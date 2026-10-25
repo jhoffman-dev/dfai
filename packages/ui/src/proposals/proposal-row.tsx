@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import {
   editedPayload,
+  isNoteProposal,
   noteTitle,
   payloadFields,
   propertyText,
   proposalHeadline,
+  specSummary,
   type PayloadFields,
   type ProposalConfidence,
   type ProposalKind,
   type ProposalNote,
+  type SpecProposal,
 } from '@dfai/domain';
 import { Icon } from '../icon.tsx';
 import { SelectBox } from '../row-selection.tsx';
@@ -21,6 +24,8 @@ export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
   link: 'Link',
   term: 'Term',
   project: 'Project',
+  dashboard: 'Dashboard',
+  view: 'View',
 };
 
 export interface ProposalRowProps {
@@ -69,7 +74,9 @@ export function ProposalRow(props: ProposalRowProps) {
             />
           )}
         </span>
-        <span className="proposal-row__kind">{KIND_LABEL[proposal.kind]}</span>
+        <span className="proposal-row__kind" data-kind={proposal.kind}>
+          {KIND_LABEL[proposal.kind]}
+        </span>
         <div className="proposal-row__text">
           <span className="proposal-row__title">{headline}</span>
           {reason !== null && reason !== '' && <p className="proposal-row__why">{reason}</p>}
@@ -194,6 +201,7 @@ function Payload({ proposal }: { proposal: ProposalNote }) {
       </p>
     );
   }
+  if (!isNoteProposal(proposal)) return <SpecPreview proposal={proposal} />;
   const { properties, body, linkFrom } = proposal.payload;
   const entries = Object.entries(properties);
   return (
@@ -218,6 +226,54 @@ function Payload({ proposal }: { proposal: ProposalNote }) {
   );
 }
 
+/**
+ * What a dashboard or view would write, as Accept will write it
+ * (`specSummary`): each widget's kind and title, its filters, and a SQL
+ * statement or DFAI query whole — it runs once accepted, so it is read first.
+ * A view shows its type and layout.
+ */
+function SpecPreview({ proposal }: { proposal: SpecProposal }) {
+  const summary = specSummary(proposal);
+  return (
+    <>
+      <dl className="proposal-row__props" aria-label="What it would write">
+        {summary.kind === 'view' ? (
+          <>
+            <div>
+              <dt>type</dt>
+              <dd>{summary.type}</dd>
+            </div>
+            <div>
+              <dt>layout</dt>
+              <dd>{summary.layout}</dd>
+            </div>
+          </>
+        ) : (
+          summary.widgets.map((widget, at) => (
+            <div key={at}>
+              <dt>{widget.kind}</dt>
+              <dd>{widget.title}</dd>
+              {widget.filters.map((filter) => (
+                <dd key={filter} className="proposal-row__spec-filter">
+                  {filter}
+                </dd>
+              ))}
+              {widget.asks !== null && (
+                <dd>
+                  <code className="proposal-row__spec-query">{widget.asks}</code>
+                </dd>
+              )}
+            </div>
+          ))
+        )}
+      </dl>
+      <p className="proposal-row__change">
+        Accepting makes it in <b>{summary.folder}</b>.
+      </p>
+    </>
+  );
+}
+
 /** The payload's fields, to change before accepting. */
 function PayloadForm({
   fields,
@@ -226,6 +282,19 @@ function PayloadForm({
   fields: PayloadFields;
   onChange: (fields: PayloadFields) => void;
 }) {
+  if (fields.kind === 'spec') {
+    return (
+      <div className="proposal-row__form">
+        <label>
+          Name
+          <input
+            value={fields.title}
+            onChange={(event) => onChange({ ...fields, title: event.target.value })}
+          />
+        </label>
+      </div>
+    );
+  }
   if (fields.kind === 'link') {
     return (
       <div className="proposal-row__form">

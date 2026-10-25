@@ -27,6 +27,8 @@ import {
   type VaultFsPort,
   type VaultLocation,
 } from '../vault/ports.ts';
+import { createMeetingDrafts } from '../assistant/meeting-drafts.ts';
+import type { ClaudeStepPorts } from '../automations/claude-step.ts';
 import { fakeIndexPort, fakeMarkdown, fakeOpenNotes } from './fake-ports.ts';
 
 /*
@@ -77,6 +79,10 @@ export interface ApiFixture {
   today: string;
   /** The vault owner's name from the profile; null (none) to start, tests set it. */
   ownerName: string | null;
+  /** What drafting a meeting's tasks asks Claude through; none to start, tests set it. */
+  claudeStep: ClaudeStepPorts | null;
+  /** What the app told the person in a notice, in order. */
+  readonly notices: string[];
   /** Pictures every page; a test swaps it to make pictures fail. */
   snapshot: PageSnapshotPort;
   /** Every request a source refresh handed the host, with the vault it named. */
@@ -128,6 +134,8 @@ export function apiFixture({
     timeZone: 'America/Los_Angeles',
     today: TODAY,
     ownerName: null as string | null,
+    claudeStep: null as ClaudeStepPorts | null,
+    notices: [] as string[],
     writes: [] as { path: string; contents: string }[],
     followed: [] as EntryMove[],
     flushed: [] as (readonly VaultPath[])[],
@@ -363,6 +371,9 @@ export function apiFixture({
     googleCalendar: google.port,
     timeZone: () => state.timeZone,
     ownerName: () => state.ownerName,
+    claudeStep: () => state.claudeStep,
+    meetingDrafts: createMeetingDrafts(),
+    notices: { warn: (message) => state.notices.push(message) },
   };
   const fixture: ApiFixture = Object.assign(state, {
     automations: new Map<string, AutomationClockState>(),

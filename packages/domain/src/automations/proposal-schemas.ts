@@ -12,7 +12,11 @@
  * the link, for the meeting the draft cites, by the identity the run read.
  */
 
-import { PROPOSAL_KINDS, type NoteProposalKind } from '../proposals/proposal.ts';
+import {
+  isSpecProposalKind,
+  PROPOSAL_KINDS,
+  type NoteProposalKind,
+} from '../proposals/proposal.ts';
 import { MEETING_DIGEST } from './meeting-digest.ts';
 import { MEETING_ITEMS } from './meeting-items.ts';
 import {
@@ -24,8 +28,14 @@ import {
   type RegisteredProposalSchema,
 } from './proposal-schema.ts';
 
-/** The kinds the general schema proposes: every kind that makes a note. */
-const NOTE_KINDS = PROPOSAL_KINDS.filter((kind): kind is NoteProposalKind => kind !== 'link');
+/**
+ * The kinds the general schema proposes: every kind that makes a note in user
+ * space. Never a dashboard or a view: an unattended step does not ask for
+ * entries in `.atlas` (P32-05).
+ */
+const NOTE_KINDS = PROPOSAL_KINDS.filter(
+  (kind): kind is NoteProposalKind => kind !== 'link' && !isSpecProposalKind(kind),
+);
 
 interface GeneralItem {
   readonly kind: NoteProposalKind;

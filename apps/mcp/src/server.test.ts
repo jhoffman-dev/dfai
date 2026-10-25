@@ -47,6 +47,7 @@ const ALL_TOOLS = [
   'atlas_list_type_views',
   'atlas_list_types',
   'atlas_list_views',
+  'atlas_make_dashboard',
   'atlas_meeting_quotes',
   'atlas_meetings',
   'atlas_merge_people',
@@ -56,6 +57,7 @@ const ALL_TOOLS = [
   'atlas_profile',
   'atlas_promote_checklist_line',
   'atlas_proposals',
+  'atlas_propose_tasks',
   'atlas_query',
   'atlas_quick_add',
   'atlas_quick_add_types',
@@ -187,6 +189,14 @@ describe('tools/list', () => {
     // The assistant's tools read the vault; none writes, not even a block id (ADR-0022).
     for (const name of ['atlas_brief', 'atlas_open_loops', 'atlas_meeting_quotes']) {
       expect(byName.get(name)).toMatchObject({ readOnlyHint: true });
+    }
+    // The two drafts write proposal notes only, and asking twice proposes nothing twice.
+    for (const name of ['atlas_propose_tasks', 'atlas_make_dashboard']) {
+      expect(byName.get(name), name).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
     }
     // The name is set in Settings; the API never writes `.atlas`.
     expect(byName.get('atlas_profile')).toMatchObject({ readOnlyHint: true });
@@ -623,6 +633,20 @@ describe('tools/call → REST', () => {
       '/v1/assistant/meetings?entity=People%2FTobias+Fenn.md',
       null,
     ],
+    [
+      'atlas_propose_tasks',
+      { meeting: 'Meetings/2026-10-01 Larkspur Payroll sync.md' },
+      'POST',
+      '/v1/assistant/propose-tasks',
+      { meeting: 'Meetings/2026-10-01 Larkspur Payroll sync.md' },
+    ],
+    [
+      'atlas_make_dashboard',
+      { spec: { kind: 'view', name: 'Open tasks', type: 'task', layout: 'board' } },
+      'POST',
+      '/v1/assistant/make-dashboard',
+      { spec: { kind: 'view', name: 'Open tasks', type: 'task', layout: 'board' } },
+    ],
     ['atlas_inbox', {}, 'GET', '/v1/inbox', null],
     [
       'atlas_inbox',
@@ -796,6 +820,24 @@ describe('tools/call → REST', () => {
   it('returns the answer as JSON text', async () => {
     atlas.respondWith(() => ({ status: 200, body: ROWS }));
     expect(JSON.parse((await call('atlas_sql', { sql: 'SELECT 1' })).text)).toEqual(ROWS);
+  });
+
+  it('hands a refused spec’s problems to the model whole, each where it is (P32-05)', async () => {
+    const problems = [
+      { at: 'name', message: 'Name the dashboard.' },
+      { at: 'widgets[1]', message: 'A bar chart needs a property to group by.' },
+    ];
+    atlas.respondWith(() => ({
+      status: 400,
+      body: { error: { code: 'invalid', message: 'The spec was refused.', problems } },
+    }));
+
+    const result = await call('atlas_make_dashboard', { spec: { kind: 'dashboard' } });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toMatch(/^invalid: The spec was refused\./);
+    const listed = result.text.slice(result.text.indexOf('problems: ') + 'problems: '.length);
+    expect(JSON.parse(listed)).toEqual(problems);
   });
 
   it('refuses a replace without ifModified before any request is made', async () => {

@@ -1558,6 +1558,7 @@ ORDER BY phase</pre>
             <tr><td>Task, Follow-up</td><td>A new task, with <code>source</code> linking the line it came from and <code>meeting</code> linking the meeting the proposal names — whatever made it from a meeting says which. A follow-up is a task to chase someone.</td></tr>
             <tr><td>Decision</td><td>A new note of the built-in <b>Decision</b> type — title, date, meeting, project, people — citing its line the same way.</td></tr>
             <tr><td>Person, Term, Project</td><td>A new note of that type. A person proposed from a <a href="#meeting-links">meeting</a> is added to that meeting's <b>People</b> too.</td></tr>
+            <tr><td>Dashboard, View</td><td>A new dashboard in <code>.atlas/dashboards</code>, or a saved view in <code>.atlas/views</code> — what <a href="#ask-dashboard">asking Claude for one</a> proposes. Only <b>Accept</b> in DFAI makes it, never a connected tool. Its card lists the widgets, or the view's type and layout; <b>Edit</b> changes only its name.</td></tr>
             <tr><td>Link</td><td>Adds one link to a note's relation — Mara Quill's <b>Companies</b> gets <code>[[Larkspur Payroll]]</code>. A link from <a href="#meeting-links">meeting linking</a> goes in even if the meeting has changed since, but never replaces a link already there: a meeting whose project you set is left with yours.</td></tr>
           </tbody>
         </table>
@@ -1569,7 +1570,7 @@ ORDER BY phase</pre>
         <li><i>“Mara Quill changed since this was proposed, so it was left as it is.”</i> — the note a link would change has been edited since; check it and answer again.</li>
         <li><i>“2026-10-06 Payroll sync already links [[Payrun]] in project; this would replace it.”</i> — the meeting got a project since the proposal was made.</li>
         <li>A proposal, or the note it would change, with unsaved typing: save it first.</li>
-        <li>A proposal may only write where your notes live: never in <code>.atlas</code>, a hidden folder, a folder DFAI doesn't show (<code>node_modules</code>), the Archive or <code>Inbox/Proposals</code> itself. A title too long for a file name is cut to fit.</li>
+        <li>A proposal may only write where your notes live — apart from a <a href="#ask-dashboard">dashboard or view</a>, which goes in its own folder of <code>.atlas</code> — never in <code>.atlas</code>, a hidden folder, a folder DFAI doesn't show (<code>node_modules</code>), the Archive or <code>Inbox/Proposals</code> itself. A title too long for a file name is cut to fit.</li>
       </ul>
       <h3>Where they live</h3>
       <ul>
@@ -1847,6 +1848,30 @@ do: archive</pre>
         <li><b>Never a whole huge folder.</b> Every list of notes it reads — here or through an <a href="#connect">MCP client</a> — is a page of at most 500, with the <code>total</code> and a cursor for the next page. Backlinks are paged too.</li>
         <li>Ask about a day — <i>“what did today's meetings say?”</i> — and it lists that day's notes: those named for it, like <code>Meetings/2026/10/2026-10-14 Larkspur Standup.md</code>, and those whose <code>date</code> is that day. Search finds a note by the words of its title first, and by the day in its file name. If Claude asks for a note that isn't there, it's told the real notes with a name like it, so it never has to guess where one is filed.</li>
         <li>It can't run automations, refresh sources or reach the web, and nothing it reads is changed.</li>
+        <li><b>It can draft for you</b>, as proposals: the tasks of a meeting (<a href="#ask-meeting-tasks">below</a>) and a dashboard or a view (<a href="#ask-dashboard">below</a>). Those wait in the <a href="#proposals">Inbox</a> until you answer them.</li>
+      </ul>
+      <h3 id="ask-meeting-tasks">Drafting tasks from a meeting</h3>
+      <p>Ask <i>“pull the tasks out of today's Larkspur Payroll sync”</i> and Claude runs the same reading the <a href="#meeting-extraction">meeting extraction</a> automation does, on that one meeting, now. You don't need the automation turned on.</p>
+      <ul>
+        <li>The conversation shows <i>Drafted the tasks of Meetings/2026-10-14 Larkspur Payroll sync.md as proposals</i>. Each item — yours, a waiting-for on someone else, a decision, a follow-up — is a proposal in the <a href="#proposals">Inbox</a>, citing the turn it came from, exactly as the automation's are. Nothing else is written: no task is made and the meeting isn't touched until you accept.</li>
+        <li><b>Ask again and nothing is proposed twice</b> — not what you already accepted or rejected, and not what the automation already proposed for that meeting. If the meeting's words haven't changed since Claude drafted it, Claude isn't asked again at all; once they change (a corrected transcript, say), it reads the meeting afresh.</li>
+        <li>It asks Claude as your Claude steps do, with the provider and model in <a href="#claude-setup">Settings → Claude</a>. A long meeting takes a while: if Claude is still reading after about 25 seconds, the conversation says it's still running, and the proposals turn up in the Inbox when it's done. If it fails then — Claude stopped, or you deleted the meeting or opened another vault meanwhile — DFAI says so in a notice and in <a href="#activity">Activity</a>, naming the meeting, and nothing is written.</li>
+        <li>A note that isn't a meeting is refused: <i>Tasks/Send it.md is not a meeting note.</i></li>
+        <li>A <a href="#connect">connected Claude</a> can do the same with <code>atlas_propose_tasks</code>.</li>
+      </ul>
+      <h3 id="ask-dashboard">Asking for a dashboard</h3>
+      <p>Ask <i>“build me a dashboard of my tasks by status”</i> — or a saved view, <i>“a board of open tasks”</i> — and Claude describes it and DFAI checks it the way the <a href="#dashboards">widget editor</a> and the <b>New view</b> dialog check yours. A dashboard lives in <code>.atlas/dashboards</code>, which nothing outside the app writes, so what Claude makes is a <b>proposal</b>:</p>
+      <ol class="steps">
+        <li>The conversation shows <i>Proposed the dashboard “Task board”</i>, and the <a href="#proposals">Inbox</a> has a <b>Dashboard</b> card listing each widget — its kind and title — and saying <i>Accepting makes it in .atlas/dashboards.</i> A view's card says its type and layout.</li>
+        <li><b>Accept</b> writes the dashboard and it appears under <b>Dashboards</b> in the sidebar. A dashboard of that name already there is left alone: the new one is <i>Task board 2</i>. <b>Edit</b> lets you rename it first. <b>Undo</b> takes it back out.</li>
+        <li><b>Reject</b> writes nothing.</li>
+      </ol>
+      <ul>
+        <li><b>A dashboard that wouldn't draw is never proposed.</b> If a widget counts a type your vault doesn't have, or a chart has nothing to group by, Claude is told exactly what the editor would tell you — <i>widgets[1]: A bar chart needs a property to group by.</i> — and fixes it before proposing. Accept checks again, in case you deleted a type since.</li>
+        <li><b>Read a query before you accept it.</b> The card shows each widget's filters (<i>status is inbox</i>), and a widget that runs SQL or a DFAI query shows it whole, in monospace — what you'd be accepting is exactly what's written.</li>
+        <li><b>No loose reading.</b> A filter DFAI can't read, a width that isn't a whole number of columns, an icon or chart style that doesn't exist, or a name with invisible characters is refused and Claude told why — never quietly dropped, which could make a tile count every note.</li>
+        <li>The same dashboard asked for twice is proposed once, and Claude is told what became of the first: still waiting, or accepted or rejected and when.</li>
+        <li>A <a href="#connect">connected Claude</a> can propose one with <code>atlas_make_dashboard</code>, but only <b>Accept</b> here in DFAI makes it: <code>atlas_accept_proposal</code> refuses a dashboard or view proposal.</li>
       </ul>
       <h3>Changes you accept</h3>
       <p>When you ask for a change, Claude proposes it as a card — <b>Proposed edit</b> or <b>Proposed new note</b> — showing the full vault path it would write, any property changes, and the text as the note would show it: removed blocks struck through, added ones marked, unchanged runs folded (<i>3 unchanged blocks</i>).</p>

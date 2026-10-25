@@ -11,6 +11,8 @@ import type {
   ApiAssistantMeetings,
   ApiBrief,
   ApiOpenLoops,
+  ApiProposedSpec,
+  ApiProposedTasks,
   ApiAcceptedProposal,
   ApiDuplicatePair,
   ApiMergePeopleBody,
@@ -468,6 +470,18 @@ export class AtlasClient {
       query: { ...query },
     });
 
+  proposeTasks = (meeting: string) =>
+    this.json<
+      { proposedTasks: ApiProposedTasks } | { proposingTasks: { meeting: string; running: true } }
+    >({ method: 'POST', path: '/v1/assistant/propose-tasks', body: { meeting } });
+
+  makeDashboard = (spec: Readonly<Record<string, unknown>>) =>
+    this.json<{ proposedSpec: ApiProposedSpec }>({
+      method: 'POST',
+      path: '/v1/assistant/make-dashboard',
+      body: { spec },
+    });
+
   automations = () => this.json<ApiAutomationList>({ method: 'GET', path: '/v1/automations' });
 
   proposals = () =>
@@ -580,8 +594,10 @@ async function readBody(response: Response): Promise<unknown> {
 function settle(answer: Answer): Answer {
   if (answer.status >= 200 && answer.status < 300 && answer.body !== undefined) return answer;
   if (isErrorBody(answer.body)) {
-    const { code, message } = answer.body.error;
-    throw new AtlasCallError(`${code}: ${message}${hintFor(code)}`);
+    const { code, message, problems } = answer.body.error;
+    // A refused spec's problems go to the caller whole, each where it is, to fix and send again.
+    const listed = problems === undefined ? '' : `\nproblems: ${JSON.stringify(problems)}`;
+    throw new AtlasCallError(`${code}: ${message}${hintFor(code)}${listed}`);
   }
   throw new AtlasCallError(`DFAI answered ${answer.status} with a body this server cannot read.`);
 }

@@ -103,7 +103,7 @@ describe('a Claude step’s task that links back to its meeting', () => {
     const setup = proposalVault(VAULT);
     const path = await propose(setup);
 
-    await acceptProposalNote({ ports: fresh(setup), path, today: TODAY });
+    await acceptProposalNote({ via: 'app', ports: fresh(setup), path, today: TODAY });
 
     expect(setup.propertiesOf(TASK)).toEqual({
       type: 'task',
@@ -127,7 +127,7 @@ describe('a Claude step’s task that links back to its meeting', () => {
     // Filed out of the older Inbox/Meetings into the meeting's month (#214).
     expect(moved).toMatch(/^Meetings\/2026\/10\//);
 
-    await acceptProposalNote({ ports: fresh(setup), path, today: TODAY });
+    await acceptProposalNote({ via: 'app', ports: fresh(setup), path, today: TODAY });
 
     expect(setup.paths()).toContain(TASK);
     expect(setup.propertiesOf(moved)?.['tasks']).toEqual(['[[Send Mara the payroll file]]']);
@@ -143,9 +143,9 @@ describe('a Claude step’s task that links back to its meeting', () => {
       expectedModified: null,
     });
 
-    await expect(acceptProposalNote({ ports: fresh(setup), path, today: TODAY })).rejects.toThrow(
-      /no longer the meeting this was proposed for/,
-    );
+    await expect(
+      acceptProposalNote({ via: 'app', ports: fresh(setup), path, today: TODAY }),
+    ).rejects.toThrow(/no longer the meeting this was proposed for/);
 
     expect(setup.paths()).not.toContain(TASK);
     expect(setup.propertiesOf(MEETING)?.['tasks']).toBeUndefined();
@@ -165,9 +165,9 @@ describe('a vault whose Meeting type predates `tasks` (#162)', () => {
     const setup = proposalVault(OLDER);
     const path = await propose(setup);
 
-    await expect(acceptProposalNote({ ports: fresh(setup), path, today: TODAY })).rejects.toThrow(
-      /has no relation called tasks to link through/,
-    );
+    await expect(
+      acceptProposalNote({ via: 'app', ports: fresh(setup), path, today: TODAY }),
+    ).rejects.toThrow(/has no relation called tasks to link through/);
   });
 
   it('accepts once the vault has been opened, linking the task back into the meeting', async () => {
@@ -190,7 +190,7 @@ describe('a vault whose Meeting type predates `tasks` (#162)', () => {
     // The migration's record is YAML (`atlas: migration`), which this vault's JSON-lines
     // markdown cannot read; Accept reads no note under `.atlas/migrations`, so it is left out.
     setup.fixture.files.delete('.atlas/migrations/type-properties.md');
-    await acceptProposalNote({ ports: fresh(setup), path, today: TODAY });
+    await acceptProposalNote({ via: 'app', ports: fresh(setup), path, today: TODAY });
 
     expect(setup.paths()).toContain(TASK);
     expect(setup.propertiesOf(MEETING)?.['tasks']).toEqual(['[[Send Mara the payroll file]]']);

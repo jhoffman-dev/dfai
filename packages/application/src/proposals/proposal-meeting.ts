@@ -7,6 +7,7 @@ import {
   proposedChangeRefusal,
   resolveWikiLinkTarget,
   vaultSpellingOf,
+  isNoteProposal,
   type LinkFrom,
   type MeetingIdentity,
   type ProposalNote,
@@ -18,7 +19,8 @@ import type { ProposalPorts } from './proposal-file.ts';
 
 /** The relation a proposal changes on a note it names: a link proposal's own, or a new note's `linkFrom`. */
 export function relationChanged(proposal: ProposalNote): LinkFrom | null {
-  return proposal.kind === 'link' ? proposal.payload : proposal.payload.linkFrom;
+  if (proposal.kind === 'link') return proposal.payload;
+  return isNoteProposal(proposal) ? proposal.payload.linkFrom : null;
 }
 
 /**
@@ -136,6 +138,7 @@ async function indexedHolders(
 
 function withNote(proposal: ProposalNote, note: VaultPath): ProposalNote {
   if (proposal.kind === 'link') return { ...proposal, payload: { ...proposal.payload, note } };
+  if (!isNoteProposal(proposal)) return proposal;
   const { linkFrom } = proposal.payload;
   if (linkFrom === null) return proposal;
   return { ...proposal, payload: { ...proposal.payload, linkFrom: { ...linkFrom, note } } };

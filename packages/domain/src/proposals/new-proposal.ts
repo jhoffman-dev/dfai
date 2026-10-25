@@ -1,4 +1,5 @@
 import type { CompiledQuery } from '../query/view-query.ts';
+import { digestOf } from '../sources/merge.ts';
 import { withoutLatinAccents } from '../terms/spelling-folds.ts';
 import { fitFileNameStem } from '../vault/file-name-bytes.ts';
 import { cleanEntryName, NUMBERED_NOTE_ENDING } from '../vault/new-note.ts';
@@ -30,6 +31,11 @@ export type NewProposal = Pick<ProposalNote, 'kind' | 'payload'> & {
   readonly name: string;
   /** Why it is proposed, in a sentence or two: the proposal note's body. */
   readonly reason: string;
+  /**
+   * More frontmatter its maker keeps on it — what it was drafted from
+   * (`meeting_digest`, P32-05). Never one of the keys above, which win.
+   */
+  readonly stamp?: Readonly<Record<string, string>>;
 };
 
 /** A proposal as a note: where it goes in `Inbox/Proposals/`, its frontmatter and its body. */
@@ -53,6 +59,7 @@ export function proposalFileFor(proposal: NewProposal): NewProposalFile {
   return {
     path: joinVaultPath(createVaultPath(PROPOSALS_FOLDER), `${stem}.md`),
     properties: {
+      ...proposal.stamp,
       type: PROPOSAL_TYPE,
       kind: proposal.kind,
       state: 'open',
@@ -63,6 +70,48 @@ export function proposalFileFor(proposal: NewProposal): NewProposalFile {
       payload: payloadRecord(proposal.payload),
     },
     body: proposal.reason === '' ? '' : `${proposal.reason}\n`,
+  };
+}
+
+/**
+ * The key a proposal drafted from a meeting on demand keeps what it was
+ * drafted from by (P32-05): asked again about the same meeting with the same
+ * words, nothing is asked.
+ */
+export const MEETING_DIGEST_KEY = 'meeting_digest';
+
+/**
+ * What a meeting was drafted from: which meeting — its provider and id when
+ * the import gave it them, which filing does not change, else its path — and
+ * its words. Two hashes of the same text, as a Claude proposal's id is, so
+ * two meetings' collision needs both to meet; JSON, so no meeting's name can
+ * be taken for another's words.
+ */
+export function meetingDraftDigest({
+  meeting,
+  words,
+}: {
+  meeting: { readonly provider: string; readonly externalId: string } | { readonly path: string };
+  words: string;
+}): string {
+  const which =
+    'path' in meeting ? ['path', meeting.path] : ['meeting', meeting.provider, meeting.externalId];
+  const what = JSON.stringify([...which, words]);
+  return `meeting-${digestOf(`a${what}`)}${digestOf(`b${what}`)}`;
+}
+
+/**
+ * The proposals, anywhere in the vault — the Archive too — whose `key` is
+ * `value`: notes of the proposal type only, so another note carrying the key
+ * never counts. Columns: path.
+ */
+export function compileProposalsStampedQuery(key: string, value: string): CompiledQuery {
+  return {
+    sql: `/* proposals: stamped */ SELECT stamped.path AS "path" FROM props AS stamped
+ JOIN props AS kind ON kind.path = stamped.path AND kind.key = 'type'
+  AND lower(trim(kind.value_text)) = ?
+ WHERE stamped.key = ? AND stamped.value_text = ? ORDER BY stamped.path`,
+    parameters: [PROPOSAL_TYPE, key, value],
   };
 }
 

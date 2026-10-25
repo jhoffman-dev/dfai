@@ -75,3 +75,9 @@ export {
 } from './widget-draft.ts';
 export type { WidgetDraft } from './widget-draft.ts';
 export { sqlGroups, sqlNumber, sqlShowProblem } from './sql-widget.ts';
+export {
+  checkDashboardSpec,
+  dashboardFrontmatter,
+  MAX_DASHBOARD_DESCRIPTION,
+} from './dashboard-spec.ts';
+export type { DashboardSpec, DashboardSpecReading } from './dashboard-spec.ts';

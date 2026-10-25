@@ -39,6 +39,16 @@ describe('describeToolCall', () => {
     );
     expect(said('propose_edit', { path: 'Q3.md' })).toBe('Proposed an edit to Q3.md');
     expect(said('propose_note', { title: 'Idea' })).toBe('Proposed a new note, “Idea”');
+    expect(said('propose_tasks', { meeting: 'Meetings/Sync.md' })).toBe(
+      'Drafted the tasks of Meetings/Sync.md as proposals',
+    );
+    expect(said('make_dashboard', { spec: { kind: 'dashboard', name: ' Payroll ' } })).toBe(
+      'Proposed the dashboard “Payroll”',
+    );
+    expect(said('make_dashboard', { spec: { kind: 'view', name: 'Open tasks' } })).toBe(
+      'Proposed the view “Open tasks”',
+    );
+    expect(said('make_dashboard', { spec: 'x' })).toBe('Proposed a dashboard');
   });
 
   it('names a tool that does not exist, and shows nothing for input that is not text', () => {
@@ -51,6 +61,12 @@ describe('describeToolCall', () => {
       describeFailedToolCall({ id: 'c', name, input });
     expect(failed('propose_edit', { path: 'Q3.md' })).toBe('Could not propose an edit to Q3.md');
     expect(failed('propose_note', { title: 'Idea' })).toBe('Could not propose a new note, “Idea”');
+    expect(failed('propose_tasks', { meeting: 'Meetings/Sync.md' })).toBe(
+      'Could not draft the tasks of Meetings/Sync.md',
+    );
+    expect(failed('make_dashboard', { spec: { kind: 'view', name: 'Doing' } })).toBe(
+      'Could not propose the view “Doing”',
+    );
     expect(failed('atlas_read_note', { path: 'Q3.md' })).toBe('Failed: Read Q3.md');
   });
 });

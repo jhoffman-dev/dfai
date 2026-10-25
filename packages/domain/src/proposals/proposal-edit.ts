@@ -1,10 +1,11 @@
 import { listAsInput, listFromInput } from '../types/list-input.ts';
-import type { ProposalNote } from './proposal.ts';
+import { isNoteProposal, type ProposalNote } from './proposal.ts';
 
 /**
  * A proposal's payload as the Edit form shows it: each thing Accept would
  * write, as text. A link proposal edits only its link; the note and the
- * relation it goes in are what was proposed.
+ * relation it goes in are what was proposed. A dashboard or a view edits only
+ * its name: its widgets, type and layout are what the checker passed.
  */
 export type PayloadFields =
   | {
@@ -14,11 +15,13 @@ export type PayloadFields =
       /** Each property as text, in the payload's order. */
       readonly properties: readonly (readonly [key: string, text: string])[];
     }
-  | { readonly kind: 'link'; readonly link: string };
+  | { readonly kind: 'link'; readonly link: string }
+  | { readonly kind: 'spec'; readonly title: string };
 
 /** The payload's fields as the Edit form starts them. */
 export function payloadFields(proposal: ProposalNote): PayloadFields {
   if (proposal.kind === 'link') return { kind: 'link', link: proposal.payload.link };
+  if (!isNoteProposal(proposal)) return { kind: 'spec', title: proposal.payload.title };
   const { title, body, properties } = proposal.payload;
   return {
     kind: 'note',
@@ -39,6 +42,9 @@ export function payloadFields(proposal: ProposalNote): PayloadFields {
 export function editedPayload(proposal: ProposalNote, fields: PayloadFields): unknown {
   if (proposal.kind === 'link' || fields.kind === 'link') {
     return { ...proposal.payload, link: fields.kind === 'link' ? fields.link : '' };
+  }
+  if (!isNoteProposal(proposal) || fields.kind === 'spec') {
+    return { ...proposal.payload, title: fields.kind === 'note' ? '' : fields.title };
   }
   const { properties: before, folder, linkFrom } = proposal.payload;
   return {

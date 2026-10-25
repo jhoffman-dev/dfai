@@ -13,6 +13,20 @@ export interface MeetingIdentity {
 export const sameMeetingIdentity = (a: MeetingIdentity, b: MeetingIdentity): boolean =>
   a.provider === b.provider && a.externalId.trim() === b.externalId.trim();
 
+/**
+ * The meeting a note's own keys say it is — its provider and id — or null
+ * when it names no provider or no id (a meeting written by hand, say).
+ */
+export function meetingIdentityOf(
+  properties: Readonly<Record<string, unknown>>,
+): MeetingIdentity | null {
+  const provider = properties['provider'];
+  const externalId = properties['external_id'];
+  if (typeof provider !== 'string' || provider.trim() === '') return null;
+  if (typeof externalId !== 'string' || externalId.trim() === '') return null;
+  return { provider: provider.trim(), externalId: externalId.trim() };
+}
+
 /** Whether a note's own keys name the meeting: what a holder let in is kept by, whatever else it says. */
 function holdsSameId(properties: Readonly<Record<string, unknown>>, meeting: MeetingIdentity) {
   const text = (key: string) => {

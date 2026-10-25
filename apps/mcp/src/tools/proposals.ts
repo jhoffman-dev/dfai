@@ -29,7 +29,8 @@ export const proposals = defineTool({
     '[{ path, kind, headline, confidence, source, madeBy, reason, payload, modified }], stranded, ' +
     'unreadable }; "stranded" are answered but still in the Inbox. "reason" is why it was ' +
     'proposed — for an item taken from a meeting, whose it is and what to check first. ' +
-    '"kind" is task, decision, follow-up, person, link, term or project; "payload" is what ' +
+    '"kind" is task, decision, follow-up, person, link, term, project, dashboard or view; ' +
+    '"payload" is what ' +
     'accepting writes; "source" is the block it cites, as [[Note#^id]], or null when it cites ' +
     'none. Show James what each would do and what it cites before accepting anything for him.',
   inputSchema: noInput,
@@ -46,8 +47,9 @@ export const acceptProposal = defineTool({
     "proposed from a meeting is added to that meeting's people too), or one link added to a " +
     'relation of a note — then mark it accepted and move it into the Archive. Returns ' +
     '{ accepted: { proposal, headline, archivedAt, archiveProblem, wrote: [{ kind, path }] } }. ' +
-    `Only accept what James asked you to. ${REFUSED} Editing a proposal first, and undoing an ` +
-    'accept, are done in DFAI.',
+    `Only accept what James asked you to. ${REFUSED} A dashboard or view proposal is refused ` +
+    'with "forbidden": it is written into .atlas, so only Accept in DFAI makes it. Editing a ' +
+    'proposal first, and undoing an accept, are done in DFAI.',
   inputSchema: z.object({ path: proposalPath }),
   annotations: ANSWERS,
   call: (client, input) => client.acceptProposal(input.path),

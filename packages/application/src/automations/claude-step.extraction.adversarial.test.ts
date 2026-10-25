@@ -218,7 +218,12 @@ const waiting = (files: ReadonlyMap<string, string>) =>
 /** Accepts, answering what it wrote — or the refusal, when it was refused. */
 async function accepted(ports: Parameters<typeof acceptProposalNote>[0]['ports'], path: string) {
   try {
-    return await acceptProposalNote({ ports, path: createVaultPath(path), today: TODAY });
+    return await acceptProposalNote({
+      via: 'app',
+      ports,
+      path: createVaultPath(path),
+      today: TODAY,
+    });
   } catch (refusal) {
     return refusal as Error;
   }
@@ -287,7 +292,12 @@ describe('two items of one title', () => {
     await run(SYNC_ONLY);
     const [mine, theirs] = waiting(vault.files);
     expect(properties(theirs!)['payload']).toMatchObject({ properties: { status: 'waiting' } });
-    await acceptProposalNote({ ports: vault.ports, path: createVaultPath(mine!), today: TODAY });
+    await acceptProposalNote({
+      via: 'app',
+      ports: vault.ports,
+      path: createVaultPath(mine!),
+      today: TODAY,
+    });
 
     const second = await accepted(vault.ports, theirs!);
 
@@ -335,11 +345,13 @@ describe('undoing an accept after another proposal of the same meeting was accep
     await run(SYNC_ONLY);
     const made = await proposals();
     const first = await acceptProposalNote({
+      via: 'app',
       ports,
       path: made.get('Write the rollout note')!.proposal.path,
       today: TODAY,
     });
     await acceptProposalNote({
+      via: 'app',
       ports,
       path: made.get('Flag the new cache')!.proposal.path,
       today: TODAY,
@@ -395,6 +407,7 @@ describe('DESIGN: the same meeting reaching Claude more than once', () => {
     // Unchanged, the meeting is not asked about again.
     expect(asked()).toHaveLength(1);
     await acceptProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: (await proposals()).get('Write the rollout note')!.proposal.path,
       today: TODAY,

@@ -2,6 +2,7 @@ import { foldedLinkName } from '../markdown/resolve-wikilink.ts';
 import { readWikiLink } from '../markdown/wikilink-spans.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import {
+  isNoteProposal,
   PROPOSAL_CONFIDENCES,
   type ProposalConfidence,
   type ProposalKind,
@@ -44,6 +45,7 @@ export function proposalSlotOf(proposal: ProposalNote): ProposalSlot | null {
   if (proposal.kind === 'link') {
     return { note: proposal.payload.note, property: proposal.payload.property };
   }
+  if (!isNoteProposal(proposal)) return null;
   const { linkFrom } = proposal.payload;
   return linkFrom === null ? null : { note: linkFrom.note, property: linkFrom.property };
 }

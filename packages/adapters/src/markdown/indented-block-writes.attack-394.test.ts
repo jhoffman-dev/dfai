@@ -310,6 +310,7 @@ describe('#394 guards: the other write paths on an indented block', () => {
     const proposal = indentedNote(2, 'type: proposal', 'kind: task', 'state: open', ...payload);
     const v = vault({ [path]: proposal });
     const rejected = await rejectProposalNote({
+      via: 'app',
       ports: v.ports,
       path: createVaultPath(path),
       today: TODAY,

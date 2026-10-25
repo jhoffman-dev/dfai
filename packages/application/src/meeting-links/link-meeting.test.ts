@@ -149,7 +149,7 @@ describe('linkMeeting', () => {
     });
     expect(run.proposed).toContain(person?.path);
 
-    await acceptProposalNote({ ports: setup.ports, path: person!.path, today: TODAY });
+    await acceptProposalNote({ via: 'app', ports: setup.ports, path: person!.path, today: TODAY });
 
     expect(setup.propertiesOf('People/Ada Venn.md')).toEqual({
       type: 'person',
@@ -170,7 +170,7 @@ describe('linkMeeting', () => {
     const [person] = (await link(ports)).proposed;
     setup.dirty.add(MEETING);
     await expect(
-      acceptProposalNote({ ports: setup.ports, path: person!, today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: setup.ports, path: person!, today: TODAY }),
     ).rejects.toThrow(/unsaved typing/);
     expect(setup.paths()).not.toContain('People/Ada Venn.md');
   });
@@ -399,7 +399,7 @@ describe('undoMeetingLink', () => {
     const { setup, ports } = vault({ [MEETING]: meeting([MARA, ADA]) });
     const run = await link(ports);
     const person = run.proposed.find((path) => path.includes('Ada Venn')) as VaultPath;
-    await acceptProposalNote({ ports: setup.ports, path: person, today: TODAY });
+    await acceptProposalNote({ via: 'app', ports: setup.ports, path: person, today: TODAY });
     const undone = await undoMeetingLink({ ports, run, today: TODAY });
     expect(setup.propertiesOf(MEETING)?.['people']).toEqual([
       '[[Mara Quill]]',

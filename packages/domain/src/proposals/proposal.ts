@@ -33,8 +33,22 @@ export const PROPOSAL_KINDS = [
   'link',
   'term',
   'project',
+  'dashboard',
+  'view',
 ] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
+
+/**
+ * The kinds that make one of DFAI's own entries in `.atlas` — a dashboard in
+ * `.atlas/dashboards`, a view in `.atlas/views` (P32-05). The local API never
+ * writes `.atlas` (ADR-0016), so these are accepted only in the app.
+ */
+export const SPEC_PROPOSAL_KINDS = ['dashboard', 'view'] as const;
+export type SpecProposalKind = (typeof SPEC_PROPOSAL_KINDS)[number];
+
+export function isSpecProposalKind(kind: ProposalKind): kind is SpecProposalKind {
+  return (SPEC_PROPOSAL_KINDS as readonly string[]).includes(kind);
+}
 
 export const PROPOSAL_STATES = ['open', 'accepted', 'rejected'] as const;
 export type ProposalState = (typeof PROPOSAL_STATES)[number];
@@ -51,8 +65,8 @@ export const PROPOSAL_ANSWERERS = ['app', 'api'] as const;
 export type ProposalAnswerer = (typeof PROPOSAL_ANSWERERS)[number];
 export type ProposalConfidence = (typeof PROPOSAL_CONFIDENCES)[number];
 
-/** A proposal that makes a note: everything but a link. */
-export type NoteProposalKind = Exclude<ProposalKind, 'link'>;
+/** A proposal that makes a note in user space: everything but a link, a dashboard or a view. */
+export type NoteProposalKind = Exclude<ProposalKind, 'link' | SpecProposalKind>;
 
 /** The type of the note each kind makes. A follow-up is a task to chase someone. */
 export const PROPOSAL_NOTE_TYPES: Readonly<Record<NoteProposalKind, string>> = {
@@ -109,6 +123,17 @@ export interface LinkPayload {
   readonly meeting?: MeetingIdentity;
 }
 
+/**
+ * What accepting a dashboard or view proposal makes: an entry called `title`
+ * in its kind's folder of `.atlas`, as `spec` describes it. The spec is
+ * checked again when it is accepted — against the vault's types as they are
+ * then — and only what the checker passes is written.
+ */
+export interface SpecPayload {
+  readonly title: string;
+  readonly spec: Readonly<Record<string, unknown>>;
+}
+
 interface ProposalCommon {
   readonly path: VaultPath;
   readonly state: ProposalState;
@@ -121,9 +146,26 @@ interface ProposalCommon {
 
 export type ProposalNote =
   | (ProposalCommon & { readonly kind: NoteProposalKind; readonly payload: NotePayload })
-  | (ProposalCommon & { readonly kind: 'link'; readonly payload: LinkPayload });
+  | (ProposalCommon & { readonly kind: 'link'; readonly payload: LinkPayload })
+  | (ProposalCommon & { readonly kind: SpecProposalKind; readonly payload: SpecPayload });
 
 export type ProposalPayload = ProposalNote['payload'];
+
+/** A proposal that makes a note in user space. */
+export type NoteProposal = Extract<ProposalNote, { readonly kind: NoteProposalKind }>;
+
+/** A proposal that makes a dashboard or a view in `.atlas`. */
+export type SpecProposal = Extract<ProposalNote, { readonly kind: SpecProposalKind }>;
+
+/** Whether a proposal makes a dashboard or a view. */
+export function isSpecProposal(proposal: ProposalNote): proposal is SpecProposal {
+  return isSpecProposalKind(proposal.kind);
+}
+
+/** Whether a proposal makes a note in user space: not a link, nor a dashboard or a view. */
+export function isNoteProposal(proposal: ProposalNote): proposal is NoteProposal {
+  return proposal.kind !== 'link' && !isSpecProposalKind(proposal.kind);
+}
 
 export type ProposalReading =
   | { readonly ok: true; readonly proposal: ProposalNote }
@@ -132,6 +174,16 @@ export type ProposalReading =
 export type PayloadReading =
   | { readonly ok: true; readonly payload: ProposalPayload }
   | { readonly ok: false; readonly problem: string };
+
+/**
+ * Why a proposal may not be accepted by whoever answered it, or null when it
+ * may. A dashboard or a view is written into `.atlas`, which nothing outside
+ * the app writes (ADR-0016): only the app's own Accept makes one.
+ */
+export function acceptRefusal(kind: ProposalKind, via: ProposalAnswerer): string | null {
+  if (via === 'app' || !isSpecProposalKind(kind)) return null;
+  return `A ${kind} proposal is written into .atlas, which the local API never writes: accept it in DFAI’s Inbox.`;
+}
 
 /** Whether a note sits in the proposals folder, however `Inbox` is cased. */
 export function isProposalPath(path: string): boolean {
@@ -181,7 +233,17 @@ export function readProposal({
  */
 export function readProposalPayload(kind: ProposalKind, value: unknown): PayloadReading {
   if (!isRecord(value)) return refused('Its payload does not say what to write.');
+  if (isSpecProposalKind(kind)) return readSpecPayload(value);
   return kind === 'link' ? readLinkPayload(value) : readNotePayload(value);
+}
+
+/** A dashboard or view payload: a title and the spec, read whole; what the spec says is checked on Accept. */
+function readSpecPayload(value: Readonly<Record<string, unknown>>): PayloadReading {
+  const title = cleanEntryName(text(value['title']) ?? '');
+  if (title === '') return refused('Its payload needs a title.');
+  const spec = value['spec'];
+  if (!isRecord(spec)) return refused('Its payload’s spec must be keys and values.');
+  return { ok: true, payload: { title, spec } };
 }
 
 function readNotePayload(value: Readonly<Record<string, unknown>>): PayloadReading {
@@ -312,6 +374,7 @@ function linkFromRecord({ meeting, ...from }: LinkFrom) {
  * no empty folder, properties or body.
  */
 export function payloadRecord(payload: ProposalPayload): Readonly<Record<string, unknown>> {
+  if ('spec' in payload) return { title: payload.title, spec: payload.spec };
   if ('digest' in payload) {
     const { digest, meeting, ...link } = payload;
     return {

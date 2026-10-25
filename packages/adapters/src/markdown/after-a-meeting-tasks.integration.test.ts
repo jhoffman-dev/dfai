@@ -431,7 +431,12 @@ describe('a leftover proposal for an item already made', () => {
     expect(leftover).toBeDefined();
 
     await expect(
-      acceptProposalNote({ ports: vault.ports, path: createVaultPath(leftover!), today: TODAY }),
+      acceptProposalNote({
+        via: 'app',
+        ports: vault.ports,
+        path: createVaultPath(leftover!),
+        today: TODAY,
+      }),
     ).rejects.toThrow('is already a task, made from the same item of the meeting');
 
     expect(tasks()).toEqual([
@@ -455,7 +460,12 @@ describe('a leftover proposal for an item already made', () => {
       vault.files.get(at)!.includes('Post the renewal contract'),
     );
 
-    await acceptProposalNote({ ports: vault.ports, path: createVaultPath(other!), today: TODAY });
+    await acceptProposalNote({
+      via: 'app',
+      ports: vault.ports,
+      path: createVaultPath(other!),
+      today: TODAY,
+    });
 
     expect(tasks()).toContain('Tasks/2026/10/Post the renewal contract.md');
   });

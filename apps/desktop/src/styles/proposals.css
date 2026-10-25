@@ -109,7 +109,7 @@
   align-items: center;
   column-gap: var(--space-2);
   display: grid;
-  grid-template-columns: 28px 64px minmax(0, 1fr) auto auto;
+  grid-template-columns: 28px 84px minmax(0, 1fr) auto auto;
   min-height: 44px;
 }
 
@@ -118,12 +118,60 @@
   justify-content: center;
 }
 
+/* Its kind, as a chip in that kind's muted pastel (#36), so a dashboard reads apart from a task at a
+   glance; the row around it stays neutral. */
 .proposal-row__kind {
-  color: var(--ink-3);
+  --pill: var(--hue-gray-bg);
+  --pill-ink: var(--hue-gray-ink);
+  background: var(--pill);
+  border-radius: var(--radius-chip);
+  color: var(--pill-ink);
   font-size: var(--text-small);
   font-weight: 500;
+  justify-self: start;
   letter-spacing: 0.04em;
+  padding: 1px 6px;
   text-transform: uppercase;
+}
+
+.proposal-row__kind[data-kind='task'] {
+  --pill: var(--hue-blue-bg);
+  --pill-ink: var(--hue-blue-ink);
+}
+
+.proposal-row__kind[data-kind='follow-up'] {
+  --pill: var(--hue-orange-bg);
+  --pill-ink: var(--hue-orange-ink);
+}
+
+.proposal-row__kind[data-kind='decision'] {
+  --pill: var(--hue-purple-bg);
+  --pill-ink: var(--hue-purple-ink);
+}
+
+.proposal-row__kind[data-kind='person'] {
+  --pill: var(--hue-pink-bg);
+  --pill-ink: var(--hue-pink-ink);
+}
+
+.proposal-row__kind[data-kind='term'] {
+  --pill: var(--hue-yellow-bg);
+  --pill-ink: var(--hue-yellow-ink);
+}
+
+.proposal-row__kind[data-kind='project'] {
+  --pill: var(--hue-green-bg);
+  --pill-ink: var(--hue-green-ink);
+}
+
+.proposal-row__kind[data-kind='dashboard'] {
+  --pill: var(--hue-brown-bg);
+  --pill-ink: var(--hue-brown-ink);
+}
+
+.proposal-row__kind[data-kind='view'] {
+  --pill: var(--hue-red-bg);
+  --pill-ink: var(--hue-red-ink);
 }
 
 .proposal-row__text {
@@ -358,4 +406,17 @@
   display: grid;
   gap: 2px;
   justify-items: start;
+}
+
+/* A dashboard widget's SQL or DFAI query, whole and as written, so it is read before Accept runs it (#36). */
+.proposal-row__spec-query {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.proposal-row__spec-filter {
+  color: var(--ink-3);
 }

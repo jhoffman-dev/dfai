@@ -1,8 +1,13 @@
 import type { ModelToolSpec, ToolCall, ToolResult } from '@dfai/domain';
-import type { ApiRouterDeps } from '../api/index.ts';
+import { noticingWrites, type ApiRouterDeps } from '../api/index.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
+import {
+  ASSISTANT_PROPOSAL_SPECS,
+  isAssistantProposalTool,
+  runAssistantProposalTool,
+} from './assistant-proposal-tools.ts';
 import { proposeEdit, proposeNote, ProposalRefused, type Proposal } from './proposals.ts';
 import { READ_TOOL_SPECS, isReadTool, runReadTool } from './read-tools.ts';
 
@@ -70,7 +75,7 @@ const PROPOSAL_SPECS: readonly ModelToolSpec[] = [
  * composition root from the same API: the chat's, and a rule's Claude step's.
  */
 export interface Toolboxes {
-  /** Every read tool and the two proposals, bound to the vault the chat is in. */
+  /** Every read tool, the two proposals and the two drafts, bound to the vault the chat is in. */
   chat(fs: VaultFsPort): ChatToolbox;
   /** Only the read tools named: what a rule's Claude step may call. */
   reading(tools: readonly string[]): ChatToolbox;
@@ -80,13 +85,16 @@ export function createToolboxes({
   api,
   markdown,
   newId,
+  onWrote,
 }: {
   api: ApiRouterDeps;
   markdown: MarkdownPort;
   newId: () => string;
+  /** Run after a drafting tool's write lands, as after one through the API, so the Inbox catches up. */
+  onWrote?: () => void;
 }): Toolboxes {
   return {
-    chat: (fs) => createChatToolbox({ api, fs, markdown, newId }),
+    chat: (fs) => createChatToolbox({ api, fs, markdown, newId, onWrote }),
     reading: (tools) => createReadToolbox({ api, tools, newId }),
   };
 }
@@ -114,26 +122,41 @@ export function createReadToolbox({
 
 /**
  * The chat's tools: the read routes of the local API, answered in-process,
- * and the two proposals, which only ever describe a change.
+ * the two proposals, which only ever describe a change, and the two drafts
+ * (`propose_tasks`, `make_dashboard`), which leave proposals in the Inbox.
  */
 export function createChatToolbox({
   api,
   fs,
   markdown,
   newId,
+  onWrote,
 }: {
   api: ApiRouterDeps;
   /** Bound to the vault the chat is in. */
   fs: VaultFsPort;
   markdown: MarkdownPort;
   newId: () => string;
+  /** Run after a drafting tool's write lands; none, left out. */
+  onWrote?: (() => void) | undefined;
 }): ChatToolbox {
+  const drafting = onWrote === undefined ? api : noticingWrites({ deps: api, onWrote });
   return {
-    specs: [...READ_TOOL_SPECS, ...PROPOSAL_SPECS],
+    specs: [...READ_TOOL_SPECS, ...PROPOSAL_SPECS, ...ASSISTANT_PROPOSAL_SPECS],
     async run(call) {
       if (isReadTool(call.name)) {
         return {
           result: await runReadTool({ call, api, requestId: `chat-${newId()}` }),
+          proposal: null,
+        };
+      }
+      if (isAssistantProposalTool(call.name)) {
+        return {
+          result: await runAssistantProposalTool({
+            call,
+            api: drafting,
+            requestId: `chat-${newId()}`,
+          }),
           proposal: null,
         };
       }

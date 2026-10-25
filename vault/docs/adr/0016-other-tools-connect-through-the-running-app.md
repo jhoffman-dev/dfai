@@ -875,3 +875,70 @@ the same names (so a rule's Claude step may name them too).
 - **The same refusals as every route.** `entity` is a user-space `.md` note,
   checked as a body's paths are; a day is a real day; `about` is at most 500
   characters, searched as words, never as query syntax.
+
+## Amendment: Claude drafts tasks and dashboards as proposals (P32-05, 2026-10-23)
+
+`POST /v1/assistant/propose-tasks` and `POST /v1/assistant/make-dashboard` —
+MCP's `atlas_propose_tasks` and `atlas_make_dashboard`, the chat's
+`propose_tasks` and `make_dashboard` — are the assistant's first writes. Both
+only propose. Neither is a tool a rule's Claude step can be given: an
+unattended step reads.
+
+- **A meeting's items, drafted on demand.** `propose-tasks` runs the meeting
+  extraction (P29-05) on one meeting note with the provider and model
+  Settings → Claude chose, as a rule's Claude step does (`runClaudeStep`), and
+  never with `apply: mine`: every item is a proposal in `Inbox/Proposals`,
+  citing its turn, and nothing else is written — no task, no meeting, no log.
+  Its proposals are known by the same ids as the meeting extraction rule's
+  (the meeting-items schema leaves the rule out of an id), so asking again,
+  or after the rule ran, proposes nothing twice. A draft runs as long as
+  Claude takes; the route waits 25 seconds — under the host's 30 — and then
+  answers `202` while it goes on, so a long meeting is not reported as a
+  `timeout` that in fact landed; how a draft past its `202` ended is said in
+  the vault's Activity log and, when it failed, as a notice in the window
+  (`AppNotices`), since no caller is left to hear it. Right before its first
+  write it checks its vault is still open and the meeting still there. One
+  meeting is drafted once at a time, per router (`MeetingDrafts`). This is
+  the API's first route that spends, so it does not spend twice on the same
+  words: each proposal keeps `meeting_digest`, two hashes of which meeting it
+  was drafted from (provider and id, else path) with that meeting's body, and
+  asked again about the same meeting with its body unchanged — counting only
+  proposal notes — the route answers `unchanged` without asking Claude. The
+  check before the first write also asks that the meeting at the path is
+  still the same meeting, by provider and id. A meeting whose draft proposed
+  nothing is asked about again; the MCP tool says that a draft costs.
+- **A dashboard or view, checked, then proposed.** `make-dashboard` checks a
+  spec with the app's own checkers — the widget editor's (`widgetProblems`,
+  whose last word is the dashboard parser) for a dashboard, the New view
+  dialog's (`newViewFieldProblems`) for a view — against the vault's types. A
+  spec either refuses is `invalid`, with every problem as `{ at, message }`
+  in the error's new `problems` field, the checker's words, so a caller can
+  fix it and ask again — at most 50, each cut at 200 characters, so a spec
+  of long text cannot make the answer large. The checker refuses rather
+  than coerces what the editor's draft would read loosely: filters it cannot
+  read, an unknown `show` or `icon`, a `span` or `limit` out of range, a
+  `title` that is not text, a `highlight` neither text nor a number, a name
+  with nothing visible or an invisible character outside an emoji (a format
+  character, a joiner not between two emoji, tag characters outside a
+  subdivision flag).
+  Asked for again, a spec already proposed is not proposed twice, and the
+  answer says what became of the first. Before Accept, the Inbox card shows
+  each widget as Accept will write it, every SQL statement and DFAI query
+  whole: what runs once it is accepted is read first. One that passes becomes a `dashboard` or
+  `view` proposal in `Inbox/Proposals` — user space, as every proposal is.
+  Nothing a spec says names a path: the folder is its kind's, the file name
+  its name, cleaned as a view's is, and a widget's key the editor does not
+  know is dropped.
+- **Nothing reaches `.atlas` without an Accept in the app.** The proposal's
+  Accept on the Inbox page writes the entry into `.atlas/dashboards` or
+  `.atlas/views` — the one write into `.atlas` a proposal makes — with the
+  exclusive create, numbered past a name already taken, its spec checked
+  again against the types as they are then; Undo takes it back as any
+  accept's. The API's accept (`POST /v1/proposals/{path}/accept`, MCP's
+  `atlas_accept_proposal`) refuses a `dashboard` or `view` proposal with
+  `forbidden` and writes nothing (`acceptRefusal`, held by
+  `acceptProposalNote` itself, so no route can skip it). This holds however
+  the proposal came to be: one written or edited by hand through the note
+  routes is still a proposal note in user space, and still accepted only in
+  the app. So the rule above stands — the API never writes `.atlas` — and
+  an MCP client cannot propose a dashboard and accept it for itself.

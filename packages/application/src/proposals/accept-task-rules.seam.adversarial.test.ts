@@ -18,6 +18,7 @@ const proposal = (kind: string, properties: Record<string, unknown>, title = 'Ch
 const accept = (files: Record<string, string>, payload?: unknown) => {
   const setup = proposalVault(files);
   const accepted = acceptProposalNote({
+    via: 'app',
     ports: setup.ports,
     path: vaultPath(PROPOSAL),
     today: TODAY,

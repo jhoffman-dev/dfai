@@ -61,7 +61,12 @@ describe('acceptProposalNote — a link whose note is spelled in another case', 
     setup.dirty.add(MARA_PATH);
 
     await expect(
-      acceptProposalNote({ ports: setup.ports, path: vaultPath(PROPOSAL), today: '2026-10-08' }),
+      acceptProposalNote({
+        via: 'app',
+        ports: setup.ports,
+        path: vaultPath(PROPOSAL),
+        today: '2026-10-08',
+      }),
     ).rejects.toThrow(/unsaved typing/);
     expect(setup.fixture.files.get(MARA_PATH)?.text).toBe(MARA);
   });
@@ -69,6 +74,7 @@ describe('acceptProposalNote — a link whose note is spelled in another case', 
   it('reloads the pane that shows the note it changed', async () => {
     const setup = caseInsensitiveVault('people/mara quill.md');
     await acceptProposalNote({
+      via: 'app',
       ports: setup.ports,
       path: vaultPath(PROPOSAL),
       today: '2026-10-08',

@@ -293,6 +293,7 @@ describe('adversarial: the owner’s items on a retry (#180)', () => {
     );
     if (leftover !== undefined) {
       await acceptProposalNote({
+        via: 'app',
         ports: vault.ports,
         path: createVaultPath(leftover),
         today: TODAY,

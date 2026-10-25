@@ -129,6 +129,11 @@ describe('the general proposals schema', () => {
 
   it('never proposes a change to a note already there: a link proposal is not a kind it takes', () => {
     expect(problemOf(answer(item({ kind: 'link' })))).toMatch(/^Item 1: Its kind is not one of/);
+    // A dashboard or a view goes into .atlas: an unattended step never asks for one (P32-05).
+    expect(problemOf(answer(item({ kind: 'dashboard' })))).toMatch(
+      /^Item 1: Its kind is not one of/,
+    );
+    expect(problemOf(answer(item({ kind: 'view' })))).toMatch(/^Item 1: Its kind is not one of/);
   });
 
   it('holds each payload to the rules Accept writes by', () => {

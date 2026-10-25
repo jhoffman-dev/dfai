@@ -217,6 +217,7 @@ describe('a term the "After a meeting" step suggests', () => {
     expect(termProposals()).toEqual(['Inbox/Proposals/Brenwick.md']);
 
     await rejectProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: createVaultPath('Inbox/Proposals/Brenwick.md'),
       today: TODAY,
@@ -231,6 +232,7 @@ describe('a term the "After a meeting" step suggests', () => {
     const { vault, arrive, propertiesOf } = await setUp([BRENWICK, says()]);
     await arrive('Contracts');
     await acceptProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: createVaultPath('Inbox/Proposals/Brenwick.md'),
       today: TODAY,
@@ -289,6 +291,7 @@ describe('accepting a term once the vault has moved on', () => {
 
     await expect(
       acceptProposalNote({
+        via: 'app',
         ports: vault.ports,
         path: createVaultPath('Inbox/Proposals/Brenwick.md'),
         today: TODAY,
@@ -312,6 +315,7 @@ describe('accepting a term once the vault has moved on', () => {
 
     await expect(
       acceptProposalNote({
+        via: 'app',
         ports: vault.ports,
         path: createVaultPath('Inbox/Proposals/Brenwick.md'),
         today: TODAY,
@@ -404,6 +408,7 @@ describe('verify #553: accepting a term once the vault has moved on', () => {
 
     await expect(
       acceptProposalNote({
+        via: 'app',
         ports: vault.ports,
         path: createVaultPath('Inbox/Proposals/Brenwick.md'),
         today: TODAY,

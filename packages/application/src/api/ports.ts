@@ -1,4 +1,6 @@
 import type { ActivityLog } from '../activity/ports.ts';
+import type { MeetingDrafts } from '../assistant/meeting-drafts.ts';
+import type { ClaudeStepPorts } from '../automations/claude-step.ts';
 import type { ImagePlacement, LocalTime, VaultPath } from '@dfai/domain';
 import type { HttpPort, SqliteSourcePort } from '../sources/ports.ts';
 import type { IndexPort } from '../index/ports.ts';
@@ -134,6 +136,24 @@ export interface ApiRouterDeps {
    * attribute to a person. Left out, no transcript's `You` is anyone's.
    */
   readonly ownerName?: () => string | null;
+  /**
+   * What drafting a meeting's tasks asks Claude through (P32-05): the
+   * provider and model Settings → Claude chose, as a rule's Claude step has
+   * them. Null until the app has them; left out, that route answers `conflict`.
+   */
+  readonly claudeStep?: () => ClaudeStepPorts | null;
+  /** The meetings this router is drafting now, so one is drafted once at a time (P32-05). */
+  readonly meetingDrafts: MeetingDrafts;
+  /** Where the app tells the person something went wrong that no caller is left to hear. */
+  readonly notices: AppNotices;
+}
+
+/**
+ * The app's own word to the person (a toast in the window): for work that
+ * outlives the request that started it, such as a draft after its `202`.
+ */
+export interface AppNotices {
+  warn(message: string): void;
 }
 
 /** What a source refresh reaches outside the vault through. Never the secret store. */

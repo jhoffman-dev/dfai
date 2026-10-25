@@ -311,16 +311,19 @@ describe('meeting extraction over the Gemini fixture', () => {
     const made = await proposals();
 
     await acceptProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: made.get('Write the rollout note')!.proposal.path,
       today: TODAY,
     });
     await acceptProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: made.get('Flag the new cache')!.proposal.path,
       today: TODAY,
     });
     await acceptProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: made.get('Ship the cache behind a flag')!.proposal.path,
       today: TODAY,
@@ -382,6 +385,7 @@ describe('meeting extraction over the Granola fixture', () => {
     await run(CALL_ONLY);
 
     await acceptProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: (await proposals()).get('Send the contract')!.proposal.path,
       today: TODAY,
@@ -492,6 +496,7 @@ describe('two meetings in one run', () => {
     const made = await proposals();
     for (const title of made.keys()) {
       await acceptProposalNote({
+        via: 'app',
         ports: vault.ports,
         path: made.get(title)!.proposal.path,
         today: TODAY,

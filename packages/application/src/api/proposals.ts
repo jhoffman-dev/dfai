@@ -7,6 +7,7 @@ import {
 } from '@dfai/domain';
 import { ProposalRefused } from '../chat/proposals.ts';
 import {
+  AcceptedOnlyInAppError,
   acceptProposalNote,
   listProposals,
   rejectProposalNote,
@@ -106,6 +107,8 @@ async function answered<T>(answer: () => Promise<T>): Promise<T> {
   try {
     return await answer();
   } catch (error) {
+    // A dashboard or a view is written into .atlas, which only the app's own Accept writes.
+    if (error instanceof AcceptedOnlyInAppError) throw new ApiError('forbidden', error.message);
     if (error instanceof ProposalRefused) throw new ApiError('conflict', error.message);
     throw error;
   }
