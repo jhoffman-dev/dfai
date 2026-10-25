@@ -1,28 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   dedicatedCalendar,
+  grantsUse,
   needsBlocksCalendar,
   parseGoogleCalendarSetting,
+  parseMeetingSetting,
   DEDICATED_CALENDAR_NAME,
   type GoogleCalendar,
   type GoogleCalendarSetting,
   type GoogleProblem,
 } from '@dfai/domain';
 import {
+  allowGoogleMeetings,
   blockCalendars,
   connectGoogleCalendar,
   createBlocksCalendar,
   disconnectGoogleCalendar,
   googleProblemOf,
   saveGoogleCalendarSetting,
+  saveMeetingsEnabled,
   type ActivityLog,
   type GoogleCalendarPort,
   type GoogleConnection,
   type MarkdownPort,
   type VaultFsPort,
 } from '@dfai/application';
-import type { GoogleCalendarView, GoogleConnectRequest } from '@dfai/ui';
+import type {
+  GoogleCalendarView,
+  GoogleConnectRequest,
+  GoogleMeetingsActions,
+  GoogleMeetingsView,
+} from '@dfai/ui';
+import type { MeetingSyncController } from '../google-calendar/use-meeting-sync.ts';
 import { useVaultSetting } from './use-vault-setting.ts';
+import { useVaultSettingsRead } from './use-vault-settings-read.ts';
 import { vaultSettingsWriter } from './vault-settings-writer.ts';
 
 /** Settings → Google Calendar as the card draws it, and what it can ask for. */
@@ -33,12 +44,35 @@ export interface GoogleCalendarSettingState {
   readonly disconnect: () => void;
   readonly choose: (calendarId: string) => void;
   readonly create: () => void;
+  readonly meetings: GoogleMeetingsActions;
 }
 
 const NO_SETTING: GoogleCalendarSetting = { clientId: null, calendarId: null };
 
 const problemOf = (message: string | null): GoogleProblem | null =>
   message === null ? null : { problem: message, fix: null };
+
+/** `9:41 AM`, on the Mac's clock and in its language. */
+const timeOfDay = (at: number) =>
+  new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** The meetings part of the card, from the vault's switch, this Mac's grant and the last sync. */
+function meetingsViewOf({
+  meetingSync,
+  enabled,
+  scopes,
+}: {
+  meetingSync: MeetingSyncController;
+  enabled: boolean;
+  scopes: readonly string[];
+}): GoogleMeetingsView {
+  return {
+    state: !enabled ? 'off' : grantsUse(scopes, 'meetings') ? 'on' : 'consent',
+    syncing: meetingSync.syncing,
+    lastSynced: meetingSync.lastSyncAt === null ? null : timeOfDay(meetingSync.lastSyncAt),
+    problem: meetingSync.report?.problem ?? null,
+  };
+}
 
 /**
  * The open vault's Google Calendar connection, read from the host while
@@ -53,6 +87,7 @@ export function useGoogleCalendar({
   vault,
   active,
   activity,
+  meetingSync,
 }: {
   port: GoogleCalendarPort;
   fs: VaultFsPort;
@@ -61,6 +96,8 @@ export function useGoogleCalendar({
   active: boolean;
   /** Where a save of the vault's setting that fails is recorded. */
   activity: Pick<ActivityLog, 'inOpenVault'>;
+  /** The window's meetings sync (ADR-0046); left out, the card offers no meetings. */
+  meetingSync?: MeetingSyncController;
 }): GoogleCalendarSettingState {
   const store = useCallback(
     (setting: GoogleCalendarSetting) =>
@@ -76,6 +113,13 @@ export function useGoogleCalendar({
     activity,
   });
   const kept = setting.value ?? NO_SETTING;
+  const settingsRead = useVaultSettingsRead({ fs, markdown, vaultKey: vault });
+  const meetingsOn = parseMeetingSetting(settingsRead.settings ?? {}).enabled;
+  /** Writes the vault's meetings switch, and reads the settings again so the card and the sync see it now. */
+  const switchMeetings = async (enabled: boolean) => {
+    await saveMeetingsEnabled({ settings: vaultSettingsWriter({ fs, markdown }), enabled });
+    await settingsRead.readAgain();
+  };
 
   const [connection, setConnection] = useState<GoogleConnection | null>(null);
   const [calendars, setCalendars] = useState<readonly GoogleCalendar[]>([]);
@@ -147,6 +191,27 @@ export function useGoogleCalendar({
       return null;
     });
 
+  /** Asks this Mac's sign-in to read meetings, then turns them on for the vault and reads them. */
+  const allowMeetings = () =>
+    inVault(async (at) => {
+      setConnecting(true);
+      try {
+        await allowGoogleMeetings({ port, vault: at });
+        await switchMeetings(true);
+        // Already on for the vault (another Mac turned it on), the sync does not start by itself.
+        if (meetingsOn) meetingSync?.syncNow();
+        return null;
+      } finally {
+        setConnecting(false);
+      }
+    });
+
+  const stopMeetings = () =>
+    inVault(async () => {
+      await switchMeetings(false);
+      return null;
+    });
+
   const chosen = dedicatedCalendar(calendars, kept.calendarId);
   const phase = connecting
     ? 'connecting'
@@ -166,6 +231,10 @@ export function useGoogleCalendar({
       calendarName: DEDICATED_CALENDAR_NAME,
       problem: problem ?? problemOf(setting.problem ?? setting.unreadable),
       pending,
+      meetings:
+        meetingSync === undefined
+          ? null
+          : meetingsViewOf({ meetingSync, enabled: meetingsOn, scopes: connection?.scopes ?? [] }),
     },
     connect,
     cancel: () => {
@@ -174,5 +243,10 @@ export function useGoogleCalendar({
     disconnect: () => inVault((at) => disconnectGoogleCalendar({ port, vault: at })),
     choose: (calendarId) => setting.save({ ...kept, calendarId }),
     create,
+    meetings: {
+      onAllow: allowMeetings,
+      onSync: () => meetingSync?.syncNow(),
+      onStop: stopMeetings,
+    },
   };
 }

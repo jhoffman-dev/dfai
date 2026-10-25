@@ -715,6 +715,7 @@ async fn scripted_google(
         token: at("/token"),
         revoke: at("/revoke"),
         api: at("/"),
+        request_timeout: super::token::REQUEST_TIMEOUT,
     }))
 }
 
@@ -1342,3 +1343,5 @@ async fn the_calendar_still_refreshes_after_the_person_declines_drive() {
         vec![SCOPE.to_string()]
     );
 }
+
+mod events;

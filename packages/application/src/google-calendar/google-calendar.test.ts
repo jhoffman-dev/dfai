@@ -3,6 +3,7 @@ import type { GoogleCalendar } from '@dfai/domain';
 import { createSettingsWriter } from '../settings/index.ts';
 import { jsonMarkdown, vaultWith } from '../testing/settings-vault.ts';
 import {
+  allowGoogleMeetings,
   blockCalendars,
   connectGoogleCalendar,
   createBlocksCalendar,
@@ -10,6 +11,7 @@ import {
   googleProblemOf,
   loadGoogleCalendarSetting,
   saveGoogleCalendarSetting,
+  saveMeetingsEnabled,
 } from './google-calendar.ts';
 import { GoogleCalendarError, type GoogleCalendarPort } from './ports.ts';
 
@@ -174,5 +176,53 @@ describe('the Google Calendar setting', () => {
 
     expect(written[SETTINGS]).toContain('"theme":"dark"');
     expect(await loadGoogleCalendarSetting({ fs, markdown })).toEqual(setting);
+  });
+});
+
+describe('allowGoogleMeetings (ADR-0046)', () => {
+  const BLOCKS = 'https://www.googleapis.com/auth/calendar.app.created';
+  const READ_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
+
+  it('asks once more for the read-only scope, on top of what was allowed, with the same client', async () => {
+    const port = fakePort({
+      status: vi.fn(async () => ({ connected: true, clientId: CLIENT_ID, scopes: [BLOCKS] })),
+    });
+    const connection = await allowGoogleMeetings({ port, vault: VAULT });
+    expect(port.connect).toHaveBeenCalledWith({
+      vault: VAULT,
+      clientId: CLIENT_ID,
+      scopes: [BLOCKS, READ_EVENTS],
+    });
+    expect(connection.scopes).toEqual([BLOCKS, READ_EVENTS]);
+  });
+
+  it('asks nothing when reading meetings is allowed already', async () => {
+    const allowed = { connected: true, clientId: CLIENT_ID, scopes: [BLOCKS, READ_EVENTS] };
+    const port = fakePort({ status: vi.fn(async () => allowed) });
+    expect(await allowGoogleMeetings({ port, vault: VAULT })).toEqual(allowed);
+    expect(port.connect).not.toHaveBeenCalled();
+  });
+
+  it('refuses before any consent screen when the vault is not connected', async () => {
+    const port = fakePort();
+    const refusal = await allowGoogleMeetings({ port, vault: VAULT }).catch(
+      (cause: unknown) => cause,
+    );
+    expect(refusal).toBeInstanceOf(GoogleCalendarError);
+    expect((refusal as GoogleCalendarError).failure.kind).toBe('not_connected');
+    expect(port.connect).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveMeetingsEnabled', () => {
+  it('writes the vault’s meetings switch, and takes it off rather than writing false', async () => {
+    const { fs, written } = vaultWith({ [SETTINGS]: '---\n{"google_client_id":"kept"}\n---\n' });
+    const markdown = jsonMarkdown();
+    const settings = createSettingsWriter({ fs, markdown });
+    await saveMeetingsEnabled({ settings, enabled: true });
+    expect(written[SETTINGS]).toContain('"google_meetings":true');
+    expect(written[SETTINGS]).toContain('"google_client_id":"kept"');
+    await saveMeetingsEnabled({ settings, enabled: false });
+    expect(written[SETTINGS]).not.toContain('"google_meetings":true');
   });
 });

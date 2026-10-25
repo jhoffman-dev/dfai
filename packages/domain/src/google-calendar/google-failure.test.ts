@@ -75,3 +75,20 @@ describe('isGoogleFailureKind', () => {
     expect(isGoogleFailureKind(undefined)).toBe(false);
   });
 });
+
+describe('explainGoogleFailure: a permission left unticked (ADR-0046)', () => {
+  it('tells the meetings permission apart from the calendar one', () => {
+    expect(
+      explainGoogleFailure({
+        kind: 'scope_not_granted',
+        message: 'Google did not grant https://www.googleapis.com/auth/calendar.events.readonly',
+      }).problem,
+    ).toContain('see your calendar’s events');
+    expect(
+      explainGoogleFailure({
+        kind: 'scope_not_granted',
+        message: 'Google did not grant https://www.googleapis.com/auth/calendar.app.created',
+      }).problem,
+    ).toContain('the calendar permission was left unticked');
+  });
+});

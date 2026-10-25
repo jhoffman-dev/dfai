@@ -2,7 +2,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { GoogleCalendarSettings, type GoogleCalendarView } from './google-calendar-settings.tsx';
+import {
+  GoogleCalendarSettings,
+  type GoogleCalendarView,
+  type GoogleMeetingsView,
+} from './google-calendar-settings.tsx';
 
 const CLIENT_ID = '1234-fictional.apps.googleusercontent.com';
 
@@ -18,6 +22,7 @@ function renderWith(overrides: Partial<GoogleCalendarView> = {}) {
     calendarName: 'DFAI blocks',
     problem: null,
     pending: false,
+    meetings: null,
     ...overrides,
   };
   const handlers = {
@@ -141,5 +146,108 @@ describe('GoogleCalendarSettings', () => {
     renderWith({ phase: 'loading' });
     expect(within(card()).getByText('Checking…')).not.toBeNull();
     expect(queryButton('Connect')).toBeNull();
+  });
+});
+
+describe('GoogleCalendarSettings: meetings (ADR-0046)', () => {
+  const meetings = (overrides: Partial<GoogleMeetingsView> = {}): GoogleMeetingsView => ({
+    state: 'off',
+    syncing: false,
+    lastSynced: null,
+    problem: null,
+    ...overrides,
+  });
+
+  function renderMeetings(view: GoogleMeetingsView, more: Partial<GoogleCalendarView> = {}) {
+    const actions = { onAllow: vi.fn(), onSync: vi.fn(), onStop: vi.fn() };
+    render(
+      <GoogleCalendarSettings
+        view={{
+          phase: 'connected',
+          clientId: CLIENT_ID,
+          calendars: [BLOCKS],
+          chosen: BLOCKS.id,
+          canCreate: false,
+          calendarName: 'DFAI blocks',
+          problem: null,
+          pending: false,
+          meetings: view,
+          ...more,
+        }}
+        onConnect={vi.fn()}
+        onCancel={vi.fn()}
+        onDisconnect={vi.fn()}
+        onChoose={vi.fn()}
+        onCreate={vi.fn()}
+        meetings={actions}
+      />,
+    );
+    return actions;
+  }
+
+  const part = () => within(card()).getByRole('group', { name: 'Meetings' });
+
+  it('offers to allow reading meetings while they are off, and nothing else', async () => {
+    const { onAllow } = renderMeetings(meetings());
+    expect(part().textContent).toContain('Today’s meetings are not read.');
+    expect(within(part()).queryByRole('button', { name: 'Stop reading meetings' })).toBeNull();
+    await userEvent.click(within(part()).getByRole('button', { name: 'Allow reading meetings' }));
+    expect(onAllow).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks this Mac to allow it when the vault reads meetings and this sign-in may not', () => {
+    renderMeetings(meetings({ state: 'consent' }));
+    expect(part().textContent).toContain('this Mac has not been allowed to read your calendar yet');
+    expect(
+      (within(part()).getByRole('button', { name: 'Allow reading meetings' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(
+      (within(part()).getByRole('button', { name: 'Stop reading meetings' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it('says when meetings were last read, and reads them now or stops on asking', async () => {
+    const { onSync, onStop } = renderMeetings(meetings({ state: 'on', lastSynced: '9:41 AM' }));
+    expect(part().textContent).toContain('last read at 9:41 AM');
+    expect(within(part()).queryByRole('button', { name: 'Allow reading meetings' })).toBeNull();
+    await userEvent.click(within(part()).getByRole('button', { name: 'Read meetings now' }));
+    await userEvent.click(within(part()).getByRole('button', { name: 'Stop reading meetings' }));
+    expect(onSync).toHaveBeenCalledTimes(1);
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read twice at once, and says what stopped the last read', () => {
+    renderMeetings(
+      meetings({
+        state: 'on',
+        syncing: true,
+        problem: {
+          problem: 'Google could not be reached: offline.',
+          fix: 'Check the connection and try again.',
+        },
+      }),
+    );
+    expect(part().textContent).toContain('Reading your meetings…');
+    expect(
+      (within(part()).getByRole('button', { name: 'Read meetings now' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(within(part()).getByRole('alert').textContent).toContain(
+      'Google could not be reached: offline.',
+    );
+  });
+
+  it('is not drawn where meetings are not offered', () => {
+    renderMeetings(meetings(), { meetings: null });
+    expect(within(card()).getByRole('button', { name: 'Disconnect…' })).toBeTruthy();
+    expect(within(card()).queryByRole('group', { name: 'Meetings' })).toBeNull();
+  });
+
+  it('is not drawn before connecting', () => {
+    renderMeetings(meetings(), { phase: 'disconnected' });
+    expect(within(card()).getByRole('form', { name: 'Connect Google Calendar' })).toBeTruthy();
+    expect(within(card()).queryByRole('group', { name: 'Meetings' })).toBeNull();
   });
 });

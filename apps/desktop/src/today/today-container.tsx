@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { REVIEW_SCOPE, todayScope, type ReadScope } from '@dfai/application';
-import { TodayPage } from '@dfai/ui';
+import { TodayMeetings, TodayPage } from '@dfai/ui';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
 import { localClock } from '../today.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { useToday } from './use-today.ts';
+import { useTodaysMeetings } from './use-todays-meetings.ts';
 
 /** What the Today page needs from the window beyond what every page is handed. */
 export interface TodayWiring {
@@ -46,6 +47,14 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
     held: pages.holds.today,
     toasts: pane.toasts,
   });
+  const meetings = useTodaysMeetings({
+    fs: pages.ports.fs,
+    markdown: pages.ports.markdown,
+    index: pages.ports.index,
+    vault: pane.vault,
+    day: today.page.today?.today ?? null,
+    indexReady: pages.indexReady,
+  });
   // Set while drawing, as React has a value from the last draw kept: the page
   // is drawn once again before anything is shown, with no commit between.
   const read = todayScope(today.page.today);
@@ -58,6 +67,9 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
       onOpenInbox={() => pages.openPage({ kind: 'inbox' })}
       onOpenReview={() => pages.openPage({ kind: 'review' })}
       onOpenDailyNote={pages.today.onOpenDailyNote}
+      {...(meetings.length > 0 && {
+        meetings: <TodayMeetings meetings={meetings} onOpen={pages.openNote} />,
+      })}
       {...chrome}
     />
   );

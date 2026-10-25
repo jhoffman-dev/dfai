@@ -74,6 +74,8 @@ export interface TodayPageProps {
   onDefer: (args: RowTask & { days: number }) => void;
   onShowSidebar?: () => void;
   history?: PageHistory;
+  /** Today's meetings, drawn above the tasks (ADR-0046); nothing when left out. */
+  meetings?: ReactNode;
 }
 
 /**
@@ -123,6 +125,7 @@ export function TodayPage(props: TodayPageProps) {
                 {props.problem}
               </p>
             )}
+            {props.meetings}
             <TodayBody {...props} focus={focus} place={{ wanted: focus.wanted }} />
           </article>
         </RowScrollerContext.Provider>

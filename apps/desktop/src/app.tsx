@@ -275,6 +275,7 @@ import type { SourcePorts } from './sources/source-ports.ts';
 import { useGoogleCalendar } from './settings/use-google-calendar.ts';
 import { useGranola } from './settings/use-granola.ts';
 import { useGranolaPull } from './granola/use-granola-pull.ts';
+import { useMeetingSync, type MeetingSyncHost } from './google-calendar/use-meeting-sync.ts';
 import { useKindleSync, type KindleHost } from './kindle/use-kindle-sync.ts';
 import { NO_KINDLE } from './kindle/no-kindle.ts';
 import { paletteKindleCommands, runPaletteKindleCommand } from './kindle/palette-kindle.ts';
@@ -442,6 +443,7 @@ function AppWindow({
   sync: syncPorts,
   googleCalendar,
   granola: granolaPorts,
+  meetings: meetingPorts,
   kindle: kindlePorts,
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
@@ -467,6 +469,8 @@ function AppWindow({
   googleCalendar: GoogleCalendarPort;
   /** Granola, through the host, which keeps the key (ADR-0034), and this Mac's record of each vault's pulls. */
   granola: { port: GranolaPort; records: GranolaPullRecords };
+  /** Today's meetings from Google Calendar (ADR-0046), and this Mac's record of each vault's syncs; left out, none are read. */
+  meetings?: MeetingSyncHost;
   /** Kindle through the host's own Amazon session (ADR-0044), and the app's one sync; left out, Kindle is not offered. */
   kindle?: KindleHost;
   /** The shortcut that opens quick capture from any app, registered by the host (#81). */
@@ -727,6 +731,19 @@ function AppWindow({
     syncPulls: sync.syncPulls,
     catchUpIndex,
     clock: localClock,
+    activity: activityLog,
+    onWrote: onChanged,
+  });
+  // Today's meetings from Google Calendar (ADR-0046): once the index is ready, every 15 minutes, and on asking.
+  const meetingSync = useMeetingSync({
+    meetings: meetingPorts ?? null,
+    fs: vault.fs,
+    markdown: notes.markdown,
+    index: index.index,
+    clock: localClock,
+    timeZone: localTimeZone,
+    vaultKey,
+    indexReady,
     activity: activityLog,
     onWrote: onChanged,
   });
@@ -1626,6 +1643,7 @@ function AppWindow({
     vault: vaultKey,
     active: overlay === 'settings',
     activity: activityLog,
+    meetingSync,
   });
   const granolaSetting = useGranola({
     port: granolaPorts.port,

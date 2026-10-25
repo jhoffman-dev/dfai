@@ -8,7 +8,7 @@ import {
 import { calendarListPage, createdCalendarOf } from './calendar-list.ts';
 
 /** A Calendar API answer as the host hands it back, with every token struck from it. */
-interface GoogleAnswer {
+export interface GoogleAnswer {
   readonly status: number;
   readonly body: string;
 }
@@ -47,10 +47,11 @@ async function throughGoogle<T>(call: Promise<T>): Promise<T> {
   }
 }
 
-const malformed = (message: string) => new GoogleCalendarError({ kind: 'malformed', message });
+export const malformed = (message: string) =>
+  new GoogleCalendarError({ kind: 'malformed', message });
 
 /** The JSON an API call answered with, or why it is not one to read. */
-function answered({ status, body }: GoogleAnswer): unknown {
+export function answered({ status, body }: GoogleAnswer): unknown {
   if (status < 200 || status > 299) {
     throw new GoogleCalendarError({
       kind: 'api_refused',
@@ -65,11 +66,16 @@ function answered({ status, body }: GoogleAnswer): unknown {
   }
 }
 
+/** One Calendar API call through the host, answered as it came back, whatever its status. */
+export function calendarAnswer(
+  vault: string,
+  call: { method: string; path: string; body?: string },
+): Promise<GoogleAnswer> {
+  return throughGoogle(invoke<GoogleAnswer>('google_calendar_request', { vault, call }));
+}
+
 async function callApi(vault: string, call: { method: string; path: string; body?: string }) {
-  const answer = await throughGoogle(
-    invoke<GoogleAnswer>('google_calendar_request', { vault, call }),
-  );
-  return answered(answer);
+  return answered(await calendarAnswer(vault, call));
 }
 
 async function listCalendars({ vault }: { vault: string }): Promise<GoogleCalendar[]> {
