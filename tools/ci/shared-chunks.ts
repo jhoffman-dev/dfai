@@ -42,14 +42,11 @@ export type SharedChunk = {
 };
 
 /**
- * Known before this check: the PDF reader draws `app-pdf-reader`, which adding
- * a PDF also imports lazily, so that chunk is both a part and shared. Listed so
- * the check can land on today's build without changing its chunks; anything
- * else that appears fails.
+ * Static imports between parts let through while one is being fixed, so the
+ * check can land first; anything else that appears fails. Empty since the
+ * readers were drawn from one chunk (#560).
  */
-export const KNOWN_IMPORTS: readonly KnownImport[] = [
-  { part: 'src/reader/document-reader.tsx', imports: 'src/reader/app-pdf-reader.ts' },
-];
+export const KNOWN_IMPORTS: readonly KnownImport[] = [];
 
 const nameOf = (key: string, chunk: ManifestChunk | undefined) => chunk?.name ?? chunk?.file ?? key;
 
