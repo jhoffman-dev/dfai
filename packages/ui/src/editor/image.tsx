@@ -2,12 +2,7 @@ import { useEffect, useState } from 'react';
 import { Node, type Editor } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { ImageLightbox, type LightboxImage } from './image-lightbox.tsx';
-import {
-  downFromLastImage,
-  enterAfterImage,
-  imageRoomPlugin,
-  upFromFirstImage,
-} from './image-room.ts';
+import { downToLineAfterImage, enterAfterImage, upFromFirstImage } from './image-room.ts';
 import { ImageResizeHandles } from './image-resize.tsx';
 
 export interface ImageOptions {
@@ -203,13 +198,9 @@ export const VaultImage = Node.create<ImageOptions>({
   addKeyboardShortcuts() {
     return {
       Enter: () => enterAfterImage(this.editor),
-      ArrowDown: () => downFromLastImage(this.editor),
+      ArrowDown: () => downToLineAfterImage(this.editor),
       ArrowUp: () => upFromFirstImage(this.editor),
     };
-  },
-
-  addProseMirrorPlugins() {
-    return [imageRoomPlugin()];
   },
 
   parseHTML() {

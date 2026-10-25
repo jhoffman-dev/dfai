@@ -408,14 +408,16 @@ test('dragging an image’s handle resizes it, and the note saves only its width
   await expectFile(vault, 'n.md').toBe("Intro.\n\n![A gradient](<attachments/a.png> 'Q3')\n");
 });
 
-test('a click below an image that ends the note goes to a new line to type on (#568)', async ({
+test('a note that ends in an image keeps an empty line under it to type on (#568)', async ({
   page,
 }) => {
   const vault = await openNoteWithImage(page);
+  // The kept line is the note's last, under the image's line, and holds nothing yet.
   const line = page.locator('.editor > p:last-child');
-  const box = (await line.boundingBox())!;
+  await expect(line.locator('img')).toHaveCount(0);
+  await expect(line).toHaveText('');
 
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height + 12);
+  await line.click();
   await page.keyboard.type('After the photo.');
 
   await saveNow(page);

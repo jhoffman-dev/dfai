@@ -275,7 +275,7 @@ describe('room after an image, in the blocks an image can be in', () => {
     expect(editor.state.selection.$from.parent).not.toBe(quote.child(0));
   });
 
-  it('one undo takes away the line Enter made after the last image', async () => {
+  it('undo after Enter on the last image keeps the image and the line after it', async () => {
     const { container } = renderNote(ONE_IMAGE);
     const editor = await editorIn(container);
     selectImage(editor, 'chart.png');
@@ -285,19 +285,21 @@ describe('room after an image, in the blocks an image can be in', () => {
     act(() => {
       undo(editor.state, editor.view.dispatch);
     });
-    expect(editor.state.doc.childCount).toBe(2);
+    // Enter made no line, so there is none to take away: the line kept after the image stays.
+    expect(editor.state.doc.childCount).toBe(3);
     expect(imageCount(editor)).toBe(1);
+    expect(editor.state.doc.child(1).firstChild?.type.name).toBe('image');
   });
 
   it('a shift-click below a note that ends in an image extends the selection, adding no line', async () => {
     const { container } = renderNote(ONE_IMAGE);
     const editor = await editorIn(container);
-    const last = container.querySelector('.ProseMirror > p:last-child')!;
-    last.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 600, height: 100 });
+    selectImage(editor, 'chart.png');
+    const lines = editor.state.doc.childCount;
 
     fireEvent.mouseDown(editor.view.dom, { button: 0, clientY: 140, shiftKey: true });
 
-    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.childCount).toBe(lines);
   });
 });
 

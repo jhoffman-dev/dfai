@@ -1008,13 +1008,6 @@
   opacity: 1;
 }
 
-/* A note whose last line ends in an image has room under it while it is
-   edited: a click there goes to a new line after the image (image-room.ts
-   marks the line). */
-.editor[contenteditable='true']:has(> p.image-room-after:last-child) {
-  padding-bottom: 2.5em;
-}
-
 .image__alt {
   background: var(--surface);
   border: 1px solid var(--line);

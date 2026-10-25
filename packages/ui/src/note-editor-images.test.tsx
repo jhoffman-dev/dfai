@@ -358,7 +358,7 @@ describe('room to type beside an image', () => {
     expect(caretBlock(editor)).toBe(1);
   });
 
-  it('↓ on an image in the note’s last line makes a line after it', async () => {
+  it('↓ on the note’s last image goes to the line kept after it', async () => {
     const { container } = renderNote(ONE_IMAGE);
     const editor = await editorIn(container);
     selectImage(editor, 'chart.png');
@@ -393,46 +393,21 @@ describe('room to type beside an image', () => {
     expect(caretBlock(editor)).toBe(0);
   });
 
-  it('a click below a note that ends in an image goes to a new line after it', async () => {
-    const { container } = renderNote(ONE_IMAGE);
-    const editor = await editorIn(container);
-    const last = container.querySelector('.ProseMirror > p:last-child')!;
-    last.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 600, height: 100 });
-
-    fireEvent.mouseDown(editor.view.dom, { button: 0, clientY: 140 });
-
-    expect(blocks(editor)).toEqual(['paragraph:Before.', 'paragraph:', 'paragraph:']);
-    expect(caretBlock(editor)).toBe(2);
-  });
-
-  it('a click on the image line itself is left to the editor', async () => {
-    const { container } = renderNote(ONE_IMAGE);
-    const editor = await editorIn(container);
-    const last = container.querySelector('.ProseMirror > p:last-child')!;
-    last.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 600, height: 100 });
-
-    fireEvent.mouseDown(editor.view.dom, { button: 0, clientY: 60 });
-    expect(blocks(editor)).toHaveLength(2);
-  });
-
-  it('marks the last line for room under it only while it ends in an image', async () => {
+  it('keeps an empty line to type on after the note’s last image, and only then', async () => {
     const { container } = renderNote({
       type: 'doc',
       content: [paragraph(words('Before.')), paragraph(image('chart.png'), words(' a caption'))],
     });
     const editor = await editorIn(container);
-    expect(container.querySelector('.ProseMirror > p.image-room-after')).toBeNull();
+    selectImage(editor, 'chart.png');
+    expect(blocks(editor)).toEqual(['paragraph:Before.', 'paragraph: a caption']);
 
     // The caption is the last line's text after the image: without it the line ends in the image.
     act(() => {
       editor.commands.deleteRange({ from: 11, to: 11 + ' a caption'.length });
     });
-    expect(container.querySelector('.ProseMirror > p:last-child.image-room-after')).not.toBeNull();
-
-    act(() => {
-      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' again');
-    });
-    expect(container.querySelector('.ProseMirror > p.image-room-after')).toBeNull();
+    expect(blocks(editor)).toEqual(['paragraph:Before.', 'paragraph:', 'paragraph:']);
+    expect(editor.state.doc.child(1).lastChild?.type.name).toBe('image');
   });
 });
 
