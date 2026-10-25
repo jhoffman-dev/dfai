@@ -66,10 +66,10 @@ describe('the list after is re-marked in its own bytes: only the marker characte
   });
 
   it('changes every item at its own level, continuation items too, and leaves spacing, a nested list and an id', () => {
-    const body = '- Water.\n\nBetween.\n\n-   Sow.\n  - Twice a week.\n- Weed. ^lst002\n';
+    const body = '- Water.\n\nBetween.\n\n- Sow.\n  - Twice a week.\n-   Weed. ^lst002\n';
     const { saved, reread } = moved(body, 1, 2);
     expect(reread).toEqual(['bulletList', 'bulletList', 'paragraph']);
-    expect(saved).toBe('- Water.\n\n*   Sow.\n  - Twice a week.\n* Weed. ^lst002\n\nBetween.\n');
+    expect(saved).toBe('- Water.\n\n* Sow.\n  - Twice a week.\n*   Weed. ^lst002\n\nBetween.\n');
   });
 
   it('changes a numbered list’s delimiters and keeps its numbers', () => {

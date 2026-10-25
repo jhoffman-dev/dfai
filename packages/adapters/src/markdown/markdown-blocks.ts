@@ -623,16 +623,23 @@ export function serializeMarkdownBody({
       keptText !== null && !endsWithLineId(beforeNode) && listsWouldJoin(previousText, keptText);
     const unchanged = keptText !== null && !joinsBefore;
     const next = kept[index + 1] ?? '';
+    // The list that joins is re-marked in its own bytes where they read back as
+    // it (ADR-0003, addendum), and written afresh only where they do not.
+    const remarked =
+      keptText !== null && joinsBefore
+        ? withMarkersChanged(node, keptText, markersBeside(previousText, next))
+        : null;
     const text = unchanged
       ? keptAfter(beforeNode, node, keptText)
-      : withLineEnding(
+      : (remarked ??
+        withLineEnding(
           renderBlock(node, {
             written: block === null ? NOTHING_WRITTEN : writtenIn(block.source, node),
             definitions: definitionsOfNote(),
             markers: markersBeside(previousText, next),
           }),
           lineEnding,
-        );
+        ));
 
     if (index === 0) {
       // Whatever precedes the first block — the blank line after frontmatter, say —
@@ -649,7 +656,9 @@ export function serializeMarkdownBody({
     }
 
     pieces.push(text);
-    previous = unchanged ? block : null;
+    // A re-marked list still stands in its own bytes, so the whitespace that
+    // followed it in the file is still its own to keep.
+    previous = unchanged || remarked !== null ? block : null;
     previousText = text;
   });
 
@@ -776,6 +785,40 @@ function markersBeside(before: string, after: string): ListMarkers {
   const free = <Marker extends ListMarker>(all: readonly Marker[]): Marker =>
     all.find((marker) => !beside.includes(marker)) ?? all.find((marker) => marker !== beside[0])!;
   return { bullet: free(['-', '*', '+']), ordered: free(['.', ')']) };
+}
+
+/**
+ * A kept list's bytes with only its marker characters changed to `markers`:
+ * the bullet, or the number's delimiter, of every item at the list's own
+ * level — a nested list keeps its own — and every other byte as it was, its
+ * escapes, spacing and ids among them (ADR-0003, addendum). Null when the
+ * re-marked bytes do not read back as the list `node` is (`- * * *` made
+ * `* * * *` is a rule), which is then written afresh instead.
+ */
+function withMarkersChanged(node: EditorNode, text: string, markers: ListMarkers): string | null {
+  const [read, ...more] = readBlocks(parseBodyToMdast(text), text);
+  if (read === undefined || more.length > 0 || read.child.type !== 'list') return null;
+  const marker = read.child.ordered === true ? markers.ordered : markers.bullet;
+  const pieces: string[] = [];
+  let at = 0;
+  for (const item of read.child.children) {
+    const start = item.position?.start.offset;
+    if (start === undefined) return null;
+    const digits = /^\d{0,9}/.exec(text.slice(start, start + 9))?.[0] ?? '';
+    const markerAt = start + digits.length;
+    if (!/^[-*+.)]$/.test(text.charAt(markerAt))) return null;
+    pieces.push(text.slice(at, markerAt), marker);
+    at = markerAt + 1;
+  }
+  pieces.push(text.slice(at));
+  const remarked = pieces.join('');
+  return readsAsBlock(remarked, node) ? remarked : null;
+}
+
+/** Whether `text` reads back as the one block `node` is, its ids included. */
+function readsAsBlock(text: string, node: EditorNode): boolean {
+  const [read, ...more] = readBlocks(parseBodyToMdast(text), text);
+  return read !== undefined && more.length === 0 && renderSafely(read.node) === renderSafely(node);
 }
 
 function separatorBetween({
