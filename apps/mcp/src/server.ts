@@ -3,6 +3,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import mcpPackage from '../package.json' with { type: 'json' };
 import type { AtlasClient } from './client.ts';
+import { UPLOAD_LIMITS, type UploadLimits } from './upload-limits.ts';
 import { archiveTools } from './tools/archive.ts';
 import { assistantTools } from './tools/assistant.ts';
 import { artifactTools } from './tools/artifacts.ts';
@@ -59,11 +60,14 @@ const INSTRUCTIONS =
   'its "modified" back as "ifModified". Call atlas_list_types before creating typed notes or ' +
   'querying, so property keys and values are real ones.';
 
-export function createAtlasServer(client: AtlasClient): McpServer {
+export function createAtlasServer(
+  client: AtlasClient,
+  limits: UploadLimits = UPLOAD_LIMITS,
+): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
-  for (const tool of ATLAS_TOOLS) tool.register(server, client);
+  for (const tool of ATLAS_TOOLS) tool.register(server, client, limits);
   return server;
 }

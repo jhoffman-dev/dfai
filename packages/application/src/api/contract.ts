@@ -16,6 +16,8 @@ import type {
   DoneAction,
   ExportDropKind,
   FilterOperator,
+  MAX_ARTIFACT_FILE_BYTES,
+  MAX_IMAGE_BYTES,
   NoteEvent,
   RunTrigger,
   SetValue,
@@ -833,6 +835,13 @@ export interface ApiArtifactFileBody {
   readonly offset?: number;
 }
 
+/**
+ * The largest file of a saved copy, in bytes, as a type: a client that refuses
+ * a file before sending it keeps a copy typed with this, so the copy cannot
+ * drift from DFAI's limit without a type error.
+ */
+export type ApiMaxArtifactFileBytes = typeof MAX_ARTIFACT_FILE_BYTES;
+
 /** A file of a saved copy, after a chunk was written to it. */
 export interface ApiArtifactFile {
   /** Vault-relative, forward slashes. */
@@ -867,6 +876,9 @@ export interface ApiNoteImageBody {
   /** Whether this chunk ends the image. Default true. */
   readonly last?: boolean;
 }
+
+/** The largest image for a note, in bytes, as a type: see ApiMaxArtifactFileBytes. */
+export type ApiMaxImageBytes = typeof MAX_IMAGE_BYTES;
 
 /** An image being staged a chunk at a time, before its last chunk arrives. */
 export interface ApiImageUpload {

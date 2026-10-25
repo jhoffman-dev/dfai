@@ -43,7 +43,8 @@ export const saveArtifact = defineTool({
     body: z.string().optional().describe("Markdown notes about the artifact, for its note's body."),
   }),
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  call: (client, input) => uploadArtifact(client, definedOnly(input)),
+  call: (client, input, { artifactFileBytes }) =>
+    uploadArtifact(client, definedOnly(input), artifactFileBytes),
 });
 
 export const artifactTools = [saveArtifact];

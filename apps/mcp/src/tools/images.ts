@@ -42,7 +42,8 @@ export const addImage = defineTool({
       .describe('Append the image to the end of the note. Default true.'),
   }),
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  call: (client, { path, ...rest }) => uploadImage(client, { note: path, ...definedOnly(rest) }),
+  call: (client, { path, ...rest }, { imageBytes }) =>
+    uploadImage(client, { note: path, ...definedOnly(rest) }, imageBytes),
 });
 
 export const imageTools = [addImage];

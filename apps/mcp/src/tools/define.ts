@@ -7,6 +7,7 @@
 import type { CallToolResult, McpServer, ToolAnnotations } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import { AtlasCallError, type AtlasClient } from '../client.ts';
+import type { UploadLimits } from '../upload-limits.ts';
 
 export interface ToolSpec<Input extends z.ZodObject> {
   readonly name: string;
@@ -15,19 +16,23 @@ export interface ToolSpec<Input extends z.ZodObject> {
   readonly inputSchema: Input;
   readonly annotations: ToolAnnotations;
   /** The single REST call this tool is. Its answer is returned to the model as JSON. */
-  readonly call: (client: AtlasClient, input: z.infer<Input>) => Promise<unknown>;
+  readonly call: (
+    client: AtlasClient,
+    input: z.infer<Input>,
+    limits: UploadLimits,
+  ) => Promise<unknown>;
 }
 
 /** A tool bound to its types, ready to be added to a server. */
 export interface AtlasTool {
   readonly name: string;
-  readonly register: (server: McpServer, client: AtlasClient) => void;
+  readonly register: (server: McpServer, client: AtlasClient, limits: UploadLimits) => void;
 }
 
 export function defineTool<Input extends z.ZodObject>(spec: ToolSpec<Input>): AtlasTool {
   return {
     name: spec.name,
-    register: (server, client) => {
+    register: (server, client, limits) => {
       const { title, description, annotations } = spec;
       // Widened for the SDK, whose conditional types cannot see through a generic schema.
       // The SDK validates every call against this schema first, so `input` is its output.
@@ -35,7 +40,7 @@ export function defineTool<Input extends z.ZodObject>(spec: ToolSpec<Input>): At
       server.registerTool(
         spec.name,
         { title, description, inputSchema, annotations: { openWorldHint: false, ...annotations } },
-        (input) => runCall(() => spec.call(client, input as z.infer<Input>)),
+        (input) => runCall(() => spec.call(client, input as z.infer<Input>, limits)),
       );
     },
   };

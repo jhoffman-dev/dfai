@@ -8,6 +8,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { CHUNK_BYTES, INLINE_PAGE_BYTES } from '../artifact-upload.ts';
 import { AtlasClient } from '../client.ts';
 import { createAtlasServer } from '../server.ts';
+import { UPLOAD_LIMITS, type UploadLimits } from '../upload-limits.ts';
 import {
   errorBody,
   startFakeAtlas,
@@ -26,6 +27,9 @@ const NOTE = {
 const NOTE_URL = '/v1/artifacts/artifacts%2FQ3%20Deck.md/files/';
 const THUMBNAIL_URL = '/v1/artifacts/artifacts%2FQ3%20Deck.md/thumbnail';
 
+/** A small file limit for the size tests, past two chunks so the chunked path still runs. */
+const TEST_FILE_BYTES = 2 * CHUNK_BYTES + 1;
+
 let atlas: FakeAtlas;
 let mcp: Client;
 
@@ -40,16 +44,29 @@ function atlasAnswer(request: RecordedRequest) {
   return { status: request.method === 'POST' ? 201 : 200, body: { note: NOTE } };
 }
 
-beforeEach(async () => {
-  atlas = await startFakeAtlas(atlasAnswer);
+/** An MCP client on a server over the fake DFAI, with DFAI's limits unless given others. */
+async function connectMcp(limits?: UploadLimits): Promise<Client> {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const connect = async () => ({ baseUrl: atlas.baseUrl, token: 't' });
-  await createAtlasServer(new AtlasClient({ connect })).connect(serverSide);
-  mcp = new Client({ name: 'test', version: '1.0.0' });
-  await mcp.connect(clientSide);
+  await createAtlasServer(new AtlasClient({ connect }), limits).connect(serverSide);
+  const client = new Client({ name: 'test', version: '1.0.0' });
+  await client.connect(clientSide);
+  return client;
+}
+
+/** Swaps the client for one whose server refuses files past `artifactFileBytes`. */
+async function withFileLimit(artifactFileBytes: number): Promise<void> {
+  await mcp.close();
+  mcp = await connectMcp({ ...UPLOAD_LIMITS, artifactFileBytes });
+}
+
+beforeEach(async () => {
+  atlas = await startFakeAtlas(atlasAnswer);
+  mcp = await connectMcp();
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await mcp.close();
   await atlas.close();
 });
@@ -168,6 +185,35 @@ describe('atlas_save_artifact', () => {
       expect(result.text).toMatch(/a\.(png|css)/);
     }
     expect(atlas.requests).toEqual([]);
+  });
+
+  it("holds files to DFAI's 32 MB limit unless the server is given another", () => {
+    expect(UPLOAD_LIMITS.artifactFileBytes).toBe(33_554_432);
+  });
+
+  it('refuses a base64 file one byte past the limit by its size, before saving anything', async () => {
+    await withFileLimit(TEST_FILE_BYTES);
+    const base64 = Buffer.alloc(TEST_FILE_BYTES + 1).toString('base64');
+
+    const result = await save({ title: 'Q3 Deck', files: [{ name: 'a.png', base64 }] });
+
+    expect(result).toEqual({
+      isError: true,
+      text: 'a.png is larger than the 32 MB a file of a copy can be.',
+    });
+    expect(atlas.requests).toEqual([]);
+  });
+
+  it('sends a base64 file of exactly the limit whole, in chunks', async () => {
+    await withFileLimit(TEST_FILE_BYTES);
+    const base64 = Buffer.alloc(TEST_FILE_BYTES).toString('base64');
+
+    const result = await save({ title: 'Q3 Deck', files: [{ name: 'a.png', base64 }] });
+
+    expect(result.isError).toBe(false);
+    const sent = summary().filter(({ url }) => url === `${NOTE_URL}a.png`);
+    expect(sent.map(({ offset }) => offset)).toEqual([0, CHUNK_BYTES, 2 * CHUNK_BYTES]);
+    expect(sent.reduce((total, chunk) => total + (chunk.bytes ?? 0), 0)).toBe(TEST_FILE_BYTES);
   });
 
   it('says the note was saved when a file of it was refused', async () => {

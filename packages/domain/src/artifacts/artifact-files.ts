@@ -33,8 +33,12 @@ export const ARTIFACT_FILE_EXTENSIONS: readonly string[] = Object.keys(MEDIA_TYP
 
 const TEXT_EXTENSIONS = new Set(['html', 'htm', 'css', 'js', 'json', 'svg']);
 
-/** The largest file a copy may hold: what the host will read back to show it. */
-export const MAX_ARTIFACT_FILE_BYTES = 32 * 1024 * 1024;
+/**
+ * The largest file a copy may hold, 32 MiB: what the host will read back to
+ * show it. Written as a literal so its type is the number itself, which the API
+ * contract hands to clients that keep their own copy (ApiMaxArtifactFileBytes).
+ */
+export const MAX_ARTIFACT_FILE_BYTES = 33_554_432;
 
 /** How many files one copy may hold. */
 export const MAX_ARTIFACT_FILES = 200;
