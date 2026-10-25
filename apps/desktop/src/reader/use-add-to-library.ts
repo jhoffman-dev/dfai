@@ -13,13 +13,14 @@ import {
   type ObjectType,
   type VaultPath,
 } from '@dfai/domain';
+import { readers } from '../pages-on-first-use.ts';
 
 /*
  * Adding PDFs (#504) or EPUBs (#505) from the dialog: each file dropped or
  * picked is copied into the library and given its literature note, one
  * after another, and the first one added opens in its reader. The reader
  * that reads a document's title — pdf.js, foliate-js — is loaded only when
- * the first of its kind is added.
+ * the first document is added, from the readers' chunk (#560).
  */
 
 export interface AddToLibraryState {
@@ -38,12 +39,12 @@ type Adder = (
 /** Each kind's use-case, with its reader loaded on first use. */
 const ADDERS: Readonly<Record<DocumentKind, () => Promise<Adder>>> = {
   pdf: async () => {
-    const { appPdfReader } = await import('./app-pdf-reader.ts');
+    const { appPdfReader } = await readers.load();
     return (fs, { picked, folder }) =>
       addPdfToLibrary({ fs, reader: appPdfReader }, { pdf: picked, folder });
   },
   epub: async () => {
-    const { appEpubReader } = await import('./app-epub-reader.ts');
+    const { appEpubReader } = await readers.load();
     return (fs, { picked, folder }) =>
       addEpubToLibrary({ fs, reader: appEpubReader }, { epub: picked, folder });
   },
