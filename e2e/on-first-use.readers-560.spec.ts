@@ -148,3 +148,36 @@ test('Reload recovers the readers whose chunks arrived cut short, once a whole c
   // The browser keeps a module that failed to parse failed under its address: only a fresh one recovers.
   await expectBothReadersOpen(page, { reload: true });
 });
+
+/** Adds the fixture PDF from ⌘K, under a name of its own so it does not collide with the vault's copy. */
+async function addPdf(page: Page) {
+  await page.keyboard.press('Meta+k');
+  await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Add PDF');
+  await page.getByRole('option', { name: 'Add PDF…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add PDF to Library' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Choose PDF').setInputFiles({
+    name: 'added-lantern-keepers.pdf',
+    mimeType: 'application/pdf',
+    buffer: lanternFixturePdf(),
+  });
+  return dialog;
+}
+
+test.describe('adding a PDF once the readers’ chunk can be fetched again', () => {
+  for (const failure of ['abort', 'truncate'] as const) {
+    test(`works after the chunk failed (${failure}) during the background preload`, async ({
+      page,
+    }) => {
+      await openVault(page);
+      const restore = await failReaderChunks(page, failure);
+      await start(page);
+      restore();
+
+      // Adding loads pdf.js to read the title: a chunk that failed to parse is only fetched again under a fresh address.
+      const dialog = await addPdf(page);
+      await expect(dialog).toBeHidden();
+      await expect(pdfText(page)).toContainText('Brightwater');
+    });
+  }
+});
