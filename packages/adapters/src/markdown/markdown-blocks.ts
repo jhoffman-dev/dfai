@@ -10,6 +10,8 @@ import {
   blockAnchorsOf,
   blockIdOf,
   standaloneBlockAnchor,
+  withImageSize,
+  withImageSizeAdded,
   withAnchorsAtPlaces,
   withoutAnchorAttr,
   withoutBlockAnchors,
@@ -20,8 +22,9 @@ import {
 } from '@dfai/domain';
 import type { Nodes, Root, RootContent } from 'mdast';
 import type { Options as StringifyOptions } from 'remark-stringify';
-import type { Join } from 'mdast-util-to-markdown';
+import { defaultHandlers, type Join } from 'mdast-util-to-markdown';
 import './mdast-custom-nodes.ts';
+import { imageAltOf, readImageSizes } from './image-alt.ts';
 import { mdastBlockToEditorNode } from './mdast-to-editor.ts';
 import { editorNodeToMdastBlock } from './editor-to-mdast.ts';
 import { escapesATag } from './escaped-tags.ts';
@@ -58,6 +61,22 @@ const writeVerbatimInline: NonNullable<StringifyOptions['handlers']>['verbatimIn
   node.value;
 
 const writeTag: NonNullable<StringifyOptions['handlers']>['tag'] = (node) => node.value;
+
+/**
+ * An image, written by remark with its words as its alt text, then its
+ * Obsidian size after them (#568): `|400`, or `\\|400` in a table cell.
+ * Words that end like a size have that pipe escaped, so they stay words.
+ */
+const writeImage: NonNullable<StringifyOptions['handlers']>['image'] = (
+  node,
+  parent,
+  state,
+  info,
+) => {
+  const { alt, size } = imageAltOf(node);
+  const written = defaultHandlers.image({ ...node, alt }, parent, state, info);
+  return withImageSizeAdded(written, size, { inCell: state.stack.includes('tableCell') });
+};
 
 /**
  * A blank line between a paragraph and a list that could not start straight
@@ -169,6 +188,7 @@ const stringifierWith = ({ bullet, ordered }: ListMarkers) =>
         calloutMarker: writeCalloutMarker,
         verbatimInline: writeVerbatimInline,
         tag: writeTag,
+        image: writeImage,
         delete: writeDelete,
         emphasis: writeEmphasis,
         strong: writeStrong,
@@ -384,7 +404,11 @@ const escapedForCell = (address: string): string =>
 interface WrittenInline {
   readonly kind: 'image' | 'link';
   readonly reads: string;
+  /** What an image reads as at any size, so a resized one keeps its bytes but the size (#568). */
+  readonly readsUnsized: string | null;
   readonly source: string;
+  /** Whether it was written in a table cell, where its size's pipe is `\|`. */
+  readonly inCell: boolean;
 }
 
 /**
@@ -392,10 +416,18 @@ interface WrittenInline {
  * afresh, which covers its address, title and text alike.
  */
 function inlineReading(node: Nodes): string | null {
-  if (node.type === 'image')
-    return JSON.stringify([node.url, node.alt ?? null, node.title ?? null]);
+  if (node.type === 'image') {
+    const { alt, size } = imageAltOf(node);
+    return JSON.stringify([node.url, alt, size, node.title ?? null]);
+  }
   if (node.type !== 'link') return null;
   return render({ type: 'root', children: [{ type: 'paragraph', children: [node] }] });
+}
+
+/** What an image reads as with its size left out; null for anything else. */
+function unsizedReading(node: Nodes): string | null {
+  if (node.type !== 'image') return null;
+  return JSON.stringify([node.url, imageAltOf(node).alt, node.title ?? null]);
 }
 
 /** How a block was written before it was edited: what of it to write the same way again. */
@@ -409,6 +441,7 @@ const NOTHING_WRITTEN: Written = { inlines: [], references: new Map() };
 /** How `source` wrote `block`, from one parse of it. */
 function writtenIn(source: string, block: EditorNode): Written {
   const root = parser.parse(source) as Root;
+  readImageSizes(root, source);
   return { inlines: writtenInlines(root, source, block), references: referencesIn(root, source) };
 }
 
@@ -421,18 +454,25 @@ function writtenIn(source: string, block: EditorNode): Written {
 function writtenInlines(root: Root, source: string, block: EditorNode): WrittenInline[] {
   const multiLineFits = block.type === 'paragraph';
   const found: WrittenInline[] = [];
-  const visit = (node: Nodes) => {
+  const visit = (node: Nodes, inCell: boolean) => {
     const reads = inlineReading(node);
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
     if (reads !== null && start !== undefined && end !== undefined) {
       const bytes = source.slice(start, end);
       if (multiLineFits || !bytes.includes('\n'))
-        found.push({ kind: node.type === 'image' ? 'image' : 'link', reads, source: bytes });
+        found.push({
+          kind: node.type === 'image' ? 'image' : 'link',
+          reads,
+          readsUnsized: unsizedReading(node),
+          source: bytes,
+          inCell,
+        });
     }
-    if ('children' in node) for (const child of node.children as Nodes[]) visit(child);
+    const inner = inCell || node.type === 'tableCell';
+    if ('children' in node) for (const child of node.children as Nodes[]) visit(child, inner);
   };
-  visit(root);
+  visit(root, false);
   return found;
 }
 
@@ -447,13 +487,47 @@ function keepWrittenInlines(node: Nodes, written: WrittenInline[]): void {
   children.forEach((child, index) => {
     const reads = inlineReading(child);
     const at = reads === null ? -1 : written.findIndex((inline) => inline.reads === reads);
-    if (at < 0) {
-      keepWrittenInlines(child, written);
+    if (at >= 0) {
+      const [inline] = written.splice(at, 1);
+      children[index] = { type: 'verbatimInline', value: inline!.source };
       return;
     }
-    const [inline] = written.splice(at, 1);
-    children[index] = { type: 'verbatimInline', value: inline!.source };
+    const resized = resizedFromWritten(child, written);
+    if (resized === null) keepWrittenInlines(child, written);
+    else children[index] = { type: 'verbatimInline', value: resized };
   });
+}
+
+/**
+ * An image only resized since it was written, as those bytes with only the
+ * size token changed (#568, ADR-0003). Null when none was written that way,
+ * or its bytes cannot take a size; it is then written afresh.
+ */
+function resizedFromWritten(node: Nodes, written: WrittenInline[]): string | null {
+  const unsized = unsizedReading(node);
+  if (unsized === null || node.type !== 'image') return null;
+  const at = written.findIndex((inline) => inline.readsUnsized === unsized);
+  if (at < 0) return null;
+  const { source, inCell } = written[at]!;
+  const sized = withImageSize(source, imageAltOf(node).size, { inCell });
+  // Read back where it will be written: anything but the size it was given, and it is written afresh.
+  if (sized === null || readImageWritten(sized, inCell) !== inlineReading(node)) return null;
+  written.splice(at, 1);
+  return sized;
+}
+
+/** What one image's markdown reads as, alone in a paragraph or in a table cell. */
+function readImageWritten(markdown: string, inCell: boolean): string | null {
+  const text = inCell ? `| x |\n| - |\n| ${markdown} |` : markdown;
+  const root = parser.parse(text) as Root;
+  readImageSizes(root, text);
+  let found: Nodes | null = null;
+  const visit = (node: Nodes) => {
+    if (found === null && node.type === 'image') found = node;
+    else if ('children' in node) (node.children as Nodes[]).forEach(visit);
+  };
+  visit(root);
+  return found === null ? null : inlineReading(found);
 }
 
 /**

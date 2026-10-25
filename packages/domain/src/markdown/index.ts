@@ -80,6 +80,16 @@ export { calloutLabel, formatCalloutMarker, parseCalloutMarker } from './callout
 export type { CalloutMarker } from './callout.ts';
 export { imageSourceCandidates, resolveImageSource } from './image-source.ts';
 export type { ImageSource } from './image-source.ts';
+export {
+  MIN_IMAGE_WIDTH,
+  readImageAlt,
+  readImageMarkdown,
+  resizedImageWidth,
+  withImageSize,
+  withImageSizeAdded,
+  writeImageAlt,
+} from './image-size.ts';
+export type { ImagePlace, ImageSize } from './image-size.ts';
 export { plainText } from './plain-text.ts';
 export { nodeText } from './node-text.ts';
 export {

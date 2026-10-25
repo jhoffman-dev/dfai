@@ -8,8 +8,10 @@ import {
   nestedBlockOf,
   QUERY_BLOCK_NODE,
   type EditorMark,
+  type ImageSize,
   type EditorNode,
 } from '@dfai/domain';
+import { imageWithAlt } from './image-alt.ts';
 import type { BlockContent, Nodes as MdastNode, PhrasingContent } from 'mdast';
 import './mdast-custom-nodes.ts';
 import { bookmarkToMdast } from './bookmark-block.ts';
@@ -342,14 +344,26 @@ function withBackslashesEscaped(node: PhrasingContent): PhrasingContent[] {
     );
 }
 
+/** The size an image node is drawn at (#568), written at the end of its alt text; none when unsized. */
+function imageSizeOf(node: EditorNode): ImageSize | null {
+  const width = node.attrs?.['width'];
+  if (typeof width !== 'number' || !Number.isInteger(width) || width <= 0) return null;
+  const height = node.attrs?.['height'];
+  return { width, height: Number.isInteger(height) && Number(height) > 0 ? Number(height) : null };
+}
+
 function leaf(node: EditorNode): PhrasingContent {
   if (node.type === 'image') {
-    return {
-      type: 'image',
-      url: String(node.attrs?.['src'] ?? ''),
-      alt: typeof node.attrs?.['alt'] === 'string' ? node.attrs['alt'] : null,
-      title: typeof node.attrs?.['title'] === 'string' ? node.attrs['title'] : null,
-    };
+    const alt = typeof node.attrs?.['alt'] === 'string' ? node.attrs['alt'] : null;
+    // The size is written after the words by the image's handler (`writeImage`).
+    return imageWithAlt(
+      {
+        type: 'image',
+        url: String(node.attrs?.['src'] ?? ''),
+        title: typeof node.attrs?.['title'] === 'string' ? node.attrs['title'] : null,
+      },
+      { alt, size: imageSizeOf(node) },
+    );
   }
   if (node.type === 'wikiLink') {
     // Written by a handler on the stringifier, so its brackets are not escaped.

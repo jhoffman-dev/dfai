@@ -360,7 +360,7 @@ describe('the v2 rules', () => {
   const block = (names: string) => new RegExp(`^\\.(${names})(?=$|__|--|[\\s.:,[>+~])`);
   /** Surfaces that float over the page: menus, popovers, palettes, the peek's previews, toasts. */
   const FLOATS = block(
-    'menu|palette|toast|peek|link-preview|link-hover|suggestions|link-suggest|cell-picker|view-popover|filter-value__list|image__alt|widget-sheet|[a-z-]*popover',
+    'menu|palette|lightbox|toast|peek|link-preview|link-hover|suggestions|link-suggest|cell-picker|view-popover|filter-value__list|image__alt|widget-sheet|[a-z-]*popover',
   );
   /** Something in the hand while it is dragged, lifted off the page. */
   const IN_HAND = /--(lifted|held)\b|^\.widget-ghost(?=$|__|--|[\s.:,[>+~])/;
