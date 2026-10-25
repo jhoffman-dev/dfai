@@ -224,6 +224,115 @@ describe('SearchPalette and archived notes', () => {
   });
 });
 
+describe('SearchPalette by meaning (P32-02)', () => {
+  const meaning = (
+    overrides: Partial<Parameters<typeof SearchPalette>[0]['meaning'] & object> = {},
+  ) => ({
+    on: true,
+    onChange: () => {},
+    progress: null,
+    problem: null,
+    ...overrides,
+  });
+
+  it('offers no By meaning switch unless it is given one', () => {
+    render(<SearchPalette {...props} archived={{ included: false, onChange: () => {} }} />);
+    expect(screen.getByRole('switch', { name: 'Include archived' })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'By meaning' })).toBeNull();
+  });
+
+  it('switches By meaning, showing which it is', async () => {
+    const onChange = vi.fn();
+    render(<SearchPalette {...props} meaning={meaning({ on: false, onChange })} />);
+    const toggle = screen.getByRole('switch', { name: 'By meaning' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await userEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('says the cache of meanings is still being built, and stops saying so once it is', () => {
+    const { rerender } = render(
+      <SearchPalette {...props} meaning={meaning({ progress: { done: 12, total: 40 } })} />,
+    );
+    expect(screen.getByRole('status').textContent).toBe(
+      'Still reading notes for meaning: 12 of 40.',
+    );
+    rerender(<SearchPalette {...props} meaning={meaning({ progress: { done: 40, total: 40 } })} />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('says why the cache of meanings stopped being built, and how far it had got', () => {
+    render(
+      <SearchPalette
+        {...props}
+        meaning={meaning({ progress: { done: 12, total: 40, failure: 'no network' } })}
+      />,
+    );
+    expect(
+      screen.getByText('Stopped reading notes for meaning (12 of 40): no network'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('does not draw a row, or the switches, again for a key typed or a handler made anew', () => {
+    let titleReads = 0;
+    const counted = {
+      path: 'a.md',
+      snippet: 'sourdough',
+      get title() {
+        titleReads += 1;
+        return 'Recipes';
+      },
+    };
+    const switches = vi.fn();
+    const { rerender } = render(
+      <SearchPalette
+        {...props}
+        query="s"
+        hits={[counted]}
+        onPick={() => {}}
+        archived={{ included: false, onChange: switches }}
+        meaning={meaning({ onChange: () => {} })}
+      />,
+    );
+    const drawn = titleReads;
+    expect(drawn).toBeGreaterThan(0);
+    rerender(
+      <SearchPalette
+        {...props}
+        query="so"
+        hits={[counted]}
+        onPick={() => {}}
+        archived={{ included: false, onChange: switches }}
+        meaning={meaning({ onChange: () => {} })}
+      />,
+    );
+    expect(titleReads).toBe(drawn);
+  });
+
+  it('says why a search by meaning could not run', () => {
+    render(<SearchPalette {...props} meaning={meaning({ problem: 'no network' })} />);
+    expect(screen.getByText('Search by meaning is not available: no network')).toBeTruthy();
+  });
+
+  it('says nothing of meaning while searching by words', () => {
+    render(<SearchPalette {...props} meaning={meaning({ on: false, problem: 'no network' })} />);
+    expect(screen.queryByText(/not available/)).toBeNull();
+  });
+
+  it('shows a block found by meaning with its folder, not as a highlight, and opens it at its block', async () => {
+    const onPick = vi.fn();
+    const found = [
+      { path: 'Meetings/Standup.md', title: 'Standup', snippet: 'Pay day moves', block: 'k3x9a1' },
+    ];
+    render(<SearchPalette {...props} hits={found} onPick={onPick} meaning={meaning()} />);
+    expect(screen.getByText('Meetings')).toBeTruthy();
+    expect(screen.queryByText('Highlight')).toBeNull();
+    await userEvent.click(screen.getByRole('option'));
+    expect(onPick).toHaveBeenCalledWith('Meetings/Standup.md', 'k3x9a1');
+  });
+});
+
 describe('SearchPalette keeps the selected result in view (#372)', () => {
   /** jsdom lays nothing out, so it has no scrollIntoView: record who is asked to scroll. */
   function spyOnScrolls() {

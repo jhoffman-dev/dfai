@@ -17,6 +17,7 @@ import {
   paneOverlayOf,
   panePopupOverlay,
   withArchived,
+  withMeaning,
   withClosed,
   withMoved,
   withOpened,
@@ -121,7 +122,7 @@ describe('holdsTheScreen', () => {
 describe('the overlay state', () => {
   const typed: OverlayState = {
     overlay: 'search',
-    palette: { query: 'sourd', selected: 2, includeArchived: true },
+    palette: { query: 'sourd', selected: 2, includeArchived: true, byMeaning: false },
     peek: null,
   };
 
@@ -179,11 +180,16 @@ describe('a table cell’s picker (#300)', () => {
 });
 
 describe('the search palette input', () => {
-  const chosen = { query: 'sour', selected: 3, includeArchived: false };
+  const chosen = { query: 'sour', selected: 3, includeArchived: false, byMeaning: false };
 
   it('chooses the first result again for a new query or a new archive choice', () => {
     expect(withQuery(chosen, 'sourd')).toEqual({ ...chosen, query: 'sourd', selected: 0 });
     expect(withArchived(chosen, true)).toEqual({ ...chosen, includeArchived: true, selected: 0 });
+  });
+
+  it('chooses the first result again when searching by meaning is turned on or off', () => {
+    expect(withMeaning(chosen, true)).toEqual({ ...chosen, byMeaning: true, selected: 0 });
+    expect(withMeaning({ ...chosen, byMeaning: true }, false)).toEqual({ ...chosen, selected: 0 });
   });
 
   it('moves the choice through the rows, wrapping at either end', () => {

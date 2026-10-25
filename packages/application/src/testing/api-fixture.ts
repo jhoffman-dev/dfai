@@ -112,11 +112,14 @@ export function apiFixture({
   index = {},
   markdown = fakeMarkdown(),
   caseInsensitive = false,
+  semantic,
 }: {
   files?: Record<string, string>;
   index?: Partial<IndexPort>;
   markdown?: MarkdownPort;
   caseInsensitive?: boolean;
+  /** The app's semantic search, by vault; left out, the API has none. */
+  semantic?: ApiRouterDeps['semantic'];
 } = {}): ApiFixture {
   let clock = 100;
   const stored = new Map(
@@ -370,6 +373,7 @@ export function apiFixture({
     activity,
     googleCalendar: google.port,
     timeZone: () => state.timeZone,
+    ...(semantic !== undefined && { semantic }),
     ownerName: () => state.ownerName,
     claudeStep: () => state.claudeStep,
     meetingDrafts: createMeetingDrafts(),

@@ -1,3 +1,4 @@
+import type { SemanticAccess } from '../embeddings/semantic-search.ts';
 import type { ActivityLog } from '../activity/ports.ts';
 import type { MeetingDrafts } from '../assistant/meeting-drafts.ts';
 import type { ClaudeStepPorts } from '../automations/claude-step.ts';
@@ -130,6 +131,13 @@ export interface ApiRouterDeps {
   readonly googleCalendar: Pick<GoogleCalendarPort, 'status'>;
   /** The IANA zone this Mac keeps time in (`America/Los_Angeles`): a sent meeting's default (#93). */
   readonly timeZone: () => string;
+  /**
+   * Semantic search in the vault named, the app's own (P32-02), so the API
+   * and the palette share one cache and one build. Left out — or null for a
+   * vault it is not keeping — `mode=semantic` says it is not available; where
+   * it has not been turned on from the app, `semantic_off`.
+   */
+  readonly semantic?: (vault: string) => SemanticAccess | null;
   /**
    * The vault owner's name from Settings → Profile, null when it has none or
    * cannot be read: whose `You` turns in a transcript the assistant's quotes
