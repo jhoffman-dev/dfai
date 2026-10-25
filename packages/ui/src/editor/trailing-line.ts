@@ -25,9 +25,11 @@ function lastVisibleBlock(doc: ProseMirrorNode): ProseMirrorNode | null {
 
 /**
  * Whether the note needs an empty paragraph at its end to type in: after any
- * last block but a paragraph, and after a paragraph that ends in a picture,
- * under which there is otherwise nowhere to type (the picture's own room
- * reads the note's last block, so this holds whatever follows the picture).
+ * last block but a paragraph, and after a paragraph that ends in a picture.
+ * The picture is an inline atom: the caret after it sits beside the picture
+ * at its edge, and words typed there run alongside it in the same paragraph.
+ * The line under it is where the note goes on below the picture, as it does
+ * below a last table or heading.
  */
 export const needsTrailingLine = (doc: ProseMirrorNode): boolean => {
   const last = lastVisibleBlock(doc);
@@ -44,10 +46,17 @@ export const TrailingLine = Extension.create({
         // On every transaction, as TrailingNode was: a note opened on a last atom
         // gets its line on the first, and an undo that brings the atom back gives
         // the note exactly what it had before.
-        appendTransaction: (_transactions, _before, state) => {
+        appendTransaction: (transactions, _before, state) => {
           const paragraph = state.schema.nodes['paragraph'];
           if (paragraph === undefined || !needsTrailingLine(state.doc)) return null;
-          return state.tr.insert(state.doc.content.size, paragraph.create());
+          const line = state.tr.insert(state.doc.content.size, paragraph.create());
+          // A line an edit calls for — a move that leaves a table last, the last
+          // paragraph deleted — is undone with that edit, as one step. The line
+          // added on opening the note, by a focus or a selection that changed
+          // nothing, is no step of its own: the person did not type it, and the
+          // first ⌘Z took it only for this to put it straight back.
+          const forAnEdit = transactions.some((transaction) => transaction.docChanged);
+          return forAnEdit ? line : line.setMeta('addToHistory', false);
         },
       }),
     ];
