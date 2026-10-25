@@ -44,7 +44,10 @@ export async function loadAutomations({
   markdown: MarkdownPort;
   notePaths: readonly string[];
 }): Promise<AutomationListing> {
-  const files = await fs.readNotes(notePaths.filter(isAutomationPath).sort());
+  const rulePaths = notePaths.filter(isAutomationPath).sort();
+  // Read on every minute's tick: a vault with no rules asks the host nothing.
+  if (rulePaths.length === 0) return { automations: [], broken: [] };
+  const files = await fs.readNotes(rulePaths);
   const automations: LoadedAutomation[] = [];
   const broken: BrokenAutomation[] = [];
   const ids = new Set<string>();

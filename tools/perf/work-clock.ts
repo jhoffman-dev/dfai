@@ -183,8 +183,9 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       return channel;
     } as unknown as typeof MessageChannel;
 
-  // The index worker answers `begin` and `derive` once each, in order, and
-  // `end` not at all (`packages/adapters/src/index/worker-note-deriver.ts`).
+  // The index's worker script answers `begin`, `derive` and `chunk` once each,
+  // in order, and `end` not at all (`worker-note-deriver.ts`, and
+  // `note-chunking.ts` for the embeddings build's own copy of it).
   const RealWorker = window.Worker as typeof Worker | undefined;
   const workerOnmessage =
     RealWorker === undefined
@@ -197,7 +198,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       const post = worker.postMessage.bind(worker) as (...given: unknown[]) => void;
       worker.postMessage = (message: unknown, ...rest: unknown[]) => {
         const kind = (message as { kind?: unknown } | null)?.kind;
-        if (kind === 'begin' || kind === 'derive') {
+        if (kind === 'begin' || kind === 'derive' || kind === 'chunk') {
           const question: Question = { command: `worker ${kind}`, answer: null };
           state.waiting.push(question);
           asked.push(question);
