@@ -1,8 +1,11 @@
 /*
- * The PDF reader's rules (#504): a page's words and where they sit, what a
- * selection or a dragged box becomes, where a stored highlight is drawn,
- * find in a document, zoom, and what adding a PDF to the library names.
- * All pure; pdf.js is the adapters' and the screen is the UI's.
+ * The readers' rules: the PDF reader's (#504) — a page's words and where
+ * they sit, what a selection or a dragged box becomes, where a stored
+ * highlight is drawn, find in a document, zoom, and what adding a PDF to the
+ * library names — and the EPUB reader's (#505): what a book may load, what a
+ * selection in a chapter becomes, where a stored highlight is drawn, and
+ * which books can be opened at all. All pure; pdf.js and foliate-js are the
+ * adapters' and the screen is the UI's.
  */
 export {
   EMPTY_PAGE_TEXT,
@@ -35,8 +38,8 @@ export {
   placeOnItsPage,
 } from './placement.ts';
 export type { DrawnPlacement, HighlightPlacement } from './placement.ts';
-export { findInDocument, MOST_MATCHES, stepMatch } from './find-in-document.ts';
-export type { DocumentMatch } from './find-in-document.ts';
+export { findInDocument, findInTexts, MOST_MATCHES, stepMatch } from './find-in-document.ts';
+export type { DocumentMatch, TextMatch } from './find-in-document.ts';
 export {
   clampZoom,
   fitWidthZoom,
@@ -49,25 +52,63 @@ export {
 } from './zoom.ts';
 export {
   areaImageName,
-  checkIncomingPdf,
+  checkIncomingDocument,
   isPdfName,
   libraryFileName,
   libraryFolder,
   literatureDetails,
   literatureNoteFileName,
   looksLikePdf,
-  MAX_PDF_BYTES,
+  MAX_DOCUMENT_BYTES,
+  notADocumentMessage,
 } from './pdf-library.ts';
-export type { IncomingPdf, PdfCheck, PdfMetadata } from './pdf-library.ts';
+export type { DocumentCheck, IncomingDocument, PdfMetadata } from './pdf-library.ts';
+export {
+  DOCUMENT_EXTENSIONS,
+  documentKindOf,
+  isEpubName,
+  withoutDocumentExtension,
+} from './document-kind.ts';
+export type { DocumentKind } from './document-kind.ts';
+export {
+  epubProtection,
+  FONT_OBFUSCATION_ALGORITHMS,
+  looksLikeEpub,
+  protectedEpubMessage,
+} from './epub-library.ts';
+export type { EpubEncryption, EpubProtection } from './epub-library.ts';
+export { bookReference, EPUB_FRAME_SANDBOX, epubFramePolicy } from './epub-frame.ts';
+export {
+  BOOK_FONT_DEFAULT,
+  BOOK_FONT_SIZES,
+  bookFontLabel,
+  largerBookFont,
+  smallerBookFont,
+} from './book-font.ts';
+export type { BookReference } from './epub-frame.ts';
+export {
+  bookQuoteAt,
+  epubHighlight,
+  findInBook,
+  foldedText,
+  inBookOrder,
+  placeByBookWords,
+  placeInCfiSection,
+  sectionTitle,
+  trimmedBookRange,
+} from './epub-text.ts';
+export type { BookPlacement, BookRange, CfiPlace, ContentsEntry } from './epub-text.ts';
 export { placeOfFile } from './document-place.ts';
 export {
   highlightChip,
+  documentLinkTarget,
   highlightOpening,
-  namesPdf,
-  pdfLinkTarget,
+  namesDocument,
   placeLabel,
   READER_KINDS,
+  readerDocumentOf,
   readerLinkLabel,
   SOURCE_KIND_HUES,
+  SOURCE_KIND_NAMES,
 } from './highlight-opening.ts';
 export type { HighlightChip, HighlightOpening, LiteratureNoteRead } from './highlight-opening.ts';

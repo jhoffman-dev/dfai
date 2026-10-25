@@ -90,6 +90,8 @@ export {
   GROUPABLE_KINDS,
   layoutLabel,
   layoutProblem,
+  entryNameProblem,
+  newViewFieldProblems,
   newViewNote,
   newViewProblems,
   viewNameProblem,
@@ -97,6 +99,9 @@ export {
   VIEWS_FOLDER,
 } from './new-view.ts';
 export type { NewViewNote, NewViewRequest } from './new-view.ts';
+export { checkViewSpec } from './view-spec.ts';
+export { hiddenCharacterProblem } from './entry-name-characters.ts';
+export type { ViewSpecReading } from './view-spec.ts';
 export {
   editedFrontmatter,
   editView,

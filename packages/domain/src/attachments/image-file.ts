@@ -35,8 +35,12 @@ export const EMBEDDABLE_IMAGE_EXTENSIONS: readonly string[] = [
   'heif',
 ];
 
-/** The largest image a note takes: well past any screenshot, well under the host's limit. */
-export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+/**
+ * The largest image a note takes, 20 MiB: well past any screenshot, well under
+ * the host's limit. Written as a literal so its type is the number itself, which
+ * the API contract hands to clients that keep their own copy (ApiMaxImageBytes).
+ */
+export const MAX_IMAGE_BYTES = 20_971_520;
 
 /** What a file picker offers when it is picking an image for a note. */
 export const IMAGE_PICKER_ACCEPT = EMBEDDABLE_IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(',');

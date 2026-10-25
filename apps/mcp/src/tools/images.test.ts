@@ -11,6 +11,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { CHUNK_BYTES } from '../artifact-upload.ts';
 import { AtlasClient } from '../client.ts';
 import { createAtlasServer } from '../server.ts';
+import { UPLOAD_LIMITS, type UploadLimits } from '../upload-limits.ts';
 import {
   errorBody,
   startFakeAtlas,
@@ -28,6 +29,9 @@ const NOTE = {
 };
 const IMAGES_URL = '/v1/notes/Work%2FPlan.md/images/';
 const APPEND_URL = '/v1/notes/Work%2FPlan.md/append';
+/** A small image limit for the size tests, past two chunks so the chunked path still runs. */
+const TEST_IMAGE_BYTES = 2 * CHUNK_BYTES + 1;
+
 const PNG_HEAD = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 let atlas: FakeAtlas;
@@ -59,17 +63,30 @@ function atlasAnswer(request: RecordedRequest) {
   return { status: 200, body: { note: NOTE } };
 }
 
+/** An MCP client on a server over the fake DFAI, with DFAI's limits unless given others. */
+async function connectMcp(limits?: UploadLimits): Promise<Client> {
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const connect = async () => ({ baseUrl: atlas.baseUrl, token: 't' });
+  await createAtlasServer(new AtlasClient({ connect }), limits).connect(serverSide);
+  const client = new Client({ name: 'test', version: '1.0.0' });
+  await client.connect(clientSide);
+  return client;
+}
+
+/** Swaps the client for one whose server refuses images past `imageBytes`. */
+async function withImageLimit(imageBytes: number): Promise<void> {
+  await mcp.close();
+  mcp = await connectMcp({ ...UPLOAD_LIMITS, imageBytes });
+}
+
 beforeEach(async () => {
   atlas = await startFakeAtlas(atlasAnswer);
   folder = await mkdtemp(join(tmpdir(), 'atlas-mcp-image-'));
-  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  const connect = async () => ({ baseUrl: atlas.baseUrl, token: 't' });
-  await createAtlasServer(new AtlasClient({ connect })).connect(serverSide);
-  mcp = new Client({ name: 'test', version: '1.0.0' });
-  await mcp.connect(clientSide);
+  mcp = await connectMcp();
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await mcp.close();
   await atlas.close();
   await rm(folder, { recursive: true, force: true });
@@ -139,14 +156,47 @@ describe('atlas_add_image', () => {
     ['base64 with no name', { base64: 'eA==' }],
     ['base64 that is not base64', { base64: 'not base64!', name: 'a.png' }],
     ['a file that is not there', { file: '/nowhere/at/all.png' }],
-    [
-      'base64 past 20 MB',
-      { base64: Buffer.alloc(20 * 1024 * 1024 + 3).toString('base64'), name: 'a.png' },
-    ],
   ])('refuses %s before any request is made', async (_why, args) => {
     const result = await addImage({ path: 'Work/Plan.md', ...args });
     expect(result.isError).toBe(true);
     expect(atlas.requests).toEqual([]);
+  });
+
+  it("holds images to DFAI's 20 MB limit unless the server is given another", () => {
+    expect(UPLOAD_LIMITS.imageBytes).toBe(20_971_520);
+  });
+
+  it('refuses base64 one byte past the limit by its size, before any request, logging nothing', async () => {
+    await withImageLimit(TEST_IMAGE_BYTES);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const base64 = Buffer.alloc(TEST_IMAGE_BYTES + 1).toString('base64');
+
+    const result = await addImage({ path: 'Work/Plan.md', base64, name: 'a.png' });
+
+    expect(result).toEqual({
+      isError: true,
+      text: 'a.png is larger than the 20 MB an image in a note can be.',
+    });
+    expect(errors).not.toHaveBeenCalled();
+    expect(atlas.requests).toEqual([]);
+  });
+
+  it('sends base64 of exactly the limit whole, as an upload in chunks', async () => {
+    await withImageLimit(TEST_IMAGE_BYTES);
+    const base64 = Buffer.alloc(TEST_IMAGE_BYTES).toString('base64');
+
+    const result = await addImage({ path: 'Work/Plan.md', base64, name: 'a.png', insert: false });
+
+    expect(result.isError).toBe(false);
+    const sent = summary().filter(({ method }) => method === 'PUT');
+    expect(sent.map((chunk) => ('last' in chunk ? chunk.last : undefined))).toEqual([
+      false,
+      false,
+      true,
+    ]);
+    expect(sent.reduce((total, chunk) => total + ('bytes' in chunk ? chunk.bytes : 0), 0)).toBe(
+      TEST_IMAGE_BYTES,
+    );
   });
 
   it.each([['shot.svg'], ['shot']])(

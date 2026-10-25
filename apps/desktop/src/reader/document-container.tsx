@@ -1,17 +1,18 @@
 import { useMemo } from 'react';
-import type { VaultPath } from '@dfai/domain';
+import { documentKindOf, type VaultPath } from '@dfai/domain';
 import { LoadedLater } from '../page-frame-fallback.tsx';
-import { documentReader } from '../pages-on-first-use.ts';
+import { bookReader, documentReader } from '../pages-on-first-use.ts';
 import { useTabReveal } from '../panes/reveals.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import type { DocumentPorts } from './use-document-highlights.ts';
 import { useHeldReveal } from './held-reveal.ts';
 
 const DocumentReader = documentReader.Component;
+const BookReader = bookReader.Component;
 
 /**
- * A PDF as a tab (#504): the reader, loaded with pdf.js the first time one
- * opens. A highlight asked to be shown — `openDocumentAt` — reaches it as the
+ * A PDF (#504) or an EPUB (#505) as a tab: its reader, loaded with pdf.js or
+ * foliate-js the first time one opens. A highlight asked to be shown — `openDocumentAt` — reaches it as the
  * tab's reveal of the highlight's block, and is spent once shown.
  */
 export function DocumentContainer({
@@ -33,9 +34,10 @@ export function DocumentContainer({
   );
   const reveal = useHeldReveal(useTabReveal(reveals, { tab: tabId, path }), path);
   if (pane.vault === null) return null;
+  const Reader = documentKindOf(path) === 'epub' ? BookReader : DocumentReader;
   return (
     <LoadedLater chrome={chrome}>
-      <DocumentReader
+      <Reader
         {...chrome}
         path={path}
         vault={pane.vault}

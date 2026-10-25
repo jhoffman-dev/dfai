@@ -16,6 +16,8 @@ import type {
   DoneAction,
   ExportDropKind,
   FilterOperator,
+  MAX_ARTIFACT_FILE_BYTES,
+  MAX_IMAGE_BYTES,
   NoteEvent,
   RunTrigger,
   SetValue,
@@ -117,7 +119,18 @@ export interface ApiErrorBody {
     readonly retryAfter?: number;
     /** Where in a DFAI query's text the problem is; only on an `invalid` query. */
     readonly at?: ApiTextPosition;
+    /** Everything a checker found wrong with a spec, each where it is; only on an `invalid` spec. */
+    readonly problems?: readonly ApiSpecProblem[];
   };
+}
+
+/**
+ * One thing wrong with a dashboard or view spec (P32-05): `at` is the field
+ * or widget (`name`, `widgets[2]`), `message` the checker's own words.
+ */
+export interface ApiSpecProblem {
+  readonly at: string;
+  readonly message: string;
 }
 
 /**
@@ -762,7 +775,16 @@ export interface ApiMeetingReceipt {
  */
 export interface ApiProposal {
   readonly path: string;
-  readonly kind: 'task' | 'decision' | 'follow-up' | 'person' | 'link' | 'term' | 'project';
+  readonly kind:
+    | 'task'
+    | 'decision'
+    | 'follow-up'
+    | 'person'
+    | 'link'
+    | 'term'
+    | 'project'
+    | 'dashboard'
+    | 'view';
   /** What it would do, in one line: a note's title, or `Note · property → [[Link]]`. */
   readonly headline: string;
   readonly confidence: 'high' | 'medium' | 'low' | null;
@@ -844,6 +866,13 @@ export interface ApiArtifactFileBody {
   readonly offset?: number;
 }
 
+/**
+ * The largest file of a saved copy, in bytes, as a type: a client that refuses
+ * a file before sending it keeps a copy typed with this, so the copy cannot
+ * drift from DFAI's limit without a type error.
+ */
+export type ApiMaxArtifactFileBytes = typeof MAX_ARTIFACT_FILE_BYTES;
+
 /** A file of a saved copy, after a chunk was written to it. */
 export interface ApiArtifactFile {
   /** Vault-relative, forward slashes. */
@@ -878,6 +907,9 @@ export interface ApiNoteImageBody {
   /** Whether this chunk ends the image. Default true. */
   readonly last?: boolean;
 }
+
+/** The largest image for a note, in bytes, as a type: see ApiMaxArtifactFileBytes. */
+export type ApiMaxImageBytes = typeof MAX_IMAGE_BYTES;
 
 /** An image being staged a chunk at a time, before its last chunk arrives. */
 export interface ApiImageUpload {
@@ -1590,6 +1622,39 @@ export interface ApiAssistantMeetings {
   readonly problems: readonly ApiSectionProblem[];
 }
 
+/** `POST /v1/assistant/propose-tasks`: a meeting's items, drafted as proposals. */
+export interface ApiProposedTasks {
+  readonly meeting: string;
+  /** The proposals written into Inbox/Proposals. */
+  readonly proposed: readonly string[];
+  /** How many the answer held that were proposed before, open or answered, and so were not again. */
+  readonly alreadyProposed: number;
+  /**
+   * True when Claude was not asked: the meeting's words are those it was
+   * drafted from before, and `alreadyProposed` counts what that made.
+   */
+  readonly unchanged: boolean;
+  /** Items left out of the answer, each with why. */
+  readonly dropped: readonly { readonly title: string; readonly reason: string }[];
+  /** Why the meeting was not asked about at all, when it was not. */
+  readonly left: readonly { readonly path: string; readonly reason: string }[];
+  readonly warnings: readonly string[];
+}
+
+/** `POST /v1/assistant/make-dashboard`: a spec checked, and left as a proposal. */
+export interface ApiProposedSpec {
+  readonly kind: 'dashboard' | 'view';
+  readonly title: string;
+  /** The proposal written; null when it was not, and `problem` says why. */
+  readonly proposal: string | null;
+  /**
+   * Why no proposal was written — the same spec proposed before, and what
+   * became of it (`already accepted on 2026-10-23`), or a write that failed —
+   * with that proposal's path when there is one. Null when one was written.
+   */
+  readonly problem: { readonly message: string; readonly proposal: string | null } | null;
+}
+
 // ---------------------------------------------------------------------------
 // Success bodies, per route
 // ---------------------------------------------------------------------------
@@ -1689,7 +1754,10 @@ export type ApiSuccessBody =
   | { readonly export: ApiNoteExport }
   | { readonly brief: ApiBrief }
   | { readonly openLoops: ApiOpenLoops }
-  | { readonly meetingQuotes: ApiAssistantMeetings };
+  | { readonly meetingQuotes: ApiAssistantMeetings }
+  | { readonly proposedTasks: ApiProposedTasks }
+  | { readonly proposingTasks: { readonly meeting: string; readonly running: true } }
+  | { readonly proposedSpec: ApiProposedSpec };
 
 /**
  * Every route, as the router and the MCP server both need to know them.
@@ -1934,6 +2002,18 @@ export const API_ROUTES = [
     path: '/v1/assistant/meetings',
     summary:
       'A page’s meetings with the turns that answer the question: speaker, quote, block link. Query: entity, since, about, limit.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/assistant/propose-tasks',
+    summary:
+      'Draft a meeting’s tasks, waiting-fors, decisions and follow-ups as proposals, each citing its turn. Body: meeting.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/assistant/make-dashboard',
+    summary:
+      'Check a dashboard or view spec and leave it as a proposal; only Accept in the app writes it into .atlas. Body: spec.',
   },
   {
     method: 'GET',

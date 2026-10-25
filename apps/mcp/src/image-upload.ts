@@ -16,7 +16,7 @@ import { basename, extname } from 'node:path';
 import type { ApiImageUpload, ApiNote, ApiNoteImage } from '@dfai/application';
 import { bytesFromBase64, CHUNK_BYTES } from './artifact-upload.ts';
 import { AtlasCallError, type AtlasClient } from './client.ts';
-import { imageKindOf, MAX_IMAGE_BYTES, readLocalImage, sameKind } from './local-image.ts';
+import { imageFolders, imageKindOf, readLocalImage, sameKind } from './local-image.ts';
 
 export interface ImageUpload {
   /** The note the image is for. */
@@ -40,8 +40,9 @@ export interface UploadedImage {
 export async function uploadImage(
   client: AtlasClient,
   upload: ImageUpload,
+  maxBytes: number,
 ): Promise<UploadedImage> {
-  const { name, bytes } = await imageOf(upload);
+  const { name, bytes } = await imageOf(upload, maxBytes);
   const image = await sendInChunks(client, { note: upload.note, name, bytes });
   if (upload.insert === false) return { image };
   try {
@@ -57,20 +58,23 @@ export async function uploadImage(
 }
 
 /** The image's name and bytes, from a file on disk or from base64 — exactly one of them. */
-async function imageOf(upload: ImageUpload): Promise<{ name: string; bytes: Buffer }> {
+async function imageOf(
+  upload: ImageUpload,
+  maxBytes: number,
+): Promise<{ name: string; bytes: Buffer }> {
   if ((upload.file === undefined) === (upload.base64 === undefined)) {
     throw new AtlasCallError('give exactly one of file and base64');
   }
   if (upload.file !== undefined) {
     const name = upload.name ?? basename(upload.file);
     refuseChangedKind({ file: upload.file, name });
-    return { name, bytes: await readLocalImage(upload.file) };
+    return { name, bytes: await readLocalImage(upload.file, imageFolders(), maxBytes) };
   }
   if (upload.name === undefined) throw new AtlasCallError('name is required with base64');
-  const bytes = bytesFromBase64(upload.name, upload.base64 ?? '');
-  if (bytes.byteLength > MAX_IMAGE_BYTES) {
-    throw new AtlasCallError(`${upload.name} is larger than the 20 MB an image in a note can be.`);
-  }
+  const bytes = bytesFromBase64(upload.name, upload.base64 ?? '', {
+    bytes: maxBytes,
+    refusal: `${upload.name} is larger than the 20 MB an image in a note can be.`,
+  });
   return { name: upload.name, bytes };
 }
 

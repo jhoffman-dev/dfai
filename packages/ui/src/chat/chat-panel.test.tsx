@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { EditorDocument } from '@dfai/domain';
+import { citeAnswer, uncitedCount, type EditorDocument } from '@dfai/domain';
 import { PageBar } from '../page-bar.tsx';
 import { ChatPanel } from './chat-panel.tsx';
 import { ChatToggleProvider } from './chat-toggle.tsx';
-import type { ChatActions, ChatItemView, ChatPanelState } from './chat-view.ts';
+import type { AskAnswerView, ChatActions, ChatItemView, ChatPanelState } from './chat-view.ts';
 
 const paragraph = (text: string): EditorDocument => ({
   type: 'doc',
@@ -26,8 +26,15 @@ function actions(): ChatActions & Record<string, ReturnType<typeof vi.fn>> {
     onUndo: vi.fn(),
     onCopy: vi.fn(),
     onFollowLink: vi.fn(),
+    onFollowCitation: vi.fn(),
+    onOpenWeb: vi.fn(),
   };
 }
+
+const answer = (text: string, checked = true): AskAnswerView => {
+  const blocks = citeAnswer(text);
+  return { kind: 'answer', id: 'a', text, blocks, uncited: uncitedCount(blocks), checked };
+};
 
 const IDLE: ChatPanelState = { items: [], busy: false, error: null, context: null, notice: null };
 
@@ -36,7 +43,13 @@ function panel(
   extra: Partial<Parameters<typeof ChatPanel>[0]> = {},
 ) {
   const handlers = actions();
-  const history = { chats: [], open: false, onOpenChange: vi.fn(), onPick: vi.fn() };
+  const history = {
+    chats: [],
+    open: false,
+    onOpenChange: vi.fn(),
+    onPick: vi.fn(),
+    problem: null,
+  };
   render(
     <ChatPanel
       state={{ ...IDLE, ...state }}
@@ -147,14 +160,14 @@ describe('ChatPanel', () => {
           state: 'failed',
           detail: 'not_found: No note',
         },
-        { kind: 'assistant', id: 'a', text: 'Sam is a friend.' },
+        answer('Sam is a friend [[Sam]].'),
       ],
     });
     const log = screen.getByRole('log', { name: 'Conversation' });
     expect(within(log).getByText('Searched for “Sam”')).toBeTruthy();
     expect(within(log).getByText('not_found: No note')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Copy answer' }));
-    expect(handlers['onCopy']).toHaveBeenCalledWith('Sam is a friend.');
+    expect(handlers['onCopy']).toHaveBeenCalledWith('Sam is a friend [[Sam]].');
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(handlers['onRetry']).toHaveBeenCalled();
   });
@@ -193,6 +206,7 @@ describe('ChatPanel', () => {
           open: true,
           onOpenChange,
           onPick,
+          problem: null,
         },
       },
     );
@@ -204,6 +218,127 @@ describe('ChatPanel', () => {
     expect(onPick).toHaveBeenCalledWith('Chats/Sam.md');
     await user.click(screen.getByRole('button', { name: 'Past chats' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('ChatPanel, an answer read for its citations (#548)', () => {
+  const ANSWER = 'Mara wants the rollback plan [[Larkspur Kickoff#^t0003]].\n\nIt may slip a week.';
+
+  it('draws a citation as a chip that follows its link, ⌘-click in a new tab', async () => {
+    const { handlers } = panel({ items: [answer(ANSWER)] });
+    const reply = screen.getByRole('region', { name: 'Answer' });
+    const chip = within(reply).getByRole('button', { name: 'Larkspur Kickoff' });
+    expect(reply.textContent).not.toContain('[[');
+    await userEvent.click(chip);
+    expect(handlers['onFollowCitation']).toHaveBeenCalledWith(
+      '[[Larkspur Kickoff#^t0003]]',
+      'here',
+    );
+    fireEvent.click(chip, { metaKey: true });
+    expect(handlers['onFollowCitation']).toHaveBeenLastCalledWith(
+      '[[Larkspur Kickoff#^t0003]]',
+      'new-tab',
+    );
+  });
+
+  it('marks the paragraph that cites nothing, keeps its words, and counts it in the foot', () => {
+    panel({ items: [answer(ANSWER)] });
+    const reply = screen.getByRole('region', { name: 'Answer' });
+    const marked = reply.querySelectorAll('[data-uncited]');
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.textContent).toContain('It may slip a week.');
+    expect(within(marked[0] as HTMLElement).getByText('not cited')).toBeTruthy();
+    expect(within(reply).getByText('1 paragraph not cited')).toBeTruthy();
+  });
+
+  it('marks nothing on an answer still arriving', () => {
+    panel({ items: [answer(ANSWER, false)], busy: true });
+    const reply = screen.getByRole('region', { name: 'Answer' });
+    expect(within(reply).getByText(/It may slip a week\./)).toBeTruthy();
+    expect(reply.querySelectorAll('[data-uncited]')).toHaveLength(0);
+    expect(within(reply).queryByText(/not cited/)).toBeNull();
+  });
+
+  it('opens an https link in the browser, and leaves any other link as text', async () => {
+    const { handlers } = panel({
+      items: [
+        answer(
+          'See [the guide](https://example.com/guide) [[Guide]] and [this](javascript:alert(1)) [[Guide]].',
+        ),
+      ],
+    });
+    const reply = screen.getByRole('region', { name: 'Answer' });
+    await userEvent.click(within(reply).getByRole('link', { name: /the guide/ }));
+    expect(handlers['onOpenWeb']).toHaveBeenCalledWith('https://example.com/guide');
+    expect(within(reply).getAllByRole('link')).toHaveLength(1);
+    expect(reply.textContent).toContain('[this](javascript:alert(1))');
+  });
+});
+
+describe('ChatPanel, Past chats', () => {
+  it('says why a picked chat could not be opened, and still lists the rest', () => {
+    panel(
+      {},
+      {
+        history: {
+          chats: [{ path: 'Chats/Payroll cutover.md', title: 'Payroll cutover' }],
+          open: true,
+          onOpenChange: vi.fn(),
+          onPick: vi.fn(),
+          problem: 'That chat could not be opened: not_found: Chats/Gone.md',
+        },
+      },
+    );
+    const list = screen.getByRole('navigation', { name: 'Past chats' });
+    expect(within(list).getByRole('alert').textContent).toBe(
+      'That chat could not be opened: not_found: Chats/Gone.md',
+    );
+    expect(within(list).getByRole('button', { name: 'Payroll cutover' })).toBeTruthy();
+  });
+});
+
+describe('ChatPanel, Past chats while an answer arrives (#548)', () => {
+  it('cannot be picked from, and says why, until the answer is finished', async () => {
+    const onPick = vi.fn();
+    const history = {
+      chats: [{ path: 'Chats/Payroll cutover.md', title: 'Payroll cutover' }],
+      open: true,
+      onOpenChange: vi.fn(),
+      onPick,
+      problem: null,
+    };
+    panel({ busy: true }, { history });
+    const row = within(screen.getByRole('navigation', { name: 'Past chats' })).getByRole('button', {
+      name: 'Payroll cutover',
+    });
+    expect(row).toHaveProperty('disabled', true);
+    expect(row.getAttribute('title')).toBe('Wait for the answer to finish');
+    await userEvent.click(row);
+    expect(onPick).not.toHaveBeenCalled();
+
+    cleanup();
+    panel({ busy: false }, { history });
+    const idle = screen.getByRole('button', { name: 'Payroll cutover' });
+    expect(idle).toHaveProperty('disabled', false);
+    expect(idle.getAttribute('title')).toBeNull();
+  });
+
+  it('says a list that could not be read, never that there are no chats', () => {
+    panel(
+      {},
+      {
+        history: {
+          chats: [],
+          open: true,
+          onOpenChange: vi.fn(),
+          onPick: vi.fn(),
+          problem: 'Past chats could not be read: Operation not permitted (os error 1)',
+        },
+      },
+    );
+    const list = screen.getByRole('navigation', { name: 'Past chats' });
+    expect(within(list).getByRole('alert').textContent).toContain('could not be read');
+    expect(list.textContent).not.toContain('No chats yet');
   });
 });
 

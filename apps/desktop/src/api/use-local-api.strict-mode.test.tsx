@@ -10,6 +10,7 @@ import {
   fakeIndexPort,
   fakeVaultFs,
   recordingActivity,
+  createMeetingDrafts,
   type ApiRouterDeps,
 } from '@dfai/application';
 import { remarkMarkdown, tauriApiBridge } from '@dfai/adapters';
@@ -104,6 +105,8 @@ function emptyVault(): ApiRouterDeps {
     activity: recordingActivity(),
     googleCalendar: fakeGoogleCalendar().port,
     timeZone: () => 'America/Los_Angeles',
+    meetingDrafts: createMeetingDrafts(),
+    notices: { warn: () => {} },
   };
 }
 

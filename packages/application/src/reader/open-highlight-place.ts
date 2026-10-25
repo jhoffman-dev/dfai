@@ -1,15 +1,17 @@
 import {
+  DOCUMENT_EXTENSIONS,
+  documentKindOf,
+  documentLinkTarget,
   highlightOpening,
-  isPdfName,
   isVisibleEntry,
-  namesPdf,
+  namesDocument,
   HIDDEN_DIRECTORY_NAMES,
   VAULT_WALK_DEPTH,
-  pdfLinkTarget,
   readerLinkLabel,
   readHighlights,
   readLiteratureNote,
   vaultPathName,
+  type DocumentKind,
   type HighlightOpening,
   type VaultPath,
 } from '@dfai/domain';
@@ -19,7 +21,7 @@ import { readLiteratureNoteAt } from './pdf-highlights.ts';
 
 /*
  * Following a highlight back to its place (#506): a transcluded highlight, a
- * link to one, the "Open in PDF" of one in its own note, and the library's
+ * link to one, the "Open in PDF" or "Open in EPUB" of one in its own note, and the library's
  * rows (#507) all ask here where a block of a note opens — the source's
  * reader at the highlight, or the note at the block — and open it there.
  * Which kind opens what is the domain's rule (`highlightOpening`); this reads
@@ -62,8 +64,8 @@ export async function whereHighlightOpens(
 
 /**
  * Opens highlight `highlightId` of literature note `note` where it lives:
- * in its reader for a PDF, at its block in the note for a Kindle book or a
- * source with no reader yet. What the library and all-highlights views
+ * in its reader for a PDF or an EPUB, at its block in the note for a Kindle
+ * book. What the library and all-highlights views
  * (#507) call for a row; resolves to where it opened.
  */
 export async function openHighlightPlace(
@@ -81,7 +83,7 @@ export async function openHighlightPlace(
 
 /** The highlights of an open literature note that offer to open in its reader, and in what words. */
 export interface ReaderHighlightLinks {
-  /** "Open in PDF". */
+  /** "Open in PDF", "Open in EPUB". */
   readonly label: string;
   readonly ids: ReadonlySet<string>;
 }
@@ -101,37 +103,44 @@ export function readerHighlightLinks(
   return { label, ids: new Set(highlights.map((highlight) => highlight.id)) };
 }
 
-/** What finding the PDF a wiki link names needs: the vault's files. */
-export interface LinkedPdfPorts {
+/** What finding the document a wiki link names needs: the vault's files. */
+export interface LinkedDocumentPorts {
   readonly fs: Pick<VaultFsPort, 'listFiles'>;
 }
 
 /**
- * The PDF a wiki link `[[…pdf]]` names among the files the vault holds, or
- * null when the vault has none so called or the link is to anything else
- * (`pdfLinkTarget`). The vault is read for its files, not the literature
- * notes' `file:` lines, so a PDF with no literature note is found; a read
- * that fails is the caller's to say.
+ * The document a wiki link `[[…pdf]]` or `[[…epub]]` names among the files
+ * the vault holds, or null when the vault has none so called or the link is
+ * to anything else (`documentLinkTarget`). The vault is read for its files of
+ * the link's kind, not the literature notes' `file:` lines, so a document
+ * with no literature note is found; a read that fails is the caller's to say.
  */
-export async function linkedPdf(ports: LinkedPdfPorts, target: string): Promise<VaultPath | null> {
-  if (!namesPdf(target)) return null;
-  return pdfLinkTarget(target, await listVaultPdfs(ports));
+export async function linkedDocument(
+  ports: LinkedDocumentPorts,
+  target: string,
+): Promise<VaultPath | null> {
+  const kind = namesDocument(target);
+  if (kind === null) return null;
+  return documentLinkTarget(target, await listVaultDocuments(ports, kind));
 }
 
 /**
- * Every PDF in user space, in one walk by the host told what to skip as the
- * note walk is, hidden entries left out as everywhere (`isVisibleEntry`).
+ * Every document of `kind` in user space, in one walk by the host told what
+ * to skip as the note walk is, hidden entries left out as everywhere
+ * (`isVisibleEntry`).
  */
-async function listVaultPdfs({ fs }: LinkedPdfPorts): Promise<VaultPath[]> {
+async function listVaultDocuments(
+  { fs }: LinkedDocumentPorts,
+  kind: DocumentKind,
+): Promise<VaultPath[]> {
   const files = await fs.listFiles({
-    extension: PDF_EXTENSION,
+    extension: DOCUMENT_EXTENSIONS[kind],
     skipDirectories: HIDDEN_DIRECTORY_NAMES,
     maxDepth: VAULT_WALK_DEPTH,
   });
   return files.filter(
-    (path) => isPdfName(path) && isVisibleEntry({ kind: 'file', name: vaultPathName(path), path }),
+    (path) =>
+      documentKindOf(path) === kind &&
+      isVisibleEntry({ kind: 'file', name: vaultPathName(path), path }),
   );
 }
-
-/** What the host is asked to list for `[[…pdf]]`: the files `isPdfName` names. */
-const PDF_EXTENSION = 'pdf';

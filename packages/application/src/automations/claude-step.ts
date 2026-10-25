@@ -220,6 +220,8 @@ interface StepArgs extends ProposalWritePorts {
    * it is, not as the step's failure.
    */
   readonly beforeWrite?: () => Promise<void>;
+  /** More frontmatter every proposal it writes keeps (`NewProposal.stamp`); none, left out. */
+  readonly stamp?: Readonly<Record<string, string>>;
   /**
    * For the declared step: the answers kept for a meeting's words, by the key
    * its schema knows them by, from a run that read them and could not finish
@@ -799,7 +801,10 @@ async function planProposalAnswers(asking: ProposalAsking): Promise<AnswerPlanne
     ...cappedForRun(
       decided.flatMap(({ meeting, proposals }) =>
         proposals.map((proposal) => {
-          const drafted = claudeNewProposal({ rule: asking.rule, madeBy: asking.madeBy, proposal });
+          const drafted = {
+            ...claudeNewProposal({ rule: asking.rule, madeBy: asking.madeBy, proposal }),
+            ...(asking.stamp !== undefined && { stamp: asking.stamp }),
+          };
           meetingOf.set(drafted.id, meeting);
           return drafted;
         }),

@@ -483,3 +483,127 @@ describe('ProposalsSection — the same proposal made twice', () => {
     expect(handlers.onAcceptMany).not.toHaveBeenCalled();
   });
 });
+
+describe('a dashboard or view proposal (P32-05)', () => {
+  const DASHBOARD = proposal('Larkspur Payroll', {
+    kind: 'dashboard',
+    made_by: 'Claude, in the chat',
+    payload: {
+      title: 'Larkspur Payroll',
+      spec: {
+        widgets: [
+          { kind: 'bar', title: 'By status', type: 'task', groupBy: 'status' },
+          { kind: 'number', type: 'project' },
+        ],
+      },
+    },
+  });
+  const VIEW = proposal('Open tasks', {
+    kind: 'view',
+    payload: { title: 'Open tasks', spec: { type: 'task', layout: 'board' } },
+  });
+
+  it('shows its kind as a chip, what it would draw, and where Accept makes it', () => {
+    page({ contents: { open: [DASHBOARD, VIEW], stranded: [], unreadable: [] } });
+
+    const row = card(/^Dashboard: Larkspur Payroll$/);
+    const chip = within(row).getByText('Dashboard');
+    expect(chip.getAttribute('data-kind')).toBe('dashboard');
+    const drawn = within(row).getByLabelText('What it would write');
+    expect(
+      within(drawn)
+        .getAllByRole('term')
+        .map((term) => term.textContent),
+    ).toEqual(['bar', 'number']);
+    expect(
+      within(drawn)
+        .getAllByRole('definition')
+        .map((each) => each.textContent),
+    ).toEqual(['By status', 'project']);
+    expect(row.textContent).toContain('Accepting makes it in .atlas/dashboards.');
+
+    const view = card(/^View: Open tasks$/);
+    expect(within(view).getByText('View').getAttribute('data-kind')).toBe('view');
+    expect(view.textContent).toContain('typetask');
+    expect(view.textContent).toContain('layoutboard');
+    expect(view.textContent).toContain('Accepting makes it in .atlas/views.');
+  });
+
+  it('edits only its name before Accept, and accepts the spec unchanged under it', async () => {
+    const { onAccept } = page({ contents: { open: [DASHBOARD], stranded: [], unreadable: [] } });
+    const row = card(/^Dashboard: Larkspur Payroll$/);
+
+    await userEvent.click(within(row).getByRole('button', { name: 'Edit' }));
+    expect(within(row).getAllByRole('textbox')).toHaveLength(1);
+    const name = within(row).getByRole('textbox', { name: 'Name' });
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Payroll board');
+    await userEvent.click(within(row).getByRole('button', { name: 'Accept as edited' }));
+
+    expect(onAccept).toHaveBeenCalledWith(DASHBOARD.path, {
+      title: 'Payroll board',
+      spec: DASHBOARD.kind === 'dashboard' ? DASHBOARD.payload.spec : null,
+    });
+  });
+});
+
+describe('a dashboard proposal that runs a query (PR #549 attack)', () => {
+  const SQL =
+    "SELECT title, status FROM notes WHERE type = 'task' AND status <> 'done' ORDER BY due LIMIT 25";
+  const QUERY = 'FROM task WHERE status != "done" SORT due';
+  const QUERYING = proposal('Orchard queries', {
+    kind: 'dashboard',
+    made_by: 'Claude, in the chat',
+    payload: {
+      title: 'Orchard queries',
+      spec: {
+        widgets: [
+          { kind: 'sql', title: 'Open by due', sql: SQL, show: 'table' },
+          { kind: 'query', title: 'Still open', query: QUERY },
+        ],
+      },
+    },
+  });
+
+  it('shows each sql widget’s full statement before Accept', () => {
+    page({ contents: { open: [QUERYING], stranded: [], unreadable: [] } });
+
+    expect(card(/^Dashboard: Orchard queries$/).textContent).toContain(SQL);
+  });
+
+  it('shows each query widget’s full query before Accept', () => {
+    page({ contents: { open: [QUERYING], stranded: [], unreadable: [] } });
+
+    expect(card(/^Dashboard: Orchard queries$/).textContent).toContain(QUERY);
+  });
+});
+
+describe('a dashboard proposal shows what Accept writes (P32-05)', () => {
+  const SQL = "SELECT title FROM notes WHERE type = 'task'\n  AND status <> 'done'";
+  const FILTERED = proposal('Filtered', {
+    kind: 'dashboard',
+    payload: {
+      title: 'Filtered',
+      spec: {
+        widgets: [
+          {
+            kind: 'number',
+            type: 'task',
+            title: 'Open',
+            filters: [{ key: 'status', operator: 'is', value: 'inbox' }],
+          },
+          { kind: 'sql', title: 'Raw', sql: SQL, show: 'table' },
+        ],
+      },
+    },
+  });
+
+  it('lists each widget’s filters, and its SQL whole in a code block', () => {
+    page({ contents: { open: [FILTERED], stranded: [], unreadable: [] } });
+    const row = card(/^Dashboard: Filtered$/);
+
+    expect(within(row).getByText('status is inbox')).toBeTruthy();
+    const code = row.querySelector('code.proposal-row__spec-query');
+    expect(code?.textContent).toBe(SQL);
+  });
+});

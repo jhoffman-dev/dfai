@@ -1,31 +1,32 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { stepMatch, type DocumentMatch, type PageRect } from '@dfai/domain';
-import type { ReaderActions } from './reader-types.ts';
+import { stepMatch } from '@dfai/domain';
 
 /*
- * Find in the document (#504): ⌘F opens it, typing searches every page,
- * Enter and ⇧Enter step through what was found, Escape closes it.
+ * Find in the document (#504) or the book (#505): ⌘F opens it, typing
+ * searches every page or chapter, Enter and ⇧Enter step through what was
+ * found, Escape closes it. A match is the reader's own (a PDF's page and
+ * boxes, a book's chapter and offsets); `show` brings one into view.
  */
 
-interface Found {
+interface Found<M> {
   readonly phrase: string;
-  readonly matches: readonly DocumentMatch[];
+  readonly matches: readonly M[];
   readonly more: boolean;
 }
 
-const NO_MATCHES: readonly DocumentMatch[] = [];
+const NO_MATCHES: readonly never[] = [];
 
-export function useFind({
+export function useFind<M>({
   onSearch,
-  goTo,
+  show,
 }: {
-  onSearch: ReaderActions['onSearch'];
-  goTo: (page: number, rect?: PageRect) => void;
+  onSearch: (phrase: string) => Promise<{ matches: readonly M[]; more: boolean }>;
+  show: (match: M) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [phrase, setPhrase] = useState('');
   // Each result knows the phrase it is for, so a result for what was typed before is never shown.
-  const [result, setResult] = useState<Found | null>(null);
+  const [result, setResult] = useState<Found<M> | null>(null);
   const [current, setCurrent] = useState<number | null>(null);
   const searched = useRef(0);
   const searching = open && phrase.trim() !== '';
@@ -43,11 +44,11 @@ export function useFind({
     );
   }, [searching, phrase, onSearch]);
   const found = searching && result?.phrase === phrase ? result : null;
-  const matches = found?.matches ?? NO_MATCHES;
+  const matches: readonly M[] = found?.matches ?? NO_MATCHES;
   const currentMatch = current === null ? null : (matches[current] ?? null);
   useEffect(() => {
-    if (currentMatch !== null) goTo(currentMatch.page, currentMatch.rects[0]);
-  }, [currentMatch, goTo]);
+    if (currentMatch !== null) show(currentMatch);
+  }, [currentMatch, show]);
   // Stable, so a button bar that holds them is not drawn again for every keystroke in the field.
   const toggle = useCallback(() => setOpen((was) => !was), []);
   const close = useCallback(() => setOpen(false), []);
@@ -73,7 +74,13 @@ export function useFind({
   };
 }
 
-export function FindBar({ find }: { find: ReturnType<typeof useFind> }) {
+/** What the find bar shows and steps, whatever a match is. */
+type FindState = Pick<
+  ReturnType<typeof useFind<unknown>>,
+  'phrase' | 'setPhrase' | 'step' | 'close' | 'found' | 'current'
+>;
+
+export function FindBar({ find }: { find: FindState }) {
   return (
     <div className="pdf-find-bar" role="search">
       <input
@@ -120,7 +127,7 @@ export function FindBar({ find }: { find: ReturnType<typeof useFind> }) {
   );
 }
 
-function countLabel(find: ReturnType<typeof useFind>): string {
+function countLabel(find: FindState): string {
   if (find.phrase.trim() === '') return '';
   if (find.found === null) return 'Searching…';
   const total = find.found.matches.length;

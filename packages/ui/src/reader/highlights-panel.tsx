@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import type { HighlightPlacement } from '@dfai/domain';
-import type { ReaderHighlight } from './reader-types.ts';
+import type { PanelEntry } from './panel-entries.ts';
 
 /*
- * The document's highlights beside it (#504), in the order they come in it.
+ * The document's highlights beside it (#504, #505), in the order they come
+ * in it: a PDF's or a book's, each reader saying what its place is called.
  * A click brings one into view; its comment is edited here, which edits the
  * note; it is removed here, after asking. One whose spot could not be found
  * says so rather than pretending.
  */
 
 export interface HighlightsPanelProps {
-  readonly highlights: readonly ReaderHighlight[];
+  readonly entries: readonly PanelEntry[];
+  /** What the panel says when there are none: how to make one. */
+  readonly emptyHint: string;
   /** The one just asked for, lit for a moment. */
   readonly flashing: string | null;
   readonly onShow: (id: string) => void;
@@ -19,18 +21,18 @@ export interface HighlightsPanelProps {
 }
 
 export function HighlightsPanel(props: HighlightsPanelProps) {
-  const count = props.highlights.length;
+  const count = props.entries.length;
   return (
     <aside className="pdf-panel" aria-label="Highlights">
       <h2 className="pdf-panel__title">
         Highlights <span className="pdf-panel__count">{count}</span>
       </h2>
       {count === 0 ? (
-        <p className="pdf-panel__empty">Select words on a page to highlight them.</p>
+        <p className="pdf-panel__empty">{props.emptyHint}</p>
       ) : (
         <ol className="pdf-panel__list">
-          {props.highlights.map((highlight) => (
-            <HighlightEntry key={highlight.id} highlight={highlight} {...props} />
+          {props.entries.map((entry) => (
+            <HighlightEntry key={entry.id} highlight={entry} {...props} />
           ))}
         </ol>
       )}
@@ -44,24 +46,23 @@ function HighlightEntry({
   onShow,
   onEditComment,
   onRemove,
-}: HighlightsPanelProps & { highlight: ReaderHighlight }) {
+}: HighlightsPanelProps & { highlight: PanelEntry }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const { placement } = highlight;
-  const classes = ['pdf-entry', `pdf-entry--${highlight.style.color}`];
+  const classes = ['pdf-entry', `pdf-entry--${highlight.color}`];
   if (flashing === highlight.id) classes.push('pdf-entry--flash');
   return (
     <li className={classes.join(' ')} data-highlight-entry={highlight.id}>
       <button
         type="button"
         className="pdf-entry__show"
-        disabled={placement.kind === 'lost'}
+        disabled={!highlight.canShow}
         onClick={() => onShow(highlight.id)}
       >
-        <span className="pdf-entry__page">{pageLabel(placement)}</span>
-        <span className="pdf-entry__quote">{quoteOf(highlight)}</span>
+        <span className="pdf-entry__page">{highlight.place}</span>
+        <span className="pdf-entry__quote">{highlight.quote}</span>
       </button>
-      {placeNote(placement) !== null && <p className="pdf-entry__lost">{placeNote(placement)}</p>}
+      {highlight.placeNote !== null && <p className="pdf-entry__lost">{highlight.placeNote}</p>}
       {editing ? (
         <CommentForm
           comment={highlight.comment}
@@ -155,22 +156,4 @@ function CommentForm({
       </div>
     </form>
   );
-}
-
-function pageLabel(placement: HighlightPlacement): string {
-  return placement.kind === 'lost' ? 'No page' : `p. ${placement.page}`;
-}
-
-function quoteOf(highlight: ReaderHighlight): string {
-  if (highlight.placement.kind === 'area') return 'Area of the page';
-  return highlight.quote;
-}
-
-/** What the entry says about where it is drawn, when that is not exactly where it was made. */
-function placeNote(placement: HighlightPlacement): string | null {
-  if (placement.kind === 'boxes') {
-    return "Couldn't find the exact spot: shown where it was when it was made.";
-  }
-  if (placement.kind === 'lost') return "Couldn't find the exact spot in this file.";
-  return null;
 }

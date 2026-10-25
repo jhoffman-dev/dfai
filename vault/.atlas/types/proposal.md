@@ -4,7 +4,7 @@ label: Proposal
 properties:
   kind:
     kind: select
-    options: [task, decision, follow-up, person, link, term, project]
+    options: [task, decision, follow-up, person, link, term, project, dashboard, view]
     required: true
   state:
     kind: select
@@ -37,7 +37,7 @@ deleted. Its properties are yours to change.
 
 ## What a proposal holds
 
-- `kind` — task, decision, follow-up, person, link, term or project.
+- `kind` — task, decision, follow-up, person, link, term, project, dashboard or view.
 - `payload` — what Accept writes. Not a property, because no property kind
   holds a record. For every kind but `link`: `title`, and optionally
   `folder`, `properties` and `body`, which make a note of the kind's type

@@ -16,7 +16,7 @@ import { fakeIndexPort, fakeVaultFs } from '../testing/fake-ports.ts';
 import { memoryFiles, readerMarkdown } from '../testing/fake-reader.ts';
 import { createTransclusionReader } from '../transclusion/read-transclusions.ts';
 import {
-  linkedPdf,
+  linkedDocument,
   openHighlightPlace,
   readerHighlightLinks,
   whereHighlightOpens,
@@ -272,12 +272,29 @@ describe('the PDF a `[[…pdf]]` link names', () => {
       ...extra,
     }).fs;
 
+  it('is an EPUB of the vault for `[[…epub]]` (#505), asking the host for EPUBs only', async () => {
+    const fs = files({
+      'Library/fables.epub': new Uint8Array([1]),
+      'Library/fables.pdf': new Uint8Array([1]),
+    });
+    const asked: string[] = [];
+    const listing = {
+      listFiles: async (options: Parameters<typeof fs.listFiles>[0]) => {
+        asked.push(options.extension);
+        return fs.listFiles(options);
+      },
+    };
+    expect(await linkedDocument({ fs: listing }, 'fables.epub')).toBe('Library/fables.epub');
+    expect(await linkedDocument({ fs: listing }, 'missing.epub')).toBeNull();
+    expect(asked).toEqual(['epub', 'epub']);
+  });
+
   it('is a PDF of the vault by its name alone, though no literature note names it', async () => {
-    expect(await linkedPdf({ fs: files() }, 'fog.pdf')).toBe('Elsewhere/Deep/Fog.pdf');
+    expect(await linkedDocument({ fs: files() }, 'fog.pdf')).toBe('Elsewhere/Deep/Fog.pdf');
   });
 
   it('is the PDF whose path ends as the link is written, as Obsidian reads it', async () => {
-    expect(await linkedPdf({ fs: files() }, 'Courses/reading.pdf')).toBe(
+    expect(await linkedDocument({ fs: files() }, 'Courses/reading.pdf')).toBe(
       'Library/Courses/reading.pdf',
     );
   });
@@ -287,18 +304,18 @@ describe('the PDF a `[[…pdf]]` link names', () => {
       'reading.pdf': new Uint8Array([1]),
       'Z/reading.pdf': new Uint8Array([1]),
     });
-    expect(await linkedPdf({ fs: shared }, 'reading.pdf')).toBe('reading.pdf');
+    expect(await linkedDocument({ fs: shared }, 'reading.pdf')).toBe('reading.pdf');
   });
 
   it('is none for a PDF the vault does not hold: a link never names a file that is not there', async () => {
-    expect(await linkedPdf({ fs: files() }, 'Areas/Missing.pdf')).toBeNull();
+    expect(await linkedDocument({ fs: files() }, 'Areas/Missing.pdf')).toBeNull();
   });
 
   it('is none for a link to a note, and the vault is not read for it', async () => {
     const listDirectory = vi.fn(async () => []);
     const listFiles = vi.fn(async () => []);
     const fs = fakeVaultFs({ listDirectory, listFiles });
-    expect(await linkedPdf({ fs }, 'The Lantern Keepers')).toBeNull();
+    expect(await linkedDocument({ fs }, 'The Lantern Keepers')).toBeNull();
     expect(listDirectory).not.toHaveBeenCalled();
     expect(listFiles).not.toHaveBeenCalled();
   });
@@ -309,7 +326,7 @@ describe('the PDF a `[[…pdf]]` link names', () => {
         throw new Error('the disk went away');
       },
     });
-    await expect(linkedPdf({ fs }, 'fog.pdf')).rejects.toThrow('the disk went away');
+    await expect(linkedDocument({ fs }, 'fog.pdf')).rejects.toThrow('the disk went away');
   });
 });
 
@@ -392,7 +409,7 @@ function largeVault(areas: number): Map<string, VaultEntry[]> {
 describe('following [[…pdf]] in a vault of 2,000 folders and 20,000 notes', () => {
   it('does not ask the host to list every folder of the vault on each click', async () => {
     const host = treeHost(largeVault(10));
-    expect(await linkedPdf({ fs: host.fs }, 'the-lantern-keepers.pdf')).toBe(
+    expect(await linkedDocument({ fs: host.fs }, 'the-lantern-keepers.pdf')).toBe(
       'Area 3/Topic 4/Folder 5/the-lantern-keepers.pdf',
     );
     // Measured: 2,111 calls per click, 250–360 ms on disk for this vault
@@ -410,6 +427,6 @@ describe('following [[…pdf]] when one folder of the vault cannot be listed', (
     ]);
     // A folder this user may not read, or one a sync removed mid-walk.
     const host = treeHost(tree, new Set(['Private']));
-    expect(await linkedPdf({ fs: host.fs }, 'the-lantern-keepers.pdf')).toBe(pdf);
+    expect(await linkedDocument({ fs: host.fs }, 'the-lantern-keepers.pdf')).toBe(pdf);
   });
 });

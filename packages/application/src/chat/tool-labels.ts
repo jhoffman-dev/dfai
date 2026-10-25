@@ -50,6 +50,10 @@ export function describeToolCall(call: ToolCall): string {
       return `Proposed an edit to ${text('path')}`;
     case 'propose_note':
       return `Proposed a new note, “${text('title')}”`;
+    case 'propose_tasks':
+      return `Drafted the tasks of ${text('meeting')} as proposals`;
+    case 'make_dashboard':
+      return `Proposed ${specLabel(call)}`;
     default:
       return `Tried a tool that does not exist (${call.name})`;
   }
@@ -66,9 +70,22 @@ export function describeFailedToolCall(call: ToolCall): string {
       return `Could not propose an edit to ${text('path')}`;
     case 'propose_note':
       return `Could not propose a new note, “${text('title')}”`;
+    case 'propose_tasks':
+      return `Could not draft the tasks of ${text('meeting')}`;
+    case 'make_dashboard':
+      return `Could not propose ${specLabel(call)}`;
     default:
       return `Failed: ${describeToolCall(call)}`;
   }
+}
+
+/** "the dashboard “Payroll”", "the view “Open tasks”", or "a dashboard" when the spec says no more. */
+function specLabel(call: ToolCall): string {
+  const spec = call.input['spec'];
+  const fields = typeof spec === 'object' && spec !== null ? (spec as Record<string, unknown>) : {};
+  const kind = fields['kind'] === 'view' ? 'view' : 'dashboard';
+  const name = typeof fields['name'] === 'string' ? fields['name'].trim() : '';
+  return name === '' ? `a ${kind}` : `the ${kind} “${name}”`;
 }
 
 function inputText(call: ToolCall, key: string): string {

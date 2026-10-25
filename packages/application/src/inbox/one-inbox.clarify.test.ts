@@ -39,7 +39,12 @@ describe('One Inbox — an accepted task proposal', () => {
         payload: { title: 'Send Mara the payroll file', folder: 'Tasks', properties },
       }),
     });
-    await acceptProposalNote({ ports: setup.ports, path: vaultPath(PROPOSAL), today: TODAY });
+    await acceptProposalNote({
+      via: 'app',
+      ports: setup.ports,
+      path: vaultPath(PROPOSAL),
+      today: TODAY,
+    });
     const files = Object.fromEntries(
       [...setup.fixture.files].map(([path, stored]) => [path, stored.text]),
     );

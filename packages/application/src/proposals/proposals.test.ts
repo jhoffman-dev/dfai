@@ -61,6 +61,7 @@ function vault(files: Record<string, string> = {}): ProposalVault {
 
 const accept = (setup: ProposalVault, path = PROPOSAL, payload?: unknown) =>
   acceptProposalNote({
+    via: 'app',
     ports: setup.ports,
     path: vaultPath(path),
     today: TODAY,
@@ -182,7 +183,7 @@ describe('acceptProposalNote — refusals', () => {
       },
     };
     await expect(
-      acceptProposalNote({ ports: sneaky, path: vaultPath(PROPOSAL), today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: sneaky, path: vaultPath(PROPOSAL), today: TODAY }),
     ).rejects.toThrow(/changed since it was read\. Nothing was kept\./);
     expect(setup.paths()).not.toContain(TASK);
     expect(setup.propertiesOf(PROPOSAL)).toMatchObject({ state: 'open' });
@@ -310,6 +311,7 @@ describe('rejectProposalNote', () => {
   it('archives the proposal with state: rejected, writing nothing it proposed', async () => {
     const setup = vault();
     const rejected = await rejectProposalNote({
+      via: 'app',
       ports: setup.ports,
       path: vaultPath(PROPOSAL),
       today: TODAY,
@@ -338,7 +340,12 @@ describe('rejectProposalNote', () => {
   it('refuses one already accepted', async () => {
     const setup = vault({ [PROPOSAL]: taskProposal({ state: 'accepted' }) });
     await expect(
-      rejectProposalNote({ ports: setup.ports, path: vaultPath(PROPOSAL), today: TODAY }),
+      rejectProposalNote({
+        via: 'app',
+        ports: setup.ports,
+        path: vaultPath(PROPOSAL),
+        today: TODAY,
+      }),
     ).rejects.toThrow('It was already accepted.');
   });
 });
@@ -429,7 +436,7 @@ describe('acceptProposalNote — when the vault moves under it', () => {
       },
     };
     await expect(
-      acceptProposalNote({ ports: racing, path: vaultPath(PROPOSAL), today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: racing, path: vaultPath(PROPOSAL), today: TODAY }),
     ).rejects.toThrow('People/Mara Quill.md changed just now; nothing was written.');
     expect(setup.propertiesOf(PROPOSAL)).not.toHaveProperty('state');
     expect(setup.paths()).toContain(PROPOSAL);
@@ -447,7 +454,7 @@ describe('acceptProposalNote — when the vault moves under it', () => {
       },
     };
     await expect(
-      acceptProposalNote({ ports: broken, path: vaultPath(PROPOSAL), today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: broken, path: vaultPath(PROPOSAL), today: TODAY }),
     ).rejects.toThrow('the disk is full');
     expect(setup.propertiesOf(PROPOSAL)).toMatchObject({ state: 'open' });
   });
@@ -470,7 +477,7 @@ describe('acceptProposalNote — when the vault moves under it', () => {
       },
     };
     await expect(
-      acceptProposalNote({ ports: tangled, path: vaultPath(PROPOSAL), today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: tangled, path: vaultPath(PROPOSAL), today: TODAY }),
     ).rejects.toThrow(
       /“Send Mara the payroll file” was written, but the proposal could not be marked accepted .* taking it back failed/,
     );
@@ -489,6 +496,7 @@ describe('acceptProposalNote — when the vault moves under it', () => {
       },
     } satisfies ProposalPorts;
     const accepted = await acceptProposalNote({
+      via: 'app',
       ports: typing,
       path: vaultPath(PROPOSAL),
       today: TODAY,
@@ -558,7 +566,7 @@ describe('undo and link reads that fail', () => {
       },
     };
     await expect(
-      acceptProposalNote({ ports: failing, path: vaultPath(PROPOSAL), today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: failing, path: vaultPath(PROPOSAL), today: TODAY }),
     ).rejects.toThrow('permission denied');
   });
 });
@@ -567,6 +575,7 @@ describe('undoRejectedProposal — when the proposal is back but cannot be opene
   it('says where it is and why, rather than failing without a word', async () => {
     const setup = vault();
     const rejected = await rejectProposalNote({
+      via: 'app',
       ports: setup.ports,
       path: vaultPath(PROPOSAL),
       today: TODAY,

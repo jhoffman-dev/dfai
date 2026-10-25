@@ -23,6 +23,7 @@ describe('accepting a proposal that makes a finished task', () => {
     });
 
     await acceptProposalNote({
+      via: 'app',
       ports: setup.ports,
       path: vaultPath(PROPOSAL),
       today: '2026-10-08',

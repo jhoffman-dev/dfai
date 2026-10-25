@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react';
-import { SettingsUnavailable, type ChatPanel, type SettingsDialog } from '@dfai/ui';
+import { SettingsUnavailable, type SettingsDialog } from '@dfai/ui';
+import type { SidebarChatProps } from './chat/sidebar-chat.tsx';
 import type { FailedPartProps } from './on-first-use.ts';
 import { PageFrameFallback, type PageChrome } from './page-frame-fallback.tsx';
 
@@ -56,10 +57,7 @@ export function SettingsFailed({
 }
 
 /** Claude's panel whose chunk could not be loaded: the same, in the panel's place, with its Close. */
-export function ChatFailed({
-  props,
-  ...outcome
-}: FailedPartProps<ComponentProps<typeof ChatPanel>>) {
+export function ChatFailed({ props, ...outcome }: FailedPartProps<SidebarChatProps>) {
   return (
     <aside className="chat" aria-label="Claude">
       <PartFailed {...outcome} />

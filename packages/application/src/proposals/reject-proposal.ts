@@ -19,13 +19,13 @@ export async function rejectProposalNote({
   ports,
   path,
   today,
-  via = 'app',
+  via,
 }: {
   ports: ProposalPorts;
   path: VaultPath;
   today: string;
-  /** Who answered, recorded on the proposal as `answered_via`: the app's buttons unless said otherwise. */
-  via?: ProposalAnswerer;
+  /** Who answered — the app's buttons or the local API — recorded on the proposal as `answered_via`. */
+  via: ProposalAnswerer;
 }): Promise<RejectedProposal> {
   const file = await readOpenProposal(ports, path);
   refuseUnsaved(ports.editors, path);

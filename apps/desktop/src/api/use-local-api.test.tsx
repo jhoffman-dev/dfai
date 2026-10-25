@@ -13,6 +13,7 @@ import {
   type ApiBridgePort,
   type ApiRequest,
   type ApiResponse,
+  createMeetingDrafts,
   type ApiRouterDeps,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
@@ -64,6 +65,8 @@ function emptyVault(): ApiRouterDeps {
     activity: recordingActivity(),
     googleCalendar: fakeGoogleCalendar().port,
     timeZone: () => 'America/Los_Angeles',
+    meetingDrafts: createMeetingDrafts(),
+    notices: { warn: () => {} },
   };
 }
 

@@ -192,7 +192,12 @@ describe('a suggested term accepted after the vault moved on', () => {
       contents: jsonNote({ type: 'term', kind: 'company', variants: ['Bren Wick'] }, ''),
     });
 
-    await acceptProposalNote({ ports: vault.ports, path: PROPOSAL, today: TODAY }).catch(
+    await acceptProposalNote({
+      via: 'app',
+      ports: vault.ports,
+      path: PROPOSAL,
+      today: TODAY,
+    }).catch(
       // A refusal is an acceptable answer here: what matters is the next meeting.
       (cause: unknown) => cause,
     );
@@ -210,9 +215,12 @@ describe('a suggested term accepted after the vault moved on', () => {
     const notes = () => [...vault.files.keys()].map((at) => createVaultPath(at));
     expect(resolveWikiLinkTarget('Brenwick', notes())).toBe(elsewhere);
 
-    await acceptProposalNote({ ports: vault.ports, path: PROPOSAL, today: TODAY }).catch(
-      (cause: unknown) => cause,
-    );
+    await acceptProposalNote({
+      via: 'app',
+      ports: vault.ports,
+      path: PROPOSAL,
+      today: TODAY,
+    }).catch((cause: unknown) => cause);
 
     // The Terms page refuses this (`linkTakeover`); every [[Brenwick]] would open the new term.
     expect(resolveWikiLinkTarget('Brenwick', notes())).toBe(elsewhere);
@@ -228,6 +236,7 @@ describe('a rejected suggested term', () => {
     await arrive('Hiring', 'Ask Lukah about the offer.');
     expect(termProposals()).toEqual(['Inbox/Proposals/Luca.md']);
     await rejectProposalNote({
+      via: 'app',
       ports: vault.ports,
       path: createVaultPath('Inbox/Proposals/Luca.md'),
       today: TODAY,

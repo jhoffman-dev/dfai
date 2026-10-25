@@ -35,6 +35,7 @@ describe('a bare [[Task]] link after a Claude task proposal is accepted (#214)',
       'Daily/2026/2026-10-14.md': `- [[${TITLE}]]\n`,
     });
     await acceptProposalNote({
+      via: 'app',
       ports: setup.ports,
       path: vaultPath(PROPOSAL),
       today: '2026-10-14',

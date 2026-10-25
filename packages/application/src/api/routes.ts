@@ -1,6 +1,7 @@
 import { ApiError } from './api-error.ts';
 import { archiveListRoute, archiveRoute, unarchiveRoute } from './archive.ts';
 import { assistantMeetingsRoute, briefRoute, openLoopsRoute } from './assistant.ts';
+import { makeDashboardRoute, proposeTasksRoute } from './assistant-proposals.ts';
 import { atlasQueryRoute } from './atlas-query.ts';
 import { automationDryRunRoute, automationLogRoute, automationsRoute } from './automations.ts';
 import { API_ROUTES, type ApiRequest, type ApiRoute } from './contract.ts';
@@ -126,6 +127,10 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'GET /v1/assistant/brief': vaultRoute(briefRoute),
   'GET /v1/assistant/open-loops': vaultRoute(openLoopsRoute),
   'GET /v1/assistant/meetings': vaultRoute(assistantMeetingsRoute),
+  'POST /v1/assistant/propose-tasks': vaultWrite(proposeTasksRoute),
+  'POST /v1/assistant/make-dashboard': vaultWrite(makeDashboardRoute, (answer) =>
+    'proposedSpec' in answer.body ? answer.body.proposedSpec.proposal !== null : false,
+  ),
   'GET /v1/today': vaultRoute(todayRoute),
   'GET /v1/automations': vaultRoute(automationsRoute),
   'GET /v1/automations/{id}/log': vaultRoute(automationLogRoute),

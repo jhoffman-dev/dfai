@@ -89,7 +89,12 @@
   width: 100%;
 }
 
-.chat__history button:hover {
+.chat__history button:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.chat__history button:hover:not(:disabled) {
   background: var(--hover);
   color: var(--ink);
 }
@@ -205,12 +210,32 @@
 
 .chat__you {
   background: var(--well);
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-.chat__text {
+/* An answer is drawn as Ask draws it (#548), at the sidebar's size: chips
+   and long words wrap (the chips inherit it), so nothing reaches past the
+   column's edge. */
+.chat__claude .ask__answer {
+  font-size: inherit;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+}
+
+.chat__claude .ask__answer > :last-child {
+  margin-bottom: 0;
+}
+
+.chat__claude .chat__actions {
+  align-items: center;
+}
+
+.chat__history-problem {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
   margin: 0;
-  white-space: pre-wrap;
+  padding: 6px 12px;
 }
 
 .chat__actions {

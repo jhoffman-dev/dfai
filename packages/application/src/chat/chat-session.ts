@@ -3,6 +3,7 @@ import {
   chatSystemPrompt,
   type ChatContext,
   type ChatNoteEntry,
+  type ChatNoteMessage,
   type ModelMessage,
   type ProfileState,
   type VaultPath,
@@ -92,6 +93,10 @@ export interface ChatSession {
   reject(id: string): void;
   undo(id: string): Promise<void>;
   newChat(): void;
+  /**
+   * Shows a past chat. Refused while an answer is arriving; dropped once read
+   * if another chat was picked, a new one begun or a question asked meanwhile.
+   */
   open(path: VaultPath): Promise<void>;
 }
 
@@ -130,6 +135,13 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
    * what it finishes with rather than touch this conversation or its note.
    */
   let generation = 0;
+  /**
+   * Picks of a past chat, and turns begun: a chat whose note is still being
+   * read when another is picked, or a question is asked, is not shown once
+   * read. The last thing the person did wins, and a question is never lost.
+   */
+  let picks = 0;
+  let turnsBegun = 0;
   /** Whether the last question is already in the chat's note, so Retry writes only its new answer. */
   let questionKept = false;
   /** Accepts and rejects since the last question, told to the model with the next one. */
@@ -153,6 +165,7 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
       set({ error: { message: 'Open a vault to chat about it.', problem: 'unavailable' } });
       return;
     }
+    turnsBegun += 1;
     const own = new AbortController();
     const began = generation;
     const live = () => generation === began;
@@ -191,6 +204,26 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     } finally {
       if (controller === own) controller = null;
     }
+  }
+
+  /** A past chat, read from its note, as the conversation now showing. */
+  function showChat(path: VaultPath, read: readonly ChatNoteMessage[]): void {
+    generation += 1;
+    questionKept = true;
+    messages = read.map((message) =>
+      message.role === 'user'
+        ? { role: 'user', text: message.text }
+        : { role: 'assistant', text: message.text, toolCalls: [] },
+    );
+    decisions = [];
+    record = { path };
+    contextRemoved = true;
+    applied.clear();
+    set({
+      ...EMPTY,
+      chatPath: path,
+      items: read.map((message) => ({ kind: message.role, id: ports.newId(), text: message.text })),
+    });
   }
 
   function show(event: ChatTurnEvent, turn: Turn): void {
@@ -404,31 +437,28 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     },
     async open(path) {
       const vault = ports.vault();
-      if (vault === null || state.busy) return;
-      const read = await readChat({ fs: vault.fs, path });
-      generation += 1;
-      questionKept = true;
-      messages = read.map((message) =>
-        message.role === 'user'
-          ? { role: 'user', text: message.text }
-          : { role: 'assistant', text: message.text, toolCalls: [] },
-      );
-      decisions = [];
-      record = { path };
-      contextRemoved = true;
-      applied.clear();
-      set({
-        ...EMPTY,
-        chatPath: path,
-        items: read.map((message) => ({
-          kind: message.role,
-          id: ports.newId(),
-          text: message.text,
-        })),
-      });
+      if (vault === null) return;
+      // Refused, never ignored: the caller says why (Past chats is disabled meanwhile).
+      if (state.busy) throw new Error(OPEN_WHILE_BUSY);
+      const pick = (picks += 1);
+      const began = generation;
+      const asked = turnsBegun;
+      const current = () => pick === picks && began === generation && asked === turnsBegun;
+      let read: ChatNoteMessage[];
+      try {
+        read = await readChat({ fs: vault.fs, path });
+      } catch (error) {
+        // A pick the person has moved on from fails unsaid: nobody is waiting on it.
+        if (current()) throw error;
+        return;
+      }
+      if (current()) showChat(path, read);
     },
   };
 }
+
+/** Why a past chat is not opened while an answer is still arriving. */
+const OPEN_WHILE_BUSY = 'Wait for the answer to finish before opening another chat.';
 
 function describeProposal(proposal: Proposal): string {
   return proposal.kind === 'edit'

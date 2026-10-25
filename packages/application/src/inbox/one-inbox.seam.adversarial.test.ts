@@ -127,7 +127,12 @@ describe('One Inbox — a proposal whose payload folder is where meeting files l
     // Fix 5 (PR #90 review): proposedWriteRefusal now refuses where meeting
     // files land, so the task is never written there for the import to judge.
     await expect(
-      acceptProposalNote({ ports: setup.ports, path: vaultPath(PROPOSAL), today: TODAY }),
+      acceptProposalNote({
+        via: 'app',
+        ports: setup.ports,
+        path: vaultPath(PROPOSAL),
+        today: TODAY,
+      }),
     ).rejects.toThrow(/where meeting files land/);
     expect(setup.paths()).not.toContain(TASK);
     expect(setup.paths()).toContain(PROPOSAL);

@@ -10,6 +10,11 @@
       srcdoc and about:blank are never subject to it. Only frames are named,
       so nothing else the app loads is affected. The host refuses the same
       navigations too (src-tauri/src/navigation.rs).
+
+      The EPUB reader's chapter frame inherits it as one more layer, never
+      the only one (ADR-0045): that frame's origin is opaque, its own policy
+      runs only DFAI's script, and a click in it never navigates. Keep this
+      line; index-html.test.ts holds it here.
     -->
     <meta http-equiv="Content-Security-Policy" content="frame-src 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

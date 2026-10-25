@@ -148,6 +148,8 @@ describe('the types this vault ships for proposals', () => {
       'link',
       'term',
       'project',
+      'dashboard',
+      'view',
     ]);
   });
 

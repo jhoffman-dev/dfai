@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { proposalFileFor } from '../proposals/new-proposal.ts';
-import { readProposal } from '../proposals/proposal.ts';
+import { isNoteProposal, readProposal } from '../proposals/proposal.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
 import { answeredMeetingOf } from './answered-note.ts';
 import { claudeNewProposal } from './claude-proposal-id.ts';
@@ -151,7 +151,7 @@ describe('a schema whose proposals join the meeting they cite', () => {
       },
     });
     const back = readProposal({ path: file.path, properties: file.properties });
-    expect(back.ok && back.proposal.kind !== 'link' && back.proposal.payload.linkFrom).toEqual({
+    expect(back.ok && isNoteProposal(back.proposal) && back.proposal.payload.linkFrom).toEqual({
       note: STANDUP,
       property: 'tasks',
       meeting: IDENTITY,

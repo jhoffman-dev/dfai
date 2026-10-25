@@ -106,7 +106,7 @@ describe('linking a meeting, adversarially', () => {
     // Filed out of the older Inbox/Meetings into the meeting's month (#214).
     expect(moved).toMatch(/^Meetings\/2026\/10\//);
 
-    await acceptProposalNote({ ports: setup.ports, path: person, today: TODAY });
+    await acceptProposalNote({ via: 'app', ports: setup.ports, path: person, today: TODAY });
 
     expect(setup.paths()).toContain('People/Ada Venn.md');
     expect(setup.propertiesOf(moved)?.['people']).toContain('[[Ada Venn]]');
@@ -127,7 +127,7 @@ describe('linking a meeting, adversarially', () => {
     };
 
     await expect(
-      acceptProposalNote({ ports: failing, path: person, today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: failing, path: person, today: TODAY }),
     ).rejects.toThrow();
 
     // The proposal is still open; the person it would make must not exist without it.
@@ -143,8 +143,8 @@ describe('linking a meeting, adversarially', () => {
 
     // Accepting the Inbox's proposals one after another without waiting, as a quick reader does.
     await Promise.allSettled([
-      acceptProposalNote({ ports: setup.ports, path: ada, today: TODAY }),
-      acceptProposalNote({ ports: setup.ports, path: benProposal, today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: setup.ports, path: ada, today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: setup.ports, path: benProposal, today: TODAY }),
     ]);
 
     const people = (setup.propertiesOf(MEETING)?.['people'] ?? []) as string[];
@@ -164,7 +164,7 @@ describe('linking a meeting, adversarially', () => {
     });
     const person = personProposal((await link(ports)).proposed);
 
-    await acceptProposalNote({ ports: setup.ports, path: person, today: TODAY });
+    await acceptProposalNote({ via: 'app', ports: setup.ports, path: person, today: TODAY });
 
     const people = setup.propertiesOf(MEETING)?.['people'] as string[];
     expect(people.filter((item) => item.toLowerCase() === '[[ada venn]]')).toHaveLength(1);
@@ -204,7 +204,7 @@ describe('linking a meeting, adversarially', () => {
       const before = setup.fixture.files.get(there)?.text;
 
       await expect(
-        acceptProposalNote({ ports: freshIndex(setup), path: person, today: TODAY }),
+        acceptProposalNote({ via: 'app', ports: freshIndex(setup), path: person, today: TODAY }),
       ).rejects.toThrow(/archived/);
 
       expect(setup.fixture.files.get(there)?.text).toBe(before);
@@ -224,7 +224,12 @@ describe('linking a meeting, adversarially', () => {
       } as never);
       setup.fixture.files.delete(MEETING);
 
-      await acceptProposalNote({ ports: freshIndex(setup), path: person, today: TODAY });
+      await acceptProposalNote({
+        via: 'app',
+        ports: freshIndex(setup),
+        path: person,
+        today: TODAY,
+      });
 
       expect(setup.fixture.files.get(OTHER)?.text).toBe(other);
       expect(setup.propertiesOf(OTHER)?.['people']).toBeUndefined();
@@ -242,7 +247,12 @@ describe('linking a meeting, adversarially', () => {
         text: edited,
       } as never);
 
-      await acceptProposalNote({ ports: freshIndex(setup), path: person, today: TODAY });
+      await acceptProposalNote({
+        via: 'app',
+        ports: freshIndex(setup),
+        path: person,
+        today: TODAY,
+      });
 
       expect(setup.fixture.files.get(OTHER)?.text).toBe(other);
       // The index knows the filed meeting by its id, whatever the source says.
@@ -259,7 +269,12 @@ describe('linking a meeting, adversarially', () => {
         text: newer,
       } as never);
 
-      await acceptProposalNote({ ports: freshIndex(setup), path: person, today: TODAY });
+      await acceptProposalNote({
+        via: 'app',
+        ports: freshIndex(setup),
+        path: person,
+        today: TODAY,
+      });
 
       expect(setup.fixture.files.get(MEETING)?.text).toBe(newer);
       expect(setup.propertiesOf(filed)?.['people']).toContain('[[Ada Venn]]');
@@ -275,7 +290,7 @@ describe('linking a meeting, adversarially', () => {
       } as never);
 
       await expect(
-        acceptProposalNote({ ports: freshIndex(setup), path: person, today: TODAY }),
+        acceptProposalNote({ via: 'app', ports: freshIndex(setup), path: person, today: TODAY }),
       ).rejects.toThrow(/no longer the meeting/);
 
       expect(setup.fixture.files.get(MEETING)?.text).toBe(newer);
@@ -301,7 +316,12 @@ describe('linking a meeting, adversarially', () => {
           setup.propertiesOf(path)?.['payload'] &&
           JSON.stringify(setup.propertiesOf(path)).includes('People/Sam Okoro'),
       ) as VaultPath;
-      await acceptProposalNote({ ports: freshIndex(setup), path: wanted, today: TODAY });
+      await acceptProposalNote({
+        via: 'app',
+        ports: freshIndex(setup),
+        path: wanted,
+        today: TODAY,
+      });
 
       expect(setup.propertiesOf(filed)?.['people']).toContain('[[People/Sam Okoro]]');
     });
@@ -319,7 +339,7 @@ describe('linking a meeting, adversarially', () => {
       const before = setup.fixture.files.get(there)?.text;
 
       await expect(
-        acceptProposalNote({ ports: freshIndex(setup), path: first, today: TODAY }),
+        acceptProposalNote({ via: 'app', ports: freshIndex(setup), path: first, today: TODAY }),
       ).rejects.toThrow(/archived/);
       expect(setup.fixture.files.get(there)?.text).toBe(before);
     });
@@ -334,7 +354,7 @@ describe('linking a meeting, adversarially', () => {
     const before = setup.fixture.files.get(MEETING)?.text;
 
     await expect(
-      acceptProposalNote({ ports: freshIndex(setup), path: person, today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: freshIndex(setup), path: person, today: TODAY }),
     ).rejects.toThrow(/not a person/);
 
     expect(setup.fixture.files.get(MEETING)?.text).toBe(before);

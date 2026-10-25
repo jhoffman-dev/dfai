@@ -1,5 +1,17 @@
 export { addPdfToLibrary, PdfNotAddedError } from './add-pdf.ts';
-export type { AddedPdf, AddPdfPorts, PickedPdf } from './add-pdf.ts';
+export type { AddPdfPorts } from './add-pdf.ts';
+export { addEpubToLibrary, EpubNotAddedError } from './add-epub.ts';
+export type { AddEpubPorts } from './add-epub.ts';
+export type { AddedDocument, PickedDocument } from './library-copy.ts';
+export { EpubProtectedError, EpubUnreadableError } from './epub-ports.ts';
+export type { EpubBook, EpubReaderPort, YieldToHost } from './epub-ports.ts';
+export {
+  allSectionTexts,
+  highlightBookSelection,
+  placeBookHighlights,
+  searchBook,
+} from './epub-highlights.ts';
+export type { PlacedBookHighlight } from './epub-highlights.ts';
 export { findLiteratureNote } from './find-literature-note.ts';
 export type { FindLiteratureNotePorts } from './find-literature-note.ts';
 export { allPageTexts, placeHighlights } from './place-highlights.ts';
@@ -14,7 +26,7 @@ export type { ReadLiteratureNote } from './pdf-highlights.ts';
 export { PdfUnreadableError } from './ports.ts';
 export type { PdfDocument, PdfOutlineEntry, PdfPageSize, PdfReaderPort } from './ports.ts';
 export {
-  linkedPdf,
+  linkedDocument,
   openHighlightPlace,
   readerHighlightLinks,
   whereHighlightOpens,
@@ -22,6 +34,6 @@ export {
 export type {
   HighlightPlaceOpener,
   HighlightPlacePorts,
-  LinkedPdfPorts,
+  LinkedDocumentPorts,
   ReaderHighlightLinks,
 } from './open-highlight-place.ts';

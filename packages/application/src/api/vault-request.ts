@@ -1,6 +1,9 @@
 import type { ImagePlacement, VaultPath } from '@dfai/domain';
+import type { ActivityRecorder } from '../activity/ports.ts';
+import type { MeetingDrafts } from '../assistant/meeting-drafts.ts';
 import type { SemanticAccess } from '../embeddings/semantic-search.ts';
 import type { ThumbnailQueue } from '../artifacts/thumbnail-queue.ts';
+import type { ClaudeStepPorts } from '../automations/claude-step.ts';
 import type { IndexPort } from '../index/ports.ts';
 import { refreshIndex } from '../index/refresh-index.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
@@ -14,6 +17,7 @@ import type { ApiRequest, ApiSuccessBody } from './contract.ts';
 import type {
   ApiRouterDeps,
   ApiSourcePorts,
+  AppNotices,
   AutomationClockState,
   MovingNotes,
   OpenNotes,
@@ -73,6 +77,12 @@ export interface VaultRequest {
   readonly semantic: SemanticAccess | null;
   /** The vault owner's name from the profile; null when it has none. */
   readonly ownerName: string | null;
+  /** What drafting a meeting's tasks asks Claude through; null when the app has not got it. */
+  readonly claudeStep: ClaudeStepPorts | null;
+  readonly meetingDrafts: MeetingDrafts;
+  readonly notices: AppNotices;
+  /** The Activity log of the vault this request is for, kept there even after another opens. */
+  readonly activity: ActivityRecorder;
   /** Refuses with `no_vault` once the vault this request arrived for is no longer open. */
   readonly assertStillOpen: () => void;
   /**
@@ -124,6 +134,10 @@ export function vaultRequest({
     timeZone: deps.timeZone(),
     semantic: deps.semantic?.(vault) ?? null,
     ownerName: deps.ownerName?.() ?? null,
+    claudeStep: deps.claudeStep?.() ?? null,
+    meetingDrafts: deps.meetingDrafts,
+    notices: deps.notices,
+    activity: deps.activity.inVault(vault),
     assertStillOpen: () => {
       if (deps.host.currentVault()?.absolutePath !== vault) {
         throw noVault('The vault this request was for is no longer open');

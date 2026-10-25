@@ -1,4 +1,8 @@
-export { acceptProposalNote, undoAcceptedProposal } from './accept-proposal.ts';
+export {
+  acceptProposalNote,
+  AcceptedOnlyInAppError,
+  undoAcceptedProposal,
+} from './accept-proposal.ts';
 export type { AcceptedProposal } from './accept-proposal.ts';
 export { rejectProposalNote, undoRejectedProposal } from './reject-proposal.ts';
 export type { RejectedProposal } from './reject-proposal.ts';

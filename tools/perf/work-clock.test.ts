@@ -4,6 +4,7 @@
  * only when the harness moves it, timers fire in the order they are due, and
  * the host's answers reach the app in the order it asked, however they arrive.
  */
+import { setTimeout as wallClockDelay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import { installWorkClock } from './work-clock.ts';
 
@@ -13,6 +14,7 @@ interface Clock {
     arg: unknown,
     settleMs: number,
     limitMs: number,
+    untrackedMs?: number,
   ): Promise<{ readyAfterMs: number }>;
   startCounting(): void;
   stopCounting(): Record<string, number>;
@@ -89,6 +91,22 @@ describe('the work clock', () => {
       1_000,
     );
     expect(ran.readyAfterMs).toBe(250);
+  });
+
+  it('waits on the wall clock, time held still, for work it does not hold', async () => {
+    const timerFired: string[] = [];
+    setTimeout(() => timerFired.push('timer'), 100);
+    // Work the clock does not hold (a read of a Blob, in the app): it settles on the wall clock.
+    void wallClockDelay(300).then(() => document.body.setAttribute('data-read', 'yes'));
+    const ran = await clock().run(
+      '() => document.body.getAttribute("data-read") === "yes"',
+      null,
+      0,
+      1_000,
+      5_000,
+    );
+    expect(ran.readyAfterMs).toBe(0);
+    expect(timerFired).toEqual([]);
   });
 
   it('fails, rather than waits for ever, when the page is never ready', async () => {

@@ -1,4 +1,5 @@
-import type { EditorDocument } from '@dfai/domain';
+import type { AnswerBlock, EditorDocument } from '@dfai/domain';
+import type { OpenHow } from '../open-how.ts';
 
 /**
  * What the chat panel draws, as plain data. The app hands its chat session's
@@ -23,7 +24,7 @@ export interface ProposalView {
 }
 
 export type ChatItemView =
-  | { readonly kind: 'user' | 'assistant'; readonly id: string; readonly text: string }
+  | { readonly kind: 'user'; readonly id: string; readonly text: string }
   | {
       readonly kind: 'tool';
       readonly id: string;
@@ -39,8 +40,25 @@ export type ChatItemView =
       readonly problem: string | null;
     };
 
+/**
+ * An answer, already read for its citations by the app (#37): drawn the same
+ * on Ask and in the chat beside the page (#548).
+ */
+export interface AskAnswerView {
+  readonly kind: 'answer';
+  readonly id: string;
+  readonly text: string;
+  readonly blocks: readonly AnswerBlock[];
+  readonly uncited: number;
+  /** Finished, and so marked where it cites nothing. */
+  readonly checked: boolean;
+}
+
+/** One entry of a conversation: what was asked, the answers, and the work in between. */
+export type ChatEntryView = ChatItemView | AskAnswerView;
+
 export interface ChatPanelState {
-  readonly items: readonly ChatItemView[];
+  readonly items: readonly ChatEntryView[];
   readonly busy: boolean;
   readonly error: { readonly message: string } | null;
   readonly context: { readonly kind: string; readonly title: string } | null;
@@ -58,6 +76,8 @@ export interface ChatHistoryView {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onPick: (path: string) => void;
+  /** Why the chat picked last could not be opened; null when all is well. */
+  readonly problem: string | null;
 }
 
 /** Everything a person can do in the panel. */
@@ -73,4 +93,8 @@ export interface ChatActions {
   readonly onUndo: (id: string) => void;
   readonly onCopy: (text: string) => void;
   readonly onFollowLink: (target: string) => void;
+  /** Follows a citation, `[[Note#^id]]`, where the click asked. */
+  readonly onFollowCitation: (link: string, how: OpenHow) => void;
+  /** Opens a web address in the browser. */
+  readonly onOpenWeb: (url: string) => void;
 }

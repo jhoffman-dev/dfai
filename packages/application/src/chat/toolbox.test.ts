@@ -199,10 +199,16 @@ describe('the toolboxes built once for the chat and a rule’s Claude step (P29-
     expect(READ_TOOL_SPECS.map((spec) => spec.name)).toEqual([...CHAT_READ_TOOLS]);
   });
 
-  it('gives the chat every read tool and the proposals', () => {
+  it('gives the chat every read tool, the proposals and the two drafts', () => {
     const { fixture, boxes } = toolboxes({});
     const names = boxes.chat(fixture.fs).specs.map((spec) => spec.name);
-    expect(names).toEqual([...CHAT_READ_TOOLS, 'propose_edit', 'propose_note']);
+    expect(names).toEqual([
+      ...CHAT_READ_TOOLS,
+      'propose_edit',
+      'propose_note',
+      'propose_tasks',
+      'make_dashboard',
+    ]);
   });
 
   it('gives a rule only the read tools it names, and runs them as the chat does', async () => {

@@ -597,7 +597,7 @@ export function checkDraft(
   if (extra !== null) return refused(extra);
   const payload = readProposalPayload(draft.kind, draft.payload);
   if (!payload.ok) return payload;
-  if (!('title' in payload.payload)) return refused('A Claude step proposes new notes only.');
+  if (!('linkFrom' in payload.payload)) return refused('A Claude step proposes new notes only.');
   const note = payload.payload;
   const where = note.folder === null ? null : claudeWriteRefusal(note.folder);
   const content =

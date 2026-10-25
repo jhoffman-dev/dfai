@@ -18,10 +18,11 @@
 import { open, realpath, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, extname, isAbsolute, join, sep } from 'node:path';
+import type { ApiMaxImageBytes } from '@dfai/application';
 import { AtlasCallError } from './client.ts';
 
-/** Settings → Images' limit, as DFAI sets it (MAX_IMAGE_BYTES). */
-export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+/** Settings → Images' limit, 20 MiB, as DFAI sets it; the type fails the build if they drift. */
+export const MAX_IMAGE_BYTES: ApiMaxImageBytes = 20_971_520;
 
 /** The environment variable naming the folders images may be read from. */
 export const IMAGE_DIRS_VARIABLE = 'ATLAS_MCP_IMAGE_DIRS';
@@ -75,6 +76,7 @@ export function sameKind(left: string, right: string): boolean {
 export async function readLocalImage(
   file: string,
   folders: readonly string[] = imageFolders(),
+  maxBytes: number = MAX_IMAGE_BYTES,
 ): Promise<Buffer> {
   const refused = new AtlasCallError(
     `${file} is not an image this server may read. It reads PNG, JPEG, GIF, WebP, SVG and ` +
@@ -90,7 +92,7 @@ export async function readLocalImage(
   // Stat before opening: opening a named pipe would wait for a writer forever.
   const found = await stat(real).catch(() => null);
   if (found === null || !found.isFile()) throw refused;
-  if (found.size > MAX_IMAGE_BYTES) {
+  if (found.size > maxBytes) {
     throw new AtlasCallError(`${file} is larger than the 20 MB an image in a note can be.`);
   }
   const handle = await open(real, 'r').catch(() => null);
@@ -101,7 +103,7 @@ export async function readLocalImage(
     if (!opened.isFile() || opened.ino !== found.ino) throw refused;
     const bytes = await handle.readFile();
     // Read from the handle stat measured, so a file grown since is still caught.
-    if (bytes.byteLength > MAX_IMAGE_BYTES || !(KINDS[kind]?.(bytes) ?? false)) throw refused;
+    if (bytes.byteLength > maxBytes || !(KINDS[kind]?.(bytes) ?? false)) throw refused;
     return bytes;
   } finally {
     await handle.close();

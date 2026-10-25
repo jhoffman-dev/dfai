@@ -83,6 +83,11 @@ export const documentReader = laterPage(
   chunk('document-reader', () => import('./reader/document-reader.tsx')),
   (m) => m.DocumentReader,
 );
+// The EPUB reader, with foliate-js and its zip reader, in a chunk of its own (#505).
+export const bookReader = laterPage(
+  chunk('book-reader-tab', () => import('./reader/book-reader-tab.tsx')),
+  (m) => m.BookReaderTab,
+);
 export const archivePage = laterPage(laterParts, (m) => m.ArchivePage);
 export const weeklyReviewPage = laterPage(laterParts, (m) => m.WeeklyReviewPage);
 export const templatesPage = laterPage(laterParts, (m) => m.TemplatesPage);
@@ -105,7 +110,7 @@ export const feedView = later(laterParts, (m) => m.FeedView);
 
 // Claude's panel, failing in its own place with its Close; and Settings, failing inside
 // its own window. `SettingsPanel` draws the dialog and its sections in one `Suspense`.
-export const chatPanel = later(laterParts, (m) => m.ChatPanel, ChatFailed);
+export const chatPanel = later(laterParts, (m) => m.SidebarChat, ChatFailed);
 export const claudeSettings = later(laterParts, (m) => m.ClaudeSettings);
 export const settingsDialog = later(laterParts, (m) => m.SettingsDialog, SettingsFailed);
 // The sections `app.tsx` hands to Settings (drawn by name from `settings/settings-sections.ts`).

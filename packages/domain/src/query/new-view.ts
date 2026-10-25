@@ -8,6 +8,7 @@
  * asked the moment it opens rather than falling back to a table.
  */
 
+import type { SpecProblem } from '../errors/spec-problem.ts';
 import { BLOCK_CALENDAR, isBlockType } from '../timeblocks/block-type.ts';
 import type { ObjectType, PropertyDef, PropertyKind } from '../types/property-def.ts';
 import { MAX_NAME_BYTES } from '../vault/file-name-bytes.ts';
@@ -74,16 +75,28 @@ function dateProperties(type: ObjectType): PropertyDef[] {
  * up both ways and would refuse the second file.
  */
 export function viewNameProblem(name: string, takenPaths: readonly string[]): string | null {
+  const problem = entryNameProblem(name, 'view');
+  if (problem !== null) return problem;
   const trimmed = name.trim();
-  if (trimmed === '') return 'Name the view.';
-  if (UNUSABLE_IN_NAME.test(trimmed)) return 'A view’s name cannot hold / \\ : * ? " < > or |.';
-  if (trimmed.startsWith('.')) return 'A view’s name cannot start with a dot.';
-  if (utf8Bytes(`${trimmed}${VIEW_EXTENSION}`) > MAX_NAME_BYTES) {
-    return 'A view’s name is too long for a file name.';
-  }
   const path = sameFileKey(viewPathFor(trimmed));
   if (takenPaths.some((taken) => sameFileKey(taken) === path)) {
     return `There is already a view called “${trimmed}”.`;
+  }
+  return null;
+}
+
+/**
+ * Why this name cannot be the file name of one of DFAI's own entries — a
+ * view or a dashboard — or null: blank, a character no disk accepts, a
+ * leading dot (which would hide it), or too long for a file name.
+ */
+export function entryNameProblem(name: string, noun: 'view' | 'dashboard'): string | null {
+  const trimmed = name.trim();
+  if (trimmed === '') return `Name the ${noun}.`;
+  if (UNUSABLE_IN_NAME.test(trimmed)) return `A ${noun}’s name cannot hold / \\ : * ? " < > or |.`;
+  if (trimmed.startsWith('.')) return `A ${noun}’s name cannot start with a dot.`;
+  if (utf8Bytes(`${trimmed}${VIEW_EXTENSION}`) > MAX_NAME_BYTES) {
+    return `A ${noun}’s name is too long for a file name.`;
   }
   return null;
 }
@@ -126,19 +139,31 @@ export function layoutProblem(layout: ViewLayout, type: ObjectType): string | nu
 /** Everything wrong with a request, in words, or nothing. */
 export function newViewProblems(
   request: NewViewRequest,
-  { types, takenPaths }: { types: readonly ObjectType[]; takenPaths: readonly string[] },
+  checked: { types: readonly ObjectType[]; takenPaths: readonly string[] },
 ): string[] {
-  const problems: string[] = [];
+  return newViewFieldProblems(request, checked).map(({ message }) => message);
+}
+
+/**
+ * Everything wrong with a request, each with the field it is about — `name`,
+ * `type` or `layout` — in the words {@link newViewProblems} gives.
+ */
+export function newViewFieldProblems(
+  request: NewViewRequest,
+  { types, takenPaths }: { types: readonly ObjectType[]; takenPaths: readonly string[] },
+): SpecProblem[] {
+  const problems: SpecProblem[] = [];
   const nameProblem = viewNameProblem(request.name, takenPaths);
-  if (nameProblem !== null) problems.push(nameProblem);
+  if (nameProblem !== null) problems.push({ at: 'name', message: nameProblem });
 
   const type = types.find((candidate) => candidate.name === request.type);
   if (type === undefined) {
-    problems.push(request.type.trim() === '' ? 'Choose a type.' : 'That type no longer exists.');
+    const message = request.type.trim() === '' ? 'Choose a type.' : 'That type no longer exists.';
+    problems.push({ at: 'type', message });
     return problems;
   }
   const layout = layoutProblem(request.layout, type);
-  if (layout !== null) problems.push(layout);
+  if (layout !== null) problems.push({ at: 'layout', message: layout });
   return problems;
 }
 

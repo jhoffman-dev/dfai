@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { pdfPageText, type PdfPageText } from '@dfai/domain';
-import { AddPdfDialog } from './add-pdf-dialog.tsx';
+import { AddDocumentDialog } from './add-document-dialog.tsx';
 import { HighlightsPanel } from './highlights-panel.tsx';
+import { pdfPanelEntries } from './panel-entries.ts';
 import { MarkPopover } from './mark-popover.tsx';
 import { PdfReader, type PdfReaderProps } from './pdf-reader.tsx';
 import type { ReaderDocument, ReaderHighlight } from './reader-types.ts';
@@ -308,7 +309,8 @@ describe('a turned run in the text layer', () => {
 describe('the highlights panel', () => {
   const panel = (highlights: ReaderHighlight[]) => {
     const props = {
-      highlights,
+      entries: pdfPanelEntries(highlights),
+      emptyHint: 'Select words on a page to highlight them.',
       flashing: null,
       onShow: vi.fn(),
       onEditComment: vi.fn(async () => true),
@@ -454,7 +456,8 @@ describe('the Add PDF dialog', () => {
   it('hands over PDFs picked or dropped, and says why one was refused', async () => {
     const onFiles = vi.fn();
     render(
-      <AddPdfDialog
+      <AddDocumentDialog
+        kind="pdf"
         folder="Library"
         adding={false}
         error="“notes.txt” is not a PDF."

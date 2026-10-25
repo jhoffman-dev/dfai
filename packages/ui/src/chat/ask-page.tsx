@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import { Icon } from '../icon.tsx';
 import { PageAction, PageBar, type PageHistory } from '../page-bar.tsx';
 import { HiddenTitle } from '../page-head.tsx';
-import { AskAnswer } from './ask-answer.tsx';
-import type { AskActions, AskEntryView, AskRecent, AskState } from './ask-view.ts';
+import { AskAnswer, UncitedCount } from './ask-answer.tsx';
+import type { AskActions, AskRecent, AskState } from './ask-view.ts';
 import { Composer, ProblemNotice, type ChatDraft } from './chat-panel.tsx';
-import type { ChatProblemView } from './chat-view.ts';
+import type { ChatEntryView, ChatProblemView } from './chat-view.ts';
 import { ProposalCard } from './proposal-card.tsx';
 
 export interface AskPageProps {
@@ -204,7 +204,7 @@ function Entry({
   links,
   loadImage,
 }: {
-  entry: AskEntryView;
+  entry: ChatEntryView;
   isLastAnswer: boolean;
   actions: AskActions;
   links: Parameters<typeof AskAnswer>[0]['links'];
@@ -247,15 +247,13 @@ function AnswerFoot({
   isLastAnswer,
   actions,
 }: {
-  entry: Extract<AskEntryView, { kind: 'answer' }>;
+  entry: Extract<ChatEntryView, { kind: 'answer' }>;
   isLastAnswer: boolean;
   actions: AskActions;
 }) {
   return (
     <div className="chat__actions ask__foot">
-      {entry.checked && entry.uncited > 0 && (
-        <span className="ask__uncited-count">{uncitedSaying(entry)}</span>
-      )}
+      <UncitedCount answer={entry} />
       <button
         type="button"
         className="icon-button"
@@ -278,24 +276,4 @@ function AnswerFoot({
       )}
     </div>
   );
-}
-
-/** What a block of each kind is called in the answer's foot, one and many. */
-const BLOCK_NAMES: Readonly<Record<string, readonly [string, string]>> = {
-  paragraph: ['paragraph', 'paragraphs'],
-  item: ['list item', 'list items'],
-  quote: ['quote', 'quotes'],
-  table: ['table', 'tables'],
-};
-
-/** "1 paragraph not cited", "2 list items not cited", or "3 parts not cited" for a mix. */
-function uncitedSaying(entry: Extract<AskEntryView, { kind: 'answer' }>): string {
-  const kinds = new Set(
-    entry.blocks.filter((block) => block.citation === 'uncited').map((block) => block.kind),
-  );
-  const [one, many] = (kinds.size === 1 ? BLOCK_NAMES[[...kinds][0] ?? ''] : undefined) ?? [
-    'part',
-    'parts',
-  ];
-  return `${entry.uncited} ${entry.uncited === 1 ? one : many} not cited`;
 }

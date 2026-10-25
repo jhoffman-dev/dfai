@@ -3,6 +3,7 @@ import {
   API_ERROR_STATUS,
   type ApiErrorBody,
   type ApiErrorCode,
+  type ApiSpecProblem,
   type ApiTextPosition,
 } from './contract.ts';
 
@@ -20,17 +21,24 @@ export class ApiError extends Error {
   readonly retryAfter: number | undefined;
   /** Where in a query's text the problem is, when the request sent one. */
   readonly at: ApiTextPosition | undefined;
+  /** What a checker found wrong with a spec the request sent, when it sent one. */
+  readonly problems: readonly ApiSpecProblem[] | undefined;
 
   constructor(
     code: ApiErrorCode,
     message: string,
-    { retryAfter, at }: { retryAfter?: number; at?: ApiTextPosition } = {},
+    {
+      retryAfter,
+      at,
+      problems,
+    }: { retryAfter?: number; at?: ApiTextPosition; problems?: readonly ApiSpecProblem[] } = {},
   ) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.retryAfter = retryAfter;
     this.at = at;
+    this.problems = problems;
   }
 }
 
@@ -46,13 +54,14 @@ export function failureOf(error: unknown): { status: number; body: ApiErrorBody 
     const internal = { code: 'internal' as const, message: INTERNAL_MESSAGE };
     return { status: API_ERROR_STATUS.internal, body: { error: internal } };
   }
-  const { code, message, retryAfter, at } = error;
+  const { code, message, retryAfter, at, problems } = error;
   const body = {
     error: {
       code,
       message,
       ...(retryAfter !== undefined && { retryAfter }),
       ...(at !== undefined && { at }),
+      ...(problems !== undefined && { problems }),
     },
   };
   return { status: API_ERROR_STATUS[code], body };

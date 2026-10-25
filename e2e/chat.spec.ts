@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeHost } from './host.ts';
 
@@ -20,9 +21,15 @@ const PROPOSE =
 
 async function openPlan(
   page: Page,
+  /** More notes in the vault, by path, written before it is opened. */
+  files: Readonly<Record<string, string>> = {},
 ): Promise<{ host: FakeHost; vault: Awaited<ReturnType<typeof createVault>> }> {
   const vault = await createVault();
   await vault.write('Plan.md', PLAN);
+  for (const [path, text] of Object.entries(files)) {
+    if (path.includes('/')) await vault.mkdir(path.slice(0, path.lastIndexOf('/')));
+    await vault.write(path, text);
+  }
   const host = await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
@@ -93,6 +100,68 @@ test('Claude opens on the note, reads it, proposes an edit, and writes it only o
   // One step back.
   await proposal.getByRole('button', { name: 'Undo' }).click();
   await expectFile(vault, 'Plan.md').toBe(PLAN);
+});
+
+/** A title wider than the sidebar's column, with a word too long for it, as a file name can be. */
+const KICKOFF_TITLE = 'Kickoff larkspur_payroll_quarterly_cutover_with_mara_quill_and_tobias_fenn';
+const KICKOFF = `# ${KICKOFF_TITLE}\n\n${'Filler.\n\n'.repeat(40)}Mara Quill owns the rollback plan. ^t3\n`;
+const CITED = `Mara Quill owns the rollback plan [[${KICKOFF_TITLE}#^t3]].\n\nIt may slip a week.`;
+
+test('an answer in the sidebar cites its note as a chip that opens the block, and marks what cites nothing (#548)', async ({
+  page,
+}) => {
+  const { host } = await openPlan(page, { [`${KICKOFF_TITLE}.md`]: KICKOFF });
+  host.claude.reply(CITED);
+
+  await page.getByRole('button', { name: 'Claude' }).first().click();
+  await ask(page, 'Who owns the rollback plan?');
+
+  const answer = chat(page).getByRole('region', { name: 'Answer' });
+  await expect(answer).toContainText('It may slip a week.');
+  await expect(answer).not.toContainText('[[');
+  const uncited = answer.locator('[data-uncited]');
+  await expect(uncited).toHaveCount(1);
+  await expect(uncited).toContainText('It may slip a week.');
+  await expect(answer.getByText('1 paragraph not cited')).toBeVisible();
+
+  // The chip wraps inside the sidebar's column: nothing scrolls sideways.
+  const chip = answer.getByRole('button', { name: KICKOFF_TITLE });
+  const [chipBox, answerBox] = await Promise.all([chip.boundingBox(), answer.boundingBox()]);
+  expect(chipBox).not.toBeNull();
+  expect(answerBox).not.toBeNull();
+  expect((chipBox?.x ?? 0) + (chipBox?.width ?? 0)).toBeLessThanOrEqual(
+    (answerBox?.x ?? 0) + (answerBox?.width ?? 0),
+  );
+  const log = chat(page).getByRole('log', { name: 'Conversation' });
+  expect(await log.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+
+  await chip.click();
+  await expect(page.getByRole('article', { name: KICKOFF_TITLE })).toBeVisible();
+  const revealed = page.locator('.editor .is-revealed');
+  await expect(revealed).toHaveText('Mara Quill owns the rollback plan.');
+  await expect(revealed).toBeInViewport();
+  // The chat is still beside it.
+  await expect(chat(page)).toBeVisible();
+});
+
+test('a past chat whose note was deleted underneath says so, and leaves the list (#548)', async ({
+  page,
+}) => {
+  const { vault } = await openPlan(page, {
+    'Chats/Payroll cutover.md': '---\ntype: chat\n---\n\n## You\n\nPayroll cutover\n',
+  });
+  await page.getByRole('button', { name: 'Claude' }).first().click();
+  await chat(page).getByRole('button', { name: 'Past chats' }).click();
+  const list = chat(page).getByRole('navigation', { name: 'Past chats' });
+  const row = list.getByRole('button', { name: 'Payroll cutover' });
+  await expect(row).toBeVisible();
+
+  // Deleted by another program before the watcher has told the app.
+  await rm(join(vault.root, 'Chats/Payroll cutover.md'));
+  await row.click();
+
+  await expect(list.getByRole('alert')).toContainText('That chat could not be opened:');
+  await expect(row).toHaveCount(0);
 });
 
 test('a rejected edit leaves the note exactly as it was', async ({ page }) => {

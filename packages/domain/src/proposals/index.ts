@@ -1,8 +1,12 @@
 export {
+  acceptRefusal,
   ANSWERED_VIA_KEY,
   DECISION_TYPE,
+  isNoteProposal,
   isProposalNote,
+  isSpecProposal,
   isProposalPath,
+  isSpecProposalKind,
   PROPOSAL_ANSWERERS,
   PROPOSAL_CONFIDENCES,
   PROPOSAL_KINDS,
@@ -16,11 +20,13 @@ export {
   proposedWriteRefusal,
   readProposal,
   readProposalPayload,
+  SPEC_PROPOSAL_KINDS,
 } from './proposal.ts';
 export type {
   LinkFrom,
   LinkPayload,
   NotePayload,
+  NoteProposal,
   NoteProposalKind,
   PayloadReading,
   ProposalAnswerer,
@@ -30,7 +36,18 @@ export type {
   ProposalPayload,
   ProposalReading,
   ProposalState,
+  SpecPayload,
+  SpecProposal,
+  SpecProposalKind,
 } from './proposal.ts';
+export {
+  applySpecProposal,
+  checkSpec,
+  SPEC_FOLDERS,
+  specProposalFor,
+  specSummary,
+} from './spec-proposal.ts';
+export type { CheckedSpec, SpecReading, SpecSummary, WidgetSummary } from './spec-proposal.ts';
 export { PROPOSAL_TYPE_FILES } from './proposal-types.ts';
 export { applyNoteProposal, applyProposal, newNotePath } from './apply-proposal.ts';
 export type {
@@ -42,7 +59,14 @@ export type {
 } from './apply-proposal.ts';
 export { editedPayload, payloadFields, propertyFromText, propertyText } from './proposal-edit.ts';
 export type { PayloadFields } from './proposal-edit.ts';
-export { compileProposalIdsQuery, PROPOSAL_ID_KEY, proposalFileFor } from './new-proposal.ts';
+export {
+  compileProposalIdsQuery,
+  compileProposalsStampedQuery,
+  MEETING_DIGEST_KEY,
+  meetingDraftDigest,
+  PROPOSAL_ID_KEY,
+  proposalFileFor,
+} from './new-proposal.ts';
 export type { NewProposal, NewProposalFile } from './new-proposal.ts';
 export {
   acceptableAtOnce,

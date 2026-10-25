@@ -328,6 +328,26 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     }
   };
 
+  /**
+   * Waits on the wall clock, time held still, until `ready` holds or
+   * `untrackedMs` pass: for work the clock does not hold — a read of a
+   * `Blob`, a stream — which finishes on its own time. No timer fires
+   * meanwhile, so what the app does is the same however long that takes;
+   * its tasks and the host's answers are taken as they come, as ever.
+   */
+  async function untrackedWork(
+    ready: (given: unknown) => boolean,
+    arg: unknown,
+    untrackedMs: number,
+  ): Promise<void> {
+    const since = performance.now();
+    for (;;) {
+      await quiet();
+      if (ready(arg) || performance.now() - since > untrackedMs) return;
+      await aFrame();
+    }
+  }
+
   // Outside `run`, answers are handed over as they come, so that setting up
   // the next action works the way it does in a real page.
   void (async () => {
@@ -342,13 +362,20 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
      * Moves time on, a timer at a time, until `ready` holds (at most `limitMs`
      * of virtual time), then `settleMs` more, so the work that follows is in.
      */
-    async run(source: string | null, arg: unknown, settleMs: number, limitMs: number) {
+    async run(
+      source: string | null,
+      arg: unknown,
+      settleMs: number,
+      limitMs: number,
+      untrackedMs = 0,
+    ) {
       const ready =
         source === null
           ? null
           : (new Function(`return (${source})`)() as (given: unknown) => boolean);
       state.running = true;
       try {
+        if (ready !== null && untrackedMs > 0) await untrackedWork(ready, arg, untrackedMs);
         const start = state.now;
         let readyAt: number | null = ready === null ? start : null;
         for (;;) {
@@ -383,7 +410,13 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
 
 interface ClockWindow {
   __workClock: {
-    run(source: string | null, arg: unknown, settleMs: number, limitMs: number): Promise<Ran>;
+    run(
+      source: string | null,
+      arg: unknown,
+      settleMs: number,
+      limitMs: number,
+      untrackedMs?: number,
+    ): Promise<Ran>;
     inputsSeen(): number;
     callsSoFar(): Record<string, number>;
     startCounting(): void;
@@ -411,16 +444,25 @@ export function runUntil<Arg>(
     arg,
     settleMs = SETTLE_MS,
     limitMs = 60_000,
-  }: { ready?: (arg: Arg) => boolean; arg?: Arg; settleMs?: number; limitMs?: number },
+    untrackedMs = 0,
+  }: {
+    ready?: (arg: Arg) => boolean;
+    arg?: Arg;
+    settleMs?: number;
+    limitMs?: number;
+    /** Real milliseconds to wait, time held still, for work the clock does not hold (`untrackedWork`). */
+    untrackedMs?: number;
+  },
 ): Promise<Ran> {
   return page.evaluate(
-    ({ source, given, settle, limit }) =>
-      (window as unknown as ClockWindow).__workClock.run(source, given, settle, limit),
+    ({ source, given, settle, limit, untracked }) =>
+      (window as unknown as ClockWindow).__workClock.run(source, given, settle, limit, untracked),
     {
       source: ready?.toString() ?? null,
       given: (arg ?? null) as unknown,
       settle: settleMs,
       limit: limitMs,
+      untracked: untrackedMs,
     },
   );
 }

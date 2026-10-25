@@ -84,9 +84,12 @@ describe('accepting a proposal after its meeting was filed and delivered again',
     expect(importOutcomeOf(vault.properties(MEETING))).toBeNull();
 
     // Accepting may link her to the filed meeting or refuse; either way the copy is not the meeting.
-    await acceptProposalNote({ ports: vault.ports, path: proposal, today: TODAY }).catch(
-      () => undefined,
-    );
+    await acceptProposalNote({
+      via: 'app',
+      ports: vault.ports,
+      path: proposal,
+      today: TODAY,
+    }).catch(() => undefined);
 
     expect(vault.properties(MEETING)['people']).toBeUndefined();
   });
@@ -99,7 +102,7 @@ describe('accepting a proposal after its meeting was filed and delivered again',
     expect(importOutcomeOf(vault.properties(MEETING))).toBeNull();
 
     await expect(
-      acceptProposalNote({ ports: vault.ports, path: proposal, today: TODAY }),
+      acceptProposalNote({ via: 'app', ports: vault.ports, path: proposal, today: TODAY }),
     ).rejects.toThrow(/has not been let in by the import yet/);
 
     expect(vault.properties(MEETING)['people']).toBeUndefined();

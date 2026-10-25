@@ -25,7 +25,12 @@ export function serveApi({
   return bridge.serve((request) => routeApiRequest(request, noticed));
 }
 
-function noticingWrites({
+/**
+ * The router's deps, with `onWrote` run after each write lands: what the
+ * host's requests are answered through, and the chat's drafting tools, which
+ * reach the same routes in-process (P32-05).
+ */
+export function noticingWrites({
   deps,
   onWrote,
 }: {

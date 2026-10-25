@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Icon } from '../icon.tsx';
 import { isImeKey } from '../ime.ts';
+import { AskAnswer, UncitedCount, type AnswerLinks } from './ask-answer.tsx';
 import type {
   ChatActions,
+  ChatEntryView,
   ChatHistoryView,
-  ChatItemView,
   ChatPanelState,
   ChatProblemView,
 } from './chat-view.ts';
@@ -52,11 +53,16 @@ export function ChatPanel({
    */
   focusOnMount?: boolean;
 }) {
-  const lastAnswer = [...state.items].reverse().find((item) => item.kind === 'assistant');
+  const lastAnswer = [...state.items].reverse().find((item) => item.kind === 'answer');
+  // Held across streamed words, so an answer already finished is not drawn again.
+  const links = useMemo<AnswerLinks>(
+    () => ({ onFollowCitation: actions.onFollowCitation, onOpenWeb: actions.onOpenWeb }),
+    [actions.onFollowCitation, actions.onOpenWeb],
+  );
   return (
     <aside className="chat" aria-label="Claude">
       <ChatBar model={model} history={history} actions={actions} />
-      {history.open && <ChatHistory history={history} />}
+      {history.open && <ChatHistory history={history} busy={state.busy} />}
       {problem !== null && <ProblemNotice problem={problem} onCopy={actions.onCopy} />}
       <div className="chat__log" role="log" aria-label="Conversation">
         {state.items.length === 0 && (
@@ -72,6 +78,7 @@ export function ChatPanel({
             item={item}
             isLastAnswer={item === lastAnswer && !state.busy}
             actions={actions}
+            links={links}
             loadImage={loadImage}
           />
         ))}
@@ -149,16 +156,32 @@ function ChatBar({
   );
 }
 
-function ChatHistory({ history }: { history: ChatHistoryView }) {
+/** Why a past chat cannot be picked now: opening one would leave the answer arriving. */
+const WAIT_FOR_ANSWER = 'Wait for the answer to finish';
+
+function ChatHistory({ history, busy }: { history: ChatHistoryView; busy: boolean }) {
   return (
     <nav className="chat__history" aria-label="Past chats">
+      {history.problem !== null && (
+        <p className="chat__history-problem" role="alert">
+          {history.problem}
+        </p>
+      )}
       {history.chats.length === 0 ? (
-        <p className="chat__history-empty">No chats yet. Each one is kept as a note in Chats/.</p>
+        // A list that could not be read is not an empty one.
+        history.problem === null && (
+          <p className="chat__history-empty">No chats yet. Each one is kept as a note in Chats/.</p>
+        )
       ) : (
         <ul>
           {history.chats.map((chat) => (
             <li key={chat.path}>
-              <button type="button" onClick={() => history.onPick(chat.path)}>
+              <button
+                type="button"
+                disabled={busy}
+                title={busy ? WAIT_FOR_ANSWER : undefined}
+                onClick={() => history.onPick(chat.path)}
+              >
                 {chat.title}
               </button>
             </li>
@@ -202,21 +225,24 @@ function ChatEntry({
   item,
   isLastAnswer,
   actions,
+  links,
   loadImage,
 }: {
-  item: ChatItemView;
+  item: ChatEntryView;
   isLastAnswer: boolean;
   actions: ChatActions;
+  links: AnswerLinks;
   loadImage: (src: string) => Promise<string | null>;
 }) {
   switch (item.kind) {
     case 'user':
       return <p className="chat__you">{item.text}</p>;
-    case 'assistant':
+    case 'answer':
       return (
-        <div className="chat__claude">
-          <p className="chat__text">{item.text}</p>
+        <section className="chat__claude" aria-label="Answer">
+          <AskAnswer answer={item} links={links} />
           <div className="chat__actions">
+            <UncitedCount answer={item} />
             <button
               type="button"
               className="icon-button"
@@ -238,7 +264,7 @@ function ChatEntry({
               </button>
             )}
           </div>
-        </div>
+        </section>
       );
     case 'tool':
       return (
