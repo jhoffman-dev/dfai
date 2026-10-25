@@ -196,9 +196,9 @@ function Meetings({
       </div>
       {view.state !== 'off' && (
         <p className="settings__lede">
-          Stopping takes effect at once, for this vault on both Macs. Google keeps DFAI’s permission
-          to read your calendar on this Mac until you disconnect: it cannot take back one permission
-          alone.
+          Stopping takes effect at once on this Mac, and on your other Mac once sync brings the
+          change there. Google keeps DFAI’s permission to read your calendar on this Mac until you
+          disconnect: it cannot take back one permission alone.
         </p>
       )}
       {view.problem !== null && (

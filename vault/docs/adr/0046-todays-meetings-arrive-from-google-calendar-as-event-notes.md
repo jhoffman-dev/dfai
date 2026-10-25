@@ -222,10 +222,11 @@ so a 403 for a missing scope is told apart from other 403s.
 
 ### Stopping
 
-**Stop reading meetings** takes effect at once. A sync under way asks
+**Stop reading meetings** takes effect at once on this Mac. A sync under way asks
 Google nothing more and writes nothing after Stop, and it keeps no record,
 so the next sync after turning meetings on again starts where the last
-whole one left off. Stop turns the vault's switch off, for both Macs.
+whole one left off. Stop turns the vault's switch off, which is in the vault's settings, so
+the other Mac stops once sync brings that change to it, not before.
 
 It does not take back the Google permission. Google cannot remove one scope
 from a token, so dropping `calendar.events.readonly` would mean revoking
