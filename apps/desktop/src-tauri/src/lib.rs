@@ -1,5 +1,6 @@
 mod activity;
 mod api;
+mod embedding_cache;
 // Public for the embedding spike (`examples/embedding_spike.rs`) and its
 // integration test, which run the real model outside the app.
 #[doc(hidden)]
@@ -57,6 +58,7 @@ pub fn run() {
         .manage(model_process::ModelProcesses::default())
         .manage(git_process::GitHost::default())
         .manage(embeddings::EmbeddingState::default())
+        .manage(embedding_cache::SharedEmbeddingCache::default())
         .manage(google::GoogleState::default())
         .manage(granola::GranolaState::default())
         .manage(global_capture::GlobalCaptureState::default())
@@ -67,6 +69,12 @@ pub fn run() {
             activity::activity_replace,
             http::http_get,
             embeddings::embed,
+            embedding_cache::embedding_cache_open,
+            embedding_cache::embedding_cache_clear,
+            embedding_cache::embedding_cache_load,
+            embedding_cache::embedding_cache_excerpts,
+            embedding_cache::embedding_cache_put,
+            embedding_cache::embedding_cache_remove,
             model_http::model_http_post,
             model_process::model_process_start,
             model_process::model_process_cancel,

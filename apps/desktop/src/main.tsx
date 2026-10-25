@@ -15,6 +15,7 @@ import {
   resolveChatPorts,
   resolveNotePorts,
   resolvePageSnapshot,
+  resolveSemanticPorts,
   resolveSourcePorts,
   resolveSyncPorts,
   resolveVaultPorts,
@@ -36,6 +37,7 @@ createRoot(root).render(
       vault={resolveVaultPorts()}
       notes={resolveNotePorts()}
       index={resolveIndexPorts()}
+      semantic={resolveSemanticPorts()}
       sources={resolveSourcePorts()}
       links={resolveExternalLinks()}
       snapshot={resolvePageSnapshot()}

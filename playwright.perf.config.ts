@@ -14,6 +14,9 @@ import e2e from './playwright.config.ts';
  *   action draws again, beside its time and longest frame.
  * - `budgets` (`pnpm perf:budgets`): in WebKit, the work each action makes the
  *   app do, as counts, held to `tools/perf/budgets.json`. CI runs it too.
+ * - `semantic` (`pnpm perf:semantic`): in WebKit, the first build of the cache
+ *   of meanings over 50,000 blocks, held to no frame over 50 ms, and a search
+ *   by meaning over them, timed (P32-02). Minutes long; run by hand.
  */
 export default defineConfig({
   ...e2e,
@@ -25,5 +28,6 @@ export default defineConfig({
     { name: 'profile', testMatch: 'profile.spec.ts', use: { ...devices['Desktop Chrome'] } },
     { name: 'renders', testMatch: 'renders.spec.ts', use: { ...devices['Desktop Safari'] } },
     { name: 'budgets', testMatch: 'budgets.spec.ts', use: { ...devices['Desktop Safari'] } },
+    { name: 'semantic', testMatch: 'semantic.spec.ts', use: { ...devices['Desktop Safari'] } },
   ],
 });

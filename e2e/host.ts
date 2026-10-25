@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve as resolvePath, sep } from 'node:path'
 import { crc32, deflateSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
 
@@ -498,6 +499,8 @@ export interface FakeHost {
   writesTo(relativePath: string): number;
   /** How many times the app has asked the host for this command. */
   callsTo(command: string): number;
+  /** The model and embeddings cache (`embedding-host.ts`): every passage the app sent to embed. */
+  readonly embeddings: { passages(): readonly string[] };
   /** How many `vault-changed` events `echoWrites` has sent of the app's own writes. */
   echoesSent(): Promise<number>;
   /**
@@ -707,6 +710,7 @@ export async function installHost(
     feeds = {},
     echoWrites = false,
     coarseTickSeconds,
+    embedMsPerText = 0,
   }: {
     /**
      * Canned feeds by URL, for sources that fetch rather than read a file. The
@@ -728,6 +732,8 @@ export async function installHost(
      * by default.
      */
     coarseTickSeconds?: number;
+    /** How long the stand-in model takes a passage, off the page's thread (`embedding-host.ts`). */
+    embedMsPerText?: number;
   } = {},
 ): Promise<FakeHost> {
   /** What the picker answers with. */
@@ -749,6 +755,8 @@ export async function installHost(
     }
     return root;
   };
+  // The model and the embeddings cache, by vault, for semantic search (P32-02).
+  const embeddings = createEmbeddingHost({ msPerText: embedMsPerText });
   // A stand-in for the SQLite index: enough behaviour to drive the interface.
   // The real queries are covered by the Rust tests.
   const indexed = new Map<string, StoredNote>();
@@ -1929,12 +1937,18 @@ export async function installHost(
         return null;
       }
       default:
+        if (embeddings.handles(command)) return embeddings.answer(command, args, openRoot());
         throw new Error(`unexpected command ${command}`);
     }
   };
 
   /** Every command the app has asked the host for, by name. */
   const calls = new Map<string, number>();
+  await page.route('**/__atlas-embedding-load*', (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const slice = embeddings.loadSlice(Number(params.get('from')), Number(params.get('to')));
+    return route.fulfill({ body: Buffer.from(slice), contentType: 'application/octet-stream' });
+  });
   await page.exposeFunction('__atlasInvoke', async (command: string, args: unknown) => {
     calls.set(command, (calls.get(command) ?? 0) + 1);
     const answered = await answer(command, args);
@@ -2075,6 +2089,19 @@ export async function installHost(
             ? Promise.reject((value as { __atlasReject: unknown }).__atlasReject)
             : value,
         );
+      // Counted by the host above; the bytes come over HTTP, as the real ones come as a binary response.
+      if (command === 'embedding_cache_load')
+        return answer.then(async (length) => {
+          // A piece at a time, so the stand-in's copy of 77 MB is not one long task in the page.
+          const PIECE = 1 << 20;
+          const bytes = new Uint8Array(length as number);
+          for (let from = 0; from < bytes.length; from += PIECE) {
+            const to = Math.min(from + PIECE, bytes.length);
+            const response = await fetch(`/__atlas-embedding-load?from=${from}&to=${to}`);
+            bytes.set(new Uint8Array(await response.arrayBuffer()), from);
+          }
+          return bytes.buffer;
+        });
       return command === 'read_binary_file'
         ? answer.then((read) => bytesOfBase64((read as { base64: string }).base64).buffer)
         : answer;
@@ -2163,6 +2190,7 @@ export async function installHost(
     },
     writesTo: (relativePath) => writes.get(relativePath) ?? 0,
     callsTo: (command) => calls.get(command) ?? 0,
+    embeddings: { passages: () => embeddings.passages() },
     echoesSent: () =>
       page.evaluate(
         () => (window as unknown as { __atlasEchoesSent?: number }).__atlasEchoesSent ?? 0,

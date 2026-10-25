@@ -30,6 +30,8 @@ export {
   recordingExportFiles,
 } from './testing/fake-export.ts';
 export { fakeGranola, granolaNote, granolaTurn } from './testing/fake-granola.ts';
+export { fakeEmbedder, memoryEmbeddingCache } from './testing/fake-embeddings.ts';
+export type { FakeEmbedder, MemoryEmbeddingCache } from './testing/fake-embeddings.ts';
 export type { GranolaCall, GranolaCallKey } from './testing/fake-granola.ts';
 export {
   fakeKindleDelay,

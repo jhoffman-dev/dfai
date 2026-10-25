@@ -28,6 +28,9 @@ export { tauriActivityStore } from './activity/tauri-activity-store.ts';
 export { tauriWindowClosing } from './activity/tauri-window-closing.ts';
 export { tauriPageSnapshot } from './artifacts/tauri-page-snapshot.ts';
 export { tauriEmbeddings } from './embeddings/tauri-embeddings.ts';
+export { readCacheLoad, tauriEmbeddingCache } from './embeddings/tauri-embedding-cache.ts';
+export { browserIdle } from './embeddings/browser-idle.ts';
+export { webWorkerNoteChunker } from './embeddings/web-worker-note-chunker.ts';
 export * from './chat/index.ts';
 export {
   tauriGit,

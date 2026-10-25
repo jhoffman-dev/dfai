@@ -22,6 +22,10 @@ import {
   tauriSqliteSource,
   tauriPageSnapshot,
   tauriIndex,
+  tauriEmbeddings,
+  tauriEmbeddingCache,
+  browserIdle,
+  webWorkerNoteChunker,
   webWorkerNoteDeriver,
   staticAppInfo,
   tauriAppInfo,
@@ -70,6 +74,8 @@ import { browserKindleRecords } from './kindle/browser-kindle-records.ts';
 import { browserKindleVaults } from './kindle/browser-kindle-vaults.ts';
 import type { KindleHost } from './kindle/use-kindle-sync.ts';
 import type { SyncHostPorts } from './sync/use-sync.ts';
+import type { SemanticPorts } from './semantic/use-semantic-search.ts';
+import { browserSemanticOptIn } from './semantic/browser-semantic-opt-in.ts';
 import {
   browserGlobalCaptureStore,
   type GlobalCaptureStore,
@@ -111,6 +117,21 @@ export function resolveIndexPorts(): OnHost<IndexPorts> {
     markdown: remarkMarkdown,
     // The notes are read for the index in a worker, so the window stays the user's (#135).
     deriver: webWorkerNoteDeriver,
+  };
+}
+
+/**
+ * Semantic search (P32-02, ADR-0031): the small model the host runs on this
+ * Mac, the cache beside the index, and the window's idle moments, which the
+ * cache is built in so typing never waits behind it.
+ */
+export function resolveSemanticPorts(): SemanticPorts {
+  return {
+    embedder: tauriEmbeddings,
+    cache: tauriEmbeddingCache,
+    idle: browserIdle(),
+    optIn: browserSemanticOptIn,
+    chunker: webWorkerNoteChunker,
   };
 }
 

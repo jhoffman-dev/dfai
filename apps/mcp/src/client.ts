@@ -61,6 +61,8 @@ import type {
   ApiRunViewBody,
   ApiSaveArtifactBody,
   ApiSearchHit,
+  ApiSemanticHit,
+  ApiSemanticProgress,
   ApiSetPropertiesBody,
   ApiSourceReport,
   ApiSqlBody,
@@ -254,6 +256,18 @@ export class AtlasClient {
       method: 'GET',
       path: '/v1/search',
       query: { q, limit, includeArchived: includeArchived === true ? 'true' : undefined },
+    });
+
+  semanticSearch = ({ q, limit, includeArchived }: SearchQuery) =>
+    this.json<{ hits: readonly ApiSemanticHit[]; progress: ApiSemanticProgress }>({
+      method: 'GET',
+      path: '/v1/search',
+      query: {
+        q,
+        mode: 'semantic',
+        limit,
+        includeArchived: includeArchived === true ? 'true' : undefined,
+      },
     });
 
   types = () => this.json<{ types: readonly ApiType[] }>({ method: 'GET', path: '/v1/types' });

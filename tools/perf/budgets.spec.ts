@@ -147,7 +147,7 @@ interface Pass {
   readonly page: Page;
   readonly vault: FakeVault;
   /** Does `step` uncounted: getting the app to where the next action starts. */
-  setUp(step: Phase): Promise<void>;
+  setUp(step: Phase, options?: { readonly limitMs?: number }): Promise<void>;
   /**
    * Does an action's phases, and keeps what it took. It first puts the
    * pointer at rest, and lets the work before it finish, unless `settleFirst`
@@ -296,9 +296,9 @@ async function countedPass(
   const pass: Pass = {
     page,
     vault,
-    async setUp({ act, ready, arg }) {
+    async setUp({ act, ready, arg }, { limitMs } = {}) {
       await act();
-      await runUntil(page, { ready, arg: arg as never });
+      await runUntil(page, { ready, arg: arg as never, ...(limitMs !== undefined && { limitMs }) });
     },
     async budgeted(action, phases, { settleFirst = true } = {}) {
       await restThePointer(page);
@@ -411,9 +411,9 @@ async function timedPass(browser: Browser, fixture: PassFixture = MAIN): Promise
   return {
     page,
     vault,
-    async setUp({ act, ready, arg }) {
+    async setUp({ act, ready, arg }, { limitMs = 60_000 } = {}) {
       await act();
-      await page.waitForFunction(ready, arg as never, { timeout: 60_000 });
+      await page.waitForFunction(ready, arg as never, { timeout: limitMs });
       await waitForQuiet(page);
     },
     budgeted: time,
@@ -555,6 +555,8 @@ async function everyAction(pass: Pass): Promise<void> {
     ),
   );
   await readALongEpub(pass);
+  // Last: once meaning search is on, the cache of meanings follows every later write.
+  await searchByMeaning(pass);
 }
 
 const sidebarButton = (page: Page, name: RegExp) => page.getByRole('button', { name }).first();
@@ -1066,6 +1068,55 @@ async function readALongPdf(pass: Pass): Promise<void> {
   const drawn = await page.locator('.pdf-page').count();
   expect(drawn, `${drawn} of ${LONG_PDF_PAGES} pages drawn`).toBeGreaterThan(0);
   expect(drawn, `${drawn} of ${LONG_PDF_PAGES} pages drawn`).toBeLessThanOrEqual(PDF_MOST_DRAWN);
+}
+
+/** The palette's note while the cache of meanings is still being built, or why it cannot be. */
+const MEANING_NOTE = '.palette__note';
+/** How long the work clock may run while the fixture's cache of meanings is built. */
+const BUILD_LIMIT_MS = 1_800_000;
+
+/**
+ * Search by meaning over the whole fixture (P32-02). Uncounted, the palette
+ * is switched to By meaning and its first search starts the cache's build,
+ * which is let finish; counted, five keys are typed into the palette, each
+ * a search by meaning answered from the cache.
+ */
+async function searchByMeaning(pass: Pass): Promise<void> {
+  const { page } = pass;
+  const query = 'wages';
+  await pass.setUp(phase(() => page.keyboard.press('Meta+k'), exists, SEARCH_BOX));
+  await pass.setUp(
+    phase(
+      async () => {
+        await page.getByRole('switch', { name: 'By meaning' }).click();
+        await page.locator(SEARCH_BOX).fill('pay');
+      },
+      ({ note }) =>
+        document.querySelector(note) === null && document.querySelector('[role="option"]') !== null,
+      { note: MEANING_NOTE },
+    ),
+    // The whole fixture is embedded first, a note per idle moment: minutes on the work clock.
+    { limitMs: BUILD_LIMIT_MS },
+  );
+  await pass.setUp(
+    phase(
+      () => page.locator(SEARCH_BOX).fill(''),
+      (selector) => document.querySelector<HTMLInputElement>(selector)?.value === '',
+      SEARCH_BOX,
+    ),
+  );
+  await pass.budgeted('⌘K by meaning + 5 keys', [
+    phase(
+      async () => {
+        for (const key of query) await pass.input(() => page.keyboard.type(key));
+      },
+      ({ text, selector }) =>
+        document.querySelector<HTMLInputElement>(selector)?.value === text &&
+        document.querySelector('[role="option"]') !== null,
+      { text: query, selector: SEARCH_BOX },
+    ),
+  ]);
+  await pass.setUp(phase(() => page.keyboard.press('Escape'), gone, SEARCH_BOX));
 }
 
 /** The 1,000-chapter EPUB the book reader is held to (#505): a file in the vault, no note of its own, like the long PDF. */

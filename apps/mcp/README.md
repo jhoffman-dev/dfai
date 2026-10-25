@@ -75,6 +75,7 @@ Normally none. These environment variables override the connection file:
 | ----------------------------- | ---------------------------------------------------------------------------- | ------- |
 | `atlas_status`                | `GET /v1/status`                                                             | no      |
 | `atlas_search`                | `GET /v1/search`                                                             | no      |
+| `atlas_semantic_search`       | `GET /v1/search?mode=semantic`                                               | no      |
 | `atlas_list_notes`            | `GET /v1/notes`                                                              | no      |
 | `atlas_read_note`             | `GET /v1/notes/{path}`                                                       | no      |
 | `atlas_create_note`           | `POST /v1/notes`                                                             | yes     |

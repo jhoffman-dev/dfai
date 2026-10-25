@@ -37,6 +37,35 @@ export const search = defineTool({
   call: (client, input) => client.search(definedOnly(input)),
 });
 
+export const semanticSearch = defineTool({
+  name: 'atlas_semantic_search',
+  title: 'Search notes by meaning',
+  description:
+    'Find the blocks of notes that mean what "q" asks, whatever words they use: "when are wages ' +
+    'paid" finds "pay day moves to Friday". Use it for questions such as "what did Mara say about ' +
+    'the budget"; use atlas_search to find exact words. Returns { hits: [{ path, title, text, ' +
+    'heading, block, link, score }], progress: { done, total, failure } }, closest first. "link" ' +
+    'cites the block — [[Note#^id]], else [[Note#Heading]], else [[Note]] — so quote it in an ' +
+    'answer; "text" is what the block says. It works only where the person has turned on search by ' +
+    'meaning in the app (⌘K, "By meaning"), which fetches a 91 MB model to their Mac: this tool ' +
+    'never turns it on, and answers semantic_off ("Search by meaning is off on this Mac — turn it ' +
+    'on from ⌘K") where it is off, so tell the person. Once on, the cache of meanings is built in ' +
+    'the background; while "progress.done" is below "progress.total" some notes cannot be found ' +
+    'yet. "q" is at most 1000 characters. Archived notes are left out unless includeArchived is ' +
+    'true.',
+  inputSchema: z.object({
+    q: z
+      .string()
+      .min(1)
+      .max(1_000)
+      .describe('The question or phrase, in any words; at most 1000 characters.'),
+    limit: limit.optional(),
+    includeArchived: includeArchived.optional(),
+  }),
+  annotations: READ_ONLY,
+  call: (client, input) => client.semanticSearch(definedOnly(input)),
+});
+
 export const listTypes = defineTool({
   name: 'atlas_list_types',
   title: 'List object types',
@@ -97,4 +126,12 @@ export const profile = defineTool({
   call: (client) => client.profile(),
 });
 
-export const vaultTools = [status, search, listTypes, listViews, listTypeViews, profile];
+export const vaultTools = [
+  status,
+  search,
+  semanticSearch,
+  listTypes,
+  listViews,
+  listTypeViews,
+  profile,
+];

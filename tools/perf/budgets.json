@@ -199,9 +199,9 @@
         "index_query": 4
       }
     },
-    "\u2318K + 5 keys over the table": {
-      "commits": 19,
-      "renders": 465,
+    "⌘K + 5 keys over the table": {
+      "commits": 18,
+      "renders": 450,
       "calls": {
         "index_search": 7
       }
@@ -272,6 +272,14 @@
       "commits": 5,
       "renders": 41,
       "calls": {}
+    },
+    "⌘K by meaning + 5 keys": {
+      "commits": 8,
+      "renders": 180,
+      "calls": {
+        "embed": 2,
+        "embedding_cache_excerpts": 2
+      }
     },
     "Open a 1,000-chapter EPUB": {
       "commits": 9,

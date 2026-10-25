@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import type { NavigationPlace, PaletteCommand } from '@dfai/domain';
-import { SEARCH_SCOPE, type IndexPort } from '@dfai/application';
+import { SEARCH_SCOPE, type IndexPort, type SemanticEngine } from '@dfai/application';
 import { SearchPalette } from '@dfai/ui';
 import { useSearch } from './index/use-search.ts';
 import { useIndexPhase, type IndexStatusStore } from './index/index-status-store.ts';
@@ -23,6 +23,8 @@ export interface SearchPaletteSlotProps {
   readonly store: OverlayStore;
   readonly workspace: WorkspaceStore;
   readonly index: IndexPort;
+  /** Search by meaning in the open vault (P32-02); null or left out, it is not offered. */
+  readonly semantic?: SemanticEngine | null;
   /**
    * The commands on offer, given the place the focused pane shows: a note
    * can be archived or unarchived from here. Read while the palette is up,
@@ -50,6 +52,7 @@ function OpenSearchPalette({
   store,
   workspace,
   index,
+  semantic = null,
   commandsFor,
   offerFor,
   indexStatus,
@@ -67,12 +70,20 @@ function OpenSearchPalette({
   );
   const commands = useMemo(() => commandsFor(focused), [commandsFor, focused]);
   const changeKey = usePaletteKey(indexStatus, vault);
-  const search = useSearch({ index, commands, offerFor, changeKey, store });
+  const search = useSearch({ index, semantic, commands, offerFor, changeKey, store });
   return (
     <SearchPalette
       query={search.query}
       commands={search.commands}
       archived={{ included: search.includeArchived, onChange: search.setIncludeArchived }}
+      {...(semantic !== null && {
+        meaning: {
+          on: search.byMeaning,
+          onChange: search.setByMeaning,
+          progress: search.meaning?.progress ?? null,
+          problem: search.meaning?.problem ?? null,
+        },
+      })}
       onCommand={(id) => {
         // Closing forgets the query (`withClosed`); this render's is the one chosen from.
         hideOverlay(store, 'search');
