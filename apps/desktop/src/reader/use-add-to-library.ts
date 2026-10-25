@@ -36,15 +36,19 @@ type Adder = (
   args: { picked: PickedDocument; folder: VaultPath },
 ) => Promise<AddedDocument>;
 
-/** Each kind's use-case, with its reader loaded on first use. */
+/**
+ * Each kind's use-case, with its reader loaded on first use. Each add is asked for by
+ * the person, as a part's Reload is, so it asks for a fresh copy of a chunk that failed
+ * on the module, which the browser keeps failed under its address (#560).
+ */
 const ADDERS: Readonly<Record<DocumentKind, () => Promise<Adder>>> = {
   pdf: async () => {
-    const { appPdfReader } = await readers.load();
+    const { appPdfReader } = await readers.load({ fresh: true });
     return (fs, { picked, folder }) =>
       addPdfToLibrary({ fs, reader: appPdfReader }, { pdf: picked, folder });
   },
   epub: async () => {
-    const { appEpubReader } = await readers.load();
+    const { appEpubReader } = await readers.load({ fresh: true });
     return (fs, { picked, folder }) =>
       addEpubToLibrary({ fs, reader: appEpubReader }, { epub: picked, folder });
   },
