@@ -47,10 +47,10 @@ function expressibleIn(node: EditorNode, beforeAnId = holdsAnId(node)): EditorNo
     const content = expelled(htmlBreaksTrimmed(inline)).map(cellCode);
     // A block with no words to run into the line — raw HTML, a highlight, a rule — is
     // kept after it for the writer to refuse (#569): run into the line it would be
-    // nothing, and the person would lose it without a word.
-    const wordless = blocks.filter(
-      (block) => block.type !== 'paragraph' && nestedBlockOf(block).content === undefined,
-    );
+    // nothing, and the person would lose it without a word. Judged by its type, not
+    // by a missing `content`: ProseMirror leaves that out of an empty node's JSON,
+    // and an empty heading (`# ` typed in the cell) collapses into the line.
+    const wordless = blocks.filter((block) => WORDLESS_TYPES.has(nestedBlockOf(block).type));
     return { ...node, content: [{ type: 'paragraph', content }, ...wordless] };
   }
   if (node.type === 'heading') {
@@ -135,6 +135,13 @@ function cellCode(node: EditorNode): EditorNode {
 }
 
 const SPACE: EditorNode = { type: 'paragraph', content: [{ type: 'text', text: ' ' }] };
+
+/**
+ * The block types that never hold text, as a cell's line could take it: a raw
+ * block (HTML, a highlight) and a rule. A card, a shown block and a query are
+ * already their link or fence here (`nestedBlockOf`).
+ */
+const WORDLESS_TYPES: ReadonlySet<string> = new Set(['rawBlock', 'horizontalRule']);
 
 const isEmptyParagraph = (node: EditorNode): boolean =>
   node.type === 'paragraph' && (node.content ?? []).length === 0;
