@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type * as LaterParts from './later-parts.ts';
+import type * as Readers from './reader/readers.ts';
 import { importAgain, reloadWindow } from './chunk-files.ts';
 import {
   chunkOf,
@@ -78,16 +79,18 @@ export const activityScreen = laterPage(
 const researchScreens = chunk('research-screens', () => import('./research/research-screens.tsx'));
 export const libraryScreen = laterPage(researchScreens, (m) => m.LibraryScreen);
 export const highlightsScreen = laterPage(researchScreens, (m) => m.HighlightsScreen);
-// The PDF reader, with pdf.js, in a chunk of its own (#504): half a megabyte nobody pays for until a PDF opens.
-export const documentReader = laterPage(
-  chunk('document-reader', () => import('./reader/document-reader.tsx')),
-  (m) => m.DocumentReader,
+/**
+ * The readers (#504, #505), with pdf.js and foliate-js, in one chunk nobody pays for until
+ * start-up has committed: the PDF and EPUB readers draw the same parts, and adding a
+ * document loads its reader, so chunks of their own would split those into chunks both
+ * import — ones a failed preload can leave broken past Reload (#560).
+ */
+export const readers = chunk(
+  'readers',
+  (): Promise<typeof Readers> => import('./reader/readers.ts'),
 );
-// The EPUB reader, with foliate-js and its zip reader, in a chunk of its own (#505).
-export const bookReader = laterPage(
-  chunk('book-reader-tab', () => import('./reader/book-reader-tab.tsx')),
-  (m) => m.BookReaderTab,
-);
+export const documentReader = laterPage(readers, (m) => m.DocumentReader);
+export const bookReader = laterPage(readers, (m) => m.BookReaderTab);
 export const archivePage = laterPage(laterParts, (m) => m.ArchivePage);
 export const weeklyReviewPage = laterPage(laterParts, (m) => m.WeeklyReviewPage);
 export const templatesPage = laterPage(laterParts, (m) => m.TemplatesPage);

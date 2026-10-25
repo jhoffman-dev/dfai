@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  KNOWN_IMPORTS,
   describeSharedChunk,
   describeStaleImport,
   sharedChunks,
@@ -35,7 +36,7 @@ const SHARED: Manifest = {
   '_chat-C3.js': { file: 'assets/chat-C3.js', name: 'chat', imports: ['index.html'] },
 };
 
-/** Today's one known import: the PDF reader draws a part that adding a PDF loads lazily. */
+/** The PDF reader before #560: it drew a part that adding a PDF loaded lazily. */
 const READER: Manifest = {
   'index.html': ENTRY,
   'src/reader/document-reader.tsx': part('document-reader', 'src/reader/document-reader.tsx', [
@@ -122,6 +123,13 @@ describe('a chunk shared under a part', () => {
     expect(describeStaleImport(KNOWN_READER)).toContain(
       'Stale exception, remove it: src/reader/document-reader.tsx -> src/reader/app-pdf-reader.ts',
     );
+  });
+
+  it('lets nothing through by default: no part may share a chunk (#560)', () => {
+    expect(KNOWN_IMPORTS).toEqual([]);
+    expect(sharedChunks(READER).map((shared) => shared.chunk)).toEqual([
+      'assets/app-pdf-reader-B2.js',
+    ]);
   });
 
   it('does not judge the entry chunk, which may import what it likes', () => {
