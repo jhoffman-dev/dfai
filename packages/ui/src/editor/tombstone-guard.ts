@@ -43,7 +43,8 @@ import { pastedRawBlocks } from './raw-block.ts';
  * copied, the copy is a plain quote, as a paste is.
  */
 
-const isTombstone = (node: ProseMirrorNode): boolean =>
+/** Whether `node` is a removed highlight's tombstone, which nobody sees (ADR-0043 §5). */
+export const isTombstone = (node: ProseMirrorNode): boolean =>
   node.type.name === 'rawBlock' && isTombstoneBlock(String(node.attrs['markdown'] ?? ''));
 
 interface Held {
@@ -207,7 +208,7 @@ function pastedOff(slice: Slice, view: EditorView): Slice {
  */
 function dropAsCopy(view: EditorView, event: DragEvent, slice: Slice, moved: boolean): boolean {
   if (moved) return false;
-  const quoted = pastedRawBlocks(quotedSlice(slice));
+  const quoted = copiedAsPasted(slice);
   if (quoted === slice) return false;
   const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
   if (at === null) return false;
@@ -223,6 +224,16 @@ function dropAsCopy(view: EditorView, event: DragEvent, slice: Slice, moved: boo
   view.focus();
   view.dispatch(tr.setMeta('uiEvent', 'drop'));
   return true;
+}
+
+/**
+ * A copy of `slice` made within the note — a drag dropped as a copy, a block
+ * duplicated (#569) — cleaned as a paste is, in the paste's order: no
+ * tombstone, each highlight a plain quote, then its raw blocks' markers and
+ * ids taken off (raw-block.ts). The same slice when there is nothing to clean.
+ */
+export function copiedAsPasted(slice: Slice): Slice {
+  return pastedRawBlocks(quotedSlice(offTheClipboard(slice)));
 }
 
 /**

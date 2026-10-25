@@ -46,6 +46,7 @@ import type { PromoteLine } from './editor/promote-line.ts';
 import { withoutPendingMentions } from './editor/pending-mention.ts';
 import { redrawPersonChips } from './editor/person-chips.ts';
 import { useLinkMenu } from './note-link-menu.tsx';
+import { useBlockMenu } from './note-block-menu.tsx';
 import {
   useBlockPicking,
   useBookmarkSource,
@@ -365,6 +366,7 @@ export function NoteEditor({
   }, [editor, doc]);
 
   const linkMenu = useLinkMenu({ editor, onFollowLink });
+  const blockMenu = useBlockMenu({ editor, highlights: highlightBlocks });
 
   // Delegated rather than bound per link, so links added while typing work too.
   const followLink = (event: {
@@ -398,8 +400,9 @@ export function NoteEditor({
 
   return (
     <div onClick={followLink} onKeyDown={followFromKeyboard} {...linkMenu.handlers}>
-      <EditorContent editor={editor} />
+      <EditorContent editor={editor} className="editor-host" />
       {linkMenu.overlay}
+      {blockMenu}
       {offerImage && (
         <input
           ref={imagePicker}
@@ -512,6 +515,12 @@ export interface NoteHighlights {
    * their words. Handed null as the editor goes.
    */
   readonly onWritePending?: (writePending: (() => Promise<void>) | null) => void;
+  /**
+   * Removes a highlight by the literature note's own write, as a block's
+   * Delete asks (#569), telling the person when it cannot; left out, a
+   * highlight's Delete is not offered.
+   */
+  readonly removeHighlight?: (id: string) => void;
 }
 
 /**
@@ -538,6 +547,7 @@ function useHighlightBlocks(
     if (recovered !== undefined) drafts.restore(recovered);
   }, [drafts, recovered]);
   const offers = highlights !== null;
+  const removes = highlights?.removeHighlight !== undefined;
   // The last highlights the note had: a note read again as no literature note
   // any more still has the words typed in its fields, and they go through these.
   const lastHeld = useRef(highlights);
@@ -570,9 +580,10 @@ function useHighlightBlocks(
             editComment: writeThrough(latest),
             drafts,
             loadImage: (src) => images.current(src),
+            ...(removes && { remove: (id: string) => latest.current?.removeHighlight?.(id) }),
           }
         : null,
-    [offers, latest, images, drafts],
+    [offers, removes, latest, images, drafts],
   );
 }
 

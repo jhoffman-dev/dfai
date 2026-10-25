@@ -43,6 +43,12 @@ export interface HighlightBlocks {
   readonly drafts: HighlightDrafts;
   /** An area highlight's picture, found as the note's images are. */
   loadImage(src: string): Promise<string | null>;
+  /**
+   * Removes highlight `id` by the literature note's own write, which leaves a
+   * Kindle highlight's tombstone (ADR-0043 §5); tells the person itself when
+   * it cannot. Left out, a highlight is not deleted from its block's menu.
+   */
+  remove?(id: string): void;
 }
 
 export interface RawBlockOptions {

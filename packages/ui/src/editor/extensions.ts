@@ -31,6 +31,7 @@ import { BlockId } from './block-id.ts';
 import { BlockAnchor } from './block-anchor.ts';
 import { RevealedBlock } from './revealed-block.ts';
 import { BlockEmbed, type TransclusionSource } from './block-embed.tsx';
+import { BlockHandle } from './block-handle.ts';
 import type { BlockPicking } from './block-picking.ts';
 import { Bookmark, TopLevelDocument, type BookmarkSource } from './bookmark.tsx';
 import { LinkKeys } from './link-keys.ts';
@@ -149,6 +150,7 @@ export function createEditorExtensions({
       offerQuery: queries !== null,
     }),
     PromoteLineButton.configure({ promote: promoteLine }),
+    BlockHandle.configure({ highlights }),
     EscapeUnused,
   ];
 }
@@ -205,6 +207,8 @@ const baseExtensions = [
     link: { openOnClick: false },
     // Replaced below by the highlighting version, which keeps the same schema.
     codeBlock: false,
+    // Where a dragged block will land (#569): a line drawn by the stylesheet, in the accent.
+    dropcursor: { color: false, width: 2, class: 'editor-drop-line' },
   }),
   CodeBlockLowlight.configure({ lowlight, languageClassPrefix: 'language-' }),
   TaskList,

@@ -97,7 +97,7 @@ export const BlockAnchor = Extension.create({
           // A drag within the note keeps its ids: whether it moves is decided only at the
           // drop, after this; a copy's second holder is taken off by keepIds (idsMadeOnce).
           transformPasted: (slice, view) =>
-            view.dragging !== null ? slice : withoutIdsIn(slice, idsIn(view.state.doc)),
+            view.dragging !== null ? slice : withoutIdsHeldBy(view.state.doc, slice),
         },
         appendTransaction: (transactions, before, state) => {
           if (!transactions.some((transaction) => transaction.docChanged)) return null;
@@ -115,6 +115,11 @@ export const BlockAnchor = Extension.create({
     ];
   },
 });
+
+/** `slice` with the ids `doc` already holds taken off its blocks, as a paste into `doc` takes them. */
+export function withoutIdsHeldBy(doc: ProseMirrorNode, slice: Slice): Slice {
+  return withoutIdsIn(slice, idsIn(doc));
+}
 
 /** Every block id in the document. */
 function idsIn(doc: ProseMirrorNode): Set<string> {

@@ -86,6 +86,16 @@
       "renders": 0,
       "calls": {}
     },
+    "Hover a block": {
+      "commits": 0,
+      "renders": 0,
+      "calls": {}
+    },
+    "Drag a block": {
+      "commits": 3,
+      "renders": 33,
+      "calls": {}
+    },
     "Split the window": {
       "commits": 8,
       "renders": 194,
