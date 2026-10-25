@@ -25,8 +25,11 @@ import { expressible } from './expressible.ts';
 const MARK_ORDER = ['link', 'bold', 'italic', 'strike'] as const;
 
 export class UnsupportedNodeError extends Error {
-  constructor(type: string) {
-    super(`Cannot serialize editor node of type "${type}"`);
+  /** `where`: the place markdown has no way to write such a node, when it has one elsewhere. */
+  constructor(type: string, where?: string) {
+    super(
+      `Cannot serialize editor node of type "${type}"${where === undefined ? '' : ` ${where}`}`,
+    );
     this.name = 'UnsupportedNodeError';
   }
 }
@@ -211,8 +214,19 @@ function tableToMdast(node: EditorNode): MdastNode {
   };
 }
 
-/** A cell's content: the one paragraph `expressible` has made of it. */
-const cellLine = (cell: EditorNode): readonly EditorNode[] => cell.content?.[0]?.content ?? [];
+/**
+ * A cell's content: the one paragraph `expressible` has made of it. A block
+ * it kept after that line is one a cell has no way to write (a highlight,
+ * raw HTML): the save is refused, loudly, rather than writing nothing (#569).
+ */
+function cellLine(cell: EditorNode): readonly EditorNode[] {
+  const [line, ...rest] = cell.content ?? [];
+  const unwritable = line !== undefined && line.type !== 'paragraph' ? line : rest[0];
+  if (unwritable !== undefined) {
+    throw new UnsupportedNodeError(unwritable.type, 'in a table cell, which holds one line');
+  }
+  return line?.content ?? [];
+}
 
 /** A line break as markdown writes one: a backslash ending the line. */
 const BREAK: PhrasingContent = { type: 'break' };
