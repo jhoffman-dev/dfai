@@ -320,13 +320,16 @@ pnpm tauri:dev</pre>
       </div>
       <ul>
         <li>While a picture is saving, a placeholder holds its place. If it can't be saved, the reason shows there and nothing is added to the note.</li>
-        <li>Click a picture to select it, then type its alt text (a short description) in the <i>Describe the image</i> field under it. <kbd>Return</kbd> or <kbd>Esc</kbd> goes back to writing.</li>
+        <li><b>See it larger:</b> click a picture and it opens over the note, as large as the window holds it — in a note you're editing, in the feed, in a note read in a panel, and in a block shown from another note. Zoom with <kbd>⌘+</kbd> and <kbd>⌘−</kbd>, a pinch or <kbd>⌘</kbd>-scroll, or the <b>−</b> / <b>+</b> buttons; <kbd>⌘0</kbd> or <b>Fit</b> shows all of it again, and a double-click goes between fit and its real size. Drag to move around a zoomed picture. <kbd>←</kbd> and <kbd>→</kbd> go to the note's other pictures. <kbd>Esc</kbd>, <b>×</b> or a click beside the picture closes it. A picture that can't be read says so there.</li>
+        <li><b>Resize it on the page:</b> hover a picture and drag the handle on either side. It can't get wider than the column or narrower than a thumbnail. The width is saved the way Obsidian writes it, <code>![Q3 chart|400](chart.png)</code>, and nothing else in the line changes; in a table it's <code>\|400</code>, as a table needs. A double-click on a handle puts it back to its own size. <kbd>⌘Z</kbd> undoes a resize, and letting go where you started changes nothing.</li>
+        <li><b>Alt text:</b> after closing the larger view the picture stays selected; type its alt text (a short description) in the <i>Describe the image</i> field under it. <kbd>Return</kbd> or <kbd>Esc</kbd> goes back to writing. Alt text that ends like a size, such as <i>Route 66|2024</i>, is saved as <code>Route 66\|2024</code> so it stays words.</li>
+        <li><b>Room to type:</b> with a picture selected, <kbd>Return</kbd> goes on after it — a new line, or in a list a new item — and never removes the picture. A note that ends with a picture keeps an empty line under it to type on: <kbd>↓</kbd> on the picture goes there, or click it. <kbd>↑</kbd> on a picture at the very top makes a line above it.</li>
         <li>PNG, JPEG, GIF, WebP and SVG work, and HEIC when the Mac can draw it. Each can be up to 20 MB. Two pictures with the same name are numbered, never overwritten.</li>
         <li>Deleting a picture from the note removes it from the note only. The file stays in the vault.</li>
         <li>Moving a note: <b>Update N links</b> fixes its pictures' paths too.</li>
       </ul>
       <p><b>Where they go:</b> Settings (<kbd>⌘,</kbd>) → <b>Images</b> → <b>Images go in</b>: the <b>Attachments folder</b> (<code>attachments/</code>, the default) or <b>Beside the note</b>, in the note's own folder.</p>
-      <p class="muted">Not yet: resizing a picture, and showing Obsidian's <code>![[picture.png]]</code> embeds as pictures. Those are kept exactly as written, so Obsidian still shows them.</p>
+      <p class="muted">Not yet: showing Obsidian's <code>![[picture.png]]</code> embeds as pictures, so they can't be opened larger or resized here. They are kept exactly as written, size and all, so Obsidian still shows them.</p>
     </section>
 
     <section id="pages">

@@ -7,6 +7,7 @@ import {
   type EditorNode,
 } from '@dfai/domain';
 import { paragraphAnchor, withoutTrailingAnchor } from './block-anchors.ts';
+import { imageAltOf, readImageSizes } from './image-alt.ts';
 import type { Nodes as MdastNode, Parent as MdastParent, PhrasingContent } from 'mdast';
 
 /**
@@ -18,6 +19,7 @@ import type { Nodes as MdastNode, Parent as MdastParent, PhrasingContent } from 
  * approximated and quietly rewritten.
  */
 export function mdastBlockToEditorNode(node: MdastNode, body: string): EditorNode | null {
+  readImageSizes(node, body);
   switch (node.type) {
     case 'paragraph': {
       const content = inlineContent(node.children);
@@ -302,13 +304,7 @@ function inlineToEditorNodes(
     case 'image':
       // A link around the image (`[![alt](src)](href)`) is a mark it carries,
       // so it is written back around it rather than lost.
-      return [
-        {
-          type: 'image',
-          attrs: { src: node.url, alt: node.alt ?? null, title: node.title ?? null },
-          ...(marks.length > 0 && { marks }),
-        },
-      ];
+      return [{ type: 'image', attrs: imageAttrs(node), ...(marks.length > 0 && { marks }) }];
     case 'strong':
       return descend(node.children, [...marks, { type: 'bold' }]);
     case 'emphasis':
@@ -323,6 +319,21 @@ function inlineToEditorNodes(
     default:
       return null;
   }
+}
+
+/**
+ * An image's attributes. A size at the end of its alt text (`![chart|400](…)`,
+ * #568) is its own attribute, so the alt text field shows only the words;
+ * only a sized image carries one, so an unsized image's node is as before.
+ */
+function imageAttrs(node: Extract<PhrasingContent, { type: 'image' }>): Record<string, unknown> {
+  const { alt, size } = imageAltOf(node);
+  return {
+    src: node.url,
+    alt,
+    title: node.title ?? null,
+    ...(size !== null && { width: size.width, height: size.height }),
+  };
 }
 
 /**

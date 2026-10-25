@@ -217,3 +217,114 @@
   font-weight: 500;
   padding: 1px 6px;
 }
+
+/* ---- The image viewer (#568) ----
+   An image as large as the window holds it, over the scrim. The chrome is
+   neutral: one small bar of controls at the bottom, the popover surface. */
+
+.lightbox__backdrop {
+  -webkit-backdrop-filter: blur(6px) saturate(1.05);
+  backdrop-filter: blur(6px) saturate(1.05);
+  background: var(--scrim);
+  inset: 0;
+  position: fixed;
+  z-index: 40;
+}
+
+.lightbox {
+  display: flex;
+  flex-direction: column;
+  inset: 0;
+  outline: none;
+  position: fixed;
+  z-index: 41;
+}
+
+.lightbox__stage {
+  align-items: center;
+  cursor: zoom-out;
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--space-6) var(--space-6) 0;
+}
+
+.lightbox__img {
+  border-radius: var(--radius-chip);
+  box-shadow: var(--shadow-overlay);
+  cursor: default;
+  flex: none;
+  max-width: none;
+  user-select: none;
+}
+
+.lightbox__stage--zoomed,
+.lightbox__stage--zoomed .lightbox__img {
+  cursor: grab;
+}
+
+.lightbox__stage--zoomed:active,
+.lightbox__stage--zoomed:active .lightbox__img {
+  cursor: grabbing;
+}
+
+.lightbox__status {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+
+.lightbox__bar {
+  align-items: center;
+  align-self: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--ink);
+  display: flex;
+  gap: var(--space-1);
+  margin: var(--space-4);
+  padding: var(--space-1);
+}
+
+.lightbox__button {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--text-body);
+  height: 28px;
+  justify-content: center;
+  min-width: 28px;
+  padding: 0 var(--space-2);
+}
+
+.lightbox__button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.lightbox__button:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.lightbox__button:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus);
+  outline: none;
+}
+
+.lightbox__zoom,
+.lightbox__count {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+  text-align: center;
+}

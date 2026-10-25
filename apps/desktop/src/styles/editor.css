@@ -970,6 +970,44 @@
   box-shadow: 0 0 0 2px var(--focus);
 }
 
+/* A click on an image opens it larger (#568), wherever it is shown. */
+.image__img {
+  cursor: zoom-in;
+}
+
+/* The resize handles: a short bar inside each side edge, shown while the
+   image is hovered or selected. Neutral chrome, the editor's own ink. */
+.image__handle {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-chip);
+  box-shadow: var(--shadow-soft);
+  cursor: ew-resize;
+  height: 36px;
+  max-height: calc(100% - 8px);
+  opacity: 0;
+  position: absolute;
+  top: 50%;
+  touch-action: none;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease;
+  width: 8px;
+  z-index: 2;
+}
+
+.image__handle--left {
+  left: 6px;
+}
+
+.image__handle--right {
+  right: 6px;
+}
+
+.image:hover .image__handle,
+.image--selected .image__handle {
+  opacity: 1;
+}
+
 .image__alt {
   background: var(--surface);
   border: 1px solid var(--line);
