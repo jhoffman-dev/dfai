@@ -58,3 +58,23 @@ export function matchMeetingNote(
   );
   return fits.length === 1 ? (fits[0]?.path ?? null) : null;
 }
+
+/**
+ * The meeting notes that give no start and fit more than one of `events` —
+ * the day's meetings, each once — under their title. Which of them a note
+ * was written up in is the person's to say, so it is linked to none: a
+ * notetaker's note of the morning standup is never also the afternoon's.
+ */
+export function startlessShared(
+  events: readonly EventToMatch[],
+  candidates: readonly MeetingCandidate[],
+): ReadonlySet<VaultPath> {
+  const fitting = (note: MeetingCandidate) =>
+    events.filter(
+      ({ title, start }) =>
+        start.startsWith(`${note.date}T`) && vocabularyKey(title) === vocabularyKey(note.title),
+    ).length;
+  return new Set(
+    candidates.filter((note) => note.start === null && fitting(note) > 1).map(({ path }) => path),
+  );
+}

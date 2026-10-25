@@ -10,6 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { isScopeRefusal } from '@dfai/domain';
 import { GoogleCalendarError } from '@dfai/application';
 
 const invoke = vi.fn();
@@ -33,6 +34,8 @@ const google = {
   scripted: [] as { status: number; body: string }[],
   endlessPages: false,
   stalls: false,
+  /** The zone each page names, as Google's do; null names none. */
+  zone: 'America/Los_Angeles' as string | null,
 };
 
 /** One page of `items`; only the last carries what `last` gives, so a token is issued once a listing ends. */
@@ -43,6 +46,7 @@ function page(items: WireEvent[], query: URLSearchParams, last: () => Record<str
   const more = google.endlessPages || start + size < items.length;
   return JSON.stringify({
     kind: 'calendar#events',
+    ...(google.zone === null ? {} : { timeZone: google.zone }),
     items: slice,
     ...(more ? { nextPageToken: `p${start + size}` } : last()),
   });
@@ -138,6 +142,7 @@ beforeEach(() => {
   google.queries = [];
   google.scripted = [];
   google.endlessPages = false;
+  google.zone = 'America/Los_Angeles';
   google.stalls = false;
   invoke.mockReset();
   invoke.mockImplementation(hop);
@@ -176,7 +181,11 @@ describe('tauriCalendarSource: a full listing', () => {
     );
     const answer = await list();
     expect(answer.kind === 'changes' && answer.events.length).toBe(260);
-    expect(answer).toMatchObject({ kind: 'changes', syncToken: 'sync-1' });
+    expect(answer).toMatchObject({
+      kind: 'changes',
+      syncToken: 'sync-1',
+      timeZone: 'America/Los_Angeles',
+    });
     expect(google.queries.map(({ query }) => query.get('pageToken'))).toEqual([null, 'p250']);
     const [first] = google.queries;
     expect(Object.fromEntries(first?.query ?? [])).toEqual({
@@ -250,7 +259,7 @@ describe('tauriCalendarSource: a full listing', () => {
     ]);
   });
 
-  it('leaves out an event it cannot place rather than guessing its day', async () => {
+  it('keeps an event it cannot place with no start, rather than guess its day or drop it', async () => {
     google.events.set('primary', [
       wire('ev-no-offset', { start: { dateTime: '2026-10-24T09:00:00' } }),
       wire('ev-no-start', { start: undefined }),
@@ -258,7 +267,18 @@ describe('tauriCalendarSource: a full listing', () => {
       wire('ev-kept'),
     ]);
     const answer = await list();
-    expect(answer.kind === 'changes' && answer.events.map(({ id }) => id)).toEqual(['ev-kept']);
+    const events = answer.kind === 'changes' ? answer.events : [];
+    expect(events.map(({ id, start }) => [id, start === null])).toEqual([
+      ['ev-no-offset', true],
+      ['ev-no-start', true],
+      ['ev-kept', false],
+    ]);
+  });
+
+  it('says no zone for a calendar whose listing names none', async () => {
+    google.zone = null;
+    google.events.set('primary', [wire('ev-kept')]);
+    expect(await list()).toMatchObject({ kind: 'changes', timeZone: null });
   });
 
   it('asks for a calendar by its id, written so it stays one part of the path', async () => {
@@ -300,6 +320,33 @@ describe('tauriCalendarSource: what goes wrong', () => {
       google.scripted.push({ status, body: `{"error":{"code":${status}}}` });
       expect(await failureOf(list())).toMatchObject({ kind: 'api_refused', code: String(status) });
     }
+  });
+
+  it('carries what Google said of a refusal, so a missing scope is told apart', async () => {
+    google.scripted.push({
+      status: 403,
+      body: JSON.stringify({
+        error: {
+          code: 403,
+          message: 'Request had insufficient authentication scopes.',
+          errors: [{ reason: 'insufficientPermissions' }],
+          details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }],
+        },
+      }),
+    });
+    const failure = await failureOf(list());
+    expect(failure).toMatchObject({
+      kind: 'api_refused',
+      code: '403',
+      message:
+        'the Calendar API answered 403: Request had insufficient authentication scopes.; insufficientPermissions; ACCESS_TOKEN_SCOPE_INSUFFICIENT',
+    });
+    expect(isScopeRefusal(failure)).toBe(true);
+  });
+
+  it('says only the status for a refusal whose body says nothing more', async () => {
+    google.scripted.push({ status: 404, body: 'Not Found' });
+    expect(await failureOf(list())).toMatchObject({ message: 'the Calendar API answered 404' });
   });
 
   it('reports a body that is not JSON, or not an events list, as malformed', async () => {

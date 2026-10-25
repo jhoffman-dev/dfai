@@ -101,6 +101,22 @@ function scopeRefusal(message: string): GoogleProblem {
   };
 }
 
+/**
+ * Whether Google said this Mac's sign-in may not do what was asked: the
+ * consent screen's box left unticked, or the API's 403 for a token without
+ * the scope. Asking again changes nothing until the person allows it.
+ */
+export function isScopeRefusal(failure: GoogleFailure): boolean {
+  if (failure.kind === 'scope_not_granted') return true;
+  return (
+    failure.kind === 'api_refused' &&
+    failure.code === '403' &&
+    /insufficient\s+(authentication\s+)?scopes?|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(
+      failure.message,
+    )
+  );
+}
+
 /** The person's problem and its fix, for any failure. */
 export function explainGoogleFailure(failure: GoogleFailure): GoogleProblem {
   switch (failure.kind) {
@@ -135,6 +151,12 @@ export function explainGoogleFailure(failure: GoogleFailure): GoogleProblem {
         fix: 'Unlock the login keychain, then connect again.',
       };
     case 'api_refused':
+      if (isScopeRefusal(failure)) {
+        return {
+          problem: 'Meetings are not read on this Mac: its Google sign-in may not see events.',
+          fix: 'Choose Allow reading meetings in Settings → Google Calendar.',
+        };
+      }
       return {
         problem: `Google Calendar refused the request (${failure.code ?? 'no status'}).`,
         fix: failure.code === '403' ? CONNECT_AGAIN : 'Try again.',

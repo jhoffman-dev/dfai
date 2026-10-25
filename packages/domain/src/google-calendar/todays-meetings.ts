@@ -1,6 +1,6 @@
 import { readEventTime } from '../calendar/calendar-event.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
-import { EVENT_NOTE_KEYS } from './event-notes.ts';
+import { compareEventNotePaths, EVENT_NOTE_KEYS } from './event-notes.ts';
 
 const K = EVENT_NOTE_KEYS;
 
@@ -29,6 +29,7 @@ export interface DayMeeting {
 }
 
 interface Gathered {
+  path: string;
   title: string;
   values: Map<string, string[]>;
 }
@@ -36,7 +37,11 @@ interface Gathered {
 function gather(rows: readonly DayEventRow[]): Map<string, Gathered> {
   const notes = new Map<string, Gathered>();
   for (const row of rows) {
-    const note = notes.get(row.path) ?? { title: row.title, values: new Map<string, string[]>() };
+    const note = notes.get(row.path) ?? {
+      path: row.path,
+      title: row.title,
+      values: new Map<string, string[]>(),
+    };
     if (row.value !== null)
       note.values.set(row.key, [...(note.values.get(row.key) ?? []), row.value]);
     notes.set(row.path, note);
@@ -47,13 +52,34 @@ function gather(rows: readonly DayEventRow[]): Map<string, Gathered> {
 const clockOf = (minutes: number) =>
   `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 
-function meetingOf(path: string, note: Gathered, day: string): DayMeeting | null {
-  const first = (key: string) => note.values.get(key)?.[0] ?? null;
+const firstOf = (note: Gathered, key: string) => note.values.get(key)?.[0] ?? null;
+
+/**
+ * The notes of each event, in twin order: two Macs can each make one before
+ * git brings the other's over (ADR-0046). A note with no event id is its own.
+ */
+function twinsOf(notes: Iterable<Gathered>): Gathered[][] {
+  const byEvent = new Map<string, Gathered[]>();
+  for (const note of notes) {
+    const event = firstOf(note, K.eventId) ?? `path:${note.path}`;
+    byEvent.set(event, [...(byEvent.get(event) ?? []), note]);
+  }
+  return [...byEvent.values()].map((twins) =>
+    twins.sort((one, other) => compareEventNotePaths(one.path, other.path)),
+  );
+}
+
+/** An event once, as its first note says; off the day once any of its notes is marked cancelled. */
+function meetingOf(twins: readonly Gathered[], day: string): DayMeeting | null {
+  const [note] = twins;
+  if (note === undefined || twins.some((twin) => firstOf(twin, K.missing) === 'true')) return null;
+  const path = note.path;
+  const first = (key: string) => firstOf(note, key);
   const paths = (key: string) => (note.values.get(key) ?? []).map(createVaultPath);
   const start = readEventTime(first(K.date));
   const response = first(K.response);
   if (start === null || start.minutes === null || start.date !== day) return null;
-  if (first(K.missing) === 'true' || response === 'declined') return null;
+  if (response === 'declined') return null;
   const end = readEventTime(first(K.ends));
   return {
     path: createVaultPath(path),
@@ -69,12 +95,13 @@ function meetingOf(path: string, note: Gathered, day: string): DayMeeting | null
 
 /**
  * The meetings on `day`, earliest first: event notes with a time that day,
- * not cancelled, and not declined. An all-day event is on the calendar but
- * is not a meeting to prepare for, so it is left out.
+ * not cancelled, and not declined, each event once however many notes carry
+ * its id. An all-day event is on the calendar but is not a meeting to
+ * prepare for, so it is left out.
  */
 export function dayMeetings(rows: readonly DayEventRow[], day: string): DayMeeting[] {
-  return [...gather(rows)]
-    .map(([path, note]) => meetingOf(path, note, day))
+  return twinsOf(gather(rows).values())
+    .map((twins) => meetingOf(twins, day))
     .filter((meeting) => meeting !== null)
     .sort((one, other) =>
       one.start === other.start

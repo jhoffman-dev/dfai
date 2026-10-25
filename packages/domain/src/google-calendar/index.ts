@@ -13,6 +13,7 @@ export type { GoogleCalendar, GoogleCalendarSetting } from './google-calendar.ts
 export {
   explainGoogleFailure,
   isGoogleFailureKind,
+  isScopeRefusal,
   GOOGLE_FAILURE_KINDS,
 } from './google-failure.ts';
 export type { GoogleFailure, GoogleFailureKind, GoogleProblem } from './google-failure.ts';
@@ -49,9 +50,14 @@ export {
   MEETING_DAYS_BEFORE,
 } from './meeting-window.ts';
 export type { MeetingWindow } from './meeting-window.ts';
-export { matchMeetingNote, MEETING_START_TOLERANCE_MINUTES } from './meeting-match.ts';
+export {
+  matchMeetingNote,
+  startlessShared,
+  MEETING_START_TOLERANCE_MINUTES,
+} from './meeting-match.ts';
 export type { EventToMatch, MeetingCandidate } from './meeting-match.ts';
 export {
+  compareEventNotePaths,
   planEventNotes,
   EVENT_NOTE_KEYS,
   EVENT_NOTE_TYPE,

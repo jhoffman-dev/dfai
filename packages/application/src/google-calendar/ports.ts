@@ -61,6 +61,8 @@ export type CalendarChanges =
       readonly events: readonly GoogleEvent[];
       /** The token the next sync of this calendar starts from; null when Google gave none. */
       readonly syncToken: string | null;
+      /** The zone the calendar keeps, as Google names it (`America/Los_Angeles`); null when it gave none. */
+      readonly timeZone: string | null;
     }
   | { readonly kind: 'expired' };
 

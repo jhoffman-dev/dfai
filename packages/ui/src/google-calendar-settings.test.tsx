@@ -239,6 +239,26 @@ describe('GoogleCalendarSettings: meetings (ADR-0046)', () => {
     );
   });
 
+  it('says another Mac writes the notes, offering only to stop, when this one does not', () => {
+    renderMeetings(meetings({ state: 'elsewhere' }));
+    expect(part().textContent).toContain('written on the Mac that runs its automations');
+    expect(part().textContent).toContain('never asks Google for them');
+    expect(within(part()).queryByRole('button', { name: 'Allow reading meetings' })).toBeNull();
+    expect(within(part()).queryByRole('button', { name: 'Read meetings now' })).toBeNull();
+    expect(within(part()).getByRole('button', { name: 'Stop reading meetings' })).toBeTruthy();
+  });
+
+  it('says stopping is at once and that Google keeps the permission until Disconnect', () => {
+    renderMeetings(meetings({ state: 'on' }));
+    expect(part().textContent).toContain('Stopping takes effect at once');
+    expect(part().textContent).toContain('until you disconnect');
+  });
+
+  it('says nothing of stopping while meetings are off', () => {
+    renderMeetings(meetings());
+    expect(part().textContent).not.toContain('Stopping takes effect at once');
+  });
+
   it('is not drawn where meetings are not offered', () => {
     renderMeetings(meetings(), { meetings: null });
     expect(within(card()).getByRole('button', { name: 'Disconnect…' })).toBeTruthy();

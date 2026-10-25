@@ -2524,7 +2524,9 @@ function fakeCalendarEvents() {
             (event) => startOf(event) >= from && startOf(event) < to,
           );
     if (token !== null) changes.set(calendar, []);
-    return { status: 200, body: JSON.stringify({ items, nextSyncToken: issue() }) };
+    // Google names the zone the calendar keeps on every listing; meetings are written on it.
+    const timeZone = 'America/Los_Angeles';
+    return { status: 200, body: JSON.stringify({ timeZone, items, nextSyncToken: issue() }) };
   };
   return {
     answer,

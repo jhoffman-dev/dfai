@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   explainGoogleFailure,
   isGoogleFailureKind,
+  isScopeRefusal,
   GOOGLE_FAILURE_KINDS,
   type GoogleFailure,
 } from './google-failure.ts';
@@ -90,5 +91,32 @@ describe('explainGoogleFailure: a permission left unticked (ADR-0046)', () => {
         message: 'Google did not grant https://www.googleapis.com/auth/calendar.app.created',
       }).problem,
     ).toContain('the calendar permission was left unticked');
+  });
+});
+
+describe('isScopeRefusal', () => {
+  const refused = (message: string, code = '403'): GoogleFailure => ({
+    kind: 'api_refused',
+    code,
+    message,
+  });
+
+  it('knows Google’s 403 for a token without the scope, and an unticked box', () => {
+    expect(isScopeRefusal(refused('Request had insufficient authentication scopes.'))).toBe(true);
+    expect(isScopeRefusal(refused('ACCESS_TOKEN_SCOPE_INSUFFICIENT'))).toBe(true);
+    expect(isScopeRefusal(failure('scope_not_granted'))).toBe(true);
+  });
+
+  it('is not any other refusal: another 403, a 404, or the same words with another status', () => {
+    expect(isScopeRefusal(refused('The caller does not have permission'))).toBe(false);
+    expect(isScopeRefusal(refused('Not Found', '404'))).toBe(false);
+    expect(isScopeRefusal(refused('insufficient authentication scopes', '401'))).toBe(false);
+  });
+
+  it('tells the person to allow reading meetings on this Mac', () => {
+    const { fix } = explainGoogleFailure(
+      refused('Request had insufficient authentication scopes.'),
+    );
+    expect(fix).toMatch(/Allow reading meetings/);
   });
 });

@@ -113,6 +113,19 @@ export function useSyncForRunners(store: SyncStore, vaultKey: string | null): Sy
 }
 
 /**
+ * Whether this Mac runs the automations of the vault at `vaultKey`, read
+ * alone so the window is drawn only when it changes. False until sync says
+ * where that vault stands, never the last vault's (#419), and always false
+ * for a null `vaultKey`: a caller with nothing to ask is never drawn for it.
+ */
+export function useAutomationsHere(store: SyncStore, vaultKey: string | null): boolean {
+  return useStore(
+    store,
+    (state) => vaultKey !== null && (controllerFor(state, vaultKey)?.automationsHere ?? false),
+  );
+}
+
+/**
  * Says where sync stands, as the runner draws it. `useSync` hands back a new
  * object each draw; one whose every part is as it was says nothing, so what
  * reads the store is not drawn for a runner drawn with the window.

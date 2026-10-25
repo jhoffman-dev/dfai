@@ -275,7 +275,11 @@ import type { SourcePorts } from './sources/source-ports.ts';
 import { useGoogleCalendar } from './settings/use-google-calendar.ts';
 import { useGranola } from './settings/use-granola.ts';
 import { useGranolaPull } from './granola/use-granola-pull.ts';
-import { useMeetingSync, type MeetingSyncHost } from './google-calendar/use-meeting-sync.ts';
+import {
+  useMeetingSync,
+  useMeetingsOn,
+  type MeetingSyncHost,
+} from './google-calendar/use-meeting-sync.ts';
 import { useKindleSync, type KindleHost } from './kindle/use-kindle-sync.ts';
 import { NO_KINDLE } from './kindle/no-kindle.ts';
 import { paletteKindleCommands, runPaletteKindleCommand } from './kindle/palette-kindle.ts';
@@ -310,7 +314,12 @@ import { chatWindowOf } from './chat/chat-window.ts';
 import { useChat, type ChatPorts } from './chat/use-chat.ts';
 import { closingInStages } from './activity/closing-stages.ts';
 import type { SyncHostPorts } from './sync/use-sync.ts';
-import { createSyncStore, settleSync, useSyncForWindow } from './sync/sync-store.ts';
+import {
+  createSyncStore,
+  settleSync,
+  useAutomationsHere,
+  useSyncForWindow,
+} from './sync/sync-store.ts';
 import { SyncLight, SyncRunner, SyncSettingsSlot } from './sync/sync-container.tsx';
 import { useScopedIndexNews } from './reads/use-scoped-index-news.ts';
 import { useOpenFromGitHub } from './sync/use-open-from-github.ts';
@@ -735,8 +744,12 @@ function AppWindow({
     onWrote: onChanged,
   });
   // Today's meetings from Google Calendar (ADR-0046): once the index is ready, every 15 minutes, and on asking.
+  // Only the Mac that runs the vault's automations writes its meeting notes (U-29), so two never write one note.
+  // Asked only for a vault that reads its meetings, so opening one that does not draws nothing for it.
+  const meetingsOn = useMeetingsOn({ fs: vault.fs, markdown: notes.markdown, vaultKey });
+  const meetingsWrittenHere = useAutomationsHere(syncStore, meetingsOn ? vaultKey : null);
   const meetingSync = useMeetingSync({
-    meetings: meetingPorts ?? null,
+    meetings: meetingsWrittenHere ? (meetingPorts ?? null) : null,
     fs: vault.fs,
     markdown: notes.markdown,
     index: index.index,
@@ -1644,6 +1657,7 @@ function AppWindow({
     active: overlay === 'settings',
     activity: activityLog,
     meetingSync,
+    meetingsWrittenHere,
   });
   const granolaSetting = useGranola({
     port: granolaPorts.port,

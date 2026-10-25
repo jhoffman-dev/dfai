@@ -60,7 +60,14 @@ export const tauriCalendarSource: CalendarSource = {
       const listed = eventsPage(answered(answer), calendarId);
       if (listed === null) throw malformed('the events list is not one DFAI can read');
       events.push(...listed.events);
-      if (listed.next === null) return { kind: 'changes', events, syncToken: listed.syncToken };
+      if (listed.next === null) {
+        return {
+          kind: 'changes',
+          events,
+          syncToken: listed.syncToken,
+          timeZone: listed.timeZone,
+        };
+      }
       pageToken = listed.next;
     }
     throw malformed(`the events list ran past ${MAX_PAGES} pages`);

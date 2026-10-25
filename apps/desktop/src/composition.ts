@@ -128,7 +128,11 @@ export function resolveGoogleCalendar(): GoogleCalendarPort {
 
 /** Today's meetings from Google Calendar through the host's sign-in (ADR-0046), and where this Mac keeps each vault's sync record. */
 export function resolveMeetingSync(): MeetingSyncHost {
-  return { source: tauriCalendarSource, records: browserMeetingSyncRecords };
+  return {
+    source: tauriCalendarSource,
+    records: browserMeetingSyncRecords,
+    connection: tauriGoogleCalendar,
+  };
 }
 
 /** Granola, through the host's pinned module (ADR-0034), and where this Mac keeps each vault's pull record. */

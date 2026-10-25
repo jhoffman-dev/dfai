@@ -77,12 +77,12 @@ export function meetingCandidatesOf(
 }
 
 /** What a row of today's events carries, beside its path and title. */
-const DAY_KEYS = [K.date, K.ends, K.response, K.missing] as const;
+const DAY_KEYS = [K.date, K.ends, K.response, K.missing, K.eventId] as const;
 const LINK_KEYS = [K.people, K.companies, K.meeting] as const;
 
 /**
  * The event notes a meetings sync wrote that start on `day`: a row for each
- * of their times, their answer and their mark, and one for each note their
+ * of their times, their answer, their mark and their event id, and one for each note their
  * people, companies and meeting link, resolved. Columns: path, title, key,
  * value; a note's rows arrive together.
  */

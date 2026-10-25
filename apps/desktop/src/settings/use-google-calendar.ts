@@ -17,6 +17,7 @@ import {
   createBlocksCalendar,
   disconnectGoogleCalendar,
   googleProblemOf,
+  meetingSyncProblem,
   saveGoogleCalendarSetting,
   saveMeetingsEnabled,
   type ActivityLog,
@@ -60,17 +61,27 @@ const timeOfDay = (at: number) =>
 function meetingsViewOf({
   meetingSync,
   enabled,
+  writesHere,
   scopes,
 }: {
   meetingSync: MeetingSyncController;
   enabled: boolean;
+  writesHere: boolean;
   scopes: readonly string[];
 }): GoogleMeetingsView {
+  const state = !enabled
+    ? 'off'
+    : !writesHere
+      ? 'elsewhere'
+      : grantsUse(scopes, 'meetings')
+        ? 'on'
+        : 'consent';
+  const report = meetingSync.report;
   return {
-    state: !enabled ? 'off' : grantsUse(scopes, 'meetings') ? 'on' : 'consent',
+    state,
     syncing: meetingSync.syncing,
     lastSynced: meetingSync.lastSyncAt === null ? null : timeOfDay(meetingSync.lastSyncAt),
-    problem: meetingSync.report?.problem ?? null,
+    problem: report === null ? null : meetingSyncProblem(report),
   };
 }
 
@@ -88,6 +99,7 @@ export function useGoogleCalendar({
   active,
   activity,
   meetingSync,
+  meetingsWrittenHere,
 }: {
   port: GoogleCalendarPort;
   fs: VaultFsPort;
@@ -98,6 +110,11 @@ export function useGoogleCalendar({
   activity: Pick<ActivityLog, 'inOpenVault'>;
   /** The window's meetings sync (ADR-0046); left out, the card offers no meetings. */
   meetingSync?: MeetingSyncController;
+  /**
+   * Whether this Mac writes the vault's meeting notes: it runs the vault's
+   * automations (U-29). Only one Mac does, so two never write the same note.
+   */
+  meetingsWrittenHere: boolean;
 }): GoogleCalendarSettingState {
   const store = useCallback(
     (setting: GoogleCalendarSetting) =>
@@ -206,8 +223,10 @@ export function useGoogleCalendar({
       }
     });
 
+  /** Ends a sync under way at once, then turns meetings off for the vault. */
   const stopMeetings = () =>
     inVault(async () => {
+      meetingSync?.stop();
       await switchMeetings(false);
       return null;
     });
@@ -234,7 +253,12 @@ export function useGoogleCalendar({
       meetings:
         meetingSync === undefined
           ? null
-          : meetingsViewOf({ meetingSync, enabled: meetingsOn, scopes: connection?.scopes ?? [] }),
+          : meetingsViewOf({
+              meetingSync,
+              enabled: meetingsOn,
+              writesHere: meetingsWrittenHere,
+              scopes: connection?.scopes ?? [],
+            }),
     },
     connect,
     cancel: () => {

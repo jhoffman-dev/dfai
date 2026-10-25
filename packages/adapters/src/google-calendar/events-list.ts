@@ -14,6 +14,8 @@ export interface EventsPage {
   readonly next: string | null;
   /** Given on the last page only: where the next sync starts from. */
   readonly syncToken: string | null;
+  /** The zone the calendar keeps (`America/Los_Angeles`); null when the page names none. */
+  readonly timeZone: string | null;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -57,9 +59,10 @@ function attendeeOf(entry: unknown): EventAttendee | null {
 const STATUSES: readonly string[] = ['confirmed', 'tentative', 'cancelled'];
 
 /**
- * An event from the API's wire form. One without an id is left out; so is
- * one that is not cancelled but whose start cannot be read, rather than
- * placed on a day it may not be on. A cancelled one may carry its id alone.
+ * An event from the API's wire form. One without an id is left out. One
+ * whose start cannot be read is kept with no start, so the plan leaves its
+ * note as it is rather than place it on a day it may not be on, or take it
+ * for gone (ADR-0046). A cancelled one may carry its id alone.
  */
 export function eventOf(entry: unknown, calendarId: string): GoogleEvent | null {
   if (!isRecord(entry)) return null;
@@ -69,7 +72,6 @@ export function eventOf(entry: unknown, calendarId: string): GoogleEvent | null 
     STATUSES.includes(String(entry['status'])) ? entry['status'] : 'confirmed'
   ) as EventStatus;
   const start = whenOf(entry['start']);
-  if (start === null && status !== 'cancelled') return null;
   const attendees = Array.isArray(entry['attendees']) ? entry['attendees'] : [];
   return {
     id,
@@ -93,5 +95,6 @@ export function eventsPage(body: unknown, calendarId: string): EventsPage | null
     events: items.map((item) => eventOf(item, calendarId)).filter((event) => event !== null),
     next: text(body['nextPageToken']),
     syncToken: text(body['nextSyncToken']),
+    timeZone: text(body['timeZone']),
   };
 }

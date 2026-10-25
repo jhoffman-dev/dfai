@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DirectoryCompany, DirectoryPerson } from '../meeting-links/attendee-matching.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
 import {
+  compareEventNotePaths,
   meetingWindow,
   planEventNotes,
   type EventAttendee,
@@ -149,6 +150,25 @@ describe('planEventNotes: a new meeting', () => {
     });
   });
 
+  it('links a meeting note with no start to an event of its title once a sync made a note for another', () => {
+    const startless = {
+      path: createVaultPath('Inbox/Meetings/Payroll standup.md'),
+      title: 'Payroll standup',
+      date: '2026-10-24',
+      start: null,
+    };
+    expect(plan({ meetings: [startless] })[0]).toMatchObject({
+      properties: { meeting: '[[Inbox/Meetings/Payroll standup]]' },
+    });
+    const morning = kept('Calendar/2026-10-24 Payroll standup.md', {
+      ...madeNote().properties,
+      gcal_event_id: 'ev-morning',
+    });
+    const afternoon = event({ id: 'ev-afternoon', start: at('2026-10-24T22:00:00Z'), end: null });
+    const [write] = plan({ events: [afternoon], existing: [morning], meetings: [startless] });
+    expect(write?.kind === 'create' ? write.properties : null).not.toHaveProperty('meeting');
+  });
+
   it('leaves an attendee no one in People has unlinked, and never links a room', () => {
     const stranger = { ...mara, email: 'ida@fenn.example', name: 'Ida Brenwick' };
     const [write] = plan({ events: [event({ attendees: [self, stranger, room] })] });
@@ -274,14 +294,68 @@ describe('planEventNotes: a meeting that has a note', () => {
     ]);
   });
 
-  it('writes to the first note by path, by code unit, when a race left two for one event', () => {
+  it('keeps both notes up to date when a race left two for one event, the first first', () => {
     const note = madeNote();
-    // ' ' sorts before '.', so the numbered twin is first on every machine.
     const twin = kept('Calendar/2026-10-24 Payroll standup 2.md', note.properties);
     const moved = event({ title: 'Payroll standup (moved)' });
-    expect(plan({ events: [moved], existing: [note, twin] })).toEqual([
+    expect(plan({ events: [moved], existing: [twin, note] })).toEqual([
+      { kind: 'update', path: note.path, properties: { title: 'Payroll standup (moved)' } },
       { kind: 'update', path: twin.path, properties: { title: 'Payroll standup (moved)' } },
     ]);
+  });
+
+  it('marks every note of a cancelled event, and each only once', () => {
+    const note = madeNote();
+    const twin = kept('Calendar/2026-10-24 Payroll standup 2.md', note.properties);
+    const cancelled = event({ status: 'cancelled', start: null, end: null });
+    expect(plan({ events: [cancelled], existing: [note, twin] })).toEqual([
+      { kind: 'missing', path: note.path },
+      { kind: 'missing', path: twin.path },
+    ]);
+    const marked = kept(twin.path, { ...note.properties, gcal_missing: true });
+    expect(plan({ events: [cancelled], existing: [note, marked] })).toEqual([
+      { kind: 'missing', path: note.path },
+    ]);
+  });
+});
+
+describe('compareEventNotePaths', () => {
+  it('puts a note before the numbered copy of it, by code unit, on every machine', () => {
+    const paths = [
+      'Calendar/2026-10-24 Payroll standup 2.md',
+      'Calendar/2026-10-24 Payroll standup.md',
+      'Calendar/2026-10-24 Payroll standup 10.md',
+    ];
+    expect([...paths].sort(compareEventNotePaths)).toEqual([
+      'Calendar/2026-10-24 Payroll standup.md',
+      'Calendar/2026-10-24 Payroll standup 10.md',
+      'Calendar/2026-10-24 Payroll standup 2.md',
+    ]);
+    expect(compareEventNotePaths('Calendar/a.md', 'Calendar/a.md')).toBe(0);
+  });
+});
+
+describe('planEventNotes: the clock times are written on', () => {
+  it('writes on the calendar’s zone, so a Mac in another zone writes the same bytes', () => {
+    const zones = { primary: 'America/Los_Angeles' };
+    const here = plan({ calendarZones: zones });
+    const away = plan({ calendarZones: zones, timeZone: 'America/New_York' });
+    expect(away).toEqual(here);
+    expect(here[0]).toMatchObject({
+      properties: { date: '2026-10-24T09:00', ends: '2026-10-24T09:30' },
+    });
+  });
+
+  it('never rewrites a note’s times because the Mac’s zone changed', () => {
+    const zones = { primary: 'America/Los_Angeles' };
+    expect(plan({ calendarZones: zones, timeZone: 'Asia/Tokyo', existing: [madeNote()] })).toEqual(
+      [],
+    );
+  });
+
+  it('writes on the person’s zone for a calendar Google gave none for', () => {
+    const [write] = plan({ calendarZones: {}, timeZone: 'America/New_York' });
+    expect(write).toMatchObject({ properties: { date: '2026-10-24T12:00' } });
   });
 });
 
@@ -324,6 +398,26 @@ describe('planEventNotes: recurring and multi-calendar events', () => {
     expect(writes[0]).toMatchObject({ properties: { gcal_calendar: 'primary' } });
   });
 
+  it('follows only the copy on the note’s own calendar once there is a note', () => {
+    const note = madeNote();
+    const team = 'team@group.calendar.example.com';
+    const declinedThere = event({
+      calendarId: team,
+      attendees: [{ ...self, response: 'declined' }],
+    });
+    const cancelledThere = event({ calendarId: team, status: 'cancelled', start: null, end: null });
+    expect(plan({ events: [declinedThere], existing: [note] })).toEqual([]);
+    expect(plan({ events: [cancelledThere], existing: [note] })).toEqual([]);
+  });
+
+  it('marks a note its own calendar no longer lists, though another calendar still does', () => {
+    const note = madeNote();
+    const team = event({ calendarId: 'team@group.calendar.example.com' });
+    expect(plan({ events: [team], existing: [note], complete: ['primary'] })).toEqual([
+      { kind: 'missing', path: note.path },
+    ]);
+  });
+
   it('keeps an invitation cancelled on one calendar but not on the other', () => {
     const gone = event({ status: 'cancelled', start: null, end: null });
     const team = event({ calendarId: 'team@group.calendar.example.com' });
@@ -361,5 +455,29 @@ describe('planEventNotes: a full listing', () => {
       gcal_calendar: 'primary',
     });
     expect(plan({ events: [], existing: [old], complete: ['primary'] })).toEqual([]);
+  });
+});
+
+describe('planEventNotes: a large vault', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** How often a plan making 50 notes composes a path, beside a vault of `size` notes. */
+  function foldsWith(size: number): number {
+    const taken = new Set(Array.from({ length: size }, (_, at) => `Notes/Note ${at}.md`));
+    const events = Array.from({ length: 50 }, (_, at) => event({ id: `ev-${at}` }));
+    // Every fold of a path composes it first; counting those counts the work.
+    const folds = vi.spyOn(String.prototype, 'normalize');
+    const writes = plan({ events, taken });
+    expect(new Set(writes.map((write) => write.path)).size).toBe(50);
+    const count = folds.mock.calls.length;
+    folds.mockRestore();
+    return count;
+  }
+
+  it('folds the vault’s paths once, however many notes it makes', () => {
+    // Once per path; folding them for each note made would be 50 000 more.
+    expect(foldsWith(1000) - foldsWith(0)).toBe(1000);
   });
 });

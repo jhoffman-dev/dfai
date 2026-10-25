@@ -52,6 +52,7 @@ function renderGoogle({
         vault: VAULT,
         active: open,
         activity: ACTIVITY,
+        meetingsWrittenHere: true,
       }),
     { wrapper: queryWrapper().wrapper, initialProps: { open: active } },
   );
@@ -167,6 +168,7 @@ describe('GoogleCalendarSettingsCard', () => {
         vault: VAULT,
         active: true,
         activity: ACTIVITY,
+        meetingsWrittenHere: true,
       });
       return <GoogleCalendarSettingsCard setting={setting} />;
     }
@@ -188,7 +190,7 @@ describe('useGoogleCalendar: meetings (ADR-0046)', () => {
   const BLOCKS = 'https://www.googleapis.com/auth/calendar.app.created';
   const READ_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
 
-  function renderWithMeetings() {
+  function renderWithMeetings({ writesHere = true }: { writesHere?: boolean } = {}) {
     const google = fakeGoogleCalendar();
     google.connected.set(VAULT, { connected: true, clientId: CLIENT_ID, scopes: [BLOCKS] });
     const vault = vaultWithSettings(`---\ngoogle_client_id: ${CLIENT_ID}\n---\n`);
@@ -199,6 +201,7 @@ describe('useGoogleCalendar: meetings (ADR-0046)', () => {
       report: null,
       lastSyncAt: null,
       syncNow: () => void syncs.push('sync'),
+      stop: () => void syncs.push('stop'),
     };
     const hook = renderHook(
       () =>
@@ -210,6 +213,7 @@ describe('useGoogleCalendar: meetings (ADR-0046)', () => {
           active: true,
           activity: ACTIVITY,
           meetingSync,
+          meetingsWrittenHere: writesHere,
         }),
       { wrapper: queryWrapper().wrapper },
     );
@@ -232,7 +236,7 @@ describe('useGoogleCalendar: meetings (ADR-0046)', () => {
   });
 
   it('stops by turning the vault’s switch off, keeping the sign-in', async () => {
-    const { hook, vault, google } = renderWithMeetings();
+    const { hook, vault, google, syncs } = renderWithMeetings();
     await waitFor(() => expect(hook.result.current.view.meetings).not.toBeNull());
     act(() => hook.result.current.meetings.onAllow());
     await waitFor(() => expect(vault.file.text).toContain('google_meetings: true'));
@@ -241,5 +245,20 @@ describe('useGoogleCalendar: meetings (ADR-0046)', () => {
 
     await waitFor(() => expect(vault.file.text).not.toContain('google_meetings'));
     expect(google.connected.get(VAULT)?.connected).toBe(true);
+    expect(syncs).toContain('stop');
+  });
+
+  it('ends a sync under way before the switch is written', async () => {
+    const { hook, syncs, vault } = renderWithMeetings();
+    await waitFor(() => expect(hook.result.current.view.meetings).not.toBeNull());
+    act(() => hook.result.current.meetings.onStop());
+    expect(syncs).toEqual(['stop']);
+    await waitFor(() => expect(vault.file.text).not.toContain('google_meetings: true'));
+  });
+
+  it('says another Mac writes the notes when this one does not run the automations', async () => {
+    const { hook } = renderWithMeetings({ writesHere: false });
+    act(() => hook.result.current.meetings.onAllow());
+    await waitFor(() => expect(hook.result.current.view.meetings?.state).toBe('elsewhere'));
   });
 });

@@ -129,3 +129,28 @@ test('a vault that has not allowed meetings reads none, and Today shows none', a
   expect(host.google.eventsAsked()).toBe(0);
   expect(await vault.exists('Calendar')).toBe(false);
 });
+
+test('a Mac that does not run the vault’s automations never asks Google for meetings or writes them', async ({
+  page,
+}) => {
+  const { vault, host } = await openVault(page);
+  // The other Mac runs this vault's automations (U-29), so it alone writes meeting notes.
+  await vault.write(
+    '.atlas/settings.md',
+    '---\nautomationsMac: laptop-0000\nautomationsMacName: Laptop\n---\n',
+  );
+  host.google.serveEvents('primary', [standup]);
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await card(page).getByRole('textbox', { name: 'OAuth client ID' }).fill(CLIENT_ID);
+  await card(page).getByRole('button', { name: 'Connect' }).click();
+  await meetingsPart(page).getByRole('button', { name: 'Allow reading meetings' }).click();
+
+  await expectFile(vault, '.atlas/settings.md').toContain('google_meetings: true');
+  await expect(meetingsPart(page)).toContainText('written on the Mac that runs its automations');
+  await expect(meetingsPart(page).getByRole('button', { name: 'Read meetings now' })).toHaveCount(
+    0,
+  );
+  expect(host.google.eventsAsked()).toBe(0);
+  expect(await vault.exists('Calendar')).toBe(false);
+});

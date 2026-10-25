@@ -14,6 +14,31 @@ const rows = (path: string, values: Record<string, string | string[]>): DayEvent
 const DAY = '2026-10-24';
 
 describe('dayMeetings', () => {
+  it('lists an event once however many notes carry its id, as its first note says', () => {
+    const standup = { date: `${DAY}T09:00`, gcal_event_id: 'ev-standup' };
+    const meetings = dayMeetings(
+      [
+        ...rows('Calendar/Standup 2.md', standup),
+        ...rows('Calendar/Standup.md', standup),
+        ...rows('Calendar/Review.md', { date: `${DAY}T14:00`, gcal_event_id: 'ev-review' }),
+      ],
+      DAY,
+    );
+    expect(meetings.map(({ path }) => path)).toEqual(['Calendar/Standup.md', 'Calendar/Review.md']);
+  });
+
+  it('takes an event off the day once any of its notes is marked cancelled', () => {
+    const standup = { date: `${DAY}T09:00`, gcal_event_id: 'ev-standup' };
+    const meetings = dayMeetings(
+      [
+        ...rows('Calendar/Standup.md', standup),
+        ...rows('Calendar/Standup 2.md', { ...standup, gcal_missing: 'true' }),
+      ],
+      DAY,
+    );
+    expect(meetings).toEqual([]);
+  });
+
   it('lists the day’s timed meetings earliest first, with whom and what they link', () => {
     const meetings = dayMeetings(
       [

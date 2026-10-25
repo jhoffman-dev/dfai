@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
-import { matchMeetingNote, type MeetingCandidate } from './index.ts';
+import { matchMeetingNote, startlessShared, type MeetingCandidate } from './index.ts';
 
 const note = (overrides: Partial<MeetingCandidate> = {}): MeetingCandidate => ({
   path: createVaultPath('Inbox/Meetings/2026-10-24 Payroll sync.md'),
@@ -45,5 +45,26 @@ describe('matchMeetingNote', () => {
   it('never matches an all-day event or an untitled one', () => {
     expect(matchMeetingNote({ ...event, start: '2026-10-24' }, [note({ start: null })])).toBeNull();
     expect(matchMeetingNote({ ...event, title: '  ' }, [note({ title: '' })])).toBeNull();
+  });
+});
+
+describe('startlessShared', () => {
+  const morning = { title: 'Payroll sync', start: '2026-10-24T09:30' };
+  const afternoon = { title: 'payroll  SYNC', start: '2026-10-24T15:00' };
+
+  it('names a note with no start that fits two meetings of its day under its title', () => {
+    const startless = note({ start: null });
+    expect([...startlessShared([morning, afternoon], [startless])]).toEqual([startless.path]);
+  });
+
+  it('leaves a note with a start, one that fits a single meeting, and one of another day', () => {
+    const timed = note();
+    const other = note({
+      path: createVaultPath('Inbox/Meetings/Other.md'),
+      start: null,
+      date: '2026-10-25',
+    });
+    expect(startlessShared([morning, afternoon], [timed, other]).size).toBe(0);
+    expect(startlessShared([morning], [note({ start: null })]).size).toBe(0);
   });
 });

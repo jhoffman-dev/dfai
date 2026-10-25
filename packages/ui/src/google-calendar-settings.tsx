@@ -19,10 +19,12 @@ export interface GoogleCalendarProblem {
 
 /**
  * Whether today's meetings are read from the calendar (ADR-0046): `off` for
- * the vault, `consent` when the vault reads them but this Mac's sign-in has
- * not been allowed to yet, `on` when they are being read.
+ * the vault, `elsewhere` when the vault reads them on the other Mac — the one
+ * that runs its automations — and this one only reads the notes, `consent`
+ * when this Mac writes them but its sign-in has not been allowed to read
+ * the calendar yet, `on` when they are being read.
  */
-export type GoogleMeetingsState = 'off' | 'consent' | 'on';
+export type GoogleMeetingsState = 'off' | 'elsewhere' | 'consent' | 'on';
 
 /** The meetings part of the card. */
 export interface GoogleMeetingsView {
@@ -135,6 +137,9 @@ function meetingsLine(view: GoogleMeetingsView): string {
   if (view.state === 'off') {
     return 'Today’s meetings are not read. Allow it to see them on Today and in the morning brief, each as a note linked to the people in it.';
   }
+  if (view.state === 'elsewhere') {
+    return 'This vault’s meeting notes are written on the Mac that runs its automations (Settings → Sync). This Mac reads them and never asks Google for them.';
+  }
   if (view.state === 'consent') {
     return 'This vault reads today’s meetings, but this Mac has not been allowed to read your calendar yet.';
   }
@@ -158,7 +163,7 @@ function Meetings({
     <div className="settings__confirm" role="group" aria-label="Meetings">
       <p className="settings__lede">{meetingsLine(view)}</p>
       <div className="settings__actions">
-        {view.state !== 'on' && (
+        {(view.state === 'off' || view.state === 'consent') && (
           <button
             className="btn btn--secondary"
             type="button"
@@ -189,6 +194,13 @@ function Meetings({
           </button>
         )}
       </div>
+      {view.state !== 'off' && (
+        <p className="settings__lede">
+          Stopping takes effect at once, for this vault on both Macs. Google keeps DFAI’s permission
+          to read your calendar on this Mac until you disconnect: it cannot take back one permission
+          alone.
+        </p>
+      )}
       {view.problem !== null && (
         <div role="alert">
           <p className="settings__problem">{view.problem.problem}</p>

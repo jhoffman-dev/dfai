@@ -43,11 +43,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const READS_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
+const MAKES_BLOCKS = 'https://www.googleapis.com/auth/calendar.app.created';
+
 function setUp({
   settings = MEETINGS_ON,
   indexReady = true,
   offered = true,
-}: { settings?: string; indexReady?: boolean; offered?: boolean } = {}) {
+  grant,
+}: {
+  settings?: string;
+  indexReady?: boolean;
+  offered?: boolean;
+  /** This Mac's scopes, as the host's status says them; left out, the host is not asked. */
+  grant?: { scopes: string[] };
+} = {}) {
   const google = fakeCalendarSource({ primary: [standup] });
   const { records, kept } = memoryMeetingSyncRecords();
   const created: string[] = [];
@@ -64,7 +74,23 @@ function setUp({
     },
   });
   const options: MeetingSyncOptions = {
-    meetings: offered ? { source: google.source, records } : null,
+    meetings: offered
+      ? {
+          source: google.source,
+          records,
+          ...(grant === undefined
+            ? {}
+            : {
+                connection: {
+                  status: async () => ({
+                    connected: true,
+                    clientId: CLIENT_ID,
+                    scopes: grant.scopes,
+                  }),
+                },
+              }),
+        }
+      : null,
     fs,
     markdown: remarkMarkdown,
     index: fakeIndexPort(),
@@ -155,5 +181,66 @@ describe('useMeetingSync (ADR-0046)', () => {
     expect(hook.result.current.report?.problem?.problem).toBe(
       'Google could not be reached: offline.',
     );
+  });
+
+  it('never calls Google on a Mac whose sign-in may not read events', async () => {
+    const { hook, google } = setUp({ grant: { scopes: [MAKES_BLOCKS] } });
+    await settle();
+    await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS));
+    await settle();
+    act(() => hook.result.current.syncNow());
+    await settle();
+    expect(google.state.asked).toEqual([]);
+  });
+
+  it('asks again once the grant changes after Google refused it the read scope', async () => {
+    const grant = { scopes: [MAKES_BLOCKS, READS_EVENTS] };
+    const { google } = setUp({ grant });
+    google.state.next = new GoogleCalendarError({
+      kind: 'api_refused',
+      code: '403',
+      message: 'Request had insufficient authentication scopes.',
+    });
+    await settle();
+    await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS));
+    await settle();
+    expect(google.state.asked).toHaveLength(1);
+    grant.scopes = [READS_EVENTS, MAKES_BLOCKS, 'openid'];
+    await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS));
+    await settle();
+    expect(google.state.asked).toHaveLength(2);
+  });
+
+  it('tries again on Sync now after a scope refusal: the person asked', async () => {
+    const { hook, google } = setUp();
+    google.state.next = new GoogleCalendarError({
+      kind: 'api_refused',
+      code: '403',
+      message: 'Request had insufficient authentication scopes.',
+    });
+    await settle();
+    act(() => hook.result.current.syncNow());
+    await settle();
+    expect(google.state.asked).toHaveLength(2);
+  });
+
+  it('writes nothing more once stopped while a sync is under way', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { hook, google, created, kept } = setUp();
+    const listEvents = google.source.listEvents;
+    google.source.listEvents = async (ask) => {
+      await held;
+      return listEvents(ask);
+    };
+    await settle();
+    act(() => hook.result.current.stop());
+    release();
+    await settle();
+    expect(google.state.asked).toHaveLength(1);
+    expect(created).toEqual([]);
+    expect(kept.get(VAULT)).toBeUndefined();
   });
 });

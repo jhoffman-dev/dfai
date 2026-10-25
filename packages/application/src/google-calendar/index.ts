@@ -10,8 +10,13 @@ export {
   saveMeetingsEnabled,
 } from './google-calendar.ts';
 export { readDayMeetings, readTodaysMeetings, DAY_MEETINGS_SCOPE } from './read-day-meetings.ts';
-export { meetingSyncActivity, syncMeetings } from './sync-meetings.ts';
-export type { MeetingSyncPorts, MeetingSyncReport, MeetingSyncRun } from './sync-meetings.ts';
+export { meetingSyncActivity, meetingSyncProblem, syncMeetings } from './sync-meetings.ts';
+export type {
+  CalendarFailure,
+  MeetingSyncPorts,
+  MeetingSyncReport,
+  MeetingSyncRun,
+} from './sync-meetings.ts';
 export { GoogleCalendarError } from './ports.ts';
 export type {
   CalendarChanges,

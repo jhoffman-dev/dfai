@@ -11,8 +11,14 @@ import { toIndexedNote } from '../index/to-indexed-note.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { fakeCalendarSource, memoryMeetingSyncRecords } from '../testing/fake-google-calendar.ts';
 import { readDayMeetings, readTodaysMeetings } from './read-day-meetings.ts';
-import { GoogleCalendarError } from './ports.ts';
-import { meetingSyncActivity, syncMeetings, type MeetingSyncRun } from './sync-meetings.ts';
+import { GoogleCalendarError, type CalendarSource } from './ports.ts';
+import {
+  meetingSyncActivity,
+  meetingSyncProblem,
+  syncMeetings,
+  type MeetingSyncReport,
+  type MeetingSyncRun,
+} from './sync-meetings.ts';
 
 const VAULT = '/Users/someone/Vault';
 const ZONE = 'America/Los_Angeles';
@@ -139,6 +145,8 @@ describe('syncMeetings: the first sync', () => {
       missing: 0,
       full: ['primary'],
       problem: null,
+      failed: [],
+      scopeRefused: false,
     });
     expect(vault.properties(NOTE)).toMatchObject({
       type: 'event',
@@ -301,6 +309,103 @@ describe('syncMeetings: offline and failing', () => {
   });
 });
 
+describe('syncMeetings: one calendar failing', () => {
+  const TEAM = 'team@example.com';
+  const both = { setting: { enabled: true, calendars: ['primary', TEAM] } };
+
+  it('syncs the others, names the one that failed, and keeps where that one left off', async () => {
+    const { vault, google, kept, ports, sync } = setUp();
+    google.state.calendars[TEAM] = [meeting({ id: 'ev-retro', calendarId: TEAM, title: 'Retro' })];
+    await sync(both);
+    const before = kept.get(VAULT)?.calendars[TEAM];
+    google.change('primary', meeting({ title: 'Payroll standup (moved)' }));
+    const refusingTeam: CalendarSource = {
+      listEvents: async (ask) => {
+        if (ask.calendarId === TEAM) {
+          throw new GoogleCalendarError({ kind: 'api_refused', code: '404', message: 'Not Found' });
+        }
+        return google.source.listEvents(ask);
+      },
+    };
+    const report = await syncMeetings(
+      { ...ports, source: refusingTeam },
+      { vault: VAULT, timeZone: ZONE, blocksCalendarId: null, ...both },
+    );
+    expect(report).toMatchObject({ updated: 1, problem: null, scopeRefused: false });
+    expect(report.failed).toEqual([
+      {
+        calendarId: TEAM,
+        problem: expect.objectContaining({ problem: expect.stringContaining('404') }),
+      },
+    ]);
+    expect(vault.properties(NOTE)).toMatchObject({ title: 'Payroll standup (moved)' });
+    expect(kept.get(VAULT)?.calendars[TEAM]).toEqual(before);
+    expect(meetingSyncProblem(report)?.problem).toMatch(/^team@example.com did not sync: /);
+    expect(meetingSyncActivity(report)).toMatchObject({ level: 'warning' });
+  });
+
+  it('stops the sync when every calendar failed, as before', async () => {
+    const { google, sync } = setUp();
+    google.state.next = new GoogleCalendarError({ kind: 'unreachable', message: 'offline' });
+    const report = await sync();
+    expect(report.problem?.problem).toBe('Google could not be reached: offline.');
+    expect(report.failed).toEqual([]);
+  });
+
+  it('says when Google refused for want of the read scope, so the sync can wait for it', async () => {
+    const { google, sync } = setUp();
+    google.state.next = new GoogleCalendarError({
+      kind: 'api_refused',
+      code: '403',
+      message: 'Request had insufficient authentication scopes.',
+    });
+    const report = await sync();
+    expect(report.scopeRefused).toBe(true);
+    expect(report.problem?.fix).toMatch(/Allow reading meetings/);
+  });
+});
+
+describe('syncMeetings: the clock it writes on', () => {
+  it('writes on the zone Google gives the calendar, whatever zone the Mac is in', async () => {
+    const { vault, sync } = setUp();
+    await sync({ timeZone: 'Asia/Tokyo' });
+    expect(vault.properties(NOTE)).toMatchObject({
+      date: '2026-10-24T09:00',
+      ends: '2026-10-24T09:30',
+    });
+  });
+});
+
+describe('syncMeetings: stopped part way', () => {
+  it('asks Google nothing once stopped before it lists', async () => {
+    const { vault, google, kept, sync } = setUp();
+    const report = await sync({ wanted: () => false });
+    expect(google.state.asked).toEqual([]);
+    expect(report.created).toBe(0);
+    expect(vault.files.has(NOTE)).toBe(false);
+    expect(kept.get(VAULT)).toBeUndefined();
+  });
+
+  it('writes nothing after Stop, and keeps no record, while a sync is under way', async () => {
+    const { vault, google, kept, sync } = setUp({
+      events: [meeting(), meeting({ id: 'ev-retro', title: 'Retro' })],
+    });
+    let stopped = false;
+    const writes: string[] = [];
+    const watched = vault.ports.fs.createNote;
+    vault.ports.fs.createNote = async (note) => {
+      writes.push(note.path);
+      stopped = true;
+      return watched(note);
+    };
+    const report = await sync({ wanted: () => !stopped });
+    expect(writes).toHaveLength(1);
+    expect(report.created).toBe(1);
+    expect(google.state.asked).toHaveLength(1);
+    expect(kept.get(VAULT)).toBeUndefined();
+  });
+});
+
 describe('syncMeetings: which calendars', () => {
   it('reads each calendar named, writes an invitation on two once, and never reads the blocks one', async () => {
     const { vault, google, kept, sync } = setUp();
@@ -367,7 +472,16 @@ describe('syncMeetings: which calendars', () => {
 });
 
 describe('meetingSyncActivity', () => {
-  const report = { ran: NOW, created: 0, updated: 0, missing: 0, full: [], problem: null };
+  const report: MeetingSyncReport = {
+    ran: NOW,
+    created: 0,
+    updated: 0,
+    missing: 0,
+    full: [],
+    problem: null,
+    failed: [],
+    scopeRefused: false,
+  };
 
   it('says what a sync wrote, counted', () => {
     expect(meetingSyncActivity({ ...report, created: 2, updated: 1, missing: 1 })).toEqual({

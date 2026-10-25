@@ -121,6 +121,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_automation_log`        | `GET /v1/automations/{id}/log`                                               | no      |
 | `atlas_automation_dry_run`    | `POST /v1/automations/{id}/dry-run`                                          | no      |
 | `atlas_meetings`              | `GET /v1/meetings`                                                           | no      |
+| `atlas_day_meetings`          | `GET /v1/calendar/meetings`                                                  | no      |
 | `atlas_brief`                 | `GET /v1/assistant/brief`                                                    | no      |
 | `atlas_open_loops`            | `GET /v1/assistant/open-loops`                                               | no      |
 | `atlas_meeting_quotes`        | `GET /v1/assistant/meetings`                                                 | no      |

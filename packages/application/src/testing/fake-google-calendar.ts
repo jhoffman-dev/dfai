@@ -63,12 +63,19 @@ function startsBetween(event: GoogleEvent, timeMin: number, timeMax: number): bo
   return at >= timeMin && at < timeMax;
 }
 
+/** The zone a fake calendar keeps unless it is given another: Google always names one. */
+export const FAKE_CALENDAR_ZONE = 'America/Los_Angeles';
+
 /**
  * Google Calendar's events in memory, with sync tokens as Google keeps them:
  * a full listing of a window gives a token, a token gives what was `change`d
- * since, and `expire` makes every token given so far stale (410).
+ * since, and `expire` makes every token given so far stale (410). Each
+ * calendar keeps {@link FAKE_CALENDAR_ZONE} unless `zones` names another, or null.
  */
-export function fakeCalendarSource(calendars: Record<string, GoogleEvent[]> = {}) {
+export function fakeCalendarSource(
+  calendars: Record<string, GoogleEvent[]> = {},
+  zones: Record<string, string | null> = {},
+) {
   const state = {
     calendars,
     changes: {} as Record<string, GoogleEvent[]>,
@@ -83,8 +90,11 @@ export function fakeCalendarSource(calendars: Record<string, GoogleEvent[]> = {}
     state.live.add(token);
     return token;
   };
+  const zoneOf = (calendarId: string) =>
+    calendarId in zones ? (zones[calendarId] ?? null) : FAKE_CALENDAR_ZONE;
   const source: CalendarSource = {
     listEvents: async ({ calendarId, timeMin, timeMax, syncToken }) => {
+      const timeZone = zoneOf(calendarId);
       state.asked.push({ calendarId, syncToken });
       if (state.next !== null) {
         const failure = state.next;
@@ -95,12 +105,12 @@ export function fakeCalendarSource(calendars: Record<string, GoogleEvent[]> = {}
         if (!state.live.has(syncToken)) return { kind: 'expired' };
         const events = state.changes[calendarId] ?? [];
         state.changes[calendarId] = [];
-        return { kind: 'changes', events, syncToken: issue() };
+        return { kind: 'changes', events, syncToken: issue(), timeZone };
       }
       const events = (state.calendars[calendarId] ?? []).filter((event) =>
         startsBetween(event, timeMin, timeMax),
       );
-      return { kind: 'changes', events, syncToken: issue() };
+      return { kind: 'changes', events, syncToken: issue(), timeZone };
     },
   };
   return {

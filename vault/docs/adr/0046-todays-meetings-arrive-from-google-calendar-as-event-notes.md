@@ -38,15 +38,27 @@ feed every time.
 these properties:
 
 - `title`, `date` and `ends`, on the wall clock. ADR-0030 keeps times with no
-  offset (`2026-10-24T09:00`); an all-day event is just its days.
+  offset (`2026-10-24T09:00`); an all-day event is just its days. The clock
+  is the zone Google gives the note's calendar (`timeZone` on every
+  `events.list` answer), not the Mac's, so two Macs in two zones write the
+  same bytes. Only when Google names no zone is the Mac's used.
 - `attendees`: everyone's address except the person's own and the rooms'.
 - `people` and `companies`, linked by P29-04's `matchAttendees`. Only sure
   matches by address or name are linked. An unknown attendee stays an
   address and is never guessed.
 - `meeting`: the meeting note a notetaker wrote, when exactly one is on that
-  day, under that title, starting within 20 minutes.
+  day, under that title, starting within 20 minutes. A meeting note that
+  gives no start, on a day with two meetings of its title, is linked to
+  neither (`startlessShared`). Which one it was is the person's to say, so
+  no meeting note is ever linked to two events.
 - `gcal_event_id`, `gcal_calendar`, `gcal_recurring_event_id`, and
   `gcal_response` (the person's own answer).
+
+These are the **owned** properties. Each sync puts them back to what Google
+says, so a hand edit of `title`, `date`, `ends`, `attendees` or a `gcal_`
+key is overwritten. `people`, `companies` and `meeting` only gain links:
+one the person added or removed by hand stays as they left it. Any other
+key the person adds is theirs and is never touched.
 
 The body is never written. It is the person's, for prep. Every view,
 backlink, Person page and query already works on these notes, because they
@@ -55,16 +67,36 @@ are notes.
 **Nothing is ever deleted.** When Google says an event was cancelled, its
 note gets `gcal_missing: true`. If the event comes back, the mark comes off.
 That is ADR-0012's rule, with ADR-0030's `gcal_` name for everything that
-comes from Google. A confirmed event whose time cannot be read is left
-alone, never taken for gone.
+comes from Google. A confirmed event whose time cannot be read is kept in
+the listing with no start, so its note is left alone and never taken for
+gone.
+
+**A note the person deletes comes back.** Nothing records a deleted note.
+The next full listing (each new day, or after a 410) makes it again while
+its meeting is in the window. To stop a meeting coming back, decline it in
+Google Calendar or leave its calendar out of `google_meeting_calendars`.
+Tracking deletions is left for later.
 
 **Today's meetings are read from the notes, not from Google.**
 `readDayMeetings(day)` is one index query, so it answers offline and on a
 Mac that is not signed in. It lists timed event notes on the day that are
 neither cancelled nor declined, earliest first, each with its people,
 companies and meeting note. All-day events are left out: they are on the
-calendar, but there is nothing to prepare. The Today page draws this above
-the tasks, and the morning brief (#39) reads it per meeting.
+calendar, but there is nothing to prepare. Each event is listed once,
+however many notes carry its `gcal_event_id`, as its first note says
+(`compareEventNotePaths`), and it is off the day once any of them is
+marked missing. The Today page draws this above the tasks. The morning
+brief (#39) and n8n read it through `GET /v1/calendar/meetings?day=` and
+the MCP tool `atlas_day_meetings`. Both are read-only, use the API's usual
+auth, and read only the notes, never Google.
+
+**One Mac writes meeting notes: the one that runs the vault's automations**
+(U-29, the "Run automations on this Mac" switch in Settings → Sync). That
+Mac lists the calendars and writes the notes. Any other Mac reads the notes
+git brings it and never calls Google for meetings. Settings says so on that
+Mac. Two writers would rewrite the same frontmatter lines from different
+indexes, and git cannot merge those. A vault that is not synced names no
+automations Mac, so it writes wherever it is open, as automations do.
 
 ### Auth flow: unchanged, one more consent
 
@@ -114,12 +146,19 @@ and the meetings case is worded as such.
 - **Which calendars.** The vault setting `google_meeting_calendars` names
   them; unset, it is the person's main calendar (`primary`). The blocks
   calendar (`google_calendar`) is never read for meetings. The vault switch
-  `google_meetings: true` turns meetings on for the vault, so both Macs read
-  the same calendars. Each Mac signs in and consents for itself.
+  `google_meetings: true` turns meetings on for the vault. Each Mac signs in
+  and consents for itself; only the writing Mac needs the read scope.
 - **When.** The sync runs once the index is ready, every 15 minutes while the
-  vault is open, and on **Read meetings now**. One runs at a time per
-  window. A vault without both the switch and a client ID asks the host
-  nothing, which is how the work budgets stay where they are.
+  vault is open, and on **Read meetings now**. One runs at a time per vault.
+  A vault opened while another's sync is under way syncs at once. A vault
+  without both the switch and a client ID asks the host nothing, which is
+  how the work budgets stay where they are.
+- **Only with the scope.** Before each sync the host's status is read (from
+  the Keychain, not from Google). A sign-in without
+  `calendar.events.readonly` never calls Google. If Google answers 403 for
+  want of the scope (`isScopeRefusal`), the clock stops asking until the
+  grant changes. **Read meetings now** always tries, because the person
+  asked.
 - **The window.** The sync reads yesterday through six days ahead, on the
   person's wall clock. Yesterday is in, so a notetaker's write-up that
   arrives the next morning is still matched. The window's bounds are the
@@ -146,10 +185,20 @@ and the meetings case is worded as such.
   part way is read again from where the last whole one left off. Writing
   again what it already wrote changes nothing. Notes the last sync made that
   the index has not reached yet are found by name in `Calendar/`, so no
-  second note is made. If a race between two Macs does make two, the first
-  by path is the one written to.
-- **Invitations on two calendars** are one meeting: the first calendar's copy
-  wins, unless it is cancelled there and not on the other.
+  second note is made. If two notes do end up with one event id (two
+  writers, before this rule, or a copy made by hand), every one of them is
+  updated and marked, so neither goes stale.
+- **Invitations on two calendars.** A new note is made from the first
+  calendar's copy, unless it is cancelled there and not on another. Once
+  there is a note, **its own `gcal_calendar` alone speaks for it**: a copy
+  on another calendar never cancels it, moves it, or changes its answer. A
+  declined meeting stays off Today even when another calendar shows it as
+  accepted. A full listing of the note's own calendar that lacks the event
+  marks it missing, whatever other calendars still show.
+- **Each calendar on its own.** One calendar Google refuses (a typo, a
+  calendar no longer shared, a 404 or 403) is reported by name in Settings
+  and Activity, keeps its old sync token, and stops none of the others. Only
+  when every calendar fails does the whole sync stop.
 
 ### Offline and failing
 
@@ -161,7 +210,22 @@ problem once until it changes, not every quarter hour while offline. The
 host already renews the access token on a 401, once. A refresh token Google
 no longer honours is `invalid_grant`, and the fix is to connect again.
 403, 429 and 5xx come back as `api_refused` with the status. The next sync
-in 15 minutes is the retry, so nothing hammers Google.
+in 15 minutes is the retry, so nothing hammers Google. The adapter carries
+Google's own words for an error (its message and reasons) into the failure,
+so a 403 for a missing scope is told apart from other 403s.
+
+### Stopping
+
+**Stop reading meetings** takes effect at once. A sync under way asks
+Google nothing more and writes nothing after Stop, and it keeps no record,
+so the next sync after turning meetings on again starts where the last
+whole one left off. Stop turns the vault's switch off, for both Macs.
+
+It does not take back the Google permission. Google cannot remove one scope
+from a token, so dropping `calendar.events.readonly` would mean revoking
+the whole sign-in, which would also end the blocks calendar (#29) and,
+later, two-way sync (#30). The grant stays on this Mac until **Disconnect**,
+and Settings says so beside the Stop button.
 
 ### What #30 adds
 
@@ -189,10 +253,15 @@ DFAI made, that is a new `GOOGLE_SCOPES_BY_USE` row
   found by its id.
 - A note's file name keeps the day and title it was made with. A moved or
   renamed meeting changes its properties, not its file.
-- The local API and MCP need nothing new: event notes are notes, readable
-  through `/v1/notes`, `/v1/query` and the existing MCP tools. Whether a
-  vault is connected stays on `/v1/status`, and no token or Calendar call
-  is exposed.
+- Event notes are notes, so they can also be read through `/v1/notes`,
+  `/v1/query` and the existing MCP tools. The day's meetings have their own
+  read, `GET /v1/calendar/meetings?day=YYYY-MM-DD` and `atlas_day_meetings`.
+  `GET /v1/meetings` was already the meeting-notes list (ADR-0027), so the
+  new read has its own path. Whether a vault is connected stays on
+  `/v1/status`. No token and no Calendar call is exposed.
+- Times on Today are the calendar's wall clock. On a trip, Today shows them
+  on the calendar's zone (the person's home zone) until Google's calendar
+  zone is changed.
 
 ## Still open
 
@@ -207,3 +276,6 @@ DFAI made, that is a new `GOOGLE_SCOPES_BY_USE` row
   setting by hand.
 - Unknown attendees as `person` proposals. P29-04 proposes them for meeting
   notes; event notes leave them as addresses for now.
+- Remembering deleted event notes so a deleted meeting stays deleted.
+- A note whose own calendar is later taken out of `google_meeting_calendars`
+  is no longer updated, but it is kept.

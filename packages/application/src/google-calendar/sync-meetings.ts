@@ -3,6 +3,7 @@ import {
   compileMeetingCandidatesQuery,
   createVaultPath,
   inWindow,
+  isScopeRefusal,
   meetingCandidatesOf,
   meetingWindow,
   planEventNotes,
@@ -28,7 +29,19 @@ import { ensureFolder } from '../vault/create-folder.ts';
 import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import { googleProblemOf } from './google-calendar.ts';
-import type { CalendarFollowing, CalendarSource, MeetingSyncRecords } from './ports.ts';
+import {
+  GoogleCalendarError,
+  type CalendarChanges,
+  type CalendarFollowing,
+  type CalendarSource,
+  type MeetingSyncRecords,
+} from './ports.ts';
+
+/** A calendar Google would not list this time, and why. The others were synced without it. */
+export interface CalendarFailure {
+  readonly calendarId: string;
+  readonly problem: GoogleProblem;
+}
 
 /** What one meetings sync did, as Settings and Activity say it. */
 export interface MeetingSyncReport {
@@ -42,6 +55,13 @@ export interface MeetingSyncReport {
   readonly full: readonly string[];
   /** Why it stopped; null when it finished. What it wrote before stopping stays written. */
   readonly problem: GoogleProblem | null;
+  /** The calendars that failed while the others synced; each is read again from where it left off. */
+  readonly failed: readonly CalendarFailure[];
+  /**
+   * Google said this Mac's sign-in may not read events. Asking again changes
+   * nothing until the person allows it, so the sync waits for that.
+   */
+  readonly scopeRefused: boolean;
 }
 
 export interface MeetingSyncPorts {
@@ -60,13 +80,23 @@ export interface MeetingSyncRun {
   readonly setting: MeetingSetting;
   /** The calendar blocks go to (#30): never read for meetings. */
   readonly blocksCalendarId: string | null;
+  /**
+   * Asked before each call to Google and each write: false once the person
+   * stops reading meetings, and from then on nothing is asked for or
+   * written. Left out, a sync runs to its end.
+   */
+  readonly wanted?: () => boolean;
 }
 
 interface Listed {
   readonly events: GoogleEvent[];
   readonly complete: string[];
   readonly following: Record<string, CalendarFollowing>;
+  readonly zones: Record<string, string>;
+  readonly failed: (CalendarFailure & { readonly cause: unknown })[];
 }
+
+const ALWAYS_WANTED = () => true;
 
 /** One calendar's events: what changed since its token, or all of the window when it has none or it expired. */
 async function listCalendar(
@@ -96,27 +126,50 @@ async function listCalendar(
   return { ...answered, full: token === null || answer.kind === 'expired' };
 }
 
+type Answered = Extract<CalendarChanges, { kind: 'changes' }> & { readonly full: boolean };
+
+function addAnswer(listed: Listed, calendarId: string, answer: Answered, fromDay: string) {
+  listed.events.push(...answer.events);
+  if (answer.full) listed.complete.push(calendarId);
+  if (answer.timeZone !== null) listed.zones[calendarId] = answer.timeZone;
+  if (answer.syncToken !== null) {
+    listed.following[calendarId] = { syncToken: answer.syncToken, fromDay };
+  }
+}
+
+/**
+ * Each calendar the vault reads, on its own: one Google refuses (a calendar
+ * shared and then taken away, a typo) is reported, keeps where it left off,
+ * and stops none of the others. Only when every one failed is the sync
+ * itself stopped, by the first one's failure.
+ */
 async function listCalendars(
   ports: MeetingSyncPorts,
   run: MeetingSyncRun,
   window: MeetingWindow,
 ): Promise<Listed> {
   const kept = ports.records.read(run.vault).calendars;
-  const listed: Listed = { events: [], complete: [], following: {} };
-  for (const calendarId of run.setting.calendars) {
-    if (calendarId === run.blocksCalendarId) continue;
-    const answer = await listCalendar(ports, {
-      vault: run.vault,
-      calendarId,
-      window,
-      kept: kept[calendarId],
-    });
-    listed.events.push(...answer.events);
-    if (answer.full) listed.complete.push(calendarId);
-    if (answer.syncToken !== null) {
-      listed.following[calendarId] = { syncToken: answer.syncToken, fromDay: window.fromDay };
+  const wanted = run.wanted ?? ALWAYS_WANTED;
+  const listed: Listed = { events: [], complete: [], following: {}, zones: {}, failed: [] };
+  const calendars = run.setting.calendars.filter((id) => id !== run.blocksCalendarId);
+  for (const calendarId of calendars) {
+    if (!wanted()) break;
+    try {
+      const answer = await listCalendar(ports, {
+        vault: run.vault,
+        calendarId,
+        window,
+        kept: kept[calendarId],
+      });
+      addAnswer(listed, calendarId, answer, window.fromDay);
+    } catch (cause) {
+      listed.failed.push({ calendarId, problem: googleProblemOf(cause), cause });
+      const before = kept[calendarId];
+      if (before !== undefined) listed.following[calendarId] = before;
     }
   }
+  const [first] = listed.failed;
+  if (first !== undefined && listed.failed.length === calendars.length) throw first.cause;
   return listed;
 }
 
@@ -202,14 +255,22 @@ interface Tally {
 /** Writes the plan: new notes made, owned properties changed, cancelled ones marked; bodies are never touched. */
 async function applyWrites(
   ports: MeetingSyncPorts,
-  writes: readonly EventNoteWrite[],
-  files: ReadonlyMap<string, NoteFile>,
+  {
+    writes,
+    files,
+    wanted,
+  }: {
+    writes: readonly EventNoteWrite[];
+    files: ReadonlyMap<string, NoteFile>;
+    wanted: () => boolean;
+  },
 ): Promise<Tally> {
   const tally: Tally = { created: 0, updated: 0, missing: 0 };
   if (writes.some((write) => write.kind === 'create')) {
     await ensureFolder({ fs: ports.fs, folder: createVaultPath(EVENT_NOTES_FOLDER) });
   }
   for (const write of writes) {
+    if (!wanted()) break;
     if (write.kind === 'create') {
       await ports.fs.createNote({
         path: write.path,
@@ -250,6 +311,7 @@ async function planWrites(
     complete: listed.complete,
     window,
     timeZone: run.timeZone,
+    calendarZones: listed.zones,
     ignoredCalendars: run.blocksCalendarId === null ? [] : [run.blocksCalendarId],
     people: directory.people,
     companies: directory.companies,
@@ -260,7 +322,10 @@ async function planWrites(
   return { writes, files: notes.files };
 }
 
-const NOTHING = { created: 0, updated: 0, missing: 0, full: [] } as const;
+const NOTHING = { created: 0, updated: 0, missing: 0, full: [], failed: [] } as const;
+
+const refusedScope = (cause: unknown) =>
+  cause instanceof GoogleCalendarError && isScopeRefusal(cause.failure);
 
 /**
  * Brings the vault's meetings up to date from Google Calendar (ADR-0046):
@@ -272,24 +337,51 @@ const NOTHING = { created: 0, updated: 0, missing: 0, full: [] } as const;
  * already wrote changes nothing.
  *
  * Failure is a report, not a rejection: offline, the notes already in the
- * vault stay as they are, and the next sync catches up.
+ * vault stay as they are, and the next sync catches up. A sync the person
+ * stops (`wanted`) writes nothing more and keeps no record, so it is read
+ * again from where the last whole one left off.
  */
 export async function syncMeetings(
   ports: MeetingSyncPorts,
   run: MeetingSyncRun,
 ): Promise<MeetingSyncReport> {
   const ran = ports.clock.now();
+  const wanted = run.wanted ?? ALWAYS_WANTED;
   try {
     const window = meetingWindow({ today: ports.clock.today(), timeZone: run.timeZone });
     if (window === null) throw new Error(`today (${ports.clock.today()}) is not a day`);
     const listed = await listCalendars(ports, run, window);
-    const { writes, files } = await planWrites(ports, run, window, listed);
-    const tally = await applyWrites(ports, writes, files);
-    ports.records.write(run.vault, { calendars: listed.following, lastSyncAt: ran });
-    return { ran, ...tally, full: listed.complete, problem: null };
+    const planned = wanted() ? await planWrites(ports, run, window, listed) : null;
+    const tally = planned === null ? NOTHING : await applyWrites(ports, { ...planned, wanted });
+    if (wanted()) ports.records.write(run.vault, { calendars: listed.following, lastSyncAt: ran });
+    const failed = listed.failed.map(({ calendarId, problem }) => ({ calendarId, problem }));
+    return {
+      ran,
+      created: tally.created,
+      updated: tally.updated,
+      missing: tally.missing,
+      full: listed.complete,
+      problem: null,
+      failed,
+      scopeRefused: listed.failed.some(({ cause }) => refusedScope(cause)),
+    };
   } catch (cause) {
-    return { ran, ...NOTHING, problem: googleProblemOf(cause) };
+    return { ran, ...NOTHING, problem: googleProblemOf(cause), scopeRefused: refusedScope(cause) };
   }
+}
+
+/**
+ * What Settings says went wrong with the last sync: why it stopped, else the
+ * first calendar that did not sync, named. Null when it all synced.
+ */
+export function meetingSyncProblem(report: MeetingSyncReport): GoogleProblem | null {
+  if (report.problem !== null) return report.problem;
+  const [first] = report.failed;
+  if (first === undefined) return null;
+  return {
+    problem: `${first.calendarId} did not sync: ${first.problem.problem}`,
+    fix: first.problem.fix,
+  };
 }
 
 const counted = (count: number, one: string, many: string) =>
@@ -307,6 +399,16 @@ export function meetingSyncActivity(report: MeetingSyncReport): ActivityReport |
       level: 'warning',
       kind: 'source',
       message: `Meetings from Google Calendar did not sync: ${report.problem.problem}${fix}`,
+      subject: null,
+    };
+  }
+  const partial = meetingSyncProblem(report);
+  if (partial !== null) {
+    const fix = partial.fix === null ? '' : ` ${partial.fix}`;
+    return {
+      level: 'warning',
+      kind: 'source',
+      message: `Meetings from Google Calendar: ${partial.problem}${fix} The other calendars synced.`,
       subject: null,
     };
   }

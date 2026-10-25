@@ -45,6 +45,7 @@ export {
   nextAvailableNotePath,
   NUMBERED_NOTE_ENDING,
   noteFileName,
+  TakenNotePaths,
 } from './new-note.ts';
 export {
   deleteRefusal,
