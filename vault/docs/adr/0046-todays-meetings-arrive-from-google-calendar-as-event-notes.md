@@ -87,9 +87,11 @@ Mac that is not signed in. It lists timed event notes on the day that are
 neither cancelled nor declined, earliest first, each with its people,
 companies and meeting note. All-day events are left out: they are on the
 calendar, but there is nothing to prepare. Each event is listed once,
-however many notes carry its `gcal_event_id`, as its first note says
-(`compareEventNotePaths`), and it is off the day once any of them is
-marked missing. The Today page draws this above the tasks. The morning
+however many notes carry its `gcal_event_id`, as its first note not
+marked missing says (`compareEventNotePaths`). A note's own calendar alone
+decides for it, so a twin cancelled on one calendar never hides the event
+live on another: it is off the day only once every one of them is marked
+missing. The Today page draws this above the tasks. The morning
 brief (#39) and n8n read it through `GET /v1/calendar/meetings?day=` and
 the MCP tool `atlas_day_meetings`. Both are read-only, use the API's usual
 auth, and read only the notes, never Google.

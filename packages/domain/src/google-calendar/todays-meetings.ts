@@ -69,10 +69,13 @@ function twinsOf(notes: Iterable<Gathered>): Gathered[][] {
   );
 }
 
-/** An event once, as its first note says; off the day once any of its notes is marked cancelled. */
+/**
+ * An event once, as its first live note says. A note's own calendar alone
+ * decides for it, so the event is off the day only once every note is marked cancelled.
+ */
 function meetingOf(twins: readonly Gathered[], day: string): DayMeeting | null {
-  const [note] = twins;
-  if (note === undefined || twins.some((twin) => firstOf(twin, K.missing) === 'true')) return null;
+  const note = twins.find((twin) => firstOf(twin, K.missing) !== 'true');
+  if (note === undefined) return null;
   const path = note.path;
   const first = (key: string) => firstOf(note, key);
   const paths = (key: string) => (note.values.get(key) ?? []).map(createVaultPath);
