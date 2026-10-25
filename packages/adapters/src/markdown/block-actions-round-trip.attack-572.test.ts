@@ -160,6 +160,7 @@ function untouchedBytesLost({
 }
 
 describe('moves and deletes of top-level blocks, saved', () => {
+  // 300 seeded notes take about 8 s on a CI runner, past Vitest's default 5 s.
   it(`keep every untouched block's bytes and read back as shown, over ${SEEDS} hostile notes`, () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= SEEDS && failures.length < 5; seed += 1) {
@@ -194,7 +195,7 @@ describe('moves and deletes of top-level blocks, saved', () => {
       }
     }
     expect(failures).toEqual([]);
-  });
+  }, 60_000);
 });
 
 describe('the byte clause itself, against a save written by hand', () => {
