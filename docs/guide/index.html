@@ -283,6 +283,17 @@ pnpm tauri:dev</pre>
       <p>Type markdown as you go (<code>#</code> for headings, <code>-</code> for lists, <code>[]</code> for a checkbox) or type <kbd>/</kbd> for the block menu: headings, lists, task list, quote, code block, callout, table, divider, <b>Link to note</b>, <b>Image</b> and <b>Query</b> (a <a href="#query-blocks">live query</a>).</p>
       <p>A link to a note can sit on its own line as a card with the note's picture and summary — see <a href="#bookmarks">Bookmarks</a>.</p>
       <p><code>#</code> with a space after it is a heading; <code>#</code> straight followed by a word is a tag, like <code>#idea</code> — see <a href="#tags">Tags</a>. <code>@</code> and a name links a person — see <a href="#people">People and mentions</a>.</p>
+      <h3 id="block-handle">Move and arrange blocks</h3>
+      <p>Rest the pointer on a paragraph, heading, quote, table, highlight or any other block and a <b>⋮⋮</b> handle appears in the margin to its left. Each item of a list has its own. It goes away as soon as you type, and comes back when you move the mouse.</p>
+      <ul>
+        <li><b>Drag the handle</b> to move the block; a line shows where it will land. Hold <kbd>⌥</kbd> as you drop to copy it instead. You can drag a block into or out of a list or a quote. A block only lands where the note's file can hold it: a table cell is one line of text, so only a paragraph can be dropped into one — anything else is refused and nothing moves — and a highlight always lands between the note's blocks, never inside a list or a quote. A numbered item dragged out of its list stays numbered.</li>
+        <li><b>Click the handle</b> for the block's menu: <b>Add block above</b>, <b>Add block below</b>, <b>Duplicate</b>, <b>Move up</b>, <b>Move down</b> and <b>Delete</b>. The arrow keys move through it and <kbd>Esc</kbd> closes it.</li>
+        <li><b>From the keyboard</b>, with the caret in a block: <kbd>⌘/</kbd> opens its menu, <kbd>⌥↩</kbd> adds a block below and <kbd>⌥⇧↩</kbd> one above, <kbd>⌘D</kbd> duplicates, <kbd>⇧⌘↑</kbd> / <kbd>⇧⌘↓</kbd> move it, and <kbd>⇧⌘⌫</kbd> deletes it. <kbd>⇧⌘↑</kbd> and <kbd>⇧⌘↓</kbd> are the Mac's own keys for selecting to the start or end of the text; here they move the block instead, as in Notion, and only on the first or last block, where there is nowhere to move, do they select as they do everywhere else.</li>
+        <li>Each of these is one <kbd>⌘Z</kbd>, and what you type afterwards is another: after <b>Add block below</b> and some typing, one <kbd>⌘Z</kbd> takes back the typing and a second takes back the block. Moving a block up and then down puts the note back exactly as it was.</li>
+        <li><b>Two lists that come to stand next to each other</b> — because you moved or deleted the block between them — stay two lists: the second is saved with a different bullet (<code>*</code> instead of <code>-</code>, or <code>1)</code> instead of <code>1.</code>), which is the only way markdown keeps them apart. Only those marker characters change; the rest of the list is left byte for byte as you wrote it, and any <code>^id</code> stays on its own list.</li>
+        <li><b>A copy is never a second highlight.</b> Duplicating a highlight, or dragging a copy of it, gives a plain quote of its words and comment. A block's <code>^id</code> stays with the original only, so links to it keep pointing to the same place. A moved highlight is still the same highlight.</li>
+        <li><b>Deleting a highlight</b> — from its menu, with <kbd>⇧⌘⌫</kbd>, or with <kbd>⌫</kbd> or <kbd>Delete</kbd> while it is selected — removes it from the book's note, the way the reader's highlights panel does. A Kindle highlight leaves a hidden marker behind so the next sync does not bring it back. This is a change to the note's file, so <kbd>⌘Z</kbd> does not bring it back.</li>
+      </ul>
       <h3>Properties</h3>
       <p>Properties sit under the title as rows: a status pill, dates like <i>Tue, Sep 22, 2026</i>, numbers, links to other notes.</p>
       <ul>
@@ -2216,6 +2227,9 @@ pnpm tauri:dev</pre>
             <tr><td><kbd>⌘,</kbd></td><td>Settings</td></tr>
             <tr><td><kbd>Return</kbd> · <kbd>⇧</kbd> <kbd>Return</kbd></td><td>In the Claude pane: send · new line</td></tr>
             <tr><td><kbd>/</kbd></td><td>Block menu, while writing</td></tr>
+            <tr><td><kbd>⌘/</kbd></td><td>The menu of the block the caret is in — see <a href="#block-handle">Move and arrange blocks</a></td></tr>
+            <tr><td><kbd>⌥↩</kbd> · <kbd>⌥⇧↩</kbd></td><td>Add a block below · above the one the caret is in</td></tr>
+            <tr><td><kbd>⌘D</kbd> · <kbd>⇧⌘↑</kbd> <kbd>⇧⌘↓</kbd> · <kbd>⇧⌘⌫</kbd></td><td>Duplicate · move up, down · delete the block the caret is in</td></tr>
             <tr><td><kbd>⇧⌘↩</kbd></td><td>Make the checklist line the caret is in a task — see <a href="#tasks">Make a line its own task</a></td></tr>
             <tr><td><kbd>[[</kbd></td><td>Link to a note, while writing; in its list <kbd>⇧</kbd> <kbd>Return</kbd> puts it in as a bookmark</td></tr>
             <tr><td><kbd>![[</kbd> · <kbd>[[Note#</kbd></td><td>Embed a note's block or heading · link to one, while writing — see <a href="#blocks">Blocks and embeds</a></td></tr>

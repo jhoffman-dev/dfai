@@ -1,12 +1,6 @@
 import { Extension } from '@tiptap/core';
-import {
-  NodeSelection,
-  Plugin,
-  TextSelection,
-  type EditorState,
-  type Transaction,
-} from '@tiptap/pm/state';
-import { dropPoint, liftTarget, Mapping } from '@tiptap/pm/transform';
+import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
+import { liftTarget, Mapping } from '@tiptap/pm/transform';
 import { Fragment, Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { EditorView } from '@tiptap/pm/view';
 import { BLOCK_ANCHOR_ATTR, highlightAsPlainQuote, isTombstoneBlock } from '@dfai/domain';
@@ -40,10 +34,11 @@ import { pastedRawBlocks } from './raw-block.ts';
  * a second live highlight of the passage, in its own note or another. Pasted,
  * it is a plain quote, its words and comment kept, its marker and id dropped.
  * A highlight dragged within its note and moved stays one; dragged and
- * copied, the copy is a plain quote, as a paste is.
+ * copied, the copy is a plain quote, as a paste is (block-drop.ts).
  */
 
-const isTombstone = (node: ProseMirrorNode): boolean =>
+/** Whether `node` is a removed highlight's tombstone, which nobody sees (ADR-0043 §5). */
+export const isTombstone = (node: ProseMirrorNode): boolean =>
   node.type.name === 'rawBlock' && isTombstoneBlock(String(node.attrs['markdown'] ?? ''));
 
 interface Held {
@@ -192,7 +187,7 @@ function quotedSlice(slice: Slice): Slice {
  * — its id dropped with it — before its marker line is taken off as any
  * marker's is. A drag within the note keeps
  * its highlights here: whether it moves or copies is decided only at the drop,
- * from the copy key held then, so {@link dropAsCopy} decides it.
+ * from the copy key held then, so the drop decides it (block-drop.ts).
  */
 function pastedOff(slice: Slice, view: EditorView): Slice {
   const clean = offTheClipboard(slice);
@@ -200,52 +195,13 @@ function pastedOff(slice: Slice, view: EditorView): Slice {
 }
 
 /**
- * A drag within the note dropped as a copy is cleaned as a paste is, in the
- * paste's order: its highlights made plain quotes, so the passage keeps one
- * live highlight, then its raw blocks' markers and ids taken off (raw-block.ts).
- * A move — or a copy with nothing to clean — is left to ProseMirror's own drop.
+ * A copy of `slice` made within the note — a drag dropped as a copy, a block
+ * duplicated (#569) — cleaned as a paste is, in the paste's order: no
+ * tombstone, each highlight a plain quote, then its raw blocks' markers and
+ * ids taken off (raw-block.ts). The same slice when there is nothing to clean.
  */
-function dropAsCopy(view: EditorView, event: DragEvent, slice: Slice, moved: boolean): boolean {
-  if (moved) return false;
-  const quoted = pastedRawBlocks(quotedSlice(slice));
-  if (quoted === slice) return false;
-  const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
-  if (at === null) return false;
-  const insertAt = dropPoint(view.state.doc, at.pos, quoted) ?? at.pos;
-  const tr = view.state.tr;
-  const single = quoted.openStart === 0 && quoted.openEnd === 0 && quoted.content.childCount === 1;
-  const only = single ? quoted.content.firstChild : null;
-  if (only !== null) tr.replaceRangeWith(insertAt, insertAt, only);
-  else tr.replaceRange(insertAt, insertAt, quoted);
-  event.preventDefault();
-  if (tr.doc.eq(view.state.doc)) return true;
-  selectDropped(view, tr, { insertAt, only });
-  view.focus();
-  view.dispatch(tr.setMeta('uiEvent', 'drop'));
-  return true;
-}
-
-/**
- * Selects what the drop put in, not the block it was copied from: the one
- * node, or the stretch inserted. Mirrors prosemirror-view 1.42's handleDrop.
- */
-function selectDropped(
-  view: EditorView,
-  tr: Transaction,
-  { insertAt, only }: { insertAt: number; only: ProseMirrorNode | null },
-): void {
-  const $pos = tr.doc.resolve(insertAt);
-  if (only !== null && NodeSelection.isSelectable(only) && $pos.nodeAfter?.sameMarkup(only)) {
-    tr.setSelection(new NodeSelection($pos));
-    return;
-  }
-  let end = tr.mapping.map(insertAt);
-  tr.mapping.maps[tr.mapping.maps.length - 1]?.forEach((_from, _to, _newFrom, newTo) => {
-    end = newTo;
-  });
-  const $end = tr.doc.resolve(end);
-  const between = view.someProp('createSelectionBetween', (create) => create(view, $pos, $end));
-  tr.setSelection(between ?? TextSelection.between($pos, $end));
+export function copiedAsPasted(slice: Slice): Slice {
+  return pastedRawBlocks(quotedSlice(offTheClipboard(slice)));
 }
 
 /** The tombstones the transactions took, put back at the block boundary nearest where they were. */
@@ -330,7 +286,6 @@ export const TombstoneGuard = Extension.create({
         props: {
           transformCopied: offTheClipboard,
           transformPasted: pastedOff,
-          handleDrop: dropAsCopy,
         },
       }),
     ];

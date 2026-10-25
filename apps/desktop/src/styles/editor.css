@@ -1772,3 +1772,51 @@
 .editor .hljs-symbol {
   color: var(--code-type);
 }
+
+/* ---- block handle (#569) ---- */
+
+/* The handle is placed against the editor's own box, so it never moves the text. */
+.editor-host {
+  position: relative;
+}
+
+/* One ⋮⋮ for the whole note, moved beside the block under the pointer. Neutral
+   chrome: faint until it is pointed at, never in the text's own colour. */
+.block-handle {
+  align-items: center;
+  border-radius: var(--radius-control);
+  color: var(--line-strong);
+  cursor: grab;
+  display: flex;
+  font-size: 12px;
+  height: 22px;
+  justify-content: center;
+  left: 0;
+  letter-spacing: -2px;
+  line-height: 1;
+  position: absolute;
+  top: 0;
+  user-select: none;
+  width: 18px;
+  z-index: 2;
+}
+
+.block-handle[hidden] {
+  display: none;
+}
+
+.block-handle:hover,
+.block-handle--open {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.block-handle:active {
+  cursor: grabbing;
+}
+
+/* Where a dragged block will land. */
+.editor-drop-line {
+  background: var(--focus);
+  border-radius: 1px;
+}
