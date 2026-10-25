@@ -53,12 +53,6 @@ const ITEM_TYPES = new Set(['listItem', 'taskItem']);
 export const isListItem = (node: ProseMirrorNode): boolean => ITEM_TYPES.has(node.type.name);
 
 /**
- * On a transaction that is one of these actions, so the handle's plugin
- * closes the undo step after it as well as before (`ownStep`).
- */
-export const BLOCK_ACTION_STEP = 'blockActionStep';
-
-/**
  * The block a handle at a point of the note acts on: the innermost list
  * item the point is in, else the block of the note it is in. `pos` and
  * `inside` are what `posAtCoords` answers; for a selection, its head and the
@@ -135,11 +129,10 @@ export function stillThere(doc: ProseMirrorNode, target: BlockTarget): boolean {
 
 /**
  * A transaction that is a step of its own to undo — closed off from the typing
- * before it here, and from the typing after it by the handle's plugin, which
- * reads `BLOCK_ACTION_STEP` — and scrolls to what it changed.
+ * before it here, and from the typing after it by the handle (`runBlockAction`
+ * closes the step again once it is dispatched) — and scrolls to what it changed.
  */
-const ownStep = (tr: Transaction): Transaction =>
-  closeHistory(tr).setMeta(BLOCK_ACTION_STEP, true).scrollIntoView();
+const ownStep = (tr: Transaction): Transaction => closeHistory(tr).scrollIntoView();
 
 /**
  * An empty block above or below `target`, with the caret in it: a paragraph

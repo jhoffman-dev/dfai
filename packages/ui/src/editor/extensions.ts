@@ -32,7 +32,7 @@ import { BlockAnchor } from './block-anchor.ts';
 import { RevealedBlock } from './revealed-block.ts';
 import { BlockEmbed, type TransclusionSource } from './block-embed.tsx';
 import { BlockDrop } from './block-drop.ts';
-import { BlockActionSteps, BlockHandle } from './block-handle.ts';
+import { BlockHandle } from './block-handle.ts';
 import type { BlockPicking } from './block-picking.ts';
 import { Bookmark, TopLevelDocument, type BookmarkSource } from './bookmark.tsx';
 import { LinkKeys } from './link-keys.ts';
@@ -154,7 +154,6 @@ export function createEditorExtensions({
     PromoteLineButton.configure({ promote: promoteLine }),
     BlockHandle.configure({ highlights }),
     BlockDrop,
-    BlockActionSteps,
     EscapeUnused,
   ];
 }

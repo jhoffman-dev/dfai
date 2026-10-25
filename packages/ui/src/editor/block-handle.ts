@@ -5,7 +5,6 @@ import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import {
   BLOCK_ACTIONS,
-  BLOCK_ACTION_STEP,
   blockChange,
   blockTargetAt,
   blockTargetOfSelection,
@@ -96,6 +95,13 @@ export function availableBlockActions(
  * Does `action` to `target`, if it is still the block there: the edit
  * dispatched as one step, the caret back in the note; a highlight's delete
  * handed to the note's own write. Answers whether anything was done.
+ *
+ * The undo step is closed after the edit too, so the typing that follows —
+ * in the block just added, say — is a step of its own, and one ⌘Z takes back
+ * the typing, not the action with it. Closed here, by a second dispatch, it
+ * comes after every transaction the other plugins appended to the edit — a
+ * block id kept, an empty line added at the end — which are applied within
+ * the first dispatch, whatever order the plugins run in.
  */
 export function runBlockAction(
   view: EditorView,
@@ -115,6 +121,7 @@ export function runBlockAction(
     return true;
   }
   view.dispatch(change.edit);
+  view.dispatch(closeHistory(view.state.tr));
   view.focus();
   return true;
 }
@@ -401,28 +408,3 @@ export const BlockHandle = Extension.create<BlockHandleOptions>({
 });
 
 const MOVE_ACTIONS: ReadonlySet<BlockAction> = new Set(['moveUp', 'moveDown']);
-
-/**
- * An action done, its undo step is closed after it too, so the typing that
- * follows — in the block just added, say — is a step of its own, and one ⌘Z
- * takes back the typing, not the action with it. The last of the plugins
- * (its priority), so it closes after every transaction the others append to
- * the action — a block id kept, an empty line added at the end — which else
- * would land in a step of their own, and one ⌘Z would take back only them.
- */
-export const BlockActionSteps = Extension.create({
-  name: 'blockActionSteps',
-  priority: 1,
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey('blockActionSteps'),
-        appendTransaction: (transactions, _before, state) =>
-          transactions.some((tr) => tr.getMeta(BLOCK_ACTION_STEP) === true)
-            ? closeHistory(state.tr)
-            : null,
-      }),
-    ];
-  },
-});

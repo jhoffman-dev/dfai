@@ -246,13 +246,10 @@ describe('one action is one undo step', () => {
     const instance = noteOf([paragraph('One.'), paragraph('Two.')]);
     const target = blockTargetAt(instance.state.doc, { pos: 2, inside: -1 });
     if (target === null) throw new Error('No block.');
-    const change = blockChange(instance.state, {
-      target,
-      action: 'addBelow',
-      isHighlight: isHighlightNode,
-    });
-    if (change === null || !('edit' in change)) throw new Error('No edit.');
-    instance.view.dispatch(change.edit);
+    // As the handle's menu and keys do it, which is what closes the step after.
+    expect(runBlockAction(instance.view, { target, action: 'addBelow', highlights: null })).toBe(
+      true,
+    );
     const added = instance.state.doc;
     instance.commands.insertContent('Typed.');
     instance.commands.undo();
