@@ -197,16 +197,50 @@ describe('room after an image, in the blocks an image can be in', () => {
     ['a bullet list', 'bulletList', 'listItem'],
     ['an ordered list', 'orderedList', 'listItem'],
     ['a task list', 'taskList', 'taskItem'],
-  ])('Enter on a selected image in %s keeps the image', async (_label, list, listItem) => {
+  ])(
+    'Enter on a selected image in %s keeps it and splits the item after it',
+    async (_label, list, listItem) => {
+      const { container } = renderNote({
+        type: 'doc',
+        content: [{ type: list, content: [item(listItem, paragraph(image('chart.png')))] }],
+      });
+      const editor = await editorIn(container);
+      selectImage(editor, 'chart.png');
+      press(editor, 'Enter');
+
+      expect(imageCount(editor)).toBe(1);
+      const items = editor.state.doc.child(0);
+      expect(items.childCount).toBe(2);
+      expect(items.child(0).firstChild?.firstChild?.type.name).toBe('image');
+      expect(items.child(1).textContent).toBe('');
+      const { $from } = editor.state.selection;
+      expect($from.node($from.depth - 1)).toBe(items.child(1));
+    },
+  );
+
+  it('Enter on a selected image in a callout keeps it and starts a new empty line inside the callout', async () => {
     const { container } = renderNote({
       type: 'doc',
-      content: [{ type: list, content: [item(listItem, paragraph(image('chart.png')))] }],
+      content: [
+        {
+          type: 'callout',
+          attrs: { kind: 'note', title: null, fold: null },
+          content: [paragraph(image('chart.png'))],
+        },
+      ],
     });
     const editor = await editorIn(container);
     selectImage(editor, 'chart.png');
     press(editor, 'Enter');
 
+    const callout = editor.state.doc.child(0);
     expect(imageCount(editor)).toBe(1);
+    expect(callout.child(0).firstChild?.type.name).toBe('image');
+    expect(callout.childCount).toBe(2);
+    expect(callout.child(1).type.name).toBe('paragraph');
+    expect(callout.child(1).content.size).toBe(0);
+    const { $from } = editor.state.selection;
+    expect($from.parent).toBe(callout.child(1));
   });
 
   it('Enter on a selected image in a list keeps its caption', async () => {

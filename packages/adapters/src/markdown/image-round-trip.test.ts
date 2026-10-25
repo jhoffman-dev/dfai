@@ -277,6 +277,35 @@ function firstImage(node: EditorNode): Record<string, unknown> | undefined {
   return undefined;
 }
 
+describe('an image resized from bytes that cannot take its size (#568)', () => {
+  const sizedImage: EditorNode = {
+    type: 'image',
+    attrs: { src: 'chart.png', alt: 'chart', title: null, width: 320 },
+  };
+
+  it('is written afresh when the written bytes would read back as another image', () => {
+    // The bytes claim to be this image without its size, but their address is another one:
+    // putting the size in them would read back as `other.png`, not `chart.png`.
+    const written = {
+      inlines: [
+        {
+          kind: 'image' as const,
+          reads: JSON.stringify(['chart.png', 'chart', null, null]),
+          readsUnsized: JSON.stringify(['chart.png', 'chart', null]),
+          source: '![chart](other.png)',
+          inCell: false,
+        },
+      ],
+      references: new Map(),
+    };
+    const markdown = renderBlock({ type: 'paragraph', content: [sizedImage] }, { written });
+
+    expect(markdown).toBe('![chart|320](chart.png)');
+    const read = parseMarkdownBody(`${markdown}\n`).doc.content[0]?.content?.[0];
+    expect(read?.attrs).toMatchObject({ src: 'chart.png', alt: 'chart', width: 320 });
+  });
+});
+
 describe('an image written afresh, where the words meet the size (#568)', () => {
   const TABLE = '| Photo | Notes |\n| - | - |\n| ![shot](a.png) | kept |\n';
 
