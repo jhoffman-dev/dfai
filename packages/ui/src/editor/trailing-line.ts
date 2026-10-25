@@ -23,9 +23,16 @@ function lastVisibleBlock(doc: ProseMirrorNode): ProseMirrorNode | null {
   return null;
 }
 
-/** Whether the note needs an empty paragraph at its end to type in. */
-export const needsTrailingLine = (doc: ProseMirrorNode): boolean =>
-  lastVisibleBlock(doc)?.type.name !== 'paragraph';
+/**
+ * Whether the note needs an empty paragraph at its end to type in: after any
+ * last block but a paragraph, and after a paragraph that ends in a picture,
+ * under which there is otherwise nowhere to type (the picture's own room
+ * reads the note's last block, so this holds whatever follows the picture).
+ */
+export const needsTrailingLine = (doc: ProseMirrorNode): boolean => {
+  const last = lastVisibleBlock(doc);
+  return last?.type.name !== 'paragraph' || last.lastChild?.type.name === 'image';
+};
 
 export const TrailingLine = Extension.create({
   name: 'trailingLine',
