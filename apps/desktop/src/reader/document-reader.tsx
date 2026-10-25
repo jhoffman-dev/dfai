@@ -12,7 +12,7 @@ import {
   useReaderWrites,
   type DocumentPorts,
 } from './use-document-highlights.ts';
-import { useOpenPdf } from './use-open-pdf.ts';
+import { useOpenDocument } from './use-open-document.ts';
 
 /*
  * A PDF in a reader tab (#504), in the chunk that brings pdf.js, loaded the
@@ -31,7 +31,7 @@ export interface DocumentReaderProps extends PageChrome {
 }
 
 export function DocumentReader(props: DocumentReaderProps) {
-  const open = useOpenPdf({ fs: props.ports.fs, reader: appPdfReader, path: props.path });
+  const open = useOpenDocument({ fs: props.ports.fs, reader: appPdfReader, path: props.path });
   const chrome = {
     ...(props.onShowSidebar !== undefined && { onShowSidebar: props.onShowSidebar }),
     ...(props.history !== undefined && { history: props.history }),

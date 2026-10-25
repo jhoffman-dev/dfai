@@ -26,6 +26,7 @@
       "@dfai/application/testing/sqlite": ["./packages/application/src/testing/sqlite.ts"],
       "@dfai/adapters": ["./packages/adapters/src/index.ts"],
       "@dfai/adapters/pdf": ["./packages/adapters/src/pdf/index.ts"],
+      "@dfai/adapters/epub": ["./packages/adapters/src/epub/index.ts"],
       "@dfai/ui": ["./packages/ui/src/index.ts"],
       "@dfai/ui/graph": ["./packages/ui/src/graph/index.ts"],
       "@dfai/ui/testing/settles": ["./packages/ui/src/testing/settles.ts"]

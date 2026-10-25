@@ -17,3 +17,6 @@ tools/notion-import/fixtures
 
 # Pages in the shape Amazon writes its Kindle notebook (#508): formatting them would change what they test.
 packages/domain/src/kindle/fixtures/*.html
+
+# The EPUB frame's script, written by tools/epub/frame-bootstrap.ts and run as it is, named by its hash.
+packages/adapters/src/epub/frame-bootstrap.generated.ts

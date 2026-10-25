@@ -18,7 +18,7 @@ import {
   useReaderWrites,
   type DocumentPorts,
 } from './use-document-highlights.ts';
-import { useOpenPdf } from './use-open-pdf.ts';
+import { useOpenDocument } from './use-open-document.ts';
 
 /*
  * The reader tab's reads and writes against a vault in memory (#504): the
@@ -226,7 +226,7 @@ describe('the PDF a reader tab opens', () => {
     const close = vi.fn(async () => {});
     const reader: PdfJsReader = { open: async () => ({ ...opened, close }) };
     const fs = fakeVaultFs({ readBinaryFile: async () => new ArrayBuffer(8) });
-    const { result, unmount } = renderHook(() => useOpenPdf({ fs, reader, path: PDF }));
+    const { result, unmount } = renderHook(() => useOpenDocument({ fs, reader, path: PDF }));
     expect(result.current.state).toBe('opening');
     await waitFor(() => expect(result.current.state).toBe('open'));
     unmount();
@@ -240,7 +240,7 @@ describe('the PDF a reader tab opens', () => {
       },
     };
     const fs = fakeVaultFs({ readBinaryFile: async () => new ArrayBuffer(8) });
-    const { result } = renderHook(() => useOpenPdf({ fs, reader, path: PDF }));
+    const { result } = renderHook(() => useOpenDocument({ fs, reader, path: PDF }));
     await waitFor(() =>
       expect(result.current).toEqual({
         state: 'failed',

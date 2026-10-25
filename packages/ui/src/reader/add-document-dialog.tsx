@@ -1,15 +1,27 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
+import type { DocumentKind } from '@dfai/domain';
 import { Icon } from '../icon.tsx';
 import { useReturnFocus, type FocusFallback } from '../return-focus.ts';
 
 /*
- * Adding PDFs to the library (#504): drop them here or pick them. Each is
- * copied into the vault and given its literature note; the files picked are
- * only read. What is refused, and why, is the caller's to say.
+ * Adding PDFs (#504) or EPUBs (#505) to the library: drop them here or pick
+ * them. Each is copied into the vault and given its literature note; the
+ * files picked are only read. What is refused, and why, is the caller's to
+ * say.
  */
 
-export interface AddPdfDialogProps {
+/** What the dialog calls each kind of document, and the files its picker offers. */
+const COPY: Readonly<
+  Record<DocumentKind, { readonly name: string; readonly article: string; readonly accept: string }>
+> = {
+  pdf: { name: 'PDF', article: 'a PDF', accept: '.pdf,application/pdf' },
+  epub: { name: 'EPUB', article: 'an EPUB', accept: '.epub,application/epub+zip' },
+};
+
+export interface AddDocumentDialogProps {
+  /** Which kind of document it adds. */
+  readonly kind: DocumentKind;
   /** The folder the copies go in, as the dialog says it. */
   readonly folder: string;
   readonly adding: boolean;
@@ -19,14 +31,16 @@ export interface AddPdfDialogProps {
   readonly fallbackFocus?: FocusFallback;
 }
 
-export function AddPdfDialog({
+export function AddDocumentDialog({
+  kind,
   folder,
   adding,
   error,
   onFiles,
   onClose,
   fallbackFocus,
-}: AddPdfDialogProps) {
+}: AddDocumentDialogProps) {
+  const copy = COPY[kind];
   const finalFocus = useReturnFocus(fallbackFocus);
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -41,11 +55,11 @@ export function AddPdfDialog({
       <Dialog.Portal>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette new-type add-pdf" finalFocus={finalFocus}>
-            <Dialog.Title className="new-type__title">Add PDF to Library</Dialog.Title>
+            <Dialog.Title className="new-type__title">Add {copy.name} to Library</Dialog.Title>
             <div
               className={over ? 'file-drop file-drop--over' : 'file-drop'}
               role="group"
-              aria-label="Drop PDFs here"
+              aria-label={`Drop ${copy.name}s here`}
               onDragOver={(event) => {
                 if (adding || !hasFiles(event)) return;
                 event.preventDefault();
@@ -63,7 +77,7 @@ export function AddPdfDialog({
             >
               <Icon name="book" size={22} className="file-drop__icon" />
               <div className="file-drop__text">
-                Drop a PDF here. A copy goes into {folder} with a literature note for its
+                Drop {copy.article} here. A copy goes into {folder} with a literature note for its
                 highlights; the file you picked is left as it is.
               </div>
               <div className="file-drop__actions">
@@ -73,16 +87,16 @@ export function AddPdfDialog({
                   disabled={adding}
                   onClick={() => input.current?.click()}
                 >
-                  {adding ? 'Adding…' : 'Choose PDF…'}
+                  {adding ? 'Adding…' : `Choose ${copy.name}…`}
                 </button>
               </div>
               <input
                 ref={input}
                 className="file-drop__input"
                 type="file"
-                accept=".pdf,application/pdf"
+                accept={copy.accept}
                 multiple
-                aria-label="Choose PDF"
+                aria-label={`Choose ${copy.name}`}
                 onChange={(event) => {
                   const picked = [...(event.target.files ?? [])];
                   // Cleared, so choosing the same file again still counts as a choice.

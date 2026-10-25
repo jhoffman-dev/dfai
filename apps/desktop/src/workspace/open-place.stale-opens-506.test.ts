@@ -68,7 +68,7 @@ describe('two block links clicked in quick succession in one tab', () => {
         note === SOURCE
           ? slow.promise
           : Promise.resolve({ kind: 'note', note, blockId } satisfies HighlightOpening),
-      linkedPdf: async () => null,
+      linkedDocument: async () => null,
     };
     const w = wiring(places);
     const link = (target: string, id: string) =>
@@ -89,7 +89,7 @@ describe('two block links clicked in quick succession in one tab', () => {
 describe('a block link whose note is read after the person has moved on', () => {
   it('does not take over the pane they have since opened something else in', async () => {
     const slow = deferred<HighlightOpening>();
-    const w = wiring({ blockOpening: () => slow.promise, linkedPdf: async () => null });
+    const w = wiring({ blockOpening: () => slow.promise, linkedDocument: async () => null });
     clickLink(w, {
       pane: 0,
       target: 'The Lantern Keepers',
@@ -109,7 +109,7 @@ describe('a block link whose note is read after the person has moved on', () => 
 
   it('does not open in a pane that was closed, nor in the one that took its number', async () => {
     const slow = deferred<HighlightOpening>();
-    const w = wiring({ blockOpening: () => slow.promise, linkedPdf: async () => null });
+    const w = wiring({ blockOpening: () => slow.promise, linkedDocument: async () => null });
     splitPane(w.store, 0);
     openNote(w.store, ELSEWHERE);
     clickLink(w, {
@@ -137,11 +137,11 @@ describe('ordinary links, as before #506', () => {
 
   it('[[Budget review.pdf]] opens the note named so when the vault holds no PDF of that name', async () => {
     // A note whose title ends in ".pdf" (a meeting about a document, say):
-    // `linkedPdf` finds no such file, so the link is read as a note's.
+    // `linkedDocument` finds no such file, so the link is read as a note's.
     const w = wiring(
       {
         blockOpening: async ({ note, blockId }) => ({ kind: 'note', note, blockId }),
-        linkedPdf: async () => null,
+        linkedDocument: async () => null,
       },
       [PLAN, NOTE_NAMED_PDF],
     );
@@ -156,7 +156,7 @@ describe('ordinary links, as before #506', () => {
     const w = wiring(
       {
         blockOpening: async ({ note, blockId }) => ({ kind: 'note', note, blockId }),
-        linkedPdf: async () => PDF,
+        linkedDocument: async () => PDF,
       },
       [PLAN, NOTE_NAMED_PDF],
     );
@@ -167,7 +167,7 @@ describe('ordinary links, as before #506', () => {
   it('[[Missing.pdf]] says neither a PDF nor a note is called so', async () => {
     const w = wiring({
       blockOpening: async () => ({ kind: 'note', note: PLAN, blockId: 'x' }),
-      linkedPdf: async () => null,
+      linkedDocument: async () => null,
     });
     followLink(w, { pane: 0, target: 'Missing.pdf' });
     await vi.waitFor(() =>
@@ -180,7 +180,7 @@ describe('ordinary links, as before #506', () => {
     const w = wiring(
       {
         blockOpening: async () => ({ kind: 'note', note: PLAN, blockId: 'x' }),
-        linkedPdf: async () => null,
+        linkedDocument: async () => null,
       },
       [PLAN, NOTE_NAMED_PDF],
     );
@@ -192,7 +192,7 @@ describe('ordinary links, as before #506', () => {
 describe('a block link read late, from the peek', () => {
   it('does not open once the peek has been left another way', async () => {
     const slow = deferred<HighlightOpening>();
-    const w = wiring({ blockOpening: () => slow.promise, linkedPdf: async () => null });
+    const w = wiring({ blockOpening: () => slow.promise, linkedDocument: async () => null });
     openPeek(w.overlays, { path: ELSEWHERE, from: null });
     clickLink(w, {
       pane: 0,
@@ -209,7 +209,7 @@ describe('a block link read late, from the peek', () => {
 
   it('leaves the peek and opens when it is still the one the click was made in', async () => {
     const slow = deferred<HighlightOpening>();
-    const w = wiring({ blockOpening: () => slow.promise, linkedPdf: async () => null });
+    const w = wiring({ blockOpening: () => slow.promise, linkedDocument: async () => null });
     openPeek(w.overlays, { path: ELSEWHERE, from: null });
     clickLink(w, {
       pane: 0,
@@ -232,7 +232,7 @@ describe('block links opened in new tabs, one after the other', () => {
         note === SOURCE
           ? slow.promise
           : Promise.resolve({ kind: 'note', note, blockId } satisfies HighlightOpening),
-      linkedPdf: async () => null,
+      linkedDocument: async () => null,
     };
     const w = wiring(places);
     const link = (target: string, id: string) =>
@@ -285,7 +285,7 @@ function slowPdfWiring() {
   const walk = deferred<VaultPath | null>();
   const places: LinkPlaces = {
     blockOpening: async ({ note, blockId }) => ({ kind: 'note', note, blockId }),
-    linkedPdf: () => walk.promise,
+    linkedDocument: () => walk.promise,
   };
   const store = createWorkspaceStore({ remembered: { read: () => null, write: () => {} } });
   loadVault(store, '/vaults/first');

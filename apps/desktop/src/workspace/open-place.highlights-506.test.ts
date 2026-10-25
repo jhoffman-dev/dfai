@@ -25,12 +25,12 @@ const PLAN = createVaultPath('Plan.md');
 const PDF = createVaultPath('Library/the-lantern-keepers.pdf');
 
 /** Every highlight of SOURCE opens the PDF; any other block opens its note. */
-const places = (): LinkPlaces & { linkedPdf: ReturnType<typeof vi.fn> } => ({
+const places = (): LinkPlaces & { linkedDocument: ReturnType<typeof vi.fn> } => ({
   blockOpening: async ({ note, blockId }): Promise<HighlightOpening> =>
     note === SOURCE
       ? { kind: 'reader', source: 'pdf', document: PDF, highlightId: blockId }
       : { kind: 'note', note, blockId },
-  linkedPdf: vi.fn(async (target: string) => (target.endsWith('.pdf') ? PDF : null)),
+  linkedDocument: vi.fn(async (target: string) => (target.endsWith('.pdf') ? PDF : null)),
 });
 
 function wiring() {
@@ -185,9 +185,22 @@ describe('a link to a PDF', () => {
     expect(peekNow(w.overlays)).toBeNull();
   });
 
+  it('follows [[…epub]] to its reader, and says when the EPUB it names is not to be found (#505)', async () => {
+    const w = wiring();
+    const book = createVaultPath('Library/fables.epub');
+    w.places.linkedDocument.mockResolvedValueOnce(book);
+    followLink(w, { pane: 0, target: 'fables.epub' });
+    await vi.waitFor(() => expect(placesOf(w.store)).toEqual([{ kind: 'document', path: book }]));
+    w.places.linkedDocument.mockResolvedValueOnce(null);
+    followLink(w, { pane: 0, target: 'missing.epub' });
+    await vi.waitFor(() =>
+      expect(w.onProblem).toHaveBeenCalledWith('No EPUB or note called "missing.epub"'),
+    );
+  });
+
   it('says when the PDF it names is not to be found', async () => {
     const w = wiring();
-    w.places.linkedPdf.mockResolvedValueOnce(null);
+    w.places.linkedDocument.mockResolvedValueOnce(null);
     followLink(w, { pane: 0, target: 'missing.pdf' });
     await vi.waitFor(() =>
       expect(w.onProblem).toHaveBeenCalledWith('No PDF or note called "missing.pdf"'),

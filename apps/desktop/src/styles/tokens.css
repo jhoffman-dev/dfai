@@ -167,6 +167,13 @@
   --mark-purple-line: #6b5bb5;
   --mark-orange: #f9cfac;
   --mark-orange-line: #b0602a;
+  /* The EPUB reader (#505): whether a book's own colours give way to the window's,
+     the ink on a highlight (whose fill is pale in every theme), a highlight lit
+     when it is brought into view, and find's current match. */
+  --book-scheme: light;
+  --book-mark-ink: #18181b;
+  --book-flash: #c9cff0;
+  --book-found-current: #f2a66b;
   /* A highlight drawn in the editor (#534): its rule and underline, and how much of the
      fill shows under its words. In light the PDF line colours hold 3:1 on the page; in dark
      the pastels themselves do, and a quarter of one keeps the words' ink above 4.5:1. */
@@ -309,6 +316,13 @@
     --mark-purple-line: #6b5bb5;
     --mark-orange: #f9cfac;
     --mark-orange-line: #b0602a;
+    /* The EPUB reader (#505): whether a book's own colours give way to the window's,
+       the ink on a highlight (whose fill is pale in every theme), a highlight lit
+       when it is brought into view, and find's current match. */
+    --book-scheme: dark;
+    --book-mark-ink: #18181b;
+    --book-flash: #c9cff0;
+    --book-found-current: #f2a66b;
     /* A highlight drawn in the editor (#534): its rule and underline, and how much of the
        fill shows under its words. In light the PDF line colours hold 3:1 on the page; in dark
        the pastels themselves do, and a quarter of one keeps the words' ink above 4.5:1. */
@@ -439,6 +453,13 @@
   --mark-purple-line: #6b5bb5;
   --mark-orange: #f9cfac;
   --mark-orange-line: #b0602a;
+  /* The EPUB reader (#505): whether a book's own colours give way to the window's,
+     the ink on a highlight (whose fill is pale in every theme), a highlight lit
+     when it is brought into view, and find's current match. */
+  --book-scheme: dark;
+  --book-mark-ink: #18181b;
+  --book-flash: #c9cff0;
+  --book-found-current: #f2a66b;
   /* A highlight drawn in the editor (#534): its rule and underline, and how much of the
      fill shows under its words. In light the PDF line colours hold 3:1 on the page; in dark
      the pastels themselves do, and a quarter of one keeps the words' ink above 4.5:1. */

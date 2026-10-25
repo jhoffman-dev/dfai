@@ -506,3 +506,39 @@
   gap: var(--space-1);
   margin-top: var(--space-1);
 }
+
+/* The EPUB reader (#505): one chapter in its frame, filling the space between
+   the find bar and the chapter turns; the frame scrolls on its own. */
+.epub-reader__page {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.epub-frame {
+  background: var(--surface);
+  border: 0;
+  display: block;
+  height: 100%;
+  inset: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.epub-reader__page .pdf-popover {
+  z-index: 1;
+}
+
+.epub-reader__turns {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: 6px 12px;
+}
+
+.epub-reader__where {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, MAX_PDF_BYTES } from '@dfai/domain';
+import { createVaultPath, MAX_DOCUMENT_BYTES } from '@dfai/domain';
 import {
   fakePdf,
   fakeReader,
@@ -8,13 +8,14 @@ import {
   pdfBytes,
   readerMarkdown,
 } from '../testing/fake-reader.ts';
-import { addPdfToLibrary, PdfNotAddedError, type PickedPdf } from './add-pdf.ts';
+import { addPdfToLibrary, PdfNotAddedError } from './add-pdf.ts';
+import type { PickedDocument } from './library-copy.ts';
 import { PdfUnreadableError, type PdfReaderPort } from './ports.ts';
 
 const LIBRARY = createVaultPath('Library');
 const BYTES = pdfBytes('the lantern keepers');
 
-const picked = (name: string, bytes = BYTES): PickedPdf & { reads: number } => {
+const picked = (name: string, bytes = BYTES): PickedDocument & { reads: number } => {
   const file = {
     name,
     size: bytes.length,
@@ -106,7 +107,7 @@ describe('adding a PDF to the library', () => {
 
   it('refuses a PDF past the most the vault holds, unread', async () => {
     const { fs } = memoryFiles();
-    const file = { ...picked('big.pdf'), size: MAX_PDF_BYTES + 1 };
+    const file = { ...picked('big.pdf'), size: MAX_DOCUMENT_BYTES + 1 };
     await expect(
       addPdfToLibrary({ fs, reader: fakeReader(LANTERN) }, { pdf: file, folder: LIBRARY }),
     ).rejects.toThrow(/at most 32 MB/);

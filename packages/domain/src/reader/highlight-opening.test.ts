@@ -6,9 +6,10 @@ import { createVaultPath } from '../vault/vault-path.ts';
 import {
   highlightChip,
   highlightOpening,
-  namesPdf,
-  pdfLinkTarget,
+  namesDocument,
+  documentLinkTarget,
   placeLabel,
+  readerDocumentOf,
   readerLinkLabel,
 } from './highlight-opening.ts';
 
@@ -74,13 +75,13 @@ describe('where following a block opens', () => {
     ).toEqual({ kind: 'note', note: NOTE, blockId: 'k3x9q2' });
   });
 
-  it('opens an EPUB highlight in its note until the EPUB reader is one of the readers (#505)', () => {
+  it("opens an EPUB's highlight in the reader (#505), and in its note where no reader is given", () => {
     const epub = {
       source: source({ kind: 'epub', file: createVaultPath('Library/b.epub') }),
       highlightIds: ['k3x9q2'],
     };
-    expect(opening(epub)).toEqual({ kind: 'note', note: NOTE, blockId: 'k3x9q2' });
-    expect(opening(epub, ['pdf', 'epub'])).toEqual({
+    expect(opening(epub, ['pdf'])).toEqual({ kind: 'note', note: NOTE, blockId: 'k3x9q2' });
+    expect(opening(epub)).toEqual({
       kind: 'reader',
       source: 'epub',
       document: 'Library/b.epub',
@@ -120,10 +121,19 @@ describe('what a highlight in its note offers', () => {
     expect(readerLinkLabel(null)).toBeNull();
   });
 
-  it('is "Open in EPUB" once the EPUB reader is one of the readers', () => {
+  it('is "Open in EPUB" for an EPUB with its file, and nothing where no EPUB reader is given', () => {
     const epub = source({ kind: 'epub', file: createVaultPath('Library/b.epub') });
-    expect(readerLinkLabel(epub)).toBeNull();
-    expect(readerLinkLabel(epub, ['pdf', 'epub'])).toBe('Open in EPUB');
+    expect(readerLinkLabel(epub)).toBe('Open in EPUB');
+    expect(readerLinkLabel(epub, ['pdf'])).toBeNull();
+  });
+
+  it('is nothing for an EPUB note whose file is not an EPUB, as for a PDF note naming no PDF', () => {
+    expect(
+      readerLinkLabel(source({ kind: 'epub', file: createVaultPath('Library/b.md') })),
+    ).toBeNull();
+    expect(
+      readerLinkLabel(source({ kind: 'epub', file: createVaultPath('Library/b.pdf') })),
+    ).toBeNull();
   });
 });
 
@@ -184,57 +194,92 @@ describe('the PDF a wiki link names', () => {
   ];
 
   it('is none for a link to anything but a PDF', () => {
-    expect(pdfLinkTarget('The Lantern Keepers', known)).toBeNull();
-    expect(pdfLinkTarget('notes.pdf.md', known)).toBeNull();
+    expect(documentLinkTarget('The Lantern Keepers', known)).toBeNull();
+    expect(documentLinkTarget('notes.pdf.md', known)).toBeNull();
   });
 
   it('is the known PDF at the path the link writes, in any case', () => {
-    expect(pdfLinkTarget('library/The-Lantern-Keepers.PDF', known)).toBe(PDF);
-    expect(pdfLinkTarget(' /Library/the-lantern-keepers.pdf ', known)).toBe(PDF);
+    expect(documentLinkTarget('library/The-Lantern-Keepers.PDF', known)).toBe(PDF);
+    expect(documentLinkTarget(' /Library/the-lantern-keepers.pdf ', known)).toBe(PDF);
   });
 
   it('is the one known PDF of the name a link gives alone', () => {
-    expect(pdfLinkTarget('fog.pdf', known)).toBe('Areas/Fog.pdf');
+    expect(documentLinkTarget('fog.pdf', known)).toBe('Areas/Fog.pdf');
   });
 
   it('is none when no file of the vault is called so: a link never names a file that is not there', () => {
-    expect(pdfLinkTarget('Elsewhere/new.pdf', known)).toBeNull();
-    expect(pdfLinkTarget('new.pdf', [])).toBeNull();
+    expect(documentLinkTarget('Elsewhere/new.pdf', known)).toBeNull();
+    expect(documentLinkTarget('new.pdf', [])).toBeNull();
   });
 
   it('is the shortest path of the name two files share, then the first alphabetically', () => {
     // Like Obsidian, a link picks one of the files that match; this one picks the same one every time.
-    expect(pdfLinkTarget('the-lantern-keepers.pdf', known)).toBe('Archive/the-lantern-keepers.pdf');
-    expect(pdfLinkTarget('the-lantern-keepers.pdf', [...known].reverse())).toBe(
+    expect(documentLinkTarget('the-lantern-keepers.pdf', known)).toBe(
+      'Archive/the-lantern-keepers.pdf',
+    );
+    expect(documentLinkTarget('the-lantern-keepers.pdf', [...known].reverse())).toBe(
       'Archive/the-lantern-keepers.pdf',
     );
     const tied = [createVaultPath('B/a.pdf'), createVaultPath('A/a.pdf')];
-    expect(pdfLinkTarget('a.pdf', tied)).toBe('A/a.pdf');
-    expect(pdfLinkTarget('a.pdf', [...tied].reverse())).toBe('A/a.pdf');
+    expect(documentLinkTarget('a.pdf', tied)).toBe('A/a.pdf');
+    expect(documentLinkTarget('a.pdf', [...tied].reverse())).toBe('A/a.pdf');
   });
 
   it('is the file whose path ends with what the link writes, not one that merely ends the same letters', () => {
     const deep = createVaultPath('Library/Courses/reading.pdf');
-    expect(pdfLinkTarget('Courses/reading.pdf', [deep])).toBe(deep);
-    expect(pdfLinkTarget('ses/reading.pdf', [deep])).toBeNull();
+    expect(documentLinkTarget('Courses/reading.pdf', [deep])).toBe(deep);
+    expect(documentLinkTarget('ses/reading.pdf', [deep])).toBeNull();
   });
 
   it('is the exact path before any file that only ends with it', () => {
     const exact = createVaultPath('reading.pdf');
     const deeper = createVaultPath('A/reading.pdf');
-    expect(pdfLinkTarget('reading.pdf', [deeper, exact, exact])).toBe(exact);
+    expect(documentLinkTarget('reading.pdf', [deeper, exact, exact])).toBe(exact);
   });
 
   it('is none for a link that is no vault path', () => {
-    expect(pdfLinkTarget('../outside.pdf', known)).toBeNull();
-    expect(pdfLinkTarget('a\\b.pdf', known)).toBeNull();
+    expect(documentLinkTarget('../outside.pdf', known)).toBeNull();
+    expect(documentLinkTarget('a\\b.pdf', known)).toBeNull();
   });
 });
 
 describe('whether a wiki link names a PDF', () => {
   it('is so for a target ending .pdf, in any case, and no other', () => {
-    expect(namesPdf(' Reading.PDF ')).toBe(true);
-    expect(namesPdf('Budget review')).toBe(false);
-    expect(namesPdf('Budget review.pdf.md')).toBe(false);
+    expect(namesDocument(' Reading.PDF ')).toBe('pdf');
+    expect(namesDocument('Budget review')).toBeNull();
+    expect(namesDocument('Budget review.pdf.md')).toBeNull();
+  });
+});
+
+describe('a link to an EPUB (#505)', () => {
+  const BOOK = createVaultPath('Library/fables-of-brightwater.epub');
+  const files = [PDF, BOOK, createVaultPath('Archive/fables.pdf')];
+
+  it('names the EPUB it ends with, and never a file of another kind', () => {
+    expect(namesDocument('fables-of-brightwater.EPUB')).toBe('epub');
+    expect(documentLinkTarget('fables-of-brightwater.epub', files)).toBe(BOOK);
+    expect(documentLinkTarget('Library/fables-of-brightwater.epub', files)).toBe(BOOK);
+    // A PDF of the same stem is not the book.
+    expect(documentLinkTarget('fables.epub', files)).toBeNull();
+    expect(documentLinkTarget('fables.pdf', files)).toBe('Archive/fables.pdf');
+  });
+});
+
+describe("what a literature note's bar offers to open", () => {
+  it('is the PDF or the EPUB, by its kind', () => {
+    expect(readerDocumentOf(source())).toEqual({ file: PDF, label: 'Open PDF' });
+    const book = createVaultPath('Library/b.epub');
+    expect(readerDocumentOf(source({ kind: 'epub', file: book }))).toEqual({
+      file: book,
+      label: 'Open EPUB',
+    });
+  });
+
+  it('is nothing for a Kindle book, a note naming no file of its kind, or no literature note', () => {
+    expect(readerDocumentOf(source({ kind: 'kindle', file: null }))).toBeNull();
+    expect(readerDocumentOf(source({ kind: 'epub', file: PDF }))).toBeNull();
+    expect(readerDocumentOf(source({ file: null }))).toBeNull();
+    expect(readerDocumentOf(null)).toBeNull();
+    expect(readerDocumentOf(source(), ['epub'])).toBeNull();
   });
 });

@@ -4,19 +4,18 @@ import type { LiteratureNote } from '../highlights/literature-note.ts';
 import type { PillHue } from '../page/pill-colour.ts';
 import { composed } from '../markdown/resolve-wikilink.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
-import { isPdfName } from './pdf-library.ts';
+import { documentKindOf, type DocumentKind } from './document-kind.ts';
 
 /*
  * Where a highlight opens when it is followed (#506, ADR-0043): a transcluded
  * highlight, a link to one, or a highlight in its own literature note. A
  * source DFAI can read in the app opens in its reader at the highlight; any
- * other — a Kindle book (DRM), an EPUB until its reader is built (#505), a
- * block that is not a highlight — opens its note at the block, as any block
- * link does.
+ * other — a Kindle book (DRM), a block that is not a highlight — opens its
+ * note at the block, as any block link does.
  */
 
-/** The kinds of source with a reader in the app. #505 adds `epub`. */
-export const READER_KINDS: readonly SourceKind[] = ['pdf'];
+/** The kinds of source with a reader in the app: PDF (#504) and EPUB (#505). */
+export const READER_KINDS: readonly SourceKind[] = ['pdf', 'epub'];
 
 /** What following a block of a note opens. */
 export type HighlightOpening =
@@ -59,7 +58,8 @@ export function highlightOpening({
   return { kind: 'reader', source: kind, document: file, highlightId: blockId };
 }
 
-const READER_NAMES: Readonly<Record<SourceKind, string>> = {
+/** What each kind of source is called to the person. */
+export const SOURCE_KIND_NAMES: Readonly<Record<SourceKind, string>> = {
   pdf: 'PDF',
   epub: 'EPUB',
   kindle: 'Kindle',
@@ -75,7 +75,7 @@ export function readerLinkLabel(
   readers: readonly SourceKind[] = READER_KINDS,
 ): string | null {
   if (source === null || !opensInReader(source, readers)) return null;
-  return `Open in ${READER_NAMES[source.kind]}`;
+  return `Open in ${SOURCE_KIND_NAMES[source.kind]}`;
 }
 
 /**
@@ -85,7 +85,19 @@ export function readerLinkLabel(
  */
 function opensInReader(source: LiteratureNote, readers: readonly SourceKind[]): boolean {
   if (source.file === null || !readers.includes(source.kind)) return false;
-  return source.kind !== 'pdf' || isPdfName(source.file);
+  return documentKindOf(source.file) === source.kind;
+}
+
+/**
+ * The file a literature note's bar offers to open in its reader ("Open PDF",
+ * "Open EPUB"), and the words; null for a note whose source has no reader.
+ */
+export function readerDocumentOf(
+  source: LiteratureNote | null,
+  readers: readonly SourceKind[] = READER_KINDS,
+): { readonly file: VaultPath; readonly label: string } | null {
+  if (source === null || source.file === null || !opensInReader(source, readers)) return null;
+  return { file: source.file, label: `Open ${SOURCE_KIND_NAMES[source.kind]}` };
 }
 
 /** The muted pastel a source's kind is drawn in (#413's hues): the same for every chip of a kind. */
@@ -130,12 +142,16 @@ export function placeLabel(anchor: HighlightAnchor): string | null {
   return anchor.page === undefined ? null : `p. ${anchor.page}`;
 }
 
-/** Whether a wiki link's target writes a PDF's name — it ends `.pdf` — whether or not the vault has one. */
-export const namesPdf = (target: string): boolean => isPdfName(target);
+/**
+ * The document a wiki link's target writes the name of — it ends `.pdf` or
+ * `.epub` — whether or not the vault has one; null for any other link.
+ */
+export const namesDocument = (target: string): DocumentKind | null => documentKindOf(target);
 
 /**
- * The PDF a wiki link `[[…pdf]]` names among `files`, the PDFs the vault
- * holds, or null when none matches (or the link names no PDF). As in
+ * The document a wiki link `[[…pdf]]` or `[[…epub]]` names among `files`,
+ * the vault's files of that kind, or null when none matches (or the link
+ * names no document, or a file of another kind). As in
  * Obsidian, a link writes the end of a path: its name alone, or the folders
  * above it that tell two apart. Where several files match, one is chosen
  * the same way every time: the exact path, else the shortest path, else the
@@ -143,10 +159,13 @@ export const namesPdf = (target: string): boolean => isPdfName(target);
  * Accents are compared composed, as note links compare them: a name written
  * to disk decomposed is the same name typed composed.
  */
-export function pdfLinkTarget(target: string, files: readonly VaultPath[]): VaultPath | null {
+export function documentLinkTarget(target: string, files: readonly VaultPath[]): VaultPath | null {
   const written = comparable(target.trim().replace(/^\/+/, ''));
-  if (!isPdfName(written)) return null;
-  const matching = [...new Set(files)].filter((path) => endsWithPath(comparable(path), written));
+  const kind = documentKindOf(written);
+  if (kind === null) return null;
+  const matching = [...new Set(files)].filter(
+    (path) => documentKindOf(path) === kind && endsWithPath(comparable(path), written),
+  );
   matching.sort(
     (a, b) =>
       Number(comparable(b) === written) - Number(comparable(a) === written) ||
@@ -156,7 +175,7 @@ export function pdfLinkTarget(target: string, files: readonly VaultPath[]): Vaul
   return matching[0] ?? null;
 }
 
-/** A path as a PDF link compares it: accents composed, case folded. */
+/** A path as a document link compares it: accents composed, case folded. */
 const comparable = (path: string): string => composed(path).toLowerCase();
 
 /** Whether `path` is `written`, or ends with it at a folder boundary. */

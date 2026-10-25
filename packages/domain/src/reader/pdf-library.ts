@@ -13,6 +13,12 @@ import {
   noteFileName,
 } from '../vault/new-note.ts';
 import { createVaultPath, vaultPathName, type VaultPath } from '../vault/vault-path.ts';
+import {
+  DOCUMENT_EXTENSIONS,
+  documentKindOf,
+  withoutDocumentExtension,
+  type DocumentKind,
+} from './document-kind.ts';
 
 /*
  * Adding a PDF to the library (#504, ADR-0043 §1): what the copy in the vault
@@ -21,28 +27,43 @@ import { createVaultPath, vaultPathName, type VaultPath } from '../vault/vault-p
  * note's title is the PDF's own title when it has a real one, else the name.
  */
 
-/** The most a PDF in the vault may be: what the host writes or reads in one file. */
-export const MAX_PDF_BYTES = 32 * 1024 * 1024;
+/** The most a document in the vault may be: what the host writes or reads in one file. */
+export const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
 
-/** What a PDF picked or dropped is, before its bytes are read. */
-export interface IncomingPdf {
+/** What a document picked or dropped is, before its bytes are read. */
+export interface IncomingDocument {
   readonly name: string;
   readonly size: number;
 }
 
-export type PdfCheck =
+export type DocumentCheck =
   { readonly kind: 'accepted' } | { readonly kind: 'refused'; readonly message: string };
 
-/** Whether a file picked or dropped can be added: a PDF by its name, not empty, not past the host's size. */
-export function checkIncomingPdf(file: IncomingPdf): PdfCheck {
+/** How a document of each kind is named to the person: "a PDF", "an EPUB". */
+const DOCUMENT_NAMES: Readonly<Record<DocumentKind, string>> = { pdf: 'a PDF', epub: 'an EPUB' };
+
+/** What the person is told of a file named `name` that is not a `kind` document: by its name, or by its bytes. */
+export const notADocumentMessage = (name: string, kind: DocumentKind): string =>
+  `“${name}” is not ${DOCUMENT_NAMES[kind]}.`;
+
+/**
+ * Whether a file picked or dropped can be added as a `kind` document: one by
+ * its name, not empty, not past the host's size.
+ */
+export function checkIncomingDocument(file: IncomingDocument, kind: DocumentKind): DocumentCheck {
   const shown = `“${file.name}”`;
-  if (!isPdfName(file.name)) return { kind: 'refused', message: `${shown} is not a PDF.` };
+  const named = DOCUMENT_NAMES[kind];
+  if (documentKindOf(file.name) !== kind) {
+    return { kind: 'refused', message: notADocumentMessage(file.name, kind) };
+  }
   if (file.size === 0) return { kind: 'refused', message: `${shown} is empty.` };
-  if (file.size > MAX_PDF_BYTES) {
+  if (file.size > MAX_DOCUMENT_BYTES) {
     const megabytes = (file.size / 1024 / 1024).toFixed(1);
+    const most = MAX_DOCUMENT_BYTES / 1024 / 1024;
+    const article = named.charAt(0).toUpperCase() + named.slice(1);
     return {
       kind: 'refused',
-      message: `${shown} is ${megabytes} MB. A PDF in the library can be at most ${MAX_PDF_BYTES / 1024 / 1024} MB.`,
+      message: `${shown} is ${megabytes} MB. ${article} in the library can be at most ${most} MB.`,
     };
   }
   return { kind: 'accepted' };
@@ -58,21 +79,20 @@ export function looksLikePdf(bytes: Uint8Array): boolean {
 }
 
 /** Whether a name or a path is a PDF's. */
-export const isPdfName = (name: string): boolean => /\.pdf$/i.test(name.trim());
-
-/** What follows a copy's stem: `.pdf`, with the room a number needs when the name is taken. */
-const NUMBERED_PDF_ENDING = ' 9999.pdf';
+export const isPdfName = (name: string): boolean => documentKindOf(name) === 'pdf';
 
 /**
- * The name the copy in the vault is saved under: the file's own, cleaned of
- * what no filesystem takes and of what a wiki link means something by, cut
- * by whole characters so it still fits a file name on disk once numbered
- * (` 2`, ` 3`, …), and ending in `.pdf`.
+ * The name the copy of a `kind` document in the vault is saved under: the
+ * file's own, cleaned of what no filesystem takes and of what a wiki link
+ * means something by, cut by whole characters so it still fits a file name
+ * on disk once numbered (` 2`, ` 3`, …), and ending in `.pdf` or `.epub`.
  */
-export function libraryFileName(name: string): string {
-  const cleaned = cleanEntryName(safeSourceFileName(name.replace(/\.pdf\s*$/i, '')));
-  const stem = fitFileNameStem(cleaned, NUMBERED_PDF_ENDING);
-  return `${stem === '' ? 'Untitled' : stem}.pdf`;
+export function libraryFileName(name: string, kind: DocumentKind): string {
+  const extension = `.${DOCUMENT_EXTENSIONS[kind]}`;
+  const cleaned = cleanEntryName(safeSourceFileName(withoutDocumentExtension(name)));
+  // What follows the stem, with the room a number needs when the name is taken.
+  const stem = fitFileNameStem(cleaned, ` 9999${extension}`);
+  return `${stem === '' ? 'Untitled' : stem}${extension}`;
 }
 
 /**
@@ -92,16 +112,16 @@ const NUMBERED_AREA_ENDING = ' p9999 area 9999.png';
 const PLACEHOLDER_TITLE =
   /^(untitled|title|document|microsoft word - .*|.*\.(docx?|pdf|tex|indd))$/i;
 
-/** What the PDF's own metadata says, as pdf.js reads it. */
+/** What a document says about itself: a PDF's information, as pdf.js reads it, or an EPUB's package metadata. */
 export interface PdfMetadata {
   readonly title: string | null;
   readonly author: string | null;
 }
 
 /**
- * The literature note's title and author for a PDF saved as `file`: the
- * PDF's own title when it names the work, else the file's name without
- * `.pdf`; its author when it gives one.
+ * The literature note's title and author for a document saved as `file`:
+ * its own title when it names the work, else the file's name without
+ * `.pdf` or `.epub`; its author when it gives one.
  */
 export function literatureDetails({ metadata, file }: { metadata: PdfMetadata; file: VaultPath }): {
   title: string;
@@ -113,7 +133,7 @@ export function literatureDetails({ metadata, file }: { metadata: PdfMetadata; f
     title:
       title !== '' && !PLACEHOLDER_TITLE.test(title)
         ? title
-        : vaultPathName(file).replace(/\.pdf$/i, ''),
+        : withoutDocumentExtension(vaultPathName(file)),
     author: author === '' ? null : author,
   };
 }

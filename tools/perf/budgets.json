@@ -273,6 +273,25 @@
       "renders": 41,
       "calls": {}
     },
+    "Open a 1,000-chapter EPUB": {
+      "commits": 9,
+      "renders": 144,
+      "calls": {
+        "index_notes_of_type": 3,
+        "read_binary_file": 3,
+        "read_notes": 3
+      }
+    },
+    "Turn a chapter of a 1,000-chapter EPUB": {
+      "commits": 6,
+      "renders": 34,
+      "calls": {}
+    },
+    "Find in a 1,000-chapter EPUB": {
+      "commits": 9,
+      "renders": 71,
+      "calls": {}
+    },
     "Open a 500-highlight literature note": {
       "commits": 9,
       "renders": 1695,

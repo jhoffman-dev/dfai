@@ -1673,9 +1673,10 @@ export async function installHost(
       case 'read_binary_file': {
         const { readFile } = await import('node:fs/promises');
         const bytes = await readFile(containedPath(openRoot(), path));
-        // Bytes cannot cross `exposeFunction` either; they go as numbers and
-        // the init script below makes an ArrayBuffer of them again.
-        return { binary: Array.from(bytes) };
+        // Bytes cannot cross `exposeFunction` either; they go as base64 and the
+        // init script below makes an ArrayBuffer of them again. Not as a list of
+        // numbers: a 30 MB book as one ran the test's worker out of memory (#505).
+        return { base64: bytes.toString('base64') };
       }
       case 'list_directory': {
         const directory = containedPath(openRoot(), path);
@@ -2075,8 +2076,17 @@ export async function installHost(
             : value,
         );
       return command === 'read_binary_file'
-        ? answer.then((read) => Uint8Array.from((read as { binary: number[] }).binary).buffer)
+        ? answer.then((read) => bytesOfBase64((read as { base64: string }).base64).buffer)
         : answer;
+    }
+
+    function bytesOfBase64(base64: string): Uint8Array {
+      const typed = Uint8Array as unknown as { fromBase64?: (text: string) => Uint8Array };
+      if (typed.fromBase64 !== undefined) return typed.fromBase64(base64);
+      const text = atob(base64);
+      const bytes = new Uint8Array(text.length);
+      for (let at = 0; at < text.length; at += 1) bytes[at] = text.charCodeAt(at);
+      return bytes;
     }
 
     // What `unlisten` in @tauri-apps/api calls before it tells the host. Missing,

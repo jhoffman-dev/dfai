@@ -27,6 +27,7 @@ import {
   noteTitle,
   NO_LINKS,
   placeOfFile,
+  readerDocumentOf,
   readLiteratureNote,
   writeFailedReport,
   type NoteSuggestion,
@@ -562,8 +563,8 @@ export function useNotePane({
     beingMade: context.notesBeingMade,
   });
   const dashboard = useDashboard({ note: note.open, index, types, notePaths, indexKey });
-  const literaturePdf = literaturePdfOf(note.open?.properties ?? null);
-  // Each highlight of a PDF's literature note offers "Open in PDF" (#506), as its file reads.
+  const literatureDocument = literatureDocumentOf(note.open?.properties ?? null);
+  // Each highlight of a PDF's or a book's literature note offers "Open in PDF" or "Open in EPUB" (#506), as its file reads.
   const highlightLinks = useMemo(
     () =>
       note.open === null
@@ -1043,9 +1044,13 @@ export function useNotePane({
         })}
       {...(template === null &&
         dashboardEditing.toggle === null &&
-        literaturePdf !== null && {
+        literatureDocument !== null && {
           actions: (
-            <PageAction icon="book" label="Open PDF" onPress={() => onOpenNote(literaturePdf)} />
+            <PageAction
+              icon="book"
+              label={literatureDocument.label}
+              onPress={() => onOpenNote(literatureDocument.file)}
+            />
           ),
         })}
       toolbar={
@@ -1391,10 +1396,14 @@ function templateNoticeFor(path: VaultPath | null, context: PaneContext): Templa
   };
 }
 
-/** The PDF a literature note is a note of, which its bar offers to open (#504); null for any other note. */
-function literaturePdfOf(properties: Readonly<Record<string, unknown>> | null): VaultPath | null {
-  const source = properties === null ? null : readLiteratureNote(properties);
-  return source?.kind === 'pdf' ? source.file : null;
+/**
+ * The PDF or EPUB a literature note is a note of, which its bar offers to
+ * open ("Open PDF", "Open EPUB"; #504, #505); null for any other note.
+ */
+function literatureDocumentOf(
+  properties: Readonly<Record<string, unknown>> | null,
+): { readonly file: VaultPath; readonly label: string } | null {
+  return readerDocumentOf(properties === null ? null : readLiteratureNote(properties));
 }
 
 /** The kept comments of the pane's vault: what its note keeps there, and is offered back. */

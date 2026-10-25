@@ -20,7 +20,8 @@ import {
   pdfBytes,
   readerMarkdown,
 } from '../testing/fake-reader.ts';
-import { addPdfToLibrary, type PickedPdf } from './add-pdf.ts';
+import { addPdfToLibrary } from './add-pdf.ts';
+import type { PickedDocument } from './library-copy.ts';
 import { highlightArea } from './pdf-highlights.ts';
 import { placeHighlights } from './place-highlights.ts';
 import { linksToUpdate } from '../vault/update-links.ts';
@@ -33,7 +34,7 @@ import { linksToUpdate } from '../vault/update-links.ts';
 const LIBRARY = createVaultPath('Library');
 const BYTES = pdfBytes('the lantern keepers');
 
-const picked = (name: string): PickedPdf => ({
+const picked = (name: string): PickedDocument => ({
   name,
   size: BYTES.length,
   bytes: async () => BYTES,

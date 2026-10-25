@@ -29,7 +29,7 @@ import { cryptoRng } from '../random.ts';
 import { scopedReadKey, scopedReadMeta } from '../reads/query-client.ts';
 
 /*
- * A PDF's literature note as its reader tab uses it (#504): which note it is,
+ * A document's literature note as its reader tab uses it (#504, #505): which note it is,
  * its highlights placed on the open document, and the writes the reader
  * makes to it. Every read is a query (ADR-0040), read again when the note
  * changes; every write is the application's, against the version just read.
@@ -44,7 +44,7 @@ export interface DocumentPorts {
   readonly onChanged: () => void;
 }
 
-/** The literature note whose `file:` is `pdf`, read again when any literature note changes. */
+/** The literature note whose `file:` is `pdf` (or a book), read again when any literature note changes. */
 export function useLiteratureNoteOf({
   ports,
   vault,
@@ -63,7 +63,7 @@ export function useLiteratureNoteOf({
 }
 
 /** The note's highlights, read again when the note changes. */
-function useNoteHighlights({
+export function useNoteHighlights({
   ports,
   vault,
   note,
@@ -135,20 +135,23 @@ const shownHighlight = ({ block, placement }: PlacedHighlight): ReaderHighlight 
   placement,
 });
 
-/** What the reader's marks write, and the notice when one is refused. */
-export function useReaderWrites({
+/**
+ * A write into the literature note, against the version just read: false,
+ * and its refusal said in `notice`, when it was not taken; the note's
+ * highlights are read again either way.
+ */
+export function useNoteWriting({
   ports,
   vault,
   note,
-  pdf,
-  opened,
 }: {
   ports: DocumentPorts;
   vault: string;
   note: VaultPath | null;
-  pdf: VaultPath;
-  opened: PdfJsDocument;
-}): { actions: ReaderActions; notice: string | null } {
+}): {
+  writing: (write: (note: VaultPath, ports: WritePorts) => Promise<unknown>) => Promise<boolean>;
+  notice: string | null;
+} {
   const client = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
   const writing = useCallback(
@@ -170,6 +173,24 @@ export function useReaderWrites({
     },
     [client, note, ports, vault],
   );
+  return { writing, notice };
+}
+
+/** What the PDF reader's marks write, and the notice when one is refused. */
+export function useReaderWrites({
+  ports,
+  vault,
+  note,
+  pdf,
+  opened,
+}: {
+  ports: DocumentPorts;
+  vault: string;
+  note: VaultPath | null;
+  pdf: VaultPath;
+  opened: PdfJsDocument;
+}): { actions: ReaderActions; notice: string | null } {
+  const { writing, notice } = useNoteWriting({ ports, vault, note });
   const actions = useMemo<ReaderActions>(
     () => ({
       onHighlight: ({ selection, style, comment }) =>
@@ -205,6 +226,6 @@ export function useReaderWrites({
   return { actions, notice };
 }
 
-type WritePorts = DocumentPorts & { readonly rng: typeof cryptoRng };
+export type WritePorts = DocumentPorts & { readonly rng: typeof cryptoRng };
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));

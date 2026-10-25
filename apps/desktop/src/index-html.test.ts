@@ -137,3 +137,16 @@ describe('index.html — reporting a failure to the host', () => {
     expect(sent).toEqual(['first @ main.js:7', 'second @ main.js:9']);
   });
 });
+
+describe("index.html — the app's own policy on frames", () => {
+  /** The policies the page sets for itself, in order. */
+  const policies = [
+    ...PAGE.matchAll(/<meta http-equiv="Content-Security-Policy" content="([^"]*)"\s*\/?>/g),
+  ].map((found) => found[1]);
+
+  it("refuses every frame a page in the app would load, the book reader's included", () => {
+    // A layer under the EPUB frame's opaque origin and its own policy (ADR-0045), not instead of them.
+    expect(policies).toEqual(["frame-src 'none'"]);
+    expect(PAGE.indexOf('Content-Security-Policy')).toBeLessThan(PAGE.indexOf('<script'));
+  });
+});

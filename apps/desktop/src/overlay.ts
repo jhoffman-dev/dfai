@@ -16,6 +16,7 @@ export type Overlay =
   | 'new-view'
   | 'new-artifact'
   | 'add-pdf'
+  | 'add-epub'
   | 'new-note-menu'
   | 'views-menu'
   | 'open-from-github'
@@ -72,6 +73,7 @@ const MODAL: ReadonlySet<Overlay> = new Set([
   'new-view',
   'new-artifact',
   'add-pdf',
+  'add-epub',
   'move-picker',
   'delete-dialog',
   'template-delete',

@@ -1,7 +1,7 @@
 import {
-  linkedPdf,
+  linkedDocument,
   whereHighlightOpens,
-  type LinkedPdfPorts,
+  type LinkedDocumentPorts,
   type HighlightPlacePorts,
 } from '@dfai/application';
 import type { LinkPlaces } from '../workspace/open-place.ts';
@@ -11,9 +11,9 @@ import type { LinkPlaces } from '../workspace/open-place.ts';
  * to its reader, `[[…pdf]]` to its PDF. The link rules are the
  * application's; this hands them the vault.
  */
-export function linkPlacesOf(ports: HighlightPlacePorts & LinkedPdfPorts): LinkPlaces {
+export function linkPlacesOf(ports: HighlightPlacePorts & LinkedDocumentPorts): LinkPlaces {
   return {
     blockOpening: (block) => whereHighlightOpens(ports, block),
-    linkedPdf: (target) => linkedPdf(ports, target),
+    linkedDocument: (target) => linkedDocument(ports, target),
   };
 }

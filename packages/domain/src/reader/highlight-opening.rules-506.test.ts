@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LiteratureNote } from '../highlights/literature-note.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
-import { highlightOpening, pdfLinkTarget, readerLinkLabel } from './highlight-opening.ts';
+import { highlightOpening, documentLinkTarget, readerLinkLabel } from './highlight-opening.ts';
 
 /*
  * Regression (#506): where a followed highlight opens, and which PDF
@@ -45,7 +45,7 @@ describe('[[name.pdf]] when the name alone is ambiguous', () => {
   it('names one of the PDFs called so, never a vault-root path no file has', () => {
     // Neither literature note's PDF sits at the root, so `reading.pdf` opens
     // a reader on a file that is not there.
-    const named = pdfLinkTarget('reading.pdf', [FIRST, SECOND]);
+    const named = documentLinkTarget('reading.pdf', [FIRST, SECOND]);
     expect([FIRST, SECOND]).toContain(named);
   });
 });
@@ -53,7 +53,7 @@ describe('[[name.pdf]] when the name alone is ambiguous', () => {
 describe('[[folder/name.pdf]] written as a trailing part of the path', () => {
   it('names the known PDF whose path ends with what the link writes, as Obsidian does', () => {
     const known = createVaultPath('Library/Courses/reading.pdf');
-    expect(pdfLinkTarget('Courses/reading.pdf', [known])).toBe(known);
+    expect(documentLinkTarget('Courses/reading.pdf', [known])).toBe(known);
   });
 });
 
@@ -67,11 +67,11 @@ describe('[[folder/name.pdf]] written as a trailing part of the path', () => {
 describe('the PDF a link names, by a name with an accent', () => {
   it('is found though the file is written decomposed and the link composed', () => {
     const decomposed = createVaultPath('Reading/Résumé of the keepers.pdf');
-    expect(pdfLinkTarget('Résumé of the keepers.pdf', [decomposed])).toBe(decomposed);
+    expect(documentLinkTarget('Résumé of the keepers.pdf', [decomposed])).toBe(decomposed);
   });
 
   it('is found though the file is written composed and the link decomposed', () => {
     const composed = createVaultPath('Reading/Café lanterns.pdf');
-    expect(pdfLinkTarget('Café lanterns.pdf', [composed])).toBe(composed);
+    expect(documentLinkTarget('Café lanterns.pdf', [composed])).toBe(composed);
   });
 });

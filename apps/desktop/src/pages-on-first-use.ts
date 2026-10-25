@@ -83,6 +83,11 @@ export const documentReader = laterPage(
   chunk('document-reader', () => import('./reader/document-reader.tsx')),
   (m) => m.DocumentReader,
 );
+// The EPUB reader, with foliate-js and its zip reader, in a chunk of its own (#505).
+export const bookReader = laterPage(
+  chunk('book-reader-tab', () => import('./reader/book-reader-tab.tsx')),
+  (m) => m.BookReaderTab,
+);
 export const archivePage = laterPage(laterParts, (m) => m.ArchivePage);
 export const weeklyReviewPage = laterPage(laterParts, (m) => m.WeeklyReviewPage);
 export const templatesPage = laterPage(laterParts, (m) => m.TemplatesPage);

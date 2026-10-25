@@ -56,6 +56,21 @@ const pdfjsRoot = dirname(
   dirname(dirname(fromAdapters.resolve('pdfjs-dist/legacy/build/pdf.mjs'))),
 );
 
+/** foliate-js's own folder, found the same way, for the licence that travels with its code (#505). */
+const foliateRoot = dirname(fromAdapters.resolve('foliate-js/epub.js'));
+
+/**
+ * The licences of what the EPUB reader's chunk bundles, shipped under `epub/`:
+ * foliate-js's own, and the BSD text of the zip.js it vendors, which the npm
+ * package does not carry, so the adapters keep a copy beside the code that uses it.
+ */
+const EPUB_LICENCES: Readonly<Record<string, string>> = {
+  'epub/foliate-js-LICENSE': join(foliateRoot, 'LICENSE'),
+  'epub/zip.js-LICENSE': fileURLToPath(
+    new URL('../../packages/adapters/src/epub/zip.js-LICENSE', import.meta.url),
+  ),
+};
+
 /**
  * pdf.js's files that are not code (#504): the standard fonts a PDF names
  * without embedding, the character maps of East Asian text, and the image
@@ -90,12 +105,15 @@ function pdfjsFiles(): Plugin {
       });
     },
     generateBundle() {
-      // The notices travel with the files they cover: pdf.js's own licence, and the list that names the rest.
+      // The notices travel with the files they cover: pdf.js's and the EPUB reader's licences, and the list that names the rest.
       this.emitFile({
         type: 'asset',
         fileName: 'pdfjs/LICENSE',
         source: readFileSync(join(pdfjsRoot, 'LICENSE')),
       });
+      for (const [fileName, path] of Object.entries(EPUB_LICENCES)) {
+        this.emitFile({ type: 'asset', fileName, source: readFileSync(path) });
+      }
       this.emitFile({
         type: 'asset',
         fileName: 'THIRD_PARTY_NOTICES.txt',
@@ -160,6 +178,10 @@ export default defineConfig({
       // the reader's chunk, loaded the first time a PDF opens.
       '@dfai/adapters/pdf': fileURLToPath(
         new URL('../../packages/adapters/src/pdf/index.ts', import.meta.url),
+      ),
+      // The same for foliate-js: it stays in the EPUB reader's chunk, loaded the first time a book opens.
+      '@dfai/adapters/epub': fileURLToPath(
+        new URL('../../packages/adapters/src/epub/index.ts', import.meta.url),
       ),
       '@dfai/adapters': pkg('adapters'),
       '@dfai/ui': pkg('ui'),

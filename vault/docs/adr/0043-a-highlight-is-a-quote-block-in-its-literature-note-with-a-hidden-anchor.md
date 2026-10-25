@@ -411,7 +411,7 @@ asin, file: null })` in the literature type's home folder (`Library` by
     highlight, `[[Source#^id]]`, its embed's source chip, and the "Open in
     PDF" a highlight offers in its own note open the source's reader at the
     highlight, scrolled to it and flashed, when the app has a reader for the
-    source's kind (`READER_KINDS`: `pdf`; #505 adds `epub`) and the note
+    source's kind (`READER_KINDS`: `pdf` and, since #505, `epub`) and the note
     names its file. Anything else — a Kindle book, a block of the note that
     is no highlight, a note that is no literature note — opens the note at
     the block, as ADR-0022 has every block link do. The rule is the
@@ -529,6 +529,53 @@ asin, file: null })` in the literature type's home folder (`Library` by
 - **A highlight is dragged into a note as its embed**: the row carries
   `![[Source#^id]]` as text, and the block embed's own HTML, which the
   editor's drop parses into the embed node, as a paste would.
+
+## Addendum: the EPUB reader (#505)
+
+- **foliate-js reads the book; DFAI shows it.** foliate-js (MIT, pinned at
+  1.0.1, bundled in the EPUB reader's own chunk) reads the package, contents,
+  metadata and CFIs, and its vendored zip.js the archive. Its own renderer is
+  not used: it loads each chapter from a `blob:` address into a frame, which the
+  app's `frame-src 'none'` refuses, and it needs `allow-scripts` with nothing
+  but a page-wide policy to hold a book's scripts back. epub.js was the other
+  choice; it has had no release since 2022 and renders the same way.
+- **A chapter is made safe, then shown in a frame of DFAI's own, with an
+  opaque origin.** How, and why it is not the `allow-same-origin` frame this
+  addendum first described, is ADR-0045: the chapter is cleaned in the reader
+  (`makeChapterSafe`), handed as data to DFAI's one script in a
+  `sandbox="allow-scripts"` frame whose policy runs only that script, by its
+  hash, and the book's files go in as `data:` addresses, never `blob:` ones of
+  the app's origin.
+- **A safe chapter keeps every node where it was.** What is taken away leaves
+  an empty, hidden element in its place, and a stylesheet `<link>` becomes a
+  `<style>` in its place, so a chapter's elements are counted as the book's
+  file counts them and a CFI made in DFAI names the same place in any reader.
+  Highlights and find's matches are drawn with the CSS Custom Highlight API and
+  the reader's own styles are adopted, so neither adds a node either. (The
+  frame builds its own copy of the chapter; places in it are offsets of the
+  chapter's text, so the copy need not match node for node: CFIs are made and
+  read on the reader's parsed chapter.)
+- **A chapter's text** is its body's words in order, a line break where a block
+  begins or ends, nothing of the head, scripts or styles (`chapterText`). A
+  selection is a stretch of it; its selector is the words as they read — every
+  run of space one space — and the quote written is those words.
+- **Placing a stored EPUB highlight** (§9): where its CFI points when the words
+  there are its own (`placeInCfiSection`); else its words in the CFI's chapter;
+  else every chapter, nearest the CFI's first (`placeByBookWords`); else lost,
+  listed as not found. Only the chapters needed are read.
+- **DRM is refused before the book is read** (`epubProtection`): a book whose
+  `encryption.xml` encrypts anything by a cipher, obfuscates a file that is no
+  font, or names no method, or that carries Adobe's `rights.xml` or Apple's
+  `sinf.xml`, is protected; the font obfuscation the EPUB standard and Adobe
+  define is not DRM. Adding one is refused, said plainly, with nothing written.
+- **Adding an EPUB** is ⌘K "Add EPUB…", a command of its own beside "Add PDF…":
+  the shipped PDF command keeps its name, and each picker offers only its own
+  kind, so a wrong file is refused by name. The copy, the note and the refusals
+  are one use-case for both (`addToLibrary`).
+- **Not done here:** a font obfuscated as the EPUB standard allows is shown in
+  the book's fallback font (foliate-js's decoder is private to its renderer);
+  pages are not paginated, a chapter scrolls; fixed-layout books are shown as
+  reflowable.
 
 ## Alternatives rejected
 

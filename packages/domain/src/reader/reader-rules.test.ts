@@ -4,13 +4,13 @@ import { placeOfFile } from './document-place.ts';
 import { findInDocument, MOST_MATCHES, stepMatch } from './find-in-document.ts';
 import {
   areaImageName,
-  checkIncomingPdf,
+  checkIncomingDocument,
   isPdfName,
   libraryFileName,
   libraryFolder,
   literatureDetails,
   looksLikePdf,
-  MAX_PDF_BYTES,
+  MAX_DOCUMENT_BYTES,
 } from './pdf-library.ts';
 import { pdfPageText } from './pdf-page-text.ts';
 import {
@@ -103,18 +103,22 @@ describe('zoom', () => {
 
 describe('adding a PDF to the library', () => {
   it('takes a PDF by its name, refuses an empty one and one past the host’s size', () => {
-    expect(checkIncomingPdf({ name: 'Brightwater.PDF', size: 10 })).toEqual({ kind: 'accepted' });
-    expect(checkIncomingPdf({ name: 'notes.txt', size: 10 })).toMatchObject({
+    expect(checkIncomingDocument({ name: 'Brightwater.PDF', size: 10 }, 'pdf')).toEqual({
+      kind: 'accepted',
+    });
+    expect(checkIncomingDocument({ name: 'notes.txt', size: 10 }, 'pdf')).toMatchObject({
       kind: 'refused',
       message: '“notes.txt” is not a PDF.',
     });
-    expect(checkIncomingPdf({ name: 'a.pdf', size: 0 })).toMatchObject({
+    expect(checkIncomingDocument({ name: 'a.pdf', size: 0 }, 'pdf')).toMatchObject({
       message: '“a.pdf” is empty.',
     });
-    const refused = checkIncomingPdf({ name: 'big.pdf', size: MAX_PDF_BYTES + 1 });
+    const refused = checkIncomingDocument({ name: 'big.pdf', size: MAX_DOCUMENT_BYTES + 1 }, 'pdf');
     expect(refused).toMatchObject({ kind: 'refused' });
     expect(refused.kind === 'refused' && refused.message).toContain('at most 32 MB');
-    expect(checkIncomingPdf({ name: 'edge.pdf', size: MAX_PDF_BYTES }).kind).toBe('accepted');
+    expect(checkIncomingDocument({ name: 'edge.pdf', size: MAX_DOCUMENT_BYTES }, 'pdf').kind).toBe(
+      'accepted',
+    );
   });
 
   it('knows a PDF by its header, even after a little junk before it', () => {
@@ -125,11 +129,11 @@ describe('adding a PDF to the library', () => {
   });
 
   it('names the copy after the file, safe for a link and for every filesystem', () => {
-    expect(libraryFileName('The Lantern Keepers.pdf')).toBe('The Lantern Keepers.pdf');
-    expect(libraryFileName('Notes #3 [draft] | v2.PDF')).toBe('Notes -3 -draft- - v2.pdf');
-    expect(libraryFileName('a/b:c.pdf')).toBe('a b c.pdf');
-    expect(libraryFileName('.pdf')).toBe('Untitled.pdf');
-    expect(libraryFileName('report')).toBe('report.pdf');
+    expect(libraryFileName('The Lantern Keepers.pdf', 'pdf')).toBe('The Lantern Keepers.pdf');
+    expect(libraryFileName('Notes #3 [draft] | v2.PDF', 'pdf')).toBe('Notes -3 -draft- - v2.pdf');
+    expect(libraryFileName('a/b:c.pdf', 'pdf')).toBe('a b c.pdf');
+    expect(libraryFileName('.pdf', 'pdf')).toBe('Untitled.pdf');
+    expect(libraryFileName('report', 'pdf')).toBe('report.pdf');
   });
 
   it("titles the note by the PDF's own title when it names the work, else by the file", () => {

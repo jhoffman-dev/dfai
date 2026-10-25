@@ -30,6 +30,7 @@ import { installProbe, measure, waitForQuiet } from './probe.ts';
 import { RESEARCH_SOURCES, HIGHLIGHTS_PER_SOURCE, researchVault } from './research-vault.ts';
 import { EVERY_NOTE_INDEXED, writeFixtureVault, writeVault } from './session.ts';
 import { longFixturePdf } from '../pdf/fixture-pdf.ts';
+import { LONG_BOOK_PHRASE, longFixtureEpub } from '../epub/fixture-epub.ts';
 import {
   installWorkClock,
   oneInput,
@@ -124,13 +125,21 @@ interface Phase {
   readonly act: () => Promise<void>;
   readonly ready: (arg: never) => boolean;
   readonly arg: unknown;
+  /** Real milliseconds the work clock waits, time held still, for work it does not hold: a book's archive read from a `Blob`. */
+  readonly untrackedMs?: number;
 }
 
 /** A phase, its predicate's argument type checked here and erased in the list. */
-const phase = <Arg>(act: () => Promise<void>, ready: (arg: Arg) => boolean, arg: Arg): Phase => ({
+const phase = <Arg>(
+  act: () => Promise<void>,
+  ready: (arg: Arg) => boolean,
+  arg: Arg,
+  untrackedMs = 0,
+): Phase => ({
   act,
   ready: ready as (arg: never) => boolean,
   arg,
+  untrackedMs,
 });
 
 /** How a pass does an action: counted on the work clock, or timed against the wall. */
@@ -233,6 +242,7 @@ const MAIN: PassFixture = {
   write: async () => {
     const vault = await writeFixtureVault([PROJECT_BOARD]);
     await writeLongPdf(vault);
+    await writeLongEpub(vault);
     return vault;
   },
   openIsBudgeted: true,
@@ -295,9 +305,9 @@ async function countedPass(
       if (settleFirst) await runUntil(page, {});
       await expectPointerAtRest(page, action);
       await startCounting(page);
-      for (const { act, ready, arg } of phases) {
+      for (const { act, ready, arg, untrackedMs } of phases) {
         await act();
-        await runUntil(page, { ready, arg: arg as never });
+        await runUntil(page, { ready, arg: arg as never, untrackedMs: untrackedMs ?? 0 });
       }
       into.set(action, await stopCounting(page));
     },
@@ -527,6 +537,24 @@ async function everyAction(pass: Pass): Promise<void> {
   await runALongAtlasQuery(pass);
   await readALongPdf(pass);
   await openAsk(pass);
+  // Back to the long PDF, whatever Ask left shown: a click on it in the tree shows it in place of
+  // Ask, and does nothing when it is shown already. The long EPUB is opened from there, where
+  // its budget was set.
+  await pass.setUp(
+    phase(
+      () =>
+        sidebarSection(page, 'userSpace')
+          .getByRole('treeitem', { name: 'A Long Crossing.pdf', exact: true })
+          .click(),
+      ({ pdf, ask }) =>
+        document.querySelector(pdf) !== null && document.querySelector(ask) === null,
+      {
+        pdf: '.pane__tab:not([hidden]) [data-pdf-page] .pdf-text__run',
+        ask: '.pane__tab:not([hidden]) .ask',
+      },
+    ),
+  );
+  await readALongEpub(pass);
 }
 
 const sidebarButton = (page: Page, name: RegExp) => page.getByRole('button', { name }).first();
@@ -1038,6 +1066,64 @@ async function readALongPdf(pass: Pass): Promise<void> {
   const drawn = await page.locator('.pdf-page').count();
   expect(drawn, `${drawn} of ${LONG_PDF_PAGES} pages drawn`).toBeGreaterThan(0);
   expect(drawn, `${drawn} of ${LONG_PDF_PAGES} pages drawn`).toBeLessThanOrEqual(PDF_MOST_DRAWN);
+}
+
+/** The 1,000-chapter EPUB the book reader is held to (#505): a file in the vault, no note of its own, like the long PDF. */
+const LONG_EPUB = 'Areas/A Long Voyage.epub';
+const LONG_EPUB_CHAPTERS = 1000;
+/** What find in the long book says once it has read every chapter: its phrase is in every hundredth. */
+const LONG_EPUB_FOUND = `1 of ${LONG_EPUB_CHAPTERS / 100}`;
+
+/**
+ * How long the work clock waits on the wall clock for the long book's own
+ * reads: zip.js reads the archive from a `Blob`, which the clock does not
+ * hold, so a phase that reads chapters waits for them with time held still.
+ */
+const EPUB_UNTRACKED_MS = 120_000;
+
+async function writeLongEpub(vault: FakeVault): Promise<void> {
+  await writeFile(join(vault.root, LONG_EPUB), longFixtureEpub({ chapters: LONG_EPUB_CHAPTERS }));
+}
+
+/** The book reader's page once chapter `section` is on screen and taking marks. */
+const shownSection = (section: string) =>
+  document.querySelector(`.epub-reader__page[data-shown-section="${section}"]`) !== null;
+
+/** Opens the long EPUB from Pages, ready once its first chapter is shown; turns a chapter; finds in the whole book. */
+async function readALongEpub(pass: Pass): Promise<void> {
+  const { page } = pass;
+  const tree = sidebarSection(page, 'userSpace');
+  await pass.setUp(
+    phase(async () => undefined, exists, '[role="treeitem"][aria-label="A Long Voyage.epub"]'),
+  );
+  await pass.budgeted('Open a 1,000-chapter EPUB', [
+    phase(
+      () => tree.getByRole('treeitem', { name: 'A Long Voyage.epub', exact: true }).click(),
+      shownSection,
+      '0',
+      EPUB_UNTRACKED_MS,
+    ),
+  ]);
+  await pass.budgeted('Turn a chapter of a 1,000-chapter EPUB', [
+    phase(
+      () => page.getByRole('button', { name: 'Next chapter' }).click(),
+      shownSection,
+      '1',
+      EPUB_UNTRACKED_MS,
+    ),
+  ]);
+  await pass.budgeted('Find in a 1,000-chapter EPUB', [
+    phase(
+      async () => {
+        await page.getByRole('button', { name: 'Find', exact: true }).click();
+        await page.getByRole('searchbox', { name: 'Find in document' }).fill(LONG_BOOK_PHRASE);
+      },
+      (found: string) =>
+        (document.querySelector('.epub-reader [role="search"]')?.textContent ?? '').includes(found),
+      LONG_EPUB_FOUND,
+      EPUB_UNTRACKED_MS,
+    ),
+  ]);
 }
 
 /** ⌘J (#37): Ask, until its question box holds the keys. */

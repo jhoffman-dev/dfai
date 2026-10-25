@@ -1,8 +1,9 @@
 import {
   linkFragment,
-  namesPdf,
+  namesDocument,
   placeOfFile,
   resolveWikiLinkTarget,
+  SOURCE_KIND_NAMES,
   type HighlightOpening,
   type NavigationPlace,
   type TabId,
@@ -34,13 +35,14 @@ import {
  * you are working.
  */
 export function openNote(store: WorkspaceStore, path: VaultPath, how: OpenHow = 'here'): void {
-  // A PDF in Pages or search opens in the reader (#504), not as a note.
+  // A PDF or an EPUB in Pages or search opens in its reader (#504, #505), not as a note.
   openPlace(store, placeOfFile(path), how);
 }
 
 /**
- * Opens the PDF at `path` in the reader, where asked, brought to highlight
- * `highlightId` and flashing it once the reader has placed it (#504); no
+ * Opens the PDF or EPUB at `path` in its reader, where asked, brought to
+ * highlight `highlightId` and flashing it once the reader has placed it
+ * (#504, #505); no
  * highlight opens it at its start. What a transcluded highlight's click
  * calls (#506).
  */
@@ -92,14 +94,14 @@ export function highlightPlaceOpener(
 
 /**
  * Where a link leads when that takes reading a file to know (#506): a block
- * that is a highlight opens its document's reader, and `[[…pdf]]` names a
- * PDF rather than a note. Left out, every link opens a note, as before.
+ * that is a highlight opens its document's reader, and `[[…pdf]]` or
+ * `[[…epub]]` names a document rather than a note. Left out, every link opens a note, as before.
  */
 export interface LinkPlaces {
   /** Where following block `blockId` of `note` leads (`whereHighlightOpens`). */
   readonly blockOpening: (args: { note: VaultPath; blockId: string }) => Promise<HighlightOpening>;
-  /** The PDF a `[[…pdf]]` link names (`linkedPdf`), or null when it names none. */
-  readonly linkedPdf: (target: string) => Promise<VaultPath | null>;
+  /** The document a `[[…pdf]]` or `[[…epub]]` link names (`linkedDocument`), or null when it names none. */
+  readonly linkedDocument: (target: string) => Promise<VaultPath | null>;
 }
 
 /**
@@ -230,10 +232,11 @@ function linkedOf(opening: HighlightOpening): Linked {
 }
 
 /**
- * Follows `[[…pdf]]` to the reader (#506) once the PDF it names is known,
- * and says so: true when the link is one that may name a PDF, and is being
- * followed. A name no PDF of the vault has may still be a note's — a note
- * called "Budget review.pdf" — so `otherwise` follows it as a note link.
+ * Follows `[[…pdf]]` or `[[…epub]]` to its reader (#506) once the document it
+ * names is known, and says so: true when the link is one that may name a
+ * document, and is being followed. A name no document of the vault has may
+ * still be a note's — a note called "Budget review.pdf" — so `otherwise`
+ * follows it as a note link.
  * Dropped, as any late answer is, once `current` says the click is stale.
  */
 function followedLater(
@@ -252,15 +255,15 @@ function followedLater(
     otherwise: () => void;
   },
 ): boolean {
-  if (places === undefined || !namesPdf(target)) return false;
+  if (places === undefined || namesDocument(target) === null) return false;
   places
-    .linkedPdf(target)
-    .then((pdf) => {
+    .linkedDocument(target)
+    .then((document) => {
       if (current() === null) return;
-      if (pdf === null) otherwise();
+      if (document === null) otherwise();
       else {
         onProblem(null);
-        open({ place: { kind: 'document', path: pdf }, fragment });
+        open({ place: { kind: 'document', path: document }, fragment });
       }
     })
     .catch((error: unknown) => {
@@ -282,8 +285,9 @@ function linkedNote(
 ): VaultPath | null {
   const resolved =
     target.trim() === '' && fragment !== null ? here : resolveWikiLinkTarget(target, notePaths);
-  // With the PDF rules wired, a `.pdf` link has already missed a file by now.
-  const called = places !== undefined && namesPdf(target) ? 'PDF or note' : 'note';
+  // With the document rules wired, a `.pdf` or `.epub` link has already missed a file by now.
+  const kind = places === undefined ? null : namesDocument(target);
+  const called = kind === null ? 'note' : `${SOURCE_KIND_NAMES[kind]} or note`;
   onProblem(resolved === null ? `No ${called} called "${target}"` : null);
   return resolved;
 }

@@ -12,11 +12,18 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import { fakeMarkdown, fakeVaultFs } from './fake-ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { PdfUnreadableError, type PdfDocument, type PdfReaderPort } from '../reader/ports.ts';
+import {
+  EpubProtectedError,
+  EpubUnreadableError,
+  type EpubBook,
+  type EpubReaderPort,
+} from '../reader/epub-ports.ts';
 
 /*
  * Fakes for the reader's use-cases: a vault of files in memory, markdown
  * that reads `key: value` frontmatter with JSON-quoted strings as the real
- * one writes them, and a PDF reader that answers pages of given words.
+ * one writes them, a PDF reader that answers pages of given words, and an
+ * EPUB reader that answers chapters of given words.
  */
 
 /** A vault in memory: notes as text, other files as bytes, folders as names. */
@@ -164,3 +171,57 @@ export function fakeReader(document: PdfDocument): PdfReaderPort {
 }
 
 export const pdfBytes = (body = '') => new TextEncoder().encode(`%PDF-1.4\n${body}`);
+
+/**
+ * A book of these chapters' texts, counting the chapters whose text was
+ * asked for. Its CFIs are made up — `epubcfi(/6/<2(n+1)>!/<start>:<end>)` —
+ * and read back by the same pattern; any other names no place in it.
+ */
+export function fakeBook(
+  sections: readonly string[],
+  metadata: PdfMetadata = { title: null, author: null },
+): EpubBook & { readonly textsRead: number[]; closed: boolean } {
+  const textsRead: number[] = [];
+  const book = {
+    sectionCount: sections.length,
+    metadata,
+    contents: [],
+    textsRead,
+    closed: false,
+    sectionText: async (section: number) => {
+      textsRead.push(section);
+      const text = sections[section];
+      if (text === undefined) throw new Error(`no chapter ${section}`);
+      return text;
+    },
+    cfiOf: async ({ section, start, end }: { section: number; start: number; end: number }) =>
+      `epubcfi(/6/${(section + 1) * 2}!/${start}:${end})`,
+    placeOfCfi: async (cfi: string) => {
+      const found = /^epubcfi\(\/6\/(\d+)(?:!\/(\d+):(\d+))?/.exec(cfi);
+      if (found === null) return null;
+      const section = Number(found[1]) / 2 - 1;
+      if (section < 0 || section >= sections.length) return null;
+      if (found[2] === undefined) return { section, range: null };
+      return { section, range: { section, start: Number(found[2]), end: Number(found[3]) } };
+    },
+    close: () => {
+      book.closed = true;
+    },
+  };
+  return book;
+}
+
+/** A reader that opens every EPUB as `book`, refuses bytes that are no ZIP, and refuses a DRM-locked one. */
+export function fakeEpubReader(book: EpubBook, { locked = false } = {}): EpubReaderPort {
+  return {
+    open: async (bytes) => {
+      if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new EpubUnreadableError('it is damaged');
+      if (locked) throw new EpubProtectedError();
+      return book;
+    },
+  };
+}
+
+/** Bytes that start as an EPUB does: a ZIP archive's local header. */
+export const epubBytes = (body = '') =>
+  new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...new TextEncoder().encode(body)]);

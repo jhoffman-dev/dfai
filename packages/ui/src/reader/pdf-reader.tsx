@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
 import {
   draggedBox,
@@ -6,6 +6,7 @@ import {
   zoomIn,
   zoomLabel,
   zoomOut,
+  type DocumentMatch,
   type PageRect,
   type PagePoint,
   type TextSelection,
@@ -14,6 +15,7 @@ import { PageAction, PageBar, type PageHistory } from '../page-bar.tsx';
 import { FindBar, useFind } from './find-bar.tsx';
 import { HighlightsPanel } from './highlights-panel.tsx';
 import { MarkPopover } from './mark-popover.tsx';
+import { pdfPanelEntries } from './panel-entries.ts';
 import { PdfPage } from './pdf-page.tsx';
 import { ReaderSidebar, type SidebarTab } from './reader-sidebar.tsx';
 import type {
@@ -70,7 +72,8 @@ export function PdfReader(props: PdfReaderProps) {
   });
   const { flashing, flash } = useFlash();
   const goTo = useGoTo({ pages, size: props.firstPageSize, zoom });
-  const find = useFind({ onSearch: props.onSearch, goTo });
+  const showMatch = useCallback((match: DocumentMatch) => goTo(match.page, match.rects[0]), [goTo]);
+  const find = useFind({ onSearch: props.onSearch, show: showMatch });
   const marking = useMarking({ props, scroller });
   // Stable, so the bar of buttons is drawn again only when what it shows changes.
   const pageWidth = props.firstPageSize.width;
@@ -80,6 +83,7 @@ export function PdfReader(props: PdfReaderProps) {
   );
   const onSide = useCallback(() => setSide((was) => (was === null ? 'outline' : null)), []);
   const onPanel = useCallback(() => setPanelOpen((was) => !was), []);
+  const entries = useMemo(() => pdfPanelEntries(props.highlights), [props.highlights]);
   const show = (id: string) => {
     const placement = props.highlights.find((highlight) => highlight.id === id)?.placement;
     if (placement !== undefined && placement.kind !== 'lost')
@@ -177,7 +181,8 @@ export function PdfReader(props: PdfReaderProps) {
         </div>
         {panelOpen && (
           <HighlightsPanel
-            highlights={props.highlights}
+            entries={entries}
+            emptyHint="Select words on a page to highlight them."
             flashing={flashing}
             onShow={show}
             onEditComment={props.onEditComment}
