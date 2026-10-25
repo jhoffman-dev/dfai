@@ -53,6 +53,9 @@ pub struct Endpoints {
     pub token: Url,
     pub revoke: Url,
     pub api: Url,
+    /// How long an API call may take before it counts as unreachable; short
+    /// in the tests that are about it running out.
+    pub request_timeout: Duration,
 }
 
 impl Endpoints {
@@ -63,6 +66,7 @@ impl Endpoints {
             token: fixed(TOKEN),
             revoke: fixed(REVOKE),
             api: fixed(API),
+            request_timeout: token::REQUEST_TIMEOUT,
         }
     }
 }
@@ -463,13 +467,13 @@ impl Session<'_> {
     ) -> Result<GoogleAnswer, GoogleFailure> {
         let checked = api::check(&self.endpoints.api, call, service)?;
         let mut access = self.access_token(false).await?;
-        let mut answer = api::send(&checked, &access).await?;
+        let mut answer = api::send(&checked, &access, self.endpoints.request_timeout).await?;
         if answer.0 == 401 {
             // Revoked or ended early at Google's end: one fresh token, one
             // more try, and whatever that answers is the answer.
             self.state.held.forget_access(self.scope);
             access = self.access_token(true).await?;
-            answer = api::send(&checked, &access).await?;
+            answer = api::send(&checked, &access, self.endpoints.request_timeout).await?;
         }
         let (status, body) = answer;
         let text = String::from_utf8(body).map_err(|_| {

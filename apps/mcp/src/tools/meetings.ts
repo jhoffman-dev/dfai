@@ -38,4 +38,27 @@ export const meetings = defineTool({
   call: (client, input) => client.meetings(definedOnly(input)),
 });
 
-export const meetingTools = [meetings];
+export const dayMeetings = defineTool({
+  name: 'atlas_day_meetings',
+  title: "A day's meetings from Google Calendar",
+  description:
+    "A day's meetings from Google Calendar, as the Today page lists them, earliest first: " +
+    '{ day, meetings: [{ path, title, start, end, people, companies, meeting, unanswered }] }. ' +
+    'Each is an event note a meetings sync wrote in Calendar/ (ADR-0046), read from the vault, ' +
+    'never from Google, so it answers offline. "start" and "end" are wall-clock HH:MM; "end" is ' +
+    'null when the meeting ends another day. Declined and cancelled meetings, and all-day ' +
+    'events, are left out. "people" and "companies" are the notes its attendees link; ' +
+    '"meeting" is the meeting note it was written up in, or null. "unanswered" is true while ' +
+    'the invitation is unanswered or answered maybe. These are calendar events; the meeting ' +
+    'notes a notetaker sends are atlas_meetings. Read a note itself with atlas_read_note.',
+  inputSchema: z.object({
+    day: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .describe('The day, YYYY-MM-DD.'),
+  }),
+  annotations: { readOnlyHint: true },
+  call: (client, input) => client.dayMeetings(input),
+});
+
+export const meetingTools = [meetings, dayMeetings];

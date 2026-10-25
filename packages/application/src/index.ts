@@ -22,7 +22,11 @@ export { fakeHostVaultFs, fakeIndexPort, fakeMarkdown, fakeVaultFs } from './tes
 export { memoryIndexPort } from './testing/memory-index.ts';
 export { memoryActivityStore, recordingActivity } from './testing/fake-activity.ts';
 export { apiFixture, bodyOf, codeOf, encoded } from './testing/api-fixture.ts';
-export { fakeGoogleCalendar } from './testing/fake-google-calendar.ts';
+export {
+  fakeCalendarSource,
+  fakeGoogleCalendar,
+  memoryMeetingSyncRecords,
+} from './testing/fake-google-calendar.ts';
 export {
   fakeGoogleDrive,
   fakePdfRenderer,

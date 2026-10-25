@@ -39,6 +39,7 @@ const ALL_TOOLS = [
   'atlas_clarify_inbox_item',
   'atlas_create_note',
   'atlas_daily_note',
+  'atlas_day_meetings',
   'atlas_export_note',
   'atlas_find_duplicate_people',
   'atlas_inbox',
@@ -216,6 +217,8 @@ describe('tools/list', () => {
     }
     // The vocabulary is read here; a term is written as any note is.
     expect(byName.get('atlas_terms')).toMatchObject({ readOnlyHint: true });
+    // A day's meetings are read from the event notes; Google is never written to (ADR-0046).
+    expect(byName.get('atlas_day_meetings')).toMatchObject({ readOnlyHint: true });
   });
 
   it('points template callers at tools that exist', async () => {
@@ -535,6 +538,13 @@ describe('tools/call → REST', () => {
       null,
     ],
     ['atlas_terms', {}, 'GET', '/v1/terms', null],
+    [
+      'atlas_day_meetings',
+      { day: '2026-10-24' },
+      'GET',
+      '/v1/calendar/meetings?day=2026-10-24',
+      null,
+    ],
     ['atlas_find_duplicate_people', {}, 'GET', '/v1/people/duplicates', null],
     [
       'atlas_merge_people',

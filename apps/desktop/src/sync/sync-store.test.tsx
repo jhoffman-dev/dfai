@@ -7,6 +7,7 @@ import {
   createSyncStore,
   publishSync,
   settleSync,
+  useAutomationsHere,
   useSyncBadge,
   useSyncForRunners,
   useSyncForWindow,
@@ -174,5 +175,34 @@ describe('sync as the window reads it (#326)', () => {
     const drawn = draws;
     act(() => publishSync(store, '/v', controller({ phase: notSetUp, thisMac: 'Studio' })));
     expect(draws).toBe(drawn);
+  });
+});
+
+describe('useAutomationsHere (ADR-0046)', () => {
+  it('says whether this Mac runs the vault’s automations, and no for another vault until said', () => {
+    const store = createSyncStore();
+    const hook = renderHook(({ vault }: { vault: string }) => useAutomationsHere(store, vault), {
+      initialProps: { vault: '/a' },
+    });
+    expect(hook.result.current).toBe(false);
+    act(() => publishSync(store, '/a', controller({ automationsHere: true })));
+    expect(hook.result.current).toBe(true);
+    hook.rerender({ vault: '/b' });
+    expect(hook.result.current).toBe(false);
+    act(() => publishSync(store, '/a', controller({ automationsHere: false })));
+    hook.rerender({ vault: '/a' });
+    expect(hook.result.current).toBe(false);
+  });
+
+  it('is always no, and draws nothing, when asked of no vault', () => {
+    const store = createSyncStore();
+    let draws = 0;
+    const hook = renderHook(() => {
+      draws += 1;
+      return useAutomationsHere(store, null);
+    });
+    act(() => publishSync(store, null, controller({ automationsHere: true })));
+    expect(hook.result.current).toBe(false);
+    expect(draws).toBe(1);
   });
 });

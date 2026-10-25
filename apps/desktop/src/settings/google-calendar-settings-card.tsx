@@ -11,6 +11,7 @@ export function GoogleCalendarSettingsCard({ setting }: { setting: GoogleCalenda
       onDisconnect={setting.disconnect}
       onChoose={setting.choose}
       onCreate={setting.create}
+      meetings={setting.meetings}
     />
   );
 }

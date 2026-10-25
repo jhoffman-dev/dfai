@@ -15,6 +15,7 @@ export { webWorkerNoteDeriver } from './index/web-worker-note-deriver.ts';
 export { tauriVaultWatch } from './vault/tauri-vault-watch.ts';
 export { tauriHttp } from './sources/tauri-http.ts';
 export { tauriSecrets } from './sources/tauri-secrets.ts';
+export { tauriCalendarSource } from './google-calendar/tauri-calendar-source.ts';
 export { tauriGoogleCalendar } from './google-calendar/tauri-google-calendar.ts';
 export { tauriGoogleDrive } from './google-calendar/tauri-google-drive.ts';
 export { tauriExportFiles } from './export/tauri-export-files.ts';

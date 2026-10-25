@@ -13,6 +13,7 @@ import {
   tauriHttp,
   tauriSecrets,
   tauriExportFiles,
+  tauriCalendarSource,
   tauriGoogleCalendar,
   tauriGoogleDrive,
   tauriPdfRenderer,
@@ -70,6 +71,8 @@ import type { ChatPorts } from './chat/use-chat.ts';
 import { browserMacId } from './sync/browser-mac-id.ts';
 import { browserSyncPause } from './sync/browser-sync-pause.ts';
 import { browserGranolaPullRecords } from './granola/browser-granola-store.ts';
+import { browserMeetingSyncRecords } from './google-calendar/browser-meeting-sync-records.ts';
+import type { MeetingSyncHost } from './google-calendar/use-meeting-sync.ts';
 import { browserKindleRecords } from './kindle/browser-kindle-records.ts';
 import { browserKindleVaults } from './kindle/browser-kindle-vaults.ts';
 import type { KindleHost } from './kindle/use-kindle-sync.ts';
@@ -142,6 +145,15 @@ export function resolveSourcePorts(): SourcePorts {
 /** Google Calendar, through the host's sign-in (ADR-0030). */
 export function resolveGoogleCalendar(): GoogleCalendarPort {
   return tauriGoogleCalendar;
+}
+
+/** Today's meetings from Google Calendar through the host's sign-in (ADR-0046), and where this Mac keeps each vault's sync record. */
+export function resolveMeetingSync(): MeetingSyncHost {
+  return {
+    source: tauriCalendarSource,
+    records: browserMeetingSyncRecords,
+    connection: tauriGoogleCalendar,
+  };
 }
 
 /** Granola, through the host's pinned module (ADR-0034), and where this Mac keeps each vault's pull record. */

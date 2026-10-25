@@ -76,6 +76,7 @@ import type {
   ApiTemplate,
   ApiTemplateContent,
   ApiTerms,
+  ApiDayMeeting,
   ApiInboxItem,
   ApiType,
   ApiTypeView,
@@ -437,6 +438,12 @@ export class AtlasClient {
       method: 'GET',
       path: '/v1/meetings',
       query: { ...query, includeArchived: includeArchived === true ? 'true' : undefined },
+    });
+  dayMeetings = ({ day }: { day: string }) =>
+    this.json<{ day: string; meetings: readonly ApiDayMeeting[] }>({
+      method: 'GET',
+      path: '/v1/calendar/meetings',
+      query: { day },
     });
   inbox = (query: InboxQuery = {}) =>
     this.json<{

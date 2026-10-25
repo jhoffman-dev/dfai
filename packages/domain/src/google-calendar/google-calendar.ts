@@ -8,14 +8,14 @@
  * runs the protocol; it decides none of this (ADR-0005).
  */
 
+import { GOOGLE_SCOPES_BY_USE } from './google-scopes.ts';
+
 /**
  * Only calendars DFAI made itself: it may make one, and see and change the
  * events on it, and nothing on any other calendar. Google lists it as a
  * non-sensitive scope, so a client needs no verification to ask for it.
  */
-export const GOOGLE_CALENDAR_SCOPES: readonly string[] = [
-  'https://www.googleapis.com/auth/calendar.app.created',
-];
+export const GOOGLE_CALENDAR_SCOPES: readonly string[] = GOOGLE_SCOPES_BY_USE.blocks;
 
 /** The name DFAI gives the calendar it makes for blocks. */
 export const DEDICATED_CALENDAR_NAME = 'DFAI blocks';

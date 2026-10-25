@@ -12,7 +12,9 @@ use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 
 use super::failure::{FailureKind, GoogleFailure};
-use super::token::{answer_of, client, unreachable};
+use std::time::Duration;
+
+use super::token::{answer_of, client_with_timeout, unreachable};
 
 /// The only paths a Calendar call may reach: the Calendar API, version 3.
 const CALENDAR_PATH: &str = "/calendar/v3/";
@@ -173,8 +175,12 @@ pub fn check(api: &Url, call: &ApiCall, service: Service) -> Result<Checked, Goo
 
 /// Sends the call with `access_token`. The answer's body is raw; the caller
 /// strikes the tokens from it.
-pub async fn send(checked: &Checked, access_token: &str) -> Result<(u16, Vec<u8>), GoogleFailure> {
-    let mut request = client()?
+pub async fn send(
+    checked: &Checked,
+    access_token: &str,
+    timeout: Duration,
+) -> Result<(u16, Vec<u8>), GoogleFailure> {
+    let mut request = client_with_timeout(timeout)?
         .request(checked.method.clone(), checked.url.clone())
         .header(AUTHORIZATION, format!("Bearer {access_token}"));
     if let Some(body) = &checked.body {

@@ -8,7 +8,7 @@ import {
 import { calendarListPage, createdCalendarOf } from './calendar-list.ts';
 
 /** A Calendar API answer as the host hands it back, with every token struck from it. */
-interface GoogleAnswer {
+export interface GoogleAnswer {
   readonly status: number;
   readonly body: string;
 }
@@ -47,15 +47,42 @@ async function throughGoogle<T>(call: Promise<T>): Promise<T> {
   }
 }
 
-const malformed = (message: string) => new GoogleCalendarError({ kind: 'malformed', message });
+export const malformed = (message: string) =>
+  new GoogleCalendarError({ kind: 'malformed', message });
 
 /** The JSON an API call answered with, or why it is not one to read. */
-function answered({ status, body }: GoogleAnswer): unknown {
+/**
+ * What Google said of an error, as its body says it: the message and every
+ * reason it names (`insufficientPermissions`, `ACCESS_TOKEN_SCOPE_INSUFFICIENT`),
+ * so what it means is decided in the domain. Empty for a body that says none.
+ */
+export function googleErrorWords(body: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    // Safe to ignore: an error body that is not JSON says nothing more than its status.
+    return '';
+  }
+  const error = (parsed as { error?: unknown } | null)?.error;
+  if (typeof error !== 'object' || error === null) return '';
+  const { message, errors, details } = error as Record<string, unknown>;
+  const reasons = [errors, details]
+    .flatMap((list) => (Array.isArray(list) ? list : []))
+    .map((entry) => (entry as { reason?: unknown } | null)?.reason)
+    .filter((reason): reason is string => typeof reason === 'string');
+  return [typeof message === 'string' ? message : '', ...reasons]
+    .filter((word) => word !== '')
+    .join('; ');
+}
+
+export function answered({ status, body }: GoogleAnswer): unknown {
   if (status < 200 || status > 299) {
+    const words = googleErrorWords(body);
     throw new GoogleCalendarError({
       kind: 'api_refused',
       code: String(status),
-      message: `the Calendar API answered ${status}`,
+      message: `the Calendar API answered ${status}${words === '' ? '' : `: ${words}`}`,
     });
   }
   try {
@@ -65,11 +92,16 @@ function answered({ status, body }: GoogleAnswer): unknown {
   }
 }
 
+/** One Calendar API call through the host, answered as it came back, whatever its status. */
+export function calendarAnswer(
+  vault: string,
+  call: { method: string; path: string; body?: string },
+): Promise<GoogleAnswer> {
+  return throughGoogle(invoke<GoogleAnswer>('google_calendar_request', { vault, call }));
+}
+
 async function callApi(vault: string, call: { method: string; path: string; body?: string }) {
-  const answer = await throughGoogle(
-    invoke<GoogleAnswer>('google_calendar_request', { vault, call }),
-  );
-  return answered(answer);
+  return answered(await calendarAnswer(vault, call));
 }
 
 async function listCalendars({ vault }: { vault: string }): Promise<GoogleCalendar[]> {
