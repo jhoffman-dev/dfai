@@ -11,8 +11,10 @@ import { Editor, type JSONContent } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeSelection } from '@tiptap/pm/state';
 import { BLOCK_ANCHOR_ATTR } from '@dfai/domain';
+import StarterKit from '@tiptap/starter-kit';
 import { createEditorExtensions } from './extensions.ts';
 import { BLOCK_ACTIONS, blockChange, blockTargetAt, type BlockTarget } from './block-actions.ts';
+import { BlockHandle, runBlockAction } from './block-handle.ts';
 import type { HighlightBlocks } from './raw-block.ts';
 import { HighlightDrafts } from './highlight-drafts.ts';
 
@@ -255,6 +257,25 @@ describe('one action is one undo step', () => {
     instance.commands.insertContent('Typed.');
     instance.commands.undo();
     expect(instance.state.doc.eq(added)).toBe(true);
+  });
+
+  it('is closed by the handle itself, whatever plugins the note has and in whatever order', () => {
+    // The handle alone over a plain editor: no other plugin of the note's to
+    // close the step for it, and nothing that fixes the order plugins run in.
+    editor?.destroy();
+    editor = new Editor({
+      extensions: [StarterKit, BlockHandle.configure({ highlights: null })],
+      content: { type: 'doc', content: [paragraph('One.'), paragraph('Two.')] },
+    });
+    const target = blockTargetAt(editor.state.doc, { pos: 2, inside: -1 });
+    if (target === null) throw new Error('No block.');
+    expect(runBlockAction(editor.view, { target, action: 'addBelow', highlights: null })).toBe(
+      true,
+    );
+    const added = editor.state.doc;
+    editor.commands.insertContent('Typed.');
+    editor.commands.undo();
+    expect(editor.state.doc.eq(added)).toBe(true);
   });
 });
 
