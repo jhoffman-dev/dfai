@@ -98,4 +98,48 @@ describe('two highlights deleted one straight after the other', () => {
     expect(readHighlights(written, noteBlocks)).toEqual([]);
     expect(written.match(/atlas:highlight-removed/g)).toHaveLength(2);
   });
+
+  it('when the first write is refused, the toast says so and the second still lands with its tombstone', async () => {
+    const files = new Map([[BOOK as string, { text: TEXT, modified: 1 }]]);
+    let refusals = 1;
+    const fs = fakeVaultFs({
+      readTextFile: async (path) => ({ ...files.get(path)! }),
+      writeTextFile: async ({ path, contents }) => {
+        if (refusals > 0) {
+          refusals -= 1;
+          throw new Error('the disk is full');
+        }
+        const now = files.get(path)!;
+        files.set(path, { text: contents, modified: now.modified + 1 });
+        return now.modified + 1;
+      },
+    });
+    const open: OpenNote = await openNote({ fs, markdown: remarkMarkdown, path: BOOK });
+    const onChanged = vi.fn();
+    const show = vi.fn(() => 0);
+    const hook = renderHook(() =>
+      useNoteHighlights({
+        fs,
+        markdown: remarkMarkdown,
+        openNotes,
+        flush: async () => {},
+        path: BOOK,
+        open,
+        onChanged,
+        toasts: { show },
+      }),
+    );
+    hook.result.current?.removeHighlight?.(IDS[0]!);
+    hook.result.current?.removeHighlight?.(IDS[1]!);
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledWith({
+      message: 'The highlight could not be deleted: the disk is full',
+      tone: 'error',
+    });
+    const written = files.get(BOOK)?.text ?? '';
+    expect(readHighlights(written, noteBlocks).map((block) => block.id)).toEqual([IDS[0]]);
+    expect(written).toContain('"annotationId":"A2"');
+    expect(written.match(/atlas:highlight-removed/g)).toHaveLength(1);
+  });
 });
