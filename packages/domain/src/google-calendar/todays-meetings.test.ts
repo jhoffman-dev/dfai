@@ -27,16 +27,29 @@ describe('dayMeetings', () => {
     expect(meetings.map(({ path }) => path)).toEqual(['Calendar/Standup.md', 'Calendar/Review.md']);
   });
 
-  it('takes an event off the day once any of its notes is marked cancelled', () => {
-    const standup = { date: `${DAY}T09:00`, gcal_event_id: 'ev-standup' };
+  it('takes an event off the day only once every one of its notes is marked cancelled', () => {
+    const standup = { date: `${DAY}T09:00`, gcal_event_id: 'ev-standup', gcal_missing: 'true' };
     const meetings = dayMeetings(
-      [
-        ...rows('Calendar/Standup.md', standup),
-        ...rows('Calendar/Standup 2.md', { ...standup, gcal_missing: 'true' }),
-      ],
+      [...rows('Calendar/Standup.md', standup), ...rows('Calendar/Standup 2.md', standup)],
       DAY,
     );
     expect(meetings).toEqual([]);
+  });
+
+  it('keeps a meeting live on one calendar though its twin is cancelled on another', () => {
+    const standup = { date: `${DAY}T09:00`, gcal_event_id: 'ev-standup' };
+    const meetings = dayMeetings(
+      [
+        ...rows('Calendar/Standup.md', {
+          ...standup,
+          gcal_calendar: 'team@larkspur.example',
+          gcal_missing: 'true',
+        }),
+        ...rows('Calendar/Standup 2.md', { ...standup, gcal_calendar: 'primary' }),
+      ],
+      DAY,
+    );
+    expect(meetings.map(({ path }) => path)).toEqual(['Calendar/Standup 2.md']);
   });
 
   it('lists the day’s timed meetings earliest first, with whom and what they link', () => {
