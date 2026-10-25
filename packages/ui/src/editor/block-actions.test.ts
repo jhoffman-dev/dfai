@@ -249,6 +249,8 @@ describe('Duplicate', () => {
       'paragraph:One.',
       'paragraph:Fern: ',
       'paragraph:Fern: ',
+      // The line kept to type on under a last picture (trailing-line.ts).
+      'paragraph:',
     ]);
     expect(instance.state.doc.child(2).childCount).toBe(2);
     let images = 0;
