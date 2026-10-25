@@ -95,3 +95,33 @@ describe('the empty line kept at the end of a note', () => {
     expect(needsTrailingLine(instance.state.doc)).toBe(false);
   });
 });
+
+describe('the kept line and undo', () => {
+  const pictureNote: JSONContent[] = [
+    paragraph('Beds.'),
+    {
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: 'A fern ' },
+        { type: 'image', attrs: { src: 'fern.png', alt: 'fern' } },
+      ],
+    },
+  ];
+
+  it('is nothing to undo on opening a note that ends in a picture', () => {
+    const instance = noteOf(...pictureNote);
+    expect(types(instance)).toEqual(['paragraph:Beds.', 'paragraph:A fern ', 'paragraph:']);
+    expect(instance.can().undo()).toBe(false);
+  });
+
+  it('is not what the first undo takes back: the word typed is, and the note is then as opened', () => {
+    const instance = noteOf(...pictureNote);
+    const opened = instance.state.doc;
+    instance.commands.insertContentAt(1, 'Raised ');
+    expect(types(instance)[0]).toBe('paragraph:Raised Beds.');
+    instance.commands.undo();
+    expect(types(instance)).toEqual(['paragraph:Beds.', 'paragraph:A fern ', 'paragraph:']);
+    expect(instance.state.doc.eq(opened)).toBe(true);
+    expect(instance.can().undo()).toBe(false);
+  });
+});
