@@ -457,3 +457,54 @@ test('a source refreshed through the API writes its notes and reports what it di
     sidebarSection(page, 'userSpace').getByRole('treeitem', { name: 'People', exact: true }),
   ).toBeVisible();
 });
+
+test('a day’s meetings from Google Calendar are read through the API from the event notes', async ({
+  page,
+}) => {
+  const event = (title: string, date: string, extra: string[] = []) =>
+    [
+      '---',
+      'type: event',
+      `title: ${title}`,
+      `date: ${date}`,
+      `gcal_event_id: ev-${title.toLowerCase().replace(/ /g, '-')}`,
+      'gcal_calendar: primary',
+      ...extra,
+      '---',
+      '',
+    ].join('\n');
+  const { host } = await openVault(page, {
+    files: {
+      'Calendar/2026-10-24 Payroll standup.md': event('Payroll standup', '2026-10-24T09:00', [
+        'ends: 2026-10-24T09:30',
+        'gcal_response: accepted',
+      ]),
+      'Calendar/2026-10-24 Declined sync.md': event('Declined sync', '2026-10-24T11:00', [
+        'gcal_response: declined',
+      ]),
+    },
+  });
+  await turnApiOn(page, host);
+
+  const day = () =>
+    host.api.send({ method: 'GET', path: '/v1/calendar/meetings', query: { day: '2026-10-24' } });
+  await expect
+    .poll(async () => (await day()).body)
+    .toEqual({
+      day: '2026-10-24',
+      meetings: [
+        {
+          path: 'Calendar/2026-10-24 Payroll standup.md',
+          title: 'Payroll standup',
+          start: '09:00',
+          end: '09:30',
+          people: [],
+          companies: [],
+          meeting: null,
+          unanswered: false,
+        },
+      ],
+    });
+  const missing = await host.api.send({ method: 'GET', path: '/v1/calendar/meetings' });
+  expect(missing.status).toBe(400);
+});

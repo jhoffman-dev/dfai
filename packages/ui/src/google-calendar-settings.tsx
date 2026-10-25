@@ -17,6 +17,24 @@ export interface GoogleCalendarProblem {
   readonly fix: string | null;
 }
 
+/**
+ * Whether today's meetings are read from the calendar (ADR-0046): `off` for
+ * the vault, `elsewhere` when the vault reads them on the other Mac — the one
+ * that runs its automations — and this one only reads the notes, `consent`
+ * when this Mac writes them but its sign-in has not been allowed to read
+ * the calendar yet, `on` when they are being read.
+ */
+export type GoogleMeetingsState = 'off' | 'elsewhere' | 'consent' | 'on';
+
+/** The meetings part of the card. */
+export interface GoogleMeetingsView {
+  readonly state: GoogleMeetingsState;
+  readonly syncing: boolean;
+  /** When this Mac last finished a sync, as the card shows it (`9:41 AM`); null before one. */
+  readonly lastSynced: string | null;
+  readonly problem: GoogleCalendarProblem | null;
+}
+
 /** Settings → Google Calendar as the card draws it. */
 export interface GoogleCalendarView {
   readonly phase: GoogleCalendarPhase;
@@ -31,6 +49,15 @@ export interface GoogleCalendarView {
   readonly calendarName: string;
   readonly problem: GoogleCalendarProblem | null;
   readonly pending: boolean;
+  /** Today's meetings, once connected; null where they are not offered. */
+  readonly meetings: GoogleMeetingsView | null;
+}
+
+/** What the meetings part can ask for. */
+export interface GoogleMeetingsActions {
+  readonly onAllow: () => void;
+  readonly onSync: () => void;
+  readonly onStop: () => void;
 }
 
 /** What a sign-in is asked for with: a client, and its secret when Google issued one. */
@@ -51,6 +78,7 @@ export function GoogleCalendarSettings({
   onDisconnect,
   onChoose,
   onCreate,
+  meetings = NO_MEETINGS_ACTIONS,
 }: {
   view: GoogleCalendarView;
   onConnect: (request: GoogleConnectRequest) => void;
@@ -58,13 +86,14 @@ export function GoogleCalendarSettings({
   onDisconnect: () => void;
   onChoose: (calendarId: string) => void;
   onCreate: () => void;
+  meetings?: GoogleMeetingsActions;
 }) {
   return (
     <SettingsSection section={SETTINGS_SECTIONS.googleCalendar}>
       <p className="settings__lede">
         Blocks show as busy on a calendar of their own on your Google account. You sign in in your
         browser; the sign-in stays in this Mac’s Keychain, and DFAI can only see and change
-        calendars it made.
+        calendars it made — and, if you allow it, read your meetings, never change them.
       </p>
       {view.phase === 'loading' && <p className="settings__lede">Checking…</p>}
       {view.phase === 'disconnected' && (
@@ -85,6 +114,9 @@ export function GoogleCalendarSettings({
           onCreate={onCreate}
         />
       )}
+      {view.phase === 'connected' && view.meetings !== null && (
+        <Meetings view={view.meetings} pending={view.pending} actions={meetings} />
+      )}
       {view.problem !== null && (
         <div className="settings__confirm" role="alert">
           <p className="settings__problem">{view.problem.problem}</p>
@@ -92,6 +124,90 @@ export function GoogleCalendarSettings({
         </div>
       )}
     </SettingsSection>
+  );
+}
+
+const NO_MEETINGS_ACTIONS: GoogleMeetingsActions = {
+  onAllow: () => {},
+  onSync: () => {},
+  onStop: () => {},
+};
+
+function meetingsLine(view: GoogleMeetingsView): string {
+  if (view.state === 'off') {
+    return 'Today’s meetings are not read. Allow it to see them on Today and in the morning brief, each as a note linked to the people in it.';
+  }
+  if (view.state === 'elsewhere') {
+    return 'This vault’s meeting notes are written on the Mac that runs its automations (Settings → Sync). This Mac reads them and never asks Google for them.';
+  }
+  if (view.state === 'consent') {
+    return 'This vault reads today’s meetings, but this Mac has not been allowed to read your calendar yet.';
+  }
+  if (view.syncing) return 'Reading your meetings…';
+  return view.lastSynced === null
+    ? 'Meetings are read every 15 minutes.'
+    : `Meetings are read every 15 minutes; last read at ${view.lastSynced}.`;
+}
+
+/** Today's meetings: allow reading them, read them now, or stop. */
+function Meetings({
+  view,
+  pending,
+  actions,
+}: {
+  view: GoogleMeetingsView;
+  pending: boolean;
+  actions: GoogleMeetingsActions;
+}) {
+  return (
+    <div className="settings__confirm" role="group" aria-label="Meetings">
+      <p className="settings__lede">{meetingsLine(view)}</p>
+      <div className="settings__actions">
+        {(view.state === 'off' || view.state === 'consent') && (
+          <button
+            className="btn btn--secondary"
+            type="button"
+            disabled={pending}
+            onClick={actions.onAllow}
+          >
+            Allow reading meetings
+          </button>
+        )}
+        {view.state === 'on' && (
+          <button
+            className="btn btn--secondary"
+            type="button"
+            disabled={pending || view.syncing}
+            onClick={actions.onSync}
+          >
+            Read meetings now
+          </button>
+        )}
+        {view.state !== 'off' && (
+          <button
+            className="btn btn--ghost"
+            type="button"
+            disabled={pending}
+            onClick={actions.onStop}
+          >
+            Stop reading meetings
+          </button>
+        )}
+      </div>
+      {view.state !== 'off' && (
+        <p className="settings__lede">
+          Stopping takes effect at once on this Mac, and on your other Mac once sync brings the
+          change there. Google keeps DFAI’s permission to read your calendar on this Mac until you
+          disconnect: it cannot take back one permission alone.
+        </p>
+      )}
+      {view.problem !== null && (
+        <div role="alert">
+          <p className="settings__problem">{view.problem.problem}</p>
+          {view.problem.fix !== null && <p className="settings__lede">{view.problem.fix}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 

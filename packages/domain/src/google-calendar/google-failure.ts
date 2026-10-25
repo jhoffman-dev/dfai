@@ -4,6 +4,8 @@
  * gave); what that means for the person is decided here.
  */
 
+import { GOOGLE_SCOPES_BY_USE } from './google-scopes.ts';
+
 export const GOOGLE_FAILURE_KINDS = [
   'not_connected',
   'busy',
@@ -81,6 +83,40 @@ function tokenRefusal(code: string | undefined): GoogleProblem {
   };
 }
 
+/**
+ * A consent screen with a permission left unticked. The host names the
+ * scope it did not get, so the meetings one is told apart (ADR-0046).
+ */
+function scopeRefusal(message: string): GoogleProblem {
+  if (GOOGLE_SCOPES_BY_USE.meetings.some((scope) => message.includes(scope))) {
+    return {
+      problem:
+        'Meetings are not read: the permission to see your calendar’s events was left unticked.',
+      fix: 'Choose Allow reading meetings again and tick the permission to view events on your calendars.',
+    };
+  }
+  return {
+    problem: 'Google Calendar was not connected: the calendar permission was left unticked.',
+    fix: 'Connect again and tick the permission to make and change DFAI’s own calendars.',
+  };
+}
+
+/**
+ * Whether Google said this Mac's sign-in may not do what was asked: the
+ * consent screen's box left unticked, or the API's 403 for a token without
+ * the scope. Asking again changes nothing until the person allows it.
+ */
+export function isScopeRefusal(failure: GoogleFailure): boolean {
+  if (failure.kind === 'scope_not_granted') return true;
+  return (
+    failure.kind === 'api_refused' &&
+    failure.code === '403' &&
+    /insufficient\s+(authentication\s+)?scopes?|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(
+      failure.message,
+    )
+  );
+}
+
 /** The person's problem and its fix, for any failure. */
 export function explainGoogleFailure(failure: GoogleFailure): GoogleProblem {
   switch (failure.kind) {
@@ -89,10 +125,7 @@ export function explainGoogleFailure(failure: GoogleFailure): GoogleProblem {
     case 'token_refused':
       return tokenRefusal(failure.code);
     case 'scope_not_granted':
-      return {
-        problem: 'Google Calendar was not connected: the calendar permission was left unticked.',
-        fix: 'Connect again and tick the permission to make and change DFAI’s own calendars.',
-      };
+      return scopeRefusal(failure.message);
     case 'timeout':
       return {
         problem: 'No answer came back from the browser in time.',
@@ -118,6 +151,12 @@ export function explainGoogleFailure(failure: GoogleFailure): GoogleProblem {
         fix: 'Unlock the login keychain, then connect again.',
       };
     case 'api_refused':
+      if (isScopeRefusal(failure)) {
+        return {
+          problem: 'Meetings are not read on this Mac: its Google sign-in may not see events.',
+          fix: 'Choose Allow reading meetings in Settings → Google Calendar.',
+        };
+      }
       return {
         problem: `Google Calendar refused the request (${failure.code ?? 'no status'}).`,
         fix: failure.code === '403' ? CONNECT_AGAIN : 'Try again.',

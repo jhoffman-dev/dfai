@@ -3,7 +3,9 @@ import {
   explainGoogleFailure,
   parseGoogleCalendarSetting,
   parseGoogleClientId,
+  scopesWith,
   DEDICATED_CALENDAR_NAME,
+  GOOGLE_MEETINGS_KEY,
   GOOGLE_CALENDAR_KEY,
   GOOGLE_CALENDAR_SCOPES,
   GOOGLE_CLIENT_ID_KEY,
@@ -121,4 +123,40 @@ export async function saveGoogleCalendarSetting({
     [GOOGLE_CLIENT_ID_KEY]: setting.clientId,
     [GOOGLE_CALENDAR_KEY]: setting.calendarId,
   });
+}
+
+const NOT_CONNECTED =
+  'Google Calendar is not connected for this vault. Connect it first, then allow reading meetings.';
+
+/**
+ * Lets DFAI read the person's calendar for today's meetings (ADR-0046): one
+ * more consent screen, asking for the read-only scope on top of what was
+ * allowed before, with the client the sign-in already uses. Nothing is asked
+ * when it was allowed already.
+ */
+export async function allowGoogleMeetings({
+  port,
+  vault,
+}: {
+  port: GoogleCalendarPort;
+  vault: string;
+}): Promise<GoogleConnection> {
+  const connection = await port.status({ vault });
+  if (!connection.connected || connection.clientId === null) {
+    throw new GoogleCalendarError({ kind: 'not_connected', message: NOT_CONNECTED });
+  }
+  const scopes = scopesWith(connection.scopes, 'meetings');
+  if (scopes === null) return connection;
+  return port.connect({ vault, clientId: connection.clientId, scopes });
+}
+
+/** Writes whether the vault reads its meetings from Google Calendar. */
+export async function saveMeetingsEnabled({
+  settings,
+  enabled,
+}: {
+  settings: SettingsWriter;
+  enabled: boolean;
+}): Promise<void> {
+  await settings.save({ [GOOGLE_MEETINGS_KEY]: enabled ? true : null });
 }

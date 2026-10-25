@@ -1,4 +1,4 @@
-import type { GoogleCalendar, GoogleFailure } from '@dfai/domain';
+import type { GoogleCalendar, GoogleEvent, GoogleFailure } from '@dfai/domain';
 
 /** Whether this vault has a Google sign-in on this Mac, and what it is for. Never a token. */
 export interface GoogleConnection {
@@ -48,4 +48,59 @@ export class GoogleCalendarError extends Error {
     this.name = 'GoogleCalendarError';
     this.failure = failure;
   }
+}
+
+/**
+ * What a calendar answered: every event between two instants (a full
+ * listing), or what changed since a sync token — or that the token has
+ * expired, and the calendar must be listed in full again.
+ */
+export type CalendarChanges =
+  | {
+      readonly kind: 'changes';
+      readonly events: readonly GoogleEvent[];
+      /** The token the next sync of this calendar starts from; null when Google gave none. */
+      readonly syncToken: string | null;
+      /** The zone the calendar keeps, as Google names it (`America/Los_Angeles`); null when it gave none. */
+      readonly timeZone: string | null;
+    }
+  | { readonly kind: 'expired' };
+
+/** The events on the person's calendars, read-only, through the host's sign-in (ADR-0046). */
+export interface CalendarSource {
+  /**
+   * With a sync token, what changed since it; without one, every event
+   * between `timeMin` and `timeMax`. Each instance of a recurring event is
+   * its own event; a cancelled one is listed, with its id.
+   */
+  listEvents(args: {
+    vault: string;
+    calendarId: string;
+    timeMin: number;
+    timeMax: number;
+    syncToken: string | null;
+  }): Promise<CalendarChanges>;
+}
+
+/** Where this Mac's sync of one calendar left off, and the window it was listed for. */
+export interface CalendarFollowing {
+  readonly syncToken: string;
+  /** The window's first day when the calendar was listed in full; another day lists it again. */
+  readonly fromDay: string;
+}
+
+/** This Mac's meetings syncs of one vault. */
+export interface MeetingSyncRecord {
+  readonly calendars: Readonly<Record<string, CalendarFollowing>>;
+  readonly lastSyncAt: number | null;
+}
+
+/**
+ * Where each vault's meetings syncs left off, kept on this Mac: a sync token
+ * is this Mac's own, and the vault syncs, so keeping it there would be a
+ * write on every sync and a conflict between Macs.
+ */
+export interface MeetingSyncRecords {
+  read(vault: string): MeetingSyncRecord;
+  write(vault: string, record: MeetingSyncRecord): void;
 }

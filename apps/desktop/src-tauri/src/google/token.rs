@@ -16,7 +16,7 @@ use super::failure::{FailureKind, GoogleFailure};
 use super::grant::Grant;
 use crate::http::{read_capped, ReadFailure, MAX_RESPONSE_BYTES};
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const USER_AGENT: &str = concat!("DFAI/", env!("CARGO_PKG_VERSION"));
 
 /// Everything but RFC 3986's unreserved characters is escaped in a form value.
@@ -58,8 +58,13 @@ pub struct Exchange<'a> {
 }
 
 pub fn client() -> Result<Client, GoogleFailure> {
+    client_with_timeout(REQUEST_TIMEOUT)
+}
+
+/// A client whose requests give up after `timeout`.
+pub fn client_with_timeout(timeout: Duration) -> Result<Client, GoogleFailure> {
     Client::builder()
-        .timeout(REQUEST_TIMEOUT)
+        .timeout(timeout)
         .user_agent(USER_AGENT)
         .redirect(redirect::Policy::none())
         .build()

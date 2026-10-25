@@ -607,6 +607,18 @@ export interface FakeHost {
     refuseNext(failure: { kind: string; code?: string; message: string }): void;
     connected(): boolean;
     calendars(): readonly string[];
+    /** The scopes the vault's sign-in was last granted. */
+    scopes(): readonly string[];
+    /**
+     * Serves `events` (the Calendar API's wire form) on a calendar, as
+     * `events.list` does: a full listing of a time range gives a sync token,
+     * a live token gives what `change` added since, a stale one 410, and a
+     * sign-in without `calendar.events.readonly` 403 (ADR-0046).
+     */
+    serveEvents(calendarId: string, events: readonly Record<string, unknown>[]): void;
+    change(calendarId: string, event: Record<string, unknown>): void;
+    /** How many `events.list` calls reached the stub. */
+    eventsAsked(): number;
   };
   /**
    * Granola, as `granola.rs` answers for it: an API key kept per vault, and a
@@ -849,6 +861,7 @@ export async function installHost(
   const requests: unknown[] = [];
   /** Google sign-ins by vault root, and the calendars DFAI made on the account. */
   const googleSignIns = new Map<string, { clientId: string; scopes: string[] }>();
+  const googleEvents = fakeCalendarEvents();
   const googleCalendars: { id: string; summary: string }[] = [];
   let googleRefusal: { kind: string; code?: string; message: string } | null = null;
   /** Granola keys and refusals by vault root, what each path answers, and every request. */
@@ -1304,6 +1317,8 @@ export async function installHost(
         // items (`atlas_item`, ADR-0036), which Accept and the After a meeting step look up.
         if (
           statement.startsWith('/* meeting links:') ||
+          // Today's meetings and the notes a meetings sync writes to (ADR-0046).
+          statement.startsWith('/* meetings: ') ||
           statement.startsWith('/* proposals: ids */') ||
           statement.startsWith('/* meeting items: made */')
         ) {
@@ -1614,6 +1629,9 @@ export async function installHost(
           return { [REJECT]: { kind: 'not_connected', message: 'not connected' } };
         }
         const { call } = args as { call: { method: string; path: string } };
+        const scopes = googleSignIns.get(writeRoot(args))?.scopes ?? [];
+        const events = googleEvents.answer(call, scopes);
+        if (events !== null) return events;
         if (call.method === 'POST' && call.path === '/calendar/v3/calendars') {
           const made = { id: 'atlas-blocks@group.calendar.example.com', summary: 'DFAI blocks' };
           googleCalendars.push(made);
@@ -2223,6 +2241,10 @@ export async function installHost(
       },
       connected: () => googleSignIns.size > 0,
       calendars: () => googleCalendars.map((calendar) => calendar.summary),
+      scopes: () => [...googleSignIns.values()].at(-1)?.scopes ?? [],
+      serveEvents: googleEvents.serve,
+      change: googleEvents.change,
+      eventsAsked: googleEvents.asked,
     },
     granola: {
       serve: (path, answer) => {
@@ -2455,3 +2477,67 @@ export const splitWindow = (page: Page, scope: Page | Locator = page) =>
 /** Closes the given pane from its own menu. */
 export const closePane = (page: Page, which: 1 | 2) =>
   pageCommand(page, /^Close pane/, page.getByRole('region', { name: `Pane ${which}` }));
+
+const READ_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
+
+/** The Calendar API's `events.list` for the stub, as much of it as a meetings sync uses (ADR-0046). */
+function fakeCalendarEvents() {
+  const listed = new Map<string, Record<string, unknown>[]>();
+  const changes = new Map<string, Record<string, unknown>[]>();
+  const live = new Set<string>();
+  let issued = 0;
+  let asked = 0;
+  const issue = () => {
+    issued += 1;
+    live.add(`sync-${issued}`);
+    return `sync-${issued}`;
+  };
+  const startOf = (event: Record<string, unknown>) => {
+    const start = event['start'] as { dateTime?: string; date?: string } | undefined;
+    return Date.parse(start?.dateTime ?? `${start?.date ?? ''}T00:00:00Z`);
+  };
+  const answer = (call: { method: string; path: string }, scopes: readonly string[]) => {
+    const url = new URL(call.path, 'https://www.googleapis.com');
+    const match = /^\/calendar\/v3\/calendars\/([^/]+)\/events$/.exec(url.pathname);
+    if (call.method !== 'GET' || match === null) return null;
+    asked += 1;
+    if (!scopes.includes(READ_EVENTS)) {
+      return {
+        status: 403,
+        body: '{"error":{"code":403,"errors":[{"reason":"insufficientPermissions"}]}}',
+      };
+    }
+    const calendar = decodeURIComponent(match[1] ?? '');
+    const token = url.searchParams.get('syncToken');
+    if (token !== null && !live.has(token)) {
+      return {
+        status: 410,
+        body: '{"error":{"code":410,"errors":[{"reason":"fullSyncRequired"}]}}',
+      };
+    }
+    const from = Date.parse(url.searchParams.get('timeMin') ?? '');
+    const to = Date.parse(url.searchParams.get('timeMax') ?? '');
+    const items =
+      token !== null
+        ? (changes.get(calendar) ?? [])
+        : (listed.get(calendar) ?? []).filter(
+            (event) => startOf(event) >= from && startOf(event) < to,
+          );
+    if (token !== null) changes.set(calendar, []);
+    // Google names the zone the calendar keeps on every listing; meetings are written on it.
+    const timeZone = 'America/Los_Angeles';
+    return { status: 200, body: JSON.stringify({ timeZone, items, nextSyncToken: issue() }) };
+  };
+  return {
+    answer,
+    asked: () => asked,
+    serve: (calendarId: string, events: readonly Record<string, unknown>[]) => {
+      listed.set(calendarId, [...events]);
+    },
+    change: (calendarId: string, event: Record<string, unknown>) => {
+      changes.set(calendarId, [...(changes.get(calendarId) ?? []), event]);
+      const others = (listed.get(calendarId) ?? []).filter((each) => each['id'] !== event['id']);
+      listed.set(calendarId, event['status'] === 'cancelled' ? others : [...others, event]);
+    },
+  };
+}

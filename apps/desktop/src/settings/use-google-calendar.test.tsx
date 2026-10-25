@@ -52,6 +52,7 @@ function renderGoogle({
         vault: VAULT,
         active: open,
         activity: ACTIVITY,
+        meetingsWrittenHere: true,
       }),
     { wrapper: queryWrapper().wrapper, initialProps: { open: active } },
   );
@@ -167,6 +168,7 @@ describe('GoogleCalendarSettingsCard', () => {
         vault: VAULT,
         active: true,
         activity: ACTIVITY,
+        meetingsWrittenHere: true,
       });
       return <GoogleCalendarSettingsCard setting={setting} />;
     }
@@ -181,5 +183,82 @@ describe('GoogleCalendarSettingsCard', () => {
 
     expect(await screen.findByRole('form', { name: 'Connect Google Calendar' })).not.toBeNull();
     expect(google.connected.size).toBe(0);
+  });
+});
+
+describe('useGoogleCalendar: meetings (ADR-0046)', () => {
+  const BLOCKS = 'https://www.googleapis.com/auth/calendar.app.created';
+  const READ_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
+
+  function renderWithMeetings({ writesHere = true }: { writesHere?: boolean } = {}) {
+    const google = fakeGoogleCalendar();
+    google.connected.set(VAULT, { connected: true, clientId: CLIENT_ID, scopes: [BLOCKS] });
+    const vault = vaultWithSettings(`---\ngoogle_client_id: ${CLIENT_ID}\n---\n`);
+    const syncs: string[] = [];
+    const meetingSync = {
+      enabled: false,
+      syncing: false,
+      report: null,
+      lastSyncAt: null,
+      syncNow: () => void syncs.push('sync'),
+      stop: () => void syncs.push('stop'),
+    };
+    const hook = renderHook(
+      () =>
+        useGoogleCalendar({
+          port: google.port,
+          fs: vault.fs,
+          markdown: remarkMarkdown,
+          vault: VAULT,
+          active: true,
+          activity: ACTIVITY,
+          meetingSync,
+          meetingsWrittenHere: writesHere,
+        }),
+      { wrapper: queryWrapper().wrapper },
+    );
+    return { hook, google, vault, syncs };
+  }
+
+  it('is off until allowed; allowing asks this Mac’s consent for reading events, then turns the vault on', async () => {
+    const { hook, google, vault } = renderWithMeetings();
+    await waitFor(() => expect(hook.result.current.view.meetings?.state).toBe('off'));
+
+    act(() => hook.result.current.meetings.onAllow());
+
+    await waitFor(() => expect(vault.file.text).toContain('google_meetings: true'));
+    expect(google.connected.get(VAULT)).toEqual({
+      connected: true,
+      clientId: CLIENT_ID,
+      scopes: [BLOCKS, READ_EVENTS],
+    });
+    await waitFor(() => expect(hook.result.current.view.meetings?.state).toBe('on'));
+  });
+
+  it('stops by turning the vault’s switch off, keeping the sign-in', async () => {
+    const { hook, vault, google, syncs } = renderWithMeetings();
+    await waitFor(() => expect(hook.result.current.view.meetings).not.toBeNull());
+    act(() => hook.result.current.meetings.onAllow());
+    await waitFor(() => expect(vault.file.text).toContain('google_meetings: true'));
+
+    act(() => hook.result.current.meetings.onStop());
+
+    await waitFor(() => expect(vault.file.text).not.toContain('google_meetings'));
+    expect(google.connected.get(VAULT)?.connected).toBe(true);
+    expect(syncs).toContain('stop');
+  });
+
+  it('ends a sync under way before the switch is written', async () => {
+    const { hook, syncs, vault } = renderWithMeetings();
+    await waitFor(() => expect(hook.result.current.view.meetings).not.toBeNull());
+    act(() => hook.result.current.meetings.onStop());
+    expect(syncs).toEqual(['stop']);
+    await waitFor(() => expect(vault.file.text).not.toContain('google_meetings: true'));
+  });
+
+  it('says another Mac writes the notes when this one does not run the automations', async () => {
+    const { hook } = renderWithMeetings({ writesHere: false });
+    act(() => hook.result.current.meetings.onAllow());
+    await waitFor(() => expect(hook.result.current.view.meetings?.state).toBe('elsewhere'));
   });
 });

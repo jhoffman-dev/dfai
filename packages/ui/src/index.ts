@@ -127,6 +127,8 @@ export { WidgetEditor } from './dashboard/widget-editor.tsx';
 export type { EditorChoice, WidgetEditorProps } from './dashboard/widget-editor.tsx';
 export { TimelineView } from './timeline-view.tsx';
 export { SourcePanel } from './source-panel.tsx';
+export { TodayMeetings } from './today-meetings.tsx';
+export type { TodayMeetingRow } from './today-meetings.tsx';
 export { SecretsSettings } from './secrets-settings.tsx';
 export type { SecretRow, SecretSave } from './secrets-settings.tsx';
 export { GoogleCalendarSettings } from './google-calendar-settings.tsx';
@@ -140,6 +142,9 @@ export type {
   GoogleCalendarProblem,
   GoogleCalendarView,
   GoogleConnectRequest,
+  GoogleMeetingsActions,
+  GoogleMeetingsState,
+  GoogleMeetingsView,
 } from './google-calendar-settings.tsx';
 export { Toggle } from './toggle.tsx';
 export { SegmentedControl } from './segmented-control.tsx';
