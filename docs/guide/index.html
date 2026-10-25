@@ -814,7 +814,7 @@ pnpm tauri:dev</pre>
       <p>Only the Mac that <a href="#sync">runs the vault's automations</a> (Settings → <b>Sync</b> → <i>Run automations on this Mac</i>) reads Google and writes meeting notes. Your other Mac gets the notes through sync, shows them on Today, and never asks Google for them. Its Settings says so. A vault that isn't synced writes them wherever it is open. Only the writing Mac needs <b>Allow reading meetings</b>.</p>
       <h3>What's in a meeting note</h3>
       <ul>
-        <li>The title, the start (<code>date</code>) and the end (<code>ends</code>), in your calendar's time zone. The other attendees' addresses, and links to their <b>People</b> and <b>Companies</b> notes when DFAI is sure who they are.</li>
+        <li>The title, the start (<code>date</code>) and the end (<code>ends</code>), in your main calendar's time zone — every calendar's meetings on that one clock, so Today never mixes two (the first calendar read that names a zone when the main one isn't read). The other attendees' addresses, and links to their <b>People</b> and <b>Companies</b> notes when DFAI is sure who they are.</li>
         <li>A link to the notetaker's meeting note, once one arrives for the same title, day and time. A notetaker note with no start time, on a day with two meetings of that title, is linked to neither. Link it yourself.</li>
         <li>Your answer (<code>gcal_response</code>). A meeting you declined isn't on Today.</li>
         <li>The body is yours, for prep, and DFAI never writes in it. DFAI keeps the title, times, attendees and <code>gcal_</code> fields as Google says, so edit those in Google Calendar. Links you add or remove, and fields of your own, are kept.</li>

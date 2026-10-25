@@ -38,10 +38,14 @@ feed every time.
 these properties:
 
 - `title`, `date` and `ends`, on the wall clock. ADR-0030 keeps times with no
-  offset (`2026-10-24T09:00`); an all-day event is just its days. The clock
-  is the zone Google gives the note's calendar (`timeZone` on every
-  `events.list` answer), not the Mac's, so two Macs in two zones write the
-  same bytes. Only when Google names no zone is the Mac's used.
+  offset (`2026-10-24T09:00`); an all-day event is just its days. One sync
+  writes every calendar's events on **one** clock, so one Today list never
+  mixes two and a time compares with meeting notes kept in local time: the
+  zone Google gives the `primary` calendar (`timeZone` on every
+  `events.list` answer), else the zone of the first calendar read that names
+  one, in `google_meeting_calendars` order. That is not the Mac's, so two Macs
+  in two zones write the same bytes. Only when no calendar read names a zone
+  is the Mac's used.
 - `attendees`: everyone's address except the person's own and the rooms'.
 - `people` and `companies`, linked by P29-04's `matchAttendees`. Only sure
   matches by address or name are linked. An unknown attendee stays an
@@ -259,9 +263,10 @@ DFAI made, that is a new `GOOGLE_SCOPES_BY_USE` row
   `GET /v1/meetings` was already the meeting-notes list (ADR-0027), so the
   new read has its own path. Whether a vault is connected stays on
   `/v1/status`. No token and no Calendar call is exposed.
-- Times on Today are the calendar's wall clock. On a trip, Today shows them
-  on the calendar's zone (the person's home zone) until Google's calendar
-  zone is changed.
+- Times on Today are the wall clock of the zone above: the `primary`
+  calendar's, else the first calendar read that names one, never a team
+  calendar's own zone when it differs. On a trip, Today shows them on that
+  zone (the person's home zone) until Google's calendar zone is changed.
 
 ## Still open
 

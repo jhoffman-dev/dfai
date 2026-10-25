@@ -25,6 +25,7 @@ import {
   type EventToMatch,
   type MeetingCandidate,
 } from './meeting-match.ts';
+import { PRIMARY_CALENDAR } from './meeting-setting.ts';
 import { inWindow, wallEnd, wallStart, type MeetingWindow } from './meeting-window.ts';
 
 /** The type an event note declares, as an ICS source's do (ADR-0012). */
@@ -69,9 +70,9 @@ export interface EventNotesInput {
   /** The zone the person keeps time in: a calendar Google gave no zone for is written in it. */
   readonly timeZone: string;
   /**
-   * The zone each calendar keeps, as Google gave it. An event's times are
-   * written on its calendar's clock, not on the Mac's, so two Macs in two
-   * zones write the same bytes (ADR-0046).
+   * The zone each calendar keeps, as Google gave it, in the order the
+   * calendars are read. Every event is written on one of them (`planZone`),
+   * not on the Mac's, so two Macs in two zones write the same bytes (ADR-0046).
    */
   readonly calendarZones?: Readonly<Record<string, string>>;
   /** Calendars whose events are never meetings: the one blocks go to (#30). */
@@ -155,9 +156,16 @@ function copyFor(note: ExistingEventNote, copies: readonly GoogleEvent[]): Googl
     : copies.find((copy) => copy.calendarId === calendar);
 }
 
-/** The clock an event's times are written on: its calendar's, else the person's. */
-const zoneFor = (event: GoogleEvent, input: EventNotesInput): string =>
-  input.calendarZones?.[event.calendarId] ?? input.timeZone;
+/**
+ * The one clock every event's times are written on, so one Today list never
+ * mixes two and each time compares with meeting notes kept in local time: the
+ * primary calendar's zone, else the first calendar read that names one, else
+ * the person's. Whenever Google names a zone, the Mac's own plays no part.
+ */
+const planZone = (input: EventNotesInput): string => {
+  const zones = input.calendarZones ?? {};
+  return zones[PRIMARY_CALENDAR] ?? Object.values(zones)[0] ?? input.timeZone;
+};
 
 /** What one plan works from besides its input: the names it has taken, and the notes it may link. */
 interface PlanContext {
@@ -176,7 +184,7 @@ function meetingsToMatch(input: EventNotesInput): EventToMatch[] {
     if (input.ignoredCalendars.includes(event.calendarId) || byId.has(event.id)) continue;
     byId.set(event.id, {
       title: event.title,
-      start: wallStart(event.start, zoneFor(event, input)),
+      start: wallStart(event.start, planZone(input)),
     });
   }
   for (const note of input.existing) {
@@ -249,7 +257,7 @@ function ownedProperties(
   context: PlanContext,
 ): Record<string, unknown> {
   const { input } = context;
-  const zone = zoneFor(event, input);
+  const zone = planZone(input);
   const title = event.title.trim() === '' ? NO_TITLE : event.title.trim();
   const date = wallStart(event.start, zone);
   const emails = otherAttendees(event).map(({ email }) => email);

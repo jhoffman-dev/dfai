@@ -75,7 +75,7 @@ export interface MeetingSyncPorts {
 
 export interface MeetingSyncRun {
   readonly vault: string;
-  /** The zone the person is in: the wall clock event notes are written on. */
+  /** The zone the person is in: event notes are written on it only when no calendar read names one. */
   readonly timeZone: string;
   readonly setting: MeetingSetting;
   /** The calendar blocks go to (#30): never read for meetings. */
