@@ -248,9 +248,11 @@ describe('GoogleCalendarSettings: meetings (ADR-0046)', () => {
     expect(within(part()).getByRole('button', { name: 'Stop reading meetings' })).toBeTruthy();
   });
 
-  it('says stopping is at once and that Google keeps the permission until Disconnect', () => {
+  it('says stopping is at once on this Mac, later on the other, and that Google keeps the permission until Disconnect', () => {
     renderMeetings(meetings({ state: 'on' }));
-    expect(part().textContent).toContain('Stopping takes effect at once');
+    expect(part().textContent).toContain('Stopping takes effect at once on this Mac');
+    expect(part().textContent).toContain('once sync brings the change there');
+    expect(part().textContent).not.toContain('on both Macs');
     expect(part().textContent).toContain('until you disconnect');
   });
 
