@@ -33,4 +33,5 @@ if (problems.length > 0) {
 }
 const parts = Object.values(manifest).filter((chunk) => chunk.isDynamicEntry).length;
 const known = KNOWN_IMPORTS.map(({ part, imports }) => `${part} -> ${imports}`).join(', ');
-console.log(`No chunk is shared under any of ${parts} parts (known and let through: ${known}).`);
+const letThrough = known === '' ? '' : ` (known and let through: ${known})`;
+console.log(`No chunk is shared under any of ${parts} parts${letThrough}.`);
