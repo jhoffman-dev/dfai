@@ -49,7 +49,14 @@ export type BlockAction = (typeof BLOCK_ACTIONS)[number];
 /** The blocks of a list that each have a handle of their own, as Notion's items do. */
 const ITEM_TYPES = new Set(['listItem', 'taskItem']);
 
-const isItem = (node: ProseMirrorNode): boolean => ITEM_TYPES.has(node.type.name);
+/** Whether `node` is an item of a list: a bullet, a numbered item, a task. */
+export const isListItem = (node: ProseMirrorNode): boolean => ITEM_TYPES.has(node.type.name);
+
+/**
+ * On a transaction that is one of these actions, so the handle's plugin
+ * closes the undo step after it as well as before (`ownStep`).
+ */
+export const BLOCK_ACTION_STEP = 'blockActionStep';
 
 /**
  * The block a handle at a point of the note acts on: the innermost list
@@ -66,7 +73,7 @@ export function blockTargetAt(
   const at = node === null ? pos : node.isLeaf ? inside : inside + 1;
   const $pos = doc.resolve(Math.max(0, Math.min(at, doc.content.size)));
   for (let depth = $pos.depth; depth >= 1; depth -= 1) {
-    if (isItem($pos.node(depth))) return { pos: $pos.before(depth), node: $pos.node(depth) };
+    if (isListItem($pos.node(depth))) return { pos: $pos.before(depth), node: $pos.node(depth) };
   }
   const found =
     $pos.depth >= 1
@@ -126,8 +133,13 @@ export function stillThere(doc: ProseMirrorNode, target: BlockTarget): boolean {
   return target.pos <= doc.content.size && doc.nodeAt(target.pos) === target.node;
 }
 
-/** A transaction that starts a step of its own to undo, and scrolls to what it changed. */
-const ownStep = (tr: Transaction): Transaction => closeHistory(tr).scrollIntoView();
+/**
+ * A transaction that is a step of its own to undo — closed off from the typing
+ * before it here, and from the typing after it by the handle's plugin, which
+ * reads `BLOCK_ACTION_STEP` — and scrolls to what it changed.
+ */
+const ownStep = (tr: Transaction): Transaction =>
+  closeHistory(tr).setMeta(BLOCK_ACTION_STEP, true).scrollIntoView();
 
 /**
  * An empty block above or below `target`, with the caret in it: a paragraph
@@ -138,7 +150,7 @@ export function insertBlock(
   target: BlockTarget,
   side: 'above' | 'below',
 ): Transaction | null {
-  const empty = isItem(target.node)
+  const empty = isListItem(target.node)
     ? target.node.type.createAndFill()
     : (state.schema.nodes['paragraph']?.create() ?? null);
   if (empty === null) return null;
@@ -164,8 +176,11 @@ export function duplicateBlock(state: EditorState, target: BlockTarget): Transac
 
 /**
  * `target` moved past the next block above it (`-1`) or below it (`1`) in
- * the same list or note, hidden tombstones stepped over; null at the end of
- * what it is in. The selection moves with it.
+ * the same list or note; null at the end of what it is in. The selection
+ * moves with it. Hidden tombstones never move: the block passes the visible
+ * block and the run of tombstones beyond it — above it on the way up, below
+ * it on the way down — so a move up and then down (or down and then up)
+ * gives the note back exactly as it was, every tombstone where it sat.
  */
 export function moveBlock(
   state: EditorState,
@@ -174,13 +189,16 @@ export function moveBlock(
 ): Transaction | null {
   const $target = state.doc.resolve(target.pos);
   const parent = $target.parent;
-  let index = $target.index() + direction;
-  while (parent.maybeChild(index) !== null && isTombstone(parent.child(index))) index += direction;
-  const passed = parent.maybeChild(index);
-  if (passed === null) return null;
-  const passedPos = $target.posAtIndex(index);
+  const tombstoneAt = (index: number) =>
+    parent.maybeChild(index) !== null && isTombstone(parent.child(index));
+  let passed = $target.index() + direction;
+  while (tombstoneAt(passed)) passed += direction;
+  if (parent.maybeChild(passed) === null) return null;
+  let beyond = passed + direction;
+  while (tombstoneAt(beyond)) beyond += direction;
   const size = target.node.nodeSize;
-  const at = direction < 0 ? passedPos : passedPos + passed.nodeSize - size;
+  // Up: before the first of the run passed. Down: after the last of it, once the block is out.
+  const at = direction < 0 ? $target.posAtIndex(beyond + 1) : $target.posAtIndex(beyond) - size;
   const tr = state.tr.delete(target.pos, target.pos + size).insert(at, target.node);
   tr.setSelection(movedSelection(state.selection, target, at, tr.doc));
   return ownStep(tr);
@@ -189,8 +207,9 @@ export function moveBlock(
 /**
  * What deleting `target` is: a highlight's removal, by the literature note's
  * own write (its id), or an edit to the note. A list item that is its list's
- * only one takes the list with it; the note's last block leaves an empty
- * paragraph, as a note always holds one.
+ * only one takes the list with it; the last block the person can see leaves
+ * an empty paragraph with the caret in it, as a note always holds somewhere
+ * to type — a hidden tombstone is no such place.
  */
 export function blockDeletion(
   state: EditorState,
@@ -212,16 +231,26 @@ function deleteBlock(state: EditorState, target: BlockTarget): Transaction {
   }
   const tr = state.tr;
   const paragraph = state.schema.nodes['paragraph'];
-  if ($pos.depth === 0 && state.doc.childCount === 1 && paragraph !== undefined) {
+  if ($pos.depth === 0 && visibleBlocksIn(state.doc) === 1 && paragraph !== undefined) {
     tr.replaceWith(pos, pos + node.nodeSize, paragraph.create());
-  } else {
-    tr.delete(pos, pos + node.nodeSize);
+    tr.setSelection(TextSelection.create(tr.doc, pos + 1));
+    return ownStep(tr);
   }
+  tr.delete(pos, pos + node.nodeSize);
   const $at = tr.doc.resolve(Math.min(pos, tr.doc.content.size));
   tr.setSelection(
     Selection.findFrom($at, 1, true) ?? Selection.findFrom($at, -1, true) ?? Selection.near($at),
   );
   return ownStep(tr);
+}
+
+/** How many blocks of the note the person can see: all but its hidden tombstones. */
+function visibleBlocksIn(doc: ProseMirrorNode): number {
+  let count = 0;
+  doc.forEach((node) => {
+    if (!isTombstone(node)) count += 1;
+  });
+  return count;
 }
 
 /** The caret at the start of the block at `at`, or the block selected whole when it has no text. */

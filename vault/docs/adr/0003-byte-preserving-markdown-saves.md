@@ -54,3 +54,19 @@ it is always written back untouched.
   reformats the entire file on every save.
 - **Storing the ProseMirror JSON as the source of truth.** Abandons the plain-text
   vault, which is the point of the project.
+
+## Addendum: two lists that come to stand side by side (#569, 2026-10-25)
+
+Moving or deleting a block can leave two untouched lists next to each other.
+To markdown they are one list if their markers match (`-` and `-`, or `1.` and
+`1.`), blank lines or not, and on the next read the second list's `^id` would
+belong to the merged list. There is no byte-free way to keep them apart: only a
+block between them, or a different marker, does.
+
+So the save writes **the list after** afresh with the markers the list before
+does not use (`*` after `-`, `1)` after `1.`; `+` when both are taken), the way
+`markersBeside` already chose a freshly rendered list's markers. The list before
+keeps its bytes, and a `^id` on a line of its own between the two already keeps
+them apart and changes nothing. This is the one case where an untouched block is
+not written from its bytes: the note must read back as the two lists the person
+sees, each with its own id, and that outranks the bytes of one list.

@@ -763,6 +763,8 @@ async function handleBlocks(pass: Pass, title: string): Promise<void> {
   const { page } = pass;
   const items = page.locator(`${editorOf(title)} li`);
   const blocks = [page.locator(`${editorOf(title)} > p`).first(), items.nth(0), items.nth(1)];
+  const last = await items.nth(1).boundingBox();
+  if (last === null) throw new Error('block is not on screen');
   await pass.budgeted('Hover a block', [
     phase(
       async () => {
@@ -774,8 +776,15 @@ async function handleBlocks(pass: Pass, title: string): Promise<void> {
           }
         }
       },
-      exists,
-      BLOCK_HANDLE,
+      // Done when the handle has followed the pointer to the last block, not on the first it showed by.
+      ({ selector, top, bottom }) => {
+        const handle = document.querySelector(selector);
+        if (handle === null) return false;
+        const box = handle.getBoundingClientRect();
+        const centre = box.top + box.height / 2;
+        return centre >= top && centre <= bottom;
+      },
+      { selector: BLOCK_HANDLE, top: last.y, bottom: last.y + last.height },
     ),
   ]);
   const second = (await items.nth(1).textContent()) ?? '';

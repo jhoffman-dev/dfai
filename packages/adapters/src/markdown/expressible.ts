@@ -1,5 +1,6 @@
 import {
   BLOCK_ANCHOR_ATTR,
+  TABLE_CELL_TYPES,
   nestedBlockOf,
   withAnchorsAtPlaces,
   type EditorMark,
@@ -40,10 +41,17 @@ export function expressible(node: EditorNode): EditorNode {
  * end with are then not at the end of a line, and are kept (A26-01).
  */
 function expressibleIn(node: EditorNode, beforeAnId = holdsAnId(node)): EditorNode {
-  if (CELLS.has(node.type)) {
-    const inline = (node.content ?? []).flatMap((block) => nestedBlockOf(block).content ?? []);
+  if (TABLE_CELL_TYPES.has(node.type)) {
+    const blocks = node.content ?? [];
+    const inline = blocks.flatMap((block) => nestedBlockOf(block).content ?? []);
     const content = expelled(htmlBreaksTrimmed(inline)).map(cellCode);
-    return { ...node, content: [{ type: 'paragraph', content }] };
+    // A block with no words to run into the line — raw HTML, a highlight, a rule — is
+    // kept after it for the writer to refuse (#569): run into the line it would be
+    // nothing, and the person would lose it without a word.
+    const wordless = blocks.filter(
+      (block) => block.type !== 'paragraph' && nestedBlockOf(block).content === undefined,
+    );
+    return { ...node, content: [{ type: 'paragraph', content }, ...wordless] };
   }
   if (node.type === 'heading') {
     const content = expelled(htmlBreaksTrimmed(node.content ?? []));
@@ -132,8 +140,6 @@ const isEmptyParagraph = (node: EditorNode): boolean =>
   node.type === 'paragraph' && (node.content ?? []).length === 0;
 
 const CONTAINERS: ReadonlySet<string> = new Set(['listItem', 'taskItem', 'blockquote', 'callout']);
-
-const CELLS: ReadonlySet<string> = new Set(['tableCell', 'tableHeader']);
 
 const ITEMS: ReadonlySet<string> = new Set(['listItem', 'taskItem']);
 

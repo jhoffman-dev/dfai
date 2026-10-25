@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   createHighlightReadMemo,
   editHighlightComment,
@@ -74,7 +74,11 @@ export function useNoteHighlights({
     [fs, markdown, openNotes, flush, path, onChanged],
   );
   // A block's Delete on a highlight (#569): the note's own write, which leaves a Kindle
-  // highlight's tombstone, after the pane's typing, as a comment is written.
+  // highlight's tombstone, after the pane's typing, as a comment is written. Each
+  // write reads the note as the one before it left it: two deletes in quick
+  // succession are both the person's word, and a write over a note another write
+  // is changing would be refused by the host, so they are taken one after another.
+  const removesQueued = useRef<Promise<void>>(Promise.resolve());
   const removeHighlight = useCallback(
     (id: string) => {
       if (path === null) return;
@@ -84,7 +88,8 @@ export function useNoteHighlights({
         onChanged();
       };
       // The pane always has its toasts; a host without them (a test) hears of nothing.
-      remove().catch((error: unknown) => {
+      // A failure is told of here, and the queue goes on to the next delete.
+      removesQueued.current = removesQueued.current.then(remove).catch((error: unknown) => {
         toasts?.show({
           message: `The highlight could not be deleted: ${errorMessage(error)}`,
           tone: 'error',

@@ -1,9 +1,11 @@
 import { Extension } from '@tiptap/core';
+import { closeHistory } from '@tiptap/pm/history';
 import type { Node as ProseMirrorNode, Slice } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import {
   BLOCK_ACTIONS,
+  BLOCK_ACTION_STEP,
   blockChange,
   blockTargetAt,
   blockTargetOfSelection,
@@ -56,6 +58,13 @@ export interface BlockHandleOptions {
 
 /** Room between the handle and the block's text (or its list's markers), in pixels. */
 const GAP = 4;
+
+/**
+ * The band left of the note the handle sits in, in pixels: the pointer there,
+ * level with the note, is still over it. Wider than the handle and its gap,
+ * so a hand that moves to the handle in steps, or overshoots it, keeps it.
+ */
+const GUTTER = 40;
 
 const handles = new WeakMap<EditorView, HandleView>();
 
@@ -169,9 +178,8 @@ class HandleView {
   }
 
   private readonly onPointerMove = (event: MouseEvent) => {
-    const inside = event.target instanceof Node && this.host?.contains(event.target) === true;
-    if (!inside) {
-      if (this.pointer !== null) this.onPointerLeave();
+    if (!this.overTheNote(event)) {
+      if (this.pointer !== null) this.pointerLeft();
       return;
     }
     this.pointer = { x: event.clientX, y: event.clientY };
@@ -182,10 +190,21 @@ class HandleView {
     });
   };
 
-  private readonly onPointerLeave = () => {
+  /** Whether the pointer is over the note: its element, its handle, or the gutter beside it. */
+  private overTheNote(event: MouseEvent): boolean {
+    const host = this.host;
+    if (host === null) return false;
+    if (event.target instanceof Node && host.contains(event.target)) return true;
+    const { left, right, top, bottom } = host.getBoundingClientRect();
+    const { clientX: x, clientY: y } = event;
+    return x >= left - GUTTER && x <= right && y >= top && y <= bottom;
+  }
+
+  /** The pointer left the note's area: the handle goes, unless its menu or a drag holds it. */
+  private pointerLeft(): void {
     this.pointer = null;
     if (!this.menuOpen && this.dragging === null) this.hide();
-  };
+  }
 
   private readonly onKey = () => {
     if (!this.menuOpen) this.hide();
@@ -341,15 +360,32 @@ export const BlockHandle = Extension.create<BlockHandleOptions>({
     const run = (action: BlockAction) => () => {
       const target = blockTargetOfSelection(this.editor.state);
       if (target === null) return false;
-      runBlockAction(this.editor.view, { target, action, highlights });
-      // Answered either way: a block that cannot move further keeps the key from selecting text.
-      return true;
+      const done = runBlockAction(this.editor.view, { target, action, highlights });
+      // ⇧⌘↑ and ⇧⌘↓ are macOS's "select to the start / end": a block that cannot move
+      // further lets them through. The other keys are answered either way, so ⇧⌘⌫ on a
+      // highlight the note cannot write is never a plain deletion of it.
+      return done || !MOVE_ACTIONS.has(action);
     };
     const keys = Object.fromEntries(
       BLOCK_ACTIONS.map((action) => [BLOCK_ACTION_KEYS[action], run(action)]),
     );
+    // Backspace or Delete on a highlight selected whole deletes it as its menu does:
+    // by the note's own write, which leaves its tombstone, never as a plain edit.
+    const deleteSelectedHighlight = () => {
+      const { selection } = this.editor.state;
+      if (!(selection instanceof NodeSelection) || !highlightTest(highlights)(selection.node)) {
+        return false;
+      }
+      const target = blockTargetOfSelection(this.editor.state);
+      return (
+        target !== null &&
+        runBlockAction(this.editor.view, { target, action: 'delete', highlights })
+      );
+    };
     return {
       ...keys,
+      Backspace: deleteSelectedHighlight,
+      Delete: deleteSelectedHighlight,
       [BLOCK_MENU_KEY]: () => handles.get(this.editor.view)?.openForSelection() ?? false,
     };
   },
@@ -359,6 +395,33 @@ export const BlockHandle = Extension.create<BlockHandleOptions>({
       new Plugin({
         key: new PluginKey('blockHandle'),
         view: (view) => new HandleView(view),
+      }),
+    ];
+  },
+});
+
+const MOVE_ACTIONS: ReadonlySet<BlockAction> = new Set(['moveUp', 'moveDown']);
+
+/**
+ * An action done, its undo step is closed after it too, so the typing that
+ * follows — in the block just added, say — is a step of its own, and one ⌘Z
+ * takes back the typing, not the action with it. The last of the plugins
+ * (its priority), so it closes after every transaction the others append to
+ * the action — a block id kept, an empty line added at the end — which else
+ * would land in a step of their own, and one ⌘Z would take back only them.
+ */
+export const BlockActionSteps = Extension.create({
+  name: 'blockActionSteps',
+  priority: 1,
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('blockActionSteps'),
+        appendTransaction: (transactions, _before, state) =>
+          transactions.some((tr) => tr.getMeta(BLOCK_ACTION_STEP) === true)
+            ? closeHistory(state.tr)
+            : null,
       }),
     ];
   },

@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Editor, type JSONContent } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import { TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { BLOCK_ANCHOR_ATTR } from '@dfai/domain';
 import { createEditorExtensions } from './extensions.ts';
 import { blockChange, blockTargetAt, type BlockAction, type BlockTarget } from './block-actions.ts';
@@ -308,21 +308,28 @@ describe('Move up and Move down', () => {
     expect(blocks(instance)).toEqual(['paragraph:Kept. ^keep01', 'paragraph:One.']);
   });
 
-  it('steps over a hidden tombstone, which stays where it was, once', () => {
+  it('passes a hidden tombstone with the block beside it, so up then down is the note as it was', () => {
     const instance = noteOf(paragraph('A.'), raw(TOMBSTONE), paragraph('B.'));
+    const before = blocks(instance);
     act(instance, targetOf(instance, 'B.'), 'moveUp');
-    expect(blocks(instance).slice(0, 3)).toEqual([
-      'paragraph:B.',
-      'paragraph:A.',
-      `rawBlock:${TOMBSTONE}`,
-    ]);
+    expect(blocks(instance)).toEqual(['paragraph:B.', 'paragraph:A.', `rawBlock:${TOMBSTONE}`]);
     act(instance, targetOf(instance, 'B.'), 'moveDown');
-    expect(blocks(instance).slice(0, 3)).toEqual([
-      'paragraph:A.',
-      'paragraph:B.',
-      `rawBlock:${TOMBSTONE}`,
-    ]);
+    expect(blocks(instance)).toEqual(before);
     expect(tombstones(instance)).toBe(1);
+  });
+
+  it('down then up is the note as it was, too, the tombstone never moved', () => {
+    const instance = noteOf(paragraph('A.'), raw(TOMBSTONE), paragraph('B.'), paragraph('C.'));
+    const before = blocks(instance);
+    act(instance, targetOf(instance, 'A.'), 'moveDown');
+    expect(blocks(instance)).toEqual([
+      `rawBlock:${TOMBSTONE}`,
+      'paragraph:B.',
+      'paragraph:A.',
+      'paragraph:C.',
+    ]);
+    act(instance, targetOf(instance, 'A.'), 'moveUp');
+    expect(blocks(instance)).toEqual(before);
   });
 });
 
@@ -505,5 +512,57 @@ describe('running an action from the handle or a key', () => {
       'paragraph:Above.',
       'paragraph:Below.',
     ]);
+  });
+});
+
+describe('the keys where the block cannot move (#572)', () => {
+  /** A key with modifiers as the person presses it: Mod is ⌘ on a Mac, Ctrl elsewhere. */
+  function pressWith(instance: Editor, key: string, { shift = false } = {}): boolean {
+    const mac = /Mac|iP(hone|[oa]d)/.test(navigator.platform);
+    const event = new KeyboardEvent('keydown', {
+      key,
+      bubbles: true,
+      cancelable: true,
+      metaKey: mac,
+      ctrlKey: !mac,
+      shiftKey: shift,
+    });
+    return (
+      instance.view.someProp('handleKeyDown', (handle) => handle(instance.view, event)) ?? false
+    );
+  }
+
+  it('⇧⌘↓ on the last block is not answered, so the platform selects to the end', () => {
+    const instance = noteOf(paragraph('First.'), paragraph('Last.'));
+    instance.commands.setTextSelection(targetOf(instance, 'Last.').pos + 2);
+    const before = instance.state.doc;
+    expect(pressWith(instance, 'ArrowDown', { shift: true })).toBe(false);
+    expect(instance.state.doc.eq(before)).toBe(true);
+  });
+
+  it('⇧⌘↓ on a block that can move is answered, and moves it', () => {
+    const instance = noteOf(paragraph('First.'), paragraph('Last.'));
+    instance.commands.setTextSelection(targetOf(instance, 'First.').pos + 2);
+    expect(pressWith(instance, 'ArrowDown', { shift: true })).toBe(true);
+    expect(blocks(instance)).toEqual(['paragraph:Last.', 'paragraph:First.']);
+  });
+
+  it('Backspace on a selected block that is no highlight is left to the editor, which deletes it', () => {
+    const instance = noteOf(
+      paragraph('A.'),
+      raw('<div class="larkspur">Raw</div>'),
+      paragraph('B.'),
+    );
+    const at = rawTarget(instance, '<div class="larkspur">Raw</div>').pos;
+    instance.view.dispatch(
+      instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, at)),
+    );
+    const event = new KeyboardEvent('keydown', {
+      key: 'Backspace',
+      bubbles: true,
+      cancelable: true,
+    });
+    instance.view.someProp('handleKeyDown', (handle) => handle(instance.view, event));
+    expect(blocks(instance)).toEqual(['paragraph:A.', 'paragraph:B.']);
   });
 });

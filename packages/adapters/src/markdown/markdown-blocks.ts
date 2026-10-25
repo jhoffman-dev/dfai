@@ -615,9 +615,14 @@ export function serializeMarkdownBody({
   nodes.forEach((node, index) => {
     const block = byId.get(blockIdOf(node) ?? '') ?? null;
     const keptText = kept[index] ?? null;
-    const unchanged = keptText !== null;
-    const next = kept[index + 1] ?? '';
     const beforeNode = index === 0 ? null : (nodes[index - 1] ?? null);
+    // A kept list that now stands after another with its markers is written again
+    // with other ones, or the two read back as one list (`listsWouldJoin`). An id
+    // on a line between them already keeps them apart.
+    const joinsBefore =
+      keptText !== null && !endsWithLineId(beforeNode) && listsWouldJoin(previousText, keptText);
+    const unchanged = keptText !== null && !joinsBefore;
+    const next = kept[index + 1] ?? '';
     const text = unchanged
       ? keptAfter(beforeNode, node, keptText)
       : withLineEnding(
@@ -739,20 +744,38 @@ const withLineEnding = (text: string, lineEnding: string): string =>
 
 const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 
+type ListMarker = ListMarkers['bullet'] | ListMarkers['ordered'];
+
+/** The marker a block's first line makes it an item with — a bullet, or a number's delimiter — or null. */
+function listMarkerOf(text: string): ListMarker | null {
+  const line = text.split(/\r?\n/, 1)[0] ?? '';
+  // `- - -` and `* * *` are separators, not lists (A21-04).
+  if (THEMATIC_BREAK.test(line)) return null;
+  const match = /^ {0,3}(?:\d{1,9}([.)])|([-*+]))(?:[ \t]|$)/.exec(line);
+  return match === null ? null : ((match[2] ?? match[1]) as ListMarker);
+}
+
+/**
+ * Whether `after`, written straight after `before`, would read as more of the
+ * same list: both begin as items with one marker. Two kept lists come to
+ * stand so when the block between them is moved or deleted (#569); the one
+ * after is then written again with the markers the one before does not use,
+ * so the note reads back as the two lists the person sees, each with its id.
+ */
+const listsWouldJoin = (before: string, after: string): boolean => {
+  const marker = listMarkerOf(before);
+  return marker !== null && marker === listMarkerOf(after);
+};
+
 /** The list markers neither neighbour's first line is written with (`ListMarkers`). */
 function markersBeside(before: string, after: string): ListMarkers {
-  const used = [before, after].map((text) => {
-    const line = text.split(/\r?\n/, 1)[0] ?? '';
-    // `- - -` and `* * *` are separators, not lists (A21-04).
-    if (THEMATIC_BREAK.test(line)) return null;
-    return /^ {0,3}(?:\d{1,9}([.)])|([-*+]))(?:[ \t]|$)/.exec(line);
-  });
-  const bullets = new Set(used.map((match) => match?.[2]));
-  const delimiters = new Set(used.map((match) => match?.[1]));
-  return {
-    bullet: (['-', '*', '+'] as const).find((bullet) => !bullets.has(bullet)) ?? '-',
-    ordered: (['.', ')'] as const).find((delimiter) => !delimiters.has(delimiter)) ?? '.',
-  };
+  const beside = [listMarkerOf(before), listMarkerOf(after)];
+  // Every marker of a kind beside it (three numbered lists in a row): the one before
+  // is written already, so its marker is the one to avoid; the one after is written
+  // again in its turn if it then joins.
+  const free = <Marker extends ListMarker>(all: readonly Marker[]): Marker =>
+    all.find((marker) => !beside.includes(marker)) ?? all.find((marker) => marker !== beside[0])!;
+  return { bullet: free(['-', '*', '+']), ordered: free(['.', ')']) };
 }
 
 function separatorBetween({

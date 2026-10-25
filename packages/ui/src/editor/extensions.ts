@@ -31,7 +31,8 @@ import { BlockId } from './block-id.ts';
 import { BlockAnchor } from './block-anchor.ts';
 import { RevealedBlock } from './revealed-block.ts';
 import { BlockEmbed, type TransclusionSource } from './block-embed.tsx';
-import { BlockHandle } from './block-handle.ts';
+import { BlockDrop } from './block-drop.ts';
+import { BlockActionSteps, BlockHandle } from './block-handle.ts';
 import type { BlockPicking } from './block-picking.ts';
 import { Bookmark, TopLevelDocument, type BookmarkSource } from './bookmark.tsx';
 import { LinkKeys } from './link-keys.ts';
@@ -51,6 +52,7 @@ import { PromoteLineButton, type PromoteLine } from './promote-line.ts';
 import { PersonChips, type PersonFor } from './person-chips.ts';
 import { RawBlock, type HighlightBlocks, type ReaderLinks } from './raw-block.ts';
 import { TombstoneGuard } from './tombstone-guard.ts';
+import { TrailingLine } from './trailing-line.ts';
 import { WikiLink } from './wiki-link.ts';
 import {
   WikiLinkSuggestion,
@@ -151,6 +153,8 @@ export function createEditorExtensions({
     }),
     PromoteLineButton.configure({ promote: promoteLine }),
     BlockHandle.configure({ highlights }),
+    BlockDrop,
+    BlockActionSteps,
     EscapeUnused,
   ];
 }
@@ -209,7 +213,10 @@ const baseExtensions = [
     codeBlock: false,
     // Where a dragged block will land (#569): a line drawn by the stylesheet, in the accent.
     dropcursor: { color: false, width: 2, class: 'editor-drop-line' },
+    // Replaced below by one that does not count a hidden tombstone as the note's end.
+    trailingNode: false,
   }),
+  TrailingLine,
   CodeBlockLowlight.configure({ lowlight, languageClassPrefix: 'language-' }),
   TaskList,
   TaskItem.configure({ nested: true }),

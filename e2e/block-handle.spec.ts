@@ -205,3 +205,21 @@ test("Delete on a highlight removes it by the note's write, which leaves its tom
   await expect(editor.locator('[data-highlight-block="kd0060"]')).toHaveCount(0);
   await expect(editor.locator('[data-highlight-block="kd0041"]')).toHaveCount(1);
 });
+
+test('⇧⌘↑ on the first block, where nothing can move, selects to the start as macOS does', async ({
+  page,
+}) => {
+  const { editor } = await openNote(page, null, 'Garden plan');
+  // The note's first block is its heading; "First line." is the second.
+  await caretAtLineEnd(editor.locator('h1', { hasText: 'Garden plan' }));
+  await page.keyboard.press('Meta+Shift+ArrowUp');
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+    .toContain('Garden plan');
+  await expect(editor.locator('h1, p')).toHaveText([
+    'Garden plan',
+    'First line.',
+    'Second line.',
+    'Third line.',
+  ]);
+});
