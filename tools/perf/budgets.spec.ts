@@ -478,6 +478,7 @@ async function everyAction(pass: Pass): Promise<void> {
   // Typed with the first note's editor waiting behind this one.
   await typeAndSave(pass, second);
   await pass.idle('Idle 3 s with a note open');
+  await handleBlocks(pass, second);
   await pass.budgeted('Split the window', [
     phase(() => page.keyboard.press('Shift+Meta+Backslash'), exists, PANE_2),
   ]);
@@ -748,6 +749,68 @@ async function typeAndSave(pass: Pass, title: string): Promise<void> {
     { settleFirst: false },
   );
   expect(await pass.vault.read(path)).toContain(TYPED);
+}
+
+const BLOCK_HANDLE = '[data-block-handle]:not([hidden])';
+
+/**
+ * A block's handle (#569): the pointer moved over the note's blocks, the
+ * handle following it — no React, no document change — then the list's
+ * second item dragged by its handle above the first, as ProseMirror's own
+ * drag. Its autosave is let finish before the next action.
+ */
+async function handleBlocks(pass: Pass, title: string): Promise<void> {
+  const { page } = pass;
+  const items = page.locator(`${editorOf(title)} li`);
+  const blocks = [page.locator(`${editorOf(title)} > p`).first(), items.nth(0), items.nth(1)];
+  const last = await items.nth(1).boundingBox();
+  if (last === null) throw new Error('block is not on screen');
+  await pass.budgeted('Hover a block', [
+    phase(
+      async () => {
+        for (const block of blocks) {
+          const box = await block.boundingBox();
+          if (box === null) throw new Error('block is not on screen');
+          for (const dx of [12, 24, 36]) {
+            await pass.input(() => page.mouse.move(box.x + dx, box.y + 6));
+          }
+        }
+      },
+      // Done when the handle has followed the pointer to the last block, not on the first it showed by.
+      ({ selector, top, bottom }) => {
+        const handle = document.querySelector(selector);
+        if (handle === null) return false;
+        const box = handle.getBoundingClientRect();
+        const centre = box.top + box.height / 2;
+        return centre >= top && centre <= bottom;
+      },
+      { selector: BLOCK_HANDLE, top: last.y, bottom: last.y + last.height },
+    ),
+  ]);
+  const second = (await items.nth(1).textContent()) ?? '';
+  const grab = await items.nth(1).boundingBox();
+  if (grab === null) throw new Error('block is not on screen');
+  await pass.budgeted('Drag a block', [
+    // The pointer was put at rest before the action: it comes back to the block to grab it.
+    phase(() => pass.input(() => page.mouse.move(grab.x + 12, grab.y + 6)), exists, BLOCK_HANDLE),
+    phase(
+      () =>
+        page.evaluate((selector) => {
+          const handle = document.querySelector('[data-block-handle]');
+          const first = document.querySelector(`${selector} li`);
+          if (handle === null || first === null) throw new Error('nothing to drag');
+          const box = first.getBoundingClientRect();
+          const init = { dataTransfer: new DataTransfer(), bubbles: true, cancelable: true };
+          handle.dispatchEvent(new DragEvent('dragstart', init));
+          const at = { ...init, clientX: box.left + 4, clientY: box.top + 2 };
+          first.dispatchEvent(new DragEvent('dragover', at));
+          first.dispatchEvent(new DragEvent('drop', at));
+          handle.dispatchEvent(new DragEvent('dragend', init));
+        }, editorOf(title)),
+      ({ selector, text }) => document.querySelector(`${selector} li`)?.textContent === text,
+      { selector: editorOf(title), text: second },
+    ),
+  ]);
 }
 
 const echoesSent = (page: Page) =>

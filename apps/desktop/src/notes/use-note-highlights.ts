@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   createHighlightReadMemo,
   editHighlightComment,
   literatureHighlightReader,
+  removeHighlight as removeHighlightFrom,
   type MarkdownPort,
   type OpenNote,
   type OpenNotes,
@@ -11,6 +12,7 @@ import {
 import { noteTitle, type StrandedComment, type VaultPath } from '@dfai/domain';
 import type { NoteHighlights } from '@dfai/ui';
 import type { Toasts } from '../toasts/toasts.ts';
+import { errorMessage } from '../query/error-message.ts';
 
 /**
  * A literature note's highlights as its pane draws them (#523): each quote
@@ -71,6 +73,31 @@ export function useNoteHighlights({
     },
     [fs, markdown, openNotes, flush, path, onChanged],
   );
+  // A block's Delete on a highlight (#569): the note's own write, which leaves a Kindle
+  // highlight's tombstone, after the pane's typing, as a comment is written. Each
+  // write reads the note as the one before it left it: two deletes in quick
+  // succession are both the person's word, and a write over a note another write
+  // is changing would be refused by the host, so they are taken one after another.
+  const removesQueued = useRef<Promise<void>>(Promise.resolve());
+  const removeHighlight = useCallback(
+    (id: string) => {
+      if (path === null) return;
+      const remove = async () => {
+        await flush();
+        await removeHighlightFrom({ fs, markdown, openNotes }, { path, id });
+        onChanged();
+      };
+      // The pane always has its toasts; a host without them (a test) hears of nothing.
+      // A failure is told of here, and the queue goes on to the next delete.
+      removesQueued.current = removesQueued.current.then(remove).catch((error: unknown) => {
+        toasts?.show({
+          message: `The highlight could not be deleted: ${errorMessage(error)}`,
+          tone: 'error',
+        });
+      });
+    },
+    [fs, markdown, openNotes, flush, path, onChanged, toasts],
+  );
   const recovered = useMemo(
     () => (path === null || kept === undefined ? undefined : kept.offered(path)),
     [path, kept],
@@ -101,11 +128,12 @@ export function useNoteHighlights({
         : {
             viewOf,
             editComment,
+            removeHighlight,
             ...(onUnwrittenComments !== undefined && { onUnwrittenComments }),
             ...(onWritePending !== undefined && { onWritePending }),
             ...(recovered !== undefined && recovered.length > 0 && { recovered }),
           },
-    [viewOf, editComment, onUnwrittenComments, onWritePending, recovered],
+    [viewOf, editComment, removeHighlight, onUnwrittenComments, onWritePending, recovered],
   );
 }
 

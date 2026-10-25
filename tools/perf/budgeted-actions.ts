@@ -11,6 +11,9 @@ export const BUDGETED_ACTIONS = [
   'Type 10 characters in a note',
   'One autosave and its watcher echo',
   'Idle 3 s with a note open',
+  // A block's handle (#569): following the pointer, then a block dragged by it.
+  'Hover a block',
+  'Drag a block',
   'Split the window',
   'Focus the other pane',
   'Close a pane',

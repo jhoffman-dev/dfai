@@ -9,6 +9,7 @@ export {
 export type { MarkdownDocument } from './markdown-document.ts';
 export { KeyAsWritten } from './frontmatter-key.ts';
 export { BLOCK_ID_ATTR, blockIdOf } from './editor-node.ts';
+export { TABLE_CELL_TYPES, fitsInTableCell } from './table-cell.ts';
 export { withoutBlockIds, withoutMarkerLines } from './marker-lines.ts';
 export type { EditorDocument, EditorMark, EditorNode } from './editor-node.ts';
 export type { AnchorSlot, ParsedBody, SourceBlock } from './source-block.ts';

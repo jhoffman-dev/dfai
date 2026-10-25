@@ -615,19 +615,31 @@ export function serializeMarkdownBody({
   nodes.forEach((node, index) => {
     const block = byId.get(blockIdOf(node) ?? '') ?? null;
     const keptText = kept[index] ?? null;
-    const unchanged = keptText !== null;
-    const next = kept[index + 1] ?? '';
     const beforeNode = index === 0 ? null : (nodes[index - 1] ?? null);
+    // A kept list that now stands after another with its markers is written again
+    // with other ones, or the two read back as one list (`listsWouldJoin`). An id
+    // on a line between them already keeps them apart.
+    const joinsBefore =
+      keptText !== null && !endsWithLineId(beforeNode) && listsWouldJoin(previousText, keptText);
+    const unchanged = keptText !== null && !joinsBefore;
+    const next = kept[index + 1] ?? '';
+    // The list that joins is re-marked in its own bytes where they read back as
+    // it (ADR-0003, addendum), and written afresh only where they do not.
+    const remarked =
+      keptText !== null && joinsBefore
+        ? withMarkersChanged(node, keptText, markersBeside(previousText, next))
+        : null;
     const text = unchanged
       ? keptAfter(beforeNode, node, keptText)
-      : withLineEnding(
+      : (remarked ??
+        withLineEnding(
           renderBlock(node, {
             written: block === null ? NOTHING_WRITTEN : writtenIn(block.source, node),
             definitions: definitionsOfNote(),
             markers: markersBeside(previousText, next),
           }),
           lineEnding,
-        );
+        ));
 
     if (index === 0) {
       // Whatever precedes the first block — the blank line after frontmatter, say —
@@ -644,7 +656,9 @@ export function serializeMarkdownBody({
     }
 
     pieces.push(text);
-    previous = unchanged ? block : null;
+    // A re-marked list still stands in its own bytes, so the whitespace that
+    // followed it in the file is still its own to keep.
+    previous = unchanged || remarked !== null ? block : null;
     previousText = text;
   });
 
@@ -739,20 +753,72 @@ const withLineEnding = (text: string, lineEnding: string): string =>
 
 const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 
+type ListMarker = ListMarkers['bullet'] | ListMarkers['ordered'];
+
+/** The marker a block's first line makes it an item with — a bullet, or a number's delimiter — or null. */
+function listMarkerOf(text: string): ListMarker | null {
+  const line = text.split(/\r?\n/, 1)[0] ?? '';
+  // `- - -` and `* * *` are separators, not lists (A21-04).
+  if (THEMATIC_BREAK.test(line)) return null;
+  const match = /^ {0,3}(?:\d{1,9}([.)])|([-*+]))(?:[ \t]|$)/.exec(line);
+  return match === null ? null : ((match[2] ?? match[1]) as ListMarker);
+}
+
+/**
+ * Whether `after`, written straight after `before`, would read as more of the
+ * same list: both begin as items with one marker. Two kept lists come to
+ * stand so when the block between them is moved or deleted (#569); the one
+ * after is then written again with the markers the one before does not use,
+ * so the note reads back as the two lists the person sees, each with its id.
+ */
+const listsWouldJoin = (before: string, after: string): boolean => {
+  const marker = listMarkerOf(before);
+  return marker !== null && marker === listMarkerOf(after);
+};
+
 /** The list markers neither neighbour's first line is written with (`ListMarkers`). */
 function markersBeside(before: string, after: string): ListMarkers {
-  const used = [before, after].map((text) => {
-    const line = text.split(/\r?\n/, 1)[0] ?? '';
-    // `- - -` and `* * *` are separators, not lists (A21-04).
-    if (THEMATIC_BREAK.test(line)) return null;
-    return /^ {0,3}(?:\d{1,9}([.)])|([-*+]))(?:[ \t]|$)/.exec(line);
-  });
-  const bullets = new Set(used.map((match) => match?.[2]));
-  const delimiters = new Set(used.map((match) => match?.[1]));
-  return {
-    bullet: (['-', '*', '+'] as const).find((bullet) => !bullets.has(bullet)) ?? '-',
-    ordered: (['.', ')'] as const).find((delimiter) => !delimiters.has(delimiter)) ?? '.',
-  };
+  const beside = [listMarkerOf(before), listMarkerOf(after)];
+  // Every marker of a kind beside it (three numbered lists in a row): the one before
+  // is written already, so its marker is the one to avoid; the one after is written
+  // again in its turn if it then joins.
+  const free = <Marker extends ListMarker>(all: readonly Marker[]): Marker =>
+    all.find((marker) => !beside.includes(marker)) ?? all.find((marker) => marker !== beside[0])!;
+  return { bullet: free(['-', '*', '+']), ordered: free(['.', ')']) };
+}
+
+/**
+ * A kept list's bytes with only its marker characters changed to `markers`:
+ * the bullet, or the number's delimiter, of every item at the list's own
+ * level — a nested list keeps its own — and every other byte as it was, its
+ * escapes, spacing and ids among them (ADR-0003, addendum). Null when the
+ * re-marked bytes do not read back as the list `node` is (`- * * *` made
+ * `* * * *` is a rule), which is then written afresh instead.
+ */
+function withMarkersChanged(node: EditorNode, text: string, markers: ListMarkers): string | null {
+  const [read, ...more] = readBlocks(parseBodyToMdast(text), text);
+  if (read === undefined || more.length > 0 || read.child.type !== 'list') return null;
+  const marker = read.child.ordered === true ? markers.ordered : markers.bullet;
+  const pieces: string[] = [];
+  let at = 0;
+  for (const item of read.child.children) {
+    const start = item.position?.start.offset;
+    if (start === undefined) return null;
+    const digits = /^\d{0,9}/.exec(text.slice(start, start + 9))?.[0] ?? '';
+    const markerAt = start + digits.length;
+    if (!/^[-*+.)]$/.test(text.charAt(markerAt))) return null;
+    pieces.push(text.slice(at, markerAt), marker);
+    at = markerAt + 1;
+  }
+  pieces.push(text.slice(at));
+  const remarked = pieces.join('');
+  return readsAsBlock(remarked, node) ? remarked : null;
+}
+
+/** Whether `text` reads back as the one block `node` is, its ids included. */
+function readsAsBlock(text: string, node: EditorNode): boolean {
+  const [read, ...more] = readBlocks(parseBodyToMdast(text), text);
+  return read !== undefined && more.length === 0 && renderSafely(read.node) === renderSafely(node);
 }
 
 function separatorBetween({
