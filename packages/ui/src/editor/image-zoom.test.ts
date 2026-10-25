@@ -8,6 +8,8 @@ import {
   zoomedIn,
   zoomedOut,
   zoomLabel,
+  clampPan,
+  panAfterZoom,
 } from './image-zoom.ts';
 
 describe('fitZoom', () => {
@@ -31,10 +33,15 @@ describe('fitZoom', () => {
     expect(fitZoom({ image: { width: 300, height: 200 }, room: { width: 0, height: 0 } })).toBe(1);
   });
 
-  it('is never below the smallest zoom', () => {
-    expect(
-      fitZoom({ image: { width: 100000, height: 10 }, room: { width: 100, height: 100 } }),
-    ).toBe(MIN_ZOOM);
+  it('goes below the smallest zoom when an image needs it, and ⌘− from there zooms no further in', () => {
+    const fit = fitZoom({
+      image: { width: 100000, height: 10 },
+      room: { width: 100, height: 100 },
+    });
+    expect(fit).toBe(0.001);
+    expect(zoomedOut(fit)).toBe(fit);
+    expect(zoomedByWheel(fit, 100)).toBeLessThanOrEqual(fit);
+    expect(zoomedIn(fit)).toBe(MIN_ZOOM);
   });
 });
 
@@ -85,5 +92,31 @@ describe('zoomLabel', () => {
   it('says the zoom as a whole percentage', () => {
     expect(zoomLabel(0.333)).toBe('33%');
     expect(zoomLabel(1.25)).toBe('125%');
+  });
+});
+
+describe('panAfterZoom', () => {
+  it('keeps the point under the anchor still', () => {
+    // The image point under the pointer, 100px right of centre, is (100 - 20) / 1 from the image's centre.
+    const pan = panAfterZoom({ pan: { x: 20, y: 0 }, from: 1, to: 2, anchor: { x: 100, y: 0 } });
+    expect(pan).toEqual({ x: -60, y: 0 });
+    expect((100 - pan.x) / 2).toBe((100 - 20) / 1);
+  });
+
+  it('zooms about the centre when no anchor is given, scaling the pan', () => {
+    expect(panAfterZoom({ pan: { x: 40, y: -10 }, from: 1, to: 2 })).toEqual({ x: 80, y: -20 });
+  });
+});
+
+describe('clampPan', () => {
+  const drawn = { width: 1000, height: 750 };
+  const room = { width: 800, height: 600 };
+
+  it('leaves a pan that keeps the image on screen as it is', () => {
+    expect(clampPan({ pan: { x: 200, y: -100 }, drawn, room })).toEqual({ x: 200, y: -100 });
+  });
+
+  it('holds a pan so 48px of the image stays in the window', () => {
+    expect(clampPan({ pan: { x: 99999, y: -99999 }, drawn, room })).toEqual({ x: 852, y: -627 });
   });
 });

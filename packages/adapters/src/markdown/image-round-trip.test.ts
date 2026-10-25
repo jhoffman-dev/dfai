@@ -260,3 +260,75 @@ describe('an image’s size on the page (#568)', () => {
     expect(typedAfter('![[diagram.png|300]]')).toBe('![[diagram.png|300]] more\n');
   });
 });
+
+/** `node` with `change` applied to every image in it. */
+function withImages(node: EditorNode, change: (image: EditorNode) => EditorNode): EditorNode {
+  if (node.type === 'image') return change(node);
+  if (node.content === undefined) return node;
+  return { ...node, content: node.content.map((child) => withImages(child, change)) };
+}
+
+function firstImage(node: EditorNode): Record<string, unknown> | undefined {
+  if (node.type === 'image') return node.attrs;
+  for (const child of node.content ?? []) {
+    const found = firstImage(child);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+describe('an image written afresh, where the words meet the size (#568)', () => {
+  const TABLE = '| Photo | Notes |\n| - | - |\n| ![shot](a.png) | kept |\n';
+
+  /** The table with its image changed, written whole: nothing of it is kept from the original. */
+  const tableWritten = (change: (image: EditorNode) => EditorNode): string => {
+    const doc = withImages(parseMarkdownBody(TABLE).doc as EditorNode, change) as EditorDocument;
+    return serializeMarkdownBody({ originalBody: '', parsed: parseMarkdownBody(''), doc });
+  };
+
+  it('in a table cell, writes the size with its pipe escaped, and the table stays a table', () => {
+    const saved = tableWritten((image) => ({
+      ...image,
+      attrs: { ...image.attrs, width: 480, height: null },
+    }));
+    expect(saved).toContain('| ![shot\\|480](a.png) |');
+    const read = parseMarkdownBody(saved).doc;
+    expect(read.content[0]?.type).toBe('table');
+    expect(firstImage(read as EditorNode)).toEqual({
+      src: 'a.png',
+      alt: 'shot',
+      title: null,
+      width: 480,
+      height: null,
+    });
+  });
+
+  it('in a table cell, keeps alt text that ends like a size as words', () => {
+    const saved = tableWritten((image) => ({
+      ...image,
+      attrs: { ...image.attrs, alt: 'Route 66|2024' },
+    }));
+    const read = parseMarkdownBody(saved).doc;
+    expect(read.content[0]?.type).toBe('table');
+    expect(firstImage(read as EditorNode)).toEqual({
+      src: 'a.png',
+      alt: 'Route 66|2024',
+      title: null,
+    });
+  });
+
+  it('in a paragraph, escapes the pipe of alt text that ends like a size', () => {
+    const doc: EditorDocument = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'image', attrs: { src: 'a.png', alt: 'Route 66|2024', title: null } }],
+        },
+      ],
+    };
+    expect(serializeMarkdownBody({ originalBody: '', parsed: parseMarkdownBody(''), doc })).toBe(
+      '![Route 66\\|2024](a.png)\n',
+    );
+  });
+});

@@ -1,34 +1,18 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import {
-  clampZoom,
-  fitZoom,
-  toggledZoom,
-  zoomedByWheel,
-  zoomedIn,
-  zoomedOut,
-  zoomLabel,
-} from './image-zoom.ts';
+  usePinchAndWheel,
+  useRoomSize,
+  useZoomedView,
+  type ZoomedView,
+} from './image-lightbox-view.ts';
+import { toggledZoom, zoomedIn, zoomedOut, zoomLabel, type Point } from './image-zoom.ts';
 
 /** An image of the note, as the viewer is handed it. */
 export interface LightboxImage {
   readonly src: string;
   readonly alt: string;
 }
-
-interface Point {
-  readonly x: number;
-  readonly y: number;
-}
-
-const CENTRED: Point = { x: 0, y: 0 };
 
 /**
  * A note's images, one at a time, as large as the window holds them (#568).
@@ -48,12 +32,14 @@ export function ImageLightbox({
   start: number;
   loadImage: (src: string) => Promise<string | null>;
   onClose: () => void;
-  onReturnFocus: () => void;
+  /** Puts the focus back where the viewer was opened from; false leaves it to the dialog. */
+  onReturnFocus: () => boolean;
 }) {
   const [index, setIndex] = useState(start);
   const image = images[index];
-  const view = useZoomedView();
-  const url = useLoadedUrl(image?.src ?? null, loadImage);
+  const src = image?.src ?? '';
+  const view = useZoomedView(src);
+  const loaded = useLoadedUrl(src, loadImage);
 
   const step = (by: number) => {
     const next = index + by;
@@ -79,15 +65,19 @@ export function ImageLightbox({
         <Dialog.Popup
           className="lightbox"
           onKeyDown={onKeyDown}
-          finalFocus={() => {
-            onReturnFocus();
-            return false;
-          }}
+          finalFocus={() => !onReturnFocus()}
         >
           <Dialog.Title className="visually-hidden">
             {image?.alt !== undefined && image.alt !== '' ? image.alt : 'Image'}
           </Dialog.Title>
-          <Stage url={url} alt={image?.alt ?? ''} view={view} onClose={onClose} />
+          <Stage
+            key={index}
+            src={src}
+            loaded={loaded}
+            alt={image?.alt ?? ''}
+            view={view}
+            onClose={onClose}
+          />
           <ZoomBar view={view} count={images.length} index={index} onStep={step} />
         </Dialog.Popup>
       </Dialog.Portal>
@@ -95,73 +85,30 @@ export function ImageLightbox({
   );
 }
 
-/** The image's url once it is loaded; null while it loads, or when it cannot be. */
-function useLoadedUrl(
-  src: string | null,
-  loadImage: (src: string) => Promise<string | null>,
-): string | null {
+/** An image's url as it loads: none yet, or none to be had. */
+type Loaded =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'ready'; readonly url: string };
+
+function useLoadedUrl(src: string, loadImage: (src: string) => Promise<string | null>): Loaded {
   const [loaded, setLoaded] = useState<{ src: string; url: string | null } | null>(null);
   useEffect(() => {
-    if (src === null) return;
     let cancelled = false;
     loadImage(src)
       .then((url) => {
         if (!cancelled) setLoaded({ src, url });
       })
       .catch(() => {
-        // Shown as "could not be shown", which is all a failure here can say.
+        // Shown as "couldn't be shown", which is all a failure here can say.
         if (!cancelled) setLoaded({ src, url: null });
       });
     return () => {
       cancelled = true;
     };
   }, [src, loadImage]);
-  return loaded !== null && loaded.src === src ? loaded.url : null;
-}
-
-/** What the viewer is showing: the zoom (null is fit), how far it is panned, and the sizes fit needs. */
-interface ZoomedView {
-  readonly zoom: number;
-  readonly fit: number;
-  readonly pan: Point;
-  readonly natural: { width: number; height: number };
-  set: (zoom: number | null) => void;
-  panBy: (by: Point) => void;
-  reset: () => void;
-  measure: (sizes: {
-    natural?: { width: number; height: number };
-    room?: { width: number; height: number };
-  }) => void;
-}
-
-function useZoomedView(): ZoomedView {
-  const [chosen, setChosen] = useState<number | null>(null);
-  const [pan, setPan] = useState<Point>(CENTRED);
-  const [natural, setNatural] = useState({ width: 0, height: 0 });
-  const [room, setRoom] = useState({ width: 0, height: 0 });
-  const fit = fitZoom({ image: natural, room });
-  const zoom = chosen ?? fit;
-  return {
-    zoom,
-    fit,
-    pan,
-    natural,
-    set: (next) => {
-      setChosen(next);
-      // Back at fit there is nothing to pan to.
-      if (next === null || next <= fit) setPan(CENTRED);
-    },
-    panBy: (by) => setPan((at) => ({ x: at.x + by.x, y: at.y + by.y })),
-    reset: () => {
-      setChosen(null);
-      setPan(CENTRED);
-      setNatural({ width: 0, height: 0 });
-    },
-    measure: (sizes) => {
-      if (sizes.natural !== undefined) setNatural(sizes.natural);
-      if (sizes.room !== undefined) setRoom(sizes.room);
-    },
-  };
+  if (loaded === null || loaded.src !== src) return { kind: 'loading' };
+  return loaded.url === null ? { kind: 'failed' } : { kind: 'ready', url: loaded.url };
 }
 
 /** ⌘+ / ⌘= in, ⌘− out, ⌘0 back to fit. True when the key was one of them. */
@@ -185,24 +132,10 @@ function stepKey(event: KeyboardEvent, step: (by: number) => void): boolean {
 /** Moves under a pointer that still count as a click rather than a pan. */
 const CLICK_SLOP = 3;
 
-/** The window the image is shown in: a click on it beside the image closes the viewer. */
-function Stage({
-  url,
-  alt,
-  view,
-  onClose,
-}: {
-  url: string | null;
-  alt: string;
-  view: ZoomedView;
-  onClose: () => void;
-}) {
-  const stage = useRef<HTMLDivElement>(null);
+/** Drag to pan a zoomed image; `panned` says whether the last press moved it, so it is no click. */
+function usePanning(view: ZoomedView) {
   const panning = useRef<{ last: Point; moved: number } | null>(null);
   const panned = useRef(false);
-  usePinchAndWheel(stage, view);
-  useRoomSize(stage, view);
-
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     panned.current = false;
     if (view.zoom <= view.fit || event.button !== 0) return;
@@ -218,101 +151,75 @@ function Stage({
     if (moved > CLICK_SLOP) panned.current = true;
     view.panBy(by);
   };
-  const endPan = () => {
+  const end = () => {
     panning.current = null;
   };
+  const handlers = { onPointerDown, onPointerMove, onPointerUp: end, onPointerCancel: end };
+  return { handlers, panned };
+}
 
+/** The window the image is shown in: a click on it beside the image closes the viewer. */
+function Stage({
+  src,
+  loaded,
+  alt,
+  view,
+  onClose,
+}: {
+  src: string;
+  loaded: Loaded;
+  alt: string;
+  view: ZoomedView;
+  onClose: () => void;
+}) {
+  const stage = useRef<HTMLDivElement>(null);
+  const [broken, setBroken] = useState(false);
+  const { handlers, panned } = usePanning(view);
+  usePinchAndWheel(stage, view);
+  useRoomSize(stage, view);
   const { zoom, natural, pan } = view;
-  const sized = natural.width > 0;
+
   return (
     <div
       ref={stage}
       className={zoom > view.fit ? 'lightbox__stage lightbox__stage--zoomed' : 'lightbox__stage'}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endPan}
-      onPointerCancel={endPan}
+      {...handlers}
       onClick={(event) => {
         if (event.target === event.currentTarget && !panned.current) onClose();
       }}
       onDoubleClick={() => view.set(toggledZoom(zoom, view.fit))}
     >
-      {url === null ? (
+      {loaded.kind === 'failed' || broken ? (
+        <p className="lightbox__status">This picture couldn’t be shown</p>
+      ) : loaded.kind === 'loading' ? (
         <p className="lightbox__status">Loading…</p>
       ) : (
         <img
           className="lightbox__img"
-          src={url}
+          src={loaded.url}
           alt={alt}
           draggable={false}
-          onLoad={(event) => {
-            const img = event.currentTarget;
-            view.measure({ natural: { width: img.naturalWidth, height: img.naturalHeight } });
+          // A picture the webview has already drawn may not load again: measured as it mounts.
+          ref={(img) => {
+            if (img !== null && img.complete && img.naturalWidth > 0) measure(img);
           }}
+          onLoad={(event) => measure(event.currentTarget)}
+          onError={() => setBroken(true)}
           style={{
-            ...(sized && { width: natural.width * zoom, height: natural.height * zoom }),
+            ...(natural.width > 0 && {
+              width: natural.width * zoom,
+              height: natural.height * zoom,
+            }),
             transform: `translate(${pan.x}px, ${pan.y}px)`,
           }}
         />
       )}
     </div>
   );
-}
 
-/** Pinch and ⌘-scroll zoom. Bound by hand: React's wheel listener is passive, so it cannot stop the page's own. */
-function usePinchAndWheel(stage: RefObject<HTMLDivElement | null>, view: ZoomedView) {
-  const latest = useRef(view);
-  useEffect(() => {
-    latest.current = view;
-  });
-  useEffect(() => {
-    const element = stage.current;
-    if (element === null) return;
-    const onWheel = (event: WheelEvent) => {
-      // A trackpad pinch arrives as a wheel with the control key held.
-      if (!(event.metaKey || event.ctrlKey)) return;
-      event.preventDefault();
-      latest.current.set(zoomedByWheel(latest.current.zoom, event.deltaY));
-    };
-    // WebKit hands a pinch over as gesture events, with the scale since it began.
-    let pinchedFrom = 1;
-    const onGestureStart = (event: Event) => {
-      event.preventDefault();
-      pinchedFrom = latest.current.zoom;
-    };
-    const onGestureChange = (event: Event) => {
-      event.preventDefault();
-      const { scale } = event as Event & { scale?: number };
-      if (typeof scale === 'number') latest.current.set(clampZoom(pinchedFrom * scale));
-    };
-    element.addEventListener('wheel', onWheel, { passive: false });
-    element.addEventListener('gesturestart', onGestureStart);
-    element.addEventListener('gesturechange', onGestureChange);
-    return () => {
-      element.removeEventListener('wheel', onWheel);
-      element.removeEventListener('gesturestart', onGestureStart);
-      element.removeEventListener('gesturechange', onGestureChange);
-    };
-  }, [stage]);
-}
-
-/** Measures the stage, which fit is worked out against, now and whenever the window changes. */
-function useRoomSize(stage: RefObject<HTMLDivElement | null>, view: ZoomedView) {
-  const measure = useRef(view.measure);
-  useEffect(() => {
-    measure.current = view.measure;
-  });
-  useEffect(() => {
-    const element = stage.current;
-    if (element === null) return;
-    const read = () =>
-      measure.current({ room: { width: element.clientWidth, height: element.clientHeight } });
-    read();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(read);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [stage]);
+  function measure(img: HTMLImageElement) {
+    view.measureImage(src, { width: img.naturalWidth, height: img.naturalHeight });
+  }
 }
 
 /** The viewer's controls: zoom out, the zoom, zoom in, fit, the images either side, and close. */

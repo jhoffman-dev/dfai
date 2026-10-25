@@ -82,11 +82,13 @@ export type { ImageSource } from './image-source.ts';
 export {
   MIN_IMAGE_WIDTH,
   readImageAlt,
+  readImageMarkdown,
   resizedImageWidth,
   withImageSize,
+  withImageSizeAdded,
   writeImageAlt,
 } from './image-size.ts';
-export type { ImageSize } from './image-size.ts';
+export type { ImagePlace, ImageSize } from './image-size.ts';
 export { plainText } from './plain-text.ts';
 export { nodeText } from './node-text.ts';
 export {

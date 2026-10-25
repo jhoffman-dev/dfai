@@ -970,8 +970,8 @@
   box-shadow: 0 0 0 2px var(--focus);
 }
 
-/* A click on an image opens it larger (#568). */
-.editor[contenteditable='true'] .image__img {
+/* A click on an image opens it larger (#568), wherever it is shown. */
+.image__img {
   cursor: zoom-in;
 }
 
@@ -1008,9 +1008,10 @@
   opacity: 1;
 }
 
-/* A note that ends in an image has room under it: a click there goes to a
-   new line after the image (image-room.ts). */
-.editor:has(> p:last-child .image) {
+/* A note whose last line ends in an image has room under it while it is
+   edited: a click there goes to a new line after the image (image-room.ts
+   marks the line). */
+.editor[contenteditable='true']:has(> p.image-room-after:last-child) {
   padding-bottom: 2.5em;
 }
 

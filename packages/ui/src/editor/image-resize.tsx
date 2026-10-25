@@ -3,6 +3,7 @@ import { resizedImageWidth } from '@dfai/domain';
 
 interface Drag {
   readonly fromX: number;
+  /** The width it was drawn at when the drag began, in whole pixels. */
   readonly fromWidth: number;
   readonly column: number;
   /** 1 for the right handle, which widens as it moves right; -1 for the left. */
@@ -14,15 +15,19 @@ interface Drag {
  * The handles either side of an image that resize it (#568). A drag draws
  * the new width as it goes (`onDrag`) and hands it over once, on release
  * (`onRelease`), so the note is written once and one undo puts it back. A
- * double-click on a handle goes back to the image's own size (`onReset`).
+ * drag released where it began, or given up on by the pointer, writes nothing
+ * and is drawn as before (`onCancel`). A double-click on a handle goes back
+ * to the image's own size (`onReset`).
  */
 export function ImageResizeHandles({
   onDrag,
   onRelease,
+  onCancel,
   onReset,
 }: {
   onDrag: (width: number) => void;
   onRelease: (width: number) => void;
+  onCancel: () => void;
   onReset: () => void;
 }) {
   const drag = useRef<Drag | null>(null);
@@ -37,7 +42,7 @@ export function ImageResizeHandles({
     event.currentTarget.setPointerCapture?.(event.pointerId);
     drag.current = {
       fromX: event.clientX,
-      fromWidth: image.getBoundingClientRect().width,
+      fromWidth: Math.round(image.getBoundingClientRect().width),
       column: columnWidth(image),
       sign,
       width: null,
@@ -53,7 +58,14 @@ export function ImageResizeHandles({
   const onPointerUp = () => {
     const at = drag.current;
     drag.current = null;
-    if (at !== null && at.width !== null) onRelease(at.width);
+    if (at === null) return;
+    if (at.width === null || at.width === at.fromWidth) onCancel();
+    else onRelease(at.width);
+  };
+  const onPointerCancel = () => {
+    if (drag.current === null) return;
+    drag.current = null;
+    onCancel();
   };
 
   const handle = (side: 'left' | 'right', sign: 1 | -1) => (
@@ -66,7 +78,7 @@ export function ImageResizeHandles({
       onPointerDown={(event) => onPointerDown(event, sign)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onDragStart={(event) => event.preventDefault()}
       onDoubleClick={(event) => {
         event.preventDefault();

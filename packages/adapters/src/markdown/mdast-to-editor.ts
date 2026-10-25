@@ -1,13 +1,13 @@
 import {
   BLOCK_ANCHOR_ATTR,
   parseCalloutMarker,
-  readImageAlt,
   readWikiLink,
   standaloneBlockAnchor,
   type EditorMark,
   type EditorNode,
 } from '@dfai/domain';
 import { paragraphAnchor, withoutTrailingAnchor } from './block-anchors.ts';
+import { imageAltOf, readImageSizes } from './image-alt.ts';
 import type { Nodes as MdastNode, Parent as MdastParent, PhrasingContent } from 'mdast';
 
 /**
@@ -19,6 +19,7 @@ import type { Nodes as MdastNode, Parent as MdastParent, PhrasingContent } from 
  * approximated and quietly rewritten.
  */
 export function mdastBlockToEditorNode(node: MdastNode, body: string): EditorNode | null {
+  readImageSizes(node, body);
   switch (node.type) {
     case 'paragraph': {
       const content = inlineContent(node.children);
@@ -321,19 +322,12 @@ function inlineToEditorNodes(
 }
 
 /**
- * A wiki link, which the parser reads as one token (`wiki-link-syntax.ts`),
- * so nothing inside it is markup, and `\[\[x]]`, escaped, stays text. Its
- * value is the link as written, read by the same grammar that found it; were
- * the two ever to disagree, the block is kept as its source (null).
- */
-/**
  * An image's attributes. A size at the end of its alt text (`![chart|400](…)`,
  * #568) is its own attribute, so the alt text field shows only the words;
  * only a sized image carries one, so an unsized image's node is as before.
  */
 function imageAttrs(node: Extract<PhrasingContent, { type: 'image' }>): Record<string, unknown> {
-  const { alt, size } =
-    typeof node.alt === 'string' ? readImageAlt(node.alt) : { alt: null, size: null };
+  const { alt, size } = imageAltOf(node);
   return {
     src: node.url,
     alt,
@@ -342,6 +336,12 @@ function imageAttrs(node: Extract<PhrasingContent, { type: 'image' }>): Record<s
   };
 }
 
+/**
+ * A wiki link, which the parser reads as one token (`wiki-link-syntax.ts`),
+ * so nothing inside it is markup, and `\[\[x]]`, escaped, stays text. Its
+ * value is the link as written, read by the same grammar that found it; were
+ * the two ever to disagree, the block is kept as its source (null).
+ */
 function wikiLinkOf(value: string, marks: readonly EditorMark[]): EditorNode[] | null {
   const withMarks = marks.length > 0 ? { marks } : {};
   const link = readWikiLink(value);

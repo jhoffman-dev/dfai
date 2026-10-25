@@ -64,8 +64,10 @@ function ImageView({ node, extension, selected, editor, updateAttributes, getPos
             alt={alt}
             title={src}
             style={shownWidth === null ? undefined : { width: `${shownWidth}px` }}
-            onClick={() => {
-              if (editor.isEditable) setViewing(imagesAround(editor, getPos()));
+            onClick={(event) => {
+              // Opened wherever the image is shown; a card it is in is not opened as well.
+              event.stopPropagation();
+              setViewing(imagesAround(editor, getPos()));
             }}
           />
         )
@@ -73,6 +75,7 @@ function ImageView({ node, extension, selected, editor, updateAttributes, getPos
       {editor.isEditable && url !== null && (
         <ImageResizeHandles
           onDrag={setDragWidth}
+          onCancel={() => setDragWidth(null)}
           onRelease={(released) => {
             setDragWidth(null);
             updateAttributes({ width: released, height: null });
@@ -87,8 +90,10 @@ function ImageView({ node, extension, selected, editor, updateAttributes, getPos
           loadImage={loadImage}
           onClose={() => setViewing(null)}
           onReturnFocus={() => {
+            // Read-only, there is no selection to go back to: the dialog's own restore does.
             const at = getPos();
-            if (at !== undefined) editor.chain().focus().setNodeSelection(at).run();
+            if (!editor.isEditable || at === undefined) return false;
+            return editor.chain().focus().setNodeSelection(at).run();
           }}
         />
       )}

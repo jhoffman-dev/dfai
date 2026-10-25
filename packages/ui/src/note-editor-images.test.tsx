@@ -6,6 +6,7 @@ import { undo } from '@tiptap/pm/history';
 import { NodeSelection } from '@tiptap/pm/state';
 import type { EditorDocument, EditorNode } from '@dfai/domain';
 import { NoteEditor } from './note-editor.tsx';
+import { NoteReading } from './note-reading.tsx';
 
 /** #568: an image opens larger in a viewer, resizes on the page, and leaves room after it. */
 
@@ -123,6 +124,42 @@ describe('the image viewer', () => {
     fireEvent.keyDown(viewer(), { key: '=', metaKey: true });
     expect(shown.style.width).toBe('500px');
     expect(shown.style.height).toBe('250px');
+  });
+
+  it('zooms on a ⌘-scroll or a pinch, and not on a plain scroll', async () => {
+    renderNote(ONE_IMAGE);
+    fireEvent.click(await pageImage('chart.png'));
+    const stage = viewer().querySelector('.lightbox__stage')!;
+
+    fireEvent.wheel(stage, { deltaY: -100 });
+    expect(zoom().textContent).toBe('100%');
+    fireEvent.wheel(stage, { deltaY: -100, metaKey: true });
+    expect(zoom().textContent).toBe('165%');
+    fireEvent.wheel(stage, { deltaY: 200, ctrlKey: true });
+    expect(zoom().textContent).toBe('61%');
+  });
+
+  it('pans a zoomed image by a drag, and a drag is not a click that closes it', async () => {
+    renderNote(ONE_IMAGE);
+    fireEvent.click(await pageImage('chart.png'));
+    const shown = await waitFor(() => {
+      const found = viewer().querySelector('img.lightbox__img');
+      if (!(found instanceof HTMLImageElement)) throw new Error('not loaded');
+      return found;
+    });
+    Object.defineProperty(shown, 'naturalWidth', { value: 400 });
+    Object.defineProperty(shown, 'naturalHeight', { value: 200 });
+    fireEvent.load(shown);
+    fireEvent.keyDown(viewer(), { key: '=', metaKey: true });
+    const stage = viewer().querySelector('.lightbox__stage')!;
+
+    fireEvent.pointerDown(stage, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(stage, { clientX: 40, clientY: 30, pointerId: 1 });
+    fireEvent.pointerUp(stage, { clientX: 40, clientY: 30, pointerId: 1 });
+    fireEvent.click(stage);
+
+    expect(shown.style.transform).toBe('translate(30px, 20px)');
+    expect(viewer()).toBeTruthy();
   });
 
   it('closes on Escape and hands the focus back to the image, selected', async () => {
@@ -376,5 +413,50 @@ describe('room to type beside an image', () => {
 
     fireEvent.mouseDown(editor.view.dom, { button: 0, clientY: 60 });
     expect(blocks(editor)).toHaveLength(2);
+  });
+
+  it('marks the last line for room under it only while it ends in an image', async () => {
+    const { container } = renderNote({
+      type: 'doc',
+      content: [paragraph(words('Before.')), paragraph(image('chart.png'), words(' a caption'))],
+    });
+    const editor = await editorIn(container);
+    expect(container.querySelector('.ProseMirror > p.image-room-after')).toBeNull();
+
+    // The caption is the last line's text after the image: without it the line ends in the image.
+    act(() => {
+      editor.commands.deleteRange({ from: 11, to: 11 + ' a caption'.length });
+    });
+    expect(container.querySelector('.ProseMirror > p:last-child.image-room-after')).not.toBeNull();
+
+    act(() => {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' again');
+    });
+    expect(container.querySelector('.ProseMirror > p.image-room-after')).toBeNull();
+  });
+});
+
+describe('the image viewer where a note is read, not edited', () => {
+  it('opens on a click on the image and closes on Escape, with nothing to select', async () => {
+    render(
+      <NoteReading
+        doc={ONE_IMAGE}
+        label="Body of Photos"
+        onFollowLink={() => {}}
+        loadImage={async (src) => `blob:${src}`}
+      />,
+    );
+    const img = await waitFor(() => {
+      const found = document.querySelector('.editor--reading img.image__img');
+      if (!(found instanceof HTMLImageElement)) throw new Error('no image yet');
+      return found;
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('.image__handle')).toBeNull();
+
+    fireEvent.click(img);
+    expect(screen.getByRole('dialog', { name: 'chart' })).toBeTruthy();
+    fireEvent.keyDown(viewer(), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
