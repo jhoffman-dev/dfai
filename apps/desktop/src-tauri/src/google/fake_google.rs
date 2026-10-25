@@ -5,7 +5,7 @@
 //! 127.0.0.1, so the host's requests are the ones the app sends. No test
 //! reaches Google.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::Infallible;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
@@ -20,6 +20,7 @@ use reqwest::Url;
 use tokio::net::TcpListener;
 
 use super::pkce::challenge_of;
+use super::token::REQUEST_TIMEOUT;
 use super::Endpoints;
 use crate::http::MAX_RESPONSE_BYTES;
 
@@ -86,6 +87,19 @@ pub struct Google {
     pub drive_files: Vec<(String, String)>,
     /// Every upload, as its content type and body.
     pub uploads: Vec<(String, String)>,
+    /// The query string of every events.list request, as it arrived.
+    pub event_queries: Vec<String>,
+    /// The pages events.list answers with: page 0 without a `pageToken`,
+    /// page n for `pageToken=p<n>`. Each scripts its own `nextPageToken` and
+    /// `nextSyncToken`.
+    pub event_pages: Vec<String>,
+    /// The sync tokens Google still honours; any other is answered 410.
+    pub live_sync_tokens: HashSet<String>,
+    /// Answers handed to the next API calls, before any route is looked at:
+    /// a status and a raw body, which need not be text.
+    pub scripted_answers: VecDeque<(u16, Vec<u8>)>,
+    /// The API takes every call and never answers it.
+    pub api_stalls: bool,
 }
 
 impl Google {
@@ -229,6 +243,7 @@ fn revoke_answer(google: &mut Google, form: &HashMap<String, String>) -> Answer 
 struct Call<'a> {
     method: &'a str,
     path: &'a str,
+    query: &'a str,
     authorization: &'a str,
     content_type: &'a str,
     body: &'a [u8],
@@ -295,7 +310,50 @@ fn api_answer(google: &mut Google, call: &Call) -> Answer {
                 ),
             )
         }
+        ("GET", events) if is_events_path(events) => events_answer(google, call.query, &echo),
         _ => json(404, r#"{"error":{"code":404}}"#.into()),
+    }
+}
+
+/// `/calendar/v3/calendars/{calendarId}/events`, for one calendar id.
+fn is_events_path(path: &str) -> bool {
+    path.strip_prefix("/calendar/v3/calendars/")
+        .and_then(|rest| rest.strip_suffix("/events"))
+        .is_some_and(|id| !id.is_empty() && !id.contains('/'))
+}
+
+const FULL_SYNC_REQUIRED: &str = r#"{"error":{"code":410,"message":"Sync token is no longer valid, a full sync is required.","errors":[{"reason":"fullSyncRequired"}]}}"#;
+
+/// events.list as Google pages it: a stale sync token is 410, a page token
+/// picks the page.
+fn events_answer(google: &mut Google, query: &str, echo: &str) -> Answer {
+    google.event_queries.push(query.to_string());
+    let pairs: HashMap<String, String> = Url::parse(&format!("http://q.example/?{query}"))
+        .unwrap()
+        .query_pairs()
+        .into_owned()
+        .collect();
+    if let Some(token) = pairs.get("syncToken") {
+        if !google.live_sync_tokens.contains(token) {
+            return json(410, FULL_SYNC_REQUIRED.into());
+        }
+    }
+    let page = match pairs.get("pageToken") {
+        None => Some(0),
+        Some(token) => token
+            .strip_prefix('p')
+            .and_then(|n| n.parse::<usize>().ok()),
+    };
+    match page.and_then(|n| google.event_pages.get(n)) {
+        // The echo goes inside the page's object, as the calendar list's does.
+        Some(body) => match body.strip_suffix('}') {
+            Some(open) => json(200, format!("{open}{echo}}}")),
+            None => json(200, body.clone()),
+        },
+        None => json(
+            400,
+            r#"{"error":{"code":400,"message":"Invalid page token"}}"#.into(),
+        ),
     }
 }
 
@@ -309,6 +367,7 @@ fn calendar_id(name: &str) -> String {
 async fn answer(google: Arc<Mutex<Google>>, request: Request<Incoming>) -> Answer {
     let method = request.method().to_string();
     let path = request.uri().path().to_string();
+    let query = request.uri().query().unwrap_or_default().to_string();
     let authorization = request
         .headers()
         .get(header::AUTHORIZATION)
@@ -322,7 +381,21 @@ async fn answer(google: Arc<Mutex<Google>>, request: Request<Incoming>) -> Answe
         .unwrap_or_default()
         .to_string();
     let body = request.into_body().collect().await.unwrap().to_bytes();
+    let is_api = !matches!(path.as_str(), "/token" | "/revoke");
+    let stalls = is_api && google.lock().unwrap().api_stalls;
+    if stalls {
+        // Never answered while the test lasts; the lock is not held, so the
+        // rest of the fake goes on answering.
+        tokio::time::sleep(REQUEST_TIMEOUT * 10).await;
+    }
     let mut google = google.lock().unwrap();
+    if is_api {
+        if let Some((status, raw)) = google.scripted_answers.pop_front() {
+            let mut scripted = json(status, String::new());
+            *scripted.body_mut() = Full::new(Bytes::from(raw));
+            return scripted;
+        }
+    }
     match path.as_str() {
         "/token" => {
             let form = form_of(&body);
@@ -336,6 +409,7 @@ async fn answer(google: Arc<Mutex<Google>>, request: Request<Incoming>) -> Answe
             &Call {
                 method: &method,
                 path: &path,
+                query: &query,
                 authorization: &authorization,
                 content_type: &content_type,
                 body: &body,
@@ -370,6 +444,7 @@ impl FakeGoogle {
                 token: at("/token"),
                 revoke: at("/revoke"),
                 api: at("/"),
+                request_timeout: REQUEST_TIMEOUT,
             },
             google,
         }

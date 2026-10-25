@@ -8,6 +8,7 @@ import { API_ROUTES, type ApiRequest, type ApiRoute } from './contract.ts';
 import { artifactFileRoute, artifactThumbnailRoute, saveArtifactRoute } from './artifacts.ts';
 import { calendarRoute } from './calendar.ts';
 import { promoteLineRoute } from './checklists.ts';
+import { dayMeetingsRoute } from './day-meetings.ts';
 import { captureRoute, dailyRoute } from './daily.ts';
 import { noteImageRoute } from './images.ts';
 import { meetingsRoute, receiveMeetingRoute } from './meetings.ts';
@@ -138,6 +139,7 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'GET /v1/terms': vaultRoute(termsRoute),
   'GET /v1/meetings': vaultRoute(meetingsRoute),
   'POST /v1/meetings': vaultWrite(receiveMeetingRoute, created),
+  'GET /v1/calendar/meetings': vaultRoute(dayMeetingsRoute),
   'GET /v1/proposals': vaultRoute(proposalsRoute),
   'POST /v1/proposals/{path}/accept': vaultWrite(acceptProposalRoute),
   'POST /v1/proposals/{path}/reject': vaultWrite(rejectProposalRoute),

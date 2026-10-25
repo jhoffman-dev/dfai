@@ -2,7 +2,7 @@ import {
   defaultDriveFolderName,
   driveRetryDelay,
   MAX_GOOGLE_DOC_HTML_BYTES,
-  scopesWithDrive,
+  scopesWith,
   type VaultPath,
 } from '@dfai/domain';
 import type { Wait } from '../granola/granola-requests.ts';
@@ -41,7 +41,7 @@ async function ensureDriveAccess(google: GoogleCalendarPort, vault: string): Pro
   if (!connection.connected || connection.clientId === null) {
     throw new ExportError('google-not-set-up', NOT_SET_UP);
   }
-  const scopes = scopesWithDrive(connection.scopes);
+  const scopes = scopesWith(connection.scopes, 'export');
   if (scopes === null) return;
   await google.connect({ vault, clientId: connection.clientId, scopes });
 }

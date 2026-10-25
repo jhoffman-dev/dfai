@@ -126,3 +126,57 @@
   color: var(--danger);
   font-weight: 600;
 }
+
+/* ---- today's meetings (ADR-0046) ----
+   One line a meeting: its time in tabular figures, its title as the link to
+   its event note, then who it is with and whether it is answered, quieter. */
+
+.today__meeting-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.today__meeting {
+  align-items: baseline;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: var(--space-1) 0;
+}
+
+.today__meeting-open {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: var(--space-3);
+  padding: 0;
+  text-align: left;
+}
+
+.today__meeting-open:hover .today__meeting-title {
+  text-decoration: underline;
+}
+
+.today__meeting-open:focus-visible {
+  box-shadow: var(--ring);
+  outline: none;
+}
+
+.today__meeting-time {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 7.5em;
+}
+
+.today__meeting-people,
+.today__meeting-note {
+  color: var(--ink-3);
+  font-size: var(--text-column);
+}

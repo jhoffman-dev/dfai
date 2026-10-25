@@ -263,3 +263,11 @@ card. Where the build went past or around the text above:
   that `calendar.app.created` lists the calendars Atlas made through
   `calendarList`. Each is a configuration change or a one-line scope change
   if it turns out otherwise.
+
+## As built (P31-05, 2026-10-24)
+
+Reading meetings added the read scope by incremental consent, as the P31-03
+note said it would: `calendar.events.readonly`, asked for only once the
+person turns meetings on. The scope list became one row per use
+(`GOOGLE_SCOPES_BY_USE`). The host is unchanged apart from a timeout tests
+can shorten. ADR-0046 has the decision, and what P31-04 adds on top of it.

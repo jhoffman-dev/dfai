@@ -59,6 +59,27 @@ export function linkableEntryName(name: string): string {
 export const NUMBERED_NOTE_ENDING = ' 9999.md';
 
 /**
+ * The paths taken, as a disk compares names: in any case. Folding each path
+ * of a large vault takes about a millisecond, so what makes many notes at a
+ * time folds them once here and adds each note it makes.
+ */
+export class TakenNotePaths {
+  readonly #folded: Set<string>;
+
+  constructor(paths: Iterable<string>) {
+    this.#folded = new Set([...paths].map(foldedVaultPath));
+  }
+
+  has(path: string): boolean {
+    return this.#folded.has(foldedVaultPath(path));
+  }
+
+  add(path: string): void {
+    this.#folded.add(foldedVaultPath(path));
+  }
+}
+
+/**
  * A path for a new note in `folder`, adding a number if that name is taken.
  * `Untitled.md`, then `Untitled 2.md`, and so on, the way Finder numbers copies.
  *
@@ -72,12 +93,12 @@ export function nextAvailableNotePath({
 }: {
   folder: VaultPath;
   name: string;
-  taken: ReadonlySet<string>;
+  taken: ReadonlySet<string> | TakenNotePaths;
 }): VaultPath {
   const fileName = noteFileName(name);
   const extension = MARKDOWN.exec(fileName)?.[0] ?? '.md';
   const base = fileName.slice(0, fileName.length - extension.length);
-  const takenInAnyCase = new Set([...taken].map(foldedVaultPath));
+  const takenInAnyCase = taken instanceof TakenNotePaths ? taken : new TakenNotePaths(taken);
 
   for (let attempt = 1; ; attempt += 1) {
     const candidate = attempt === 1 ? fileName : `${base} ${attempt}${extension}`;
@@ -85,7 +106,7 @@ export function nextAvailableNotePath({
       folder === VAULT_ROOT
         ? joinVaultPath(VAULT_ROOT, candidate)
         : joinVaultPath(folder, candidate);
-    if (!takenInAnyCase.has(foldedVaultPath(path))) return path;
+    if (!takenInAnyCase.has(path)) return path;
   }
 }
 
