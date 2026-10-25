@@ -66,7 +66,7 @@ describe('the overlay store', () => {
 
     expect(typedInto.result.current).toEqual({
       up: true,
-      input: { query: 'sourd', selected: 0, includeArchived: false },
+      input: { query: 'sourd', selected: 0, includeArchived: false, byMeaning: false },
     });
     expect(paletteDrawn - paletteBefore).toBe(6);
     expect(shown.result.current).toBeNull();

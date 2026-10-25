@@ -99,6 +99,11 @@ export type ApiErrorCode =
   | 'exists'
   /** No vault is open in DFAI. */
   | 'no_vault'
+  /**
+   * `mode=semantic` on a vault where search by meaning has not been turned on
+   * from the app: the API never turns it on, since that fetches a 91 MB model.
+   */
+  | 'semantic_off'
   /** The SQL was rejected by the read-only connection, or ran past its budget. */
   | 'query_failed'
   /** The artifact's page could not be pictured here — another platform, a page that never loaded. */
@@ -153,6 +158,7 @@ export const API_ERROR_STATUS: Readonly<Record<ApiErrorCode, number>> = {
   unsaved_in_app: 409,
   exists: 409,
   no_vault: 503,
+  semantic_off: 409,
   query_failed: 422,
   thumbnail_failed: 422,
   internal: 500,
@@ -266,6 +272,31 @@ export interface ApiSearchHit {
   readonly snippet: string;
   /** Present, and true, on a hit in the Archive: only when the search asked for `includeArchived`. */
   readonly archived?: true;
+}
+
+/** A block found by meaning (`/v1/search?mode=semantic`, P32-02), with the link that cites it. */
+export interface ApiSemanticHit {
+  readonly path: string;
+  readonly title: string;
+  /** What the block says, cut to an excerpt. */
+  readonly text: string;
+  /** The heading the block sits under, or null. */
+  readonly heading: string | null;
+  /** The block's `^id` when it has one, or null. */
+  readonly block: string | null;
+  /** `[[Note#^id]]`, else `[[Note#Heading]]`, else `[[Note]]`: what to cite. */
+  readonly link: string;
+  /** Cosine similarity to the question, from -1 to 1; higher is closer. */
+  readonly score: number;
+  readonly archived?: true;
+}
+
+/** How far the embeddings cache is built: while `done < total`, notes not yet embedded cannot be found. */
+export interface ApiSemanticProgress {
+  readonly done: number;
+  readonly total: number;
+  /** Why the build stopped, when it did; the next search starts it again. */
+  readonly failure: string | null;
 }
 
 export interface ApiTypeProperty {
@@ -1668,6 +1699,7 @@ export type ApiSuccessBody =
       readonly total: number;
     }
   | { readonly hits: readonly ApiSearchHit[] }
+  | { readonly hits: readonly ApiSemanticHit[]; readonly progress: ApiSemanticProgress }
   | { readonly types: readonly ApiType[] }
   | { readonly views: readonly ApiView[] }
   | {

@@ -37,6 +37,28 @@ function installSlowHost() {
   };
 }
 
+/**
+ * A worker that answers when the test says, as the index's script does: one
+ * answer per `begin`, `derive` or `chunk`, in the order they were posted.
+ */
+class StandInWorker {
+  readonly posted: unknown[] = [];
+  #heard: ((event: MessageEvent) => void) | null = null;
+  get onmessage() {
+    return this.#heard;
+  }
+  set onmessage(heard: ((event: MessageEvent) => void) | null) {
+    this.#heard = heard;
+  }
+  postMessage(message: unknown) {
+    this.posted.push(message);
+  }
+  answer(data: unknown) {
+    this.#heard?.({ data } as MessageEvent);
+  }
+}
+(window as unknown as { Worker: unknown }).Worker = StandInWorker;
+
 const clock = () => (window as unknown as { __workClock: Clock }).__workClock;
 const invoke = (command: string) =>
   (
@@ -81,6 +103,21 @@ describe('the work clock', () => {
     await clock().run(null, null, 0, 0);
     expect(heard).toEqual(['first answered', 'second answered']);
   });
+
+  it.each(['derive', 'chunk'])(
+    'moves no time on while the worker has a %s to answer, whenever its answer comes',
+    async (kind) => {
+      const heard: string[] = [];
+      const worker = new Worker('note-derivation.worker.ts') as unknown as StandInWorker;
+      worker.onmessage = () => heard.push('answer');
+      worker.postMessage({ kind, id: 1 });
+      setTimeout(() => heard.push('timer'), 100);
+      // The note is cut on the wall clock, after the clock has had time to move on without it.
+      void wallClockDelay(200).then(() => worker.answer({ kind: `${kind} done`, id: 1 }));
+      await clock().run(null, null, 1_000, 0);
+      expect(heard).toEqual(['answer', 'timer']);
+    },
+  );
 
   it('runs until the page says it is ready, and says how long that took', async () => {
     setTimeout(() => document.body.setAttribute('data-ready', 'yes'), 250);

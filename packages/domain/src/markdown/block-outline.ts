@@ -150,7 +150,7 @@ export function withAnchorsAtPlaces(block: EditorNode): EditorNode {
   return kept;
 }
 
-const pathKey = (path: NodePath): string => path.join('.');
+export const pathKey = (path: NodePath): string => path.join('.');
 
 /** The nearest of `places` that holds the node at `path`, as its key, or null. */
 function placeAround(path: NodePath, places: ReadonlyMap<string, NodePath>): string | null {
@@ -302,7 +302,7 @@ export function blockOutline(doc: EditorDocument): OutlineEntry[] {
 }
 
 /** Each id in the note, and the place it names — the first that holds it — as a path's key. */
-function namedPlaces(doc: EditorDocument): Map<string, string> {
+export function namedPlaces(doc: EditorDocument): Map<string, string> {
   const named = new Map<string, string>();
   doc.content.forEach((block, index) => {
     for (const path of anchorPlaces(block)) {

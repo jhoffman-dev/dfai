@@ -30,6 +30,24 @@ function highlight(snippet: string) {
 }
 
 /**
+ * "By meaning": blocks found by what they mean rather than by their words
+ * (P32-02), and how that search stands.
+ */
+export interface MeaningToggle {
+  readonly on: boolean;
+  readonly onChange: (on: boolean) => void;
+  /** How far the cache of meanings is built, as the hits on screen were found; null before any. */
+  readonly progress: {
+    readonly done: number;
+    readonly total: number;
+    /** Why the build stopped, when it did. */
+    readonly failure?: string | null;
+  } | null;
+  /** Why the search by meaning could not run, or null. */
+  readonly problem: string | null;
+}
+
+/**
  * Full-text search over the vault, driven from the keyboard.
  *
  * Mounted only while it is open, so the dialog is held open and closing is the
@@ -52,6 +70,7 @@ export function SearchPalette({
   commands = [],
   onCommand = () => undefined,
   archived,
+  meaning,
 }: {
   query: string;
   hits: readonly SearchHit[];
@@ -68,10 +87,16 @@ export function SearchPalette({
   onCommand?: (id: string) => void;
   /** "Include archived": whether the search reaches the Archive too; left out, it is not offered. */
   archived?: ArchivedToggle;
+  /** "By meaning": left out, it is not offered. */
+  meaning?: MeaningToggle;
 }) {
+  const byMeaning = meaning?.on === true;
   const finalFocus = useReturnFocus(fallbackFocus);
-  // Steady, so a command still listed after a key is typed is not drawn again for it.
+  // Steady, so a command or hit still listed after a key is typed is not drawn again for it.
   const runCommand = useSteadyCallback(onCommand);
+  const pick = useSteadyCallback(onPick);
+  const changeArchived = useSteadyCallback((included: boolean) => archived?.onChange(included));
+  const changeMeaning = useSteadyCallback((on: boolean) => meaning?.onChange(on));
   const hitsRef = useRef<HTMLUListElement>(null);
   // The selection the list was last scrolled for. It starts at the one the
   // palette opens on, which is already drawn in view: opening does no scroll work.
@@ -124,15 +149,23 @@ export function SearchPalette({
                 <Key>esc</Key>
               </span>
             </div>
-            {archived !== undefined && (
-              <label className="palette__scope">
-                <Toggle
-                  label="Include archived"
-                  checked={archived.included}
-                  onChange={archived.onChange}
-                />
-                <span aria-hidden="true">Include archived</span>
-              </label>
+            {(archived !== undefined || meaning !== undefined) && (
+              <PaletteScope
+                archivable={archived !== undefined}
+                archived={archived?.included === true}
+                onArchived={changeArchived}
+                meaningful={meaning !== undefined}
+                byMeaning={byMeaning}
+                onMeaning={changeMeaning}
+              />
+            )}
+            {byMeaning && (
+              <MeaningNote
+                problem={meaning?.problem ?? null}
+                done={meaning?.progress?.done ?? null}
+                total={meaning?.progress?.total ?? 0}
+                failure={meaning?.progress?.failure ?? null}
+              />
             )}
 
             {query.trim() !== '' && hits.length === 0 && commands.length === 0 ? (
@@ -153,7 +186,8 @@ export function SearchPalette({
                     <Hit
                       hit={hit}
                       selected={index + commands.length === selected}
-                      onPick={onPick}
+                      onPick={pick}
+                      byMeaning={byMeaning}
                     />
                   </li>
                 ))}
@@ -218,21 +252,96 @@ function pickHit(hit: SearchHit, onPick: (path: string, block?: string) => void)
 }
 
 /**
+ * The two switches under the field. Drawn again only when one is switched or
+ * offered or let go: typing on leaves them as they were, so what it is given
+ * is plain values and callbacks that stay the same.
+ */
+const PaletteScope = memo(function PaletteScope({
+  archivable,
+  archived,
+  onArchived,
+  meaningful,
+  byMeaning,
+  onMeaning,
+}: {
+  archivable: boolean;
+  archived: boolean;
+  onArchived: (included: boolean) => void;
+  meaningful: boolean;
+  byMeaning: boolean;
+  onMeaning: (on: boolean) => void;
+}) {
+  return (
+    <div className="palette__scope">
+      {archivable && (
+        <label className="palette__switch">
+          <Toggle label="Include archived" checked={archived} onChange={onArchived} />
+          <span aria-hidden="true">Include archived</span>
+        </label>
+      )}
+      {meaningful && (
+        <label className="palette__switch">
+          <Toggle label="By meaning" checked={byMeaning} onChange={onMeaning} />
+          <span aria-hidden="true">By meaning</span>
+        </label>
+      )}
+    </div>
+  );
+});
+
+/**
+ * What the palette says of a search by meaning: why it could not run, why the
+ * cache of meanings stopped being built, or that it is still being built, so a
+ * missing note is expected.
+ */
+const MeaningNote = memo(function MeaningNote({
+  problem,
+  done,
+  total,
+  failure,
+}: {
+  problem: string | null;
+  /** Notes read for meaning so far; null before any search has answered. */
+  done: number | null;
+  total: number;
+  failure: string | null;
+}) {
+  if (problem !== null)
+    return <p className="palette__note">Search by meaning is not available: {problem}</p>;
+  if (done === null) return null;
+  if (failure !== null)
+    return (
+      <p className="palette__note">
+        Stopped reading notes for meaning ({done} of {total}): {failure}
+      </p>
+    );
+  if (done >= total) return null;
+  return (
+    <p className="palette__note" role="status">
+      Still reading notes for meaning: {done} of {total}.
+    </p>
+  );
+});
+
+/**
  * One result: what kind of note it is and where it lives (never `.atlas/…`),
  * its title, and the words around the match. A highlight says so, and which
- * source it is in, in place of the folder.
+ * source it is in, in place of the folder; a block found by meaning shows
+ * what the block says.
  */
-function Hit({
+const Hit = memo(function Hit({
   hit,
   selected,
   onPick,
+  byMeaning,
 }: {
   hit: SearchHit;
   selected: boolean;
   onPick: (path: string, block?: string) => void;
+  byMeaning: boolean;
 }) {
   const place = placeCrumb(createVaultPath(hit.path));
-  const isHighlight = hit.block !== undefined;
+  const isHighlight = hit.block !== undefined && !byMeaning;
   return (
     <button
       type="button"
@@ -261,4 +370,4 @@ function Hit({
       )}
     </button>
   );
-}
+});

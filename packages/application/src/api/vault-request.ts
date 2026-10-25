@@ -1,6 +1,7 @@
 import type { ImagePlacement, VaultPath } from '@dfai/domain';
 import type { ActivityRecorder } from '../activity/ports.ts';
 import type { MeetingDrafts } from '../assistant/meeting-drafts.ts';
+import type { SemanticAccess } from '../embeddings/semantic-search.ts';
 import type { ThumbnailQueue } from '../artifacts/thumbnail-queue.ts';
 import type { ClaudeStepPorts } from '../automations/claude-step.ts';
 import type { IndexPort } from '../index/ports.ts';
@@ -72,6 +73,8 @@ export interface VaultRequest {
   readonly automationClock: AutomationClockState | null;
   /** The IANA zone this Mac kept time in as the request arrived. */
   readonly timeZone: string;
+  /** Semantic search in this request's vault; null when the app offers none (P32-02). */
+  readonly semantic: SemanticAccess | null;
   /** The vault owner's name from the profile; null when it has none. */
   readonly ownerName: string | null;
   /** What drafting a meeting's tasks asks Claude through; null when the app has not got it. */
@@ -129,6 +132,7 @@ export function vaultRequest({
     rng: deps.rng,
     automationClock: deps.automationClock.forVault(vault),
     timeZone: deps.timeZone(),
+    semantic: deps.semantic?.(vault) ?? null,
     ownerName: deps.ownerName?.() ?? null,
     claudeStep: deps.claudeStep?.() ?? null,
     meetingDrafts: deps.meetingDrafts,

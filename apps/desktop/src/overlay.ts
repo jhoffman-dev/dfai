@@ -121,9 +121,16 @@ export interface PaletteInput {
   readonly selected: number;
   /** Archived notes are left out of a search unless this is on (U-22). */
   readonly includeArchived: boolean;
+  /** Blocks found by meaning rather than notes by their words (P32-02). */
+  readonly byMeaning: boolean;
 }
 
-export const NO_INPUT: PaletteInput = { query: '', selected: 0, includeArchived: false };
+export const NO_INPUT: PaletteInput = {
+  query: '',
+  selected: 0,
+  includeArchived: false,
+  byMeaning: false,
+};
 
 /** The list a peeked note was opened from, and where in it the note shown sits. */
 export interface PeekFrom {
@@ -288,6 +295,11 @@ export function withQuery(input: PaletteInput, query: string): PaletteInput {
 /** Archived notes let in or left out, with the first result chosen. */
 export function withArchived(input: PaletteInput, includeArchived: boolean): PaletteInput {
   return { ...input, includeArchived, selected: 0 };
+}
+
+/** Searching by meaning or by words, with the first result chosen. */
+export function withMeaning(input: PaletteInput, byMeaning: boolean): PaletteInput {
+  return { ...input, byMeaning, selected: 0 };
 }
 
 /** The choice moved `delta` rows through `count`, wrapping at either end. */
