@@ -94,6 +94,11 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
+      # A part loaded on first use that imports a chunk other than the entry
+      # cannot recover from a failed load (#552).
+      - name: No chunk shared under a part
+        run: pnpm check:chunks
+
   unit:
     needs: changes
     if: needs.changes.outputs.code == 'true'

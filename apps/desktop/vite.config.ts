@@ -191,6 +191,8 @@ export default defineConfig({
   server: { port: 1420, strictPort: true },
   build: {
     outDir: 'dist',
+    // dist/.vite/manifest.json, the chunk graph `pnpm check:chunks` reads (#552). It changes no chunk.
+    manifest: true,
     emptyOutDir: true,
     target: 'safari17',
     // Everything start-up loads in one chunk. Left alone, the bundler splits the code
