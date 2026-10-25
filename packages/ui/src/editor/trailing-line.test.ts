@@ -71,6 +71,21 @@ describe('the empty line kept at the end of a note', () => {
     expect(types(noteOf(raw(TOMBSTONE)))).toEqual(['rawBlock:', 'paragraph:']);
   });
 
+  it('is added after a paragraph ending in a picture that only tombstones follow, to type under the picture', () => {
+    const instance = noteOf(
+      {
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'A fern ' },
+          { type: 'image', attrs: { src: 'fern.png', alt: 'fern' } },
+        ],
+      },
+      raw(TOMBSTONE),
+    );
+    expect(types(instance)).toEqual(['paragraph:A fern ', 'rawBlock:', 'paragraph:']);
+    expect(needsTrailingLine(instance.state.doc)).toBe(false);
+  });
+
   it('is added after a heading that only tombstones follow', () => {
     const instance = noteOf(
       { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'North' }] },
