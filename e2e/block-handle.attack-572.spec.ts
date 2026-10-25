@@ -15,9 +15,12 @@ const PLAN = ['# Garden plan', '', 'First line.', '', 'Second line.', '', 'Third
   '\n',
 );
 
-async function openPlan(page: Page) {
+// A note whose first block is a paragraph, which the heading-first fixture above does not cover.
+const OPENING = ['Opening line.', '', 'Middle line.', '', 'Closing line.', ''].join('\n');
+
+async function openPlan(page: Page, body: string = PLAN) {
   const vault = await createVault();
-  await writeFile(join(vault.root, 'Garden plan.md'), PLAN);
+  await writeFile(join(vault.root, 'Garden plan.md'), body);
   await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
@@ -68,12 +71,17 @@ test('after Add block below and typing, one undo takes back the typing, the new 
   await expect(editor.locator('p')).toHaveText(['First line.', '', 'Second line.', 'Third line.']);
 });
 
-test('⇧⌘↑ on the first block selects to the start of the note, as macOS does', async ({ page }) => {
-  const editor = await openPlan(page);
-  await caretAtLineEnd(line(editor, 'First line.'));
+test('⇧⌘↑ in a note whose first block is a paragraph selects to the start of the note and moves nothing', async ({
+  page,
+}) => {
+  const editor = await openPlan(page, OPENING);
+  await caretAtLineEnd(line(editor, 'Opening line.'));
   await page.keyboard.press('Meta+Shift+ArrowUp');
-  const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');
-  expect(selected).toContain('First line.');
+  // From the end of the first block back to the start of the note: the whole block, no more.
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+    .toBe('Opening line.');
+  await expect(editor.locator('p')).toHaveText(['Opening line.', 'Middle line.', 'Closing line.']);
 });
 
 test('Esc on the block menu opened by ⌘/ puts the caret back in the note', async ({ page }) => {
