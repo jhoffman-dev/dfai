@@ -32,6 +32,18 @@ describe('a block put in a table cell, saved', () => {
     expect(saved).toContain('| Northbed | Fern |');
   });
 
+  // ProseMirror leaves `content` out of an empty node's JSON: an empty block is
+  // not a wordless one. Typing `# ` in a cell must not block the save.
+  it('an empty heading, as `# ` typed in a cell leaves one, is run into the line', () => {
+    const saved = savedWithInCell({ type: 'heading', attrs: { level: 1 } });
+    expect(saved).toBe(BODY);
+  });
+
+  it('an empty code block is run into the line', () => {
+    const saved = savedWithInCell({ type: 'codeBlock', attrs: { language: null } });
+    expect(saved).toBe(BODY);
+  });
+
   it('a horizontal rule, which has no words, is refused with the cell named', () => {
     expect(() => savedWithInCell({ type: 'horizontalRule' })).toThrow(UnsupportedNodeError);
     expect(() => savedWithInCell({ type: 'horizontalRule' })).toThrow(/in a table cell/);
