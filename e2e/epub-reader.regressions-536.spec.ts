@@ -1,5 +1,6 @@
 import type { Frame } from '@playwright/test';
 import { expect, test, type Page } from './fixtures.ts';
+import { frameOf, painted, readShownChapter } from './reader-frame.ts';
 import { createVault, installHost } from './host.ts';
 import {
   ANT_AND_GRASSHOPPER,
@@ -43,12 +44,6 @@ async function openBook(page: Page, bytes: Buffer): Promise<{ hits: string[] }> 
 }
 
 const text = (page: Page) => page.frameLocator('iframe.epub-frame').locator('body');
-
-async function frameOf(page: Page): Promise<Frame> {
-  const frame = await (await page.locator('iframe.epub-frame').elementHandle())?.contentFrame();
-  if (frame === null || frame === undefined) throw new Error('the reader shows no chapter');
-  return frame;
-}
 
 /** Selects `words` as a drag would, with a Range the book cannot shadow, and lets the press go. */
 async function selectWords(frame: Frame, words: string): Promise<void> {
@@ -94,12 +89,7 @@ test('a picture the book names createRange does not stop the reader drawing a hi
   ).toBeVisible();
   // The highlight is saved; the frame must also draw it.
   await expect
-    .poll(async () =>
-      (await frameOf(page)).evaluate(() => {
-        const highlight = CSS.highlights.get('dfai-highlight-green');
-        return highlight === undefined ? [] : [...highlight].map((range) => range.toString());
-      }),
-    )
+    .poll(() => painted(page, 'dfai-highlight-green'))
     .toEqual(['Slow but steady wins the race.']);
 });
 
@@ -122,7 +112,7 @@ test('a picture the book names getElementById does not stop a link to a place in
   await (await frameOf(page)).locator('#far-link').click();
   await expect(text(page)).toContainText('The far end of the fable.');
   await expect
-    .poll(async () => (await frameOf(page)).evaluate(() => window.scrollY))
+    .poll(() => readShownChapter(page, (frame) => frame.evaluate(() => window.scrollY), 0))
     .toBeGreaterThan(1000);
 });
 
@@ -154,17 +144,12 @@ ${HARE_AND_TORTOISE.body}`,
     .getByRole('button', { name: 'Highlight Green' })
     .click();
   await expect
-    .poll(async () =>
-      (await frameOf(page)).evaluate(() => {
-        const highlight = CSS.highlights.get('dfai-highlight-green');
-        return highlight === undefined ? [] : [...highlight].map((range) => range.toString());
-      }),
-    )
+    .poll(() => painted(page, 'dfai-highlight-green'))
     .toEqual(['The tortoise kept on, slow and steady.']);
   await (await frameOf(page)).locator('#far-link').click();
   await expect(text(page)).toContainText('The far end of the fable.');
   await expect
-    .poll(async () => (await frameOf(page)).evaluate(() => window.scrollY))
+    .poll(() => readShownChapter(page, (frame) => frame.evaluate(() => window.scrollY), 0))
     .toBeGreaterThan(1000);
 });
 

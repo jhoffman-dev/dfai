@@ -1,5 +1,5 @@
-import type { Frame } from '@playwright/test';
 import { expect, test, type Page } from './fixtures.ts';
+import { frameOf } from './reader-frame.ts';
 import { createVault, installHost } from './host.ts';
 import { fixtureEpub, HARE_AND_TORTOISE, HOSTILE_ORIGIN } from '../tools/epub/fixture-epub.ts';
 
@@ -40,12 +40,6 @@ async function openBook(page: Page, bytes: Buffer): Promise<{ hits: string[] }> 
 }
 
 const text = (page: Page) => page.frameLocator('iframe.epub-frame').locator('body');
-
-async function frameOf(page: Page): Promise<Frame> {
-  const frame = await (await page.locator('iframe.epub-frame').elementHandle())?.contentFrame();
-  if (frame === null || frame === undefined) throw new Error('the reader shows no chapter');
-  return frame;
-}
 
 test("an SVG presentation attribute keeps no other site's address, however CSS spells it", async ({
   page,
