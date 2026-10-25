@@ -353,6 +353,49 @@ describe('planEventNotes: the clock times are written on', () => {
     );
   });
 
+  it('writes every calendar on the primary calendar’s clock, so one Today list keeps one clock', () => {
+    // The team calendar is read first and keeps London time; 17:00Z is 10:00 in Los Angeles.
+    const zones = { 'team@larkspur.example': 'Europe/London', primary: 'America/Los_Angeles' };
+    const team = event({
+      id: 'ev-review',
+      calendarId: 'team@larkspur.example',
+      title: 'Payroll review',
+      start: at('2026-10-24T17:00:00Z'),
+      end: at('2026-10-24T17:30:00Z'),
+    });
+    const meeting = {
+      path: createVaultPath('Inbox/Meetings/Payroll review.md'),
+      title: 'Payroll review',
+      date: '2026-10-24',
+      start: '10:01',
+    };
+    const writes = plan({
+      events: [team, event()],
+      calendarZones: zones,
+      timeZone: 'Asia/Tokyo',
+      meetings: [meeting],
+    });
+    expect(writes.map((write) => write.kind === 'create' && write.properties)).toEqual([
+      expect.objectContaining({
+        title: 'Payroll review',
+        date: '2026-10-24T10:00',
+        ends: '2026-10-24T10:30',
+        meeting: '[[Inbox/Meetings/Payroll review]]',
+      }),
+      expect.objectContaining({ date: '2026-10-24T09:00', ends: '2026-10-24T09:30' }),
+    ]);
+  });
+
+  it('writes on the first calendar read that names a zone when the primary names none', () => {
+    const zones = {
+      'team@larkspur.example': 'America/Los_Angeles',
+      'ops@larkspur.example': 'Europe/London',
+    };
+    const ops = event({ calendarId: 'ops@larkspur.example' });
+    const [write] = plan({ events: [ops], calendarZones: zones, timeZone: 'Asia/Tokyo' });
+    expect(write).toMatchObject({ properties: { date: '2026-10-24T09:00' } });
+  });
+
   it('writes on the person’s zone for a calendar Google gave none for', () => {
     const [write] = plan({ calendarZones: {}, timeZone: 'America/New_York' });
     expect(write).toMatchObject({ properties: { date: '2026-10-24T12:00' } });
