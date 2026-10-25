@@ -9,7 +9,9 @@ import {
   blockAnchorSuffix,
   blockAnchorsOf,
   blockIdOf,
+  readImageAlt,
   standaloneBlockAnchor,
+  withImageSize,
   withAnchorsAtPlaces,
   withoutAnchorAttr,
   withoutBlockAnchors,
@@ -384,6 +386,8 @@ const escapedForCell = (address: string): string =>
 interface WrittenInline {
   readonly kind: 'image' | 'link';
   readonly reads: string;
+  /** What an image reads as at any size, so a resized one keeps its bytes but the size (#568). */
+  readonly readsUnsized: string | null;
   readonly source: string;
 }
 
@@ -396,6 +400,13 @@ function inlineReading(node: Nodes): string | null {
     return JSON.stringify([node.url, node.alt ?? null, node.title ?? null]);
   if (node.type !== 'link') return null;
   return render({ type: 'root', children: [{ type: 'paragraph', children: [node] }] });
+}
+
+/** What an image reads as with its size left out; null for anything else. */
+function unsizedReading(node: Nodes): string | null {
+  if (node.type !== 'image') return null;
+  const alt = typeof node.alt === 'string' ? readImageAlt(node.alt).alt : null;
+  return JSON.stringify([node.url, alt, node.title ?? null]);
 }
 
 /** How a block was written before it was edited: what of it to write the same way again. */
@@ -428,7 +439,12 @@ function writtenInlines(root: Root, source: string, block: EditorNode): WrittenI
     if (reads !== null && start !== undefined && end !== undefined) {
       const bytes = source.slice(start, end);
       if (multiLineFits || !bytes.includes('\n'))
-        found.push({ kind: node.type === 'image' ? 'image' : 'link', reads, source: bytes });
+        found.push({
+          kind: node.type === 'image' ? 'image' : 'link',
+          reads,
+          readsUnsized: unsizedReading(node),
+          source: bytes,
+        });
     }
     if ('children' in node) for (const child of node.children as Nodes[]) visit(child);
   };
@@ -447,13 +463,30 @@ function keepWrittenInlines(node: Nodes, written: WrittenInline[]): void {
   children.forEach((child, index) => {
     const reads = inlineReading(child);
     const at = reads === null ? -1 : written.findIndex((inline) => inline.reads === reads);
-    if (at < 0) {
-      keepWrittenInlines(child, written);
+    if (at >= 0) {
+      const [inline] = written.splice(at, 1);
+      children[index] = { type: 'verbatimInline', value: inline!.source };
       return;
     }
-    const [inline] = written.splice(at, 1);
-    children[index] = { type: 'verbatimInline', value: inline!.source };
+    const resized = resizedFromWritten(child, written);
+    if (resized === null) keepWrittenInlines(child, written);
+    else children[index] = { type: 'verbatimInline', value: resized };
   });
+}
+
+/**
+ * An image only resized since it was written, as those bytes with only the
+ * size token changed (#568, ADR-0003). Null when none was written that way,
+ * or its bytes cannot take a size; it is then written afresh.
+ */
+function resizedFromWritten(node: Nodes, written: WrittenInline[]): string | null {
+  const unsized = unsizedReading(node);
+  if (unsized === null || node.type !== 'image') return null;
+  const at = written.findIndex((inline) => inline.readsUnsized === unsized);
+  if (at < 0) return null;
+  const sized = withImageSize(written[at]!.source, readImageAlt(node.alt ?? '').size);
+  if (sized !== null) written.splice(at, 1);
+  return sized;
 }
 
 /**

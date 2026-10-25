@@ -292,7 +292,11 @@ test('a selected image’s alt text is edited in place and written to the note',
   await openNote(page, 'n');
   await expectDrawnImage(page);
 
+  // A click opens the image larger (#568); closing that leaves it selected, its alt text open.
   await page.locator('.editor img.image__img').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   const alt = page.getByRole('textbox', { name: 'Alt text' });
   await expect(alt).toBeVisible();
   await alt.fill('A gradient');
@@ -331,4 +335,90 @@ test('a pasted image still shows once its note is moved up to the vault root and
   await page.getByRole('button', { name: 'Update 1 link' }).click();
   await expectFile(vault, 'q3.md').toBe(`# Q3\n\nThe goals.\n\n![](attachments/${encoded})\n`);
   await expectDrawnImage(page);
+});
+
+/** A note that is an intro line and one image, `attachments/a.png`, open. */
+async function openNoteWithImage(page: Page, line = '![](attachments/a.png)'): Promise<FakeVault> {
+  const vault = await openVault(page, { 'n.md': `Intro.\n\n${line}\n` });
+  await vault.mkdir('attachments');
+  await writeFile(join(vault.root, 'attachments', 'a.png'), PICTURE);
+  await openNote(page, 'n');
+  await expectDrawnImage(page);
+  return vault;
+}
+
+test('a pasted image opens larger on a click, zooms with ⌘+, and closes on Escape (#568)', async ({
+  page,
+}) => {
+  await openVault(page, { 'plan.md': '# Plan\n\nThe first step.\n' });
+  await openNote(page, 'plan');
+  await newLineAfter(page, 'The first step.');
+  await pasteFile(page, { bytes: PICTURE, name: 'image.png' });
+  await expectDrawnImage(page);
+
+  await page.locator('.editor img.image__img').click();
+  const viewer = page.getByRole('dialog');
+  await expect(viewer).toBeVisible();
+  const shown = viewer.locator('img.lightbox__img');
+  await expect(shown).toBeVisible();
+  const zoom = viewer.getByRole('status', { name: 'Zoom' });
+  await expect(zoom).toHaveText('100%');
+  const before = (await shown.boundingBox())!.width;
+  expect(before).toBeCloseTo(360, 0);
+
+  await page.keyboard.press('Meta+Equal');
+  await expect(zoom).toHaveText('125%');
+  await expect.poll(async () => (await shown.boundingBox())!.width).toBeCloseTo(450, 0);
+
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+  await expect(page.locator('.editor .image--selected')).toHaveCount(1);
+  await expect(page.locator('.editor')).toBeFocused();
+});
+
+test('dragging an image’s handle resizes it, and the note saves only its width (#568)', async ({
+  page,
+}) => {
+  const vault = await openNoteWithImage(page, "![A gradient](<attachments/a.png> 'Q3')");
+  const img = page.locator('.editor img.image__img');
+  const box = (await img.boundingBox())!;
+  await img.hover();
+  const handle = page.locator('.editor .image__handle--right');
+  await expect(handle).toBeVisible();
+  const grip = (await handle.boundingBox())!;
+
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 - 50, grip.y + grip.height / 2, { steps: 4 });
+  await page.mouse.move(grip.x + grip.width / 2 - 100, grip.y + grip.height / 2, { steps: 4 });
+  await page.mouse.up();
+
+  const width = Math.round(box.width - 100);
+  await expect.poll(async () => Math.round((await img.boundingBox())!.width)).toBe(width);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await saveNow(page);
+  await expectSaved(page);
+  await expectFile(vault, 'n.md').toBe(
+    `Intro.\n\n![A gradient|${width}](<attachments/a.png> 'Q3')\n`,
+  );
+
+  await handle.dblclick();
+  await expect.poll(async () => Math.round((await img.boundingBox())!.width)).toBe(360);
+  await saveNow(page);
+  await expectFile(vault, 'n.md').toBe("Intro.\n\n![A gradient](<attachments/a.png> 'Q3')\n");
+});
+
+test('a click below an image that ends the note goes to a new line to type on (#568)', async ({
+  page,
+}) => {
+  const vault = await openNoteWithImage(page);
+  const line = page.locator('.editor > p:last-child');
+  const box = (await line.boundingBox())!;
+
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height + 12);
+  await page.keyboard.type('After the photo.');
+
+  await saveNow(page);
+  await expectSaved(page);
+  await expectFile(vault, 'n.md').toBe('Intro.\n\n![](attachments/a.png)\n\nAfter the photo.\n');
 });

@@ -1,6 +1,7 @@
 import {
   BLOCK_ANCHOR_ATTR,
   parseCalloutMarker,
+  readImageAlt,
   readWikiLink,
   standaloneBlockAnchor,
   type EditorMark,
@@ -302,13 +303,7 @@ function inlineToEditorNodes(
     case 'image':
       // A link around the image (`[![alt](src)](href)`) is a mark it carries,
       // so it is written back around it rather than lost.
-      return [
-        {
-          type: 'image',
-          attrs: { src: node.url, alt: node.alt ?? null, title: node.title ?? null },
-          ...(marks.length > 0 && { marks }),
-        },
-      ];
+      return [{ type: 'image', attrs: imageAttrs(node), ...(marks.length > 0 && { marks }) }];
     case 'strong':
       return descend(node.children, [...marks, { type: 'bold' }]);
     case 'emphasis':
@@ -331,6 +326,22 @@ function inlineToEditorNodes(
  * value is the link as written, read by the same grammar that found it; were
  * the two ever to disagree, the block is kept as its source (null).
  */
+/**
+ * An image's attributes. A size at the end of its alt text (`![chart|400](…)`,
+ * #568) is its own attribute, so the alt text field shows only the words;
+ * only a sized image carries one, so an unsized image's node is as before.
+ */
+function imageAttrs(node: Extract<PhrasingContent, { type: 'image' }>): Record<string, unknown> {
+  const { alt, size } =
+    typeof node.alt === 'string' ? readImageAlt(node.alt) : { alt: null, size: null };
+  return {
+    src: node.url,
+    alt,
+    title: node.title ?? null,
+    ...(size !== null && { width: size.width, height: size.height }),
+  };
+}
+
 function wikiLinkOf(value: string, marks: readonly EditorMark[]): EditorNode[] | null {
   const withMarks = marks.length > 0 ? { marks } : {};
   const link = readWikiLink(value);

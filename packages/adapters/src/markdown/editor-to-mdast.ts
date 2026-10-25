@@ -7,7 +7,9 @@ import {
   formatWikiLink,
   nestedBlockOf,
   QUERY_BLOCK_NODE,
+  writeImageAlt,
   type EditorMark,
+  type ImageSize,
   type EditorNode,
 } from '@dfai/domain';
 import type { BlockContent, Nodes as MdastNode, PhrasingContent } from 'mdast';
@@ -328,12 +330,22 @@ function withBackslashesEscaped(node: PhrasingContent): PhrasingContent[] {
     );
 }
 
+/** The size an image node is drawn at (#568), written at the end of its alt text; none when unsized. */
+function imageSizeOf(node: EditorNode): ImageSize | null {
+  const width = node.attrs?.['width'];
+  if (typeof width !== 'number' || !Number.isInteger(width) || width <= 0) return null;
+  const height = node.attrs?.['height'];
+  return { width, height: Number.isInteger(height) && Number(height) > 0 ? Number(height) : null };
+}
+
 function leaf(node: EditorNode): PhrasingContent {
   if (node.type === 'image') {
+    const alt = typeof node.attrs?.['alt'] === 'string' ? node.attrs['alt'] : null;
+    const size = imageSizeOf(node);
     return {
       type: 'image',
       url: String(node.attrs?.['src'] ?? ''),
-      alt: typeof node.attrs?.['alt'] === 'string' ? node.attrs['alt'] : null,
+      alt: size === null ? alt : writeImageAlt(alt ?? '', size),
       title: typeof node.attrs?.['title'] === 'string' ? node.attrs['title'] : null,
     };
   }

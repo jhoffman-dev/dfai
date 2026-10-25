@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Node } from '@tiptap/core';
+import { Node, type Editor } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
+import { ImageLightbox, type LightboxImage } from './image-lightbox.tsx';
+import {
+  downFromLastImage,
+  enterAfterImage,
+  imageRoomPlugin,
+  upFromFirstImage,
+} from './image-room.ts';
+import { ImageResizeHandles } from './image-resize.tsx';
 
 export interface ImageOptions {
   /**
@@ -22,6 +30,11 @@ function ImageView({ node, extension, selected, editor, updateAttributes, getPos
   const { url, failed } = loaded;
 
   const loadImage = (extension.options as ImageOptions).loadImage;
+  const width = typeof node.attrs['width'] === 'number' ? node.attrs['width'] : null;
+  // The width a drag is at, drawn but not yet written to the note: that is done once, on release.
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const shownWidth = dragWidth ?? width;
+  const [viewing, setViewing] = useState<{ images: LightboxImage[]; start: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +57,40 @@ function ImageView({ node, extension, selected, editor, updateAttributes, getPos
           Missing image: {src}
         </span>
       ) : (
-        url !== null && <img className="image__img" src={url} alt={alt} title={src} />
+        url !== null && (
+          <img
+            className="image__img"
+            src={url}
+            alt={alt}
+            title={src}
+            style={shownWidth === null ? undefined : { width: `${shownWidth}px` }}
+            onClick={() => {
+              if (editor.isEditable) setViewing(imagesAround(editor, getPos()));
+            }}
+          />
+        )
+      )}
+      {editor.isEditable && url !== null && (
+        <ImageResizeHandles
+          onDrag={setDragWidth}
+          onRelease={(released) => {
+            setDragWidth(null);
+            updateAttributes({ width: released, height: null });
+          }}
+          onReset={() => updateAttributes({ width: null, height: null })}
+        />
+      )}
+      {viewing !== null && (
+        <ImageLightbox
+          images={viewing.images}
+          start={viewing.start}
+          loadImage={loadImage}
+          onClose={() => setViewing(null)}
+          onReturnFocus={() => {
+            const at = getPos();
+            if (at !== undefined) editor.chain().focus().setNodeSelection(at).run();
+          }}
+        />
       )}
       {editor.isEditable && (
         <AltTextField
@@ -59,6 +105,21 @@ function ImageView({ node, extension, selected, editor, updateAttributes, getPos
       )}
     </NodeViewWrapper>
   );
+}
+
+/** The note's images, in order, and which of them is the one at `at`. */
+function imagesAround(
+  editor: Editor,
+  at: number | undefined,
+): { images: LightboxImage[]; start: number } {
+  const images: LightboxImage[] = [];
+  let start = 0;
+  editor.state.doc.descendants((node, position) => {
+    if (node.type.name !== 'image') return;
+    if (position === at) start = images.length;
+    images.push({ src: String(node.attrs['src'] ?? ''), alt: String(node.attrs['alt'] ?? '') });
+  });
+  return { images, start };
 }
 
 /**
@@ -121,7 +182,29 @@ export const VaultImage = Node.create<ImageOptions>({
       src: { default: '' },
       alt: { default: null },
       title: { default: null },
+      // Its width on the page, written `![alt|400](…)` (#568); null is its own size.
+      width: {
+        default: null,
+        parseHTML: (element) => {
+          const width = Number(element.getAttribute('width'));
+          return Number.isInteger(width) && width > 0 ? width : null;
+        },
+      },
+      // Read from `|400x300` so it is written back as it was; a resize drops it.
+      height: { default: null, parseHTML: () => null },
     };
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => enterAfterImage(this.editor),
+      ArrowDown: () => downFromLastImage(this.editor),
+      ArrowUp: () => upFromFirstImage(this.editor),
+    };
+  },
+
+  addProseMirrorPlugins() {
+    return [imageRoomPlugin()];
   },
 
   parseHTML() {
@@ -129,7 +212,15 @@ export const VaultImage = Node.create<ImageOptions>({
   },
 
   renderHTML({ node }) {
-    return ['img', { src: String(node.attrs['src'] ?? ''), alt: String(node.attrs['alt'] ?? '') }];
+    const width = node.attrs['width'];
+    return [
+      'img',
+      {
+        src: String(node.attrs['src'] ?? ''),
+        alt: String(node.attrs['alt'] ?? ''),
+        ...(typeof width === 'number' && { width: String(width) }),
+      },
+    ];
   },
 
   addNodeView() {

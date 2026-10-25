@@ -167,3 +167,96 @@ describe('an image in a paragraph that is edited around it', () => {
     expect(saved).toBe('See ![new](a\\(1\\).png "t")\n');
   });
 });
+
+/** `original` with each image in it resized to `width` (its natural size when null), as saved. */
+function resized(original: string, width: number | null): string {
+  const parsed = parseMarkdownBody(original);
+  const content = parsed.doc.content.map((block) => ({
+    ...block,
+    ...(block.content !== undefined && {
+      content: block.content.map((node) =>
+        node.type === 'image' ? { ...node, attrs: { ...node.attrs, width, height: null } } : node,
+      ),
+    }),
+  }));
+  return serializeMarkdownBody({ originalBody: original, parsed, doc: { type: 'doc', content } });
+}
+
+describe('an image’s size on the page (#568)', () => {
+  it.each([
+    ['a width', '![diagram|300](diagram.png)', { alt: 'diagram', width: 300, height: null }],
+    [
+      'a width and height',
+      '![diagram|400x300](d.png)',
+      { alt: 'diagram', width: 400, height: 300 },
+    ],
+    ['no alt text', '![|250](d.png)', { alt: '', width: 250, height: null }],
+    [
+      'a pipe in the alt text',
+      '![in | out|120](d.png)',
+      { alt: 'in | out', width: 120, height: null },
+    ],
+  ])('reads %s out of the alt text', (_label, line, attrs) => {
+    const node = parseMarkdownBody(`${line}\n`).doc.content[0]?.content?.[0];
+    expect(node?.attrs).toMatchObject(attrs);
+  });
+
+  it('reads an image with no size as before: no size attributes at all', () => {
+    const node = parseMarkdownBody('![a|b](d.png)\n').doc.content[0]?.content?.[0];
+    expect(node).toEqual({ type: 'image', attrs: { src: 'd.png', alt: 'a|b', title: null } });
+  });
+
+  it.each([
+    ['a width', '![shot|300](a.png)', '![shot|480](a.png)'],
+    ['no size yet', '![shot](a.png)', '![shot|480](a.png)'],
+    ['no alt text', '![](a.png)', '![|480](a.png)'],
+    ['a width and a height', '![shot|400x300](a.png)', '![shot|480](a.png)'],
+    [
+      'an angle-bracket path and a single-quoted title',
+      "![a \\[b\\]|300](<my pic.png> 't')",
+      "![a \\[b\\]|480](<my pic.png> 't')",
+    ],
+    ['a pipe in the words', '![in | out](a.png)', '![in | out|480](a.png)'],
+    ['text beside it', 'See ![shot|300](a(1).png) here', 'See ![shot|480](a(1).png) here'],
+  ])('changes only the width token of an image with %s', (_label, line, saved) => {
+    expect(resized(`# Photos\n\n${line}\n\nAfter.\n`, 480)).toBe(
+      `# Photos\n\n${saved}\n\nAfter.\n`,
+    );
+  });
+
+  it('takes the width token out when the image goes back to its natural size', () => {
+    expect(resized("![shot|300](<my pic.png> 't')\n", null)).toBe("![shot](<my pic.png> 't')\n");
+  });
+
+  it('keeps a width and height byte-identical when other words in its paragraph are edited', () => {
+    expect(typedAfter('See ![chart|400x300](<my chart.png>)')).toBe(
+      'See ![chart|400x300](<my chart.png>) more\n',
+    );
+  });
+
+  it('writes a new sized image as Obsidian does', () => {
+    const doc: EditorDocument = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'image', attrs: { src: 'a.png', alt: 'shot', title: null, width: 320 } },
+          ],
+        },
+      ],
+    };
+    expect(serializeMarkdownBody({ originalBody: '', parsed: parseMarkdownBody(''), doc })).toBe(
+      '![shot|320](a.png)\n',
+    );
+  });
+
+  it('leaves a sized Obsidian embed alone: its `|300` is the embed’s own', () => {
+    const node = parseMarkdownBody('![[diagram.png|300]]\n').doc.content[0]?.content?.[0];
+    expect(node).toMatchObject({
+      type: 'wikiLink',
+      attrs: { target: 'diagram.png', alias: '300' },
+    });
+    expect(typedAfter('![[diagram.png|300]]')).toBe('![[diagram.png|300]] more\n');
+  });
+});
