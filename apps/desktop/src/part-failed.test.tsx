@@ -2,7 +2,8 @@
 import type { ComponentProps } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ChatPanel, SettingsDialog } from '@dfai/ui';
+import type { SettingsDialog } from '@dfai/ui';
+import type { SidebarChatProps } from './chat/sidebar-chat.tsx';
 import { ChatFailed, PageFailed, PartFailed, SettingsFailed } from './part-failed.tsx';
 
 const outcome = { retrying: false, onRetry: vi.fn(), onReloadWindow: null };
@@ -72,7 +73,7 @@ describe('SettingsFailed', () => {
 describe('ChatFailed', () => {
   it('says so in the panel’s place, which its Close still closes', async () => {
     const onClose = vi.fn();
-    const props = { actions: { onClose } } as unknown as ComponentProps<typeof ChatPanel>;
+    const props = { actions: { onClose } } as unknown as SidebarChatProps;
     render(<ChatFailed {...outcome} props={props} />);
     const panel = screen.getByRole('complementary', { name: 'Claude' });
     expect(panel.querySelector('[role="alert"]')).not.toBeNull();

@@ -1839,7 +1839,7 @@ do: archive</pre>
       <ul>
         <li>Type in <b>Ask Claude…</b> and press <kbd>Return</kbd> (<kbd>⇧</kbd> <kbd>Return</kbd> for a new line). The answer streams in; <b>Stop</b> ends it.</li>
         <li>Under an answer, <b>Copy</b> copies it; under the latest one, <b>Retry</b> asks again.</li>
-        <li>Answers show as plain text for now: markdown in them appears as written.</li>
+        <li>Answers are drawn as on <a href="#ask">Ask</a>: each link to a note is a coloured chip that opens the note at that block (<kbd>⌘</kbd>-click for a new tab), a paragraph, list item or quote with no link is marked <i>not cited</i>, and the answer's foot counts them (<i>1 paragraph not cited</i>). Long titles and words wrap to the sidebar's width.</li>
       </ul>
       <h3>What Claude can do</h3>
       <ul>
@@ -1891,6 +1891,8 @@ do: archive</pre>
       <ul>
         <li>Each chat is saved as a note in <code>Chats/</code>, named from the first words you asked. After the first turn DFAI only adds to it, so anything you edit in an old chat is kept.</li>
         <li><b>Past chats</b> in the pane's header lists them and reopens one; <b>New chat</b> starts over.</li>
+        <li>If a past chat's note is gone (deleted or moved since the list was read), picking it says <i>That chat could not be opened: …</i> and the list is read again, so the row goes. A list that can't be read says <i>Past chats could not be read: …</i>.</li>
+        <li>While an answer is still arriving, the Past chats rows are greyed out (<i>Wait for the answer to finish</i>); press <b>Stop</b> or let it finish first.</li>
         <li>If a chat can't be saved, the pane says <i>The chat could not be saved to Chats/: …</i> and the reason.</li>
       </ul>
       <h3 id="profile">Your name (Settings → Profile)</h3>

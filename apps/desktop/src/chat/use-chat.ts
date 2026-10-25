@@ -3,12 +3,10 @@ import {
   acceptProposal,
   captureWindowContext,
   createChatSession,
-  listChats,
   undoProposal,
   type ActivityLog,
   type ApiRouterDeps,
   type ChatState,
-  type ChatSummary,
   type ChatWindow,
   type MarkdownPort,
   type ModelProvider,
@@ -17,18 +15,14 @@ import {
   type Toolboxes,
   type VaultFsPort,
 } from '@dfai/application';
-import {
-  chatModelOrDefault,
-  createVaultPath,
-  type ProfileState,
-  type VaultPath,
-} from '@dfai/domain';
+import { chatModelOrDefault, type ProfileState, type VaultPath } from '@dfai/domain';
 import type { ChatDraft, ChatProblemView } from '@dfai/ui';
 import { localClock } from '../today.ts';
 import type { ClipboardWriter } from '../settings/clipboard.ts';
 import type { ChatSettings, ChatSettingsStore } from './chat-settings-store.ts';
 import { chosenProvider } from './claude-step-ports.ts';
 import { profileWhenKnown } from './profile-when-known.ts';
+import { useChatHistory, type ChatHistory } from './use-chat-history.ts';
 
 /** How long the first question waits for the settings note to be read before going without a name. */
 const PROFILE_WAIT_MS = 1500;
@@ -77,12 +71,7 @@ export interface ChatController {
   readonly session: ReturnType<typeof createChatSession>;
   readonly model: string;
   readonly problem: ChatProblemView | null;
-  readonly history: {
-    readonly chats: readonly ChatSummary[];
-    readonly open: boolean;
-    readonly onOpenChange: (open: boolean) => void;
-    readonly onPick: (path: string) => void;
-  };
+  readonly history: ChatHistory;
   readonly settings: ChatSettings;
   readonly setSettings: (settings: ChatSettings) => void;
   readonly copy: (text: string) => void;
@@ -290,38 +279,6 @@ function useProviderProblem({
     };
   }, [asking, provider, settings.provider]);
   return status === null || status.ready ? null : { message: status.message, fix: status.fix };
-}
-
-function useChatHistory({
-  session,
-  fs,
-  chatPath,
-}: {
-  session: ReturnType<typeof createChatSession>;
-  fs: VaultFsPort | null;
-  chatPath: VaultPath | null;
-}) {
-  const [open, setOpen] = useState(false);
-  const [chats, setChats] = useState<readonly ChatSummary[]>([]);
-  useEffect(() => {
-    if (!open || fs === null) return;
-    let current = true;
-    listChats({ fs })
-      .then((found) => current && setChats(found))
-      .catch(() => current && setChats([]));
-    return () => {
-      current = false;
-    };
-  }, [open, fs, chatPath]);
-  return {
-    chats,
-    open,
-    onOpenChange: setOpen,
-    onPick: (path: string) => {
-      setOpen(false);
-      void session.open(createVaultPath(path));
-    },
-  };
 }
 
 /** `2026-09-27 10:04`, in the person's own time, as a chat note's `created:` says it. */

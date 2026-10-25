@@ -227,6 +227,11 @@ reader for a highlight; ⌘-click opens a new tab — and only an `https://`
 address with a host is a web link, opened in the browser. Any other markdown
 link stays the text it was written as.
 
+The chat beside the page draws its answers the same way, from the same
+reading (#548): the same chips, markers and links, at the sidebar's width.
+A past chat that cannot be opened, there or on Ask, says why and the list is
+read again; it never fails silently.
+
 ## Consequences
 
 - Nothing new holds a credential. Logging out of Claude Code logs Atlas out.

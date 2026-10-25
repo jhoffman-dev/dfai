@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import type { ChatNameHint } from '@dfai/ui';
+import type { ChatNameHint, OpenHow } from '@dfai/ui';
 import { DEFAULT_CHAT_MODEL } from '@dfai/domain';
 import { chatPanel, claudeSettings } from '../pages-on-first-use.ts';
 import type { ChatController } from './use-chat.ts';
@@ -12,11 +12,17 @@ const ClaudeSettings = claudeSettings.Component;
 export function ChatPane({
   chat,
   onFollowLink,
+  onFollowCitation,
+  onOpenWeb,
   loadImage,
   nameHint,
 }: {
   chat: ChatController;
   onFollowLink: (target: string) => void;
+  /** Follows a citation in an answer, where the click asked (⌘-click: a new tab). */
+  onFollowCitation: (link: string, how: OpenHow) => void;
+  /** Opens a web address an answer gives in the browser. */
+  onOpenWeb: (url: string) => void;
   loadImage: (src: string) => Promise<string | null>;
   /** Offered while Settings → Profile has no name; null once it has one. */
   nameHint: ChatNameHint | null;
@@ -46,6 +52,8 @@ export function ChatPane({
           onUndo: (id) => void session.undo(id),
           onCopy: chat.copy,
           onFollowLink,
+          onFollowCitation,
+          onOpenWeb,
         }}
       />
     </Suspense>

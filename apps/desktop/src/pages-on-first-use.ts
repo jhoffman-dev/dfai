@@ -110,7 +110,7 @@ export const feedView = later(laterParts, (m) => m.FeedView);
 
 // Claude's panel, failing in its own place with its Close; and Settings, failing inside
 // its own window. `SettingsPanel` draws the dialog and its sections in one `Suspense`.
-export const chatPanel = later(laterParts, (m) => m.ChatPanel, ChatFailed);
+export const chatPanel = later(laterParts, (m) => m.SidebarChat, ChatFailed);
 export const claudeSettings = later(laterParts, (m) => m.ClaudeSettings);
 export const settingsDialog = later(laterParts, (m) => m.SettingsDialog, SettingsFailed);
 // The sections `app.tsx` hands to Settings (drawn by name from `settings/settings-sections.ts`).

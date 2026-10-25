@@ -23,6 +23,8 @@ const actions: ChatActions = {
   onNewChat: vi.fn(),
   onClose: vi.fn(),
   onRemoveContext: vi.fn(),
+  onFollowCitation: vi.fn(),
+  onOpenWeb: vi.fn(),
   onAccept: vi.fn(),
   onReject: vi.fn(),
   onUndo: vi.fn(),
@@ -57,7 +59,7 @@ describe('a proposal card (adversarial)', () => {
         }}
         model="claude-opus-5-5"
         problem={null}
-        history={{ chats: [], open: false, onOpenChange: vi.fn(), onPick: vi.fn() }}
+        history={{ chats: [], open: false, onOpenChange: vi.fn(), onPick: vi.fn(), problem: null }}
         actions={actions}
         loadImage={async () => null}
       />,
@@ -103,7 +105,7 @@ function renderPanel(items: ChatItemView[]) {
       state={{ items, busy: false, error: null, context: null, notice: null }}
       model="claude-opus-5-5"
       problem={null}
-      history={{ chats: [], open: false, onOpenChange: vi.fn(), onPick: vi.fn() }}
+      history={{ chats: [], open: false, onOpenChange: vi.fn(), onPick: vi.fn(), problem: null }}
       actions={actions}
       loadImage={async () => null}
     />,

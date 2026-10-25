@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
-import { createVaultPath } from '@dfai/domain';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { VaultFsPort } from '@dfai/application';
 import { AskPage, type AskActions } from '@dfai/ui';
+import { usePickChat } from '../chat/use-pick-chat.ts';
 import type { PageChrome } from '../page-frame-fallback.tsx';
 import type { AskSeat } from './ask-seat.tsx';
 import { useAskState } from './use-ask-transcript.ts';
@@ -28,7 +28,7 @@ export function AskScreen({ seat, fs, vault, pane, onShowSidebar, history }: Ask
   const { session } = chat;
   const state = useAskState(chat.state);
   const recent = useRecentQuestions({ fs, vault, chatPath: chat.state.chatPath });
-  const pick = usePickRecent({ open: session.open, refresh: recent.refresh });
+  const pick = usePickChat({ open: session.open, refresh: recent.refresh });
   const asked = useSyncExternalStore(focus.subscribe, focus.latest);
   const focusRequest =
     asked !== null && asked.pane === pane && focus.pending(asked) ? asked.serial : null;
@@ -68,30 +68,4 @@ export function AskScreen({ seat, fs, vault, pane, onShowSidebar, history }: Ask
       {...(history !== undefined && { history })}
     />
   );
-}
-
-/**
- * Opens a past question's chat. One that cannot be opened — its note deleted
- * underneath — is said, and the list read again so the row goes.
- */
-function usePickRecent({
-  open,
-  refresh,
-}: {
-  open: (path: ReturnType<typeof createVaultPath>) => Promise<void>;
-  refresh: () => void;
-}) {
-  const [problem, setProblem] = useState<string | null>(null);
-  const onPick = useCallback(
-    (path: string) => {
-      setProblem(null);
-      open(createVaultPath(path)).catch((error: unknown) => {
-        const why = error instanceof Error ? error.message : String(error);
-        setProblem(`That chat could not be opened: ${why}`);
-        refresh();
-      });
-    },
-    [open, refresh],
-  );
-  return { onPick, problem };
 }
