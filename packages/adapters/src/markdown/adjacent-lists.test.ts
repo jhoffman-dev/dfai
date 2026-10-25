@@ -58,6 +58,37 @@ describe('numbered lists brought side by side', () => {
   });
 });
 
+describe('the list after is re-marked in its own bytes: only the marker characters change', () => {
+  it('keeps an escape, which written afresh would be dropped and read as an autolink', () => {
+    const { saved, reread } = moved('- Water.\n\nBetween.\n\n- See www\\.x.com\n', 1, 2);
+    expect(reread).toEqual(['bulletList', 'bulletList', 'paragraph']);
+    expect(saved).toBe('- Water.\n\n* See www\\.x.com\n\nBetween.\n');
+  });
+
+  it('changes every item at its own level, continuation items too, and leaves spacing, a nested list and an id', () => {
+    const body = '- Water.\n\nBetween.\n\n-   Sow.\n  - Twice a week.\n- Weed. ^lst002\n';
+    const { saved, reread } = moved(body, 1, 2);
+    expect(reread).toEqual(['bulletList', 'bulletList', 'paragraph']);
+    expect(saved).toBe('- Water.\n\n*   Sow.\n  - Twice a week.\n* Weed. ^lst002\n\nBetween.\n');
+  });
+
+  it('changes a numbered list’s delimiters and keeps its numbers', () => {
+    const { saved, reread } = moved('1. Sow.\n\nBetween.\n\n3. Weed  twice.\n7. Hoe.\n', 1, 2);
+    expect(reread).toEqual(['orderedList', 'orderedList', 'paragraph']);
+    expect(saved).toBe('1. Sow.\n\n3) Weed  twice.\n7) Hoe.\n\nBetween.\n');
+  });
+
+  it('falls back to a fresh write when the re-marked bytes read as something else', () => {
+    // `- * * *` is an item holding a rule; `* * * *` would be a rule.
+    const { saved, reread } = moved('- Water.\n\nBetween.\n\n- * * *\n', 1, 2);
+    expect(reread).toEqual(['bulletList', 'bulletList', 'paragraph']);
+    expect(parseMarkdownBody(saved).doc.content[1]).toMatchObject({
+      type: 'bulletList',
+      content: [{ type: 'listItem', content: [{ type: 'horizontalRule' }] }],
+    });
+  });
+});
+
 describe('a list that comes to stand after a paragraph', () => {
   it('keeps its bytes: nothing joins it', () => {
     const body = '- Water.\n\nBetween.\n\n- Repot.\n';

@@ -83,34 +83,33 @@ function firstMarker(source: string): string | null {
   return match === null ? null : (match[2] ?? match[1] ?? null);
 }
 
-const LEADING_MARKER = /^( *)(?:\d{1,9}[.)]|[-*+])(?=[ \t]|$)/gm;
+const LEADING_MARKER = /^( *)(?:(\d{1,9})[.)]|[-*+])(?=[ \t]|$)/gm;
 
 /**
- * Text with every line-leading list marker made one, and every backslash escape
- * dropped (the writer re-renders a list it re-marks, and may escape differently),
- * so that only a re-marking is forgiven.
+ * Text with every line-leading list marker — a bullet, or a number's delimiter,
+ * the number kept — made one, and nothing else changed, so that only a
+ * re-marking is forgiven: an escape dropped, a space moved, is caught.
  */
-const withMarkersBlanked = (text: string): string =>
-  text.replace(LEADING_MARKER, '$1#').replaceAll('\\', '');
+const withMarkersBlanked = (text: string): string => text.replace(LEADING_MARKER, '$1$2#');
 
 /**
- * The one block allowed to lose its bytes (ADR-0003 addendum): the later of two
- * neighbouring lists that would read as one, which the save re-marks on purpose.
- * Exempt only when the block before it in the note shown is an untouched list
- * with the same first marker, and the saved note holds this list as it was
- * except for its list markers and escapes. (A list kept apart by an id line
- * keeps its bytes, so it never needs the exemption.)
+ * The one block allowed to differ from its bytes (ADR-0003 addendum): the later
+ * of two neighbouring lists that would read as one, which the save re-marks on
+ * purpose. Exempt only when the block before it in the note shown is an
+ * untouched list with the same first marker, and the bytes `written` for it are
+ * its own except for the list marker characters. (A list kept apart by an id
+ * line keeps its bytes, so it never needs the exemption.)
  */
 function isDeliberatelyRemarked({
   shown,
   at,
   parsedBlocks,
-  saved,
+  written,
 }: {
   shown: readonly EditorNode[];
   at: number;
   parsedBlocks: ReturnType<typeof parseMarkdownBody>['blocks'];
-  saved: string;
+  written: string;
 }): boolean {
   const blockAt = (index: number) =>
     parsedBlocks.find((block) => block.id === shown[index]?.attrs?.['blockId']);
@@ -119,7 +118,45 @@ function isDeliberatelyRemarked({
   if (block === undefined || before === undefined) return false;
   const marker = firstMarker(block.source);
   if (marker === null || marker !== firstMarker(before.source)) return false;
-  return withMarkersBlanked(saved).includes(withMarkersBlanked(block.source));
+  return withMarkersBlanked(written) === withMarkersBlanked(block.source);
+}
+
+/**
+ * The byte clause (ADR-0003): every block of `doc` the person did not touch
+ * stands in the saved note in exactly its own bytes. The saved note is split
+ * into blocks and each untouched block is compared with the span at its
+ * place, so a byte appended to a block is caught, not only one taken away.
+ */
+function untouchedBytesLost({
+  parsed,
+  doc,
+  saved,
+}: {
+  parsed: ReturnType<typeof parseMarkdownBody>;
+  doc: EditorDocument;
+  saved: string;
+}): string[] {
+  const spans = parseMarkdownBody(saved).blocks;
+  const lost: string[] = [];
+  for (const [at, node] of doc.content.entries()) {
+    const source = parsed.blocks.find((block) => block.id === node.attrs?.['blockId'])?.source;
+    if (source === undefined) continue;
+    const span = spans[at];
+    const written = span === undefined ? '' : saved.slice(span.start, span.end);
+    if (written === source) continue;
+    const remarked = isDeliberatelyRemarked({
+      shown: doc.content,
+      at,
+      parsedBlocks: parsed.blocks,
+      written,
+    });
+    if (!remarked) {
+      lost.push(
+        `untouched block lost its bytes: ${JSON.stringify(source)} is written ${JSON.stringify(written)}`,
+      );
+    }
+  }
+  return lost;
 }
 
 describe('moves and deletes of top-level blocks, saved', () => {
@@ -137,18 +174,8 @@ describe('moves and deletes of top-level blocks, saved', () => {
         failures.push(`seed ${seed}: save threw ${String(error)}`);
         continue;
       }
-      for (const [at, node] of doc.content.entries()) {
-        const id = node.attrs?.['blockId'];
-        const source = parsed.blocks.find((block) => block.id === id)?.source;
-        const remarked = isDeliberatelyRemarked({
-          shown: doc.content,
-          at,
-          parsedBlocks: parsed.blocks,
-          saved,
-        });
-        if (source !== undefined && !saved.includes(source) && !remarked) {
-          failures.push(`seed ${seed}: untouched block lost its bytes: ${JSON.stringify(source)}`);
-        }
+      for (const lost of untouchedBytesLost({ parsed, doc, saved })) {
+        failures.push(`seed ${seed}: ${lost}`);
       }
       const reread = parseMarkdownBody(saved).doc.content.map(withoutReadIds);
       if (JSON.stringify(reread) !== JSON.stringify(doc.content.map(withoutReadIds))) {
@@ -167,6 +194,30 @@ describe('moves and deletes of top-level blocks, saved', () => {
       }
     }
     expect(failures).toEqual([]);
+  });
+});
+
+describe('the byte clause itself, against a save written by hand', () => {
+  // The middle paragraph moved below the second list, which then stands after
+  // the first with the same bullet, and is the one list the save may re-mark.
+  const BODY = '- Water.\n\nBetween.\n\n- See www\\.x.com\n';
+  const parsed = parseMarkdownBody(BODY);
+  const [first, middle, second] = parsed.doc.content;
+  const doc: EditorDocument = { type: 'doc', content: [first!, second!, middle!] };
+
+  it('passes the list after re-marked in its own bytes, its escape kept', () => {
+    const saved = '- Water.\n\n* See www\\.x.com\n\nBetween.\n';
+    expect(untouchedBytesLost({ parsed, doc, saved })).toEqual([]);
+  });
+
+  it('goes red when the re-marked list is written afresh, which drops its escape', () => {
+    const saved = '- Water.\n\n* See www.x.com\n\nBetween.\n';
+    expect(untouchedBytesLost({ parsed, doc, saved })).toHaveLength(1);
+  });
+
+  it('goes red when trailing spaces are appended to an untouched paragraph', () => {
+    const saved = '- Water.\n\n* See www\\.x.com\n\nBetween.  \n';
+    expect(untouchedBytesLost({ parsed, doc, saved })).toHaveLength(1);
   });
 });
 
