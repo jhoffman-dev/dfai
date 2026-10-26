@@ -622,6 +622,15 @@ export interface FakeHost {
     change(calendarId: string, event: Record<string, unknown>): void;
     /** How many `events.list` calls reached the stub. */
     eventsAsked(): number;
+    /**
+     * The calendar DFAI made, as the blocks sync (#30) sees it: events listed
+     * whole or by token, inserted and patched, each write a new version.
+     */
+    blockEvents(): readonly Record<string, unknown>[];
+    /** Someone moves a block's event in Google Calendar. */
+    moveBlockEvent(id: string, start: string, end: string): void;
+    /** The next call to the blocks calendar is answered with this status. */
+    refuseNextBlockCall(status: number): void;
   };
   /**
    * Granola, as `granola.rs` answers for it: an API key kept per vault, and a
@@ -870,6 +879,7 @@ export async function installHost(
   /** Google sign-ins by vault root, and the calendars DFAI made on the account. */
   const googleSignIns = new Map<string, { clientId: string; scopes: string[] }>();
   const googleEvents = fakeCalendarEvents();
+  const googleBlocks = fakeBlockEvents();
   const googleCalendars: { id: string; summary: string }[] = [];
   let googleRefusal: { kind: string; code?: string; message: string } | null = null;
   /** Granola keys and refusals by vault root, what each path answers, and every request. */
@@ -1327,6 +1337,8 @@ export async function installHost(
           statement.startsWith('/* meeting links:') ||
           // Today's meetings and the notes a meetings sync writes to (ADR-0046).
           statement.startsWith('/* meetings: ') ||
+          // The blocks a blocks sync may write to, and every note carrying one's event id (#30).
+          statement.startsWith('/* blocks: ') ||
           // The briefs stamped for today's meetings, wherever they were filed (#39).
           statement.startsWith('/* morning brief: stamped briefs */') ||
           statement.startsWith('/* proposals: ids */') ||
@@ -1638,8 +1650,11 @@ export async function installHost(
         if (!googleSignIns.has(writeRoot(args))) {
           return { [REJECT]: { kind: 'not_connected', message: 'not connected' } };
         }
-        const { call } = args as { call: { method: string; path: string } };
+        const { call } = args as { call: { method: string; path: string; body?: string } };
         const scopes = googleSignIns.get(writeRoot(args))?.scopes ?? [];
+        const made = new Set(googleCalendars.map((calendar) => calendar.id));
+        const blocks = googleBlocks.answer(call, made);
+        if (blocks !== null) return blocks;
         const events = googleEvents.answer(call, scopes);
         if (events !== null) return events;
         if (call.method === 'POST' && call.path === '/calendar/v3/calendars') {
@@ -2275,6 +2290,9 @@ export async function installHost(
       serveEvents: googleEvents.serve,
       change: googleEvents.change,
       eventsAsked: googleEvents.asked,
+      blockEvents: googleBlocks.events,
+      moveBlockEvent: googleBlocks.move,
+      refuseNextBlockCall: googleBlocks.refuseNext,
     },
     granola: {
       serve: (path, answer) => {
@@ -2509,6 +2527,77 @@ export const closePane = (page: Page, which: 1 | 2) =>
   pageCommand(page, /^Close pane/, page.getByRole('region', { name: `Pane ${which}` }));
 
 const READ_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
+
+/**
+ * The Calendar API's events on the calendars DFAI made, for the blocks sync
+ * (#30): `calendar.app.created` reaches them, so no read scope is asked for.
+ */
+function fakeBlockEvents() {
+  const events = new Map<string, Record<string, unknown>>();
+  const changed = new Set<string>();
+  let versions = 0;
+  let tokens = 0;
+  let refusal: number | null = null;
+  const written = (id: string, fields: Record<string, unknown>) => {
+    versions += 1;
+    const event = { ...events.get(id), ...fields, id, etag: `"b${versions}"`, status: 'confirmed' };
+    events.set(id, event);
+    changed.add(id);
+    return { status: 200, body: JSON.stringify(event) };
+  };
+  const answer = (call: { method: string; path: string; body?: string }, made: Set<string>) => {
+    const url = new URL(call.path, 'https://www.googleapis.com');
+    const match = /^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(url.pathname);
+    if (match === null || !made.has(decodeURIComponent(match[1] ?? ''))) return null;
+    if (refusal !== null) {
+      const status = refusal;
+      refusal = null;
+      return { status, body: `{"error":{"code":${status},"message":"Backend Error"}}` };
+    }
+    const eventId = match[2] === undefined ? null : decodeURIComponent(match[2]);
+    const fields = (call.body === undefined ? {} : JSON.parse(call.body)) as Record<
+      string,
+      unknown
+    >;
+    if (call.method === 'GET' && eventId !== null) {
+      const event = events.get(eventId);
+      return event === undefined
+        ? { status: 404, body: '{"error":{"code":404}}' }
+        : { status: 200, body: JSON.stringify(event) };
+    }
+    if (call.method === 'GET') {
+      const token = url.searchParams.get('syncToken');
+      const ids = token === null ? [...events.keys()] : [...changed];
+      changed.clear();
+      tokens += 1;
+      const items = ids.map((id) => events.get(id));
+      const timeZone = 'America/Los_Angeles';
+      return {
+        status: 200,
+        body: JSON.stringify({ timeZone, items, nextSyncToken: `blocks-${tokens}` }),
+      };
+    }
+    if (call.method === 'POST' && eventId === null) {
+      const id = String(fields['id']);
+      if (events.has(id)) return { status: 409, body: '{"error":{"code":409}}' };
+      return written(id, fields);
+    }
+    if (call.method === 'PATCH' && eventId !== null && events.has(eventId)) {
+      return written(eventId, fields);
+    }
+    return { status: 404, body: '{"error":{"code":404}}' };
+  };
+  return {
+    answer,
+    events: () => [...events.values()],
+    refuseNext: (status: number) => {
+      refusal = status;
+    },
+    move: (id: string, start: string, end: string) => {
+      written(id, { start: { dateTime: start }, end: { dateTime: end } });
+    },
+  };
+}
 
 /** The Calendar API's `events.list` for the stub, as much of it as a meetings sync uses (ADR-0046). */
 function fakeCalendarEvents() {

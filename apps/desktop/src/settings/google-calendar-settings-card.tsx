@@ -12,6 +12,7 @@ export function GoogleCalendarSettingsCard({ setting }: { setting: GoogleCalenda
       onChoose={setting.choose}
       onCreate={setting.create}
       meetings={setting.meetings}
+      blocks={setting.blocks}
     />
   );
 }

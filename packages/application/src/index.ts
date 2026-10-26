@@ -23,8 +23,10 @@ export { memoryIndexPort } from './testing/memory-index.ts';
 export { memoryActivityStore, recordingActivity } from './testing/fake-activity.ts';
 export { apiFixture, bodyOf, codeOf, encoded } from './testing/api-fixture.ts';
 export {
+  fakeBlockCalendar,
   fakeCalendarSource,
   fakeGoogleCalendar,
+  memoryBlockSyncRecords,
   memoryMeetingSyncRecords,
 } from './testing/fake-google-calendar.ts';
 export {

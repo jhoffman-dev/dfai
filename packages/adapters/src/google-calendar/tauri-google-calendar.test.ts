@@ -87,10 +87,14 @@ describe('tauriGoogleCalendar', () => {
     expect(invoke).toHaveBeenCalledTimes(20);
   });
 
-  it('makes a calendar by name and reads back the one Google made', async () => {
+  it('makes a calendar by name on the zone given, and reads back the one Google made', async () => {
     invoke.mockResolvedValue(answer(200, { id: 'made@example.com', summary: 'DFAI blocks' }));
 
-    const made = await tauriGoogleCalendar.createCalendar({ vault: VAULT, name: 'DFAI blocks' });
+    const made = await tauriGoogleCalendar.createCalendar({
+      vault: VAULT,
+      name: 'DFAI blocks',
+      timeZone: 'America/Los_Angeles',
+    });
 
     expect(made).toEqual({
       id: 'made@example.com',
@@ -100,7 +104,11 @@ describe('tauriGoogleCalendar', () => {
     });
     expect(invoke).toHaveBeenCalledWith('google_calendar_request', {
       vault: VAULT,
-      call: { method: 'POST', path: '/calendar/v3/calendars', body: '{"summary":"DFAI blocks"}' },
+      call: {
+        method: 'POST',
+        path: '/calendar/v3/calendars',
+        body: '{"summary":"DFAI blocks","timeZone":"America/Los_Angeles"}',
+      },
     });
   });
 
@@ -118,7 +126,7 @@ describe('tauriGoogleCalendar', () => {
     });
     invoke.mockResolvedValueOnce(answer(200, { summary: 'no id' }));
     await expect(
-      tauriGoogleCalendar.createCalendar({ vault: VAULT, name: 'DFAI blocks' }),
+      tauriGoogleCalendar.createCalendar({ vault: VAULT, name: 'DFAI blocks', timeZone: 'UTC' }),
     ).rejects.toMatchObject({ failure: { kind: 'malformed' } });
   });
 

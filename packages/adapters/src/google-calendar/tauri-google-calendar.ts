@@ -144,8 +144,8 @@ export const tauriGoogleCalendar: GoogleCalendarPort = {
     );
   },
   listCalendars,
-  async createCalendar({ vault, name }) {
-    const body = JSON.stringify({ summary: name });
+  async createCalendar({ vault, name, timeZone }) {
+    const body = JSON.stringify({ summary: name, timeZone });
     const made = createdCalendarOf(
       await callApi(vault, { method: 'POST', path: '/calendar/v3/calendars', body }),
     );

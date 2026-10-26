@@ -35,6 +35,23 @@ export interface GoogleMeetingsView {
   readonly problem: GoogleCalendarProblem | null;
 }
 
+/**
+ * Whether blocks sync two ways with the blocks calendar (#30): `off` for the
+ * vault, `elsewhere` when the Mac that runs its automations syncs them,
+ * `nocalendar` before a calendar for blocks is chosen, `consent` when this
+ * Mac's sign-in may not write DFAI's calendar, `on` when they sync.
+ */
+export type GoogleBlocksState = 'off' | 'elsewhere' | 'nocalendar' | 'consent' | 'on';
+
+/** The blocks part of the card. */
+export interface GoogleBlocksView {
+  readonly state: GoogleBlocksState;
+  readonly syncing: boolean;
+  /** When this Mac last finished a whole sync, as the card shows it; null before one. */
+  readonly lastSynced: string | null;
+  readonly problem: GoogleCalendarProblem | null;
+}
+
 /** Settings → Google Calendar as the card draws it. */
 export interface GoogleCalendarView {
   readonly phase: GoogleCalendarPhase;
@@ -51,6 +68,8 @@ export interface GoogleCalendarView {
   readonly pending: boolean;
   /** Today's meetings, once connected; null where they are not offered. */
   readonly meetings: GoogleMeetingsView | null;
+  /** Two-way sync of blocks, once connected; null where it is not offered. */
+  readonly blocks?: GoogleBlocksView | null;
 }
 
 /** What the meetings part can ask for. */
@@ -59,6 +78,9 @@ export interface GoogleMeetingsActions {
   readonly onSync: () => void;
   readonly onStop: () => void;
 }
+
+/** What the blocks part can ask for: allow and turn it on, sync now, or stop. */
+export type GoogleBlocksActions = GoogleMeetingsActions;
 
 /** What a sign-in is asked for with: a client, and its secret when Google issued one. */
 export interface GoogleConnectRequest {
@@ -79,6 +101,7 @@ export function GoogleCalendarSettings({
   onChoose,
   onCreate,
   meetings = NO_MEETINGS_ACTIONS,
+  blocks = NO_MEETINGS_ACTIONS,
 }: {
   view: GoogleCalendarView;
   onConnect: (request: GoogleConnectRequest) => void;
@@ -87,6 +110,7 @@ export function GoogleCalendarSettings({
   onChoose: (calendarId: string) => void;
   onCreate: () => void;
   meetings?: GoogleMeetingsActions;
+  blocks?: GoogleBlocksActions;
 }) {
   return (
     <SettingsSection section={SETTINGS_SECTIONS.googleCalendar}>
@@ -114,6 +138,9 @@ export function GoogleCalendarSettings({
           onCreate={onCreate}
         />
       )}
+      {view.phase === 'connected' && view.blocks !== undefined && view.blocks !== null && (
+        <Blocks view={view.blocks} pending={view.pending} actions={blocks} />
+      )}
       {view.phase === 'connected' && view.meetings !== null && (
         <Meetings view={view.meetings} pending={view.pending} actions={meetings} />
       )}
@@ -132,6 +159,86 @@ const NO_MEETINGS_ACTIONS: GoogleMeetingsActions = {
   onSync: () => {},
   onStop: () => {},
 };
+
+function blocksLine(view: GoogleBlocksView): string {
+  if (view.state === 'off') {
+    return 'Blocks are not on Google Calendar yet. Sync them to show each as busy on the calendar above; moving one on either side moves the other.';
+  }
+  if (view.state === 'elsewhere') {
+    return 'This vault’s blocks are synced by the Mac that runs its automations (Settings → Sync). This Mac never asks Google for them.';
+  }
+  if (view.state === 'nocalendar')
+    return 'Choose or make the calendar for blocks above, and they sync to it.';
+  if (view.state === 'consent') {
+    return 'This vault syncs its blocks, but this Mac’s sign-in may not write DFAI’s calendar yet.';
+  }
+  if (view.syncing) return 'Syncing your blocks…';
+  return view.lastSynced === null
+    ? 'Blocks sync every 15 minutes.'
+    : `Blocks sync every 15 minutes; last synced at ${view.lastSynced}.`;
+}
+
+/** Blocks on Google Calendar: turn sync on, sync now, or stop. */
+function Blocks({
+  view,
+  pending,
+  actions,
+}: {
+  view: GoogleBlocksView;
+  pending: boolean;
+  actions: GoogleBlocksActions;
+}) {
+  return (
+    <div className="settings__confirm" role="group" aria-label="Blocks">
+      <p className="settings__lede">{blocksLine(view)}</p>
+      <div className="settings__actions">
+        {(view.state === 'off' || view.state === 'consent') && (
+          <button
+            className="btn btn--secondary"
+            type="button"
+            disabled={pending}
+            onClick={actions.onAllow}
+          >
+            Sync blocks with Google Calendar
+          </button>
+        )}
+        {view.state === 'on' && (
+          <button
+            className="btn btn--secondary"
+            type="button"
+            disabled={pending || view.syncing}
+            onClick={actions.onSync}
+          >
+            Sync blocks now
+          </button>
+        )}
+        {view.state !== 'off' && (
+          <button
+            className="btn btn--ghost"
+            type="button"
+            disabled={pending}
+            onClick={actions.onStop}
+          >
+            Stop syncing blocks
+          </button>
+        )}
+      </div>
+      {view.state !== 'off' && (
+        <p className="settings__lede">
+          Only the calendar chosen above is written to, and no event is ever deleted. A block
+          deleted in Google is marked, never deleted; when both sides moved a block, Google’s time
+          is kept. Stopping takes effect at once on this Mac.
+        </p>
+      )}
+      {view.problem !== null && (
+        <div role="alert">
+          <p className="settings__problem">{view.problem.problem}</p>
+          {view.problem.fix !== null && <p className="settings__lede">{view.problem.fix}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function meetingsLine(view: GoogleMeetingsView): string {
   if (view.state === 'off') {

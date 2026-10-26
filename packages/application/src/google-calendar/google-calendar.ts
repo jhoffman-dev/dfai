@@ -5,6 +5,7 @@ import {
   parseGoogleClientId,
   scopesWith,
   DEDICATED_CALENDAR_NAME,
+  GOOGLE_BLOCKS_KEY,
   GOOGLE_MEETINGS_KEY,
   GOOGLE_CALENDAR_KEY,
   GOOGLE_CALENDAR_SCOPES,
@@ -12,9 +13,12 @@ import {
   type GoogleCalendar,
   type GoogleCalendarSetting,
   type GoogleProblem,
+  type GoogleUse,
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
+import type { Rng } from '../ports.ts';
 import { readVaultSettings, type SettingsWriter } from '../settings/index.ts';
+import { vaultIdChange } from '../settings/vault-id.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { GoogleCalendarError, type GoogleCalendarPort, type GoogleConnection } from './ports.ts';
 
@@ -68,15 +72,20 @@ export async function blockCalendars({
   return calendars.filter(canHoldBlocks).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-/** Makes the calendar blocks go to, under DFAI's name for it. */
+/**
+ * Makes the calendar blocks go to, under DFAI's name for it, keeping the
+ * person's zone: one made with none is on UTC, and shows every block hours off.
+ */
 export function createBlocksCalendar({
   port,
   vault,
+  timeZone,
 }: {
   port: GoogleCalendarPort;
   vault: string;
+  timeZone: string;
 }): Promise<GoogleCalendar> {
-  return port.createCalendar({ vault, name: DEDICATED_CALENDAR_NAME });
+  return port.createCalendar({ vault, name: DEDICATED_CALENDAR_NAME, timeZone });
 }
 
 const NOT_REVOKED: GoogleProblem = {
@@ -134,20 +143,73 @@ const NOT_CONNECTED =
  * allowed before, with the client the sign-in already uses. Nothing is asked
  * when it was allowed already.
  */
-export async function allowGoogleMeetings({
-  port,
-  vault,
-}: {
+export function allowGoogleMeetings(args: {
   port: GoogleCalendarPort;
   vault: string;
 }): Promise<GoogleConnection> {
+  return allowGoogleUse({ ...args, use: 'meetings', notConnected: NOT_CONNECTED });
+}
+
+/** Signs in again for `use` on top of what was granted, with the same client; nothing asked when it is granted. */
+async function allowGoogleUse({
+  port,
+  vault,
+  use,
+  notConnected,
+}: {
+  port: GoogleCalendarPort;
+  vault: string;
+  use: GoogleUse;
+  notConnected: string;
+}): Promise<GoogleConnection> {
   const connection = await port.status({ vault });
   if (!connection.connected || connection.clientId === null) {
-    throw new GoogleCalendarError({ kind: 'not_connected', message: NOT_CONNECTED });
+    throw new GoogleCalendarError({ kind: 'not_connected', message: notConnected });
   }
-  const scopes = scopesWith(connection.scopes, 'meetings');
+  const scopes = scopesWith(connection.scopes, use);
   if (scopes === null) return connection;
   return port.connect({ vault, clientId: connection.clientId, scopes });
+}
+
+const BLOCKS_NOT_CONNECTED =
+  'Google Calendar is not connected for this vault. Connect it first, then sync blocks.';
+
+/**
+ * Lets DFAI write blocks to the calendar it made (#30). The connection
+ * already asks for `calendar.app.created`, which reaches only calendars DFAI
+ * made; a sign-in that lacks it (one made before, or with it unticked) is
+ * asked for it again. Nothing is asked when it is granted.
+ */
+export function allowGoogleBlocks(args: {
+  port: GoogleCalendarPort;
+  vault: string;
+}): Promise<GoogleConnection> {
+  return allowGoogleUse({ ...args, use: 'blocks', notConnected: BLOCKS_NOT_CONNECTED });
+}
+
+/**
+ * Writes whether the vault's blocks sync two ways with its Google calendar.
+ * Turned on, the vault is given its own id too when it has none (a seed of
+ * every new block's event id), in the same write, so it reaches the Mac that
+ * syncs blocks with the switch itself.
+ */
+export async function saveBlocksEnabled({
+  settings,
+  enabled,
+  rng,
+}: {
+  settings: SettingsWriter;
+  enabled: boolean;
+  rng: Pick<Rng, 'next'>;
+}): Promise<void> {
+  if (!enabled) {
+    await settings.save({ [GOOGLE_BLOCKS_KEY]: null });
+    return;
+  }
+  await settings.update((current) => ({
+    [GOOGLE_BLOCKS_KEY]: true,
+    ...vaultIdChange(current, rng),
+  }));
 }
 
 /** Writes whether the vault reads its meetings from Google Calendar. */

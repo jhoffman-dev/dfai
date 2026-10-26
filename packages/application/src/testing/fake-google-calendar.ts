@@ -1,5 +1,9 @@
-import type { GoogleCalendar, GoogleEvent } from '@dfai/domain';
+import type { BlockEvent, BlockSyncFields, GoogleCalendar, GoogleEvent } from '@dfai/domain';
 import type {
+  BlockCalendar,
+  BlockEventCall,
+  BlockSyncRecord,
+  BlockSyncRecords,
   CalendarSource,
   GoogleCalendarPort,
   GoogleConnection,
@@ -131,6 +135,138 @@ export function memoryMeetingSyncRecords() {
   const kept = new Map<string, MeetingSyncRecord>();
   const records: MeetingSyncRecords = {
     read: (vault) => kept.get(vault) ?? { calendars: {}, lastSyncAt: null },
+    write: (vault, record) => {
+      kept.set(vault, record);
+    },
+  };
+  return { records, kept };
+}
+
+/**
+ * The blocks calendar in memory, as Google keeps one: each write gives the
+ * event a new version (etag) and keeps the note it was written for, a
+ * listing with no token gives everything and a token, a token gives what
+ * changed since, `expire` makes every token stale (410). An insert whose id
+ * is taken answers `exists` — a deleted event's id stays taken, as Google
+ * keeps it — and a patch of a deleted event `gone`. Times are read on the
+ * fixed `offset` (Los Angeles in late October), which is all the tests need
+ * of a zone. `zone` is the blocks calendar's own, which never places a time;
+ * `primaryZone` is the primary calendar's, null when the sign-in may not read it.
+ */
+export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') {
+  const state = {
+    events: new Map(events.map((event) => [event.id, event])),
+    changed: new Set<string>(),
+    live: new Set<string>(),
+    issued: 0,
+    versions: 0,
+    asked: [] as { calendarId: string; syncToken: string | null }[],
+    writes: [] as { kind: 'insert' | 'patch'; call: BlockEventCall }[],
+    /** Every events.get, by id. */
+    fetched: [] as string[],
+    /** The next call of each kind fails with this, once. */
+    failNext: {} as Partial<Record<'list' | 'insert' | 'patch' | 'zone', Error>>,
+    zone: 'America/Los_Angeles' as string | null,
+    primaryZone: null as string | null,
+  };
+  const issue = () => {
+    state.issued += 1;
+    const token = `blocks-sync-${state.issued}`;
+    state.live.add(token);
+    return token;
+  };
+  const version = () => {
+    state.versions += 1;
+    return `"g${state.versions}"`;
+  };
+  const failing = (kind: keyof typeof state.failNext) => {
+    const failure = state.failNext[kind];
+    delete state.failNext[kind];
+    if (failure !== undefined) throw failure;
+  };
+  const at = (wall: string) => Date.parse(`${wall}:00${offset}`);
+  const put = (id: string, fields: BlockSyncFields, notePath: string | null) => {
+    const event: BlockEvent = {
+      id,
+      etag: version(),
+      cancelled: false,
+      title: fields.title,
+      start: { kind: 'timed', at: at(fields.start) },
+      end: { kind: 'timed', at: at(fields.end) },
+      notePath,
+    };
+    state.events.set(id, event);
+    state.changed.add(id);
+    return { kind: 'written' as const, etag: event.etag };
+  };
+  const calendar: BlockCalendar = {
+    listBlockEvents: async ({ calendarId, syncToken }) => {
+      state.asked.push({ calendarId, syncToken });
+      failing('list');
+      if (syncToken !== null && !state.live.has(syncToken)) return { kind: 'expired' };
+      const listed =
+        syncToken === null
+          ? [...state.events.values()]
+          : [...state.changed].flatMap((id) => {
+              const event = state.events.get(id);
+              return event === undefined ? [] : [event];
+            });
+      state.changed.clear();
+      return { kind: 'changes', events: listed, syncToken: issue() };
+    },
+    getBlockEvent: async ({ eventId }) => {
+      state.fetched.push(eventId);
+      return state.events.get(eventId) ?? null;
+    },
+    insertBlockEvent: async (call) => {
+      state.writes.push({ kind: 'insert', call });
+      failing('insert');
+      if (state.events.has(call.eventId)) return { kind: 'exists' };
+      return put(call.eventId, call.fields, call.notePath ?? null);
+    },
+    patchBlockEvent: async (call) => {
+      state.writes.push({ kind: 'patch', call });
+      failing('patch');
+      const kept = state.events.get(call.eventId);
+      if (kept === undefined || kept.cancelled) return { kind: 'gone' };
+      return put(call.eventId, call.fields, call.notePath ?? kept.notePath ?? null);
+    },
+    primaryTimeZone: async () => {
+      failing('zone');
+      return state.primaryZone;
+    },
+  };
+  return {
+    calendar,
+    state,
+    /** Someone moves the event in Google Calendar. */
+    move: (id: string, start: string, end: string) => {
+      const kept = state.events.get(id);
+      if (kept === undefined) throw new Error(`no event ${id}`);
+      put(id, { title: kept.title, start, end }, kept.notePath ?? null);
+    },
+    /** Someone deletes the event in Google Calendar. */
+    remove: (id: string) => {
+      state.events.set(id, {
+        id,
+        etag: version(),
+        cancelled: true,
+        title: '',
+        start: null,
+        end: null,
+      });
+      state.changed.add(id);
+    },
+    expire: () => state.live.clear(),
+  };
+}
+
+/** This Mac's block sync records, in memory. */
+export function memoryBlockSyncRecords() {
+  const kept = new Map<string, BlockSyncRecord>();
+  const records: BlockSyncRecords = {
+    read: (vault) =>
+      kept.get(vault) ?? { calendarId: null, syncToken: null, lastSyncAt: null, timeZone: null },
     write: (vault, record) => {
       kept.set(vault, record);
     },

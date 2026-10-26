@@ -263,3 +263,59 @@ fn an_events_path_stays_under_the_calendar_api_whatever_its_calendar_id() {
         assert!(call_url(&api, path, Service::Calendar).is_err(), "{path}");
     }
 }
+
+/// #30's writes to the blocks calendar: TypeScript builds them, the host
+/// carries them. A patch whose access token Google ended is renewed once and
+/// sent again, and neither the method nor the body is changed on the way.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_block_events_insert_and_patch_reach_google_as_built_and_a_401_is_renewed_once() {
+    let setup = connected_with_pages().await;
+    let session = setup.session();
+    let events = "/calendar/v3/calendars/dfai-blocks%40group.calendar.example.com/events";
+    let insert = ApiCall {
+        method: "POST".into(),
+        path: events.into(),
+        body: Some(
+            r#"{"id":"dfaiblock1","summary":"Larkspur close block","transparency":"opaque"}"#
+                .into(),
+        ),
+        content_type: None,
+    };
+    let inserted = session.call(&insert, Service::Calendar).await.unwrap();
+    assert_eq!(
+        (inserted.status, inserted.body.as_str()),
+        (200, r#"{"id":"dfaiblock1","etag":"\"w1\""}"#)
+    );
+
+    let before = refreshes(&setup);
+    setup.google().expire_access_tokens();
+    let patch = ApiCall {
+        method: "PATCH".into(),
+        path: format!("{events}/dfaiblock1"),
+        body: Some(
+            r#"{"start":{"dateTime":"2026-10-26T13:00:00","timeZone":"America/Los_Angeles"}}"#
+                .into(),
+        ),
+        content_type: None,
+    };
+    let patched = session.call(&patch, Service::Calendar).await.unwrap();
+
+    assert_eq!(patched.status, 200);
+    assert_eq!(refreshes(&setup), before + 1);
+    let writes = setup.google().event_writes.clone();
+    assert_eq!(
+        writes,
+        vec![
+            (
+                "POST".to_string(),
+                events.to_string(),
+                insert.body.clone().unwrap()
+            ),
+            (
+                "PATCH".to_string(),
+                format!("{events}/dfaiblock1"),
+                patch.body.clone().unwrap()
+            ),
+        ]
+    );
+}

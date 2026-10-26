@@ -10,6 +10,7 @@ import {
   resolveGoogleCalendar,
   resolveGranola,
   resolveMeetingSync,
+  resolveBlockSync,
   resolveIndexPorts,
   resolveKindle,
   resolveLocalApiPorts,
@@ -49,6 +50,7 @@ createRoot(root).render(
       googleCalendar={resolveGoogleCalendar()}
       granola={resolveGranola()}
       meetings={resolveMeetingSync()}
+      blocks={resolveBlockSync()}
       kindle={resolveKindle()}
       globalCapture={resolveGlobalCapture()}
       exporting={resolveExportPorts()}

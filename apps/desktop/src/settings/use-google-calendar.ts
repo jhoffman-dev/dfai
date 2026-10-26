@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  blockSyncEnabled,
   dedicatedCalendar,
   grantsUse,
   needsBlocksCalendar,
@@ -11,13 +12,16 @@ import {
   type GoogleProblem,
 } from '@dfai/domain';
 import {
+  allowGoogleBlocks,
   allowGoogleMeetings,
+  blockSyncProblem,
   blockCalendars,
   connectGoogleCalendar,
   createBlocksCalendar,
   disconnectGoogleCalendar,
   googleProblemOf,
   meetingSyncProblem,
+  saveBlocksEnabled,
   saveGoogleCalendarSetting,
   saveMeetingsEnabled,
   type ActivityLog,
@@ -27,12 +31,17 @@ import {
   type VaultFsPort,
 } from '@dfai/application';
 import type {
+  GoogleBlocksActions,
+  GoogleBlocksView,
   GoogleCalendarView,
   GoogleConnectRequest,
   GoogleMeetingsActions,
   GoogleMeetingsView,
 } from '@dfai/ui';
+import type { BlockSyncController } from '../google-calendar/use-block-sync.ts';
 import type { MeetingSyncController } from '../google-calendar/use-meeting-sync.ts';
+import { cryptoRng } from '../random.ts';
+import { localTimeZone } from '../today.ts';
 import { useVaultSetting } from './use-vault-setting.ts';
 import { useVaultSettingsRead } from './use-vault-settings-read.ts';
 import { vaultSettingsWriter } from './vault-settings-writer.ts';
@@ -46,6 +55,7 @@ export interface GoogleCalendarSettingState {
   readonly choose: (calendarId: string) => void;
   readonly create: () => void;
   readonly meetings: GoogleMeetingsActions;
+  readonly blocks: GoogleBlocksActions;
 }
 
 const NO_SETTING: GoogleCalendarSetting = { clientId: null, calendarId: null };
@@ -85,6 +95,38 @@ function meetingsViewOf({
   };
 }
 
+/** The blocks part of the card, from the vault's switch, its calendar, this Mac's grant and the last sync. */
+function blocksViewOf({
+  blockSync,
+  enabled,
+  writesHere,
+  hasCalendar,
+  scopes,
+}: {
+  blockSync: BlockSyncController;
+  enabled: boolean;
+  writesHere: boolean;
+  hasCalendar: boolean;
+  scopes: readonly string[];
+}): GoogleBlocksView {
+  const state = !enabled
+    ? 'off'
+    : !writesHere
+      ? 'elsewhere'
+      : !hasCalendar
+        ? 'nocalendar'
+        : grantsUse(scopes, 'blocks')
+          ? 'on'
+          : 'consent';
+  const report = blockSync.report;
+  return {
+    state,
+    syncing: blockSync.syncing,
+    lastSynced: blockSync.lastSyncAt === null ? null : timeOfDay(blockSync.lastSyncAt),
+    problem: report === null ? null : blockSyncProblem(report),
+  };
+}
+
 /**
  * The open vault's Google Calendar connection, read from the host while
  * Settings is open (`active`), and the client and calendar the vault's
@@ -100,6 +142,9 @@ export function useGoogleCalendar({
   activity,
   meetingSync,
   meetingsWrittenHere,
+  blockSync,
+  blocksWrittenHere = false,
+  timeZone = localTimeZone,
 }: {
   port: GoogleCalendarPort;
   fs: VaultFsPort;
@@ -115,6 +160,12 @@ export function useGoogleCalendar({
    * automations (U-29). Only one Mac does, so two never write the same note.
    */
   meetingsWrittenHere: boolean;
+  /** The window's block sync (#30); left out, the card offers no block sync. */
+  blockSync?: BlockSyncController;
+  /** Whether this Mac syncs the vault's blocks: it runs the vault's automations (U-29). */
+  blocksWrittenHere?: boolean;
+  /** The Mac's zone, which the calendar DFAI makes for blocks keeps. */
+  timeZone?: () => string;
 }): GoogleCalendarSettingState {
   const store = useCallback(
     (setting: GoogleCalendarSetting) =>
@@ -132,9 +183,20 @@ export function useGoogleCalendar({
   const kept = setting.value ?? NO_SETTING;
   const settingsRead = useVaultSettingsRead({ fs, markdown, vaultKey: vault });
   const meetingsOn = parseMeetingSetting(settingsRead.settings ?? {}).enabled;
+  const blocksOn = blockSyncEnabled(settingsRead.settings ?? {});
   /** Writes the vault's meetings switch, and reads the settings again so the card and the sync see it now. */
   const switchMeetings = async (enabled: boolean) => {
     await saveMeetingsEnabled({ settings: vaultSettingsWriter({ fs, markdown }), enabled });
+    await settingsRead.readAgain();
+  };
+
+  /** Writes the vault's block sync switch, and reads the settings again so the card and the sync see it now. */
+  const switchBlocks = async (enabled: boolean) => {
+    await saveBlocksEnabled({
+      settings: vaultSettingsWriter({ fs, markdown }),
+      enabled,
+      rng: cryptoRng,
+    });
     await settingsRead.readAgain();
   };
 
@@ -203,7 +265,7 @@ export function useGoogleCalendar({
 
   const create = () =>
     inVault(async (at) => {
-      const made = await createBlocksCalendar({ port, vault: at });
+      const made = await createBlocksCalendar({ port, vault: at, timeZone: timeZone() });
       setting.save({ ...kept, calendarId: made.id });
       return null;
     });
@@ -228,6 +290,28 @@ export function useGoogleCalendar({
     inVault(async () => {
       meetingSync?.stop();
       await switchMeetings(false);
+      return null;
+    });
+
+  /** Makes sure this Mac's sign-in may write DFAI's calendar, then turns block sync on for the vault and syncs. */
+  const allowBlocks = () =>
+    inVault(async (at) => {
+      setConnecting(true);
+      try {
+        await allowGoogleBlocks({ port, vault: at });
+        await switchBlocks(true);
+        if (blocksOn) blockSync?.syncNow();
+        return null;
+      } finally {
+        setConnecting(false);
+      }
+    });
+
+  /** Ends a sync under way at once, then turns block sync off for the vault. */
+  const stopBlocks = () =>
+    inVault(async () => {
+      blockSync?.stop();
+      await switchBlocks(false);
       return null;
     });
 
@@ -259,6 +343,16 @@ export function useGoogleCalendar({
               writesHere: meetingsWrittenHere,
               scopes: connection?.scopes ?? [],
             }),
+      blocks:
+        blockSync === undefined
+          ? null
+          : blocksViewOf({
+              blockSync,
+              enabled: blocksOn,
+              writesHere: blocksWrittenHere,
+              hasCalendar: kept.calendarId !== null,
+              scopes: connection?.scopes ?? [],
+            }),
     },
     connect,
     cancel: () => {
@@ -271,6 +365,11 @@ export function useGoogleCalendar({
       onAllow: allowMeetings,
       onSync: () => meetingSync?.syncNow(),
       onStop: stopMeetings,
+    },
+    blocks: {
+      onAllow: allowBlocks,
+      onSync: () => blockSync?.syncNow(),
+      onStop: stopBlocks,
     },
   };
 }
