@@ -872,7 +872,7 @@ pnpm tauri:dev</pre>
       </ul>
       <h3>Once a meeting, never over a note</h3>
       <p>A meeting gets one brief a day, however often the rule runs. The brief records the day and the Google event it is for (<code>atlas_period</code>, <code>atlas_period_item</code>), so your other Mac knows it is made once sync brings it over. Running again the same day makes nothing new and doesn't ask Claude. Filing a brief out of the Inbox keeps it made, wherever you put it. If you delete a brief, the 07:00 run won't bring it back; <b>Run now</b> writes it again. A brief never replaces a note already there: if the name is taken, it gets the next free one, so two meetings with the same time and title get <code>09.30 Standup.md</code> and <code>09.30 Standup 2.md</code>.</p>
-      <p>DFAI sets a brief's properties itself and ignores any Claude suggests, so a brief is never mistaken for one of the day's meetings. Only notes of type <code>event</code> are read as meetings.</p>
+      <p>DFAI sets a brief's properties itself and ignores any Claude suggests, so a brief is never mistaken for one of the day's meetings. Retyping an event note yourself is fine: it stays the meeting's note.</p>
       <h3>Asleep at 07:00</h3>
       <p>If the Mac is asleep or DFAI is closed at 07:00, the brief is written when it next wakes that day. It never briefs yesterday's meetings: wake up the next morning before 07:00 and it waits for 07:00.</p>
       <h3>If one meeting fails</h3>

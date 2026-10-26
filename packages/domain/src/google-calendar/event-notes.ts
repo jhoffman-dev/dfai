@@ -26,6 +26,7 @@ import {
   type MeetingCandidate,
 } from './meeting-match.ts';
 import { PRIMARY_CALENDAR } from './meeting-setting.ts';
+import { isNotEventNote } from './not-event-notes.ts';
 import { inWindow, wallEnd, wallStart, type MeetingWindow } from './meeting-window.ts';
 
 /** The type an event note declares, as an ICS source's do (ADR-0012). */
@@ -120,15 +121,15 @@ export function compareEventNotePaths(one: string, other: string): number {
 }
 
 /**
- * The notes each event id is on, in twin order. Only a note of type `event`
- * is one: another note carrying an event's id and day, such as a brief, is
- * never updated, marked gone, or taken for a twin.
+ * The notes each event id is on, in twin order. A brief or a block carrying
+ * an event's id (`isNotEventNote`) is never updated, marked gone, or taken
+ * for a twin; any other note's `type` is the person's, and decides nothing.
  */
 function notesById(existing: readonly ExistingEventNote[]): Map<string, ExistingEventNote[]> {
   const byId = new Map<string, ExistingEventNote[]>();
   const sorted = [...existing].sort((one, other) => compareEventNotePaths(one.path, other.path));
   for (const note of sorted) {
-    if (textOf(note.properties['type']) !== EVENT_NOTE_TYPE) continue;
+    if (isNotEventNote(note.properties)) continue;
     const id = textOf(note.properties[K.eventId]);
     if (id !== null) byId.set(id, [...(byId.get(id) ?? []), note]);
   }

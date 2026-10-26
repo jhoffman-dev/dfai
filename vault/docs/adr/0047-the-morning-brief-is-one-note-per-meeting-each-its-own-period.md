@@ -52,9 +52,13 @@ writes, so two meetings of one start and title get `… 2`.
 ignored for this preset: an invitee's event title is data handed to the
 model, and could ask it to answer with `date` and `gcal_event_id`, which
 would make the brief read back as a meeting, or as a declined twin hiding
-one. The brief carries only its period stamps. As defence in depth, only a
-note of type `event` is an event note to the day's meetings
-(`compileDayEventsQuery`) and to a meetings sync (`notesById`).
+one. The brief carries only its period stamps. As defence in depth, a note
+carrying a brief's stamps (`atlas_period_item` or `atlas_period_rule`), or of
+type `block` in any case (a time block carries its event's id, ADR-0030), is
+never an event note: not to the day's meetings (`compileDayEventsQuery`) nor
+to a meetings sync (`notesById`), which say so with one rule
+(`not-event-notes.ts`). Nothing requires `type: event`: `type` is the
+person's key (ADR-0046), and an event note retyped by hand stays the event's.
 
 **The key: the day's slot and the event.** Each brief is its own period:
 `{ slot: "<day>T07:00:00", item: "gcal:<event id>" }`, or the event note's
