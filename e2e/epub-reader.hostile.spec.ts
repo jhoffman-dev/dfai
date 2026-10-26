@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Frame } from '@playwright/test';
 import { expect, test, type Page } from './fixtures.ts';
+import { frameOf } from './reader-frame.ts';
 import { createVault, installHost, type FakeHost } from './host.ts';
 import {
   hostileFixtureEpub,
@@ -59,12 +60,6 @@ function isOwn(url: string): boolean {
 }
 
 const text = (page: Page) => page.frameLocator('iframe.epub-frame').locator('body');
-
-async function frameOf(page: Page): Promise<Frame> {
-  const frame = await (await page.locator('iframe.epub-frame').elementHandle())?.contentFrame();
-  if (frame === null || frame === undefined) throw new Error('the reader shows no chapter');
-  return frame;
-}
 
 /** What any of the book's scripts would have left behind, in the app's window or the frame's. */
 async function traces(page: Page): Promise<unknown[]> {

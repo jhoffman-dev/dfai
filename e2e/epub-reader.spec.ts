@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Frame } from '@playwright/test';
 import { expect, test, type Page } from './fixtures.ts';
+import { frameOf, painted } from './reader-frame.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { fablesFixtureEpub, protectedFixtureEpub } from '../tools/epub/fixture-epub.ts';
 
@@ -51,13 +52,6 @@ const reader = (page: Page) => page.locator('.epub-reader');
 const text = (page: Page) => page.frameLocator('iframe.epub-frame').locator('body');
 const panel = (page: Page) => page.getByRole('complementary', { name: 'Highlights' });
 
-/** The chapter's frame, to run a script in as a test (the book's own never run). */
-async function frameOf(page: Page): Promise<Frame> {
-  const frame = await (await page.locator('iframe.epub-frame').elementHandle())?.contentFrame();
-  if (frame === null || frame === undefined) throw new Error('the reader shows no chapter');
-  return frame;
-}
-
 /** The chapter's frame, once it shows `words`. */
 async function chapterFrame(page: Page, words: string): Promise<Frame> {
   await expect(text(page)).toContainText(words);
@@ -86,15 +80,6 @@ async function selectWords(page: Page, words: string): Promise<void> {
     }
     throw new Error(`"${picked}" is not in the chapter`);
   }, words);
-}
-
-/** The words each highlight of the frame's registry under `name` covers. */
-async function painted(page: Page, name: string): Promise<string[]> {
-  const frame = await frameOf(page);
-  return frame.evaluate((wanted) => {
-    const highlight = CSS.highlights.get(wanted);
-    return highlight === undefined ? [] : [...highlight].map((range) => range.toString());
-  }, name);
 }
 
 /** Opens the copy from Pages, as a click on its row there does. */
