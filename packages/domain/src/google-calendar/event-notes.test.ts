@@ -269,6 +269,42 @@ describe('planEventNotes: a meeting that has a note', () => {
     expect(plan({ events: [cancelled], existing: [marked] })).toEqual([]);
   });
 
+  it('keeps following an event note retyped by hand: updated, marked missing, never made twice', () => {
+    const declined = event({ attendees: [{ ...self, response: 'declined' }, mara] });
+    const cancelled = event({ status: 'cancelled', start: null, end: null, attendees: [] });
+    for (const type of ['meeting', 'Event', ['event']]) {
+      // `type` is the person's key (ADR-0046): the sync never owns it, so never reads it either.
+      const note = kept(madeNote().path, { ...madeNote().properties, type });
+      expect(plan({ existing: [note] })).toEqual([]);
+      expect(plan({ events: [declined], existing: [note] })).toEqual([
+        { kind: 'update', path: note.path, properties: { gcal_response: 'declined' } },
+      ]);
+      expect(plan({ events: [cancelled], existing: [note] })).toEqual([
+        { kind: 'missing', path: note.path },
+      ]);
+    }
+  });
+
+  it('never takes a brief or a block carrying an event’s keys for the event’s note', () => {
+    const note = madeNote();
+    const brief = kept('Inbox/Briefs/2026-10-24/09.30 Standup.md', {
+      ...note.properties,
+      atlas_period: '2026-10-24T07:00:00',
+      atlas_period_item: 'gcal:ev-1',
+      atlas_period_rule: 'Morning brief',
+    });
+    const block = kept('Blocks/Standup.md', { ...note.properties, type: ' Block ' });
+    const blocks = kept('Blocks/Standup prep.md', { ...note.properties, type: ['note', 'block'] });
+    const declined = event({ attendees: [{ ...self, response: 'declined' }, mara] });
+    expect(plan({ events: [declined], existing: [brief, block, blocks, note] })).toEqual([
+      { kind: 'update', path: note.path, properties: { gcal_response: 'declined' } },
+    ]);
+    const cancelled = event({ status: 'cancelled', start: null, end: null, attendees: [] });
+    expect(plan({ events: [cancelled], existing: [brief, block, blocks, note] })).toEqual([
+      { kind: 'missing', path: note.path },
+    ]);
+  });
+
   it('leaves the note as it is for a meeting whose time could not be read', () => {
     expect(plan({ events: [event({ start: null, end: null })], existing: [madeNote()] })).toEqual(
       [],

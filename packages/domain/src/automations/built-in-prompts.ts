@@ -248,6 +248,44 @@ itself: a list item that does not link its task, project or meeting is left out.
 4. Title the note "Weekly review" and today's date, written YYYY-MM-DD.
 `;
 
+/**
+ * The prompt of the "Morning brief" rule (#39): a pre-read for one of today's
+ * meetings, from what `brief()` says of the people and companies met. An item
+ * that links no note it was given is left out (`cited-items.ts`).
+ */
+export const MORNING_BRIEF_PROMPT = createVaultPath(`${PROMPTS_DIRECTORY}/morning-brief.md`);
+
+const MORNING_BRIEF = `# Morning brief
+
+Write a short pre-read for one of today's meetings, for the vault's owner to
+read before it starts: who they are meeting, where things stand, and what to
+bring up. Keep it to what fits on one screen.
+
+This note is yours to edit: it is what the "Morning brief" rule asks Claude,
+once for each of today's meetings with a linked person or company. DFAI hands
+Claude the meeting and, for each person and company in it, what their page
+says — open tasks, who waits on whom, follow-ups, the last meeting and what
+came of it, decisions and recent mentions — and checks every answer itself:
+a list item that does not link its note is left out.
+
+## What the brief holds
+
+- **Who** — each person and company met, and when they were last met.
+- **Where things stand** — open tasks, waiting-fors and follow-ups worth
+  raising, overdue ones first.
+- **Last time** — what the last meeting settled and what came of it.
+- **To bring up** — at most five points for this meeting, each linking what
+  it is about.
+
+## Rules
+
+1. Every list item links the note it is about by its path, exactly as the
+   data writes it: [[Tasks/Send the file.md]].
+2. Only what the data says. Do not invent a task, a date or a person.
+3. A section with nothing in it is left out.
+4. Title the note after the meeting.
+`;
+
 export const BUILT_IN_PROMPTS: readonly BuiltInPrompt[] = [
   {
     path: MEETING_EXTRACTION_PROMPT,
@@ -262,6 +300,7 @@ export const BUILT_IN_PROMPTS: readonly BuiltInPrompt[] = [
     earlier: ['6e894bcafa0d09b9-3665', '4be4543b9c77ec18-5365'],
   },
   { path: FRIDAY_REVIEW_PROMPT, contents: FRIDAY_REVIEW, earlier: [] },
+  { path: MORNING_BRIEF_PROMPT, contents: MORNING_BRIEF, earlier: [] },
 ];
 
 /** The prompt DFAI ships at `path`, or null when it ships none there. */

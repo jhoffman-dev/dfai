@@ -5,9 +5,14 @@
  * (`cited-items.ts`). Data, fenced as the notes are, never instructions.
  */
 
+import {
+  Citations,
+  citedSection,
+  type CitedLine,
+  type CitedStepData,
+} from '../automations/cited-data.ts';
 import type { PromptData } from '../automations/proposal-schema.ts';
 import { localTimeMs, type LocalTime } from '../automations/schedule.ts';
-import { linkBreakingCharacter } from '../markdown/wikilink.ts';
 import { addDays } from '../timeline/timeline.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import {
@@ -91,16 +96,7 @@ export interface ReviewWeek {
 }
 
 /** The data the step is handed, and the notes it may cite. */
-export interface ReviewDraftData {
-  readonly data: readonly PromptData[];
-  /**
-   * What a list item may link to be taken as citing: a note's path, or — for a
-   * note whose name no link can hold — the id handed in its place (`src:3`).
-   */
-  readonly sources: readonly string[];
-  /** For each such id, the note's title, which the draft shows where the id was. */
-  readonly plain: ReadonlyMap<string, string>;
-}
+export type ReviewDraftData = CitedStepData;
 
 /** Each section of the draft's data, the items it lists, and how each is said. */
 export function reviewDraftData(input: ReviewDraftInput): ReviewDraftData {
@@ -132,97 +128,28 @@ export function reviewDraftData(input: ReviewDraftInput): ReviewDraftData {
       items: review.untouchedSomeday.map((task) => sourceLine(task, since(task))),
     },
   ];
-  const shown = sections.map(({ about, items }) => ({
-    about,
-    items: items.slice(0, REVIEW_DRAFT_SECTION_ITEMS),
-    more: Math.max(0, items.length - REVIEW_DRAFT_SECTION_ITEMS),
-  }));
   const citations = new Citations();
+  const data = sections.map(({ about, items }) =>
+    citedSection({ about, lines: items, limit: REVIEW_DRAFT_SECTION_ITEMS, citations }),
+  );
   return {
-    data: [...shown.map((section) => sectionData(section, citations)), inboxData(input)],
+    data: [...data, inboxData(input)],
     sources: citations.sources,
     plain: citations.plain,
   };
 }
 
-/**
- * How each note is cited: by its path, or by an id when no link could hold
- * its path. One note has one citation wherever it is listed.
- */
-class Citations {
-  private readonly byPath = new Map<string, string>();
-  readonly plain = new Map<string, string>();
-
-  get sources(): string[] {
-    return [...this.byPath.values()];
-  }
-
-  /** What a link to the note is written with. */
-  targetOf({ path, title }: { path: VaultPath; title: string }): string {
-    const known = this.byPath.get(path);
-    if (known !== undefined) return known;
-    const target = linkBreakingCharacter(path) === null ? path : `src:${this.byPath.size + 1}`;
-    this.byPath.set(path, target);
-    if (target !== path) this.plain.set(target, flattened(title));
-    return target;
-  }
-}
-
 interface Section {
   readonly about: string;
-  readonly items: readonly SectionItem[];
+  readonly items: readonly CitedLine[];
 }
 
-interface SectionItem {
-  readonly note: { path: VaultPath; title: string };
-  readonly detail: string;
-}
-
-const sourceLine = (note: { path: VaultPath; title: string }, detail: string): SectionItem => ({
+const sourceLine = (note: { path: VaultPath; title: string }, detail: string): CitedLine => ({
   note,
   detail,
 });
 
-const plainLine = (note: { path: VaultPath; title: string }): SectionItem => sourceLine(note, '');
-
-/**
- * A value from a note on one line, as plain words: whitespace of any kind is
- * one space, and every run of brackets is broken — `[[[` too, not just its
- * first pair — so a name or title cannot start another list item or link a
- * note of its own choosing.
- */
-function flattened(value: string): string {
-  return value
-    .replace(/\s+/g, ' ')
-    .replace(/\[(?=\[)/g, '[ ')
-    .replace(/\](?=\])/g, '] ')
-    .trim();
-}
-
-/** "- [[Tasks/Send the file.md]] Send the file — due 2026-10-20". */
-function lineOf({ note, detail }: SectionItem, target: string): string {
-  const after = detail === '' ? '' : ` — ${flattened(detail)}`;
-  return `- [[${target}]] ${flattened(note.title)}${after}`;
-}
-
-function sectionData(
-  {
-    about,
-    items,
-    more,
-  }: {
-    about: string;
-    items: readonly SectionItem[];
-    more: number;
-  },
-  citations: Citations,
-): PromptData {
-  const lines =
-    items.length === 0
-      ? ['None.']
-      : items.map((item) => lineOf(item, citations.targetOf(item.note)));
-  return { about, text: [...lines, ...(more > 0 ? [`And ${more} more.`] : [])].join('\n') };
-}
+const plainLine = (note: { path: VaultPath; title: string }): CitedLine => sourceLine(note, '');
 
 function inboxData({ inbox, truncated }: ReviewDraftInput): PromptData {
   const notes = `${inbox.more ? 'More than ' : ''}${inbox.toFile} notes to file`;

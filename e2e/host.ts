@@ -1327,6 +1327,8 @@ export async function installHost(
           statement.startsWith('/* meeting links:') ||
           // Today's meetings and the notes a meetings sync writes to (ADR-0046).
           statement.startsWith('/* meetings: ') ||
+          // The briefs stamped for today's meetings, wherever they were filed (#39).
+          statement.startsWith('/* morning brief: stamped briefs */') ||
           statement.startsWith('/* proposals: ids */') ||
           statement.startsWith('/* meeting items: made */')
         ) {
