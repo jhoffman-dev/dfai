@@ -11,12 +11,10 @@ import {
   type GoogleCalendarPort,
   type IndexPort,
   type MarkdownPort,
-  type Rng,
   type VaultFsPort,
 } from '@dfai/application';
 import { useSteadyCallback } from '@dfai/ui';
 import { useVaultSettingsRead } from '../settings/use-vault-settings-read.ts';
-import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 
 /** How often an open vault whose blocks sync is synced. */
 export const BLOCK_SYNC_INTERVAL_MS = 15 * 60_000;
@@ -36,8 +34,6 @@ export interface BlockSyncOptions {
   readonly markdown: MarkdownPort;
   readonly index: Pick<IndexPort, 'query'>;
   readonly clock: Pick<Clock, 'today' | 'now'>;
-  /** Draws the vault's own id, once, for a vault whose settings hold none. */
-  readonly rng: Pick<Rng, 'next'>;
   /** The zone the Mac keeps time in, asked at each sync: used only when Google names none for the primary calendar. */
   readonly timeZone: () => string;
   readonly vaultKey: string | null;
@@ -142,8 +138,6 @@ export function useBlockSync(options: BlockSyncOptions): BlockSyncController {
         markdown: now.markdown,
         index: now.index,
         clock: now.clock,
-        rng: now.rng,
-        settings: vaultSettingsWriter({ fs: now.fs, markdown: now.markdown }),
       },
       {
         vault,

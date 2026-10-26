@@ -11,7 +11,6 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import { fakeBlockCalendar, memoryBlockSyncRecords } from '../testing/fake-google-calendar.ts';
 import { blockSyncActivity } from './block-sync-activity.ts';
 import { GoogleCalendarError } from './ports.ts';
-import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { syncBlocks, type BlockSyncRun } from './sync-blocks.ts';
 
 const VAULT = '/Users/someone/Vault';
@@ -76,7 +75,6 @@ function mac(
     index: liveIndex(vault.files, vault.ports.markdown),
     clock: { today: () => TODAY, now: () => NOW },
     rng: { next: random },
-    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
   };
   const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'America/Los_Angeles' };
   const props = (path: string) =>

@@ -47,11 +47,13 @@ export function blockIdDigest(text: string): string {
 
 /**
  * The event id a block is given at its first push: drawn from the vault's own
- * id and the calendar it goes to, which the vault's settings name on every
- * Mac, and the note's path then. Two Macs that both push a new block in one
+ * id (when its settings hold one) and the calendar it goes to, which the
+ * vault's settings name on every Mac, and the note's path then. With no
+ * vault id it is drawn from the calendar and the path alone, so it never
+ * depends on an id one Mac has made and git has not yet carried. Two Macs that both push a new block in one
  * tick (git has not carried the first one's id yet) send the same id, so
  * Google answers the second with 409 and it patches the one event; two vaults
- * pointed at one calendar draw two ids for one path. `attempt` moves on past
+ * pointed at one calendar draw two ids for one path once each has a vault id. `attempt` moves on past
  * an id another note already carries, or one Google deleted.
  *
  * Not a secret and not a security hash: it only has to be the same everywhere
@@ -66,12 +68,13 @@ export function blockEventId({
   path,
   attempt,
 }: {
-  vaultId: string;
+  vaultId: string | null;
   calendarId: string;
   path: string;
   attempt: number;
 }): string {
-  const seed = `${vaultId}\n${calendarId}\n${path}\n${attempt}`;
+  const place = `${calendarId}\n${path}\n${attempt}`;
+  const seed = vaultId === null ? place : `${vaultId}\n${place}`;
   // Two 64-bit digests of differently prefixed text: 128 bits, all in hex, which is inside base32hex.
   return `dfai${blockIdDigest(`a${seed}`)}${blockIdDigest(`b${seed}`)}`;
 }

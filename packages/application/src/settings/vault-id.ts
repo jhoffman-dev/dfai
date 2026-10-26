@@ -1,14 +1,7 @@
-import {
-  newVaultId,
-  vaultIdOf,
-  VAULT_ID_KEY,
-  VAULT_SETTINGS_PATH,
-  type VaultIdReading,
-} from '@dfai/domain';
+import { newVaultId, vaultIdOf, VAULT_ID_KEY, VAULT_SETTINGS_PATH } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Rng } from '../ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
-import type { SettingsWriter } from './settings-writer.ts';
 import { readVaultSettings } from './vault-settings.ts';
 
 const unreadable = () =>
@@ -28,37 +21,19 @@ export function vaultIdChange(
 }
 
 /**
- * The vault's own id, from its settings; made once, from `rng`, and written
- * there through the vault's one settings writer when it has none, so it
- * travels with the vault as every setting does. A value there that is not
- * text is refused rather than overwritten. `beforeWrite` is asked just
- * before the settings are written, so a caller that was stopped writes
- * nothing.
+ * The vault's own id, as its settings hold it; null when they hold none. Only
+ * read, never made here: an id one Mac made and git has not carried would
+ * have two writers draw two event ids for one block. A value that is not
+ * text is refused.
  */
-export async function ensureVaultId({
+export async function readVaultId({
   fs,
   markdown,
-  settings,
-  rng,
-  beforeWrite = () => undefined,
 }: {
   fs: Pick<VaultFsPort, 'readNotes'>;
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>;
-  settings: SettingsWriter;
-  rng: Pick<Rng, 'next'>;
-  beforeWrite?: () => void;
-}): Promise<string> {
-  const first = vaultIdOf(await readVaultSettings({ fs, markdown }));
-  if (first.kind === 'id') return first.id;
-  if (first.kind === 'unreadable') throw unreadable();
-  beforeWrite();
-  const settled: { reading: VaultIdReading } = { reading: first };
-  await settings.update((current) => {
-    const change = vaultIdChange(current, rng);
-    // Another write may have given it one meanwhile: that one is kept.
-    settled.reading = vaultIdOf({ ...current, ...change });
-    return change;
-  });
-  if (settled.reading.kind === 'id') return settled.reading.id;
-  throw unreadable();
+}): Promise<string | null> {
+  const reading = vaultIdOf(await readVaultSettings({ fs, markdown }));
+  if (reading.kind === 'unreadable') throw unreadable();
+  return reading.kind === 'id' ? reading.id : null;
 }

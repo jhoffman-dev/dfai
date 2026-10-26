@@ -7,7 +7,6 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import { fakeBlockCalendar, memoryBlockSyncRecords } from '../testing/fake-google-calendar.ts';
 import { blockSyncActivity, blockSyncProblem } from './block-sync-activity.ts';
 import { GoogleCalendarError } from './ports.ts';
-import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { syncBlocks, type BlockSyncRun } from './sync-blocks.ts';
 
 const VAULT = '/Users/someone/Vault';
@@ -65,15 +64,12 @@ function setUp(
   {
     extraPaths = [],
     settings = file({ vault_id: VAULT_ID }),
-    draws = [0.5],
-  }: { extraPaths?: string[]; settings?: string | null; draws?: number[] } = {},
+  }: { extraPaths?: string[]; settings?: string | null } = {},
 ) {
   const vault = automationVault({
     today: TODAY,
     notes: settings === null ? notes : { [SETTINGS]: settings, ...notes },
   });
-  let drawsAt = 0;
-  const rng = { next: () => draws[drawsAt++ % draws.length] ?? 0 };
   const google = fakeBlockCalendar();
   // The fake keeps Los Angeles time; the person's primary calendar is on it too.
   google.state.primaryZone = 'America/Los_Angeles';
@@ -93,8 +89,6 @@ function setUp(
       },
     },
     clock: { today: () => TODAY, now: () => NOW },
-    rng,
-    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
   };
   const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'Europe/London' };
   const props = (path = BLOCK) =>
