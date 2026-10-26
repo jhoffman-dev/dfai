@@ -619,15 +619,10 @@ async function everyLongNoteAction(pass: Pass): Promise<void> {
   const comment = page.locator(fields).first();
   await comment.click();
   await comment.fill('Typed in place.');
+  // The field reads the typed comment before the key is handled: ready once the
+  // save itself has written, then settled, so its echo, index and list are in.
   await pass.budgeted('Save a comment in a 500-highlight note', [
-    phase(
-      () => page.keyboard.press('Meta+Enter'),
-      (selector) => {
-        const field = document.querySelector<HTMLTextAreaElement>(selector);
-        return field !== null && !field.readOnly && field.value === 'Typed in place.';
-      },
-      fields,
-    ),
+    phase(() => page.keyboard.press('Meta+Enter'), caused, { write_text_file: 1 }),
   ]);
   await page.close();
 }
@@ -715,25 +710,6 @@ async function typeAndSave(pass: Pass, title: string): Promise<void> {
   ]);
 
   const path = `Notes/${title}.md`;
-  // Ready once the host was asked for these commands since the action began: work
-  // the action itself caused, not a state that was already true. On the work clock
-  // the counted calls tell; in real time, the probe's calls since the phase began.
-  const caused = (wanted: Record<string, number>) => {
-    const clock = (window as unknown as { __workClock?: { callsSoFar(): Record<string, number> } })
-      .__workClock;
-    const sent: Record<string, number> = {};
-    if (clock !== undefined) Object.assign(sent, clock.callsSoFar());
-    else {
-      const probe = (window as unknown as { __perf: { calls: { command: string }[] } }).__perf;
-      for (const { command } of probe.calls) sent[command] = (sent[command] ?? 0) + 1;
-    }
-    const saved = [...document.querySelectorAll('[role="status"]')].some(
-      (each) => each.textContent === 'Saved',
-    );
-    return (
-      saved && Object.entries(wanted).every(([command, least]) => (sent[command] ?? 0) >= least)
-    );
-  };
   const echoesBefore = await echoesSent(page);
   // Not settled first: the autosave due 1.2 s after the last key is this action.
   await pass.budgeted(
@@ -817,6 +793,26 @@ async function handleBlocks(pass: Pass, title: string): Promise<void> {
 
 const echoesSent = (page: Page) =>
   page.evaluate(() => (window as unknown as { __atlasEchoesSent?: number }).__atlasEchoesSent ?? 0);
+
+/**
+ * Ready once the host was asked for these commands since the action began: work
+ * the action itself caused, not a state that was already true. On the work clock
+ * the counted calls tell; in real time, the probe's calls since the phase began.
+ */
+const caused = (wanted: Record<string, number>) => {
+  const clock = (window as unknown as { __workClock?: { callsSoFar(): Record<string, number> } })
+    .__workClock;
+  const sent: Record<string, number> = {};
+  if (clock !== undefined) Object.assign(sent, clock.callsSoFar());
+  else {
+    const probe = (window as unknown as { __perf: { calls: { command: string }[] } }).__perf;
+    for (const { command } of probe.calls) sent[command] = (sent[command] ?? 0) + 1;
+  }
+  const saved = [...document.querySelectorAll('[role="status"]')].some(
+    (each) => each.textContent === 'Saved',
+  );
+  return saved && Object.entries(wanted).every(([command, least]) => (sent[command] ?? 0) >= least);
+};
 
 async function tickATask(pass: Pass): Promise<void> {
   const tick = pass.page.locator(TODAY_TICKS).first();
