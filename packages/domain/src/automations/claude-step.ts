@@ -66,8 +66,12 @@ export interface ClaudeAction {
   readonly data?: ClaudeData;
 }
 
-/** What a step may be handed beside its notes: the weekly review (#40). */
-export const CLAUDE_DATA = ['weekly-review'] as const;
+/**
+ * What a step may be handed beside its notes: the weekly review (#40), or
+ * what `brief()` says of the people and companies of each of today's
+ * meetings (#39), one note a meeting.
+ */
+export const CLAUDE_DATA = ['weekly-review', 'meeting-briefs'] as const;
 
 export type ClaudeData = (typeof CLAUDE_DATA)[number];
 

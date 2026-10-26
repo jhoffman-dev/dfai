@@ -85,6 +85,10 @@ function refusalOf(action: AutomationAction, path: VaultPath): string | null {
   return isAtlasNote(path) ? 'DFAI keeps its own files as they are.' : null;
 }
 
+/** What a dry run of the morning brief (#39) says: which meetings it briefs is read when it runs. */
+export const MEETING_BRIEFS_PLAN =
+  'Would write a brief for each of today’s meetings with a linked person or company that has none yet.';
+
 /** The plan in a sentence: "Would archive 12 notes." */
 export function describePlan(plan: AutomationPlan): string {
   const count = plan.paths.length;
@@ -92,8 +96,13 @@ export function describePlan(plan: AutomationPlan): string {
   if (plan.periodNote?.made === true) {
     return `Its note for ${plan.periodNote.period.slot.slice(0, 10)} is made already: nothing to do right now.`;
   }
-  // A step that reads its data asks with no note at all, and still writes one.
-  const writes = count === 0 && readsData(plan.action) ? 'Would write its note.' : null;
+  // A step that reads its data asks with no note at all, and still writes one — a morning brief, one a meeting.
+  const writes =
+    count === 0 && readsData(plan.action)
+      ? plan.action.kind === 'claude' && plan.action.data === 'meeting-briefs'
+        ? MEETING_BRIEFS_PLAN
+        : 'Would write its note.'
+      : null;
   const head =
     writes ??
     (count === 0 ? 'Nothing to do right now.' : `Would ${planVerb(plan.action)} ${notes}.`);
