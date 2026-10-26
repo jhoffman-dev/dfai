@@ -179,6 +179,8 @@ export interface BlockSyncRecord {
   readonly calendarId: string | null;
   readonly syncToken: string | null;
   readonly lastSyncAt: number | null;
+  /** The plan zone the last sync read blocks on; another one next time is said in Activity. */
+  readonly timeZone: string | null;
 }
 
 /** Each vault's block sync record, kept on this Mac, as meetings' are. */

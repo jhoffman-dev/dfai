@@ -3,6 +3,7 @@ import {
   blockEventId,
   blockOnDisk,
   blockPlanZone,
+  blockZoneChange,
   blockSyncEnabled,
   eventTimes,
   isBlockCalendarId,
@@ -812,5 +813,29 @@ describe('blockSyncEnabled', () => {
     expect(blockSyncEnabled({ google_blocks: true })).toBe(true);
     expect(blockSyncEnabled({ google_blocks: 'true' })).toBe(false);
     expect(blockSyncEnabled({})).toBe(false);
+  });
+});
+
+describe('blockZoneChange', () => {
+  const at = Date.parse('2026-10-26T16:00:00Z');
+  it('is none on a first sync, or on the same zone', () => {
+    expect(blockZoneChange({ from: null, to: ZONE, at })).toBeNull();
+    expect(blockZoneChange({ from: ZONE, to: ZONE, at })).toBeNull();
+  });
+
+  it('says how far a block’s times move: the new zone’s offset less the old one’s, then', () => {
+    expect(blockZoneChange({ from: ZONE, to: 'America/New_York', at })).toEqual({
+      from: ZONE,
+      to: 'America/New_York',
+      shiftMinutes: 180,
+    });
+    expect(blockZoneChange({ from: 'Europe/London', to: 'Asia/Kolkata', at })?.shiftMinutes).toBe(
+      330,
+    );
+    // A week on, both have left summer time: London on UTC, Los Angeles eight hours behind.
+    const later = Date.parse('2026-11-02T16:00:00Z');
+    expect(blockZoneChange({ from: 'Europe/London', to: ZONE, at: later })?.shiftMinutes).toBe(
+      -480,
+    );
   });
 });

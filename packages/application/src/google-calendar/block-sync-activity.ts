@@ -20,6 +20,29 @@ const aboutBlock = (
 
 const named = (path: string) => `“${noteTitle(createVaultPath(path))}”`;
 
+/** A shift in minutes as said: `+3 h`, `−30 min`, `+5 h 30 min`. */
+function shiftText(minutes: number): string {
+  const sign = minutes < 0 ? '−' : '+';
+  const hours = Math.floor(Math.abs(minutes) / 60);
+  const rest = Math.abs(minutes) % 60;
+  const parts = [hours > 0 ? `${hours} h` : null, rest > 0 ? `${rest} min` : null];
+  return `${sign}${parts.filter((part) => part !== null).join(' ')}`;
+}
+
+/** The zone blocks are read on changed since this Mac's last sync, and how far their times moved. */
+function zoneLine(report: BlockSyncReport): ActivityReport | null {
+  const change = report.zoneChange;
+  if (change === null) return null;
+  const moved =
+    change.shiftMinutes === 0 ? 'did not move' : `moved by ${shiftText(change.shiftMinutes)}`;
+  return {
+    level: 'info',
+    kind: 'source',
+    message: `Blocks are now shown on ${change.to}, so their times on this Mac ${moved}.`,
+    subject: null,
+  };
+}
+
 /** What the sync wrote, in one line; null when it wrote nothing. */
 function summaryLine(report: BlockSyncReport): ActivityReport | null {
   const parts = [
@@ -40,10 +63,11 @@ function summaryLine(report: BlockSyncReport): ActivityReport | null {
 }
 
 /**
- * What a block sync says in Activity: why it stopped, else a line for what it
- * wrote and one for each block that needs saying — a conflict Google won, a
- * block that failed, one with nothing to push, a copy made a block of its own.
- * None when it wrote nothing and nothing went wrong.
+ * What a block sync says in Activity: why it stopped, else a line when the
+ * zone blocks are shown on changed, one for what it wrote, and one for each
+ * block that needs saying — a conflict Google won, a block that failed, one
+ * with nothing to push, a copy made a block of its own. None when it wrote
+ * nothing and nothing went wrong.
  */
 export function blockSyncActivity(report: BlockSyncReport): ActivityReport[] {
   if (report.problem !== null) {
@@ -57,7 +81,9 @@ export function blockSyncActivity(report: BlockSyncReport): ActivityReport[] {
     ];
   }
   const summary = summaryLine(report);
+  const zone = zoneLine(report);
   return [
+    ...(zone === null ? [] : [zone]),
     ...(summary === null ? [] : [summary]),
     ...report.conflicts.map((path) =>
       aboutBlock(

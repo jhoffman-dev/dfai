@@ -83,6 +83,7 @@ export type { MeetingSetting } from './meeting-setting.ts';
 export {
   blockOnDisk,
   blockPlanZone,
+  blockZoneChange,
   eventTimes,
   pushableFields,
   reconcileBlocks,
@@ -95,6 +96,7 @@ export type {
   BlockEvent,
   BlockOnDisk,
   BlockSyncFields,
+  BlockZoneChange,
   ReconcileBlocksInput,
   ReconcileBlocksPlan,
 } from './block-sync.ts';

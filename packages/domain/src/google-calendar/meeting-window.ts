@@ -32,6 +32,11 @@ function shownAsUtc(clock: ReturnType<typeof wallClockIn>, instant: number): num
   return Date.UTC(year ?? 0, (month ?? 1) - 1, date ?? 1, hours ?? 0, minutes ?? 0, seconds ?? 0);
 }
 
+/** How far `timeZone`'s clock is ahead of UTC at `instant`, in minutes. */
+export function zoneOffsetMinutes(timeZone: string, instant: number): number {
+  return Math.round((shownAsUtc(wallClockIn(timeZone), instant) - instant) / 60_000);
+}
+
 /**
  * The first instant of `day` in `timeZone`. Usually its midnight; on a day
  * whose midnight the clocks skip (Santiago's spring change), the instant

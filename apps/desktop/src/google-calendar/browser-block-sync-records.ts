@@ -2,7 +2,12 @@ import type { BlockSyncRecord, BlockSyncRecords } from '@dfai/application';
 
 const PREFIX = 'atlas.block-sync:';
 
-const NONE: BlockSyncRecord = { calendarId: null, syncToken: null, lastSyncAt: null };
+const NONE: BlockSyncRecord = {
+  calendarId: null,
+  syncToken: null,
+  lastSyncAt: null,
+  timeZone: null,
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -20,13 +25,14 @@ function recordOf(kept: string | null): BlockSyncRecord {
     calendarId: text(parsed['calendarId']),
     syncToken: text(parsed['syncToken']),
     lastSyncAt: typeof lastSyncAt === 'number' && Number.isFinite(lastSyncAt) ? lastSyncAt : null,
+    timeZone: text(parsed['timeZone']),
   };
 }
 
 /**
  * Where this Mac's block syncs of each vault left off (#30), in the app's own
  * storage, as meetings' are (ADR-0046): only a cache of the sync token, which
- * is this Mac's own. What both sides last agreed on is on the blocks
+ * is this Mac's own, and of the zone its last sync read blocks on. What both sides last agreed on is on the blocks
  * (`gcal_synced_*`), so a Mac with no record here still knows it.
  *
  * Every access is guarded. A record that cannot be read reads as none, which

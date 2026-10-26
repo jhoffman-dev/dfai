@@ -26,7 +26,7 @@ import { isGoogleEventId } from './block-event-id.ts';
 import { planZone } from './event-notes.ts';
 import type { EventWhen } from './google-event.ts';
 import { PRIMARY_CALENDAR } from './meeting-setting.ts';
-import { wallStart } from './meeting-window.ts';
+import { wallStart, zoneOffsetMinutes } from './meeting-window.ts';
 
 /** The properties a block sync writes on a block, and owns. Nothing else on it is touched. */
 export const BLOCK_SYNC_KEYS = {
@@ -175,6 +175,32 @@ export function blockPlanZone({
 }): string {
   const calendarZones = primaryZone === null ? {} : { [PRIMARY_CALENDAR]: primaryZone };
   return planZone({ calendarZones, timeZone });
+}
+
+/** The plan zone moved since this Mac's last sync: blocks' wall clocks now mean another zone. */
+export interface BlockZoneChange {
+  readonly from: string;
+  readonly to: string;
+  /** How far a block's times on this Mac move, in minutes: Google's instants read on the new zone. */
+  readonly shiftMinutes: number;
+}
+
+/** The change from the zone the last sync used to this one's; null when there was none, or it is the same. */
+export function blockZoneChange({
+  from,
+  to,
+  at,
+}: {
+  from: string | null;
+  to: string;
+  at: number;
+}): BlockZoneChange | null {
+  if (from === null || from === to) return null;
+  return {
+    from,
+    to,
+    shiftMinutes: zoneOffsetMinutes(to, at) - zoneOffsetMinutes(from, at),
+  };
 }
 
 /** A date property as wall-clock text, written the one way sync compares it; null when it is not one. */

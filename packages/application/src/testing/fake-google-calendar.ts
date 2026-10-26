@@ -265,7 +265,8 @@ export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') 
 export function memoryBlockSyncRecords() {
   const kept = new Map<string, BlockSyncRecord>();
   const records: BlockSyncRecords = {
-    read: (vault) => kept.get(vault) ?? { calendarId: null, syncToken: null, lastSyncAt: null },
+    read: (vault) =>
+      kept.get(vault) ?? { calendarId: null, syncToken: null, lastSyncAt: null, timeZone: null },
     write: (vault, record) => {
       kept.set(vault, record);
     },

@@ -3,6 +3,7 @@ import {
   blockEventId,
   blockOnDisk,
   blockPlanZone,
+  blockZoneChange,
   compileBlocksByEventIdQuery,
   compileBlocksToSyncQuery,
   createVaultPath,
@@ -21,6 +22,7 @@ import {
   type BlockEvent,
   type BlockOnDisk,
   type BlockSyncFields,
+  type BlockZoneChange,
   type CompiledQuery,
   type GoogleProblem,
 } from '@dfai/domain';
@@ -66,6 +68,8 @@ export interface BlockSyncReport {
   readonly failed: readonly BlockFailure[];
   /** Whether the calendar was listed in full rather than by what changed. */
   readonly full: boolean;
+  /** The zone blocks are read on is not the one this Mac's last sync used; null when it is. */
+  readonly zoneChange: BlockZoneChange | null;
   /** Why it stopped before writing anything; null when it ran. */
   readonly problem: GoogleProblem | null;
   /** Google said this sign-in may not change the calendar: the clock waits for the grant to change. */
@@ -558,7 +562,7 @@ async function applyAll(applying: Applying, actions: readonly BlockAction[]): Pr
   return tally;
 }
 
-/** The record after a sync: the token moves on only once every write landed. */
+/** The record after a sync: the token moves on only once every write landed; the zone is the one it read on. */
 function nextRecord(
   kept: BlockSyncRecord,
   {
@@ -566,13 +570,15 @@ function nextRecord(
     whole,
     ran,
     calendarId,
-  }: { listed: Listed; whole: boolean; ran: number; calendarId: string },
+    timeZone,
+  }: { listed: Listed; whole: boolean; ran: number; calendarId: string; timeZone: string },
 ): BlockSyncRecord {
   const same = kept.calendarId === calendarId;
   return {
     calendarId,
     syncToken: whole ? listed.syncToken : same ? kept.syncToken : null,
     lastSyncAt: whole ? ran : same ? kept.lastSyncAt : null,
+    timeZone,
   };
 }
 
@@ -589,6 +595,7 @@ const NOTHING = {
   copies: [],
   failed: [],
   full: false,
+  zoneChange: null,
 } as const;
 
 /** The zone a block's wall clock means, asked of Google only when the sync goes on. */
@@ -663,7 +670,7 @@ export async function syncBlocks(
       const whole = tally.failed.length === 0;
       ports.records.write(
         run.vault,
-        nextRecord(kept, { listed, whole, ran, calendarId: run.calendarId }),
+        nextRecord(kept, { listed, whole, ran, calendarId: run.calendarId, timeZone }),
       );
     }
     return {
@@ -671,6 +678,7 @@ export async function syncBlocks(
       ...tally,
       unplaced: pathsOf(plan.actions, 'unplaced'),
       full: listed.full,
+      zoneChange: blockZoneChange({ from: kept.timeZone, to: timeZone, at: ran }),
       problem: null,
     };
   } catch (cause) {
