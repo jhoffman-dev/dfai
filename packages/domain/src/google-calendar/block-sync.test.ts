@@ -617,6 +617,42 @@ describe('reconcileBlocks: copies keep one event with one note', () => {
     });
   });
 
+  describe('a name ending in a number is only a copy’s beside the name it was copied from', () => {
+    const kept = (blocks: BlockOnDisk[], notePath: string) =>
+      actionsFor(blocks, [event({ notePath })])
+        .filter((action) => action.kind !== 'insert')
+        .map((action) => action.path);
+    const inserted = (blocks: BlockOnDisk[], notePath: string) =>
+      actionsFor(blocks, [event({ notePath })])
+        .filter((action) => action.kind === 'insert')
+        .map((action) => action.path);
+
+    it('“Retro” renamed “Sprint 2” after a “Retro copy” was made: Sprint 2 keeps the event', () => {
+      const blocks = [
+        block({ path: 'Blocks/Retro copy.md', title: 'Retro copy' }),
+        block({ path: 'Blocks/Sprint 2.md', title: 'Sprint 2' }),
+      ];
+      expect(inserted(blocks, 'Blocks/Retro.md')).toEqual(['Blocks/Retro copy.md']);
+      expect(kept(blocks, 'Blocks/Retro.md')).toEqual(['Blocks/Sprint 2.md']);
+    });
+
+    it('“Sprint 2” on the event’s times beside a moved “Retro”: Sprint 2 keeps it', () => {
+      const blocks = [
+        block({ path: 'Blocks/Retro.md', title: 'Retro', ...moved }),
+        block({ path: 'Blocks/Sprint 2.md', title: 'Sprint 2' }),
+      ];
+      expect(inserted(blocks, 'Blocks/Old.md')).toEqual(['Blocks/Retro.md']);
+    });
+
+    it('“Sprint 2” beside “Sprint” is taken for the copy', () => {
+      const blocks = [
+        block({ path: 'Blocks/Sprint 2.md', title: 'Sprint 2' }),
+        block({ path: 'Blocks/Sprint.md', title: 'Sprint' }),
+      ];
+      expect(inserted(blocks, 'Blocks/Old.md')).toEqual(['Blocks/Sprint 2.md']);
+    });
+  });
+
   it('a copy never patches the event, and its times are never pulled into another note', () => {
     const actions = actionsFor(
       [
