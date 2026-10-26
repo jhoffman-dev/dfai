@@ -410,7 +410,7 @@ describe('the start of a Gemini meeting, from its email', () => {
     const noLength = { ...fromEmail, stated: subject, arrived: '2026-10-06T17:52:00Z' };
     expect(() => mapMeeting({ ...noLength, transcript: '' }, zone)).toThrow(
       new MeetingMappingError(
-        'start: the meeting has no start time: the email states none, and with no transcript length the arrival (about when it ended) cannot give one',
+        'start: the meeting has no start time: the email states none, and with no transcript length the arrival (about when it ended) cannot give one; send `start`, a time in the subject, or a transcript with its times',
       ),
     );
     expect(() => mapMeeting({ ...noLength, transcript: 'Ann Lee: Hi.' }, zone)).toThrow(/^start: /);

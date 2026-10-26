@@ -133,8 +133,11 @@ arrival as `date` or `start`: it would be taken as when the meeting began.
 `title`, a day (`stated` or `date`), a start time, `source` and `sourceId`
 are required. Without a start time (in `start`, `stated` or `date`, or worked
 out from `arrived` less a transcript's length), the mapper refuses the
-meeting with "start: the meeting has no start time…" and it goes to the
-failure email. It never makes a start up.
+meeting with "start: the meeting has no start time… send `start`, a time in
+the subject, or a transcript with its times" and it goes to the failure
+email. It never makes a start up. (The Code nodes have no calendar to ask;
+the API destination below does, and takes such a meeting's start from its
+Google Calendar event.)
 
 **When a Gemini meeting began.** A Gemini meeting's notes arrive about when
 it ended, so the day and start come from the email itself:
@@ -158,7 +161,9 @@ it ended, so the day and start come from the email itself:
    start: it is about when the meeting ended, so the meeting is refused.
 
 The order is: `start`, then the time in `stated`, then the time in `date`,
-then (Granola) the first stamped turn, then `arrived` less the transcript.
+then (Granola) the first stamped turn, then — only when DFAI maps it, through
+the API destination — the meeting's Google Calendar event, then `arrived`
+less the transcript.
 
 `attendees` is an **Array** row: the mapper reads `{ name, email }` records.
 It reads `Name — email` lines too; for those, make the row a **String**. A
@@ -427,6 +432,13 @@ Why each part:
 - **Retry on fail** covers DFAI starting up, a sleeping Mac waking, or a
   timeout after the file was written: a retry of a meeting already written is
   answered "already in the vault" and writes nothing.
+- **A day but no time** (`Oct 24, 2026`) and no transcript: DFAI takes the
+  start and end from Google Calendar (#582) when meetings sync is on — the
+  one event on that day with the meeting's title (case and spacing aside)
+  that ended at or before `arrived`, at most 3 hours before. Two such
+  events, or none, and it is refused with what to add. When the workflow
+  knows the start some other way, send it as `start` (and `end`), `HH:MM`
+  on the Mac's clock; it is read before anything else.
 - **The error output** sends whatever is left after the retries — a meeting
   with no start time (`invalid`, as in the commit's mapper), both paths held
   by other meetings (`exists`), no vault open (`no_vault`), DFAI closed — to

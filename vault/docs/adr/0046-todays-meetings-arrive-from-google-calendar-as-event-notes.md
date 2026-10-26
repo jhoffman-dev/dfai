@@ -55,6 +55,9 @@ these properties:
   gives no start, on a day with two meetings of its title, is linked to
   neither (`startlessShared`). Which one it was is the person's to say, so
   no meeting note is ever linked to two events.
+  The same title rule gives a meeting sent with no start time its start
+  (#582, ADR-0027): `calendarStartFor` takes the one event of its title on
+  its day that ended at or before the notes arrived, within 3 hours.
 - `gcal_event_id`, `gcal_calendar`, `gcal_recurring_event_id`, and
   `gcal_response` (the person's own answer).
 

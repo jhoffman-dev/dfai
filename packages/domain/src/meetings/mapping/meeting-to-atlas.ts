@@ -11,7 +11,14 @@ import {
   type Transcript,
 } from './meeting-transcript.ts';
 import { readStated } from './meeting-stated.ts';
-import { meetingWhen, type MeetingWhen } from './meeting-when.ts';
+import {
+  meetingWhen,
+  startAsk,
+  type CalendarStart,
+  type MeetingWhen,
+  type StartAsk,
+  type WhenInput,
+} from './meeting-when.ts';
 
 /*
  * The meeting mapper (ADR-0027). The app's `POST /v1/meetings` runs it, and
@@ -70,6 +77,12 @@ export interface MappingOptions {
   readonly timeZone?: string | null;
   /** Addresses to treat as groups that the address rule misses. */
   readonly groupAddresses?: readonly string[];
+  /**
+   * The meeting's calendar event, as the caller looked it up from
+   * {@link meetingStartAsk}: a start when nothing the meeting carries gives
+   * one. Left out where there is no calendar to ask (n8n's Code nodes).
+   */
+  readonly calendar?: CalendarStart | null;
 }
 
 /** One contract file, where it goes, and what n8n needs to commit it. */
@@ -143,6 +156,7 @@ function frontmatter(header: Header): string {
     `date: ${quoted(when.date)}`,
     `start: ${quoted(when.start)}`,
     ...(when.startApproximate ? ['start_approximate: true'] : []),
+    ...(when.startSource === null ? [] : [`start_source: ${when.startSource}`]),
     ...(when.end === null ? [] : [`end: ${quoted(when.end)}`]),
     ...(kind === '' ? [] : [`kind: ${quoted(kind)}`]),
     `provider: ${quoted(provider)}`,
@@ -200,13 +214,18 @@ function body(fields: MeetingFields, transcript: Transcript): string {
     .join('\n\n');
 }
 
-/**
- * One meeting as a meeting/v1 contract file (vault/docs/contracts/meeting-import-v1.md),
- * with the path it goes to and the commit message. Throws a
- * {@link MeetingMappingError} when a required field is missing, rather than
- * writing a file DFAI would refuse.
- */
-export function mapMeeting(given: MeetingFields, options: MappingOptions = {}): MeetingFile {
+/** The fields read and checked, in the order the mapping refuses them. */
+interface Prepared {
+  readonly fields: MeetingFields;
+  readonly title: string;
+  readonly provider: string;
+  readonly externalId: string;
+  readonly attendees: readonly Attendee[];
+  readonly transcript: Transcript;
+  readonly when: WhenInput;
+}
+
+function prepared(given: MeetingFields, options: MappingOptions): Prepared {
   const fields = withSections(given);
   const title = required(fields.title, 'title');
   const provider = providerOf(fields.source);
@@ -218,7 +237,7 @@ export function mapMeeting(given: MeetingFields, options: MappingOptions = {}): 
         attendees.map((each) => each.name),
       )
     : readTurns(fields.turns, fields.clock);
-  const when = meetingWhen({
+  const when: WhenInput = {
     date: fields.date,
     start: fields.start,
     end: fields.end,
@@ -227,7 +246,42 @@ export function mapMeeting(given: MeetingFields, options: MappingOptions = {}): 
     transcriptLength: transcript.length,
     firstSpoken: firstSpoken(transcript),
     timeZone: options.timeZone ?? null,
-  });
+    calendar: options.calendar ?? null,
+  };
+  return { fields, title, provider, externalId, attendees, transcript, when };
+}
+
+/**
+ * What to look the meeting up on the calendar by — its title, day and
+ * arrival — when nothing it carries gives its start; null when something
+ * does. Throws as {@link mapMeeting} would for a field it cannot read.
+ */
+export function meetingStartAsk(
+  given: MeetingFields,
+  options: MappingOptions = {},
+): (StartAsk & { readonly title: string }) | null {
+  const { title, when } = prepared(given, options);
+  const ask = startAsk(when);
+  return ask === null ? null : { title, ...ask };
+}
+
+/**
+ * One meeting as a meeting/v1 contract file (vault/docs/contracts/meeting-import-v1.md),
+ * with the path it goes to and the commit message. Throws a
+ * {@link MeetingMappingError} when a required field is missing, rather than
+ * writing a file DFAI would refuse.
+ */
+export function mapMeeting(given: MeetingFields, options: MappingOptions = {}): MeetingFile {
+  const {
+    fields,
+    title,
+    provider,
+    externalId,
+    attendees,
+    transcript,
+    when: whenInput,
+  } = prepared(given, options);
+  const when = meetingWhen(whenInput);
   const header: Header = {
     title,
     when,

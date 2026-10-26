@@ -51,11 +51,13 @@ export {
 } from './meeting-window.ts';
 export type { MeetingWindow } from './meeting-window.ts';
 export {
+  calendarStartFor,
   matchMeetingNote,
   startlessShared,
+  MEETING_NOTES_ARRIVAL_WINDOW_MINUTES,
   MEETING_START_TOLERANCE_MINUTES,
 } from './meeting-match.ts';
-export type { EventToMatch, MeetingCandidate } from './meeting-match.ts';
+export type { DayEventTimes, EventToMatch, MeetingCandidate } from './meeting-match.ts';
 export {
   compareEventNotePaths,
   planEventNotes,
