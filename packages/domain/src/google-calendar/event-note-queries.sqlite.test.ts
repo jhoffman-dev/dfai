@@ -95,7 +95,6 @@ describe('compileDayEventsQuery', () => {
     note(
       'Calendar/Standup.md',
       {
-        type: 'event',
         date: '2026-10-24T09:00',
         ends: '2026-10-24T09:15',
         gcal_event_id: 'ev-1',
@@ -103,19 +102,8 @@ describe('compileDayEventsQuery', () => {
       },
       { people: 'People/Mara Quill.md', companies: null, meeting: 'Inbox/Meetings/Standup.md' },
     );
-    note('Calendar/Tomorrow.md', {
-      type: 'event',
-      date: '2026-10-25T09:00',
-      gcal_event_id: 'ev-2',
-    });
+    note('Calendar/Tomorrow.md', { date: '2026-10-25T09:00', gcal_event_id: 'ev-2' });
     note('Notes/Hand made.md', { date: '2026-10-24T10:00' });
-    // A note with an event's keys that is not of type event, as a brief could carry: no meeting.
-    note(
-      'Inbox/Briefs/2026-10-24/09.00 Standup.md',
-      { date: '2026-10-24T16:00', gcal_event_id: 'ev-phantom', gcal_response: 'accepted' },
-      { people: 'People/Mara Quill.md' },
-    );
-    note('Notes/Typed.md', { type: 'note', date: '2026-10-24T11:00', gcal_event_id: 'ev-3' });
     const rows = all(compileDayEventsQuery('2026-10-24')) as unknown as DayEventRow[];
     expect([...new Set(rows.map((row) => row.path))]).toEqual(['Calendar/Standup.md']);
     expect(dayMeetings(rows, '2026-10-24')).toEqual([
@@ -129,6 +117,36 @@ describe('compileDayEventsQuery', () => {
         meeting: 'Inbox/Meetings/Standup.md',
         unanswered: false,
       },
+    ]);
+  });
+
+  it('keeps an event note retyped by hand, and leaves out a brief and a block carrying an event’s keys', () => {
+    const { note, all } = index();
+    const keys = { date: '2026-10-24T09:00', gcal_event_id: 'ev-1', gcal_response: 'accepted' };
+    // `type` is the person's key (ADR-0046): an event note retyped is still the event's note.
+    note('Calendar/Standup.md', { ...keys, type: 'meeting' });
+    note('Calendar/Review.md', { ...keys, gcal_event_id: 'ev-2', type: 'Event' });
+    note('Calendar/Retro.md', { ...keys, gcal_event_id: 'ev-3', type: ['event'] });
+    // A brief that copied an event's keys still carries its period stamps: never a meeting.
+    note('Inbox/Briefs/2026-10-24/09.00 Standup.md', {
+      ...keys,
+      atlas_period: '2026-10-24T07:00:00',
+      atlas_period_item: 'gcal:ev-1',
+      atlas_period_rule: 'Morning brief',
+    });
+    note('Notes/Stamped only.md', {
+      ...keys,
+      gcal_event_id: 'ev-4',
+      atlas_period_item: 'gcal:ev-4',
+    });
+    // A time block a calendar sync wrote carries the event's id, in any case of its type.
+    note('Blocks/Focus.md', { ...keys, gcal_event_id: 'ev-5', type: ' Block ' });
+    note('Blocks/Deep work.md', { ...keys, gcal_event_id: 'ev-6', type: ['note', 'block'] });
+    const rows = all(compileDayEventsQuery('2026-10-24')) as unknown as DayEventRow[];
+    expect([...new Set(rows.map((row) => row.path))].sort()).toEqual([
+      'Calendar/Retro.md',
+      'Calendar/Review.md',
+      'Calendar/Standup.md',
     ]);
   });
 });
