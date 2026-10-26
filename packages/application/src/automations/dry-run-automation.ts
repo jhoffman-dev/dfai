@@ -84,6 +84,8 @@ export async function withPeriodNote({
   at: LocalTime;
   ports: RuleQueryPorts;
 }): Promise<AutomationPlan> {
+  // Each meeting's brief is its own period, read when the run asks (`meeting-briefs.ts`).
+  if (rule.action.kind === 'claude' && rule.action.data === 'meeting-briefs') return plan;
   const state = await periodStateOf({
     rule,
     entries: log,

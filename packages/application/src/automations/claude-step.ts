@@ -51,13 +51,14 @@ import {
   type MeetingTally,
   type ModelMessage,
   type NewProposal,
+  type NoteAnswer,
   type NoteCut,
   type NoteSkipped,
   type ProjectChoice,
   type OutputPeriod,
   type PromptData,
   type RegisteredProposalSchema,
-  type ReviewDraftData,
+  type CitedStepData,
   type StoredAnswer,
   type StoredAnswerDraft,
   type SummaryOutcome,
@@ -240,6 +241,18 @@ interface StepArgs extends ProposalWritePorts {
    * and a step handed data counts the week from it.
    */
   readonly period?: { readonly period: OutputPeriod; readonly at: LocalTime };
+  /**
+   * What DFAI read for the step when its caller read it, in place of what
+   * the action's `data` names: one meeting's brief (#39).
+   */
+  readonly stepData?: CitedStepData;
+  /**
+   * What DFAI names the note and sets in its properties, in place of the
+   * answer's title and properties, which are ignored: a meeting's brief (#39),
+   * whose answer an invitee's words can steer. The period's stamp is added
+   * either way.
+   */
+  readonly noteAs?: { readonly name: string; readonly properties: NoteAnswer['properties'] };
 }
 
 /**
@@ -718,9 +731,12 @@ async function planNoteAnswer({
     notePaths: asking.notePaths,
     folder: asking.output.folder,
     note: {
-      ...note.value,
+      title: asking.noteAs?.name ?? note.value.title,
       body,
-      properties: { ...note.value.properties, ...stamp(asking.period, asking.rule) },
+      properties: {
+        ...(asking.noteAs?.properties ?? note.value.properties),
+        ...stamp(asking.period, asking.rule),
+      },
     },
   });
   return { planned: [planned], proposed: 0 };
@@ -738,8 +754,13 @@ async function readStepData({
   markdown,
   ports,
   period,
-}: Asking): Promise<ReviewDraftData | null> {
+  stepData,
+  fail,
+}: Asking): Promise<CitedStepData | null> {
+  if (stepData !== undefined) return stepData;
   if (action.data === undefined) return null;
+  // Each meeting's brief is read by the run that asks about it (`meeting-briefs.ts`).
+  if (action.data === 'meeting-briefs') return fail(MEETING_UNNAMED);
   const clock = ports.clock;
   // Counted from the slot the draft is for; a step with no period counts the week up to now.
   const wall = period?.at ?? `${clock.today()}T00:00:00`;
@@ -751,6 +772,8 @@ async function readStepData({
     week: { slot: period?.period.slot ?? wall, localNow: wall },
   });
 }
+
+const MEETING_UNNAMED = 'A morning brief is written for one meeting at a time, and none was named.';
 
 /** What every proposal answer of a run is read with. */
 type ProposalAsking = Asking & {

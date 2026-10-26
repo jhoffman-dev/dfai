@@ -96,11 +96,9 @@ export async function periodStateOf({
 }
 
 /** The notes in the rule's folder that say the period they were made for, and the rule they name. */
-async function periodNotesIn({
+function periodNotesIn({
   rule,
-  fs,
-  markdown,
-  notePaths,
+  ...reads
 }: {
   rule: Pick<AutomationRule, 'action'>;
   fs: Pick<VaultFsPort, 'readNotes'>;
@@ -108,12 +106,44 @@ async function periodNotesIn({
   notePaths: readonly string[];
 }): Promise<PeriodNote[]> {
   const { action } = rule;
-  if (action.kind !== 'claude' || action.output.kind !== 'note') return [];
-  const folder = `${action.output.folder.replace(/\/+$/, '')}/`;
-  const inFolder = notePaths.filter((path) => path.startsWith(folder));
+  if (action.kind !== 'claude' || action.output.kind !== 'note') return Promise.resolve([]);
+  return periodNotesInFolder({ folder: action.output.folder, ...reads });
+}
+
+/**
+ * The notes in `folder`, at any depth, that say the period they were made
+ * for, and the rule they name: what tells a period's note made when the log
+ * cannot (a crash between the note and its log line, a note synced in).
+ */
+export async function periodNotesInFolder({
+  folder,
+  fs,
+  markdown,
+  notePaths,
+}: {
+  folder: string;
+  fs: Pick<VaultFsPort, 'readNotes'>;
+  markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
+  notePaths: readonly string[];
+}): Promise<PeriodNote[]> {
+  const within = `${folder.replace(/\/+$/, '')}/`;
+  const inFolder = notePaths.filter((path) => path.startsWith(within));
+  return periodNotesAt({ paths: inFolder, fs, markdown });
+}
+
+/** The notes at `paths` that say the period they were made for, and the rule they name. */
+export async function periodNotesAt({
+  paths,
+  fs,
+  markdown,
+}: {
+  paths: readonly string[];
+  fs: Pick<VaultFsPort, 'readNotes'>;
+  markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
+}): Promise<PeriodNote[]> {
   const found: PeriodNote[] = [];
-  for (let start = 0; start < inFolder.length; start += READ_BATCH) {
-    for (const file of await fs.readNotes(inFolder.slice(start, start + READ_BATCH))) {
+  for (let start = 0; start < paths.length; start += READ_BATCH) {
+    for (const file of await fs.readNotes(paths.slice(start, start + READ_BATCH))) {
       const note = periodNoteOf(
         file.path as VaultPath,
         markdown.frontmatterProperties(splitFrontmatter(file.text).frontmatter),

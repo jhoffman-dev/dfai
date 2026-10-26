@@ -436,6 +436,7 @@ describe('the ready-made "After a meeting" rule', () => {
       'Pull actions and decisions out of a new meeting',
       'After a meeting',
       'Friday review',
+      'Morning brief',
     ]);
     const extraction = AUTOMATION_PRESETS[1]!;
     expect(extraction.action).toEqual({

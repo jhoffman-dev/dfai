@@ -54,9 +54,11 @@ describe('a Claude step with data: weekly-review', () => {
   it('refuses data it does not know, and data with an output that is not a note', () => {
     const queried = { ...RULE, which: 'FROM task' };
     expect(problemOf({ ...queried, data: 'calendar' })).toBe(
-      'Write data: weekly-review, or leave it out.',
+      'Write data: weekly-review or meeting-briefs, or leave it out.',
     );
-    expect(problemOf({ ...queried, data: 3 })).toBe('Write data: weekly-review, or leave it out.');
+    expect(problemOf({ ...queried, data: 3 })).toBe(
+      'Write data: weekly-review or meeting-briefs, or leave it out.',
+    );
     expect(problemOf({ ...RULE, output: 'proposals', which: 'FROM task' })).toBe(
       'data: weekly-review goes with output: note, the one note it is written into.',
     );

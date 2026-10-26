@@ -36,6 +36,7 @@ export const automations = defineTool({
     'Claude may call, and what it writes — "proposals" or "meeting-items" (a meeting\'s action ' +
     'items, decisions, follow-ups and suggested glossary terms, each citing a transcript turn) waiting in the Inbox, or ' +
     '"note", one new note in "folder"; "data" is "weekly-review" for a step handed the weekly review, ' +
+    'or "meeting-briefs" for the morning brief, one note per meeting of the day in "folder"/<day>, ' +
     'whose note is written once a period and keeps only list items linking a note it was given, ' +
     'or null. A Claude step never edits a note. ' +
     '"lastRun" is { at, kind, trigger, summary } or null, "trigger" "note" for a run a note set ' +

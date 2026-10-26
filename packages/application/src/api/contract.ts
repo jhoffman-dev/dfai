@@ -1306,7 +1306,10 @@ export interface ApiClaudeStep {
   readonly output: string;
   /** Where its one new note goes, for `output: note`; null otherwise. */
   readonly folder: string | null;
-  /** What DFAI hands it beside its notes (#40): `weekly-review`, or null for its notes alone. */
+  /**
+   * What DFAI hands it beside its notes: `weekly-review` (#40), `meeting-briefs` (#39, one
+   * note per meeting of the day), or null for its notes alone.
+   */
   readonly data: string | null;
 }
 
