@@ -527,6 +527,16 @@ describe('POST /v1/meetings: a day but no time, placed by the calendar (#582)', 
     expect(frontmatterOf(text)).toMatchObject({ start_approximate: true });
   });
 
+  // meeting/v1 took an undated end past midnight before #583; it still does.
+  it('takes an undated end past midnight as the next day’s, writing it as sent', async () => {
+    const api = vault();
+    const response = await send(api, { ...DAY_ONLY, start: '23:30', end: '00:15' });
+
+    expect(response.status).toBe(201);
+    const text = api.files.get(DAY_ONLY_PATH)?.text ?? '';
+    expect(accepted(text)).toMatchObject({ start: '23:30', end: '00:15' });
+  });
+
   it('takes a `start` and `end` the sender gives, as the message says it may', async () => {
     const api = vault();
     const response = await send(api, { ...DAY_ONLY, start: '10:05', end: '10:35' });

@@ -345,6 +345,32 @@ describe('an end before the start', () => {
   });
 });
 
+describe('an end with no date, earlier on the clock than the start', () => {
+  const mapped = (fields: MeetingFields) => frontmatterOf(mapMeeting(fields, ZONE).content);
+
+  it('is the next day’s when that keeps the meeting to 12 hours, written as sent', () => {
+    expect(mapped({ ...SENT, start: '23:30', end: '00:15' })).toContain("end: '00:15'");
+    expect(mapped({ ...SENT, start: '20:00', end: '08:00' })).toContain("end: '08:00'");
+  });
+
+  it('is refused when even the next day would make the meeting longer than 12 hours', () => {
+    expect(() => mapMeeting({ ...SENT, start: '20:00', end: '07:59' }, ZONE)).toThrow(
+      'end: 07:59 is before the start, 20:00, and the next day’s would make the meeting longer than 12 hours',
+    );
+  });
+
+  it('is the next day’s against a calendar start of 23:30 too', () => {
+    const late = { ...SYNC, start: '2026-10-24T23:30', end: '2026-10-25T00:15' };
+    const ask = { ...MEETING, arrived: '2026-10-25T00:30' };
+    const calendar = calendarStartFor(ask, [late]);
+    const head = frontmatterOf(
+      mapMeeting({ ...SENT, end: '00:15' }, { ...ZONE, calendar }).content,
+    );
+    expect(head).toContain("start: '23:30'");
+    expect(head).toContain("end: '00:15'");
+  });
+});
+
 describe('an end sent with a start DFAI works out', () => {
   // TIMED's transcript ran 00:11:49, 709 seconds.
   const CHICAGO = { timeZone: 'America/Chicago' };
