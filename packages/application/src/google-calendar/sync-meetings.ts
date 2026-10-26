@@ -194,7 +194,7 @@ const zonesOf = (run: MeetingSyncRun, listed: Listed, stored: string | null): Sy
   syncZones({
     calendars: meetingCalendars(run),
     listedZones: listed.zones,
-    failed: listed.failed.map(({ calendarId }) => calendarId),
+    failed: failedIds(listed),
     stored,
   });
 
@@ -212,13 +212,27 @@ async function storedZone(ports: MeetingSyncPorts): Promise<string | null> {
   }
 }
 
+/** `listed` with no token kept for `calendarIds`: each is listed in full next time. */
+function forgetting(listed: Listed, calendarIds: readonly string[]): Listed {
+  const following = Object.fromEntries(
+    Object.entries(listed.following).filter(([calendarId]) => !calendarIds.includes(calendarId)),
+  );
+  return { ...listed, following };
+}
+
+const failedIds = (listed: Listed) => listed.failed.map(({ calendarId }) => calendarId);
+
 /**
  * Each calendar's events, and the zones they are planned on. When the zone
  * the notes are on has moved (#587) — the primary calendar now keeps New
  * York's time, not Chicago's — every calendar is listed again in full, so
  * each note in the window is written again on the new zone, whether or not
  * its event changed. Once the new zone is kept the next sync finds no move,
- * so the relisting happens once for each move.
+ * so the relisting happens once for each move. A calendar that fails the
+ * relisting keeps no token, so the next sync lists it in full on the zone
+ * kept by then (PR #592 verification); and a sync whose notes were planned
+ * on a zone that will not be kept (`listAgain`) keeps no token for the
+ * calendars that answered, for the same reason.
  */
 async function listWithZones(
   ports: MeetingSyncPorts,
@@ -229,9 +243,16 @@ async function listWithZones(
   const listed = await listCalendars(ports, run, { window, fresh: false });
   const zones = zonesOf(run, listed, stored);
   const wanted = run.wanted ?? ALWAYS_WANTED;
-  if (!planZoneMoved(stored, zones.learned) || !wanted()) return { listed, zones };
-  const relisted = await listCalendars(ports, run, { window, fresh: true });
-  return { listed: relisted, zones: zonesOf(run, relisted, stored) };
+  if (planZoneMoved(stored, zones.learned) && wanted()) {
+    const relisted = await listCalendars(ports, run, { window, fresh: true });
+    return {
+      listed: forgetting(relisted, failedIds(relisted)),
+      zones: zonesOf(run, relisted, stored),
+    };
+  }
+  if (!zones.listAgain) return { listed, zones };
+  const answered = meetingCalendars(run).filter((id) => !failedIds(listed).includes(id));
+  return { listed: forgetting(listed, answered), zones };
 }
 
 const pathsIn = (result: QueryResult): string[] => {
@@ -460,39 +481,15 @@ export function meetingSyncProblem(report: MeetingSyncReport): GoogleProblem | n
 const counted = (count: number, one: string, many: string) =>
   `${count} ${count === 1 ? one : many}`;
 
-/**
- * What a sync says in Activity: what it wrote, or why it stopped. Null when
- * it wrote nothing and nothing went wrong — a sync every quarter hour that
- * finds nothing new is not news.
- */
-export function meetingSyncActivity(report: MeetingSyncReport): ActivityReport | null {
-  if (report.problem !== null) {
-    const fix = report.problem.fix === null ? '' : ` ${report.problem.fix}`;
-    return {
-      level: 'warning',
-      kind: 'source',
-      message: `Meetings from Google Calendar did not sync: ${report.problem.problem}${fix}`,
-      subject: null,
-    };
-  }
-  const partial = meetingSyncProblem(report);
-  if (partial !== null) {
-    const fix = partial.fix === null ? '' : ` ${partial.fix}`;
-    return {
-      level: 'warning',
-      kind: 'source',
-      message: `Meetings from Google Calendar: ${partial.problem}${fix} The other calendars synced.`,
-      subject: null,
-    };
-  }
-  if (report.zoneProblem !== null) {
-    return {
-      level: 'warning',
-      kind: 'source',
-      message: `Meetings from Google Calendar synced, but the calendar’s time zone could not be kept in the vault’s settings: ${report.zoneProblem}`,
-      subject: null,
-    };
-  }
+const warning = (message: string): ActivityReport => ({
+  level: 'warning',
+  kind: 'source',
+  message,
+  subject: null,
+});
+
+/** What the sync wrote, in one line; null when it wrote nothing. */
+function summaryLine(report: MeetingSyncReport): ActivityReport | null {
   const parts = [
     report.created > 0 ? `${counted(report.created, 'meeting', 'meetings')} added` : null,
     report.updated > 0 ? `${counted(report.updated, 'meeting', 'meetings')} changed` : null,
@@ -505,4 +502,33 @@ export function meetingSyncActivity(report: MeetingSyncReport): ActivityReport |
     message: `Meetings from Google Calendar: ${parts.join(', ')}.`,
     subject: null,
   };
+}
+
+/**
+ * What a sync says in Activity: why it stopped; else a line for a calendar
+ * that did not sync, one when the calendar's zone could not be kept (#587),
+ * and one for what it wrote — each its own line, so one warning said once
+ * never hides the others. None when it wrote nothing and nothing went
+ * wrong: a sync every quarter hour that finds nothing new is not news.
+ */
+export function meetingSyncActivity(report: MeetingSyncReport): ActivityReport[] {
+  if (report.problem !== null) {
+    const fix = report.problem.fix === null ? '' : ` ${report.problem.fix}`;
+    return [warning(`Meetings from Google Calendar did not sync: ${report.problem.problem}${fix}`)];
+  }
+  const partial = meetingSyncProblem(report);
+  const lines = [
+    partial === null
+      ? null
+      : warning(
+          `Meetings from Google Calendar: ${partial.problem}${partial.fix === null ? '' : ` ${partial.fix}`} The other calendars synced.`,
+        ),
+    report.zoneProblem === null
+      ? null
+      : warning(
+          `Meetings from Google Calendar synced, but the calendar’s time zone could not be kept in the vault’s settings: ${report.zoneProblem}`,
+        ),
+    summaryLine(report),
+  ];
+  return lines.filter((line) => line !== null);
 }

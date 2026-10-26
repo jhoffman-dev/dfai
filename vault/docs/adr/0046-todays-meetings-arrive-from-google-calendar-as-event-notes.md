@@ -293,9 +293,13 @@ clock too, so it is kept:
   London's clock would otherwise move every reader of the primary's
   Chicago notes onto London's for one sync and back on the next. That
   sync's notes, the other calendars' too, are planned on the zone kept, as
-  the notes already written are (`syncZones`). With none kept yet, it plans
-  as the calendars it read say, and keeps nothing until the naming
-  calendar answers.
+  the notes already written are (`syncZones`). With none kept yet, it
+  plans them on the Mac's zone, the one readers use while none is kept,
+  never on another calendar's (PR #592 verification), keeps nothing, and
+  keeps no token for the calendars that answered (`listAgain`): the next
+  sync lists them in full, so the sync that first keeps a zone writes their
+  notes on it. While the naming calendar keeps failing with none kept, each
+  sync lists the others in full.
 - **When the zone moves, the notes move with it** (PR #592 attack). Chosen
   over recording each note's zone as one more owned key. When the zone a
   sync learns is not the one kept (`planZoneMoved`: Chicago kept, New York
@@ -307,13 +311,20 @@ clock too, so it is kept:
   one full listing of the window for each move, the window's notes only —
   and idempotent: once the new zone is kept the next sync finds no move,
   and a second rewrite writes nothing. A sync that fails part way keeps the
-  old zone, so the next one tries the move again. Why not a zone per note:
+  old zone, so the next one tries the move again. A calendar that fails the
+  relisting while the others answer keeps no token (PR #592 verification):
+  the new zone is kept, and the next sync lists that calendar in full on it,
+  so none of its notes in the window is left on the old clock. While the
+  settings note can be read but refuses the write, nothing is kept, so every
+  sync finds the move again and lists every calendar in full, and readers,
+  still on the old zone, read the rewritten notes off by the zones'
+  difference until the write lands; Activity's warning (below) says so. Why not a zone per note:
   every reader (Today, the brief, `POST /v1/meetings`, queries on `date`)
   would have to convert each note on its own clock, every note would gain a
   key on the first sync after the upgrade, and `date` would still mix two
-  clocks in one query. The cost of the choice: a note before the window,
-  or one on a calendar that failed during the move, stays on the clock it
-  was written on — the past is what it was — until its event changes. None
+  clocks in one query. The cost of the choice: a note before the window
+  stays on the clock it was written on — the past is what it was — until
+  its event changes. None
   kept is no move: before #587 every note was already written on the zone
   the calendars named.
 - **No churn.** The settings are read first and written only when the
@@ -325,8 +336,9 @@ clock too, so it is kept:
 - **A refused write is said, once.** A settings note that refuses the write
   (unreadable frontmatter, a disk that will not write) stops no sync: the
   notes are written and the zone is learned again next time. The sync's
-  report carries why (`zoneProblem`), and Activity says it as one warning,
-  not again until it changes or the zone is kept. A fault in DFAI's own
+  report carries why (`zoneProblem`), and Activity says it as a warning
+  of its own beside what the sync wrote and any calendar that failed, not
+  again until it changes or the zone is kept. A fault in DFAI's own
   code (a `TypeError`) is no refusal: it rises and stops the sync, which
   says so.
 - **Who reads it.** A meeting's start from the calendar (`POST

@@ -346,7 +346,9 @@ describe('syncMeetings: one calendar failing', () => {
     expect(vault.properties(NOTE)).toMatchObject({ title: 'Payroll standup (moved)' });
     expect(kept.get(VAULT)?.calendars[TEAM]).toEqual(before);
     expect(meetingSyncProblem(report)?.problem).toMatch(/^team@example.com did not sync: /);
-    expect(meetingSyncActivity(report)).toMatchObject({ level: 'warning' });
+    expect(meetingSyncActivity(report)).toContainEqual(
+      expect.objectContaining({ level: 'warning' }),
+    );
   });
 
   it('stops the sync when every calendar failed, as before', async () => {
@@ -490,17 +492,19 @@ describe('meetingSyncActivity', () => {
   };
 
   it('says what a sync wrote, counted', () => {
-    expect(meetingSyncActivity({ ...report, created: 2, updated: 1, missing: 1 })).toEqual({
-      level: 'info',
-      kind: 'source',
-      message:
-        'Meetings from Google Calendar: 2 meetings added, 1 meeting changed, 1 meeting cancelled.',
-      subject: null,
-    });
+    expect(meetingSyncActivity({ ...report, created: 2, updated: 1, missing: 1 })).toEqual([
+      {
+        level: 'info',
+        kind: 'source',
+        message:
+          'Meetings from Google Calendar: 2 meetings added, 1 meeting changed, 1 meeting cancelled.',
+        subject: null,
+      },
+    ]);
   });
 
   it('says nothing for a sync that found nothing new', () => {
-    expect(meetingSyncActivity(report)).toBeNull();
+    expect(meetingSyncActivity(report)).toEqual([]);
   });
 
   it('warns with the problem and its fix when a sync stopped', () => {
@@ -508,11 +512,13 @@ describe('meetingSyncActivity', () => {
       problem: 'Google could not be reached: offline.',
       fix: 'Check the connection and try again.',
     };
-    expect(meetingSyncActivity({ ...report, problem })).toMatchObject({
-      level: 'warning',
-      message:
-        'Meetings from Google Calendar did not sync: Google could not be reached: offline. Check the connection and try again.',
-    });
+    expect(meetingSyncActivity({ ...report, problem })).toMatchObject([
+      {
+        level: 'warning',
+        message:
+          'Meetings from Google Calendar did not sync: Google could not be reached: offline. Check the connection and try again.',
+      },
+    ]);
   });
 });
 
@@ -574,16 +580,18 @@ describe('syncMeetings: the plan zone kept in the vault’s settings (#587)', ()
     });
     const refused = await sync();
     expect(refused.zoneProblem).toContain("settings.md can't be read");
-    expect(meetingSyncActivity(refused)).toMatchObject({
-      level: 'warning',
-      message: expect.stringContaining(
-        'Meetings from Google Calendar synced, but the calendar’s time zone could not be kept',
-      ),
-    });
+    expect(meetingSyncActivity(refused)).toContainEqual(
+      expect.objectContaining({
+        level: 'warning',
+        message: expect.stringContaining(
+          'Meetings from Google Calendar synced, but the calendar’s time zone could not be kept',
+        ),
+      }),
+    );
     vault.files.set(SETTINGS, file({ theme: 'dark' }));
     const kept = await sync();
     expect(kept.zoneProblem).toBeNull();
-    expect(meetingSyncActivity(kept)?.level ?? null).not.toBe('warning');
+    expect(meetingSyncActivity(kept).some((line) => line.level === 'warning')).toBe(false);
     expect(keptZone(vault)).toBe('America/Chicago');
   });
 

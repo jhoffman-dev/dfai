@@ -178,6 +178,8 @@ describe('syncZones', () => {
       stored: CHICAGO,
     });
     expect(zones.learned).toBeNull();
+    // Planned on the zone kept, as the notes already are: nothing to list again.
+    expect(zones.listAgain).toBe(false);
     expect(planZone({ calendarZones: zones.calendarZones, timeZone: LOS_ANGELES })).toBe(CHICAGO);
   });
 
@@ -192,14 +194,18 @@ describe('syncZones', () => {
     expect(planZone({ calendarZones: zones.calendarZones, timeZone: LOS_ANGELES })).toBe(CHICAGO);
   });
 
-  it('with no zone kept yet, plans as the others say and keeps nothing', () => {
+  it('with no zone kept yet, plans on the Mac’s zone, keeps nothing, and lists them again', () => {
     const zones = syncZones({
       calendars: ['primary', TEAM],
       listedZones: { [TEAM]: LONDON },
       failed: ['primary'],
       stored: null,
     });
-    expect(zones).toEqual({ calendarZones: { [TEAM]: LONDON }, learned: null });
+    // Planned on the Mac's zone, as readers read while none is kept; never on London's.
+    expect(zones).toEqual({ calendarZones: {}, learned: null, listAgain: true });
+    expect(planZone({ calendarZones: zones.calendarZones, timeZone: LOS_ANGELES })).toBe(
+      LOS_ANGELES,
+    );
   });
 
   it('learns from the naming calendar though another failed', () => {

@@ -88,6 +88,12 @@ export interface SyncZones {
   readonly calendarZones: Readonly<Record<string, string>>;
   /** The zone to keep; null when this sync learned none it may keep. */
   readonly learned: string | null;
+  /**
+   * Whether the calendars that answered are to be listed in full on the next
+   * sync rather than by what changed: their notes were planned on a clock
+   * that is not the one the sync that first keeps a zone will keep.
+   */
+  readonly listAgain: boolean;
 }
 
 /**
@@ -96,8 +102,11 @@ export interface SyncZones {
  * others' zones say nothing of it: a team calendar on London's clock would
  * move every reader of the primary's Chicago notes onto London's. So the
  * sync learns nothing, and plans this time's notes on the zone kept, as the
- * notes already written are. With none kept yet, it plans as the calendars
- * it read say, and keeps nothing until the naming calendar answers.
+ * notes already written are. With none kept yet, it plans them on the Mac's
+ * zone, the one readers use while none is kept, never on another calendar's
+ * (PR #592 verification): and since the zone the naming calendar will name
+ * may be neither, the calendars that answered are listed in full again
+ * next time, so the sync that first keeps a zone writes them on it.
  */
 export function syncZones({
   calendars,
@@ -115,11 +124,12 @@ export function syncZones({
 }): SyncZones {
   const namer = namingCalendar(calendars);
   if (namer === null || !failed.includes(namer)) {
-    return { calendarZones: listedZones, learned: namedPlanZone(listedZones) };
+    return { calendarZones: listedZones, learned: namedPlanZone(listedZones), listAgain: false };
   }
+  // No zones: `planZone` then falls to the Mac's, the zone readers use while none is kept.
+  if (stored === null) return { calendarZones: {}, learned: null, listAgain: true };
   // The kept zone stands in for the naming calendar's, first, so `namedPlanZone` picks it.
-  const calendarZones = stored === null ? listedZones : { [namer]: stored, ...listedZones };
-  return { calendarZones, learned: null };
+  return { calendarZones: { [namer]: stored, ...listedZones }, learned: null, listAgain: false };
 }
 
 /**

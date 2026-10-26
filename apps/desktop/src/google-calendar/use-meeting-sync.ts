@@ -125,16 +125,20 @@ export function useMeetingSync(options: MeetingSyncOptions): MeetingSyncControll
   const running = useRef(new Set<string>());
   const stops = useRef(0);
   const refused = useRef(new Map<string, string>());
-  const lastWarning = useRef(new Map<string, string | null>());
+  const lastWarnings = useRef(new Map<string, ReadonlySet<string>>());
   const [shown, setShown] = useState<Shown>({ vault: null, syncing: false, report: null });
 
+  // Each warning is said once, until a sync no longer has it; what a sync wrote is said each time.
   const tell = (vault: string, report: MeetingSyncReport) => {
-    const line = meetingSyncActivity(report);
-    const warning = line?.level === 'warning' ? line.message : null;
-    if (line !== null && (warning === null || warning !== lastWarning.current.get(vault))) {
-      latest.current.options.activity.inVault(vault).record(line);
+    const before = lastWarnings.current.get(vault) ?? new Set<string>();
+    const warnings = new Set<string>();
+    for (const line of meetingSyncActivity(report)) {
+      if (line.level === 'warning') warnings.add(line.message);
+      if (line.level !== 'warning' || !before.has(line.message)) {
+        latest.current.options.activity.inVault(vault).record(line);
+      }
     }
-    lastWarning.current.set(vault, warning);
+    lastWarnings.current.set(vault, warnings);
   };
 
   /** Shows what a sync of `vault` is doing, unless another vault has been opened since. */
