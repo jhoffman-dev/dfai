@@ -34,6 +34,7 @@ import { changeProperties, type PropertyOutcome } from './apply-changes.ts';
 import { withHandledKeys } from './handled-keys.ts';
 import { ClaudeStepFailed, runClaudeStep, type ClaudeStepPorts } from './claude-step.ts';
 import { holdUnlessFresh, type FreshPullCheck } from './fresh-pull-hold.ts';
+import { briefEachMeeting } from './meeting-briefs.ts';
 import { PeriodNoteArrived, periodStateOf } from './period-state.ts';
 import { heldEntries } from '../index/refresh-index.ts';
 import { allowanceEntries, askedThisHour } from './ask-allowance.ts';
@@ -405,7 +406,8 @@ async function runOnce({
  * A step that writes one note a period (#40) asks nothing when its log says
  * this period's note is made: the run is logged, as one that found it made,
  * and its schedule counts on from it. The run that makes the note says the
- * period it made it for.
+ * period it made it for. A step handed `meeting-briefs` writes one note per
+ * meeting of the day instead (`briefEachMeeting`, #39).
  */
 async function askClaude({
   run,
@@ -429,6 +431,9 @@ async function askClaude({
   append: (entry: LogEntry, stored?: readonly StoredAnswerDraft[]) => Promise<void>;
 }): Promise<LogEntry> {
   const { plan } = target;
+  if (action.data === 'meeting-briefs') {
+    return briefEachMeeting({ ...run, ports, action, at, trigger, log, append });
+  }
   const { entries } = await readRuleLog(ports.fs, run.rule);
   const period = await periodStateOf({
     rule: run.rule,

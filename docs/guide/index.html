@@ -137,6 +137,7 @@ td:first-child { white-space: nowrap; }
     <a href="#calendar">Calendar</a>
     <a href="#google-calendar">Google Calendar</a>
     <a href="#todays-meetings">Today's meetings</a>
+    <a href="#morning-brief">Morning brief</a>
     <a href="#thumbnails">Thumbnails</a>
     <a href="#queries">Queries</a>
     <a href="#sql">SQL queries</a>
@@ -852,6 +853,33 @@ pnpm tauri:dev</pre>
         </table>
       </div>
       <p class="muted">The <a href="#connect">Local API and MCP</a> read the day's meetings from these notes (<code>GET /v1/calendar/meetings?day=YYYY-MM-DD</code>, <code>atlas_day_meetings</code>). The morning brief and n8n use this. Neither reaches Google.</p>
+    </section>
+
+    <section id="morning-brief">
+      <h2>Morning brief</h2>
+      <p class="sub">A pre-read for each of today's meetings, waiting in the Inbox when you sit down: who you are meeting, where things stand with them, and what to bring up. Claude writes it from what DFAI already knows about the people and companies in the meeting.</p>
+      <h3>Turn it on</h3>
+      <ol class="steps">
+        <li>Have <a href="#todays-meetings">today's meetings</a> arriving from Google Calendar, linked to the people in them.</li>
+        <li>Open <a href="#automations">Automations</a>, press <b>Morning brief</b>, look it over and press <b>Create automation</b>. It is off until you do.</li>
+        <li>It runs every day at 07:00 on the Mac that <a href="#sync">runs the vault's automations</a>. Press <b>Run now</b> to brief today's meetings straight away.</li>
+      </ol>
+      <h3>What you get</h3>
+      <ul>
+        <li>One note per meeting in <code>Inbox/Briefs/&lt;day&gt;/</code>, named by its start and title: <code>Inbox/Briefs/2026-10-26/09.30 Larkspur Payroll sync.md</code>. It waits in the <a href="#para">Inbox</a> like anything else you have not filed.</li>
+        <li>Only meetings with a linked person or company get one. A meeting you declined, one that was cancelled, an all-day event and one with nobody linked get none. On a day with none of those, nothing is written.</li>
+        <li>Claude is handed the meeting and, for each person and company in it, what their <a href="#ask">brief</a> says: open tasks, who you are waiting on, follow-ups, the last meeting and what came of it, decisions and recent mentions. Every line of the note links the note it is about; a line that links none is left out, and the run's log says which.</li>
+        <li>At most ten meetings are briefed in one run. <b>Run now</b> briefs the rest.</li>
+      </ul>
+      <h3>Once a meeting, never over a note</h3>
+      <p>A meeting gets one brief a day, however often the rule runs. The brief records the day and the Google event it is for (<code>atlas_period</code>, <code>atlas_period_item</code>), so your other Mac knows it is made once sync brings it over. Running again the same day makes nothing new and doesn't ask Claude. Filing a brief out of the Inbox keeps it made, wherever you put it. If you delete a brief, the 07:00 run won't bring it back; <b>Run now</b> writes it again. A brief never replaces a note already there: if the name is taken, it gets the next free one, so two meetings with the same time and title get <code>09.30 Standup.md</code> and <code>09.30 Standup 2.md</code>.</p>
+      <p>DFAI sets a brief's properties itself and ignores any Claude suggests, so a brief is never mistaken for one of the day's meetings. Retyping an event note yourself is fine: it stays the meeting's note.</p>
+      <h3>Asleep at 07:00</h3>
+      <p>If the Mac is asleep or DFAI is closed at 07:00, the brief is written when it next wakes that day. It never briefs yesterday's meetings: wake up the next morning before 07:00 and it waits for 07:00.</p>
+      <h3>If one meeting fails</h3>
+      <p>If Claude fails on a meeting, or its brief can't be read together or saved (a full disk, say), the other meetings still get their brief. Activity says once which meeting has none and why, and nothing half-written is left. <b>Run now</b> tries that meeting again. Only opening another vault stops the run part-way; what it made by then is in Activity.</p>
+      <p>The prompt is <code>.atlas/prompts/morning-brief.md</code>, yours to edit. Today and 07:00 are on your Mac's clock, the same day Today shows.</p>
+      <p class="muted">Briefs are notes, so the <a href="#connect">Local API and MCP</a> read them as any other note.</p>
     </section>
 
     <section id="thumbnails">
@@ -1719,6 +1747,7 @@ ORDER BY phase</pre>
         <li><b>Archive done tasks after 30 days</b>, the ready-made one, sits at the top of the page. It opens in the editor for you to look over; nothing is made until you press <b>Create automation</b>. It runs every day at 03:00, takes <code>FROM task WHERE status = done</code>, only notes not changed in the last 30 days, and archives them.</li>
         <li><b>After a meeting</b>, another ready-made one, asks Claude about each meeting of the last 14 days that arrives (<code>FROM meeting WHERE date &gt;= @-14d</code>) with its own prompt, <code>.atlas/prompts/after-a-meeting.md</code>, which DFAI writes once when you create the rule and never over yours. It is the step that says <a href="#automation-claude">Make into tasks: My own action items</a>, so it asks claude-sonnet-5-5 on its own budget, and your own action items become tasks without a click — see <a href="#after-a-meeting">What happens after a meeting</a>.</li>
         <li><b>Friday review</b> drafts your weekly review every Friday at 15:00, as one new note in <code>Reviews/</code>: what got done, what is stuck, what to decide. Claude is handed the <a href="#tasks">weekly review</a> itself — the tasks you finished and the meetings you had this week, who has not come back to you, what is overdue, projects with no next action, and what waits in the Inbox — and every line of the draft links the task, project or meeting it is about; a line that links none is left out, and the log says which. It writes one draft a week: <b>Run now</b> again that week makes nothing. Its prompt is <code>.atlas/prompts/friday-review.md</code>, yours to edit.</li>
+        <li><b>Morning brief</b> writes a pre-read for each of today's meetings with a linked person or company, every day at 07:00, into <code>Inbox/Briefs/</code>. See <a href="#morning-brief">Morning brief</a>.</li>
         <li><b>New automation</b> starts a blank rule, taking every note of your first type.</li>
       </ul>
       <h3>The editor</h3>

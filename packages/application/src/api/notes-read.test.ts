@@ -189,6 +189,25 @@ describe('GET /v1/notes/{path}', () => {
     });
   });
 
+  it('reads a morning brief (#39) as the note it is: nothing new is needed for one', async () => {
+    const brief = 'Inbox/Briefs/2026-10-26/09.30 Larkspur sync.md';
+    const api = apiFixture({
+      files: {
+        [brief]:
+          '---\natlas_period: "2026-10-26T07:00:00"\natlas_period_item: gcal:ev-sync\n---\n\n- Mara Quill: [[People/Mara Quill.md]]\n',
+      },
+    });
+
+    const response = await api.send({ method: 'GET', path: `/v1/notes/${encoded(brief)}` });
+
+    expect(response.status).toBe(200);
+    expect(bodyOf(response)['note']).toMatchObject({
+      path: brief,
+      title: '09.30 Larkspur sync',
+      body: '\n- Mara Quill: [[People/Mara Quill.md]]\n',
+    });
+  });
+
   it('names the note as its page does: the title property, not the filename or a heading', async () => {
     const api = apiFixture({
       files: { 'A15-03.md': '---\ntitle: Leftovers\n---\n\n# Other\n' },

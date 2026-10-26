@@ -1339,6 +1339,8 @@ export async function installHost(
           statement.startsWith('/* meetings: ') ||
           // The blocks a blocks sync may write to, and every note carrying one's event id (#30).
           statement.startsWith('/* blocks: ') ||
+          // The briefs stamped for today's meetings, wherever they were filed (#39).
+          statement.startsWith('/* morning brief: stamped briefs */') ||
           statement.startsWith('/* proposals: ids */') ||
           statement.startsWith('/* meeting items: made */')
         ) {

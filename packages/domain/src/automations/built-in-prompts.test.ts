@@ -24,6 +24,7 @@ describe('the prompts DFAI ships', () => {
       '.atlas/prompts/meeting-extraction.md',
       '.atlas/prompts/after-a-meeting.md',
       '.atlas/prompts/friday-review.md',
+      '.atlas/prompts/morning-brief.md',
     ]);
     for (const prompt of BUILT_IN_PROMPTS) {
       expect(isPromptPath(prompt.path)).toBe(true);

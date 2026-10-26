@@ -57,6 +57,21 @@ export {
 } from './output-period.ts';
 export type { OutputPeriod, PeriodNote } from './output-period.ts';
 export {
+  BRIEF_SECTION_ITEMS,
+  BRIEFS_CAPPED_REASON,
+  briefDayOf,
+  briefFolder,
+  briefItem,
+  briefNoteName,
+  compileStampedBriefsQuery,
+  MAX_BRIEFS_PER_RUN,
+  meetingBriefData,
+  meetingsToBrief,
+  MORNING_BRIEF_FOLDER,
+} from './morning-brief.ts';
+export type { PageBrief, UnreadPage } from './morning-brief.ts';
+export type { CitedStepData } from './cited-data.ts';
+export {
   appendEntryToLog,
   appendLogEntry,
   futureMarkOf,
@@ -220,6 +235,7 @@ export {
   BUILT_IN_PROMPTS,
   builtInPromptAt,
   FRIDAY_REVIEW_PROMPT,
+  MORNING_BRIEF_PROMPT,
   outdatedBuiltInPrompt,
   promptDigest,
   MEETING_EXTRACTION_PROMPT,
