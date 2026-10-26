@@ -108,6 +108,7 @@ number, and an id of digits is a number to every reader. A value of the wrong ki
 | `date`              | yes      | The day, `YYYY-MM-DD`, and a day the calendar has (no 30 February).                                                                            |
 | `start`             | yes      | Local start time, 24-hour `HH:MM`.                                                                                                             |
 | `start_approximate` | no       | `true` when the mapping worked `start` out rather than read it: a Gemini email's arrival less the transcript's length. DFAI does not read it.  |
+| `start_source`      | no       | `calendar` when `start` was read off the meeting's Google Calendar event, for a meeting that stated no time (#582). DFAI does not read it.     |
 | `end`               | no       | Local end time, `HH:MM`.                                                                                                                       |
 | `kind`              | no       | What sort of meeting: the Notion "Category" (Standup, Retro, 1:1…). Free text, not blank.                                                      |
 | `provider`          | yes      | Who wrote it up, lowercase: `gemini`, `granola`, or the next one.                                                                              |
@@ -280,5 +281,5 @@ The Granola API rows describe the mapping DFAI runs when it pulls Granola
 
 `atlas_import: meeting/v1` is this page. A change that would refuse a file
 v1 accepts, or read one differently, is v2, with a page and a schema of its
-own; DFAI reads both. Naming `source_url` is not such a change: v1 already
+own; DFAI reads both. Naming `source_url` or `start_source` is not such a change: v1 already
 allowed keys it does not name, and what it accepts and refuses is the same.
