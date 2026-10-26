@@ -74,6 +74,13 @@ function countedRuns(given: string | undefined): number {
   return runs;
 }
 
+/**
+ * The test's time limit grows with `COUNTED_RUNS`: each counted run takes
+ * minutes, so a fixed limit times out a many-run check on a busy machine.
+ * Two runs, as CI counts, get the 15 minutes they always had.
+ */
+const TIMEOUT_MS = 300_000 + COUNTED_RUNS * 300_000;
+
 /** A fixed day, in UTC, so Today shows the same tasks on every run and every machine. */
 const STARTS_AT = Date.UTC(2026, 5, 15, 9);
 /** How long the page is watched doing nothing. */
@@ -170,7 +177,7 @@ const counted = new Map<string, Work>();
 const timed = new Map<string, { inputToReady: number; longestFrame: number }>();
 
 test('the app does no more work than its budget', async ({ browser }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(TIMEOUT_MS);
   const budgets = JSON.parse(await readFile(BUDGETS_FILE, 'utf8')) as BudgetsFile;
 
   await test.step('counted, on the work clock', async () => {
@@ -1183,6 +1190,8 @@ const LONG_EPUB = 'Areas/A Long Voyage.epub';
 const LONG_EPUB_CHAPTERS = 1000;
 /** What find in the long book says once it has read every chapter: its phrase is in every hundredth. */
 const LONG_EPUB_FOUND = `1 of ${LONG_EPUB_CHAPTERS / 100}`;
+/** The section find then shows, its first match: the hundredth chapter, counted from 0. */
+const LONG_EPUB_FIRST_MATCH = String(100 - 1);
 
 /**
  * How long the work clock waits on the wall clock for the long book's own
@@ -1228,9 +1237,13 @@ async function readALongEpub(pass: Pass): Promise<void> {
         await page.getByRole('button', { name: 'Find', exact: true }).click();
         await page.getByRole('searchbox', { name: 'Find in document' }).fill(LONG_BOOK_PHRASE);
       },
-      (found: string) =>
-        (document.querySelector('.epub-reader [role="search"]')?.textContent ?? '').includes(found),
-      LONG_EPUB_FOUND,
+      // Not only the count: find then shows its first match, a chapter read from
+      // the archive off the work clock, and ready waits for it to be on screen.
+      ({ found, section }: { found: string; section: string }) =>
+        (document.querySelector('.epub-reader [role="search"]')?.textContent ?? '').includes(
+          found,
+        ) && document.querySelector(`.epub-reader__page[data-shown-section="${section}"]`) !== null,
+      { found: LONG_EPUB_FOUND, section: LONG_EPUB_FIRST_MATCH },
       EPUB_UNTRACKED_MS,
     ),
   ]);
