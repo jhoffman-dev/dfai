@@ -285,6 +285,54 @@ describe('syncBlocks: moving a block', () => {
     expect(props()['gcal_etag']).toBe('"g2"');
   });
 
+  /** Agreed 09:00, moved to 10:00 in DFAI, and the patch that would say so never reaches Google. */
+  async function pushNeverLanded() {
+    const set = setUp();
+    await set.sync();
+    await set.sync();
+    const id = String(set.props()['gcal_event_id']);
+    set.vault.files.set(
+      BLOCK,
+      blockFile({ ...set.props(), start: '2026-10-26T10:00', end: '2026-10-26T11:00' }),
+    );
+    set.google.state.failNext.patch = new GoogleCalendarError({
+      kind: 'unreachable',
+      message: 'offline',
+    });
+    expect((await set.sync()).failed.map((failure) => failure.path)).toEqual([BLOCK]);
+    return { ...set, id };
+  }
+
+  it('a push that never landed survives a full listing (a lost token): it is sent again, not undone', async () => {
+    const { google, props, sync, id } = await pushNeverLanded();
+    google.expire();
+    const report = await sync();
+    expect(report).toMatchObject({ full: true, pushed: 1, pulled: 0, conflicts: [] });
+    expect(props()).toMatchObject({ start: '2026-10-26T10:00', end: '2026-10-26T11:00' });
+    expect(props()).not.toHaveProperty('gcal_pending');
+    expect(google.state.events.get(id)?.start).toEqual({
+      kind: 'timed',
+      at: Date.parse('2026-10-26T10:00:00-07:00'),
+    });
+  });
+
+  it('a push that never landed, the event changed in Google since: Google is kept, and Activity says so', async () => {
+    const { google, props, sync, id } = await pushNeverLanded();
+    const kept = google.state.events.get(id);
+    if (kept === undefined) throw new Error('no event');
+    // A colour or a description: a new version, times as they were.
+    google.state.versions += 1;
+    google.state.events.set(id, { ...kept, etag: `"g${google.state.versions}"` });
+    google.state.changed.add(id);
+    google.expire();
+    const report = await sync();
+    expect(report.conflicts).toEqual([BLOCK]);
+    expect(props()).toMatchObject({ start: '2026-10-26T09:00', end: '2026-10-26T10:00' });
+    expect(blockSyncActivity(report).map((line) => line.message)).toContain(
+      '“Larkspur close block” was changed in DFAI and in Google Calendar; Google’s time was kept.',
+    );
+  });
+
   it('moved in Google, the block’s times move on the next sync; its body and other keys stay', async () => {
     const { vault, google, props, sync } = setUp();
     await sync();

@@ -40,6 +40,7 @@ const block = (more: Partial<BlockOnDisk> = {}): BlockOnDisk => ({
   etag: '"v1"',
   calendarId: CALENDAR,
   missing: false,
+  pending: false,
   synced: agreedNineToTen,
   ...more,
 });
@@ -274,6 +275,105 @@ describe('reconcileBlocks: the table of cases', () => {
 
   it.each(cases)('$name', ({ input, expected }) => {
     expect(kinds(input)).toEqual(expected);
+  });
+});
+
+describe('reconcileBlocks: a push that never landed (sent, Google not answered)', () => {
+  // Agreed 09:00; James moved it to 10:00; the push wrote the record and the
+  // pending mark, kept the last version Google confirmed, then never landed.
+  const sentTen: BlockSyncFields = {
+    ...agreedNineToTen,
+    start: '2026-10-26T10:00',
+    end: '2026-10-26T11:00',
+  };
+  const pendingTen = (more: Partial<BlockOnDisk> = {}) =>
+    block({ start: sentTen.start, end: sentTen.end, synced: sentTen, pending: true, ...more });
+
+  const only = (input: Partial<ReconcileBlocksInput>) => {
+    const [action, ...rest] = plan(input).actions;
+    expect(rest).toEqual([]);
+    return action;
+  };
+
+  it('Google lists the version the block kept, in a full listing: unchanged there, so it is sent again', () => {
+    expect(only({ blocks: [pendingTen()], events: [event()], listedInFull: true })).toMatchObject({
+      kind: 'patch',
+      fields: sentTen,
+    });
+  });
+
+  it('Google lists the version the block kept, incrementally: sent again', () => {
+    expect(only({ blocks: [pendingTen()], events: [event()] })).toMatchObject({ kind: 'patch' });
+  });
+
+  it('Google lists nothing: sent again, not taken as agreed', () => {
+    expect(only({ blocks: [pendingTen()] })).toMatchObject({ kind: 'patch', fields: sentTen });
+  });
+
+  it('a full listing without the event: marked missing, never pushed', () => {
+    expect(only({ blocks: [pendingTen()], listedInFull: true })).toMatchObject({ kind: 'missing' });
+  });
+
+  it('Google changed the event since (a colour), on its old times: both changed, Google kept and said', () => {
+    expect(
+      only({ blocks: [pendingTen()], events: [event({ etag: '"v2"' })], listedInFull: true }),
+    ).toMatchObject({
+      kind: 'pull',
+      fields: { start: '2026-10-26T09:00', end: '2026-10-26T10:00' },
+      conflict: true,
+    });
+  });
+
+  it('Google moved the event elsewhere since: Google kept, as a conflict', () => {
+    const elsewhere = event({
+      etag: '"v2"',
+      start: { kind: 'timed', at: Date.parse('2026-10-26T20:00:00Z') },
+      end: { kind: 'timed', at: Date.parse('2026-10-26T21:00:00Z') },
+    });
+    expect(only({ blocks: [pendingTen()], events: [elsewhere] })).toMatchObject({
+      kind: 'pull',
+      fields: { start: '2026-10-26T13:00', end: '2026-10-26T14:00' },
+      conflict: true,
+    });
+  });
+
+  it('the push landed but its version was not written: Google on the sent times, so it is adopted', () => {
+    expect(only({ blocks: [pendingTen()], events: [tenToEleven()] })).toMatchObject({
+      kind: 'adopt',
+      etag: '"v2"',
+    });
+  });
+
+  it('landed, and James saved a newer edit before its version was written: his edit is pushed (2c)', () => {
+    const newer = pendingTen({ start: '2026-10-26T12:00', end: '2026-10-26T13:00' });
+    expect(only({ blocks: [newer], events: [tenToEleven()] })).toMatchObject({
+      kind: 'patch',
+      fields: { start: '2026-10-26T12:00', end: '2026-10-26T13:00' },
+    });
+  });
+
+  it('a block with a record but no version, Google on other times in a full listing: never silently reverted', () => {
+    const unconfirmed = block({
+      start: sentTen.start,
+      end: sentTen.end,
+      synced: sentTen,
+      etag: null,
+    });
+    expect(only({ blocks: [unconfirmed], events: [event()], listedInFull: true })).toMatchObject({
+      kind: 'pull',
+      conflict: true,
+    });
+  });
+
+  it('reads the pending mark from the block, only as true', () => {
+    const read = (value: unknown) =>
+      blockOnDisk({ path: 'x.md', title: 'x', properties: { gcal_pending: value } }).pending;
+    expect([read(true), read('true'), read(null), read(undefined)]).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
   });
 });
 
