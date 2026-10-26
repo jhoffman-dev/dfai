@@ -138,7 +138,7 @@ export function wallClockIn(timeZone: string): (instant: number) => WallTime {
  * The instant a clock in `timeZone` shows `wall` (`YYYY-MM-DDTHH:MM`). On a
  * fall-back day, whose hour after the change shows twice, the earlier; in
  * the hour a spring change skips, the instant the clocks jump to it from.
- * Tried with the zone's offset half a day either side, so a change at any
+ * Tried with the zone's offset 14 hours either side, so a change at any
  * hour is on one side of it.
  */
 export function instantOnClock(wall: string, timeZone: string): number {
@@ -148,14 +148,15 @@ export function instantOnClock(wall: string, timeZone: string): number {
     const { day, time } = clock(instant);
     return Date.parse(`${day}T${time}Z`);
   };
-  const readings = [asUtc - HALF_DAY_MS, asUtc + HALF_DAY_MS].map(
+  const readings = [asUtc - WIDEST_OFFSET_MS, asUtc + WIDEST_OFFSET_MS].map(
     (near) => asUtc - (shownAsUtc(near) - near),
   );
   const exact = readings.filter((instant) => shownAsUtc(instant) === asUtc);
   return exact.length > 0 ? Math.min(...exact) : Math.max(...readings);
 }
 
-const HALF_DAY_MS = 14 * 3_600_000;
+/** Wider than any zone's offset from UTC (+14:00 is the widest), so each try lands either side of a change. */
+const WIDEST_OFFSET_MS = 14 * 3_600_000;
 
 /** The day and time an instant shows on a clock in `timeZone`. */
 function inZone(instant: Date, timeZone: string): Moment {
@@ -377,18 +378,34 @@ export function startAsk(input: WhenInput, calendarTimeZone: string | null): Sta
 const at = (day: string, time: string) => `${day}T${time}`;
 
 /**
- * The end, refused when it is before the start: an end with no day of its
- * own is on the meeting's day, so one that runs past midnight is sent with
- * its date (`2026-10-25T00:15`).
+ * The longest a meeting with an undated end is taken to run: an end earlier
+ * on the clock than the start is the next day's only within it, so 23:30 to
+ * 00:15 is a late meeting and 10:00 to 09:00 a mistake.
+ */
+const LONGEST_OVERNIGHT_MINUTES = 12 * 60;
+
+const minutesOfClock = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+/**
+ * The end, as sent, checked against a start read from the meeting or its
+ * calendar event. A dated end must not be before the start. An undated one
+ * earlier on the clock than the start is the next day's when that keeps the
+ * meeting to {@link LONGEST_OVERNIGHT_MINUTES}, and is refused otherwise.
  */
 function endAfter(end: Moment, { day, start }: { day: string; start: string }): string | null {
   if (end.time === null) return null;
-  if (at(end.day ?? day, end.time) < at(day, start)) {
+  if (end.day !== null) {
+    if (at(end.day, end.time) >= at(day, start)) return end.time;
     throw new MeetingMappingError(
-      `end: ${end.time} is before the start, ${start}; send an end after the start, with its date when the meeting ends the next day`,
+      `end: ${end.day} ${end.time} is before the start, ${day} ${start}; send an end after the start`,
     );
   }
-  return end.time;
+  if (end.time >= start) return end.time;
+  const overnight = minutesOfClock(end.time) + 24 * 60 - minutesOfClock(start);
+  if (overnight <= LONGEST_OVERNIGHT_MINUTES) return end.time;
+  throw new MeetingMappingError(
+    `end: ${end.time} is before the start, ${start}, and the next day’s would make the meeting longer than 12 hours; send an end after the start, with its date when it ends another day`,
+  );
 }
 
 /**

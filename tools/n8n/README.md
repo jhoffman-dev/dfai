@@ -153,7 +153,8 @@ it ended, so the day and start come from the email itself:
    `stated` is given, `date` is not read at all. Words with no date in them
    are refused.
 2. `arrived` — when the email arrived (an instant). When nothing gives a
-   start time, the start is the arrival less the transcript's length —
+   start time, the start is the `end` sent, else the arrival, less the
+   transcript's length —
    Gemini's "Transcription ended after 00:51:49" line, else its last
    `### hh:mm:ss` section stamp (a little short) — and the file says
    `start_approximate: true`. With no length to take off (no transcript, or
@@ -163,7 +164,7 @@ it ended, so the day and start come from the email itself:
 The order is: `start`, then the time in `stated`, then the time in `date`,
 then (Granola) the first stamped turn, then — only when DFAI maps it, through
 the API destination's `POST /v1/meetings` — the meeting's Google Calendar
-event, then `arrived` less the transcript. (A Granola note always carries a
+event, then `end` (else `arrived`) less the transcript. (A Granola note always carries a
 start; one without is refused before it is mapped, so the Granola pull never
 asks the calendar.)
 
@@ -443,8 +444,12 @@ Why each part:
   day before are both looked at. Two such events, or none, and it is
   refused with what to add. When the workflow knows the start some other
   way, send it as `start` (and `end`), `HH:MM` on the Mac's clock; it is
-  read before anything else. An `end` before the start is refused; send one
-  that runs past midnight with its date (`2026-10-25T00:15`).
+  read before anything else. An `end` with no date that is earlier on the
+  clock than the start (`23:30` to `00:15`) is the next day's, written as
+  sent, when that keeps the meeting to 12 hours; longer (`10:00` to `09:00`)
+  it is refused `invalid`, as is a dated `end` before the start. A start
+  DFAI works out is never checked against the end: it is the end less the
+  transcript's length.
 - **The error output** sends whatever is left after the retries — a meeting
   with no start time (`invalid`, as in the commit's mapper), both paths held
   by other meetings (`exists`), no vault open (`no_vault`), DFAI closed — to

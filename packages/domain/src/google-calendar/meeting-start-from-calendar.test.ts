@@ -325,7 +325,7 @@ describe('the connect hint, and the end of a calendar start', () => {
 
   it('refuses a sent end before the calendar’s start, as invalid input', () => {
     expect(() => mappedWith([SYNC], { ...SENT, end: '09:45' })).toThrow(
-      'end: 09:45 is before the start, 10:00; send an end after the start, with its date when the meeting ends the next day',
+      'end: 09:45 is before the start, 10:00, and the next day’s would make the meeting longer than 12 hours; send an end after the start, with its date when it ends another day',
     );
   });
 });
@@ -354,8 +354,8 @@ describe('an end with no date, earlier on the clock than the start', () => {
   });
 
   it('is refused when even the next day would make the meeting longer than 12 hours', () => {
-    expect(() => mapMeeting({ ...SENT, start: '20:00', end: '07:59' }, ZONE)).toThrow(
-      'end: 07:59 is before the start, 20:00, and the next day’s would make the meeting longer than 12 hours',
+    expect(() => mapMeeting({ ...SENT, start: '20:00', end: '08:01' }, ZONE)).toThrow(
+      'end: 08:01 is before the start, 20:00, and the next day’s would make the meeting longer than 12 hours',
     );
   });
 

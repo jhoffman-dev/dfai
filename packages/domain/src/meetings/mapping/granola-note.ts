@@ -196,10 +196,6 @@ function attendeesOf(note: JsonRecord, event: JsonRecord | null): unknown[] {
 }
 
 /**
- * The meeting's title: the note's, else its calendar event's. With neither,
- * the mapper refuses it as `title: missing`.
- */
-/**
  * The end as the mapper reads it: `HH:MM` on the start's day, with its date
  * when it is a later day's (`2026-10-25T00:15`), and none when the clock
  * shows it before the start — a fall-back hour, the instant later but the
@@ -211,6 +207,10 @@ function endOnClock(began: WallTime, ended: WallTime): string | null {
   return time < began.time.slice(0, 5) ? null : time;
 }
 
+/**
+ * The meeting's title: the note's, else its calendar event's. With neither,
+ * the mapper refuses it as `title: missing`.
+ */
 function titleOf(note: JsonRecord, event: JsonRecord | null): unknown {
   return firstWithText(
     ['title', note['title']],
