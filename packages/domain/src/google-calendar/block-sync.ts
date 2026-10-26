@@ -110,6 +110,12 @@ export type BlockAction =
       readonly path: string;
       readonly eventId: string;
       readonly fields: BlockSyncFields;
+      /**
+       * The version of the listed event this patch was planned against, kept
+       * on the block while it is pending; null when Google did not list it, so
+       * the block's own last confirmed version stays.
+       */
+      readonly basedOn: string | null;
     }
   /**
    * Google changed the event: write its times onto the block, as agreed.
@@ -296,11 +302,12 @@ type Identified = BlockOnDisk & { readonly eventId: string };
 const strayed = (event: BlockEvent, block: BlockOnDisk) =>
   typeof event.notePath === 'string' && event.notePath !== block.path;
 
-/** Pushes the block as it is, or says it has nothing to push. */
-function planPatch(block: Identified, plan: Plan): void {
+/** Pushes the block as it is, based on the version of the event it was planned against, or says it has nothing to push. */
+function planPatch(block: Identified, basedOn: string | null, plan: Plan): void {
   const fields = pushableFields(block);
   if (fields === null) plan.actions.push({ kind: 'unplaced', path: block.path });
-  else plan.actions.push({ kind: 'patch', path: block.path, eventId: block.eventId, fields });
+  else
+    plan.actions.push({ kind: 'patch', path: block.path, eventId: block.eventId, fields, basedOn });
 }
 
 /** A block with no event yet, or one whose id was written but whose event may not have been made. */
@@ -342,7 +349,7 @@ const unchangedSincePending = (block: BlockOnDisk, event: BlockEvent) =>
 /** Google's times, read off its event: compared with the agreed record, else with the block's own. */
 function planListed(block: Identified, event: BlockEvent, times: Times, plan: Plan): void {
   if (unchangedSincePending(block, event)) {
-    planPatch(block, plan);
+    planPatch(block, event.etag, plan);
     return;
   }
   const held = heldFields(block);
@@ -350,13 +357,13 @@ function planListed(block: Identified, event: BlockEvent, times: Times, plan: Pl
   if (sameTimes(block.synced ?? held, times)) {
     // Google did not move it — whatever else changed there — so DFAI's values go to Google.
     if (sameTimes(held, times) && titled) planAdopt(block, event, times, plan);
-    else planPatch(block, plan);
+    else planPatch(block, event.etag, plan);
     return;
   }
   if (sameTimes(held, times)) {
     // Both moved it to the same place: agreed, bar a title to put back.
     if (titled) planAdopt(block, event, times, plan);
-    else planPatch(block, plan);
+    else planPatch(block, event.etag, plan);
     return;
   }
   plan.actions.push({
@@ -377,12 +384,12 @@ function planListed(block: Identified, event: BlockEvent, times: Times, plan: Pl
 function planUnlisted(block: Identified, plan: Plan): void {
   // A push sent and not answered: Google may not hold it, so it is sent again.
   if (block.pending) {
-    planPatch(block, plan);
+    planPatch(block, null, plan);
     return;
   }
   // Nothing agreed to compare with: wait for Google to list the event.
   if (block.synced === null || sameFields(heldFields(block), block.synced)) return;
-  planPatch(block, plan);
+  planPatch(block, null, plan);
 }
 
 /** A block whose event was made: follow what each side did since they last agreed. */

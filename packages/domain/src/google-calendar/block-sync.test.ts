@@ -415,6 +415,7 @@ describe('reconcileBlocks: what each action carries', () => {
       path: 'Larkspur close block.md',
       eventId: 'dfaiev1',
       fields: { title: 'Larkspur close block', ...moved },
+      basedOn: '"v2"',
     });
   });
 
@@ -548,6 +549,7 @@ describe('reconcileBlocks: copies keep one event with one note', () => {
         path: original,
         eventId: 'dfaiev1',
         fields: { title: 'Larkspur close block', ...moved },
+        basedOn: '"v1"',
       },
     ]);
   });

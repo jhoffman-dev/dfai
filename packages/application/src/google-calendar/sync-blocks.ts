@@ -400,8 +400,9 @@ type Outcome = 'inserted' | 'pushed' | 'pulled' | 'missing' | 'copied' | null;
 
 /**
  * Pushes a block to its event. What is sent is written onto the block as
- * agreed, marked pending, before it is sent; its version stays the last one
- * Google confirmed. If the push lands and the write of its version after it
+ * agreed, marked pending, before it is sent; its version is the one of the
+ * listed event it was planned against (else the last one Google confirmed),
+ * so Google listing that version again means nothing changed there. If the push lands and the write of its version after it
  * fails (James saved the block meanwhile), the next sync finds Google on the
  * agreed times, knows the push for DFAI's own, and pushes his newer edit. If
  * it never lands, Google still lists the version the block kept, so the next
@@ -420,7 +421,13 @@ async function push(
     return landed(applying, { path, etag: written.etag, outcome: copied ? 'copied' : 'inserted' });
   }
   // Pending until Google answers: a send that never lands is sent again, not taken as agreed.
-  await writeOwned(applying, path, { ...syncedKeys(fields), [BLOCK_SYNC_KEYS.pending]: true });
+  // Based on the version it was planned against, so a retry knows Google unchanged since.
+  const basedOn = action.kind === 'patch' ? action.basedOn : null;
+  await writeOwned(applying, path, {
+    ...syncedKeys(fields),
+    ...etagKeys(basedOn),
+    [BLOCK_SYNC_KEYS.pending]: true,
+  });
   const written = await writeEvent(applying, { eventId, fields, insert, path });
   if (written.kind !== 'written') {
     // Its event was made, then deleted in Google since: the block is marked, never removed.
