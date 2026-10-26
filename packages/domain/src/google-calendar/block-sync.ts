@@ -437,23 +437,36 @@ function planBlock(block: BlockOnDisk, context: Context, plan: Plan): void {
   else planMade(identified, context, plan);
 }
 
+/** A copy's suffix: Finder's ` copy`, ` copy 2`, or the vault's next free name, ` 2`. */
+const COPY_SUFFIX = / (?:copy(?: \d+)?|\d+)$/i;
+
+/** A note's name from its path: the last segment, without `.md`. */
+const nameOf = (path: string) => (path.split('/').at(-1) ?? path).replace(/\.md$/i, '');
+
 /**
- * A name Finder gives a copy (`… copy`, `… copy 2`) or the vault gives the
- * next free name (`… 2`). Only a tie-break: a note so named is never taken
- * for the original over one that is not.
+ * Whether a note is named like a copy of one of `names`: its name is one of
+ * them with a copy's suffix. Only a tie-break, and only beside the name it
+ * would be a copy of, so `Sprint 2` is a copy's name beside `Sprint`, never
+ * beside `Retro`.
  */
-const COPY_NAME = / (?:copy(?: \d+)?|\d+)$/i;
+function namedAsCopy(copy: BlockOnDisk, names: ReadonlySet<string>): boolean {
+  const stem = copy.title.replace(COPY_SUFFIX, '');
+  return stem !== copy.title && names.has(stem);
+}
 
 /**
  * Which of the notes carrying one event id is the one the event is for: the
  * note the event says it was written for; else, among the notes not named
- * like a copy (all of them when every one is), one on the event's times;
- * else one unchanged since it was agreed; else the first by path.
+ * like a copy of another of them or of the note the event names (all of them
+ * when every one is), the one on the event's times; else the one unchanged
+ * since it was agreed; else the first by path.
  */
 function originalOf(copies: readonly BlockOnDisk[], event: BlockEvent | undefined, zone: string) {
   const named = copies.find((copy) => event?.notePath === copy.path);
   if (named !== undefined) return named.path;
-  const plain = copies.filter((copy) => !COPY_NAME.test(copy.title));
+  const names = new Set(copies.map((copy) => copy.title));
+  if (typeof event?.notePath === 'string') names.add(nameOf(event.notePath));
+  const plain = copies.filter((copy) => !namedAsCopy(copy, names));
   const pool = plain.length > 0 ? plain : copies;
   const times = event === undefined || event.cancelled ? null : eventTimes(event, zone);
   const chosen =
