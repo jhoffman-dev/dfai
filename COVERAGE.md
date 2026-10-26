@@ -47,7 +47,7 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `application/meeting-links` | Writes a meeting's people and companies, and proposals, by itself; undone.                    | 29      |
 | `application/embeddings`    | The cache of meanings: a block stale or missing answers a question silently wrong.            | 32      |
 | `application/profile`       | Reads who the vault's owner is, by name and address: whose a meeting's tasks are.             | #173    |
-| `*/google-calendar`         | Connects your Google account and reads its answers; tokens stay in Rust.                      | 31      |
+| `*/google-calendar`         | Connects your Google account, reads its answers and syncs blocks to it; tokens stay in Rust.  | 31, #30 |
 | `domain/granola`            | Granola's watermark, pacing and backoff: a wrong rule drops meetings.                         | 28      |
 | `*/granola`                 | Writes files into your vault from outside it; turns Granola's JSON into domain types.         | 28      |
 | `domain/kindle`             | Reads Amazon's notebook page into highlights; a wrong rule writes junk or drops highlights.   | #508    |

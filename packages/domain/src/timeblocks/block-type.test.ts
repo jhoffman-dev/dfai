@@ -28,6 +28,12 @@ describe('the Block type', () => {
   it('keeps the Google event it is synced with', () => {
     expect(property('gcal_event_id')).toMatchObject({ kind: 'text' });
     expect(property('gcal_etag')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_calendar')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_missing')).toMatchObject({ kind: 'checkbox' });
+    expect(property('gcal_synced_title')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_synced_start')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_synced_end')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_pending')).toMatchObject({ kind: 'checkbox' });
   });
 
   it('is built in: it cannot be deleted, and says why', () => {

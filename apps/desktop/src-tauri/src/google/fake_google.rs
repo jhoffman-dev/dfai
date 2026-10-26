@@ -100,6 +100,8 @@ pub struct Google {
     pub scripted_answers: VecDeque<(u16, Vec<u8>)>,
     /// The API takes every call and never answers it.
     pub api_stalls: bool,
+    /// Every events.insert and events.patch, as (method, path, body), in order (#30).
+    pub event_writes: Vec<(String, String, String)>,
 }
 
 impl Google {
@@ -311,6 +313,8 @@ fn api_answer(google: &mut Google, call: &Call) -> Answer {
             )
         }
         ("GET", events) if is_events_path(events) => events_answer(google, call.query, &echo),
+        ("POST", events) if is_events_path(events) => event_written(google, call),
+        ("PATCH", event) if is_event_path(event) => event_written(google, call),
         _ => json(404, r#"{"error":{"code":404}}"#.into()),
     }
 }
@@ -320,6 +324,26 @@ fn is_events_path(path: &str) -> bool {
     path.strip_prefix("/calendar/v3/calendars/")
         .and_then(|rest| rest.strip_suffix("/events"))
         .is_some_and(|id| !id.is_empty() && !id.contains('/'))
+}
+
+/// `/calendar/v3/calendars/{calendarId}/events/{eventId}`, for one event.
+fn is_event_path(path: &str) -> bool {
+    path.rsplit_once('/')
+        .is_some_and(|(events, id)| !id.is_empty() && is_events_path(events))
+}
+
+/// events.insert and events.patch: the write kept as it arrived, answered
+/// with a new version, as Google gives each write.
+fn event_written(google: &mut Google, call: &Call) -> Answer {
+    let body = String::from_utf8_lossy(call.body).into_owned();
+    google
+        .event_writes
+        .push((call.method.to_string(), call.path.to_string(), body));
+    let version = google.event_writes.len();
+    json(
+        200,
+        format!(r#"{{"id":"dfaiblock1","etag":"\"w{version}\""}}"#),
+    )
 }
 
 const FULL_SYNC_REQUIRED: &str = r#"{"error":{"code":410,"message":"Sync token is no longer valid, a full sync is required.","errors":[{"reason":"fullSyncRequired"}]}}"#;
