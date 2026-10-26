@@ -770,43 +770,28 @@ describe('syncBlocks: the vault’s own id, a seed of every new block’s event 
   const settingsProps = (vault: ReturnType<typeof setUp>['vault']) =>
     JSON.parse(vault.files.get(SETTINGS)?.split('\n')[1] ?? '{}') as Record<string, unknown>;
 
-  it('a vault without one is given one, once, from the injected Rng, every other byte of its settings kept', async () => {
+  it('a vault without one draws a new block’s id from the calendar alone, and the sync writes no id', async () => {
+    // An id only this Mac had would make another writer draw another id for the same note.
     const { vault, google, sync } = setUp(
       { [BLOCK]: blockFile() },
       { settings: file({ google_blocks: true }, '# Settings\n\nWords James wrote.\n') },
     );
-    const before = vault.files.get(SETTINGS) ?? '';
+    const before = vault.files.get(SETTINGS);
     await sync();
-    const made = settingsProps(vault)['vault_id'];
-    // Each of its 16 characters is one draw: 0.5 of 32 is `g`, in Google's alphabet.
-    expect(made).toBe('gggggggggggggggg');
-    expect(settingsProps(vault)).toEqual({ google_blocks: true, vault_id: made });
-    expect(vault.files.get(SETTINGS)?.endsWith('\n# Settings\n\nWords James wrote.\n')).toBe(true);
-    expect(before).not.toBe(vault.files.get(SETTINGS));
+    expect(vault.files.get(SETTINGS)).toBe(before);
+    expect(settingsProps(vault)).not.toHaveProperty('vault_id');
     expect(google.state.writes[0]?.call.eventId).toBe(
-      blockEventId({ vaultId: String(made), calendarId: CALENDAR, path: BLOCK, attempt: 0 }),
-    );
-    // A second new block reads the id the first wrote, and draws nothing.
-    vault.files.set('Mara Quill prep.md', blockFile());
-    const settingsThen = vault.files.get(SETTINGS);
-    const writesBefore = google.state.writes.length;
-    await sync();
-    expect(vault.files.get(SETTINGS)).toBe(settingsThen);
-    expect(google.state.writes.length).toBe(writesBefore + 1);
-    expect(google.state.writes.at(-1)?.call.eventId).toBe(
-      blockEventId({
-        vaultId: String(made),
-        calendarId: CALENDAR,
-        path: 'Mara Quill prep.md',
-        attempt: 0,
-      }),
+      blockEventId({ vaultId: null, calendarId: CALENDAR, path: BLOCK, attempt: 0 }),
     );
   });
 
-  it('a vault with no settings file is given one holding its id', async () => {
-    const { vault, sync } = setUp({ [BLOCK]: blockFile() }, { settings: null, draws: [0, 0.99] });
+  it('a vault with no settings file draws from the calendar alone, and no file is made', async () => {
+    const { vault, google, sync } = setUp({ [BLOCK]: blockFile() }, { settings: null });
     await sync();
-    expect(settingsProps(vault)).toEqual({ vault_id: '0v0v0v0v0v0v0v0v' });
+    expect(vault.files.has(SETTINGS)).toBe(false);
+    expect(google.state.writes[0]?.call.eventId).toBe(
+      blockEventId({ vaultId: null, calendarId: CALENDAR, path: BLOCK, attempt: 0 }),
+    );
   });
 
   it('two vaults on one calendar draw two ids for one path, so neither patches the other’s event', async () => {

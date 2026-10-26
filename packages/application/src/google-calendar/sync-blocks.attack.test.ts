@@ -561,6 +561,25 @@ describe('block sync, adversarial: two Macs', () => {
     expect(inserted.size).toBe(1);
   });
 
+  it('two writers for one tick in a vault with no vault_id yet make one event for one block', async () => {
+    const google = fakeBlockCalendar();
+    const path = 'Blocks/Payroll run block.md';
+    // Switched on by an earlier build, or the id lost in a settings conflict.
+    const notes = {
+      '.atlas/settings.md': file({ google_blocks: true }, ''),
+      [path]: blockFile('2026-10-26T09:00', '2026-10-26T10:00'),
+    };
+    const macA = mac(notes, google, 11);
+    const macB = mac(notes, google, 22);
+    await macA.sync();
+    await macB.sync();
+    const inserted = new Set(
+      google.state.writes.filter((write) => write.kind === 'insert').map((w) => w.call.eventId),
+    );
+    expect(inserted.size).toBe(1);
+    expect(google.state.events.size).toBe(1);
+  });
+
   it('a new automations Mac (no record) says so when Google and James both moved a block', async () => {
     const google = fakeBlockCalendar();
     const path = 'Blocks/Payroll run block.md';

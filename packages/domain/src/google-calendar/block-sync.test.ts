@@ -737,6 +737,17 @@ describe('blockEventId', () => {
     );
   });
 
+  it('pins the id drawn for a vault with no id of its own: from the calendar and the path alone', () => {
+    expect(
+      blockEventId({
+        vaultId: null,
+        calendarId: CALENDAR,
+        path: 'Blocks/Payroll run block.md',
+        attempt: 0,
+      }),
+    ).toBe('dfaia80d472d8e863e224b16aa3d35f8cb53');
+  });
+
   it('is FNV-1a, 64 bits, over the UTF-8 bytes: its published test values', () => {
     expect([blockIdDigest(''), blockIdDigest('a'), blockIdDigest('foobar')]).toEqual([
       'cbf29ce484222325',
