@@ -163,6 +163,9 @@ describe('GET /v1/notes/{path}', () => {
           gcal_etag: 'v3',
           gcal_calendar: 'dfai-blocks@group.calendar.example.com',
           gcal_missing: true,
+          gcal_synced_title: 'Larkspur close block',
+          gcal_synced_start: '2026-10-26T09:00',
+          gcal_synced_end: '2026-10-26T10:00',
         })}\n---\n`,
       },
       markdown: jsonMarkdown(),
@@ -179,6 +182,9 @@ describe('GET /v1/notes/{path}', () => {
         gcal_etag: 'v3',
         gcal_calendar: 'dfai-blocks@group.calendar.example.com',
         gcal_missing: true,
+        gcal_synced_title: 'Larkspur close block',
+        gcal_synced_start: '2026-10-26T09:00',
+        gcal_synced_end: '2026-10-26T10:00',
       },
     });
   });

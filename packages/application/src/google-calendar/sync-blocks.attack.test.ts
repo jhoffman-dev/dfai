@@ -109,7 +109,16 @@ function touchEvent(google: ReturnType<typeof fakeBlockCalendar>, id: string) {
 const wall = (day: string, hour: number) => `${day}T${String(hour).padStart(2, '0')}:00`;
 
 describe('block sync, adversarial: random edits on both sides with syncs between', () => {
-  const OWNED = new Set(['gcal_event_id', 'gcal_etag', 'gcal_calendar', 'gcal_missing']);
+  // The keys block sync owns; the agreed record (gcal_synced_*) joined them in the fix round (decision 2).
+  const OWNED = new Set([
+    'gcal_event_id',
+    'gcal_etag',
+    'gcal_calendar',
+    'gcal_missing',
+    'gcal_synced_title',
+    'gcal_synced_start',
+    'gcal_synced_end',
+  ]);
   const DAYS = ['2026-10-26', '2026-10-27', '2026-10-28'];
 
   /** Every non-owned key but start/end, and the body, as James last wrote them. */

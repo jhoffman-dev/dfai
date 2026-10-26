@@ -40,6 +40,7 @@ import type {
 } from '@dfai/ui';
 import type { BlockSyncController } from '../google-calendar/use-block-sync.ts';
 import type { MeetingSyncController } from '../google-calendar/use-meeting-sync.ts';
+import { localTimeZone } from '../today.ts';
 import { useVaultSetting } from './use-vault-setting.ts';
 import { useVaultSettingsRead } from './use-vault-settings-read.ts';
 import { vaultSettingsWriter } from './vault-settings-writer.ts';
@@ -142,6 +143,7 @@ export function useGoogleCalendar({
   meetingsWrittenHere,
   blockSync,
   blocksWrittenHere = false,
+  timeZone = localTimeZone,
 }: {
   port: GoogleCalendarPort;
   fs: VaultFsPort;
@@ -161,6 +163,8 @@ export function useGoogleCalendar({
   blockSync?: BlockSyncController;
   /** Whether this Mac syncs the vault's blocks: it runs the vault's automations (U-29). */
   blocksWrittenHere?: boolean;
+  /** The Mac's zone, which the calendar DFAI makes for blocks keeps. */
+  timeZone?: () => string;
 }): GoogleCalendarSettingState {
   const store = useCallback(
     (setting: GoogleCalendarSetting) =>
@@ -256,7 +260,7 @@ export function useGoogleCalendar({
 
   const create = () =>
     inVault(async (at) => {
-      const made = await createBlocksCalendar({ port, vault: at });
+      const made = await createBlocksCalendar({ port, vault: at, timeZone: timeZone() });
       setting.save({ ...kept, calendarId: made.id });
       return null;
     });

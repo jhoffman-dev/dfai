@@ -11,7 +11,6 @@ import {
   type GoogleCalendarPort,
   type IndexPort,
   type MarkdownPort,
-  type Rng,
   type VaultFsPort,
 } from '@dfai/application';
 import { useSteadyCallback } from '@dfai/ui';
@@ -35,8 +34,7 @@ export interface BlockSyncOptions {
   readonly markdown: MarkdownPort;
   readonly index: Pick<IndexPort, 'query'>;
   readonly clock: Pick<Clock, 'today' | 'now'>;
-  readonly rng: Rng;
-  /** The zone the Mac keeps time in, asked at each sync: used only when Google names none. */
+  /** The zone the Mac keeps time in, asked at each sync: used only when Google names none for the primary calendar. */
   readonly timeZone: () => string;
   readonly vaultKey: string | null;
   readonly indexReady: boolean;
@@ -140,7 +138,6 @@ export function useBlockSync(options: BlockSyncOptions): BlockSyncController {
         markdown: now.markdown,
         index: now.index,
         clock: now.clock,
-        rng: now.rng,
       },
       {
         vault,

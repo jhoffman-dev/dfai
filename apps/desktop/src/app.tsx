@@ -791,7 +791,6 @@ function AppWindow({
     markdown: notes.markdown,
     index: index.index,
     clock: localClock,
-    rng: cryptoRng,
     timeZone: localTimeZone,
     vaultKey,
     indexReady,
@@ -1703,6 +1702,7 @@ function AppWindow({
     meetingsWrittenHere,
     ...(blockPorts === undefined ? {} : { blockSync }),
     blocksWrittenHere,
+    timeZone: localTimeZone,
   });
   const granolaSetting = useGranola({
     port: granolaPorts.port,

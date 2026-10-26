@@ -42,7 +42,8 @@ export interface GoogleCalendarPort {
     vault: string;
   }): Promise<{ readonly revoked: boolean; readonly shared: boolean }>;
   listCalendars(args: { vault: string }): Promise<readonly GoogleCalendar[]>;
-  createCalendar(args: { vault: string; name: string }): Promise<GoogleCalendar>;
+  /** Makes a calendar of the person's, keeping `timeZone`, so its events show on their clock. */
+  createCalendar(args: { vault: string; name: string; timeZone: string }): Promise<GoogleCalendar>;
 }
 
 /** A Google Calendar call that failed, with what the host or the API said. */
@@ -117,8 +118,6 @@ export type BlockEventChanges =
       readonly kind: 'changes';
       readonly events: readonly BlockEvent[];
       readonly syncToken: string | null;
-      /** The zone the calendar keeps, as Google names it; null when it gave none. */
-      readonly timeZone: string | null;
     }
   | { readonly kind: 'expired' };
 
@@ -132,19 +131,21 @@ export type BlockEventWrite =
   | { readonly kind: 'exists' }
   | { readonly kind: 'gone' };
 
-/** What a block's event is written with: its fields, on the calendar's own zone. */
+/** What a block's event is written with: its fields, on the plan zone. */
 export interface BlockEventCall {
   readonly vault: string;
   readonly calendarId: string;
   readonly eventId: string;
   readonly fields: BlockSyncFields;
   readonly timeZone: string;
+  /** The note it is written for, kept on the event, so a copy of the note is told from it. */
+  readonly notePath?: string;
 }
 
 /**
  * The one calendar blocks go to, through the host's sign-in (#30): its events
- * listed, made and changed. Never deleted: a block DFAI deletes leaves its
- * event, and no call here reaches another calendar.
+ * listed, read, made and changed. Never deleted: a block DFAI deletes leaves
+ * its event, and no call here writes to another calendar.
  */
 export interface BlockCalendar {
   /** With a sync token, what changed since it; without one, every event on the calendar. */
@@ -153,17 +154,30 @@ export interface BlockCalendar {
     calendarId: string;
     syncToken: string | null;
   }): Promise<BlockEventChanges>;
+  /** One event as Google holds it now; null when it has none of that id. */
+  getBlockEvent(args: {
+    vault: string;
+    calendarId: string;
+    eventId: string;
+  }): Promise<BlockEvent | null>;
   insertBlockEvent(call: BlockEventCall): Promise<BlockEventWrite>;
   patchBlockEvent(call: BlockEventCall): Promise<BlockEventWrite>;
+  /**
+   * The zone the person's primary calendar keeps, read and never written;
+   * null when Google names none or this sign-in may not read it.
+   */
+  primaryTimeZone(args: { vault: string }): Promise<string | null>;
 }
 
-/** Where this Mac's block sync of one vault left off. */
+/**
+ * Where this Mac's block sync of one vault left off: only a cache of the
+ * sync token. What both sides agreed is on the blocks themselves, so every
+ * Mac reads the same.
+ */
 export interface BlockSyncRecord {
-  /** The calendar the token and the agreed values are for; another calendar starts again. */
+  /** The calendar the token is for; another calendar starts again. */
   readonly calendarId: string | null;
   readonly syncToken: string | null;
-  /** What both sides held when they last agreed, by event id. */
-  readonly agreed: Readonly<Record<string, BlockSyncFields>>;
   readonly lastSyncAt: number | null;
 }
 

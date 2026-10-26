@@ -9,13 +9,10 @@ afterEach(() => {
 
 const VAULT = '/Users/mara/Vault';
 const KEY = `atlas.block-sync:${VAULT}`;
-const NONE = { calendarId: null, syncToken: null, agreed: {}, lastSyncAt: null };
+const NONE = { calendarId: null, syncToken: null, lastSyncAt: null };
 const RECORD = {
   calendarId: 'dfai-blocks@group.calendar.example.com',
   syncToken: 'sync-3',
-  agreed: {
-    dfaiev1: { title: 'Larkspur close block', start: '2026-10-26T09:00', end: '2026-10-26T10:00' },
-  },
   lastSyncAt: 1_761_314_400_000,
 };
 
@@ -28,18 +25,17 @@ describe('browserBlockSyncRecords', () => {
     expect(browserBlockSyncRecords.read('/Users/mara/Other')).toEqual(NONE);
   });
 
-  it('reads a record it cannot make sense of as none, and keeps only the agreed blocks it can read', () => {
+  it('reads a record it cannot make sense of as none, and an older one’s agreed values not at all', () => {
     window.localStorage.setItem(KEY, 'not json');
     expect(browserBlockSyncRecords.read(VAULT)).toEqual(NONE);
+    window.localStorage.setItem(KEY, JSON.stringify([RECORD]));
+    expect(browserBlockSyncRecords.read(VAULT)).toEqual(NONE);
+    // What both sides agreed is kept on the blocks now; a record from before still gives its token.
     window.localStorage.setItem(
       KEY,
       JSON.stringify({
         ...RECORD,
-        agreed: {
-          ...RECORD.agreed,
-          broken: { title: 1 },
-          empty: { title: 'x', start: '', end: '' },
-        },
+        agreed: { dfaiev1: { title: 'Larkspur close block', start: '', end: '' } },
         lastSyncAt: 'soon',
       }),
     );

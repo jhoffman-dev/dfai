@@ -30,6 +30,9 @@ describe('the Block type', () => {
     expect(property('gcal_etag')).toMatchObject({ kind: 'text' });
     expect(property('gcal_calendar')).toMatchObject({ kind: 'text' });
     expect(property('gcal_missing')).toMatchObject({ kind: 'checkbox' });
+    expect(property('gcal_synced_title')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_synced_start')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_synced_end')).toMatchObject({ kind: 'text' });
   });
 
   it('is built in: it cannot be deleted, and says why', () => {

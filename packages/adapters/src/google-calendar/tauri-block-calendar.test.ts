@@ -34,6 +34,8 @@ const google = {
   scripted: [] as { status: number; body: string }[],
   stalls: false,
   zone: 'America/Los_Angeles' as string | null,
+  /** The primary calendar's zone; null answers 403, as for a sign-in that may not read events. */
+  primaryZone: 'America/Chicago' as string | null,
 };
 
 const version = () => {
@@ -89,6 +91,16 @@ function serve(method: string, url: URL, body: unknown): { status: number; body:
   const scripted = google.scripted.shift();
   if (scripted !== undefined) return scripted;
   if (google.stalls) return null;
+  if (method === 'GET' && url.pathname === '/calendar/v3/calendars/primary/events') {
+    if (google.primaryZone === null) {
+      return answer(403, { error: { code: 403, errors: [{ reason: 'insufficientPermissions' }] } });
+    }
+    // `fields=timeZone`: only what was asked for comes back.
+    return answer(
+      200,
+      url.searchParams.get('fields') === 'timeZone' ? { timeZone: google.primaryZone } : {},
+    );
+  }
   const match = /^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(url.pathname);
   if (match === null || decodeURIComponent(match[1] ?? '') !== CALENDAR) {
     return answer(404, { error: { code: 404 } });
@@ -96,6 +108,10 @@ function serve(method: string, url: URL, body: unknown): { status: number; body:
   const eventId = match[2] === undefined ? null : decodeURIComponent(match[2]);
   const fields = (body ?? {}) as Record<string, unknown>;
   if (method === 'GET' && eventId === null) return list(url.searchParams);
+  if (method === 'GET' && eventId !== null) {
+    const kept = google.events.get(eventId);
+    return kept === undefined ? answer(404, { error: { code: 404 } }) : answer(200, kept);
+  }
   if (method === 'POST' && eventId === null) {
     const id = String(fields['id']);
     if (google.events.has(id)) return answer(409, { error: { code: 409, message: 'duplicate' } });
@@ -174,6 +190,7 @@ beforeEach(() => {
   google.scripted = [];
   google.stalls = false;
   google.zone = 'America/Los_Angeles';
+  google.primaryZone = 'America/Chicago';
   invoke.mockReset();
   invoke.mockImplementation(hop);
 });
@@ -230,10 +247,10 @@ describe('tauriBlockCalendar: the round trip', () => {
           title: 'Larkspur close block',
           start: { kind: 'timed', at: Date.parse('2026-10-26T16:00:00Z') },
           end: { kind: 'timed', at: Date.parse('2026-10-26T17:00:00Z') },
+          notePath: null,
         },
       ],
       syncToken: 'sync-1',
-      timeZone: 'America/Los_Angeles',
     });
     expect(Object.fromEntries(google.requests.at(-1)!.query)).toEqual({
       showDeleted: 'true',
@@ -273,7 +290,7 @@ describe('tauriBlockCalendar: the round trip', () => {
   });
 
   it('says a patch of an event Google no longer has (404, 410) is gone', async () => {
-    expect(await tauriBlockCalendar.patchBlockEvent(call({ eventId: 'never-made' }))).toEqual({
+    expect(await tauriBlockCalendar.patchBlockEvent(call({ eventId: 'nevermade' }))).toEqual({
       kind: 'gone',
     });
     google.events.set('dfaiblock1', { id: 'dfaiblock1', status: 'cancelled' });
@@ -288,6 +305,57 @@ describe('tauriBlockCalendar: the round trip', () => {
     });
   });
 
+  it('keeps the note an event is written for on it, private to DFAI, and reads it back', async () => {
+    await tauriBlockCalendar.insertBlockEvent(call({ notePath: 'Blocks/Larkspur close block.md' }));
+    expect(google.requests.at(-1)?.body).toMatchObject({
+      extendedProperties: { private: { dfai_note: 'Blocks/Larkspur close block.md' } },
+    });
+    await tauriBlockCalendar.patchBlockEvent(call({ notePath: 'Done/Larkspur close block.md' }));
+    const listed = await listBlocks();
+    expect(listed).toMatchObject({
+      events: [{ id: 'dfaiblock1', notePath: 'Done/Larkspur close block.md' }],
+    });
+    // Without a note, nothing is said of one.
+    await tauriBlockCalendar.patchBlockEvent(call());
+    expect(google.requests.at(-1)?.body).not.toHaveProperty('extendedProperties');
+  });
+
+  it('reads one event as Google holds it now, and none for an id it does not have', async () => {
+    await tauriBlockCalendar.insertBlockEvent(call({ notePath: 'Blocks/Larkspur close block.md' }));
+    const got = await tauriBlockCalendar.getBlockEvent({
+      vault: VAULT,
+      calendarId: CALENDAR,
+      eventId: 'dfaiblock1',
+    });
+    expect(got).toMatchObject({
+      id: 'dfaiblock1',
+      etag: '"v1"',
+      notePath: 'Blocks/Larkspur close block.md',
+    });
+    expect(google.requests.at(-1)).toMatchObject({
+      method: 'GET',
+      path: `/calendar/v3/calendars/${encodeURIComponent(CALENDAR)}/events/dfaiblock1`,
+    });
+    expect(
+      await tauriBlockCalendar.getBlockEvent({
+        vault: VAULT,
+        calendarId: CALENDAR,
+        eventId: 'nevermade',
+      }),
+    ).toBeNull();
+  });
+
+  it('reads the primary calendar’s zone, and none for a sign-in that may not read events', async () => {
+    expect(await tauriBlockCalendar.primaryTimeZone({ vault: VAULT })).toBe('America/Chicago');
+    expect(google.requests.at(-1)).toMatchObject({
+      method: 'GET',
+      path: '/calendar/v3/calendars/primary/events',
+      body: null,
+    });
+    google.primaryZone = null;
+    expect(await tauriBlockCalendar.primaryTimeZone({ vault: VAULT })).toBeNull();
+  });
+
   it('reads every page of a listing before it answers', async () => {
     google.scripted.push(
       answer(200, { items: [{ id: 'a', etag: '"1"' }], nextPageToken: 'p1' }),
@@ -297,7 +365,6 @@ describe('tauriBlockCalendar: the round trip', () => {
     expect(listed).toMatchObject({
       events: [{ id: 'a' }, { id: 'b' }],
       syncToken: 'sync-9',
-      timeZone: null,
     });
     expect(google.requests.at(-1)?.query.get('pageToken')).toBe('p1');
   });
@@ -375,6 +442,42 @@ describe('tauriBlockCalendar: what goes wrong', () => {
     };
     invoke.mockRejectedValueOnce(refused);
     expect(await failureOf(listBlocks())).toEqual(refused);
+  });
+
+  it('a primary zone Google will not give for another reason fails, rather than guess one', async () => {
+    google.scripted.push(answer(500, { error: { code: 500, message: 'Backend Error' } }));
+    expect(await failureOf(tauriBlockCalendar.primaryTimeZone({ vault: VAULT }))).toMatchObject({
+      kind: 'api_refused',
+      code: '500',
+    });
+  });
+
+  it('refuses an event id or calendar id Google could not have given, before any request', async () => {
+    for (const eventId of ['..', 'dfai/../x', 'DFAI12345']) {
+      expect(await failureOf(tauriBlockCalendar.patchBlockEvent(call({ eventId })))).toMatchObject({
+        kind: 'invalid',
+      });
+      expect(await failureOf(tauriBlockCalendar.insertBlockEvent(call({ eventId })))).toMatchObject(
+        {
+          kind: 'invalid',
+        },
+      );
+      expect(
+        await failureOf(
+          tauriBlockCalendar.getBlockEvent({ vault: VAULT, calendarId: CALENDAR, eventId }),
+        ),
+      ).toMatchObject({ kind: 'invalid' });
+    }
+    expect(
+      await failureOf(
+        tauriBlockCalendar.listBlockEvents({
+          vault: VAULT,
+          calendarId: 'primary',
+          syncToken: null,
+        }),
+      ),
+    ).toMatchObject({ kind: 'invalid' });
+    expect(google.requests).toEqual([]);
   });
 
   it('never calls another calendar, and never deletes', async () => {

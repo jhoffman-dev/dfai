@@ -1,9 +1,10 @@
-import type { BlockEvent } from '@dfai/domain';
-import type {
-  BlockCalendar,
-  BlockEventCall,
-  BlockEventChanges,
-  BlockEventWrite,
+import { isBlockCalendarId, isGoogleEventId, isScopeRefusal, type BlockEvent } from '@dfai/domain';
+import {
+  GoogleCalendarError,
+  type BlockCalendar,
+  type BlockEventCall,
+  type BlockEventChanges,
+  type BlockEventWrite,
 } from '@dfai/application';
 import { whenOf } from './events-list.ts';
 import { answered, calendarAnswer, malformed } from './tauri-google-calendar.ts';
@@ -24,8 +25,33 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const text = (value: unknown): string | null =>
   typeof value === 'string' && value !== '' ? value : null;
 
-const eventsPath = (calendarId: string) =>
-  `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+/** The private property DFAI keeps on an event: the note it was last written for. */
+const NOTE_PATH = 'dfai_note';
+
+const invalid = (message: string) => new GoogleCalendarError({ kind: 'invalid', message });
+
+/**
+ * An id read from a block or the vault's settings, checked before it is put
+ * in a URL: the host resolves `..` before sending, so an unchecked one could
+ * call another resource of the API.
+ */
+function eventsPath(calendarId: string): string {
+  if (!isBlockCalendarId(calendarId))
+    throw invalid('the blocks calendar’s id is not one Google gives');
+  return `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+}
+
+function eventPath(calendarId: string, eventId: string): string {
+  if (!isGoogleEventId(eventId)) throw invalid('the block’s event id is not one Google takes');
+  return `${eventsPath(calendarId)}/${encodeURIComponent(eventId)}`;
+}
+
+/** The note an event says it was written for, from its private properties. */
+function notePathOf(entry: Record<string, unknown>): string | null {
+  const properties = entry['extendedProperties'];
+  const own = isRecord(properties) ? properties['private'] : undefined;
+  return isRecord(own) ? text(own[NOTE_PATH]) : null;
+}
 
 /** An event on the blocks calendar from the API's wire form; null without an id. */
 export function blockEventOf(entry: unknown): BlockEvent | null {
@@ -39,7 +65,20 @@ export function blockEventOf(entry: unknown): BlockEvent | null {
     title: typeof entry['summary'] === 'string' ? entry['summary'] : '',
     start: whenOf(entry['start']),
     end: whenOf(entry['end']),
+    notePath: notePathOf(entry),
   };
+}
+
+/**
+ * A page token as Google gives one: absent on the last page, else a string.
+ * Anything else is no proof the listing ended, so it is not read as the end.
+ */
+function pageTokenOf(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const token = text(value);
+  if (token === null)
+    throw malformed('a page of the blocks calendar’s events names no readable next page');
+  return token;
 }
 
 /** One page of the listing, or null when the body is not one. */
@@ -49,9 +88,8 @@ function blockEventsPage(body: unknown) {
   const items: unknown[] = Array.isArray(body['items']) ? body['items'] : [];
   return {
     events: items.map(blockEventOf).filter((event) => event !== null),
-    next: text(body['nextPageToken']),
+    next: pageTokenOf(body['nextPageToken']),
     syncToken: text(body['nextSyncToken']),
-    timeZone: text(body['timeZone']),
   };
 }
 
@@ -64,15 +102,23 @@ export function blockEventsQuery(syncToken: string | null, pageToken: string | n
 }
 
 /**
- * The event's body: busy, its title, and its times as the block's wall clock
- * on the calendar's zone, so Google places them and no offset is guessed.
+ * The event's body: busy, its title, its times as the block's wall clock on
+ * the plan zone, so Google places them and no offset is guessed, and the
+ * note it is for, kept private to DFAI.
  */
-export function blockEventBody({ fields, timeZone }: BlockEventCall): Record<string, unknown> {
+export function blockEventBody({
+  fields,
+  timeZone,
+  notePath,
+}: BlockEventCall): Record<string, unknown> {
   return {
     summary: fields.title,
     start: { dateTime: `${fields.start}:00`, timeZone },
     end: { dateTime: `${fields.end}:00`, timeZone },
     transparency: 'opaque',
+    ...(notePath === undefined
+      ? {}
+      : { extendedProperties: { private: { [NOTE_PATH]: notePath } } }),
   };
 }
 
@@ -85,11 +131,15 @@ function writeAnswer(answer: { status: number; body: string }): BlockEventWrite 
   return { kind: 'written', etag: event.etag };
 }
 
+/** The primary calendar's zone, from a listing of one of its events and nothing else. */
+const PRIMARY_ZONE_PATH = '/calendar/v3/calendars/primary/events?maxResults=1&fields=timeZone';
+
 /**
  * The blocks calendar through the host's sign-in (#30): `events.list`,
- * `events.insert` and `events.patch` on the one calendar named, and nothing
- * else — never a delete. Every page of a listing is read before it is
- * answered, since a listing cut short would read as events deleted.
+ * `events.get`, `events.insert` and `events.patch` on the one calendar named,
+ * and nothing else — never a delete. The primary calendar is only read, for
+ * its zone. Every page of a listing is read before it is answered, since a
+ * listing cut short would read as events deleted.
  */
 export const tauriBlockCalendar: BlockCalendar = {
   async listBlockEvents({ vault, calendarId, syncToken }): Promise<BlockEventChanges> {
@@ -103,22 +153,44 @@ export const tauriBlockCalendar: BlockCalendar = {
       if (listed === null)
         throw malformed('the blocks calendar’s events are not a list DFAI can read');
       events.push(...listed.events);
-      if (listed.next === null) {
-        return { kind: 'changes', events, syncToken: listed.syncToken, timeZone: listed.timeZone };
-      }
+      if (listed.next === null) return { kind: 'changes', events, syncToken: listed.syncToken };
       pageToken = listed.next;
     }
     throw malformed(`the blocks calendar’s events ran past ${MAX_PAGES} pages`);
   },
+  async getBlockEvent({ vault, calendarId, eventId }) {
+    const answer = await calendarAnswer(vault, {
+      method: 'GET',
+      path: eventPath(calendarId, eventId),
+    });
+    if (answer.status === GONE || answer.status === NOT_FOUND) return null;
+    const event = blockEventOf(answered(answer));
+    if (event === null) throw malformed('the block’s event came back without an id');
+    return event;
+  },
   async insertBlockEvent(call) {
+    if (!isGoogleEventId(call.eventId))
+      throw invalid('the block’s event id is not one Google takes');
     const body = JSON.stringify({ id: call.eventId, ...blockEventBody(call) });
     return writeAnswer(
       await calendarAnswer(call.vault, { method: 'POST', path: eventsPath(call.calendarId), body }),
     );
   },
   async patchBlockEvent(call) {
-    const path = `${eventsPath(call.calendarId)}/${encodeURIComponent(call.eventId)}`;
+    const path = eventPath(call.calendarId, call.eventId);
     const body = JSON.stringify(blockEventBody(call));
     return writeAnswer(await calendarAnswer(call.vault, { method: 'PATCH', path, body }));
+  },
+  async primaryTimeZone({ vault }) {
+    try {
+      const body = answered(
+        await calendarAnswer(vault, { method: 'GET', path: PRIMARY_ZONE_PATH }),
+      );
+      return isRecord(body) ? text(body['timeZone']) : null;
+    } catch (cause) {
+      // A sign-in that may not read events (blocks without meetings) has no primary zone to give.
+      if (cause instanceof GoogleCalendarError && isScopeRefusal(cause.failure)) return null;
+      throw cause;
+    }
   },
 };

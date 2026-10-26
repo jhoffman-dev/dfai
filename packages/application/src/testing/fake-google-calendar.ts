@@ -144,11 +144,14 @@ export function memoryMeetingSyncRecords() {
 
 /**
  * The blocks calendar in memory, as Google keeps one: each write gives the
- * event a new version (etag), a listing with no token gives everything and a
- * token, a token gives what changed since, `expire` makes every token stale
- * (410). An insert whose id is taken answers `exists`, a patch of a deleted
- * event `gone`. Times are read on the fixed `offset` (Los Angeles in late
- * October), which is all the tests need of a zone.
+ * event a new version (etag) and keeps the note it was written for, a
+ * listing with no token gives everything and a token, a token gives what
+ * changed since, `expire` makes every token stale (410). An insert whose id
+ * is taken answers `exists` — a deleted event's id stays taken, as Google
+ * keeps it — and a patch of a deleted event `gone`. Times are read on the
+ * fixed `offset` (Los Angeles in late October), which is all the tests need
+ * of a zone. `zone` is the blocks calendar's own, which never places a time;
+ * `primaryZone` is the primary calendar's, null when the sign-in may not read it.
  */
 export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') {
   const state = {
@@ -159,9 +162,12 @@ export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') 
     versions: 0,
     asked: [] as { calendarId: string; syncToken: string | null }[],
     writes: [] as { kind: 'insert' | 'patch'; call: BlockEventCall }[],
+    /** Every events.get, by id. */
+    fetched: [] as string[],
     /** The next call of each kind fails with this, once. */
-    failNext: {} as Partial<Record<'list' | 'insert' | 'patch', Error>>,
+    failNext: {} as Partial<Record<'list' | 'insert' | 'patch' | 'zone', Error>>,
     zone: 'America/Los_Angeles' as string | null,
+    primaryZone: null as string | null,
   };
   const issue = () => {
     state.issued += 1;
@@ -173,13 +179,13 @@ export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') 
     state.versions += 1;
     return `"g${state.versions}"`;
   };
-  const failing = (kind: 'list' | 'insert' | 'patch') => {
+  const failing = (kind: keyof typeof state.failNext) => {
     const failure = state.failNext[kind];
     delete state.failNext[kind];
     if (failure !== undefined) throw failure;
   };
   const at = (wall: string) => Date.parse(`${wall}:00${offset}`);
-  const put = (id: string, fields: BlockSyncFields) => {
+  const put = (id: string, fields: BlockSyncFields, notePath: string | null) => {
     const event: BlockEvent = {
       id,
       etag: version(),
@@ -187,6 +193,7 @@ export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') 
       title: fields.title,
       start: { kind: 'timed', at: at(fields.start) },
       end: { kind: 'timed', at: at(fields.end) },
+      notePath,
     };
     state.events.set(id, event);
     state.changed.add(id);
@@ -205,20 +212,28 @@ export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') 
               return event === undefined ? [] : [event];
             });
       state.changed.clear();
-      return { kind: 'changes', events: listed, syncToken: issue(), timeZone: state.zone };
+      return { kind: 'changes', events: listed, syncToken: issue() };
+    },
+    getBlockEvent: async ({ eventId }) => {
+      state.fetched.push(eventId);
+      return state.events.get(eventId) ?? null;
     },
     insertBlockEvent: async (call) => {
       state.writes.push({ kind: 'insert', call });
       failing('insert');
       if (state.events.has(call.eventId)) return { kind: 'exists' };
-      return put(call.eventId, call.fields);
+      return put(call.eventId, call.fields, call.notePath ?? null);
     },
     patchBlockEvent: async (call) => {
       state.writes.push({ kind: 'patch', call });
       failing('patch');
       const kept = state.events.get(call.eventId);
       if (kept === undefined || kept.cancelled) return { kind: 'gone' };
-      return put(call.eventId, call.fields);
+      return put(call.eventId, call.fields, call.notePath ?? kept.notePath ?? null);
+    },
+    primaryTimeZone: async () => {
+      failing('zone');
+      return state.primaryZone;
     },
   };
   return {
@@ -228,7 +243,7 @@ export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') 
     move: (id: string, start: string, end: string) => {
       const kept = state.events.get(id);
       if (kept === undefined) throw new Error(`no event ${id}`);
-      put(id, { title: kept.title, start, end });
+      put(id, { title: kept.title, start, end }, kept.notePath ?? null);
     },
     /** Someone deletes the event in Google Calendar. */
     remove: (id: string) => {
@@ -250,8 +265,7 @@ export function fakeBlockCalendar(events: BlockEvent[] = [], offset = '-07:00') 
 export function memoryBlockSyncRecords() {
   const kept = new Map<string, BlockSyncRecord>();
   const records: BlockSyncRecords = {
-    read: (vault) =>
-      kept.get(vault) ?? { calendarId: null, syncToken: null, agreed: {}, lastSyncAt: null },
+    read: (vault) => kept.get(vault) ?? { calendarId: null, syncToken: null, lastSyncAt: null },
     write: (vault, record) => {
       kept.set(vault, record);
     },

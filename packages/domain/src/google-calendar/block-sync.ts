@@ -2,23 +2,30 @@
  * Two-way sync of blocks with the one calendar they go to (ADR-0030, #30).
  *
  * A block is a note; its event on the blocks calendar is found by the id
- * written on the block. What each side holds is compared with what both held
- * when they last agreed (`lastSync`), and with the version Google last gave
- * the block (`gcal_etag`):
+ * written on the block. Each side is compared with what both last agreed —
+ * the `gcal_synced_*` keys on the block itself, so every Mac reads the same
+ * base — and never with a version alone, since Google gives an event a new
+ * version for a description or a colour as well as a move:
  *
- * - DFAI changed it, Google did not → push it to Google;
- * - Google changed it, DFAI did not → pull its times into the block;
+ * - DFAI changed it, Google's times are the agreed ones → push it to Google;
+ * - Google changed its times, DFAI did not → pull them into the block;
  * - both changed → Google's time is kept, and Activity says so;
  * - Google deleted it → the block is marked `gcal_missing`, never deleted.
  *
  * Only the times come back from Google. A block's title is its note's name,
  * which a sync never renames, so a title goes one way: DFAI to Google.
+ *
+ * Two notes carrying one event id (a copied note) keep one event: the
+ * original keeps it, and every copy is a new block with its own event.
  */
 
 import { minutesBetween, readEventTime } from '../calendar/calendar-event.ts';
 import { BLOCK_KEYS } from '../timeblocks/block-type.ts';
 import { addDays } from '../timeline/timeline.ts';
+import { isGoogleEventId } from './block-event-id.ts';
+import { planZone } from './event-notes.ts';
 import type { EventWhen } from './google-event.ts';
+import { PRIMARY_CALENDAR } from './meeting-setting.ts';
 import { wallStart } from './meeting-window.ts';
 
 /** The properties a block sync writes on a block, and owns. Nothing else on it is touched. */
@@ -28,6 +35,10 @@ export const BLOCK_SYNC_KEYS = {
   calendar: BLOCK_KEYS.gcalCalendar,
   /** Set once Google says the event was deleted; the block is never removed. */
   missing: BLOCK_KEYS.gcalMissing,
+  /** What both sides last agreed the block was: written before a push is sent, and on every pull. */
+  syncedTitle: BLOCK_KEYS.gcalSyncedTitle,
+  syncedStart: BLOCK_KEYS.gcalSyncedStart,
+  syncedEnd: BLOCK_KEYS.gcalSyncedEnd,
 } as const;
 
 /** How far back a sync looks for blocks to push: older ones are history, and stay off Google. */
@@ -40,6 +51,8 @@ export interface BlockSyncFields {
   readonly end: string;
 }
 
+type Times = Pick<BlockSyncFields, 'start' | 'end'>;
+
 /** A block as its file says now. */
 export interface BlockOnDisk {
   readonly path: string;
@@ -48,10 +61,13 @@ export interface BlockOnDisk {
   /** Its start and end as wall-clock text, or null when either is not a date. */
   readonly start: string | null;
   readonly end: string | null;
+  /** Its event's id; null when it has none, or one Google could never have given. */
   readonly eventId: string | null;
   readonly etag: string | null;
   readonly calendarId: string | null;
   readonly missing: boolean;
+  /** What both sides last agreed (`gcal_synced_*`); null when the block holds no whole record of it. */
+  readonly synced: BlockSyncFields | null;
 }
 
 /** An event on the blocks calendar, as a listing gave it. */
@@ -63,17 +79,24 @@ export interface BlockEvent {
   readonly title: string;
   readonly start: EventWhen | null;
   readonly end: EventWhen | null;
+  /** The note DFAI last wrote it for, kept on the event; absent on one DFAI has not written since. */
+  readonly notePath?: string | null;
 }
 
 export type BlockAction =
-  /** Make its event. With no id, one is written onto the block first, so a retry never makes two. */
+  /**
+   * Make its event. With no id, one is written onto the block first, so a
+   * retry never makes two; `copyOf` names the event a copied note carried,
+   * which it gives up for its own.
+   */
   | {
       readonly kind: 'insert';
       readonly path: string;
       readonly eventId: string | null;
       readonly fields: BlockSyncFields;
+      readonly copyOf: string | null;
     }
-  /** DFAI changed the block: give its event the block's title and times. */
+  /** DFAI changed the block, or Google's title strayed: give its event the block's title and times. */
   | {
       readonly kind: 'patch';
       readonly path: string;
@@ -81,9 +104,10 @@ export type BlockAction =
       readonly fields: BlockSyncFields;
     }
   /**
-   * Google changed the event: write its times and version onto the block.
+   * Google changed the event: write its times onto the block, as agreed.
    * `conflict` when DFAI had changed the block too; `returned` when the
-   * event came back after being marked missing.
+   * event came back after being marked missing; `retitle` when the event's
+   * title is not the block's, so the same run puts the block's back.
    */
   | {
       readonly kind: 'pull';
@@ -93,21 +117,22 @@ export type BlockAction =
       readonly fields: BlockSyncFields;
       readonly conflict: boolean;
       readonly returned: boolean;
+      readonly retitle: boolean;
     }
-  /** The event has a new version with the block's own times: only its version is written. */
+  /** Both sides hold the same block: write only the version, or the agreed record, that is new (null: as it is). */
   | {
       readonly kind: 'adopt';
       readonly path: string;
       readonly eventId: string;
       readonly etag: string | null;
-      readonly fields: BlockSyncFields;
+      readonly synced: BlockSyncFields | null;
     }
   /** Google deleted the event. */
   | { readonly kind: 'missing'; readonly path: string; readonly eventId: string }
   /** A block with no time at both ends, or ending no later than it starts: nothing to push. */
   | { readonly kind: 'unplaced'; readonly path: string }
-  /** A second block carrying an event id an earlier one has: left alone, so one event has one block. */
-  | { readonly kind: 'duplicate'; readonly path: string; readonly eventId: string };
+  /** A copy of another block with nothing to push now: its sync keys are cleared, so it is a new block. */
+  | { readonly kind: 'detach'; readonly path: string; readonly eventId: string };
 
 export interface ReconcileBlocksInput {
   readonly blocks: readonly BlockOnDisk[];
@@ -115,18 +140,33 @@ export interface ReconcileBlocksInput {
   readonly events: readonly BlockEvent[];
   /** Whether `events` is everything on the calendar, so an event not in it has gone. */
   readonly listedInFull: boolean;
-  /** What both sides held, by event id, when they last agreed. Empty on a Mac that has not synced. */
-  readonly lastSync: Readonly<Record<string, BlockSyncFields>>;
   /** The calendar blocks go to now. A block another calendar holds is left alone. */
   readonly calendarId: string;
-  /** The calendar's own zone, which Google's times are read on. */
+  /** The plan zone (ADR-0046): what a block's wall clock means, and what Google's times are read on. */
   readonly timeZone: string;
+  /** The first day a sync pushes: a copy of an older block is cleared, not put on Google. */
+  readonly fromDay: string;
 }
 
 export interface ReconcileBlocksPlan {
   readonly actions: readonly BlockAction[];
-  /** Blocks needing no write whose agreed values this sync learnt, by event id. */
-  readonly agreed: Readonly<Record<string, BlockSyncFields>>;
+}
+
+/**
+ * The zone a block's wall clock means: meetings' plan zone (ADR-0046), from
+ * the primary calendar's zone when Google gave it, else the Mac's. The blocks
+ * calendar's own zone plays no part, so a block and a meeting at 09:00 on the
+ * Today list are at one 09:00.
+ */
+export function blockPlanZone({
+  primaryZone,
+  timeZone,
+}: {
+  primaryZone: string | null;
+  timeZone: string;
+}): string {
+  const calendarZones = primaryZone === null ? {} : { [PRIMARY_CALENDAR]: primaryZone };
+  return planZone({ calendarZones, timeZone });
 }
 
 /** A date property as wall-clock text, written the one way sync compares it; null when it is not one. */
@@ -142,6 +182,15 @@ export function wallClockText(value: unknown): string | null {
 const text = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 
+/** The agreed record on a block, when all of it is there. */
+function syncedOf(properties: Readonly<Record<string, unknown>>): BlockSyncFields | null {
+  const title = properties[BLOCK_SYNC_KEYS.syncedTitle];
+  const start = wallClockText(properties[BLOCK_SYNC_KEYS.syncedStart]);
+  const end = wallClockText(properties[BLOCK_SYNC_KEYS.syncedEnd]);
+  if (typeof title !== 'string' || start === null || end === null) return null;
+  return { title, start, end };
+}
+
 /** A block's sync state, read from its frontmatter. */
 export function blockOnDisk({
   path,
@@ -152,20 +201,24 @@ export function blockOnDisk({
   title: string;
   properties: Readonly<Record<string, unknown>>;
 }): BlockOnDisk {
+  const eventId = text(properties[BLOCK_SYNC_KEYS.eventId]);
   return {
     path,
     title,
     start: wallClockText(properties[BLOCK_KEYS.start]),
     end: wallClockText(properties[BLOCK_KEYS.end]),
-    eventId: text(properties[BLOCK_SYNC_KEYS.eventId]),
+    eventId: eventId !== null && isGoogleEventId(eventId) ? eventId : null,
     etag: text(properties[BLOCK_SYNC_KEYS.etag]),
     calendarId: text(properties[BLOCK_SYNC_KEYS.calendar]),
     missing: properties[BLOCK_SYNC_KEYS.missing] === true,
+    synced: syncedOf(properties),
   };
 }
 
 /** A block's title and times, when both ends are times and it ends after it starts. */
-export function pushableFields(block: BlockOnDisk): BlockSyncFields | null {
+export function pushableFields(
+  block: Pick<BlockOnDisk, 'title' | 'start' | 'end'>,
+): BlockSyncFields | null {
   const start = readEventTime(block.start);
   const end = readEventTime(block.end);
   if (start === null || end === null || start.minutes === null || end.minutes === null) return null;
@@ -174,14 +227,11 @@ export function pushableFields(block: BlockOnDisk): BlockSyncFields | null {
 }
 
 /**
- * An event's times on the calendar's wall clock. Google ends an all-day
+ * An event's times on the plan zone's wall clock. Google ends an all-day
  * event on the day after its last; a block names its last day. Null when
  * either end cannot be read, so the block is left as it is.
  */
-export function eventTimes(
-  event: BlockEvent,
-  timeZone: string,
-): { start: string; end: string } | null {
+export function eventTimes(event: BlockEvent, timeZone: string): Times | null {
   if (event.start === null || event.end === null) return null;
   const start = wallStart(event.start, timeZone);
   if (event.end.kind === 'timed') return { start, end: wallStart(event.end, timeZone) };
@@ -189,114 +239,112 @@ export function eventTimes(
   return { start, end: last === null || last < start ? start : last };
 }
 
-const sameTimes = (left: BlockSyncFields | null, right: { start: string; end: string } | null) =>
+const sameTimes = (left: Times | null, right: Times | null) =>
   left !== null && right !== null && left.start === right.start && left.end === right.end;
 
 const sameFields = (left: BlockSyncFields | null, right: BlockSyncFields | null) =>
   sameTimes(left, right) && left?.title === right?.title;
 
-/** The block's own values, pushable or not: what a pull compares against. */
+/** The block's own values, pushable or not: what both sides are compared with. */
 const heldFields = (block: BlockOnDisk): BlockSyncFields | null =>
   block.start === null || block.end === null
     ? null
     : { title: block.title, start: block.start, end: block.end };
 
-interface Plan {
-  readonly actions: BlockAction[];
-  readonly agreed: Record<string, BlockSyncFields>;
-}
+type Plan = { readonly actions: BlockAction[] };
 
 type Context = ReconcileBlocksInput & { readonly byId: ReadonlyMap<string, BlockEvent> };
+
+type Identified = BlockOnDisk & { readonly eventId: string };
+
+/** The event says it was last written for another note: the block was moved or renamed since. */
+const strayed = (event: BlockEvent, block: BlockOnDisk) =>
+  typeof event.notePath === 'string' && event.notePath !== block.path;
+
+/** Pushes the block as it is, or says it has nothing to push. */
+function planPatch(block: Identified, plan: Plan): void {
+  const fields = pushableFields(block);
+  if (fields === null) plan.actions.push({ kind: 'unplaced', path: block.path });
+  else plan.actions.push({ kind: 'patch', path: block.path, eventId: block.eventId, fields });
+}
 
 /** A block with no event yet, or one whose id was written but whose event may not have been made. */
 function planUnmade(block: BlockOnDisk, plan: Plan): void {
   const fields = pushableFields(block);
-  if (fields === null) {
-    plan.actions.push({ kind: 'unplaced', path: block.path });
-    return;
-  }
-  plan.actions.push({ kind: 'insert', path: block.path, eventId: block.eventId, fields });
-}
-
-/** Google's copy changed since the block's version: pull it, or take only its version when the times agree. */
-function planChanged(
-  block: BlockOnDisk & { eventId: string },
-  event: BlockEvent,
-  context: Context,
-  plan: Plan,
-): void {
-  const times = eventTimes(event, context.timeZone);
-  const held = heldFields(block);
-  if (times === null) return;
-  if (sameTimes(held, times)) {
-    // Titles go one way: a rename in Google is put back to the block's name.
-    const fields = pushableFields(block);
-    if (event.title !== block.title && fields !== null) {
-      plan.actions.push({ kind: 'patch', path: block.path, eventId: block.eventId, fields });
-      return;
-    }
+  if (fields === null) plan.actions.push({ kind: 'unplaced', path: block.path });
+  else
     plan.actions.push({
-      kind: 'adopt',
+      kind: 'insert',
       path: block.path,
       eventId: block.eventId,
-      etag: event.etag,
-      fields: { title: block.title, ...times },
+      fields,
+      copyOf: null,
     });
+}
+
+/** Both sides hold the block's values: write whatever of the version and the agreed record is new. */
+function planAdopt(block: Identified, event: BlockEvent, times: Times, plan: Plan): void {
+  const agreed = { title: block.title, ...times };
+  // A version Google gives as null is never written: it would read as an insert not yet made.
+  const etag = event.etag !== null && event.etag !== block.etag ? event.etag : null;
+  const synced = sameFields(block.synced, agreed) ? null : agreed;
+  if (etag === null && synced === null) return;
+  plan.actions.push({ kind: 'adopt', path: block.path, eventId: block.eventId, etag, synced });
+}
+
+/** Google's times, read off its event: compared with the agreed record, else with the block's own. */
+function planListed(block: Identified, event: BlockEvent, times: Times, plan: Plan): void {
+  const held = heldFields(block);
+  const titled = event.title === block.title && !strayed(event, block);
+  if (sameTimes(block.synced ?? held, times)) {
+    // Google did not move it — whatever else changed there — so DFAI's values go to Google.
+    if (sameTimes(held, times) && titled) planAdopt(block, event, times, plan);
+    else planPatch(block, plan);
     return;
   }
-  const last = context.lastSync[block.eventId] ?? null;
+  if (sameTimes(held, times)) {
+    // Both moved it to the same place: agreed, bar a title to put back.
+    if (titled) planAdopt(block, event, times, plan);
+    else planPatch(block, plan);
+    return;
+  }
   plan.actions.push({
     kind: 'pull',
     path: block.path,
     eventId: block.eventId,
     etag: event.etag,
     fields: { title: block.title, ...times },
-    conflict: last !== null && !sameTimes(held, last),
+    // With no agreed record, who moved it cannot be told: Google's time is kept, and said.
+    conflict: block.synced === null || !sameTimes(held, block.synced),
     returned: false,
+    retitle: !titled,
   });
 }
 
-/** Google's copy is the version the block holds, or was not listed: push what DFAI changed since. */
-function planUnchanged(
-  block: BlockOnDisk & { eventId: string },
-  compareWith: BlockSyncFields | null,
-  plan: Plan,
-): void {
-  const fields = pushableFields(block);
-  if (compareWith === null) return;
-  if (sameFields(heldFields(block), compareWith)) {
-    plan.agreed[block.eventId] = compareWith;
-    return;
-  }
-  if (fields === null) plan.actions.push({ kind: 'unplaced', path: block.path });
-  else plan.actions.push({ kind: 'patch', path: block.path, eventId: block.eventId, fields });
+/** Google did not list the event, so it holds what was last agreed: push what DFAI changed since. */
+function planUnlisted(block: Identified, plan: Plan): void {
+  // Nothing agreed to compare with: wait for Google to list the event.
+  if (block.synced === null || sameFields(heldFields(block), block.synced)) return;
+  planPatch(block, plan);
 }
 
-const eventFields = (event: BlockEvent, timeZone: string): BlockSyncFields | null => {
-  const times = eventTimes(event, timeZone);
-  return times === null ? null : { title: event.title, ...times };
-};
-
 /** A block whose event was made: follow what each side did since they last agreed. */
-function planMade(block: BlockOnDisk & { eventId: string }, context: Context, plan: Plan): void {
+function planMade(block: Identified, context: Context, plan: Plan): void {
   const event = context.byId.get(block.eventId);
   if (event?.cancelled === true || (event === undefined && context.listedInFull)) {
     plan.actions.push({ kind: 'missing', path: block.path, eventId: block.eventId });
     return;
   }
   if (event === undefined) {
-    planUnchanged(block, context.lastSync[block.eventId] ?? null, plan);
+    planUnlisted(block, plan);
     return;
   }
-  if (event.etag !== null && event.etag === block.etag) {
-    planUnchanged(block, eventFields(event, context.timeZone), plan);
-    return;
-  }
-  planChanged(block, event, context, plan);
+  const times = eventTimes(event, context.timeZone);
+  if (times !== null) planListed(block, event, times, plan);
 }
 
 /** A block marked missing: left alone, unless its event is back on the calendar. */
-function planMissing(block: BlockOnDisk & { eventId: string }, context: Context, plan: Plan): void {
+function planMissing(block: Identified, context: Context, plan: Plan): void {
   const event = context.byId.get(block.eventId);
   const times = event === undefined || event.cancelled ? null : eventTimes(event, context.timeZone);
   if (event === undefined || times === null) return;
@@ -308,11 +356,11 @@ function planMissing(block: BlockOnDisk & { eventId: string }, context: Context,
     fields: { title: block.title, ...times },
     conflict: false,
     returned: true,
+    retitle: event.title !== block.title || strayed(event, block),
   });
 }
 
 function planBlock(block: BlockOnDisk, context: Context, plan: Plan): void {
-  if (block.calendarId !== null && block.calendarId !== context.calendarId) return;
   const { eventId } = block;
   if (eventId === null) {
     if (!block.missing) planUnmade(block, plan);
@@ -320,47 +368,77 @@ function planBlock(block: BlockOnDisk, context: Context, plan: Plan): void {
   }
   const identified = { ...block, eventId };
   if (block.missing) planMissing(identified, context, plan);
+  // An id but no version, and Google lists no such event: the insert may never have landed.
   else if (block.etag === null && !context.byId.has(eventId)) planUnmade(block, plan);
   else planMade(identified, context, plan);
 }
 
 /**
+ * Which of the notes carrying one event id is the one the event is for: the
+ * note the event says it was written for; else one on the event's times;
+ * else one unchanged since it was agreed; else the first by path.
+ */
+function originalOf(copies: readonly BlockOnDisk[], event: BlockEvent | undefined, zone: string) {
+  const times = event === undefined || event.cancelled ? null : eventTimes(event, zone);
+  const chosen =
+    copies.find((copy) => event?.notePath === copy.path) ??
+    copies.find((copy) => sameTimes(heldFields(copy), times)) ??
+    copies.find((copy) => copy.synced !== null && sameTimes(heldFields(copy), copy.synced)) ??
+    copies[0];
+  return chosen?.path ?? null;
+}
+
+/** A copy of another block: a new block, given its own event when it has one to push. */
+function planCopy(block: Identified, context: Context, plan: Plan): void {
+  const fields = pushableFields(block);
+  if (fields !== null && fields.start.slice(0, 10) >= context.fromDay) {
+    plan.actions.push({
+      kind: 'insert',
+      path: block.path,
+      eventId: null,
+      fields,
+      copyOf: block.eventId,
+    });
+    return;
+  }
+  plan.actions.push({ kind: 'detach', path: block.path, eventId: block.eventId });
+}
+
+/** The original note for each event id two or more blocks carry. */
+function originals(blocks: readonly BlockOnDisk[], context: Context): Map<string, string | null> {
+  const carriers = new Map<string, BlockOnDisk[]>();
+  for (const block of blocks) {
+    if (block.eventId === null) continue;
+    carriers.set(block.eventId, [...(carriers.get(block.eventId) ?? []), block]);
+  }
+  const chosen = new Map<string, string | null>();
+  for (const [eventId, copies] of carriers) {
+    if (copies.length < 2) continue;
+    chosen.set(eventId, originalOf(copies, context.byId.get(eventId), context.timeZone));
+  }
+  return chosen;
+}
+
+/**
  * What a block sync does: one action per block that needs one, in the order
- * of the blocks' paths. Pure: the same blocks, events and last sync give the
- * same plan on every Mac.
+ * of the blocks' paths. Pure: the same blocks and events give the same plan
+ * on every Mac, because what was agreed is read from the blocks themselves.
  */
 export function reconcileBlocks(input: ReconcileBlocksInput): ReconcileBlocksPlan {
   const byId = new Map(input.events.map((event) => [event.id, event]));
   const context: Context = { ...input, byId };
-  const plan: Plan = { actions: [], agreed: {} };
-  const seen = new Set<string>();
-  const blocks = [...input.blocks].sort((left, right) => (left.path < right.path ? -1 : 1));
-  for (const block of blocks) {
-    if (block.eventId !== null && seen.has(block.eventId)) {
-      plan.actions.push({ kind: 'duplicate', path: block.path, eventId: block.eventId });
-      continue;
+  const plan: Plan = { actions: [] };
+  const ours = [...input.blocks]
+    .filter((block) => block.calendarId === null || block.calendarId === input.calendarId)
+    .sort((left, right) => (left.path < right.path ? -1 : 1));
+  const chosen = originals(ours, context);
+  for (const block of ours) {
+    const original = block.eventId === null ? undefined : chosen.get(block.eventId);
+    if (block.eventId !== null && original !== undefined && original !== block.path) {
+      planCopy({ ...block, eventId: block.eventId }, context, plan);
+    } else {
+      planBlock(block, context, plan);
     }
-    if (block.eventId !== null) seen.add(block.eventId);
-    planBlock(block, context, plan);
   }
   return plan;
-}
-
-/** Google's alphabet for an event id a client picks: base32hex, lower case. */
-const EVENT_ID_ALPHABET = '0123456789abcdefghijklmnopqrstuv';
-
-/** Long enough that two blocks never draw the same one. */
-const EVENT_ID_RANDOM_LENGTH = 26;
-
-/**
- * A new event id for a block, written on the block before its event is
- * made, so an insert tried again after a failure is the same event, not a
- * second one. `random` gives numbers in [0, 1).
- */
-export function newBlockEventId(random: () => number): string {
-  let id = 'dfai';
-  for (let at = 0; at < EVENT_ID_RANDOM_LENGTH; at += 1) {
-    id += EVENT_ID_ALPHABET[Math.floor(random() * EVENT_ID_ALPHABET.length)] ?? '0';
-  }
-  return id;
 }

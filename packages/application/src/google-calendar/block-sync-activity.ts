@@ -42,7 +42,7 @@ function summaryLine(report: BlockSyncReport): ActivityReport | null {
 /**
  * What a block sync says in Activity: why it stopped, else a line for what it
  * wrote and one for each block that needs saying — a conflict Google won, a
- * block that failed, one with nothing to push, one sharing another's event.
+ * block that failed, one with nothing to push, a copy made a block of its own.
  * None when it wrote nothing and nothing went wrong.
  */
 export function blockSyncActivity(report: BlockSyncReport): ActivityReport[] {
@@ -80,11 +80,11 @@ export function blockSyncActivity(report: BlockSyncReport): ActivityReport[] {
         `${named(path)} is not on Google Calendar: it needs a start and an end time, the end after the start.`,
       ),
     ),
-    ...report.duplicates.map((path) =>
+    ...report.copies.map((path) =>
       aboutBlock(
         path,
-        'warning',
-        `${named(path)} is not synced: another block has the same Google event. Clear its gcal_ properties to give it its own.`,
+        'info',
+        `${named(path)} is a copy of another block, so it was made a block of its own: the other keeps its Google event.`,
       ),
     ),
   ];

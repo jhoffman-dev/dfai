@@ -18,6 +18,9 @@ export const BLOCK_KEYS = {
   gcalEtag: 'gcal_etag',
   gcalCalendar: 'gcal_calendar',
   gcalMissing: 'gcal_missing',
+  gcalSyncedTitle: 'gcal_synced_title',
+  gcalSyncedStart: 'gcal_synced_start',
+  gcalSyncedEnd: 'gcal_synced_end',
 } as const;
 
 /**
@@ -55,6 +58,9 @@ export const BLOCK_TYPE_FILE: BuiltInTypeFile = {
       plain(BLOCK_KEYS.gcalEtag, 'text', 'Google version'),
       plain(BLOCK_KEYS.gcalCalendar, 'text', 'Google calendar'),
       plain(BLOCK_KEYS.gcalMissing, 'checkbox', 'Deleted in Google'),
+      plain(BLOCK_KEYS.gcalSyncedTitle, 'text', 'Title agreed with Google'),
+      plain(BLOCK_KEYS.gcalSyncedStart, 'text', 'Start agreed with Google'),
+      plain(BLOCK_KEYS.gcalSyncedEnd, 'text', 'End agreed with Google'),
     ],
   },
   body: [

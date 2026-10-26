@@ -82,8 +82,8 @@ export {
 export type { MeetingSetting } from './meeting-setting.ts';
 export {
   blockOnDisk,
+  blockPlanZone,
   eventTimes,
-  newBlockEventId,
   pushableFields,
   reconcileBlocks,
   wallClockText,
@@ -98,5 +98,11 @@ export type {
   ReconcileBlocksInput,
   ReconcileBlocksPlan,
 } from './block-sync.ts';
-export { compileBlocksToSyncQuery } from './block-sync-queries.ts';
+export {
+  blockEventId,
+  isBlockCalendarId,
+  isGoogleEventId,
+  BLOCK_EVENT_ID_ATTEMPTS,
+} from './block-event-id.ts';
+export { compileBlocksByEventIdQuery, compileBlocksToSyncQuery } from './block-sync-queries.ts';
 export { blockSyncEnabled, GOOGLE_BLOCKS_KEY } from './block-sync-setting.ts';

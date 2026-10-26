@@ -27,3 +27,18 @@ export function compileBlocksToSyncQuery({
     parameters: [BLOCK_TYPE, BLOCK_KEYS.start, fromDay, BLOCK_SYNC_KEYS.eventId, ...ids],
   };
 }
+
+/**
+ * Every block, of any day, carrying one of `ids`: a note copied with its
+ * event id is found however old the original is, so the original keeps the
+ * event. Ids come in lists of at most `EVENT_ID_LOOKUP_SIZE`. Column: path.
+ */
+export function compileBlocksByEventIdQuery({ ids }: { ids: readonly string[] }): CompiledQuery {
+  return {
+    sql: `/* blocks: by event id */ SELECT DISTINCT kind.path AS "path" FROM props AS kind
+ WHERE kind.key = 'type' AND lower(trim(kind.value_text)) = ? AND ${userSpaceNoteSql('kind.path')}
+   AND kind.path IN (SELECT path FROM props WHERE key = ? AND value_text IN (${marks(ids.length)}))
+ ORDER BY kind.path`,
+    parameters: [BLOCK_TYPE, BLOCK_SYNC_KEYS.eventId, ...ids],
+  };
+}

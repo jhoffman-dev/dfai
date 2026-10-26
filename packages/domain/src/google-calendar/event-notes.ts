@@ -161,8 +161,9 @@ function copyFor(note: ExistingEventNote, copies: readonly GoogleEvent[]): Googl
  * mixes two and each time compares with meeting notes kept in local time: the
  * primary calendar's zone, else the first calendar read that names one, else
  * the person's. Whenever Google names a zone, the Mac's own plays no part.
+ * Blocks are written on it too (#30), from the primary calendar's zone alone.
  */
-const planZone = (input: EventNotesInput): string => {
+export const planZone = (input: Pick<EventNotesInput, 'calendarZones' | 'timeZone'>): string => {
   const zones = input.calendarZones ?? {};
   return zones[PRIMARY_CALENDAR] ?? Object.values(zones)[0] ?? input.timeZone;
 };

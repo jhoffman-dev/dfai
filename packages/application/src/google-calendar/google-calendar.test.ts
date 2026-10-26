@@ -108,12 +108,16 @@ describe('blockCalendars', () => {
 });
 
 describe('createBlocksCalendar', () => {
-  it('makes the calendar under DFAI’s name for it', async () => {
+  it('makes the calendar under DFAI’s name for it, on the person’s zone', async () => {
     const port = fakePort();
 
-    const made = await createBlocksCalendar({ port, vault: VAULT });
+    const made = await createBlocksCalendar({ port, vault: VAULT, timeZone: 'America/Chicago' });
 
-    expect(port.createCalendar).toHaveBeenCalledWith({ vault: VAULT, name: 'DFAI blocks' });
+    expect(port.createCalendar).toHaveBeenCalledWith({
+      vault: VAULT,
+      name: 'DFAI blocks',
+      timeZone: 'America/Chicago',
+    });
     expect(made.name).toBe('DFAI blocks');
   });
 });

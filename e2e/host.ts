@@ -1337,8 +1337,8 @@ export async function installHost(
           statement.startsWith('/* meeting links:') ||
           // Today's meetings and the notes a meetings sync writes to (ADR-0046).
           statement.startsWith('/* meetings: ') ||
-          // The blocks a blocks sync may write to (#30).
-          statement.startsWith('/* blocks: to sync */') ||
+          // The blocks a blocks sync may write to, and every note carrying one's event id (#30).
+          statement.startsWith('/* blocks: ') ||
           statement.startsWith('/* proposals: ids */') ||
           statement.startsWith('/* meeting items: made */')
         ) {
@@ -2557,6 +2557,12 @@ function fakeBlockEvents() {
       string,
       unknown
     >;
+    if (call.method === 'GET' && eventId !== null) {
+      const event = events.get(eventId);
+      return event === undefined
+        ? { status: 404, body: '{"error":{"code":404}}' }
+        : { status: 200, body: JSON.stringify(event) };
+    }
     if (call.method === 'GET') {
       const token = url.searchParams.get('syncToken');
       const ids = token === null ? [...events.keys()] : [...changed];

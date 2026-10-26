@@ -246,6 +246,11 @@ lets DFAI change events on the calendar it made. #30 adds:
 - `gcal_event_id` and `gcal_etag` on the block, and `gcal_missing` when
   Google deletes the event.
 
+As built (PR #580), the calls are `events.list`, `get`, `insert` and `patch`
+— never `delete` — and blocks are written and read on this ADR's plan zone
+(the primary calendar's zone, else the Mac's), so a block and a meeting at
+09:00 on one Today list are at the same 09:00. ADR-0030 has the rest.
+
 This sync already leaves the blocks calendar alone, so a block never becomes
 a meeting. If James ever wants blocks on a calendar he made himself, not one
 DFAI made, that is a new `GOOGLE_SCOPES_BY_USE` row

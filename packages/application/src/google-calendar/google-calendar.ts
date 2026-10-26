@@ -70,15 +70,20 @@ export async function blockCalendars({
   return calendars.filter(canHoldBlocks).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-/** Makes the calendar blocks go to, under DFAI's name for it. */
+/**
+ * Makes the calendar blocks go to, under DFAI's name for it, keeping the
+ * person's zone: one made with none is on UTC, and shows every block hours off.
+ */
 export function createBlocksCalendar({
   port,
   vault,
+  timeZone,
 }: {
   port: GoogleCalendarPort;
   vault: string;
+  timeZone: string;
 }): Promise<GoogleCalendar> {
-  return port.createCalendar({ vault, name: DEDICATED_CALENDAR_NAME });
+  return port.createCalendar({ vault, name: DEDICATED_CALENDAR_NAME, timeZone });
 }
 
 const NOT_REVOKED: GoogleProblem = {
