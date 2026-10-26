@@ -53,6 +53,7 @@ export type { MeetingWindow } from './meeting-window.ts';
 export {
   calendarStartFor,
   matchMeetingNote,
+  startAskDays,
   startlessShared,
   MEETING_NOTES_ARRIVAL_WINDOW_MINUTES,
   MEETING_START_TOLERANCE_MINUTES,
@@ -73,8 +74,8 @@ export {
   meetingCandidatesOf,
   EVENT_ID_LOOKUP_SIZE,
 } from './event-note-queries.ts';
-export { dayMeetings } from './todays-meetings.ts';
-export type { DayEventRow, DayMeeting } from './todays-meetings.ts';
+export { dayEventTimes, dayMeetings } from './todays-meetings.ts';
+export type { DayEventRow, DayEvents, DayMeeting } from './todays-meetings.ts';
 export {
   parseMeetingSetting,
   GOOGLE_MEETING_CALENDARS_KEY,

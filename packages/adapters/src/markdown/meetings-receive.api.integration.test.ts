@@ -475,9 +475,35 @@ describe('POST /v1/meetings: a day but no time, placed by the calendar (#582)', 
     expect(response.status).toBe(400);
     expect(codeOf(response)).toBe('invalid');
     expect(JSON.stringify(response.body)).toContain(
-      'and DFAI has no calendar events on 2026-10-24; send `start`, a time in the subject, or a transcript with its times, or connect Google Calendar so DFAI can take the start from the meeting’s event',
+      'and DFAI has no calendar events on 2026-10-24; send `start`, a time in the subject, or a transcript with its times, or if Google Calendar isn’t connected, connect it so DFAI can take the start from the meeting’s event',
     );
     expect(api.writes).toEqual([]);
+  });
+
+  // The review's case: the sender names Los Angeles, this Mac (and its event notes) keep Chicago's clock.
+  it('matches the event on the event notes’ clock, not the sender’s zone', async () => {
+    const note = (start: string, end: string, id: string) =>
+      EVENT_NOTE.replace("'2026-10-24T10:00'", `'${start}'`)
+        .replace("'2026-10-24T10:30'", `'${end}'`)
+        .replace("'ev-larkspur-sync'", `'${id}'`);
+    const api = vault({
+      'Calendar/2026-10-24 Larkspur Payroll onboarding sync.md': note(
+        '2026-10-24T06:00',
+        '2026-10-24T06:30',
+        'ev-early',
+      ),
+      'Calendar/2026-10-24 Larkspur Payroll onboarding sync 1.md': note(
+        '2026-10-24T09:30',
+        '2026-10-24T10:00',
+        'ev-late',
+      ),
+    });
+    api.timeZone = 'America/Chicago';
+    // 10:05 in Chicago, 08:05 in Los Angeles.
+    const response = await send(api, { ...DAY_ONLY, arrived: '2026-10-24T15:05:00Z' });
+
+    expect(response.status).toBe(201);
+    expect(accepted(api.files.get(DAY_ONLY_PATH)?.text ?? '')).toMatchObject({ start: '09:30' });
   });
 
   it('takes a `start` and `end` the sender gives, as the message says it may', async () => {

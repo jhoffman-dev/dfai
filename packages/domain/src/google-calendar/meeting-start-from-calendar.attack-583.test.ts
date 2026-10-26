@@ -94,7 +94,14 @@ describe('calendar start, seeded property (500 days)', () => {
         ...(withTranscript ? { transcript: TIMED_TRANSCRIPT } : {}),
       };
       const ask = meetingStartAsk(fields, ZONE);
-      expect(ask).toEqual({ title: 'Wren standup', day: DAY, arrived });
+      expect(ask).toEqual({
+        title: 'Wren standup',
+        day: DAY,
+        arrived,
+        arrivedAt: Date.parse(`${arrived}:00Z`),
+        timeZone: 'UTC',
+        dayBefore: false,
+      });
       if (ask === null) continue;
       const calendar = calendarStartFor(ask, events);
       const fits = oracle(events, arrived);
@@ -102,6 +109,7 @@ describe('calendar start, seeded property (500 days)', () => {
       if (fits.length === 1 && only !== undefined) {
         expect(calendar).toEqual({
           found: true,
+          day: DAY,
           start: only.start.slice(11),
           end: only.end?.slice(11) ?? null,
         });
@@ -125,7 +133,7 @@ describe('calendar start, seeded property (500 days)', () => {
 
   it('lets a start the meeting carries (start, subject time, date time, first word) win over any calendar', () => {
     const random = seeded(584);
-    const calendar = { found: true, start: '03:03', end: '03:33' } as const;
+    const calendar = { found: true, day: DAY, start: '03:03', end: '03:33' } as const;
     const own: MeetingFields[] = [
       { ...BASE, start: '09:30' },
       { ...BASE, stated: 'Notes: “Wren standup” Oct 24, 2026 at 9:30 AM GMT' },
@@ -162,6 +170,7 @@ describe('calendar start, edges', () => {
     // Arrival 15:30: the morning one ended 6h15 before, outside the window.
     expect(calendarStartFor(ask(wall(930)), [morning, afternoon])).toEqual({
       found: true,
+      day: DAY,
       start: '15:00',
       end: '15:15',
     });

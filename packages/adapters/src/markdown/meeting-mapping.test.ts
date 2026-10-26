@@ -258,7 +258,7 @@ describe('the time of the meeting', () => {
   it('takes the start from a date-time with no offset, as written, in any zone', () => {
     for (const timeZone of [null, 'America/Los_Angeles']) {
       const { meeting } = mapped(
-        { ...GEMINI, date: '2026-10-06T11:59:00', start: '' },
+        { ...GEMINI, date: '2026-10-06T11:59:00', start: '', end: null },
         { timeZone },
       );
       expect([meeting.date, meeting.start]).toEqual(['2026-10-06', '11:59']);
@@ -276,7 +276,7 @@ describe('the time of the meeting', () => {
 
   it('reads 17:02 PDT, stored as 00:02Z the next day, on the day it happened', () => {
     const { meeting } = mapped(
-      { ...GEMINI, date: '2026-10-07T00:02:00.000Z', start: null },
+      { ...GEMINI, date: '2026-10-07T00:02:00.000Z', start: null, end: null },
       { timeZone: 'America/Los_Angeles' },
     );
     expect([meeting.date, meeting.start]).toEqual(['2026-10-06', '17:02']);
@@ -292,7 +292,7 @@ describe('the time of the meeting', () => {
 
   it('reads an offset written without a colon', () => {
     const { meeting } = mapped(
-      { ...GEMINI, date: '2026-10-06T17:02:00-0700', start: null },
+      { ...GEMINI, date: '2026-10-06T17:02:00-0700', start: null, end: null },
       { timeZone: 'America/Los_Angeles' },
     );
     expect([meeting.date, meeting.start]).toEqual(['2026-10-06', '17:02']);
@@ -309,7 +309,7 @@ describe('the time of the meeting', () => {
 
   it('converts a UTC date-time into the time zone it is given, day and all', () => {
     const { meeting } = mapped(
-      { ...GEMINI, date: '2026-07-01T00:01:00.000Z', start: null },
+      { ...GEMINI, date: '2026-07-01T00:01:00.000Z', start: null, end: null },
       { timeZone: 'America/Los_Angeles' },
     );
     expect([meeting.date, meeting.start]).toEqual(['2026-06-30', '17:01']);
@@ -340,7 +340,13 @@ describe('the time of the meeting', () => {
 describe('the start of a Gemini meeting, from its email', () => {
   const zone = { timeZone: 'America/Los_Angeles' };
   // The Notion Date for a Gemini meeting: when the notes arrived, not when the meeting began.
-  const fromEmail: MeetingFields = { ...GEMINI, date: '2026-10-06T10:52:00.000Z', start: '' };
+  // A Gemini email gives no end; GEMINI's 10:30 would be before most starts here, and refused.
+  const fromEmail: MeetingFields = {
+    ...GEMINI,
+    date: '2026-10-06T10:52:00.000Z',
+    start: '',
+    end: null,
+  };
   const subject = 'Notes: “Platform weekly sync” Oct 6, 2026';
 
   it('takes the day and time the email states, over the Notion date', () => {

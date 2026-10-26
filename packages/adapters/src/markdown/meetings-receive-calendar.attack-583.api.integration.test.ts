@@ -70,6 +70,9 @@ function writtenFrontmatter(api: ReturnType<typeof vault>) {
 
 const messageOf = (response: { body: unknown }) => JSON.stringify(response.body);
 
+/** The refusal's hint to connect a calendar, as worded since the #583 fix round. */
+const CONNECT_HINT = 'if Google Calendar isn’t connected, connect it';
+
 describe('POST /v1/meetings: calendar start, attack (#583)', () => {
   it('reads two event notes for one gcal_event_id as one event, not two matches', async () => {
     const twin = eventNote({ start: '2026-10-24T10:00', end: '2026-10-24T10:30', id: 'ev-heron' });
@@ -115,7 +118,7 @@ describe('POST /v1/meetings: calendar start, attack (#583)', () => {
       subject: undefined,
       arrived: '2026-10-25T07:10:00Z',
     });
-    expect(messageOf(response)).not.toContain('connect Google Calendar');
+    expect(messageOf(response)).not.toContain(CONNECT_HINT);
     expect(response.status).toBe(201);
     expect(writtenFrontmatter(api)).toMatchObject({ date: '2026-10-24', start: '22:30' });
   });
@@ -133,7 +136,7 @@ describe('POST /v1/meetings: calendar start, attack (#583)', () => {
     expect(response.status).toBe(400);
     expect(codeOf(response)).toBe('invalid');
     expect(api.writes).toEqual([]);
-    expect(messageOf(response)).not.toContain('connect Google Calendar');
+    expect(messageOf(response)).not.toContain(CONNECT_HINT);
   });
 
   it('never takes a cancelled (gcal_missing) event', async () => {
@@ -216,15 +219,23 @@ describe('POST /v1/meetings: calendar start, attack (#583)', () => {
     const api = vault({}, () => () => Promise.reject(new Error('index is rebuilding')));
     const response = await send(api, SENT);
     expect(response.status).toBe(500);
-    expect(messageOf(response)).not.toContain('connect Google Calendar');
+    expect(messageOf(response)).not.toContain(CONNECT_HINT);
     expect(api.writes).toEqual([]);
   });
 
   // Before #583 this meeting mapped (arrival less transcript length,
-  // approximate) without touching the index; now a failing index lookup for a
-  // calendar start it never needed makes it a 500.
+  // approximate) without the calendar; now a failing calendar lookup for a
+  // start it never needed makes it a 500. Only the day's event-notes query
+  // fails here: the held-in-vault check reads the index too, and a vault that
+  // cannot say whether it holds the meeting must still refuse to write it.
   it('still writes a meeting with a transcript length when the calendar lookup fails', async () => {
-    const api = vault({}, () => () => Promise.reject(new Error('index is rebuilding')));
+    const api = vault(
+      {},
+      (base) => (sql, parameters) =>
+        sql.includes('meetings: today')
+          ? Promise.reject(new Error('index is rebuilding'))
+          : base(sql, parameters),
+    );
     const response = await send(api, { ...SENT, transcriptMd: TIMED_TRANSCRIPT });
     expect(response.status).toBe(201);
     expect(writtenFrontmatter(api)).toMatchObject({ start_approximate: true });

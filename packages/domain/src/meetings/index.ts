@@ -48,7 +48,11 @@ export { duplicateLink, withLinesAfterContract } from './meeting-stamp.ts';
 export { meetingHolding, meetingIdentityOf, sameMeetingIdentity } from './meeting-holding.ts';
 export type { MeetingHoldingQuestion, MeetingIdentity } from './meeting-holding.ts';
 export { MEETING_IMPORT_PROPERTIES } from './meeting-import-properties.ts';
-export { mapMeeting, meetingStartAsk } from './mapping/meeting-to-atlas.ts';
+export {
+  mapMeeting,
+  meetingStartAsk,
+  startWorksOutWithoutCalendar,
+} from './mapping/meeting-to-atlas.ts';
 export type { MappingOptions, MeetingFields, MeetingFile } from './mapping/meeting-to-atlas.ts';
 export { MeetingMappingError } from './mapping/meeting-mapping-error.ts';
 export type { CalendarStart, StartAsk } from './mapping/meeting-when.ts';

@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { mapMeeting, meetingStartAsk, type MeetingFields } from '../meetings/index.ts';
+import { instantOnClock } from '../meetings/mapping/meeting-when.ts';
 import {
   calendarStartFor,
   MEETING_NOTES_ARRIVAL_WINDOW_MINUTES,
@@ -38,6 +39,14 @@ const MEETING = {
   arrived: '2026-10-24T10:40',
 };
 
+/** MEETING as meetingStartAsk gives it: with the arrival's instant and the clock it is shown on. */
+const ASKED = {
+  ...MEETING,
+  arrivedAt: Date.parse('2026-10-24T17:40:00Z'),
+  timeZone: 'America/Los_Angeles',
+  dayBefore: false,
+};
+
 /** A Gemini transcript with its length: it ended 11:49 in, so less the arrival it would start 10:28, approximate. */
 const TIMED = {
   ...SENT,
@@ -58,7 +67,7 @@ function mappedWith(events: readonly DayEventTimes[], fields: MeetingFields = SE
 
 describe('meetingStartAsk', () => {
   it('asks the calendar for the stated day and the local arrival when nothing gives a start', () => {
-    expect(meetingStartAsk(SENT, ZONE)).toEqual(MEETING);
+    expect(meetingStartAsk(SENT, ZONE)).toEqual(ASKED);
   });
 
   it('asks for the day of `date` when no day is stated, else for the arrival’s', () => {
@@ -73,7 +82,7 @@ describe('meetingStartAsk', () => {
   });
 
   it('asks the calendar before the transcript’s length is taken off the arrival', () => {
-    expect(meetingStartAsk(TIMED, ZONE)).toEqual(MEETING);
+    expect(meetingStartAsk(TIMED, ZONE)).toEqual(ASKED);
   });
 });
 
@@ -127,7 +136,7 @@ describe('a meeting the calendar cannot place is refused, saying what to send', 
 
   it('asks for the calendar to be connected when DFAI has no events that day', () => {
     expect(() => mappedWith([])).toThrow(
-      `and DFAI has no calendar events on 2026-10-24; ${SEND}, or connect Google Calendar so DFAI can take the start from the meeting’s event`,
+      `and DFAI has no calendar events on 2026-10-24; ${SEND}, or if Google Calendar isn’t connected, connect it so DFAI can take the start from the meeting’s event`,
     );
   });
 
@@ -140,6 +149,7 @@ describe('calendarStartFor', () => {
   it('takes the one event under the title that ended at or before the arrival', () => {
     expect(calendarStartFor(MEETING, [SYNC])).toEqual({
       found: true,
+      day: '2026-10-24',
       start: '10:00',
       end: '10:30',
     });
@@ -226,5 +236,127 @@ describe('calendarStartFor', () => {
     expect(calendarStartFor({ ...MEETING, title: '  ' }, [{ ...SYNC, title: ' ' }])).toMatchObject({
       found: false,
     });
+  });
+});
+
+describe('the calendar is asked on the clock its event notes are written on', () => {
+  // The review's case: the sender says Los Angeles, the event notes are on Chicago's clock.
+  const CHICAGO = { timeZone: 'America/Los_Angeles', calendarTimeZone: 'America/Chicago' };
+  const notes = { ...SENT, arrived: '2026-10-24T15:05:00Z' };
+
+  it('puts the arrival on the event notes’ clock, not the sender’s', () => {
+    expect(meetingStartAsk(notes, CHICAGO)).toMatchObject({
+      day: '2026-10-24',
+      arrived: '2026-10-24T10:05',
+      timeZone: 'America/Chicago',
+    });
+  });
+
+  // On the sender's clock the notes came at 08:05: the 06:00 one would fit, the 09:30 one not have begun.
+  it('takes the event that ended just before the notes on that clock, not one that fits only the sender’s', () => {
+    const ask = meetingStartAsk(notes, CHICAGO);
+    if (ask === null) throw new Error('the meeting should need the calendar');
+    const early = { ...SYNC, start: '2026-10-24T06:00', end: '2026-10-24T06:30' };
+    const late = { ...SYNC, start: '2026-10-24T09:30', end: '2026-10-24T10:00' };
+    expect(calendarStartFor(ask, [early, late])).toMatchObject({ found: true, start: '09:30' });
+  });
+
+  it('puts a local arrival on the sender’s clock first, then on the event notes’', () => {
+    const local = { ...SENT, arrived: '2026-10-24T08:05' };
+    expect(meetingStartAsk(local, CHICAGO)?.arrived).toBe('2026-10-24T10:05');
+  });
+});
+
+describe('a meeting that states no day looks at the arrival’s day and the day before', () => {
+  const UNSTATED = { ...SENT, stated: undefined, arrived: '2026-10-25T07:10:00Z' };
+  const late = { ...SYNC, start: '2026-10-24T22:30', end: '2026-10-24T23:30' };
+
+  it('asks for the day before too, and only then', () => {
+    expect(meetingStartAsk(UNSTATED, ZONE)).toMatchObject({ day: '2026-10-25', dayBefore: true });
+    expect(meetingStartAsk(SENT, ZONE)).toMatchObject({ dayBefore: false });
+    expect(meetingStartAsk({ ...UNSTATED, date: '2026-10-24' }, ZONE)).toMatchObject({
+      dayBefore: false,
+    });
+  });
+
+  it('takes a late-evening event of the day before, and writes the meeting on that day', () => {
+    const ask = meetingStartAsk(UNSTATED, ZONE);
+    if (ask === null) throw new Error('the meeting should need the calendar');
+    const calendar = calendarStartFor(ask, [late]);
+    expect(calendar).toEqual({ found: true, day: '2026-10-24', start: '22:30', end: '23:30' });
+    const head = frontmatterOf(mapMeeting(UNSTATED, { ...ZONE, calendar }).content);
+    expect(head).toContain("date: '2026-10-24'");
+    expect(head).toContain("start: '22:30'");
+  });
+
+  it('takes neither when both days have one that fits, and names both days', () => {
+    const ask = meetingStartAsk({ ...UNSTATED, arrived: '2026-10-25T08:00:00Z' }, ZONE);
+    if (ask === null) throw new Error('the meeting should need the calendar');
+    const justAfter = { ...SYNC, start: '2026-10-25T00:30', end: '2026-10-25T00:45' };
+    expect(calendarStartFor(ask, [late, justAfter])).toEqual({
+      found: false,
+      why: '2 events on 2026-10-25 or the day before called “Larkspur Payroll onboarding sync” ended in the 3 hours before the notes arrived, so which it was is unclear',
+      connect: false,
+    });
+  });
+});
+
+describe('the connect hint, and the end of a calendar start', () => {
+  it('suggests connecting only when the days held no event notes at all', () => {
+    expect(calendarStartFor(MEETING, [], 0)).toMatchObject({ found: false, connect: true });
+    // One declined or cancelled note was left out before matching: a calendar is connected.
+    expect(calendarStartFor(MEETING, [], 1)).toEqual({
+      found: false,
+      why: 'no event on 2026-10-24 called “Larkspur Payroll onboarding sync” ended in the 3 hours before the notes arrived',
+      connect: false,
+    });
+  });
+
+  it('writes no end for an event that ends another day, which HH:MM cannot say', () => {
+    const late = { ...SYNC, start: '2026-10-24T23:00', end: '2026-10-25T00:15' };
+    const ask = { ...MEETING, arrived: '2026-10-25T00:30' };
+    expect(calendarStartFor(ask, [late])).toEqual({
+      found: true,
+      day: '2026-10-24',
+      start: '23:00',
+      end: null,
+    });
+  });
+
+  it('refuses a sent end before the calendar’s start, as invalid input', () => {
+    expect(() => mappedWith([SYNC], { ...SENT, end: '09:45' })).toThrow(
+      'end: 09:45 is before the start, 10:00; send an end after the start, with its date when the meeting ends the next day',
+    );
+  });
+});
+
+describe('an end before the start', () => {
+  it('is refused, whatever gave the start', () => {
+    expect(() => mapMeeting({ ...SENT, start: '11:00', end: '10:00' }, ZONE)).toThrow(
+      'end: 10:00 is before the start, 11:00',
+    );
+  });
+
+  it('is kept when it is the start, or sent with the next day’s date', () => {
+    const same = frontmatterOf(mapMeeting({ ...SENT, start: '11:00', end: '11:00' }, ZONE).content);
+    expect(same).toContain("end: '11:00'");
+    const overnight = { ...SENT, start: '23:30', end: '2026-10-25T00:15' };
+    expect(frontmatterOf(mapMeeting(overnight, ZONE).content)).toContain("end: '00:15'");
+  });
+});
+
+describe('instantOnClock', () => {
+  const LA = 'America/Los_Angeles';
+
+  it('reads a wall time on the zone’s clock', () => {
+    expect(instantOnClock('2026-10-24T10:40', LA)).toBe(Date.parse('2026-10-24T17:40:00Z'));
+  });
+
+  it('takes the earlier of a fall-back hour’s two readings', () => {
+    expect(instantOnClock('2026-11-01T01:30', LA)).toBe(Date.parse('2026-11-01T08:30:00Z'));
+  });
+
+  it('reads a time the spring change skips as the instant the clocks jump at', () => {
+    expect(instantOnClock('2026-03-08T02:30', LA)).toBe(Date.parse('2026-03-08T10:30:00Z'));
   });
 });

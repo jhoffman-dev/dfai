@@ -83,6 +83,12 @@ export interface MappingOptions {
    * one. Left out where there is no calendar to ask (n8n's Code nodes).
    */
   readonly calendar?: CalendarStart | null;
+  /**
+   * The zone of the clock the calendar's event notes are written on
+   * (ADR-0046), which {@link meetingStartAsk} puts the arrival on. Left out,
+   * `timeZone`'s.
+   */
+  readonly calendarTimeZone?: string | null;
 }
 
 /** One contract file, where it goes, and what n8n needs to commit it. */
@@ -261,8 +267,21 @@ export function meetingStartAsk(
   options: MappingOptions = {},
 ): (StartAsk & { readonly title: string }) | null {
   const { title, when } = prepared(given, options);
-  const ask = startAsk(when);
+  const ask = startAsk(when, options.calendarTimeZone ?? null);
   return ask === null ? null : { title, ...ask };
+}
+
+/**
+ * Whether the meeting's start can be worked out without a calendar, as the
+ * arrival less the transcript's length: the calendar's start is then a
+ * better one, not the only one. Throws as {@link mapMeeting} would for a
+ * field it cannot read.
+ */
+export function startWorksOutWithoutCalendar(
+  given: MeetingFields,
+  options: MappingOptions = {},
+): boolean {
+  return prepared(given, options).when.transcriptLength !== null;
 }
 
 /**

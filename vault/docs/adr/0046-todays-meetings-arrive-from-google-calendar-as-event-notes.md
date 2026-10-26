@@ -57,7 +57,10 @@ these properties:
   no meeting note is ever linked to two events.
   The same title rule gives a meeting sent with no start time its start
   (#582, ADR-0027): `calendarStartFor` takes the one event of its title on
-  its day that ended at or before the notes arrived, within 3 hours.
+  its day (or, with no day stated, the arrival's and the day before) that
+  ended at or before the notes arrived, within 3 hours, measured in real
+  time on the clock the notes are written on. That clock is not stored, so
+  `POST /v1/meetings` takes the Mac's.
 - `gcal_event_id`, `gcal_calendar`, `gcal_recurring_event_id`, and
   `gcal_response` (the person's own answer).
 

@@ -162,8 +162,10 @@ it ended, so the day and start come from the email itself:
 
 The order is: `start`, then the time in `stated`, then the time in `date`,
 then (Granola) the first stamped turn, then — only when DFAI maps it, through
-the API destination — the meeting's Google Calendar event, then `arrived`
-less the transcript.
+the API destination's `POST /v1/meetings` — the meeting's Google Calendar
+event, then `arrived` less the transcript. (A Granola note always carries a
+start; one without is refused before it is mapped, so the Granola pull never
+asks the calendar.)
 
 `attendees` is an **Array** row: the mapper reads `{ name, email }` records.
 It reads `Name — email` lines too; for those, make the row a **String**. A
@@ -434,11 +436,15 @@ Why each part:
   answered "already in the vault" and writes nothing.
 - **A day but no time** (`Oct 24, 2026`) and no transcript: DFAI takes the
   start and end from Google Calendar (#582) when meetings sync is on — the
-  one event on that day with the meeting's title (case and spacing aside)
-  that ended at or before `arrived`, at most 3 hours before. Two such
-  events, or none, and it is refused with what to add. When the workflow
-  knows the start some other way, send it as `start` (and `end`), `HH:MM`
-  on the Mac's clock; it is read before anything else.
+  one event on that day with the meeting's title (case, spacing and
+  invisible marks aside) that ended at or before `arrived`, at most 3 hours
+  before, on the clock the event notes are written on (this Mac's), whatever
+  `timeZone` says. With no day in the subject, the arrival's day and the
+  day before are both looked at. Two such events, or none, and it is
+  refused with what to add. When the workflow knows the start some other
+  way, send it as `start` (and `end`), `HH:MM` on the Mac's clock; it is
+  read before anything else. An `end` before the start is refused; send one
+  that runs past midnight with its date (`2026-10-25T00:15`).
 - **The error output** sends whatever is left after the retries — a meeting
   with no start time (`invalid`, as in the commit's mapper), both paths held
   by other meetings (`exists`), no vault open (`no_vault`), DFAI closed — to
