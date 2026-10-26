@@ -822,3 +822,45 @@ describe('syncBlocks: the vault’s own id, a seed of every new block’s event 
     expect(report.failed[0]?.problem.problem).toContain('vault_id');
   });
 });
+
+describe('syncBlocks: the zone blocks are shown on changed', () => {
+  it('says so once, in Activity, with how far their times moved on this Mac', async () => {
+    const { google, kept, sync } = setUp();
+    const first = await sync();
+    expect(first.zoneChange).toBeNull();
+    expect(kept.get(VAULT)?.timeZone).toBe('America/Los_Angeles');
+    // The person's primary calendar moved to New York: blocks are read on its zone now.
+    google.state.primaryZone = 'America/New_York';
+    const moved = await sync();
+    expect(moved.zoneChange).toEqual({
+      from: 'America/Los_Angeles',
+      to: 'America/New_York',
+      shiftMinutes: 180,
+    });
+    expect(blockSyncActivity(moved).map((line) => line.message)).toContain(
+      'Blocks are now shown on America/New_York, so their times on this Mac moved by +3 h.',
+    );
+    expect(kept.get(VAULT)?.timeZone).toBe('America/New_York');
+    const after = await sync();
+    expect(after.zoneChange).toBeNull();
+  });
+
+  it.each([
+    [-30, 'moved by −30 min'],
+    [330, 'moved by +5 h 30 min'],
+    [-480, 'moved by −8 h'],
+    [0, 'did not move'],
+  ])('says a shift of %i minutes as “%s”', async (shiftMinutes, said) => {
+    const { sync } = setUp();
+    const report = { ...(await sync()), zoneChange: { from: 'A/B', to: 'C/D', shiftMinutes } };
+    const line = blockSyncActivity(report).find((each) => each.message.includes('C/D'));
+    expect(line).toMatchObject({ level: 'info', subject: null });
+    expect(line?.message).toBe(`Blocks are now shown on C/D, so their times on this Mac ${said}.`);
+  });
+
+  it('a Mac with no zone recorded says nothing: there is nothing to have moved from', async () => {
+    const { kept, sync } = setUp();
+    kept.set(VAULT, { calendarId: CALENDAR, syncToken: null, lastSyncAt: null, timeZone: null });
+    expect((await sync()).zoneChange).toBeNull();
+  });
+});

@@ -9,11 +9,12 @@ afterEach(() => {
 
 const VAULT = '/Users/mara/Vault';
 const KEY = `atlas.block-sync:${VAULT}`;
-const NONE = { calendarId: null, syncToken: null, lastSyncAt: null };
+const NONE = { calendarId: null, syncToken: null, lastSyncAt: null, timeZone: null };
 const RECORD = {
   calendarId: 'dfai-blocks@group.calendar.example.com',
   syncToken: 'sync-3',
   lastSyncAt: 1_761_314_400_000,
+  timeZone: 'America/Los_Angeles',
 };
 
 describe('browserBlockSyncRecords', () => {
@@ -37,9 +38,14 @@ describe('browserBlockSyncRecords', () => {
         ...RECORD,
         agreed: { dfaiev1: { title: 'Larkspur close block', start: '', end: '' } },
         lastSyncAt: 'soon',
+        timeZone: 7,
       }),
     );
-    expect(browserBlockSyncRecords.read(VAULT)).toEqual({ ...RECORD, lastSyncAt: null });
+    expect(browserBlockSyncRecords.read(VAULT)).toEqual({
+      ...RECORD,
+      lastSyncAt: null,
+      timeZone: null,
+    });
   });
 
   it('reads as none, and writes nothing, where site data is blocked', () => {
