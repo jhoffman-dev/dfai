@@ -565,6 +565,45 @@ describe('reconcileBlocks: copies keep one event with one note', () => {
     expect(actions.map((action) => [action.kind, action.path])).toEqual([['insert', original]]);
   });
 
+  describe('renamed, and copied, before the next sync: no note is the one the event names', () => {
+    // The event still names the old path; the original was renamed since, and a copy made.
+    const renamed = 'Blocks/Ledger review, Q4.md';
+    const oldPath = 'Blocks/Ledger review block.md';
+    it.each([
+      'Blocks/Ledger review block copy.md',
+      'Blocks/Ledger review block copy 2.md',
+      'Blocks/Ledger review block 2.md',
+    ])('the renamed original keeps the event, never the copy %s that sorts first', (copied) => {
+      const actions = actionsFor(
+        [
+          block({ path: renamed, title: 'Ledger review, Q4' }),
+          block({ path: copied, title: copied.slice(7, -3) }),
+        ],
+        [event({ notePath: oldPath })],
+      );
+      expect(actions.map((action) => [action.kind, action.path])).toEqual([
+        ['insert', copied],
+        ['patch', renamed],
+      ]);
+    });
+
+    it('when every note looks like a copy, the rules before decide as they did', () => {
+      const first = 'Blocks/Ledger review block 2.md';
+      const second = 'Blocks/Ledger review block copy.md';
+      const actions = actionsFor(
+        [
+          block({ path: second, title: 'Ledger review block copy' }),
+          block({ path: first, title: 'Ledger review block 2' }),
+        ],
+        [event({ notePath: oldPath })],
+      );
+      expect(actions.map((action) => [action.kind, action.path])).toEqual([
+        ['patch', first],
+        ['insert', second],
+      ]);
+    });
+  });
+
   it('a copy never patches the event, and its times are never pulled into another note', () => {
     const actions = actionsFor(
       [
