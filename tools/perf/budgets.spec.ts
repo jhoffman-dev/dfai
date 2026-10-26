@@ -619,12 +619,10 @@ async function everyLongNoteAction(pass: Pass): Promise<void> {
   const comment = page.locator(fields).first();
   await comment.click();
   await comment.fill('Typed in place.');
-  const echoesBefore = await echoesSent(page);
-  // The field reads the typed comment before the key is handled: ready on what the
-  // save itself caused, its write and then the watcher's echo the index follows.
+  // The field reads the typed comment before the key is handled: ready once the
+  // save itself has written, then settled, so its echo, index and list are in.
   await pass.budgeted('Save a comment in a 500-highlight note', [
     phase(() => page.keyboard.press('Meta+Enter'), caused, { write_text_file: 1 }),
-    phase(() => Promise.resolve(), echoedSince, echoesBefore),
   ]);
   await page.close();
 }
@@ -719,7 +717,12 @@ async function typeAndSave(pass: Pass, title: string): Promise<void> {
     [
       phase(() => Promise.resolve(), caused, { write_text_file: 1 }),
       // What the host's watcher sends once the save is on disk (`echoWrites`).
-      phase(() => Promise.resolve(), echoedSince, echoesBefore),
+      phase(
+        () => Promise.resolve(),
+        (before) =>
+          ((window as unknown as { __atlasEchoesSent?: number }).__atlasEchoesSent ?? 0) > before,
+        echoesBefore,
+      ),
     ],
     { settleFirst: false },
   );
@@ -810,10 +813,6 @@ const caused = (wanted: Record<string, number>) => {
   );
   return saved && Object.entries(wanted).every(([command, least]) => (sent[command] ?? 0) >= least);
 };
-
-/** Ready once the host's watcher has reported a write since `before` echoes (`echoWrites`). */
-const echoedSince = (before: number) =>
-  ((window as unknown as { __atlasEchoesSent?: number }).__atlasEchoesSent ?? 0) > before;
 
 async function tickATask(pass: Pass): Promise<void> {
   const tick = pass.page.locator(TODAY_TICKS).first();
