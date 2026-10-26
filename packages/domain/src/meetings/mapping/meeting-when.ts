@@ -301,20 +301,25 @@ function noStartMessage(calendar: CalendarStart | null): string {
 }
 
 /**
- * When the meeting began, about: the arrival less the recording's length.
- * Without a length (no transcript, or one with no stamps and no end mark)
- * there is nothing to take off, and the arrival — about when the meeting
- * ended — is never a start, so the meeting is refused, saying what would
- * give one. Worked on the local clock, so a meeting that spans a
- * daylight-saving change is out by that hour — it is marked approximate.
+ * When the meeting began, about: the end the sender gave, else the arrival
+ * (about when it ended), less the recording's length. Without a length (no
+ * transcript, or one with no stamps and no end mark) there is nothing to
+ * take off, and neither is ever a start, so the meeting is refused, saying
+ * what would give one. An end with no date is on the day the meeting
+ * states, else the arrival's. Worked on the local clock, so a meeting that
+ * spans a daylight-saving change is out by that hour — it is marked approximate.
  */
-function arrivalLessLength(input: WhenInput): Moment {
+function workedOutStart(
+  input: WhenInput,
+  { end, statedDay }: { end: Moment; statedDay: string | null },
+): Moment {
   const arrived = arrivalMoment(input);
   if (arrived === null) return NOTHING;
-  const { day, time } = arrived;
   if (input.transcriptLength === null) {
     throw new MeetingMappingError(noStartMessage(input.calendar));
   }
+  const { day, time } =
+    end.time === null ? arrived : { day: end.day ?? statedDay ?? arrived.day, time: end.time };
   const arrival = Date.parse(`${day}T${time}:00Z`);
   const began = new Date(arrival - input.transcriptLength * 1000).toISOString();
   return { day: began.slice(0, 10), time: began.slice(11, 16) };
@@ -392,8 +397,8 @@ function endAfter(end: Moment, { day, start }: { day: string; start: string }): 
  * time the email states, else the time on the date, else when the first
  * word was spoken (a wall-clock transcript only), else the start of the
  * meeting's calendar event (read, so not approximate; its end too, when none
- * was given), else — marked approximate — the arrival less the transcript's
- * length. With none of those the meeting has no start, and the contract
+ * was given), else — marked approximate — the end given, or the arrival,
+ * less the transcript's length. With none of those the meeting has no start, and the contract
  * requires one — so it is refused rather than given a made-up time. A start
  * read off another zone's clock that could not be converted is marked
  * approximate too.
@@ -412,7 +417,8 @@ export function meetingWhen(input: WhenInput): MeetingWhen {
       startSource: 'calendar',
     };
   }
-  const worked = read === null ? arrivalLessLength(input) : NOTHING;
+  const worked =
+    read === null ? workedOutStart(input, { end, statedDay: date.day ?? start.day }) : NOTHING;
   const day = date.day ?? start.day ?? worked.day;
   if (day === null) throw new MeetingMappingError('date: the meeting has no date');
   const startTime = read ?? worked.time;
@@ -424,7 +430,8 @@ export function meetingWhen(input: WhenInput): MeetingWhen {
   return {
     date: day,
     start: startTime,
-    end: endAfter(end, { day, start: startTime }),
+    // A worked-out start is taken off the end itself, so the end is never checked against it.
+    end: read === null ? end.time : endAfter(end, { day, start: startTime }),
     startApproximate: read === null || foreignClock,
     startSource: null,
   };
