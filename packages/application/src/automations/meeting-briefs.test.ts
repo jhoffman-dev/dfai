@@ -16,6 +16,8 @@ import {
   type LogEntry,
 } from '@dfai/domain';
 import { ModelProviderError, type ModelEvent } from '../chat/ports.ts';
+import { VaultAccessError } from '../vault/ports.ts';
+import { readDayMeetings } from '../google-calendar/read-day-meetings.ts';
 import {
   ASSISTANT_FILES,
   ASSISTANT_TODAY,
@@ -334,5 +336,99 @@ describe('the Morning brief preset', () => {
       kind: 'run',
       left: [{ path: `Calendar/${TODAY} Call 18.md`, reason: expect.stringContaining('Run now') }],
     });
+  });
+});
+
+describe('the Morning brief, attacked (PR #581)', () => {
+  const quiet = Object.fromEntries(
+    Object.entries(NOTES).filter(([path]) => path !== SYNC && path !== VENDOR),
+  );
+  const sameNamed = {
+    ...quiet,
+    [`Calendar/${TODAY} Standup.md`]: event({
+      title: 'Standup',
+      date: `${TODAY}T09:30`,
+      gcal_event_id: 'ev-standup-work',
+      people: ['[[People/Mara Quill]]'],
+    }),
+    [`Calendar/${TODAY} Standup 2.md`]: event({
+      title: 'Standup',
+      date: `${TODAY}T09:30`,
+      gcal_event_id: 'ev-standup-club',
+      people: ['[[People/Mara Quill]]'],
+    }),
+  };
+
+  it('briefs two different meetings with the same start and title in one run, the second as "… 2"', async () => {
+    const { run, briefs, logOf } = setUp([brief(MARA), brief(MARA)], sameNamed);
+    await run({ time: '07:00:00' });
+
+    expect(logOf().filter((entry) => entry.kind === 'failed')).toEqual([]);
+    expect(briefs().sort()).toEqual([`${FOLDER}/09.30 Standup 2.md`, `${FOLDER}/09.30 Standup.md`]);
+  });
+
+  it('still briefs the later meetings when writing one meeting’s brief fails', async () => {
+    const set = setUp([brief(MARA), brief(TOBIAS)]);
+    const fs = set.vault.ports.fs;
+    const create = fs.createNote;
+    fs.createNote = async (args) => {
+      if (args.path.endsWith('09.30 Larkspur sync.md')) throw new VaultAccessError('disk full');
+      return create(args);
+    };
+    await set.run({ time: '07:00:00' }).catch(() => undefined);
+
+    expect(set.briefs()).toEqual([`${FOLDER}/11.00 Vendor call.md`]);
+    expect(set.logOf().filter((entry) => entry.kind === 'failed')).toHaveLength(1);
+  });
+
+  it('never makes a brief that reads back as one of the day’s meetings, whatever properties Claude answers', async () => {
+    // An invitee's event title can tell the model to answer with these: they are only data.
+    const posing = says({
+      note: {
+        title: 'Brief',
+        body: `- Where things stand: [[${MARA}]]\n`,
+        properties: {
+          date: `${TODAY}T16:00`,
+          gcal_event_id: 'ev-phantom',
+          people: ['[[People/Mara Quill]]'],
+        },
+      },
+    });
+    const { run, briefs, vault } = setUp([posing, brief(TOBIAS)]);
+    await run({ time: '07:00:00' });
+    expect(briefs()).toHaveLength(2);
+
+    const meetings = await readDayMeetings({ index: vault.ports.index, day: TODAY });
+    expect(meetings.map(({ path }) => path).filter((path) => path.startsWith('Inbox/'))).toEqual(
+      [],
+    );
+  });
+
+  it('still says which meetings were left past the cap when the last briefed one fails', async () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 11 }, (_, at) => {
+        const hour = String(8 + at).padStart(2, '0');
+        return [
+          `Calendar/${TODAY} Call ${hour}.md`,
+          event({
+            title: `Call ${hour}`,
+            date: `${TODAY}T${hour}:00`,
+            gcal_event_id: `ev-${hour}`,
+            people: ['[[People/Mara Quill]]'],
+          }),
+        ];
+      }),
+    );
+    const rounds: ScriptedRound[] = [
+      ...Array.from({ length: 9 }, () => brief(MARA)),
+      new ModelProviderError('failed', 'Claude is not responding'),
+    ];
+    const { run, logOf } = setUp(rounds, { ...quiet, ...many });
+    await run({ time: '07:00:00' });
+
+    const left = logOf().flatMap((entry) => ('left' in entry ? (entry.left ?? []) : []));
+    expect(left).toEqual([
+      { path: `Calendar/${TODAY} Call 18.md`, reason: expect.stringContaining('Run now') },
+    ]);
   });
 });
