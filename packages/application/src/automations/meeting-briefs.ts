@@ -5,10 +5,12 @@ import {
   briefFolder,
   briefItem,
   briefNoteName,
+  compileStampedBriefsQuery,
   currentPeriod,
   MAX_BRIEFS_PER_RUN,
   meetingBriefData,
   meetingsToBrief,
+  messageWithoutPaths,
   outputPeriod,
   periodNoteMade,
   periodRecorded,
@@ -35,8 +37,9 @@ import { listVaultNotes } from '../vault/read-vault.ts';
 import { askedThisHour } from './ask-allowance.ts';
 import { readRuleLog } from './automation-log.ts';
 import { ClaudeStepFailed, runClaudeStep, type ClaudeStepPorts } from './claude-step.ts';
-import { holdUnlessFresh, type FreshPullCheck } from './fresh-pull-hold.ts';
-import { PeriodNoteArrived, periodNotesInFolder } from './period-state.ts';
+import { HeldForPullError, holdUnlessFresh, type FreshPullCheck } from './fresh-pull-hold.ts';
+import { PeriodNoteArrived, periodNotesAt, periodNotesInFolder } from './period-state.ts';
+import { VaultChangedError } from './vault-guard.ts';
 
 type ClaudeAction = Extract<AutomationRule['action'], { kind: 'claude' }>;
 
@@ -63,8 +66,11 @@ export interface MeetingBriefsRun {
 /** A meeting to brief, and the period its brief is written for: the day's slot and the event. */
 interface MeetingToBrief {
   readonly meeting: DayMeeting;
-  readonly period: OutputPeriod;
+  readonly period: BriefPeriod;
 }
+
+/** A brief's period: always for one meeting, its item. */
+type BriefPeriod = OutputPeriod & { readonly item: string };
 
 /**
  * The morning brief's run (#39, ADR-0047): for each of today's meetings with a
@@ -79,10 +85,14 @@ interface MeetingToBrief {
  * now writes afresh one whose note is gone. A missed 07:00 caught up the next
  * day briefs nothing: those meetings are over.
  *
- * Each meeting is logged as its own entry, and said once in Activity: a
- * meeting whose ask fails is a failed entry that wrote nothing, and the
- * others still get their brief. Settles with the last entry, which the caller
- * says in Activity as it says every run's.
+ * Each meeting is logged as its own entry, and said in Activity as soon as
+ * it is logged: a meeting whose ask or write fails is a failed entry, and the
+ * others still get their brief. Only a switch of vault, or the gates of a
+ * fresh pull shutting, ends the run early. Each brief is named past the
+ * notes the run has made already, so two meetings of one start and title get
+ * `… 2`. The meetings past the cap are logged last, as left, for Run now.
+ * Settles with the last entry, which the caller says in Activity as it says
+ * every run's.
  */
 export async function briefEachMeeting(run: MeetingBriefsRun): Promise<LogEntry> {
   const slot = periodSlot(run);
@@ -90,22 +100,38 @@ export async function briefEachMeeting(run: MeetingBriefsRun): Promise<LogEntry>
   if (slot === null || day === null) return logged(run, ranOn(run, { done: [] }));
   const due = await meetingsDue({ run, slot, day });
   if (due.length === 0) return logged(run, ranOn(run, { done: [], period: { slot } }));
-  const briefed = due.slice(0, MAX_BRIEFS_PER_RUN);
   const passedOver: PassedOver[] = due
     .slice(MAX_BRIEFS_PER_RUN)
     .map(({ meeting }) => ({ path: meeting.path, reason: BRIEFS_CAPPED_REASON }));
-  const entries: LogEntry[] = [];
-  for (const [at, each] of briefed.entries()) {
-    const left = at === briefed.length - 1 ? passedOver : [];
-    entries.push(await briefOne({ run, day, due: each, left }));
+  const say = sayInActivity(run);
+  const taken: VaultPath[] = [...run.ports.notePaths];
+  let last: LogEntry | null = null;
+  for (const each of due.slice(0, MAX_BRIEFS_PER_RUN)) {
+    if (last !== null) say(last);
+    last = await briefOne({ run, day, due: each, taken });
+    taken.push(...createdPaths(last));
   }
+  if (passedOver.length === 0) return last!;
+  say(last!);
+  const left = ranOn(run, { done: [], left: passedOver });
+  await run.append(left);
+  return left;
+}
+
+/** Says an entry in Activity, once: for each but the run's last, which its caller says. */
+function sayInActivity(run: MeetingBriefsRun): (entry: LogEntry) => void {
   const recorder = run.activity.inOpenVault();
-  for (const entry of entries.slice(0, -1)) {
+  return (entry) => {
     const report = automationEntryReport(run.rule, entry);
     if (report !== null) recorder.record(report);
-  }
-  return entries.at(-1)!;
+  };
 }
+
+/** The notes an entry says it made. */
+const createdPaths = (entry: LogEntry): VaultPath[] =>
+  'done' in entry && entry.done !== undefined
+    ? entry.done.flatMap((action) => (action.kind === 'created' ? [action.path] : []))
+    : [];
 
 /** The slot the run writes for: the latest due at or before it, or — by hand — today's. */
 function periodSlot({ rule, at, trigger }: MeetingBriefsRun): LocalTime | null {
@@ -138,7 +164,7 @@ async function meetingsDue({
   const meetings = meetingsToBrief(await readDayMeetings({ index: ports.index, day }));
   if (meetings.length === 0) return [];
   const items = await itemsOf(ports, meetings);
-  const made = await madeCheck({ run, day, notePaths: ports.notePaths });
+  const made = await madeCheck({ run, day, items, notePaths: ports.notePaths });
   return meetings
     .map((meeting, at) => ({ meeting, period: { slot, item: items[at]! } }))
     .filter(({ period }) => !made(period));
@@ -160,27 +186,26 @@ async function itemsOf(
 }
 
 /**
- * Whether a meeting's period is made, as the rule's log and the day folder's
- * notes say, read once. Scheduled, anything that records it counts; by hand,
- * only a note still on disk.
+ * Whether a meeting's period is made, as the rule's log and the briefs say,
+ * read once: those in the day's folder, and those stamped for one of `items`
+ * anywhere, as the index finds them — a brief filed out of the Inbox is still
+ * made. Scheduled, anything that records it counts; by hand, only a note
+ * still on disk, so a deleted brief is written afresh.
  */
 async function madeCheck({
   run,
   day,
+  items,
   notePaths,
 }: {
   run: MeetingBriefsRun;
   day: string;
+  items: readonly string[];
   notePaths: readonly VaultPath[];
 }): Promise<(period: OutputPeriod) => boolean> {
-  const { rule, ports, at, trigger, action } = run;
+  const { rule, ports, at, trigger } = run;
   const { entries } = await readRuleLog(ports.fs, rule);
-  const notes: PeriodNote[] = await periodNotesInFolder({
-    folder: briefFolder(noteFolder(action), day),
-    fs: ports.fs,
-    markdown: ports.markdown,
-    notePaths,
-  });
+  const notes = await briefsMade({ run, day, items, notePaths });
   const existing = new Set<string>(notePaths);
   return (period) => {
     const asked = { entries, notes, rule: rule.id, period, schedule: rule.when, now: at };
@@ -190,24 +215,57 @@ async function madeCheck({
   };
 }
 
+/** The briefs that say the period they were made for: the day folder's, and those the index finds stamped for `items`. */
+async function briefsMade({
+  run,
+  day,
+  items,
+  notePaths,
+}: {
+  run: MeetingBriefsRun;
+  day: string;
+  items: readonly string[];
+  notePaths: readonly VaultPath[];
+}): Promise<PeriodNote[]> {
+  const { fs, markdown, index } = run.ports;
+  const inDay = await periodNotesInFolder({
+    folder: briefFolder(noteFolder(run.action), day),
+    fs,
+    markdown,
+    notePaths,
+  });
+  const { sql, parameters } = compileStampedBriefsQuery({ rule: run.rule.id, items });
+  const result = await index.query(sql, parameters);
+  const seen = new Set<string>(inDay.map(({ path }) => path));
+  const existing = new Set<string>(notePaths);
+  // The index can lag a delete: only a note still listed in the vault counts.
+  const elsewhere = result.rows
+    .map((row) => String(row[result.columns.indexOf('path')]))
+    .filter((path) => existing.has(path) && !seen.has(path));
+  return [...inDay, ...(await periodNotesAt({ paths: elsewhere, fs, markdown }))];
+}
+
 const noteFolder = (action: ClaudeAction): string =>
   action.output.kind === 'note' ? action.output.folder : '';
 
 /**
  * One meeting's brief: what `brief()` says of each person and company in it,
- * handed to the rule's step, and its note written — or, when the ask fails,
- * a failed entry that wrote nothing. Logged either way.
+ * handed to the rule's step, and its note written, named past `taken` — or,
+ * when the ask or the write fails, a failed entry. Logged either way. DFAI
+ * alone sets the brief's properties: the answer's are ignored, so an
+ * invitee's words in a title can never make a brief read as a meeting.
  */
 async function briefOne({
   run,
   day,
   due,
-  left,
+  taken,
 }: {
   run: MeetingBriefsRun;
   day: string;
   due: MeetingToBrief;
-  left: readonly PassedOver[];
+  /** Every note in the vault, and each brief this run has made. */
+  taken: readonly VaultPath[];
 }): Promise<LogEntry> {
   const { rule, ports, action, at, trigger } = run;
   const hold = () => holdUnlessFresh({ check: run.freshPull, rule, trigger });
@@ -225,56 +283,69 @@ async function briefOne({
       index: ports.index,
       markdown: ports.markdown,
       editors: ports.editors,
-      notePaths: ports.notePaths,
+      notePaths: taken,
       rule: rule.id,
       madeBy: `${rule.name} · ${at.replace('T', ' ')}`,
       beforeWrite,
       askedThisHour: await askedThisHour(ports, rule, at),
       stepData: await briefData(run, day, due.meeting),
-      noteName: briefNoteName(due.meeting),
+      noteAs: { name: briefNoteName(due.meeting), properties: {} },
       period: { period: due.period, at },
     });
     const made = done.some(({ kind }) => kind === 'created');
-    const entry = ranOn(run, { done, left, claude, ...(made && { period: due.period }) });
+    const entry = ranOn(run, { done, claude, ...(made && { period: due.period }) });
     await (done.length > 0 ? run.append(entry) : run.log(entry));
     return entry;
   } catch (cause) {
-    return recordFailure({ run, due, cause, left });
+    return recordFailure({ run, due, cause });
   }
 }
 
-/** What a meeting's ask that did not write logs: found made, or failed with why. Anything else is raised. */
+/**
+ * What a meeting whose brief was not written logs: found made, or failed with
+ * why — the ask, the disk refusing the brief, or a read of what it is handed.
+ * Only what ends the whole run is raised, once logged: a switch of vault, or
+ * the fresh-pull gates shutting.
+ */
 async function recordFailure({
   run,
   due,
   cause,
-  left,
 }: {
   run: MeetingBriefsRun;
   due: MeetingToBrief;
   cause: unknown;
-  left: readonly PassedOver[];
 }): Promise<LogEntry> {
   if (cause instanceof PeriodNoteArrived) {
     const found = ranOn(run, {
       done: [],
-      left,
       period: due.period,
       ...(cause.claude !== undefined && { claude: cause.claude }),
     });
     return logged(run, found);
   }
-  if (!(cause instanceof ClaudeStepFailed)) throw cause;
+  if (cause instanceof HeldForPullError || cause instanceof VaultChangedError) throw cause;
+  const problem = (why: string) => `No brief for “${due.meeting.title}”: ${why}`;
+  const { at, trigger } = run;
+  if (!(cause instanceof ClaudeStepFailed)) {
+    // Read before Claude was asked: nothing made, so it waits on the gates like any such entry.
+    return logged(run, {
+      kind: 'failed',
+      at,
+      trigger,
+      problem: problem(messageWithoutPaths(cause)),
+    });
+  }
   const failed: LogEntry = {
     kind: 'failed',
-    at: run.at,
-    trigger: run.trigger,
-    problem: `No brief for “${due.meeting.title}”: ${cause.message}`,
+    at,
+    trigger,
+    problem: problem(cause.message),
     claude: cause.claude,
     ...(cause.made.length > 0 && { done: cause.made }),
   };
   await run.append(failed);
-  if (cause.interruption !== undefined) throw cause.interruption;
+  if (cause.interruption instanceof VaultChangedError) throw cause.interruption;
   return failed;
 }
 
@@ -282,10 +353,10 @@ async function recordFailure({
 async function madeSince(
   run: MeetingBriefsRun,
   day: string,
-  period: OutputPeriod,
+  period: BriefPeriod,
 ): Promise<boolean> {
   const notePaths = await listVaultNotes({ fs: run.ports.fs });
-  return (await madeCheck({ run, day, notePaths }))(period);
+  return (await madeCheck({ run, day, items: [period.item], notePaths }))(period);
 }
 
 /** What the step is handed for a meeting: `brief()` of each person and company in it, on its day. */

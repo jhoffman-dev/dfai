@@ -128,9 +128,22 @@ export async function periodNotesInFolder({
 }): Promise<PeriodNote[]> {
   const within = `${folder.replace(/\/+$/, '')}/`;
   const inFolder = notePaths.filter((path) => path.startsWith(within));
+  return periodNotesAt({ paths: inFolder, fs, markdown });
+}
+
+/** The notes at `paths` that say the period they were made for, and the rule they name. */
+export async function periodNotesAt({
+  paths,
+  fs,
+  markdown,
+}: {
+  paths: readonly string[];
+  fs: Pick<VaultFsPort, 'readNotes'>;
+  markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
+}): Promise<PeriodNote[]> {
   const found: PeriodNote[] = [];
-  for (let start = 0; start < inFolder.length; start += READ_BATCH) {
-    for (const file of await fs.readNotes(inFolder.slice(start, start + READ_BATCH))) {
+  for (let start = 0; start < paths.length; start += READ_BATCH) {
+    for (const file of await fs.readNotes(paths.slice(start, start + READ_BATCH))) {
       const note = periodNoteOf(
         file.path as VaultPath,
         markdown.frontmatterProperties(splitFrontmatter(file.text).frontmatter),

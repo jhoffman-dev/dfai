@@ -63,6 +63,7 @@ export {
   briefFolder,
   briefItem,
   briefNoteName,
+  compileStampedBriefsQuery,
   MAX_BRIEFS_PER_RUN,
   meetingBriefData,
   meetingsToBrief,

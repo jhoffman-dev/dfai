@@ -43,8 +43,18 @@ page is named in the data and linked nowhere. The answer goes through
 
 **Where and what it is called.** `Inbox/Briefs/<day>/<HH.MM> <title>.md`, so
 the brief waits in the Inbox (the Inbox lists notes under `Inbox/`). DFAI
-names the note, not the model. `planNote` numbers past a name already taken,
-so a brief never writes over a note.
+names the note, not the model, and a title that cleans away to nothing (`.`,
+`..`) is `Meeting`. `planNote` numbers past a name already taken, so a brief
+never writes over a note; the names taken grow with each brief the run
+writes, so two meetings of one start and title get `… 2`.
+
+**DFAI alone sets a brief's properties.** The answer's `properties` are
+ignored for this preset: an invitee's event title is data handed to the
+model, and could ask it to answer with `date` and `gcal_event_id`, which
+would make the brief read back as a meeting, or as a declined twin hiding
+one. The brief carries only its period stamps. As defence in depth, only a
+note of type `event` is an event note to the day's meetings
+(`compileDayEventsQuery`) and to a meetings sync (`notesById`).
 
 **The key: the day's slot and the event.** Each brief is its own period:
 `{ slot: "<day>T07:00:00", item: "gcal:<event id>" }`, or the event note's
@@ -53,8 +63,10 @@ period, in both places that each work alone: the run's log entry (one entry
 per meeting, `- period "…" for "gcal:…"`) and the brief's own frontmatter
 (`atlas_period`, `atlas_period_item`, `atlas_period_rule`). The event id is
 the same on both Macs, so a brief synced in from the other Mac counts as
-made; the folder searched for stamped briefs is the day's own, so the check
-does not grow with every brief ever written. A scheduled run never writes a
+made. The notes searched for stamps are the day's folder, and those the index
+finds stamped by the rule for one of the day's items, wherever they are: a
+brief filed out of the Inbox is still made, by hand too, and only a deleted
+one is gone. Neither grows with every brief ever written. A scheduled run never writes a
 brief the log or a note records, even one deleted since; Run now writes
 afresh one whose note is gone, as for #40. The period is read again after
 Claude answers and before the write: a brief that synced in meanwhile means
@@ -62,7 +74,9 @@ nothing is written.
 
 **One writer.** Nothing new: scheduled Claude runs are already held to the
 Mac that runs the vault's automations (`gatedByFreshPull`, ADR-0035), as the
-meeting notes are (ADR-0046).
+meeting notes are (ADR-0046). Run now is not gated, as for #40, so Run now
+on the second Mac before git has synced the first Mac's briefs can write a
+second copy, and the two can clash as add/add when they meet.
 
 **A missed 07:00.** The scheduler's catch-up rule stands (a slot missed
 while asleep or closed runs once, on the next tick). The brief briefs the
@@ -71,11 +85,13 @@ the next morning briefs nothing, and is logged as a run so its schedule
 counts on from it.
 
 **One failure, the rest still briefed.** Each meeting's ask is its own
-`runClaudeStep`, and each is logged as its own entry. A provider failure on
-one is a `failed` entry for that meeting, naming it, which wrote nothing;
-the others go on. Each entry is said once in Activity. At most ten meetings
-are briefed in one run (one ask each); the rest are logged as left, for Run
-now.
+`runClaudeStep`, and each is logged as its own entry. A provider failure, a
+write the disk refuses, or a read of what it is handed that fails, on one is
+a `failed` entry for that meeting, naming it; the others go on. Only a switch of vault, or the fresh-pull gates
+shutting, ends the run early. Each entry is said once in Activity, as soon
+as it is logged, so one made before a run is cut off is still said. At most
+ten meetings are briefed in one run (one ask each); the rest are logged as
+left, in an entry of their own, for Run now.
 
 **The clock.** "Today" and 07:00 are the Mac's wall clock, the clock the
 scheduler and the Today page already use. ADR-0046 writes event times on the
@@ -97,5 +113,3 @@ open (below).
 
 - Storing the zone a meetings sync used, so a Mac abroad briefs on the
   calendar's day rather than its own.
-- A brief moved out of its day's folder, with its log entry also gone, is not
-  found, and that meeting could be briefed again that day.

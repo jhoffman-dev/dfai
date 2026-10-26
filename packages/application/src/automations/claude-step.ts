@@ -51,6 +51,7 @@ import {
   type MeetingTally,
   type ModelMessage,
   type NewProposal,
+  type NoteAnswer,
   type NoteCut,
   type NoteSkipped,
   type ProjectChoice,
@@ -245,8 +246,13 @@ interface StepArgs extends ProposalWritePorts {
    * the action's `data` names: one meeting's brief (#39).
    */
   readonly stepData?: CitedStepData;
-  /** What DFAI names the note, in place of the answer's title: a meeting's brief (#39). */
-  readonly noteName?: string;
+  /**
+   * What DFAI names the note and sets in its properties, in place of the
+   * answer's title and properties, which are ignored: a meeting's brief (#39),
+   * whose answer an invitee's words can steer. The period's stamp is added
+   * either way.
+   */
+  readonly noteAs?: { readonly name: string; readonly properties: NoteAnswer['properties'] };
 }
 
 /**
@@ -725,10 +731,12 @@ async function planNoteAnswer({
     notePaths: asking.notePaths,
     folder: asking.output.folder,
     note: {
-      ...note.value,
-      ...(asking.noteName !== undefined && { title: asking.noteName }),
+      title: asking.noteAs?.name ?? note.value.title,
       body,
-      properties: { ...note.value.properties, ...stamp(asking.period, asking.rule) },
+      properties: {
+        ...(asking.noteAs?.properties ?? note.value.properties),
+        ...stamp(asking.period, asking.rule),
+      },
     },
   });
   return { planned: [planned], proposed: 0 };

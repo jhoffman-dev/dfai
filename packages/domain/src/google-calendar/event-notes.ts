@@ -119,11 +119,16 @@ export function compareEventNotePaths(one: string, other: string): number {
   return first < second ? -1 : first > second ? 1 : 0;
 }
 
-/** The notes each event id is on, in twin order. */
+/**
+ * The notes each event id is on, in twin order. Only a note of type `event`
+ * is one: another note carrying an event's id and day, such as a brief, is
+ * never updated, marked gone, or taken for a twin.
+ */
 function notesById(existing: readonly ExistingEventNote[]): Map<string, ExistingEventNote[]> {
   const byId = new Map<string, ExistingEventNote[]>();
   const sorted = [...existing].sort((one, other) => compareEventNotePaths(one.path, other.path));
   for (const note of sorted) {
+    if (textOf(note.properties['type']) !== EVENT_NOTE_TYPE) continue;
     const id = textOf(note.properties[K.eventId]);
     if (id !== null) byId.set(id, [...(byId.get(id) ?? []), note]);
   }

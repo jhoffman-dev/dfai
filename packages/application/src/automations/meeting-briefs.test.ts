@@ -39,7 +39,6 @@ import type { VaultGuard } from './vault-guard.ts';
 
 const TODAY = ASSISTANT_TODAY;
 const VAULT = '/vaults/home';
-const GUARD: VaultGuard = { vault: VAULT, currentVault: () => VAULT };
 const PRESET = AUTOMATION_PRESETS.find((each) => each.name === 'Morning brief')!;
 const RULE: AutomationRule = {
   ...PRESET,
@@ -116,20 +115,43 @@ function setUp(rounds: readonly ScriptedRound[], notes: Record<string, string> =
   const ports: AutomationPorts = {
     ...vault.ports,
     index: fakeIndexPort({
+      // The stamped-brief lookup reads properties only: the vault's index as it is now, briefs made since included.
       query: async (sql, parameters) =>
-        query(sql.replaceAll("date('now', 'localtime'", `date('${TODAY}'`), parameters),
+        sql.includes('/* morning brief: stamped briefs */')
+          ? vault.ports.index.query(sql, parameters)
+          : query(sql.replaceAll("date('now', 'localtime'", `date('${TODAY}'`), parameters),
     }),
     claude: { ...claude, clock: { today: clock.today, now: clock.now } },
   };
   const activity = recordingActivity();
+  let open = VAULT;
+  const guard: VaultGuard = { vault: VAULT, currentVault: () => open };
+  let fresh = true;
+  const freshPull = async () => fresh;
   const run = (at: { day?: string; time: string }, trigger: 'schedule' | 'hand' = 'schedule') => {
     day = at.day ?? day;
     time = at.time;
-    return runAutomation({ ports, rule: RULE, clock, guard: GUARD, activity, trigger });
+    return runAutomation({ ports, rule: RULE, clock, guard, activity, trigger, freshPull });
+  };
+  const switchVault = () => {
+    open = '/vaults/other';
+  };
+  const shutGates = () => {
+    fresh = false;
   };
   const briefs = () => [...vault.files.keys()].filter((path) => path.startsWith('Inbox/Briefs/'));
   const logOf = (): LogEntry[] => parseRunLog(vault.files.get(logPathFor(RULE.id)) ?? '');
-  return { claude, vault, run, briefs, logOf, activity, asked: () => claude.fake.requests.length };
+  return {
+    claude,
+    vault,
+    run,
+    briefs,
+    logOf,
+    activity,
+    switchVault,
+    shutGates,
+    asked: () => claude.fake.requests.length,
+  };
 }
 
 describe('the Morning brief preset', () => {
@@ -430,5 +452,116 @@ describe('the Morning brief, attacked (PR #581)', () => {
     expect(left).toEqual([
       { path: `Calendar/${TODAY} Call 18.md`, reason: expect.stringContaining('Run now') },
     ]);
+  });
+
+  it('ignores every property Claude answers, so a declined twin can never hide the meeting', async () => {
+    const twin = says({
+      note: {
+        title: 'Brief',
+        body: `- Where things stand: [[${MARA}]]\n`,
+        // A twin of the 11.00 call, declined: were it kept, the call would go unbriefed and off Today.
+        properties: {
+          date: `${TODAY}T11:00`,
+          gcal_event_id: 'ev-vendor',
+          gcal_response: 'declined',
+          status: 'done',
+        },
+      },
+    });
+    const { run, briefs, vault } = setUp([twin, brief(TOBIAS)]);
+    await run({ time: '07:00:00' });
+    expect(briefs()).toHaveLength(2);
+
+    const sync = vault.files.get(`${FOLDER}/09.30 Larkspur sync.md`)!;
+    for (const key of ['date', 'gcal_event_id', 'gcal_response', 'status']) {
+      expect(sync).not.toContain(`"${key}"`);
+    }
+    expect(sync).toContain('"atlas_period_item":"gcal:ev-sync"');
+    const meetings = await readDayMeetings({ index: vault.ports.index, day: TODAY });
+    expect(meetings.map(({ path }) => path)).toContain(VENDOR);
+  });
+
+  it('counts a brief filed out of the Inbox as made, by hand too, and briefs it afresh only once deleted', async () => {
+    const { run, briefs, vault, asked } = setUp([brief(MARA), brief(TOBIAS), brief(MARA)]);
+    await run({ time: '07:00:00' });
+    const filed = 'Projects/Larkspur/09.30 Larkspur sync.md';
+    vault.files.set(filed, vault.files.get(`${FOLDER}/09.30 Larkspur sync.md`)!);
+    vault.files.delete(`${FOLDER}/09.30 Larkspur sync.md`);
+
+    await run({ time: '09:05:00' }, 'hand');
+    expect(asked()).toBe(2);
+    expect(briefs()).toEqual([`${FOLDER}/11.00 Vendor call.md`]);
+
+    vault.files.delete(filed);
+    await run({ time: '09:10:00' }, 'hand');
+    expect(asked()).toBe(3);
+    expect(briefs().sort()).toEqual([
+      `${FOLDER}/09.30 Larkspur sync.md`,
+      `${FOLDER}/11.00 Vendor call.md`,
+    ]);
+  });
+
+  it('ends the run when another vault is opened, every brief made by then said in Activity', async () => {
+    const set = setUp([brief(MARA), brief(TOBIAS)]);
+    const fs = set.vault.ports.fs;
+    const create = fs.createNote;
+    fs.createNote = async (args) => {
+      const made = await create(args);
+      if (args.path.endsWith('09.30 Larkspur sync.md')) set.switchVault();
+      return made;
+    };
+    await expect(set.run({ time: '07:00:00' })).rejects.toThrow('Another vault was opened');
+
+    expect(set.briefs()).toEqual([`${FOLDER}/09.30 Larkspur sync.md`]);
+    expect(set.logOf().map((entry) => entry.kind)).toEqual(['run', 'failed']);
+    const said = set.activity.reports.map((report) => report.message);
+    expect(said.filter((message) => message.includes('Made'))).toHaveLength(1);
+  });
+
+  it('ends the run when the fresh-pull gates shut while Claude is asked, the brief made by then said', async () => {
+    let shut = () => {};
+    // The second answer arrives once the gates have shut: nothing more is written.
+    async function* heldAnswer(): AsyncIterable<ModelEvent> {
+      shut();
+      yield* brief(TOBIAS);
+    }
+    const set = setUp([brief(MARA), heldAnswer]);
+    shut = set.shutGates;
+    await expect(set.run({ time: '07:00:00' })).rejects.toThrow('Held until this Mac has pulled');
+
+    expect(set.briefs()).toEqual([`${FOLDER}/09.30 Larkspur sync.md`]);
+    expect(set.logOf().map((entry) => entry.kind)).toEqual(['run']);
+    const said = set.activity.reports.map((report) => report.message);
+    expect(said.filter((message) => message.includes('Made'))).toHaveLength(1);
+  });
+
+  it('briefs an event note the index still lists but the disk no longer has, keyed by its path', async () => {
+    const set = setUp([brief(MARA), brief(TOBIAS)]);
+    // The index lags a delete: the Larkspur sync is listed, its file is gone, so no event id is read.
+    set.vault.files.delete(SYNC);
+    await set.run({ time: '07:00:00' });
+
+    expect(set.vault.files.get(`${FOLDER}/09.30 Larkspur sync.md`)).toContain(
+      `"atlas_period_item":"${SYNC}"`,
+    );
+  });
+
+  it('still briefs the other meetings when reading what one is handed fails', async () => {
+    const set = setUp([brief(MARA), brief(TOBIAS)]);
+    const fs = set.vault.ports.fs;
+    const read = fs.readTextFile;
+    // Not a page that is gone (that is said in the data): a read that fails outright.
+    fs.readTextFile = async (path) => {
+      if (path === TOBIAS) throw new Error('the read was cut off');
+      return read(path);
+    };
+    await set.run({ time: '07:00:00' });
+
+    expect(set.briefs()).toEqual([`${FOLDER}/09.30 Larkspur sync.md`]);
+    const failed = set.logOf().filter((entry) => entry.kind === 'failed');
+    expect(failed).toEqual([
+      expect.objectContaining({ problem: expect.stringContaining('No brief for “Vendor call”') }),
+    ]);
+    expect(failed[0]).not.toHaveProperty('claude');
   });
 });

@@ -95,6 +95,7 @@ describe('compileDayEventsQuery', () => {
     note(
       'Calendar/Standup.md',
       {
+        type: 'event',
         date: '2026-10-24T09:00',
         ends: '2026-10-24T09:15',
         gcal_event_id: 'ev-1',
@@ -102,8 +103,19 @@ describe('compileDayEventsQuery', () => {
       },
       { people: 'People/Mara Quill.md', companies: null, meeting: 'Inbox/Meetings/Standup.md' },
     );
-    note('Calendar/Tomorrow.md', { date: '2026-10-25T09:00', gcal_event_id: 'ev-2' });
+    note('Calendar/Tomorrow.md', {
+      type: 'event',
+      date: '2026-10-25T09:00',
+      gcal_event_id: 'ev-2',
+    });
     note('Notes/Hand made.md', { date: '2026-10-24T10:00' });
+    // A note with an event's keys that is not of type event, as a brief could carry: no meeting.
+    note(
+      'Inbox/Briefs/2026-10-24/09.00 Standup.md',
+      { date: '2026-10-24T16:00', gcal_event_id: 'ev-phantom', gcal_response: 'accepted' },
+      { people: 'People/Mara Quill.md' },
+    );
+    note('Notes/Typed.md', { type: 'note', date: '2026-10-24T11:00', gcal_event_id: 'ev-3' });
     const rows = all(compileDayEventsQuery('2026-10-24')) as unknown as DayEventRow[];
     expect([...new Set(rows.map((row) => row.path))]).toEqual(['Calendar/Standup.md']);
     expect(dayMeetings(rows, '2026-10-24')).toEqual([

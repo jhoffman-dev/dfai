@@ -871,11 +871,12 @@ pnpm tauri:dev</pre>
         <li>At most ten meetings are briefed in one run. <b>Run now</b> briefs the rest.</li>
       </ul>
       <h3>Once a meeting, never over a note</h3>
-      <p>A meeting gets one brief a day, however often the rule runs. The brief records the day and the Google event it is for (<code>atlas_period</code>, <code>atlas_period_item</code>), so your other Mac knows it is made once sync brings it over. Running again the same day makes nothing new and doesn't ask Claude. If you delete a brief, the 07:00 run won't bring it back; <b>Run now</b> writes it again. A brief never replaces a note already there: if the name is taken, it gets the next free one.</p>
+      <p>A meeting gets one brief a day, however often the rule runs. The brief records the day and the Google event it is for (<code>atlas_period</code>, <code>atlas_period_item</code>), so your other Mac knows it is made once sync brings it over. Running again the same day makes nothing new and doesn't ask Claude. Filing a brief out of the Inbox keeps it made, wherever you put it. If you delete a brief, the 07:00 run won't bring it back; <b>Run now</b> writes it again. A brief never replaces a note already there: if the name is taken, it gets the next free one, so two meetings with the same time and title get <code>09.30 Standup.md</code> and <code>09.30 Standup 2.md</code>.</p>
+      <p>DFAI sets a brief's properties itself and ignores any Claude suggests, so a brief is never mistaken for one of the day's meetings. Only notes of type <code>event</code> are read as meetings.</p>
       <h3>Asleep at 07:00</h3>
       <p>If the Mac is asleep or DFAI is closed at 07:00, the brief is written when it next wakes that day. It never briefs yesterday's meetings: wake up the next morning before 07:00 and it waits for 07:00.</p>
-      <h3>If Claude fails on one meeting</h3>
-      <p>The other meetings still get their brief. Activity says once which meeting has none and why, and nothing half-written is left. <b>Run now</b> tries that meeting again.</p>
+      <h3>If one meeting fails</h3>
+      <p>If Claude fails on a meeting, or its brief can't be read together or saved (a full disk, say), the other meetings still get their brief. Activity says once which meeting has none and why, and nothing half-written is left. <b>Run now</b> tries that meeting again. Only opening another vault stops the run part-way; what it made by then is in Activity.</p>
       <p>The prompt is <code>.atlas/prompts/morning-brief.md</code>, yours to edit. Today and 07:00 are on your Mac's clock, the same day Today shows.</p>
       <p class="muted">Briefs are notes, so the <a href="#connect">Local API and MCP</a> read them as any other note.</p>
     </section>

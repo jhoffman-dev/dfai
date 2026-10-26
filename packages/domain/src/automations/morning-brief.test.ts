@@ -115,6 +115,13 @@ describe('briefFolder and briefNoteName', () => {
     );
     expect(briefNoteName({ start: '08:00', title: '   ' })).toBe('08.00 Meeting');
   });
+
+  it('names a brief "Meeting" when its title cleans away to nothing, never the time alone', () => {
+    expect(briefNoteName({ start: '09:30', title: '.' })).toBe('09.30 Meeting');
+    expect(briefNoteName({ start: '09:30', title: '..' })).toBe('09.30 Meeting');
+    expect(briefNoteName({ start: '09:30', title: ' / ? ' })).toBe('09.30 Meeting');
+    expect(briefNoteName({ start: '09:30', title: '.plan.' })).toBe('09.30 plan');
+  });
 });
 
 describe('meetingBriefData', () => {

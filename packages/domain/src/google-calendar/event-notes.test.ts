@@ -269,6 +269,23 @@ describe('planEventNotes: a meeting that has a note', () => {
     expect(plan({ events: [cancelled], existing: [marked] })).toEqual([]);
   });
 
+  it('never takes a note that is not of type event for the event’s note, whatever keys it carries', () => {
+    const note = madeNote();
+    // A brief that copied the event's keys: not updated, not marked gone, not a twin.
+    const brief = kept('Inbox/Briefs/2026-10-24/09.30 Standup.md', {
+      ...note.properties,
+      type: 'note',
+    });
+    const declined = event({ attendees: [{ ...self, response: 'declined' }, mara] });
+    expect(plan({ events: [declined], existing: [note, brief] })).toEqual([
+      { kind: 'update', path: note.path, properties: { gcal_response: 'declined' } },
+    ]);
+    const cancelled = event({ status: 'cancelled', start: null, end: null, attendees: [] });
+    expect(plan({ events: [cancelled], existing: [brief, note] })).toEqual([
+      { kind: 'missing', path: note.path },
+    ]);
+  });
+
   it('leaves the note as it is for a meeting whose time could not be read', () => {
     expect(plan({ events: [event({ start: null, end: null })], existing: [madeNote()] })).toEqual(
       [],

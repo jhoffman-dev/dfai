@@ -9,7 +9,10 @@
 import type { BriefParts, OpenLoops } from '../assistant/brief.ts';
 import type { DayMeeting } from '../google-calendar/todays-meetings.ts';
 import { EVENT_NOTE_KEYS } from '../google-calendar/event-notes.ts';
+import type { CompiledQuery } from '../query/view-query.ts';
+import { cleanEntryName } from '../vault/new-note.ts';
 import { noteTitle } from '../vault/vault-entry.ts';
+import { userSpaceNoteSql } from '../vault/vault-visibility.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
 import {
   Citations,
@@ -18,6 +21,7 @@ import {
   type CitedLine,
   type CitedStepData,
 } from './cited-data.ts';
+import { PERIOD_ITEM_KEY, PERIOD_RULE_KEY } from './output-period.ts';
 import type { PromptData } from './proposal-schema.ts';
 import type { LocalTime } from './schedule.ts';
 
@@ -78,10 +82,36 @@ export function briefFolder(folder: string, day: string): string {
   return `${folder.replace(/\/+$/, '')}/${day}`;
 }
 
-/** What a brief is called: when its meeting starts, then its title — `09.30 Larkspur Payroll sync`. */
+/**
+ * What a brief is called: when its meeting starts, then its title — `09.30
+ * Larkspur Payroll sync` — or `Meeting` for a title no file name can hold
+ * (`.`, `..`, `/`), which would otherwise leave the time alone.
+ */
 export function briefNoteName(meeting: Pick<DayMeeting, 'start' | 'title'>): string {
-  const title = flattened(meeting.title);
+  const title = cleanEntryName(flattened(meeting.title));
   return `${meeting.start.replace(':', '.')} ${title === '' ? 'Meeting' : title}`;
+}
+
+/**
+ * The notes anywhere in the vault stamped as `rule`'s brief for one of
+ * `items` (`atlas_period_item`): a brief filed out of its day's folder still
+ * says it was made. Column: path.
+ */
+export function compileStampedBriefsQuery({
+  rule,
+  items,
+}: {
+  rule: string;
+  items: readonly string[];
+}): CompiledQuery {
+  const marks = items.map(() => '?').join(', ');
+  return {
+    sql: `/* morning brief: stamped briefs */ SELECT DISTINCT props.path AS "path" FROM props
+ WHERE props.key = ? AND props.value_text IN (${marks}) AND ${userSpaceNoteSql('props.path')}
+   AND props.path IN (SELECT path FROM props WHERE key = ? AND value_text = ?)
+ ORDER BY props.path`,
+    parameters: [PERIOD_ITEM_KEY, ...items, PERIOD_RULE_KEY, rule],
+  };
 }
 
 /** What `brief()` said of one person or company met (P32-04), as a brief's data reads it. */
