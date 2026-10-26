@@ -506,6 +506,27 @@ describe('POST /v1/meetings: a day but no time, placed by the calendar (#582)', 
     expect(accepted(api.files.get(DAY_ONLY_PATH)?.text ?? '')).toMatchObject({ start: '09:30' });
   });
 
+  // The verification review's repro: at c287f33f this mapped; the end rule then refused it.
+  it('maps an end sent with no start against the start it works out, not refusing it', async () => {
+    const api = vault();
+    const response = await send(api, {
+      ...DAY_ONLY,
+      end: '10:00',
+      arrived: '2026-10-24T10:20-05:00',
+      timeZone: 'America/Chicago',
+      transcriptMd: [
+        '### 00:00:12',
+        'Mara Quill: Morning.',
+        '### Transcription ended after 00:11:49',
+      ].join('\n'),
+    });
+
+    expect(response.status).toBe(201);
+    const text = api.files.get(DAY_ONLY_PATH)?.text ?? '';
+    expect(accepted(text)).toMatchObject({ start: '09:48', end: '10:00' });
+    expect(frontmatterOf(text)).toMatchObject({ start_approximate: true });
+  });
+
   it('takes a `start` and `end` the sender gives, as the message says it may', async () => {
     const api = vault();
     const response = await send(api, { ...DAY_ONLY, start: '10:05', end: '10:35' });

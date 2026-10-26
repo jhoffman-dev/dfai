@@ -345,6 +345,28 @@ describe('an end before the start', () => {
   });
 });
 
+describe('an end sent with a start DFAI works out', () => {
+  // TIMED's transcript ran 00:11:49, 709 seconds.
+  const CHICAGO = { timeZone: 'America/Chicago' };
+
+  it('is never checked against the guess, and the start is the end less the length', () => {
+    // Arrival less length would be 10:08, after the end; the review's repro.
+    const fields = { ...TIMED, end: '10:00', arrived: '2026-10-24T10:20-05:00' };
+    const head = frontmatterOf(mapMeeting(fields, CHICAGO).content);
+    expect(head).toContain("start: '09:48'");
+    expect(head).toContain("end: '10:00'");
+    expect(head).toContain('start_approximate: true');
+  });
+
+  it('takes the end less the length when the arrival less the length lands after the end', () => {
+    const fields = { ...TIMED, end: '09:00', arrived: '2026-10-24T10:20-05:00' };
+    const head = frontmatterOf(mapMeeting(fields, CHICAGO).content);
+    expect(head).toContain("start: '08:48'");
+    expect(head).toContain("end: '09:00'");
+    expect(head).toContain('start_approximate: true');
+  });
+});
+
 describe('instantOnClock', () => {
   const LA = 'America/Los_Angeles';
 
