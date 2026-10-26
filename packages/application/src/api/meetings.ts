@@ -144,6 +144,9 @@ export async function receiveMeetingRoute(request: VaultRequest): Promise<RouteR
   const fields = meetingFieldsOf(body);
   const options = {
     timeZone: optionalString(body, 'timeZone') ?? request.timeZone,
+    // Event notes are on the calendar's clock (ADR-0046), which nothing stores; the Mac's is the
+    // nearest one known, and never the sender's.
+    calendarTimeZone: request.timeZone,
     groupAddresses: groupAddressesOf(body),
   };
   const receipt = await receiveMeeting({ ports: request, fields, options }).catch(refusedMeeting);
@@ -158,6 +161,8 @@ const MEETING_FIELDS = new Set([
   'sourceId',
   'title',
   'subject',
+  'start',
+  'end',
   'arrived',
   'attendees',
   'summaryMd',
@@ -189,6 +194,8 @@ function meetingFieldsOf(body: Fields): MeetingFields {
     sourceId: requiredText(body, 'sourceId'),
     title: requiredText(body, 'title'),
     stated: optionalString(body, 'subject'),
+    start: optionalString(body, 'start'),
+    end: optionalString(body, 'end'),
     arrived: optionalString(body, 'arrived'),
     attendees: attendeesOf(body),
     sections: optionalString(body, 'summaryMd'),

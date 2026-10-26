@@ -13,6 +13,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { ensureFolder } from '../vault/create-folder.ts';
+import { meetingCalendarStart } from './meeting-calendar-start.ts';
 import { holdingAt, meetingHoldersIn, type HolderPorts } from './meeting-files.ts';
 import { validateMeetingFile } from './meeting-reading.ts';
 
@@ -38,7 +39,9 @@ export class MeetingPathsTakenError extends Error {
  * written again. The index lags what was written a moment ago, so a file
  * already at either of the meeting's paths is read too: the same meeting
  * there is held; another meeting there passes it to the next path. Nothing
- * is written over, and the folders are made when missing.
+ * is written over, and the folders are made when missing. A meeting that
+ * carries no start takes its calendar event's (#582), read from the day's
+ * event notes.
  *
  * Throws a `MeetingMappingError` when the meeting cannot be mapped, or maps
  * to a file the contract refuses, and a {@link MeetingPathsTakenError} when
@@ -53,7 +56,8 @@ export async function receiveMeeting({
   fields: MeetingFields;
   options: MappingOptions;
 }): Promise<MeetingReceipt> {
-  const file = checkedMeeting(ports, mapMeeting(fields, options));
+  const calendar = await meetingCalendarStart({ index: ports.index, fields, options });
+  const file = checkedMeeting(ports, mapMeeting(fields, { ...options, calendar }));
   const held = await heldInVault(ports, file);
   if (held !== null) return { path: held, outcome: 'in-vault' };
   const month = parentVaultPath(createVaultPath(file.path));

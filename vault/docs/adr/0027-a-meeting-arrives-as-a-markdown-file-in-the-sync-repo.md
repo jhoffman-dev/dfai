@@ -170,6 +170,22 @@ differs from the issue (#8) and the text above:
   approximate); otherwise the start is the arrival less the transcript's
   length, marked approximate. With no length to take off, the meeting is
   refused rather than given the arrival, which is about when it ended.
+  (Amended 2026-10-25, #582: where DFAI maps a meeting sent to it — `POST
+/v1/meetings` — a meeting with no start of its own takes its Google
+  Calendar event's start and end before the arrival less the length is
+  tried: the one event note of its title that ended at or before the
+  arrival, within 3 hours of real time, measured on the clock the event
+  notes are written on. The day is the one the meeting states
+  (subject, `date`, or a dated `start`); with none, the arrival's and the
+  day before, so notes that arrive just after midnight find a late-evening
+  event. The file says `start_source: calendar`. An `end` before a start
+  read from the meeting or its event is refused, by the API and n8n's Code
+  nodes alike, unless it has no date and the next day's keeps the meeting to
+  12 hours (`23:30` to `00:15`). A worked-out start is the `end`, when sent,
+  less the length. The Granola pull never asks: a Granola note always
+  carries a start, and one without is refused before it is mapped. n8n's
+  Code nodes have no calendar, so a commit is refused as before; every
+  refusal now says what the sender can add.)
 - **Instants need a time zone.** A date-time with `Z` or an offset is read on
   the clock of `timeZone` (default `America/Los_Angeles`); with none it is
   refused rather than kept as a UTC clock time. A date or time without an

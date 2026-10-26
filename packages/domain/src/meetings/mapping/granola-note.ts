@@ -196,6 +196,18 @@ function attendeesOf(note: JsonRecord, event: JsonRecord | null): unknown[] {
 }
 
 /**
+ * The end as the mapper reads it: `HH:MM` on the start's day, with its date
+ * when it is a later day's (`2026-10-25T00:15`), and none when the clock
+ * shows it before the start — a fall-back hour, the instant later but the
+ * time earlier — since an end before the start is not an end.
+ */
+function endOnClock(began: WallTime, ended: WallTime): string | null {
+  const time = ended.time.slice(0, 5);
+  if (ended.day !== began.day) return `${ended.day}T${time}`;
+  return time < began.time.slice(0, 5) ? null : time;
+}
+
+/**
  * The meeting's title: the note's, else its calendar event's. With neither,
  * the mapper refuses it as `title: missing`.
  */
@@ -237,7 +249,7 @@ export function granolaNoteToFields(value: unknown, options: GranolaMappingOptio
     title: titleOf(note, event),
     date: began.day,
     start: began.time.slice(0, 5),
-    end: end === null ? null : clock(end).time.slice(0, 5),
+    end: end === null ? null : endOnClock(began, clock(end)),
     attendees: attendeesOf(note, event),
     summary: firstWithText(
       ['summary_markdown', note['summary_markdown']],

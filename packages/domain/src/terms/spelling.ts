@@ -1,11 +1,13 @@
 /**
  * Characters that take no room and mean nothing in a spelling — the
- * zero-width space, the word joiner and the byte-order mark — which text
- * copied from a chat or a web page often carries. Invisible in a box, they
- * are dropped. The zero-width joiner and non-joiner are kept: they shape
- * Persian and Indic words and join emoji into one.
+ * zero-width space, the word joiner and the byte-order mark, which text
+ * copied from a chat or a web page often carries, and the direction marks,
+ * embeddings, overrides and isolates (U+200E, U+200F, U+202A–U+202E,
+ * U+2066–U+2069) a subject in Hebrew or Arabic often carries. Invisible in
+ * a box, they are dropped. The zero-width joiner and
+ * non-joiner are kept: they shape Persian and Indic words and join emoji into one.
  */
-const NO_ROOM = /\u200B|\u2060|\uFEFF/gu;
+const NO_ROOM = /[\u200B\u2060\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
 
 /** The joiners kept within a spelling, which are still nothing on their own. */
 const ONLY_JOINERS = /^[\u200C\u200D\s]*$/u;

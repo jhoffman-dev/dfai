@@ -427,3 +427,123 @@ describe('POST /v1/meetings: the vault is switched mid-request', () => {
     expect(codeOf(response)).toBe('no_vault');
   });
 });
+
+describe('POST /v1/meetings: a day but no time, placed by the calendar (#582)', () => {
+  /** The payload from the report: Gemini states the day, no time, and no transcript is sent. */
+  const DAY_ONLY = {
+    ...SENT,
+    sourceId: '19a2b3c4d5e6f799',
+    subject: 'Notes: “Larkspur Payroll onboarding sync” Oct 24, 2026',
+    arrived: '2026-10-24T17:40:00Z',
+    transcriptMd: undefined,
+    timeZone: 'America/Los_Angeles',
+  };
+  const DAY_ONLY_PATH = 'Meetings/2026/10/2026-10-24 Larkspur Payroll onboarding sync.md';
+
+  /** An event note a meetings sync wrote (ADR-0046), ended ten minutes before the notes arrived. */
+  const EVENT_NOTE = [
+    '---',
+    'type: event',
+    "title: 'Larkspur Payroll onboarding sync'",
+    "date: '2026-10-24T10:00'",
+    "ends: '2026-10-24T10:30'",
+    "gcal_event_id: 'ev-larkspur-sync'",
+    "gcal_calendar: 'primary'",
+    "gcal_response: 'accepted'",
+    '---',
+    '',
+    'Prep notes.',
+    '',
+  ].join('\n');
+
+  it('takes the start and end of the meeting’s event, not approximate, and says where from', async () => {
+    const api = vault({ 'Calendar/2026-10-24 Larkspur Payroll onboarding sync.md': EVENT_NOTE });
+    const response = await send(api, DAY_ONLY);
+
+    expect(response.status).toBe(201);
+    expect(bodyOf(response)).toEqual({ meeting: { path: DAY_ONLY_PATH, outcome: 'written' } });
+    const text = api.files.get(DAY_ONLY_PATH)?.text ?? '';
+    expect(accepted(text)).toMatchObject({ date: '2026-10-24', start: '10:00', end: '10:30' });
+    expect(frontmatterOf(text)).toMatchObject({ start_source: 'calendar' });
+    expect(frontmatterOf(text)).not.toHaveProperty('start_approximate');
+  });
+
+  it('refuses with what to send when DFAI has no calendar events that day', async () => {
+    const api = vault();
+    const response = await send(api, DAY_ONLY);
+
+    expect(response.status).toBe(400);
+    expect(codeOf(response)).toBe('invalid');
+    expect(JSON.stringify(response.body)).toContain(
+      'and DFAI has no calendar events on 2026-10-24; send `start`, a time in the subject, or a transcript with its times, or if Google Calendar isn’t connected, connect it so DFAI can take the start from the meeting’s event',
+    );
+    expect(api.writes).toEqual([]);
+  });
+
+  // The review's case: the sender names Los Angeles, this Mac (and its event notes) keep Chicago's clock.
+  it('matches the event on the event notes’ clock, not the sender’s zone', async () => {
+    const note = (start: string, end: string, id: string) =>
+      EVENT_NOTE.replace("'2026-10-24T10:00'", `'${start}'`)
+        .replace("'2026-10-24T10:30'", `'${end}'`)
+        .replace("'ev-larkspur-sync'", `'${id}'`);
+    const api = vault({
+      'Calendar/2026-10-24 Larkspur Payroll onboarding sync.md': note(
+        '2026-10-24T06:00',
+        '2026-10-24T06:30',
+        'ev-early',
+      ),
+      'Calendar/2026-10-24 Larkspur Payroll onboarding sync 1.md': note(
+        '2026-10-24T09:30',
+        '2026-10-24T10:00',
+        'ev-late',
+      ),
+    });
+    api.timeZone = 'America/Chicago';
+    // 10:05 in Chicago, 08:05 in Los Angeles.
+    const response = await send(api, { ...DAY_ONLY, arrived: '2026-10-24T15:05:00Z' });
+
+    expect(response.status).toBe(201);
+    expect(accepted(api.files.get(DAY_ONLY_PATH)?.text ?? '')).toMatchObject({ start: '09:30' });
+  });
+
+  // The verification review's repro: at c287f33f this mapped; the end rule then refused it.
+  it('maps an end sent with no start against the start it works out, not refusing it', async () => {
+    const api = vault();
+    const response = await send(api, {
+      ...DAY_ONLY,
+      end: '10:00',
+      arrived: '2026-10-24T10:20-05:00',
+      timeZone: 'America/Chicago',
+      transcriptMd: [
+        '### 00:00:12',
+        'Mara Quill: Morning.',
+        '### Transcription ended after 00:11:49',
+      ].join('\n'),
+    });
+
+    expect(response.status).toBe(201);
+    const text = api.files.get(DAY_ONLY_PATH)?.text ?? '';
+    expect(accepted(text)).toMatchObject({ start: '09:48', end: '10:00' });
+    expect(frontmatterOf(text)).toMatchObject({ start_approximate: true });
+  });
+
+  // meeting/v1 took an undated end past midnight before #583; it still does.
+  it('takes an undated end past midnight as the next day’s, writing it as sent', async () => {
+    const api = vault();
+    const response = await send(api, { ...DAY_ONLY, start: '23:30', end: '00:15' });
+
+    expect(response.status).toBe(201);
+    const text = api.files.get(DAY_ONLY_PATH)?.text ?? '';
+    expect(accepted(text)).toMatchObject({ start: '23:30', end: '00:15' });
+  });
+
+  it('takes a `start` and `end` the sender gives, as the message says it may', async () => {
+    const api = vault();
+    const response = await send(api, { ...DAY_ONLY, start: '10:05', end: '10:35' });
+
+    expect(response.status).toBe(201);
+    const text = api.files.get(DAY_ONLY_PATH)?.text ?? '';
+    expect(accepted(text)).toMatchObject({ start: '10:05', end: '10:35' });
+    expect(frontmatterOf(text)).not.toHaveProperty('start_source');
+  });
+});

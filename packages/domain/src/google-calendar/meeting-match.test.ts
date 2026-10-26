@@ -21,6 +21,11 @@ describe('matchMeetingNote', () => {
     expect(matchMeetingNote({ ...event, title: '  payroll   SYNC ' }, [note()])).not.toBeNull();
   });
 
+  it('matches a title carrying an invisible direction mark to the same title without one', () => {
+    expect(matchMeetingNote({ ...event, title: 'Payroll sync\u200F' }, [note()])).not.toBeNull();
+    expect(matchMeetingNote(event, [note({ title: '\u2067Payroll sync\u2069' })])).not.toBeNull();
+  });
+
   it('allows a notetaker’s start to be some minutes off, and no more', () => {
     expect(matchMeetingNote(event, [note({ start: '09:50' })])).not.toBeNull();
     expect(matchMeetingNote(event, [note({ start: '09:51' })])).toBeNull();
