@@ -327,15 +327,34 @@ Two-way sync of blocks with the one calendar they go to (#30):
   - Cancelled in Google, or missing from a full listing → `gcal_missing:
 true`. The note is never deleted, and a missing block is never pushed.
     If the event comes back, the mark comes off and its times are pulled.
-- **A push is recognised as DFAI's own.** Before an insert or patch is
-  sent, the values sent are written onto the block as the agreed record,
-  and `gcal_etag` is cleared; the version is written when Google answers.
-  If the push lands but that last write fails (James saved the block in
-  between, so its modification time moved), the next sync finds Google on
-  the agreed times — DFAI's own push — and pushes his newer edit, rather
-  than read it as a Google move and roll him back. If the push never
-  lands, the block has no version, so the next sync sends it again
-  (insert, then patch on 409) instead of taking the record as agreed.
+- **A push is recognised as DFAI's own, and one that never landed is sent
+  again, never undone.** Before an insert or patch is sent, the values sent
+  are written onto the block as the agreed record with `gcal_pending: true`;
+  `gcal_etag` keeps the last version Google confirmed. When Google answers,
+  the new version is written and the mark comes off. Then:
+  - Google lists the very version the block kept: nothing changed there
+    since, so the push never landed (offline, or Stop before the send) and
+    it is sent again — in a full listing too (410, a lost token, a new
+    automations Mac), which an earlier version read as Google moving the
+    block back, and silently reverted James's move.
+  - Google lists another version, on the sent times: the push landed and
+    only its last write failed (James saved the block in between, so its
+    modification time moved). Google's times are DFAI's own push, so the
+    block is adopted, or his newer edit is pushed — never read as a Google
+    move that rolls him back.
+  - Google lists another version on other times: both sides changed, so
+    Google's time is kept and Activity says so for that block. This is also
+    what happens when the push never landed and something else (a colour, a
+    description) was changed in Google meanwhile: what was agreed before the
+    push is no longer on the block, so who moved it cannot be told, and the
+    move is said rather than taken.
+  - Not listed by an incremental listing: sent again. Missing from a full
+    one: marked missing, as any block.
+
+  A block with an id but no version (an insert that may not have landed) is
+  taken the same way: inserted again when Google does not list it, adopted
+  on the sent times, and Google's kept, and said, on other times.
+
 - **Copies keep one event with one note.** Two or more notes carrying one
   `gcal_event_id` (a Finder "… copy.md", a template, a copy into this
   week's folder) are found across every note, of any day, by a query on
@@ -343,18 +362,34 @@ true`. The note is never deleted, and a missing block is never pushed.
   it was last written for, as a private extended property (`dfai_note`,
   set on every insert and patch; a moved note's event is patched to name
   it). When the listing did not give the event, it is read with
-  `events.get` first. The original is the note the event names; else the
-  one on the event's times; else the one unchanged since it was agreed;
-  else the first by path. Every other copy is a new block: its owned keys
+  `events.get` first. The original is the note the event names; else,
+  among the notes not named like a copy, the one on the event's times; else
+  the one unchanged since it was agreed; else the first by path. Named like
+  a copy is Finder's `… copy`, `… copy 2` and the vault's next free name,
+  `… 2`; when every note is named so, all of them are asked. This is for a
+  note renamed and copied before the next sync, so no note is the one the
+  event names and both are on its times: the renamed original keeps the
+  event. Still a risk: a block whose own name ends in a number (`Sprint 12`)
+  that was renamed, beside a copy whose name does not look like one, or two
+  notes both named like copies, still fall to the rules after, and so to
+  path order. Every other copy is a new block: its owned keys
   are cleared, and one with times from the window on gets its own event;
   an older one stays off Google. A copy never patches the original's event
   and its times are never pulled into another note. Activity says "is a
   copy of another block, so it was made a block of its own".
 - **No duplicate events, even with two writers.** A new block's event id
-  is drawn from the blocks calendar's id (the same on every Mac, from the
-  vault's settings, and one per vault) and the note's path at its first
+  is drawn from the vault's own id, the blocks calendar's id (both the same
+  on every Mac, from the vault's settings) and the note's path at its first
   push: `dfai` and two 64-bit digests, in Google's base32hex alphabet
-  (`blockEventId`). It is written onto the block, with the agreed record,
+  (`blockEventId`). The digest is the block ids' own, FNV-1a over 64 bits
+  of the UTF-8 text, shared with nothing else (an earlier version leant on
+  the embeddings' passage digest, which could change for reasons of its
+  own). Its output is pinned by golden values in the tests: a change to it
+  makes two app versions draw different ids for one new block, so two
+  writers on two versions would make two events. An id once drawn is
+  written on its note and never drawn again, so a change to the derivation
+  — this one included — reaches only blocks pushed after it; every block
+  already on Google keeps the id on its note. It is written onto the block, with the agreed record,
   before the insert. Two Macs that both act as writer for one tick (git has
   not carried the first one's id) send the same id; Google answers the
   second with 409 and it patches the one event. An insert retried after a
@@ -362,6 +397,22 @@ true`. The note is never deleted, and a missing block is never pushed.
   was renamed since its first push and a new note took its old path), or
   one Google holds as deleted (409, then 410 on the patch), moves on to the
   next attempt, up to four.
+- **Two vaults on one calendar.** The vault's own id, `vault_id` in
+  `.atlas/settings.md`, is part of every new block's seed, so two vaults
+  pointed at one blocks calendar (a copy of the vault, a second one set to
+  the same calendar) draw two ids for one path and never patch each other's
+  events. It is 16 base32hex characters from the injected Rng, made once:
+  when **Sync blocks with Google Calendar** is turned on, in the same
+  settings write, or else at the first new block a vault that has none
+  pushes. It is written through the vault's one settings writer,
+  byte-preserving, and synced like every other setting; a value there that
+  is not text is refused and never overwritten, and new blocks stay off
+  Google until it is fixed. Each vault still lists the whole calendar, so
+  the other vault's events are only ever left alone (an event with no block
+  is never made a note). If two Macs each made a `vault_id` before git
+  carried either, the settings file would conflict as any setting does; the
+  switch makes it on the Mac it is turned on on, and only the automations
+  Mac makes one at sync.
 - **Ids are checked before any URL is built.** An event id must be
   base32hex, 5 to 1024 long; a calendar id must be `name@domain`. Anything
   else — `..`, a `/`, `primary` — is refused before the host is called (it
@@ -381,13 +432,27 @@ true`. The note is never deleted, and a missing block is never pushed.
   on it. DFAI now makes "DFAI blocks" with the Mac's zone. This replaces
   both the P31-01 note above ("with the Mac's zone") and the first P31-04
   rule ("the calendar's own zone").
+  - **A blocks-only grant.** A sign-in that allowed blocks but not meetings
+    (`calendar.app.created` without `calendar.events.readonly`) is refused
+    the primary calendar's zone with a 403. That refusal is not a failure:
+    the Mac's zone is the plan zone then, as it is when Google names none.
+    Allowing meetings later moves blocks onto the primary calendar's zone,
+    which is the next point.
+  - **A change of zone is said.** This Mac's record keeps the plan zone its
+    last sync read blocks on, with the sync token. When a sync's zone is
+    another (the primary calendar moved zone, meetings were allowed, the
+    Mac moved with a blocks-only grant), Activity says once: "Blocks are
+    now shown on <zone>, so their times on this Mac moved by <offset>" —
+    the new zone's offset less the old one's, then. The blocks then follow
+    Google's instants on the new zone's clock, as pulls.
 - **Listing and tokens.** The calendar is listed whole (no time range,
   `showDeleted=true`), then by `syncToken`; 410 lists it whole again. A page
   whose `nextPageToken` is anything but a string is an error, never the end
   of the listing (read as the end, every block on a later page would be
   marked missing). The token is the only thing kept per vault on this Mac
-  (`localStorage`, `atlas.block-sync:`), a cache that starts over when
-  another calendar is chosen and costs one full listing when lost. It moves
+  (`localStorage`, `atlas.block-sync:`), with the plan zone of its last
+  sync: a cache that starts over when another calendar is chosen and costs
+  one full listing when lost. It moves
   on only once every write of the run landed, so a failed run reads the
   same changes again; writing again what was written changes nothing.
   Blocks starting from two weeks ago are pushed; older ones only follow
@@ -396,12 +461,16 @@ true`. The note is never deleted, and a missing block is never pushed.
   in Activity (with the note as its subject) and the others still sync. A
   warning is said once until it changes. **Stop syncing blocks** takes
   effect at once on this Mac: `wanted()` is asked before every call to
-  Google and every write — between writing a new id and sending its insert
-  too — so nothing more is asked or written, and no record is kept.
+  Google and every write — between writing a new id and sending its insert,
+  before each read of a copy's event, and before the full listing a 410
+  asks for — so nothing more is asked or written, and no record is kept. A
+  pull stopped before its title is put back still counts as pulled: its
+  times are on the block.
 - **Writes are byte-preserving** (ADR-0003): only `start` and `end` on a
   pull, and the owned keys `gcal_event_id`, `gcal_etag`, `gcal_calendar`,
-  `gcal_missing` and `gcal_synced_title`/`_start`/`_end`, through
-  `updateFrontmatter`, with the file's modification time checked. The body
+  `gcal_missing`, `gcal_pending` and `gcal_synced_title`/`_start`/`_end`,
+  through `updateFrontmatter`, with the file's modification time checked;
+  and `vault_id` in the vault's settings, once. The body
   and every other key are never touched, and no note is deleted or
   renamed. The Block type written into new vaults lists the owned keys.
 - **Calls.** `events.list`, `events.get`, `events.insert` and
@@ -411,6 +480,18 @@ true`. The note is never deleted, and a missing block is never pushed.
   ever made: a block deleted in DFAI leaves its event. The host is
   unchanged; a Rust test now proves an insert and a patch reach Google as
   built and a 401 is renewed once.
+- **What the calendar shows of the vault.** Every insert and patch sets a
+  private extended property, `dfai_note`, to the block's vault-relative
+  path, folders and all (`Blocks/2026/Larkspur close block.md`). Private,
+  in Google's terms, means kept on this calendar's copy of the event
+  rather than shared with attendees' copies; it is not hidden from other
+  apps, and not secret. Google Calendar's own screens do not show it, but
+  anyone or anything that can read the blocks calendar through the API —
+  James's own account, a person the calendar is shared with, any app
+  holding a calendar read scope for his account — can read the folder
+  layout and note names of the blocks on it, as they can read the event
+  titles. That is James's call, made knowing this, so a copy's original can
+  be told apart.
 - **API and MCP.** No new route. A block's sync state is in its properties
   on `GET /v1/notes/{path}` and `/v1/query`, as every property is; nothing
   through the API calls Google.
@@ -421,8 +502,10 @@ true`. The note is never deleted, and a missing block is never pushed.
   calendar, with no block, is left alone rather than made into a note. A
   write Google answers with no version leaves the block without one, so
   each later sync sends it again (insert, 409, patch) until one comes with a
-  version; Google always gives one, so this is a guard, not a path. Two
-  vaults pointed at one blocks calendar would draw one id for one path;
-  each vault makes its own calendar, so they do not. Block sync and
+  version, the block staying `gcal_pending`; Google always gives one, so
+  this is a guard, not a path. A push that never landed, with something
+  else changed on its event in Google meanwhile, keeps Google's time and
+  says so (above): James's move is never lost silently, but he makes it
+  again. Block sync and
   meetings sync still run two copies of one loop in the desktop app
   (issue #585).
