@@ -232,6 +232,7 @@ const describeTrip = (seed: number, trip: Trip) =>
     : '') +
   `, tick ${trip.every} min, asleep ${trip.asleep.length}`;
 
+// Each case plays seeded weeks through the scheduler: seconds of work, past Vitest's default 5 s under load.
 describe('attack #592: the brief over random zones, trips, ticks and sleeps (seeded)', () => {
   it('briefs no calendar day twice', () => {
     const failures: string[] = [];
@@ -245,7 +246,7 @@ describe('attack #592: the brief over random zones, trips, ticks and sleeps (see
       }
     }
     expect(failures.slice(0, 5)).toEqual([]);
-  });
+  }, 60_000);
 
   it('briefs, on a kept zone, only the plan zone’s own day, at or after its 07:00', () => {
     const failures: string[] = [];
@@ -263,7 +264,7 @@ describe('attack #592: the brief over random zones, trips, ticks and sleeps (see
       }
     }
     expect(failures.slice(0, 5)).toEqual([]);
-  });
+  }, 60_000);
 
   it('skips no calendar day the Mac was awake past 07:00 on, the zone kept and settled (zone kept once)', () => {
     const failures: string[] = [];
@@ -275,7 +276,7 @@ describe('attack #592: the brief over random zones, trips, ticks and sleeps (see
       if (skipped.length > 0) failures.push(`${describeTrip(seed, trip)}: skipped ${skipped}`);
     }
     expect(failures.slice(0, 5)).toEqual([]);
-  });
+  }, 60_000);
 
   it('skips no calendar day the Mac was awake past 07:00 on, after the kept zone moved', () => {
     const failures: string[] = [];
@@ -287,5 +288,5 @@ describe('attack #592: the brief over random zones, trips, ticks and sleeps (see
       if (skipped.length > 0) failures.push(`${describeTrip(seed, trip)}: skipped ${skipped}`);
     }
     expect(failures.slice(0, 5)).toEqual([]);
-  });
+  }, 60_000);
 });
