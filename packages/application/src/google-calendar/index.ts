@@ -11,7 +11,12 @@ export {
   saveBlocksEnabled,
   saveMeetingsEnabled,
 } from './google-calendar.ts';
-export { readDayMeetings, readTodaysMeetings, DAY_MEETINGS_SCOPE } from './read-day-meetings.ts';
+export {
+  meetingsDayOf,
+  readDayMeetings,
+  readTodaysMeetings,
+  DAY_MEETINGS_SCOPE,
+} from './read-day-meetings.ts';
 export { meetingSyncActivity, meetingSyncProblem, syncMeetings } from './sync-meetings.ts';
 export type {
   CalendarFailure,

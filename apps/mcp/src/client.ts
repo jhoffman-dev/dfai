@@ -440,7 +440,7 @@ export class AtlasClient {
       query: { ...query, includeArchived: includeArchived === true ? 'true' : undefined },
     });
   dayMeetings = ({ day }: { day: string }) =>
-    this.json<{ day: string; meetings: readonly ApiDayMeeting[] }>({
+    this.json<{ day: string; timeZone: string; meetings: readonly ApiDayMeeting[] }>({
       method: 'GET',
       path: '/v1/calendar/meetings',
       query: { day },

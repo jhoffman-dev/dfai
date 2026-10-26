@@ -8,6 +8,7 @@ import {
   memoryMeetingSyncRecords,
   syncMeetings,
   type MeetingSyncRun,
+  createSettingsWriter,
 } from '@dfai/application';
 import { automationVault } from '@dfai/application/testing/sqlite';
 import type { GoogleEvent } from '@dfai/domain';
@@ -40,6 +41,7 @@ function setUp() {
     markdown: vault.ports.markdown,
     index: vault.ports.index,
     clock: { today: () => TODAY, now: () => Date.parse('2026-10-24T14:00:00Z') },
+    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
   };
   const run: MeetingSyncRun = {
     vault: '/Users/someone/Vault',

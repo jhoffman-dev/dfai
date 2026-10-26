@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createSettingsWriter } from '../settings/settings-writer.ts';
 import {
   createVaultPath,
   type EventAttendee,
@@ -90,10 +91,12 @@ function setUp({
   events = [meeting()],
   today = TODAY,
   notes = {},
+  zones = {},
 }: {
   events?: GoogleEvent[];
   today?: string;
   notes?: Record<string, string>;
+  zones?: Record<string, string | null>;
 } = {}) {
   const vault = automationVault({
     today,
@@ -102,7 +105,7 @@ function setUp({
       ...notes,
     },
   });
-  const google = fakeCalendarSource({ primary: events });
+  const google = fakeCalendarSource({ primary: events }, zones);
   const { records, kept } = memoryMeetingSyncRecords();
   let day = today;
   const ports = {
@@ -112,6 +115,7 @@ function setUp({
     markdown: vault.ports.markdown,
     index: liveIndex(vault.files, vault.ports.markdown),
     clock: { today: () => day, now: () => NOW },
+    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
   };
   const run: MeetingSyncRun = {
     vault: VAULT,
@@ -507,5 +511,56 @@ describe('meetingSyncActivity', () => {
       message:
         'Meetings from Google Calendar did not sync: Google could not be reached: offline. Check the connection and try again.',
     });
+  });
+});
+
+describe('syncMeetings: the plan zone kept in the vault’s settings (#587)', () => {
+  const SETTINGS = '.atlas/settings.md';
+  const keptZone = (vault: ReturnType<typeof setUp>['vault']) =>
+    vault.files.has(SETTINGS) ? vault.properties(SETTINGS)['google_plan_zone'] : undefined;
+
+  it('keeps the zone the event notes were written on: the primary calendar’s, not the Mac’s', async () => {
+    const { vault, sync } = setUp({ zones: { primary: 'America/Chicago' } });
+    await sync();
+    expect(vault.properties(NOTE)['date']).toBe('2026-10-24T11:00');
+    expect(keptZone(vault)).toBe('America/Chicago');
+  });
+
+  it('writes the settings once, not on every sync', async () => {
+    const { vault, sync } = setUp({ zones: { primary: 'America/Chicago' } });
+    await sync();
+    const settled = vault.files.get(SETTINGS);
+    await sync();
+    expect(vault.files.get(SETTINGS)).toBe(settled);
+  });
+
+  it('moves the kept zone when the calendar’s moves', async () => {
+    const notes = { [SETTINGS]: file({ google_plan_zone: 'America/Los_Angeles' }) };
+    const { vault, sync } = setUp({ notes, zones: { primary: 'America/New_York' } });
+    await sync();
+    expect(keptZone(vault)).toBe('America/New_York');
+  });
+
+  it('keeps nothing when no calendar names a zone: the Mac’s is never kept', async () => {
+    const { vault, sync } = setUp({ zones: { primary: null } });
+    await sync();
+    expect(keptZone(vault)).toBeUndefined();
+  });
+
+  it('keeps nothing for a sync the person stopped', async () => {
+    const { vault, sync } = setUp({ zones: { primary: 'America/Chicago' } });
+    await sync({ wanted: () => false });
+    expect(keptZone(vault)).toBeUndefined();
+  });
+
+  it('still reports the sync whole when the settings refuse the zone', async () => {
+    const broken = '---\n: [unclosed\n---\n';
+    const { vault, sync } = setUp({
+      notes: { [SETTINGS]: broken },
+      zones: { primary: 'America/Chicago' },
+    });
+    const report = await sync();
+    expect(report).toMatchObject({ created: 1, problem: null });
+    expect(vault.files.get(SETTINGS)).toBe(broken);
   });
 });

@@ -7,6 +7,7 @@
  */
 
 import type { BriefParts, OpenLoops } from '../assistant/brief.ts';
+import type { AutomationRule } from './automation-rule.ts';
 import type { DayMeeting } from '../google-calendar/todays-meetings.ts';
 import { EVENT_NOTE_KEYS } from '../google-calendar/event-notes.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
@@ -49,6 +50,16 @@ export const BRIEFS_CAPPED_REASON = `One run briefs at most ${MAX_BRIEFS_PER_RUN
 export function briefDayOf({ slot, now }: { slot: LocalTime; now: LocalTime }): string | null {
   const day = slot.slice(0, 10);
   return day === now.slice(0, 10) ? day : null;
+}
+
+/**
+ * Whether a rule keeps the calendar's clock rather than the Mac's (#587):
+ * the morning brief, whose "today" and 07:00 are the day and the hour of
+ * the event notes it reads, which are on the plan zone (ADR-0046). On a trip
+ * it still briefs the calendar's day, at 07:00 on the calendar's clock.
+ */
+export function keepsCalendarClock(rule: Pick<AutomationRule, 'action'>): boolean {
+  return rule.action.kind === 'claude' && rule.action.data === 'meeting-briefs';
 }
 
 /**

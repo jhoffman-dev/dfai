@@ -15,6 +15,7 @@ import {
 } from '@dfai/application';
 import { useSteadyCallback } from '@dfai/ui';
 import { useVaultSettingsRead } from '../settings/use-vault-settings-read.ts';
+import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 
 /** How often an open vault that reads its meetings is synced. */
 export const MEETING_SYNC_INTERVAL_MS = 15 * 60_000;
@@ -143,7 +144,14 @@ export function useMeetingSync(options: MeetingSyncOptions): MeetingSyncControll
   const sync = async (now: MeetingSyncOptions, host: MeetingSyncHost, vault: string) => {
     const stopsAtStart = stops.current;
     const report = await syncMeetings(
-      { ...host, fs: now.fs, markdown: now.markdown, index: now.index, clock: now.clock },
+      {
+        ...host,
+        fs: now.fs,
+        markdown: now.markdown,
+        index: now.index,
+        clock: now.clock,
+        settings: vaultSettingsWriter({ fs: now.fs, markdown: now.markdown }),
+      },
       {
         vault,
         timeZone: now.timeZone(),

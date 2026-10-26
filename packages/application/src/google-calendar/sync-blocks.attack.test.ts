@@ -3,6 +3,7 @@
  * only; Google is the in-memory fake. Each test names the invariant it holds.
  */
 import { describe, expect, it } from 'vitest';
+import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { createVaultPath, splitFrontmatter, type BlockEvent } from '@dfai/domain';
 import { automationVault, sqliteIndexPort } from '@dfai/application/testing/sqlite';
 import type { IndexPort } from '../index/ports.ts';
@@ -74,6 +75,7 @@ function mac(
     markdown: vault.ports.markdown,
     index: liveIndex(vault.files, vault.ports.markdown),
     clock: { today: () => TODAY, now: () => NOW },
+    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
     rng: { next: random },
   };
   const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'America/Los_Angeles' };

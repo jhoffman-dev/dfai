@@ -15,6 +15,7 @@ import {
 } from '@dfai/application';
 import { useSteadyCallback } from '@dfai/ui';
 import { useVaultSettingsRead } from '../settings/use-vault-settings-read.ts';
+import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 
 /** How often an open vault whose blocks sync is synced. */
 export const BLOCK_SYNC_INTERVAL_MS = 15 * 60_000;
@@ -138,6 +139,7 @@ export function useBlockSync(options: BlockSyncOptions): BlockSyncController {
         markdown: now.markdown,
         index: now.index,
         clock: now.clock,
+        settings: vaultSettingsWriter({ fs: now.fs, markdown: now.markdown }),
       },
       {
         vault,

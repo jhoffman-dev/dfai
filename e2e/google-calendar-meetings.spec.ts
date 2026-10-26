@@ -91,6 +91,8 @@ test('today’s meetings arrive as event notes linked to People, show on Today, 
   await expect.poll(() => host.google.eventsAsked()).toBeGreaterThan(0);
   await expectFile(vault, '.atlas/settings.md').toContain('google_meetings: true');
   await expectFile(vault, NOTE).toContain('gcal_event_id: ev-standup');
+  // The zone the notes were written on is kept for the brief, Today and meeting start (#587).
+  await expectFile(vault, '.atlas/settings.md').toContain('google_plan_zone: America/Los_Angeles');
   const note = await vault.read(NOTE);
   expect(note).toContain('date: 2026-10-24T09:00');
   expect(note).toContain('[[Mara Quill]]');

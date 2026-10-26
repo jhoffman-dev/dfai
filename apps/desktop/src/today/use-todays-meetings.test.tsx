@@ -63,12 +63,29 @@ describe('useTodaysMeetings', () => {
           index: port,
           vault: VAULT,
           day: '2026-10-24',
+          // 20:00 on the 24th in Los Angeles; already 12:00 on the 25th in Tokyo.
+          clock: { now: () => Date.parse('2026-10-25T03:00:00Z') },
           indexReady: true,
         }),
       { wrapper: queryWrapper().wrapper },
     );
     return { hook, port };
   };
+
+  it('reads the calendar’s day when the vault keeps a plan zone, as the brief does (#587)', async () => {
+    const { port } = read('google_meetings: true\ngoogle_plan_zone: Asia/Tokyo');
+    await waitFor(() => expect(port.query).toHaveBeenCalled());
+    const [, parameters] = vi.mocked(port.query).mock.calls[0]!;
+    expect(parameters).toContain('2026-10-25');
+    expect(parameters).not.toContain('2026-10-24');
+  });
+
+  it('reads the page’s own day while the vault keeps no zone', async () => {
+    const { hook, port } = read('google_meetings: true');
+    await waitFor(() => expect(hook.result.current).toHaveLength(1));
+    const [, parameters] = vi.mocked(port.query).mock.calls[0]!;
+    expect(parameters).toContain('2026-10-24');
+  });
 
   it('reads the day’s meetings for a vault that reads them', async () => {
     const { hook } = read('google_meetings: true');

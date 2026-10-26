@@ -29,6 +29,8 @@ import {
 import type { IndexPort, QueryResult } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
+import { keepPlanZone } from '../settings/plan-zone.ts';
+import type { SettingsWriter } from '../settings/settings-writer.ts';
 import { readVaultId } from '../settings/vault-id.ts';
 import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
 import { googleProblemOf } from './google-calendar.ts';
@@ -82,6 +84,8 @@ export interface BlockSyncPorts {
   readonly markdown: MarkdownPort;
   readonly index: Pick<IndexPort, 'query'>;
   readonly clock: Pick<Clock, 'today' | 'now'>;
+  /** The vault's settings, where the primary calendar's zone is kept (#587). */
+  readonly settings: SettingsWriter;
 }
 
 export interface BlockSyncRun {
@@ -612,7 +616,22 @@ const NOTHING = {
 async function planZoneFor(ports: BlockSyncPorts, run: BlockSyncRun, wanted: () => boolean) {
   if (!wanted()) return null;
   const primaryZone = await ports.calendar.primaryTimeZone({ vault: run.vault });
+  if (wanted()) await keepZone(ports, primaryZone);
   return blockPlanZone({ primaryZone, timeZone: run.timeZone });
+}
+
+/**
+ * Keeps the primary calendar's zone (#587) where the vault reads no
+ * meetings: where it does, the meetings sync keeps the zone its notes are
+ * on. A write the settings refuse stops nothing: the zone is learned again
+ * on the next sync, and until then readers keep the one kept before.
+ */
+async function keepZone(ports: BlockSyncPorts, learned: string | null): Promise<void> {
+  try {
+    await keepPlanZone({ ...ports, learned, from: 'blocks' });
+  } catch {
+    // Safe to ignore: see above.
+  }
 }
 
 /**

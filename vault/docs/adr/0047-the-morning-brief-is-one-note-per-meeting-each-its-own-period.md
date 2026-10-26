@@ -97,11 +97,23 @@ as it is logged, so one made before a run is cut off is still said. At most
 ten meetings are briefed in one run (one ask each); the rest are logged as
 left, in an entry of their own, for Run now.
 
-**The clock.** "Today" and 07:00 are the Mac's wall clock, the clock the
-scheduler and the Today page already use. ADR-0046 writes event times on the
-primary calendar's zone, which is the Mac's except on a trip; the zone it
-used is not stored anywhere, so the brief cannot read it. Storing it is left
-open (below).
+**The clock.** "Today" and 07:00 are the **plan zone's** wall clock: the
+zone the vault's settings keep (`google_plan_zone`, ADR-0046's #587
+amendment), which event notes are written on. James decided this on
+2026-10-26: when he travels, the brief's day and its 07:00 slot follow the
+primary calendar's zone, not the Mac's clock. Only this rule keeps it
+(`keepsCalendarClock`); every other rule, and the Mac's own Today, keep the
+Mac's. The scheduler counts the brief on that clock (`ruleClockOf`), and its
+runs (`clockForRule`) log on it, so the brief's slot, its day
+(`briefDayOf`) and its log entries are all on one clock and the catch-up
+rule reads as before. The key is the slot's day on that clock, the same on
+both Macs wherever they are, so a Mac far ahead or behind briefs each
+calendar day once, at 07:00 there, and never skips one; the scheduler was
+played out across zones a day apart and across both clock changes to show
+it. When a zone is first kept mid-trip, a day the Mac's clock already
+briefed is found recorded and not briefed again. While no zone is kept, it
+is the Mac's clock, as before. The Automations page and `GET
+/v1/automations` show the brief's next run, and its log, on that clock.
 
 ## Consequences
 
@@ -115,5 +127,8 @@ open (below).
 
 ## Still open
 
-- Storing the zone a meetings sync used, so a Mac abroad briefs on the
-  calendar's day rather than its own.
+- A rule's first mark, written when it is created, is on the Mac's clock:
+  a brief created just after 07:00 calendar time, on a Mac whose own
+  07:00 is still to come, briefs that day's meetings at once rather than
+  from the next day. That is what the Mac's clock would have done anyway,
+  and it is gone after the first run.

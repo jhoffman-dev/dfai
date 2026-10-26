@@ -5,7 +5,13 @@ import {
   PROPOSAL_SCHEMAS,
   type VaultPath,
 } from '@dfai/domain';
-import type { ActivityLog, AutomationPorts, Clock, RuleQueryPorts } from '@dfai/application';
+import {
+  planNowOf,
+  type ActivityLog,
+  type AutomationPorts,
+  type Clock,
+  type RuleQueryPorts,
+} from '@dfai/application';
 import { AutomationEditor, AutomationsPage, QueryComposer, type PageHistory } from '@dfai/ui';
 import { automationRows, logViews } from './automation-rows.ts';
 import { useAutomationEditor } from './use-automation-editor.ts';
@@ -39,11 +45,12 @@ export function AutomationsScreen({
   history?: PageHistory;
 }) {
   const editor = useAutomationEditor({ automations, ports, clock, indexKey, activity });
-  const { listing, watchingSince, pauses } = automations;
+  const { listing, watchingSince, pauses, planZone } = automations;
+  const planNow = planNowOf(clock, planZone);
   const rows =
     listing === null || watchingSince === null
       ? null
-      : automationRows(listing, { watchingSince, now: clock.localNow(), pauses });
+      : automationRows(listing, { watchingSince, now: clock.localNow(), pauses, planNow });
   const loadedOf = (id: string) =>
     listing?.automations.find((loaded) => loaded.rule.path === id) ?? null;
   const open = editor.editing?.kind === 'rule' ? loadedOf(editor.editing.rule.path) : null;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { createVaultPath, type EventAttendee, type GoogleEvent } from '@dfai/domain';
 import { automationVault, sqliteIndexPort } from '@dfai/application/testing/sqlite';
 import type { IndexPort } from '../index/ports.ts';
@@ -99,6 +100,7 @@ function setUp({
       markdown: vault.ports.markdown,
       index: liveIndex(vault.files, vault.ports.markdown),
       clock: { today: () => TODAY, now: () => NOW },
+      settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
     };
     const run: MeetingSyncRun = {
       vault: VAULT,

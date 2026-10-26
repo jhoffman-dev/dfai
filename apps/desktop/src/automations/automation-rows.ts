@@ -8,6 +8,7 @@ import {
   logEntryHeading,
   logEntrySummary,
   nextRunOf,
+  ruleClockOf,
   noteTitle,
   type AutomationPlan,
   type DoneAction,
@@ -35,6 +36,8 @@ export interface RowClock {
   readonly watchingSince: LocalTime;
   readonly now: LocalTime;
   readonly pauses: ReadonlyMap<string, RulePause>;
+  /** The plan zone's wall clock now, which the morning brief is counted on; null when none is kept (#587). */
+  readonly planNow?: LocalTime | null;
 }
 
 /** Every rule as its row: broken ones too, with why. */
@@ -56,7 +59,7 @@ export function automationRows(listing: AutomationListing, clock: RowClock): Aut
 }
 
 function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow {
-  const { watchingSince, now } = clock;
+  const { watchingSince, now } = ruleClockOf({ rule, ...clock, planNow: clock.planNow ?? null });
   const last = lastRunOf(log);
   const pause = clock.pauses.get(rule.id);
   const next = pause?.retryAt === null ? null : nextRunOf({ rule, log, watchingSince, now });

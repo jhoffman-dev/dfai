@@ -209,6 +209,7 @@ import { useExport } from './export/use-export.ts';
 import { ExportSlot } from './export/export-slot.tsx';
 import { paletteExportCommands, runPaletteExportCommand } from './export/palette-export.ts';
 import { vaultSettingsWriter } from './settings/vault-settings-writer.ts';
+import { usePlanZone } from './google-calendar/use-plan-zone.ts';
 import { useLocalApi, type LocalApiPorts } from './api/use-local-api.ts';
 import { useApiHost } from './api/use-api-host.ts';
 import { createAutomationRelay } from './api/automation-relay.ts';
@@ -768,6 +769,8 @@ function AppWindow({
   // Only the Mac that runs the vault's automations writes its meeting notes (U-29), so two never write one note.
   // Asked only for a vault that reads its meetings, so opening one that does not draws nothing for it.
   const meetingsOn = useMeetingsOn({ fs: vault.fs, markdown: notes.markdown, vaultKey });
+  // The clock the vault's event notes are on, which the morning brief keeps (#587).
+  const planZone = usePlanZone({ fs: vault.fs, markdown: notes.markdown, vaultKey });
   const meetingsWrittenHere = useAutomationsHere(syncStore, meetingsOn ? vaultKey : null);
   const meetingSync = useMeetingSync({
     meetings: meetingsWrittenHere ? (meetingPorts ?? null) : null,
@@ -2213,6 +2216,7 @@ function AppWindow({
           relay={apiAutomations}
           ports={automationPorts}
           clock={localClock}
+          planZone={planZone}
           vaultKey={vaultKey}
           indexReady={indexReady}
           activity={activityLog}

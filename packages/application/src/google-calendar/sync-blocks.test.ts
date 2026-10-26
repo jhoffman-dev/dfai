@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { blockEventId, createVaultPath } from '@dfai/domain';
 import { automationVault, sqliteIndexPort } from '@dfai/application/testing/sqlite';
 import type { IndexPort } from '../index/ports.ts';
@@ -89,6 +90,7 @@ function setUp(
       },
     },
     clock: { today: () => TODAY, now: () => NOW },
+    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
   };
   const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'Europe/London' };
   const props = (path = BLOCK) =>
@@ -768,7 +770,13 @@ describe('syncBlocks: the vault’s own id, a seed of every new block’s event 
     // An id only this Mac had would make another writer draw another id for the same note.
     const { vault, google, sync } = setUp(
       { [BLOCK]: blockFile() },
-      { settings: file({ google_blocks: true }, '# Settings\n\nWords James wrote.\n') },
+      {
+        // The zone kept already: the sync has nothing to write into the settings (#587).
+        settings: file(
+          { google_blocks: true, google_plan_zone: 'America/Los_Angeles' },
+          '# Settings\n\nWords James wrote.\n',
+        ),
+      },
     );
     const before = vault.files.get(SETTINGS);
     await sync();
@@ -781,6 +789,8 @@ describe('syncBlocks: the vault’s own id, a seed of every new block’s event 
 
   it('a vault with no settings file draws from the calendar alone, and no file is made', async () => {
     const { vault, google, sync } = setUp({ [BLOCK]: blockFile() }, { settings: null });
+    // No zone to keep either (#587), so nothing else makes the file.
+    google.state.primaryZone = null;
     await sync();
     expect(vault.files.has(SETTINGS)).toBe(false);
     expect(google.state.writes[0]?.call.eventId).toBe(
@@ -832,18 +842,57 @@ describe('syncBlocks: the vault’s own id, a seed of every new block’s event 
       ['patch', old],
     ]);
     expect(props()['gcal_event_id']).toBe(old);
-    // Nothing new to draw an id for, so the settings are not written.
-    expect(vault.files.has(SETTINGS)).toBe(false);
+    // Nothing new to draw an id for, so no id is written; only the zone is kept (#587).
+    expect(settingsProps(vault)).toEqual({ google_plan_zone: 'America/Los_Angeles' });
   });
 
   it('a vault id that is not text is never overwritten: the new block is not pushed, and says why', async () => {
     const { vault, google, sync } = setUp(undefined, { settings: file({ vault_id: 42 }) });
-    const before = vault.files.get(SETTINGS);
     const report = await sync();
     expect(google.state.writes).toEqual([]);
-    expect(vault.files.get(SETTINGS)).toBe(before);
+    expect(settingsProps(vault)['vault_id']).toBe(42);
     expect(report.failed.map((failure) => failure.path)).toEqual([BLOCK]);
     expect(report.failed[0]?.problem.problem).toContain('vault_id');
+  });
+});
+
+describe('syncBlocks: the plan zone kept in the vault’s settings (#587)', () => {
+  const settingsProps = (vault: ReturnType<typeof setUp>['vault']) =>
+    JSON.parse(vault.files.get(SETTINGS)?.split('\n')[1] ?? '{}') as Record<string, unknown>;
+
+  it('keeps the primary calendar’s zone, not the Mac’s, where the vault reads no meetings', async () => {
+    const { vault, sync } = setUp();
+    await sync();
+    expect(settingsProps(vault)).toMatchObject({ google_plan_zone: 'America/Los_Angeles' });
+  });
+
+  it('writes the settings once, not on every sync', async () => {
+    const { vault, sync } = setUp();
+    await sync();
+    const kept = vault.files.get(SETTINGS);
+    await sync();
+    expect(vault.files.get(SETTINGS)).toBe(kept);
+  });
+
+  it('leaves the zone to the meetings sync in a vault that reads meetings', async () => {
+    const settings = file({ vault_id: VAULT_ID, google_meetings: true });
+    const { vault, sync } = setUp(undefined, { settings });
+    await sync();
+    expect(settingsProps(vault)).not.toHaveProperty('google_plan_zone');
+  });
+
+  it('keeps nothing when Google names no zone for the primary calendar', async () => {
+    const { vault, google, sync } = setUp();
+    google.state.primaryZone = null;
+    await sync();
+    expect(settingsProps(vault)).not.toHaveProperty('google_plan_zone');
+  });
+
+  it('still syncs when the settings refuse the zone', async () => {
+    const { vault, sync } = setUp(undefined, { settings: '---\n: [unclosed\n---\n' });
+    const report = await sync();
+    expect(report.problem).toBeNull();
+    expect(vault.files.get(SETTINGS)).toBe('---\n: [unclosed\n---\n');
   });
 });
 

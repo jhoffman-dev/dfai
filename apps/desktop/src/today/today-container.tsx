@@ -53,6 +53,7 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
     index: pages.ports.index,
     vault: pane.vault,
     day: today.page.today?.today ?? null,
+    clock: localClock,
     indexReady: pages.indexReady,
   });
   // Set while drawing, as React has a value from the last draw kept: the page

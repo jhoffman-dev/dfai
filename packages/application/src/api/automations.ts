@@ -10,6 +10,7 @@ import {
   MAX_LOG_ENTRIES,
   nextRunOf,
   noteTitle,
+  ruleClockOf,
   printSchedule,
   type AutomationAction,
   type AutomationPlan,
@@ -25,6 +26,8 @@ import {
   withPeriodNote,
   type LoadedAutomation,
 } from '../automations/index.ts';
+import { planNowOf } from '../automations/rule-clock.ts';
+import { readPlanZone } from '../settings/plan-zone.ts';
 import { AtlasQueryError } from '../query/run-atlas-query.ts';
 import { loadObjectTypes } from '../types/load-types.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
@@ -60,8 +63,11 @@ const ECHOED_ID_LENGTH = 80;
 /** Every rule in the vault, as the Automations page lists it; broken ones apart, with why. */
 export async function automationsRoute(request: VaultRequest): Promise<RouteResult> {
   const listing = await listingOf(request);
-  const now = request.clock.localNow();
-  const automations = listing.automations.map((loaded) => automationOf(loaded, request, now));
+  const clock = {
+    now: request.clock.localNow(),
+    planNow: planNowOf(request.clock, await readPlanZone(request)),
+  };
+  const automations = listing.automations.map((loaded) => automationOf(loaded, request, clock));
   request.assertStillOpen();
   const body: ApiAutomationList = {
     automations,
@@ -204,10 +210,16 @@ function claudeStepOf(action: Extract<AutomationAction, { kind: 'claude' }>): Ap
 function automationOf(
   { rule, log }: LoadedAutomation,
   request: VaultRequest,
-  now: string,
+  clock: { now: string; planNow: string | null },
 ): ApiAutomation {
   const pause = request.automationClock?.pauses.get(rule.id) ?? null;
-  const watchingSince = request.automationClock?.watchingSince ?? now;
+  // The morning brief is counted on the plan zone's clock, as the app's runner counts it (#587).
+  const { now, watchingSince } = ruleClockOf({
+    rule,
+    now: clock.now,
+    watchingSince: request.automationClock?.watchingSince ?? clock.now,
+    planNow: clock.planNow,
+  });
   const nextRun = pause?.retryAt === null ? null : nextRunOf({ rule, log, watchingSince, now });
   return {
     id: rule.id,

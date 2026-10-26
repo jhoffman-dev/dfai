@@ -1757,7 +1757,12 @@ export type ApiSuccessBody =
   | ApiAutomationLog
   | ApiAutomationDryRun
   | ApiTerms
-  | { readonly day: string; readonly meetings: readonly ApiDayMeeting[] }
+  | {
+      readonly day: string;
+      /** The zone `day` and each start and end are on: the plan zone the vault keeps, else the Mac's (#587). */
+      readonly timeZone: string;
+      readonly meetings: readonly ApiDayMeeting[];
+    }
   | { readonly items: readonly ApiInboxItem[]; readonly truncated: boolean }
   | {
       readonly meetings: readonly ApiMeeting[];
@@ -2081,7 +2086,7 @@ export const API_ROUTES = [
     method: 'GET',
     path: '/v1/calendar/meetings',
     summary:
-      "A day's meetings from Google Calendar, as Today lists them, from the event notes in Calendar/. Query: day.",
+      "A day's meetings from Google Calendar, as Today lists them, from the event notes in Calendar/. Query: day, on the calendar's clock (the answer's timeZone).",
   },
   {
     method: 'GET',

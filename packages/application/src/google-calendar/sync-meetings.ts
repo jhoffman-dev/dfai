@@ -6,6 +6,7 @@ import {
   isScopeRefusal,
   meetingCandidatesOf,
   meetingWindow,
+  namedPlanZone,
   planEventNotes,
   splitFrontmatter,
   wikiLinkTargetFor,
@@ -25,6 +26,8 @@ import type { IndexPort, QueryResult } from '../index/ports.ts';
 import { loadLinkDirectory } from '../meeting-links/link-directory.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
+import { keepPlanZone } from '../settings/plan-zone.ts';
+import type { SettingsWriter } from '../settings/settings-writer.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
@@ -71,6 +74,8 @@ export interface MeetingSyncPorts {
   readonly markdown: MarkdownPort;
   readonly index: Pick<IndexPort, 'query'>;
   readonly clock: Pick<Clock, 'today' | 'now'>;
+  /** The vault's settings, where the zone the calendars name is kept (#587). */
+  readonly settings: SettingsWriter;
 }
 
 export interface MeetingSyncRun {
@@ -328,6 +333,20 @@ const refusedScope = (cause: unknown) =>
   cause instanceof GoogleCalendarError && isScopeRefusal(cause.failure);
 
 /**
+ * Keeps the zone the event notes were just written on (#587), so what reads
+ * them later reads them on that clock. A write the settings refuse stops
+ * nothing: the notes are written, the zone is learned again on the next
+ * sync, and until then readers keep the zone kept before, or the Mac's.
+ */
+async function keepZone(ports: MeetingSyncPorts, learned: string | null): Promise<void> {
+  try {
+    await keepPlanZone({ ...ports, learned, from: 'meetings' });
+  } catch {
+    // Safe to ignore: see above.
+  }
+}
+
+/**
  * Brings the vault's meetings up to date from Google Calendar (ADR-0046):
  * each calendar the vault reads, by what changed since this Mac last looked,
  * or in full when it has not looked this window; then event notes made,
@@ -353,7 +372,10 @@ export async function syncMeetings(
     const listed = await listCalendars(ports, run, window);
     const planned = wanted() ? await planWrites(ports, run, window, listed) : null;
     const tally = planned === null ? NOTHING : await applyWrites(ports, { ...planned, wanted });
-    if (wanted()) ports.records.write(run.vault, { calendars: listed.following, lastSyncAt: ran });
+    if (wanted()) {
+      ports.records.write(run.vault, { calendars: listed.following, lastSyncAt: ran });
+      await keepZone(ports, namedPlanZone(listed.zones));
+    }
     const failed = listed.failed.map(({ calendarId, problem }) => ({ calendarId, problem }));
     return {
       ran,

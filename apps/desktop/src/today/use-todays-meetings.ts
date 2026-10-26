@@ -1,9 +1,17 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { parseMeetingSetting, vaultPathName, type DayMeeting, type VaultPath } from '@dfai/domain';
 import {
+  parseMeetingSetting,
+  storedPlanZone,
+  vaultPathName,
+  type DayMeeting,
+  type VaultPath,
+} from '@dfai/domain';
+import {
+  meetingsDayOf,
   readDayMeetings,
   DAY_MEETINGS_SCOPE,
+  type Clock,
   type IndexPort,
   type MarkdownPort,
   type VaultFsPort,
@@ -31,7 +39,8 @@ export function todayMeetingRow(meeting: DayMeeting): TodayMeetingRow {
 /**
  * Today's meetings for the Today page (ADR-0046), read from the event notes
  * and kept (ADR-0040) until the index has news of them. Only for a vault
- * that reads its meetings: any other is asked nothing.
+ * that reads its meetings: any other is asked nothing. The day is the
+ * calendar's, on the plan zone the vault keeps (#587), as the morning brief's is.
  */
 export function useTodaysMeetings({
   fs,
@@ -39,6 +48,7 @@ export function useTodaysMeetings({
   index,
   vault,
   day,
+  clock,
   indexReady,
 }: {
   fs: Pick<VaultFsPort, 'readNotes'>;
@@ -47,15 +57,19 @@ export function useTodaysMeetings({
   vault: string | null;
   /** Today, `YYYY-MM-DD`, as the page reads it; null until it has. */
   day: string | null;
+  /** The instant the calendar's day is read at. */
+  clock: Pick<Clock, 'now'>;
   indexReady: boolean;
 }): readonly TodayMeetingRow[] {
   const { settings } = useVaultSettingsRead({ fs, markdown, vaultKey: vault });
   const enabled = parseMeetingSetting(settings ?? {}).enabled;
+  const planZone = storedPlanZone(settings ?? {});
+  const meetingsDay = day === null ? null : meetingsDayOf({ pageDay: day, planZone, clock });
   const { data } = useQuery({
-    queryKey: scopedReadKey(vault ?? '', 'day-meetings', day),
-    queryFn: () => readDayMeetings({ index, day: day ?? '' }),
+    queryKey: scopedReadKey(vault ?? '', 'day-meetings', meetingsDay),
+    queryFn: () => readDayMeetings({ index, day: meetingsDay ?? '' }),
     meta: scopedReadMeta(DAY_MEETINGS_SCOPE),
-    enabled: vault !== null && day !== null && enabled && indexReady,
+    enabled: vault !== null && meetingsDay !== null && enabled && indexReady,
   });
   return useMemo(
     () => (data === undefined || !enabled ? NONE : data.map(todayMeetingRow)),

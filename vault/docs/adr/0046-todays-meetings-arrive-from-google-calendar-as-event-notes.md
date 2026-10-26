@@ -59,8 +59,8 @@ these properties:
   (#582, ADR-0027): `calendarStartFor` takes the one event of its title on
   its day (or, with no day stated, the arrival's and the day before) that
   ended at or before the notes arrived, within 3 hours, measured in real
-  time on the clock the notes are written on. That clock is not stored, so
-  `POST /v1/meetings` takes the Mac's.
+  time on the clock the notes are written on: the plan zone the vault
+  keeps (below, #587), else the Mac's.
 - `gcal_event_id`, `gcal_calendar`, `gcal_recurring_event_id`, and
   `gcal_response` (the person's own answer).
 
@@ -262,6 +262,43 @@ a meeting. If James ever wants blocks on a calendar he made himself, not one
 DFAI made, that is a new `GOOGLE_SCOPES_BY_USE` row
 (`calendar.events.owned`), asked for by the same incremental consent.
 
+### The plan zone is kept in the vault's settings (#587)
+
+Amended 2026-10-26. The zone event notes are written on is the **plan
+zone**: the one the primary calendar names, else the first calendar read
+that names one, else the Mac's (`planZone`). Blocks are written on the
+primary calendar's (ADR-0030, PR #580). Readers of the notes need that
+clock too, so it is kept:
+
+- **Where: the vault's settings, `google_plan_zone`**, an IANA name
+  (`America/Chicago`), written byte-preserving through the one settings
+  writer, the way PR #580's `vault_id` is. Per vault rather than per Mac,
+  because the notes are per vault: both Macs read the same notes on the
+  same clock, and the second Mac, which never calls Google for meetings,
+  has the zone as soon as git brings the settings.
+- **Who writes it: the writing Mac only.** The meetings sync and the
+  block sync both run only on the Mac that runs the vault's automations,
+  so the setting has one writer. Where the vault reads meetings, the
+  meetings sync owns it: it keeps the zone its notes were just written on.
+  A block sync keeps the primary calendar's zone only where the vault reads
+  no meetings, so two syncs that can disagree (meetings read from a team
+  calendar alone) never rewrite it in turn (`planZoneChange`).
+- **Only what Google names.** The Mac's own zone is never kept: kept, it
+  would move every reader onto the clock of wherever the Mac was. A sync
+  where no calendar named one keeps what was kept before.
+- **No churn.** The settings are read first and written only when the
+  zone changes, so a sync every 15 minutes leaves the file alone. A sync
+  that is stopped keeps nothing, and a settings note that refuses the write
+  (unreadable frontmatter) stops no sync: the zone is learned again next
+  time.
+- **Who reads it.** A meeting's start from the calendar (`POST
+/v1/meetings`, #582) measures the arrival on it. The morning brief
+  (ADR-0047) counts its day and its 07:00 on it. Today's meeting list
+  reads the plan zone's day, so Today and the brief agree; Today's tasks
+  and daily note keep the Mac's day. `GET /v1/calendar/meetings` answers
+  the `timeZone` its `day` is on. Each reader falls back to the Mac's zone
+  while none is kept, or when the settings cannot be read.
+
 ## Consequences
 
 - One more permission, read-only, on one more consent screen, and only for
@@ -280,7 +317,9 @@ DFAI made, that is a new `GOOGLE_SCOPES_BY_USE` row
 - Times on Today are the wall clock of the zone above: the `primary`
   calendar's, else the first calendar read that names one, never a team
   calendar's own zone when it differs. On a trip, Today shows them on that
-  zone (the person's home zone) until Google's calendar zone is changed.
+  zone (the person's home zone) until Google's calendar zone is changed,
+  and from #587 Today lists that zone's day's meetings, which on a long
+  trip is not always the Mac's day.
 
 ## Still open
 
