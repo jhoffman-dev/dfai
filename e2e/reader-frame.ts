@@ -11,10 +11,20 @@ import { expect } from './fixtures.ts';
 
 /** The chapter's frame on screen now, or null while the reader is between chapters. */
 export async function shownFrame(page: Page): Promise<Frame | null> {
-  // The newest is last: each chapter's frame is appended, and an older one still there is on its way out.
-  const handle = (await page.locator('iframe.epub-frame').elementHandles()).at(-1);
-  // An iframe removed since it was found has no frame any more.
-  return handle === undefined ? null : handle.contentFrame();
+  try {
+    const handles = await page.locator('iframe.epub-frame').elementHandles();
+    // Only a lone frame is the chapter on screen. During a chapter change the outgoing frame can still be
+    // attached, before or after the incoming one: its chapter is built asynchronously, and a slower one is
+    // appended late and destroyed once it resolves (book-frame.ts).
+    if (handles.length !== 1) return null;
+    // An iframe removed since it was found has no frame any more.
+    return await handles[0].contentFrame();
+  } catch (error) {
+    // On an open page these fail only when the iframe is removed while it is read ("not attached to the
+    // DOM", "unable to adopt element handle"): the reader is between chapters, which is what null says.
+    if (page.isClosed()) throw error;
+    return null;
+  }
 }
 
 /** The chapter's frame, to run a script in as a test (the book's own never run), once the reader shows one. */
