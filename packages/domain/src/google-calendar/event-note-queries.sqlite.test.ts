@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import {
+  compileBlocksToSyncQuery,
   compileDayEventsQuery,
   compileEventNotesQuery,
   compileMeetingCandidatesQuery,
@@ -118,5 +119,21 @@ describe('compileDayEventsQuery', () => {
         unanswered: false,
       },
     ]);
+  });
+});
+
+describe('compileBlocksToSyncQuery', () => {
+  it('finds blocks from the day on, and older ones only by an event id Google listed', () => {
+    const { note, all } = index();
+    note('Old block.md', { type: 'block', start: '2026-09-01T09:00', gcal_event_id: 'old' });
+    note('Older block.md', { type: 'Block', start: '2026-08-01T09:00', gcal_event_id: 'older' });
+    note('Soon block.md', { type: 'block', start: '2026-10-20T09:00' });
+    note('Calendar/Standup.md', { type: 'event', date: '2026-10-20T09:00', gcal_event_id: 'old' });
+    note('.atlas/types/block.md', { type: 'block', start: '2026-10-20T09:00' });
+    const rows = all(compileBlocksToSyncQuery({ ids: ['old'], fromDay: '2026-10-12' }));
+    expect(rows.map((row) => row['path'])).toEqual(['Old block.md', 'Soon block.md']);
+    expect(
+      all(compileBlocksToSyncQuery({ ids: [], fromDay: '2026-10-12' })).map((r) => r['path']),
+    ).toEqual(['Soon block.md']);
   });
 });

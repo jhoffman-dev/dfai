@@ -80,3 +80,23 @@ export {
   PRIMARY_CALENDAR,
 } from './meeting-setting.ts';
 export type { MeetingSetting } from './meeting-setting.ts';
+export {
+  blockOnDisk,
+  eventTimes,
+  newBlockEventId,
+  pushableFields,
+  reconcileBlocks,
+  wallClockText,
+  BLOCK_SYNC_DAYS_BEFORE,
+  BLOCK_SYNC_KEYS,
+} from './block-sync.ts';
+export type {
+  BlockAction,
+  BlockEvent,
+  BlockOnDisk,
+  BlockSyncFields,
+  ReconcileBlocksInput,
+  ReconcileBlocksPlan,
+} from './block-sync.ts';
+export { compileBlocksToSyncQuery } from './block-sync-queries.ts';
+export { blockSyncEnabled, GOOGLE_BLOCKS_KEY } from './block-sync-setting.ts';

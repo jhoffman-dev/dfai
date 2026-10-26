@@ -271,3 +271,90 @@ note said it would: `calendar.events.readonly`, asked for only once the
 person turns meetings on. The scope list became one row per use
 (`GOOGLE_SCOPES_BY_USE`). The host is unchanged apart from a timeout tests
 can shorten. ADR-0046 has the decision, and what P31-04 adds on top of it.
+
+## As built (P31-04, 2026-10-25)
+
+Two-way sync of blocks with the one calendar they go to (#30):
+
+- **The scope is `calendar.app.created`, the one connect already asks for.**
+  It reaches only calendars DFAI made, so "never write to the main calendar
+  or any other" is held by Google, not only by this code. `calendar.events`
+  cannot be narrowed to one calendar: it reaches every calendar the person
+  can write, which is the reach this ADR set out to avoid. The separate
+  allowance is the vault switch **Sync blocks with Google Calendar**
+  (`google_blocks: true`), off until the person turns it on: connecting
+  writes nothing to Google. A sign-in that lacks the scope (unticked on the
+  consent screen) is asked for it by incremental consent when the switch is
+  turned on (`allowGoogleBlocks`, `scopesWith(…, 'blocks')`). Every sync is
+  gated on `grantsUse(scopes, 'blocks')`, and a 403 for want of a scope
+  stops the run and waits until the grant changes, as meetings do. A
+  calendar the person made themselves is not reached by this scope; if
+  James wants one, it is a `calendar.events.owned` row in
+  `GOOGLE_SCOPES_BY_USE`, as ADR-0046 says.
+- **One writer.** Only the Mac that runs the vault's automations (U-29)
+  syncs blocks; any other Mac never calls Google for them. Every 15 minutes
+  while the vault is open, once its index is ready, and on **Sync blocks
+  now**. A vault without the switch, a client ID and a calendar asks the
+  host nothing.
+- **The rules are one pure function**, `reconcileBlocks(blocks, events,
+lastSync)`, in the domain. A block's event is found by `gcal_event_id`.
+  `gcal_etag` is the version Google last gave the block; `lastSync` is what
+  both sides held, by event id, when they last agreed (kept on this Mac).
+  - DFAI changed the block (it differs from `lastSync`, and Google listed no
+    newer version) → patch the event.
+  - Google gave a newer version with other times → pull its times into
+    `start` and `end`. If the block had changed too, Google's time is kept
+    and Activity says so for that block.
+  - A newer version with the block's own times (a push coming back, or a
+    change to something DFAI does not sync) → only `gcal_etag` is written,
+    so a push never comes back as a pull that rewrites the note.
+  - Titles go one way. A block's title is its note's name, which a sync
+    never renames; an event renamed in Google is put back to the block's
+    name.
+  - Cancelled in Google, or missing from a full listing → `gcal_missing:
+true`. The note is never deleted, and a missing block is never pushed.
+    If the event comes back, the mark comes off and its times are pulled.
+  - Two blocks with one event id (a copied block): the first by path is
+    followed, the other named in Activity and left alone.
+- **No duplicate events.** A new block's event id is drawn (base32hex,
+  `dfai…`, from the injected `Rng`) and written onto the block before the
+  insert. An insert retried after a failure uses the same id; Google's 409
+  for a taken id means it landed before, and the event is patched instead.
+- **Times on the calendar's own zone.** The event is written as the
+  block's wall clock with the zone Google gives the calendar (`timeZone` on
+  the listing) — `{ dateTime: "2026-10-26T09:00:00", timeZone }` — so Google
+  places it and no offset is computed here. The Mac's zone is used only
+  when Google names none. Pulled times are read on that same zone. This
+  replaces the P31-01 note above that said to push "with the Mac's zone".
+- **Listing and tokens.** The calendar is listed whole (no time range,
+  `showDeleted=true`), then by `syncToken`; 410 lists it whole again. The
+  token and `lastSync` are kept per vault on this Mac (`localStorage`,
+  `atlas.block-sync:`), and start over when another calendar is chosen.
+  The token moves on only once every write of the run landed, so a failed
+  run reads the same changes again; writing again what was written changes
+  nothing. Blocks starting from two weeks ago are pushed; older ones only
+  follow Google if their event changes.
+- **Per item.** Each block's writes are their own: one that fails is named
+  in Activity (with the note as its subject) and the others still sync. A
+  warning is said once until it changes. **Stop syncing blocks** takes
+  effect at once on this Mac: nothing more is asked of Google or written,
+  and no record is kept.
+- **Writes are byte-preserving** (ADR-0003): only `start` and `end` on a
+  pull, and the owned keys `gcal_event_id`, `gcal_etag`, `gcal_calendar`
+  and `gcal_missing`, through `updateFrontmatter`, with the file's
+  modification time checked. The body and every other key are never
+  touched. The Block type written into new vaults lists the two new keys.
+- **Calls.** `events.list`, `events.insert` and `events.patch` on the
+  blocks calendar only, built in TypeScript (`tauriBlockCalendar`) and sent
+  through the existing `google_calendar_request` passthrough. No delete is
+  ever made: a block deleted in DFAI leaves its event. The host is
+  unchanged; a Rust test now proves an insert and a patch reach Google as
+  built and a 401 is renewed once.
+- **API and MCP.** No new route. A block's sync state is in its properties
+  on `GET /v1/notes/{path}` and `/v1/query`, as every property is; nothing
+  through the API calls Google.
+- **Still open.** Writes carry no `If-Match`: the passthrough sends no
+  extra headers, so a change made in Google between this run's listing and
+  its patch is overwritten by the patch. The next listing shows the
+  result, and the window is seconds. An event made in Google on the blocks
+  calendar, with no block, is left alone rather than made into a note.

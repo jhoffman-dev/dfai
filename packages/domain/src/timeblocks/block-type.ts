@@ -16,6 +16,8 @@ export const BLOCK_KEYS = {
   tasks: 'tasks',
   gcalEventId: 'gcal_event_id',
   gcalEtag: 'gcal_etag',
+  gcalCalendar: 'gcal_calendar',
+  gcalMissing: 'gcal_missing',
 } as const;
 
 /**
@@ -51,6 +53,8 @@ export const BLOCK_TYPE_FILE: BuiltInTypeFile = {
       { ...plain(BLOCK_KEYS.tasks, 'relation', 'Tasks'), target: TASK_TYPE, many: true },
       plain(BLOCK_KEYS.gcalEventId, 'text', 'Google event'),
       plain(BLOCK_KEYS.gcalEtag, 'text', 'Google version'),
+      plain(BLOCK_KEYS.gcalCalendar, 'text', 'Google calendar'),
+      plain(BLOCK_KEYS.gcalMissing, 'checkbox', 'Deleted in Google'),
     ],
   },
   body: [

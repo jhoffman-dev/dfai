@@ -13,6 +13,7 @@ import {
   tauriHttp,
   tauriSecrets,
   tauriExportFiles,
+  tauriBlockCalendar,
   tauriCalendarSource,
   tauriGoogleCalendar,
   tauriGoogleDrive,
@@ -72,6 +73,8 @@ import { browserMacId } from './sync/browser-mac-id.ts';
 import { browserSyncPause } from './sync/browser-sync-pause.ts';
 import { browserGranolaPullRecords } from './granola/browser-granola-store.ts';
 import { browserMeetingSyncRecords } from './google-calendar/browser-meeting-sync-records.ts';
+import { browserBlockSyncRecords } from './google-calendar/browser-block-sync-records.ts';
+import type { BlockSyncHost } from './google-calendar/use-block-sync.ts';
 import type { MeetingSyncHost } from './google-calendar/use-meeting-sync.ts';
 import { browserKindleRecords } from './kindle/browser-kindle-records.ts';
 import { browserKindleVaults } from './kindle/browser-kindle-vaults.ts';
@@ -152,6 +155,15 @@ export function resolveMeetingSync(): MeetingSyncHost {
   return {
     source: tauriCalendarSource,
     records: browserMeetingSyncRecords,
+    connection: tauriGoogleCalendar,
+  };
+}
+
+/** Two-way sync of blocks with their Google calendar through the host's sign-in (#30), and where this Mac keeps each vault's record. */
+export function resolveBlockSync(): BlockSyncHost {
+  return {
+    calendar: tauriBlockCalendar,
+    records: browserBlockSyncRecords,
     connection: tauriGoogleCalendar,
   };
 }

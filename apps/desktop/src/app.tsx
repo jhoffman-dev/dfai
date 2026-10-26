@@ -273,6 +273,11 @@ import { useAsideWidth } from './aside/use-aside-width.ts';
 import type { GlobalCaptureStore } from './global-capture/browser-global-capture-store.ts';
 import { useGlobalCapture } from './global-capture/use-global-capture.ts';
 import type { SourcePorts } from './sources/source-ports.ts';
+import {
+  useBlockSync,
+  useBlockSyncOn,
+  type BlockSyncHost,
+} from './google-calendar/use-block-sync.ts';
 import { useGoogleCalendar } from './settings/use-google-calendar.ts';
 import { useGranola } from './settings/use-granola.ts';
 import { useGranolaPull } from './granola/use-granola-pull.ts';
@@ -455,6 +460,7 @@ function AppWindow({
   googleCalendar,
   granola: granolaPorts,
   meetings: meetingPorts,
+  blocks: blockPorts,
   kindle: kindlePorts,
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
@@ -484,6 +490,8 @@ function AppWindow({
   granola: { port: GranolaPort; records: GranolaPullRecords };
   /** Today's meetings from Google Calendar (ADR-0046), and this Mac's record of each vault's syncs; left out, none are read. */
   meetings?: MeetingSyncHost;
+  /** Two-way sync of blocks with their Google calendar (#30), and this Mac's record of each vault's syncs; left out, blocks are not synced. */
+  blocks?: BlockSyncHost;
   /** Kindle through the host's own Amazon session (ADR-0044), and the app's one sync; left out, Kindle is not offered. */
   kindle?: KindleHost;
   /** The shortcut that opens quick capture from any app, registered by the host (#81). */
@@ -767,6 +775,23 @@ function AppWindow({
     markdown: notes.markdown,
     index: index.index,
     clock: localClock,
+    timeZone: localTimeZone,
+    vaultKey,
+    indexReady,
+    activity: activityLog,
+    onWrote: onChanged,
+  });
+  // Blocks to and from their Google calendar (#30), written only from the Mac that runs the vault's automations (U-29).
+  // Asked only for a vault that syncs its blocks, so opening one that does not draws nothing for it.
+  const blocksOn = useBlockSyncOn({ fs: vault.fs, markdown: notes.markdown, vaultKey });
+  const blocksWrittenHere = useAutomationsHere(syncStore, blocksOn ? vaultKey : null);
+  const blockSync = useBlockSync({
+    blocks: blocksWrittenHere ? (blockPorts ?? null) : null,
+    fs: vault.fs,
+    markdown: notes.markdown,
+    index: index.index,
+    clock: localClock,
+    rng: cryptoRng,
     timeZone: localTimeZone,
     vaultKey,
     indexReady,
@@ -1676,6 +1701,8 @@ function AppWindow({
     activity: activityLog,
     meetingSync,
     meetingsWrittenHere,
+    ...(blockPorts === undefined ? {} : { blockSync }),
+    blocksWrittenHere,
   });
   const granolaSetting = useGranola({
     port: granolaPorts.port,

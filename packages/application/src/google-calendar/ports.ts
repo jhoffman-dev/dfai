@@ -1,4 +1,10 @@
-import type { GoogleCalendar, GoogleEvent, GoogleFailure } from '@dfai/domain';
+import type {
+  BlockEvent,
+  BlockSyncFields,
+  GoogleCalendar,
+  GoogleEvent,
+  GoogleFailure,
+} from '@dfai/domain';
 
 /** Whether this vault has a Google sign-in on this Mac, and what it is for. Never a token. */
 export interface GoogleConnection {
@@ -103,4 +109,66 @@ export interface MeetingSyncRecord {
 export interface MeetingSyncRecords {
   read(vault: string): MeetingSyncRecord;
   write(vault: string, record: MeetingSyncRecord): void;
+}
+
+/** What the blocks calendar listed: every event on it, or what changed since a token, or that the token expired. */
+export type BlockEventChanges =
+  | {
+      readonly kind: 'changes';
+      readonly events: readonly BlockEvent[];
+      readonly syncToken: string | null;
+      /** The zone the calendar keeps, as Google names it; null when it gave none. */
+      readonly timeZone: string | null;
+    }
+  | { readonly kind: 'expired' };
+
+/**
+ * How a write to a block's event went: it landed, with the version Google
+ * gave it; the id was taken already (an insert that landed before, so the
+ * event is patched instead); or the event is gone from the calendar.
+ */
+export type BlockEventWrite =
+  | { readonly kind: 'written'; readonly etag: string | null }
+  | { readonly kind: 'exists' }
+  | { readonly kind: 'gone' };
+
+/** What a block's event is written with: its fields, on the calendar's own zone. */
+export interface BlockEventCall {
+  readonly vault: string;
+  readonly calendarId: string;
+  readonly eventId: string;
+  readonly fields: BlockSyncFields;
+  readonly timeZone: string;
+}
+
+/**
+ * The one calendar blocks go to, through the host's sign-in (#30): its events
+ * listed, made and changed. Never deleted: a block DFAI deletes leaves its
+ * event, and no call here reaches another calendar.
+ */
+export interface BlockCalendar {
+  /** With a sync token, what changed since it; without one, every event on the calendar. */
+  listBlockEvents(args: {
+    vault: string;
+    calendarId: string;
+    syncToken: string | null;
+  }): Promise<BlockEventChanges>;
+  insertBlockEvent(call: BlockEventCall): Promise<BlockEventWrite>;
+  patchBlockEvent(call: BlockEventCall): Promise<BlockEventWrite>;
+}
+
+/** Where this Mac's block sync of one vault left off. */
+export interface BlockSyncRecord {
+  /** The calendar the token and the agreed values are for; another calendar starts again. */
+  readonly calendarId: string | null;
+  readonly syncToken: string | null;
+  /** What both sides held when they last agreed, by event id. */
+  readonly agreed: Readonly<Record<string, BlockSyncFields>>;
+  readonly lastSyncAt: number | null;
+}
+
+/** Each vault's block sync record, kept on this Mac, as meetings' are. */
+export interface BlockSyncRecords {
+  read(vault: string): BlockSyncRecord;
+  write(vault: string, record: BlockSyncRecord): void;
 }

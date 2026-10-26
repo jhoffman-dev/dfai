@@ -3,6 +3,7 @@ import type { GoogleCalendar } from '@dfai/domain';
 import { createSettingsWriter } from '../settings/index.ts';
 import { jsonMarkdown, vaultWith } from '../testing/settings-vault.ts';
 import {
+  allowGoogleBlocks,
   allowGoogleMeetings,
   blockCalendars,
   connectGoogleCalendar,
@@ -10,6 +11,7 @@ import {
   disconnectGoogleCalendar,
   googleProblemOf,
   loadGoogleCalendarSetting,
+  saveBlocksEnabled,
   saveGoogleCalendarSetting,
   saveMeetingsEnabled,
 } from './google-calendar.ts';
@@ -224,5 +226,50 @@ describe('saveMeetingsEnabled', () => {
     expect(written[SETTINGS]).toContain('"google_client_id":"kept"');
     await saveMeetingsEnabled({ settings, enabled: false });
     expect(written[SETTINGS]).not.toContain('"google_meetings":true');
+  });
+});
+
+describe('allowGoogleBlocks (#30)', () => {
+  const BLOCKS = 'https://www.googleapis.com/auth/calendar.app.created';
+  const READ_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
+
+  it('asks nothing when the sign-in already reaches DFAI’s own calendar', async () => {
+    const allowed = { connected: true, clientId: CLIENT_ID, scopes: [BLOCKS] };
+    const port = fakePort({ status: vi.fn(async () => allowed) });
+    expect(await allowGoogleBlocks({ port, vault: VAULT })).toEqual(allowed);
+    expect(port.connect).not.toHaveBeenCalled();
+  });
+
+  it('asks again for DFAI’s calendar scope on top of what was allowed, and nothing broader', async () => {
+    const port = fakePort({
+      status: vi.fn(async () => ({ connected: true, clientId: CLIENT_ID, scopes: [READ_EVENTS] })),
+    });
+    await allowGoogleBlocks({ port, vault: VAULT });
+    expect(port.connect).toHaveBeenCalledWith({
+      vault: VAULT,
+      clientId: CLIENT_ID,
+      scopes: [READ_EVENTS, BLOCKS],
+    });
+  });
+
+  it('refuses before any consent screen when the vault is not connected', async () => {
+    const port = fakePort();
+    const refusal = await allowGoogleBlocks({ port, vault: VAULT }).catch(
+      (cause: unknown) => cause,
+    );
+    expect((refusal as GoogleCalendarError).failure.kind).toBe('not_connected');
+    expect((refusal as GoogleCalendarError).message).toContain('then sync blocks');
+  });
+});
+
+describe('saveBlocksEnabled', () => {
+  it('writes the vault’s block sync switch, and takes it off rather than writing false', async () => {
+    const { fs, written } = vaultWith({ [SETTINGS]: '---\n{"google_client_id":"kept"}\n---\n' });
+    const settings = createSettingsWriter({ fs, markdown: jsonMarkdown() });
+    await saveBlocksEnabled({ settings, enabled: true });
+    expect(written[SETTINGS]).toContain('"google_blocks":true');
+    expect(written[SETTINGS]).toContain('"google_client_id":"kept"');
+    await saveBlocksEnabled({ settings, enabled: false });
+    expect(written[SETTINGS]).not.toContain('"google_blocks":true');
   });
 });

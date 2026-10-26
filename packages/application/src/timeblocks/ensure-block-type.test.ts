@@ -76,6 +76,8 @@ describe('ensureBlockType', () => {
       'tasks',
       'gcal_event_id',
       'gcal_etag',
+      'gcal_calendar',
+      'gcal_missing',
     ]);
   });
 

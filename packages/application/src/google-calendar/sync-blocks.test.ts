@@ -1,0 +1,486 @@
+import { describe, expect, it } from 'vitest';
+import { createVaultPath } from '@dfai/domain';
+import { automationVault, sqliteIndexPort } from '@dfai/application/testing/sqlite';
+import type { IndexPort } from '../index/ports.ts';
+import { toIndexedNote } from '../index/to-indexed-note.ts';
+import type { MarkdownPort } from '../notes/ports.ts';
+import { fakeBlockCalendar, memoryBlockSyncRecords } from '../testing/fake-google-calendar.ts';
+import { blockSyncActivity, blockSyncProblem } from './block-sync-activity.ts';
+import { GoogleCalendarError } from './ports.ts';
+import { syncBlocks, type BlockSyncRun } from './sync-blocks.ts';
+
+const VAULT = '/Users/someone/Vault';
+const CALENDAR = 'dfai-blocks@group.calendar.example.com';
+const TODAY = '2026-10-25';
+const NOW = Date.parse('2026-10-25T16:00:00Z');
+const BLOCK = 'Larkspur close block.md';
+
+const file = (properties: Record<string, unknown>, body = '') =>
+  `---\n${JSON.stringify(properties)}\n---\n${body}`;
+
+const blockFile = (more: Record<string, unknown> = {}, body = 'Bring the Q4 numbers.\n') =>
+  file(
+    {
+      type: 'block',
+      start: '2026-10-26T09:00',
+      end: '2026-10-26T10:00',
+      tasks: ['[[Close the books]]'],
+      owner: 'Mara Quill',
+      ...more,
+    },
+    body,
+  );
+
+/** The index as the app builds it, rebuilt from the files for every query. */
+function liveIndex(
+  files: ReadonlyMap<string, string>,
+  markdown: MarkdownPort,
+): Pick<IndexPort, 'query'> {
+  return {
+    query: async (sql, parameters) => {
+      const index = sqliteIndexPort();
+      const notePaths = [...files.keys()].map(createVaultPath);
+      await index.put(
+        [...files].map(([path, text]) =>
+          toIndexedNote({
+            file: { path, text, modified: 1, size: text.length },
+            notePaths,
+            markdown,
+          }),
+        ),
+      );
+      return index.query(sql, parameters);
+    },
+  };
+}
+
+function setUp(
+  notes: Record<string, string> = { [BLOCK]: blockFile() },
+  { extraPaths = [] }: { extraPaths?: string[] } = {},
+) {
+  const vault = automationVault({ today: TODAY, notes });
+  const google = fakeBlockCalendar();
+  const { records, kept } = memoryBlockSyncRecords();
+  let seed = 0;
+  const queries: string[] = [];
+  const live = liveIndex(vault.files, vault.ports.markdown);
+  const ports = {
+    calendar: google.calendar,
+    records,
+    fs: vault.ports.fs,
+    markdown: vault.ports.markdown,
+    index: {
+      query: async (sql: string, parameters: readonly (string | number | null)[]) => {
+        queries.push(sql);
+        const result = await live.query(sql, parameters);
+        return { ...result, rows: [...result.rows, ...extraPaths.map((path) => [path])] };
+      },
+    },
+    clock: { today: () => TODAY, now: () => NOW },
+    rng: {
+      next: () => {
+        seed = (seed + 0.137) % 1;
+        return seed;
+      },
+    },
+  };
+  const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'Europe/London' };
+  const props = (path = BLOCK) =>
+    JSON.parse(vault.files.get(path)?.split('\n')[1] ?? '{}') as Record<string, unknown>;
+  return {
+    vault,
+    google,
+    kept,
+    props,
+    queries,
+    sync: (overrides: Partial<BlockSyncRun> = {}) => syncBlocks(ports, { ...run, ...overrides }),
+  };
+}
+
+describe('syncBlocks: a new block', () => {
+  it('becomes a busy event on the blocks calendar, its id and version written on the block, nothing else touched', async () => {
+    const { vault, google, props, kept, sync } = setUp();
+    const report = await sync();
+    expect(report).toMatchObject({
+      inserted: 1,
+      pushed: 0,
+      pulled: 0,
+      missing: 0,
+      failed: [],
+      full: true,
+    });
+    const [write] = google.state.writes;
+    expect(write?.kind).toBe('insert');
+    expect(write?.call).toMatchObject({
+      calendarId: CALENDAR,
+      fields: { title: 'Larkspur close block', start: '2026-10-26T09:00', end: '2026-10-26T10:00' },
+      // The calendar's own zone, not the Mac's.
+      timeZone: 'America/Los_Angeles',
+    });
+    const id = write?.call.eventId ?? '';
+    expect(id).toMatch(/^dfai[a-v0-9]{26}$/);
+    expect(props()).toEqual({
+      type: 'block',
+      start: '2026-10-26T09:00',
+      end: '2026-10-26T10:00',
+      tasks: ['[[Close the books]]'],
+      owner: 'Mara Quill',
+      gcal_event_id: id,
+      gcal_calendar: CALENDAR,
+      gcal_etag: '"g1"',
+    });
+    expect(vault.files.get(BLOCK)?.endsWith('\nBring the Q4 numbers.\n')).toBe(true);
+    expect(kept.get(VAULT)).toMatchObject({
+      calendarId: CALENDAR,
+      syncToken: 'blocks-sync-1',
+      lastSyncAt: NOW,
+    });
+  });
+
+  it('writes the Mac’s zone only when Google names none for the calendar', async () => {
+    const { google, sync } = setUp();
+    google.state.zone = null;
+    await sync();
+    expect(google.state.writes[0]?.call.timeZone).toBe('Europe/London');
+  });
+
+  it('does not come back as a pull: the next sync, hearing its own insert, writes nothing', async () => {
+    const { vault, google, sync } = setUp();
+    await sync();
+    const after = vault.files.get(BLOCK);
+    const report = await sync();
+    expect(google.state.asked.at(-1)?.syncToken).toBe('blocks-sync-1');
+    expect(report).toMatchObject({ inserted: 0, pushed: 0, pulled: 0, missing: 0 });
+    expect(google.state.writes).toHaveLength(1);
+    expect(vault.files.get(BLOCK)).toBe(after);
+    expect(blockSyncActivity(report)).toEqual([]);
+  });
+
+  it('an insert that failed is tried again with the same id, so Google never holds two', async () => {
+    const { google, props, kept, sync } = setUp();
+    google.state.failNext.insert = new GoogleCalendarError({
+      kind: 'unreachable',
+      message: 'offline',
+    });
+    const first = await sync();
+    expect(first.failed.map((failure) => failure.path)).toEqual([BLOCK]);
+    const id = props()['gcal_event_id'];
+    expect(typeof id).toBe('string');
+    expect(props()['gcal_etag']).toBeUndefined();
+    // The token stays where it was, so the same changes are read again.
+    expect(kept.get(VAULT)?.syncToken).toBeNull();
+    await sync();
+    expect(google.state.writes.map((write) => [write.kind, write.call.eventId])).toEqual([
+      ['insert', id],
+      ['insert', id],
+    ]);
+    expect(google.state.events.size).toBe(1);
+    expect(props()['gcal_etag']).toBe('"g1"');
+  });
+
+  it('an insert that landed but whose version was not written is patched, not made twice', async () => {
+    const { google, props, sync } = setUp({
+      [BLOCK]: blockFile({ gcal_event_id: 'dfaiknown', gcal_calendar: CALENDAR }),
+    });
+    google.state.events.set('dfaiknown', {
+      id: 'dfaiknown',
+      etag: '"g0"',
+      cancelled: false,
+      title: 'Larkspur close block',
+      start: { kind: 'timed', at: Date.parse('2026-10-26T16:00:00Z') },
+      end: { kind: 'timed', at: Date.parse('2026-10-26T17:00:00Z') },
+    });
+    // A token from before the insert, so the listing does not include it.
+    google.expire();
+    const report = await sync();
+    // The full listing found it, with the block's own times: only its version is taken.
+    expect(report.inserted).toBe(0);
+    expect(props()['gcal_etag']).toBe('"g0"');
+    expect(google.state.writes).toEqual([]);
+  });
+});
+
+describe('syncBlocks: moving a block', () => {
+  it('moved in DFAI, the event is patched to match', async () => {
+    const { vault, google, props, sync } = setUp();
+    await sync();
+    const id = String(props()['gcal_event_id']);
+    vault.files.set(
+      BLOCK,
+      blockFile({ ...props(), start: '2026-10-26T13:00', end: '2026-10-26T14:30' }),
+    );
+    const report = await sync();
+    expect(report.pushed).toBe(1);
+    expect(google.state.writes.at(-1)).toMatchObject({
+      kind: 'patch',
+      call: { eventId: id, fields: { start: '2026-10-26T13:00', end: '2026-10-26T14:30' } },
+    });
+    expect(props()['gcal_etag']).toBe('"g2"');
+  });
+
+  it('moved in Google, the block’s times move on the next sync; its body and other keys stay', async () => {
+    const { vault, google, props, sync } = setUp();
+    await sync();
+    const id = String(props()['gcal_event_id']);
+    google.move(id, '2026-10-26T15:00', '2026-10-26T16:00');
+    const report = await sync();
+    expect(report).toMatchObject({ pulled: 1, conflicts: [] });
+    expect(props()).toMatchObject({
+      start: '2026-10-26T15:00',
+      end: '2026-10-26T16:00',
+      gcal_etag: '"g2"',
+      owner: 'Mara Quill',
+      tasks: ['[[Close the books]]'],
+    });
+    expect(vault.files.get(BLOCK)?.endsWith('\nBring the Q4 numbers.\n')).toBe(true);
+    expect(blockSyncActivity(report).map((line) => line.message)).toEqual([
+      'Blocks on Google Calendar: 1 block moved from Google.',
+    ]);
+    // Pulled, it is not pushed back.
+    await sync();
+    expect(google.state.writes.filter((write) => write.kind === 'patch')).toEqual([]);
+  });
+
+  it('moved on both sides: Google wins, and Activity says so about that block', async () => {
+    const { vault, google, props, sync } = setUp();
+    await sync();
+    const id = String(props()['gcal_event_id']);
+    google.move(id, '2026-10-26T15:00', '2026-10-26T16:00');
+    vault.files.set(
+      BLOCK,
+      blockFile({ ...props(), start: '2026-10-26T11:00', end: '2026-10-26T12:00' }),
+    );
+    const report = await sync();
+    expect(report.conflicts).toEqual([BLOCK]);
+    expect(props()).toMatchObject({ start: '2026-10-26T15:00', end: '2026-10-26T16:00' });
+    expect(google.state.writes.filter((write) => write.kind === 'patch')).toEqual([]);
+    const conflict = blockSyncActivity(report).find((line) => line.subject !== null);
+    expect(conflict).toEqual({
+      level: 'info',
+      kind: 'source',
+      message:
+        '“Larkspur close block” was changed in DFAI and in Google Calendar; Google’s time was kept.',
+      subject: { kind: 'note', path: BLOCK },
+    });
+  });
+});
+
+describe('syncBlocks: deleting in Google', () => {
+  it('marks the block gcal_missing and never deletes the note or pushes it again', async () => {
+    const { vault, google, props, sync } = setUp();
+    await sync();
+    google.remove(String(props()['gcal_event_id']));
+    const report = await sync();
+    expect(report.missing).toBe(1);
+    expect(vault.files.has(BLOCK)).toBe(true);
+    expect(props()['gcal_missing']).toBe(true);
+    vault.files.set(
+      BLOCK,
+      blockFile({ ...props(), start: '2026-10-26T13:00', end: '2026-10-26T14:00' }),
+    );
+    await sync();
+    expect(google.state.writes).toHaveLength(1);
+  });
+
+  it('an event restored in Google takes the mark off and brings its times back', async () => {
+    const { google, props, sync } = setUp();
+    await sync();
+    const id = String(props()['gcal_event_id']);
+    google.remove(id);
+    await sync();
+    expect(props()['gcal_missing']).toBe(true);
+    google.state.events.delete(id);
+    google.state.events.set(id, {
+      id,
+      etag: '"g9"',
+      cancelled: false,
+      title: 'Larkspur close block',
+      start: { kind: 'timed', at: Date.parse('2026-10-26T18:00:00Z') },
+      end: { kind: 'timed', at: Date.parse('2026-10-26T19:00:00Z') },
+    });
+    google.state.changed.add(id);
+    const report = await sync();
+    expect(report.pulled).toBe(1);
+    expect(props()).toMatchObject({
+      start: '2026-10-26T11:00',
+      end: '2026-10-26T12:00',
+      gcal_etag: '"g9"',
+    });
+    expect(props()).not.toHaveProperty('gcal_missing');
+  });
+
+  it('a patch of an event deleted since the listing marks the block, rather than fail', async () => {
+    const { vault, google, props, sync } = setUp();
+    await sync();
+    // A second sync hears its own insert, so the next listing holds nothing.
+    await sync();
+    const id = String(props()['gcal_event_id']);
+    vault.files.set(
+      BLOCK,
+      blockFile({ ...props(), start: '2026-10-26T13:00', end: '2026-10-26T14:00' }),
+    );
+    google.state.events.set(id, { ...google.state.events.get(id)!, cancelled: true });
+    const report = await sync();
+    expect(report).toMatchObject({ missing: 1, failed: [] });
+    expect(google.state.writes.at(-1)?.kind).toBe('patch');
+    expect(props()['gcal_missing']).toBe(true);
+  });
+});
+
+describe('syncBlocks: what goes wrong', () => {
+  it('a 410 lists the calendar in full again', async () => {
+    const { google, sync } = setUp();
+    await sync();
+    google.expire();
+    const report = await sync();
+    expect(report.full).toBe(true);
+    expect(google.state.asked.slice(-2).map((ask) => ask.syncToken)).toEqual([
+      'blocks-sync-1',
+      null,
+    ]);
+  });
+
+  it('a listing Google refuses writes nothing and keeps no record', async () => {
+    const { vault, google, kept, sync } = setUp();
+    const before = vault.files.get(BLOCK);
+    google.state.failNext.list = new GoogleCalendarError({
+      kind: 'unreachable',
+      message: 'offline',
+    });
+    const report = await sync();
+    expect(report.problem).not.toBeNull();
+    expect(report.scopeRefused).toBe(false);
+    expect(vault.files.get(BLOCK)).toBe(before);
+    expect(kept.has(VAULT)).toBe(false);
+    expect(blockSyncActivity(report)[0]?.level).toBe('warning');
+    expect(blockSyncProblem(report)).toBe(report.problem);
+  });
+
+  it('a 403 for want of a scope stops the rest and says what to do', async () => {
+    const { google, sync } = setUp({
+      [BLOCK]: blockFile(),
+      'Mara Quill prep block.md': blockFile(),
+    });
+    google.state.failNext.insert = new GoogleCalendarError({
+      kind: 'api_refused',
+      code: '403',
+      message: 'the Calendar API answered 403: insufficientPermissions',
+    });
+    const report = await sync();
+    expect(report.scopeRefused).toBe(true);
+    expect(report.failed).toHaveLength(1);
+    expect(google.state.writes).toHaveLength(1);
+    expect(blockSyncProblem(report)?.problem).toContain('may not change that calendar');
+  });
+
+  it('one block failing is reported by name, and the others still sync', async () => {
+    const { google, sync } = setUp({
+      'A block.md': blockFile(),
+      'B block.md': blockFile(),
+    });
+    google.state.failNext.insert = new GoogleCalendarError({
+      kind: 'api_refused',
+      code: '500',
+      message: 'the Calendar API answered 500',
+    });
+    const report = await sync();
+    expect(report.inserted).toBe(1);
+    expect(report.failed.map((failure) => failure.path)).toEqual(['A block.md']);
+    const lines = blockSyncActivity(report);
+    expect(lines.find((line) => line.level === 'warning')).toMatchObject({
+      subject: { kind: 'note', path: 'A block.md' },
+    });
+    expect(blockSyncProblem(report)?.problem).toContain('“A block” did not sync');
+  });
+
+  it('stopped as the listing comes back, it reads no blocks, writes nothing and keeps no record', async () => {
+    const { vault, google, kept, queries, sync } = setUp();
+    const before = vault.files.get(BLOCK);
+    const report = await sync({ wanted: () => google.state.asked.length === 0 });
+    expect(report.inserted).toBe(0);
+    expect(queries).toEqual([]);
+    expect(google.state.writes).toEqual([]);
+    expect(vault.files.get(BLOCK)).toBe(before);
+    expect(kept.has(VAULT)).toBe(false);
+  });
+
+  it('stopped part way, it makes no more events and keeps no record', async () => {
+    const { google, kept, sync } = setUp({ 'A block.md': blockFile(), 'B block.md': blockFile() });
+    const report = await sync({ wanted: () => google.state.writes.length === 0 });
+    expect(report.inserted).toBe(1);
+    expect(google.state.writes.map((write) => write.kind)).toEqual(['insert']);
+    expect(kept.has(VAULT)).toBe(false);
+  });
+
+  it('an insert retried after it landed (its version not written) patches the event, not a second one', async () => {
+    const { vault, google, props, sync } = setUp();
+    await sync();
+    await sync();
+    const withoutVersion = props();
+    delete withoutVersion['gcal_etag'];
+    vault.files.set(BLOCK, blockFile(withoutVersion));
+    const report = await sync();
+    expect(google.state.writes.map((write) => write.kind)).toEqual(['insert', 'insert', 'patch']);
+    expect(google.state.events.size).toBe(1);
+    expect(report.inserted).toBe(1);
+    expect(props()['gcal_etag']).toBe('"g2"');
+  });
+
+  it('a note the index still calls a block, but whose file no longer is one, is never written to', async () => {
+    const { vault, google, sync } = setUp(
+      { 'Standup.md': file({ type: 'event', start: '2026-10-26T09:00', end: '2026-10-26T10:00' }) },
+      { extraPaths: ['Standup.md'] },
+    );
+    const before = vault.files.get('Standup.md');
+    await sync();
+    expect(google.state.writes).toEqual([]);
+    expect(vault.files.get('Standup.md')).toBe(before);
+  });
+
+  it('a block with no end is said once as not placed, and is not pushed', async () => {
+    const { google, sync } = setUp({ [BLOCK]: blockFile({ end: '' }) });
+    const report = await sync();
+    expect(report.unplaced).toEqual([BLOCK]);
+    expect(google.state.writes).toEqual([]);
+    expect(blockSyncActivity(report).map((line) => line.message)).toEqual([
+      '“Larkspur close block” is not on Google Calendar: it needs a start and an end time, the end after the start.',
+    ]);
+  });
+
+  it('blocks more than two weeks past are history and stay off Google', async () => {
+    const { google, sync } = setUp({
+      [BLOCK]: blockFile({ start: '2026-10-01T09:00', end: '2026-10-01T10:00' }),
+    });
+    await sync();
+    expect(google.state.writes).toEqual([]);
+  });
+
+  it('a note that is not a block, whatever the index says, is never written to', async () => {
+    const { google, sync } = setUp({
+      'Standup.md': file({ type: 'event', start: '2026-10-26T09:00', end: '2026-10-26T10:00' }),
+    });
+    await sync();
+    expect(google.state.writes).toEqual([]);
+  });
+
+  it('a new calendar chosen starts again from a full listing and leaves the old calendar’s blocks alone', async () => {
+    const { google, props, sync } = setUp();
+    await sync();
+    const report = await sync({ calendarId: 'other@group.calendar.example.com' });
+    expect(google.state.asked.at(-1)).toEqual({
+      calendarId: 'other@group.calendar.example.com',
+      syncToken: null,
+    });
+    expect(report).toMatchObject({ inserted: 0, missing: 0 });
+    expect(props()['gcal_calendar']).toBe(CALENDAR);
+  });
+
+  it('says a duplicate event id on a copied block', async () => {
+    const { google, props, sync, vault } = setUp();
+    await sync();
+    vault.files.set('Mara Quill copy block.md', blockFile(props()));
+    const report = await sync();
+    expect(report.duplicates).toEqual(['Mara Quill copy block.md']);
+    expect(google.state.writes).toHaveLength(1);
+  });
+});

@@ -811,7 +811,8 @@ pnpm tauri:dev</pre>
         </table>
       </div>
       <p>The same sign-in makes Google Docs when you <a href="#export">export a note</a> — the first time, Google asks once more, for files DFAI makes in your Drive.</p>
-      <p class="muted">The <a href="#connect">Local API and MCP</a> can only see whether Google Calendar is connected, and read the <a href="#todays-meetings">meeting notes</a> already in the vault. They can't read your calendar or the sign-in.</p>
+      <p>To show your blocks as busy on that calendar, see <a href="#blocks-on-google">Blocks on Google Calendar</a>.</p>
+      <p class="muted">The <a href="#connect">Local API and MCP</a> can only see whether Google Calendar is connected, and read the <a href="#todays-meetings">meeting notes</a> and blocks already in the vault. They can't read your calendar or the sign-in.</p>
     </section>
 
     <section id="todays-meetings">
@@ -1158,7 +1159,7 @@ ORDER BY phase</pre>
       <ul>
         <li>A block is a note of the <b>Block</b> type: <b>Start</b> and <b>End</b>, each a day and a time (<code>2026-10-12T09:00</code>), and <b>Tasks</b>, the tasks it holds. Make one like any note of a type, with <b>New block</b> on the Block type's page.</li>
         <li>DFAI adds the Block type once your tasks follow <a href="#tasks">GTD</a> — when the vault opens, or as soon as you move your tasks — and says so in <a href="#activity">Activity</a>. A Block type you already have is left as it is, and it can't be deleted — its properties are yours to change.</li>
-        <li>A block also keeps the Google Calendar event it will sync with (<b>Google event</b>, <b>Google version</b>); leave them alone.</li>
+        <li>A block also keeps the Google Calendar event it syncs with (<b>Google event</b>, <b>Google version</b>, <b>Google calendar</b>, <b>Deleted in Google</b>); leave them alone. See <a href="#blocks-on-google">Blocks on Google Calendar</a>.</li>
       </ul>
       <h3>Plan the day</h3>
       <p>Open the <b>Block</b> type, add a view with <b>+</b> and choose <b>Calendar</b>: each block sits on the clock from its start to its end. In <b>Week</b>, <b>3 days</b> or <b>Day</b>, your <b>Next actions</b> stand beside the clock, the ones with no time set aside yet at the top, each with <i>1h of 2h scheduled</i> under its name.</p>
@@ -1189,6 +1190,22 @@ ORDER BY phase</pre>
         <li><b>Estimate</b> is in minutes. A vault that keeps its own text estimates can write <code>2h</code> or <code>1h30m</code>; a day or a week (<code>1d</code>) is read as no estimate, since only you know how many hours your day holds. A task with no estimate shows the time scheduled alone.</li>
         <li>Times are read as written, on the wall clock. A block from 23:45 to 00:15 is half an hour, into the next day; one across a daylight-saving change is as long as the clock says. A block without a time at both ends, or ending before it starts, gives no time to anything.</li>
       </ul>
+      <h3 id="blocks-on-google">Blocks on Google Calendar</h3>
+      <p>Your blocks can show as <b>busy</b> on your real Google Calendar, so colleagues see the time is taken. Moving a block on either side moves the other.</p>
+      <ol>
+        <li><a href="#google-calendar">Connect Google Calendar</a> and choose the calendar for blocks — press <b>Create “DFAI blocks”</b> to have DFAI make one. Blocks go only to that calendar, never to your main calendar or any other.</li>
+        <li>In Settings → <b>Google Calendar</b> → <b>Blocks</b>, press <b>Sync blocks with Google Calendar</b>. No new permission is asked for: the sign-in already lets DFAI change the calendars it made, and nothing else. (If your sign-in is missing that permission, your browser asks for it once.)</li>
+      </ol>
+      <ul>
+        <li>DFAI syncs every 15 minutes while the vault is open, and when you press <b>Sync blocks now</b>. Only the Mac that runs the vault's automations (Settings → <b>Sync</b>) talks to Google; your other Mac sees the changes when sync brings them.</li>
+        <li>A new block becomes an event named after the block, from its start to its end. A block needs a time at both ends, the end after the start; DFAI says in <a href="#activity">Activity</a> when one can't go on the calendar. Blocks that started more than two weeks ago stay off Google.</li>
+        <li>Move or rename a block in DFAI and its event follows. Move the event in Google Calendar and the block's <b>Start</b> and <b>End</b> follow. An event renamed in Google gets the block's name back at the next sync: rename the block in DFAI instead.</li>
+        <li>Moved on both sides since the last sync? Google's time is kept, and Activity says so for that block.</li>
+        <li>Delete the event in Google and the block is kept, marked <b>Deleted in Google</b> (<code>gcal_missing</code>), and no longer synced. Deleting a block in DFAI never deletes its event — delete it in Google Calendar.</li>
+        <li>DFAI only ever writes a block's times and its <code>gcal_</code> fields (<b>Google event</b>, <b>Google version</b>, <b>Google calendar</b>, <b>Deleted in Google</b>). Its body, tasks and your own fields are never touched.</li>
+        <li>A block that won't sync — Google can't be reached, say — is named in Activity, and the others still sync; the next sync tries it again. <b>Stop syncing blocks</b> takes effect at once on this Mac. Copying a block copies its <code>gcal_</code> fields too: clear them on the copy to give it an event of its own.</li>
+      </ul>
+      <p class="muted">The <a href="#connect">Local API and MCP</a> see a block's sync state among its properties. They can't call Google, and there is no way to sync through them.</p>
     </section>
 
     <section id="graph">

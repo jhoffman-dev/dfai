@@ -4,6 +4,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   GoogleCalendarSettings,
+  type GoogleBlocksView,
   type GoogleCalendarView,
   type GoogleMeetingsView,
 } from './google-calendar-settings.tsx';
@@ -271,5 +272,112 @@ describe('GoogleCalendarSettings: meetings (ADR-0046)', () => {
     renderMeetings(meetings(), { phase: 'disconnected' });
     expect(within(card()).getByRole('form', { name: 'Connect Google Calendar' })).toBeTruthy();
     expect(within(card()).queryByRole('group', { name: 'Meetings' })).toBeNull();
+  });
+});
+
+describe('GoogleCalendarSettings: blocks (#30)', () => {
+  const blocks = (overrides: Partial<GoogleBlocksView> = {}): GoogleBlocksView => ({
+    state: 'off',
+    syncing: false,
+    lastSynced: null,
+    problem: null,
+    ...overrides,
+  });
+
+  function renderBlocks(view: GoogleBlocksView | null) {
+    const actions = { onAllow: vi.fn(), onSync: vi.fn(), onStop: vi.fn() };
+    render(
+      <GoogleCalendarSettings
+        view={{
+          phase: 'connected',
+          clientId: CLIENT_ID,
+          calendars: [BLOCKS],
+          chosen: BLOCKS.id,
+          canCreate: false,
+          calendarName: 'DFAI blocks',
+          problem: null,
+          pending: false,
+          meetings: null,
+          blocks: view,
+        }}
+        onConnect={vi.fn()}
+        onCancel={vi.fn()}
+        onDisconnect={vi.fn()}
+        onChoose={vi.fn()}
+        onCreate={vi.fn()}
+        blocks={actions}
+      />,
+    );
+    return actions;
+  }
+
+  const part = () => within(card()).getByRole('group', { name: 'Blocks' });
+  const partButtons = () =>
+    within(part())
+      .getAllByRole('button')
+      .map((each) => each.textContent);
+
+  it('offers to sync blocks while it is off, and nothing else', async () => {
+    const { onAllow } = renderBlocks(blocks());
+    expect(part().textContent).toContain('Blocks are not on Google Calendar yet.');
+    expect(partButtons()).toEqual(['Sync blocks with Google Calendar']);
+    await userEvent.click(
+      within(part()).getByRole('button', { name: 'Sync blocks with Google Calendar' }),
+    );
+    expect(onAllow).toHaveBeenCalledOnce();
+  });
+
+  it('says when blocks last synced, and syncs now or stops on asking', async () => {
+    const { onSync, onStop } = renderBlocks(blocks({ state: 'on', lastSynced: '9:41 AM' }));
+    expect(part().textContent).toContain('Blocks sync every 15 minutes; last synced at 9:41 AM.');
+    expect(part().textContent).toContain('no event is ever deleted');
+    await userEvent.click(within(part()).getByRole('button', { name: 'Sync blocks now' }));
+    await userEvent.click(within(part()).getByRole('button', { name: 'Stop syncing blocks' }));
+    expect(onSync).toHaveBeenCalledOnce();
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it('does not sync twice at once, and says what stopped the last sync', () => {
+    renderBlocks(
+      blocks({
+        state: 'on',
+        syncing: true,
+        problem: {
+          problem: '“Larkspur close block” did not sync: offline',
+          fix: 'Try again later.',
+        },
+      }),
+    );
+    expect(part().textContent).toContain('Syncing your blocks…');
+    expect(within(part()).getByRole('button', { name: 'Sync blocks now' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(within(part()).getByRole('alert').textContent).toContain(
+      'did not sync: offlineTry again later.',
+    );
+  });
+
+  it('says another Mac syncs them, offering only to stop', () => {
+    renderBlocks(blocks({ state: 'elsewhere' }));
+    expect(part().textContent).toContain('synced by the Mac that runs its automations');
+    expect(partButtons()).toEqual(['Stop syncing blocks']);
+  });
+
+  it('asks for a calendar before syncing', () => {
+    renderBlocks(blocks({ state: 'nocalendar' }));
+    expect(part().textContent).toContain('Choose or make the calendar for blocks above');
+    expect(partButtons()).toEqual(['Stop syncing blocks']);
+  });
+
+  it('offers to allow it on a Mac whose sign-in may not write the calendar', () => {
+    renderBlocks(blocks({ state: 'consent' }));
+    expect(partButtons()).toEqual(['Sync blocks with Google Calendar', 'Stop syncing blocks']);
+  });
+
+  it('is not drawn where block sync is not offered', () => {
+    renderBlocks(null);
+    expect(card()).not.toBeNull();
+    expect(within(card()).queryByRole('group', { name: 'Blocks' })).toBeNull();
   });
 });
