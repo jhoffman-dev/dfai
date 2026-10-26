@@ -538,6 +538,7 @@ describe('AutomationEditor', () => {
       expect([...given.options].map((option) => option.textContent)).toEqual([
         'Only its notes',
         'The weekly review',
+        'Each of today’s meetings, briefed',
       ]);
     });
 

@@ -70,6 +70,7 @@ const DAYS: readonly { value: Weekday; label: string }[] = [
 /** What DFAI may hand a Claude step beside its notes, as the editor offers it. */
 const DATA_LABELS: Readonly<Record<ClaudeData, string>> = {
   'weekly-review': 'The weekly review',
+  'meeting-briefs': 'Each of today’s meetings, briefed',
 };
 
 const NOTE_EVENTS: readonly { value: NoteEvent; label: string }[] = [

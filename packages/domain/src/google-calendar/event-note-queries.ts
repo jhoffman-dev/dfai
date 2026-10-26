@@ -4,6 +4,7 @@ import { createVaultPath } from '../vault/vault-path.ts';
 import { userSpaceNoteSql } from '../vault/vault-visibility.ts';
 import { EVENT_NOTE_KEYS } from './event-notes.ts';
 import type { MeetingCandidate } from './meeting-match.ts';
+import { notEventNoteSql } from './not-event-notes.ts';
 
 const K = EVENT_NOTE_KEYS;
 
@@ -84,11 +85,16 @@ const LINK_KEYS = [K.people, K.companies, K.meeting] as const;
  * The event notes a meetings sync wrote that start on `day`: a row for each
  * of their times, their answer, their mark and their event id, and one for each note their
  * people, companies and meeting link, resolved. Columns: path, title, key,
- * value; a note's rows arrive together.
+ * value; a note's rows arrive together. A brief or a block that carries an
+ * event's keys is no meeting (`notEventNoteSql`); any other note's `type` is
+ * the person's, and decides nothing.
  */
 export function compileDayEventsQuery(day: string): CompiledQuery {
+  const notEvent = notEventNoteSql('path');
   const ofTheDay = `SELECT path FROM props WHERE key = ? AND substr(value_text, 1, 10) = ?
-     AND path IN (SELECT path FROM props WHERE key = ?)`;
+     AND path IN (SELECT path FROM props WHERE key = ?)
+     AND ${notEvent.sql}`;
+  const dayOf = [K.date, day, K.eventId, ...notEvent.parameters];
   return {
     sql: `/* meetings: today */ SELECT "path", "title", "key", "value" FROM (
   SELECT files.path AS "path", files.title AS "title", item.key AS "key",
@@ -101,6 +107,6 @@ export function compileDayEventsQuery(day: string): CompiledQuery {
    WHERE relations.key IN (${marks(LINK_KEYS.length)}) AND relations.dst IS NOT NULL
      AND relations.src IN (${ofTheDay}) AND ${userSpaceNoteSql('files.path')}
 ) ORDER BY "path", "key", "idx"`,
-    parameters: [...DAY_KEYS, K.date, day, K.eventId, ...LINK_KEYS, K.date, day, K.eventId],
+    parameters: [...DAY_KEYS, ...dayOf, ...LINK_KEYS, ...dayOf],
   };
 }

@@ -3,9 +3,11 @@ import {
   AFTER_A_MEETING_PROMPT,
   FRIDAY_REVIEW_PROMPT,
   MEETING_EXTRACTION_PROMPT,
+  MORNING_BRIEF_PROMPT,
 } from './built-in-prompts.ts';
 import { MEETING_DIGEST_OUTPUT } from './meeting-digest.ts';
 import { MEETING_ITEMS_OUTPUT } from './meeting-items.ts';
+import { MORNING_BRIEF_FOLDER } from './morning-brief.ts';
 
 /**
  * The automations offered ready-made (P25-03). The first is James's own
@@ -28,6 +30,11 @@ import { MEETING_ITEMS_OUTPUT } from './meeting-items.ts';
  * `Reviews/` drafted from the weekly review DFAI hands it — no query, its
  * data is what it reads — each item linking its task, project or meeting. It
  * writes one a week however often it runs (`output-period.ts`).
+ *
+ * The fifth is the morning brief (#39, ADR-0047): daily at 07:00, a pre-read
+ * for each of today's meetings with a linked person or company, one note a
+ * meeting in `Inbox/Briefs/<day>/`, each item citing a note `brief()` read.
+ * A meeting's brief is written once however often the rule runs.
  */
 export const AUTOMATION_PRESETS: readonly AutomationDraft[] = [
   {
@@ -77,6 +84,20 @@ export const AUTOMATION_PRESETS: readonly AutomationDraft[] = [
       tools: [],
       output: { kind: 'note', folder: 'Reviews' },
       data: 'weekly-review',
+    },
+  },
+  {
+    name: 'Morning brief',
+    enabled: true,
+    when: { kind: 'daily', at: '07:00' },
+    which: '',
+    olderThanDays: null,
+    action: {
+      kind: 'claude',
+      prompt: MORNING_BRIEF_PROMPT,
+      tools: [],
+      output: { kind: 'note', folder: MORNING_BRIEF_FOLDER },
+      data: 'meeting-briefs',
     },
   },
 ];

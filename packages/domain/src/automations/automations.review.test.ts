@@ -199,6 +199,7 @@ describe('the log’s entries', () => {
     ]);
   });
 
+  // Slow by design: 60 appends rewrite a log at its 256 KB cap; over 5 s on a loaded machine.
   it('keeps the log under its size in bytes, however long each entry is', () => {
     const busy = (minute: number): LogEntry => ({
       kind: 'run',
@@ -214,7 +215,7 @@ describe('the log’s entries', () => {
     }
     expect(new TextEncoder().encode(text!).length).toBeLessThanOrEqual(MAX_LOG_BYTES);
     expect(parseRunLog(text!).at(-1)?.at).toBe('2026-09-27T03:59:00');
-  });
+  }, 60_000);
 
   it('writes a first-seen mark, which the schedule counts from', () => {
     const seen: LogEntry = { kind: 'seen', at: '2026-09-27T09:00:00' };
