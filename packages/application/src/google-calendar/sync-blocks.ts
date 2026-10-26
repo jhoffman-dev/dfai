@@ -127,10 +127,15 @@ const problemOf = (cause: unknown) =>
 type Listed = Extract<BlockEventChanges, { kind: 'changes' }> & { readonly full: boolean };
 
 /** What changed since the token this Mac keeps, or every event when it has none or Google let it lapse (410). */
-async function listCalendar(ports: BlockSyncPorts, run: BlockSyncRun, token: string | null) {
+async function listCalendar(
+  ports: BlockSyncPorts,
+  run: BlockSyncRun & { readonly wanted: () => boolean },
+  token: string | null,
+) {
   const list = (syncToken: string | null) =>
     ports.calendar.listBlockEvents({ vault: run.vault, calendarId: run.calendarId, syncToken });
   const first = await list(token);
+  if (first.kind === 'expired' && !run.wanted()) throw new SyncStopped();
   const answer = first.kind === 'expired' ? await list(null) : first;
   if (answer.kind === 'expired') throw new Error('Google asked for a full listing of blocks again');
   return { ...answer, full: token === null || first.kind === 'expired' } satisfies Listed;
@@ -214,7 +219,7 @@ async function readBlocks(ports: BlockSyncPorts, events: readonly BlockEvent[], 
  */
 async function eventsOfCopies(
   ports: BlockSyncPorts,
-  run: BlockSyncRun,
+  run: BlockSyncRun & { readonly wanted: () => boolean },
   { blocks, events }: { blocks: readonly BlockOnDisk[]; events: readonly BlockEvent[] },
 ): Promise<BlockEvent[]> {
   const listed = new Set(events.map((event) => event.id));
@@ -227,6 +232,7 @@ async function eventsOfCopies(
   }
   const fetched: BlockEvent[] = [];
   for (const eventId of shared) {
+    if (!run.wanted()) throw new SyncStopped();
     const event = await ports.calendar.getBlockEvent({
       vault: run.vault,
       calendarId: run.calendarId,
@@ -452,6 +458,8 @@ async function pull(applying: Applying, action: Extract<BlockAction, { kind: 'pu
   });
   const retitled = action.retitle ? pushableFields(fields) : null;
   if (retitled === null) return;
+  // Its times are on the block now: stopped before the title goes back, it still counts as pulled.
+  if (!applying.wanted()) throw new SyncStopped('pulled');
   const written = await writeEvent(applying, {
     eventId: action.eventId,
     fields: retitled,
@@ -634,11 +642,15 @@ export async function syncBlocks(
     if (fromDay === null) throw new Error(`today (${ports.clock.today()}) is not a day`);
     const kept = ports.records.read(run.vault);
     const same = kept.calendarId === run.calendarId;
-    const listed = await listCalendar(ports, run, same ? kept.syncToken : null);
+    const listed = await listCalendar(ports, { ...run, wanted }, same ? kept.syncToken : null);
     const timeZone = await planZoneFor(ports, run, wanted);
     if (timeZone === null || !wanted()) return stopped;
     const { blocks, files } = await readBlocks(ports, listed.events, fromDay);
-    const fetched = await eventsOfCopies(ports, run, { blocks, events: listed.events });
+    const fetched = await eventsOfCopies(
+      ports,
+      { ...run, wanted },
+      { blocks, events: listed.events },
+    );
     const plan = reconcileBlocks({
       blocks,
       events: [...listed.events, ...fetched],
@@ -682,6 +694,8 @@ export async function syncBlocks(
       problem: null,
     };
   } catch (cause) {
+    // Stopped before any action ran: nothing was written, and no record is kept.
+    if (cause instanceof SyncStopped) return stopped;
     return { ran, ...NOTHING, problem: problemOf(cause), scopeRefused: refusedScope(cause) };
   }
 }
