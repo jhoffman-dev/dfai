@@ -198,6 +198,30 @@ describe('when the meeting was', () => {
     expect(turnsOf(note).map((each) => each['time'])).toEqual(['01:45:10', '01:05:00']);
   });
 
+  it('sends an end past midnight with its date, so the mapper keeps it after the start', () => {
+    // 23:30–00:15 in Los Angeles, the night of 2026-10-24.
+    const note = {
+      ...NOTE,
+      calendar_event: calendar('2026-10-25T06:30:00Z', '2026-10-25T07:15:00Z'),
+    };
+    expect(fieldsOf(note)).toMatchObject({
+      date: '2026-10-24',
+      start: '23:30',
+      end: '2026-10-25T00:15',
+    });
+    expect(fileOf(note)).toContain("end: '00:15'");
+  });
+
+  it('has no end when the fall-back hour shows it before the start, though it came later', () => {
+    // 01:50 PDT to 01:10 PST: twenty minutes, but the clock reads backwards.
+    const note = {
+      ...NOTE,
+      calendar_event: calendar('2026-11-01T08:50:00Z', '2026-11-01T09:10:00Z'),
+    };
+    expect(fieldsOf(note)).toMatchObject({ date: '2026-11-01', start: '01:50', end: null });
+    expect(fileOf(note)).toContain("start: '01:50'");
+  });
+
   it('maps a meeting across the spring-forward hour to the clock times the zone showed', () => {
     // 2026-03-08: Los Angeles goes from 01:59:59 PST to 03:00:00 PDT.
     const note = {

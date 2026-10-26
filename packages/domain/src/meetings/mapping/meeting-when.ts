@@ -9,6 +9,44 @@ export interface MeetingWhen {
   readonly end: string | null;
   /** True when the start was worked out (arrival less transcript length), not read. */
   readonly startApproximate: boolean;
+  /** `calendar` when the start was read off the meeting's calendar event; null when off the meeting itself. */
+  readonly startSource: 'calendar' | null;
+}
+
+/**
+ * What the meeting's calendar event gave: its day, start and end (`HH:MM`;
+ * the end null when it ends another day), or why no event could be taken.
+ * `connect` says connecting a calendar could help: DFAI had no event notes
+ * on the days looked at, not even declined or cancelled ones.
+ */
+export type CalendarStart =
+  | {
+      readonly found: true;
+      readonly day: string;
+      readonly start: string;
+      readonly end: string | null;
+    }
+  | { readonly found: false; readonly why: string; readonly connect: boolean };
+
+/**
+ * What a calendar is asked about a meeting nothing it carries gives a start
+ * for: the day (`YYYY-MM-DD`) and when its notes arrived, which is about
+ * when it ended, on the clock the calendar's event notes are written on.
+ */
+export interface StartAsk {
+  /** The day the meeting states (subject, `date` or `start`), else the arrival's. */
+  readonly day: string;
+  /** When the notes arrived, `YYYY-MM-DDTHH:MM` on `timeZone`'s clock. */
+  readonly arrived: string;
+  /**
+   * The instant they arrived, in milliseconds, when it is known. It decides
+   * over `arrived`, which on a fall-back day names two instants.
+   */
+  readonly arrivedAt?: number | null;
+  /** The clock event notes are written on; left out, times are compared as written. */
+  readonly timeZone?: string | null;
+  /** True when the meeting states no day: notes that arrive after midnight may be the day before's. */
+  readonly dayBefore?: boolean;
 }
 
 /** A day and a time read off one input value; either may be missing. */
@@ -96,6 +134,30 @@ export function wallClockIn(timeZone: string): (instant: number) => WallTime {
   };
 }
 
+/**
+ * The instant a clock in `timeZone` shows `wall` (`YYYY-MM-DDTHH:MM`). On a
+ * fall-back day, whose hour after the change shows twice, the earlier; in
+ * the hour a spring change skips, the instant the clocks jump to it from.
+ * Tried with the zone's offset 14 hours either side, so a change at any
+ * hour is on one side of it.
+ */
+export function instantOnClock(wall: string, timeZone: string): number {
+  const clock = wallClockIn(timeZone);
+  const asUtc = Date.parse(`${wall}:00Z`);
+  const shownAsUtc = (instant: number) => {
+    const { day, time } = clock(instant);
+    return Date.parse(`${day}T${time}Z`);
+  };
+  const readings = [asUtc - WIDEST_OFFSET_MS, asUtc + WIDEST_OFFSET_MS].map(
+    (near) => asUtc - (shownAsUtc(near) - near),
+  );
+  const exact = readings.filter((instant) => shownAsUtc(instant) === asUtc);
+  return exact.length > 0 ? Math.min(...exact) : Math.max(...readings);
+}
+
+/** Wider than any zone's offset from UTC (+14:00 is the widest), so each try lands either side of a change. */
+const WIDEST_OFFSET_MS = 14 * 3_600_000;
+
 /** The day and time an instant shows on a clock in `timeZone`. */
 function inZone(instant: Date, timeZone: string): Moment {
   const { day, time } = wallClockIn(timeZone)(instant.getTime());
@@ -109,7 +171,7 @@ function inZone(instant: Date, timeZone: string): Moment {
  * UTC clock time would put a 17:02 meeting at 00:02 the next day.
  */
 function dateTime(match: RegExpExecArray, field: string, timeZone: string | null): Moment {
-  const [text, day = '', hours = '', minutes = '', seconds = '00', offset] = match;
+  const [text, day = '', hours = '', minutes = '', , offset] = match;
   if (realDay(day) === null) throw new MeetingMappingError(`${field}: ${day} is not a real day`);
   const time = clockTime(`${hours}:${minutes}`);
   if (time === null) {
@@ -121,13 +183,20 @@ function dateTime(match: RegExpExecArray, field: string, timeZone: string | null
       `${field}: ${text} is an instant (it ends in Z or an offset) and there is no time zone to read it in; set timeZone`,
     );
   }
-  const zone = offset.toUpperCase().replace(/^([+-]\d{2})(\d{2})$/, '$1:$2');
-  // Read by our own rules, not the engine's: V8 and JavaScriptCore differ on a 60th second.
-  const instant = rfc3339Instant(`${day}T${hours}:${minutes}:${seconds}${zone}`);
+  const instant = offsetInstant(match);
   if (instant === null) {
     throw new MeetingMappingError(`${field}: cannot read ${shown(text)} as an instant`);
   }
   return inZone(new Date(instant), timeZone);
+}
+
+/** The instant a date-time with an offset names; null without one, or when it names none. */
+function offsetInstant(match: RegExpExecArray): number | null {
+  const [, day = '', hours = '', minutes = '', seconds = '00', offset] = match;
+  if (offset === undefined) return null;
+  const zone = offset.toUpperCase().replace(/^([+-]\d{2})(\d{2})$/, '$1:$2');
+  // Read by our own rules, not the engine's: V8 and JavaScriptCore differ on a 60th second.
+  return rfc3339Instant(`${day}T${hours}:${minutes}:${seconds}${zone}`);
 }
 
 function readMoment(value: unknown, field: string, timeZone: string | null): Moment {
@@ -166,6 +235,8 @@ export interface WhenInput {
   /** The transcript's first time of day, for a provider (Granola) that stamps every turn. */
   readonly firstSpoken: string | null;
   readonly timeZone: string | null;
+  /** The meeting's calendar event, looked up from a {@link StartAsk}; null when there is no calendar to ask. */
+  readonly calendar: CalendarStart | null;
 }
 
 /** A stated day and time; approximate when it is another zone's clock that could not be converted. */
@@ -192,51 +263,179 @@ function statedMoment(stated: StatedWhen, timeZone: string | null): StatedMoment
   return { ...inZone(instant, timeZone), approximate: false };
 }
 
-/**
- * When the meeting began, about: the arrival less the recording's length.
- * Without a length (no transcript, or one with no stamps and no end mark)
- * there is nothing to take off, and the arrival — about when the meeting
- * ended — is never a start, so the meeting is refused. Worked on the local
- * clock, so a meeting that spans a daylight-saving change is out by that
- * hour — it is marked approximate.
- */
-function arrivalLessLength(input: WhenInput): Moment {
-  if (input.arrived === null || input.arrived === undefined || input.arrived === '') {
-    return NOTHING;
-  }
+/** When the notes arrived, on the local clock; null when the sender did not say. */
+function arrivalMoment(input: WhenInput): { day: string; time: string } | null {
+  if (input.arrived === null || input.arrived === undefined || input.arrived === '') return null;
   const { day, time } = readMoment(input.arrived, 'arrived', input.timeZone);
   if (day === null || time === null) {
     throw new MeetingMappingError('arrived: needs a date and a time (when the notes arrived)');
   }
+  return { day, time };
+}
+
+/**
+ * The instant the notes arrived: the one an arrival with an offset names,
+ * else its local time on the clock of `timeZone`; null with no zone to read
+ * a local time in.
+ */
+function arrivalInstant(input: WhenInput, local: { day: string; time: string }): number | null {
+  const given = input.arrived instanceof Date ? input.arrived.toISOString() : input.arrived;
+  const match = typeof given === 'string' ? DATE_TIME.exec(given.trim()) : null;
+  const named = match === null ? null : offsetInstant(match);
+  if (named !== null) return named;
+  return input.timeZone === null
+    ? null
+    : instantOnClock(`${local.day}T${local.time}`, input.timeZone);
+}
+
+const SEND_A_START = 'send `start`, a time in the subject, or a transcript with its times';
+
+/** Why there is no start, and what the sender can add to give one. */
+function noStartMessage(calendar: CalendarStart | null): string {
+  const lead =
+    'start: the meeting has no start time: the email states none, and with no transcript length the arrival (about when it ended) cannot give one';
+  if (calendar === null || calendar.found) return `${lead}; ${SEND_A_START}`;
+  const connect = calendar.connect
+    ? ', or if Google Calendar isn’t connected, connect it so DFAI can take the start from the meeting’s event'
+    : '';
+  return `${lead}, and ${calendar.why}; ${SEND_A_START}${connect}`;
+}
+
+/**
+ * When the meeting began, about: the end the sender gave, else the arrival
+ * (about when it ended), less the recording's length. Without a length (no
+ * transcript, or one with no stamps and no end mark) there is nothing to
+ * take off, and neither is ever a start, so the meeting is refused, saying
+ * what would give one. An end with no date is on the day the meeting
+ * states, else the arrival's. Worked on the local clock, so a meeting that
+ * spans a daylight-saving change is out by that hour — it is marked approximate.
+ */
+function workedOutStart(
+  input: WhenInput,
+  { end, statedDay }: { end: Moment; statedDay: string | null },
+): Moment {
+  const arrived = arrivalMoment(input);
+  if (arrived === null) return NOTHING;
   if (input.transcriptLength === null) {
-    throw new MeetingMappingError(
-      'start: the meeting has no start time: the email states none, and with no transcript length the arrival (about when it ended) cannot give one',
-    );
+    throw new MeetingMappingError(noStartMessage(input.calendar));
   }
+  const { day, time } =
+    end.time === null ? arrived : { day: end.day ?? statedDay ?? arrived.day, time: end.time };
   const arrival = Date.parse(`${day}T${time}:00Z`);
   const began = new Date(arrival - input.transcriptLength * 1000).toISOString();
   return { day: began.slice(0, 10), time: began.slice(11, 16) };
 }
 
-/**
- * The meeting's day, start and end. The day is the one the email states,
- * else the date's, else the start's. The start is the one given, else the
- * time the email states, else the time on the date, else when the first
- * word was spoken (a wall-clock transcript only), else — marked approximate —
- * the arrival less the transcript's length. With none of those the meeting
- * has no start, and the contract requires one — so it is refused rather than
- * given a made-up time. A start read off another zone's clock that could not
- * be converted is marked approximate too.
- */
-export function meetingWhen(input: WhenInput): MeetingWhen {
+/** What the meeting itself says of its time: each source read and checked. */
+interface Sources {
+  readonly stated: StatedMoment | null;
+  readonly date: Moment;
+  readonly start: Moment;
+  readonly end: Moment;
+  /** The start read off the meeting (`start`, the email, `date`, the first word spoken), if any. */
+  readonly read: string | null;
+}
+
+function readSources(input: WhenInput): Sources {
   if (input.timeZone !== null) zoneClock(input.timeZone);
   const stated = input.stated === null ? null : statedMoment(input.stated, input.timeZone);
   // A stated day means the date is the provider's arrival time (Gemini's Notion Date): not the meeting's.
   const date = stated ?? readMoment(input.date, 'date', input.timeZone);
   const start = readMoment(input.start, 'start', input.timeZone);
   const end = readMoment(input.end, 'end', input.timeZone);
-  const read = start.time ?? date.time ?? input.firstSpoken;
-  const worked = read === null ? arrivalLessLength(input) : NOTHING;
+  return { stated, date, start, end, read: start.time ?? date.time ?? input.firstSpoken };
+}
+
+/**
+ * What to ask the calendar, when nothing the meeting carries gives its start:
+ * the day the email states, else the date's, else the start's, else the
+ * arrival's (and the day before it), and the arrival itself, on the clock of
+ * `calendarTimeZone` — the one the event notes are written on — else of the
+ * meeting's own zone. Null when the meeting has its start, or no arrival to
+ * check an event's end against.
+ */
+export function startAsk(input: WhenInput, calendarTimeZone: string | null): StartAsk | null {
+  const { date, start, read } = readSources(input);
+  if (read !== null) return null;
+  const local = arrivalMoment(input);
+  if (local === null) return null;
+  const timeZone = calendarTimeZone ?? input.timeZone;
+  const arrivedAt = arrivalInstant(input, local);
+  const shown =
+    arrivedAt === null || timeZone === null ? local : inZone(new Date(arrivedAt), timeZone);
+  const arrived = `${shown.day ?? local.day}T${shown.time ?? local.time}`;
+  const stated = date.day ?? start.day;
+  return {
+    day: stated ?? arrived.slice(0, 10),
+    arrived,
+    arrivedAt,
+    timeZone,
+    dayBefore: stated === null,
+  };
+}
+
+/** `HH:MM` on a day as one comparable text, `2026-10-24T09:30`. */
+const at = (day: string, time: string) => `${day}T${time}`;
+
+/**
+ * The longest a meeting with an undated end is taken to run: an end earlier
+ * on the clock than the start is the next day's only within it, so 23:30 to
+ * 00:15 is a late meeting and 10:00 to 09:00 a mistake.
+ */
+const LONGEST_OVERNIGHT_MINUTES = 12 * 60;
+
+const minutesOfClock = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+/**
+ * The end, as sent, checked against a start read from the meeting or its
+ * calendar event. A dated end must not be before the start. An undated one
+ * earlier on the clock than the start is the next day's when that keeps the
+ * meeting to {@link LONGEST_OVERNIGHT_MINUTES}, and is refused otherwise.
+ */
+function endAfter(end: Moment, { day, start }: { day: string; start: string }): string | null {
+  if (end.time === null) return null;
+  if (end.day !== null) {
+    if (at(end.day, end.time) >= at(day, start)) return end.time;
+    throw new MeetingMappingError(
+      `end: ${end.day} ${end.time} is before the start, ${day} ${start}; send an end after the start`,
+    );
+  }
+  if (end.time >= start) return end.time;
+  const overnight = minutesOfClock(end.time) + 24 * 60 - minutesOfClock(start);
+  if (overnight <= LONGEST_OVERNIGHT_MINUTES) return end.time;
+  throw new MeetingMappingError(
+    `end: ${end.time} is before the start, ${start}, and the next day’s would make the meeting longer than 12 hours; send an end after the start, with its date when it ends another day`,
+  );
+}
+
+/**
+ * The meeting's day, start and end. The day is the one the email states,
+ * else the date's, else the start's. The start is the one given, else the
+ * time the email states, else the time on the date, else when the first
+ * word was spoken (a wall-clock transcript only), else the start of the
+ * meeting's calendar event (read, so not approximate; its end too, when none
+ * was given), else — marked approximate — the end given, or the arrival,
+ * less the transcript's length. With none of those the meeting has no start, and the contract
+ * requires one — so it is refused rather than given a made-up time. A start
+ * read off another zone's clock that could not be converted is marked
+ * approximate too.
+ */
+export function meetingWhen(input: WhenInput): MeetingWhen {
+  const { stated, date, start, end, read } = readSources(input);
+  const event = read === null && input.calendar?.found === true ? input.calendar : null;
+  if (event !== null) {
+    const day = date.day ?? start.day ?? event.day;
+    const finish = endAfter(end, { day, start: event.start }) ?? event.end;
+    return {
+      date: day,
+      start: event.start,
+      end: finish,
+      startApproximate: false,
+      startSource: 'calendar',
+    };
+  }
+  const worked =
+    read === null ? workedOutStart(input, { end, statedDay: date.day ?? start.day }) : NOTHING;
   const day = date.day ?? start.day ?? worked.day;
   if (day === null) throw new MeetingMappingError('date: the meeting has no date');
   const startTime = read ?? worked.time;
@@ -248,7 +447,9 @@ export function meetingWhen(input: WhenInput): MeetingWhen {
   return {
     date: day,
     start: startTime,
-    end: end.time,
+    // A worked-out start is taken off the end itself, so the end is never checked against it.
+    end: read === null ? end.time : endAfter(end, { day, start: startTime }),
     startApproximate: read === null || foreignClock,
+    startSource: null,
   };
 }

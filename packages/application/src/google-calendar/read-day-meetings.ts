@@ -1,8 +1,11 @@
 import {
   compileDayEventsQuery,
+  dayEventTimes,
   dayMeetings,
   EVENT_NOTE_TYPE,
   EVENT_NOTES_FOLDER,
+  type DayEventRow,
+  type DayEvents,
   type DayMeeting,
 } from '@dfai/domain';
 import type { IndexPort } from '../index/ports.ts';
@@ -30,6 +33,30 @@ export async function readDayMeetings({
   index: Pick<IndexPort, 'query'>;
   day: string;
 }): Promise<DayMeeting[]> {
+  return dayMeetings(await readDayEventRows({ index, day }), day);
+}
+
+/**
+ * The events on `day` as a meeting's calendar start is looked for among
+ * them (#582): with ends on their own days, and how many event notes the day held.
+ */
+export async function readDayEventTimes({
+  index,
+  day,
+}: {
+  index: Pick<IndexPort, 'query'>;
+  day: string;
+}): Promise<DayEvents> {
+  return dayEventTimes(await readDayEventRows({ index, day }), day);
+}
+
+async function readDayEventRows({
+  index,
+  day,
+}: {
+  index: Pick<IndexPort, 'query'>;
+  day: string;
+}): Promise<DayEventRow[]> {
   const { sql, parameters } = compileDayEventsQuery(day);
   const result = await index.query(sql, parameters);
   const at = (name: string) => result.columns.indexOf(name);
@@ -42,7 +69,7 @@ export async function readDayMeetings({
       value: value === null || value === undefined ? null : String(value),
     };
   });
-  return dayMeetings(rows, day);
+  return rows;
 }
 
 /** Today's meetings, on the injected clock's day. */

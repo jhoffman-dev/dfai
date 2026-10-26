@@ -133,8 +133,11 @@ arrival as `date` or `start`: it would be taken as when the meeting began.
 `title`, a day (`stated` or `date`), a start time, `source` and `sourceId`
 are required. Without a start time (in `start`, `stated` or `date`, or worked
 out from `arrived` less a transcript's length), the mapper refuses the
-meeting with "start: the meeting has no start time…" and it goes to the
-failure email. It never makes a start up.
+meeting with "start: the meeting has no start time… send `start`, a time in
+the subject, or a transcript with its times" and it goes to the failure
+email. It never makes a start up. (The Code nodes have no calendar to ask;
+the API destination below does, and takes such a meeting's start from its
+Google Calendar event.)
 
 **When a Gemini meeting began.** A Gemini meeting's notes arrive about when
 it ended, so the day and start come from the email itself:
@@ -150,7 +153,8 @@ it ended, so the day and start come from the email itself:
    `stated` is given, `date` is not read at all. Words with no date in them
    are refused.
 2. `arrived` — when the email arrived (an instant). When nothing gives a
-   start time, the start is the arrival less the transcript's length —
+   start time, the start is the `end` sent, else the arrival, less the
+   transcript's length —
    Gemini's "Transcription ended after 00:51:49" line, else its last
    `### hh:mm:ss` section stamp (a little short) — and the file says
    `start_approximate: true`. With no length to take off (no transcript, or
@@ -158,7 +162,11 @@ it ended, so the day and start come from the email itself:
    start: it is about when the meeting ended, so the meeting is refused.
 
 The order is: `start`, then the time in `stated`, then the time in `date`,
-then (Granola) the first stamped turn, then `arrived` less the transcript.
+then (Granola) the first stamped turn, then — only when DFAI maps it, through
+the API destination's `POST /v1/meetings` — the meeting's Google Calendar
+event, then `end` (else `arrived`) less the transcript. (A Granola note always carries a
+start; one without is refused before it is mapped, so the Granola pull never
+asks the calendar.)
 
 `attendees` is an **Array** row: the mapper reads `{ name, email }` records.
 It reads `Name — email` lines too; for those, make the row a **String**. A
@@ -427,6 +435,21 @@ Why each part:
 - **Retry on fail** covers DFAI starting up, a sleeping Mac waking, or a
   timeout after the file was written: a retry of a meeting already written is
   answered "already in the vault" and writes nothing.
+- **A day but no time** (`Oct 24, 2026`) and no transcript: DFAI takes the
+  start and end from Google Calendar (#582) when meetings sync is on — the
+  one event on that day with the meeting's title (case, spacing and
+  invisible marks aside) that ended at or before `arrived`, at most 3 hours
+  before, on the clock the event notes are written on (this Mac's), whatever
+  `timeZone` says. With no day in the subject, the arrival's day and the
+  day before are both looked at. Two such events, or none, and it is
+  refused with what to add. When the workflow knows the start some other
+  way, send it as `start` (and `end`), `HH:MM` on the Mac's clock; it is
+  read before anything else. An `end` with no date that is earlier on the
+  clock than the start (`23:30` to `00:15`) is the next day's, written as
+  sent, when that keeps the meeting to 12 hours; longer (`10:00` to `09:00`)
+  it is refused `invalid`, as is a dated `end` before the start. A start
+  DFAI works out is never checked against the end: it is the end less the
+  transcript's length.
 - **The error output** sends whatever is left after the retries — a meeting
   with no start time (`invalid`, as in the commit's mapper), both paths held
   by other meetings (`exists`), no vault open (`no_vault`), DFAI closed — to

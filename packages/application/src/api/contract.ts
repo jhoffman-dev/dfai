@@ -744,7 +744,11 @@ export interface ApiReceiveMeetingBody {
   readonly title: string;
   /** The notes email's subject, which states the meeting's day, and time if given. */
   readonly subject?: string;
-  /** When the notes arrived, an ISO instant: a start, less the transcript's length, when nothing states one. */
+  /** When the meeting began, `HH:MM` (or a date-time), when the sender knows it: read before anything else. */
+  readonly start?: string;
+  /** When the meeting ended, `HH:MM` (or a date-time). */
+  readonly end?: string;
+  /** When the notes arrived, an ISO instant: checked against the calendar event's end, or a start less the transcript's length, when nothing states one. */
   readonly arrived?: string;
   readonly attendees?: readonly {
     readonly name?: string | null;

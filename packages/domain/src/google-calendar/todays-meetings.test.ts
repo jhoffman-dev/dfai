@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayMeetings, parseMeetingSetting, type DayEventRow } from './index.ts';
+import { dayEventTimes, dayMeetings, parseMeetingSetting, type DayEventRow } from './index.ts';
 
 const rows = (path: string, values: Record<string, string | string[]>): DayEventRow[] =>
   Object.entries(values).flatMap(([key, value]) =>
@@ -154,5 +154,36 @@ describe('parseMeetingSetting', () => {
     expect(parseMeetingSetting({ google_meeting_calendars: 'team@example.com' }).calendars).toEqual(
       ['team@example.com'],
     );
+  });
+});
+
+describe('dayEventTimes', () => {
+  const late = { date: `${DAY}T23:00`, ends: '2026-10-25T00:15', gcal_event_id: 'ev-late' };
+
+  it('gives an event that runs past midnight its end on its own day, where Today shows none', () => {
+    const day = rows('Calendar/Late.md', late);
+    expect(dayEventTimes(day, DAY).events).toEqual([
+      { title: 'Late', start: `${DAY}T23:00`, end: '2026-10-25T00:15' },
+    ]);
+    expect(dayMeetings(day, DAY)[0]?.end).toBeNull();
+  });
+
+  it('lists the events dayMeetings lists, each once, and counts every note the day held', () => {
+    const standup = { date: `${DAY}T09:00`, ends: `${DAY}T09:15`, gcal_event_id: 'ev-standup' };
+    const day = [
+      ...rows('Calendar/Standup.md', standup),
+      ...rows('Calendar/Standup 2.md', standup),
+      ...rows('Calendar/Declined.md', {
+        ...late,
+        gcal_event_id: 'ev-d',
+        gcal_response: 'declined',
+      }),
+      ...rows('Calendar/Gone.md', { ...late, gcal_event_id: 'ev-g', gcal_missing: 'true' }),
+      ...rows('Calendar/Offsite.md', { date: DAY, gcal_event_id: 'ev-offsite' }),
+    ];
+    expect(dayEventTimes(day, DAY)).toEqual({
+      events: [{ title: 'Standup', start: `${DAY}T09:00`, end: `${DAY}T09:15` }],
+      notes: 5,
+    });
   });
 });

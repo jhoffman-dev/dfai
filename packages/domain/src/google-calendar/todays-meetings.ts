@@ -1,6 +1,7 @@
-import { readEventTime } from '../calendar/calendar-event.ts';
+import { readEventTime, type EventTime } from '../calendar/calendar-event.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
 import { compareEventNotePaths, EVENT_NOTE_KEYS } from './event-notes.ts';
+import type { DayEventTimes } from './meeting-match.ts';
 
 const K = EVENT_NOTE_KEYS;
 
@@ -69,25 +70,37 @@ function twinsOf(notes: Iterable<Gathered>): Gathered[][] {
   );
 }
 
+/** An event's first live note, timed on the day and not declined, with its start minute and its end as written. */
+interface TimedNote {
+  readonly note: Gathered;
+  readonly start: number;
+  readonly end: EventTime | null;
+  readonly response: string | null;
+}
+
 /**
  * An event once, as its first live note says. A note's own calendar alone
  * decides for it, so the event is off the day only once every note is marked cancelled.
  */
-function meetingOf(twins: readonly Gathered[], day: string): DayMeeting | null {
+function timedNoteOf(twins: readonly Gathered[], day: string): TimedNote | null {
   const note = twins.find((twin) => firstOf(twin, K.missing) !== 'true');
   if (note === undefined) return null;
-  const path = note.path;
-  const first = (key: string) => firstOf(note, key);
-  const paths = (key: string) => (note.values.get(key) ?? []).map(createVaultPath);
-  const start = readEventTime(first(K.date));
-  const response = first(K.response);
+  const start = readEventTime(firstOf(note, K.date));
+  const response = firstOf(note, K.response);
   if (start === null || start.minutes === null || start.date !== day) return null;
   if (response === 'declined') return null;
-  const end = readEventTime(first(K.ends));
+  return { note, start: start.minutes, end: readEventTime(firstOf(note, K.ends)), response };
+}
+
+function meetingOf(twins: readonly Gathered[], day: string): DayMeeting | null {
+  const timed = timedNoteOf(twins, day);
+  if (timed === null) return null;
+  const { note, start, end, response } = timed;
+  const paths = (key: string) => (note.values.get(key) ?? []).map(createVaultPath);
   return {
-    path: createVaultPath(path),
+    path: createVaultPath(note.path),
     title: note.title,
-    start: clockOf(start.minutes),
+    start: clockOf(start),
     end: end !== null && end.date === day && end.minutes !== null ? clockOf(end.minutes) : null,
     people: paths(K.people),
     companies: paths(K.companies),
@@ -113,4 +126,29 @@ export function dayMeetings(rows: readonly DayEventRow[], day: string): DayMeeti
           ? -1
           : 1,
     );
+}
+
+/** The events of a day, as a meeting's calendar start is looked for among them, and how many event notes the day held. */
+export interface DayEvents {
+  readonly events: DayEventTimes[];
+  /** Every event note of the day, before cancelled, declined and all-day ones are left out. */
+  readonly notes: number;
+}
+
+/**
+ * The events on `day` that {@link dayMeetings} lists, each once, with its
+ * start and its end on their own days (`2026-10-25T00:15` for one that
+ * runs past midnight), and how many event notes the day held in all.
+ */
+export function dayEventTimes(rows: readonly DayEventRow[], day: string): DayEvents {
+  const notes = gather(rows);
+  const events = twinsOf(notes.values()).flatMap((twins) => {
+    const timed = timedNoteOf(twins, day);
+    if (timed === null) return [];
+    const { end } = timed;
+    const ends =
+      end === null || end.minutes === null ? null : `${end.date}T${clockOf(end.minutes)}`;
+    return [{ title: timed.note.title, start: `${day}T${clockOf(timed.start)}`, end: ends }];
+  });
+  return { events, notes: notes.size };
 }

@@ -32,6 +32,7 @@ function dayIn(value: string, timeZone: string | null): { day: string | null; wh
       transcriptLength: null,
       firstSpoken: '00:00',
       timeZone,
+      calendar: null,
     });
     return { day: date, why: '' };
   } catch (error) {
