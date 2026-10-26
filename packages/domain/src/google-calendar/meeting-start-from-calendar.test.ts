@@ -62,7 +62,7 @@ describe('meetingStartAsk', () => {
   });
 
   it('asks for the day of `date` when no day is stated, else for the arrival’s', () => {
-    const { stated: _stated, ...unstated } = SENT;
+    const unstated = { ...SENT, stated: undefined };
     expect(meetingStartAsk({ ...unstated, date: '2026-10-23' }, ZONE)?.day).toBe('2026-10-23');
     expect(meetingStartAsk(unstated, ZONE)?.day).toBe('2026-10-24');
   });
@@ -186,6 +186,15 @@ describe('calendarStartFor', () => {
     expect(
       calendarStartFor({ ...MEETING, day: '2026-10-23', arrived: '2026-10-23T10:40' }, [yesterday]),
     ).toMatchObject({
+      found: true,
+    });
+  });
+
+  it('does not take the day before’s late event, though it ended in the window', () => {
+    const lateYesterday = { ...SYNC, start: '2026-10-23T23:00', end: '2026-10-23T23:50' };
+    const meeting = { ...MEETING, arrived: '2026-10-24T00:10' };
+    expect(calendarStartFor(meeting, [lateYesterday])).toMatchObject({ found: false });
+    expect(calendarStartFor({ ...meeting, day: '2026-10-23' }, [lateYesterday])).toMatchObject({
       found: true,
     });
   });
