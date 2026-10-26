@@ -1194,6 +1194,8 @@ const LONG_EPUB = 'Areas/A Long Voyage.epub';
 const LONG_EPUB_CHAPTERS = 1000;
 /** What find in the long book says once it has read every chapter: its phrase is in every hundredth. */
 const LONG_EPUB_FOUND = `1 of ${LONG_EPUB_CHAPTERS / 100}`;
+/** The section find then shows, its first match: the hundredth chapter, counted from 0. */
+const LONG_EPUB_FIRST_MATCH = String(100 - 1);
 
 /**
  * How long the work clock waits on the wall clock for the long book's own
@@ -1239,9 +1241,13 @@ async function readALongEpub(pass: Pass): Promise<void> {
         await page.getByRole('button', { name: 'Find', exact: true }).click();
         await page.getByRole('searchbox', { name: 'Find in document' }).fill(LONG_BOOK_PHRASE);
       },
-      (found: string) =>
-        (document.querySelector('.epub-reader [role="search"]')?.textContent ?? '').includes(found),
-      LONG_EPUB_FOUND,
+      // Not only the count: find then shows its first match, a chapter read from
+      // the archive off the work clock, and ready waits for it to be on screen.
+      ({ found, section }: { found: string; section: string }) =>
+        (document.querySelector('.epub-reader [role="search"]')?.textContent ?? '').includes(
+          found,
+        ) && document.querySelector(`.epub-reader__page[data-shown-section="${section}"]`) !== null,
+      { found: LONG_EPUB_FOUND, section: LONG_EPUB_FIRST_MATCH },
       EPUB_UNTRACKED_MS,
     ),
   ]);
