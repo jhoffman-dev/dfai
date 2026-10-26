@@ -74,6 +74,13 @@ function countedRuns(given: string | undefined): number {
   return runs;
 }
 
+/**
+ * The test's time limit grows with `COUNTED_RUNS`: each counted run takes
+ * minutes, so a fixed limit times out a many-run check on a busy machine.
+ * Two runs, as CI counts, get the 15 minutes they always had.
+ */
+const TIMEOUT_MS = 300_000 + COUNTED_RUNS * 300_000;
+
 /** A fixed day, in UTC, so Today shows the same tasks on every run and every machine. */
 const STARTS_AT = Date.UTC(2026, 5, 15, 9);
 /** How long the page is watched doing nothing. */
@@ -170,7 +177,7 @@ const counted = new Map<string, Work>();
 const timed = new Map<string, { inputToReady: number; longestFrame: number }>();
 
 test('the app does no more work than its budget', async ({ browser }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(TIMEOUT_MS);
   const budgets = JSON.parse(await readFile(BUDGETS_FILE, 'utf8')) as BudgetsFile;
 
   await test.step('counted, on the work clock', async () => {
