@@ -10,6 +10,7 @@ import { toIndexedNote } from '../index/to-indexed-note.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { fakeBlockCalendar, memoryBlockSyncRecords } from '../testing/fake-google-calendar.ts';
 import { blockSyncActivity } from './block-sync-activity.ts';
+import { GoogleCalendarError } from './ports.ts';
 import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { syncBlocks, type BlockSyncRun } from './sync-blocks.ts';
 
@@ -412,6 +413,64 @@ describe('block sync, adversarial: a change in Google that is not a time', () =>
     await here.sync();
     // James's newest edit (16:00) is what both sides should end on.
     expect(here.props(path)).toMatchObject({ start: '2026-10-26T16:00', end: '2026-10-26T17:00' });
+  });
+});
+
+describe('block sync, adversarial: a retried push is based on the version it was planned against', () => {
+  const offline = () => new GoogleCalendarError({ kind: 'unreachable', message: 'offline' });
+
+  it('a colour changed in Google, then James’s move fails to send: the retry sends it, no conflict', async () => {
+    const google = fakeBlockCalendar();
+    const path = 'Blocks/Payroll run block.md';
+    const here = mac({ [path]: blockFile('2026-10-26T09:00', '2026-10-26T10:00') }, google);
+    await here.sync();
+    const id = String(here.props(path)['gcal_event_id']);
+    touchEvent(google, id);
+    here.edit(path, { start: '2026-10-26T10:00', end: '2026-10-26T11:00' });
+    google.state.failNext.patch = offline();
+    expect((await here.sync()).failed.map((failure) => failure.path)).toEqual([path]);
+    // A full listing (a lost token) gives the coloured version, still on 09:00.
+    google.expire();
+    const report = await here.sync();
+    expect(report.conflicts).toEqual([]);
+    expect(here.props(path)).toMatchObject({ start: '2026-10-26T10:00', end: '2026-10-26T11:00' });
+    expect(google.state.events.get(id)?.start).toEqual({
+      kind: 'timed',
+      at: Date.parse('2026-10-26T10:00:00-07:00'),
+    });
+  });
+
+  it('2(c) twice: a push landed with its version unwritten, then the push of James’s newer edit fails too', async () => {
+    const google = fakeBlockCalendar();
+    const path = 'Blocks/Quarter close block.md';
+    const here = mac({ [path]: blockFile('2026-10-26T09:00', '2026-10-26T10:00') }, google);
+    await here.sync();
+    const id = String(here.props(path)['gcal_event_id']);
+    here.edit(path, { start: '2026-10-26T10:00', end: '2026-10-26T11:00' });
+    const realPatch = google.calendar.patchBlockEvent;
+    google.calendar.patchBlockEvent = async (call) => {
+      const written = await realPatch(call);
+      // James saves 11:00 before the version of the landed push is written back.
+      here.edit(path, { start: '2026-10-26T11:00', end: '2026-10-26T12:00' });
+      await here.vault.ports.fs.writeTextFile({
+        path: createVaultPath(path),
+        contents: here.vault.files.get(path) ?? '',
+        expectedModified: null,
+      });
+      return written;
+    };
+    expect((await here.sync()).failed.map((failure) => failure.path)).toEqual([path]);
+    google.calendar.patchBlockEvent = realPatch;
+    google.state.failNext.patch = offline();
+    expect((await here.sync()).failed.map((failure) => failure.path)).toEqual([path]);
+    google.expire();
+    const report = await here.sync();
+    expect(report.conflicts).toEqual([]);
+    expect(here.props(path)).toMatchObject({ start: '2026-10-26T11:00', end: '2026-10-26T12:00' });
+    expect(google.state.events.get(id)?.start).toEqual({
+      kind: 'timed',
+      at: Date.parse('2026-10-26T11:00:00-07:00'),
+    });
   });
 });
 

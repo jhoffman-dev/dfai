@@ -367,6 +367,15 @@ describe('reconcileBlocks: a push that never landed (sent, Google not answered)'
     });
   });
 
+  it('a patch planned from a listed event is based on that event’s version; an unlisted one on the block’s', () => {
+    const colouredMoved = block({ start: sentTen.start, end: sentTen.end });
+    expect(only({ blocks: [colouredMoved], events: [event({ etag: '"v5"' })] })).toMatchObject({
+      kind: 'patch',
+      basedOn: '"v5"',
+    });
+    expect(only({ blocks: [colouredMoved] })).toMatchObject({ kind: 'patch', basedOn: null });
+  });
+
   it('reads the pending mark from the block, only as true', () => {
     const read = (value: unknown) =>
       blockOnDisk({ path: 'x.md', title: 'x', properties: { gcal_pending: value } }).pending;
