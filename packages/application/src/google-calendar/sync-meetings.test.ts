@@ -703,3 +703,113 @@ describe('syncMeetings: the kept zone moves (#587)', () => {
     expect(vault.properties(SETTINGS)['google_plan_zone']).toBe('America/Chicago');
   });
 });
+
+describe('verification #592: no note in the window is left on another clock than the kept one (#587)', () => {
+  const SETTINGS = '.atlas/settings.md';
+  const TEAM = 'team@larkspur.example';
+  const RETRO = 'Calendar/2026-10-24 Retro.md';
+  const BOTH: MeetingSetting = { enabled: true, calendars: ['primary', TEAM] };
+  const twoCalendars = (
+    zones: Record<string, string | null>,
+    notes: Record<string, string> = {},
+  ) => {
+    const set = setUp({ zones, notes });
+    set.google.state.calendars[TEAM] = [
+      meeting({ id: 'ev-retro', calendarId: TEAM, title: 'Retro', attendees: [self] }),
+    ];
+    return { ...set, syncBoth: () => set.sync({ setting: BOTH }) };
+  };
+  const refusing = (
+    google: ReturnType<typeof setUp>['google'],
+    refuse: (ask: { calendarId: string; syncToken: string | null }) => boolean,
+  ) => {
+    const list = google.source.listEvents;
+    google.source.listEvents = async (ask) => {
+      if (refuse(ask)) {
+        throw new GoogleCalendarError({ kind: 'unreachable', message: 'timed out' });
+      }
+      return list(ask);
+    };
+    return () => {
+      google.source.listEvents = list;
+    };
+  };
+
+  it('a calendar that fails the relisting of a move is listed in full next time, on the new zone', async () => {
+    const zones: Record<string, string | null> = {
+      primary: 'America/Chicago',
+      [TEAM]: 'Europe/London',
+    };
+    const { vault, google, syncBoth } = twoCalendars(zones);
+    await syncBoth();
+    expect(vault.properties(RETRO)['date']).toBe('2026-10-24T11:00');
+    zones['primary'] = 'America/New_York';
+    // The team calendar answers what changed, then times out when listed in full.
+    const restore = refusing(google, (ask) => ask.calendarId === TEAM && ask.syncToken === null);
+    const moved = await syncBoth();
+    expect(moved.failed.map((failure) => failure.calendarId)).toEqual([TEAM]);
+    expect(vault.properties(SETTINGS)['google_plan_zone']).toBe('America/New_York');
+    restore();
+    await syncBoth();
+    expect(vault.properties(NOTE)['date']).toBe('2026-10-24T12:00');
+    expect(vault.properties(RETRO)).toMatchObject({
+      date: '2026-10-24T12:00',
+      ends: '2026-10-24T12:30',
+    });
+  });
+
+  it('with no zone kept and the primary refused, the team’s notes end on the primary’s zone once it answers', async () => {
+    const zones: Record<string, string | null> = {
+      primary: 'America/Chicago',
+      [TEAM]: 'Europe/London',
+    };
+    const { vault, google, syncBoth } = twoCalendars(zones);
+    const restore = refusing(google, (ask) => ask.calendarId === 'primary');
+    await syncBoth();
+    // Nothing kept: readers read on the Mac's zone (Los Angeles), so the note is not on London's.
+    expect(vault.properties(RETRO)['date']).not.toBe('2026-10-24T17:00');
+    restore();
+    await syncBoth();
+    expect(vault.properties(SETTINGS)['google_plan_zone']).toBe('America/Chicago');
+    expect(vault.properties(RETRO)).toMatchObject({
+      date: '2026-10-24T11:00',
+      ends: '2026-10-24T11:30',
+    });
+    expect(vault.properties(NOTE)['date']).toBe('2026-10-24T11:00');
+  });
+
+  it('says both what a sync wrote and why the zone was not kept, and a failed calendar hides neither', async () => {
+    const report: MeetingSyncReport = {
+      ran: NOW,
+      created: 2,
+      updated: 0,
+      missing: 0,
+      full: [],
+      problem: null,
+      failed: [
+        {
+          calendarId: TEAM,
+          problem: { problem: 'Google could not be reached: offline.', fix: null },
+        },
+      ],
+      scopeRefused: false,
+      zoneProblem: 'the disk is full',
+    };
+    // Flattened, so it reads one line or many alike.
+    const lines = [meetingSyncActivity(report)].flat().filter((line) => line !== null);
+    const messages = lines.map((line) => line.message);
+    expect(messages).toContainEqual(
+      expect.stringContaining('could not be kept in the vault’s settings: the disk is full'),
+    );
+    expect(messages).toContainEqual(expect.stringContaining(`${TEAM} did not sync`));
+    const clean = [meetingSyncActivity({ ...report, failed: [] })]
+      .flat()
+      .filter((line) => line !== null);
+    expect(clean.map((line) => line.message)).toContainEqual(
+      'Meetings from Google Calendar: 2 meetings added.',
+    );
+    expect(clean.map((line) => line.message)).toContainEqual(
+      expect.stringContaining('the disk is full'),
+    );
+  });
+});
