@@ -7,6 +7,7 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import { fakeBlockCalendar, memoryBlockSyncRecords } from '../testing/fake-google-calendar.ts';
 import { blockSyncActivity, blockSyncProblem } from './block-sync-activity.ts';
 import { GoogleCalendarError } from './ports.ts';
+import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { syncBlocks, type BlockSyncRun } from './sync-blocks.ts';
 
 const VAULT = '/Users/someone/Vault';
@@ -93,6 +94,7 @@ function setUp(
     },
     clock: { today: () => TODAY, now: () => NOW },
     rng,
+    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
   };
   const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'Europe/London' };
   const props = (path = BLOCK) =>
@@ -724,7 +726,6 @@ describe('syncBlocks: the vault’s own id, a seed of every new block’s event 
     JSON.parse(vault.files.get(SETTINGS)?.split('\n')[1] ?? '{}') as Record<string, unknown>;
 
   it('a vault without one is given one, once, from the injected Rng, every other byte of its settings kept', async () => {
-    let writesBefore = 0;
     const { vault, google, sync } = setUp(
       { [BLOCK]: blockFile() },
       { settings: file({ google_blocks: true }, '# Settings\n\nWords James wrote.\n') },
@@ -743,7 +744,7 @@ describe('syncBlocks: the vault’s own id, a seed of every new block’s event 
     // A second new block reads the id the first wrote, and draws nothing.
     vault.files.set('Mara Quill prep.md', blockFile());
     const settingsThen = vault.files.get(SETTINGS);
-    writesBefore = google.state.writes.length;
+    const writesBefore = google.state.writes.length;
     await sync();
     expect(vault.files.get(SETTINGS)).toBe(settingsThen);
     expect(google.state.writes.length).toBe(writesBefore + 1);

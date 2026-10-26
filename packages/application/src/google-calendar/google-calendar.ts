@@ -16,7 +16,9 @@ import {
   type GoogleUse,
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
+import type { Rng } from '../ports.ts';
 import { readVaultSettings, type SettingsWriter } from '../settings/index.ts';
+import { vaultIdChange } from '../settings/vault-id.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { GoogleCalendarError, type GoogleCalendarPort, type GoogleConnection } from './ports.ts';
 
@@ -185,15 +187,29 @@ export function allowGoogleBlocks(args: {
   return allowGoogleUse({ ...args, use: 'blocks', notConnected: BLOCKS_NOT_CONNECTED });
 }
 
-/** Writes whether the vault's blocks sync two ways with its Google calendar. */
+/**
+ * Writes whether the vault's blocks sync two ways with its Google calendar.
+ * Turned on, the vault is given its own id too when it has none (a seed of
+ * every new block's event id), in the same write, so it reaches the Mac that
+ * syncs blocks with the switch itself.
+ */
 export async function saveBlocksEnabled({
   settings,
   enabled,
+  rng,
 }: {
   settings: SettingsWriter;
   enabled: boolean;
+  rng: Pick<Rng, 'next'>;
 }): Promise<void> {
-  await settings.save({ [GOOGLE_BLOCKS_KEY]: enabled ? true : null });
+  if (!enabled) {
+    await settings.save({ [GOOGLE_BLOCKS_KEY]: null });
+    return;
+  }
+  await settings.update((current) => ({
+    [GOOGLE_BLOCKS_KEY]: true,
+    ...vaultIdChange(current, rng),
+  }));
 }
 
 /** Writes whether the vault reads its meetings from Google Calendar. */

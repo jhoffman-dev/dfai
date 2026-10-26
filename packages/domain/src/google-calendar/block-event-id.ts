@@ -4,8 +4,6 @@
  * settings passes before it reaches one.
  */
 
-import { passageDigest } from '../embeddings/passage-digest.ts';
-
 /** Google's alphabet for an event id a client picks: base32hex, lower case, 5 to 1024 long. */
 const EVENT_ID = /^[a-v0-9]{5,1024}$/;
 
@@ -29,26 +27,51 @@ export function isBlockCalendarId(id: string): boolean {
 /** How many ids one block may be offered before the sync gives up on it. */
 export const BLOCK_EVENT_ID_ATTEMPTS = 4;
 
+const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
+const FNV_PRIME = 0x100000001b3n;
+const SIXTY_FOUR_BITS = (1n << 64n) - 1n;
+
 /**
- * The event id a block is given at its first push: drawn from the calendar
- * it goes to, which the vault's settings name on every Mac, and the note's
- * path then. Two Macs that both push a new block in one tick (git has not
- * carried the first one's id yet) send the same id, so Google answers the
- * second with 409 and it patches the one event. `attempt` moves on past an
- * id another note already carries, or one Google deleted. Not a secret and
- * not a security hash: it only has to be the same everywhere and unlikely
- * to meet another block's.
+ * FNV-1a, 64 bits, over the UTF-8 bytes of `text`, as 16 hex characters: the
+ * published algorithm (its test values are pinned in the tests), so the ids it
+ * draws can be checked by anyone. Block ids' own, shared with nothing else:
+ * a change to another module's hash must never change the ids drawn here.
+ */
+export function blockIdDigest(text: string): string {
+  let hash = FNV_OFFSET_BASIS;
+  for (const byte of new TextEncoder().encode(text)) {
+    hash = ((hash ^ BigInt(byte)) * FNV_PRIME) & SIXTY_FOUR_BITS;
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+
+/**
+ * The event id a block is given at its first push: drawn from the vault's own
+ * id and the calendar it goes to, which the vault's settings name on every
+ * Mac, and the note's path then. Two Macs that both push a new block in one
+ * tick (git has not carried the first one's id yet) send the same id, so
+ * Google answers the second with 409 and it patches the one event; two vaults
+ * pointed at one calendar draw two ids for one path. `attempt` moves on past
+ * an id another note already carries, or one Google deleted.
+ *
+ * Not a secret and not a security hash: it only has to be the same everywhere
+ * and unlikely to meet another block's. The derivation is pinned by golden
+ * values: changing it makes two app versions draw different ids for one new
+ * block. An id once drawn is written on its note and never drawn again, so a
+ * change reaches only blocks pushed after it.
  */
 export function blockEventId({
+  vaultId,
   calendarId,
   path,
   attempt,
 }: {
+  vaultId: string;
   calendarId: string;
   path: string;
   attempt: number;
 }): string {
-  const seed = `${calendarId}\n${path}\n${attempt}`;
-  // Two 64-bit digests of differently salted text: 128 bits, all in hex, which is inside base32hex.
-  return `dfai${passageDigest(`a${seed}`)}${passageDigest(`b${seed}`)}`;
+  const seed = `${vaultId}\n${calendarId}\n${path}\n${attempt}`;
+  // Two 64-bit digests of differently prefixed text: 128 bits, all in hex, which is inside base32hex.
+  return `dfai${blockIdDigest(`a${seed}`)}${blockIdDigest(`b${seed}`)}`;
 }

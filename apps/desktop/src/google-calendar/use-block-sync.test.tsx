@@ -74,6 +74,7 @@ function setUp({
           : { columns: [], rows: [], truncated: false },
     },
     clock: { today: () => '2026-10-25', now: () => NOW },
+    rng: { next: () => 0.5 },
     timeZone: () => 'America/Los_Angeles',
     vaultKey: VAULT,
     indexReady: true,

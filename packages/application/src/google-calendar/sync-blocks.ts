@@ -26,7 +26,9 @@ import {
 } from '@dfai/domain';
 import type { IndexPort, QueryResult } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
-import type { Clock } from '../ports.ts';
+import type { Clock, Rng } from '../ports.ts';
+import type { SettingsWriter } from '../settings/settings-writer.ts';
+import { ensureVaultId } from '../settings/vault-id.ts';
 import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
 import { googleProblemOf } from './google-calendar.ts';
 import {
@@ -77,6 +79,10 @@ export interface BlockSyncPorts {
   readonly markdown: MarkdownPort;
   readonly index: Pick<IndexPort, 'query'>;
   readonly clock: Pick<Clock, 'today' | 'now'>;
+  /** Draws the vault's own id, once, when its settings hold none and a new block needs an event id. */
+  readonly rng: Pick<Rng, 'next'>;
+  /** The vault's one way into its settings, where that id is written. */
+  readonly settings: SettingsWriter;
 }
 
 export interface BlockSyncRun {
@@ -234,6 +240,20 @@ interface Applying {
   readonly timeZone: string;
   readonly files: Map<string, NoteFile>;
   readonly wanted: () => boolean;
+  /** The vault's own id, read (or made) the first time a new block needs an event id. */
+  readonly vaultId: () => Promise<string>;
+}
+
+/** `make` the first time it is asked for, and the same answer after; a failure is asked again next time. */
+function once<T>(make: () => Promise<T>): () => Promise<T> {
+  let made: Promise<T> | null = null;
+  return () => {
+    made ??= make().catch((cause: unknown) => {
+      made = null;
+      throw cause;
+    });
+    return made;
+  };
 }
 
 /** Stops here when the person has stopped the sync. */
@@ -308,7 +328,12 @@ async function writeEvent(
 /** The first id for a new block, from `attempt` on, that no other note carries. */
 async function freeEventId(applying: Applying, path: string, attempt: number) {
   for (let at = attempt; at < BLOCK_EVENT_ID_ATTEMPTS; at += 1) {
-    const eventId = blockEventId({ calendarId: applying.run.calendarId, path, attempt: at });
+    const eventId = blockEventId({
+      vaultId: await applying.vaultId(),
+      calendarId: applying.run.calendarId,
+      path,
+      attempt: at,
+    });
     const carriers = await pathsFor(applying.ports, [[eventId]], (ids) =>
       compileBlocksByEventIdQuery({ ids }),
     );
@@ -615,7 +640,24 @@ export async function syncBlocks(
       timeZone,
       fromDay,
     });
-    const applying: Applying = { ports, run, timeZone, files, wanted };
+    const applying: Applying = {
+      ports,
+      run,
+      timeZone,
+      files,
+      wanted,
+      vaultId: once(() =>
+        ensureVaultId({
+          fs: ports.fs,
+          markdown: ports.markdown,
+          settings: ports.settings,
+          rng: ports.rng,
+          beforeWrite: () => {
+            if (!wanted()) throw new SyncStopped();
+          },
+        }),
+      ),
+    };
     const tally = await applyAll(applying, plan.actions);
     if (wanted()) {
       const whole = tally.failed.length === 0;

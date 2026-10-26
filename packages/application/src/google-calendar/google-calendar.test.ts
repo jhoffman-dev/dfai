@@ -270,10 +270,21 @@ describe('saveBlocksEnabled', () => {
   it('writes the vault’s block sync switch, and takes it off rather than writing false', async () => {
     const { fs, written } = vaultWith({ [SETTINGS]: '---\n{"google_client_id":"kept"}\n---\n' });
     const settings = createSettingsWriter({ fs, markdown: jsonMarkdown() });
-    await saveBlocksEnabled({ settings, enabled: true });
+    await saveBlocksEnabled({ settings, enabled: true, rng: { next: () => 0.5 } });
     expect(written[SETTINGS]).toContain('"google_blocks":true');
     expect(written[SETTINGS]).toContain('"google_client_id":"kept"');
-    await saveBlocksEnabled({ settings, enabled: false });
+    await saveBlocksEnabled({ settings, enabled: false, rng: { next: () => 0.5 } });
     expect(written[SETTINGS]).not.toContain('"google_blocks":true');
+  });
+
+  it('turned on, gives the vault its own id when it has none, and never replaces one', async () => {
+    const { fs, written } = vaultWith({ [SETTINGS]: '---\n{"google_client_id":"kept"}\n---\n' });
+    const settings = createSettingsWriter({ fs, markdown: jsonMarkdown() });
+    await saveBlocksEnabled({ settings, enabled: true, rng: { next: () => 0.5 } });
+    expect(written[SETTINGS]).toContain('"vault_id":"gggggggggggggggg"');
+    await saveBlocksEnabled({ settings, enabled: false, rng: { next: () => 0 } });
+    await saveBlocksEnabled({ settings, enabled: true, rng: { next: () => 0 } });
+    expect(written[SETTINGS]).toContain('"vault_id":"gggggggggggggggg"');
+    expect(written[SETTINGS]).toContain('"google_blocks":true');
   });
 });

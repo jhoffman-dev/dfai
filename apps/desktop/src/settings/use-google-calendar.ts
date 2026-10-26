@@ -40,6 +40,7 @@ import type {
 } from '@dfai/ui';
 import type { BlockSyncController } from '../google-calendar/use-block-sync.ts';
 import type { MeetingSyncController } from '../google-calendar/use-meeting-sync.ts';
+import { cryptoRng } from '../random.ts';
 import { localTimeZone } from '../today.ts';
 import { useVaultSetting } from './use-vault-setting.ts';
 import { useVaultSettingsRead } from './use-vault-settings-read.ts';
@@ -191,7 +192,11 @@ export function useGoogleCalendar({
 
   /** Writes the vault's block sync switch, and reads the settings again so the card and the sync see it now. */
   const switchBlocks = async (enabled: boolean) => {
-    await saveBlocksEnabled({ settings: vaultSettingsWriter({ fs, markdown }), enabled });
+    await saveBlocksEnabled({
+      settings: vaultSettingsWriter({ fs, markdown }),
+      enabled,
+      rng: cryptoRng,
+    });
     await settingsRead.readAgain();
   };
 

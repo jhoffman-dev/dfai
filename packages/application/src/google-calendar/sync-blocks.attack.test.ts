@@ -10,6 +10,7 @@ import { toIndexedNote } from '../index/to-indexed-note.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { fakeBlockCalendar, memoryBlockSyncRecords } from '../testing/fake-google-calendar.ts';
 import { blockSyncActivity } from './block-sync-activity.ts';
+import { createSettingsWriter } from '../settings/settings-writer.ts';
 import { syncBlocks, type BlockSyncRun } from './sync-blocks.ts';
 
 const VAULT = '/Users/someone/Vault';
@@ -74,6 +75,7 @@ function mac(
     index: liveIndex(vault.files, vault.ports.markdown),
     clock: { today: () => TODAY, now: () => NOW },
     rng: { next: random },
+    settings: createSettingsWriter({ fs: vault.ports.fs, markdown: vault.ports.markdown }),
   };
   const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'America/Los_Angeles' };
   const props = (path: string) =>
@@ -484,7 +486,11 @@ describe('block sync, adversarial: two Macs', () => {
   it('two Macs that both think they are the writer for one tick (git lag) make one event for one block', async () => {
     const google = fakeBlockCalendar();
     const path = 'Blocks/Payroll run block.md';
-    const notes = { [path]: blockFile('2026-10-26T09:00', '2026-10-26T10:00') };
+    const notes = {
+      // Turning the switch on gave the vault its id, and git carried both to each Mac.
+      '.atlas/settings.md': file({ google_blocks: true, vault_id: 'k3v9q0m2b7hd5t1e' }, ''),
+      [path]: blockFile('2026-10-26T09:00', '2026-10-26T10:00'),
+    };
     const macA = mac(notes, google, 11);
     const macB = mac(notes, google, 22);
     await macA.sync();
