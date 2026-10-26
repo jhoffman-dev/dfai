@@ -15,6 +15,7 @@ import {
   type BlockSyncFields,
   type ReconcileBlocksInput,
 } from './index.ts';
+import { blockIdDigest } from './block-event-id.ts';
 
 const ZONE = 'America/Los_Angeles';
 const CALENDAR = 'dfai-blocks@group.calendar.example.com';
@@ -708,8 +709,35 @@ describe('the times sync compares', () => {
 });
 
 describe('blockEventId', () => {
-  const id = (path: string, attempt = 0, calendarId = CALENDAR) =>
-    blockEventId({ calendarId, path, attempt });
+  const VAULT_ID = 'k3v9q0m2b7hd5t1e';
+  const id = (path: string, attempt = 0, calendarId = CALENDAR, vaultId = VAULT_ID) =>
+    blockEventId({ vaultId, calendarId, path, attempt });
+
+  it('pins the exact ids drawn for fixed inputs', () => {
+    // Changing these makes two app versions draw different ids for one new
+    // block: two writers on different versions would then make two events.
+    // Ids already pushed are kept on their notes and never drawn again.
+    expect(id('Blocks/Payroll run block.md')).toBe('dfaic52ed443a64adb9b8e4ed70a2240502c');
+    expect(id('Blocks/Payroll run block.md', 1)).toBe('dfaic52ed343a64ad9e88e4ed80a224051df');
+    expect(id('Blocks/Mara Quill prep — Q4 ✓.md')).toBe('dfaif2b55218ddcf62b73e8c147f3e20db6e');
+    expect(id('Blocks/Payroll run block.md', 0, CALENDAR, 'p8r2s6u0c4f1g9j7')).toBe(
+      'dfai9fc20c8b20b34fb7abb90616d2e91b14',
+    );
+  });
+
+  it('is FNV-1a, 64 bits, over the UTF-8 bytes: its published test values', () => {
+    expect([blockIdDigest(''), blockIdDigest('a'), blockIdDigest('foobar')]).toEqual([
+      'cbf29ce484222325',
+      'af63dc4c8601ec8c',
+      '85944171f73967e8',
+    ]);
+  });
+
+  it('differs by vault: two vaults on one calendar never draw one id for one path', () => {
+    expect(id('Blocks/Payroll run block.md', 0, CALENDAR, 'p8r2s6u0c4f1g9j7')).not.toBe(
+      id('Blocks/Payroll run block.md'),
+    );
+  });
 
   it('is the same on every Mac for one calendar and one path, and in Google’s alphabet', () => {
     expect(id('Blocks/Payroll run block.md')).toBe(id('Blocks/Payroll run block.md'));

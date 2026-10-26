@@ -14,6 +14,11 @@ const CALENDAR = 'dfai-blocks@group.calendar.example.com';
 const TODAY = '2026-10-25';
 const NOW = Date.parse('2026-10-25T16:00:00Z');
 const BLOCK = 'Larkspur close block.md';
+const SETTINGS = '.atlas/settings.md';
+/** The vault's own id, in its settings: one of the seeds of a new block's event id. */
+const VAULT_ID = 'k3v9q0m2b7hd5t1e';
+const drawn = (attempt: number, path = BLOCK) =>
+  blockEventId({ vaultId: VAULT_ID, calendarId: CALENDAR, path, attempt });
 
 const file = (properties: Record<string, unknown>, body = '') =>
   `---\n${JSON.stringify(properties)}\n---\n${body}`;
@@ -56,9 +61,18 @@ function liveIndex(
 
 function setUp(
   notes: Record<string, string> = { [BLOCK]: blockFile() },
-  { extraPaths = [] }: { extraPaths?: string[] } = {},
+  {
+    extraPaths = [],
+    settings = file({ vault_id: VAULT_ID }),
+    draws = [0.5],
+  }: { extraPaths?: string[]; settings?: string | null; draws?: number[] } = {},
 ) {
-  const vault = automationVault({ today: TODAY, notes });
+  const vault = automationVault({
+    today: TODAY,
+    notes: settings === null ? notes : { [SETTINGS]: settings, ...notes },
+  });
+  let drawsAt = 0;
+  const rng = { next: () => draws[drawsAt++ % draws.length] ?? 0 };
   const google = fakeBlockCalendar();
   // The fake keeps Los Angeles time; the person's primary calendar is on it too.
   google.state.primaryZone = 'America/Los_Angeles';
@@ -78,6 +92,7 @@ function setUp(
       },
     },
     clock: { today: () => TODAY, now: () => NOW },
+    rng,
   };
   const run: BlockSyncRun = { vault: VAULT, calendarId: CALENDAR, timeZone: 'Europe/London' };
   const props = (path = BLOCK) =>
@@ -115,7 +130,7 @@ describe('syncBlocks: a new block', () => {
     });
     const id = write?.call.eventId ?? '';
     // Drawn from the calendar and the path, so another Mac pushing it too sends the same id.
-    expect(id).toBe(blockEventId({ calendarId: CALENDAR, path: BLOCK, attempt: 0 }));
+    expect(id).toBe(drawn(0));
     expect(props()).toEqual({
       type: 'block',
       start: '2026-10-26T09:00',
@@ -644,7 +659,7 @@ describe('syncBlocks: what goes wrong', () => {
   });
 
   it('a new block whose drawn id another note carries takes the next one', async () => {
-    const taken = blockEventId({ calendarId: CALENDAR, path: BLOCK, attempt: 0 });
+    const taken = drawn(0);
     const { google, props, sync } = setUp({
       [BLOCK]: blockFile(),
       // Renamed since its first push: it still carries the id drawn from this path.
@@ -657,14 +672,14 @@ describe('syncBlocks: what goes wrong', () => {
       }),
     });
     await sync();
-    const next = blockEventId({ calendarId: CALENDAR, path: BLOCK, attempt: 1 });
+    const next = drawn(1);
     expect(props()['gcal_event_id']).toBe(next);
     expect(google.state.writes.map((write) => write.call.eventId)).toEqual([next]);
   });
 
   it('a new block whose id Google holds as deleted is given the next id, never left unsynced', async () => {
     const { google, props, sync } = setUp();
-    const first = blockEventId({ calendarId: CALENDAR, path: BLOCK, attempt: 0 });
+    const first = drawn(0);
     // A note at this path before had that event, since deleted in Google: its id stays taken.
     google.state.events.set(first, {
       id: first,
@@ -675,7 +690,7 @@ describe('syncBlocks: what goes wrong', () => {
       end: null,
     });
     const report = await sync();
-    const next = blockEventId({ calendarId: CALENDAR, path: BLOCK, attempt: 1 });
+    const next = drawn(1);
     expect(report).toMatchObject({ inserted: 1, failed: [] });
     expect(props()['gcal_event_id']).toBe(next);
     expect(google.state.writes.map((write) => [write.kind, write.call.eventId])).toEqual([
@@ -688,7 +703,7 @@ describe('syncBlocks: what goes wrong', () => {
   it('gives up on a block after every id it may have is taken in Google, and says so', async () => {
     const { google, props, sync } = setUp();
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      const id = blockEventId({ calendarId: CALENDAR, path: BLOCK, attempt });
+      const id = drawn(attempt);
       google.state.events.set(id, {
         id,
         etag: '"g0"',
@@ -701,5 +716,108 @@ describe('syncBlocks: what goes wrong', () => {
     const report = await sync();
     expect(report.failed.map((failure) => failure.path)).toEqual([BLOCK]);
     expect(props()['gcal_etag']).toBeUndefined();
+  });
+});
+
+describe('syncBlocks: the vault’s own id, a seed of every new block’s event id', () => {
+  const settingsProps = (vault: ReturnType<typeof setUp>['vault']) =>
+    JSON.parse(vault.files.get(SETTINGS)?.split('\n')[1] ?? '{}') as Record<string, unknown>;
+
+  it('a vault without one is given one, once, from the injected Rng, every other byte of its settings kept', async () => {
+    let writesBefore = 0;
+    const { vault, google, sync } = setUp(
+      { [BLOCK]: blockFile() },
+      { settings: file({ google_blocks: true }, '# Settings\n\nWords James wrote.\n') },
+    );
+    const before = vault.files.get(SETTINGS) ?? '';
+    await sync();
+    const made = settingsProps(vault)['vault_id'];
+    // Each of its 16 characters is one draw: 0.5 of 32 is `g`, in Google's alphabet.
+    expect(made).toBe('gggggggggggggggg');
+    expect(settingsProps(vault)).toEqual({ google_blocks: true, vault_id: made });
+    expect(vault.files.get(SETTINGS)?.endsWith('\n# Settings\n\nWords James wrote.\n')).toBe(true);
+    expect(before).not.toBe(vault.files.get(SETTINGS));
+    expect(google.state.writes[0]?.call.eventId).toBe(
+      blockEventId({ vaultId: String(made), calendarId: CALENDAR, path: BLOCK, attempt: 0 }),
+    );
+    // A second new block reads the id the first wrote, and draws nothing.
+    vault.files.set('Mara Quill prep.md', blockFile());
+    const settingsThen = vault.files.get(SETTINGS);
+    writesBefore = google.state.writes.length;
+    await sync();
+    expect(vault.files.get(SETTINGS)).toBe(settingsThen);
+    expect(google.state.writes.length).toBe(writesBefore + 1);
+    expect(google.state.writes.at(-1)?.call.eventId).toBe(
+      blockEventId({
+        vaultId: String(made),
+        calendarId: CALENDAR,
+        path: 'Mara Quill prep.md',
+        attempt: 0,
+      }),
+    );
+  });
+
+  it('a vault with no settings file is given one holding its id', async () => {
+    const { vault, sync } = setUp({ [BLOCK]: blockFile() }, { settings: null, draws: [0, 0.99] });
+    await sync();
+    expect(settingsProps(vault)).toEqual({ vault_id: '0v0v0v0v0v0v0v0v' });
+  });
+
+  it('two vaults on one calendar draw two ids for one path, so neither patches the other’s event', async () => {
+    const one = setUp();
+    const two = setUp(undefined, { settings: file({ vault_id: 'p8r2s6u0c4f1g9j7' }) });
+    await one.sync();
+    await two.sync();
+    const [first] = one.google.state.writes;
+    const [second] = two.google.state.writes;
+    expect(first?.call.eventId).toBe(drawn(0));
+    expect(second?.call.eventId).not.toBe(first?.call.eventId);
+  });
+
+  it('a block pushed before keeps the id on its note, however ids are drawn now', async () => {
+    const old = 'dfai0123456789abcdef0123456789abcdef';
+    const { vault, google, props, sync } = setUp(
+      {
+        [BLOCK]: blockFile({
+          gcal_event_id: old,
+          gcal_calendar: CALENDAR,
+          gcal_etag: '"g0"',
+          gcal_synced_title: 'Larkspur close block',
+          gcal_synced_start: '2026-10-26T09:00',
+          gcal_synced_end: '2026-10-26T10:00',
+        }),
+      },
+      { settings: null },
+    );
+    google.state.events.set(old, {
+      id: old,
+      etag: '"g0"',
+      cancelled: false,
+      title: 'Larkspur close block',
+      start: { kind: 'timed', at: Date.parse('2026-10-26T09:00:00-07:00') },
+      end: { kind: 'timed', at: Date.parse('2026-10-26T10:00:00-07:00') },
+    });
+    vault.files.set(
+      BLOCK,
+      blockFile({ ...props(), start: '2026-10-26T11:00', end: '2026-10-26T12:00' }),
+    );
+    const report = await sync();
+    expect(report).toMatchObject({ pushed: 1, inserted: 0, failed: [] });
+    expect(google.state.writes.map((write) => [write.kind, write.call.eventId])).toEqual([
+      ['patch', old],
+    ]);
+    expect(props()['gcal_event_id']).toBe(old);
+    // Nothing new to draw an id for, so the settings are not written.
+    expect(vault.files.has(SETTINGS)).toBe(false);
+  });
+
+  it('a vault id that is not text is never overwritten: the new block is not pushed, and says why', async () => {
+    const { vault, google, sync } = setUp(undefined, { settings: file({ vault_id: 42 }) });
+    const before = vault.files.get(SETTINGS);
+    const report = await sync();
+    expect(google.state.writes).toEqual([]);
+    expect(vault.files.get(SETTINGS)).toBe(before);
+    expect(report.failed.map((failure) => failure.path)).toEqual([BLOCK]);
+    expect(report.failed[0]?.problem.problem).toContain('vault_id');
   });
 });
