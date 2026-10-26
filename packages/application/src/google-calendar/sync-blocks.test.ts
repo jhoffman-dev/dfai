@@ -537,6 +537,51 @@ describe('syncBlocks: what goes wrong', () => {
     expect(kept.has(VAULT)).toBe(false);
   });
 
+  it('stopped while Google’s copies of shared events are read, it reads no more and says no problem', async () => {
+    const { vault, google, kept, sync } = setUp({
+      'A block.md': blockFile(),
+      'B block.md': blockFile(),
+    });
+    await sync();
+    // Hearing its own inserts: after this, the listing gives nothing, so the copies' events are read.
+    await sync();
+    for (const name of ['A block', 'B block']) {
+      vault.files.set(`${name} copy.md`, vault.files.get(`${name}.md`) ?? '');
+    }
+    const record = kept.get(VAULT);
+    const writes = google.state.writes.length;
+    const report = await sync({ wanted: () => google.state.fetched.length === 0 });
+    expect(google.state.fetched).toHaveLength(1);
+    expect(report.problem).toBeNull();
+    expect(google.state.writes).toHaveLength(writes);
+    expect(kept.get(VAULT)).toBe(record);
+  });
+
+  it('stopped as Google answers 410, it does not list the calendar again', async () => {
+    const { google, kept, sync } = setUp();
+    await sync();
+    google.expire();
+    const record = kept.get(VAULT);
+    const report = await sync({ wanted: () => google.state.asked.length < 2 });
+    expect(google.state.asked).toHaveLength(2);
+    expect(report.problem).toBeNull();
+    expect(kept.get(VAULT)).toBe(record);
+  });
+
+  it('a pull stopped before its title is put back still counts as pulled', async () => {
+    const { google, props, sync } = setUp();
+    await sync();
+    const id = String(props()['gcal_event_id']);
+    google.move(id, '2026-10-26T15:00', '2026-10-26T16:00');
+    const kept = google.state.events.get(id);
+    if (kept === undefined) throw new Error('no event');
+    google.state.events.set(id, { ...kept, title: 'Renamed in Google' });
+    const report = await sync({ wanted: () => props()['start'] !== '2026-10-26T15:00' });
+    expect(props()['start']).toBe('2026-10-26T15:00');
+    expect(google.state.writes.filter((write) => write.kind === 'patch')).toEqual([]);
+    expect(report.pulled).toBe(1);
+  });
+
   it('stopped part way, it makes no more events and keeps no record', async () => {
     const { google, kept, sync } = setUp({ 'A block.md': blockFile(), 'B block.md': blockFile() });
     const report = await sync({ wanted: () => google.state.writes.length === 0 });
