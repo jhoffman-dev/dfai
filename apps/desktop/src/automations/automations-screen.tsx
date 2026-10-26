@@ -2,6 +2,7 @@ import {
   AUTOMATION_PRESETS,
   CHAT_READ_TOOLS,
   createVaultPath,
+  planClockLabel,
   PROPOSAL_SCHEMAS,
   type VaultPath,
 } from '@dfai/domain';
@@ -13,6 +14,7 @@ import {
   type RuleQueryPorts,
 } from '@dfai/application';
 import { AutomationEditor, AutomationsPage, QueryComposer, type PageHistory } from '@dfai/ui';
+import { localTimeZone } from '../today.ts';
 import { automationRows, logViews } from './automation-rows.ts';
 import { useAutomationEditor } from './use-automation-editor.ts';
 import type { useAutomations } from './use-automations.ts';
@@ -47,10 +49,17 @@ export function AutomationsScreen({
   const editor = useAutomationEditor({ automations, ports, clock, indexKey, activity });
   const { listing, watchingSince, pauses, planZone } = automations;
   const planNow = planNowOf(clock, planZone);
+  const planClock = planClockLabel({ planZone, macZone: localTimeZone() });
   const rows =
     listing === null || watchingSince === null
       ? null
-      : automationRows(listing, { watchingSince, now: clock.localNow(), pauses, planNow });
+      : automationRows(listing, {
+          watchingSince,
+          now: clock.localNow(),
+          pauses,
+          planNow,
+          planClock,
+        });
   const loadedOf = (id: string) =>
     listing?.automations.find((loaded) => loaded.rule.path === id) ?? null;
   const open = editor.editing?.kind === 'rule' ? loadedOf(editor.editing.rule.path) : null;

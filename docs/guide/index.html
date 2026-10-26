@@ -853,7 +853,8 @@ pnpm tauri:dev</pre>
         </table>
       </div>
       <h3>On a trip</h3>
-      <p>Today's meetings are your calendar's day, not the Mac's. Away in another time zone, Today lists the meetings of the day it is where your main calendar is, at that calendar's times, the same as the morning brief. Your tasks and the daily note still follow the Mac's day.</p>
+      <p>Today's meetings are your calendar's day, not the Mac's. Away in another time zone, Today lists the meetings of the day it is where your main calendar is, at that calendar's times, the same as the morning brief, and heads them with that day and clock — <i>Meetings · Tue 27 Oct, Chicago time</i>. At midnight on your calendar's clock the list turns to the next day by itself. Your tasks and the daily note still follow the Mac's day.</p>
+      <p>If you change your main calendar's time zone in Google (you moved, say), the next sync writes every meeting of the days it reads again on the new clock, once, and changes nothing else in those notes. A sync in which Google refuses your main calendar keeps the zone it had, so one bad sync never moves your meetings. If DFAI can't save the zone in the vault's settings, Activity says so once.</p>
       <p class="muted">The <a href="#connect">Local API and MCP</a> read the day's meetings from these notes (<code>GET /v1/calendar/meetings?day=YYYY-MM-DD</code>, <code>atlas_day_meetings</code>). The day you ask for is your calendar's day, and the answer names its time zone. The morning brief and n8n use this. Neither reaches Google.</p>
     </section>
 
@@ -865,7 +866,7 @@ pnpm tauri:dev</pre>
         <li>Have <a href="#todays-meetings">today's meetings</a> arriving from Google Calendar, linked to the people in them.</li>
         <li>Open <a href="#automations">Automations</a>, press <b>Morning brief</b>, look it over and press <b>Create automation</b>. It is off until you do.</li>
         <li>It runs every day at 07:00 on the Mac that <a href="#sync">runs the vault's automations</a>. Press <b>Run now</b> to brief today's meetings straight away.</li>
-        <li>"Today" and 07:00 are your main Google calendar's, not the Mac's. On a trip it briefs your calendar's day at 07:00 in your calendar's time zone, once, wherever the Mac is. The Automations page shows its next run and its log on that clock too. Until DFAI has read your meetings once, it uses the Mac's clock.</li>
+        <li>"Today" and 07:00 are your main Google calendar's, not the Mac's. On a trip it briefs your calendar's day at 07:00 in your calendar's time zone, once, wherever the Mac is. The Automations page shows its next run and its log on that clock too, and says so when it isn't the Mac's — <i>07:00 Chicago time</i>. Until DFAI has read your meetings once, it uses the Mac's clock; when a vault opens, the brief waits until DFAI has read the vault's settings.</li>
       </ol>
       <h3>What you get</h3>
       <ul>

@@ -33,5 +33,5 @@ export {
   previewMeetingCleanup,
 } from './meeting-cleanup.ts';
 export type { CleanupOwner, ListedCleanupTask, MeetingCleanupPorts } from './meeting-cleanup.ts';
-export { clockForRule, clockOnZone, planNowOf } from './rule-clock.ts';
+export { clockForRule, clockOnZone, planNowOf, waitsForPlanZone } from './rule-clock.ts';
 export type { RunClock } from './rule-clock.ts';

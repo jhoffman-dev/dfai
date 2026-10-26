@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { jsonMarkdown, vaultWith } from '../testing/settings-vault.ts';
-import { readPlanZone } from './plan-zone.ts';
+import { createSettingsWriter } from './settings-writer.ts';
+import { readPlanZone, tryKeepPlanZone } from './plan-zone.ts';
 
 const SETTINGS = '.atlas/settings.md';
 
@@ -20,5 +21,40 @@ describe('readPlanZone', () => {
   it('lets a failure that is not the note’s own rise', async () => {
     const fs = { readNotes: async () => Promise.reject(new Error('the disk went away')) };
     await expect(readPlanZone({ fs, markdown: jsonMarkdown() })).rejects.toThrow('disk went away');
+  });
+});
+
+describe('tryKeepPlanZone', () => {
+  const keep = (fs: ReturnType<typeof vaultWith>['fs']) => {
+    const markdown = jsonMarkdown();
+    return tryKeepPlanZone({
+      fs,
+      markdown,
+      settings: createSettingsWriter({ fs, markdown }),
+      learned: 'America/Chicago',
+      from: 'meetings',
+    });
+  };
+
+  it('is null once the zone is kept, and null again when there was nothing to write', async () => {
+    const { fs, written } = vaultWith({ [SETTINGS]: '---\n{}\n---\n' });
+    expect(await keep(fs)).toBeNull();
+    expect(written[SETTINGS]).toContain('America/Chicago');
+    expect(await keep(fs)).toBeNull();
+  });
+
+  it('says why a settings note refused it, naming no path on the Mac', async () => {
+    const { fs } = vaultWith({});
+    fs.readNotes = async () =>
+      Promise.reject(new Error('EACCES: /Users/mara/Vault/.atlas/settings.md'));
+    const problem = await keep(fs);
+    expect(problem).toContain('EACCES');
+    expect(problem).not.toContain('/Users/mara');
+  });
+
+  it('lets a fault in DFAI’s own code rise rather than be reported as a refusal', async () => {
+    const { fs } = vaultWith({});
+    fs.readNotes = async () => Promise.reject(new TypeError('paths is not iterable'));
+    await expect(keep(fs)).rejects.toThrow(TypeError);
   });
 });

@@ -2216,7 +2216,8 @@ function AppWindow({
           relay={apiAutomations}
           ports={automationPorts}
           clock={localClock}
-          planZone={planZone}
+          planZone={planZone.zone}
+          planZoneRead={planZone.read}
           vaultKey={vaultKey}
           indexReady={indexReady}
           activity={activityLog}

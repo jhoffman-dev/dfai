@@ -151,6 +151,7 @@ describe('syncMeetings: the first sync', () => {
       problem: null,
       failed: [],
       scopeRefused: false,
+      zoneProblem: null,
     });
     expect(vault.properties(NOTE)).toMatchObject({
       type: 'event',
@@ -485,6 +486,7 @@ describe('meetingSyncActivity', () => {
     problem: null,
     failed: [],
     scopeRefused: false,
+    zoneProblem: null,
   };
 
   it('says what a sync wrote, counted', () => {
@@ -562,5 +564,142 @@ describe('syncMeetings: the plan zone kept in the vault’s settings (#587)', ()
     const report = await sync();
     expect(report).toMatchObject({ created: 1, problem: null });
     expect(vault.files.get(SETTINGS)).toBe(broken);
+  });
+
+  it('says once in Activity why the zone was not kept, and nothing once it is', async () => {
+    const broken = '---\n: [unclosed\n---\n';
+    const { vault, sync } = setUp({
+      notes: { [SETTINGS]: broken },
+      zones: { primary: 'America/Chicago' },
+    });
+    const refused = await sync();
+    expect(refused.zoneProblem).toContain("settings.md can't be read");
+    expect(meetingSyncActivity(refused)).toMatchObject({
+      level: 'warning',
+      message: expect.stringContaining(
+        'Meetings from Google Calendar synced, but the calendar’s time zone could not be kept',
+      ),
+    });
+    vault.files.set(SETTINGS, file({ theme: 'dark' }));
+    const kept = await sync();
+    expect(kept.zoneProblem).toBeNull();
+    expect(meetingSyncActivity(kept)?.level ?? null).not.toBe('warning');
+    expect(keptZone(vault)).toBe('America/Chicago');
+  });
+
+  it('lets a fault in DFAI’s own code stop the sync, not pass as a refused write', async () => {
+    const { vault, sync } = setUp({ zones: { primary: 'America/Chicago' } });
+    const reads = vault.ports.fs.readNotes.bind(vault.ports.fs);
+    vault.ports.fs.readNotes = async (paths) => {
+      if (paths.includes(SETTINGS)) throw new TypeError('settings is not iterable');
+      return reads(paths);
+    };
+    const report = await sync();
+    expect(report.problem?.problem).toContain('settings is not iterable');
+  });
+});
+
+describe('syncMeetings: the calendar that names the zone failed (#587)', () => {
+  const SETTINGS = '.atlas/settings.md';
+  const TEAM = 'team@larkspur.example';
+  const teamOnly = (calendars: string[]): MeetingSetting => ({ enabled: true, calendars });
+  const refusing = (ports: ReturnType<typeof setUp>['ports'], refused: string): CalendarSource => ({
+    listEvents: async (ask) => {
+      if (ask.calendarId === refused) {
+        throw new GoogleCalendarError({ kind: 'api_refused', code: '403', message: 'Forbidden' });
+      }
+      return ports.source.listEvents(ask);
+    },
+  });
+
+  it('in a vault that reads no primary, keeps the first calendar’s zone while it fails', async () => {
+    const OTHER = 'other@larkspur.example';
+    const { vault, ports, google } = setUp({
+      notes: { [SETTINGS]: file({ google_plan_zone: 'America/Chicago' }) },
+    });
+    google.state.calendars[TEAM] = [meeting({ calendarId: TEAM })];
+    google.state.calendars[OTHER] = [
+      meeting({ id: 'ev-retro', calendarId: OTHER, title: 'Retro' }),
+    ];
+    const run: MeetingSyncRun = {
+      vault: VAULT,
+      timeZone: ZONE,
+      setting: teamOnly([TEAM, OTHER]),
+      blocksCalendarId: null,
+    };
+    const report = await syncMeetings({ ...ports, source: refusing(ports, TEAM) }, run);
+    expect(report.failed.map((failure) => failure.calendarId)).toEqual([TEAM]);
+    expect(vault.properties(SETTINGS)['google_plan_zone']).toBe('America/Chicago');
+    // The other calendar's note is written on the zone kept, not on its own (the fake's Los Angeles).
+    expect(vault.properties('Calendar/2026-10-24 Retro.md')['date']).toBe('2026-10-24T11:00');
+  });
+});
+
+describe('syncMeetings: the kept zone moves (#587)', () => {
+  const SETTINGS = '.atlas/settings.md';
+  const chicago = () => {
+    const zones: Record<string, string | null> = { primary: 'America/Chicago' };
+    return { zones, ...setUp({ zones }) };
+  };
+
+  it('lists every calendar again in full once, and writes each note on the new zone', async () => {
+    const { vault, google, zones, sync } = chicago();
+    await sync();
+    expect(vault.properties(NOTE)['date']).toBe('2026-10-24T11:00');
+    zones['primary'] = 'America/New_York';
+    const asked = google.state.asked.length;
+    const moved = await sync();
+    // Changes first, which name the new zone, then the window in full.
+    expect(google.state.asked.slice(asked).map((ask) => ask.syncToken === null)).toEqual([
+      false,
+      true,
+    ]);
+    expect(moved).toMatchObject({ updated: 1, full: ['primary'] });
+    expect(vault.properties(NOTE)).toMatchObject({
+      date: '2026-10-24T12:00',
+      ends: '2026-10-24T12:30',
+    });
+    expect(vault.properties(SETTINGS)['google_plan_zone']).toBe('America/New_York');
+  });
+
+  it('rewrites only the times, byte for byte elsewhere, and then leaves the note be', async () => {
+    const { vault, google, zones, sync } = chicago();
+    await sync();
+    vault.files.set(NOTE, `${vault.files.get(NOTE)}\nPrep James wrote.\n`);
+    zones['primary'] = 'America/New_York';
+    await sync();
+    const rewritten = vault.files.get(NOTE) ?? '';
+    expect(rewritten).toContain('Prep James wrote.');
+    expect(rewritten).toContain('"date":"2026-10-24T12:00"');
+    const asked = google.state.asked.length;
+    const settled = await sync();
+    expect(settled).toMatchObject({ updated: 0, created: 0 });
+    expect(google.state.asked.slice(asked).every((ask) => ask.syncToken !== null)).toBe(true);
+    expect(vault.files.get(NOTE)).toBe(rewritten);
+  });
+
+  it('lists nothing again when the zone was never kept: the notes were on it already', async () => {
+    const { google, sync } = setUp({ zones: { primary: 'America/Chicago' } });
+    await sync();
+    const asked = google.state.asked.length;
+    await sync();
+    expect(google.state.asked.slice(asked).every((ask) => ask.syncToken !== null)).toBe(true);
+  });
+
+  it('keeps the old zone, and the notes on it, when the relisting fails', async () => {
+    const { vault, google, zones, sync } = chicago();
+    await sync();
+    zones['primary'] = 'America/New_York';
+    const first = google.source.listEvents;
+    let calls = 0;
+    google.source.listEvents = async (ask) => {
+      calls += 1;
+      if (calls === 2) throw new GoogleCalendarError({ kind: 'unreachable', message: 'offline' });
+      return first(ask);
+    };
+    const report = await sync();
+    expect(report.problem).not.toBeNull();
+    expect(vault.properties(NOTE)['date']).toBe('2026-10-24T11:00');
+    expect(vault.properties(SETTINGS)['google_plan_zone']).toBe('America/Chicago');
   });
 });

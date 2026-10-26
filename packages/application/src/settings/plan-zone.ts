@@ -1,4 +1,9 @@
-import { planZoneChange, storedPlanZone, type PlanZoneSource } from '@dfai/domain';
+import {
+  messageWithoutPaths,
+  planZoneChange,
+  storedPlanZone,
+  type PlanZoneSource,
+} from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import type { SettingsWriter } from './settings-writer.ts';
@@ -47,4 +52,28 @@ export async function keepPlanZone({
   if (Object.keys(planZoneChange({ settings: current, learned, from })).length === 0) return false;
   await settings.update((latest) => planZoneChange({ settings: latest, learned, from }));
   return true;
+}
+
+/** A fault in DFAI's own code, not the disk's or the note's: one no retry mends. */
+export const isProgrammingFault = (cause: unknown): boolean =>
+  cause instanceof TypeError || cause instanceof RangeError || cause instanceof ReferenceError;
+
+/**
+ * Keeps the zone as `keepPlanZone` does, for a sync that finishes whether
+ * or not it lands: why it did not, in words that name no path, or null when
+ * it landed or needed no write. The sync reports it, so the person hears of
+ * a settings note that keeps refusing it; the zone is learned again on the
+ * next sync, and until then readers keep the one kept before. A fault in
+ * DFAI's own code is no refusal to report: it rises.
+ */
+export async function tryKeepPlanZone(
+  input: Parameters<typeof keepPlanZone>[0],
+): Promise<string | null> {
+  try {
+    await keepPlanZone(input);
+    return null;
+  } catch (cause) {
+    if (isProgrammingFault(cause)) throw cause;
+    return messageWithoutPaths(cause);
+  }
 }

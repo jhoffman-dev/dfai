@@ -6,9 +6,10 @@ import {
   isScopeRefusal,
   meetingCandidatesOf,
   meetingWindow,
-  namedPlanZone,
   planEventNotes,
+  planZoneMoved,
   splitFrontmatter,
+  syncZones,
   wikiLinkTargetFor,
   EVENT_ID_LOOKUP_SIZE,
   EVENT_NOTE_KEYS,
@@ -20,13 +21,14 @@ import {
   type GoogleProblem,
   type MeetingSetting,
   type MeetingWindow,
+  type SyncZones,
   type VaultPath,
 } from '@dfai/domain';
 import type { IndexPort, QueryResult } from '../index/ports.ts';
 import { loadLinkDirectory } from '../meeting-links/link-directory.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
-import { keepPlanZone } from '../settings/plan-zone.ts';
+import { isProgrammingFault, readPlanZone, tryKeepPlanZone } from '../settings/plan-zone.ts';
 import type { SettingsWriter } from '../settings/settings-writer.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
@@ -65,6 +67,11 @@ export interface MeetingSyncReport {
    * nothing until the person allows it, so the sync waits for that.
    */
   readonly scopeRefused: boolean;
+  /**
+   * Why the zone the notes are on could not be kept in the vault's settings
+   * (#587); null when it was, or needed no write. The notes are written either way.
+   */
+  readonly zoneProblem: string | null;
 }
 
 export interface MeetingSyncPorts {
@@ -151,12 +158,12 @@ function addAnswer(listed: Listed, calendarId: string, answer: Answered, fromDay
 async function listCalendars(
   ports: MeetingSyncPorts,
   run: MeetingSyncRun,
-  window: MeetingWindow,
+  { window, fresh }: { window: MeetingWindow; fresh: boolean },
 ): Promise<Listed> {
   const kept = ports.records.read(run.vault).calendars;
   const wanted = run.wanted ?? ALWAYS_WANTED;
   const listed: Listed = { events: [], complete: [], following: {}, zones: {}, failed: [] };
-  const calendars = run.setting.calendars.filter((id) => id !== run.blocksCalendarId);
+  const calendars = meetingCalendars(run);
   for (const calendarId of calendars) {
     if (!wanted()) break;
     try {
@@ -164,7 +171,7 @@ async function listCalendars(
         vault: run.vault,
         calendarId,
         window,
-        kept: kept[calendarId],
+        kept: fresh ? undefined : kept[calendarId],
       });
       addAnswer(listed, calendarId, answer, window.fromDay);
     } catch (cause) {
@@ -176,6 +183,55 @@ async function listCalendars(
   const [first] = listed.failed;
   if (first !== undefined && listed.failed.length === calendars.length) throw first.cause;
   return listed;
+}
+
+/** The calendars a sync reads meetings from, in order: never the one blocks go to. */
+const meetingCalendars = (run: MeetingSyncRun) =>
+  run.setting.calendars.filter((id) => id !== run.blocksCalendarId);
+
+/** The zones a listing plans on and keeps, against the zone kept as the sync began. */
+const zonesOf = (run: MeetingSyncRun, listed: Listed, stored: string | null): SyncZones =>
+  syncZones({
+    calendars: meetingCalendars(run),
+    listedZones: listed.zones,
+    failed: listed.failed.map(({ calendarId }) => calendarId),
+    stored,
+  });
+
+/**
+ * The zone kept as the sync begins. A settings note the disk will not hand
+ * over keeps none for this sync: the notes are planned as the calendars say,
+ * and the keep that follows reports why it could not be written.
+ */
+async function storedZone(ports: MeetingSyncPorts): Promise<string | null> {
+  try {
+    return await readPlanZone(ports);
+  } catch (cause) {
+    if (isProgrammingFault(cause)) throw cause;
+    return null;
+  }
+}
+
+/**
+ * Each calendar's events, and the zones they are planned on. When the zone
+ * the notes are on has moved (#587) — the primary calendar now keeps New
+ * York's time, not Chicago's — every calendar is listed again in full, so
+ * each note in the window is written again on the new zone, whether or not
+ * its event changed. Once the new zone is kept the next sync finds no move,
+ * so the relisting happens once for each move.
+ */
+async function listWithZones(
+  ports: MeetingSyncPorts,
+  run: MeetingSyncRun,
+  window: MeetingWindow,
+): Promise<{ listed: Listed; zones: SyncZones }> {
+  const stored = await storedZone(ports);
+  const listed = await listCalendars(ports, run, { window, fresh: false });
+  const zones = zonesOf(run, listed, stored);
+  const wanted = run.wanted ?? ALWAYS_WANTED;
+  if (!planZoneMoved(stored, zones.learned) || !wanted()) return { listed, zones };
+  const relisted = await listCalendars(ports, run, { window, fresh: true });
+  return { listed: relisted, zones: zonesOf(run, relisted, stored) };
 }
 
 const pathsIn = (result: QueryResult): string[] => {
@@ -304,8 +360,7 @@ async function applyWrites(
 async function planWrites(
   ports: MeetingSyncPorts,
   run: MeetingSyncRun,
-  window: MeetingWindow,
-  listed: Listed,
+  { window, listed, zones }: { window: MeetingWindow; listed: Listed; zones: SyncZones },
 ) {
   const notes = await readEventNotes(ports, listed.events, window);
   const directory = await loadLinkDirectory({ index: ports.index });
@@ -316,7 +371,7 @@ async function planWrites(
     complete: listed.complete,
     window,
     timeZone: run.timeZone,
-    calendarZones: listed.zones,
+    calendarZones: zones.calendarZones,
     ignoredCalendars: run.blocksCalendarId === null ? [] : [run.blocksCalendarId],
     people: directory.people,
     companies: directory.companies,
@@ -327,24 +382,17 @@ async function planWrites(
   return { writes, files: notes.files };
 }
 
-const NOTHING = { created: 0, updated: 0, missing: 0, full: [], failed: [] } as const;
+const NOTHING = {
+  created: 0,
+  updated: 0,
+  missing: 0,
+  full: [],
+  failed: [],
+  zoneProblem: null,
+} as const;
 
 const refusedScope = (cause: unknown) =>
   cause instanceof GoogleCalendarError && isScopeRefusal(cause.failure);
-
-/**
- * Keeps the zone the event notes were just written on (#587), so what reads
- * them later reads them on that clock. A write the settings refuse stops
- * nothing: the notes are written, the zone is learned again on the next
- * sync, and until then readers keep the zone kept before, or the Mac's.
- */
-async function keepZone(ports: MeetingSyncPorts, learned: string | null): Promise<void> {
-  try {
-    await keepPlanZone({ ...ports, learned, from: 'meetings' });
-  } catch {
-    // Safe to ignore: see above.
-  }
-}
 
 /**
  * Brings the vault's meetings up to date from Google Calendar (ADR-0046):
@@ -369,12 +417,14 @@ export async function syncMeetings(
   try {
     const window = meetingWindow({ today: ports.clock.today(), timeZone: run.timeZone });
     if (window === null) throw new Error(`today (${ports.clock.today()}) is not a day`);
-    const listed = await listCalendars(ports, run, window);
-    const planned = wanted() ? await planWrites(ports, run, window, listed) : null;
+    const { listed, zones } = await listWithZones(ports, run, window);
+    const planned = wanted() ? await planWrites(ports, run, { window, listed, zones }) : null;
     const tally = planned === null ? NOTHING : await applyWrites(ports, { ...planned, wanted });
+    let zoneProblem: string | null = null;
     if (wanted()) {
       ports.records.write(run.vault, { calendars: listed.following, lastSyncAt: ran });
-      await keepZone(ports, namedPlanZone(listed.zones));
+      // Kept once the notes are written on it, so what reads them later reads them on that clock (#587).
+      zoneProblem = await tryKeepPlanZone({ ...ports, learned: zones.learned, from: 'meetings' });
     }
     const failed = listed.failed.map(({ calendarId, problem }) => ({ calendarId, problem }));
     return {
@@ -386,6 +436,7 @@ export async function syncMeetings(
       problem: null,
       failed,
       scopeRefused: listed.failed.some(({ cause }) => refusedScope(cause)),
+      zoneProblem,
     };
   } catch (cause) {
     return { ran, ...NOTHING, problem: googleProblemOf(cause), scopeRefused: refusedScope(cause) };
@@ -431,6 +482,14 @@ export function meetingSyncActivity(report: MeetingSyncReport): ActivityReport |
       level: 'warning',
       kind: 'source',
       message: `Meetings from Google Calendar: ${partial.problem}${fix} The other calendars synced.`,
+      subject: null,
+    };
+  }
+  if (report.zoneProblem !== null) {
+    return {
+      level: 'warning',
+      kind: 'source',
+      message: `Meetings from Google Calendar synced, but the calendar’s time zone could not be kept in the vault’s settings: ${report.zoneProblem}`,
       subject: null,
     };
   }

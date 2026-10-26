@@ -20,6 +20,7 @@ import {
   clockForRule,
   planNowOf,
   refreshBuiltInPrompts,
+  waitsForPlanZone,
   HeldForPullError,
   loadAutomations,
   needsAdoption,
@@ -83,6 +84,12 @@ export interface AutomationsOptions {
    * brief is counted and run on its clock. Null or left out, on the Mac's.
    */
   readonly planZone?: string | null;
+  /**
+   * Whether the vault's settings have been read, so `planZone` is known
+   * (#587). Until they have, the brief's schedule waits: counted on the
+   * Mac's clock meanwhile, it could brief a day early. Left out, read.
+   */
+  readonly planZoneRead?: boolean;
   /** Re-reads the tree and the index once a run or an edit has written. */
   readonly onSettled: () => void;
   /**
@@ -169,6 +176,8 @@ export function useAutomations(options: AutomationsOptions) {
   const planZone = options.planZone ?? null;
   const planZoneNow = useRef(planZone);
   planZoneNow.current = planZone;
+  const planZoneReadNow = useRef(options.planZoneRead ?? true);
+  planZoneReadNow.current = options.planZoneRead ?? true;
 
   useListing({ ...options, revision, tick, setRead, setError });
 
@@ -366,6 +375,7 @@ export function useAutomations(options: AutomationsOptions) {
     mayActOn,
     heldForPull,
     planZoneNow,
+    planZoneReadNow,
   });
   useNoteRuns({
     ...options,
@@ -554,6 +564,7 @@ function useSchedule({
   pulledFiles,
   activity,
   planZoneNow,
+  planZoneReadNow,
   scheduled = true,
 }: AutomationsOptions & {
   listing: AutomationListing | null;
@@ -566,6 +577,8 @@ function useSchedule({
   heldForPull: { readonly current: ReadonlySet<string> };
   /** The plan zone the vault keeps, as of this tick. */
   planZoneNow: { readonly current: string | null };
+  /** Whether the settings that keep the plan zone have been read, as of this tick. */
+  planZoneReadNow: { readonly current: boolean };
 }) {
   const opened = useRef<string | null>(null);
   const checked = useRef<{ key: string; standing: unknown } | null>(null);
@@ -593,6 +606,11 @@ function useSchedule({
         const now = clock.localNow();
         if (isPaused(rule.id, now)) continue;
         const onOpening = opening || openingHeld.current.has(rule.id);
+        if (waitsForPlanZone({ rule, zoneRead: planZoneReadNow.current })) {
+          // Its turn on opening is kept for a tick once the zone is known.
+          if (onOpening) openingHeld.current.add(rule.id);
+          continue;
+        }
         const planNow = planNowOf(clock, planZoneNow.current);
         const counted = ruleClockOf({ rule, now, watchingSince, planNow });
         const trigger = dueTrigger({ rule, log, ...counted, opening: onOpening });
@@ -625,6 +643,7 @@ function useSchedule({
     standing,
     activity,
     planZoneNow,
+    planZoneReadNow,
   ]);
 }
 

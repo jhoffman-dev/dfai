@@ -1266,6 +1266,12 @@ export interface ApiAutomation {
    * it is off, paused until run by hand, or runs only on opening or by hand.
    */
   readonly nextRun: string | null;
+  /**
+   * The zone `nextRun` and its log's times are on, as an IANA name, when that
+   * is the vault's plan zone rather than the Mac's own: the morning brief
+   * keeps the primary calendar's clock (#587). Null for a rule on the Mac's.
+   */
+  readonly timeZone: string | null;
   /** Why the app's clock is not running it just now, or null. */
   readonly paused: string | null;
 }

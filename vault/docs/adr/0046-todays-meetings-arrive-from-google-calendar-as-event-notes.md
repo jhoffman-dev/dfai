@@ -286,18 +286,63 @@ clock too, so it is kept:
 - **Only what Google names.** The Mac's own zone is never kept: kept, it
   would move every reader onto the clock of wherever the Mac was. A sync
   where no calendar named one keeps what was kept before.
+- **Only from the calendar that names it** (PR #592 attack). The zone is
+  named by the primary calendar, else the first calendar the vault reads
+  (`namingCalendar`). A sync in which that calendar failed (a 403, a
+  timeout) learns nothing, though the others answered: a team calendar on
+  London's clock would otherwise move every reader of the primary's
+  Chicago notes onto London's for one sync and back on the next. That
+  sync's notes, the other calendars' too, are planned on the zone kept, as
+  the notes already written are (`syncZones`). With none kept yet, it plans
+  as the calendars it read say, and keeps nothing until the naming
+  calendar answers.
+- **When the zone moves, the notes move with it** (PR #592 attack). Chosen
+  over recording each note's zone as one more owned key. When the zone a
+  sync learns is not the one kept (`planZoneMoved`: Chicago kept, New York
+  learned), the same sync lists every calendar again in full, not by what
+  changed, so each event note in the window has its owned `date` and `ends`
+  written again on the new zone, whether or not its event changed; then the
+  new zone is kept. Only owned keys that differ are written, byte-preserving
+  (ADR-0003), so a note's body and other keys are untouched. It is bounded —
+  one full listing of the window for each move, the window's notes only —
+  and idempotent: once the new zone is kept the next sync finds no move,
+  and a second rewrite writes nothing. A sync that fails part way keeps the
+  old zone, so the next one tries the move again. Why not a zone per note:
+  every reader (Today, the brief, `POST /v1/meetings`, queries on `date`)
+  would have to convert each note on its own clock, every note would gain a
+  key on the first sync after the upgrade, and `date` would still mix two
+  clocks in one query. The cost of the choice: a note before the window,
+  or one on a calendar that failed during the move, stays on the clock it
+  was written on — the past is what it was — until its event changes. None
+  kept is no move: before #587 every note was already written on the zone
+  the calendars named.
 - **No churn.** The settings are read first and written only when the
-  zone changes, so a sync every 15 minutes leaves the file alone. A sync
-  that is stopped keeps nothing, and a settings note that refuses the write
-  (unreadable frontmatter) stops no sync: the zone is learned again next
-  time.
+  zone changes, so a sync every 15 minutes leaves the file alone. A zone is
+  compared by its own name (`sameZone`), so one typed by hand as
+  `america/chicago` or `America/Chicago` is the zone Google names
+  `America/Chicago`, read as it, and never written over. A sync that is
+  stopped keeps nothing.
+- **A refused write is said, once.** A settings note that refuses the write
+  (unreadable frontmatter, a disk that will not write) stops no sync: the
+  notes are written and the zone is learned again next time. The sync's
+  report carries why (`zoneProblem`), and Activity says it as one warning,
+  not again until it changes or the zone is kept. A fault in DFAI's own
+  code (a `TypeError`) is no refusal: it rises and stops the sync, which
+  says so.
 - **Who reads it.** A meeting's start from the calendar (`POST
 /v1/meetings`, #582) measures the arrival on it. The morning brief
-  (ADR-0047) counts its day and its 07:00 on it. Today's meeting list
-  reads the plan zone's day, so Today and the brief agree; Today's tasks
-  and daily note keep the Mac's day. `GET /v1/calendar/meetings` answers
-  the `timeZone` its `day` is on. Each reader falls back to the Mac's zone
-  while none is kept, or when the settings cannot be read.
+  (ADR-0047) counts its day and its 07:00 on it, and waits for the settings
+  to be read before it is counted at all. Today's meeting list reads the
+  plan zone's day, so Today and the brief agree, and turns to the next day
+  at that zone's midnight, looked at each minute, though the page's own day
+  has not turned; Today's tasks and daily note keep the Mac's day. When
+  the plan zone is not the Mac's, the list is headed with its day and
+  clock (`Meetings · Tue 27 Oct, Chicago time`) and the brief's row on the
+  Automations page says its next run is on that clock (`07:00 Chicago
+time`). `GET /v1/calendar/meetings` answers the `timeZone` its `day` is
+  on, and `GET /v1/automations` the `timeZone` of the brief's `nextRun`.
+  Each reader falls back to the Mac's zone while none is kept, or when the
+  settings cannot be read.
 
 ## Consequences
 

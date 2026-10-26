@@ -112,12 +112,19 @@ export {
 export { compileBlocksByEventIdQuery, compileBlocksToSyncQuery } from './block-sync-queries.ts';
 export { blockSyncEnabled, GOOGLE_BLOCKS_KEY } from './block-sync-setting.ts';
 export {
+  meetingsHeading,
   namedPlanZone,
+  namingCalendar,
+  planClockLabel,
   planZoneChange,
+  planZoneMoved,
   planZoneOr,
+  sameZone,
   storedPlanZone,
+  syncZones,
   wallDayIn,
   wallTimeIn,
+  zonePlaceName,
   PLAN_ZONE_KEY,
 } from './plan-zone.ts';
-export type { PlanZoneSource } from './plan-zone.ts';
+export type { PlanZoneSource, SyncZones } from './plan-zone.ts';

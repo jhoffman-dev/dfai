@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { REVIEW_SCOPE, todayScope, type ReadScope } from '@dfai/application';
 import { TodayMeetings, TodayPage } from '@dfai/ui';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
-import { localClock } from '../today.ts';
+import { localClock, localTimeZone } from '../today.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { useToday } from './use-today.ts';
 import { useTodaysMeetings } from './use-todays-meetings.ts';
@@ -54,6 +54,7 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
     vault: pane.vault,
     day: today.page.today?.today ?? null,
     clock: localClock,
+    macZone: localTimeZone(),
     indexReady: pages.indexReady,
   });
   // Set while drawing, as React has a value from the last draw kept: the page
@@ -68,8 +69,14 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
       onOpenInbox={() => pages.openPage({ kind: 'inbox' })}
       onOpenReview={() => pages.openPage({ kind: 'review' })}
       onOpenDailyNote={pages.today.onOpenDailyNote}
-      {...(meetings.length > 0 && {
-        meetings: <TodayMeetings meetings={meetings} onOpen={pages.openNote} />,
+      {...(meetings.meetings.length > 0 && {
+        meetings: (
+          <TodayMeetings
+            meetings={meetings.meetings}
+            heading={meetings.heading}
+            onOpen={pages.openNote}
+          />
+        ),
       })}
       {...chrome}
     />

@@ -46,7 +46,8 @@ export const dayMeetings = defineTool({
     '{ day, timeZone, meetings: [{ path, title, start, end, people, companies, meeting, unanswered }] }. ' +
     'Each is an event note a meetings sync wrote in Calendar/ (ADR-0046), read from the vault, ' +
     'never from Google, so it answers offline. "day" is a day on the calendar\'s clock: the zone ' +
-    'its primary calendar keeps, named as "timeZone" (the Mac\'s until a sync has learned it), ' +
+    'the primary calendar keeps, else the first calendar the vault reads, named as "timeZone" ' +
+    "(the Mac's until a sync has learned it), " +
     'which may not be the day where the Mac is. "start" and "end" are wall-clock HH:MM on that ' +
     'zone; "end" is ' +
     'null when the meeting ends another day. Declined and cancelled meetings, and all-day ' +

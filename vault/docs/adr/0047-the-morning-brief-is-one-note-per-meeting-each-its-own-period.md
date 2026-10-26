@@ -112,8 +112,16 @@ calendar day once, at 07:00 there, and never skips one; the scheduler was
 played out across zones a day apart and across both clock changes to show
 it. When a zone is first kept mid-trip, a day the Mac's clock already
 briefed is found recorded and not briefed again. While no zone is kept, it
-is the Mac's clock, as before. The Automations page and `GET
-/v1/automations` show the brief's next run, and its log, on that clock.
+is the Mac's clock, as before. Until the vault's settings have been read
+when it opens, the brief is not counted at all (`waitsForPlanZone`): counted
+on the Mac's clock meanwhile, a Mac far ahead of the calendar could brief
+the calendar's tomorrow from yesterday's notes. A turn on opening is held
+for the next tick, once the read lands; a settings note that cannot be read
+counts as read, with no zone. No other rule waits. The Automations page and
+`GET /v1/automations` show the brief's next run, and its log, on that
+clock; where it is not the Mac's, the page says so (`28 Oct 2026, 07:00
+Chicago time`) and the API row names it as `timeZone`, null for a rule on
+the Mac's clock.
 
 ## Consequences
 

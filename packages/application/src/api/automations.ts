@@ -8,6 +8,7 @@ import {
   logEntrySummary,
   capFor,
   MAX_LOG_ENTRIES,
+  keepsCalendarClock,
   nextRunOf,
   noteTitle,
   ruleClockOf,
@@ -63,9 +64,11 @@ const ECHOED_ID_LENGTH = 80;
 /** Every rule in the vault, as the Automations page lists it; broken ones apart, with why. */
 export async function automationsRoute(request: VaultRequest): Promise<RouteResult> {
   const listing = await listingOf(request);
+  const planZone = await readPlanZone(request);
   const clock = {
     now: request.clock.localNow(),
-    planNow: planNowOf(request.clock, await readPlanZone(request)),
+    planZone,
+    planNow: planNowOf(request.clock, planZone),
   };
   const automations = listing.automations.map((loaded) => automationOf(loaded, request, clock));
   request.assertStillOpen();
@@ -210,7 +213,7 @@ function claudeStepOf(action: Extract<AutomationAction, { kind: 'claude' }>): Ap
 function automationOf(
   { rule, log }: LoadedAutomation,
   request: VaultRequest,
-  clock: { now: string; planNow: string | null },
+  clock: { now: string; planZone: string | null; planNow: string | null },
 ): ApiAutomation {
   const pause = request.automationClock?.pauses.get(rule.id) ?? null;
   // The morning brief is counted on the plan zone's clock, as the app's runner counts it (#587).
@@ -235,6 +238,7 @@ function automationOf(
     action: describeAction(rule.action),
     lastRun: lastRunFrom(log),
     nextRun,
+    timeZone: clock.planZone !== null && keepsCalendarClock(rule) ? clock.planZone : null,
     // A pause's reason can quote the disk's refusal, path and all.
     paused: pause === null ? null : messageWithoutPaths(pause.reason),
   };

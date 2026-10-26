@@ -2,12 +2,19 @@
 import { describe, expect, it } from 'vitest';
 import { planZone } from './event-notes.ts';
 import {
+  meetingsHeading,
   namedPlanZone,
+  namingCalendar,
+  planClockLabel,
   planZoneChange,
+  planZoneMoved,
   planZoneOr,
+  sameZone,
   storedPlanZone,
+  syncZones,
   wallDayIn,
   wallTimeIn,
+  zonePlaceName,
   PLAN_ZONE_KEY,
 } from './plan-zone.ts';
 
@@ -17,6 +24,11 @@ const LOS_ANGELES = 'America/Los_Angeles';
 describe('storedPlanZone', () => {
   it('reads the zone the settings keep, trimmed', () => {
     expect(storedPlanZone({ [PLAN_ZONE_KEY]: ' America/Chicago ' })).toBe(CHICAGO);
+  });
+
+  it('reads a zone typed in any case by the zone’s own name', () => {
+    expect(storedPlanZone({ [PLAN_ZONE_KEY]: 'america/chicago' })).toBe(CHICAGO);
+    expect(storedPlanZone({ [PLAN_ZONE_KEY]: 'utc' })).toBe('UTC');
   });
 
   it('reads none from settings that keep none, or one that is not a zone', () => {
@@ -101,5 +113,177 @@ describe('the plan zone’s clock', () => {
 
   it('reads midnight as 00, not 24', () => {
     expect(wallTimeIn(CHICAGO, Date.parse('2026-10-27T05:00:00Z'))).toBe('2026-10-27T00:00:00');
+  });
+});
+
+describe('sameZone', () => {
+  it('is one zone however each was written', () => {
+    expect(sameZone('america/chicago', ' America/Chicago ')).toBe(true);
+    expect(sameZone(CHICAGO, LOS_ANGELES)).toBe(false);
+    expect(sameZone(null, null)).toBe(true);
+    expect(sameZone(CHICAGO, null)).toBe(false);
+  });
+});
+
+describe('planZoneChange, against a zone typed by hand', () => {
+  it('writes nothing over a zone the settings keep in another case or with spaces', () => {
+    for (const typed of ['america/chicago', ' America/Chicago ', 'AMERICA/CHICAGO']) {
+      expect(
+        planZoneChange({
+          settings: { [PLAN_ZONE_KEY]: typed },
+          learned: CHICAGO,
+          from: 'meetings',
+        }),
+      ).toEqual({});
+    }
+  });
+
+  it('keeps the zone by its own name when it was learned in another case', () => {
+    expect(planZoneChange({ settings: {}, learned: 'america/chicago', from: 'meetings' })).toEqual({
+      [PLAN_ZONE_KEY]: CHICAGO,
+    });
+  });
+});
+
+describe('namingCalendar', () => {
+  it('is the primary when it is read, else the first calendar read', () => {
+    expect(namingCalendar(['team@larkspur.example', 'primary'])).toBe('primary');
+    expect(namingCalendar(['team@larkspur.example', 'other@larkspur.example'])).toBe(
+      'team@larkspur.example',
+    );
+    expect(namingCalendar([])).toBeNull();
+  });
+});
+
+describe('syncZones', () => {
+  const TEAM = 'team@larkspur.example';
+  const LONDON = 'Europe/London';
+
+  it('plans and keeps as the calendars say when the naming one answered', () => {
+    const zones = syncZones({
+      calendars: ['primary', TEAM],
+      listedZones: { primary: CHICAGO, [TEAM]: LONDON },
+      failed: [],
+      stored: LOS_ANGELES,
+    });
+    expect(zones.learned).toBe(CHICAGO);
+    expect(planZone({ calendarZones: zones.calendarZones, timeZone: LOS_ANGELES })).toBe(CHICAGO);
+  });
+
+  it('learns nothing, and plans on the kept zone, when the primary failed', () => {
+    const zones = syncZones({
+      calendars: ['primary', TEAM],
+      listedZones: { [TEAM]: LONDON },
+      failed: ['primary'],
+      stored: CHICAGO,
+    });
+    expect(zones.learned).toBeNull();
+    expect(planZone({ calendarZones: zones.calendarZones, timeZone: LOS_ANGELES })).toBe(CHICAGO);
+  });
+
+  it('does the same for the first calendar of a vault that reads no primary', () => {
+    const zones = syncZones({
+      calendars: [TEAM, 'other@larkspur.example'],
+      listedZones: { 'other@larkspur.example': LONDON },
+      failed: [TEAM],
+      stored: CHICAGO,
+    });
+    expect(zones.learned).toBeNull();
+    expect(planZone({ calendarZones: zones.calendarZones, timeZone: LOS_ANGELES })).toBe(CHICAGO);
+  });
+
+  it('with no zone kept yet, plans as the others say and keeps nothing', () => {
+    const zones = syncZones({
+      calendars: ['primary', TEAM],
+      listedZones: { [TEAM]: LONDON },
+      failed: ['primary'],
+      stored: null,
+    });
+    expect(zones).toEqual({ calendarZones: { [TEAM]: LONDON }, learned: null });
+  });
+
+  it('learns from the naming calendar though another failed', () => {
+    const zones = syncZones({
+      calendars: ['primary', TEAM],
+      listedZones: { primary: CHICAGO },
+      failed: [TEAM],
+      stored: LOS_ANGELES,
+    });
+    expect(zones.learned).toBe(CHICAGO);
+  });
+});
+
+describe('planZoneMoved', () => {
+  it('is a move only from one kept zone to another', () => {
+    expect(planZoneMoved(CHICAGO, 'America/New_York')).toBe(true);
+    expect(planZoneMoved('america/chicago', CHICAGO)).toBe(false);
+    expect(planZoneMoved(null, CHICAGO)).toBe(false);
+    expect(planZoneMoved(CHICAGO, null)).toBe(false);
+  });
+});
+
+describe('the kept zone over a run of syncs', () => {
+  const NEW_YORK = 'America/New_York';
+  /** One sync: what it keeps, and whether it lists again, from what it learned. */
+  const step = (settings: Record<string, unknown>, learned: string | null) => {
+    const stored = storedPlanZone(settings);
+    const moved = planZoneMoved(stored, learned);
+    return {
+      moved,
+      settings: { ...settings, ...planZoneChange({ settings, learned, from: 'meetings' }) },
+    };
+  };
+
+  it('moves between two zones and back, and keeps the last when a sync learns none', () => {
+    const learnedRun: (string | null)[] = [
+      CHICAGO,
+      CHICAGO,
+      NEW_YORK,
+      NEW_YORK,
+      null,
+      CHICAGO,
+      null,
+    ];
+    let settings: Record<string, unknown> = {};
+    const seen = learnedRun.map((learned) => {
+      const next = step(settings, learned);
+      settings = next.settings;
+      return { kept: storedPlanZone(settings), moved: next.moved };
+    });
+    expect(seen).toEqual([
+      { kept: CHICAGO, moved: false },
+      { kept: CHICAGO, moved: false },
+      { kept: NEW_YORK, moved: true },
+      { kept: NEW_YORK, moved: false },
+      { kept: NEW_YORK, moved: false },
+      { kept: CHICAGO, moved: true },
+      { kept: CHICAGO, moved: false },
+    ]);
+  });
+});
+
+describe('the clock’s words', () => {
+  it('names a zone by its place', () => {
+    expect(zonePlaceName(LOS_ANGELES)).toBe('Los Angeles');
+    expect(zonePlaceName('America/Argentina/Buenos_Aires')).toBe('Buenos Aires');
+    expect(zonePlaceName('UTC')).toBe('UTC');
+  });
+
+  it('says whose clock only when it is not the Mac’s', () => {
+    expect(planClockLabel({ planZone: CHICAGO, macZone: 'Asia/Tokyo' })).toBe('Chicago time');
+    expect(planClockLabel({ planZone: 'america/chicago', macZone: CHICAGO })).toBeNull();
+    expect(planClockLabel({ planZone: null, macZone: CHICAGO })).toBeNull();
+  });
+
+  it('heads the meetings with their day and clock when that is another’s', () => {
+    expect(meetingsHeading({ day: '2026-10-27', planZone: CHICAGO, macZone: 'Asia/Tokyo' })).toBe(
+      'Meetings · Tue 27 Oct, Chicago time',
+    );
+    expect(meetingsHeading({ day: '2026-10-27', planZone: CHICAGO, macZone: CHICAGO })).toBe(
+      'Meetings',
+    );
+    expect(meetingsHeading({ day: '2026-10-27', planZone: null, macZone: CHICAGO })).toBe(
+      'Meetings',
+    );
   });
 });

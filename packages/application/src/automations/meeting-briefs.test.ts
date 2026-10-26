@@ -34,7 +34,7 @@ import { jsonMarkdown } from '../testing/json-markdown.ts';
 import { atlasQueryIndex } from '../testing/query-index.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
 import type { ScriptedRound } from '../testing/fake-model.ts';
-import { clockForRule, clockOnZone } from './rule-clock.ts';
+import { clockForRule, clockOnZone, waitsForPlanZone } from './rule-clock.ts';
 import { runAutomation, type AutomationPorts } from './run-automation.ts';
 import type { VaultGuard } from './vault-guard.ts';
 
@@ -634,5 +634,18 @@ describe('the Morning brief, attacked (PR #581)', () => {
       expect.objectContaining({ problem: expect.stringContaining('No brief for “Vendor call”') }),
     ]);
     expect(failed[0]).not.toHaveProperty('claude');
+  });
+});
+
+describe('waitsForPlanZone (#587)', () => {
+  const TIDY: AutomationRule = { ...RULE, id: 'tidy', action: { kind: 'archive' } };
+
+  it('holds the brief until the settings that keep the zone are read', () => {
+    expect(waitsForPlanZone({ rule: RULE, zoneRead: false })).toBe(true);
+    expect(waitsForPlanZone({ rule: RULE, zoneRead: true })).toBe(false);
+  });
+
+  it('never holds a rule on the Mac’s clock', () => {
+    expect(waitsForPlanZone({ rule: TIDY, zoneRead: false })).toBe(false);
   });
 });

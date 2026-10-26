@@ -29,7 +29,7 @@ import {
 import type { IndexPort, QueryResult } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
-import { keepPlanZone } from '../settings/plan-zone.ts';
+import { tryKeepPlanZone } from '../settings/plan-zone.ts';
 import type { SettingsWriter } from '../settings/settings-writer.ts';
 import { readVaultId } from '../settings/vault-id.ts';
 import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
@@ -73,6 +73,11 @@ export interface BlockSyncReport {
   readonly zoneChange: BlockZoneChange | null;
   /** Why it stopped before writing anything; null when it ran. */
   readonly problem: GoogleProblem | null;
+  /**
+   * Why the primary calendar's zone could not be kept in the vault's
+   * settings (#587); null when it was, or needed no write. The blocks sync either way.
+   */
+  readonly zoneProblem: string | null;
   /** Google said this sign-in may not change the calendar: the clock waits for the grant to change. */
   readonly scopeRefused: boolean;
 }
@@ -610,28 +615,25 @@ const NOTHING = {
   failed: [],
   full: false,
   zoneChange: null,
+  zoneProblem: null,
 } as const;
 
-/** The zone a block's wall clock means, asked of Google only when the sync goes on. */
-async function planZoneFor(ports: BlockSyncPorts, run: BlockSyncRun, wanted: () => boolean) {
+/**
+ * The zone a block's wall clock means, asked of Google only when the sync
+ * goes on; and why it could not be kept (#587), where the vault reads no
+ * meetings — where it does, the meetings sync keeps the zone its notes are on.
+ */
+async function planZoneFor(
+  ports: BlockSyncPorts,
+  run: BlockSyncRun,
+  wanted: () => boolean,
+): Promise<{ timeZone: string; zoneProblem: string | null } | null> {
   if (!wanted()) return null;
   const primaryZone = await ports.calendar.primaryTimeZone({ vault: run.vault });
-  if (wanted()) await keepZone(ports, primaryZone);
-  return blockPlanZone({ primaryZone, timeZone: run.timeZone });
-}
-
-/**
- * Keeps the primary calendar's zone (#587) where the vault reads no
- * meetings: where it does, the meetings sync keeps the zone its notes are
- * on. A write the settings refuse stops nothing: the zone is learned again
- * on the next sync, and until then readers keep the one kept before.
- */
-async function keepZone(ports: BlockSyncPorts, learned: string | null): Promise<void> {
-  try {
-    await keepPlanZone({ ...ports, learned, from: 'blocks' });
-  } catch {
-    // Safe to ignore: see above.
-  }
+  const zoneProblem = wanted()
+    ? await tryKeepPlanZone({ ...ports, learned: primaryZone, from: 'blocks' })
+    : null;
+  return { timeZone: blockPlanZone({ primaryZone, timeZone: run.timeZone }), zoneProblem };
 }
 
 /**
@@ -664,8 +666,9 @@ export async function syncBlocks(
     const kept = ports.records.read(run.vault);
     const same = kept.calendarId === run.calendarId;
     const listed = await listCalendar(ports, { ...run, wanted }, same ? kept.syncToken : null);
-    const timeZone = await planZoneFor(ports, run, wanted);
-    if (timeZone === null || !wanted()) return stopped;
+    const zone = await planZoneFor(ports, run, wanted);
+    if (zone === null || !wanted()) return stopped;
+    const { timeZone } = zone;
     const { blocks, files } = await readBlocks(ports, listed.events, fromDay);
     const fetched = await eventsOfCopies(
       ports,
@@ -703,6 +706,7 @@ export async function syncBlocks(
       full: listed.full,
       zoneChange: blockZoneChange({ from: kept.timeZone, to: timeZone, at: ran }),
       problem: null,
+      zoneProblem: zone.zoneProblem,
     };
   } catch (cause) {
     // Stopped before any action ran: nothing was written, and no record is kept.

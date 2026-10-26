@@ -35,3 +35,20 @@ export function clockForRule({
 export function planNowOf(clock: Pick<Clock, 'now'>, planZone: string | null): string | null {
   return planZone === null ? null : wallTimeIn(planZone, clock.now());
 }
+
+/**
+ * Whether a rule's turn waits for the vault's settings to be read (#587): a
+ * rule on the calendar's clock cannot be counted until the zone is known,
+ * kept or not. Counted on the Mac's clock meanwhile, a Mac far ahead of the
+ * calendar could brief its tomorrow from yesterday's notes. Every other rule
+ * keeps the Mac's clock and never waits.
+ */
+export function waitsForPlanZone({
+  rule,
+  zoneRead,
+}: {
+  rule: Pick<AutomationRule, 'action'>;
+  zoneRead: boolean;
+}): boolean {
+  return !zoneRead && keepsCalendarClock(rule);
+}
