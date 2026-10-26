@@ -329,9 +329,12 @@ true`. The note is never deleted, and a missing block is never pushed.
     If the event comes back, the mark comes off and its times are pulled.
 - **A push is recognised as DFAI's own, and one that never landed is sent
   again, never undone.** Before an insert or patch is sent, the values sent
-  are written onto the block as the agreed record with `gcal_pending: true`;
-  `gcal_etag` keeps the last version Google confirmed. When Google answers,
-  the new version is written and the mark comes off. Then:
+  are written onto the block as the agreed record with `gcal_pending: true`,
+  and `gcal_etag` is set to the version the push was planned against: the
+  listed event's, when the patch was planned from a listing (a colour
+  changed in Google gives a new version on the old times, and the patch is
+  based on that one), else the block's own last confirmed version. When
+  Google answers, the new version is written and the mark comes off. Then:
   - Google lists the very version the block kept: nothing changed there
     since, so the push never landed (offline, or Stop before the send) and
     it is sent again — in a full listing too (410, a lost token, a new
@@ -341,13 +344,15 @@ true`. The note is never deleted, and a missing block is never pushed.
     only its last write failed (James saved the block in between, so its
     modification time moved). Google's times are DFAI's own push, so the
     block is adopted, or his newer edit is pushed — never read as a Google
-    move that rolls him back.
+    move that rolls him back. If that push of his newer edit fails too, it
+    was based on the version it saw, so the retry is a resend, not a
+    conflict.
   - Google lists another version on other times: both sides changed, so
     Google's time is kept and Activity says so for that block. This is also
     what happens when the push never landed and something else (a colour, a
-    description) was changed in Google meanwhile: what was agreed before the
-    push is no longer on the block, so who moved it cannot be told, and the
-    move is said rather than taken.
+    description) was changed in Google after the listing it was planned
+    from: what was agreed before the push is no longer on the block, so who
+    moved it cannot be told, and the move is said rather than taken.
   - Not listed by an incremental listing: sent again. Missing from a full
     one: marked missing, as any block.
 
@@ -364,23 +369,28 @@ true`. The note is never deleted, and a missing block is never pushed.
   it). When the listing did not give the event, it is read with
   `events.get` first. The original is the note the event names; else,
   among the notes not named like a copy, the one on the event's times; else
-  the one unchanged since it was agreed; else the first by path. Named like
-  a copy is Finder's `… copy`, `… copy 2` and the vault's next free name,
-  `… 2`; when every note is named so, all of them are asked. This is for a
-  note renamed and copied before the next sync, so no note is the one the
-  event names and both are on its times: the renamed original keeps the
-  event. Still a risk: a block whose own name ends in a number (`Sprint 12`)
-  that was renamed, beside a copy whose name does not look like one, or two
-  notes both named like copies, still fall to the rules after, and so to
+  the one unchanged since it was agreed; else the first by path. A note is
+  named like a copy only beside the name it would be a copy of: its name
+  is another carrier's, or the name of the note the event names, with
+  Finder's ` copy`, ` copy 2` or the vault's next free name's ` 2` after
+  it. `Sprint 2` is a copy's name beside `Sprint`, never beside `Retro`,
+  so a name that simply ends in a number (`Week 43`, `Q3 2026`) is never
+  held against it. When every note is named so, all of them are asked.
+  This is for a note renamed and copied before the next sync, so no note is
+  the one the event names and both are on its times: the renamed original
+  keeps the event. Still a risk: a copy renamed by hand to a name of its
+  own, or a copy whose stem matches nothing (the original renamed and the
+  event naming another note still), falls to the rules after, and so to
   path order. Every other copy is a new block: its owned keys
   are cleared, and one with times from the window on gets its own event;
   an older one stays off Google. A copy never patches the original's event
   and its times are never pulled into another note. Activity says "is a
   copy of another block, so it was made a block of its own".
 - **No duplicate events, even with two writers.** A new block's event id
-  is drawn from the vault's own id, the blocks calendar's id (both the same
-  on every Mac, from the vault's settings) and the note's path at its first
-  push: `dfai` and two 64-bit digests, in Google's base32hex alphabet
+  is drawn from the vault's own id when its settings hold one, the blocks
+  calendar's id, and the note's path at its first push — only what every
+  Mac reads from the vault's files, never something one Mac has made and
+  git has not carried: `dfai` and two 64-bit digests, in Google's base32hex alphabet
   (`blockEventId`). The digest is the block ids' own, FNV-1a over 64 bits
   of the UTF-8 text, shared with nothing else (an earlier version leant on
   the embeddings' passage digest, which could change for reasons of its
@@ -397,22 +407,32 @@ true`. The note is never deleted, and a missing block is never pushed.
   was renamed since its first push and a new note took its old path), or
   one Google holds as deleted (409, then 410 on the patch), moves on to the
   next attempt, up to four.
+  What is guaranteed: two writers of one vault that read the same settings
+  draw the same id for one note, whether or not the vault has a `vault_id`.
+  Still open: a writer that has a `vault_id` the other has not yet pulled
+  (the switch turned on again on one Mac, in the minute before git carries
+  it, while both act as writer) draws another id, and the two make two
+  events.
 - **Two vaults on one calendar.** The vault's own id, `vault_id` in
-  `.atlas/settings.md`, is part of every new block's seed, so two vaults
-  pointed at one blocks calendar (a copy of the vault, a second one set to
-  the same calendar) draw two ids for one path and never patch each other's
-  events. It is 16 base32hex characters from the injected Rng, made once:
-  when **Sync blocks with Google Calendar** is turned on, in the same
-  settings write, or else at the first new block a vault that has none
-  pushes. It is written through the vault's one settings writer,
+  `.atlas/settings.md`, is part of every new block's seed once it is there,
+  so two vaults pointed at one blocks calendar (a copy of the vault, a
+  second one set to the same calendar) draw two ids for one path and never
+  patch each other's events. It is 16 base32hex characters from the
+  injected Rng, made only when **Sync blocks with Google Calendar** is
+  turned on, in the same settings write as the switch, so it reaches the
+  Mac that syncs with the switch itself. The sync only reads it: a sync
+  that made one would base its ids on an id the other Macs do not have
+  yet. It is written through the vault's one settings writer,
   byte-preserving, and synced like every other setting; a value there that
   is not text is refused and never overwritten, and new blocks stay off
-  Google until it is fixed. Each vault still lists the whole calendar, so
-  the other vault's events are only ever left alone (an event with no block
-  is never made a note). If two Macs each made a `vault_id` before git
-  carried either, the settings file would conflict as any setting does; the
-  switch makes it on the Mac it is turned on on, and only the automations
-  Mac makes one at sync.
+  Google until it is fixed. A vault with none (switched on by an earlier
+  build, the id removed by hand, a settings conflict that kept the side
+  without it) draws from the calendar and the path alone, as before; turning
+  the switch off and on gives it one. Each vault still lists the whole
+  calendar, so the other vault's events are only ever left alone (an event
+  with no block is never made a note). Still open: two vaults sharing one
+  calendar before either has a `vault_id` draw one id for one path, so a
+  note at the same path in both patches one event.
 - **Ids are checked before any URL is built.** An event id must be
   base32hex, 5 to 1024 long; a calendar id must be `name@domain`. Anything
   else — `..`, a `/`, `primary` — is refused before the host is called (it
