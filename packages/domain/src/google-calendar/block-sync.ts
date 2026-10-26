@@ -405,17 +405,28 @@ function planBlock(block: BlockOnDisk, context: Context, plan: Plan): void {
 }
 
 /**
+ * A name Finder gives a copy (`… copy`, `… copy 2`) or the vault gives the
+ * next free name (`… 2`). Only a tie-break: a note so named is never taken
+ * for the original over one that is not.
+ */
+const COPY_NAME = / (?:copy(?: \d+)?|\d+)$/i;
+
+/**
  * Which of the notes carrying one event id is the one the event is for: the
- * note the event says it was written for; else one on the event's times;
+ * note the event says it was written for; else, among the notes not named
+ * like a copy (all of them when every one is), one on the event's times;
  * else one unchanged since it was agreed; else the first by path.
  */
 function originalOf(copies: readonly BlockOnDisk[], event: BlockEvent | undefined, zone: string) {
+  const named = copies.find((copy) => event?.notePath === copy.path);
+  if (named !== undefined) return named.path;
+  const plain = copies.filter((copy) => !COPY_NAME.test(copy.title));
+  const pool = plain.length > 0 ? plain : copies;
   const times = event === undefined || event.cancelled ? null : eventTimes(event, zone);
   const chosen =
-    copies.find((copy) => event?.notePath === copy.path) ??
-    copies.find((copy) => sameTimes(heldFields(copy), times)) ??
-    copies.find((copy) => copy.synced !== null && sameTimes(heldFields(copy), copy.synced)) ??
-    copies[0];
+    pool.find((copy) => sameTimes(heldFields(copy), times)) ??
+    pool.find((copy) => copy.synced !== null && sameTimes(heldFields(copy), copy.synced)) ??
+    pool[0];
   return chosen?.path ?? null;
 }
 
