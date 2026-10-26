@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { apiFixture, bodyOf, codeOf, encoded } from '../testing/api-fixture.ts';
+import { jsonMarkdown } from '../testing/json-markdown.ts';
 
 const note = (type: string) => `---\ntype: ${type}\n---\n\n# Body\n`;
 
@@ -151,6 +152,43 @@ describe('GET /v1/notes', () => {
 });
 
 describe('GET /v1/notes/{path}', () => {
+  it('shows a block’s Google Calendar sync state among its properties (#30), with no route of its own', async () => {
+    const api = apiFixture({
+      files: {
+        'Larkspur close block.md': `---\n${JSON.stringify({
+          type: 'block',
+          start: '2026-10-26T09:00',
+          end: '2026-10-26T10:00',
+          gcal_event_id: 'dfaiev1',
+          gcal_etag: 'v3',
+          gcal_calendar: 'dfai-blocks@group.calendar.example.com',
+          gcal_missing: true,
+          gcal_synced_title: 'Larkspur close block',
+          gcal_synced_start: '2026-10-26T09:00',
+          gcal_synced_end: '2026-10-26T10:00',
+        })}\n---\n`,
+      },
+      markdown: jsonMarkdown(),
+    });
+
+    const response = await api.send({
+      method: 'GET',
+      path: `/v1/notes/${encoded('Larkspur close block.md')}`,
+    });
+
+    expect(bodyOf(response)['note']).toMatchObject({
+      properties: {
+        gcal_event_id: 'dfaiev1',
+        gcal_etag: 'v3',
+        gcal_calendar: 'dfai-blocks@group.calendar.example.com',
+        gcal_missing: true,
+        gcal_synced_title: 'Larkspur close block',
+        gcal_synced_start: '2026-10-26T09:00',
+        gcal_synced_end: '2026-10-26T10:00',
+      },
+    });
+  });
+
   it('reads a morning brief (#39) as the note it is: nothing new is needed for one', async () => {
     const brief = 'Inbox/Briefs/2026-10-26/09.30 Larkspur sync.md';
     const api = apiFixture({

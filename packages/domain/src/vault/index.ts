@@ -67,3 +67,5 @@ export { compileNotesOnDayQuery, isNamedForDay, NOTE_DAY_KEY } from './notes-on-
 export { nearestNotePaths, NEAREST_NOTE_PATHS } from './nearest-note-paths.ts';
 export { writeUndo } from './write-undo.ts';
 export type { WriteRecord, WriteUndo } from './write-undo.ts';
+export { newVaultId, vaultIdOf, VAULT_ID_KEY } from './vault-id.ts';
+export type { VaultIdReading } from './vault-id.ts';

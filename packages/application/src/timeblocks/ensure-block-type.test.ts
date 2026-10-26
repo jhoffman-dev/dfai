@@ -76,6 +76,12 @@ describe('ensureBlockType', () => {
       'tasks',
       'gcal_event_id',
       'gcal_etag',
+      'gcal_calendar',
+      'gcal_missing',
+      'gcal_synced_title',
+      'gcal_synced_start',
+      'gcal_synced_end',
+      'gcal_pending',
     ]);
   });
 
