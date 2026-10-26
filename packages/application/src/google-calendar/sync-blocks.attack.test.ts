@@ -118,6 +118,7 @@ describe('block sync, adversarial: random edits on both sides with syncs between
     'gcal_synced_title',
     'gcal_synced_start',
     'gcal_synced_end',
+    'gcal_pending',
   ]);
   const DAYS = ['2026-10-26', '2026-10-27', '2026-10-28'];
 

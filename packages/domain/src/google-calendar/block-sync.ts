@@ -39,6 +39,12 @@ export const BLOCK_SYNC_KEYS = {
   syncedTitle: BLOCK_KEYS.gcalSyncedTitle,
   syncedStart: BLOCK_KEYS.gcalSyncedStart,
   syncedEnd: BLOCK_KEYS.gcalSyncedEnd,
+  /**
+   * Set with the agreed record before a push is sent, cleared when Google
+   * answers. `gcal_etag` keeps the last version Google confirmed meanwhile, so
+   * a listing of that version says the push never landed.
+   */
+  pending: BLOCK_KEYS.gcalPending,
 } as const;
 
 /** How far back a sync looks for blocks to push: older ones are history, and stay off Google. */
@@ -66,6 +72,8 @@ export interface BlockOnDisk {
   readonly etag: string | null;
   readonly calendarId: string | null;
   readonly missing: boolean;
+  /** A push was sent and Google has not answered it: `synced` is what was sent, `etag` what Google last confirmed. */
+  readonly pending: boolean;
   /** What both sides last agreed (`gcal_synced_*`); null when the block holds no whole record of it. */
   readonly synced: BlockSyncFields | null;
 }
@@ -211,6 +219,7 @@ export function blockOnDisk({
     etag: text(properties[BLOCK_SYNC_KEYS.etag]),
     calendarId: text(properties[BLOCK_SYNC_KEYS.calendar]),
     missing: properties[BLOCK_SYNC_KEYS.missing] === true,
+    pending: properties[BLOCK_SYNC_KEYS.pending] === true,
     synced: syncedOf(properties),
   };
 }
@@ -288,12 +297,28 @@ function planAdopt(block: Identified, event: BlockEvent, times: Times, plan: Pla
   // A version Google gives as null is never written: it would read as an insert not yet made.
   const etag = event.etag !== null && event.etag !== block.etag ? event.etag : null;
   const synced = sameFields(block.synced, agreed) ? null : agreed;
-  if (etag === null && synced === null) return;
+  // A pending mark is cleared by the adopt itself, so one is written for it alone.
+  if (etag === null && synced === null && !block.pending) return;
   plan.actions.push({ kind: 'adopt', path: block.path, eventId: block.eventId, etag, synced });
 }
 
+/**
+ * Whether the block's record may not be on Google: a push was sent and not
+ * answered, or no version was ever confirmed. Then Google's times differing
+ * from the record cannot be told from a move in Google.
+ */
+const unconfirmed = (block: BlockOnDisk) => block.pending || block.etag === null;
+
+/** Google lists the very version the block last had confirmed: nothing changed there since, so the push never landed. */
+const unchangedSincePending = (block: BlockOnDisk, event: BlockEvent) =>
+  block.pending && event.etag !== null && event.etag === block.etag;
+
 /** Google's times, read off its event: compared with the agreed record, else with the block's own. */
 function planListed(block: Identified, event: BlockEvent, times: Times, plan: Plan): void {
+  if (unchangedSincePending(block, event)) {
+    planPatch(block, plan);
+    return;
+  }
   const held = heldFields(block);
   const titled = event.title === block.title && !strayed(event, block);
   if (sameTimes(block.synced ?? held, times)) {
@@ -314,8 +339,9 @@ function planListed(block: Identified, event: BlockEvent, times: Times, plan: Pl
     eventId: block.eventId,
     etag: event.etag,
     fields: { title: block.title, ...times },
-    // With no agreed record, who moved it cannot be told: Google's time is kept, and said.
-    conflict: block.synced === null || !sameTimes(held, block.synced),
+    // With no agreed record, or one Google may never have had, who moved it cannot be told:
+    // Google's time is kept, and said.
+    conflict: block.synced === null || unconfirmed(block) || !sameTimes(held, block.synced),
     returned: false,
     retitle: !titled,
   });
@@ -323,6 +349,11 @@ function planListed(block: Identified, event: BlockEvent, times: Times, plan: Pl
 
 /** Google did not list the event, so it holds what was last agreed: push what DFAI changed since. */
 function planUnlisted(block: Identified, plan: Plan): void {
+  // A push sent and not answered: Google may not hold it, so it is sent again.
+  if (block.pending) {
+    planPatch(block, plan);
+    return;
+  }
   // Nothing agreed to compare with: wait for Google to list the event.
   if (block.synced === null || sameFields(heldFields(block), block.synced)) return;
   planPatch(block, plan);

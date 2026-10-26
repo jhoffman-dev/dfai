@@ -33,6 +33,7 @@ describe('the Block type', () => {
     expect(property('gcal_synced_title')).toMatchObject({ kind: 'text' });
     expect(property('gcal_synced_start')).toMatchObject({ kind: 'text' });
     expect(property('gcal_synced_end')).toMatchObject({ kind: 'text' });
+    expect(property('gcal_pending')).toMatchObject({ kind: 'checkbox' });
   });
 
   it('is built in: it cannot be deleted, and says why', () => {

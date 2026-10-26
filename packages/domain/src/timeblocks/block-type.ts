@@ -21,6 +21,7 @@ export const BLOCK_KEYS = {
   gcalSyncedTitle: 'gcal_synced_title',
   gcalSyncedStart: 'gcal_synced_start',
   gcalSyncedEnd: 'gcal_synced_end',
+  gcalPending: 'gcal_pending',
 } as const;
 
 /**
@@ -61,6 +62,7 @@ export const BLOCK_TYPE_FILE: BuiltInTypeFile = {
       plain(BLOCK_KEYS.gcalSyncedTitle, 'text', 'Title agreed with Google'),
       plain(BLOCK_KEYS.gcalSyncedStart, 'text', 'Start agreed with Google'),
       plain(BLOCK_KEYS.gcalSyncedEnd, 'text', 'End agreed with Google'),
+      plain(BLOCK_KEYS.gcalPending, 'checkbox', 'Waiting for Google'),
     ],
   },
   body: [

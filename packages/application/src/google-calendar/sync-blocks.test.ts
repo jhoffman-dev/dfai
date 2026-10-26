@@ -256,9 +256,10 @@ describe('syncBlocks: moving a block', () => {
       gcal_synced_start: '2026-10-26T13:00',
       gcal_synced_end: '2026-10-26T14:00',
     });
-    // Its version is cleared until Google confirms the push.
-    expect(onBlockWhenSent).not.toHaveProperty('gcal_etag');
+    // Marked pending, its version still the last Google confirmed, until Google answers.
+    expect(onBlockWhenSent).toMatchObject({ gcal_pending: true, gcal_etag: '"g1"' });
     expect(props()['gcal_etag']).toBe('"g2"');
+    expect(props()).not.toHaveProperty('gcal_pending');
   });
 
   it('a push that never landed is sent again, though its agreed record was written', async () => {
@@ -276,7 +277,7 @@ describe('syncBlocks: moving a block', () => {
     });
     const failed = await sync();
     expect(failed.failed.map((failure) => failure.path)).toEqual([BLOCK]);
-    // Google never heard of the move, and lists nothing new; the block's lack of a version says to send it.
+    // Google never heard of the move, and lists nothing new; the block's pending mark says to send it.
     await sync();
     expect(google.state.events.get(id)?.start).toEqual({
       kind: 'timed',

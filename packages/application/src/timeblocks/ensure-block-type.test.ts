@@ -81,6 +81,7 @@ describe('ensureBlockType', () => {
       'gcal_synced_title',
       'gcal_synced_start',
       'gcal_synced_end',
+      'gcal_pending',
     ]);
   });
 

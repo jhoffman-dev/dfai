@@ -646,6 +646,7 @@ describe('the times sync compares', () => {
       etag: '"v1"',
       calendarId: CALENDAR,
       missing: true,
+      pending: false,
       synced: null,
     });
     const bare = blockOnDisk({ path: 'y.md', title: 'y', properties: { gcal_missing: 'yes' } });

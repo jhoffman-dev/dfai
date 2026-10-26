@@ -273,6 +273,10 @@ const syncedKeys = (fields: BlockSyncFields) => ({
 /** A version Google gave, as a change; none when it gave none, so the block's is not cleared. */
 const etagKeys = (etag: string | null) => (etag === null ? {} : { [BLOCK_SYNC_KEYS.etag]: etag });
 
+/** Google answered with a version: the push is no longer pending. Without one it stays pending, and is sent again. */
+const answeredKeys = (etag: string | null) =>
+  etag === null ? {} : { [BLOCK_SYNC_KEYS.etag]: etag, [BLOCK_SYNC_KEYS.pending]: null };
+
 /** Writes the event, as an insert or a patch; an insert whose id is taken already landed once, and is patched. */
 async function writeEvent(
   applying: Applying,
@@ -329,6 +333,7 @@ async function newIdentity(
     [BLOCK_SYNC_KEYS.calendar]: applying.run.calendarId,
     [BLOCK_SYNC_KEYS.etag]: null,
     [BLOCK_SYNC_KEYS.missing]: null,
+    [BLOCK_SYNC_KEYS.pending]: true,
     ...syncedKeys(fields),
   });
   return fresh;
@@ -356,27 +361,21 @@ async function insertNew(
   }
 }
 
-/** Whether the block's agreed record is already what is about to be sent. */
-const sameAgreed = (left: BlockSyncFields | null, right: BlockSyncFields) =>
-  left !== null &&
-  left.title === right.title &&
-  left.start === right.start &&
-  left.end === right.end;
-
 type Outcome = 'inserted' | 'pushed' | 'pulled' | 'missing' | 'copied' | null;
 
 /**
  * Pushes a block to its event. What is sent is written onto the block as
- * agreed, its version cleared, before it is sent. If the push lands and the
- * write of its version after it fails (James saved the block meanwhile), the
- * next sync finds Google on the agreed times, knows the push for DFAI's own,
- * and pushes his newer edit. If it never lands, the block has no version, so
- * the next sync sends it again rather than take it as agreed.
+ * agreed, marked pending, before it is sent; its version stays the last one
+ * Google confirmed. If the push lands and the write of its version after it
+ * fails (James saved the block meanwhile), the next sync finds Google on the
+ * agreed times, knows the push for DFAI's own, and pushes his newer edit. If
+ * it never lands, Google still lists the version the block kept, so the next
+ * sync sends it again; a listing of another version on other times is a
+ * change on both sides, and Google's is kept and said — never taken silently.
  */
 async function push(
   applying: Applying,
   action: Extract<BlockAction, { kind: 'insert' | 'patch' }>,
-  synced: BlockSyncFields | null,
 ): Promise<Outcome> {
   const { path, fields, eventId } = action;
   const insert = action.kind === 'insert';
@@ -385,10 +384,8 @@ async function push(
     const copied = action.kind === 'insert' && action.copyOf !== null;
     return landed(applying, { path, etag: written.etag, outcome: copied ? 'copied' : 'inserted' });
   }
-  // No version until Google confirms: a send that never lands is sent again, not taken as agreed.
-  if (!sameAgreed(synced, fields)) {
-    await writeOwned(applying, path, { ...syncedKeys(fields), [BLOCK_SYNC_KEYS.etag]: null });
-  }
+  // Pending until Google answers: a send that never lands is sent again, not taken as agreed.
+  await writeOwned(applying, path, { ...syncedKeys(fields), [BLOCK_SYNC_KEYS.pending]: true });
   const written = await writeEvent(applying, { eventId, fields, insert, path });
   if (written.kind !== 'written') {
     // Its event was made, then deleted in Google since: the block is marked, never removed.
@@ -408,7 +405,7 @@ async function landed(
   { path, etag, outcome }: { path: string; etag: string | null; outcome: Outcome },
 ): Promise<Outcome> {
   if (!applying.wanted()) throw new SyncStopped(outcome);
-  await writeOwned(applying, path, etagKeys(etag));
+  await writeOwned(applying, path, answeredKeys(etag));
   return outcome;
 }
 
@@ -420,6 +417,8 @@ async function pull(applying: Applying, action: Extract<BlockAction, { kind: 'pu
     [BLOCK_KEYS.end]: fields.end,
     ...syncedKeys(fields),
     ...etagKeys(action.etag),
+    // Google's times are now the agreed ones: nothing DFAI sent is waited on any more.
+    [BLOCK_SYNC_KEYS.pending]: null,
     ...(action.returned ? { [BLOCK_SYNC_KEYS.missing]: null } : {}),
   });
   const retitled = action.retitle ? pushableFields(fields) : null;
@@ -440,21 +439,18 @@ const DETACHED = {
   [BLOCK_SYNC_KEYS.etag]: null,
   [BLOCK_SYNC_KEYS.calendar]: null,
   [BLOCK_SYNC_KEYS.missing]: null,
+  [BLOCK_SYNC_KEYS.pending]: null,
   [BLOCK_SYNC_KEYS.syncedTitle]: null,
   [BLOCK_SYNC_KEYS.syncedStart]: null,
   [BLOCK_SYNC_KEYS.syncedEnd]: null,
 };
 
 /** Carries out one action; null for one that counts as nothing. */
-async function apply(
-  applying: Applying,
-  action: BlockAction,
-  synced: BlockSyncFields | null,
-): Promise<Outcome> {
+async function apply(applying: Applying, action: BlockAction): Promise<Outcome> {
   switch (action.kind) {
     case 'insert':
     case 'patch':
-      return push(applying, action, synced);
+      return push(applying, action);
     case 'pull':
       await pull(applying, action);
       return 'pulled';
@@ -462,6 +458,8 @@ async function apply(
       await writeOwned(applying, action.path, {
         ...etagKeys(action.etag),
         ...(action.synced === null ? {} : syncedKeys(action.synced)),
+        // Both sides hold the block's values: whatever was sent has landed.
+        [BLOCK_SYNC_KEYS.pending]: null,
       });
       return null;
     case 'missing':
@@ -504,10 +502,7 @@ function count(tally: Tally, action: BlockAction, outcome: Outcome): void {
  * Each action on its own: one that fails is reported by its block and stops
  * none of the others. Stopped, it ends where it is.
  */
-async function applyAll(
-  applying: Applying,
-  { actions, blocks }: { actions: readonly BlockAction[]; blocks: readonly BlockOnDisk[] },
-): Promise<Tally> {
+async function applyAll(applying: Applying, actions: readonly BlockAction[]): Promise<Tally> {
   const tally: Tally = {
     inserted: 0,
     pushed: 0,
@@ -518,11 +513,10 @@ async function applyAll(
     failed: [],
     scopeRefused: false,
   };
-  const synced = new Map(blocks.map((block) => [block.path, block.synced]));
   for (const action of actions) {
     try {
       goOn(applying);
-      count(tally, action, await apply(applying, action, synced.get(action.path) ?? null));
+      count(tally, action, await apply(applying, action));
     } catch (cause) {
       if (cause instanceof SyncStopped) {
         if (cause.landed !== null) count(tally, action, cause.landed);
@@ -622,7 +616,7 @@ export async function syncBlocks(
       fromDay,
     });
     const applying: Applying = { ports, run, timeZone, files, wanted };
-    const tally = await applyAll(applying, { actions: plan.actions, blocks });
+    const tally = await applyAll(applying, plan.actions);
     if (wanted()) {
       const whole = tally.failed.length === 0;
       ports.records.write(
