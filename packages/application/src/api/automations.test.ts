@@ -107,6 +107,8 @@ describe('GET /v1/automations', () => {
       },
       // Counted from its last scheduled run, as the app's clock counts it.
       nextRun: '2026-09-23T03:00:00',
+      // A rule on the Mac's clock names no other zone.
+      timeZone: null,
       paused: null,
     });
     expect(automations[0]).toMatchObject({
@@ -702,6 +704,38 @@ describe('a rule with a Claude step, through the API (P29-03)', () => {
       which: '',
       schedule: 'Every Friday at 15:00',
       claude: { output: 'note', folder: 'Reviews', data: 'weekly-review' },
+    });
+  });
+
+  it('names the zone the morning brief’s next run is on, the calendar’s, and no zone for the others (#587)', async () => {
+    const brief = jsonNote({
+      atlas: 'automation',
+      id: 'brief',
+      name: 'Morning brief',
+      enabled: true,
+      when: 'daily at 07:00',
+      do: 'claude',
+      prompt: '.atlas/prompts/morning-brief.md',
+      output: 'note',
+      folder: 'Briefs',
+      data: 'meeting-briefs',
+    });
+    const kept = {
+      ...files,
+      '.atlas/automations/Morning brief.md': brief,
+      '.atlas/settings.md': jsonNote({ google_plan_zone: 'America/Chicago' }),
+    };
+    const { automations } = bodyOf(await list(vault(kept))) as {
+      automations: Record<string, unknown>[];
+    };
+    const byId = (id: string) => automations.find((automation) => automation['id'] === id);
+    expect(byId('brief')).toMatchObject({ timeZone: 'America/Chicago' });
+    expect(byId('tidy')).toMatchObject({ timeZone: null });
+    const none = bodyOf(
+      await list(vault({ ...files, '.atlas/automations/Morning brief.md': brief })),
+    ) as { automations: Record<string, unknown>[] };
+    expect(none.automations.find((automation) => automation['id'] === 'brief')).toMatchObject({
+      timeZone: null,
     });
   });
 

@@ -3,11 +3,13 @@ import {
   describePlan,
   describeSchedule,
   futureMarkOf,
+  keepsCalendarClock,
   lastRunOf,
   lastUndoableRun,
   logEntryHeading,
   logEntrySummary,
   nextRunOf,
+  ruleClockOf,
   noteTitle,
   type AutomationPlan,
   type DoneAction,
@@ -35,6 +37,10 @@ export interface RowClock {
   readonly watchingSince: LocalTime;
   readonly now: LocalTime;
   readonly pauses: ReadonlyMap<string, RulePause>;
+  /** The plan zone's wall clock now, which the morning brief is counted on; null when none is kept (#587). */
+  readonly planNow?: LocalTime | null;
+  /** What says a time is on the plan zone's clock, `Chicago time`; null when it is the Mac's (#587). */
+  readonly planClock?: string | null;
 }
 
 /** Every rule as its row: broken ones too, with why. */
@@ -56,7 +62,7 @@ export function automationRows(listing: AutomationListing, clock: RowClock): Aut
 }
 
 function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow {
-  const { watchingSince, now } = clock;
+  const { watchingSince, now } = ruleClockOf({ rule, ...clock, planNow: clock.planNow ?? null });
   const last = lastRunOf(log);
   const pause = clock.pauses.get(rule.id);
   const next = pause?.retryAt === null ? null : nextRunOf({ rule, log, watchingSince, now });
@@ -67,11 +73,19 @@ function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow 
     schedule: describeSchedule(rule.when),
     action: describeAction(rule.action),
     lastRun: last === null ? null : `${shownTime(last.at)} · ${logEntrySummary(last)}`,
-    nextRun: next === null ? null : shownTime(next),
+    nextRun: next === null ? null : withClock(shownTime(next), rule, clock),
     canUndo: lastUndoableRun(log) !== null,
     problem: null,
     notice: pause?.reason ?? futureNotice(log, now),
   };
+}
+
+/** A time the brief is counted on, with the clock it is on when that is not the Mac's: `07:00 Chicago time`. */
+function withClock(time: string, rule: LoadedAutomation['rule'], clock: RowClock): string {
+  const label = clock.planClock ?? null;
+  return label === null || (clock.planNow ?? null) === null || !keepsCalendarClock(rule)
+    ? time
+    : `${time} ${label}`;
 }
 
 /** What the row says of a mark later than now, which the schedule does not count from. */

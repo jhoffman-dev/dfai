@@ -183,6 +183,25 @@ describe('useMeetingSync (ADR-0046)', () => {
     );
   });
 
+  it('says a zone that could not be kept once, and still says what each sync wrote (#587)', async () => {
+    const { google, activity, options } = setUp();
+    options.fs.writeTextFile = async () => Promise.reject(new Error('the disk is full'));
+    await settle();
+    const zoneLines = () =>
+      activity.reports.filter((report) => report.message.includes('could not be kept'));
+    expect(zoneLines()).toHaveLength(1);
+    expect(activity.reports.map((report) => report.message)).toContain(
+      'Meetings from Google Calendar: 1 meeting added.',
+    );
+    google.change('primary', { ...standup, id: 'ev-retro', title: 'Retro' });
+    await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS));
+    await settle();
+    expect(zoneLines()).toHaveLength(1);
+    expect(
+      activity.reports.filter((report) => report.message.endsWith('1 meeting added.')),
+    ).toHaveLength(2);
+  });
+
   it('never calls Google on a Mac whose sign-in may not read events', async () => {
     const { hook, google } = setUp({ grant: { scopes: [MAKES_BLOCKS] } });
     await settle();

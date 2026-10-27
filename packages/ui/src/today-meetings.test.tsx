@@ -42,6 +42,20 @@ describe('TodayMeetings (ADR-0046)', () => {
     expect(onOpen).toHaveBeenCalledWith('Calendar/Review.md');
   });
 
+  it('heads them as it is told: the calendar’s day and clock when they are not the Mac’s (#587)', () => {
+    render(
+      <TodayMeetings
+        meetings={[row()]}
+        heading="Meetings · Tue 27 Oct, Chicago time"
+        onOpen={vi.fn()}
+      />,
+    );
+    const section = screen.getByRole('region', { name: 'Meetings' });
+    expect(within(section).getByRole('heading').textContent).toBe(
+      'Meetings · Tue 27 Oct, Chicago time',
+    );
+  });
+
   it('draws nothing on a day with no meetings', () => {
     const { container } = render(<TodayMeetings meetings={[]} onOpen={vi.fn()} />);
     expect(container.childElementCount).toBe(0);

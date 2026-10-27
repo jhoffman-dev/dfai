@@ -34,6 +34,7 @@ import { jsonMarkdown } from '../testing/json-markdown.ts';
 import { atlasQueryIndex } from '../testing/query-index.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
 import type { ScriptedRound } from '../testing/fake-model.ts';
+import { clockForRule, clockOnZone, waitsForPlanZone } from './rule-clock.ts';
 import { runAutomation, type AutomationPorts } from './run-automation.ts';
 import type { VaultGuard } from './vault-guard.ts';
 
@@ -100,14 +101,31 @@ const brief = (cited: string): ModelEvent[] =>
     },
   });
 
-function setUp(rounds: readonly ScriptedRound[], notes: Record<string, string> = NOTES) {
+/**
+ * The zones a run is on (#587): the Mac's and the plan zone the vault keeps.
+ * Given, `day` and `time` are the instant, in UTC, and each clock reads it.
+ */
+interface RunZones {
+  readonly mac: string;
+  readonly plan: string | null;
+}
+
+function setUp(
+  rounds: readonly ScriptedRound[],
+  notes: Record<string, string> = NOTES,
+  zones?: RunZones,
+) {
   let day = TODAY;
   let time = '07:00:00';
-  const clock = {
+  const wall = {
     today: () => day,
     localNow: () => `${day}T${time}`,
     now: () => Date.parse(`${day}T${time}Z`),
   };
+  const clock =
+    zones === undefined
+      ? wall
+      : clockForRule({ rule: RULE, clock: clockOnZone(wall, zones.mac), planZone: zones.plan });
   const claude = fakeClaudeStepPorts({ rounds, model: 'claude-test', today: TODAY });
   const vault = automationVault({ notes, today: TODAY, types: ASSISTANT_TYPES, claude });
   // The vault's notes as the host's index holds them when the run starts: relations resolved, today pinned.
@@ -361,6 +379,59 @@ describe('the Morning brief preset', () => {
   });
 });
 
+describe('the Morning brief on the calendar’s clock (#587)', () => {
+  // Honolulu keeps no summer time; Kiritimati is a whole day ahead of it.
+  const HONOLULU = 'Pacific/Honolulu';
+  const KIRITIMATI = 'Pacific/Kiritimati';
+  // 07:00 in Honolulu on TODAY, and 07:00 the day after on Kiritimati.
+  const AT_SEVEN = { day: TODAY, time: '17:00:00' };
+
+  it('briefs the calendar’s day at its 07:00 from a Mac a day ahead', async () => {
+    const { run, briefs, logOf } = setUp([brief(MARA), brief(TOBIAS)], NOTES, {
+      mac: KIRITIMATI,
+      plan: HONOLULU,
+    });
+    await run(AT_SEVEN);
+    expect(briefs().sort()).toEqual([
+      `${FOLDER}/09.30 Larkspur sync.md`,
+      `${FOLDER}/11.00 Vendor call.md`,
+    ]);
+    // Its log is on the calendar's clock too, so its schedule counts on from 07:00 there.
+    expect(logOf().at(-1)).toMatchObject({ at: `${TODAY}T07:00:00` });
+  });
+
+  it('briefs that day once, however often it runs that day on either clock', async () => {
+    const { run, briefs, asked } = setUp([brief(MARA), brief(TOBIAS)], NOTES, {
+      mac: KIRITIMATI,
+      plan: HONOLULU,
+    });
+    await run(AT_SEVEN);
+    await run({ day: TODAY, time: '23:30:00' });
+    expect(briefs()).toHaveLength(2);
+    expect(asked()).toBe(2);
+  });
+
+  it('on the Mac’s clock, with no zone kept, would brief the Mac’s day instead: none of these', async () => {
+    const { run, briefs, asked } = setUp([brief(MARA), brief(TOBIAS)], NOTES, {
+      mac: KIRITIMATI,
+      plan: null,
+    });
+    await run(AT_SEVEN);
+    expect(asked()).toBe(0);
+    expect(briefs()).toEqual([]);
+  });
+
+  it('briefs the calendar’s day from a Mac a day behind, before the Mac’s own day has come', async () => {
+    const { run, briefs } = setUp([brief(MARA), brief(TOBIAS)], NOTES, {
+      mac: HONOLULU,
+      plan: KIRITIMATI,
+    });
+    // 07:00 on TODAY on Kiritimati: still the day before in Honolulu.
+    await run({ day: '2999-03-12', time: '17:00:00' });
+    expect(briefs()).toHaveLength(2);
+  });
+});
+
 describe('the Morning brief, attacked (PR #581)', () => {
   const quiet = Object.fromEntries(
     Object.entries(NOTES).filter(([path]) => path !== SYNC && path !== VENDOR),
@@ -563,5 +634,18 @@ describe('the Morning brief, attacked (PR #581)', () => {
       expect.objectContaining({ problem: expect.stringContaining('No brief for “Vendor call”') }),
     ]);
     expect(failed[0]).not.toHaveProperty('claude');
+  });
+});
+
+describe('waitsForPlanZone (#587)', () => {
+  const TIDY: AutomationRule = { ...RULE, id: 'tidy', action: { kind: 'archive' } };
+
+  it('holds the brief until the settings that keep the zone are read', () => {
+    expect(waitsForPlanZone({ rule: RULE, zoneRead: false })).toBe(true);
+    expect(waitsForPlanZone({ rule: RULE, zoneRead: true })).toBe(false);
+  });
+
+  it('never holds a rule on the Mac’s clock', () => {
+    expect(waitsForPlanZone({ rule: TIDY, zoneRead: false })).toBe(false);
   });
 });

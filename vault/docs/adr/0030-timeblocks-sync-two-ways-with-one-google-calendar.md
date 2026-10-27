@@ -529,3 +529,10 @@ true`. The note is never deleted, and a missing block is never pushed.
   again. Block sync and
   meetings sync still run two copies of one loop in the desktop app
   (issue #585).
+- **James's decisions, 2026-10-26.** The `dfai_note` folder paths on
+  Google's copy of a block are OK. `calendar.app.created` is the right
+  scope for blocks. An event made in Google on the blocks calendar, with no
+  block, stays out of DFAI: it is not made a note, because blocks are
+  already tasks in DFAI and are made there. And the plan zone blocks are
+  written on is kept in the vault's settings (`google_plan_zone`, #587,
+  ADR-0046), by the block sync only where the vault reads no meetings.

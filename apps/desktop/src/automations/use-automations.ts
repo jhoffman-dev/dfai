@@ -8,6 +8,7 @@ import {
   localTimeOf,
   noteTitle,
   noteTriggerHears,
+  ruleClockOf,
   type AutomationRule,
   type LocalTime,
   type LogEntry,
@@ -16,7 +17,10 @@ import {
 import {
   adoptAutomations,
   AutomationLogError,
+  clockForRule,
+  planNowOf,
   refreshBuiltInPrompts,
+  waitsForPlanZone,
   HeldForPullError,
   loadAutomations,
   needsAdoption,
@@ -75,6 +79,17 @@ export interface AutomationsOptions {
   readonly indexReady: boolean;
   /** Where each run and undo is said (U-28). */
   readonly activity: ActivityLog;
+  /**
+   * The plan zone the vault's settings keep (#587, ADR-0046): the morning
+   * brief is counted and run on its clock. Null or left out, on the Mac's.
+   */
+  readonly planZone?: string | null;
+  /**
+   * Whether the vault's settings have been read, so `planZone` is known
+   * (#587). Until they have, the brief's schedule waits: counted on the
+   * Mac's clock meanwhile, it could brief a day early. Left out, read.
+   */
+  readonly planZoneRead?: boolean;
   /** Re-reads the tree and the index once a run or an edit has written. */
   readonly onSettled: () => void;
   /**
@@ -157,6 +172,12 @@ export function useAutomations(options: AutomationsOptions) {
     [vaultKey, clock],
   );
   const pauses = usePauses(vaultKey, clock);
+  // The morning brief keeps the calendar's clock (#587): read when a run's turn comes.
+  const planZone = options.planZone ?? null;
+  const planZoneNow = useRef(planZone);
+  planZoneNow.current = planZone;
+  const planZoneReadNow = useRef(options.planZoneRead ?? true);
+  planZoneReadNow.current = options.planZoneRead ?? true;
 
   useListing({ ...options, revision, tick, setRead, setError });
 
@@ -255,7 +276,7 @@ export function useAutomations(options: AutomationsOptions) {
         runAutomation({
           ports,
           rule,
-          clock,
+          clock: clockForRule({ rule, clock, planZone: planZoneNow.current }),
           activity,
           trigger,
           guard: guardOf(vault),
@@ -353,6 +374,8 @@ export function useAutomations(options: AutomationsOptions) {
     isPaused: pauses.isPaused,
     mayActOn,
     heldForPull,
+    planZoneNow,
+    planZoneReadNow,
   });
   useNoteRuns({
     ...options,
@@ -371,6 +394,8 @@ export function useAutomations(options: AutomationsOptions) {
     notice,
     setNotice,
     watchingSince,
+    /** The plan zone the vault keeps, which the morning brief is counted on; null for none (#587). */
+    planZone,
     /** Rules the clock is not running just now, by id, and why. */
     pauses: pauses.all,
     /** Runs a rule now, by hand; settles with its log entry, or null when it did not run. */
@@ -538,6 +563,8 @@ function useSchedule({
   heldForPull,
   pulledFiles,
   activity,
+  planZoneNow,
+  planZoneReadNow,
   scheduled = true,
 }: AutomationsOptions & {
   listing: AutomationListing | null;
@@ -548,6 +575,10 @@ function useSchedule({
   isPaused: (id: string, now: LocalTime) => boolean;
   mayActOn: (rule: AutomationRule, vault: string, trigger: RunTrigger) => Promise<boolean>;
   heldForPull: { readonly current: ReadonlySet<string> };
+  /** The plan zone the vault keeps, as of this tick. */
+  planZoneNow: { readonly current: string | null };
+  /** Whether the settings that keep the plan zone have been read, as of this tick. */
+  planZoneReadNow: { readonly current: boolean };
 }) {
   const opened = useRef<string | null>(null);
   const checked = useRef<{ key: string; standing: unknown } | null>(null);
@@ -575,7 +606,14 @@ function useSchedule({
         const now = clock.localNow();
         if (isPaused(rule.id, now)) continue;
         const onOpening = opening || openingHeld.current.has(rule.id);
-        const trigger = dueTrigger({ rule, log, now, watchingSince, opening: onOpening });
+        if (waitsForPlanZone({ rule, zoneRead: planZoneReadNow.current })) {
+          // Its turn on opening is kept for a tick once the zone is known.
+          if (onOpening) openingHeld.current.add(rule.id);
+          continue;
+        }
+        const planNow = planNowOf(clock, planZoneNow.current);
+        const counted = ruleClockOf({ rule, now, watchingSince, planNow });
+        const trigger = dueTrigger({ rule, log, ...counted, opening: onOpening });
         if (trigger === null) continue;
         // A Claude step waits for fresh sync state: a schedule due now is due still once a pull
         // completes, and one that runs on opening is kept for it.
@@ -604,6 +642,8 @@ function useSchedule({
     heldForPull,
     standing,
     activity,
+    planZoneNow,
+    planZoneReadNow,
   ]);
 }
 

@@ -26,7 +26,7 @@ export const automations = defineTool({
     'Every automation in the vault — a rule that archives notes, sets properties on them, or asks ' +
     'Claude about them, on a schedule or when a note of a type is created or changed — as the ' +
     'Automations page lists it: { automations: [{ id, name, path, enabled, when, note, which, ' +
-    'olderThanDays, do, set, claude, schedule, action, lastRun, nextRun, paused }], broken: [{ ' +
+    'olderThanDays, do, set, claude, schedule, action, lastRun, nextRun, timeZone, paused }], broken: [{ ' +
     'path, name, problem }] }. "when" ' +
     'is as the rule\'s file writes it ("daily at 03:00", "fridays at 15:00", "a meeting is created or changed"); ' +
     '"note" is { type, on: ["created" and/or "changed"] } for a rule a note sets off, which runs ' +
@@ -40,7 +40,9 @@ export const automations = defineTool({
     'whose note is written once a period and keeps only list items linking a note it was given, ' +
     'or null. A Claude step never edits a note. ' +
     '"lastRun" is { at, kind, trigger, summary } or null, "trigger" "note" for a run a note set ' +
-    'off; "nextRun" is a local time or null; "paused" says why the app is holding it back. A ' +
+    'off; "nextRun" is a local time or null, on the Mac\'s clock unless "timeZone" names another: ' +
+    'the morning brief keeps its calendar\'s clock, and "timeZone" is that zone (IANA) once a sync ' +
+    'has learned it, else null; "paused" says why the app is holding it back. A ' +
     `rule under "broken" cannot be read and never runs. ${IN_THE_APP}`,
   inputSchema: noInput,
   annotations: READ_ONLY,

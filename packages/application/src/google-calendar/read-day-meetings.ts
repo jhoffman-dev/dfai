@@ -2,6 +2,7 @@ import {
   compileDayEventsQuery,
   dayEventTimes,
   dayMeetings,
+  wallDayIn,
   EVENT_NOTE_TYPE,
   EVENT_NOTES_FOLDER,
   type DayEventRow,
@@ -81,4 +82,22 @@ export function readTodaysMeetings({
   clock: Pick<Clock, 'today'>;
 }): Promise<DayMeeting[]> {
   return readDayMeetings({ index, day: clock.today() });
+}
+
+/**
+ * The day Today's meetings are read for (#587): the plan zone's today when
+ * the vault keeps one, the day the morning brief briefs, so Today and the
+ * brief list the same meetings wherever the Mac is; else the page's own day.
+ * Only the meetings move: the tasks and the daily note keep the Mac's day.
+ */
+export function meetingsDayOf({
+  pageDay,
+  planZone,
+  clock,
+}: {
+  pageDay: string;
+  planZone: string | null;
+  clock: Pick<Clock, 'now'>;
+}): string {
+  return planZone === null ? pageDay : wallDayIn(planZone, clock.now());
 }

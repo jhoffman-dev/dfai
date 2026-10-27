@@ -41,9 +41,8 @@ const ANSWER = JSON.stringify({
   },
 });
 
-test('the "Morning brief" preset writes a cited brief per meeting into the Inbox, once a day (#39)', async ({
-  page,
-}) => {
+/** A vault with today's meetings as event notes: one with Mara linked, one declined, one with nobody. */
+async function meetingsVault() {
   const vault = await createVault();
   await vault.mkdir('.atlas/types');
   await vault.write('.atlas/types/person.md', type('person', 'Person'));
@@ -79,6 +78,13 @@ test('the "Morning brief" preset writes a cited brief per meeting into the Inbox
     `Calendar/${DAY} Focus time.md`,
     event(['title: Focus time', `date: ${DAY}T15:00`, 'gcal_event_id: ev-focus']),
   );
+  return vault;
+}
+
+test('the "Morning brief" preset writes a cited brief per meeting into the Inbox, once a day (#39)', async ({
+  page,
+}) => {
+  const vault = await meetingsVault();
   const host = await installHost(page, vault);
   host.claude.reply(ANSWER);
   await page.clock.setFixedTime(NOW);
@@ -133,4 +139,34 @@ test('the "Morning brief" preset writes a cited brief per meeting into the Inbox
   await page.getByRole('button', { name: /^Inbox/ }).click();
   const inbox = page.getByRole('article', { name: 'Inbox' });
   await expect(inbox.getByText('09.30 Larkspur sync', { exact: true })).toBeVisible();
+});
+
+// #587: the calendar keeps Kiritimati's clock, a day ahead of the Mac in Los Angeles.
+test('the brief briefs the calendar’s day, on the zone the vault keeps, not the Mac’s (#587)', async ({
+  page,
+}) => {
+  const vault = await meetingsVault();
+  await vault.write('.atlas/settings.md', '---\ngoogle_plan_zone: Pacific/Kiritimati\n---\n');
+  const host = await installHost(page, vault);
+  host.claude.reply(ANSWER);
+  // 10:30 on the 25th in Los Angeles; 07:30 on the 26th on Kiritimati.
+  await page.clock.setFixedTime(new Date('2026-10-25T17:30:00Z'));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click();
+  const screen = page.getByRole('article', { name: 'Automations' });
+  await page.getByRole('button', { name: 'Morning brief' }).click();
+  const editor = screen.getByRole('region', { name: 'Automation' });
+  await editor.getByRole('button', { name: 'Create automation' }).click();
+  await expectFile(vault, '.atlas/automations/Morning brief.md').toContain(
+    '\ndata: meeting-briefs\n',
+  );
+  const list = screen.getByRole('list', { name: 'All automations' });
+  await list.getByRole('button', { name: 'Morning brief', exact: true }).click();
+
+  await editor.getByRole('button', { name: 'Run now' }).click();
+  await expectFile(vault, BRIEF).toContain('atlas_period_item: gcal:ev-sync');
+  expect(await vault.read(BRIEF)).toMatch(/atlas_period: '?2026-10-26T07:00:00/);
 });

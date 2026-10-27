@@ -175,7 +175,8 @@ differs from the issue (#8) and the text above:
   Calendar event's start and end before the arrival less the length is
   tried: the one event note of its title that ended at or before the
   arrival, within 3 hours of real time, measured on the clock the event
-  notes are written on. The day is the one the meeting states
+  notes are written on — the plan zone the vault keeps (#587, ADR-0046),
+  else the Mac's. The day is the one the meeting states
   (subject, `date`, or a dated `start`); with none, the arrival's and the
   day before, so notes that arrive just after midnight find a late-evening
   event. The file says `start_source: calendar`. An `end` before a start

@@ -43,6 +43,14 @@ function zoneLine(report: BlockSyncReport): ActivityReport | null {
   };
 }
 
+/** The calendar's zone could not be kept in the vault's settings (#587); the blocks synced. */
+const zoneProblemLine = (problem: string): ActivityReport => ({
+  level: 'warning',
+  kind: 'source',
+  message: `Blocks synced with Google Calendar, but the calendar’s time zone could not be kept in the vault’s settings: ${problem}`,
+  subject: null,
+});
+
 /** What the sync wrote, in one line; null when it wrote nothing. */
 function summaryLine(report: BlockSyncReport): ActivityReport | null {
   const parts = [
@@ -84,6 +92,7 @@ export function blockSyncActivity(report: BlockSyncReport): ActivityReport[] {
   const zone = zoneLine(report);
   return [
     ...(zone === null ? [] : [zone]),
+    ...(report.zoneProblem === null ? [] : [zoneProblemLine(report.zoneProblem)]),
     ...(summary === null ? [] : [summary]),
     ...report.conflicts.map((path) =>
       aboutBlock(

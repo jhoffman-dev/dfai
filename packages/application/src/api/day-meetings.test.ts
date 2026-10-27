@@ -85,6 +85,7 @@ describe('GET /v1/calendar/meetings', () => {
     expect(response.status).toBe(200);
     expect(bodyOf(response)).toEqual({
       day: DAY,
+      timeZone: 'America/Los_Angeles',
       meetings: [
         {
           path: 'Calendar/2026-10-24 Vendor review.md',
@@ -122,7 +123,21 @@ describe('GET /v1/calendar/meetings', () => {
     const api = apiFixture({ index: await indexOf(FILES) });
     expect(bodyOf(await get(api, { day: '2026-11-02' }))).toEqual({
       day: '2026-11-02',
+      timeZone: 'America/Los_Angeles',
       meetings: [],
+    });
+  });
+
+  it('names the zone the day is on: the plan zone the vault keeps, not the Mac’s (#587)', async () => {
+    const settings = '---\n{"google_plan_zone":"America/Chicago"}\n---\n';
+    const api = apiFixture({
+      files: { '.atlas/settings.md': settings },
+      markdown: jsonMarkdown(),
+      index: await indexOf(FILES),
+    });
+    expect(bodyOf(await get(api, { day: DAY }))).toMatchObject({
+      day: DAY,
+      timeZone: 'America/Chicago',
     });
   });
 

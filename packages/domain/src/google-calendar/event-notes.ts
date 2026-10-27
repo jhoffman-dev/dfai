@@ -25,8 +25,8 @@ import {
   type EventToMatch,
   type MeetingCandidate,
 } from './meeting-match.ts';
-import { PRIMARY_CALENDAR } from './meeting-setting.ts';
 import { isNotEventNote } from './not-event-notes.ts';
+import { namedPlanZone } from './plan-zone.ts';
 import { inWindow, wallEnd, wallStart, type MeetingWindow } from './meeting-window.ts';
 
 /** The type an event note declares, as an ICS source's do (ADR-0012). */
@@ -169,10 +169,8 @@ function copyFor(note: ExistingEventNote, copies: readonly GoogleEvent[]): Googl
  * the person's. Whenever Google names a zone, the Mac's own plays no part.
  * Blocks are written on it too (#30), from the primary calendar's zone alone.
  */
-export const planZone = (input: Pick<EventNotesInput, 'calendarZones' | 'timeZone'>): string => {
-  const zones = input.calendarZones ?? {};
-  return zones[PRIMARY_CALENDAR] ?? Object.values(zones)[0] ?? input.timeZone;
-};
+export const planZone = (input: Pick<EventNotesInput, 'calendarZones' | 'timeZone'>): string =>
+  namedPlanZone(input.calendarZones ?? {}) ?? input.timeZone;
 
 /** What one plan works from besides its input: the names it has taken, and the notes it may link. */
 interface PlanContext {

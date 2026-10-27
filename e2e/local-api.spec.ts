@@ -482,6 +482,8 @@ test('a day’s meetings from Google Calendar are read through the API from the 
       'Calendar/2026-10-24 Declined sync.md': event('Declined sync', '2026-10-24T11:00', [
         'gcal_response: declined',
       ]),
+      // The calendar's zone, as a meetings sync keeps it (#587): the answer names it.
+      '.atlas/settings.md': '---\ngoogle_plan_zone: America/Chicago\n---\n',
     },
   });
   await turnApiOn(page, host);
@@ -492,6 +494,7 @@ test('a day’s meetings from Google Calendar are read through the API from the 
     .poll(async () => (await day()).body)
     .toEqual({
       day: '2026-10-24',
+      timeZone: 'America/Chicago',
       meetings: [
         {
           path: 'Calendar/2026-10-24 Payroll standup.md',

@@ -5,6 +5,7 @@ import {
   MEETING_LIST_LIMIT,
   MeetingMappingError,
   createVaultPath,
+  planZoneOr,
   type MeetingFields,
 } from '@dfai/domain';
 import {
@@ -13,6 +14,7 @@ import {
   receiveMeeting,
   type MeetingSummaryStates,
 } from '../meetings/index.ts';
+import { readPlanZone } from '../settings/plan-zone.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import { ApiError, messageWithoutPaths } from './api-error.ts';
 import type { ApiMeeting } from './contract.ts';
@@ -144,9 +146,9 @@ export async function receiveMeetingRoute(request: VaultRequest): Promise<RouteR
   const fields = meetingFieldsOf(body);
   const options = {
     timeZone: optionalString(body, 'timeZone') ?? request.timeZone,
-    // Event notes are on the calendar's clock (ADR-0046), which nothing stores; the Mac's is the
-    // nearest one known, and never the sender's.
-    calendarTimeZone: request.timeZone,
+    // Event notes are on the calendar's clock (ADR-0046), which the vault keeps once a sync has
+    // learned it (#587); until then the Mac's is the nearest one known, and never the sender's.
+    calendarTimeZone: planZoneOr(await readPlanZone(request), request.timeZone),
     groupAddresses: groupAddressesOf(body),
   };
   const receipt = await receiveMeeting({ ports: request, fields, options }).catch(refusedMeeting);

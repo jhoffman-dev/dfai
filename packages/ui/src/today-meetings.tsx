@@ -19,15 +19,18 @@ export interface TodayMeetingRow {
  */
 export function TodayMeetings({
   meetings,
+  heading = 'Meetings',
   onOpen,
 }: {
   meetings: readonly TodayMeetingRow[];
+  /** What the section is headed: which day and clock when they are not the Mac's (#587). */
+  heading?: string;
   onOpen: (path: VaultPath) => void;
 }) {
   if (meetings.length === 0) return null;
   return (
     <section className="review__section today__meetings" aria-label="Meetings">
-      <h2 className="review__heading">Meetings</h2>
+      <h2 className="review__heading">{heading}</h2>
       <ul className="today__meeting-list">
         {meetings.map((meeting) => (
           <li key={meeting.path} className="today__meeting">

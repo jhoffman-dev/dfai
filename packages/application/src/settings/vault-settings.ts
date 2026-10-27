@@ -76,13 +76,16 @@ export async function saveVaultSettings({
   await fs.createNote({ path: SETTINGS, contents: `${frontmatter}\n# Settings\n` });
 }
 
+/** The vault's settings note is there and its frontmatter cannot be read. */
+export class UnreadableSettingsError extends Error {}
+
 function refuseUnreadable(
   markdown: Pick<MarkdownPort, 'frontmatterProblem'>,
   frontmatter: string | null,
 ): void {
   const problem = markdown.frontmatterProblem(frontmatter);
   if (problem !== null)
-    throw new Error(
+    throw new UnreadableSettingsError(
       `${VAULT_SETTINGS_PATH} can't be read, so its settings are left as they are until it is fixed: ${problem}`,
     );
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, planAutomation, type AutomationRule, type LogEntry } from '@dfai/domain';
+import {
+  createVaultPath,
+  planAutomation,
+  AUTOMATION_PRESETS,
+  type AutomationRule,
+  type LogEntry,
+} from '@dfai/domain';
 import { automationRows, dryRunView, logViews, shownTime } from './automation-rows.ts';
 
 const p = createVaultPath;
@@ -72,6 +78,34 @@ describe('automationRows', () => {
       ['Tidy', null, null, false, null],
       ['Bad', null, null, false, 'This rule’s file cannot be read: Say when it runs.'],
     ]);
+  });
+});
+
+describe('automationRows on the calendar’s clock (#587)', () => {
+  const BRIEF: AutomationRule = {
+    ...AUTOMATION_PRESETS.find((each) => each.name === 'Morning brief')!,
+    id: 'Morning brief',
+    path: p('.atlas/automations/Morning brief.md'),
+  };
+  const listing = {
+    automations: [
+      { rule: BRIEF, log: [], idWritten: true },
+      { rule: RULE, log: [RUN], idWritten: true },
+    ],
+    broken: [],
+  };
+  // 09:00 on the Mac; 02:00 on the calendar's clock, before its 07:00.
+  const ON_PLAN = { ...CLOCK, planNow: '2026-09-27T02:00:00', planClock: 'Chicago time' };
+
+  it('says the brief’s next run is on the calendar’s clock, and no other rule’s', () => {
+    const [brief, tidy] = automationRows(listing, ON_PLAN);
+    expect(brief?.nextRun).toBe('27 Sep 2026, 07:00 Chicago time');
+    expect(tidy?.nextRun).toBe('28 Sep 2026, 03:00');
+  });
+
+  it('says no clock when the calendar’s is the Mac’s', () => {
+    const [brief] = automationRows(listing, { ...ON_PLAN, planClock: null });
+    expect(brief?.nextRun).toBe('27 Sep 2026, 07:00');
   });
 });
 

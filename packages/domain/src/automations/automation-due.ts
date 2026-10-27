@@ -1,5 +1,6 @@
 import type { AutomationRule } from './automation-rule.ts';
 import { SHARED_STEP_BUDGET, type ClaudeStepBudget } from './claude-step-budget.ts';
+import { keepsCalendarClock } from './morning-brief.ts';
 import { lastScheduleMark, type LogEntry, type RunTrigger } from './run-log.ts';
 import { isDue, localTimeMs, localTimeOf, nextRunAfter, type LocalTime } from './schedule.ts';
 
@@ -43,6 +44,35 @@ export function nextRunOf(clock: RuleClock): LocalTime | null {
 
 function sinceOf({ log, watchingSince, now }: Omit<RuleClock, 'rule'>): LocalTime {
   return lastScheduleMark(log, now) ?? watchingSince;
+}
+
+/**
+ * The clock a rule is counted on (#587): the Mac's, except for a rule that
+ * keeps the calendar's (`keepsCalendarClock`) in a vault that keeps a plan
+ * zone, which is counted on `planNow`, that zone's wall clock now. When
+ * watching began is moved by the same gap, so a rule never run counts its
+ * first run from the same instant on either clock. The rule's log is
+ * written on the clock it is counted on, so its marks need no moving.
+ */
+export function ruleClockOf({
+  rule,
+  now,
+  watchingSince,
+  planNow,
+}: {
+  rule: Pick<AutomationRule, 'action'>;
+  now: LocalTime;
+  watchingSince: LocalTime;
+  /** The plan zone's wall clock now; null when the vault keeps no zone. */
+  planNow: LocalTime | null;
+}): { now: LocalTime; watchingSince: LocalTime } {
+  if (planNow === null || !keepsCalendarClock(rule)) return { now, watchingSince };
+  const gap = (localTimeMs(planNow) ?? 0) - (localTimeMs(now) ?? 0);
+  const since = localTimeMs(watchingSince);
+  return {
+    now: planNow,
+    watchingSince: since === null ? watchingSince : localTimeOf(since + gap),
+  };
 }
 
 /** The longest a failing rule waits before it is tried again: six hours. */
