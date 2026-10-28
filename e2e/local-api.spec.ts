@@ -133,10 +133,12 @@ test('Settings turns the API on, off by default, and says where it is running', 
   expect(status.body).toMatchObject({ app: 'atlas', index: { ready: true } });
 });
 
-// #161: a reload takes the router away with the page; the new page's router
-// takes over, so a request after it is answered rather than sent to the page
-// that has gone and left waiting.
-test('a reload hands the API to the new page, which answers the next request', async ({ page }) => {
+// A reload takes the router away with the page, and the new page's router must
+// take over: the API is not left stuck refusing everything as still starting.
+// This is a smoke test of the reload path, not of #161 itself (a gone page's
+// late "I listen"), which the fake host cannot time; the Rust tests in
+// src-tauri/src/api/control.rs are that regression test.
+test('a reload does not leave the API stuck at 503', async ({ page }) => {
   const { host } = await openVault(page);
   await turnApiOn(page, host);
   expect((await host.api.send({ method: 'GET', path: '/v1/status' })).status).toBe(200);
