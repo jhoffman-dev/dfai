@@ -130,6 +130,15 @@ describe('a Standard Webhooks delivery', () => {
     expect(verify(vectorHeaders(), body, { ...check, now: edge })).toBe(VECTOR.id);
   });
 
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'is refused when the clock reads %s, rather than passing any timestamp',
+    (now) => {
+      expect(() => verify(vectorHeaders(), body, { ...check, now })).toThrow(
+        /clock is not a number/,
+      );
+    },
+  );
+
   it('is refused when the body is not the one signed, by one byte', () => {
     expect(() => verify(vectorHeaders(), Buffer.from('{"test": 2432232315}'))).toThrow(
       /no v1 signature/,

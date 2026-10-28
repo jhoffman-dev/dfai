@@ -595,14 +595,18 @@ it through the same GitHub nodes as the Gemini workflow. The app's own
 Granola pull stays the safety net: anything this misses, the pull catches.
 
 ```
-Granola webhook → Verify Granola signature → Answer 200 → Fetch Granola note → (200) Map → GitHub branch
-                         └ refused → Answer 401                     └ anything else, or no answer → email
+Granola webhook → Verify Granola signature → Signed by Granola? → Answer 200 → Fetch Granola note → (200) Map → GitHub branch
+                         │                          └ no → Answer 401                └ anything else, or no answer → email
+                         └ signed but unreadable, or a fault → Answer 200 → email
 ```
 
 | Granola or GitHub says…                                 | n8n answers Granola | Then                                      |
 | ------------------------------------------------------- | ------------------- | ----------------------------------------- |
 | A delivery not signed with the secret, or stale         | `401`               | Nothing (Granola does not retry a 4xx).   |
+| A body over 64 KB (refused before it is hashed)         | `401`               | Nothing.                                  |
 | A signed delivery                                       | `200`, at once      | Fetch, map, commit.                       |
+| Signed, but the body names no note (or is not JSON)     | `200`               | Emailed, quoting its first 200 bytes.     |
+| A fault in the check (no Raw Body, no binary)           | `200`               | Emailed with n8n's error.                 |
 | Granola's fetch: `404` (gone, or still processing)      | `200` (already)     | Emailed; the pull catches the meeting.    |
 | Granola's fetch: any other status (`401`, `413`, `5xx`) | `200` (already)     | Emailed; the pull catches the meeting.    |
 | Granola's fetch: no answer in 10 s                      | `200` (already)     | Emailed; the pull catches the meeting.    |
@@ -617,6 +621,24 @@ budget, not even on a note that is still processing. The ticket asked for a
 `503` on a `404`; that was dropped in favour of the ADR, because a note that
 404s for good (deleted, or never visible to your key) — or Granola's own
 test event — would have spent the whole budget with no email.
+
+Only a delivery the check refuses — a bad or missing signature, a stale or
+missing timestamp, the secret not pasted, a body over 64 KB (Granola's
+payload holds only a note id) — is answered `401` in silence: that is what
+keeps a forger from filling your mailbox. A delivery Granola did sign but
+whose body the check cannot read, and any fault in the verify node itself
+(n8n cannot hand over the raw body), leave by the node's error output and
+are answered **`200` and emailed**. The two cannot be told apart there
+without reading n8n's error text, and a `200` asks Granola for nothing more,
+as a `401` would; a `500` would spend the retry budget. The email quotes the
+body's first 200 bytes, printable ASCII only (`\xNN` for every other byte).
+
+Every value the failure email interpolates — a meeting's title, its source
+id, the error, the workflow's name — has its control characters (CR, LF,
+tab, U+2028…) turned to spaces, so none can forge a line of the email; one
+that cannot be read is left empty. This is the same in the Gemini workflow
+(`meeting-to-atlas.workflow.json` changed for it: re-import or re-paste
+**Email me: meeting not in DFAI** there too).
 
 ### What only you can do, in n8n and Granola
 
@@ -650,8 +672,9 @@ test event — would have spent the whole budget with no email.
    whenever you re-import a rebuilt JSON.
 6. **Activate** the workflow, then send Granola's **test event** from the
    webhook's page. It should be answered `200`. Then open n8n's
-   **Executions** for the workflow and check the run: it must have passed
-   **Verify Granola signature**. A `401` there sends **no email** — a secret
+   **Executions** for the workflow and check the run: it must have gone from
+   **Signed by Granola?** to **Answer 200: signature verified**. A `401`
+   there sends **no email** — a secret
    never pasted, or a wrong one, refuses every delivery in silence — so this
    is the one place to see it. Past the check, a test event that names no real
    note gets a `404` from the fetch and the failure email; a real meeting
@@ -673,12 +696,17 @@ reach, and you must see work on the first run:
   verify node reads the bytes with
   `await this.helpers.getBinaryDataBuffer(0, "data")` (n8n's documented
   Code-node helper, in "Run Once for All Items" mode). If n8n refuses it, the
-  verify node fails and every delivery is answered `401`: the run's error
-  says why.
+  verify node fails: every delivery is answered `200` and you get the failure
+  email with n8n's error.
 - **Where the note id is.** Granola documents that the payload carries a
   `note_id`, not where; the check reads it at the top or under `data`. A test
-  event that fails with `body: no note_id` means it is elsewhere: tell the
+  event emailed as `signed by Granola, but body: no note_id` means it is elsewhere: tell the
   next agent the payload's shape.
+- **The email's expressions.** Each value in the failure email is a small
+  `(() => { try { … } catch … })()` expression, so a control character or a
+  node that never ran cannot break it. If n8n's expression editor refuses
+  one, the email node fails (it stops nothing) — say so, and the next agent
+  will flatten it.
 - **The status branches.** The fetch is set to "Include Response Headers and
   Status" and "Never Error", so its output has `statusCode`; the If nodes read
   `$json.statusCode`.

@@ -1,7 +1,7 @@
 import { MAP_MEETING_NODE } from './code-node.ts';
 import { BRANCH_NODES, githubBranch } from './github-branch.ts';
 import { FETCH_NOTE_NODE } from './granola-code-node.ts';
-import { codeNode, ifNode, to, type Position } from './n8n-nodes.ts';
+import { codeNode, ERROR_OUTPUT, ifNode, to, type Position } from './n8n-nodes.ts';
 
 /*
  * The Granola webhook workflow (P28-14, ADR-0034): Granola's `note.generated`
@@ -29,7 +29,9 @@ export const FETCH_TIMEOUT_MS = 10_000;
 export const GRANOLA_NODES = {
   webhook: 'Granola webhook',
   verify: 'Verify Granola signature',
+  signed: 'Signed by Granola?',
   refuse: 'Answer 401: not signed by Granola',
+  verifyFailed: 'Answer 200: email why it cannot be read',
   fetch: FETCH_NOTE_NODE,
   accepted: 'Answer 200: signature verified',
   found: 'Granola sent the note?',
@@ -74,7 +76,7 @@ function fetchNode() {
     name: N.fetch,
     type: 'n8n-nodes-base.httpRequest',
     typeVersion: 4.2,
-    position: [660, 0],
+    position: [880, 0],
     parameters: {
       method: 'GET',
       url: `=${GRANOLA_API}/v1/notes/{{ $('${N.verify}').item.json.noteId }}`,
@@ -112,6 +114,18 @@ function answerNode({ name, serial, responseCode, position }: AnswerSpec) {
   };
 }
 
+/** Did the check pass? A refusal is `signed: false`, out of the verify node's first output. */
+const signedNode = () =>
+  ifNode({
+    name: N.signed,
+    id: granolaId('100b'),
+    position: [440, 0],
+    conditionId: granolaId('c00b'),
+    leftValue: '={{ $json.signed }}',
+    rightValue: '',
+    operator: { type: 'boolean', operation: 'true', singleValue: true },
+  });
+
 interface StatusSpec {
   readonly name: string;
   readonly serial: string;
@@ -132,11 +146,13 @@ const statusIs = ({ name, serial, status, position }: StatusSpec) =>
   });
 
 /** Where the webhook half hands over to the GitHub branch: the branch is drawn this far right. */
-const BRANCH_SHIFT = 880;
+const BRANCH_SHIFT = 1100;
 
 const CONNECTIONS = {
   [N.webhook]: { main: [to(N.verify)] },
-  [N.verify]: { main: [to(N.accepted), to(N.refuse)] },
+  [N.verify]: { main: [to(N.signed), to(N.verifyFailed)] },
+  [N.signed]: { main: [to(N.accepted), to(N.refuse)] },
+  [N.verifyFailed]: { main: [to(N.failed), to(N.failed)] },
   [N.accepted]: { main: [to(N.fetch)] },
   [N.fetch]: { main: [to(N.found), to(N.failed)] },
   [N.found]: { main: [to(N.map), to(N.failed)] },
@@ -145,9 +161,11 @@ const CONNECTIONS = {
 
 /**
  * The whole workflow. Its answers to Granola (ADR-0034): `401` to a delivery
- * not signed with the secret (Granola does not retry a 4xx), and `200` the
- * moment the signature holds, before the fetch, well inside Granola's 15
- * seconds. Every later failure — any Granola status but 200 (a 404 too: the
+ * not signed with the secret (Granola does not retry a 4xx), in silence; `200`
+ * the moment the signature holds, before the fetch, well inside Granola's 15
+ * seconds. A signed body that names no note, and any fault in the verify node
+ * (no raw body), are answered `200` and emailed: they leave by its error
+ * output, which cannot tell them apart, and neither is worth a retry. Every later failure — any Granola status but 200 (a 404 too: the
  * note is gone or still processing), a timeout, a note the mapper refuses, a
  * GitHub failure — is emailed, never answered: the pull catches the meeting,
  * and no answer of ours spends Granola's four-day retry budget.
@@ -177,11 +195,21 @@ export function granolaWebhookWorkflow(scripts: {
         position: [220, 0],
         mode: 'runOnceForAllItems',
       }),
-      answerNode({ name: N.refuse, serial: '1003', responseCode: 401, position: [440, 160] }),
-      answerNode({ name: N.accepted, serial: '1008', responseCode: 200, position: [440, 0] }),
+      signedNode(),
+      answerNode({ name: N.refuse, serial: '1003', responseCode: 401, position: [660, 160] }),
+      answerNode({ name: N.accepted, serial: '1008', responseCode: 200, position: [660, 0] }),
+      {
+        ...answerNode({
+          name: N.verifyFailed,
+          serial: '1009',
+          responseCode: 200,
+          position: [440, 240],
+        }),
+        ...ERROR_OUTPUT,
+      },
       fetchNode(),
-      statusIs({ name: N.found, serial: '1005', status: 200, position: [880, 0] }),
-      codeNode({ name: N.map, id: granolaId('100a'), jsCode: scripts.map, position: [1100, 0] }),
+      statusIs({ name: N.found, serial: '1005', status: 200, position: [1100, 0] }),
+      codeNode({ name: N.map, id: granolaId('100a'), jsCode: scripts.map, position: [1320, 0] }),
       ...branch.nodes,
     ],
     connections: { ...CONNECTIONS, ...branch.connections },

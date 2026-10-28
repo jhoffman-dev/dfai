@@ -156,6 +156,8 @@ function freshTimestamp(value: string | null, now: number): string {
   if (value === null || !/^\d{1,12}$/.test(value)) {
     throw new WebhookRefusal('webhook-timestamp: missing or not seconds since the epoch');
   }
+  // A clock that is not a number would make every distance NaN, and no NaN is "too far".
+  if (!Number.isFinite(now)) throw new WebhookRefusal('the clock is not a number; refusing');
   if (Math.abs(now / 1000 - Number(value)) > TIMESTAMP_TOLERANCE_SECONDS) {
     throw new WebhookRefusal('webhook-timestamp: more than five minutes from now');
   }

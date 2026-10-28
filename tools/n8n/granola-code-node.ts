@@ -39,6 +39,8 @@ export function verifyGranolaScript(secret: string = SECRET_PLACEHOLDER): string
       `const SECRET = ${JSON.stringify(secret)};`,
       'const body = new Uint8Array(await this.helpers.getBinaryDataBuffer(0, "data"));',
       'const delivery = { headers: $input.first().json.headers, body };',
+      '// A refusal leaves as { signed: false } (answered 401); an unreadable signed body, or any',
+      '// fault here (no raw body), throws to the error output: answered 200 and emailed.',
       'return [{ json: verifyGranolaWebhook(delivery, { secret: SECRET, now: Date.now() }) }];',
     ].join('\n'),
   );

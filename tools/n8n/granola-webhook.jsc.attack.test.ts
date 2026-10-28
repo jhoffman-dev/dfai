@@ -115,10 +115,19 @@ describe.skipIf(!existsSync(JSC))(
     );
 
     it('passes the signed delivery and refuses the stale and the wrongly signed', () => {
-      expect(answers()[1]).toEqual({ webhookId: VECTOR.id, noteId: 'not_4kTq2mWxLp4Rz7' });
-      expect(answers()[0]).toMatch(/^WebhookRefusal: body: no note_id/);
-      expect(answers()[2]).toMatch(/^WebhookRefusal: .*five minutes/);
-      expect(answers()[3]).toMatch(/^WebhookRefusal: .*signature/);
+      expect(answers()[1]).toEqual({
+        signed: true,
+        webhookId: VECTOR.id,
+        noteId: 'not_4kTq2mWxLp4Rz7',
+      });
+      expect(answers()[0]).toMatch(
+        /^UnreadableWebhookBody: signed by Granola, but body: no note_id/,
+      );
+      expect(answers()[2]).toEqual({
+        signed: false,
+        reason: expect.stringMatching(/five minutes/),
+      });
+      expect(answers()[3]).toEqual({ signed: false, reason: expect.stringMatching(/signature/) });
     });
   },
 );

@@ -130,7 +130,7 @@ describe('the wiring', () => {
     expect(path.at(-1)).toBe(N.create);
     expect(answers(path)).toEqual([200]);
     // The 200 goes as soon as the signature holds, before the fetch: Granola waits 15 seconds.
-    expect(path.indexOf(N.accepted)).toBe(path.indexOf(N.verify) + 1);
+    expect(path.slice(1, 4)).toEqual([N.verify, N.signed, N.accepted]);
     expect(path.indexOf(N.accepted)).toBeLessThan(path.indexOf(N.fetch));
   });
 
@@ -138,7 +138,14 @@ describe('the wiring', () => {
     const codes = committed.nodes
       .filter((each) => each.type === 'n8n-nodes-base.respondToWebhook')
       .map((each) => (each.parameters.options as { responseCode: number }).responseCode);
-    expect(codes.sort()).toEqual([200, 401]);
+    expect(new Set(codes)).toEqual(new Set([200, 401]));
+  });
+
+  it('answers a signed body it cannot read, or a fault in the check, with 200 and the email', () => {
+    const path = walk((name) => (name === N.verify ? 1 : 0));
+    expect(answers(path)).toEqual([200]);
+    expect(path).toEqual([N.webhook, N.verify, N.verifyFailed, N.failed, N.notify]);
+    expect(node(N.verify).onError).toBe('continueErrorOutput');
   });
 
   it('answers a GitHub failure with 200 and the failure email', () => {
@@ -165,8 +172,8 @@ describe('the wiring', () => {
   });
 
   it('answers a delivery the check refuses with a 401, and fetches nothing', () => {
-    const path = walk((name) => (name === N.verify ? 1 : 0));
-    expect(path).toEqual([N.webhook, N.verify, N.refuse]);
+    const path = walk((name) => (name === N.signed ? 1 : 0));
+    expect(path).toEqual([N.webhook, N.verify, N.signed, N.refuse]);
     expect(answers(path)).toEqual([401]);
   });
 
@@ -278,36 +285,48 @@ describe('the verify node', () => {
   });
 
   it('passes the Standard Webhooks vector once the secret is pasted in', async () => {
-    // The vector's body names no note: past the signature, it is refused for that alone.
+    // The vector's body names no note: signed, so it leaves by the error output (200 + email).
     await expect(
       verifyIn(verifyGranolaScript(VECTOR.secret), vectorHeaders(), VECTOR.body),
-    ).rejects.toThrow(/^body: no note_id/);
+    ).rejects.toThrow(
+      /^signed by Granola, but body: no note_id.*it begins: \{"test": 2432232314\}$/,
+    );
   });
 
   it('hands a signed Granola delivery’s note id on to the fetch', async () => {
     const headers = vectorHeaders({ 'webhook-signature': signature(NOTE_BODY) });
     const out = await verifyIn(verifyGranolaScript(VECTOR.secret), headers, NOTE_BODY);
-    expect(out).toEqual([{ json: { webhookId: VECTOR.id, noteId: 'not_4kTq2mWxLp4Rz7' } }]);
+    expect(out).toEqual([
+      { json: { signed: true, webhookId: VECTOR.id, noteId: 'not_4kTq2mWxLp4Rz7' } },
+    ]);
   });
 
   it('refuses a stale timestamp and a wrong secret', async () => {
     const headers = vectorHeaders({ 'webhook-signature': signature(NOTE_BODY) });
     vi.setSystemTime(VECTOR_NOW + 301_000);
-    await expect(verifyIn(verifyGranolaScript(VECTOR.secret), headers, NOTE_BODY)).rejects.toThrow(
-      /five minutes/,
+    const refusal = (reason: RegExp) => [
+      { json: { signed: false, reason: expect.stringMatching(reason) } },
+    ];
+    await expect(verifyIn(verifyGranolaScript(VECTOR.secret), headers, NOTE_BODY)).resolves.toEqual(
+      refusal(/five minutes/),
     );
     vi.setSystemTime(VECTOR_NOW);
     const wrong = 'whsec_' + Buffer.from('another secret').toString('base64');
-    await expect(verifyIn(verifyGranolaScript(wrong), headers, NOTE_BODY)).rejects.toThrow(
-      /signature/,
+    await expect(verifyIn(verifyGranolaScript(wrong), headers, NOTE_BODY)).resolves.toEqual(
+      refusal(/signature/),
+    );
+    const huge = `{"note_id":"not_4kTq2mWxLp4Rz7","pad":"${'x'.repeat(70_000)}"}`;
+    const signedHuge = vectorHeaders({ 'webhook-signature': signature(huge) });
+    await expect(verifyIn(verifyGranolaScript(VECTOR.secret), signedHuge, huge)).resolves.toEqual(
+      refusal(/^body: over 65536 bytes$/),
     );
   });
 
   it('refuses everything as committed, until James pastes the secret in', async () => {
     const headers = vectorHeaders({ 'webhook-signature': signature(NOTE_BODY) });
-    await expect(verifyIn(jsCodeOf(N.verify), headers, NOTE_BODY)).rejects.toThrow(
-      /secret is not set/,
-    );
+    await expect(verifyIn(jsCodeOf(N.verify), headers, NOTE_BODY)).resolves.toEqual([
+      { json: { signed: false, reason: expect.stringMatching(/secret is not set/) } },
+    ]);
     expect(node(N.verify).parameters.mode).toBe('runOnceForAllItems');
   });
 });

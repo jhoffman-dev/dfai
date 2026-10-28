@@ -115,9 +115,21 @@ const fileCreate = ({ path, ...spec }: FileNodeSpec) => ({
   ...ERROR_OUTPUT,
 });
 
+/**
+ * An n8n expression's value as one line of the email: every control
+ * character (CR, LF, tab, NUL, C1, the Unicode line and paragraph
+ * separators) as a space, so no value — a meeting's title, an error — can
+ * forge another line. One that cannot be read (a node that never ran) is
+ * empty rather than failing the email.
+ */
+export function emailValue(expression: string): string {
+  return `{{ (() => { try { return String(${expression} ?? ''); } catch (error) { return ''; } })().replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, ' ') }}`;
+}
+
 /** What went wrong, as the failing node's error output carries it. */
-const WHY =
-  '{{ typeof $json.error === "string" ? $json.error : JSON.stringify($json.error ?? $json) }}';
+const WHY = emailValue(
+  'typeof $json.error === "string" ? $json.error : JSON.stringify($json.error ?? $json)',
+);
 
 /**
  * An email to you when a meeting did not reach DFAI. It says nothing of
@@ -135,14 +147,14 @@ function notifyNode(id: string, position: Position, email: FailureEmail) {
       resource: 'message',
       operation: 'send',
       sendTo: NOTIFY_TO,
-      subject: `=DFAI did not get a meeting: {{ ${email.title} }}`,
+      subject: `=DFAI did not get a meeting: ${emailValue(email.title)}`,
       emailType: 'text',
       message: [
         `=This meeting did not reach DFAI: ${WHY}`,
         '',
-        `Meeting: {{ ${email.title} }}`,
-        `Source ID: {{ ${email.sourceId} }}`,
-        'Execution: {{ $workflow.name }} #{{ $execution.id }}',
+        `Meeting: ${emailValue(email.title)}`,
+        `Source ID: ${emailValue(email.sourceId)}`,
+        `Execution: ${emailValue('$workflow.name')} #${emailValue('$execution.id')}`,
       ].join('\n'),
       options: { appendAttribution: false },
     },

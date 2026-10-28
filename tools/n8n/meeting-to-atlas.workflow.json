@@ -235,9 +235,9 @@
         "resource": "message",
         "operation": "send",
         "sendTo": "you@example.com",
-        "subject": "=DFAI did not get a meeting: {{ $('Assembled meeting').item.json[\"title\"] }}",
+        "subject": "=DFAI did not get a meeting: {{ (() => { try { return String($('Assembled meeting').item.json[\"title\"] ?? ''); } catch (error) { return ''; } })().replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, ' ') }}",
         "emailType": "text",
-        "message": "=This meeting did not reach DFAI: {{ typeof $json.error === \"string\" ? $json.error : JSON.stringify($json.error ?? $json) }}\n\nMeeting: {{ $('Assembled meeting').item.json[\"title\"] }}\nSource ID: {{ $('Assembled meeting').item.json[\"sourceId\"] }}\nExecution: {{ $workflow.name }} #{{ $execution.id }}",
+        "message": "=This meeting did not reach DFAI: {{ (() => { try { return String(typeof $json.error === \"string\" ? $json.error : JSON.stringify($json.error ?? $json) ?? ''); } catch (error) { return ''; } })().replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, ' ') }}\n\nMeeting: {{ (() => { try { return String($('Assembled meeting').item.json[\"title\"] ?? ''); } catch (error) { return ''; } })().replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, ' ') }}\nSource ID: {{ (() => { try { return String($('Assembled meeting').item.json[\"sourceId\"] ?? ''); } catch (error) { return ''; } })().replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, ' ') }}\nExecution: {{ (() => { try { return String($workflow.name ?? ''); } catch (error) { return ''; } })().replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, ' ') }} #{{ (() => { try { return String($execution.id ?? ''); } catch (error) { return ''; } })().replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, ' ') }}",
         "options": { "appendAttribution": false }
       },
       "credentials": { "gmailOAuth2": { "name": "Gmail account" } },
