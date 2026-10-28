@@ -113,7 +113,10 @@ fn is_listed_as_itself(path: &Path) -> bool {
 /// Taking the way to the Trash as an argument is what lets the tests check the
 /// path handling without filling the real Trash; the command hands over the
 /// system one. There is deliberately no fallback: if the Trash refuses, the
-/// error is the answer, never a permanent delete in its place.
+/// error is the answer, never a permanent delete in its place. The command
+/// trashes through `trash_entry_at_unless_changed`; this is the tests' way in
+/// with no file to hold still.
+#[cfg(test)]
 pub(crate) fn trash_entry_at(
     root: &Path,
     relative: &str,
