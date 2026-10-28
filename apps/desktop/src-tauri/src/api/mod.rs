@@ -120,16 +120,25 @@ pub async fn api_token(app: AppHandle) -> Result<String, String> {
     off_main(app, |control, _| Ok(control.token())).await
 }
 
-/// A router in the main window, named by `listener`, started (`true`) or
-/// stopped (`false`) listening. Until one listens, requests are refused at once
-/// rather than sent to nothing.
+/// The id a router in the main window names itself by in `api_router_ready`.
+/// Ids handed out before the page last loaded are not accepted, so a page that
+/// has gone cannot say it listens (#161).
+#[tauri::command]
+pub fn api_router_register(state: State<'_, ApiState>) -> Result<u64, String> {
+    Ok(loaded_control(&state)?.register_router())
+}
+
+/// A router in the main window, named by the id `api_router_register` gave
+/// it, started (`true`) or stopped (`false`) listening. Until one of this
+/// page's routers listens, requests are refused at once rather than sent to
+/// nothing.
 #[tauri::command]
 pub fn api_router_ready(
     state: State<'_, ApiState>,
-    listener: String,
+    listener: u64,
     ready: bool,
 ) -> Result<(), String> {
-    loaded_control(&state)?.set_router_ready(&listener, ready);
+    loaded_control(&state)?.set_router_ready(listener, ready);
     Ok(())
 }
 
