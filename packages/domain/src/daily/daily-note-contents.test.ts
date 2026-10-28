@@ -92,11 +92,18 @@ function taskType({
   done = 'archive',
   due = 'date',
   defer = 'date',
-}: { options?: string[]; done?: string; due?: string | null; defer?: string | null } = {}) {
+  name = 'task',
+}: {
+  options?: string[];
+  done?: string;
+  due?: string | null;
+  defer?: string | null;
+  name?: string;
+} = {}) {
   const properties: Record<string, unknown> = { status: { kind: 'select', options, done } };
   if (due !== null) properties['due'] = due;
   if (defer !== null) properties['defer'] = defer;
-  return parseObjectType({ name: 'Task', properties });
+  return parseObjectType({ name, properties });
 }
 
 describe('whether the day fits the vault (#110)', () => {
@@ -107,9 +114,16 @@ describe('whether the day fits the vault (#110)', () => {
     expect(dayBlocksFit(GTD)).toBe(true);
   });
 
-  it('fits a vault with no Task type yet, as the built-in one it would be given', () => {
-    expect(dayBlocksFit([])).toBe(true);
-    expect(dayBlocksFit([person])).toBe(true);
+  // The index knows only the types on disk: with no task.md, `FROM task` has no type to read.
+  it('does not fit a vault with no Task type of its own', () => {
+    expect(dayBlocksFit([])).toBe(false);
+    expect(dayBlocksFit([person])).toBe(false);
+  });
+
+  // `FROM task` names the type exactly, so a type spelt `Task` is no type of that name.
+  it('does not fit a GTD Task type whose name is spelt other than task', () => {
+    expect(dayBlocksFit([taskType({ name: 'Task' })])).toBe(false);
+    expect(dayBlocksFit([taskType({ name: ' task' })])).toBe(false);
   });
 
   it.each<[string, ObjectType]>([

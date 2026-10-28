@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { createVaultPath, dailyNoteContents, type VaultEntry, type VaultPath } from '@dfai/domain';
+import { describe, expect, it, vi } from 'vitest';
+import { createVaultPath, type VaultEntry, type VaultPath } from '@dfai/domain';
 import { fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { dailyNotePath, ensureDailyNote } from './daily-note.ts';
 
@@ -71,7 +71,8 @@ describe("today's note", () => {
     ]);
   });
 
-  it('starts as a note of the built-in Daily type when the vault has no Daily template', async () => {
+  // #110: with no Task type on disk, `FROM task` could not run, so there are no blocks.
+  it('starts as a note of the built-in Daily type, headings alone, with no Daily template or Task type', async () => {
     const { fs, created } = vault();
     await ensureDailyNote({
       fs,
@@ -82,20 +83,11 @@ describe("today's note", () => {
     });
 
     expect(created).toEqual([
-      { path: 'Daily/2026/2026-09-22.md', contents: dailyNoteContents({ day: TODAY, types: [] }) },
+      {
+        path: 'Daily/2026/2026-09-22.md',
+        contents: '---\ntype: daily\n---\n\n## What happened\n\n## What is next\n',
+      },
     ]);
-    expect(created[0]?.contents).toMatch(/^---\ntype: daily\n---\n/);
-  });
-
-  // #110: the day's blocks are about the day the clock says, not one fixed in code.
-  it("starts with the clock's day in its query blocks", async () => {
-    const { fs, created } = vault();
-    await ensureDailyNote({ fs, markdown, today: '2026-11-03', notePaths: [], templates: [] });
-
-    const contents = created[0]?.contents ?? '';
-    expect(contents).toContain('```atlas-query\n');
-    expect(contents).toContain('due <= 2026-11-03');
-    expect(contents).not.toContain(TODAY);
   });
 
   it('is held to the task rules: a Daily template that is a task waiting on nobody is made as it is (#202)', async () => {
@@ -211,8 +203,43 @@ describe("today's note in a vault with a Task type of its own", () => {
     return { fs, created };
   }
 
-  const make = (fs: ReturnType<typeof vaultWithTask>['fs']) =>
-    ensureDailyNote({ fs, markdown: typesMarkdown, today: TODAY, notePaths: [], templates: [] });
+  const make = (fs: ReturnType<typeof vaultWithTask>['fs'], today = TODAY) =>
+    ensureDailyNote({ fs, markdown: typesMarkdown, today, notePaths: [], templates: [] });
+
+  const GTD_TASK = {
+    name: 'task',
+    properties: {
+      status: { kind: 'select', options: GTD_STATUSES, done: 'archive' },
+      due: 'date',
+      defer: 'date',
+    },
+  };
+
+  // The day's blocks are about the day the clock says, not one fixed in code.
+  it("starts with the clock's day in its query blocks", async () => {
+    const { fs, created } = vaultWithTask(GTD_TASK);
+    await make(fs, '2026-11-03');
+
+    const contents = created[0]?.contents ?? '';
+    expect(contents).toContain('```atlas-query\n');
+    expect(contents).toContain('due <= 2026-11-03');
+    expect(contents).not.toContain(TODAY);
+  });
+
+  it('reads the types once for the note: its folder and its contents both come from that read', async () => {
+    const { fs } = vaultWithTask(GTD_TASK);
+    const listed = vi.spyOn(fs, 'listDirectory');
+    await make(fs);
+
+    expect(listed.mock.calls.filter(([folder]) => folder === '.atlas/types')).toHaveLength(1);
+  });
+
+  it('starts with the two headings alone when the Task type is spelt Task, which FROM task cannot name', async () => {
+    const { fs, created } = vaultWithTask({ ...GTD_TASK, name: 'Task' });
+    await make(fs);
+
+    expect(created[0]?.contents).toBe(PLAIN);
+  });
 
   it('starts with the day when the Task type is on GTD, with due and defer as dates', async () => {
     const { fs, created } = vaultWithTask({

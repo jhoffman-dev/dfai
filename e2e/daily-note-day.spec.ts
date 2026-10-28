@@ -83,7 +83,7 @@ test.describe("today's note starts with the day", () => {
   test('made from the Today page, it shows what is due or late and the next actions, live', async ({
     page,
   }) => {
-    const { vault } = await openVault(page);
+    const { vault, host } = await openVault(page);
 
     await page.getByRole('list', { name: 'Go to' }).getByRole('button', { name: 'Today' }).click();
     await page.getByRole('button', { name: 'Open today’s note' }).click();
@@ -98,6 +98,10 @@ test.describe("today's note starts with the day", () => {
       /^---\ntype: daily\n---\n\n## Due and overdue\n\n```atlas-query\nlayout: list\n[\s\S]*\n```\n\n## Next actions\n\n```atlas-query\nlayout: list\n[\s\S]*\n```\n\n## What happened\n\n## What is next\n$/,
     );
     await expectFile(vault, file).toContain(`WHERE due <= ${today} AND`);
+
+    // ADR-0003: drawn in the editor, the note and its two fences are not written again.
+    await expect(page.getByRole('article', { name: today })).toContainText('What is next');
+    expect(host.writesTo(file)).toBe(1);
   });
 
   test('a daily note already written in is opened as it is, every byte kept', async ({ page }) => {
