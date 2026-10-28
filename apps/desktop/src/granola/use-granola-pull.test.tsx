@@ -649,3 +649,66 @@ function setUpFailing(failure: GranolaFailure) {
   fixture.hook.rerender({ ...fixture.options, syncedThisSession: new Set([VAULT]) });
   return fixture;
 }
+
+describe('useGranolaPull for the API, under attack (#613)', () => {
+  it('is not ready for the API after the vault is closed and opened again, until its index catches up again', async () => {
+    let catchUps = 0;
+    const second = held<boolean>();
+    const { hook, options } = setUp({
+      catchUpIndex: () => {
+        catchUps += 1;
+        return catchUps === 1 ? Promise.resolve(true) : second.promise;
+      },
+    });
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+
+    hook.rerender({ ...options, vaultKey: OTHER });
+    await act(async () => undefined);
+    hook.rerender({ ...options, vaultKey: VAULT });
+    await act(async () => undefined);
+
+    expect(catchUps).toBe(2);
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+    second.settle(true);
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+  });
+
+  it('is not ready for the API once a later sync brings files in, until the index catches up with it', async () => {
+    let catchUps = 0;
+    const second = held<boolean>();
+    const { hook, options } = setUp({
+      catchUpIndex: () => {
+        catchUps += 1;
+        return catchUps === 1 ? Promise.resolve(true) : second.promise;
+      },
+    });
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+
+    hook.rerender({ ...options, syncPulls: new Map([[VAULT, 1]]) });
+    await act(async () => undefined);
+
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+    second.settle(true);
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+  });
+
+  it('lists Granola once for a burst of API pulls and the window’s own Sync now together', async () => {
+    const { hook, gate, lists } = setUp();
+    await settles(() => expect(lists()).toBe(1));
+    const listing = held<void>();
+    gate.current = listing.promise;
+
+    let reports: Awaited<ReturnType<typeof hook.result.current.syncNowFor>>[] = [];
+    await act(async () => {
+      const api = [1, 2, 3].map(() => hook.result.current.syncNowFor(VAULT));
+      hook.result.current.syncNow();
+      listing.settle();
+      reports = await Promise.all(api);
+    });
+    await drained();
+
+    expect(lists()).toBe(2);
+    expect(new Set(reports).size).toBe(1);
+    expect(hook.result.current.pulling).toBe(false);
+  });
+});
