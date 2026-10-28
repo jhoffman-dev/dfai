@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.ts';
-import { createVault, expectFile, installHost, type FakeHost } from './host.ts';
+import { createVault, expectFile, installHost, STUB_API_PORT, type FakeHost } from './host.ts';
 
 /**
  * P28-12: Settings → Granola. The host's commands are stubbed (`host.ts`):
@@ -232,4 +232,37 @@ test('a Sync now that fails says why as a toast', async ({ page }) => {
   const toast = page.locator('.toast');
   await expect(toast).toContainText('Granola is having trouble (status 503).');
   await expect(card(page).getByRole('alert')).toContainText('Granola is having trouble');
+});
+
+test('the local API reads Granola’s status, never the key, and pulls once per 30 s (P28-13)', async ({
+  page,
+}) => {
+  const { vault, host } = await openSettings(page);
+  serveNotes(host, [RENEWAL]);
+  await card(page).getByLabel('Granola API key', { exact: true }).fill(KEY);
+  await card(page).getByRole('button', { name: 'Save', exact: true }).click();
+  await expectFile(vault, RENEWAL_FILE).toContain(`external_id: '${RENEWAL.id}'`);
+
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await settings.getByRole('switch', { name: 'Local API' }).click();
+  await expect(settings.getByTestId('api-status')).toHaveText(`Running on port ${STUB_API_PORT}`);
+
+  const status = await host.api.send({ method: 'GET', path: '/v1/granola' });
+  expect(status.status).toBe(200);
+  expect(status.body).toMatchObject({ hasKey: true, lastPullAt: expect.any(Number) });
+
+  serveNotes(host, [RENEWAL, ONE_ON_ONE]);
+  const pulled = await host.api.send({ method: 'POST', path: '/v1/granola/pull' });
+  expect(pulled.status).toBe(200);
+  expect(pulled.body).toMatchObject({
+    report: { mode: 'sync-now', ended: 'pulled', written: [ONE_ON_ONE_FILE], held: 1 },
+  });
+  await expectFile(vault, ONE_ON_ONE_FILE).toContain(`external_id: '${ONE_ON_ONE.id}'`);
+  // The app's own Sync now ran: its card says what this pull did.
+  await expect(card(page).getByTestId('granola-pull')).toContainText('1 new, 1 already in DFAI');
+
+  const again = await host.api.send({ method: 'POST', path: '/v1/granola/pull' });
+  expect(again.body).toMatchObject({ error: { code: 'conflict', retryAfter: expect.any(Number) } });
+
+  for (const answer of [status, pulled, again]) expect(JSON.stringify(answer)).not.toContain(KEY);
 });

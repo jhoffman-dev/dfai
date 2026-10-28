@@ -63,6 +63,7 @@ import {
   type VaultRead,
   type ActivityStore,
   type WindowClosingPort,
+  type ApiGranola,
   type ApiRouterDeps,
   type AppInfoPort,
   type ExternalLinkPort,
@@ -842,6 +843,20 @@ function AppWindow({
   const apiOwner = useMemo(() => createOwnerNameRelay(), []);
   const apiClaude = useMemo(() => createClaudeStepRelay(), []);
   const meetingDrafts = useMemo(() => createMeetingDrafts(), []);
+  // Granola for the API (P28-13): the host's word on the key, this Mac's record, and the app's own Sync now.
+  const apiGranolaReady = useSteadyCallback(
+    (vault: string) => vault === vaultKey && granolaPull.ready,
+  );
+  const apiGranolaSyncNow = useSteadyCallback((vault: string) => granolaPull.syncNowFor(vault));
+  const apiGranola = useMemo<ApiGranola>(
+    () => ({
+      keyStatus: (vault) => granolaPorts.port.status({ vault }),
+      record: (vault) => granolaPorts.records.read(vault),
+      ready: apiGranolaReady,
+      syncNow: apiGranolaSyncNow,
+    }),
+    [granolaPorts.port, granolaPorts.records, apiGranolaReady, apiGranolaSyncNow],
+  );
   const apiDeps = useMemo<ApiRouterDeps>(
     () => ({
       host: apiHost,
@@ -875,6 +890,7 @@ function AppWindow({
       meetingDrafts,
       // A draft that failed after the API answered is said in the window, where no caller is left.
       notices: { warn: (message) => toasts.show({ message, tone: 'error' }) },
+      granola: apiGranola,
     }),
     [
       apiHost,
@@ -899,6 +915,7 @@ function AppWindow({
       apiClaude.ports,
       meetingDrafts,
       toasts,
+      apiGranola,
     ],
   );
   // A write from another tool shows up the way one made here does.

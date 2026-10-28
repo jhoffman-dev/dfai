@@ -65,6 +65,7 @@ import type {
   ApiSemanticProgress,
   ApiSetPropertiesBody,
   ApiSourceReport,
+  ApiGranolaPullReport,
   ApiSqlBody,
   ApiStatus,
   ApiTag,
@@ -384,6 +385,9 @@ export class AtlasClient {
       method: 'POST',
       path: `/v1/sources/${encodeURIComponent(path)}/refresh`,
     });
+
+  syncGranola = () =>
+    this.json<{ report: ApiGranolaPullReport }>({ method: 'POST', path: '/v1/granola/pull' });
 
   tags = (sort?: 'name' | 'frequency') =>
     this.json<{ tags: readonly ApiTag[] }>({ method: 'GET', path: '/v1/tags', query: { sort } });

@@ -8,6 +8,7 @@ export const API_REFRESH_SPACING_MS = 30_000;
  * a local caller looping on the route would hammer the feed's site in the
  * user's name. So a source refreshed through the API waits a while before the
  * API may refresh it again. The pane's own timer and button are not spaced.
+ * A pull of Granola through the API is spaced the same way, per vault (P28-13).
  */
 export interface RefreshSpacing {
   /** Milliseconds until `key` may be refreshed again; 0 when now, which is then recorded. */

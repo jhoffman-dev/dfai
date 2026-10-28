@@ -442,6 +442,32 @@ describe('useGranolaPull', () => {
     expect(hook.result.current.report?.mode).toBe('sync-now');
   });
 
+  it('a Sync now for the API settles to its report, and is the card’s too (P28-13)', async () => {
+    const { hook, lists } = setUp({
+      notes: [granolaNote('not_hook000000002', { updatedAt: '2026-10-13T15:00:00Z' })],
+    });
+    await settles(() => expect(hook.result.current.report?.mode).toBe('startup'));
+    let report: Awaited<ReturnType<typeof hook.result.current.syncNowFor>> | null = null;
+    await act(async () => {
+      report = await hook.result.current.syncNowFor(VAULT);
+    });
+    expect(report).toMatchObject({ vault: VAULT, mode: 'sync-now', ended: 'pulled' });
+    expect(lists()).toBe(2);
+    expect(hook.result.current.report).toBe(report);
+    expect(hook.result.current.pulling).toBe(false);
+  });
+
+  it('a Sync now for the API of a vault no longer open pulls nothing into it (P28-13)', async () => {
+    const { hook, lists } = setUp();
+    await settles(() => expect(hook.result.current.report?.ended).toBe('pulled'));
+    let ended: string | null = null;
+    await act(async () => {
+      ended = (await hook.result.current.syncNowFor(OTHER)).ended;
+    });
+    expect(ended).not.toBe('pulled');
+    expect(lists()).toBe(1);
+  });
+
   it('has the tree and the index read again once a pull has written meetings, and not before', async () => {
     const none = setUp();
     await settles(() => expect(none.hook.result.current.report?.ended).toBe('pulled'));
