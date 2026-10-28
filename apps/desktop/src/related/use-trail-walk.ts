@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   createVaultPath,
   messageWithoutPaths,
@@ -46,10 +46,14 @@ export function useTrailWalk({
   fs: VaultFsPort;
   index: Pick<IndexPort, 'manifest'>;
 }): { walk: TrailWalk | undefined; start: () => void } {
-  const [saved, setSaved] = useState<{ note: TrailNote | null; problem: string | null }>({
-    note: null,
-    problem: null,
-  });
+  // What the last save came to, for the trail as it was saved: walked on, it is not that note.
+  const [saved, setSaved] = useState<{
+    for: Trail | null;
+    note: TrailNote | null;
+    problem: string | null;
+  }>({ for: null, note: null, problem: null });
+  // A save under way: pressed again meanwhile, it would make a second note.
+  const saving = useRef(false);
   const here = trail !== null && path !== null && trailStep(trail) === path;
 
   const go = useCallback(
@@ -61,15 +65,26 @@ export function useTrailWalk({
   );
   const start = useCallback(() => {
     if (path === null) return;
-    setSaved({ note: null, problem: null });
     memory.set(tab, startTrail(path));
   }, [memory, tab, path]);
   const save = useCallback(() => {
-    if (trail === null) return;
+    if (trail === null || saving.current) return;
+    saving.current = true;
     saveTrail({ fs, index, trail })
-      .then((note) => setSaved({ note: { path: note, title: titleOf(note) }, problem: null }))
-      .catch((error: unknown) => setSaved({ note: null, problem: messageWithoutPaths(error) }));
+      .then((note) =>
+        setSaved({ for: trail, note: { path: note, title: titleOf(note) }, problem: null }),
+      )
+      .catch((error: unknown) =>
+        setSaved({ for: trail, note: null, problem: messageWithoutPaths(error) }),
+      )
+      .finally(() => {
+        saving.current = false;
+      });
   }, [trail, fs, index, titleOf]);
+  const said = useMemo(
+    () => (saved.for === trail ? saved : { note: null, problem: null }),
+    [saved, trail],
+  );
 
   const walk = useMemo<TrailWalk | undefined>(() => {
     if (trail === null || path === null || !here) return undefined;
@@ -82,19 +97,19 @@ export function useTrailWalk({
       at: trail.at,
       linked: linkedSteps(links, path),
       related: related.kind === 'ready' ? related.notes : [],
-      saved: saved.note,
-      problem: saved.problem,
+      saved: said.note,
+      problem: said.problem,
       onBack: () => go(stepBack(trail)),
       onForward: () => go(stepForward(trail)),
       onStandOn: (at) => go(standOn(trail, at)),
       onStep: (to) => go(stepTo(trail, to)),
       onSave: save,
       onOpenSaved: () => {
-        if (saved.note !== null) onOpenNote(saved.note.path);
+        if (said.note !== null) onOpenNote(said.note.path);
       },
       onEnd: () => memory.set(tab, null),
     };
-  }, [here, trail, links, path, related, saved, titleOf, go, save, onOpenNote, memory, tab]);
+  }, [here, trail, links, path, related, said, titleOf, go, save, onOpenNote, memory, tab]);
 
   return { walk, start };
 }
