@@ -90,6 +90,21 @@ describe('compileMeetingCandidatesQuery', () => {
   });
 });
 
+describe('compileMeetingCandidatesQuery, a type in any case', () => {
+  // Follow-up to #110: a type in any case, as FROM finds it.
+  it('reads a meeting note whose type is written in capitals or with spaces', () => {
+    const { note, all } = index();
+    note('Inbox/Meetings/A.md', { type: 'Meeting', date: '2026-10-24' });
+    note('Inbox/Meetings/B.md', { type: ' MEETING ', date: '2026-10-24' });
+    note('Inbox/Meetings/C.md', { type: 'meetings', date: '2026-10-24' });
+    const rows = all(compileMeetingCandidatesQuery({ fromDay: '2026-10-23', toDay: '2026-10-30' }));
+    expect(meetingCandidatesOf(rows as never).map((row) => row.path)).toEqual([
+      'Inbox/Meetings/A.md',
+      'Inbox/Meetings/B.md',
+    ]);
+  });
+});
+
 describe('compileDayEventsQuery', () => {
   it('reads the day’s event notes with their links resolved, and no other note', () => {
     const { note, all } = index();

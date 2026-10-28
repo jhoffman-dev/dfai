@@ -25,6 +25,7 @@ const NOTES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   'Words then a day': { type: 'task', due: ['soon', '2026-10-05'] },
   'Two notes': { type: 'task', notes: ['alpha', 'beta'] },
   'Two labels': { type: 'task', labels: ['red', 'blue'] },
+  'Beta and a blank': { type: 'task', notes: ['beta', ''] },
   'Words for a number': { type: 'task', estimate: 'lots' },
   Shed: { type: 'project', due: ['2026-12-31', '2026-10-01'] },
   'Hop to the shed': { type: 'task', project: '[[Shed]]' },
@@ -148,5 +149,16 @@ describe('a field reached through a relation holds its value as the linked note 
     expect(row?.['project.due']).toBe('2026-12-31');
     expect(titles('FROM task WHERE project.due < 2026-11-01')).not.toContain('Hop to the shed');
     expect(titles('FROM task WHERE project.due = 2026-12-31')).toContain('Hop to the shed');
+  });
+});
+
+describe('a blank item is no item', () => {
+  // Decided with PR #616's review: `status: [next-action, ""]` holds
+  // next-action, in a query as in Today (gtdStatusOf drops blank items).
+  it('reads a single field written as one value beside blanks as that value', () => {
+    expect(titles('FROM task WHERE notes = beta')).toContain('Beta and a blank');
+    expect(titles('FROM task WHERE notes IS EMPTY')).not.toContain('Beta and a blank');
+    const [row] = rows("FROM task WHERE title = 'Beta and a blank' SHOW notes");
+    expect(row?.['notes']).toBe('beta');
   });
 });

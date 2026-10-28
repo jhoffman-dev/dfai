@@ -166,9 +166,13 @@ function vault(random: () => number, nested: boolean): Record<string, Frontmatte
 
 // ---- The oracle: the PR's rules, read off the rows the index is given.
 
-/** A note's rows of one key, in the order they are written. */
+/**
+ * A note's rows of one key that hold anything, in the order they are written.
+ * A blank item is no item (decided after this attack): `[next-action, ""]`
+ * holds next-action, as Today's gtdStatusOf reads it.
+ */
 const rowsOfKey = (rows: readonly IndexableProperty[], key: string) =>
-  rows.filter((row) => row.key === key);
+  rows.filter((row) => row.key === key && (row.text ?? row.json ?? '') !== '');
 
 /**
  * The rows holding a field's value, by the PR's rules: a date its first real
@@ -561,9 +565,11 @@ describe('#616 attack: Today and FROM task read a status alike', () => {
     }
   });
 
-  it('a task whose status lists archive and next-action is finished to both', () => {
+  // Decided after this attack: a status written as a list is no status, in
+  // Today as in FROM, so the task is shown as open work rather than hidden.
+  it('a task whose status lists archive and next-action is open to both', () => {
     const database = index({ 'Task listed': { type: 'task', status: ['archive', 'next-action'] } });
-    expect(todayOpen(database)).toEqual([]);
+    expect(todayOpen(database)).toEqual(['Task listed']);
     expect(gtdRun(database, 'FROM task WHERE status != archive')).toEqual(todayOpen(database));
   });
 
