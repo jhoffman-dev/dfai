@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { apiFixture, bodyOf, codeOf, VAULT } from '../testing/api-fixture.ts';
 import type { RelatedAnswer, RelatedQuery } from '../embeddings/related-by-meaning.ts';
 import type { SemanticAccess } from '../embeddings/semantic-search.ts';
+import { relatedEngine } from '../testing/related-engine.ts';
 
 const PROGRESS = { done: 4, total: 4, failure: null };
 
@@ -133,5 +134,30 @@ describe('GET /v1/notes/{path}/related', () => {
     const response = await api.send(relatedGet('Plan.md'));
     expect(codeOf(response)).toBe('query_failed');
     expect(JSON.stringify(bodyOf(response))).not.toContain('/Users/someone');
+  });
+});
+
+describe('GET /v1/notes/{path}/related, from the app’s own cache', () => {
+  it('never answers a note gone from the vault whose forget is still queued', async () => {
+    const notes = {
+      'Plan.md': 'Mara Quill moves payday to Friday.',
+      'Payroll/Wages.md': 'Wages are paid on the last Friday.',
+      'Old/Salary.md': 'The salary was paid weekly.',
+    };
+    const { engine, busy, remove } = relatedEngine(notes, { vault: VAULT.absolutePath });
+    await engine.start();
+    await engine.settled();
+    busy('Old/Salary.md');
+    remove('Payroll/Wages.md');
+    const api = apiFixture({ files: notes, index: graphIndex, semantic: () => engine });
+
+    const response = await api.send(relatedGet('Plan.md'));
+
+    expect(response.status).toBe(200);
+    const paths = (bodyOf(response) as { related: { path: string }[] }).related.map(
+      (note) => note.path,
+    );
+    expect(paths).toContain('Old/Salary.md');
+    expect(paths).not.toContain('Payroll/Wages.md');
   });
 });
