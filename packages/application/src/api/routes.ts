@@ -28,6 +28,7 @@ import { quickAddRoute, quickAddTypesRoute } from './quick-add.ts';
 import { searchRoute } from './search.ts';
 import { scheduleTaskRoute } from './schedule-task.ts';
 import { chooseForTodayRoute } from './today-choose.ts';
+import { granolaStatusRoute, pullGranolaRoute } from './granola.ts';
 import { refreshSourceRoute } from './sources.ts';
 import { statusRoute } from './status.ts';
 import { renameTagRoute, taggedNotesRoute, tagsRoute } from './tags.ts';
@@ -145,6 +146,9 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'GET /v1/proposals': vaultRoute(proposalsRoute),
   'POST /v1/proposals/{path}/accept': vaultWrite(acceptProposalRoute),
   'POST /v1/proposals/{path}/reject': vaultWrite(rejectProposalRoute),
+  'GET /v1/granola': vaultRoute(granolaStatusRoute),
+  // The puller says what it wrote in the vault's Activity itself, as a source refresh does.
+  'POST /v1/granola/pull': vaultRoute(pullGranolaRoute),
 };
 
 /** The segments a route pattern leaves open, and what a request filled them with. */
