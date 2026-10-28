@@ -18,7 +18,7 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import { filesUnder } from '../vault/delete-entry.ts';
 import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
-import { listSkillFolders, skillFileOf, type SkillFile } from './skills.ts';
+import { listSkillFolders, readSkillFileAt, skillFileOf, type SkillFile } from './skills.ts';
 
 /*
  * Making, saving and deleting skills (ADR-0050). Every write is held to the
@@ -47,11 +47,57 @@ function refuseUnlessValid(draft: SkillDraft): void {
   }
 }
 
+/** The refusal of a name some folder or file in `.atlas/skills` already has. */
+const taken = (name: string) => new SkillRefusedError(`There is already a skill called “${name}”.`);
+
+/** Writes `draft` as a new SKILL.md in `folder`, in the one canonical form; never over one there. */
+async function writeSkillFile({
+  fs,
+  markdown,
+  folder,
+  draft,
+}: {
+  fs: Pick<VaultFsPort, 'createNote'>;
+  markdown: SkillMarkdown;
+  folder: { readonly name: string; readonly path: VaultPath };
+  draft: SkillDraft;
+}): Promise<SkillFile> {
+  const path = joinVaultPath(folder.path, SKILL_FILE);
+  const frontmatter = markdown.updateFrontmatter(null, {
+    name: draft.name,
+    description: draft.description,
+  });
+  const text = joinFrontmatter(frontmatter, newSkillBody(draft.instructions));
+  const modified = await fs.createNote({ path, contents: text });
+  return skillFileOf({ markdown, folder, path, read: { kind: 'read', text, modified } });
+}
+
+/**
+ * Makes the folder for a new skill called `name`. A clash the listing could
+ * not see — a file of that name, or a folder made since — is refused as a
+ * name already taken; any other failure is passed on.
+ */
+async function makeSkillFolder(fs: VaultFsPort, name: string): Promise<VaultPath> {
+  const parent = await ensureFolder({ fs, folder: createVaultPath(SKILLS_DIRECTORY) });
+  const folder = joinVaultPath(parent, name);
+  try {
+    await fs.createFolder({ path: folder });
+  } catch (error) {
+    if (!(error instanceof VaultAccessError)) throw error;
+    const there = (await fs.listDirectory(parent)).map((entry) => entry.name);
+    if (isSkillNameTaken(name, there)) throw taken(name);
+    throw error;
+  }
+  return folder;
+}
+
 /**
  * Writes a new skill: its folder in `.atlas/skills`, and in it a SKILL.md in
  * the one canonical form — `name` and `description`, then the instructions.
- * Refused when the draft breaks a rule or a folder already has its name in
- * any case or form.
+ * A folder of exactly that name with no SKILL.md yet is the skill's: its
+ * SKILL.md is written into it. Refused when the draft breaks a rule, or
+ * another folder has the name in any case or form. When the folder is made
+ * but its SKILL.md cannot be, the folder is taken away again.
  */
 export async function createSkill({
   fs,
@@ -63,48 +109,54 @@ export async function createSkill({
   draft: SkillDraft;
 }): Promise<SkillFile> {
   refuseUnlessValid(draft);
-  const taken = (await listSkillFolders(fs)).map((folder) => folder.name);
-  if (isSkillNameTaken(draft.name, taken)) {
-    throw new SkillRefusedError(`There is already a skill called “${draft.name}”.`);
+  const folders = await listSkillFolders(fs);
+  const own = folders.find((folder) => folder.name === draft.name);
+  if (own !== undefined) {
+    const there = await readSkillFileAt(fs, joinVaultPath(own.path, SKILL_FILE));
+    if (there.kind !== 'missing') throw taken(draft.name);
+    return writeSkillFile({ fs, markdown, folder: own, draft });
   }
-  const parent = await ensureFolder({ fs, folder: createVaultPath(SKILLS_DIRECTORY) });
-  const folder = joinVaultPath(parent, draft.name);
-  await fs.createFolder({ path: folder });
-  const path = joinVaultPath(folder, SKILL_FILE);
-  const frontmatter = markdown.updateFrontmatter(null, {
-    name: draft.name,
-    description: draft.description,
-  });
-  const text = joinFrontmatter(frontmatter, newSkillBody(draft.instructions));
-  const modified = await fs.createNote({ path, contents: text });
-  return skillFileOf({
-    markdown,
-    folder: { name: draft.name, path: folder },
-    path,
-    read: { text, modified },
-  });
+  if (
+    isSkillNameTaken(
+      draft.name,
+      folders.map((folder) => folder.name),
+    )
+  )
+    throw taken(draft.name);
+  const path = await makeSkillFolder(fs, draft.name);
+  try {
+    return await writeSkillFile({ fs, markdown, folder: { name: draft.name, path }, draft });
+  } catch (cause) {
+    // The folder was empty a moment ago; left, it would hold the name. If it
+    // cannot be trashed, a retry still writes into it, as above.
+    await fs.trashEntry({ path }).catch(() => undefined);
+    throw cause;
+  }
 }
 
 /**
  * Refuses a skill whose SKILL.md is no longer what `skill` read: changed,
- * gone, or there now when it was not.
+ * gone, there now when it was not, or now unreadable.
  */
 async function refuseUnlessUnchanged(
-  fs: Pick<VaultFsPort, 'readTextFile'>,
+  fs: Pick<VaultFsPort, 'listDirectory' | 'readTextFile'>,
   skill: SkillFile,
 ): Promise<void> {
-  let now: { text: string; modified: number } | null;
-  try {
-    now = await fs.readTextFile(skill.path);
-  } catch (error) {
-    if (!(error instanceof VaultAccessError)) throw error;
-    now = null;
-  }
+  const now = await readSkillFileAt(fs, skill.path);
   const same =
-    now === null
-      ? skill.modified === null
-      : now.modified === skill.modified && now.text === skill.text;
+    now.kind === 'read'
+      ? now.modified === skill.modified && now.text === skill.text
+      : now.kind === 'missing' && skill.modified === null && skill.readFailure === null;
   if (!same) throw new NoteChangedError(skill.path);
+}
+
+/** Refuses a skill whose SKILL.md is there but could not be read: nothing is done to it here. */
+function refuseUnreadable(skill: SkillFile, doing: string): void {
+  if (skill.readFailure !== null) {
+    throw new SkillRefusedError(
+      `${SKILL_FILE} cannot be read (${skill.readFailure}), so it is not ${doing} here.`,
+    );
+  }
 }
 
 /**
@@ -125,10 +177,11 @@ function editedText(markdown: SkillMarkdown, skill: SkillFile, draft: SkillDraft
 /**
  * Saves `draft` over `skill`, as it was read. A skill keeps its folder's
  * name — renaming one is not offered yet — so a draft naming another is
- * refused; one naming the folder puts a `name:` that differed right. Nothing
- * is written when nothing changed. Refused, with nothing written, when
- * SKILL.md changed since it was read, is missing, or its frontmatter cannot
- * be read. Answers the skill as saved.
+ * refused; one naming the folder puts a `name:` that differed right. A
+ * folder with no SKILL.md gets one, written canonically and never over one
+ * made since. Nothing is written when nothing changed. Refused, with nothing
+ * written, when SKILL.md changed since it was read, or it or its frontmatter
+ * cannot be read. Answers the skill as saved.
  */
 export async function saveSkill({
   fs,
@@ -145,11 +198,13 @@ export async function saveSkill({
     throw new SkillRefusedError('A skill cannot be renamed yet: it keeps its folder’s name.');
   }
   refuseUnlessValid(draft);
-  if (skill.modified === null) throw new SkillRefusedError(`The folder has no ${SKILL_FILE}.`);
+  refuseUnreadable(skill, 'saved');
   if (skill.frontmatterProblem !== null) {
     throw new SkillRefusedError(`${SKILL_FILE} cannot be read: ${skill.frontmatterProblem}`);
   }
   await refuseUnlessUnchanged(fs, skill);
+  const folder = { name: skill.name, path: skill.folder };
+  if (skill.modified === null) return writeSkillFile({ fs, markdown, folder, draft });
   const text = editedText(markdown, skill, draft);
   if (text === skill.text) return skill;
   const modified = await fs.writeTextFile({
@@ -158,11 +213,26 @@ export async function saveSkill({
     expectedModified: skill.modified,
     expectedText: skill.text,
   });
-  const folder = { name: skill.name, path: skill.folder };
-  return skillFileOf({ markdown, folder, path: skill.path, read: { text, modified } });
+  return skillFileOf({
+    markdown,
+    folder,
+    path: skill.path,
+    read: { kind: 'read', text, modified },
+  });
 }
 
-/** The files a skill's folder holds besides SKILL.md, which deleting it takes too. */
+/** Whether a file below a skill's folder is a dotfile, or in a dotted folder: `.DS_Store`. */
+const isDotted = (folder: VaultPath, path: VaultPath) =>
+  path
+    .slice(folder.length + 1)
+    .split('/')
+    .some((segment) => segment.startsWith('.'));
+
+/**
+ * The files a skill's folder holds besides SKILL.md, which deleting it takes
+ * too, as deep as a folder is walked; dotfiles such as `.DS_Store` go
+ * unnamed. `skillDeletionWarning` says that deeper files go as well.
+ */
 export async function skillOtherFiles({
   fs,
   skill,
@@ -171,13 +241,17 @@ export async function skillOtherFiles({
   skill: Pick<SkillFile, 'folder' | 'path'>;
 }): Promise<VaultPath[]> {
   const files = await filesUnder({ fs, folder: skill.folder });
-  return files.filter((path) => path.toLowerCase() !== skill.path.toLowerCase());
+  return files.filter(
+    (path) => path.toLowerCase() !== skill.path.toLowerCase() && !isDotted(skill.folder, path),
+  );
 }
 
 /**
  * Puts a skill's whole folder in the system Trash, where it can be got back,
- * only while its SKILL.md is unchanged since `skill` read it. Answers the
- * other files that went with it, so the person can be told.
+ * only while its SKILL.md is unchanged since `skill` read it — checked after
+ * the folder is walked, right before the Trash. Refused for a SKILL.md that
+ * is there but cannot be read. Answers the other files that went with it, so
+ * the person can be told.
  */
 export async function deleteSkill({
   fs,
@@ -186,8 +260,9 @@ export async function deleteSkill({
   fs: VaultFsPort;
   skill: SkillFile;
 }): Promise<{ readonly folder: VaultPath; readonly otherFiles: readonly VaultPath[] }> {
-  await refuseUnlessUnchanged(fs, skill);
+  refuseUnreadable(skill, 'deleted');
   const otherFiles = await skillOtherFiles({ fs, skill });
+  await refuseUnlessUnchanged(fs, skill);
   await fs.trashEntry({ path: skill.folder });
   return { folder: skill.folder, otherFiles };
 }

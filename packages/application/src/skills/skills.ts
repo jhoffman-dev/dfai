@@ -1,6 +1,7 @@
 import {
   createVaultPath,
   joinVaultPath,
+  parentVaultPath,
   skillReadingOf,
   SKILL_FILE,
   skillFolderNamed,
@@ -9,6 +10,7 @@ import {
   type SkillReading,
   type VaultEntry,
   type VaultPath,
+  vaultPathName,
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
@@ -35,7 +37,15 @@ export interface SkillFile extends SkillSummary {
   readonly modified: number | null;
   /** Why its frontmatter cannot be read, or null: such a skill is not saved over. */
   readonly frontmatterProblem: string | null;
+  /** Why SKILL.md, though there, could not be read at all, or null: such a skill is not saved over or deleted. */
+  readonly readFailure: string | null;
 }
+
+/** What reading a SKILL.md found: its text, nothing there, or a file that cannot be read. */
+export type SkillFileRead =
+  | { readonly kind: 'read'; readonly text: string; readonly modified: number }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'unreadable'; readonly reason: string };
 
 type SkillPorts = {
   fs: Pick<VaultFsPort, 'listDirectory' | 'readTextFile'>;
@@ -92,11 +102,11 @@ export async function readSkill({
 /** One folder's skill, read through its SKILL.md. */
 export async function readSkillIn(ports: SkillPorts, folder: VaultEntry): Promise<SkillFile> {
   const path = joinVaultPath(folder.path, SKILL_FILE);
-  const read = await readIfThere(ports.fs, path);
+  const read = await readSkillFileAt(ports.fs, path);
   return skillFileOf({ markdown: ports.markdown, folder, path, read });
 }
 
-/** A skill from SKILL.md's text as read, or from its absence. */
+/** A skill from what reading its SKILL.md found. */
 export function skillFileOf({
   markdown,
   folder,
@@ -106,16 +116,21 @@ export function skillFileOf({
   markdown: SkillPorts['markdown'];
   folder: Pick<VaultEntry, 'name' | 'path'>;
   path: VaultPath;
-  read: { text: string; modified: number } | null;
+  read: SkillFileRead;
 }): SkillFile {
   const place = { folder: folder.path, path };
-  if (read === null) {
+  if (read.kind !== 'read') {
+    const unreadable = read.kind === 'unreadable';
     return {
-      ...skillReadingOf({ folder: folder.name, file: null }),
+      ...skillReadingOf({
+        folder: folder.name,
+        file: unreadable ? { unreadable: read.reason } : null,
+      }),
       ...place,
       text: '',
       modified: null,
       frontmatterProblem: null,
+      readFailure: unreadable ? read.reason : null,
     };
   }
   const { frontmatter, body } = splitFrontmatter(read.text);
@@ -127,19 +142,40 @@ export function skillFileOf({
     text: read.text,
     modified: read.modified,
     frontmatterProblem,
+    readFailure: null,
   };
 }
 
-/** A file's text and time, or null when it is not there. */
-async function readIfThere(
-  fs: Pick<VaultFsPort, 'readTextFile'>,
+/**
+ * Reads a SKILL.md. The host refuses a file it cannot read — gone, too
+ * large, not text — with one error, so a refusal is told apart by whether
+ * the folder still lists the file: only a file not listed is missing.
+ */
+export async function readSkillFileAt(
+  fs: Pick<VaultFsPort, 'listDirectory' | 'readTextFile'>,
   path: VaultPath,
-): Promise<{ text: string; modified: number } | null> {
+): Promise<SkillFileRead> {
   try {
-    return await fs.readTextFile(path);
+    const { text, modified } = await fs.readTextFile(path);
+    return { kind: 'read', text, modified };
   } catch (error) {
-    // A folder without SKILL.md is a skill with nothing in it yet, shown as a problem.
-    if (error instanceof VaultAccessError) return null;
+    if (!(error instanceof VaultAccessError)) throw error;
+    return (await isListed(fs, path))
+      ? { kind: 'unreadable', reason: error.message }
+      : { kind: 'missing' };
+  }
+}
+
+/** Whether `path`'s folder lists it as a file, in any case as the Mac's disk reads a name. */
+async function isListed(fs: Pick<VaultFsPort, 'listDirectory'>, path: VaultPath): Promise<boolean> {
+  let entries: readonly VaultEntry[];
+  try {
+    entries = await fs.listDirectory(parentVaultPath(path));
+  } catch (error) {
+    // A folder that has gone holds no SKILL.md.
+    if (error instanceof VaultAccessError) return false;
     throw error;
   }
+  const name = vaultPathName(path).toLowerCase();
+  return entries.some((entry) => entry.kind === 'file' && entry.name.toLowerCase() === name);
 }

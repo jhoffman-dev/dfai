@@ -9,6 +9,7 @@ export {
   skillReadingOf,
   RESERVED_SKILL_WORDS,
   SKILL_FILE,
+  skillDeletionWarning,
   skillDescriptionProblem,
   skillDraftProblems,
   skillFilePath,
@@ -23,6 +24,7 @@ export type {
   SkillDraft,
   SkillField,
   SkillFileContents,
+  SkillFileState,
   SkillProblem,
   SkillReading,
 } from './skill-rules.ts';

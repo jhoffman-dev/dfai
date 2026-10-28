@@ -228,10 +228,9 @@ describe('saveSkill', () => {
     ]);
   });
 
-  it('refuses a rename, a broken rule, and a skill with no SKILL.md', async () => {
-    const vault = memoryVault({ [SKILL_PATH]: TEXT, '.atlas/skills/empty/notes.txt': 'x' });
+  it('refuses a rename and a broken rule', async () => {
+    const vault = memoryVault({ [SKILL_PATH]: TEXT });
     const skill = await readBack(vault);
-    const empty = await readBack(vault, 'empty');
 
     await expect(
       saveSkill({ fs: vault.fs, markdown, skill, draft: { ...DRAFT, name: 'friday-review' } }),
@@ -239,9 +238,6 @@ describe('saveSkill', () => {
     await expect(
       saveSkill({ fs: vault.fs, markdown, skill, draft: { ...DRAFT, instructions: '' } }),
     ).rejects.toThrow(/Write the skill’s instructions/);
-    await expect(
-      saveSkill({ fs: vault.fs, markdown, skill: empty, draft: { ...DRAFT, name: 'empty' } }),
-    ).rejects.toThrow(/has no SKILL.md/);
     expect(vault.writes).toEqual([]);
   });
 
@@ -306,7 +302,10 @@ describe('deleteSkill', () => {
   });
 
   it('refuses when SKILL.md has gone since it was read, or appeared in a folder that had none', async () => {
-    const vault = memoryVault({ [SKILL_PATH]: TEXT }, ['.atlas/skills/empty']);
+    const vault = memoryVault({ [SKILL_PATH]: TEXT }, [
+      '.atlas/skills/empty',
+      '.atlas/skills/weekly-review',
+    ]);
     const skill = await readBack(vault);
     const empty = await readBack(vault, 'empty');
     vault.notes.delete(SKILL_PATH);
@@ -389,6 +388,19 @@ describe('a folder with no SKILL.md is not a dead end (review of #620)', () => {
 
     expect(skill.problems).toEqual([]);
     expect(vault.notes.get(SKILL_PATH)?.text).toMatch(/^---\nname: weekly-review\n/);
+  });
+
+  it('create refuses, as already a skill, that folder once it has a SKILL.md, readable or not', async () => {
+    const vault = memoryVault({ [SKILL_PATH]: TEXT });
+
+    await expect(createSkill({ fs: vault.fs, markdown, draft: DRAFT })).rejects.toThrow(
+      'There is already a skill called “weekly-review”.',
+    );
+    vault.unreadable.add(SKILL_PATH);
+    await expect(createSkill({ fs: vault.fs, markdown, draft: DRAFT })).rejects.toThrow(
+      SkillRefusedError,
+    );
+    expect(vault.notes.get(SKILL_PATH)?.text).toBe(TEXT);
   });
 
   it('create still refuses a folder of that name in another case', async () => {

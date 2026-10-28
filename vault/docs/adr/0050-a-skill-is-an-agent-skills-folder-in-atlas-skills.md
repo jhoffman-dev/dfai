@@ -53,7 +53,13 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
 3. **Use-cases in `application/skills`: list, read, create, save, delete.**
    - _Create_ writes the folder and a SKILL.md in one canonical form: `name`
      and `description` through `MarkdownPort.updateFrontmatter`, a blank
-     line, then the instructions ending their last line.
+     line, then the instructions ending their last line. A folder of exactly
+     the name with no SKILL.md yet is the skill's, and its SKILL.md is written
+     into it; saving such a folder's skill does the same. Both write through
+     `createNote`, which never overwrites. When a create makes the folder but
+     not its SKILL.md, it trashes the empty folder again, so no half-made skill
+     holds the name. A folder clash the listing could not see (a file of that
+     name, a folder made since) is refused as a name already taken.
    - _Save_ is byte-preserving (ADR-0003): only the frontmatter keys that
      changed are rewritten, through `updateFrontmatter` (which keeps comments,
      key order, quoting and unknown keys), and the body is replaced only when
@@ -65,8 +71,16 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
      refuses a change it made in between.
    - _Delete_ puts the whole folder in the system Trash, only while SKILL.md
      is unchanged since it was read (or still absent, for a folder that had
-     none), and answers the other files that went with it so the person can
-     be told. The host's `trashEntry` has no guard of its own, so the guard is
+     none). The folder is walked first and SKILL.md checked right before the
+     Trash. It answers the other files that went with it, dotfiles such as
+     `.DS_Store` left unnamed, and the warning says that files in subfolders,
+     however deep, go too.
+   - _Missing is not unreadable._ The host refuses a file that is gone, too
+     large or not text with one error, so a refused read is told apart by
+     whether the folder still lists SKILL.md. One that is there but cannot be
+     read is a `file` problem, and such a skill is neither saved over nor
+     deleted here.
+   - An edit of a body written with CRLF line ends keeps them. The host's `trashEntry` has no guard of its own, so the guard is
      the use-case's re-read; the window between that read and the Trash is the
      one every other undo and delete here already has.
 

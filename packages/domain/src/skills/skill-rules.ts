@@ -156,10 +156,14 @@ export function instructionsOf(body: string): string {
 /**
  * The body that holds `instructions` in place of `body`: `body` itself when
  * they are what it already holds, so an untouched skill is written back byte
- * for byte, and otherwise the instructions after the blank line it had.
+ * for byte, and otherwise the instructions after the blank line it had —
+ * with its CRLF line ends, when it used them and the instructions came with
+ * bare ones, as an editor's form sends them.
  */
 export function bodyWithInstructions(body: string, instructions: string): string {
-  return instructionsOf(body) === instructions ? body : leadingBreak(body) + instructions;
+  if (instructionsOf(body) === instructions) return body;
+  const crlf = body.includes('\r\n') && !instructions.includes('\r');
+  return leadingBreak(body) + (crlf ? instructions.replace(/\n/g, '\r\n') : instructions);
 }
 
 /**
@@ -200,52 +204,90 @@ function declaredNameProblem(folder: string, declared: string | null): SkillProb
   ];
 }
 
+/** What SKILL.md was when its folder was read: its contents, unreadable, or not there. */
+export type SkillFileState = SkillFileContents | { readonly unreadable: string } | null;
+
+/** What is wrong with a folder's own name, which is the skill's. */
+function folderNameProblems(folder: string): SkillProblem[] {
+  const problem = skillNameProblem(folder);
+  return problem === null ? [] : [{ field: 'name', message: `Its folder: ${problem}` }];
+}
+
+/** What is wrong with a read SKILL.md's description and instructions. */
+function contentProblems(description: string, instructions: string): SkillProblem[] {
+  const checks = [
+    ['description', skillDescriptionProblem(description)],
+    ['instructions', skillInstructionsProblem(instructions)],
+  ] as const;
+  return checks.flatMap(([field, message]) => (message === null ? [] : [{ field, message }]));
+}
+
+/** A skill whose SKILL.md gave nothing to read, for `problem`. */
+function emptyReading(folder: string, problem: string): SkillReading {
+  return {
+    name: folder,
+    declaredName: null,
+    description: '',
+    instructions: '',
+    problems: [...folderNameProblems(folder), { field: 'file', message: problem }],
+  };
+}
+
 /**
  * A skill as its folder `folder` and its SKILL.md read. The folder's name is
  * the skill's; a `name:` that differs is a problem to show, never put right
- * here. A folder with no SKILL.md is a skill with nothing in it yet.
+ * here. A folder with no SKILL.md is a skill with nothing in it yet; one
+ * whose SKILL.md is there but cannot be read says so.
  */
 export function skillReadingOf({
   folder,
   file,
 }: {
   folder: string;
-  file: SkillFileContents | null;
+  file: SkillFileState;
 }): SkillReading {
-  const folderProblem = skillNameProblem(folder);
-  const ownName: SkillProblem[] =
-    folderProblem === null ? [] : [{ field: 'name', message: `Its folder: ${folderProblem}` }];
-  if (file === null) {
-    const missing = { field: 'file' as const, message: `The folder has no ${SKILL_FILE}.` };
-    return {
-      name: folder,
-      declaredName: null,
-      description: '',
-      instructions: '',
-      problems: [...ownName, missing],
-    };
+  if (file === null) return emptyReading(folder, `The folder has no ${SKILL_FILE}.`);
+  if ('unreadable' in file) {
+    return emptyReading(folder, `${SKILL_FILE} cannot be read: ${file.unreadable}`);
   }
   const declaredName = textOrNull(file.properties['name']);
   const description = textOrNull(file.properties['description']) ?? '';
   const instructions = instructionsOf(file.body);
-  const unreadable: SkillProblem[] =
+  const frontmatter: SkillProblem[] =
     file.frontmatterProblem === null ? [] : [{ field: 'file', message: file.frontmatterProblem }];
-  const fieldProblems = (
-    [
-      ['description', skillDescriptionProblem(description)],
-      ['instructions', skillInstructionsProblem(instructions)],
-    ] as const
-  ).flatMap(([field, message]) => (message === null ? [] : [{ field, message }]));
   return {
     name: folder,
     declaredName,
     description,
     instructions,
     problems: [
-      ...unreadable,
-      ...ownName,
+      ...frontmatter,
+      ...folderNameProblems(folder),
       ...declaredNameProblem(folder, declaredName),
-      ...fieldProblems,
+      ...contentProblems(description, instructions),
     ],
   };
+}
+
+/** A file's path below its skill's folder: `scripts/run.sh`. */
+function withinFolder(path: string): string {
+  const at = path.indexOf('/', SKILLS_DIRECTORY.length + 1);
+  return at === -1 ? path : path.slice(at + 1);
+}
+
+/**
+ * What the person is asked before a skill is deleted: the whole folder goes,
+ * with each other file it holds named, and — since a folder is listed only so
+ * deep — everything in its subfolders, however deep, goes too.
+ */
+export function skillDeletionWarning(name: string, otherFiles: readonly string[]): string {
+  const trash = 'goes to the Trash, where it can be got back';
+  if (otherFiles.length === 0)
+    return `Delete “${name}”? Its folder, holding only ${SKILL_FILE}, ${trash}.`;
+  const count = otherFiles.length === 1 ? '1 other file' : `${otherFiles.length} other files`;
+  const named = otherFiles.map(withinFolder).join(', ');
+  return (
+    `Delete “${name}”? Its whole folder ${trash}, with ${count}: ${named} — ` +
+    'and everything in its subfolders, however deep.'
+  );
 }
