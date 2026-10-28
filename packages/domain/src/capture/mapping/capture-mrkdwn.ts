@@ -157,6 +157,7 @@ const TOKEN = /`([^`\n]+)`|<([^<>\n]*)>/g;
  */
 // The character before is matched, not looked behind at: JavaScriptCore reads a
 // lookbehind by code unit, and a letter beyond U+FFFF would let it start mid-word.
+// eslint-disable-next-line no-control-regex -- NUL marks a held part, which ends an address
 const BARE_ADDRESS = /(^|[^\p{L}\p{N}_])((?:https?:\/\/|www\.)[^\s<>[\]\u0000]+)/giu;
 
 /** What ends a sentence after an address rather than belonging to it, as GFM cuts it. */
