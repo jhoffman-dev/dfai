@@ -277,10 +277,12 @@ const copyOf = (live: string, mac = 'Laptop') =>
   `Sync conflicts/atlas/${live.slice('.atlas/'.length).replace(/\.md$/, '')} (conflict from ${mac}).md`;
 
 describe('attack #235: a trashed .atlas copy holds nothing its live file lacks', () => {
-  it('holds over 3000 seeded random live and copy pairs, with the real markdown adapter', async () => {
+  it('holds over 8000 seeded random live and copy pairs, with the real markdown adapter', async () => {
     const violations: string[] = [];
     let trashedCount = 0;
-    for (let seed = 1; seed <= 3000; seed += 1) {
+    // 8000 seeds (#235 fix round): the stricter rule trashes fewer pairs, and the run
+    // must still reach the trashing path over 100 times.
+    for (let seed = 1; seed <= 8000; seed += 1) {
       const r = rng(seed);
       const livePath = r.pick(SETTINGS_FILES);
       const liveParts = randomParts(r);
@@ -401,7 +403,9 @@ describe('attack #235: volume', () => {
     for (let n = 0; n < 500; n += 1) {
       const live = `.atlas/views/view ${n}.md`;
       files[live] = `---\nname: v${n}\nlimit: ${n}\n---\n`;
-      files[copyOf(live)] = `---\nname: v${n}\n---\n`;
+      // The same as its live file (#235 fix round): a view's live file may hold nothing the
+      // copy lacks, since `limit` there could be a person's deletion on the copy's Mac.
+      files[copyOf(live)] = files[live];
       if (n % 50 === 7) refuse.add(copyOf(live));
     }
     const world = vault(files, { refuse });
