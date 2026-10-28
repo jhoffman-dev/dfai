@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { ATLAS_TOOLS } from './server.ts';
 import { errorBody, startFakeAtlas, type FakeAtlas } from './testing/fake-atlas.ts';
 
 const MAIN = fileURLToPath(new URL('./main.ts', import.meta.url));
@@ -54,9 +55,13 @@ const search = async () => {
 };
 
 describe('dfai-mcp over stdio', () => {
-  it('lists every tool', async () => {
+  it('lists exactly the tools the server registers, each once', async () => {
     const { tools } = await mcp.listTools();
-    expect(tools).toHaveLength(61);
+    const listed = tools.map((tool) => tool.name).sort();
+    const registered = ATLAS_TOOLS.map((tool) => tool.name).sort();
+    // Read from the server's own list, so a PR adding a tool never edits a count here.
+    expect(registered.length).toBeGreaterThan(0);
+    expect(listed).toEqual(registered);
   });
 
   it('picks up the connection file as it changes, without a restart', async () => {
