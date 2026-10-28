@@ -126,7 +126,7 @@ const TOP_KEYS = ['name', 'label', 'icon', 'sort', 'atlas', 'color', 'filter', '
 /** One top-level key as text lines, in one of the styles a person or DFAI writes. */
 function keyText(r: Rng, key: string): string[] {
   const comment = r.chance(0.15) ? [r.pick(['# why this', '# ✓ checked', '#'])] : [];
-  switch (r.int(7)) {
+  switch (r.int(8)) {
     case 0:
     case 1:
       return [...comment, `${key}: ${r.pick(SCALARS)}`.trimEnd()];
@@ -139,6 +139,19 @@ function keyText(r: Rng, key: string): string[] {
       return [...comment, `${key}: [${MAP_ENTRY_NAMES.slice(0, 1 + r.int(3)).join(', ')}]`];
     case 4:
       return [...comment, `${key}: ${r.pick(['|', '>', '|-'])}`, '  line one', '  line two'];
+    case 7: {
+      // A map of maps, two deep: a view's filters, an automation's trigger (verification review).
+      const lines = [...comment, `${key}:`];
+      for (const outer of ['when', 'filters', 'sync'].filter(() => r.chance(0.7))) {
+        lines.push(`  ${outer}:`);
+        for (const inner of ['type', 'status', 'owner', 'every'].filter(() => r.chance(0.6))) {
+          lines.push(`    ${inner}: ${r.pick(SCALARS.filter((scalar) => scalar !== ''))}`);
+        }
+        if (lines.at(-1) === `  ${outer}:`) lines.push('    type: task');
+      }
+      if (lines.length === 1 + comment.length) lines.push('  when:', '    type: task');
+      return lines;
+    }
     default: {
       const names = MAP_ENTRY_NAMES.filter(() => r.chance(0.6));
       const lines = [...comment, `${key}:`];
@@ -187,7 +200,7 @@ function mutate(r: Rng, live: Parts): { parts: Parts; crlf: boolean } {
   let crlf = false;
   for (let edits = 1 + r.int(3); edits > 0; edits -= 1) {
     const at = parts.keys.length === 0 ? -1 : r.int(parts.keys.length);
-    switch (r.int(12)) {
+    switch (r.int(14)) {
       case 0: // drop a key
         if (at >= 0) parts.keys.splice(at, 1);
         break;
@@ -229,6 +242,10 @@ function mutate(r: Rng, live: Parts): { parts: Parts; crlf: boolean } {
       case 10: // a trailing comment at the end of the block
         parts.keys.push({ key: '#', lines: ['# trailing note'] });
         break;
+      case 12:
+      case 13: // an entry of a map taken off whole, its lines under it too (verification review)
+        if (at >= 0) parts.keys[at]!.lines = withoutAnEntry(r, parts.keys[at]!.lines);
+        break;
       default: // the list order changed
         if (at >= 0) parts.keys[at]!.lines = [...parts.keys[at]!.lines].reverse();
     }
@@ -236,7 +253,31 @@ function mutate(r: Rng, live: Parts): { parts: Parts; crlf: boolean } {
   return { parts, crlf };
 }
 
+/** `lines` with one entry of the map at two spaces in taken off, with the lines under it. */
+function withoutAnEntry(r: Rng, lines: readonly string[]): string[] {
+  const indent = (line: string) => line.length - line.trimStart().length;
+  const starts = lines.flatMap((line, at) =>
+    indent(line) === 2 && /^ {2}[^\s#-]/.test(line) ? [at] : [],
+  );
+  if (starts.length < 2) return [...lines];
+  const from = r.pick(starts);
+  let to = from + 1;
+  while (to < lines.length && indent(lines[to]!) > 2) to += 1;
+  return [...lines.slice(0, from), ...lines.slice(to)];
+}
+
 // ---- The oracle -------------------------------------------------------------
+
+/** Whether `live` holds, below its top level, a key the copy lacks: a nested extra. */
+function nestedExtra(live: unknown, copy: unknown, depth = 0): boolean {
+  if (live === null || typeof live !== 'object' || Array.isArray(live)) return false;
+  if (copy === null || typeof copy !== 'object' || Array.isArray(copy)) return false;
+  return Object.entries(live).some(([key, value]) =>
+    Object.hasOwn(copy, key)
+      ? nestedExtra(value, (copy as Record<string, unknown>)[key], depth + 1)
+      : depth >= 1,
+  );
+}
 
 /** Whether every value in `copy` is in `live`: maps by key, everything else equal. */
 function contained(copy: unknown, live: unknown): boolean {
@@ -262,6 +303,8 @@ function loss(copy: string, live: string): string | null {
     return remarkMarkdown.frontmatterProperties(match?.[0] ?? null);
   };
   if (!contained(props(copy), props(live))) return 'a value only in the copy';
+  // No record here, so nothing the live file has may be missing from the copy (#235 review).
+  if (!contained(props(live), props(copy))) return 'a value the copy lacks: a deletion lost';
   return null;
 }
 
@@ -280,6 +323,7 @@ describe('attack #235: a trashed .atlas copy holds nothing its live file lacks',
   it('holds over 8000 seeded random live and copy pairs, with the real markdown adapter', async () => {
     const violations: string[] = [];
     let trashedCount = 0;
+    let nestedExtras = 0;
     // 8000 seeds (#235 fix round): the stricter rule trashes fewer pairs, and the run
     // must still reach the trashing path over 100 times.
     for (let seed = 1; seed <= 8000; seed += 1) {
@@ -290,6 +334,13 @@ describe('attack #235: a trashed .atlas copy holds nothing its live file lacks',
       const drawn = r.chance(0.15) ? { parts: randomParts(r), crlf: false } : mutate(r, liveParts);
       const copyText = textOf(drawn.parts, { crlf: drawn.crlf });
       const copy = copyOf(livePath);
+      const frontmatter = (text: string) =>
+        remarkMarkdown.frontmatterProperties(
+          /^---\r?\n[\s\S]*?\n---\r?\n?/.exec(text)?.[0] ?? null,
+        );
+      // Counted only for a copy that is the live file with lines taken off: a deletion.
+      const deletion = linesOf(copyText).every((line) => linesOf(liveText).includes(line));
+      if (deletion && nestedExtra(frontmatter(liveText), frontmatter(copyText))) nestedExtras += 1;
       const world = vault({ [livePath]: liveText, [copy]: copyText });
       const { cleared } = await clear(world);
       if (cleared.length === 0) continue;
@@ -300,6 +351,8 @@ describe('attack #235: a trashed .atlas copy holds nothing its live file lacks',
     expect(violations).toEqual([]);
     // The run must reach the trashing path, or it proves nothing.
     expect(trashedCount).toBeGreaterThan(100);
+    // And it must draw the case the verification review found: a key the copy lacks one map down.
+    expect(nestedExtras).toBeGreaterThan(100);
   });
 
   it('keeps a record copy whose JSON names a type twice, the first listing a key the live file lacks', async () => {

@@ -110,6 +110,16 @@ function vault(
   };
 }
 
+/** A non-type `.atlas` file and its copy, the copy the live file exactly. */
+const nested2 = (path: string) => {
+  const text = ['---', `name: ${path}`, 'when:', '  type: task', '---', ''].join('\n');
+  return {
+    [path]: text,
+    [`Sync conflicts/atlas/${path.slice('.atlas/'.length, -'.md'.length)} (conflict from Laptop).md`]:
+      text,
+  };
+};
+
 async function clear(
   world: ReturnType<typeof vault>,
   { keep = new Set<string>(), said }: { keep?: ReadonlySet<string>; said?: UnsettledSaid } = {},
@@ -374,6 +384,93 @@ describe('clearSettledCopies (#235)', () => {
       });
       await expectKept({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY }, { record: otherType });
     });
+
+    // Verification review of PR #599: a key the copy lacks one map down was missed.
+    const nested = (path: string, live: string[], copy: string[]) => ({
+      [path]: ['---', ...live, '---', ''].join('\n'),
+      [`Sync conflicts/atlas/${path.slice('.atlas/'.length, -'.md'.length)} (conflict from Laptop).md`]:
+        ['---', ...copy, '---', ''].join('\n'),
+    });
+
+    it('a key one map down in an automation, a view or the settings', async () => {
+      await expectKept(
+        nested(
+          '.atlas/automations/weekly.md',
+          ['name: weekly', 'when:', '  type: task', '  status: done'],
+          ['name: weekly', 'when:', '  type: task'],
+        ),
+      );
+      await expectKept(
+        nested(
+          '.atlas/views/Board.md',
+          ['name: Board', 'filters:', '  status: next', '  owner: me'],
+          ['name: Board', 'filters:', '  status: next'],
+        ),
+      );
+      await expectKept(
+        nested(
+          '.atlas/settings.md',
+          ['sync:', '  auto: true', '  every: 5'],
+          ['sync:', '  auto: true'],
+        ),
+      );
+    });
+
+    it('a key in a type’s map other than its properties', async () => {
+      await expectKept({
+        [LIVE]: meeting([...ATTENDEES, ...DATE, ...SUMMARY], {
+          head: [
+            'name: meeting',
+            'label: Meeting',
+            'display:',
+            '  icon: calendar',
+            '  color: blue',
+          ],
+        }),
+        [COPY]: meeting([...ATTENDEES, ...DATE], {
+          head: ['name: meeting', 'label: Meeting', 'display:', '  icon: calendar'],
+        }),
+      });
+    });
+
+    it('a view, the settings or an automation that is not its live file exactly', async () => {
+      await expectKept(
+        nested('.atlas/views/Board.md', ['name: Board', 'limit: 5'], ['name: Board']),
+      );
+    });
+  });
+
+  it('clears a view, the settings or an automation whose copy is its live file exactly', async () => {
+    const world = vault(
+      Object.fromEntries(
+        ['.atlas/views/Board.md', '.atlas/settings.md', '.atlas/automations/weekly.md'].flatMap(
+          (path) => Object.entries(nested2(path)),
+        ),
+      ),
+    );
+    expect((await clear(world)).cleared).toHaveLength(3);
+  });
+
+  it('finds what DFAI added to a type whose name is written with capitals or spaces', async () => {
+    for (const name of ['Meeting', ' meeting', 'MEETING ']) {
+      const head = [`name: "${name}"`, 'label: Meeting'];
+      const world = vault({
+        [LIVE]: meeting([...ATTENDEES, ...DATE, ...SUMMARY], { head }),
+        [COPY]: meeting([...ATTENDEES, ...DATE], { head }),
+      });
+      expect((await clear(world)).cleared, name).toEqual([COPY]);
+    }
+  });
+
+  it('keeps a record copy whose JSON is broken past the block that parses, and never throws', async () => {
+    const copy = 'Sync conflicts/atlas/migrations/type-properties (conflict from Laptop).md';
+    const good = shippedPropertiesRecordText({ settled: {}, added: {} });
+    const json = JSON.stringify({ settled: {}, added: {} });
+    expect(good).toContain(json);
+    // Block 1 parses, over two lines; block 2, on one line, is cut short.
+    const broken = good.replace(json, '{"settled":\n{}}\n```\n\n```json\n{"a');
+    await expectKept({ [copy]: broken }, { record: broken });
+    await expectKept({ [copy]: broken });
   });
 
   it('asks the host to trash the copy only while it and its live file are as they were read', async () => {
