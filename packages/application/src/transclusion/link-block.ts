@@ -5,7 +5,9 @@ import {
   locateFragment,
   newBlockId,
   noteLabelForNotice,
+  parentVaultPath,
   splitFrontmatter,
+  VAULT_ROOT,
   withAnchorAt,
   type NodePath,
   type OutlineEntry,
@@ -68,17 +70,30 @@ export function createBlockChoicesReader({
 }
 
 /**
- * A note's text, or null when the host has no note there to read. The host
- * words a missing file as any other failure, so it is asked again the way
- * the index reads notes, which leaves out a path with no readable note;
- * a failure while the note is there is passed on.
+ * A note's text, or null when there is no note there to read. The host words
+ * a missing file as it words any failure, so its folder is asked: a file the
+ * folder lists — one too large, not text, not readable — is there, and the
+ * failure to read it is passed on.
  */
 async function readIfThere(fs: VaultFsPort, path: VaultPath) {
   try {
     return await fs.readTextFile(path);
   } catch (cause) {
-    if ((await fs.readNotes([path])).length === 0) return null;
-    throw cause;
+    // The read's own failure is the one to show: one in asking the folder only means it may be there.
+    if (await isThere(fs, path).catch(() => true)) throw cause;
+    return null;
+  }
+}
+
+/** Whether the folder a path is in lists it; a folder no longer there lists nothing. */
+async function isThere(fs: VaultFsPort, path: VaultPath): Promise<boolean> {
+  if (path === VAULT_ROOT) return true;
+  const folder = parentVaultPath(path);
+  try {
+    return (await fs.listDirectory(folder)).some((entry) => entry.path === path);
+  } catch (cause) {
+    if (await isThere(fs, folder)) throw cause;
+    return false;
   }
 }
 

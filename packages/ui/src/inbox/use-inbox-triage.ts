@@ -123,6 +123,11 @@ export function useInboxTriage({
   // The rows being written, by how many writes each: one that leaves the list
   // meanwhile is the app's, which brings it back, picks and all, should it be refused.
   const writing = useRef(new Map<VaultPath, number>());
+  // Rows whose write was refused. The app brings such a row back as it refuses, so a
+  // refused row the list then lacks was taken away meanwhile — by sync, say — and its
+  // picks go with it. Read after the render that follows, when the list is the app's answer.
+  const refused = useRef(new Set<VaultPath>());
+  const [refusals, setRefusals] = useState(0);
 
   const focusRow = useCallback(
     (path: VaultPath) => {
@@ -161,6 +166,19 @@ export function useInboxTriage({
     else if (before.some((item) => item.path === path)) stranded.current = path;
   }, [items, focusRow, stranded]);
 
+  useEffect(() => {
+    const gone = [...refused.current].filter(
+      (path) => !writing.current.has(path) && !listed.current.some((item) => item.path === path),
+    );
+    refused.current.clear();
+    if (gone.length === 0) return;
+    setDrafts((held) =>
+      Object.fromEntries(
+        Object.entries(held).filter(([path]) => !gone.includes(path as VaultPath)),
+      ),
+    );
+  }, [refusals]);
+
   // The last row leaving empties the list, and the page draws no rows at all:
   // what held the focus is kept where the page can give it back.
   useEffect(
@@ -180,7 +198,12 @@ export function useInboxTriage({
         if (left === 0) writing.current.delete(path);
         else writing.current.set(path, left);
       });
-      if (!done) return;
+      if (!done) {
+        // Looked at once the app's own answer to the refusal is drawn: see `refused`.
+        refused.current.add(path);
+        setRefusals((count) => count + 1);
+        return;
+      }
       setDrafts((held) => Object.fromEntries(Object.entries(held).filter(([at]) => at !== path)));
       // Focus that has gone elsewhere since — another note opened, say — is left there.
       const at = document.activeElement;
