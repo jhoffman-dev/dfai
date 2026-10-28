@@ -255,9 +255,8 @@ function tokenText(token: string, users: SlackUserNames, writer: Writer): string
   if (target.startsWith('@')) {
     const id = target.slice(1);
     // Its own names only: `<@constructor>` must not read one from Object.prototype.
-    const named = Object.hasOwn(users, id) ? users[id] : undefined;
-    const name =
-      (typeof named === 'string' ? oneLineText(named) : '') || label.replace(/^@/, '') || id;
+    const named = Object.hasOwn(users, id) ? (users[id] ?? '') : '';
+    const name = oneLineText(named) || label.replace(/^@/, '') || id;
     return writer.words(`@${name}`);
   }
   if (target.startsWith('#')) return writer.words(`#${label || target.slice(1)}`);
