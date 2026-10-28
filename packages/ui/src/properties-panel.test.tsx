@@ -149,6 +149,22 @@ describe('PropertiesPanel', () => {
     expect(onChange).toHaveBeenLastCalledWith('field', ['Mara, Inc.', 'Quill']);
   });
 
+  it('puts the saved list back on Esc or leaving while a quote is still open', () => {
+    const onChange = panel([row('multiSelect', ['Payroll, Larkspur', 'Quill'])]);
+    const field = screen.getByLabelText('Field') as HTMLInputElement;
+    const shown = '"Payroll, Larkspur", Quill';
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: '"Payroll, Larkspur, Quill' } });
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(field.value).toBe(shown);
+    fireEvent.change(field, { target: { value: 'Quill, "Mara' } });
+    fireEvent.keyDown(field, { key: 'a' });
+    expect(field.value).toBe('Quill, "Mara');
+    fireEvent.blur(field);
+    expect(field.value).toBe(shown);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('drops blank entries from a list rather than storing them', () => {
     const onChange = panel([row('multiSelect', [])]);
     fireEvent.change(screen.getByLabelText('Field'), { target: { value: 'a, , b,' } });

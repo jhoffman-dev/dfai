@@ -16,7 +16,8 @@ export {
 } from './property-value.ts';
 export { combinedExtensions, inboxTypePlan } from './inbox-setup.ts';
 export type { InboxTypePlan } from './inbox-setup.ts';
-export { listAsInput, listFromInput } from './list-input.ts';
+export { hasOpenQuote, listAsInput, listFromInput } from './list-input.ts';
+export { listEditText, listFromEditText } from './list-edit.ts';
 export { linkedNotes, withLink, withoutLink } from './relation-links.ts';
 export { objectTypeIcon, TYPE_ICONS } from './type-icon.ts';
 export {

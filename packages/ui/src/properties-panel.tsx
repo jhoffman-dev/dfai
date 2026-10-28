@@ -3,8 +3,10 @@ import {
   createVaultPath,
   formatPropertyDate,
   linkedNames,
+  hasOpenQuote,
   listAsInput,
-  listFromInput,
+  listEditText,
+  listFromEditText,
   linkedNotes,
   optionColor,
   optionLabel,
@@ -300,13 +302,25 @@ function CheckboxEditor({ id, row, onChange }: EditorProps) {
  * Shown instead, it would put each keystroke back until then — "412" typed
  * quickly reached the file as "42" — and a list typed as "a, " would lose its
  * comma to the list it reads back as.
+ *
+ * `held` says when what was typed is not saved yet; Esc then puts back what
+ * the file says, as leaving the field does.
  */
-function useTyping(fileText: string, write: (typed: string) => void) {
+function useTyping(
+  fileText: string,
+  write: (typed: string) => void,
+  held?: (typed: string) => boolean,
+) {
   const [typed, setTyped] = useState<string | null>(null);
   return {
     value: typed ?? fileText,
     onFocus: () => setTyped(fileText),
     onBlur: () => setTyped(null),
+    ...(held !== undefined && {
+      onKeyDown: (event: { key: string }) => {
+        if (event.key === 'Escape' && typed !== null && held(typed)) setTyped(fileText);
+      },
+    }),
     onChange: (event: { target: { value: string } }) => {
       setTyped(event.target.value);
       write(event.target.value);
@@ -346,11 +360,18 @@ function offeredOptions(options: readonly string[], held: string): readonly stri
 /**
  * A multi-select as one line, in the shared list codec: commas between the
  * items, and an item holding a comma of its own — `"Payroll, Larkspur"` —
- * quoted, so editing one item never cuts another in two (#50).
+ * quoted, so editing one item never cuts another in two (#50). An item left
+ * as it was shown is saved as the file held it, and nothing is saved while a
+ * quote is open: leaving the field or Esc then shows the file's list again.
  */
 function MultiSelectEditor({ id, row, onChange }: EditorProps) {
-  const typing = useTyping(listAsInput(asList(row.value)), (typed) =>
-    onChange(listFromInput(typed)),
+  const typing = useTyping(
+    listEditText(row.value),
+    (typed) => {
+      const list = listFromEditText(typed, row.value);
+      if (list !== null) onChange(list);
+    },
+    hasOpenQuote,
   );
   return (
     <input
@@ -558,8 +579,3 @@ function DateEditor({
     </span>
   );
 }
-
-const asList = (value: unknown): string[] =>
-  value === null || value === undefined
-    ? []
-    : (Array.isArray(value) ? value : [value]).map((item) => String(item));
