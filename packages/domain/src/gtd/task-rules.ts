@@ -78,9 +78,9 @@ function spelledAsStatus(before: Properties, changes: Properties): Properties {
  *   of Archive loses its day, unless the change says one, so unticking
  *   leaves nothing stale behind.
  * - Finishing ends the day's choice (#108): a task finished, or a repeating
- *   one rolled on (the roll writes `lastCompleted`), loses a `focus` that is
- *   a day, unless the change names `focus` itself. One that is the person's
- *   own is left as it is.
+ *   one rolled on (the roll writes `lastCompleted` with `due` or `status`),
+ *   loses a `focus` that is a day, unless the change names `focus` itself.
+ *   One that is the person's own, or blank, is left as it is.
  *
  * A status is read as the index reads it — trimmed, a one-item list as its
  * item — so a spelling the Archive rule reads is held to it too, and a GTD
@@ -134,12 +134,25 @@ function datedOnFinishing({
   return changes;
 }
 
-/** The change, taking a dated `focus` out of a task it finishes or rolls on. */
+/**
+ * The change, taking a dated `focus` out of a task it finishes or rolls on.
+ * A blank `focus:` — as a property template writes it — is no choice, and stays.
+ */
 function withChoiceEnded(before: Properties, changes: Properties): Properties {
   const focus = TASK_KEYS.focus;
-  if (!has(before, focus) || has(changes, focus) || focusIsOwn(before)) return changes;
+  if (!has(before, focus) || has(changes, focus)) return changes;
+  if (isBlankValue(before[focus]) || focusIsOwn(before)) return changes;
   const after = changed(before, changes);
   const finished = isFinished(after) && !isFinished(before);
-  const rolled = isTaskNote(after) && has(changes, LAST_COMPLETED_KEY);
-  return finished || rolled ? { ...changes, [focus]: null } : changes;
+  return finished || isRoll(after, changes) ? { ...changes, [focus]: null } : changes;
 }
+
+/**
+ * Whether a change is a repeating task's roll: `lastCompleted` written with
+ * the next `due` or the status it goes back to, as the roll writes them — not
+ * `lastCompleted` edited alone by hand.
+ */
+const isRoll = (after: Properties, changes: Properties) =>
+  isTaskNote(after) &&
+  has(changes, LAST_COMPLETED_KEY) &&
+  (has(changes, DUE_KEY) || has(changes, TASK_KEYS.status));

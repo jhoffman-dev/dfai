@@ -221,7 +221,11 @@ what needs attention but had nowhere to say what was chosen.
   that day's choice: its row says _Chosen for 2026-11-02_, and Today moves the
   choice to today, the toast naming the day it was.
 - **Finishing ends the choice** (amended in PR #602's fix round). A task
-  finished, or a repeating one rolled on, loses a dated `focus`. It is a task
+  finished, or a repeating one rolled on, loses a dated `focus`. A roll is
+  `lastCompleted` written together with `due` or `status`, as the roll writes
+  them; a hand edit of `lastCompleted` alone keeps the choice. A blank
+  `focus:`, as a property template writes it, is no choice and stays, and
+  reopening a task leaves its `focus` as it is. It is a task
   rule, so every tick does it, from Today, a view, a board or the API. Undo
   gives the key back as written. Otherwise a ticked repeating task stays
   under Chosen for today, looking as if the tick did nothing, and a task
