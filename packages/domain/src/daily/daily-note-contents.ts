@@ -1,6 +1,8 @@
-import { GTD_STATUSES, type GtdStatus } from '../gtd/gtd-status.ts';
+import { GTD_STATUSES, TASK_KEYS, type GtdStatus } from '../gtd/gtd-status.ts';
+import { followsGtd, TASK_TYPE_FILE, taskTypeOf } from '../gtd/task-type.ts';
 import { queryBlockFence } from '../query-block/query-block.ts';
 import { promisesItsDay } from '../review/weekly-review.ts';
+import type { ObjectType } from '../types/property-def.ts';
 import { VAULT_ROOT } from '../vault/vault-path.ts';
 import { DAILY_TYPE } from './daily-note.ts';
 
@@ -93,23 +95,48 @@ export function dailyDaySections(day: string): readonly DailyDaySection[] {
   ];
 }
 
-/** Today's note as it starts on `day` when the vault has no Daily template. */
-export function dailyNoteContents(day: string): string {
-  const sections = dailyDaySections(day).flatMap(({ heading, block }) => [
-    `## ${heading}`,
-    '',
-    queryBlockFence(block),
-    '',
-  ]);
-  return [
-    '---',
-    `type: ${DAILY_TYPE}`,
-    '---',
-    '',
-    ...sections,
-    '## What happened',
-    '',
-    '## What is next',
-    '',
-  ].join('\n');
+/** The date fields the blocks ask about, besides the status. */
+const DAY_FIELDS = [TASK_KEYS.due, TASK_KEYS.defer] as const;
+
+/**
+ * Whether the day's blocks can run in a vault of these types: its Task type
+ * has GTD's eight statuses and `due` and `defer` as dates — everything the
+ * queries name. Otherwise a block would show a problem where the day should
+ * be, so the note starts without them. A vault with no Task type yet counts
+ * as having the built-in one it would be given, as choosing for today does.
+ */
+export function dayBlocksFit(types: readonly ObjectType[]): boolean {
+  const task = taskTypeOf(types) ?? TASK_TYPE_FILE.type;
+  return (
+    followsGtd(task) &&
+    DAY_FIELDS.every((key) =>
+      task.properties.some((property) => property.key === key && property.kind === 'date'),
+    )
+  );
+}
+
+const FRONTMATTER = ['---', `type: ${DAILY_TYPE}`, '---', ''];
+const HEADINGS = ['## What happened', '', '## What is next', ''];
+
+/**
+ * Today's note as it starts on `day` when the vault has no Daily template:
+ * the day's blocks above the two headings when the vault's `types` can run
+ * them ({@link dayBlocksFit}), the two headings alone otherwise.
+ */
+export function dailyNoteContents({
+  day,
+  types,
+}: {
+  day: string;
+  types: readonly ObjectType[];
+}): string {
+  const sections = dayBlocksFit(types)
+    ? dailyDaySections(day).flatMap(({ heading, block }) => [
+        `## ${heading}`,
+        '',
+        queryBlockFence(block),
+        '',
+      ])
+    : [];
+  return [...FRONTMATTER, ...sections, ...HEADINGS].join('\n');
 }

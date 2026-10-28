@@ -10,7 +10,7 @@ import type { ReviewTask } from '../review/weekly-review.ts';
 import { todayLists } from '../today/today-lists.ts';
 import { parseObjectType } from '../types/property-def.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
-import { dailyDaySections } from './daily-note-contents.ts';
+import { dailyDaySections, dayBlocksFit } from './daily-note-contents.ts';
 
 /**
  * #110: the daily note's blocks run for real against SQLite, over the
@@ -140,11 +140,25 @@ describe("the daily note's day, as the index answers it", () => {
     const bare = parseObjectType({
       name: 'task',
       properties: {
-        status: { kind: 'select', options: ['inbox', 'next-action', 'archive'] },
+        status: {
+          kind: 'select',
+          options: [
+            'inbox',
+            'backlog',
+            'next-action',
+            'in-progress',
+            'waiting',
+            'someday',
+            'longterm',
+            'archive',
+          ],
+          done: 'archive',
+        },
         defer: 'date',
         due: 'date',
       },
     });
+    expect(dayBlocksFit([bare])).toBe(true);
     for (const block of [due, next]) {
       const reading = readQueryBlock(block);
       if (!reading.ok) throw new Error(reading.problem);

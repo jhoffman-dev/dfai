@@ -8,6 +8,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { newNoteTaskRules } from '../gtd/task-rules.ts';
+import { loadObjectTypes } from '../types/load-types.ts';
 import { findDailyTemplate, readTemplate, type NoteTemplate } from '../types/templates.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
@@ -33,7 +34,8 @@ export function dailyNotePath(today: string, folder: VaultPath): VaultPath {
  * type's home folder (#214), never beside
  * whatever note happens to be in view, or the next ask would not find it. It
  * starts from the vault's Daily template when it has one, and as a note of the
- * built-in Daily type otherwise.
+ * built-in Daily type otherwise — with the day's blocks when the vault's
+ * Task type can run them (#110).
  *
  * Its exact name is the point, so it is not made through `createNote`, which
  * numbers a taken name; what it starts as is held to the task rules here, as
@@ -62,7 +64,9 @@ export async function ensureDailyNote({
 
   const template = findDailyTemplate(templates);
   const started =
-    template === null ? dailyNoteContents(today) : await readTemplate({ fs, template });
+    template === null
+      ? await builtInContents({ fs, markdown, today })
+      : await readTemplate({ fs, template });
   const contents = newNoteTaskRules({ markdown, contents: started, today });
   try {
     await fs.createNote({ path, contents });
@@ -74,4 +78,23 @@ export async function ensureDailyNote({
     throw error;
   }
   return { path, created: true };
+}
+
+/**
+ * What today's note starts as with no Daily template: the day's blocks when
+ * the vault's Task type can run them, judged from the types as they are on
+ * disk as the note is made — never from a list still loading, which would
+ * look like a vault with no Task type at all.
+ */
+async function builtInContents({
+  fs,
+  markdown,
+  today,
+}: {
+  fs: VaultFsPort;
+  markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
+  today: string;
+}): Promise<string> {
+  const types = await loadObjectTypes({ fs, markdown });
+  return dailyNoteContents({ day: today, types });
 }

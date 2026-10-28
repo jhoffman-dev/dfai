@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, dailyNoteContents, type VaultPath } from '@dfai/domain';
+import { createVaultPath, dailyNoteContents, type VaultEntry, type VaultPath } from '@dfai/domain';
 import { fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { dailyNotePath, ensureDailyNote } from './daily-note.ts';
 
@@ -82,7 +82,7 @@ describe("today's note", () => {
     });
 
     expect(created).toEqual([
-      { path: 'Daily/2026/2026-09-22.md', contents: dailyNoteContents(TODAY) },
+      { path: 'Daily/2026/2026-09-22.md', contents: dailyNoteContents({ day: TODAY, types: [] }) },
     ]);
     expect(created[0]?.contents).toMatch(/^---\ntype: daily\n---\n/);
   });
@@ -162,5 +162,98 @@ describe("today's note", () => {
     await expect(
       ensureDailyNote({ fs, markdown, today: TODAY, notePaths: [], templates: [] }),
     ).rejects.toThrow('permission denied');
+  });
+});
+
+/**
+ * #110: the day's blocks go only into a vault whose Task type can run them,
+ * judged from `.atlas/types` as it is when the note is made.
+ */
+describe("today's note in a vault with a Task type of its own", () => {
+  const GTD_STATUSES = [
+    'inbox',
+    'backlog',
+    'next-action',
+    'in-progress',
+    'waiting',
+    'someday',
+    'longterm',
+    'archive',
+  ];
+  const PLAIN = '---\ntype: daily\n---\n\n## What happened\n\n## What is next\n';
+
+  /** Frontmatter written as one JSON object is a type's; any other is read as lines. */
+  const lines = fakeMarkdown();
+  const typesMarkdown = {
+    ...lines,
+    frontmatterProperties: (frontmatter: string | null) => {
+      const inner = (frontmatter ?? '').replace(/^---\n|\n---\n?$/g, '');
+      return inner.startsWith('{')
+        ? (JSON.parse(inner) as Record<string, unknown>)
+        : lines.frontmatterProperties(frontmatter);
+    },
+  };
+
+  function vaultWithTask(task: Record<string, unknown>) {
+    const created: { path: string; contents: string }[] = [];
+    const text = `---\n${JSON.stringify(task)}\n---\n`;
+    const path = createVaultPath('.atlas/types/task.md');
+    const fs = fakeVaultFs({
+      listDirectory: async (folder) =>
+        folder === '.atlas/types' ? [{ kind: 'file', name: 'task.md', path } as VaultEntry] : [],
+      readNotes: async (paths) =>
+        paths.includes(path) ? [{ path, text, modified: 1, size: text.length }] : [],
+      createNote: async ({ path: made, contents }) => {
+        created.push({ path: made, contents });
+        return 0;
+      },
+    });
+    return { fs, created };
+  }
+
+  const make = (fs: ReturnType<typeof vaultWithTask>['fs']) =>
+    ensureDailyNote({ fs, markdown: typesMarkdown, today: TODAY, notePaths: [], templates: [] });
+
+  it('starts with the day when the Task type is on GTD, with due and defer as dates', async () => {
+    const { fs, created } = vaultWithTask({
+      name: 'task',
+      properties: {
+        status: { kind: 'select', options: GTD_STATUSES, done: 'archive' },
+        due: 'date',
+        defer: 'date',
+      },
+    });
+    await make(fs);
+
+    expect(created).toHaveLength(1);
+    expect(created[0]?.contents).toContain('## Due and overdue\n\n```atlas-query\n');
+    expect(created[0]?.contents).toContain(`due <= ${TODAY}`);
+  });
+
+  it('starts with the two headings alone when the Task type keeps statuses of its own', async () => {
+    const { fs, created } = vaultWithTask({
+      name: 'task',
+      properties: {
+        status: { kind: 'select', options: ['todo', 'doing', 'done'], done: 'done' },
+        due: 'date',
+        defer: 'date',
+      },
+    });
+    await make(fs);
+
+    expect(created).toEqual([{ path: 'Daily/2026/2026-09-22.md', contents: PLAIN }]);
+  });
+
+  it('starts with the two headings alone when the Task type has no defer', async () => {
+    const { fs, created } = vaultWithTask({
+      name: 'task',
+      properties: {
+        status: { kind: 'select', options: GTD_STATUSES, done: 'archive' },
+        due: 'date',
+      },
+    });
+    await make(fs);
+
+    expect(created[0]?.contents).toBe(PLAIN);
   });
 });

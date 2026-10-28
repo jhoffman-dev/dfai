@@ -52,6 +52,7 @@ const todaysNote = (page: Page) => page.keyboard.press('Meta+Shift+D');
 const goTo = (page: Page) => page.getByRole('list', { name: 'Go to' });
 
 test.describe("today's note", () => {
+  // Its Task type is not on GTD, so the note starts without the day's blocks (#110).
   test('is made from the built-in Daily template in a vault that has none', async ({ page }) => {
     const { vault } = await openVault(page);
 
@@ -59,7 +60,7 @@ test.describe("today's note", () => {
 
     await expect(page.getByRole('article', { name: today })).toBeVisible();
     await expectFile(vault, `${DAILY}/${today}.md`).toMatch(
-      /^---\ntype: daily\n---\n\n## Due and overdue\n\n```atlas-query\n[\s\S]*\n## What happened\n\n## What is next\n$/,
+      /^---\ntype: daily\n---\n\n## What happened\n\n## What is next\n$/,
     );
   });
 
