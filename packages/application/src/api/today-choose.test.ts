@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { apiFixture, bodyOf, codeOf, TODAY } from '../testing/api-fixture.ts';
+import { jsonMarkdown, jsonNote } from '../testing/json-markdown.ts';
 
 const note = (lines: readonly string[], body = '\nCall about the proofs.\n') =>
   ['---', ...lines, '---', body].join('\n');
@@ -104,16 +105,19 @@ describe('POST /v1/today/choose, where choosing is not the vault’s (#108 fix r
   });
 
   it('refuses as invalid a task whose focus is not one day, writing nothing', async () => {
-    const own = note(['type: task', 'status: next-action', 'focus: writing']);
+    const own = jsonNote({ type: 'task', status: 'next-action', focus: 'writing' });
     const api = apiFixture({
+      markdown: jsonMarkdown(),
       files: {
-        '.atlas/types/task.md': typeWith(['  focus: date']),
+        '.atlas/types/task.md': jsonNote({ name: 'task', properties: { focus: 'date' } }),
         'Tasks/Chapter.md': own,
       },
     });
 
     for (const chosen of [true, false]) {
-      expect(codeOf(await choose(api, { path: 'Tasks/Chapter.md', chosen }))).toBe('invalid');
+      const response = await choose(api, { path: 'Tasks/Chapter.md', chosen });
+      expect(codeOf(response)).toBe('invalid');
+      expect(JSON.stringify(response.body)).toContain('holds something other than one day');
     }
     expect(text(api, 'Tasks/Chapter.md')).toBe(own);
   });
