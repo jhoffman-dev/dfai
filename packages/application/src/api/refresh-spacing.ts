@@ -16,6 +16,8 @@ export interface RefreshSpacing {
   claim(args: { key: string; now: number }): number;
   /** Starts `key`'s wait again from `now`: what it ran for has just ended. */
   restart(args: { key: string; now: number }): void;
+  /** Lets `key` be claimed at once: what it was claimed for never reached the site. */
+  release(args: { key: string }): void;
 }
 
 export function createRefreshSpacing(spacingMs: number = API_REFRESH_SPACING_MS): RefreshSpacing {
@@ -23,13 +25,18 @@ export function createRefreshSpacing(spacingMs: number = API_REFRESH_SPACING_MS)
   return {
     claim({ key, now }) {
       const previous = last.get(key);
-      const wait = previous === undefined ? 0 : previous + spacingMs - now;
+      // A clock set back since (NTP, a manual change) would otherwise hold `key`
+      // off for as long as it went back; the window starts again from now.
+      const wait = previous === undefined || now < previous ? 0 : previous + spacingMs - now;
       if (wait > 0) return wait;
       last.set(key, now);
       return 0;
     },
     restart({ key, now }) {
       last.set(key, now);
+    },
+    release({ key }) {
+      last.delete(key);
     },
   };
 }

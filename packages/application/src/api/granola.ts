@@ -42,11 +42,12 @@ export async function pullGranolaRoute(request: VaultRequest): Promise<RouteResu
   if (!granola.ready(request.vault)) throw new ApiError('conflict', NOT_READY);
   refuseTooSoon(request);
 
+  const key = spacingKey(request);
   const report = await granola
     .syncNow(request.vault)
-    .finally(() =>
-      request.refreshSpacing.restart({ key: spacingKey(request), now: request.clock.now() }),
-    );
+    .finally(() => request.refreshSpacing.restart({ key, now: request.clock.now() }));
+  // It did not start, so asked Granola nothing: no reason to wait before asking again.
+  if (report.ended === 'not-synced') request.refreshSpacing.release({ key });
   // A pull a vault switch ended is that switch.
   request.assertStillOpen();
   return { status: 200, body: { report: apiGranolaPullReport(report) } };
