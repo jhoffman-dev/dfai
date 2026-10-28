@@ -1,3 +1,4 @@
+import { pairEmphasis, type EmphasisMark } from './capture-emphasis.ts';
 import { cleanText, decodeSlackEntities, oneLineText } from './capture-text.ts';
 
 /*
@@ -177,9 +178,6 @@ function bareAddress(found: string): { address: string; after: string } {
   }
 }
 
-/** Slack's emphasis: a mark at a word's edge, the same mark closing it on the same line. */
-const STYLED = /(^|[^\p{L}\p{N}])([*_~])(?!\s|\2)([^\n]*?[^\s])\2(?![\p{L}\p{N}])/gu;
-
 /** Where a part already written sits in the line while the words round it are escaped. */
 // eslint-disable-next-line no-control-regex -- NUL is the mark no cleaned message can hold
 const HELD = /\u0000(\d+)\u0000/g;
@@ -208,13 +206,22 @@ function inlineText(line: string, users: SlackUserNames, writer: Writer): string
     const url = /^www\./i.test(label) ? `http://${label}` : label;
     return `${before}${hold(writer.link(url, label))}${after}`;
   });
-  const styled = (text: string): string =>
-    text.replace(STYLED, (_, before: string, mark: '*' | '_' | '~', inner: string) => {
-      const written = hold(writer.marks[mark]);
-      return `${before}${written}${styled(inner)}${hold(writer.marks[mark])}`;
-    });
-  const escaped = writer.words(decodeSlackEntities(styled(linked)));
+  const escaped = writer.words(
+    decodeSlackEntities(styled(linked, (mark) => hold(writer.marks[mark]))),
+  );
   return escaped.replace(HELD, (_, at: string) => held[Number(at)] ?? '');
+}
+
+/** The line with each paired emphasis mark written as `mark` writes it, every other character as it is. */
+function styled(line: string, mark: (written: EmphasisMark) => string): string {
+  const characters = Array.from(line);
+  const { closes } = pairEmphasis(characters);
+  const closers = new Set(closes.values());
+  return characters
+    .map((character, at) =>
+      closes.has(at) || closers.has(at) ? mark(character as EmphasisMark) : character,
+    )
+    .join('');
 }
 
 /**

@@ -41,6 +41,7 @@ const CAPTURE_MODULES = [
   `${MAPPING}meeting-file-name.ts`,
   `${CAPTURE_MAPPING}capture-refusal.ts`,
   `${CAPTURE_MAPPING}capture-text.ts`,
+  `${CAPTURE_MAPPING}capture-emphasis.ts`,
   `${CAPTURE_MAPPING}capture-mrkdwn.ts`,
   `${CAPTURE_MAPPING}capture-payload.ts`,
   `${CAPTURE_MAPPING}capture-to-atlas.ts`,
