@@ -14,30 +14,39 @@ import type { RouteResult, VaultRequest } from './vault-request.ts';
 /** `GET /v1/granola`: whether this Mac holds a key for the vault, and its record of the pulls. */
 export async function granolaStatusRoute(request: VaultRequest): Promise<RouteResult> {
   const granola = granolaOf(request);
-  const { hasKey } = await granola.keyStatus(request.vault);
+  const { hasKey, lastRefusal } = await granola.keyStatus(request.vault);
   const { lastPullAt, watermark } = granola.record(request.vault);
   request.assertStillOpen();
-  return { status: 200, body: { hasKey, lastPullAt, watermark } };
+  return {
+    status: 200,
+    body: { hasKey, keyRefused: lastRefusal !== null, lastPullAt, watermark },
+  };
 }
 
 /**
  * `POST /v1/granola/pull`: the app's own Sync now, through its one puller, so
  * it never runs beside a pull of the app's. It is refused, before anything is
- * asked of Granola, when this Mac holds no key for the vault, or when the app
- * would not pull it yet either — sync has not pulled it this session, or the
- * index has not caught up (ADR-0034). One the API pulled less than 30 seconds
- * ago is `conflict` with `retryAfter`, as a source refresh is: a caller
- * looping on this route must not spend the key's rate limit in the user's name.
+ * asked of Granola, when this Mac holds no key for the vault or one Granola
+ * refused, or when the app would not pull it yet either — sync has not pulled
+ * it this session, or the index has not caught up (ADR-0034). One asked for
+ * less than 30 seconds after the API's last pull of the vault ended is
+ * `conflict` with `retryAfter`, as a source refresh is: a caller looping on
+ * this route must not spend the key's rate limit in the user's name.
  */
 export async function pullGranolaRoute(request: VaultRequest): Promise<RouteResult> {
   const granola = granolaOf(request);
-  const { hasKey } = await granola.keyStatus(request.vault);
+  const { hasKey, lastRefusal } = await granola.keyStatus(request.vault);
   request.assertStillOpen();
   if (!hasKey) throw new ApiError('conflict', NO_KEY);
+  if (lastRefusal !== null) throw new ApiError('conflict', KEY_REFUSED);
   if (!granola.ready(request.vault)) throw new ApiError('conflict', NOT_READY);
   refuseTooSoon(request);
 
-  const report = await granola.syncNow(request.vault);
+  const report = await granola
+    .syncNow(request.vault)
+    .finally(() =>
+      request.refreshSpacing.restart({ key: spacingKey(request), now: request.clock.now() }),
+    );
   // A pull a vault switch ended is that switch.
   request.assertStillOpen();
   return { status: 200, body: { report: apiGranolaPullReport(report) } };
@@ -45,6 +54,10 @@ export async function pullGranolaRoute(request: VaultRequest): Promise<RouteResu
 
 const NO_KEY =
   'This Mac holds no Granola key for this vault: set one in Settings → Granola, in DFAI.';
+
+const KEY_REFUSED =
+  "Granola refused this Mac's key for this vault, so DFAI asks it nothing more with it: set a " +
+  'new one in Settings → Granola, in DFAI.';
 
 const NOT_READY =
   'DFAI pulls Granola into this vault once sync has pulled it this session and the index has ' +
@@ -55,13 +68,12 @@ function granolaOf(request: VaultRequest): ApiGranola {
   return request.granola;
 }
 
+/** A source's key starts with the vault's absolute path, so this one is never a source's. */
+const spacingKey = (request: VaultRequest) => `granola\n${request.vault}`;
+
 /** Refuses a pull of a vault the API pulled too recently, saying how long is left. */
 function refuseTooSoon(request: VaultRequest): void {
-  // A source's key starts with the vault's absolute path, so this one is never a source's.
-  const wait = request.refreshSpacing.claim({
-    key: `granola\n${request.vault}`,
-    now: request.clock.now(),
-  });
+  const wait = request.refreshSpacing.claim({ key: spacingKey(request), now: request.clock.now() });
   if (wait === 0) return;
   const retryAfter = Math.ceil(wait / 1000);
   throw new ApiError(

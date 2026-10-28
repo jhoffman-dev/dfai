@@ -12,10 +12,10 @@ export const syncGranola = defineTool({
     'yet as a meeting note. The key stays in DFAI; no tool can read it. Returns { report: { mode, ' +
     'ended, written, held, refused, skipped, failed, problem, keyRefused, watermark } }: "written" ' +
     'are the meeting files, and "ended" with "problem" say why a pull stopped or failed, which is ' +
-    'not a tool error. Fails with "conflict" when this Mac holds no Granola key for the vault, ' +
-    'while DFAI waits for sync and its index before it pulls, or when it was pulled through the ' +
-    'API less than 30 seconds ago ("retryAfter" says how long is left). A long first pull may ' +
-    'end in "timeout" while it goes on; its outcome is then in DFAI.',
+    'not a tool error. Fails with "conflict" when this Mac holds no Granola key for the vault ' +
+    'or holds one Granola refused, while DFAI waits for sync and its index before it pulls, or ' +
+    'within 30 seconds of the end of the last pull through the API ("retryAfter" says how long ' +
+    'is left). A long first pull may end in "timeout" while it goes on; its outcome is then in DFAI.',
   inputSchema: noInput,
   annotations: {
     readOnlyHint: false,

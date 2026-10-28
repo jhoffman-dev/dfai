@@ -945,21 +945,24 @@ unattended step reads.
 
 ## Granola: read, and one guarded pull (P28-13, 2026-10-28)
 
-`GET /v1/granola` answers `{ hasKey, lastPullAt, watermark }` for the vault
+`GET /v1/granola` answers `{ hasKey, keyRefused, lastPullAt, watermark }` for the vault
 the request arrived for: whether this Mac holds a Granola key for it, and this
 Mac's record of its pulls. The key is never in an answer: it lives only in the
-host (ADR-0034), the app holds only `hasKey`, and each answer is built field
+host (ADR-0034), the app holds only `hasKey` and whether Granola refused it, and each answer is built field
 by field, so nothing the host adds can ride along. `POST /v1/granola/pull` —
 MCP's `atlas_sync_granola`, not marked idempotent since it writes meetings —
 is the app's own Sync now through its one puller, so it never runs beside a
 startup or timed pull, and every meeting it writes goes through
 `receiveMeeting`, as any pull's does. It is guarded as a source refresh is:
-one per vault per 30 seconds (`conflict` with `retryAfter`), since a caller
-looping on it would spend the key's rate limit in the user's name. It asks
-nothing of Granola when this Mac holds no key, or when the app would not pull
+one per vault per 30 seconds, counted from when the last pull ended
+(`conflict` with `retryAfter`), since a caller looping on it would spend the
+key's rate limit in the user's name. Its outcome shows on the Granola card,
+never as a toast, since no one in the window asked for it. It asks nothing of
+Granola when this Mac holds no key or one Granola refused, or when the app would not pull
 the vault yet either — until sync has pulled it this session and the index has
 caught up (ADR-0034) — and says which. It is not gated to the automations
 Mac, because the app's pull is not: ADR-0034 kept that gate as a fallback, and
-should it be taken, `ready` is where the route follows it. Setting or removing
+should it be taken, the pull controller's `readyFor` is where the route
+follows it. Setting or removing
 the key stays in Settings → Granola: a caller that could set one could point
 the vault's meetings at an account of its own.

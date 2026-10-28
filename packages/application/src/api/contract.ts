@@ -1026,6 +1026,8 @@ export interface ApiSourceReport {
  */
 export interface ApiGranolaStatus {
   readonly hasKey: boolean;
+  /** Granola refused the key this Mac holds (401): a new one is set in Settings → Granola. */
+  readonly keyRefused: boolean;
   /** When this Mac last finished a pull of the vault, in milliseconds since the epoch; null before one. */
   readonly lastPullAt: number | null;
   /** Granola's `updated_at` this Mac lists the vault's notes from; null before a pull kept one. */

@@ -844,18 +844,15 @@ function AppWindow({
   const apiClaude = useMemo(() => createClaudeStepRelay(), []);
   const meetingDrafts = useMemo(() => createMeetingDrafts(), []);
   // Granola for the API (P28-13): the host's word on the key, this Mac's record, and the app's own Sync now.
-  const apiGranolaReady = useSteadyCallback(
-    (vault: string) => vault === vaultKey && granolaPull.ready,
-  );
   const apiGranolaSyncNow = useSteadyCallback((vault: string) => granolaPull.syncNowFor(vault));
   const apiGranola = useMemo<ApiGranola>(
     () => ({
       keyStatus: (vault) => granolaPorts.port.status({ vault }),
       record: (vault) => granolaPorts.records.read(vault),
-      ready: apiGranolaReady,
+      ready: granolaPull.readyFor,
       syncNow: apiGranolaSyncNow,
     }),
-    [granolaPorts.port, granolaPorts.records, apiGranolaReady, apiGranolaSyncNow],
+    [granolaPorts.port, granolaPorts.records, granolaPull.readyFor, apiGranolaSyncNow],
   );
   const apiDeps = useMemo<ApiRouterDeps>(
     () => ({

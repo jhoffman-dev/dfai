@@ -249,7 +249,11 @@ test('the local API reads Granola’s status, never the key, and pulls once per 
 
   const status = await host.api.send({ method: 'GET', path: '/v1/granola' });
   expect(status.status).toBe(200);
-  expect(status.body).toMatchObject({ hasKey: true, lastPullAt: expect.any(Number) });
+  expect(status.body).toMatchObject({
+    hasKey: true,
+    keyRefused: false,
+    lastPullAt: expect.any(Number),
+  });
 
   serveNotes(host, [RENEWAL, ONE_ON_ONE]);
   const pulled = await host.api.send({ method: 'POST', path: '/v1/granola/pull' });
