@@ -75,6 +75,14 @@ const escaped = (name: string) => name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
  * `from"x"`, `import"x"`, `import("x")`, `require("x")` and
  * `process.getBuiltinModule("x")`, with any quote, `x` a built-in. The last is
  * how the SQLite test support reaches Node without an import (#525).
+ *
+ * It reads text, not code, so it is a backstop, not the check: it can match
+ * a regex literal or a string that spells `require("path")` (a false alarm,
+ * let through by KNOWN_NODE_REFERENCES once understood), and it cannot see a
+ * built-in named through a variable, such as an aliased
+ * `createRequire(import.meta.url)(name)`. The app's own code and its
+ * dependencies are covered by the build's record instead, which sees every
+ * import as it resolves, by name or through Vite's stand-in.
  */
 const LEFT_IN_OUTPUT = new RegExp(
   String.raw`(?:\bfrom|\bimport|\bimport\s*\(|\brequire\s*\(|\bgetBuiltinModule\s*\()\s*(["'\x60])(node:[\w/]+|` +
@@ -188,8 +196,12 @@ export function describeNodeBuiltin(finding: NodeBuiltinFinding): string {
           : 'in the module graph, shaken out of every chunk for now';
       const via =
         finding.pulledInBy === finding.importer ? '' : `, pulled in by ${finding.pulledInBy}`;
+      // Vite's stand-in names no module: the built-in was resolved before the report saw it.
+      const what = finding.module.startsWith('__vite-browser-external')
+        ? `A Node built-in, resolved out of sight (an alias or a subpath import) to ${finding.module},`
+        : finding.module;
       return [
-        `${finding.module} is imported by ${finding.importer}${via} (${where}): the webview has no Node, and the build swaps it for an empty object.`,
+        `${what} is imported by ${finding.importer}${via} (${where}): the webview has no Node, and the build swaps it for an empty object.`,
         FIX,
       ].join('\n');
     }

@@ -82,7 +82,7 @@ describe('a real vite build', () => {
     const found = await buildAndCheck();
     expect(found).toHaveLength(1);
     expect(found[0]).toMatch(
-      /swapped for an empty object.*node_modules\/some-lib\/index\.js, pulled in by main\.js/s,
+      /^A Node built-in, resolved out of sight .* is imported by node_modules\/some-lib\/index\.js, pulled in by main\.js .*swaps it for an empty object/s,
     );
   }, 60_000);
 });

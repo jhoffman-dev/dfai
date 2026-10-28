@@ -62,18 +62,48 @@ function packagesIn(moduleIds: readonly string[], ownFile: (id: string) => strin
   return [...first].map(([name, id]) => ({ name, pulledInBy: ownFile(id) }));
 }
 
-function recordChunk(
-  seen: Seen,
-  chunk: { fileName: string; moduleIds: readonly string[] },
-  ownFile: (id: string) => string,
-): void {
+/**
+ * Vite's empty stand-in for a built-in in a browser build. It is the one trace
+ * of a built-in the plugin never saw by name: one an alias, a package's
+ * subpath import (`#fs` → `fs`) or another plugin resolved first.
+ */
+export const BROWSER_EXTERNAL = '__vite-browser-external';
+
+type ChunkContext = {
+  ownFile: (id: string) => string;
+  importersOf: (id: string) => readonly string[];
+};
+
+/** Each importer of Vite's stand-in that no import by name already accounts for. */
+function recordStandIns(seen: Seen, chunk: Chunk, { ownFile, importersOf }: ChunkContext): void {
+  const named = new Set([...seen.imports.values()].map((found) => found.importer));
+  for (const id of chunk.moduleIds.filter((m) => m.startsWith(BROWSER_EXTERNAL))) {
+    for (const importer of importersOf(id).filter((i) => !named.has(i))) {
+      const found = seen.imports.get(`${id}\0${importer}`);
+      if (found !== undefined) found.chunks.push(chunk.fileName);
+      else {
+        seen.imports.set(`${id}\0${importer}`, {
+          module: id,
+          importer,
+          pulledInBy: ownFile(importer),
+          chunks: [chunk.fileName],
+        });
+      }
+    }
+  }
+}
+
+type Chunk = { fileName: string; moduleIds: readonly string[] };
+
+function recordChunk(seen: Seen, chunk: Chunk, context: ChunkContext): void {
   const ids = new Set(chunk.moduleIds);
   for (const found of seen.imports.values()) {
     if (!ids.has(found.importer)) continue;
-    found.pulledInBy ??= ownFile(found.importer);
+    found.pulledInBy ??= context.ownFile(found.importer);
     if (!found.chunks.includes(chunk.fileName)) found.chunks.push(chunk.fileName);
   }
-  seen.chunks.set(chunk.fileName, packagesIn(chunk.moduleIds, ownFile));
+  recordStandIns(seen, chunk, context);
+  seen.chunks.set(chunk.fileName, packagesIn(chunk.moduleIds, context.ownFile));
 }
 
 function reportOf(
@@ -113,10 +143,10 @@ export function nodeBuiltinsReport(repoRoot: string): {
       return null;
     },
     generateBundle(_options, bundle) {
-      const ownFile = (id: string) =>
-        ownFileAbove(id, (i) => this.getModuleInfo(i)?.importers ?? []);
+      const importersOf = (id: string) => this.getModuleInfo(id)?.importers ?? [];
+      const ownFile = (id: string) => ownFileAbove(id, importersOf);
       for (const output of Object.values(bundle)) {
-        if (output.type === 'chunk') recordChunk(seen, output, ownFile);
+        if (output.type === 'chunk') recordChunk(seen, output, { ownFile, importersOf });
       }
       if (!writes) return;
       this.emitFile({

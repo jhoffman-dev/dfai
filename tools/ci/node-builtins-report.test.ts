@@ -19,6 +19,8 @@ const IMPORTERS: Record<string, string[]> = {
   [INNER]: [LIB],
   [LIB]: [READER],
   [READER]: [MAIN],
+  // Vite's stand-in for a built-in, as two modules import it.
+  '__vite-browser-external': [MAIN, READER],
 };
 
 /** Runs a plugin's `generateBundle` over the chunks given, and returns what it wrote, if anything. */
@@ -120,6 +122,28 @@ describe('nodeBuiltinsReport', () => {
     expect(report?.chunks.map((chunk) => chunk.file)).toEqual([
       'assets/worker-C3.js',
       'assets/index-A1.js',
+    ]);
+  });
+
+  it('records an importer of Vite’s stand-in that no import by name accounts for', () => {
+    const { window } = nodeBuiltinsReport(ROOT);
+    window.resolveId('node:fs', MAIN);
+    const report = bundle(window, {
+      'assets/index-A1.js': [MAIN, READER, '__vite-browser-external'],
+    });
+    expect(report?.imports).toEqual([
+      {
+        module: 'node:fs',
+        importer: 'apps/desktop/src/main.tsx',
+        pulledInBy: 'apps/desktop/src/main.tsx',
+        chunks: ['assets/index-A1.js'],
+      },
+      {
+        module: '__vite-browser-external',
+        importer: 'packages/adapters/src/vault/reader.ts',
+        pulledInBy: 'packages/adapters/src/vault/reader.ts',
+        chunks: ['assets/index-A1.js'],
+      },
     ]);
   });
 });
