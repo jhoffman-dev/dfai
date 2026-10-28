@@ -37,10 +37,7 @@ function recordingRelated(answer: Partial<RelatedAnswer> = {}, on = true) {
     related: async (query) => {
       asked.push(query);
       return {
-        notes: [
-          { path: 'Home/Garden.md', title: 'Garden', target: 'Garden', score: 0.62 },
-          { path: '.atlas/templates/Plan.md', title: 'Plan', target: 'x', score: 0.5 },
-        ],
+        notes: [{ path: 'Home/Garden.md', title: 'Garden', target: 'Garden', score: 0.62 }],
         embedded: true,
         progress: PROGRESS,
         ...answer,
