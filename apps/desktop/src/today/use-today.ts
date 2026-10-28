@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import {
+  focusChange,
   TASK_KEYS,
   taskDeferral,
   tasksStartInInbox,
   taskTypeOf,
   type ObjectType,
   type TaskAsRead,
+  type TodayChoice,
   type VaultPath,
 } from '@dfai/domain';
 import {
@@ -288,6 +290,16 @@ export function useToday(options: TodayOptions) {
     },
     [change, clock, setProblem],
   );
+  // Chosen for the clock's day, which is the page's own once it has read again at midnight.
+  const choose = useCallback(
+    ({ choice, ...task }: Row & { choice: TodayChoice }) =>
+      void change({
+        ...task,
+        action: { kind: choice },
+        values: focusChange({ choice, today: clock.today() }),
+      }),
+    [change, clock],
+  );
   const undo = useCallback(
     async () => (undoable === null ? undefined : undoChange(undoable)),
     [undoable, undoChange],
@@ -325,6 +337,7 @@ export function useToday(options: TodayOptions) {
       onDone: done,
       onSetStatus: setStatus,
       onDefer: defer,
+      onChoose: choose,
     },
   };
 }
@@ -357,8 +370,8 @@ function rowsAsRead(report: TodayReport | null): ReadonlyMap<VaultPath, TaskAsRe
   const rows = new Map<VaultPath, TaskAsRead>();
   for (const section of report?.sections ?? []) {
     for (const group of section.groups) {
-      for (const { path, status, due, defer } of group.tasks)
-        rows.set(path, { status, due, defer });
+      for (const { path, status, due, defer, focus } of group.tasks)
+        rows.set(path, { status, due, defer, focus: focus ?? null });
     }
   }
   return rows;

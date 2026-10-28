@@ -83,6 +83,7 @@ describe('useSteadyCallback, through the Today page', () => {
     onDone,
     onSetStatus: vi.fn(),
     onDefer: vi.fn(),
+    onChoose: vi.fn(),
   });
 
   it('ticks through the onDone the app handed over last', async () => {

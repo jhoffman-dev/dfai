@@ -205,3 +205,41 @@ Where the build differs from, or settles, what is written above:
   promoted, as any edit to it is (ADR-0003): the editor's checklist node
   holds no marker or numbering, so keeping them would mean a new node
   attribute through the editor, the reader and the writer — not cheap.
+
+## Addendum (#108, 2026-10-28): a task chosen for today carries the day
+
+GTD leaves "what will I do today" to the person; the Today page (#111) showed
+what needs attention but had nowhere to say what was chosen.
+
+- **A choice is a date, `focus`, on the task.** `focus: 2026-10-28` says the
+  task was chosen for that day. A date rather than a flag, so yesterday's
+  choice stops being today's without anything being written at midnight: the
+  page, read again when the day turns, lists it under **Carried over** until
+  it is kept (`focus` set to today) or dropped (the key taken out). Taking the
+  key out, rather than writing it empty, gives a task chosen and then
+  unchosen back byte for byte (ADR-0003). A `focus` on a day still to come is
+  that day's choice. A finished task keeps its `focus`: it says what was
+  chosen that day, and `focus = @today` in a query can count what got done.
+- **Chosen for today leads the page, and claims its tasks whatever their
+  status** — an In Progress task chosen for today is under Chosen alone, as an
+  overdue one is under Overdue alone. Carried over comes next and is drawn
+  only while it holds something. Both are ordered as Overdue is (the earliest
+  due first, then by title); Carried over the most recently chosen first. A
+  hand order (drag to rank) is not kept: it would need a rank key beside the
+  day, and nobody has asked for one yet.
+- **The Task type gains `focus` on opening, not with the move to GTD.** It is
+  added as DFAI's shipped properties are (#162): only lines, never over a key
+  the type has (a vault's own `focus` of another kind is left alone, and the
+  page's choice is then not offered to the planning tray's query), and never
+  again once it is taken off. GTD's own keys stay the move's offer. Putting
+  `focus` in the move instead would offer every vault already on GTD the move
+  again.
+- **A row's choice is part of what it showed**: `stillAsRead` compares
+  `focus` too, so a Drop pressed after another Mac kept the task is refused
+  rather than taking today's choice away.
+- **The planning tray lists what was chosen first**: the open tasks whose
+  `focus` is `@today` (the query language's day, as in every view), whatever
+  their status, then the next actions; within each, the unscheduled first.
+- **The API chooses through `POST /v1/today/choose` `{ path, chosen }`**, on
+  the app's clock, through the same write as a property change; MCP's
+  `atlas_choose_for_today` calls it.

@@ -1,7 +1,11 @@
-/** The weekly review and the Today page, read-only: `GET /v1/review/weekly` (P30-07), `GET /v1/today` (#111). */
+/**
+ * The weekly review and the Today page: `GET /v1/review/weekly` (P30-07),
+ * `GET /v1/today` (#111), and choosing a task for today, `POST /v1/today/choose` (#108).
+ */
 
+import { z } from 'zod';
 import { defineTool } from './define.ts';
-import { noInput } from './inputs.ts';
+import { noInput, notePath } from './inputs.ts';
 
 export const weeklyReview = defineTool({
   name: 'atlas_weekly_review',
@@ -37,25 +41,46 @@ export const today = defineTool({
   description:
     "What needs the person today, as DFAI's Today page shows it, read on the app's clock: " +
     '{ today: { today, sections, stalledProjects, inbox: { count, toFile, toAnswer, more }, ' +
-    'truncated } }. sections are always these six, in order, each { id, count, groups }: ' +
+    'truncated } }. sections are always these eight, in order, each { id, count, groups }: ' +
+    'chosen (open tasks chosen for today: "focus" is today, any status), carriedOver (open ' +
+    'tasks chosen on an earlier day, to keep for today or drop), ' +
     'overdue (open tasks due before today), dueToday, backToday (tasks whose "defer" is ' +
     'today, any open status, and inbox, backlog, someday or longterm tasks whose "defer" ' +
     'day has passed), inProgress, nextActions (grouped by project, those under none ' +
     'last), waiting (grouped by who is waited on). A task is in one section only, the first ' +
     'that claims it, and a task deferred past today is in none. A group is { key, label, ' +
     'project, tasks }; a task is { path, title, status, due, defer, recurrence, waitingOn, ' +
-    'contexts, project, projectTitle, modified, waitingDays } ("recurrence" how it repeats, ' +
-    'null when it does not). waitingDays, for a waiting task, is whole ' +
+    'contexts, project, projectTitle, modified, waitingDays, focus } ("recurrence" how it ' +
+    'repeats, null when it does not; "focus" the day it was chosen for, or null). waitingDays, for a waiting task, is whole ' +
     "days since the file's last change, not since it began waiting: any edit restarts it. " +
     'stalledProjects counts active projects with no next-action or in-progress task (listed ' +
     'by atlas_weekly_review). To act on a task as the page does, use atlas_update_properties: ' +
     'set "status", or set "defer" to a later day (YYYY-MM-DD) to take it off the page until ' +
     'then. Status waiting never needs "waiting_on"; set it too only to say who. Setting status ' +
     'archive finishes a task and, for a repeating one (with "recurrence"), ends its series; ' +
-    "the page's tick instead rolls a repeating task on to its next due date.",
+    "the page's tick instead rolls a repeating task on to its next due date. To choose a task " +
+    'for today, or keep or drop one carried over, use atlas_choose_for_today.',
   inputSchema: noInput,
   annotations: { readOnlyHint: true },
   call: (client) => client.today(),
 });
 
-export const reviewTools = [weeklyReview, today];
+export const chooseForToday = defineTool({
+  name: 'atlas_choose_for_today',
+  title: 'Choose a task for today',
+  description:
+    "Choose a task for today, or take it off, as the Today page's Today button does: " +
+    '"chosen": true sets its "focus" to today on the app\'s clock, so it heads the page under ' +
+    'chosen, and keeps one listed under carriedOver; false takes "focus" out, which also drops ' +
+    'one carried over. A choice is of its day: tomorrow it is listed under carriedOver until ' +
+    'kept or dropped. Returns the task note. "path" must be a note of type task.',
+  inputSchema: z.object({
+    path: notePath.describe('The task, by its path, e.g. "Tasks/Call the printer.md".'),
+    chosen: z.boolean().describe('True to choose it for today; false to take it off today.'),
+  }),
+  // Setting the same day, or taking out a key that is gone, twice changes nothing more.
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  call: (client, input) => client.chooseForToday(input),
+});
+
+export const reviewTools = [weeklyReview, today, chooseForToday];

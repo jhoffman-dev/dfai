@@ -65,7 +65,7 @@ describe('readToday', () => {
     expect(titles(report, 'backToday')).toEqual(['Book the venue']);
     expect(titles(report, 'inProgress')).toEqual(['Draft the plan']);
     expect(titles(report, 'waiting')).toEqual(['Quote from Larkspur']);
-    expect(report.sections.map((section) => section.count)).toEqual([1, 1, 1, 1, 3, 1]);
+    expect(report.sections.map((section) => section.count)).toEqual([0, 0, 1, 1, 1, 1, 3, 1]);
     expect(report.truncated).toBe(false);
   });
 

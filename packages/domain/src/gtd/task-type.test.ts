@@ -103,6 +103,15 @@ describe('taskTypeChange', () => {
     expect(taskTypeChange(TASK_TYPE_FILE.type)).toBeNull();
   });
 
+  it('is nothing to do for a GTD type without `focus`: it is added on opening, not by the move (#108)', () => {
+    expect(TASK_TYPE_FILE.type.properties.find((p) => p.key === 'focus')?.kind).toBe('date');
+    const withoutFocus: ObjectType = {
+      ...TASK_TYPE_FILE.type,
+      properties: TASK_TYPE_FILE.type.properties.filter((p) => p.key !== 'focus'),
+    };
+    expect(taskTypeChange(withoutFocus)).toBeNull();
+  });
+
   it('is nothing to do for a GTD type without the meeting keys: they are not the move to GTD’s (#177)', () => {
     const withoutMeetingKeys: ObjectType = {
       ...TASK_TYPE_FILE.type,

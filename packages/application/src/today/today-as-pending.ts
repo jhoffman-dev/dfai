@@ -14,7 +14,7 @@ import type { TodayReport } from './read-today.ts';
  * The Today page as it is drawn while the page's own changes are being
  * written (#260): each task a change is pending for, put where the change
  * leaves it — off the page once ticked done or deferred, in the section of
- * its new status once moved — by the page's own rules, before the write
+ * its new status once moved, under Chosen for today once chosen — by the page's own rules, before the write
  * lands and the index reads it back. Every other task is the object the read
  * made, so its row is not drawn again; the read itself when nothing changes.
  *
@@ -69,6 +69,7 @@ function asChanged(task: TodayTask, values: PropertyChanges, newest: number): To
     [TASK_KEYS.status]: task.status,
     [TASK_KEYS.due]: task.due,
     [TASK_KEYS.defer]: task.defer,
+    [TASK_KEYS.focus]: task.focus ?? null,
     ...(task.recurrence !== undefined && { [RECURRENCE_KEY]: task.recurrence }),
   };
   let changes: Readonly<Record<string, unknown>>;

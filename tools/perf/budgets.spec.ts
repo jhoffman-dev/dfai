@@ -92,6 +92,10 @@ const IDLE_MS = 3_000;
  */
 const ROW_RULES: Partial<Record<BudgetedAction, ActionBudget['rows']>> = {
   'Tick a task on Today': { TaskRow: 1 },
+  // The chosen row moves (#108): it is drawn under Chosen for today as the click
+  // lands, then as the reads after its write land — its file's time is new to
+  // each. No other row is drawn: today-page.renders.test.tsx holds the page to that.
+  'Choose a task on Today': { TaskRow: 3 },
   'Decide an Inbox row': { InboxRow: 2 },
 };
 
@@ -457,6 +461,8 @@ const newPage = (browser: Browser) =>
 const INBOX_PICKERS = 'article[aria-label="Inbox"] div.inbox__clarify input.inbox__file';
 const SUGGESTIONS = '[role="listbox"][aria-label="Suggested notes"] [role="option"]';
 const TODAY_TICKS = 'article[aria-label="Today"] input.done-check:not([disabled])';
+const TODAY_CHOICES =
+  'article[aria-label="Today"] button.today__choose[aria-pressed="false"]:not([disabled])';
 const SETTINGS = '[role="dialog"][aria-label="Settings"]';
 const SEARCH_BOX = 'input[aria-label="Search the vault"]';
 const TASK_TABLE = /^Task, \d+ notes?$/;
@@ -515,6 +521,7 @@ async function everyAction(pass: Pass): Promise<void> {
   ]);
   await pass.idle('Idle 3 s on Today');
   await tickATask(pass);
+  await chooseATask(pass);
 
   await pass.budgeted('Open the Inbox', [
     phase(
@@ -829,6 +836,20 @@ async function tickATask(pass: Pass): Promise<void> {
       () => tick.click(),
       (ticked) => document.querySelector(`input[aria-label="${CSS.escape(ticked)}"]`) === null,
       label,
+    ),
+  ]);
+}
+
+/** Today on the first row not chosen (#108): done once the row says it is chosen, under Chosen for today. */
+async function chooseATask(pass: Pass): Promise<void> {
+  const choose = pass.page.locator(TODAY_CHOICES).first();
+  const label = (await choose.getAttribute('aria-label')) ?? '';
+  const chosen = label.replace(/^Choose (.*) for today$/, 'Take $1 off today');
+  await pass.budgeted('Choose a task on Today', [
+    phase(
+      () => choose.click(),
+      (taken) => document.querySelector(`button[aria-label="${CSS.escape(taken)}"]`) !== null,
+      chosen,
     ),
   ]);
 }

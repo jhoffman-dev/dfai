@@ -54,6 +54,7 @@ function pageOf(tasks: readonly ReviewTask[], overrides: Partial<TodayPageProps>
       onDone={vi.fn()}
       onSetStatus={vi.fn()}
       onDefer={vi.fn()}
+      onChoose={vi.fn()}
       {...overrides}
     />,
   );

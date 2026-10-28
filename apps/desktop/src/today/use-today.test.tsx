@@ -145,6 +145,38 @@ describe('useToday', () => {
     expect(result.current.notice?.action).toEqual({ kind: 'defer', days });
   });
 
+  it('chooses a task for the clock’s today, draws it under Chosen at once, and undoes it byte for byte (#108)', async () => {
+    const { result, text, onSettled } = setUp();
+    await waitFor(() => expect(result.current.page.today).not.toBeNull());
+    await act(async () => result.current.page.onChoose({ ...ROW, choice: 'choose' }));
+    await waitFor(() => expect(result.current.notice).not.toBeNull());
+    expect(text()).toBe(
+      TASK_TEXT.replace('due: 2026-10-13\n', 'due: 2026-10-13\nfocus: 2026-10-13\n'),
+    );
+    expect(result.current.notice?.action).toEqual({ kind: 'choose' });
+    const chosen = result.current.page.today?.sections.find((section) => section.id === 'chosen');
+    expect(chosen?.groups[0]?.tasks.map((task) => task.title)).toEqual(['Ship the page']);
+
+    await act(async () => result.current.notice?.onUndo());
+    await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(2));
+    expect(text()).toBe(TASK_TEXT);
+  });
+
+  it.each([
+    ['unchoose', 'focus: 2026-10-13'],
+    ['drop', 'focus: 2026-10-12'],
+  ] as const)(
+    'takes focus out to %s a task, leaving the rest as written',
+    async (choice, focus) => {
+      const taskText = TASK_TEXT.replace('due: 2026-10-13\n', `due: 2026-10-13\n${focus}\n`);
+      const { result, text } = setUp({ taskText });
+      await act(async () => result.current.page.onChoose({ ...ROW, choice }));
+      await waitFor(() => expect(result.current.notice).not.toBeNull());
+      expect(text()).toBe(TASK_TEXT);
+      expect(result.current.notice?.action).toEqual({ kind: choice });
+    },
+  );
+
   it('moves a task to another status', async () => {
     const { result, text } = setUp();
     await act(async () => result.current.page.onSetStatus({ ...ROW, status: 'someday' }));

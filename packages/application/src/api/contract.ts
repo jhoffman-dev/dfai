@@ -651,6 +651,18 @@ export interface ApiScheduleTaskBody {
   readonly minutes?: number;
 }
 
+/**
+ * `POST /v1/today/choose` (#108): choose a task for today, or take it off, as
+ * the Today page's Today, Keep and Drop do — its `focus` set to the app's
+ * today, or taken out.
+ */
+export interface ApiChooseForTodayBody {
+  /** The task's vault-relative path: a note of type task. */
+  readonly path: string;
+  /** True to choose it for today (or keep one carried over); false to take it off (or drop it). */
+  readonly chosen: boolean;
+}
+
 /** What a batch of archiving, unarchiving or processing the Inbox did. */
 export interface ApiArchiveOutcome {
   /** Every note that moved, in the order asked, from where it was to where it went. */
@@ -1436,6 +1448,8 @@ export interface ApiReviewTask {
   readonly defer: string | null;
   /** How it repeats, as its `recurrence` says, or null when it does not (#260). Always read by the API. */
   readonly recurrence?: string | null;
+  /** The day it was chosen for (`focus`, #108), `YYYY-MM-DD`, or null. Always read by the API. */
+  readonly focus?: string | null;
   /** Who it waits on — a link by what it shows, a plain name as written — joined with ", "; '' for nobody. */
   readonly waitingOn: string;
   /** Its `contexts`, as written, in order. */
@@ -1499,9 +1513,12 @@ export interface ApiToday {
   /** The day it was taken, `YYYY-MM-DD`, where the app is. */
   readonly today: string;
   /**
-   * Every section, in order — `overdue`, `dueToday`, `backToday`,
-   * `inProgress`, `nextActions`, `waiting` — empty ones included. A task is
-   * in one section only: the first that claims it.
+   * Every section, in order — `chosen`, `carriedOver`, `overdue`,
+   * `dueToday`, `backToday`, `inProgress`, `nextActions`, `waiting` — empty
+   * ones included. A task is in one section only: the first that claims it.
+   * `chosen` holds the open tasks whose `focus` is today, whatever their
+   * status; `carriedOver` those chosen on an earlier day and not yet kept or
+   * dropped (#108).
    */
   readonly sections: readonly {
     readonly id: string;
@@ -2024,7 +2041,12 @@ export const API_ROUTES = [
     method: 'GET',
     path: '/v1/today',
     summary:
-      'The Today page: overdue, due today, back from deferral, in progress, next actions, waiting.',
+      'The Today page: chosen, carried over, overdue, due today, back, in progress, next, waiting.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/today/choose',
+    summary: 'Choose a task for today, or take it off, as the Today page does. Answers the task.',
   },
   {
     method: 'GET',

@@ -91,7 +91,7 @@ describe('changeUndoably', () => {
       write: () => vault.write(defer(1)),
     });
     expect(made.undo).toBeNull();
-    expect(made.was).toEqual({ status: 'next-action', due: null, defer: null });
+    expect(made.was).toEqual({ status: 'next-action', due: null, defer: null, focus: null });
     expect(vault.properties()).toMatchObject({ defer: '2026-10-14' });
   });
 
@@ -103,7 +103,7 @@ describe('changeUndoably', () => {
       path: PATH,
       write: (readAt) => vault.write(defer(1), readAt),
     });
-    expect(was).toEqual({ status: 'in-progress', due: '2026-10-13', defer: null });
+    expect(was).toEqual({ status: 'in-progress', due: '2026-10-13', defer: null, focus: null });
   });
 
   it('takes a move back to the status the task held', async () => {
@@ -164,7 +164,7 @@ describe('changeUndoably', () => {
 
   it('passes on a refusal, and a missing task, with nothing written', async () => {
     const vault = vaultWith(NEXT);
-    const stale = { status: 'someday', due: null, defer: null } as const;
+    const stale = { status: 'someday', due: null, defer: null, focus: null } as const;
     const refused = whileAsRead({ values: { [TASK_KEYS.status]: 'waiting' }, row: stale });
     await expect(vault.change(refused)).rejects.toThrow(ChangedSinceError);
     expect(vault.text()).toBe(NEXT);
@@ -196,7 +196,7 @@ describe('changeUndoably', () => {
 });
 
 describe('whileAsRead', () => {
-  const row = { status: 'next-action', due: '2026-10-13', defer: null } as const;
+  const row = { status: 'next-action', due: '2026-10-13', defer: null, focus: null } as const;
   const DUE = '---\ntype: task\nstatus: next-action\ndue: 2026-10-13\n---\n';
 
   it('makes the change while the task says what the row read', async () => {

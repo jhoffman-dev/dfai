@@ -11,9 +11,12 @@ import {
   type ReviewTask,
 } from '../review/weekly-review.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
+import { focusStanding } from './chosen.ts';
 
 /** The Today page's sections, in the order they are shown and claim their tasks. */
 export const TODAY_SECTIONS = [
+  'chosen',
+  'carriedOver',
   'overdue',
   'dueToday',
   'backToday',
@@ -26,6 +29,8 @@ export type TodaySectionId = (typeof TODAY_SECTIONS)[number];
 
 /** What each section is called, on the page and to whoever reads it through the API. */
 export const TODAY_SECTION_LABELS: Readonly<Record<TodaySectionId, string>> = {
+  chosen: 'Chosen for today',
+  carriedOver: 'Carried over',
   overdue: 'Overdue',
   dueToday: 'Due today',
   backToday: 'Back from deferral',
@@ -100,6 +105,14 @@ export interface TodayLists {
  * Someday and Longterm promise no day. A finished task is in no section
  * (ADR-0029), whatever rows the caller hands over.
  *
+ * The page leads with what was chosen for today (#108): a task whose
+ * `focus` is today, whatever its status, is under Chosen for today alone. One
+ * chosen on an earlier day and still open is under Carried over, to be kept
+ * for today or dropped, until it is; a choice is of its day, so nothing has
+ * to change at midnight for yesterday's to stop being today's. A `focus` on a
+ * day still to come is that day's choice, and lists the task where it would
+ * be otherwise.
+ *
  * Back from deferral is a task whose `defer` day is today — or has passed,
  * when no later section would list it: a Backlog or Someday task put off to
  * a day the app was never opened still wakes up somewhere, and stays until
@@ -137,6 +150,8 @@ const withWaitingDays =
 
 /** What puts a task in each section, asked in {@link TODAY_SECTIONS} order. */
 const CLAIMS: Readonly<Record<TodaySectionId, (task: TodayTask, today: string) => boolean>> = {
+  chosen: (task, today) => focusStanding({ focus: task.focus, today }) === 'today',
+  carriedOver: (task, today) => focusStanding({ focus: task.focus, today }) === 'carried',
   overdue: isOverdue,
   dueToday: (task, today) => task.due === today && promisesItsDay(task),
   backToday: (task, today) =>
@@ -152,6 +167,8 @@ const CLAIMS: Readonly<Record<TodaySectionId, (task: TodayTask, today: string) =
 const LISTED_BY_STATUS: ReadonlySet<GtdStatus> = new Set(['in-progress', 'next-action', 'waiting']);
 
 const GROUPS: Readonly<Record<TodaySectionId, (tasks: TodayTask[]) => TodayGroup[]>> = {
+  chosen: (tasks) => together(tasks.sort(byDueThenTitle)),
+  carriedOver: (tasks) => together(tasks.sort(byFocusThenTitle)),
   overdue: (tasks) => together(tasks.sort(byDueThenTitle)),
   dueToday: (tasks) => together(tasks.sort(byTitle)),
   backToday: (tasks) => together(tasks.sort(byDeferThenTitle)),
@@ -223,6 +240,11 @@ function namedFirstByLabel(left: TodayGroup, right: TodayGroup): number {
 /** Today's first, then the most recently passed. */
 function byDeferThenTitle(left: TodayTask, right: TodayTask): number {
   return (right.defer ?? '').localeCompare(left.defer ?? '') || byTitle(left, right);
+}
+
+/** The most recently chosen first: yesterday's before last week's. */
+function byFocusThenTitle(left: TodayTask, right: TodayTask): number {
+  return (right.focus ?? '').localeCompare(left.focus ?? '') || byTitle(left, right);
 }
 
 /** The earliest day first; a task with no day after every task with one. */

@@ -21,6 +21,7 @@ export const BUDGETED_ACTIONS = [
   'Open Today',
   'Idle 3 s on Today',
   'Tick a task on Today',
+  'Choose a task on Today',
   'Open the Inbox',
   'Decide an Inbox row',
   "Open a person's page",

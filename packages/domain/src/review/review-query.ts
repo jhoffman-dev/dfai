@@ -59,6 +59,7 @@ export function compileReviewTasksQuery(): CompiledQuery {
       `  ${singleText(TASK_KEYS.status)} AS "status",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
+      `  ${firstDay(TASK_KEYS.focus)} AS "focus",`,
       `  ${singleText(RECURRENCE_KEY)} AS "recurrence",`,
       `  ${allItems(TASK_KEYS.waitingOn)} AS "waitingOn",`,
       `  ${allItems(TASK_KEYS.contexts)} AS "contexts",`,
@@ -146,6 +147,7 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     status: gtdStatusOf(row['status']),
     due: textOrNull(row['due']),
     defer: textOrNull(row['defer']),
+    focus: textOrNull(row['focus']),
     // Absent when the row did not carry it, which is not knowing it: see ReviewTask.
     ...(Object.hasOwn(row, 'recurrence') && { recurrence: textOrNull(row['recurrence']) }),
     waitingOn: waitingOnNames(row['waitingOn']),

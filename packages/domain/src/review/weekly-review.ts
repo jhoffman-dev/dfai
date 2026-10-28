@@ -23,6 +23,11 @@ export interface ReviewTask {
    * which rolls a repeating task on — cannot be known before it is written.
    */
   readonly recurrence?: string | null;
+  /**
+   * The day it was chosen for (`focus`, #108), `YYYY-MM-DD`; null when it
+   * has none. Absent when the read did not say, which is read as not chosen.
+   */
+  readonly focus?: string | null;
   /** Who it waits on, as its `waiting_on` names them; '' for nobody. */
   readonly waitingOn: string;
   /** Its `contexts`, as written, in order; none when it has none. */
