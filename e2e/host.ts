@@ -532,6 +532,15 @@ export interface FakeHost {
    */
   holdWrites(relativePath: string): (outcome?: { readonly fail: string }) => void;
   /**
+   * Holds a move of this file — a filing out of the Inbox, say — in flight
+   * until the returned function is called. Called with `{ fail }`, the move
+   * is refused with that message, as the Rust host answers `Err`, and
+   * nothing moves.
+   */
+  holdMoves(relativePath: string): (outcome?: { readonly fail: string }) => void;
+  /** How many moves of this file have reached the host, held or not. */
+  movesFrom(relativePath: string): number;
+  /**
    * Holds every read of this file in flight — on its own or in a batch —
    * until the returned function is called, so a test can make one of the
    * app's reads land late without racing a timer (#130). A batch that also
@@ -811,6 +820,8 @@ export async function installHost(
   const writes = new Map<string, number>();
   /** Files whose writes wait, and what lets them go. */
   const held = new Map<string, Promise<void>>();
+  const heldMoves = new Map<string, Promise<void>>();
+  const moves = new Map<string, number>();
   /** Files whose reads wait, and what lets them go. */
   const heldReads = new Map<
     string,
@@ -1148,6 +1159,8 @@ export async function installHost(
         // As vault_entries.rs does: refuses to write over anything, and a
         // folder into itself, and lets a case-only rename through.
         const { from, to } = args as { from: string; to: string };
+        moves.set(from, (moves.get(from) ?? 0) + 1);
+        await heldMoves.get(from);
         const { rename, lstat } = await import('node:fs/promises');
         const root = writeRoot(args);
         const source = containedPath(root, from);
@@ -2343,22 +2356,9 @@ export async function installHost(
         release();
       };
     },
-    holdWrites(relativePath) {
-      let release: () => void = () => {};
-      let refuse: (cause: Error) => void = () => {};
-      const holding = new Promise<void>((resolve, reject) => {
-        release = resolve;
-        refuse = reject;
-      });
-      // Handled here as well, so a refusal with no write waiting on it is not an unhandled rejection.
-      holding.catch(() => {});
-      held.set(relativePath, holding);
-      return (outcome) => {
-        held.delete(relativePath);
-        if (outcome === undefined) release();
-        else refuse(new Error(outcome.fail));
-      };
-    },
+    holdWrites: (relativePath) => holdIn(held, relativePath),
+    holdMoves: (relativePath) => holdIn(heldMoves, relativePath),
+    movesFrom: (relativePath) => moves.get(relativePath) ?? 0,
     holdReads(relativePath, options) {
       let release: () => void = () => {};
       const until = new Promise<void>((resolve) => (release = resolve));
@@ -2658,5 +2658,29 @@ function fakeCalendarEvents() {
       const others = (listed.get(calendarId) ?? []).filter((each) => each['id'] !== event['id']);
       listed.set(calendarId, event['status'] === 'cancelled' ? others : [...others, event]);
     },
+  };
+}
+
+/**
+ * Holds what waits on `relativePath` in `holds` until the returned function
+ * is called; called with `{ fail }`, it is refused with that message.
+ */
+function holdIn(
+  holds: Map<string, Promise<void>>,
+  relativePath: string,
+): (outcome?: { readonly fail: string }) => void {
+  let release: () => void = () => {};
+  let refuse: (cause: Error) => void = () => {};
+  const holding = new Promise<void>((resolve, reject) => {
+    release = resolve;
+    refuse = reject;
+  });
+  // Handled here as well, so a refusal with nothing waiting on it is not an unhandled rejection.
+  holding.catch(() => {});
+  holds.set(relativePath, holding);
+  return (outcome) => {
+    holds.delete(relativePath);
+    if (outcome === undefined) release();
+    else refuse(new Error(outcome.fail));
   };
 }

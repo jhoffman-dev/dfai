@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.ts';
-import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
+import { createVault, expectFile, installHost, type FakeHost, type FakeVault } from './host.ts';
 import { pickSuggestion, suggestion } from './link-suggest.ts';
 
 /**
@@ -46,6 +46,10 @@ const note = (frontmatter: string[], body: string) =>
   ['---', ...frontmatter, '---', '', body, ''].join('\n');
 
 async function openParaVault(page: Page): Promise<FakeVault> {
+  return (await openParaHost(page)).vault;
+}
+
+async function openParaHost(page: Page): Promise<{ vault: FakeVault; host: FakeHost }> {
   const vault = await createVault();
   await vault.mkdir('.atlas/types');
   await vault.mkdir('.atlas/templates');
@@ -64,11 +68,11 @@ async function openParaVault(page: Page): Promise<FakeVault> {
     note(['type: meeting'], 'Who brings what.'),
   );
 
-  await installHost(page, vault);
+  const host = await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
-  return vault;
+  return { vault, host };
 }
 
 const goTo = (page: Page) => page.getByRole('list', { name: 'Go to' });
@@ -183,6 +187,40 @@ test('the Inbox files a meeting under an area, linked, into its home folder', as
   expect(await vault.read(filed)).toMatch(/^project: "?\[\[Garden\]\]"?$/m);
   expect(await vault.exists('Inbox/Meetings/2026-10-01 Seed swap.md')).toBe(false);
   expect(await vault.exists('Areas/Garden/2026-10-01 Seed swap.md')).toBe(false);
+});
+
+test('a filing whose move fails comes back to the Inbox, saying why, and nothing moves (#225)', async ({
+  page,
+}) => {
+  const { vault, host } = await openParaHost(page);
+  const waiting = 'Inbox/Meetings/2026-10-01 Seed swap.md';
+  const before = await vault.read(waiting);
+  const refuse = host.holdMoves(waiting);
+  await goTo(page)
+    .getByRole('button', { name: /^Inbox/ })
+    .click();
+  const inbox = inboxPage(page);
+  const seedSwap = inbox.getByRole('button', { name: '2026-10-01 Seed swap' });
+  await expect(seedSwap).toBeVisible();
+
+  await pickSuggestion(
+    inbox.getByRole('combobox', { name: 'File 2026-10-01 Seed swap under' }),
+    'Garden',
+  );
+  // Filed at once: the row leaves while the move is still held on the disk.
+  await expect(seedSwap).toHaveCount(0);
+  // The move has reached the host and is held there, not still on its way.
+  await expect.poll(() => host.movesFrom(waiting)).toBeGreaterThan(0);
+  refuse({ fail: 'The disk is full.' });
+
+  await expect(seedSwap).toBeVisible();
+  await expect(inbox.getByRole('row', { name: /^2026-10-01 Seed swap/ })).toContainText(
+    'The disk is full.',
+  );
+  // Nothing was written, so nothing is said to be clarified, nor offered to undo.
+  await expect(page.getByRole('status').filter({ hasText: 'Clarified' })).toHaveCount(0);
+  expect(await vault.read(waiting)).toBe(before);
+  expect(await vault.exists('Meetings/2026/10/2026-10-01 Seed swap.md')).toBe(false);
 });
 
 test('a task’s project, once its type is extended, offers projects and areas alike', async ({

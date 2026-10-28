@@ -686,6 +686,34 @@ describe('useInbox — said in the window’s toasts (#320)', () => {
     await waitFor(() => expect(hook.result.current.refusals).toEqual([]));
   });
 
+  it('says nothing was clarified when a filing alone fails, and offers nothing to undo (#225)', async () => {
+    const toasts = createToasts();
+    const { hook, initial, files } = inbox({ toasts });
+    const refusing = {
+      ...initial.ports,
+      fs: {
+        ...initial.ports.fs,
+        moveEntry: async () => {
+          throw new Error('The disk is full.');
+        },
+      },
+    };
+    hook.rerender({ ...initial, ports: refusing });
+    await act(() =>
+      hook.result.current.clarify({
+        path: CALL,
+        clarification: { project: createVaultPath('Projects/DFAI.md') },
+      }),
+    );
+
+    expect(hook.result.current.refusals).toEqual([
+      { path: CALL, reason: expect.stringMatching(/The disk is full/) },
+    ]);
+    expect(files.get(CALL)).toBe(CAPTURED);
+    expect(toasts.store.getState().toasts).toEqual([]);
+    expect(hook.result.current.lastAction).toBeNull();
+  });
+
   it('offers an undo that could not be written again, in a toast of its own (#455)', async () => {
     const toasts = createToasts();
     const { hook, initial, files } = inbox({ toasts });
