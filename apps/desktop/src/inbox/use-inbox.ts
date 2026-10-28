@@ -253,15 +253,19 @@ export function useInbox(options: InboxOptions) {
             }),
           );
           const reason = outcomeProblem(outcome);
+          // Said on the row the note is on now: filed, that is its new path's.
+          const row = { path: outcome.path, reason };
+          const changed = clarifiedAnything(outcome);
           // Clarified but not filed — the move refused, say — the row comes back to say why.
-          if (reason === null && leaves) writes.written(asked, path);
+          if (reason === null && leaves && changed) writes.written(asked, path);
           else writes.stay(asked, path);
-          if (reason !== null && !clarifiedAnything(outcome)) {
-            say(asked, { problem: null, row: { path, reason }, last: 'kept' });
+          // Nothing changed is nothing to call clarified, nor to take back.
+          if (!changed) {
+            say(asked, { problem: null, row, last: 'kept' });
             return NOT_WRITTEN;
           }
           const clarified = { title: noteTitle(path), undo: outcome.undo };
-          say(asked, { problem: null, row: { path, reason }, last: clarified });
+          say(asked, { problem: null, row, last: clarified });
           announce(clarified);
           return { done: reason === null, wrote: true };
         } catch (cause) {

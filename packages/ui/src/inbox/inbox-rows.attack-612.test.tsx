@@ -98,6 +98,34 @@ describe('InboxRows — 2,000 rows (#225, PR #612)', () => {
     expect(status('Task 3')?.value).toBe('someday');
   });
 
+  it('keeps the pick of a row taken off the list while written, once its write is refused', async () => {
+    let refuse: (written: boolean) => void = () => {};
+    const onClarify = vi.fn(
+      () =>
+        new Promise<boolean>((settle) => {
+          refuse = settle;
+        }),
+    );
+    const items = tasks(2_000);
+    const view = render(<InboxPage {...given(items, onClarify)} />);
+    fireEvent.change(status('Task 2')!, { target: { value: 'someday' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Clarify Task 2' }));
+    // The app takes the row off the list while it is written…
+    view.rerender(
+      <InboxPage
+        {...given(
+          items.filter((item) => item.title !== 'Task 2'),
+          onClarify,
+        )}
+      />,
+    );
+    // …and brings it back when the write is refused.
+    view.rerender(<InboxPage {...given(items, onClarify)} />);
+    await act(async () => refuse(false));
+
+    expect(status('Task 2')?.value).toBe('someday');
+  });
+
   it('gives a new note at a path sync emptied nothing the old one picked', () => {
     const items = tasks(2_000);
     const view = render(<InboxPage {...given(items)} />);

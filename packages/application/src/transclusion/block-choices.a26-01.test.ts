@@ -54,7 +54,7 @@ describe('createBlockChoicesReader', () => {
     const vault = reader({ [plans]: 'Pack the tent\nBook the train\n' });
     for (let key = 0; key < 5; key += 1) {
       const entries = await vault.choices.read(plans);
-      expect(entries.map((entry) => entry.text)).toEqual(['Pack the tent', 'Book the train']);
+      expect(entries?.map((entry) => entry.text)).toEqual(['Pack the tent', 'Book the train']);
     }
     expect(vault.counts()).toEqual({ reads: 1, parses: 1 });
   });
@@ -64,7 +64,7 @@ describe('createBlockChoicesReader', () => {
     await vault.choices.read(plans);
     vault.save(plans, 'Pack the big tent\n');
     const entries = await vault.choices.read(plans);
-    expect(entries.map((entry) => entry.text)).toEqual(['Pack the big tent']);
+    expect(entries?.map((entry) => entry.text)).toEqual(['Pack the big tent']);
     expect(vault.counts()).toEqual({ reads: 2, parses: 2 });
   });
 
@@ -74,5 +74,30 @@ describe('createBlockChoicesReader', () => {
     await vault.choices.read(other);
     await vault.choices.read(other);
     expect(vault.counts().reads).toBe(2);
+  });
+});
+
+describe('createBlockChoicesReader — a note that is not there (#225, PR #612)', () => {
+  const failing = (listed: readonly string[]) =>
+    createBlockChoicesReader({
+      fs: fakeVaultFs({
+        readTextFile: async () => {
+          throw new Error('the disk stopped answering');
+        },
+        readNotes: async (paths) =>
+          paths
+            .filter((path) => listed.includes(path))
+            .map((path) => ({ path: createVaultPath(path), text: '', modified: 1, size: 0 })),
+      }),
+      markdown: fakeMarkdown(),
+      index: fakeIndexPort({ manifest: async () => [] }),
+    });
+
+  it('answers null for a note deleted before the tree caught up', async () => {
+    await expect(failing([]).read(plans)).resolves.toBeNull();
+  });
+
+  it('passes on a failure to read a note that is there', async () => {
+    await expect(failing([plans]).read(plans)).rejects.toThrow('the disk stopped answering');
   });
 });

@@ -138,7 +138,8 @@ export function useBlockPicking({
           target === '' ? notePath : (resolve ??= createWikiLinkResolver(notePaths))(target);
         if (path === null) return null;
         if (path === notePath) return { same: true, target };
-        return { same: false, target, path, entries: await choices.read(path) };
+        const entries = await choices.read(path);
+        return entries === null ? null : { same: false, target, path, entries };
       },
       anchor: async (block) => {
         const id = await anchorBlock({ fs, markdown, openNotes, rng, ...block });

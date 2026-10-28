@@ -82,11 +82,13 @@ export interface ClarifyRequest {
  *
  * Everything is judged before anything is written: a refusal — a project
  * that cannot be filed under, a person who is not one — throws {@link ClarifyRefusedError} and leaves the vault as it
- * was. The properties are written first, so a filing that then fails leaves
- * a clarified note where it was, and says so in `failed`.
+ * was. The properties are written first, so a filing that then fails —
+ * refused, or thrown, by a project sync took away meanwhile — leaves a
+ * clarified note where it was, says so in `failed`, and can still be undone.
  */
 export async function clarifyInboxItem(request: ClarifyRequest): Promise<ClarifyOutcome> {
-  const { ports, notePaths, today } = request;
+  const { notePaths, today } = request;
+  const { ports, written } = recordingWrites(request.ports);
   const unsavedTyping = request.unsavedTyping ?? 'save';
   const path = vaultSpellingOf(request.path, notePaths);
   if (path === null) throw new ClarifyRefusedError('There is no note at that path.');
@@ -122,9 +124,17 @@ export async function clarifyInboxItem(request: ClarifyRequest): Promise<Clarify
           today,
           updateLinks: true,
           unsavedTyping,
+        }).catch((cause: unknown) => {
+          // Everything it throws, it throws before it moves anything: once the
+          // properties are written, a filing that cannot start is said in `failed`,
+          // so the written note still has its undo. Before, it is the rejection.
+          if (!written.has(path)) throw cause;
+          return { moves: [], failed: [{ path, reason: notFiled(cause) }], linksUpdated: 0 };
         });
   const landed = filed.moves[0]?.move.to ?? path;
-  const after = (await ports.fs.readTextFile(landed)).text;
+  // What clarifying itself wrote, not the disk read back: an edit saved since is
+  // then a change the undo refuses to write over.
+  const after = written.get(landed) ?? written.get(path) ?? text;
   return {
     path: landed,
     movedFrom: landed === path ? null : path,
@@ -133,6 +143,23 @@ export async function clarifyInboxItem(request: ClarifyRequest): Promise<Clarify
     undo: { from: path, to: landed, before: text, after },
   };
 }
+
+/** The ports, with the last text each note was written with remembered. */
+function recordingWrites(ports: ArchivePorts): {
+  ports: ArchivePorts;
+  written: ReadonlyMap<VaultPath, string>;
+} {
+  const written = new Map<VaultPath, string>();
+  const writeTextFile: ArchivePorts['fs']['writeTextFile'] = async (write) => {
+    const modified = await ports.fs.writeTextFile(write);
+    written.set(write.path, write.contents);
+    return modified;
+  };
+  return { ports: { ...ports, fs: { ...ports.fs, writeTextFile } }, written };
+}
+
+const notFiled = (cause: unknown): string =>
+  `Clarified, but not filed: ${cause instanceof Error ? cause.message : String(cause)}`;
 
 /**
  * Takes a clarification back (#112): the note goes back where it was and says

@@ -26,7 +26,8 @@ export type BlockLinkPanes = Pick<OpenEditorsPort, 'state'> & {
 
 /** A note's headings and blocks for the `#` picker, kept while its file is the same version. */
 export interface BlockChoicesReader {
-  read(path: VaultPath): Promise<OutlineEntry[]>;
+  /** Null when there is no note there to read: deleted, say, before the tree caught up. */
+  read(path: VaultPath): Promise<OutlineEntry[] | null>;
 }
 
 /**
@@ -53,13 +54,32 @@ export function createBlockChoicesReader({
       const known = (await modifiedTimes(index)).get(path);
       const held = kept.get(path);
       if (held !== undefined && known === held.modified) return held.entries;
-      const file = await fs.readTextFile(path);
+      const file = await readIfThere(fs, path);
+      if (file === null) {
+        kept.delete(path);
+        return null;
+      }
       if (held !== undefined && file.modified === held.modified) return held.entries;
       const entries = blockOutline(markdown.parseBody(splitFrontmatter(file.text).body).doc);
       kept.set(path, { modified: file.modified, entries });
       return entries;
     },
   };
+}
+
+/**
+ * A note's text, or null when the host has no note there to read. The host
+ * words a missing file as any other failure, so it is asked again the way
+ * the index reads notes, which leaves out a path with no readable note;
+ * a failure while the note is there is passed on.
+ */
+async function readIfThere(fs: VaultFsPort, path: VaultPath) {
+  try {
+    return await fs.readTextFile(path);
+  } catch (cause) {
+    if ((await fs.readNotes([path])).length === 0) return null;
+    throw cause;
+  }
 }
 
 /** The block a link was about to name is not where, or what, it was when it was offered. */
