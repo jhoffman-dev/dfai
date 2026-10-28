@@ -6,9 +6,21 @@
  * With the real markdown adapter, as the sync runs it.
  */
 import { describe, expect, it } from 'vitest';
-import { clearSettledCopies, recordingActivity, type NoteContents } from '@dfai/application';
+import {
+  clearSettledCopies,
+  createUnsettledSaid,
+  EntryChangedError,
+  recordingActivity,
+  type NoteContents,
+  type UnsettledSaid,
+} from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
-import { shippedPropertiesRecordText, type VaultPath } from '@dfai/domain';
+import {
+  SHIPPED_PROPERTIES,
+  SHIPPED_PROPERTIES_RECORD_PATH,
+  shippedPropertiesRecordText,
+  type VaultPath,
+} from '@dfai/domain';
 
 const LIVE = '.atlas/types/meeting.md';
 const COPY = 'Sync conflicts/atlas/types/meeting (conflict from Laptop).md';
@@ -34,28 +46,44 @@ const OLD_COPY = meeting([...ATTENDEES, ...DATE]);
 
 const OID = 'a'.repeat(40);
 
+const RECORD_PATH = SHIPPED_PROPERTIES_RECORD_PATH as string;
+/** The vault's record: DFAI added the summary key to the Meeting type itself. */
+const RECORD = shippedPropertiesRecordText({
+  settled: { meeting: ['atlas_summary_of'] },
+  added: { meeting: ['atlas_summary_of'] },
+});
+
+/** What the host is asked to hold still while it trashes: each file as it was read. */
+type Unchanged = readonly { path: VaultPath; modified: number; text: string }[];
+
 /** The vault's files, read and trashed as the host does; `onRead` runs after each read. */
 function vault(
   files: Record<string, string>,
   {
     onRead,
     stage = 0,
+    record = RECORD,
   }: {
     onRead?: (path: string, reads: number, held: Map<string, NoteContents>) => void;
     /** The index stage every file is listed at: 0, or 1–3 while a merge is in conflict. */
     stage?: number;
+    /** The vault's record of the properties DFAI added; null for a vault without one. */
+    record?: string | null;
   } = {},
 ) {
-  const held = new Map(Object.entries(files).map(([path, text]) => [path, { text, modified: 1 }]));
+  const all = record === null ? files : { [RECORD_PATH]: record, ...files };
+  const held = new Map(Object.entries(all).map(([path, text]) => [path, { text, modified: 1 }]));
+  const asked: Unchanged[] = [];
   const trashed: string[] = [];
   const reads = new Map<string, number>();
   const index = () =>
-    Object.keys(files)
+    Object.keys(all)
       .map((path) => `100644 ${OID} ${stage}\t${path}\0`)
       .join('');
   return {
     trashed,
     held,
+    asked,
     git: { indexEntries: async () => ({ code: 0, stdout: index(), stderr: '' }) },
     fs: {
       readTextFile: async (path: VaultPath) => {
@@ -66,7 +94,15 @@ function vault(
         onRead?.(path, count, held);
         return read;
       },
-      trashEntry: async ({ path }: { path: VaultPath }) => {
+      // As the host does: nothing moves unless every file named is still as it was read.
+      trashEntry: async ({ path, unchanged = [] }: { path: VaultPath; unchanged?: Unchanged }) => {
+        asked.push(unchanged);
+        for (const file of unchanged) {
+          const now = held.get(file.path);
+          if (now?.modified !== file.modified || now.text !== file.text) {
+            throw new EntryChangedError(`${file.path} changed on disk since it was read`);
+          }
+        }
         if (!held.delete(path)) throw new Error(`${path}: no such file`);
         trashed.push(path);
       },
@@ -76,12 +112,13 @@ function vault(
 
 async function clear(
   world: ReturnType<typeof vault>,
-  { keep = new Set<string>() }: { keep?: ReadonlySet<string> } = {},
+  { keep = new Set<string>(), said }: { keep?: ReadonlySet<string>; said?: UnsettledSaid } = {},
 ) {
   const activity = recordingActivity();
   const cleared = await clearSettledCopies({
     ports: { git: world.git, fs: world.fs, markdown: remarkMarkdown, activity },
     keep,
+    ...(said !== undefined && { said }),
   });
   return { cleared, reports: activity.reports };
 }
@@ -281,13 +318,106 @@ describe('clearSettledCopies (#235)', () => {
   });
 
   it('merges the record of shipped properties as the sync does: a subset goes, a key more stays', async () => {
-    const live = '.atlas/migrations/type-properties.md';
+    // Keys DFAI ships on Meeting: a record lacking one of them adds nothing (#235).
+    const [first = '', second = ''] = SHIPPED_PROPERTIES.get('meeting')!.map(({ key }) => key);
     const copy = 'Sync conflicts/atlas/migrations/type-properties (conflict from Laptop).md';
     const record = (keys: string[]) =>
       shippedPropertiesRecordText({ settled: { meeting: keys }, added: {} });
-    const cleared = vault({ [live]: record(['date', 'summary']), [copy]: record(['date']) });
+    const cleared = vault({ [copy]: record([first]) }, { record: record([first, second]) });
     expect((await clear(cleared)).cleared).toEqual([copy]);
-    await expectKept({ [live]: record(['date']), [copy]: record(['date', 'summary']) });
+    await expectKept({ [copy]: record([first, second]) }, { record: record([first]) });
+  });
+
+  it('keeps a record copy that lacks a key DFAI does not ship on that type: a person took it off', async () => {
+    const [first = ''] = SHIPPED_PROPERTIES.get('meeting')!.map(({ key }) => key);
+    const copy = 'Sync conflicts/atlas/migrations/type-properties (conflict from Laptop).md';
+    const record = (keys: string[]) =>
+      shippedPropertiesRecordText({ settled: { meeting: keys }, added: {} });
+    await expectKept({ [copy]: record([first]) }, { record: record([first, 'venue']) });
+  });
+
+  describe('keeps a copy that lacks something DFAI did not write into the live file (#235)', () => {
+    const P = ['  p:', '    kind: text'];
+
+    it('before #234: a property taken off on the copy’s Mac while this one gained a shipped one', async () => {
+      // Mac B took `p` off; Mac A's newer build added the summary key; the copy is B's.
+      await expectKept({
+        [LIVE]: meeting([...ATTENDEES, ...DATE, ...P, ...SUMMARY]),
+        [COPY]: meeting([...ATTENDEES, ...DATE]),
+      });
+    });
+
+    it('a copy trimmed by hand of a property, or of a top-level key', async () => {
+      await expectKept({ [LIVE]: LIVE_TEXT, [COPY]: meeting([...ATTENDEES, ...SUMMARY]) });
+      await expectKept({
+        [LIVE]: meeting([...ATTENDEES, ...DATE, ...SUMMARY], {
+          head: ['name: meeting', 'label: Meeting', 'icon: calendar'],
+        }),
+        [COPY]: meeting([...ATTENDEES, ...DATE, ...SUMMARY]),
+      });
+    });
+
+    it('a shipped property the record does not say DFAI added, or a vault with no record or a broken one', async () => {
+      const settledOnly = shippedPropertiesRecordText({
+        settled: { meeting: ['atlas_summary_of'] },
+        added: {},
+      });
+      await expectKept({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY }, { record: settledOnly });
+      await expectKept({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY }, { record: null });
+      await expectKept({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY }, { record: 'not a record\n' });
+    });
+
+    it('a property DFAI added to another type', async () => {
+      const otherType = shippedPropertiesRecordText({
+        settled: { daily: ['atlas_summary_of'] },
+        added: { daily: ['atlas_summary_of'] },
+      });
+      await expectKept({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY }, { record: otherType });
+    });
+  });
+
+  it('asks the host to trash the copy only while it and its live file are as they were read', async () => {
+    const world = vault({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY });
+    await clear(world);
+    expect(world.asked).toEqual([
+      [
+        { path: COPY, modified: 1, text: OLD_COPY },
+        { path: LIVE, modified: 1, text: LIVE_TEXT },
+      ],
+    ]);
+  });
+
+  it('keeps a copy the host finds changed as it trashes, and says so', async () => {
+    const world = vault({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY });
+    const trash = world.fs.trashEntry;
+    // A save lands between the last read and the Trash: the host refuses.
+    world.fs.trashEntry = async (args) => {
+      world.held.set(COPY, { text: OLD_COPY, modified: world.held.get(COPY)!.modified + 1 });
+      await trash(args);
+    };
+    const said = createUnsettledSaid();
+    const first = await clear(world, { said });
+    expect(first.cleared).toEqual([]);
+    expect(world.held.has(COPY)).toBe(true);
+    expect(first.reports.map(({ level, message }) => ({ level, message }))).toEqual([
+      {
+        level: 'info',
+        message: `The conflict copy ${COPY} was kept: it or ${LIVE} changed while it was checked.`,
+      },
+    ]);
+  });
+
+  it('says a Trash that keeps refusing a copy once, and again only when the copy changes', async () => {
+    const world = vault({ [LIVE]: LIVE_TEXT, [COPY]: OLD_COPY });
+    world.fs.trashEntry = async () => {
+      throw new Error('the Trash is not available');
+    };
+    const said = createUnsettledSaid();
+    expect((await clear(world, { said })).reports).toHaveLength(1);
+    expect((await clear(world, { said })).reports).toEqual([]);
+    world.held.set(COPY, { text: OLD_COPY, modified: 5 });
+    expect((await clear(world, { said })).reports).toHaveLength(1);
+    expect((await clear(world, { said })).reports).toEqual([]);
   });
 
   it('says a copy the Trash refused, keeps it, and goes on to the next', async () => {

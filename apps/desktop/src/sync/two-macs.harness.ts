@@ -28,6 +28,8 @@ import { promisify } from 'node:util';
 import { expect, onTestFinished } from 'vitest';
 import { createVaultPath, VAULT_ROOT, type SyncReport } from '@dfai/domain';
 import {
+  createUnsettledSaid,
+  EntryChangedError,
   fakeVaultFs,
   syncNow,
   type GitPort,
@@ -221,7 +223,14 @@ export function realFs(root: string, trash: string): RealFs {
       }
       await rename(at(from), at(to));
     },
-    trashEntry: async ({ path }) => {
+    // As `vault_entries.rs` does (#235): nothing moves unless each file named is as it was read.
+    trashEntry: async ({ path, unchanged = [] }) => {
+      for (const file of unchanged) {
+        const now = await readTextFile(file.path).catch(() => null);
+        if (now?.modified !== file.modified || now.text !== file.text) {
+          throw new EntryChangedError(`${file.path} changed on disk since it was read`);
+        }
+      }
       trashed += 1;
       await rename(at(path), join(trash, `${trashed}`));
     },
@@ -332,6 +341,8 @@ export function macAt({
   const fs = realFs(root, trash);
   const syncFiles = realSyncFiles(root);
   const activity: string[] = [];
+  // What this Mac has said of copies it kept, for the session, as the app holds it.
+  const copiesSaid = createUnsettledSaid();
   return {
     name,
     root,
@@ -352,6 +363,7 @@ export function macAt({
             overrides.intercept,
           ),
           activity: { record: (line) => activity.push(`${line.level}: ${line.message}`) },
+          copiesSaid,
         },
         mac: name,
         clock,

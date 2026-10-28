@@ -62,7 +62,20 @@ function vault(files: Record<string, string>, { onRead, refuse }: Options = {}) 
         onRead?.(path, count, held);
         return read;
       },
-      trashEntry: async ({ path }: { path: VaultPath }) => {
+      // As the host does (#235): nothing moves unless every file named is still as it was read.
+      trashEntry: async ({
+        path,
+        unchanged = [],
+      }: {
+        path: VaultPath;
+        unchanged?: readonly { path: VaultPath; modified: number; text: string }[];
+      }) => {
+        for (const file of unchanged) {
+          const now = held.get(file.path);
+          if (now?.modified !== file.modified || now.text !== file.text) {
+            throw new Error(`${file.path} changed on disk since it was read`);
+          }
+        }
         if (refuse?.has(path)) throw new Error('the Trash refused');
         if (!held.delete(path)) throw new Error(`${path}: no such file`);
         trashed.push(path);
