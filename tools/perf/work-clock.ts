@@ -122,9 +122,12 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       ? window.requestAnimationFrame.bind(window)
       : (callback: () => void) => realSetTimeout(callback, 16);
 
+  // As a browser takes a delay: a 32-bit long (2 ** 31 and Infinity wrap or
+  // fall to 0, as NaN does), and never below 0.
+  const delayOf = (delay: unknown) => Math.max(0, Number(delay) | 0);
   const addTimer = (run: () => void, delay: unknown, every: number | null) => {
     const id = state.nextId++;
-    const wait = Math.max(0, Number(delay) || 0);
+    const wait = delayOf(delay);
     const long = wait >= LONG_TIMER_MS;
     state.timers.set(id, { id, due: state.now + wait, order: state.order++, run, every, long });
     return id;
@@ -138,7 +141,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       addTimer(call(handler, args), delay, null),
     // Never every 0 ms: an interval that is always due would never let time move on.
     setInterval: (handler: unknown, delay?: unknown, ...args: unknown[]) =>
-      addTimer(call(handler, args), delay, Math.max(1, Number(delay) || 0)),
+      addTimer(call(handler, args), delay, Math.max(1, delayOf(delay))),
     clearTimeout: clear,
     clearInterval: clear,
     requestAnimationFrame: (callback: FrameRequestCallback) =>
@@ -329,7 +332,12 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   const fire = (timer: Timer) => {
     state.now = Math.max(state.now, timer.due);
     if (timer.every === null) state.timers.delete(timer.id);
-    else Object.assign(timer, { due: timer.due + timer.every, order: state.order++ });
+    else {
+      // Its next period after now, on its own phase: a browser skips the
+      // periods an interval missed (held while counting) rather than run them all at once.
+      const missed = Math.floor((state.now - timer.due) / timer.every);
+      Object.assign(timer, { due: timer.due + (missed + 1) * timer.every, order: state.order++ });
+    }
     try {
       timer.run();
     } catch (error) {
