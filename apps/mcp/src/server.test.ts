@@ -66,6 +66,7 @@ const ALL_TOOLS = [
   'atlas_read_template',
   'atlas_refresh_source',
   'atlas_reject_proposal',
+  'atlas_related',
   'atlas_rename_tag',
   'atlas_replace_note_body',
   'atlas_run_query',
@@ -165,6 +166,7 @@ describe('tools/list', () => {
       destructiveHint: false,
     });
     expect(byName.get('atlas_archived')).toMatchObject({ readOnlyHint: true });
+    expect(byName.get('atlas_related')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_find_duplicate_people')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_merge_people')).toMatchObject({
       readOnlyHint: false,
@@ -428,6 +430,14 @@ describe('tools/call → REST', () => {
       null,
     ],
     ['atlas_backlinks', { path: 'P/Q.md' }, 'GET', '/v1/notes/P%2FQ.md/backlinks', null],
+    ['atlas_related', { path: 'P/Q.md' }, 'GET', '/v1/notes/P%2FQ.md/related', null],
+    [
+      'atlas_related',
+      { path: 'P/Q.md', limit: 5 },
+      'GET',
+      '/v1/notes/P%2FQ.md/related?limit=5',
+      null,
+    ],
     [
       'atlas_export_note',
       { path: 'P/Q.md' },
@@ -896,6 +906,10 @@ describe('tools/call → REST', () => {
     ['atlas_rename_tag', { tag: 'idea', to: 'x', dryRun: 'yes' }],
     ['atlas_read_note', { path: '..' }],
     ['atlas_backlinks', { path: '.' }],
+    ['atlas_related', { path: '..' }],
+    ['atlas_related', {}],
+    ['atlas_related', { path: 'P.md', limit: 0 }],
+    ['atlas_related', { path: 'P.md', limit: 51 }],
     ['atlas_export_note', { path: '..' }],
     ['atlas_update_properties', { path: '..', set: { x: 1 } }],
     ['atlas_append_to_note', { path: '..', markdown: 'x' }],

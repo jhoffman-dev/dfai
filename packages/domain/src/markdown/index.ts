@@ -32,6 +32,7 @@ export {
   resolveWikiLinkTarget,
   wikiLinkNewNotePath,
   wikiLinkTargetFor,
+  wikiLinkTargetWith,
 } from './resolve-wikilink.ts';
 export {
   imagePathsToCheck,

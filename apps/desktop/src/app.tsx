@@ -200,6 +200,7 @@ import { PEEK_EDITOR, PeekLayer } from './panes/peek-container.tsx';
 import { leavePeek } from './panes/peek-moves.ts';
 import { SearchPaletteSlot } from './search-palette-slot.tsx';
 import { useSemanticSearch, type SemanticPorts } from './semantic/use-semantic-search.ts';
+import { useRelatedPorts } from './related/use-related-ports.ts';
 import { linkPlacesOf } from './reader/link-places.ts';
 import { movingEditorsIn, openNotesIn } from './panes/open-notes.ts';
 import { useVaultEntries, type VaultEntryPorts } from './vault/use-vault-entries.ts';
@@ -666,6 +667,7 @@ function AppWindow({
     changes: noteChanges,
     indexReady,
   });
+  const relatedPorts = useRelatedPorts({ semantic, idle: semanticPorts?.idle ?? null, vaultKey });
 
   // Anything that edits the vault from outside — Obsidian, a sync client — should
   // show up here without a restart. The echo of the app's own writes is left
@@ -1830,6 +1832,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       graph: vaultGraph.kind === 'ready' ? vaultGraph.graph : null,
+      related: relatedPorts,
       openNotes: paneOpenNotes,
       viewPaths,
       viewDrafts,
@@ -1873,6 +1876,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       vaultGraph,
+      relatedPorts,
       paneOpenNotes,
       viewPaths,
       viewDrafts,

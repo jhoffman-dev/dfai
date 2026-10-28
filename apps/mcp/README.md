@@ -83,6 +83,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_append_to_note`        | `POST /v1/notes/{path}/append`                                               | yes     |
 | `atlas_replace_note_body`     | `PUT /v1/notes/{path}/body`                                                  | yes     |
 | `atlas_backlinks`             | `GET /v1/notes/{path}/backlinks`                                             | no      |
+| `atlas_related`               | `GET /v1/notes/{path}/related`                                               | no      |
 | `atlas_export_note`           | `GET /v1/notes/{path}/export?format=confluence`                              | no      |
 | `atlas_list_types`            | `GET /v1/types`                                                              | no      |
 | `atlas_list_views`            | `GET /v1/views`                                                              | no      |

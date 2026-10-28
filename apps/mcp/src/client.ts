@@ -55,6 +55,7 @@ import type {
   ApiQueryBody,
   ApiQuickAddBody,
   ApiQuickAddType,
+  ApiRelatedNote,
   ApiRenameTagBody,
   ApiReplaceBodyBody,
   ApiRows,
@@ -244,6 +245,13 @@ export class AtlasClient {
       path: notePath(path, '/backlinks'),
       query: { ...query },
     });
+
+  related = (path: string, query: { limit?: number } = {}) =>
+    this.json<{
+      related: readonly ApiRelatedNote[];
+      embedded: boolean;
+      progress: ApiSemanticProgress;
+    }>({ method: 'GET', path: notePath(path, '/related'), query: { ...query } });
 
   exportNote = (path: string, { format = 'confluence', frontmatter }: ExportNoteQuery = {}) =>
     this.json<{ export: ApiNoteExport }>({

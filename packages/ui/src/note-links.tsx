@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { noteLinksLabel, type NoteLinkEntry, type NoteLinks, type VaultPath } from '@dfai/domain';
 import { Icon } from './icon.tsx';
+import { RelatedNotesList, type RelatedPanel } from './related-notes.tsx';
 
 /** Another note naming this one in plain text, and the words around it. */
 export interface MentionRow {
@@ -30,6 +31,7 @@ export function NoteLinksPanel({
   mentions,
   onFindMentions,
   onLinkMention,
+  related,
 }: {
   links: NoteLinks;
   /** What the notes linking here are headed: "Mentioned in" on a person's page. */
@@ -39,44 +41,67 @@ export function NoteLinksPanel({
   /** Looks for unlinked mentions; asked for only when that group is opened. */
   onFindMentions: () => void;
   onLinkMention: (path: VaultPath) => void;
+  /**
+   * Notes close in meaning and not linked yet (P32-03), as a section of its
+   * own under the links; left out where the page offers none. Its toggle is
+   * drawn here rather than by a component of its own, so a note opened with
+   * it closed draws nothing more than it did without it.
+   */
+  related?: RelatedPanel;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <section className="mentions links" aria-label="Links">
-      <button
-        type="button"
-        className="mentions__toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((was) => !was)}
-      >
-        <Icon name="forward" size={14} className="mentions__chevron" />
-        Links
-        <span className="links__count">{noteLinksLabel(links)}</span>
-      </button>
-      {open && (
-        <div className="links__groups">
-          <LinkGroup
-            title={incomingTitle}
-            empty="Nothing links here yet."
-            entries={links.incoming}
-            onOpen={onOpen}
-          />
-          <LinkGroup
-            title="Links from this note"
-            empty="This note links nowhere yet."
-            entries={links.outgoing}
-            onOpen={onOpen}
-          />
-          <UnlinkedMentions
-            mentions={mentions}
-            onFind={onFindMentions}
-            onOpen={onOpen}
-            onLink={onLinkMention}
-          />
-        </div>
+    <>
+      <section className="mentions links" aria-label="Links">
+        <button
+          type="button"
+          className="mentions__toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((was) => !was)}
+        >
+          <Icon name="forward" size={14} className="mentions__chevron" />
+          Links
+          <span className="links__count">{noteLinksLabel(links)}</span>
+        </button>
+        {open && (
+          <div className="links__groups">
+            <LinkGroup
+              title={incomingTitle}
+              empty="Nothing links here yet."
+              entries={links.incoming}
+              onOpen={onOpen}
+            />
+            <LinkGroup
+              title="Links from this note"
+              empty="This note links nowhere yet."
+              entries={links.outgoing}
+              onOpen={onOpen}
+            />
+            <UnlinkedMentions
+              mentions={mentions}
+              onFind={onFindMentions}
+              onOpen={onOpen}
+              onLink={onLinkMention}
+            />
+          </div>
+        )}
+      </section>
+      {related !== undefined && (
+        <section className="mentions related" aria-label="Related notes">
+          <button
+            type="button"
+            className="mentions__toggle"
+            aria-expanded={related.open}
+            onClick={related.onToggle}
+          >
+            <Icon name="forward" size={14} className="mentions__chevron" />
+            Related notes
+          </button>
+          {related.open && <RelatedNotesList panel={related} onOpen={onOpen} />}
+        </section>
       )}
-    </section>
+    </>
   );
 }
 

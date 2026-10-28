@@ -415,3 +415,111 @@
   font-size: var(--text-meta);
   min-width: 96px;
 }
+
+/* ---- Related notes and trails (P32-03) ---- */
+
+/* The Related notes section sits under Links as a section of its own. */
+.related {
+  margin-top: 0;
+}
+
+.related__trail {
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 12px;
+}
+
+/* A trail: a hairline band over the note it stands on — Back and Forward,
+   the steps as a path, then the notes to step to next. */
+.trail {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+}
+
+.trail__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.trail__steps {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+/* Each step after the first reads as the next along the path. */
+.trail__steps li + li::before {
+  color: var(--ink-3);
+  content: '→';
+  margin-right: var(--space-1);
+}
+
+.trail__step,
+.trail__choice,
+.trail__saved {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-meta);
+  padding: 2px 6px;
+}
+
+.trail__step:hover,
+.trail__choice:hover,
+.trail__saved:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.trail__step[aria-current='step'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.trail__step:focus-visible,
+.trail__choice:focus-visible,
+.trail__saved:focus-visible {
+  box-shadow: var(--ring);
+  outline: none;
+}
+
+.trail__next {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.trail__next-title,
+.trail__status {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+  margin: 0;
+}
+
+.trail__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trail__saved {
+  text-decoration: underline;
+}
