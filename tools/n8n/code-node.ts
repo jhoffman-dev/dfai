@@ -25,6 +25,27 @@ const MODULES = [
   './github-file.ts',
 ] as const;
 
+/** Where the Slack capture mapper lives (#103), compiled for #104's Code node by the same rules. */
+const CAPTURE_MAPPING = '../../packages/domain/src/capture/mapping/';
+
+/**
+ * The capture mapper's modules, in order: the meeting mapper's clock and
+ * file-name rules it shares, then its own. A Slack message is written by the
+ * same bytes whether n8n or the app maps it.
+ */
+const CAPTURE_MODULES = [
+  `${MAPPING}meeting-mapping-error.ts`,
+  `${MAPPING}meeting-instant.ts`,
+  `${MAPPING}meeting-stated.ts`,
+  `${MAPPING}meeting-when.ts`,
+  `${MAPPING}meeting-file-name.ts`,
+  `${CAPTURE_MAPPING}capture-refusal.ts`,
+  `${CAPTURE_MAPPING}capture-text.ts`,
+  `${CAPTURE_MAPPING}capture-mrkdwn.ts`,
+  `${CAPTURE_MAPPING}capture-payload.ts`,
+  `${CAPTURE_MAPPING}capture-to-atlas.ts`,
+] as const;
+
 const IMPORT = /^import\s[^;]*;[ \t]*\n?/gm;
 const EXPORT = /^export\s+(?=(async\s+)?(function|class|const|let)\b)/gm;
 const EMPTY_EXPORT = /^export\s*\{\s*\};?[ \t]*\n?/gm;
@@ -71,6 +92,29 @@ const HEADER = [
 /** The mapper as one plain-JavaScript script, followed by `run`, the node's own lines. */
 export function codeNodeScript(run: string): string {
   return `${HEADER}\n\n${MODULES.map(moduleScript).join('\n')}\n// --- n8n ---\n${run}\n`;
+}
+
+const CAPTURE_HEADER = [
+  '// DFAI capture mapper (capture contract v1).',
+  '// Generated from packages/domain/src/capture/mapping/*.ts and the meeting mapper it shares',
+  '// in the DFAI repo by `pnpm n8n:build`:',
+  '// change those files and rebuild rather than editing here.',
+].join('\n');
+
+/** The capture mapper as one plain-JavaScript script, followed by `run`, the node's own lines. */
+export function captureCodeNodeScript(run: string): string {
+  return `${CAPTURE_HEADER}\n\n${CAPTURE_MODULES.map(moduleScript).join('\n')}\n// --- n8n ---\n${run}\n`;
+}
+
+/** A Slack capture's Code node (#104): the payload n8n assembles, as the file DFAI would write. */
+export function mapCaptureScript(): string {
+  return captureCodeNodeScript(
+    [
+      '// timeZone: the zone the times in the note are shown on.',
+      `const OPTIONS = { timeZone: '${DEFAULT_TIME_ZONE}' };`,
+      'return { json: mapCapture($json, OPTIONS) };',
+    ].join('\n'),
+  );
 }
 
 /** The "Map meeting to DFAI file" node: run once for each item, one file per meeting. */
