@@ -357,7 +357,8 @@ function rowsOf(
   }
   if (kind === 'date') {
     return {
-      present,
+      // A date field holds the days it can read: `soon` is no date, so no value.
+      present: rows.some((row) => dayOf(row.date) !== null),
       any: (op, value) =>
         rows.some((row) => {
           const day = dayOf(row.date);

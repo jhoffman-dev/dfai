@@ -29,6 +29,7 @@ import { checkAtlasQuery } from './check.ts';
 import {
   comparedValue,
   fieldRows,
+  testedRows,
   presentValue,
   rowOrder,
   shownValue,
@@ -143,15 +144,23 @@ function selection(columns: readonly QueryField[], from: readonly string[]): Fra
     [
       fixed('n.path AS "path"'),
       fixed('n.title AS "title"'),
-      sql`(SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (${typeList(from)}) ORDER BY t.idx LIMIT 1) AS "type"`,
+      sql`(SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (${typeList(from)}) ORDER BY t.idx LIMIT 1) AS "type"`,
       ...columns.map((column) => sql`${cellOf(column)} AS ${fixed(`"${column.text}"`)}`),
     ],
     ', ',
   );
 }
 
+/**
+ * The types a note's `type` names, as the rest of DFAI reads it — in any case
+ * and spacing (`taskTypeOf`, the Today page, the review): a note that says
+ * `type: Task` is a task to `FROM task` too.
+ */
 function typeList(from: readonly string[]): Fragment {
-  return joined(from.map(bound), ', ');
+  return joined(
+    from.map((name) => bound(name.trim().toLowerCase())),
+    ', ',
+  );
 }
 
 /** One value, or several joined as a type's view joins them: `a, b`. */
@@ -187,7 +196,7 @@ function conditions(
   const from = query.from.map((name) => name.text);
   return joined(
     [
-      sql`EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (${typeList(from)}))`,
+      sql`EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (${typeList(from)}))`,
       fixed(userSpaceNoteSql('n.path')),
       ...(query.includeArchived ? [] : archivedLeftOut(from)),
       ...(query.where === null ? [] : [sql`(${expressionSql(query.where, field, context)})`]),
@@ -258,8 +267,8 @@ function conditionSql(
   const compared = fixed(comparedValue(field));
   const operand = operandOf(field, value);
   // "Is not" means no value is: a note without one is not `done`, so it is listed.
-  if (op === '!=') return anyRow(fieldRows(field), sql`${compared} = ${operand}`, true);
-  return anyRow(fieldRows(field), comparisonSql(op, compared, operand));
+  if (op === '!=') return anyRow(testedRows(field), sql`${compared} = ${operand}`, true);
+  return anyRow(testedRows(field), comparisonSql(op, compared, operand));
 }
 
 function comparisonSql(op: Comparison, left: Fragment, right: Fragment): Fragment {

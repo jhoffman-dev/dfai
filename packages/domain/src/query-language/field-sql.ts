@@ -53,7 +53,9 @@ export function fieldRows(
 ): Fragment {
   const { alias, owner } = TABLES[table];
   const keyed = table === 'props' || table === 'relations';
-  const key = keyed ? sql` AND ${fixed(alias)}.key = ${bound(field.key)}` : fixed('');
+  const key = keyed
+    ? sql` AND ${fixed(alias)}.key = ${bound(field.key)}${fixed(datesOnly(field, table))}`
+    : fixed('');
   const from = fixed(`${table} AS ${alias}`);
   if (field.via === null) {
     return sql`FROM ${from}${fixed(join)} WHERE ${fixed(`${alias}.${owner}`)} = n.path${key}`;
@@ -62,6 +64,28 @@ export function fieldRows(
 }
 
 const HOP_IN_USER_SPACE = userSpaceNoteSql('h.dst');
+
+/**
+ * A date field's values are the days it holds: a value written as words —
+ * `TBD`, `next week` — or a day no calendar has, `2026-02-30`, is no date,
+ * and its cell shows none. So it is empty, and compares as nothing, as the
+ * Today page and the review read it.
+ */
+function datesOnly(field: QueryField, table: RowTable): string {
+  return field.kind === 'date' && table === 'props' ? ' AND p.value_date IS NOT NULL' : '';
+}
+
+/**
+ * The rows a comparison asks about. A field that holds one value is tested on
+ * the value its cell shows — the first — so a single `due` written as two
+ * days is one day, as the Today page reads it, not both at once. A field that
+ * holds many, or one reached through a link, is asked whether any row matches.
+ */
+export function testedRows(field: QueryField): Fragment {
+  const rows = fieldRows(field);
+  if (field.many || field.via !== null || valueTable(field) !== 'props') return rows;
+  return sql`${rows} AND p.rowid = (SELECT p.rowid ${rows} ORDER BY ${fixed(rowOrder(field))} LIMIT 1)`;
+}
 
 /** The order a field's rows are read in: as written, and for a hop, by the link first. */
 export function rowOrder(field: QueryField, table: RowTable = valueTable(field)): string {
