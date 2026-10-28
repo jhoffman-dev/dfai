@@ -116,8 +116,10 @@ export const HIDDEN = 'require';
  * - it scans only `.js` and `.mjs` files, the scripts the webview runs;
  * - it can match a regex literal or a string that spells `require("path")`
  *   (a false alarm, let through by KNOWN_NODE_REFERENCES once understood);
- * - it cannot see a built-in named through a variable, such as an aliased
- *   `createRequire(import.meta.url)(name)` or a computed `globalThis['proc' + 'ess']`.
+ * - it cannot see a built-in or a call named through a variable or a computed
+ *   name, such as an aliased `createRequire(import.meta.url)(name)` or
+ *   `process['getBuiltin' + 'Module']('fs')`. (A computed object is fine:
+ *   `globalThis['proc' + 'ess'].getBuiltinModule('fs')` still names the call.)
  *
  * The app's own code and its dependencies' imports are covered by the build's
  * record instead, which sees every import as it resolves, by name or through
