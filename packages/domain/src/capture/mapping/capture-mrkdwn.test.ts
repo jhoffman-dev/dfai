@@ -74,6 +74,15 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     expect(md(slack)).toBe(markdown);
   });
 
+  it('percent-encodes what would make a wiki link, an embed or an end in a link’s address', () => {
+    expect(md("<https://example.com/![[a]]'|see>")).toBe(
+      '[see](https://example.com/%21%5B%5Ba%5D%5D%27)',
+    );
+    expect(md('<mailto:[[a]]@example.com>')).toBe(
+      '[mailto:\\[\\[a\\]\\]@example.com](mailto:%5B%5Ba%5D%5D@example.com)',
+    );
+  });
+
   it('never writes a link that runs script or leaves the web', () => {
     expect(md('<javascript:alert(1)|click>')).toBe('click');
     expect(md('<slack://open|app>')).toBe('app');

@@ -49,9 +49,17 @@ const LINKABLE = /^(?:https?:\/\/[^\s/<>]|mailto:[^\s<>])[^\s<>]*$/i;
 
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
-/** The characters a link's destination cannot hold as written, by their percent codes. */
+/**
+ * The characters a link's destination cannot hold as written, by their
+ * percent codes: those that would end it (`(`, `)`, `<`, `>`, a quote), the
+ * backslash, and `[`, `]` and `!`, which the index would read as a wiki
+ * link or an embed inside the address.
+ */
 const encodeDestination = (url: string) =>
-  url.replace(/[()\\]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+  url.replace(
+    /[()\\[\]!<>"'`]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 
 /** The longest run of backticks in `text`. */
 function longestBacktickRun(text: string): number {
