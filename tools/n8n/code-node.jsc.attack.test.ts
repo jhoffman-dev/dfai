@@ -140,3 +140,47 @@ describe.skipIf(!existsSync(JSC))('running a script in the webview’s engine', 
     expect(scratch()).toEqual(before);
   });
 });
+
+describe.skipIf(!existsSync(JSC))(
+  'an owner’s address compared in the webview’s engine (#199)',
+  () => {
+    // JavaScriptCore's shell has no URL: the mapper reads a domain's punycode form itself.
+    const SELF_RUN = (selfEmails: readonly string[]) =>
+      `return mapGranolaNote($json, ${JSON.stringify({ ...OPTIONS, selfEmails })});`;
+    const spoken = {
+      ...NOTE,
+      transcript: [
+        {
+          speaker: { source: 'speaker', attribution: 'me' },
+          text: 'Hello.',
+          start_time: '2026-10-06T17:25:00Z',
+          end_time: '2026-10-06T17:25:02Z',
+        },
+      ],
+    };
+
+    it.each([
+      [
+        'a Unicode domain against its punycode form',
+        'Mara@Bücher.example',
+        'mara@xn--bcher-kva.example',
+      ],
+      [
+        'a punycode domain against its Unicode form',
+        'mara@xn--bcher-kva.example.',
+        'mara@bücher.example',
+      ],
+      [
+        'a decomposed local part against a composed one',
+        'rén@日本語.example',
+        'Rén <rén@xn--wgv71a119e.example>',
+      ],
+    ])('names the owner You for %s, byte for byte as Node does', (_, owner, self) => {
+      const note = { ...spoken, owner: { name: 'Mara Quill', email: owner } };
+      const [webview] = inJavaScriptCore([note], SELF_RUN([self]));
+      const inNode = { ...mapGranolaNote(note, { ...OPTIONS, selfEmails: [self] }) };
+      expect(webview).toEqual(inNode);
+      expect(inNode.content).toContain('**You** [');
+    });
+  },
+);
