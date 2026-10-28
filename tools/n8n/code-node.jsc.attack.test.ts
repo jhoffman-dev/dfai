@@ -184,3 +184,63 @@ describe.skipIf(!existsSync(JSC))(
     });
   },
 );
+
+describe.skipIf(!existsSync(JSC))('emailKey in the webview’s engine (#199, PR #604 attack)', () => {
+  /** A seeded linear congruential generator: the same addresses on every run. */
+  function seeded(seed: number): () => number {
+    let state = seed >>> 0;
+    return () => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state / 2 ** 32;
+    };
+  }
+  const POOL = [
+    ...'maRA.+-"<> @',
+    ...['а', 'Σ', 'σ', 'ς', 'ß', 'ẞ', 'İ', 'ı', 'é', 'é', 'Ａ', 'K', 'ü'],
+    ...['​', '‍', ' ', '­', '\u0000', '\u0085', '﻿'],
+    ...['。', '．', '｡', 'xn--', 'xn--bcher-kva', 'xn--wca', '😀', '日本'],
+  ];
+  const addresses = (() => {
+    const random = seeded(604);
+    const pick = () => POOL[Math.floor(random() * POOL.length)] ?? '';
+    const part = () => Array.from({ length: 1 + Math.floor(random() * 6) }, pick).join('');
+    return Array.from({ length: 2_000 }, () => `${part()}@${part()}.${part()}`);
+  })();
+  const EDGES = [
+    'mara@larkspur.ΟΔΟΣ',
+    'ΜΑΡΑΣ@ΟΔΟΣ-ΕΝΑ.example',
+    'evil@x.com <mara@example.com>',
+    'Mara Quill <>',
+    'ma​ra@lark‍spur.example',
+    'ｍａｒａ@ｌａｒｋｓｐｕｒ。example．',
+    'mİra@straẞe.example',
+  ];
+
+  it('keys every address byte for byte as Node does', async () => {
+    const { emailKey } =
+      await import('../../packages/domain/src/meetings/mapping/meeting-email-key.ts');
+    const inputs = [...EDGES, ...addresses];
+    const [webview] = inJavaScriptCore([inputs], 'return $json.map((each) => emailKey(each));');
+    expect(webview).toEqual(inputs.map((each) => emailKey(each)));
+  });
+
+  it('encodes and decodes punycode byte for byte as Node does', async () => {
+    const { punycodeDecode, punycodeEncode } =
+      await import('../../packages/domain/src/meetings/mapping/meeting-punycode.ts');
+    const labels = addresses.map((each) => each.split('@')[0] ?? '');
+    const [webview] = inJavaScriptCore(
+      [labels],
+      'return $json.map((each) => [punycodeEncode(each), punycodeDecode(each)]);',
+    );
+    expect(webview).toEqual(labels.map((each) => [punycodeEncode(each), punycodeDecode(each)]));
+  });
+
+  it('names the owner alike at a capital-Σ domain', () => {
+    const note = { ...NOTE, owner: { name: 'Mara Quill', email: 'mara@larkspur.ΟΔΟΣ' } };
+    const run = `return mapGranolaNote($json, ${JSON.stringify({ ...OPTIONS, selfEmails: ['mara@larkspur.οδος'] })});`;
+    const [webview] = inJavaScriptCore([note], run);
+    expect(webview).toEqual({
+      ...mapGranolaNote(note, { ...OPTIONS, selfEmails: ['mara@larkspur.οδος'] }),
+    });
+  });
+});
