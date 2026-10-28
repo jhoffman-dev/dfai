@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { digestOf } from '@dfai/domain';
-import { blockMarkdown } from '../testing/block-markdown.ts';
-import { fakeEmbedder, memoryEmbeddingCache } from '../testing/fake-embeddings.ts';
-import { createSemanticEngine, type SemanticOptIn } from './semantic-engine.ts';
+import { relatedEngine } from '../testing/related-engine.ts';
 
 const VAULT = '/vault';
 
@@ -16,39 +13,7 @@ const NOTES = {
 };
 
 function setUp(notes: Record<string, string> = NOTES, { on = true } = {}) {
-  const files = new Map(Object.entries(notes));
-  const embedder = fakeEmbedder();
-  const turnedOn = new Set<string>(on ? [VAULT] : []);
-  const optIn: SemanticOptIn = {
-    isOn: (vault) => turnedOn.has(vault),
-    turnOn: (vault) => turnedOn.add(vault),
-  };
-  const engine = createSemanticEngine({
-    vault: VAULT,
-    fs: {
-      readNotes: async (paths) =>
-        paths.flatMap((path) => {
-          const text = files.get(path);
-          return text === undefined ? [] : [{ path, text, modified: 1, size: text.length }];
-        }),
-    },
-    markdown: blockMarkdown(),
-    index: {
-      manifest: async () =>
-        [...files].map(([path, text]) => ({
-          path,
-          digest: digestOf(text),
-          type: null,
-          modified: 1,
-          size: text.length,
-        })),
-    },
-    embedder,
-    cache: memoryEmbeddingCache({ vault: VAULT }),
-    idle: { idle: async () => {} },
-    optIn,
-  });
-  return { engine, embedder, turnedOn };
+  return relatedEngine(notes, { vault: VAULT, on });
 }
 
 const nothingExcluded = { linked: new Set<string>(), dismissed: new Set<string>() };
@@ -91,6 +56,19 @@ describe('related notes by meaning', () => {
     const wages = notes.filter((note) => note.title === 'Wages').map((note) => note.target);
     expect(wages.length).toBeGreaterThan(0);
     expect(wages.some((target) => target.includes('/'))).toBe(true);
+  });
+
+  it('never offers a note gone from the vault whose forget is still queued', async () => {
+    const { engine, busy, remove } = setUp();
+    await engine.start();
+    await engine.settled();
+    // A long build: the forget waits behind an embed the window has no idle moment for yet.
+    busy('Home/Garden.md');
+    remove('Payroll/Wages.md');
+    const answer = await engine.related({ path: 'Meetings/Standup.md', exclude: nothingExcluded });
+    const paths = answer.notes.map((note) => note.path);
+    expect(paths).toContain('Elsewhere/Wages.md');
+    expect(paths).not.toContain('Payroll/Wages.md');
   });
 
   it('asks the model nothing: the vectors are the cache’s', async () => {
