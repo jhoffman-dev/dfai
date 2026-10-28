@@ -45,6 +45,7 @@ export {
   isConflictCopyPath,
   macLabel,
   planConflictSteps,
+  settingsFileOfCopy,
 } from './conflict-copy.ts';
 export type { ConflictStep } from './conflict-copy.ts';
 export {

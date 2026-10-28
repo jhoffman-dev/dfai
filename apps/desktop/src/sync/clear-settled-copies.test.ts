@@ -39,14 +39,19 @@ function vault(
   files: Record<string, string>,
   {
     onRead,
-  }: { onRead?: (path: string, reads: number, held: Map<string, NoteContents>) => void } = {},
+    stage = 0,
+  }: {
+    onRead?: (path: string, reads: number, held: Map<string, NoteContents>) => void;
+    /** The index stage every file is listed at: 0, or 1–3 while a merge is in conflict. */
+    stage?: number;
+  } = {},
 ) {
   const held = new Map(Object.entries(files).map(([path, text]) => [path, { text, modified: 1 }]));
   const trashed: string[] = [];
   const reads = new Map<string, number>();
   const index = () =>
     Object.keys(files)
-      .map((path) => `100644 ${OID} 0\t${path}\0`)
+      .map((path) => `100644 ${OID} ${stage}\t${path}\0`)
       .join('');
   return {
     trashed,
@@ -262,6 +267,10 @@ describe('clearSettledCopies (#235)', () => {
     const { cleared } = await clear(world, { keep: new Set([COPY]) });
     expect(cleared).toEqual([]);
     expect(world.trashed).toEqual([]);
+  });
+
+  it('leaves alone a copy git still holds in conflict', async () => {
+    await expectKept({ [LIVE]: LIVE_TEXT, [COPY]: LIVE_TEXT }, { stage: 2 });
   });
 
   it('leaves alone a copy of a note, however alike the two are', async () => {

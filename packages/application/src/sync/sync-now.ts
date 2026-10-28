@@ -30,6 +30,7 @@ import {
   SyncError,
   withPrograms,
 } from './git-steps.ts';
+import { clearSettledCopies } from './clear-settled-copies.ts';
 import { leaveOut } from './leave-out.ts';
 import type { GitPort, SyncFilesPort, UnsavedWorkPort } from './ports.ts';
 import { clearJournal, readJournal } from './journal.ts';
@@ -39,11 +40,12 @@ export interface SyncPorts {
   readonly git: GitPort;
   /**
    * To measure files, for what is too large to sync, to make a folder a copy
-   * goes in, and to write a settings file both Macs changed merged by its keys.
+   * goes in, to write a settings file both Macs changed merged by its keys,
+   * and to move a copy that holds nothing more to the Trash.
    */
   readonly fs: Pick<
     VaultFsPort,
-    'listDirectory' | 'createFolder' | 'readTextFile' | 'writeTextFile'
+    'listDirectory' | 'createFolder' | 'readTextFile' | 'writeTextFile' | 'trashEntry'
   >;
   /** To read and write the frontmatter of a settings file both Macs changed. */
   readonly markdown: MarkdownPort;
@@ -117,6 +119,7 @@ async function runSync({
   const committed = (await commitAll({ git, mac, message, leftOut })) || leftover;
   expectOk('fetch from GitHub', await git.fetch());
   const pulled = await mergeFromOrigin(step);
+  const cleared = await clearCopiesThatAddNothing(step);
   const tooLarge = await leaveOutOfUnpushedHistory(step);
   const after = await readStatus(git);
   // Without a comparison the upstream is not on GitHub yet, so nothing here is either.
@@ -126,7 +129,7 @@ async function runSync({
   await clearJournal(files);
   return {
     at: clock.now(),
-    committed,
+    committed: committed || cleared,
     pulled,
     pushed,
     conflicts,
@@ -206,6 +209,22 @@ async function mergeFromOrigin(step: SyncStep): Promise<boolean> {
   await settleConflicts({ git, files, conflicts, mac: from, leftOut, settings: settingsOf(step) });
   await commitAs({ git, message, identity });
   return true;
+}
+
+/**
+ * Clears the `.atlas` conflict copies whose live file, as this sync's merge
+ * left it, already holds everything in them (#235), then commits their
+ * removal so it goes out with this push. Copies this sync made are kept: it
+ * is about to report them. Says whether it committed.
+ */
+async function clearCopiesThatAddNothing(step: SyncStep): Promise<boolean> {
+  const { git, fs, markdown, files, activity, mac, message, leftOut } = step;
+  const { unreported } = await readJournal(files);
+  const cleared = await clearSettledCopies({
+    ports: { git, fs, markdown, activity },
+    keep: new Set(unreported.map(({ copy }) => copy)),
+  });
+  return cleared.length > 0 && (await commitAll({ git, mac, message, leftOut }));
 }
 
 /**
