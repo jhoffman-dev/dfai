@@ -50,6 +50,15 @@ export interface ClarifyOutcome {
   readonly undo: ClarifyUndo;
 }
 
+/**
+ * Whether clarifying changed the note at all: wrote its properties, or moved
+ * it. A filing alone whose move failed changed nothing, so it has nothing to
+ * be said done or taken back.
+ */
+export function clarifiedAnything({ undo }: Pick<ClarifyOutcome, 'undo'>): boolean {
+  return undo.from !== undo.to || undo.before !== undo.after;
+}
+
 /** A note to clarify, and how. */
 export interface ClarifyRequest {
   readonly ports: ArchivePorts;

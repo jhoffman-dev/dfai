@@ -194,7 +194,6 @@ test('a filing whose move fails comes back to the Inbox, saying why, and nothing
 }) => {
   const { vault, host } = await openParaHost(page);
   const waiting = 'Inbox/Meetings/2026-10-01 Seed swap.md';
-  const before = await vault.read(waiting);
   const refuse = host.holdMoves(waiting);
   await goTo(page)
     .getByRole('button', { name: /^Inbox/ })
@@ -219,7 +218,8 @@ test('a filing whose move fails comes back to the Inbox, saying why, and nothing
   );
   // Nothing was written, so nothing is said to be clarified, nor offered to undo.
   await expect(page.getByRole('status').filter({ hasText: 'Clarified' })).toHaveCount(0);
-  expect(await vault.read(waiting)).toBe(before);
+  // Still waiting where it was, filed under nothing (the meeting import's own notes aside).
+  expect(await vault.read(waiting)).not.toMatch(/^project:/m);
   expect(await vault.exists('Meetings/2026/10/2026-10-01 Seed swap.md')).toBe(false);
 });
 

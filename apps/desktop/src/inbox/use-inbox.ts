@@ -17,6 +17,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import {
+  clarifiedAnything,
   clarifyInboxItem,
   ClarifyRefusedError,
   listInbox,
@@ -255,6 +256,10 @@ export function useInbox(options: InboxOptions) {
           // Clarified but not filed — the move refused, say — the row comes back to say why.
           if (reason === null && leaves) writes.written(asked, path);
           else writes.stay(asked, path);
+          if (reason !== null && !clarifiedAnything(outcome)) {
+            say(asked, { problem: null, row: { path, reason }, last: 'kept' });
+            return NOT_WRITTEN;
+          }
           const clarified = { title: noteTitle(path), undo: outcome.undo };
           say(asked, { problem: null, row: { path, reason }, last: clarified });
           announce(clarified);
