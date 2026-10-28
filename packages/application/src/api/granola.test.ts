@@ -72,6 +72,7 @@ describe('GET /v1/granola', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       hasKey: true,
+      keyRefused: false,
       lastPullAt: NOW - 60_000,
       watermark: '2026-10-13T16:00:00Z',
     });
@@ -83,7 +84,20 @@ describe('GET /v1/granola', () => {
     granola.key = { hasKey: false, lastRefusal: null };
     granola.record = { watermark: null, lastPullAt: null };
 
-    expect((await status(api)).body).toEqual({ hasKey: false, lastPullAt: null, watermark: null });
+    expect((await status(api)).body).toEqual({
+      hasKey: false,
+      keyRefused: false,
+      lastPullAt: null,
+      watermark: null,
+    });
+  });
+
+  it('says when Granola refused the key this Mac holds', async () => {
+    const api = apiFixture();
+    const granola = fakeGranola(api);
+    granola.key = { hasKey: true, lastRefusal: 401 };
+
+    expect((await status(api)).body).toMatchObject({ hasKey: true, keyRefused: true });
   });
 
   it('answers no_vault when the vault is switched while the host is asked', async () => {
@@ -194,6 +208,46 @@ describe('POST /v1/granola/pull', () => {
     expect(granola.pulls).toEqual([]);
   });
 
+  it('is conflict, and asks Granola nothing, when Granola refused the key', async () => {
+    const api = apiFixture();
+    const granola = fakeGranola(api);
+    granola.key = { hasKey: true, lastRefusal: 401 };
+
+    const response = await pull(api);
+
+    expect(codeOf(response)).toBe('conflict');
+    expect(bodyOf(response)['error']).toMatchObject({
+      message: expect.stringMatching(/Granola refused this Mac's key/),
+    });
+    expect(bodyOf(response)['error']).not.toHaveProperty('retryAfter');
+    expect(granola.pulls).toEqual([]);
+  });
+
+  it('counts the 30 s from when a pull ends, so full listings never run back to back', async () => {
+    const api = apiFixture();
+    const granola = fakeGranola(api);
+    // Asking the key and the pull each take 40 s.
+    granola.during = () => (api.now += 40_000);
+    await pull(api);
+    granola.during = () => {};
+    api.now += 20_000;
+
+    const second = await pull(api);
+
+    expect(bodyOf(second)['error']).toMatchObject({ code: 'conflict', retryAfter: 10 });
+    expect(granola.pulls).toHaveLength(1);
+  });
+
+  it('does not spend the 30 s on a pull refused for want of a key', async () => {
+    const api = apiFixture();
+    const granola = fakeGranola(api);
+    granola.key = { hasKey: false, lastRefusal: null };
+    await pull(api);
+    granola.key = { hasKey: true, lastRefusal: null };
+
+    expect((await pull(api)).status).toBe(200);
+  });
+
   it('does not spend the 30 s on a pull it refused', async () => {
     const api = apiFixture();
     const granola = fakeGranola(api);
@@ -250,6 +304,8 @@ describe('the key', () => {
     granola.key = { hasKey: false, lastRefusal: 401 };
     await ask(() => status(api));
     await ask(() => pull(api)); // no key
+    granola.key = { hasKey: true, lastRefusal: 401 };
+    await ask(() => pull(api)); // a key Granola refused
     granola.key = { hasKey: true, lastRefusal: null };
     granola.ready = false;
     await ask(() => pull(api)); // not ready
@@ -267,6 +323,7 @@ describe('the key', () => {
       'conflict',
       null,
       null,
+      'conflict',
       'conflict',
       'conflict',
       'no_vault',

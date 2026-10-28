@@ -464,8 +464,50 @@ describe('useGranolaPull', () => {
     await act(async () => {
       ended = (await hook.result.current.syncNowFor(OTHER)).ended;
     });
-    expect(ended).not.toBe('pulled');
+    expect(ended).toBe('not-synced');
     expect(lists()).toBe(1);
+  });
+
+  it('a Sync now for the API that fails shows on the card, never as a toast (P28-13)', async () => {
+    const { hook, granola, lists } = setUp();
+    await settles(() => expect(lists()).toBe(1));
+    granola.fail('list', UNREACHABLE);
+    await act(async () => {
+      await hook.result.current.syncNowFor(VAULT);
+    });
+    expect(hook.result.current.report).toMatchObject({ mode: 'sync-now', ended: 'failed' });
+    expect(hook.result.current.toast).toBeNull();
+    expect(hook.result.current.toastShown).toBe(0);
+  });
+
+  it('a Sync now for the API that Granola refuses the key on raises no toast either (P28-13)', async () => {
+    const { hook, granola, lists } = setUp();
+    await settles(() => expect(lists()).toBe(1));
+    granola.fail('list', KEY_REFUSED);
+    await act(async () => {
+      await hook.result.current.syncNowFor(VAULT);
+    });
+    expect(hook.result.current.report?.keyRefused).toBe(true);
+    expect(hook.result.current.toast).toBeNull();
+  });
+
+  it('says a vault is ready for the API only once it is open, synced and caught up (P28-13)', async () => {
+    const index = held<boolean>();
+    const { hook, options } = setUp({ synced: [], catchUpIndex: () => index.promise });
+    await act(async () => undefined);
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+
+    hook.rerender({ ...options, syncedThisSession: new Set([VAULT]) });
+    await act(async () => undefined);
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+
+    index.settle(true);
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+    expect(hook.result.current.readyFor(OTHER)).toBe(false);
+
+    // Another vault opened: the one before is no longer ready, whatever it was.
+    hook.rerender({ ...options, syncedThisSession: new Set([VAULT]), vaultKey: OTHER });
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
   });
 
   it('has the tree and the index read again once a pull has written meetings, and not before', async () => {
