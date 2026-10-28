@@ -143,6 +143,17 @@ describe('code blocks highlighted on first use', () => {
     expect(drawnClasses(failed)[0]).toContain('hljs-keyword');
   });
 
+  it('does not ask again for a failed grammar on each key typed into its block', async () => {
+    const { languages, asked, settle } = heldGrammars();
+    const editor = reading([code('ts', 'let a = 1;')], languages);
+    await settle('typescript', 'fail');
+    for (const key of 'let b;') {
+      editor.commands.insertContentAt(editor.state.doc.child(0).nodeSize - 1, key);
+    }
+    expect(editor.state.doc.child(0).textContent).toBe('let a = 1;let b;');
+    expect(asked).toEqual(['typescript']);
+  });
+
   it('colours a block typed into, and keeps the colours of a block not touched', async () => {
     const { languages, settle } = heldGrammars();
     const editor = reading([paragraph('Prose.'), code('ts', 'let a = 1;')], languages);

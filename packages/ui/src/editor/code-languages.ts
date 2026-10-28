@@ -86,12 +86,32 @@ export function createCodeLanguages(loadGrammar: LoadGrammar): CodeLanguages {
   const failed = new Set<CodeGrammar>();
   const listeners = new Set<(grammar: CodeGrammar) => void>();
 
+  /** Tells each listener; one that throws is reported and does not keep the grammar from the rest. */
+  const announce = (grammar: CodeGrammar) => {
+    for (const listener of [...listeners]) {
+      try {
+        listener(grammar);
+      } catch (cause) {
+        console.error(`An editor could not draw the ${grammar} code it was waiting on:`, cause);
+      }
+    }
+  };
+
+  /** The fetch begun now; one that throws before it returns a promise is a failed load too. */
+  const fetchOf = (grammar: CodeGrammar): Promise<LanguageFn> => {
+    try {
+      return loadGrammar(grammar, { fresh: failed.has(grammar) });
+    } catch (cause) {
+      return Promise.reject(cause instanceof Error ? cause : new Error(String(cause)));
+    }
+  };
+
   const fetchOnce = (grammar: CodeGrammar): Promise<boolean> =>
-    loadGrammar(grammar, { fresh: failed.has(grammar) }).then(
+    fetchOf(grammar).then(
       (language) => {
         lowlight.register(grammar, language);
         failed.delete(grammar);
-        for (const listener of [...listeners]) listener(grammar);
+        announce(grammar);
         return true;
       },
       () => {

@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core';
 import type { Node as PmNode } from '@tiptap/pm/model';
-import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state';
+import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import {
   grammarFor,
@@ -19,8 +19,8 @@ import {
 
 interface HighlightState {
   readonly decorations: DecorationSet;
-  /** The grammars this note's blocks name that have not loaded yet. */
-  readonly waiting: readonly CodeGrammar[];
+  /** The grammars this note's blocks name that have not loaded yet, with how many blocks name each. */
+  readonly waiting: ReadonlyMap<CodeGrammar, number>;
 }
 
 const highlightKey = new PluginKey<HighlightState>('codeHighlight');
@@ -62,15 +62,15 @@ function decorationsOf(nodes: readonly Branch[], from: number, classes: readonly
 
 function highlightDoc(doc: PmNode, languages: CodeLanguages): HighlightState {
   const decorations: Decoration[] = [];
-  const waiting = new Set<CodeGrammar>();
+  const waiting = new Map<CodeGrammar, number>();
   for (const { node, pos } of codeBlocksOf(doc)) {
     const grammar = grammarFor(node.attrs.language as string | null);
     if (grammar === null) continue;
     const tree = languages.highlight(grammar, node.textContent);
-    if (tree === null) waiting.add(grammar);
+    if (tree === null) waiting.set(grammar, (waiting.get(grammar) ?? 0) + 1);
     else decorations.push(...decorationsOf(tree.children, pos + 1).decorations);
   }
-  return { decorations: DecorationSet.create(doc, decorations), waiting: [...waiting] };
+  return { decorations: DecorationSet.create(doc, decorations), waiting };
 }
 
 /** Whether a change left every code block as it was: then the colours only move. */
@@ -79,32 +79,48 @@ function sameBlocks(before: PmNode, after: PmNode): boolean {
   return was.length === now.length && was.every((block, at) => block.node === now[at]?.node);
 }
 
+/** Marks a transaction that only redraws: plugins that append edits leave it alone. */
+export const REDRAW_ONLY = 'redrawOnly';
+
+/** Whether every transaction in a round only redrew, changing nothing in the note. */
+export const onlyRedraws = (transactions: readonly Transaction[]): boolean =>
+  transactions.length > 0 &&
+  transactions.every((transaction) => transaction.getMeta(REDRAW_ONLY) === true);
+
 /**
- * Asks for each grammar the note waits on, once per editor, and colours the
- * note whenever one it waits on arrives, whichever editor's ask brought it:
- * a note whose own fetch failed is coloured once another succeeds.
+ * Asks for each grammar the note waits on, and colours the note whenever one
+ * it waits on arrives, whichever editor's ask brought it. A grammar whose
+ * fetch failed is asked for again, fresh, when the note gains another block
+ * in it: once per new block, never on each keystroke.
  */
 function askForGrammars(languages: CodeLanguages) {
-  return (view: { state: EditorState; dispatch: (tr: EditorState['tr']) => void }) => {
+  return (view: { state: EditorState; dispatch: (tr: Transaction) => void }) => {
     const asked = new Set<CodeGrammar>();
-    const waitsOn = (grammar: CodeGrammar) =>
-      highlightKey.getState(view.state)?.waiting.includes(grammar) === true;
+    /** How many blocks named a grammar when its fetch failed. */
+    const failedWith = new Map<CodeGrammar, number>();
+    const waiting = () =>
+      highlightKey.getState(view.state)?.waiting ?? new Map<CodeGrammar, number>();
     const stopListening = languages.onReady((grammar) => {
-      if (!waitsOn(grammar)) return;
-      // Nothing in the note changed: not an edit to save, nor a step to undo.
+      if (!waiting().has(grammar)) return;
+      // Nothing in the note changed: not an edit to save, nor a step to undo, nor one to append to.
       view.dispatch(
         view.state.tr
           .setMeta(highlightKey, grammar)
+          .setMeta(REDRAW_ONLY, true)
           .setMeta('preventUpdate', true)
           .setMeta('addToHistory', false),
       );
     });
     const ask = () => {
-      for (const grammar of highlightKey.getState(view.state)?.waiting ?? []) {
-        if (asked.has(grammar)) continue;
+      for (const [grammar, blocks] of waiting()) {
+        if (asked.has(grammar) || blocks <= (failedWith.get(grammar) ?? 0)) continue;
         asked.add(grammar);
-        // A failure leaves the code plain; the grammar's arrival, from any ask, colours it.
-        void languages.load(grammar);
+        void languages.load(grammar).then((ready) => {
+          if (ready) return;
+          // Its arrival from another editor's ask still colours the note (onReady).
+          asked.delete(grammar);
+          failedWith.set(grammar, waiting().get(grammar) ?? 0);
+        });
       }
     };
     ask();
