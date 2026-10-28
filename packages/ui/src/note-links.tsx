@@ -44,8 +44,8 @@ export function NoteLinksPanel({
   /**
    * Notes close in meaning and not linked yet (P32-03), as a section of its
    * own under the links; left out where the page offers none. Its toggle is
-   * drawn here rather than by a component of its own, so a note opened with
-   * it closed draws nothing more than it did without it.
+   * drawn here, its chevron by CSS, rather than by components of their own,
+   * so a note opened with it closed mounts nothing more than it did without it.
    */
   related?: RelatedPanel;
 }) {
@@ -91,11 +91,10 @@ export function NoteLinksPanel({
         <section className="mentions related" aria-label="Related notes">
           <button
             type="button"
-            className="mentions__toggle"
+            className="mentions__toggle related__toggle"
             aria-expanded={related.open}
             onClick={related.onToggle}
           >
-            <Icon name="forward" size={14} className="mentions__chevron" />
             Related notes
           </button>
           {related.open && <RelatedNotesList panel={related} onOpen={onOpen} />}

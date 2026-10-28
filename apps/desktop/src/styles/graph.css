@@ -423,6 +423,23 @@
   margin-top: 0;
 }
 
+/* The chevron is drawn here, not by an Icon: a note opened with the section
+   shut then mounts no more components than before (the work budgets). */
+.related__toggle::before {
+  border-right: 2px solid currentColor;
+  border-top: 2px solid currentColor;
+  content: '';
+  height: 5px;
+  margin: 0 5px 0 3px;
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+  width: 5px;
+}
+
+.related__toggle[aria-expanded='true']::before {
+  transform: rotate(135deg);
+}
+
 .related__trail {
   align-self: flex-start;
   height: 28px;
