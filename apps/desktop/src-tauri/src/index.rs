@@ -2778,6 +2778,51 @@ mod tests {
         assert_eq!(result.rows[0][0], serde_json::json!("Big"));
     }
 
+    /// #237: a string parameter is bound as the string itself, never as its
+    /// JSON-escaped text, so `"`, `\`, control characters and non-ASCII match.
+    #[test]
+    fn a_string_parameter_is_bound_as_the_string_itself() {
+        let awkward = [
+            "Mara \"Q\" Quill",
+            "C:\\notes\\drafts",
+            "line one\nline two\ttabbed",
+            "Zoë Café 東京 🌿",
+            "\"",
+        ];
+        let notes: Vec<IndexedNote> = awkward
+            .iter()
+            .enumerate()
+            .map(|(at, value)| {
+                typed_note(&format!("{at}.md"), &format!("N{at}"), &[("stage", value)])
+            })
+            .collect();
+        let mut index = empty_index();
+        put_notes(&mut index, &notes).unwrap();
+        rebuild_views(&index, &[company_type()]).unwrap();
+
+        for (at, value) in awkward.iter().enumerate() {
+            let echoed =
+                run_query(&index, "SELECT ? AS echoed", &[serde_json::json!(value)]).unwrap();
+            assert_eq!(
+                echoed.rows[0][0],
+                serde_json::json!(value),
+                "echo of {value:?}"
+            );
+
+            let result = run_query(
+                &index,
+                "SELECT title FROM v_company WHERE stage = ?",
+                &[serde_json::json!(value)],
+            )
+            .unwrap();
+            assert_eq!(
+                result.rows,
+                vec![vec![serde_json::json!(format!("N{at}"))]],
+                "match for {value:?}"
+            );
+        }
+    }
+
     #[test]
     fn a_list_property_becomes_one_cell() {
         let mut index = empty_index();
