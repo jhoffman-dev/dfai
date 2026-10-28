@@ -38,5 +38,12 @@ export type {
   SemanticSearch,
   SemanticSearchDeps,
 } from './semantic-search.ts';
+export { relatedByMeaning } from './related-by-meaning.ts';
+export type {
+  RelatedAnswer,
+  RelatedByMeaningDeps,
+  RelatedSuggestion,
+  RelatedQuery,
+} from './related-by-meaning.ts';
 export { createSemanticEngine, EMBEDDING_GENERATION } from './semantic-engine.ts';
 export type { SemanticEngine, SemanticEngineDeps, SemanticOptIn } from './semantic-engine.ts';
