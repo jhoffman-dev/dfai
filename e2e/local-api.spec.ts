@@ -133,6 +133,21 @@ test('Settings turns the API on, off by default, and says where it is running', 
   expect(status.body).toMatchObject({ app: 'atlas', index: { ready: true } });
 });
 
+// #161: a reload takes the router away with the page; the new page's router
+// takes over, so a request after it is answered rather than sent to the page
+// that has gone and left waiting.
+test('a reload hands the API to the new page, which answers the next request', async ({ page }) => {
+  const { host } = await openVault(page);
+  await turnApiOn(page, host);
+  expect((await host.api.send({ method: 'GET', path: '/v1/status' })).status).toBe(200);
+
+  await page.reload();
+
+  const status = await host.api.send({ method: 'GET', path: '/v1/status' });
+  expect(status.status).toBe(200);
+  expect(host.callsTo('api_router_register')).toBeGreaterThanOrEqual(2);
+});
+
 test('the MCP command names the server built beside this app, and copies exactly that', async ({
   page,
 }) => {

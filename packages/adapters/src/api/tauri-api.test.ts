@@ -38,13 +38,19 @@ const ANSWER: ApiResponse = {
   },
 };
 
+/** The host's side of `api_router_register`: ids that count up, as Rust's do. */
+let nextRouterId = 0;
+const hostAnswer = (command: string) =>
+  Promise.resolve(command === 'api_router_register' ? nextRouterId++ : null);
+
 /** Lets the promise chain started by a delivered event run to its end. */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe('tauriApiBridge', () => {
   beforeEach(() => {
     invoke.mockReset();
-    invoke.mockResolvedValue(null);
+    nextRouterId = 40;
+    invoke.mockImplementation(hostAnswer);
     listen.mockClear();
     unlisten.mockReset();
     deliver = null;
@@ -85,21 +91,33 @@ describe('tauriApiBridge', () => {
     });
     invoke.mockImplementation(async (command: string) => {
       order.push(command);
-      return null;
+      return hostAnswer(command);
     });
 
     await tauriApiBridge.serve(async () => ANSWER);
 
-    expect(order).toEqual(['listen', 'api_router_ready']);
-    expect(invoke).toHaveBeenCalledWith('api_router_ready', {
-      listener: expect.any(String),
-      ready: true,
-    });
+    expect(order).toEqual(['api_router_register', 'listen', 'api_router_ready']);
+  });
+
+  // #161: a page load makes the host refuse every id it gave before, which
+  // only works if the router names itself by the host's id and no other.
+  it('names itself to the host by the id the host gave it', async () => {
+    await tauriApiBridge.serve(async () => ANSWER);
+
+    expect(invoke).toHaveBeenCalledWith('api_router_ready', { listener: 40, ready: true });
+  });
+
+  it('never listens when the host gives it no id', async () => {
+    invoke.mockRejectedValueOnce('the API is not ready yet');
+
+    await expect(tauriApiBridge.serve(async () => ANSWER)).rejects.toBe('the API is not ready yet');
+
+    expect(listen).not.toHaveBeenCalled();
   });
 
   it('tells the host the router it named is gone when it stops', async () => {
     const stop = await tauriApiBridge.serve(async () => ANSWER);
-    const [, started] = invoke.mock.lastCall as [string, { listener: string }];
+    const [, started] = invoke.mock.lastCall as [string, { listener: number }];
     invoke.mockClear();
 
     stop();
@@ -115,13 +133,18 @@ describe('tauriApiBridge', () => {
     await tauriApiBridge.serve(async () => ANSWER);
     await tauriApiBridge.serve(async () => ANSWER);
 
-    const named = invoke.mock.calls.map(([, args]) => (args as { listener: string }).listener);
-    expect(named).toHaveLength(2);
-    expect(new Set(named).size).toBe(2);
+    const named = invoke.mock.calls
+      .filter(([command]) => command === 'api_router_ready')
+      .map(([, args]) => (args as { listener: number }).listener);
+    expect(named).toEqual([40, 41]);
   });
 
   it('stops listening and fails when the host cannot be told it is ready', async () => {
-    invoke.mockRejectedValueOnce('the API is not ready yet');
+    invoke.mockImplementation((command: string) =>
+      command === 'api_router_ready'
+        ? Promise.reject('the API is not ready yet')
+        : hostAnswer(command),
+    );
 
     await expect(tauriApiBridge.serve(async () => ANSWER)).rejects.toBe('the API is not ready yet');
 
@@ -150,7 +173,7 @@ describe('tauriApiBridge', () => {
       const live = new Set<unknown>();
       const pending: (() => void)[] = [];
       invoke.mockImplementation((command: string, args: { listener?: unknown; ready: boolean }) => {
-        if (command !== 'api_router_ready') return Promise.resolve(null);
+        if (command !== 'api_router_ready') return hostAnswer(command);
         if (args.ready) live.add(args.listener);
         else live.delete(args.listener);
         return new Promise<null>((resolve) => pending.push(() => resolve(null)));

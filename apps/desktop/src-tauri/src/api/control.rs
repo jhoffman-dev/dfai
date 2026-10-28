@@ -67,6 +67,12 @@ struct Routers {
     listening: HashSet<u64>,
 }
 
+impl Routers {
+    fn is_this_page_s(&self, id: u64) -> bool {
+        (self.this_page_from..self.next).contains(&id)
+    }
+}
+
 /// The port this server stopped listening on, and when.
 struct Released {
     port: u16,
@@ -284,6 +290,12 @@ impl ApiControl {
     pub fn set_router_ready(&self, listener: u64, ready: bool) {
         let mut routers = self.routers();
         if ready {
+            if !routers.is_this_page_s(listener) {
+                // A page that has gone, saying late that it listens: it
+                // never will again, so a request sent to it would go unheard.
+                log::debug!("API router {listener} is not this page's; ignored");
+                return;
+            }
             routers.listening.insert(listener);
         } else {
             routers.listening.remove(&listener);
