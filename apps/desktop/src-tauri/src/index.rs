@@ -1314,7 +1314,11 @@ pub(crate) fn run_query(
                 },
                 serde_json::Value::Bool(flag) => Box::new(flag.to_string()),
                 serde_json::Value::Null => Box::new(rusqlite::types::Null),
-                other => Box::new(other.to_string().trim_matches('"').to_string()),
+                // The string itself, never its JSON text: that escapes `"`, `\`
+                // and control characters, which then match nothing (#237).
+                serde_json::Value::String(text) => Box::new(text.clone()),
+                // An array or object is bound as its JSON text, for json_each.
+                other => Box::new(other.to_string()),
             }
         })
         .collect();
