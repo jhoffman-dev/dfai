@@ -222,6 +222,57 @@ describe('tauriApiBridge', () => {
 
     expect(invoke).not.toHaveBeenCalled();
   });
+
+  /** Rejections nobody handled while `during` ran and the turn after it. */
+  async function unhandledDuring(during: () => Promise<unknown>): Promise<unknown[]> {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    try {
+      await during().catch(() => undefined);
+      await settle();
+      await settle();
+    } finally {
+      process.off('unhandledRejection', record);
+    }
+    return unhandled;
+  }
+
+  // A plain function, not a `vi.fn`: a spy attaches its own handler to the
+  // promise it returns, which would hide the rejection this looks for.
+  const unlistenThatCannotReachTheHost = () => Promise.reject('the page is going away');
+
+  // Tauri's real unlisten is async: it asks the host (`plugin:event|unlisten`)
+  // and rejects when that IPC fails, as it can while the page goes away.
+  it('leaves no rejection unhandled when stopping cannot reach the host', async () => {
+    listen.mockImplementationOnce(async () => unlistenThatCannotReachTheHost);
+    const stop = await tauriApiBridge.serve(async () => ANSWER);
+
+    const unhandled = await unhandledDuring(async () => stop());
+
+    expect(unhandled, 'stop() leaked an unhandled rejection').toEqual([]);
+  });
+
+  it('leaves no rejection unhandled when it cannot stop listening after the host refused ready', async () => {
+    listen.mockImplementationOnce(async () => unlistenThatCannotReachTheHost);
+    invoke.mockImplementation((command: string) =>
+      command === 'api_router_ready'
+        ? Promise.reject('the API is not ready yet')
+        : hostAnswer(command),
+    );
+
+    const unhandled = await unhandledDuring(() => tauriApiBridge.serve(async () => ANSWER));
+
+    expect(unhandled, 'the failed serve leaked an unhandled rejection').toEqual([]);
+  });
+
+  it('never tells the host it listens when listening fails', async () => {
+    listen.mockRejectedValueOnce('no event plugin');
+
+    await expect(tauriApiBridge.serve(async () => ANSWER)).rejects.toBe('no event plugin');
+
+    expect(invoke).not.toHaveBeenCalledWith('api_router_ready', expect.anything());
+  });
 });
 
 describe('tauriApiSettings', () => {
