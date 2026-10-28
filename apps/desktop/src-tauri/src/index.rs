@@ -1308,9 +1308,13 @@ pub(crate) fn run_query(
         .iter()
         .map(|value| -> Box<dyn rusqlite::ToSql> {
             match value {
-                serde_json::Value::Number(number) => match number.as_f64() {
-                    Some(float) => Box::new(float),
-                    None => Box::new(number.to_string()),
+                // An integer binds as an SQL integer, so it keeps every digit and
+                // matches text holding its digits. SQLite integers are i64, so a
+                // larger u64 can only bind as a real.
+                serde_json::Value::Number(number) => match (number.as_i64(), number.as_f64()) {
+                    (Some(integer), _) => Box::new(integer),
+                    (None, Some(float)) => Box::new(float),
+                    (None, None) => Box::new(number.to_string()),
                 },
                 serde_json::Value::Bool(flag) => Box::new(flag.to_string()),
                 serde_json::Value::Null => Box::new(rusqlite::types::Null),
