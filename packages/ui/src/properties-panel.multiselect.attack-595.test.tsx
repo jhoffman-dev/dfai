@@ -64,8 +64,12 @@ describe('the multi-select box while it is being edited (attack #595)', () => {
 
   it('never saves a list missing an untouched item while an opening quote is typed before another', () => {
     const { onChange, field } = panel(['Payroll', 'Quill', 'Mara']);
-    typeLines(field, ['Payroll, "Quill, Mara', 'Payroll, "Quill, Mara"']);
-    for (const list of saved(onChange)) expect(list).toContain('Mara');
+    typeLines(field, ['Payroll, "Quill, Mara']);
+    // While the quote is open nothing is saved, so no save can be missing Mara.
+    expect(onChange).not.toHaveBeenCalled();
+    // Closing it is the person asking for "Quill, Mara" as one item: that is saved.
+    typeLines(field, ['Payroll, "Quill, Mara"']);
+    expect(saved(onChange)).toEqual([['Payroll', 'Quill, Mara']]);
   });
 
   it('never writes the text "null" for an empty item it was not asked to change', async () => {
