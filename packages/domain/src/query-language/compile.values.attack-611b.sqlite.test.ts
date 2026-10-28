@@ -5,6 +5,7 @@ import { correlatedReads } from '../testing/query-plan.ts';
 import { compileAtlasQuery } from './compile.ts';
 import { parseAtlasQuery } from './parse.ts';
 import { QUERY_TEST_TYPES } from './query-fixtures.ts';
+import { typeViewSelectSql } from './type-view.ts';
 
 /**
  * Second attack on PR #611 (#110, commit df3eee78): the query language now
@@ -139,12 +140,17 @@ function vault(random: () => number): Record<string, Frontmatter> {
 const isTask = (rows: readonly IndexableProperty[]) =>
   rows.some((row) => row.key === 'type' && row.text?.trim().toLowerCase() === 'task');
 
-/** The field's rows in order; a date field's are its real dates only. */
+/**
+ * The rows that hold the field's value, as Today reads them (the rule settled
+ * after this attack, in place of "the first row"): a date's first real date
+ * (`firstDay`); any other single field's value only when it is written as one
+ * (`singleText`), and a number's only when it is a number.
+ */
 function rowsOf(rows: readonly IndexableProperty[], key: SingleField): IndexableProperty[] {
-  return rows
-    .filter((row) => row.key === key)
-    .filter((row) => SINGLE_FIELDS[key] !== 'date' || row.date !== null)
-    .sort((left, right) => left.index - right.index);
+  const own = rows.filter((row) => row.key === key).sort((left, right) => left.index - right.index);
+  if (SINGLE_FIELDS[key] === 'date') return own.filter((row) => row.date !== null).slice(0, 1);
+  if (own.length !== 1) return [];
+  return SINGLE_FIELDS[key] === 'number' ? own.filter((row) => row.number !== null) : own;
 }
 
 /** What the cell shows: the first row's value as the query reads it, null for none. */
@@ -328,7 +334,8 @@ describe('#611b attack: a value the cell shows blank is empty', () => {
   it('a single text whose first item is blank is empty, as its cell is', () => {
     const database = index({ 'Brief Tobias Fenn': { type: 'task', notes: ['', 'alpha'] } });
     const [row] = run(database, 'FROM task SHOW notes');
-    expect(row?.['notes']).toBe('');
+    // Written as a list, a single text holds no value (singleText), so its cell is blank.
+    expect(row?.['notes']).toBeNull();
     expect(titlesOf(run(database, 'FROM task WHERE notes = alpha'))).toEqual([]);
     expect(titlesOf(run(database, 'FROM task WHERE notes IS EMPTY'))).toEqual([
       'Brief Tobias Fenn',
@@ -353,7 +360,8 @@ describe('#611b attack: a checkbox is a single-valued own field too', () => {
   it('a checkbox written as [false, true] is compared on the false its cell shows', () => {
     const database = index({ 'Ring Mara Quill': { type: 'task', flagged: [false, true] } });
     const [row] = run(database, 'FROM task SHOW flagged');
-    expect(row?.['flagged']).toBe('false');
+    // Written as a list, a single checkbox holds no value, so its cell is blank.
+    expect(row?.['flagged']).toBeNull();
     expect(titlesOf(run(database, 'FROM task WHERE flagged = true'))).toEqual([]);
   });
 });
@@ -393,7 +401,12 @@ describe('#611b attack: FROM in any case costs no more reads per note', () => {
       .all(...(compiled.parameters as never[])) as { detail: string }[];
     const typeTest = plan.map((step) => step.detail).filter((detail) => /^SEARCH t\b/.test(detail));
     expect(typeTest.length).toBeGreaterThan(0);
-    for (const detail of typeTest) expect(detail).toContain('value_text=?');
+    // Matched in any case, the type cannot be sought by its exact value_text.
+    // It is sought by the note and the key instead — the note's own type
+    // rows, one for nearly every note — never a scan of other notes' rows.
+    for (const detail of typeTest) {
+      expect(detail).toContain('(path=? AND key=?)');
+    }
     // Every per-note read still seeks by the note's path: no scan was introduced.
     for (const detail of correlatedReads(database, compiled)) expect(detail).toMatch(/\(path=\?/);
   });
@@ -408,15 +421,14 @@ describe("#611b attack: a type's table and a FROM query read one note alike", ()
   // first row"; the view kept the old rule.
   function withTaskView(notes: Readonly<Record<string, Frontmatter>>): DatabaseSync {
     const database = index(notes);
-    database.exec(`
-      CREATE VIEW "v_task" AS
-      SELECT files.path AS "path",
-             COALESCE(MAX(CASE WHEN props.key = 'title' THEN props.value_text END), files.title) AS "title",
-             files.summary AS "summary", files.modified AS "modified",
-             MAX(CASE WHEN props.key = 'due' THEN props.value_date END) AS "due"
-      FROM files JOIN props ON props.path = files.path
-      WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = 'task')
-      GROUP BY files.path;`);
+    // The view as the index builds it now: from typeViewSelectSql, which the
+    // Rust builder is pinned to (type-view.pin.test.ts).
+    const select = typeViewSelectSql({
+      name: 'task',
+      columns: [{ key: 'due', kind: 'date', many: false }],
+      progress: false,
+    });
+    database.exec(`CREATE VIEW "v_task" AS ${select ?? ''};`);
     return database;
   }
 

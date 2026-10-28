@@ -1057,14 +1057,15 @@ pub struct TypedNote {
     pub title: String,
 }
 
-/// Notes declaring `type: <name>` in their frontmatter, which is what a relation
-/// property is allowed to point at.
+/// Notes declaring `type: <name>` in their frontmatter, in any case and
+/// spacing as TypeScript's `foldedTypeSql` matches a type — what a relation
+/// property is allowed to point at. A note listing the type twice is one note.
 fn notes_of_type(connection: &Connection, type_name: &str) -> Result<Vec<TypedNote>, String> {
     let mut statement = connection
         .prepare(
             "SELECT files.path, files.title FROM files
-             JOIN props ON props.path = files.path
-             WHERE props.key = 'type' AND props.value_text = ?1
+             WHERE files.path IN (SELECT path FROM props
+                                  WHERE key = 'type' AND lower(trim(value_text)) = lower(trim(?1)))
              ORDER BY files.title",
         )
         .map_err(|error| error.to_string())?;
@@ -1148,64 +1149,84 @@ fn replace_views(connection: &Connection, types: &[TypeSpec]) -> Result<(), Stri
     }
 
     for spec in types {
-        if !is_identifier(&spec.name) {
-            continue;
+        if let Some(select) = type_view_select(spec) {
+            connection
+                .execute_batch(&format!("CREATE VIEW \"v_{}\" AS\n{select};", spec.name))
+                .map_err(|error| format!("cannot build the view for {}: {error}", spec.name))?;
         }
-
-        let mut columns = String::new();
-        for column in &spec.columns {
-            if !is_identifier(&column.key) {
-                continue;
-            }
-            let source = match column.kind.as_str() {
-                "number" => "props.value_num",
-                "date" => "props.value_date",
-                _ => "props.value_text",
-            };
-            // A property holding several values becomes one comma-separated cell,
-            // which is what a table can show and what a filter can match against.
-            let aggregate = if column.many {
-                format!(
-                    "group_concat(CASE WHEN props.key = '{}' THEN {source} END, ', ')",
-                    column.key
-                )
-            } else {
-                format!(
-                    "MAX(CASE WHEN props.key = '{}' THEN {source} END)",
-                    column.key
-                )
-            };
-            columns.push_str(&format!(", {aggregate} AS \"{}\"", column.key));
-        }
-        let progress = if spec.progress {
-            ", files.progress AS \"progress\""
-        } else {
-            ""
-        };
-
-        connection
-            .execute_batch(&format!(
-                "CREATE VIEW \"v_{name}\" AS
-                 SELECT files.path AS \"path\",
-                        COALESCE(
-                            MAX(CASE WHEN props.key = 'title' THEN props.value_text END),
-                            files.title
-                        ) AS \"title\",
-                        files.summary AS \"summary\",
-                        files.modified AS \"modified\"{progress}{columns}
-                 FROM files
-                 JOIN props ON props.path = files.path
-                 WHERE files.path IN (
-                     SELECT path FROM props WHERE key = 'type' AND value_text = '{name}'
-                 )
-                 GROUP BY files.path;",
-                name = spec.name
-            ))
-            .map_err(|error| format!("cannot build the view for {}: {error}", spec.name))?;
     }
 
     Ok(())
 }
+
+/// The `SELECT` behind a type's view, holding each note as a DFAI query's
+/// cells hold it: its notes found by `type` in any case and spacing, and each
+/// column the value a `SHOW` of it draws. This is TypeScript's
+/// `typeViewSelectSql` written out (TypeScript decides; this builds the text
+/// it describes), and `type-view.pin.test.ts` holds the two to one text
+/// through `VIEW_OF_A_TYPE` below. None when the name is not an identifier.
+fn type_view_select(spec: &TypeSpec) -> Option<String> {
+    if !is_identifier(&spec.name) {
+        return None;
+    }
+    let progress = if spec.progress {
+        ", n.progress AS \"progress\""
+    } else {
+        ""
+    };
+    let columns: String = spec
+        .columns
+        .iter()
+        .filter(|column| is_identifier(&column.key))
+        .map(|column| format!(", {} AS \"{}\"", view_cell(column), column.key))
+        .collect();
+    Some(format!(
+        "SELECT n.path AS \"path\",\n       COALESCE((SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = 'title' ORDER BY p.idx, p.rowid LIMIT 1), n.title) AS \"title\",\n       n.summary AS \"summary\",\n       n.modified AS \"modified\"{progress}{columns}\nFROM files AS n\nWHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND lower(trim(value_text)) = '{}')",
+        spec.name.trim().to_ascii_lowercase()
+    ))
+}
+
+/// One column's cell: the rows that hold its value (`valueRowsSql`), the
+/// first of them, or all of them joined for a field that holds several.
+fn view_cell(column: &TypeColumn) -> String {
+    let kind = column.kind.as_str();
+    let many = column.many || kind == "multiSelect";
+    let holds_many = many || kind == "type" || kind == "relation";
+    let value = match kind {
+        "date" => "p.value_date",
+        "number" => "p.value_num",
+        _ => "p.value_text",
+    };
+    let held = if kind == "date" {
+        if holds_many {
+            VIEW_DATED.to_string()
+        } else {
+            format!("{VIEW_DATED} AND {VIEW_FIRST_DATE}")
+        }
+    } else {
+        let numbered = if kind == "number" { VIEW_NUMBERED } else { "" };
+        if holds_many {
+            numbered.to_string()
+        } else {
+            format!("{numbered} AND {VIEW_ONLY_ROW}")
+        }
+    };
+    let rows = format!(
+        "FROM props AS p WHERE p.path = n.path AND p.key = '{}'{held}",
+        column.key
+    );
+    if many {
+        format!("(SELECT group_concat(v, ', ') FROM (SELECT {value} AS v {rows} ORDER BY p.idx, p.rowid))")
+    } else {
+        format!("(SELECT {value} {rows} ORDER BY p.idx, p.rowid LIMIT 1)")
+    }
+}
+
+const VIEW_DATED: &str = " AND p.value_date IS NOT NULL";
+const VIEW_NUMBERED: &str = " AND p.value_num IS NOT NULL";
+const VIEW_FIRST_DATE: &str = "p.idx = (SELECT MIN(q.idx) FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_date IS NOT NULL)";
+const VIEW_ONLY_ROW: &str =
+    "NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx)";
 
 #[tauri::command]
 pub async fn index_rebuild_views(
@@ -2001,6 +2022,128 @@ mod tests {
             columns,
             progress,
         }
+    }
+
+    fn column(key: &str, kind: &str, many: bool) -> TypeColumn {
+        TypeColumn {
+            key: key.into(),
+            kind: kind.into(),
+            many,
+        }
+    }
+
+    /// Every kind a view column can be, single and many: `PINNED_VIEW` in
+    /// `index-rs.pin.test.ts`, which holds this text to `typeViewSelectSql`.
+    fn pinned_view() -> TypeSpec {
+        task_spec(
+            true,
+            vec![
+                column("status", "select", false),
+                column("due", "date", false),
+                column("estimate", "number", false),
+                column("contexts", "multiSelect", false),
+                column("project", "relation", false),
+                column("flagged", "checkbox", false),
+                column("dates", "date", true),
+                column("sizes", "number", true),
+            ],
+        )
+    }
+
+    /// The view TypeScript describes for `pinned_view` (`typeViewSelectSql`).
+    const VIEW_OF_A_TYPE: &str = r#"SELECT n.path AS "path",
+       COALESCE((SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = 'title' ORDER BY p.idx, p.rowid LIMIT 1), n.title) AS "title",
+       n.summary AS "summary",
+       n.modified AS "modified", n.progress AS "progress", (SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = 'status' AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx) ORDER BY p.idx, p.rowid LIMIT 1) AS "status", (SELECT p.value_date FROM props AS p WHERE p.path = n.path AND p.key = 'due' AND p.value_date IS NOT NULL AND p.idx = (SELECT MIN(q.idx) FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_date IS NOT NULL) ORDER BY p.idx, p.rowid LIMIT 1) AS "due", (SELECT p.value_num FROM props AS p WHERE p.path = n.path AND p.key = 'estimate' AND p.value_num IS NOT NULL AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx) ORDER BY p.idx, p.rowid LIMIT 1) AS "estimate", (SELECT group_concat(v, ', ') FROM (SELECT p.value_text AS v FROM props AS p WHERE p.path = n.path AND p.key = 'contexts' ORDER BY p.idx, p.rowid)) AS "contexts", (SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = 'project' ORDER BY p.idx, p.rowid LIMIT 1) AS "project", (SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = 'flagged' AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx) ORDER BY p.idx, p.rowid LIMIT 1) AS "flagged", (SELECT group_concat(v, ', ') FROM (SELECT p.value_date AS v FROM props AS p WHERE p.path = n.path AND p.key = 'dates' AND p.value_date IS NOT NULL ORDER BY p.idx, p.rowid)) AS "dates", (SELECT group_concat(v, ', ') FROM (SELECT p.value_num AS v FROM props AS p WHERE p.path = n.path AND p.key = 'sizes' AND p.value_num IS NOT NULL ORDER BY p.idx, p.rowid)) AS "sizes"
+FROM files AS n
+WHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND lower(trim(value_text)) = 'task')"#;
+
+    #[test]
+    fn a_types_view_is_the_text_typescript_describes() {
+        assert_eq!(
+            type_view_select(&pinned_view()).as_deref(),
+            Some(VIEW_OF_A_TYPE)
+        );
+    }
+
+    fn note_with_rows(path: &str, rows: &[(&str, i64, &str, Option<&str>)]) -> IndexedNote {
+        let mut found = note(path, path, "body");
+        found.properties = rows
+            .iter()
+            .map(|(key, index, text, date)| IndexedProperty {
+                key: (*key).into(),
+                index: *index,
+                text: Some((*text).into()),
+                number: None,
+                date: date.map(Into::into),
+                json: None,
+            })
+            .collect();
+        found
+    }
+
+    /// Follow-up to #110: the type's table holds a note as a query's cells
+    /// do — `type: Task` is a task, a due written as two days is its first,
+    /// and a status written as a list is no status.
+    #[test]
+    fn a_types_view_reads_each_note_as_a_query_does() {
+        let mut index = empty_index();
+        put_notes(
+            &mut index,
+            &[
+                note_with_rows(
+                    "a.md",
+                    &[("type", 0, "Task", None), ("status", 0, "next", None)],
+                ),
+                note_with_rows(
+                    "b.md",
+                    &[
+                        ("type", 0, "task", None),
+                        ("due", 0, "2026-10-01", Some("2026-10-01")),
+                        ("due", 1, "2026-11-30", Some("2026-11-30")),
+                        ("status", 0, "next", None),
+                        ("status", 1, "done", None),
+                    ],
+                ),
+                note_with_rows("c.md", &[("type", 0, "tasks", None)]),
+            ],
+        )
+        .unwrap();
+        rebuild_views(&index, &[pinned_view()]).unwrap();
+        let result = run_query(
+            &index,
+            "SELECT path, status, due FROM v_task ORDER BY path",
+            &[],
+        )
+        .unwrap();
+        assert_eq!(result.rows.len(), 2, "a.md and b.md are tasks; c.md is not");
+        assert_eq!(result.rows[0][1], serde_json::json!("next"));
+        assert_eq!(result.rows[1][1], serde_json::Value::Null);
+        assert_eq!(result.rows[1][2], serde_json::json!("2026-10-01"));
+    }
+
+    /// The relation picker offers a note of a type in any case, once.
+    #[test]
+    fn notes_of_a_type_are_found_in_any_case_and_once() {
+        let mut index = empty_index();
+        put_notes(
+            &mut index,
+            &[
+                note_with_rows("a.md", &[("type", 0, "Task", None)]),
+                note_with_rows(
+                    "b.md",
+                    &[("type", 0, "task", None), ("type", 1, " TASK ", None)],
+                ),
+                note_with_rows("c.md", &[("type", 0, "project", None)]),
+            ],
+        )
+        .unwrap();
+        let found: Vec<String> = notes_of_type(&index, "task")
+            .unwrap()
+            .into_iter()
+            .map(|note| note.path)
+            .collect();
+        assert_eq!(found, vec!["a.md".to_string(), "b.md".to_string()]);
     }
 
     #[test]
@@ -3314,10 +3457,11 @@ ORDER BY m.type DESC, m.name, p.cid";
         }
 
         /// What a DFAI query (`compileAtlasQuery`) asks of every note: is this
-        /// one of the types listed? One key and one value of one note.
+        /// one of the types listed, in any case? The note's own type rows, one
+        /// for nearly every note. Pinned by `index-rs.pin.test.ts`.
         const NOTES_OF_A_TYPE: &str = "SELECT n.path FROM files AS n
              WHERE EXISTS (SELECT 1 FROM props AS t
-                           WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?))
+                           WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?))
              ORDER BY n.title LIMIT ?";
 
         /// #143: a view over every meeting came back "interrupted" at 614 of them.
@@ -3352,12 +3496,16 @@ ORDER BY m.type DESC, m.name, p.cid";
         /// compiles it: `FROM meeting, person, project WHERE CONNECTED TO this
         /// AND NOT (type = meeting AND attendees = this) SORT BY modified DESC
         /// SHOW title LIMIT 202`, with `this` the person's page.
-        const LINKED_NOTES_OF_A_PERSON: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?, ?, ?) ORDER BY t.idx LIMIT 1) AS "type"
+        const LINKED_NOTES_OF_A_PERSON: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?, ?, ?) ORDER BY t.idx LIMIT 1) AS "type"
 FROM files AS n
-WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?, ?, ?))
+WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?, ?, ?))
   AND instr('/' || n.path, '/.') = 0 AND instr('/' || lower(n.path) || '/', '/node_modules/') = 0
   AND lower(substr(n.path, 1, 8)) <> 'archive/'
-  AND (((n.path <> ? AND (EXISTS (SELECT 1 FROM links AS l WHERE l.src = n.path AND l.dst = ?) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.dst = ?) OR EXISTS (SELECT 1 FROM links AS l WHERE l.src = ? AND l.dst = n.path) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = ? AND r.dst = n.path)))) AND (NOT ((EXISTS (SELECT 1 FROM props AS p WHERE p.path = n.path AND p.key = ? AND p.value_text = ?)) AND (EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.key = ? AND r.dst = ?)))))
+  AND NOT EXISTS (SELECT 1 FROM props AS para_value WHERE para_value.path = n.path
+  AND para_value.key = 'para' AND lower(trim(para_value.value_text)) = 'archive'
+  AND EXISTS (SELECT 1 FROM props AS para_type WHERE para_type.path = n.path
+    AND para_type.key = 'type' AND lower(trim(para_type.value_text)) = 'project'))
+  AND (((n.path <> ? AND (EXISTS (SELECT 1 FROM links AS l WHERE l.src = n.path AND l.dst = ?) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.dst = ?) OR EXISTS (SELECT 1 FROM links AS l WHERE l.src = ? AND l.dst = n.path) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = ? AND r.dst = n.path)))) AND (NOT ((EXISTS (SELECT 1 FROM props AS p WHERE p.path = n.path AND p.key = ? AND lower(trim(p.value_text)) = ?)) AND (EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.key = ? AND r.dst = ?)))))
 ORDER BY NULLIF((SELECT f.modified FROM files AS f WHERE f.path = n.path ORDER BY f.rowid LIMIT 1), '') DESC NULLS LAST, n.title COLLATE NOCASE ASC, n.path ASC
 LIMIT ?"#;
 
@@ -3469,9 +3617,9 @@ LIMIT ?"#;
         }
 
         /// `FROM meeting WHERE LINKS TO this`, as `compileAtlasQuery` compiles it.
-        const MEETINGS_LINKING_TO_THIS: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?) ORDER BY t.idx LIMIT 1) AS "type"
+        const MEETINGS_LINKING_TO_THIS: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?) ORDER BY t.idx LIMIT 1) AS "type"
 FROM files AS n
-WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?))
+WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?))
   AND instr('/' || n.path, '/.') = 0 AND instr('/' || lower(n.path) || '/', '/node_modules/') = 0
   AND lower(substr(n.path, 1, 8)) <> 'archive/'
   AND (EXISTS (SELECT 1 FROM links AS l WHERE l.src = n.path AND l.dst = ? AND l.src <> l.dst))
@@ -3503,9 +3651,9 @@ LIMIT ?"#;
         }
 
         /// `FROM meeting WHERE CONNECTED TO this`, as `compileAtlasQuery` compiles it.
-        const MEETINGS_CONNECTED_TO_THIS: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?) ORDER BY t.idx LIMIT 1) AS "type"
+        const MEETINGS_CONNECTED_TO_THIS: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?) ORDER BY t.idx LIMIT 1) AS "type"
 FROM files AS n
-WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?))
+WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?))
   AND instr('/' || n.path, '/.') = 0 AND instr('/' || lower(n.path) || '/', '/node_modules/') = 0
   AND lower(substr(n.path, 1, 8)) <> 'archive/'
   AND ((n.path <> ? AND (EXISTS (SELECT 1 FROM links AS l WHERE l.src = n.path AND l.dst = ?) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.dst = ?) OR EXISTS (SELECT 1 FROM links AS l WHERE l.src = ? AND l.dst = n.path) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = ? AND r.dst = n.path))))
@@ -3551,9 +3699,9 @@ LIMIT ?"#;
 
         /// `FROM meeting WHERE attendees CONNECTED TO this`, as
         /// `compileAtlasQuery` compiles it.
-        const MEETINGS_WITH_AN_ATTENDEE_CONNECTED_TO_THIS: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?) ORDER BY t.idx LIMIT 1) AS "type"
+        const MEETINGS_WITH_AN_ATTENDEE_CONNECTED_TO_THIS: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?) ORDER BY t.idx LIMIT 1) AS "type"
 FROM files AS n
-WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?))
+WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?))
   AND instr('/' || n.path, '/.') = 0 AND instr('/' || lower(n.path) || '/', '/node_modules/') = 0
   AND lower(substr(n.path, 1, 8)) <> 'archive/'
   AND (EXISTS (SELECT 1 FROM relations AS h WHERE h.src = n.path AND h.key = ? AND h.dst IS NOT NULL AND (h.dst <> ? AND (EXISTS (SELECT 1 FROM links AS l WHERE l.src = h.dst AND l.dst = ?) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = h.dst AND r.dst = ?) OR EXISTS (SELECT 1 FROM links AS l WHERE l.src = ? AND l.dst = h.dst) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = ? AND r.dst = h.dst)))))
@@ -3612,13 +3760,13 @@ LIMIT ?"#;
         /// compiles it: `FROM task WHERE CONNECTED TO this AND status != done
         /// AND NOT (status = waiting AND waiting_on = this) SORT BY due, title
         /// GROUP BY status SHOW due LIMIT 202`, with `this` the person's page.
-        const OPEN_TASKS_OF_A_PERSON: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?) ORDER BY t.idx LIMIT 1) AS "type", (SELECT p.value_date FROM props AS p WHERE p.path = n.path AND p.key = ? ORDER BY p.idx, p.rowid LIMIT 1) AS "due", (SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = ? ORDER BY p.idx, p.rowid LIMIT 1) AS "status"
+        const OPEN_TASKS_OF_A_PERSON: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?) ORDER BY t.idx LIMIT 1) AS "type", (SELECT p.value_date FROM props AS p WHERE p.path = n.path AND p.key = ? AND p.value_date IS NOT NULL AND p.idx = (SELECT MIN(q.idx) FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_date IS NOT NULL) ORDER BY p.idx, p.rowid LIMIT 1) AS "due", (SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx) ORDER BY p.idx, p.rowid LIMIT 1) AS "status"
 FROM files AS n
-WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (?))
+WHERE EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?))
   AND instr('/' || n.path, '/.') = 0 AND instr('/' || lower(n.path) || '/', '/node_modules/') = 0
   AND lower(substr(n.path, 1, 8)) <> 'archive/'
-  AND ((((n.path <> ? AND (EXISTS (SELECT 1 FROM links AS l WHERE l.src = n.path AND l.dst = ?) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.dst = ?) OR EXISTS (SELECT 1 FROM links AS l WHERE l.src = ? AND l.dst = n.path) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = ? AND r.dst = n.path)))) AND (NOT EXISTS (SELECT 1 FROM props AS p WHERE p.path = n.path AND p.key = ? AND p.value_text = ?))) AND ((NOT ((EXISTS (SELECT 1 FROM props AS p WHERE p.path = n.path AND p.key = ? AND p.value_text = ?)) AND (EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.key = ? AND r.dst = ?))))))
-ORDER BY NULLIF((SELECT replace(p.value_date, ' ', 'T') FROM props AS p WHERE p.path = n.path AND p.key = ? ORDER BY p.idx, p.rowid LIMIT 1), '') ASC NULLS LAST, NULLIF((SELECT f.title FROM files AS f WHERE f.path = n.path ORDER BY f.rowid LIMIT 1), '') COLLATE NOCASE ASC NULLS LAST, n.title COLLATE NOCASE ASC, n.path ASC
+  AND ((((n.path <> ? AND (EXISTS (SELECT 1 FROM links AS l WHERE l.src = n.path AND l.dst = ?) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.dst = ?) OR EXISTS (SELECT 1 FROM links AS l WHERE l.src = ? AND l.dst = n.path) OR EXISTS (SELECT 1 FROM relations AS r WHERE r.src = ? AND r.dst = n.path)))) AND (NOT EXISTS (SELECT 1 FROM props AS p WHERE p.path = n.path AND p.key = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx) AND p.value_text = ?))) AND ((NOT ((EXISTS (SELECT 1 FROM props AS p WHERE p.path = n.path AND p.key = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx) AND p.value_text = ?)) AND (EXISTS (SELECT 1 FROM relations AS r WHERE r.src = n.path AND r.key = ? AND r.dst = ?))))))
+ORDER BY NULLIF((SELECT replace(p.value_date, ' ', 'T') FROM props AS p WHERE p.path = n.path AND p.key = ? AND p.value_date IS NOT NULL AND p.idx = (SELECT MIN(q.idx) FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_date IS NOT NULL) ORDER BY p.idx, p.rowid LIMIT 1), '') ASC NULLS LAST, NULLIF((SELECT f.title FROM files AS f WHERE f.path = n.path ORDER BY f.rowid LIMIT 1), '') COLLATE NOCASE ASC NULLS LAST, n.title COLLATE NOCASE ASC, n.path ASC
 LIMIT ?"#;
 
         /// #143: the person's tasks name them as owner and do not link to

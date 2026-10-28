@@ -150,3 +150,4 @@ export type {
   ShippedPropertiesRecord,
   ShippedPropertiesSkip,
 } from './shipped-properties.ts';
+export { foldedTypeName, foldedTypeSql } from './note-type-sql.ts';

@@ -54,7 +54,7 @@ export function fieldRows(
   const { alias, owner } = TABLES[table];
   const keyed = table === 'props' || table === 'relations';
   const key = keyed
-    ? sql` AND ${fixed(alias)}.key = ${bound(field.key)}${fixed(datesOnly(field, table))}`
+    ? sql` AND ${fixed(alias)}.key = ${bound(field.key)}${fixed(table === 'props' ? valueRowsSql(field) : '')}`
     : fixed('');
   const from = fixed(`${table} AS ${alias}`);
   if (field.via === null) {
@@ -66,26 +66,43 @@ export function fieldRows(
 const HOP_IN_USER_SPACE = userSpaceNoteSql('h.dst');
 
 /**
- * A date field's values are the days it holds: a value written as words —
- * `TBD`, `next week` — or a day no calendar has, `2026-02-30`, is no date,
- * and its cell shows none. So it is empty, and compares as nothing, as the
- * Today page and the review read it.
+ * Which of a note's rows of a property hold its values, as the Today page and
+ * the weekly review read them, so a query, a cell and a sort all agree with
+ * them (follow-up to #110):
+ *
+ * - A date field holds the days it can read. A value written as words, `TBD`,
+ *   or a day no calendar has, `2026-02-30`, is no date (`firstDay`). One that
+ *   holds a single date holds its first real one, so a `due` written as two
+ *   days is the first of them. A number field likewise holds only numbers:
+ *   `estimate: lots` is no number, as its cell shows none.
+ * - Any other field that holds one value holds it only when it is written as
+ *   one: `status: [next, done]` is no status (`singleText`, `gtdStatusOf`).
+ * - A field that holds many — a multi-select, tags, links, a relation, and a
+ *   note's `type`, which may list several — holds every value written.
+ *
+ * Each rule asks about the row's own note (`p.path`), so it holds through a
+ * hop too: `project.due` is each linked project's first day.
  */
-function datesOnly(field: QueryField, table: RowTable): string {
-  return field.kind === 'date' && table === 'props' ? ' AND p.value_date IS NOT NULL' : '';
+export function valueRowsSql(field: Pick<QueryField, 'kind' | 'many' | 'valueMany'>): string {
+  const holdsMany = MANY_KINDS.includes(field.kind) || (field.valueMany ?? field.many);
+  if (field.kind === 'date') return holdsMany ? DATED : `${DATED} AND ${FIRST_DATE}`;
+  const numbered = field.kind === 'number' ? NUMBERED : '';
+  return holdsMany ? numbered : `${numbered} AND ${ONLY_ROW}`;
 }
 
-/**
- * The rows a comparison asks about. A field that holds one value is tested on
- * the value its cell shows — the first — so a single `due` written as two
- * days is one day, as the Today page reads it, not both at once. A field that
- * holds many, or one reached through a link, is asked whether any row matches.
- */
-export function testedRows(field: QueryField): Fragment {
-  const rows = fieldRows(field);
-  if (field.many || field.via !== null || valueTable(field) !== 'props') return rows;
-  return sql`${rows} AND p.rowid = (SELECT p.rowid ${rows} ORDER BY ${fixed(rowOrder(field))} LIMIT 1)`;
-}
+/** Kinds read as several values whatever the property says. */
+const MANY_KINDS: readonly FieldKind[] = ['type', 'relation', 'multiSelect'];
+
+const DATED = ' AND p.value_date IS NOT NULL';
+
+const NUMBERED = ' AND p.value_num IS NOT NULL';
+
+/** idx is unique for a key within a note, so MIN(idx) is the first row as written. */
+const FIRST_DATE =
+  'p.idx = (SELECT MIN(q.idx) FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_date IS NOT NULL)';
+
+const ONLY_ROW =
+  'NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx)';
 
 /** The order a field's rows are read in: as written, and for a hop, by the link first. */
 export function rowOrder(field: QueryField, table: RowTable = valueTable(field)): string {

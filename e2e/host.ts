@@ -8,6 +8,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
+import { typeViewSelectSql } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
 
 /** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
@@ -133,8 +134,6 @@ interface ViewSpec {
   progress: boolean;
 }
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
 /**
  * A statement written by hand, run for real by SQLite over what was indexed.
  *
@@ -169,31 +168,9 @@ function runHandWrittenSql(
     }
   }
   for (const [type, spec] of types) {
-    if (!IDENTIFIER.test(type)) continue;
-    const progress = spec.progress ? ', files.progress AS "progress"' : '';
-    const columns = spec.columns
-      .filter((column) => IDENTIFIER.test(column.key))
-      .map((column) => {
-        const source =
-          column.kind === 'number'
-            ? 'props.value_num'
-            : column.kind === 'date'
-              ? 'props.value_date'
-              : 'props.value_text';
-        const picked = `CASE WHEN props.key = '${column.key}' THEN ${source} END`;
-        const aggregate = column.many ? `group_concat(${picked}, ', ')` : `MAX(${picked})`;
-        return `, ${aggregate} AS "${column.key}"`;
-      })
-      .join('');
-    database.exec(`
-      CREATE VIEW "v_${type}" AS
-      SELECT files.path AS "path",
-             COALESCE(MAX(CASE WHEN props.key = 'title' THEN props.value_text END), files.title) AS "title",
-             files.summary AS "summary",
-             files.modified AS "modified"${progress}${columns}
-      FROM files JOIN props ON props.path = files.path
-      WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = '${type}')
-      GROUP BY files.path;`);
+    // The view as the index builds it: typeViewSelectSql, pinned to index.rs.
+    const select = typeViewSelectSql({ name: type, ...spec });
+    if (select !== null) database.exec(`CREATE VIEW "v_${type}" AS ${select};`);
   }
   const prepared = database.prepare(statement);
   const columns = prepared.columns().map((column) => column.name);

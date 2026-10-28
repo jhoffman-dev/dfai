@@ -1,3 +1,4 @@
+import { foldedTypeName, foldedTypeSql } from '../types/note-type-sql.ts';
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { TASK_KEYS } from '../gtd/gtd-status.ts';
 import { tagKey } from '../tags/tag-name.ts';
@@ -147,7 +148,7 @@ export function compileFollowUpsQuery({
   const namesOtherPerson =
     personType === null
       ? '0'
-      : `EXISTS (SELECT 1 FROM props AS t WHERE t.key = 'type' AND t.value_text = ? AND t.path <> ? AND (${linkedWith}))`;
+      : `EXISTS (SELECT 1 FROM props AS t WHERE t.key = 'type' AND ${foldedTypeSql('t.value_text')} = ? AND t.path <> ? AND (${linkedWith}))`;
   const open = done === null ? [] : ["  AND COALESCE(status, '') <> ?"];
   return {
     sql: [
@@ -164,7 +165,7 @@ export function compileFollowUpsQuery({
       '    (SELECT MIN(h.around) FROM hits AS h WHERE h.task = f.path AND h.self = 0) AS meeting,',
       `    ${namesOtherPerson} AS other`,
       '  FROM files AS f',
-      "  WHERE f.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = ?)",
+      `  WHERE f.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = ?)`,
       '    AND f.path IN (SELECT path FROM tags WHERE tag = ?)',
       '    AND f.path IN (SELECT task FROM hits)',
       `    AND ${outsideArchiveSql('f.path')} AND ${userSpaceNoteSql('f.path')}`,
@@ -184,8 +185,8 @@ export function compileFollowUpsQuery({
       TASK_KEYS.due,
       TASK_KEYS.source,
       TASK_KEYS.waitingOn,
-      ...(personType === null ? [] : [personType, entity]),
-      taskType,
+      ...(personType === null ? [] : [foldedTypeName(personType), entity]),
+      foldedTypeName(taskType),
       tagKey(FOLLOW_UP_TAG),
       ...(done === null ? [] : [done]),
       limit,

@@ -38,8 +38,10 @@ function indexOver(notes: Readonly<Record<string, Frontmatter>>) {
     notesOfType: async (type) =>
       database
         .prepare(
-          `SELECT files.path, files.title FROM files JOIN props ON props.path = files.path
-           WHERE props.key = 'type' AND props.value_text = ? ORDER BY files.title`,
+          `SELECT files.path, files.title FROM files
+           WHERE files.path IN (SELECT path FROM props
+                                WHERE key = 'type' AND lower(trim(value_text)) = lower(trim(?)))
+           ORDER BY files.title`,
         )
         .all(type) as { path: string; title: string }[],
     query: async (sql, parameters = []): Promise<QueryResult> => {

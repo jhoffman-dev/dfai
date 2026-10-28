@@ -87,18 +87,30 @@ function randomVault(rng: Rng): Note[] {
   }
   const folders = ['tasks/', 'tasks/', 'tasks/', 'Archive/tasks/', 'archive/', '.atlas/'];
   for (let at = 0; at < 30; at += 1) {
-    const frontmatter: Record<string, unknown> = { type: 'task' };
+    // A task's type as people write it: any case, padded, or one of a list.
+    const frontmatter: Record<string, unknown> = {
+      type: pick(rng, ['task', 'task', 'task', 'Task', ' TASK ', ['task', 'meeting'], ['meeting']]),
+    };
     const maybe = (key: string, values: readonly unknown[]) => {
       if (chance(rng, 0.75)) frontmatter[key] = pick(rng, values);
     };
-    maybe('status', ['backlog', 'doing', 'done', 'Done', '', null]);
-    maybe('estimate', [1, 2, 3, 2.5, '3', 'lots', -1, 0]);
-    maybe('notes', ['alpha', 'Beta', 'alphabet', '', 'x_y', '50%', 5, "it's"]);
-    maybe('flagged', [true, false, 'true', 'yes', null]);
+    maybe('status', ['backlog', 'doing', 'done', 'Done', '', null, ['doing', 'done'], ['done']]);
+    maybe('estimate', [1, 2, 3, 2.5, '3', 'lots', -1, 0, [1, 2], ['lots', 3]]);
+    maybe('notes', ['alpha', 'Beta', 'alphabet', '', 'x_y', '50%', 5, "it's", ['', 'alpha']]);
+    maybe('flagged', [true, false, 'true', 'yes', null, [false, true]]);
     maybe('labels', [['red'], ['blue'], ['red', 'blue'], [], 'red']);
     maybe('project', ['[[DFAI]]', '[[projects/Beacon]]', '[[Ghost]]', '[[atlas]]', '[[Old]]']);
     maybe('owner', ['[[Julie]]', '[[Sam]]', '[[Nobody]]']);
-    maybe('due', ['2026-09-29', '2026-09-30', '2026-10-01', '2026-09-30T18:00', 'soon']);
+    maybe('due', [
+      '2026-09-29',
+      '2026-09-30',
+      '2026-10-01',
+      '2026-09-30T18:00',
+      'soon',
+      '2026-02-30',
+      ['2026-10-01', '2026-09-29'],
+      ['soon', '2026-09-30'],
+    ]);
     const tags = ['q3', 'q3/okr', 'q4', 'Q3', 'q3x'].filter(() => chance(rng, 0.3));
     notes.push({
       path: `${pick(rng, folders)}T${String(at).padStart(2, '0')}.md`,
@@ -151,6 +163,7 @@ const FIELDS: readonly FuzzField[] = [
     ),
   },
   { text: 'title', ops: WORDY, values: ['T01', 't0', 'T1'].map(text) },
+  { text: 'type', ops: WORDY, values: ['task', 'Task', 'project', 'meeting', 'tas'].map(text) },
   {
     text: 'project',
     ops: WORDY,
@@ -301,7 +314,26 @@ const KINDS: Readonly<Record<string, string>> = {
   owner: 'relation',
   role: 'text',
   due: 'date',
+  type: 'type',
 };
+
+/** Kinds that hold every value written; any other holds one, as Today reads it. */
+const MANY: ReadonlySet<string> = new Set(['multiSelect', 'relation', 'type']);
+
+/** SQLite's lower(trim()): spaces trimmed, A–Z folded — a type as FROM matches it. */
+const folded = (value: string) => asciiLower(value.replace(/^ +| +$/g, ''));
+
+/**
+ * The rows that hold a field's value: a date's first real date; a number's
+ * value when it is one number; any other single field's when it is written
+ * as one (singleText); every row of a field that holds many.
+ */
+function heldRows(rows: readonly IndexableProperty[], kind: string): IndexableProperty[] {
+  if (kind === 'date') return rows.filter((row) => row.date !== null).slice(0, 1);
+  if (MANY.has(kind)) return [...rows];
+  if (rows.length !== 1) return [];
+  return kind === 'number' ? rows.filter((row) => row.number !== null) : [...rows];
+}
 
 /** Whether one note (the holder) has a row of this field matching `test`, and whether it has any value. */
 function rowsOf(
@@ -324,8 +356,23 @@ function rowsOf(
       },
     };
   }
-  const rows = world.props(holder).filter((row) => row.key === key);
+  const rows = heldRows(
+    world
+      .props(holder)
+      .filter((row) => row.key === key)
+      .sort((left, right) => left.index - right.index),
+    kind,
+  );
   const present = rows.some((row) => (row.text ?? row.json ?? '') !== '');
+  if (kind === 'type') {
+    return {
+      present,
+      any: (op, value) =>
+        rows.some((row) =>
+          wordy(op, row.text === null ? null : folded(row.text), folded(valueWords(value))),
+        ),
+    };
+  }
   if (kind === 'checkbox') {
     return { present, any: () => rows.some((row) => row.text === 'true') };
   }
@@ -357,8 +404,7 @@ function rowsOf(
   }
   if (kind === 'date') {
     return {
-      // A date field holds the days it can read: `soon` is no date, so no value.
-      present: rows.some((row) => dayOf(row.date) !== null),
+      present,
       any: (op, value) =>
         rows.some((row) => {
           const day = dayOf(row.date);
@@ -409,7 +455,11 @@ function holds(world: World, path: string, expression: Expression): boolean {
 function naive(world: World, query: AtlasQuery): string[] {
   const from = new Set(query.from.map((name) => name.text));
   return world.notes
-    .filter((note) => from.has(String(note.frontmatter['type'])))
+    .filter((note) =>
+      [note.frontmatter['type']]
+        .flat()
+        .some((type) => typeof type === 'string' && from.has(folded(type))),
+    )
     .filter((note) => !note.path.startsWith('.atlas/'))
     .filter((note) => query.includeArchived || !note.path.toLowerCase().startsWith('archive/'))
     .filter((note) => query.where === null || holds(world, note.path, query.where))

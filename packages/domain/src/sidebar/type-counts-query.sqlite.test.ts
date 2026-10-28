@@ -35,6 +35,21 @@ function countsIn(
 }
 
 describe('compileTypeCountsQuery', () => {
+  // Follow-up to #110: counted in any case and spacing, as FROM finds a type, under its folded name.
+  it('counts a note whose type is written in capitals or with spaces, once, under the folded name', () => {
+    expect(
+      countsIn(
+        {
+          'tasks/a.md': { type: 'task' },
+          'tasks/b.md': { type: 'Task' },
+          'tasks/c.md': { type: [' TASK ', 'task'] },
+          'tasks/d.md': { type: 'tasks' },
+        },
+        ['Task'],
+      ),
+    ).toEqual({ task: 3 });
+  });
+
   it('counts the notes of each type asked for, in one row per type, and no other type', () => {
     expect(
       countsIn(
