@@ -73,6 +73,28 @@ describe('the Related notes section', () => {
     expect(related.onAccept).toHaveBeenCalledOnce();
   });
 
+  it('says why a link failed on that row alone, keeping the rest listed', () => {
+    renderFoot(
+      panel({
+        state: {
+          kind: 'ready',
+          notes: [
+            { path: garden, title: 'Garden', problem: 'Plan changed on disk. Try again.' },
+            { path: honey, title: 'Honey' },
+          ],
+        },
+      }),
+    );
+    const rows = within(screen.getByRole('list', { name: 'Related notes' })).getAllByRole(
+      'listitem',
+    );
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]!).getByRole('alert').textContent).toBe(
+      'Plan changed on disk. Try again.',
+    );
+    expect(within(rows[1]!).queryByRole('alert')).toBeNull();
+  });
+
   it('starts a trail from the note', async () => {
     const related = panel();
     renderFoot(related);
