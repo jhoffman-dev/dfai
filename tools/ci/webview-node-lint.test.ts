@@ -36,9 +36,13 @@ const WEBVIEW = [
 
 const NODE_ONLY = [
   'packages/domain/src/activity/probe.test.ts',
-  'packages/application/src/testing/probe.ts',
-  'apps/desktop/src/sync/probe.harness.ts',
-  'apps/desktop/src/probe.test-support.ts',
+  // Test support that runs on Node, each named in the config.
+  'packages/application/src/testing/node-sqlite.ts',
+  'packages/application/src/testing/query-index.ts',
+  'apps/desktop/src/sync/two-macs.harness.ts',
+  'apps/desktop/src/styles.test-support.ts',
+  'packages/domain/src/calendar/zones.test-support.ts',
+  'packages/adapters/src/markdown/frontmatter-write-cases.attack-454.ts',
   'tools/ci/probe.ts',
   'apps/mcp/src/probe.ts',
   'e2e/probe.ts',
@@ -104,6 +108,63 @@ describe('Node in the webview’s code (#114)', () => {
     const found = await nodeFindings(
       path,
       "import { readFileSync } from 'node:fs';\nexport const x = [readFileSync, Buffer, process.env, __dirname];",
+    );
+    expect(found).toEqual([]);
+  });
+
+  it.each([
+    'packages/application/src/testing/fake-ports.ts',
+    'apps/desktop/src/sync/probe.harness.ts',
+    'packages/ui/src/probe.fixture.ts',
+    'packages/adapters/src/probe.attack-1.ts',
+  ])(
+    'holds test support not named as Node’s to the rule, since the barrels export it: %s',
+    async (path) => {
+      expect(await nodeFindings(path, 'export const x = process.env;')).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    [
+      'the production barrel',
+      'packages/application/src/index.ts',
+      "export * from './testing/sqlite.ts';",
+    ],
+    [
+      'an alias',
+      'apps/desktop/src/probe.ts',
+      "import { atlasQueryIndex } from '@dfai/application/testing/sqlite';\nexport const x = atlasQueryIndex;",
+    ],
+    [
+      'app code',
+      'apps/desktop/src/probe.ts',
+      "import { sectionFiles } from './styles.test-support.ts';\nexport const x = sectionFiles;",
+    ],
+    [
+      'app code, deeper',
+      'apps/desktop/src/notes/probe.ts',
+      "import { x } from '../sync/two-macs.harness';\nexport const y = x;",
+    ],
+    [
+      'the domain',
+      'packages/domain/src/calendar/probe.ts',
+      "import { x } from './zones.test-support.ts';\nexport const y = x;",
+    ],
+    [
+      'other test support',
+      'packages/application/src/testing/fake-ports.ts',
+      "import { x } from './query-index.ts';\nexport const y = x;",
+    ],
+  ])('forbids importing Node’s test support from %s', async (_case, path, code) => {
+    const found = await nodeFindings(path, code);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('runs on Node');
+  });
+
+  it('lets a production file import its own sibling that shares a test support file’s name', async () => {
+    const found = await nodeFindings(
+      'packages/application/src/meetings/probe.ts',
+      "import { x } from './meeting-files.ts';\nexport const y = x;",
     );
     expect(found).toEqual([]);
   });
