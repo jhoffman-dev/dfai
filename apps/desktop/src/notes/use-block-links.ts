@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import {
+  createWikiLinkResolver,
   newBlockId,
-  resolveWikiLinkTarget,
   type Transclusion,
   type VaultPath,
   type WikiLink,
@@ -128,10 +128,14 @@ export function useBlockPicking({
     () => createBlockChoicesReader({ fs, markdown, index }),
     [fs, markdown, index],
   );
-  return useMemo<BlockPicking>(
-    () => ({
+  return useMemo<BlockPicking>(() => {
+    // Asked on every key typed after `#`: the vault's names are indexed once
+    // per set of notes, when first asked, not searched a key at a time (#225).
+    let resolve: ((target: string) => VaultPath | null) | null = null;
+    return {
       choicesFor: async (target): Promise<BlockChoices | null> => {
-        const path = target === '' ? notePath : resolveWikiLinkTarget(target, notePaths);
+        const path =
+          target === '' ? notePath : (resolve ??= createWikiLinkResolver(notePaths))(target);
         if (path === null) return null;
         if (path === notePath) return { same: true, target };
         return { same: false, target, path, entries: await choices.read(path) };
@@ -143,7 +147,6 @@ export function useBlockPicking({
       },
       newId: (taken) => newBlockId(() => rng.next(), taken),
       onRefused,
-    }),
-    [fs, markdown, choices, notePath, notePaths, openNotes, rng, onChanged, onRefused],
-  );
+    };
+  }, [fs, markdown, choices, notePath, notePaths, openNotes, rng, onChanged, onRefused]);
 }
