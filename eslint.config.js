@@ -123,16 +123,13 @@ const NODE_GLOBALS = {
   global: 'Use globalThis.',
   setImmediate: 'Use queueMicrotask or setTimeout.',
   clearImmediate: 'Use clearTimeout.',
+  module: 'Use export: CommonJS is Node’s.',
+  exports: 'Use export: CommonJS is Node’s.',
 };
 
 const nodeBuiltinNames = builtinModules
   .filter((name) => !name.startsWith('node:'))
   .map(escapeRegex);
-
-/** The same names for a selector, where no `/` may appear: `fs/promises` is `fs` and a subpath. */
-const dynamicNodeModule = `^(node:.*|(${nodeBuiltinNames
-  .filter((name) => !name.includes('/'))
-  .join('|')})(\\x2F.*)?)$`;
 
 /** `node:fs`, `fs`, `fs/promises`, by exact name: `./path` or `pathe` is not Node's. */
 const noNodeModules = {
@@ -140,6 +137,21 @@ const noNodeModules = {
   message:
     'The webview has no Node: keep this in tools/, a test, or test support, or use a Web API (#114).',
 };
+
+/**
+ * The same restrictions for `import()`, which no-restricted-imports does not
+ * look at. A selector's regex ends at its first `/`, so each slash is `\x2F`.
+ */
+const dynamicImports = (restrictions) => [
+  'error',
+  ...restrictions.flatMap(({ regex, message }) => {
+    const pattern = regex.replaceAll('\\/', '\\x2F').replaceAll('/', '\\x2F');
+    return [
+      `ImportExpression > Literal[value=/${pattern}/]`,
+      `ImportExpression > TemplateLiteral > TemplateElement[value.raw=/${pattern}/]`,
+    ].map((selector) => ({ selector, message }));
+  }),
+];
 
 const webviewNode = [
   ...Object.keys(forbidden).map((layer) => ({
@@ -186,18 +198,7 @@ const webviewNode = [
           message: `${name} is Node's, and the webview has none (#114). ${instead}`,
         })),
       ],
-      // no-restricted-imports does not look at `import()`. A selector's regex
-      // ends at its first `/`, so the subpath's slash is written `\x2F`.
-      'no-restricted-syntax': [
-        'error',
-        ...[
-          'ImportExpression > Literal',
-          'ImportExpression > TemplateLiteral > TemplateElement',
-        ].map((node) => ({
-          selector: `${node}[${node.endsWith('Literal') ? 'value' : 'value.raw'}=/${dynamicNodeModule}/]`,
-          message: noNodeModules.message,
-        })),
-      ],
+      'no-restricted-syntax': dynamicImports([noNodeModules, noNodeSupport]),
       // The same globals reached through the global object.
       'no-restricted-properties': [
         'error',
@@ -209,6 +210,14 @@ const webviewNode = [
           })),
         ),
       ],
+    },
+  },
+  {
+    // After the block above, whose `import()` rule it repeats with the siblings added.
+    files: ['packages/application/src/testing/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-syntax': dynamicImports([noNodeModules, noNodeSupport, noSqliteSibling]),
     },
   },
 ];
