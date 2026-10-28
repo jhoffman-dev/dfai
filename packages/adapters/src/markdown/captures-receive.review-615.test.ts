@@ -15,7 +15,7 @@ import {
   splitWikiLinksAndEmbeds,
 } from '@dfai/domain';
 import { SLACK_PERMALINK, slackCapture, slackSource } from '@dfai/domain/testing';
-import { parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
+import { parseBodyToMdast, parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
 import { remarkMarkdown } from './markdown-port.ts';
 
 const MARA = '---\ntype: person\nemail: mara.quill@example.com\n---\n\nPayroll lead.\n';
@@ -170,4 +170,16 @@ describe('review #615 MAJOR 4: a mention never reads a name through the prototyp
     expect(codeOf(response)).toBe('internal');
     expect(api.writes).toEqual([]);
   });
+});
+
+describe('review #615 minor: a line under words never makes a table', () => {
+  it.each(['x\n:-', 'a\n:-:', 'a\n-:', 'a\n---', 'a | b\n:-|-:'])(
+    'reads %j as no table',
+    (text) => {
+      const body = slackToMarkdown(text).join('\n');
+      const kinds = JSON.stringify(parseBodyToMdast(body));
+      expect(kinds).not.toContain('"table"');
+      expect(JSON.stringify(parseBodyToMdast(editedBack(body)))).not.toContain('"table"');
+    },
+  );
 });

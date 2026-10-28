@@ -41,8 +41,12 @@ export function escapeMarkdown(text: string): string {
   return text.replace(SPECIAL, '\\$&');
 }
 
-/** A line of only `-`, `=` or `+` (and spaces) would be a rule or underline a heading. */
-const RULE_LINE = /^(\s*)([-=+])([\s\-=+]*)$/;
+/**
+ * A line of only `-`, `=`, `+` or `:` (and spaces) would be a rule, underline
+ * a heading, or — `:-`, `-:`, `:-:` under a line of words — be a table's
+ * delimiter row. Its first character is escaped.
+ */
+const RULE_LINE = /^(\s*)([-=+:])([\s\-=+:]*)$/;
 
 /** A web or mail address a link may open: `javascript:` and the like are never written as one. */
 const LINKABLE = /^(?:https?:\/\/[^\s/<>]|mailto:[^\s<>])[^\s<>]*$/i;
@@ -234,7 +238,7 @@ function tokenText(token: string, users: SlackUserNames, writer: Writer): string
   if (target.startsWith('!')) {
     return writer.words(label || `@${target.slice(1).split('^')[0] ?? ''}`);
   }
-  if (LINKABLE.test(target)) return writer.link(target, label || target);
+  if (LINKABLE.test(target)) return writer.link(target, label || decodeSlackEntities(target));
   // Another scheme (`javascript:`, `slack://`) is never a link: what it says, at most.
   if (label !== '' && SCHEME.test(target)) return writer.words(label);
   return writer.words(decodeSlackEntities(`<${token}>`));

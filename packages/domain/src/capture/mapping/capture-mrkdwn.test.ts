@@ -83,6 +83,13 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     );
   });
 
+  it('shows a link with no label by its address as Slack shows it, its entities read', () => {
+    expect(md('<https://example.com/?a=1&amp;b=2>')).toBe(
+      '[https\\://example.com/?a=1&b=2](https://example.com/?a=1&amp;b=2)',
+    );
+    expect(slackToPlain('<https://example.com/?a=1&amp;b=2>')).toBe('https://example.com/?a=1&b=2');
+  });
+
   it('never writes a link that runs script or leaves the web', () => {
     expect(md('<javascript:alert(1)|click>')).toBe('click');
     expect(md('<slack://open|app>')).toBe('app');
@@ -161,10 +168,10 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     expect(md(slack)).toBe(markdown);
   });
 
-  it.each([['---'], ['  - - -'], ['==='], ['+++']])(
+  it.each([['---'], ['  - - -'], ['==='], ['+++'], [':-'], ['-:'], [':-:'], ['  :--: ']])(
     'keeps the line %j from being a rule or a heading’s underline',
     (line) => {
-      expect(md(`above\n${line}`).split('\n')[1]).toMatch(/^\s*\\[-=+]/);
+      expect(md(`above\n${line}`).split('\n')[1]).toMatch(/^\s*\\[-=+:]/);
     },
   );
 

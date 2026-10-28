@@ -164,6 +164,12 @@ describe('a capture’s title and path', () => {
     expect(collisionPath).toMatch(/^Inbox\/Captures\/secret x y z a b \(slack [0-9a-f]{8}\)\.md$/);
   });
 
+  it('names a note after a link’s address with its entities read', () => {
+    const { title, path } = titled({ text: '<https://example.com/?a=1&amp;b=2>' });
+    expect(title).toBe('https://example.com/?a=1&b=2');
+    expect(path).not.toContain('&amp;');
+  });
+
   it('names a title that cleans away to nothing as a Slack message', () => {
     expect(titled({ title: '///' }).path).toBe('Inbox/Captures/Slack message.md');
   });
