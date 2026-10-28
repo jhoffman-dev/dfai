@@ -353,7 +353,8 @@ describe('attack #235: a trashed .atlas copy holds nothing its live file lacks',
     expect(trashedCount).toBeGreaterThan(100);
     // And it must draw the case the verification review found: a key the copy lacks one map down.
     expect(nestedExtras).toBeGreaterThan(100);
-  });
+    // Its own budget: about 20 s alone, it took 71 s beside 51 other files on a loaded Mac.
+  }, 300_000);
 
   it('keeps a record copy whose JSON names a type twice, the first listing a key the live file lacks', async () => {
     const record = (json: string) =>

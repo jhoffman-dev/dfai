@@ -58,7 +58,7 @@ is one DFAI wrote itself**:
   the vault's record (`.atlas/migrations/type-properties.md`) lists under
   `added` for that type's `name` — the keys DFAI wrote into that file. The
   record is keyed by the folded name (trimmed, lower case), so `name:
-  Meeting` finds what was recorded for `meeting`;
+Meeting` finds what was recorded for `meeting`;
 - for the record itself, a key DFAI ships on that type
   (`SHIPPED_PROPERTIES`);
 - for any other `.atlas` file — a view, the settings, an automation —
