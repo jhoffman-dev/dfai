@@ -1,13 +1,14 @@
 import {
   createVaultPath,
   extrasDfaiWrote,
-  keysRecorded,
+  keysRecordedForType,
   liveExtras,
   parseShippedPropertiesRecord,
   recordExtrasShipped,
   settingsFileOfCopy,
   SHIPPED_PROPERTIES,
   SHIPPED_PROPERTIES_RECORD_PATH,
+  sameFrontmatterValue,
   splitFrontmatter,
   type ShippedPropertiesRecord,
 } from '@dfai/domain';
@@ -117,7 +118,7 @@ async function addsNothing(
           copy: parseShippedPropertiesRecord(read.copy.text),
           shipped: SHIPPED_PROPERTIES,
         })
-      : typeExtrasDfaiWrote(markdown, { live, read, added: await added() });
+      : extrasDfaiWroteIn(markdown, { live, read, added: await added() });
   if (!onlyDfais) return null;
   // Read again: a write to either since is seen here, before the host is asked at all.
   const again = await readBoth(fs, { copy, live });
@@ -126,16 +127,22 @@ async function addsNothing(
     : null;
 }
 
-function typeExtrasDfaiWrote(
+/**
+ * For a type, whether all its live file has beyond the copy is properties the
+ * record says DFAI added to it, the record keyed by the type's folded name.
+ * Any other file must say what the copy says, at every depth: DFAI adds
+ * nothing to a view, the settings or an automation by itself.
+ */
+function extrasDfaiWroteIn(
   markdown: MarkdownPort,
   { live, read, added }: { live: string; read: BothRead; added: ShippedPropertiesRecord['added'] },
 ): boolean {
   const values = (text: string) =>
     markdown.frontmatterProperties(splitFrontmatter(text).frontmatter);
   const own = values(read.live.text);
+  if (!live.startsWith(TYPES_FOLDER)) return sameFrontmatterValue(own, values(read.copy.text));
   const name = own['name'];
-  const wrote =
-    live.startsWith(TYPES_FOLDER) && typeof name === 'string' ? keysRecorded(added, name) : [];
+  const wrote = typeof name === 'string' ? keysRecordedForType(added, name) : [];
   return extrasDfaiWrote({
     extras: liveExtras({ live: own, copy: values(read.copy.text) }),
     added: wrote,

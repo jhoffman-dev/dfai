@@ -54,16 +54,26 @@ the person's deletion. The same goes for a copy trimmed by hand.
 So the copy goes only when **every key the live file has beyond the copy
 is one DFAI wrote itself**:
 
-- for a type (`.atlas/types/…`), a property in its `properties` map that the
-  vault's record (`.atlas/migrations/type-properties.md`) lists under
-  `added` for that type's `name` — the keys DFAI wrote into that file;
+- for a type (`.atlas/types/…`), a whole entry of its `properties` map that
+  the vault's record (`.atlas/migrations/type-properties.md`) lists under
+  `added` for that type's `name` — the keys DFAI wrote into that file. The
+  record is keyed by the folded name (trimmed, lower case), so `name:
+  Meeting` finds what was recorded for `meeting`;
 - for the record itself, a key DFAI ships on that type
   (`SHIPPED_PROPERTIES`);
 - for any other `.atlas` file — a view, the settings, an automation —
-  nothing: only a copy the live file holds exactly, with nothing more, goes.
+  nothing: its copy goes only when its frontmatter says what the live
+  file's does, at every depth (`sameFrontmatterValue`).
 
-A top-level key the live file has beyond the copy always keeps it. A record
-that cannot be read counts as one that lists nothing. (James may widen this;
+"Beyond the copy" is looked for at every depth (`liveExtras` walks every
+map both sides have, and gives each path the copy lacks). The merge by keys
+folds the entries of any block map, not only `properties`, so a key the copy
+lacks one map down — an automation's `when.status`, a view's
+`filters.owner`, the settings' `sync.every`, a type's `display.color` —
+leaves the merge byte-equal, and only this walk sees it (verification review
+of PR #599). A top-level key, a key inside a property, or a value the two
+say differently always keeps the copy. A record that cannot be read counts
+as one that lists nothing. (James may widen this;
 it is the strict choice made on review of PR #599.)
 
 Semantic equality — the same values read from the frontmatter, in any key
@@ -84,7 +94,10 @@ Each of these is tested (`clear-settled-copies.test.ts`,
   shipped key the record does not say DFAI added, a vault with no record;
 - it is the record, and its JSON names a key twice: a reader keeps only the
   last, so it was not written by DFAI and what the first held would be lost
-  (the merge by keys, #233, refuses it too);
+  (the merge by keys, #233, refuses it too). The check runs only once the
+  file is known to be DFAI's text around the one JSON line that parsed, and
+  text that is not JSON counts as not DFAI's rather than throwing, so a
+  record broken past its first block never stops a sync;
 - the live file or the copy is missing, cannot be read as text, or has
   frontmatter the merge cannot cut into keys;
 - it is a copy of a copy (` (conflict from A) (conflict from B)`): its live

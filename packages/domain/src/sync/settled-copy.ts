@@ -1,4 +1,5 @@
 import type { ShippedCatalogue, ShippedPropertiesRecord } from '../types/shipped-properties.ts';
+import { sameFrontmatterValue } from './settings-merge.ts';
 
 /**
  * Whether an old `.atlas` conflict copy can go (#235, ADR-0048). Merging it
@@ -9,21 +10,20 @@ import type { ShippedCatalogue, ShippedPropertiesRecord } from '../types/shipped
  * DFAI wrote into the live file itself.
  */
 
-/** What the live file has and the copy lacks: top-level keys, and entries of its `properties` map. */
-export interface LiveExtras {
-  readonly keys: readonly string[];
-  readonly properties: readonly string[];
-}
+/**
+ * What the live file has and the copy lacks, as paths of keys from the top:
+ * `['when', 'status']` for a `status` the copy's `when` lacks. A key whose
+ * value is a map on both sides is walked into; any other value the two do
+ * not say the same counts whole.
+ */
+export type LiveExtras = readonly (readonly string[])[];
 
 const PROPERTIES = 'properties';
 
 const isMap = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Date);
 
-const missingFrom = (from: object, other: object) =>
-  Object.keys(from).filter((key) => !Object.hasOwn(other, key));
-
-/** The keys and `properties` entries in `live`'s frontmatter and not in `copy`'s. */
+/** Every path in `live`'s frontmatter that `copy`'s lacks, at any depth. */
 export function liveExtras({
   live,
   copy,
@@ -31,16 +31,24 @@ export function liveExtras({
   live: Readonly<Record<string, unknown>>;
   copy: Readonly<Record<string, unknown>>;
 }): LiveExtras {
-  const keys = missingFrom(live, copy);
-  const own = live[PROPERTIES];
-  const theirs = copy[PROPERTIES];
-  if (!Object.hasOwn(live, PROPERTIES) || keys.includes(PROPERTIES))
-    return { keys, properties: [] };
-  if (!isMap(own) || !isMap(theirs)) return { keys: [...keys, PROPERTIES], properties: [] };
-  return { keys, properties: missingFrom(own, theirs) };
+  return pathsMissing(live, copy, []);
 }
 
-/** Whether all `extras` are properties the vault's record says DFAI added to this type's file. */
+function pathsMissing(
+  live: Readonly<Record<string, unknown>>,
+  copy: Readonly<Record<string, unknown>>,
+  at: readonly string[],
+): LiveExtras {
+  return Object.entries(live).flatMap(([key, value]): LiveExtras => {
+    const path = [...at, key];
+    if (!Object.hasOwn(copy, key)) return [path];
+    const theirs = copy[key];
+    if (isMap(value) && isMap(theirs)) return pathsMissing(value, theirs, path);
+    return sameFrontmatterValue(value, theirs) ? [] : [path];
+  });
+}
+
+/** Whether every extra is a whole property the vault's record says DFAI added to this type's file. */
 export function extrasDfaiWrote({
   extras,
   added,
@@ -48,7 +56,9 @@ export function extrasDfaiWrote({
   extras: LiveExtras;
   added: readonly string[];
 }): boolean {
-  return extras.keys.length === 0 && extras.properties.every((key) => added.includes(key));
+  return extras.every(
+    (path) => path.length === 2 && path[0] === PROPERTIES && added.includes(path[1]!),
+  );
 }
 
 /** Whether every key the live record holds beyond the copy's is one DFAI ships on that type. */
@@ -73,9 +83,16 @@ export function recordExtrasShipped({
 /**
  * Whether JSON text names one key twice in an object, at any depth. A
  * reader keeps only the last, so what the first held is lost on reading:
- * such a record was not written by DFAI. Expects text that parses as JSON.
+ * such a record was not written by DFAI — nor was text that is not JSON at
+ * all, for which this is true too.
  */
 export function jsonHasDuplicateKeys(json: string): boolean {
+  try {
+    JSON.parse(json);
+  } catch {
+    // Safe to ignore: text that does not parse is not a record DFAI wrote, which is the answer.
+    return true;
+  }
   const open: { keys: Set<string> | null; wantsKey: boolean }[] = [];
   for (let at = 0; at < json.length; at += 1) {
     const character = json[at];
