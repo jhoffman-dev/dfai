@@ -309,3 +309,30 @@ describe('todayAsPending, ticking a chosen task (#108 fix round)', () => {
     expect(titlesIn(shown, 'nextActions')).toEqual(['Water the beds']);
   });
 });
+
+describe('todayAsPending, once a read already holds the change (#108 fix round)', () => {
+  it('gives the read’s own task back, so the row is not drawn again when the change settles', () => {
+    const read: TodayReport = {
+      ...todayLists({
+        tasks: [
+          task('Call the bank', { focus: TODAY, modified: NOW + 5_000 }),
+          task('Sow the beans', {}),
+        ],
+        projects: [],
+        at: { today: TODAY, now: NOW },
+      }),
+      today: TODAY,
+      choosing: true,
+      inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
+      truncated: false,
+    };
+    const shown = todayAsPending({
+      report: read,
+      pending: pending(['Call the bank', focusChange({ choice: 'choose', today: TODAY })]),
+    });
+    const inRead = read.sections.flatMap((s) => s.groups.flatMap((g) => g.tasks));
+    const inShown = shown.sections.flatMap((s) => s.groups.flatMap((g) => g.tasks));
+    const chosen = (tasks: typeof inRead) => tasks.find((each) => each.title === 'Call the bank');
+    expect(chosen(inShown)).toBe(chosen(inRead));
+  });
+});
