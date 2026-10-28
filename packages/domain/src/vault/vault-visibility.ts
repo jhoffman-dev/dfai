@@ -61,6 +61,9 @@ export function isAtlasNote(path: string): boolean {
 /** Where a vault keeps the templates new notes are made from. */
 export const TEMPLATES_DIRECTORY = `${ATLAS_DIRECTORY}/templates`;
 
+/** Where a vault keeps its skills, one folder each holding a `SKILL.md` (ADR-0050). */
+export const SKILLS_DIRECTORY = `${ATLAS_DIRECTORY}/skills`;
+
 /** Where a vault keeps its type definitions, one note per type. */
 export const TYPES_DIRECTORY = `${ATLAS_DIRECTORY}/types`;
 
@@ -108,7 +111,8 @@ export function isSystemFolder(entry: VaultEntry): boolean {
 
 /**
  * The parts of `.atlas` another place in the app already lists: the Views and
- * Dashboards sections, and the Templates page (ADR-0026).
+ * Dashboards sections, the Templates page (ADR-0026), and the skills
+ * (ADR-0050), which their own page and the API list.
  *
  * These, and only these, are left out of user space — showing them in both
  * places would list every view and dashboard twice, and a template among the
@@ -122,7 +126,12 @@ export function isSystemFolder(entry: VaultEntry): boolean {
  * direction to fail in: a note you can reach and did not expect beats a note
  * you cannot reach at all.
  */
-const SECTIONED_ATLAS_PATHS = new Set([VIEWS_DIRECTORY, DASHBOARDS_DIRECTORY, TEMPLATES_DIRECTORY]);
+const SECTIONED_ATLAS_PATHS = new Set([
+  VIEWS_DIRECTORY,
+  DASHBOARDS_DIRECTORY,
+  TEMPLATES_DIRECTORY,
+  SKILLS_DIRECTORY,
+]);
 
 /**
  * Whether an entry belongs in user space — the vault as it is on disk, minus

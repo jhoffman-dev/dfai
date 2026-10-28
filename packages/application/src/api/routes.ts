@@ -30,6 +30,7 @@ import { scheduleTaskRoute } from './schedule-task.ts';
 import { refreshSourceRoute } from './sources.ts';
 import { statusRoute } from './status.ts';
 import { renameTagRoute, taggedNotesRoute, tagsRoute } from './tags.ts';
+import { skillRoute, skillsRoute } from './skills.ts';
 import { templateRoute, templatesRoute } from './templates.ts';
 import { termsRoute } from './terms.ts';
 import { typeViewsRoute } from './type-views.ts';
@@ -95,6 +96,8 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'GET /v1/types/{name}/views': vaultRoute(typeViewsRoute),
   'GET /v1/templates': vaultRoute(templatesRoute),
   'GET /v1/templates/{name}': vaultRoute(templateRoute),
+  'GET /v1/skills': vaultRoute(skillsRoute),
+  'GET /v1/skills/{name}': vaultRoute(skillRoute),
   'GET /v1/views': vaultRoute(viewsRoute),
   'POST /v1/views/{path}/run': vaultRoute(runViewRoute),
   'POST /v1/views/{path}/calendar': vaultRoute(calendarRoute),

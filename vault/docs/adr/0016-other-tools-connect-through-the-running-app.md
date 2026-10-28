@@ -942,3 +942,37 @@ unattended step reads.
   routes is still a proposal note in user space, and still accepted only in
   the app. So the rule above stands — the API never writes `.atlas` — and
   an MCP client cannot propose a dashboard and accept it for itself.
+
+## Skills: read, not written (#169, 2026-10-28)
+
+Skills are Agent Skills folders in `.atlas/skills` (ADR-0050): instructions
+for Claude the person writes once and reuses from a rule's Claude step and the
+chat. The API follows on the same terms as templates above:
+
+- **Read.** `GET /v1/skills` lists every skill folder with its description and
+  its problems; `GET /v1/skills/{name}` answers one with its instructions,
+  byte for byte. Both run `listSkills` and `readSkill`, the use-cases the
+  Skills page uses, so a problem here is the page's. Both name their vault and
+  answer `no_vault` if another is opened while they read.
+- **A name is compared, never joined.** `{name}` is matched against the
+  folders `.atlas/skills` lists — exactly, else in any case and Unicode form —
+  and only a listed folder's own path is read. A name holding `/`, `..`,
+  percent-encoded dots or another `.atlas` folder's name finds nothing
+  (`not_found`), so no name reaches outside `.atlas/skills`, and only each
+  folder's SKILL.md is opened.
+- **No note route hands out a skill.** `.atlas/skills` is a sectioned path
+  (ADR-0013, ADR-0050), so a SKILL.md is outside user space: not a note, a
+  search hit, a link target or a row.
+- **Not routes: making, editing and deleting a skill.** Each writes
+  `.atlas/skills`, which the API never writes:
+  - _Making and editing_ decide what Claude is told to do in every later run
+    that uses the skill. A caller that could write one could change what a
+    rule's Claude step does tomorrow morning, with nothing in the run saying
+    where the instructions came from.
+  - _Deleting_ is a delete, and v1 has none (Security model); and it takes the
+    whole folder, other files included.
+
+  So the API stays read-only for skills (James to confirm, ADR-0050). An
+  exception would be a `PUT /v1/skills/{name}` taking `ifModified`, running
+  the app's own `saveSkill` (only the keys and body that changed, refused on a
+  changed file), and it would need this section amended to accept it.

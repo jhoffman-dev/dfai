@@ -56,7 +56,7 @@ const search = async () => {
 describe('dfai-mcp over stdio', () => {
   it('lists every tool', async () => {
     const { tools } = await mcp.listTools();
-    expect(tools).toHaveLength(60);
+    expect(tools).toHaveLength(62);
   });
 
   it('picks up the connection file as it changes, without a restart', async () => {

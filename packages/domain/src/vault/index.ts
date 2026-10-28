@@ -19,6 +19,7 @@ export {
   isTemplateNote,
   isUserSpaceNote,
   isVisibleEntry,
+  SKILLS_DIRECTORY,
   TEMPLATES_DIRECTORY,
   userSpaceNoteSql,
   TYPES_DIRECTORY,

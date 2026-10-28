@@ -49,6 +49,11 @@ describe('isVisibleEntry', () => {
     '.atlas/templates',
     '.atlas/templates/Daily.md',
     '.atlas/templates/work/Task.md',
+    '.atlas/skills',
+    '.atlas/skills/weekly-review',
+    '.atlas/skills/weekly-review/SKILL.md',
+    '.atlas/skills/weekly-review/examples/sample.md',
+    '.atlas/Skills/weekly-review/SKILL.md',
   ])('hides %j, which a place of its own already lists', (path) => {
     expect(isVisibleEntry(at(path))).toBe(false);
   });
@@ -58,6 +63,7 @@ describe('isVisibleEntry', () => {
     '.atlas/sources',
     '.atlas/types/task.md',
     '.atlas/templates-old/Daily.md',
+    '.atlas/skills-old/SKILL.md',
     '.atlas/sources/Milestones.md',
     '.atlas/settings.md',
   ])('shows %j, which no other section lists', (path) => {

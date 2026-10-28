@@ -44,6 +44,7 @@ const ALL_TOOLS = [
   'atlas_find_duplicate_people',
   'atlas_inbox',
   'atlas_list_notes',
+  'atlas_list_skills',
   'atlas_list_templates',
   'atlas_list_type_views',
   'atlas_list_types',
@@ -63,6 +64,7 @@ const ALL_TOOLS = [
   'atlas_quick_add',
   'atlas_quick_add_types',
   'atlas_read_note',
+  'atlas_read_skill',
   'atlas_read_template',
   'atlas_refresh_source',
   'atlas_reject_proposal',
@@ -215,6 +217,10 @@ describe('tools/list', () => {
     for (const name of ['atlas_list_templates', 'atlas_read_template']) {
       expect(byName.get(name)).toMatchObject({ readOnlyHint: true });
     }
+    // Skills are made and edited in the app; the API never writes `.atlas` (ADR-0050).
+    for (const name of ['atlas_list_skills', 'atlas_read_skill']) {
+      expect(byName.get(name)).toMatchObject({ readOnlyHint: true });
+    }
     // The vocabulary is read here; a term is written as any note is.
     expect(byName.get('atlas_terms')).toMatchObject({ readOnlyHint: true });
     // A day's meetings are read from the event notes; Google is never written to (ADR-0046).
@@ -229,6 +235,8 @@ describe('tools/list', () => {
       'atlas_read_template',
       'atlas_create_note',
       'atlas_terms',
+      'atlas_list_skills',
+      'atlas_read_skill',
     ]) {
       const description = tools.find((t) => t.name === tool)?.description ?? '';
       const named = description.match(/atlas_[a-z_]+/g) ?? [];
@@ -413,6 +421,9 @@ describe('tools/call → REST', () => {
     ['atlas_list_templates', {}, 'GET', '/v1/templates', null],
     ['atlas_read_template', { name: 'Reading list' }, 'GET', '/v1/templates/Reading%20list', null],
     ['atlas_read_template', { name: 'A/B' }, 'GET', '/v1/templates/A%2FB', null],
+    ['atlas_list_skills', {}, 'GET', '/v1/skills', null],
+    ['atlas_read_skill', { name: 'weekly-review' }, 'GET', '/v1/skills/weekly-review', null],
+    ['atlas_read_skill', { name: '../settings' }, 'GET', '/v1/skills/..%2Fsettings', null],
     [
       'atlas_list_type_views',
       { type: 'reading list' },

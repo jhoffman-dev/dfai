@@ -89,6 +89,8 @@ Normally none. These environment variables override the connection file:
 | `atlas_list_type_views`       | `GET /v1/types/{name}/views`                                                 | no      |
 | `atlas_list_templates`        | `GET /v1/templates`                                                          | no      |
 | `atlas_read_template`         | `GET /v1/templates/{name}`                                                   | no      |
+| `atlas_list_skills`           | `GET /v1/skills`                                                             | no      |
+| `atlas_read_skill`            | `GET /v1/skills/{name}`                                                      | no      |
 | `atlas_terms`                 | `GET /v1/terms`                                                              | no      |
 | `atlas_run_view`              | `POST /v1/views/{path}/run`                                                  | no      |
 | `atlas_query`                 | `POST /v1/query`                                                             | no      |
@@ -244,6 +246,14 @@ none serves. `atlas_read_template` reads one by name: the properties and body a
 note made from it with `atlas_create_note` starts with. Both only read: making,
 renaming, editing, moving and deleting templates stay on the app's Templates
 page, since templates live in `.atlas`, which the API never writes (ADR-0016).
+
+`atlas_list_skills` lists the vault's skills — each an Agent Skills folder in
+`.atlas/skills` holding a `SKILL.md` — by folder name, with its description and
+what breaks the rules (a `name:` that differs from the folder, a missing
+description, no `SKILL.md`). `atlas_read_skill` reads one by name, in any case,
+with its instructions as written. Both only read: making, editing and deleting
+skills stay in the app, since skills live in `.atlas`, which the API never
+writes (ADR-0016, ADR-0050).
 
 `atlas_automations` lists the vault's automations — each rule, its last and
 next run, and why one is paused — with rules that cannot be read listed apart
