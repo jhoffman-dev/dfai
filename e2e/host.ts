@@ -188,7 +188,10 @@ function filesAndProps(notes: Iterable<StoredNote>): DatabaseSync {
     CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
                         modified INTEGER NOT NULL, size INTEGER NOT NULL, progress INTEGER);
     CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
-                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);`);
+                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
+    -- As index.rs indexes them: a note's own rows are sought, not scanned.
+    CREATE INDEX props_path ON props(path, key, value_text);
+    CREATE INDEX props_key ON props(key, value_text);`);
   const file = database.prepare('INSERT INTO files VALUES (?, ?, ?, ?, ?, ?)');
   const prop = database.prepare('INSERT INTO props VALUES (?, ?, ?, ?, ?, ?, NULL)');
   for (const note of notes) {
@@ -301,7 +304,6 @@ function researchTables(): (writes: number, notes: Iterable<StoredNote>) => Data
     fillHighlights(database, stored);
     // The indexes `src-tauri/src/index.rs` makes on what these views read by note.
     database.exec(`
-      CREATE INDEX props_path ON props(path, key, value_text);
       CREATE INDEX tags_path ON tags(path);
       CREATE INDEX relations_src ON relations(src, key);
       CREATE INDEX highlights_path_idx ON highlights(path, idx);`);
