@@ -142,3 +142,32 @@ describe('review #615 MAJOR 3: a bare address stays words after the paragraph is
     expect(readAsMarkup(edited)).toEqual({ links: [], tags: [] });
   });
 });
+
+describe('review #615 MAJOR 4: a mention never reads a name through the prototype', () => {
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+    'writes <@%s> by what it says, and is saved',
+    async (id) => {
+      const author = { name: 'Tobias Fenn' };
+      const text = await written(
+        slackCapture({
+          text: `hey <@${id}>`,
+          source: slackSource({ author }),
+          thread: [],
+          users: {},
+        }),
+      );
+      expect(splitFrontmatter(text).body).toContain(`> hey @${id.replace(/_/g, '\\_')}`);
+    },
+  );
+
+  it('answers a failure that is not a refusal as internal, writing nothing', async () => {
+    const api = apiFixture({
+      markdown: remarkMarkdown,
+      index: { query: async () => Promise.reject(new Error('index closed')) },
+    });
+    const response = await api.send({ method: 'POST', path: '/v1/captures', body: slackCapture() });
+    expect(response.status).toBe(500);
+    expect(codeOf(response)).toBe('internal');
+    expect(api.writes).toEqual([]);
+  });
+});
