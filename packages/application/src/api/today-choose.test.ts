@@ -85,3 +85,36 @@ describe('POST /v1/today/choose', () => {
     expect(codeOf(await choose(api, { path: 'Tasks/Gone.md', chosen: true }))).toBe('not_found');
   });
 });
+
+describe('POST /v1/today/choose, where choosing is not the vault’s (#108 fix round)', () => {
+  const typeWith = (focusLines: readonly string[]) =>
+    ['---', 'name: task', 'properties:', '  status: select', ...focusLines, '---', ''].join('\n');
+
+  it.each([
+    ['declares focus as text', ['  focus:', '    kind: text']],
+    ['has taken focus off', []],
+  ])('refuses as invalid, writing nothing, when the Task type %s', async (_, lines) => {
+    const api = apiFixture({ files: { ...FILES, '.atlas/types/task.md': typeWith(lines) } });
+
+    const response = await choose(api, { path: 'Tasks/Call the printer.md', chosen: true });
+
+    expect(codeOf(response)).toBe('invalid');
+    expect(JSON.stringify(response.body)).toContain('Chosen for');
+    expect(text(api, 'Tasks/Call the printer.md')).toBe(PRINTER);
+  });
+
+  it('refuses as invalid a task whose focus is not one day, writing nothing', async () => {
+    const own = note(['type: task', 'status: next-action', 'focus: writing']);
+    const api = apiFixture({
+      files: {
+        '.atlas/types/task.md': typeWith(['  focus: date']),
+        'Tasks/Chapter.md': own,
+      },
+    });
+
+    for (const chosen of [true, false]) {
+      expect(codeOf(await choose(api, { path: 'Tasks/Chapter.md', chosen }))).toBe('invalid');
+    }
+    expect(text(api, 'Tasks/Chapter.md')).toBe(own);
+  });
+});

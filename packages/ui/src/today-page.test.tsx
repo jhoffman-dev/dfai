@@ -47,6 +47,7 @@ function report(tasks: readonly ReviewTask[] = TASKS, fields: Partial<TodayRepor
   return {
     ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 3, toFile: 2, toAnswer: 1, more: false },
     truncated: false,
     stalledProjects: 2,
@@ -538,5 +539,56 @@ describe('TodayPage, chosen for today (#108)', () => {
     ['drop', 'Dropped “Call the bank” from today.'],
   ] as const)('says what a %s did, in the words its toast offers to take back', (kind, words) => {
     expect(todayActionWords({ title: 'Call the bank', action: { kind } })).toBe(words);
+  });
+});
+
+describe('TodayPage, where a task cannot be chosen (#108 fix round)', () => {
+  it('draws no choosing at all in a vault that does not choose', () => {
+    page({
+      today: report([task('Call the bank', { focus: '2026-10-12' }), task('Ship the page')], {
+        choosing: false,
+      }),
+    });
+    const names = screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'));
+    expect(names).toContain('Next actions');
+    expect(names).not.toContain('Chosen for today');
+    expect(names).not.toContain('Carried over');
+    expect(screen.queryAllByRole('button', { name: /for today$|off today$|from today$/ })).toEqual(
+      [],
+    );
+  });
+
+  it('offers no Today on a task whose focus is the person’s own', () => {
+    page({
+      today: report([task('Write the chapter', { focusIsOwn: true }), task('Ship the page')]),
+    });
+    expect(screen.getByRole('button', { name: 'Choose Ship the page for today' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Write the chapter (for|off) today/ })).toBeNull();
+  });
+
+  it('says the later day a task was chosen for, and moves the choice to today with that day', async () => {
+    const { onChoose } = page({
+      today: report([task('Plan the offsite', { focus: '2026-11-02' })]),
+    });
+    const next = section('Next actions');
+    expect(within(next).getByText('Chosen for 2026-11-02')).toBeDefined();
+    await userEvent.click(
+      within(next).getByRole('button', { name: 'Choose Plan the offsite for today' }),
+    );
+    expect(onChoose).toHaveBeenCalledWith({
+      path: path('Plan the offsite'),
+      title: 'Plan the offsite',
+      choice: 'choose',
+      was: '2026-11-02',
+    });
+  });
+
+  it('says a choice moved from a later day in its toast', () => {
+    expect(
+      todayActionWords({
+        title: 'Plan the offsite',
+        action: { kind: 'choose', was: '2026-11-02' },
+      }),
+    ).toBe('“Plan the offsite” chosen for today (was 2026-11-02).');
   });
 });

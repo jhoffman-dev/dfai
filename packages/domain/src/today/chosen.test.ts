@@ -152,3 +152,43 @@ describe('todayLists, with tasks chosen for today', () => {
     expect(order).toEqual(['Tasks/Chosen one.md', 'Tasks/Next one.md']);
   });
 });
+
+describe('todayLists, against a focus that is not a choice (#108 fix round)', () => {
+  it('lists a task whose focus is the person’s own where it would be otherwise, even with a day in it', () => {
+    const own = task('Write the chapter', { focus: TODAY, focusIsOwn: true });
+    expect(placed([own])).toEqual({ 'Write the chapter': 'nextActions' });
+  });
+
+  it('lists nothing as chosen or carried over in a vault that does not choose', () => {
+    const tasks = [task('Today one', { focus: TODAY }), task('Old one', { focus: YESTERDAY })];
+    const lists = todayLists({ tasks, projects: [], at: AT, choosing: false });
+    const where = Object.fromEntries(
+      lists.sections.flatMap((section) =>
+        section.groups.flatMap((group) => group.tasks.map((each) => [each.title, section.id])),
+      ),
+    );
+    expect(where).toEqual({ 'Today one': 'nextActions', 'Old one': 'nextActions' });
+  });
+
+  it('says the later day a task was chosen for, and no day for the rest', () => {
+    const tasks = [
+      task('Plan the offsite', { focus: '2026-11-02' }),
+      task('Book the hall', { focus: TODAY }),
+      task('Older choice', { focus: YESTERDAY }),
+      task('Not chosen'),
+    ];
+    const later = Object.fromEntries(
+      todayLists({ tasks, projects: [], at: AT }).sections.flatMap((section) =>
+        section.groups.flatMap((group) =>
+          group.tasks.map((each) => [each.title, each.laterChoice]),
+        ),
+      ),
+    );
+    expect(later).toEqual({
+      'Plan the offsite': '2026-11-02',
+      'Book the hall': null,
+      'Older choice': null,
+      'Not chosen': null,
+    });
+  });
+});

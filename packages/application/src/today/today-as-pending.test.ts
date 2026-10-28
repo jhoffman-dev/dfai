@@ -282,3 +282,26 @@ describe('todayAsPending, choosing for today (#108)', () => {
     expect(titlesIn(shown, 'nextActions')).toEqual(['Sow the beans']);
   });
 });
+
+describe('todayAsPending, ticking a chosen task (#108 fix round)', () => {
+  it('draws a chosen repeating task ticked as rolled on and off Chosen, as the task rules leave it', () => {
+    const read: TodayReport = {
+      ...todayLists({
+        tasks: [task('Water the beds', { focus: TODAY, due: TODAY, recurrence: 'every week' })],
+        projects: [],
+        at: { today: TODAY, now: NOW },
+      }),
+      today: TODAY,
+      choosing: true,
+      inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
+      truncated: false,
+    };
+    expect(titlesIn(read, 'chosen')).toEqual(['Water the beds']);
+    const shown = todayAsPending({
+      report: read,
+      pending: pending(['Water the beds', archiveTaskChange()]),
+    });
+    expect(titlesIn(shown, 'chosen')).toEqual([]);
+    expect(titlesIn(shown, 'nextActions')).toEqual(['Water the beds']);
+  });
+});

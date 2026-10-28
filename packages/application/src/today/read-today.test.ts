@@ -206,3 +206,27 @@ describe('readToday — the Inbox count is the Inbox page’s', () => {
     ]);
   });
 });
+
+describe('readToday, choosing for today (#108 fix round)', () => {
+  const FILES_CHOSEN = { 'Tasks/Paint.md': task('status: next-action', 'focus: 2026-10-13') };
+  const index = () =>
+    fakeIndexPort({ query: atlasQueryIndex({ markdown: fakeMarkdown(), files: FILES_CHOSEN }) });
+
+  it('chooses in a vault with no Task type of its own, as the built-in type does', async () => {
+    const report = await readToday({ index: index(), ...NO_PROPOSALS, clock: CLOCK });
+    expect(report.choosing).toBe(true);
+    expect(titles(report, 'chosen')).toEqual(['Paint']);
+  });
+
+  it('lists nothing as chosen when the caller says the vault does not choose', async () => {
+    const report = await readToday({
+      index: index(),
+      ...NO_PROPOSALS,
+      clock: CLOCK,
+      choosing: false,
+    });
+    expect(report.choosing).toBe(false);
+    expect(titles(report, 'chosen')).toEqual([]);
+    expect(titles(report, 'nextActions')).toEqual(['Paint']);
+  });
+});
