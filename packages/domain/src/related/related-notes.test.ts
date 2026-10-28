@@ -128,14 +128,8 @@ describe('rankRelatedNotes', () => {
 
   it('offers the closest notes first, each scored by its closest block, once', () => {
     const ranked = rankRelatedNotes({ blocks, excluded: nothingExcluded('Me.md'), limit: 10 });
-    expect(ranked.map((each) => each.path)).toEqual([
-      'Close.md',
-      'Middle.md',
-      'Far.md',
-      'Opposite.md',
-    ]);
+    expect(ranked.map((each) => each.path)).toEqual(['Close.md', 'Middle.md', 'Far.md']);
     expect(ranked[0]!.score).toBeGreaterThan(0.99);
-    expect(ranked[3]!.score).toBeLessThan(0);
   });
 
   it('never offers the note itself, a linked one, a dismissed one, the Archive or a template', () => {
@@ -148,7 +142,22 @@ describe('rankRelatedNotes', () => {
       excluded: { note: 'Me.md', linked: new Set(['Close.md']), dismissed: new Set(['Far.md']) },
       limit: 10,
     });
-    expect(ranked.map((each) => each.path)).toEqual(['Middle.md', 'Opposite.md']);
+    expect(ranked.map((each) => each.path)).toEqual(['Middle.md']);
+  });
+
+  it('never offers a note that points away from it, or at right angles: nothing in common', () => {
+    const apart = [
+      block('Me.md', 1, 0),
+      block('Across.md', 0, 1),
+      block('Away.md', -1, 0.2),
+      block('Near.md', 1, 1),
+    ];
+    const ranked = rankRelatedNotes({
+      blocks: apart,
+      excluded: nothingExcluded('Me.md'),
+      limit: 5,
+    });
+    expect(ranked.map((each) => each.path)).toEqual(['Near.md']);
   });
 
   it('keeps only the limit', () => {
