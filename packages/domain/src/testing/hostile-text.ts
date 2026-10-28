@@ -89,6 +89,15 @@ export const HOSTILE_PIECES: readonly string[] = [
   'é',
   '👨‍👩‍👧',
   'words',
+  // From PR #615's review: links whose addresses hold wiki links, delimiter rows, prototype keys.
+  '<https://example.com/[[Mara]]|see>',
+  '<https://example.com/![[Secret]]>',
+  '<mailto:[[Mara]]@example.com>',
+  'https://example.com/[[Mara]] ',
+  '\n:-',
+  '\n:-:',
+  '<@constructor>',
+  '<@__proto__>',
 ];
 
 /** Between one and `most` hostile pieces, joined. */

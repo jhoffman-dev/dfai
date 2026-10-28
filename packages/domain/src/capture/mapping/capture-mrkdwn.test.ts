@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { escapeMarkdown, slackToMarkdown, slackToPlain } from './capture-mrkdwn.ts';
+import { escapeMarkdown, slackToMarkdown, slackToPlain, wordsMarkdown } from './capture-mrkdwn.ts';
 
 /** One line of a message, as markdown. */
 const md = (text: string, users: Record<string, string> = {}) =>
@@ -204,6 +204,14 @@ describe('escapeMarkdown', () => {
   it('escapes every character markdown or DFAI reads as more than itself, and nothing else', () => {
     expect(escapeMarkdown('\\`*_~[]<>#^| plain: words, 1. (x) &amp;')).toBe(
       '\\\\\\`\\*\\_\\~\\[\\]\\<\\>\\#\\^\\| plain: words, 1. (x) \\&amp;',
+    );
+  });
+});
+
+describe('wordsMarkdown: a sender’s plain words, such as a name', () => {
+  it('escapes them, and writes a bare address in them as an explicit link', () => {
+    expect(wordsMarkdown('Mara https://example.com/[[x]] #ops')).toBe(
+      'Mara [https\\://example.com/](https://example.com/)\\[\\[x\\]\\] \\#ops',
     );
   });
 });

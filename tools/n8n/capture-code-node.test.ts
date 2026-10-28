@@ -78,15 +78,15 @@ function hostileCaptures(count: number): Record<string, unknown>[] {
     const random = seededRandom(at + 1);
     return slackCapture({
       kind: random() < 0.5 ? 'note' : 'task',
-      title: random() < 0.3 ? `T${hostileText(random, 8)}` : null,
+      title: random() < 0.3 ? hostileText(random, 8) : null,
       text: hostileText(random, 40),
       source: slackSource({
-        author: { name: `N${hostileText(random, 6)}`, email: 'mara.quill@example.com' },
+        author: { name: hostileText(random, 6), email: 'mara.quill@example.com' },
       }),
       thread: [
         {
           ts: '1793136300.000200',
-          author: { name: `R${hostileText(random, 4)}` },
+          author: { name: hostileText(random, 4) },
           text: hostileText(random, 20),
         },
       ],
@@ -120,6 +120,17 @@ function inApp(capture: unknown): unknown {
     return `${(error as Error).name}: ${(error as Error).message}`;
   }
 }
+
+// Only where macOS's jsc is: CI's Linux unit shards skip it, and the test below says so in
+// their output. Run tools/n8n on a Mac after changing the mapper (tools/n8n/README.md).
+describe('where the parity test runs', () => {
+  it.runIf(!existsSync(JSC))(
+    'says JavaScriptCore parity is not checked here: jsc is macOS’s',
+    () => {
+      expect(existsSync(JSC)).toBe(false);
+    },
+  );
+});
 
 describe.skipIf(!existsSync(JSC))('a capture mapped in the webview’s engine', () => {
   it('writes the fixture, a refusal and 200 hostile captures byte for byte as Node does', () => {

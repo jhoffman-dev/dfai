@@ -12,7 +12,13 @@ import type { Nodes, Root } from 'mdast';
 import { describe, expect, it } from 'vitest';
 import { apiFixture, bodyOf, codeOf, type IndexPort } from '@dfai/application';
 import { atlasQueryIndex } from '@dfai/application/testing/sqlite';
-import { noteTags, readCapture, splitFrontmatter, splitWikiLinks } from '@dfai/domain';
+import {
+  noteTags,
+  readCapture,
+  relationsOf,
+  splitFrontmatter,
+  splitWikiLinksAndEmbeds,
+} from '@dfai/domain';
 import {
   hostileText,
   seededRandom,
@@ -21,6 +27,7 @@ import {
   slackCapture,
   slackSource,
 } from '@dfai/domain/testing';
+import { parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
 import { remarkMarkdown } from './markdown-port.ts';
 
 type ApiFixture = ReturnType<typeof apiFixture>;
@@ -308,6 +315,12 @@ function* nodesOf(node: Nodes): Generator<Nodes> {
   if ('children' in node) for (const child of node.children) yield* nodesOf(child as Nodes);
 }
 
+/** The body as the editor writes it back once each of its blocks is edited. */
+const editedBack = (body: string) =>
+  parseMarkdownBody(body)
+    .doc.content.map((node) => renderBlock(node))
+    .join('\n\n');
+
 const parse = (body: string) => unified().use(remarkParse).use(remarkGfm).parse(body) as Root;
 
 describe('POST /v1/captures: hostile text, over 200 seeded messages, through the real parser', () => {
@@ -315,21 +328,29 @@ describe('POST /v1/captures: hostile text, over 200 seeded messages, through the
     'seed %i reads back as words',
     async (seed) => {
       const random = seededRandom(seed);
-      const name = `N${hostileText(random, 6)}`;
+      const name = hostileText(random, 6);
       const api = vault();
       const sent = slackCapture({
-        title: random() < 0.5 ? `T${hostileText(random, 8)}` : null,
+        title: random() < 0.5 ? hostileText(random, 8) : null,
         text: hostileText(random, 30),
         source: slackSource({ author: { name, email: 'mara.quill@example.com' } }),
         thread: [
           {
             ts: SLACK_REPLY_TS,
-            author: { name: `R${hostileText(random, 4)}` },
+            author: { name: hostileText(random, 4) },
             text: hostileText(random, 20),
           },
         ],
+        attachments: [{ name: hostileText(random, 4), url: 'https://files.slack.com/a.pdf' }],
       });
       const response = await send(api, sent);
+      // Names are hostile, not prefixed to be safe: one that cleans away to nothing is refused.
+      if (response.status === 400) {
+        expect(messageOf(response)).toMatch(
+          /^The capture was refused: [^;]*name: is blank(?:; [^;]*name: is blank)*$/,
+        );
+        return;
+      }
       expect(response.status).toBe(201);
       const path = (bodyOf(response)['capture'] as { path: string }).path;
       const text = api.files.get(path)?.text ?? '';
@@ -354,9 +375,17 @@ describe('POST /v1/captures: hostile text, over 200 seeded messages, through the
         readCapture(sent).message.author.name.replace(/\[/g, '(').replace(/\]/g, ')'),
       );
 
-      const ranges = remarkMarkdown.textRanges(body);
-      expect(noteTags({ tagsProperty: undefined, body, ranges })).toEqual([]);
-      expect(splitWikiLinks(body).filter((piece) => piece.kind === 'wikiLink')).toEqual([]);
+      // No frontmatter value a sender wrote is a relation (review of PR #615).
+      expect(relationsOf(properties, () => null)).toEqual([]);
+
+      // No tag, wiki link or embed — as written, and once every block is edited and written back.
+      for (const markdown of [body, editedBack(body)]) {
+        const ranges = remarkMarkdown.textRanges(markdown);
+        expect(noteTags({ tagsProperty: undefined, body: markdown, ranges })).toEqual([]);
+        expect(splitWikiLinksAndEmbeds(markdown).filter((piece) => piece.kind !== 'text')).toEqual(
+          [],
+        );
+      }
 
       const tree = parse(body);
       const kinds = new Set([...nodesOf(tree)].map((node) => node.type));

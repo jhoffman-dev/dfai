@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { relationsOf } from '../../index/relation-rows.ts';
 import { splitWikiLinks } from '../../markdown/wikilink.ts';
 import { hostileText, seededRandom } from '../../testing/hostile-text.ts';
 import {
@@ -7,7 +8,8 @@ import {
   slackCapture,
   slackSource,
 } from '../../testing/slack-capture.ts';
-import { mapCapture } from './capture-to-atlas.ts';
+import { CaptureRefusedError } from './capture-refusal.ts';
+import { mapCapture, type CaptureFile } from './capture-to-atlas.ts';
 
 /*
  * A seeded property test (#103): messages, names, titles and channels built
@@ -22,21 +24,50 @@ function payload(random: () => number) {
   const replies = Math.floor(random() * 4);
   return slackCapture({
     kind: random() < 0.5 ? 'note' : 'task',
-    title: random() < 0.3 ? `T${hostileText(random, 8)}` : null,
+    title: random() < 0.3 ? hostileText(random, 8) : null,
     text: hostileText(random, 40),
     source: slackSource({
-      channel: { id: 'C0LARK5PUR', name: `c${hostileText(random, 5)}`.slice(0, 70) },
-      author: { name: `N${hostileText(random, 6)}`, email: 'mara.quill@example.com' },
+      channel: { id: 'C0LARK5PUR', name: hostileText(random, 5).slice(0, 70) },
+      author: { name: hostileText(random, 6), email: 'mara.quill@example.com' },
       url: SLACK_PERMALINK,
     }),
     thread: Array.from({ length: replies }, (_, at) => ({
       ts: `${SLACK_REPLY_TS.slice(0, -1)}${at}`,
-      author: { name: `R${hostileText(random, 6)}` },
+      author: { name: hostileText(random, 6) },
       text: hostileText(random, 40),
     })),
-    attachments: [{ name: `A${hostileText(random, 6)}`, url: 'https://files.slack.com/a.pdf' }],
-    users: { U0TOBIAS22: `U${hostileText(random, 6)}` },
+    attachments: [{ name: hostileText(random, 6), url: 'https://files.slack.com/a.pdf' }],
+    users: { U0TOBIAS22: hostileText(random, 6) },
   });
+}
+
+/**
+ * The payload's file, or null when the only reasons it is refused are a name
+ * that cleans away to nothing: names are hostile text, not prefixed to be safe.
+ */
+function mappedUnlessBlank(sent: unknown): CaptureFile | null {
+  try {
+    return mapCapture(sent, { timeZone: 'America/Los_Angeles' });
+  } catch (error) {
+    if (!(error instanceof CaptureRefusedError)) throw error;
+    for (const reason of error.reasons)
+      expect(reason).toMatch(/(?:\bname|^users\["U0TOBIAS22"\]): is blank$/);
+    return null;
+  }
+}
+
+/** The frontmatter as YAML reads the mapper's lines: single-quoted, `''` a quote. */
+function propertiesOf(frontmatter: string): Record<string, string> {
+  return Object.fromEntries(
+    frontmatter
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const value = line.slice(line.indexOf(': ') + 2);
+        const read = value.startsWith("'") ? value.slice(1, -1).replace(/''/g, "'") : value;
+        return [line.slice(0, line.indexOf(':')), read];
+      }),
+  );
 }
 
 const FRONTMATTER_LINE = /^[a-z_]+: (?:'(?:[^'\n]|'')*'|[a-z0-9/]+)$/;
@@ -86,7 +117,8 @@ describe('a capture of hostile text, over 400 seeded payloads', () => {
   it.each(SEEDS)('seed %i maps to a file that says only what the contract writes', (seed) => {
     const random = seededRandom(seed);
     const sent = payload(random);
-    const file = mapCapture(sent, { timeZone: 'America/Los_Angeles' });
+    const file = mappedUnlessBlank(sent);
+    if (file === null) return;
     const [, frontmatter = '', ...rest] = file.content.split(/^---$/m);
     const body = rest.join('---');
     const replies = (sent.thread as unknown[]).length;
@@ -109,6 +141,9 @@ describe('a capture of hostile text, over 400 seeded payloads', () => {
     ]);
     expect(file.content.split(/^---$/m).length).toBe(3 + (body.match(/^---$/gm)?.length ?? 0));
     expect(body).not.toMatch(/^---$/m);
+
+    // No value a sender wrote is read as a relation (review of PR #615).
+    expect(relationsOf(propertiesOf(frontmatter), () => null)).toEqual([]);
 
     // Nothing unsafe survives, anywhere in the file or its name.
     expect(file.content).not.toMatch(UNSAFE);

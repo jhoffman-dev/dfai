@@ -182,6 +182,30 @@ function bareAddress(found: string): { address: string; after: string } {
 // eslint-disable-next-line no-control-regex -- NUL is the mark no cleaned message can hold
 const HELD = /\u0000(\d+)\u0000/g;
 
+/** Every bare address in `text` replaced by what `link` writes for it, its entities read. */
+function linkBareAddresses(text: string, link: (url: string, label: string) => string): string {
+  return text.replace(BARE_ADDRESS, (_, before: string, found: string) => {
+    const { address, after } = bareAddress(found);
+    const label = decodeSlackEntities(address);
+    const url = /^www\./i.test(label) ? `http://${label}` : label;
+    return `${before}${link(url, label)}${after}`;
+  });
+}
+
+/**
+ * Plain words from a sender — an author's name in a message's header — as
+ * markdown: escaped, and a bare address in them written as an explicit link,
+ * as in a message, so editing the line never makes a link or tag of them.
+ */
+export function wordsMarkdown(text: string): string {
+  const held: string[] = [];
+  const linked = linkBareAddresses(
+    text,
+    (url, label) => `\u0000${held.push(markdownLink(url, label)) - 1}\u0000`,
+  );
+  return escapeMarkdown(linked).replace(HELD, (_, at: string) => held[Number(at)] ?? '');
+}
+
 /**
  * One line's words. Code and tokens are written first and held in their
  * places by a mark no message can hold (`cleanText` takes out every control
@@ -200,12 +224,7 @@ function inlineText(line: string, users: SlackUserNames, writer: Writer): string
   );
   // A bare address is written as an explicit link: GFM would read it as one anyway, and
   // a link it reads from words runs on over the escapes after it once they are edited.
-  const linked = tokened.replace(BARE_ADDRESS, (_, before: string, found: string) => {
-    const { address, after } = bareAddress(found);
-    const label = decodeSlackEntities(address);
-    const url = /^www\./i.test(label) ? `http://${label}` : label;
-    return `${before}${hold(writer.link(url, label))}${after}`;
-  });
+  const linked = linkBareAddresses(tokened, (url, label) => hold(writer.link(url, label)));
   const escaped = writer.words(
     decodeSlackEntities(styled(linked, (mark) => hold(writer.marks[mark]))),
   );

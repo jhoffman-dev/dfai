@@ -1,7 +1,7 @@
 import { fileTitle, fitStem, shortHash } from '../../meetings/mapping/meeting-file-name.ts';
 import { MeetingMappingError } from '../../meetings/mapping/meeting-mapping-error.ts';
 import { wallClockIn } from '../../meetings/mapping/meeting-when.ts';
-import { escapeMarkdown, markdownLink, slackToMarkdown, slackToPlain } from './capture-mrkdwn.ts';
+import { markdownLink, slackToMarkdown, slackToPlain, wordsMarkdown } from './capture-mrkdwn.ts';
 import {
   CAPTURE_V1,
   readCapture,
@@ -199,7 +199,7 @@ const blockIdOf = (ts: string) => ts.replace('.', '-');
  * is citable as `[[Note#^r1761600300-000200]]`.
  */
 function messageBlock(writer: FileWriter, message: CaptureMessage, id: string): string[] {
-  const author = personLink(writer, message.author) ?? escapeMarkdown(message.author.name);
+  const author = personLink(writer, message.author) ?? wordsMarkdown(message.author.name);
   const link = message.url === null ? '' : ` · ${markdownLink(message.url, 'Open in Slack')}`;
   const words = slackToMarkdown(message.text, writer.capture.users);
   const quote = [
