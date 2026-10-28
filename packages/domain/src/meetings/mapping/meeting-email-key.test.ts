@@ -113,3 +113,64 @@ describe('punycode (RFC 3492)', () => {
     expect(punycodeDecode('99999999999999')).toBeNull();
   });
 });
+
+/*
+ * PR #604 review: an `xn--` label that is not the canonical A-label of its
+ * Unicode was decoded, folded and encoded again, so two DNS labels shared a
+ * key. When in doubt, keep them apart.
+ */
+describe('emailKey keeps an `xn--` label that is not canonical apart', () => {
+  it.each([
+    ['a leading delimiter, which RFC 3492 refuses', 'a@xn---tda.example'],
+    ['an upper-case letter encoded (Ü)', 'a@xn--wca.example'],
+    ['a decomposed letter encoded (u and a combining diaeresis)', 'a@xn--u-ccb.example'],
+  ])('%s: %s is its own address, as written', (_, address) => {
+    expect(emailKey(address)).toBe(address);
+    expect(emailKey(address)).not.toBe(emailKey('a@xn--tda.example'));
+  });
+
+  it('still reads a Unicode domain as its canonical A-label', () => {
+    expect(emailKey('a@ü.example')).toBe('a@xn--tda.example');
+    expect(emailKey('a@Ü.example')).toBe('a@xn--tda.example');
+  });
+});
+
+describe('punycode refuses a label RFC 3492 does', () => {
+  it('reads nothing from a label whose only delimiter comes first (§6.2)', () => {
+    expect(punycodeDecode('-tda')).toBeNull();
+    expect(punycodeDecode('-abc')).toBeNull();
+  });
+});
+
+describe('emailKey on all-ASCII domains (property)', () => {
+  /** A seeded linear congruential generator: the same labels on every run. */
+  function seeded(seed: number): () => number {
+    let state = seed >>> 0;
+    return () => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state / 2 ** 32;
+    };
+  }
+  const CHARACTERS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+  function label(random: () => number): string {
+    const length = 1 + Math.floor(random() * 8);
+    const body = Array.from(
+      { length },
+      () => CHARACTERS[Math.floor(random() * CHARACTERS.length)],
+    ).join('');
+    return random() < 0.7 ? `xn--${body}` : body;
+  }
+
+  it('keeps every domain as written (case aside), so no two distinct ones share a key', () => {
+    const random = seeded(199);
+    const byKey = new Map<string, string>();
+    for (let run = 0; run < 20_000; run++) {
+      const domain = `${label(random)}.${random() < 0.5 ? label(random) : 'example'}`;
+      const key = emailKey(`a@${domain}`);
+      expect(key, domain).toBe(`a@${domain.toLowerCase()}`);
+      const seen = byKey.get(key);
+      if (seen !== undefined) expect(seen.toLowerCase(), domain).toBe(domain.toLowerCase());
+      byKey.set(key, domain);
+    }
+  });
+});

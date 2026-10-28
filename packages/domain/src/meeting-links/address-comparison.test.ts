@@ -216,3 +216,28 @@ describe('the selfEmails setting (profile)', () => {
     expect(reading).toEqual({ ok: true, emails: ['mara@bücher.example'] });
   });
 });
+
+/** PR #604 review: an `xn--` label that is not canonical is its own address, at every caller. */
+describe('a non-canonical `xn--` label is not the canonical one', () => {
+  const CANONICAL = 'a@xn--tda.example';
+  const OTHERS = ['a@xn---tda.example', 'a@xn--wca.example', 'a@xn--u-ccb.example'];
+
+  it.each(OTHERS)('never links an attendee at %s to the note at the canonical address', (other) => {
+    const holder = person('Ana Ortiz', [CANONICAL]);
+    const matching = matchAttendees([attendee('Ana', other)], [holder], []);
+    expect(matching.linked).toEqual([]);
+  });
+
+  it.each(OTHERS)('keeps %s when merged into a note at the canonical address', (other) => {
+    const note = (path: string, email: string): MergeNote => ({
+      path: createVaultPath(path),
+      properties: { type: 'person', email },
+      body: '',
+    });
+    const plan = planPersonMerge({
+      kept: note('People/Ana Ortiz.md', CANONICAL),
+      duplicates: [note('People/Ana.md', other)],
+    });
+    expect(plan.emailsAdded).toEqual([other]);
+  });
+});
