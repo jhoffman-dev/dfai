@@ -34,9 +34,9 @@ function setUp({
     ...answer,
   }));
   let shut = !open;
-  const listeners = new Set<() => void>();
+  const listeners = new Set<(progress: typeof PROGRESS) => void>();
   /** The build moves on: a note written, or one more read for meaning. */
-  const progressMoves = () => act(() => listeners.forEach((listener) => listener()));
+  const progressMoves = () => act(() => listeners.forEach((listener) => listener(PROGRESS)));
   const ports: RelatedPorts = {
     semantic: {
       isOn: () => true,
@@ -172,6 +172,15 @@ describe('the open note’s related notes', () => {
     progressMoves();
     await waitFor(() => expect(related).toHaveBeenCalledTimes(3));
     expect(related.mock.calls[2]![0].path).toBe(GARDEN);
+  });
+
+  it('stops listening to the build once the note is closed while not read yet', async () => {
+    const { hook, listeners } = setUp({
+      answer: { notes: [], embedded: false, progress: { done: 5, total: 9, failure: null } },
+    });
+    await waitFor(() => expect(listeners.size).toBe(1));
+    hook.unmount();
+    expect(listeners.size).toBe(0);
   });
 
   it('stops listening to the build once the note is read', async () => {

@@ -5,6 +5,8 @@ import { Icon } from './icon.tsx';
 export interface RelatedRow {
   readonly path: VaultPath;
   readonly title: string;
+  /** Why linking it last failed, said on its row. */
+  readonly problem?: string;
 }
 
 /** Where the Related notes of the open note have got to. */
@@ -95,6 +97,11 @@ function RelatedBody({
           >
             Dismiss
           </button>
+          {note.problem !== undefined && (
+            <p className="links__empty links__empty--error related__problem" role="alert">
+              {note.problem}
+            </p>
+          )}
         </li>
       ))}
     </ul>

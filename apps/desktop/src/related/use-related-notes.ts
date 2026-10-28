@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { messageWithoutPaths, type VaultGraph, type VaultPath } from '@dfai/domain';
 import {
   acceptRelatedNote,
@@ -17,7 +17,7 @@ import type { TrailMemory } from './trail-memory.ts';
 /** What Related notes and trails run on in the window (P32-03). */
 export interface RelatedPorts {
   /** The open vault's search by meaning; null where the app offers none. */
-  readonly semantic: Pick<SemanticEngine, 'isOn' | 'related' | 'settled'> | null;
+  readonly semantic: Pick<SemanticEngine, 'isOn' | 'related' | 'subscribe'> | null;
   /** The window's idle moments: the panel is looked for only once the note is drawn. */
   readonly idle: IdlePort | null;
   /** The open vault's dismissals; null while no vault is open. */
@@ -38,8 +38,9 @@ const LOADING: RelatedPanelState = { kind: 'loading' };
  * The open note's Related notes: looked for only while the section is open
  * (or a trail stands on the note), and then only once the window is idle
  * after the note is drawn — opening a note never waits on it, nor does any
- * work for it with the section shut. Looked for again once a build still
- * reading the vault settles, and after one is linked or dismissed.
+ * work for it with the section shut. Looked for again as the build moves on
+ * while the note is not read yet, and after one is linked, dismissed or
+ * fails to link.
  */
 export function useRelatedNotes({
   ports,
@@ -72,8 +73,12 @@ export function useRelatedNotes({
     paths: new Set(),
   });
   const [round, setRound] = useState(0);
-  // How far the build had got at the last look that found the note not read yet.
-  const lastDone = useRef<number | null>(null);
+  // Why the last Link on a row failed: said on that row, the rest kept.
+  const [problem, setProblem] = useState<{
+    for: VaultPath | null;
+    related: VaultPath;
+    message: string;
+  } | null>(null);
   const wanted = (open || trailHere) && path !== null && graph !== null;
   const goneHere = useMemo(
     () => (gone.for === path ? gone.paths : new Set<string>()),
@@ -83,6 +88,7 @@ export function useRelatedNotes({
   useEffect(() => {
     if (!wanted) return undefined;
     let cancelled = false;
+    let stopHearing: (() => void) | null = null;
     const look = async () => {
       await ports.idle?.idle();
       if (cancelled) return;
@@ -94,19 +100,14 @@ export function useRelatedNotes({
       });
       if (cancelled) return;
       setFound({ for: path, state: panelState(state) });
-      const previous = lastDone.current;
-      lastDone.current = state.kind === 'not-built' ? state.progress.done : null;
-      // A note the build has not reached yet is looked for again once it has; one
-      // it has read and found nothing in (an empty note) is not asked again and again.
-      if (rereads(state, previous))
-        ports.semantic
-          ?.settled()
-          .then(() => {
-            if (!cancelled) setRound((was) => was + 1);
-          })
-          .catch(() => {
-            // Safe to ignore: the panel keeps saying it is reading, and opening it again asks again.
-          });
+      // Not read yet — the build has not reached it, or found nothing in it so far:
+      // looked for again the next time the build moves on (a note read, this one written).
+      if (state.kind === 'not-built' && ports.semantic !== null)
+        stopHearing = ports.semantic.subscribe(() => {
+          stopHearing?.();
+          stopHearing = null;
+          if (!cancelled) setRound((was) => was + 1);
+        });
     };
     look().catch((error: unknown) => {
       if (!cancelled)
@@ -114,6 +115,7 @@ export function useRelatedNotes({
     });
     return () => {
       cancelled = true;
+      stopHearing?.();
     };
   }, [wanted, ports, graph, path, goneHere, round]);
 
@@ -130,6 +132,7 @@ export function useRelatedNotes({
   const accept = useCallback(
     (related: VaultPath) => {
       if (path === null) return;
+      setProblem(null);
       const write = async () => {
         await editor.flush();
         await acceptRelatedNote({ fs, index, note: path, target: related });
@@ -137,9 +140,11 @@ export function useRelatedNotes({
         hide(related);
         onChanged();
       };
-      write().catch((error: unknown) =>
-        setFound({ for: path, state: { kind: 'failed', message: messageWithoutPaths(error) } }),
-      );
+      write().catch((error: unknown) => {
+        setProblem({ for: path, related, message: messageWithoutPaths(error) });
+        // The note may have changed, or gone: the list is read again.
+        setRound((was) => was + 1);
+      });
     },
     [path, editor, fs, index, hide, onChanged],
   );
@@ -160,21 +165,14 @@ export function useRelatedNotes({
 
   const state = useMemo(() => {
     const shown = found.for === path ? found.state : LOADING;
-    if (shown.kind !== 'ready' || goneHere.size === 0) return shown;
-    return { ...shown, notes: shown.notes.filter((note) => !goneHere.has(note.path)) };
-  }, [found, path, goneHere]);
+    if (shown.kind !== 'ready') return shown;
+    const failed = problem?.for === path ? problem : null;
+    const notes = shown.notes
+      .filter((note) => !goneHere.has(note.path))
+      .map((note) => (failed?.related === note.path ? { ...note, problem: failed.message } : note));
+    return { ...shown, notes };
+  }, [found, path, goneHere, problem]);
   return { open, toggle, state, accept, dismiss };
-}
-
-/**
- * Whether to look again once the build settles: only while it is still
- * reading the vault, has not failed, and has moved on since the last look —
- * a build stopped short settles at once, and would be asked without end.
- */
-function rereads(state: RelatedNotesState, lastDone: number | null): boolean {
-  if (state.kind !== 'not-built') return false;
-  const { done, total, failure } = state.progress;
-  return done < total && failure === null && done !== lastDone;
 }
 
 function panelState(state: RelatedNotesState): RelatedPanelState {

@@ -440,6 +440,16 @@
   transform: rotate(135deg);
 }
 
+/* A row whose Link failed says why under it, the row kept. */
+.related .links__mention {
+  flex-wrap: wrap;
+}
+
+.related__problem {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .related__trail {
   align-self: flex-start;
   height: 28px;
