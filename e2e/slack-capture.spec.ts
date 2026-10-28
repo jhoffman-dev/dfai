@@ -16,7 +16,7 @@ import {
  */
 
 const PERMALINK = 'https://larkspur.slack.com/archives/C0LARK5PUR/p1793136000000100';
-const PATH = 'Inbox/Captures/Send the Larkspur renewal by Friday (slack 2db9a3ee).md';
+const PATH = 'Inbox/Captures/Send the Larkspur renewal by Friday (slack 2db9a3ee76a9e132).md';
 
 const CAPTURE = {
   contract: 'capture/v1',
@@ -66,7 +66,7 @@ test('a Slack message posted as a capture shows in the Inbox as a task, once', a
     .click();
   const inbox = page.getByRole('article', { name: 'Inbox' });
   const row = inbox.getByRole('button', {
-    name: 'Send the Larkspur renewal by Friday (slack 2db9a3ee)',
+    name: 'Send the Larkspur renewal by Friday (slack 2db9a3ee76a9e132)',
   });
   await expect(row).toBeVisible();
   await expect(inbox.getByText(/Captures/)).toBeVisible();

@@ -61,7 +61,13 @@ is for reading; the hash is what finds the note, so a message sent twice with
 two titles — n8n's from its first line, a pasted link's as typed, or the
 first line of a message edited in between — is still one note. (The first
 build named it `<title>.md` and used the hash only on a clash, so two titles
-for one key made two notes while the index lagged; review of PR #615.)
+for one key made two notes while the index lagged; review of PR #615.) The
+hash is 64 bits — FNV-1a from two bases, over the key and over it backwards,
+16 hex digits — since 32 bits gave two messages 71 seconds apart in one
+channel the same name (attack on PR #615). Should two keys still share one,
+the second is written at a numbered path, `… (slack <hash> 2).md` and on to
+9, never refused for it: a note at the path holding another `external_id` is
+another message's.
 Times are shown on the zone the request names, else the Mac's, and
 `sent_at` is UTC.
 
@@ -101,17 +107,40 @@ user, channel and special mentions become their markdown or their text. Then
 every character markdown or DFAI reads as more than itself is escaped — `#`
 (headings, tags), `[` `]` (links, wiki links, embeds, checkboxes), `^` (block
 ids), `<` `>` (HTML), `|` (tables), backticks and tildes (fences), `*` `_` `~`,
-the backslash, and an `&` that starts an entity. A bare address in the
-words (`https://…`, `www.…`) is written as an explicit link,
-`[address](address)`, cut where GFM would cut it. Escaping its `:` was the
-first build's answer, and it was wrong (review of PR #615): GFM still reads
-the words as a link, the link runs on over the escapes after it, and once
-the paragraph is edited the editor writes them back without the escapes, as
-a real wiki link or tag. An explicit link is a link node either way, and is
-written back as one. Every link's address is percent-encoded where it holds
-`[`, `]`, `!`, `<`, `>`, a quote, a parenthesis or a backslash, since the
-index reads a wiki link or an embed even inside an address. A line of `-`, `=` or `+` is kept from being a rule or a
-heading's underline. A code block's fence never carries an info string, so a
+the backslash, and an `&` that starts an entity.
+
+**Every piece of a sender's words goes through one writer** (`wordsMarkdown`):
+a message's and its thread's text, author and channel names, the names sent
+for mentions, and every token's label or fallback (`<@U…|…>`, `<#C…|…>`,
+`<!subteam…|…>`, a date's, another scheme's link's). It escapes them as
+above and writes every bare address in them — `http://`, `https://`,
+`www.` and mail addresses, wherever they stand, with nothing looked behind —
+as an explicit link, cut where GFM would cut it, linearly. When the link's
+words are its own address (`[https://x](https://x)`), it is given the
+encoded address as a title as well: the editor reads a link whose words
+are its address as one typed bare, writes it back bare once the line is
+edited, and GFM then runs it on over the words after it; a link with a title
+it keeps. Inside a link's label, where no link can be read, the address's
+start is broken instead (`https\://`, `www\.`).
+
+This replaced two attempts that each leaked (review and attack on PR #615):
+escaping a bare address's `:`, which GFM reads past, since it finds
+addresses in the words once escapes are read; and linking addresses only in
+a message's text, after a character that was not a letter, which left
+names, labels, and an address after `é` or `_` to GFM. A seeded property
+test now maps hostile payloads, edits every block and writes it back, and
+reads it again: no link the mapper did not write, and no wiki link, embed,
+tag, rule, table or HTML, before or after.
+
+Every link's address is percent-encoded where it holds `[`, `]`, `!`, `<`,
+`>`, a quote, a parenthesis, a backslash, or an `&` that starts an entity,
+since the index reads a wiki link or an embed even inside an address, and
+markdown reads `&nbsp;` there as a space. A line that is only `-`, `=`, `+`
+or `:` past any list markers (`-`, `+`, `1.`, `1)`) has that first mark
+escaped, so it is no rule, heading underline or table delimiter row, in a
+list item or out of one. A file name never starts with a space or holds
+nothing before its key: a title that leaves nothing once fitted is
+`Slack message`. A code block's fence never carries an info string, so a
 message cannot run an `atlas-query`. Only `https://`, `http://` and
 `mailto:` links are written; another scheme keeps its text. Control and
 direction characters, and half surrogate pairs, are taken out before

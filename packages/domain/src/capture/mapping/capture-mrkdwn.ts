@@ -31,23 +31,48 @@ interface Writer {
  * headings and tags (`#`), block ids (`^`), tables (`|`), the backslash
  * itself, so a sender's backslash cannot undo one of these, and an `&` that
  * starts an entity (`&lt;`, `&#60;`), which would be read as its character.
- * A bare address is kept from being a link of its own (`https\://`,
- * `www\.`): a link read from words runs on over the backslashes after it,
- * and would undo their escapes.
  */
-const SPECIAL = /[\\`*_~[\]<>#^|]|&(?=#?[A-Za-z0-9]+;)|(?<=\bhttps?):(?=\/\/)|(?<=\bwww)\./gi;
+const SPECIAL = /[\\`*_~[\]<>#^|]|&(?=#?[A-Za-z0-9]+;)/g;
 
-/** The sender's words as markdown reads them back as words. */
+/**
+ * The start of an address GFM would read from words: `http://`, `https://`,
+ * `www.`, wherever it stands, in any case — no look behind it, which the
+ * app's engine and n8n's would read differently.
+ */
+const ADDRESS_START = /(https?)(:\/\/)|(www)(\.)/gi;
+
+/**
+ * The sender's words as markdown reads them back as words, inside a link's
+ * label too: every special character escaped, and every address start
+ * broken (`https\://`, `www\.`), so a label holds no address of its own.
+ */
 export function escapeMarkdown(text: string): string {
-  return text.replace(SPECIAL, '\\$&');
+  return text
+    .replace(SPECIAL, '\\$&')
+    .replace(ADDRESS_START, (_, scheme?: string, slashes?: string, www?: string) =>
+      scheme === undefined ? `${www}\\.` : `${scheme}\\${slashes}`,
+    );
 }
 
 /**
- * A line of only `-`, `=`, `+` or `:` (and spaces) would be a rule, underline
- * a heading, or — `:-`, `-:`, `:-:` under a line of words — be a table's
- * delimiter row. Its first character is escaped.
+ * What may open a line before its words: list markers (`-`, `+`, `1.`, `1)`),
+ * each with its spaces. (`*` and `>` are escaped, so they open nothing.)
  */
-const RULE_LINE = /^(\s*)([-=+:])([\s\-=+:]*)$/;
+const CONTAINERS = /^\s*(?:(?:[-+]|\d{1,9}[.)])\s+)*/;
+
+/**
+ * What is left of a line, past its list markers, that is only `-`, `=`, `+`
+ * or `:` and spaces: a rule, a heading's underline, or — `:-` under a line
+ * of words — a table's delimiter row, in a list item as much as alone.
+ */
+const RULE_REST = /^[-=+:][\s\-=+:]*$/;
+
+/** The line with the first mark of a would-be rule, past any list markers, escaped. */
+function unruled(line: string): string {
+  const prefix = CONTAINERS.exec(line)?.[0] ?? '';
+  const rest = line.slice(prefix.length);
+  return RULE_REST.test(rest) ? `${prefix}\\${rest}` : line;
+}
 
 /** A web or mail address a link may open: `javascript:` and the like are never written as one. */
 const LINKABLE = /^(?:https?:\/\/[^\s/<>]|mailto:[^\s<>])[^\s<>]*$/i;
@@ -57,12 +82,13 @@ const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 /**
  * The characters a link's destination cannot hold as written, by their
  * percent codes: those that would end it (`(`, `)`, `<`, `>`, a quote), the
- * backslash, and `[`, `]` and `!`, which the index would read as a wiki
- * link or an embed inside the address.
+ * backslash, `[`, `]` and `!`, which the index would read as a wiki link
+ * or an embed inside the address, and an `&` that starts an entity, which
+ * markdown would read as its character (`&nbsp;` as a space).
  */
 const encodeDestination = (url: string) =>
   url.replace(
-    /[()\\[\]!<>"'`]/g,
+    /[()\\[\]!<>"'`]|&(?=#?[A-Za-z0-9]+;)/g,
     (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 
@@ -71,13 +97,25 @@ function longestBacktickRun(text: string): number {
   return Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));
 }
 
-/** A link with its label as words: the label can open nothing, the address only what it says. */
+/**
+ * A link with its label as words: the label can open nothing, the address
+ * only what it says. A link whose label is its own address — a bare address,
+ * `<https://…>` — is given that address as its title too: the editor reads a
+ * link whose words are its address as an address typed bare, writes it back
+ * bare once the line is edited, and GFM then runs it on over the words after
+ * it. A link with a title is never read so (`isAutolinkOf` in the adapters).
+ */
 export function markdownLink(url: string, label: string): string {
-  return `[${escapeMarkdown(label)}](${encodeDestination(url)})`;
+  const destination = encodeDestination(url);
+  const bare = url === label || url === `mailto:${label}` || url === `http://${label}`;
+  // The encoded address: no quote, bracket or backslash, so the title ends where it should and
+  // holds no wiki link.
+  const title = bare ? ` "${destination}"` : '';
+  return `[${escapeMarkdown(label)}](${destination}${title})`;
 }
 
 const MARKDOWN: Writer = {
-  words: escapeMarkdown,
+  words: (text) => wordsMarkdown(text),
   marks: { '*': '**', _: '*', '~': '~~' },
   code: (content) => {
     const fence = '`'.repeat(longestBacktickRun(content) + 1);
@@ -90,7 +128,7 @@ const MARKDOWN: Writer = {
     const fence = '`'.repeat(Math.max(3, longestBacktickRun(content) + 1));
     return [fence, ...(content === '' ? [] : content.split('\n')), fence];
   },
-  line: (line) => line.replace(RULE_LINE, '$1\\$2$3'),
+  line: unruled,
   quote: (words) => (words === '' ? '>' : `> ${words}`),
 };
 
@@ -151,60 +189,114 @@ function proseLine(line: string, users: SlackUserNames, writer: Writer): string 
 const TOKEN = /`([^`\n]+)`|<([^<>\n]*)>/g;
 
 /**
- * An address written as words, as GFM reads one into a link of its own
- * (`https://…`, `www.…`): taken up to a space, an angle bracket, a square
- * bracket or a held part, then cut back by {@link bareAddress}.
+ * An address in words (`https://…`, `www.…`), wherever it stands — GFM reads
+ * one after any letter beyond ASCII, so none is looked behind for — taken up
+ * to a space, an angle bracket, a square bracket or a held part, then cut
+ * back by {@link trimAddress}.
  */
-// The character before is matched, not looked behind at: JavaScriptCore reads a
-// lookbehind by code unit, and a letter beyond U+FFFF would let it start mid-word.
-// eslint-disable-next-line no-control-regex -- NUL marks a held part, which ends an address
-const BARE_ADDRESS = /(^|[^\p{L}\p{N}_])((?:https?:\/\/|www\.)[^\s<>[\]\u0000]+)/giu;
+// eslint-disable-next-line no-control-regex -- NUL and SOH mark held parts, which end an address
+const BARE_ADDRESS = /(?:https?:\/\/|www\.)[^\s<>[\]\u0000\u0001]+/gi;
 
 /** What ends a sentence after an address rather than belonging to it, as GFM cuts it. */
-const TRAILING = /[?!.,:;*_~'"]+$/;
+const TRAILING: ReadonlySet<string> = new Set([
+  '?',
+  '!',
+  '.',
+  ',',
+  ':',
+  ';',
+  '*',
+  '_',
+  '~',
+  "'",
+  '"',
+]);
+
+/** An address found in words, what after it is not part of it, and the work it took. */
+export interface TrimmedAddress {
+  readonly address: string;
+  readonly after: string;
+  /** Characters looked at: a test holds it to twice the address's length. */
+  readonly steps: number;
+}
 
 /**
- * An address found in words, and what after it is not part of it: trailing
- * punctuation, and a `)` the address did not open.
+ * Cuts trailing punctuation and every `)` the address did not open off its
+ * end, in one pass back from the end after one count forward — linear,
+ * where cutting a character at a time and counting again was quadratic.
  */
-function bareAddress(found: string): { address: string; after: string } {
-  let address = found;
-  for (;;) {
-    const cut = address.replace(TRAILING, '');
-    const opens = cut.split('(').length;
-    const closes = cut.split(')').length;
-    const next = cut.endsWith(')') && closes > opens ? cut.slice(0, -1) : cut;
-    if (next === address) return { address, after: found.slice(address.length) };
-    address = next;
+export function trimAddress(found: string): TrimmedAddress {
+  let opens = 0;
+  let closes = 0;
+  for (const character of found) {
+    if (character === '(') opens += 1;
+    else if (character === ')') closes += 1;
   }
+  let end = found.length;
+  let steps = found.length;
+  for (; end > 0; end -= 1) {
+    steps += 1;
+    const last = found[end - 1] ?? '';
+    if (last === ')' && closes > opens) closes -= 1;
+    else if (!TRAILING.has(last)) break;
+  }
+  return { address: found.slice(0, end), after: found.slice(end), steps };
 }
 
 /** Where a part already written sits in the line while the words round it are escaped. */
 // eslint-disable-next-line no-control-regex -- NUL is the mark no cleaned message can hold
 const HELD = /\u0000(\d+)\u0000/g;
 
-/** Every bare address in `text` replaced by what `link` writes for it, its entities read. */
+/** Where an address {@link wordsMarkdown} wrote sits while the words round it are escaped. */
+// eslint-disable-next-line no-control-regex -- SOH, like NUL, is a mark no cleaned message can hold
+const HELD_WORDS = /\u0001(\d+)\u0001/g;
+
+/**
+ * A mail address in words, as GFM reads one into a link of its own: its
+ * `mailto:` or `xmpp:` too, if written. GFM finds these in the words once
+ * escapes are read, so no escape can stop one; only an explicit link can.
+ */
+const BARE_MAIL = /(?:(?:mailto|xmpp):)?[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+/gi;
+
+/** Every bare mail address in `text` replaced by what `link` writes for it. */
+function linkBareMail(text: string, link: (url: string, label: string) => string): string {
+  return text.replace(BARE_MAIL, (found: string) => {
+    const label = found.replace(/\.+$/, '');
+    const url = /^(?:mailto|xmpp):/i.test(label) ? label : `mailto:${label}`;
+    return `${link(url, label)}${found.slice(label.length)}`;
+  });
+}
+
+/** Every bare web and mail address in `text` replaced by what `link` writes for it, its entities read. */
 function linkBareAddresses(text: string, link: (url: string, label: string) => string): string {
-  return text.replace(BARE_ADDRESS, (_, before: string, found: string) => {
-    const { address, after } = bareAddress(found);
+  return linkBareMail(linkBareWeb(text, link), link);
+}
+
+function linkBareWeb(text: string, link: (url: string, label: string) => string): string {
+  return text.replace(BARE_ADDRESS, (found: string) => {
+    const { address, after } = trimAddress(found);
+    if (address === '') return found;
     const label = decodeSlackEntities(address);
     const url = /^www\./i.test(label) ? `http://${label}` : label;
-    return `${before}${link(url, label)}${after}`;
+    return `${link(url, label)}${after}`;
   });
 }
 
 /**
- * Plain words from a sender — an author's name in a message's header — as
- * markdown: escaped, and a bare address in them written as an explicit link,
- * as in a message, so editing the line never makes a link or tag of them.
+ * The one writer of a sender's words outside a link's label (ADR-0049):
+ * message text, a thread's, author and channel names, mention names, every
+ * token's label and fallback. Escaped, and every bare address in them
+ * written as an explicit link, so editing the line never makes a link or a
+ * tag of them, whatever context the words came from.
  */
 export function wordsMarkdown(text: string): string {
   const held: string[] = [];
   const linked = linkBareAddresses(
     text,
-    (url, label) => `\u0000${held.push(markdownLink(url, label)) - 1}\u0000`,
+    (url, label) => `\u0001${held.push(markdownLink(url, label)) - 1}\u0001`,
   );
-  return escapeMarkdown(linked).replace(HELD, (_, at: string) => held[Number(at)] ?? '');
+  // Its own mark, SOH, not the line's NUL: the words may hold the line's held parts.
+  return escapeMarkdown(linked).replace(HELD_WORDS, (_, at: string) => held[Number(at)] ?? '');
 }
 
 /**
@@ -264,7 +356,9 @@ function tokenText(token: string, users: SlackUserNames, writer: Writer): string
   if (target.startsWith('!')) {
     return writer.words(label || `@${target.slice(1).split('^')[0] ?? ''}`);
   }
-  if (LINKABLE.test(target)) return writer.link(target, label || decodeSlackEntities(target));
+  // Slack writes `&` in an address as `&amp;`, as anywhere: the link opens the address it means.
+  const address = decodeSlackEntities(target);
+  if (LINKABLE.test(address)) return writer.link(address, label || address);
   // Another scheme (`javascript:`, `slack://`) is never a link: what it says, at most.
   if (label !== '' && SCHEME.test(target)) return writer.words(label);
   return writer.words(decodeSlackEntities(`<${token}>`));

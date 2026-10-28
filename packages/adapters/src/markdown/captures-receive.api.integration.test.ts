@@ -33,7 +33,7 @@ import { remarkMarkdown } from './markdown-port.ts';
 type ApiFixture = ReturnType<typeof apiFixture>;
 
 const PATH =
-  'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn (slack 2db9a3ee).md';
+  'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn (slack 2db9a3ee76a9e132).md';
 const MARA = [
   '---',
   'type: person',
@@ -195,7 +195,7 @@ describe('POST /v1/captures: the same message twice', () => {
     expect(response.status).toBe(201);
     expect(
       String(bodyOf(response)['capture'] && (bodyOf(response)['capture'] as { path: string }).path),
-    ).toMatch(/\(slack [0-9a-f]{8}\)\.md$/);
+    ).toMatch(/\(slack [0-9a-f]{16}\)\.md$/);
     expect(api.files.size).toBe(2);
   });
 });
@@ -252,34 +252,15 @@ describe('POST /v1/captures: a capture the contract refuses', () => {
     expect(codeOf(await send(vault(), ['not', 'a', 'capture']))).toBe('invalid');
   });
 
-  it('answers exists when another note holds its path', async () => {
+  it('writes beside another message’s note at its path, numbered, never over it', async () => {
     const other = '---\ntype: task\n---\n\nElse.\n';
-    const name = 'Can you send the Larkspur renewal by Friday cc @Tobias Fenn';
     const api = vault({ [PATH]: other });
-    await send(
-      api,
-      slackCapture({
-        source: slackSource({
-          ts: '1793136000.000555',
-          url: SLACK_PERMALINK.replace('0100', '0555'),
-        }),
-        thread: [],
-      }),
-    );
-    const collision = [...api.files.keys()].find((path) => path !== PATH) ?? '';
-    expect(collision).toContain(name);
-    const crowded = vault({ [PATH]: other, [collision]: other });
-    const response = await send(
-      crowded,
-      slackCapture({
-        source: slackSource({
-          ts: '1793136000.000555',
-          url: SLACK_PERMALINK.replace('0100', '0555'),
-        }),
-        thread: [],
-      }),
-    );
-    expect(codeOf(response)).toBe('exists');
+    const response = await send(api, slackCapture());
+    expect(response.status).toBe(201);
+    expect(bodyOf(response)).toEqual({
+      capture: { path: PATH.replace(').md', ' 2).md'), outcome: 'written' },
+    });
+    expect(api.files.get(PATH)?.text).toBe(other);
   });
 });
 

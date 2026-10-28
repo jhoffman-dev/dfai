@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { escapeMarkdown, slackToMarkdown, slackToPlain, wordsMarkdown } from './capture-mrkdwn.ts';
+import { MAX_MESSAGE_LENGTH } from './capture-payload.ts';
+import {
+  escapeMarkdown,
+  slackToMarkdown,
+  slackToPlain,
+  trimAddress,
+  wordsMarkdown,
+} from './capture-mrkdwn.ts';
 
 /** One line of a message, as markdown. */
 const md = (text: string, users: Record<string, string> = {}) =>
@@ -54,7 +61,11 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
       '<https://example.com/a|the plan>',
       '[the plan](https://example.com/a)',
     ],
-    ['a bare link', '<https://example.com/a>', '[https\\://example.com/a](https://example.com/a)'],
+    [
+      'a bare link',
+      '<https://example.com/a>',
+      '[https\\://example.com/a](https://example.com/a "https://example.com/a")',
+    ],
     [
       'a mail link',
       '<mailto:mara.quill@example.com|Mara>',
@@ -79,15 +90,22 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
       '[see](https://example.com/%21%5B%5Ba%5D%5D%27)',
     );
     expect(md('<mailto:[[a]]@example.com>')).toBe(
-      '[mailto:\\[\\[a\\]\\]@example.com](mailto:%5B%5Ba%5D%5D@example.com)',
+      '[mailto:\\[\\[a\\]\\]@example.com](mailto:%5B%5Ba%5D%5D@example.com "mailto:%5B%5Ba%5D%5D@example.com")',
     );
   });
 
   it('shows a link with no label by its address as Slack shows it, its entities read', () => {
     expect(md('<https://example.com/?a=1&amp;b=2>')).toBe(
-      '[https\\://example.com/?a=1&b=2](https://example.com/?a=1&amp;b=2)',
+      '[https\\://example.com/?a=1&b=2](https://example.com/?a=1&b=2 "https://example.com/?a=1&b=2")',
     );
     expect(slackToPlain('<https://example.com/?a=1&amp;b=2>')).toBe('https://example.com/?a=1&b=2');
+  });
+
+  it('keeps an address’s entity-like text from being read as its character', () => {
+    // `&nbsp;` in a destination would be read as a no-break space, and written back as one.
+    expect(md('<https://example.com/?x=&amp;nbsp;y|see>')).toBe(
+      '[see](https://example.com/?x=%26nbsp;y)',
+    );
   });
 
   it('never writes a link that runs script or leaves the web', () => {
@@ -98,7 +116,7 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
 
   it('writes a bare address as an explicit link, so no link read from words runs over the escapes after it', () => {
     expect(md('see https://example.com/a<b> and www.example.com')).toBe(
-      'see [https\\://example.com/a](https://example.com/a)\\<b\\> and [www\\.example.com](http://www.example.com)',
+      'see [https\\://example.com/a](https://example.com/a "https://example.com/a")\\<b\\> and [www\\.example.com](http://www.example.com "http://www.example.com")',
     );
   });
 
@@ -155,7 +173,7 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     [
       'an image',
       '![x](https://example.com/p.png)',
-      '!\\[x\\]([https\\://example.com/p.png](https://example.com/p.png))',
+      '!\\[x\\]([https\\://example.com/p.png](https://example.com/p.png "https://example.com/p.png"))',
     ],
     ['a block id', 'mine ^t0001', 'mine \\^t0001'],
     ['a table row', '| a | b |', '\\| a \\| b \\|'],
@@ -168,12 +186,29 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     expect(md(slack)).toBe(markdown);
   });
 
-  it.each([['---'], ['  - - -'], ['==='], ['+++'], [':-'], ['-:'], [':-:'], ['  :--: ']])(
-    'keeps the line %j from being a rule or a heading’s underline',
-    (line) => {
-      expect(md(`above\n${line}`).split('\n')[1]).toMatch(/^\s*\\[-=+:]/);
+  it.each([
+    ['---', '\\---'],
+    ['  - - -', '  - - \\-'],
+    ['===', '\\==='],
+    ['+++', '\\+++'],
+    [':-', '\\:-'],
+    ['-:', '\\-:'],
+    [':-:', '\\:-:'],
+    ['  :--: ', '  \\:--: '],
+    ['1. ---', '1. \\---'],
+    ['1) - - -', '1) - - \\-'],
+    ['- 1. ---', '- 1. \\---'],
+    ['+ ===', '+ \\==='],
+  ])(
+    'keeps the line %j from being a rule, a heading’s underline or a delimiter row',
+    (line, written) => {
+      expect(md(`above\n${line}`).split('\n')[1]).toBe(written);
     },
   );
+
+  it('leaves a list item of words as it is', () => {
+    expect(md('- one\n1. two')).toBe('- one\n1. two');
+  });
 
   it('drops blank lines at either end and keeps those between', () => {
     expect(slackToMarkdown('\n\none\n\ntwo\n\n', {})).toEqual(['one', '', 'two']);
@@ -211,7 +246,50 @@ describe('escapeMarkdown', () => {
 describe('wordsMarkdown: a sender’s plain words, such as a name', () => {
   it('escapes them, and writes a bare address in them as an explicit link', () => {
     expect(wordsMarkdown('Mara https://example.com/[[x]] #ops')).toBe(
-      'Mara [https\\://example.com/](https://example.com/)\\[\\[x\\]\\] \\#ops',
+      'Mara [https\\://example.com/](https://example.com/ "https://example.com/")\\[\\[x\\]\\] \\#ops',
     );
+  });
+});
+
+describe('trimAddress: an address cut where GFM cuts it, in one pass (attack on PR #615)', () => {
+  it.each([
+    ['trailing punctuation', 'https://example.com/a.,!?', 'https://example.com/a', '.,!?'],
+    ['a ) it did not open', 'https://example.com/a)', 'https://example.com/a', ')'],
+    ['a ) it opened', 'https://example.com/a_(b)', 'https://example.com/a_(b)', ''],
+    ['dots then a letter', 'https://example.com/a...b', 'https://example.com/a...b', ''],
+    ['punctuation and ) mixed', 'https://example.com/(a)).', 'https://example.com/(a)', ').'],
+  ])('cuts %s', (_, found, address, after) => {
+    expect(trimAddress(found)).toMatchObject({ address, after });
+  });
+
+  it.each([
+    ['closing parentheses', ')'],
+    ['dots and parentheses', '.)'],
+    ['dots', '.'],
+  ])('does work linear in an address followed by %s at Slack’s length', (_, unit) => {
+    const found = `https://example.com/${unit.repeat(Math.ceil(MAX_MESSAGE_LENGTH / unit.length))}`;
+    expect(trimAddress(found).steps).toBeLessThanOrEqual(2 * found.length);
+  });
+});
+
+describe('one writer for a sender’s words, wherever they stand (attack on PR #615)', () => {
+  it.each([
+    [
+      'a mention named by the names sent',
+      'cc <@U0TOBIAS22>',
+      { U0TOBIAS22: 'https://example.com/[[x]]' },
+    ],
+    ['a mention’s label', 'cc <@U0NOBODY99|https://example.com/[[x]]>', {}],
+    ['a channel’s label', '<#C0LARK5PUR|https://example.com/[[x]]>', {}],
+    ['a user group’s label', '<!subteam^S0LARKPAY|https://example.com/[[x]]>', {}],
+    ['a date’s fallback', '<!date^1793136000^{date}|https://example.com/[[x]]>', {}],
+    ['another scheme’s label', '<javascript:alert(1)|https://example.com/[[x]]>', {}],
+    ['words after a letter beyond ASCII', 'éhttps://example.com/[[x]]', {}],
+    ['words after an underscore', 'a_https://example.com/#tag', {}],
+    ['a mail address', 'mail mara@example.com now', {}],
+  ])('writes an address in %s as an explicit, titled link', (_, text, users) => {
+    const written = slackToMarkdown(text, users).join('\n');
+    expect(written).toMatch(/\]\((?:https?|mailto):[^ )]+ "[^"]+"\)/);
+    expect(written).not.toMatch(/(?<![[(":])(?:https?:\/\/|www\.)/);
   });
 });

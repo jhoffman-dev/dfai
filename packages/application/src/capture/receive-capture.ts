@@ -4,7 +4,9 @@ import {
   compileCaptureHoldersQuery,
   createVaultPath,
   holdsCapture,
+  isNamedForKey,
   joinVaultPath,
+  numberedCapturePath,
   parentVaultPath,
   splitFrontmatter,
   type Capture,
@@ -33,7 +35,7 @@ export interface CaptureReceipt {
   readonly outcome: 'written' | 'in-vault';
 }
 
-/** Another note holds a capture's path; it is never written over, nor under another name. */
+/** Other messages' notes hold every path a capture may take; it is never written over. */
 export class CapturePathTakenError extends Error {
   override readonly name = 'CapturePathTakenError';
 }
@@ -49,7 +51,9 @@ export class CapturePathTakenError extends Error {
  * message's key — however it was titled. Nothing is written over; the
  * folder is made when missing, and used as the vault spells it.
  *
- * Throws a {@link CapturePathTakenError} when another note holds its path.
+ * When another message's note holds its path — two keys, one hash — it is
+ * written at the next numbered path (`… (slack <hash> 2).md`). Throws a
+ * {@link CapturePathTakenError} when every one is taken.
  */
 export async function receiveCapture({
   ports,
@@ -73,10 +77,24 @@ export async function receiveCapture({
   });
   const arrived = await heldInFolder(ports, { folder, file });
   if (arrived !== null) return { path: arrived, outcome: 'in-vault' };
-  // In the folder as the vault spells it: `inbox/Captures`, on a disk that does not tell them apart.
-  const path = joinVaultPath(folder, vaultPathName(createVaultPath(file.path)));
-  return writeUnlessTaken(ports, { path, file });
+  for (let count = 1; count <= MOST_NUMBERED; count += 1) {
+    const named = count === 1 ? file.path : numberedCapturePath(file, count);
+    // In the folder as the vault spells it: `inbox/Captures`, on a disk that does not tell them apart.
+    const path = joinVaultPath(folder, vaultPathName(createVaultPath(named)));
+    const receipt = await writeUnlessTaken(ports, { path, file });
+    if (receipt !== null) return receipt;
+  }
+  throw new CapturePathTakenError(
+    `Other messages' notes hold every path of ${file.provider} ${file.externalId}; not writing it`,
+  );
 }
+
+/**
+ * How many numbered paths a capture tries when other messages' notes hold
+ * its own: two keys sharing 64 bits of hash is not expected, so a run of
+ * them says something else is wrong.
+ */
+const MOST_NUMBERED = 9;
 
 /** The first note the index says holds this message, or null. */
 async function heldInVault(ports: CapturePorts, capture: Capture): Promise<VaultPath | null> {
@@ -95,9 +113,8 @@ async function heldInFolder(
   ports: CapturePorts,
   { folder, file }: { folder: VaultPath; file: CaptureFile },
 ): Promise<VaultPath | null> {
-  const ending = file.keyEnding.toLowerCase();
   for (const entry of await ports.fs.listDirectory(folder)) {
-    if (entry.kind !== 'file' || !entry.path.toLowerCase().endsWith(ending)) continue;
+    if (entry.kind !== 'file' || !isNamedForKey(entry.path, file.keyEnding)) continue;
     if (await holdsThisCapture(ports, { path: entry.path, file })) return entry.path;
   }
   return null;
@@ -105,22 +122,20 @@ async function heldInFolder(
 
 /**
  * Writes the file at `path` unless something is there: held when that note
- * is this capture — another request wrote it in between — and refused when
- * it is not. A failure with nothing there is the write's own, and is passed on.
+ * is this capture — another request wrote it in between — and null — try
+ * the next number — when it is another message's. A failure with nothing
+ * there is the write's own, and is passed on.
  */
 async function writeUnlessTaken(
   ports: CapturePorts,
   { path, file }: { path: VaultPath; file: CaptureFile },
-): Promise<CaptureReceipt> {
+): Promise<CaptureReceipt | null> {
   try {
     await ports.fs.createNote({ path, contents: file.content });
     return { path, outcome: 'written' };
   } catch (error) {
     if ((await readIfThere(ports, path)) === null) throw error;
-    if (await holdsThisCapture(ports, { path, file })) return { path, outcome: 'in-vault' };
-    throw new CapturePathTakenError(
-      `Another note holds the path of ${file.provider} ${file.externalId}; not writing it`,
-    );
+    return (await holdsThisCapture(ports, { path, file })) ? { path, outcome: 'in-vault' } : null;
   }
 }
 

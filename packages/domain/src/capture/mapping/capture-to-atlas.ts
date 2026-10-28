@@ -1,4 +1,4 @@
-import { fileTitle, fitStem, shortHash } from '../../meetings/mapping/meeting-file-name.ts';
+import { fileTitle, fitStem } from '../../meetings/mapping/meeting-file-name.ts';
 import { MeetingMappingError } from '../../meetings/mapping/meeting-mapping-error.ts';
 import { wallClockIn } from '../../meetings/mapping/meeting-when.ts';
 import { markdownLink, slackToMarkdown, slackToPlain, wordsMarkdown } from './capture-mrkdwn.ts';
@@ -37,7 +37,7 @@ export interface CaptureFile {
    * hash of the message's key is what finds it, whatever title it was given.
    */
   readonly path: string;
-  /** ` (slack <hash>).md`: how every file of this message's name ends, in any folder. */
+  /** ` (slack <hash>).md`: how this message's file name ends, numbered (`… <hash> 2).md`) after a clash. */
   readonly keyEnding: string;
   readonly content: string;
   readonly kind: CaptureKind;
@@ -116,9 +116,50 @@ function cutAtWord(line: string): string {
  * of PR #615).
  */
 function capturePaths(title: string, externalId: string): Pick<CaptureFile, 'path' | 'keyEnding'> {
-  const stem = fileTitle(title) || 'Slack message';
-  const keyEnding = ` (slack ${shortHash(`slack\n${externalId}`)}).md`;
-  return { path: `${CAPTURES_FOLDER}/${fitStem(stem, keyEnding)}${keyEnding}`, keyEnding };
+  const keyEnding = ` (slack ${keyHash(`slack\n${externalId}`)}).md`;
+  // Room for a number after the hash too, so a numbered path is never longer than a name may be.
+  const fitted = fitStem(fileTitle(title), keyEnding.replace(').md', ' 99).md'));
+  // A title too long for even one of its characters, or none, leaves nothing: it is never a name.
+  const stem = fitted === '' ? 'Slack message' : fitted;
+  return { path: `${CAPTURES_FOLDER}/${stem}${keyEnding}`, keyEnding };
+}
+
+/** 32-bit FNV-1a over the text's UTF-16 code units, from `basis`, as 8 hex digits. */
+function fnv1a(text: string, basis: number): string {
+  let hash = basis;
+  for (let at = 0; at < text.length; at += 1) {
+    hash ^= text.charCodeAt(at);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * 64 bits of the key, as 16 hex digits: FNV-1a from two bases, one over the
+ * key and one over it backwards. 32 bits alone gave two messages 71 seconds
+ * apart in one channel the same name (attack on PR #615). Not for security;
+ * pure arithmetic, so every engine answers alike.
+ */
+function keyHash(key: string): string {
+  return `${fnv1a(key, 0x811c9dc5)}${fnv1a([...key].reverse().join(''), 0x050c5d1f)}`;
+}
+
+/** The path of `file` numbered `count` (2 and on): where it goes when another message's note holds its own. */
+export function numberedCapturePath(
+  file: Pick<CaptureFile, 'path' | 'keyEnding'>,
+  count: number,
+): string {
+  const ending = file.keyEnding.replace(').md', ` ${count}).md`);
+  return `${file.path.slice(0, -file.keyEnding.length)}${ending}`;
+}
+
+/** Whether a file name is one of this key's: its ending, numbered or not, in any case. */
+export function isNamedForKey(name: string, keyEnding: string): boolean {
+  const base = keyEnding.slice(0, -').md'.length).toLowerCase();
+  const folded = name.toLowerCase();
+  if (folded.endsWith(keyEnding.toLowerCase())) return true;
+  const at = folded.lastIndexOf(`${base} `);
+  return at !== -1 && /^ \d+\)\.md$/.test(folded.slice(at + base.length));
 }
 
 /** A Slack ts as the instant it names, in milliseconds. */

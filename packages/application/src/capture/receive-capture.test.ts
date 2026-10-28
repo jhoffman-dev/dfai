@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CAPTURE_QUERY_MARK, captureFile, readCapture, type VaultPath } from '@dfai/domain';
+import {
+  CAPTURE_QUERY_MARK,
+  captureFile,
+  numberedCapturePath,
+  readCapture,
+  type VaultPath,
+} from '@dfai/domain';
 import { slackCapture } from '@dfai/domain/testing';
 import { apiFixture } from '../testing/api-fixture.ts';
 import { fakeMarkdown } from '../testing/fake-ports.ts';
@@ -99,13 +105,32 @@ describe('receiveCapture (#103)', () => {
     expect(api.writes).toEqual([{ path: FILE.path, contents: FILE.content }]);
   });
 
-  it('never writes over another note at its path', async () => {
+  it('writes at the next numbered path when another message’s note holds its own, never over it', async () => {
     const { api, receive } = vault({ [FILE.path]: OTHER_NOTE });
+    const numbered = numberedCapturePath(FILE, 2);
+    expect(numbered.endsWith(FILE.keyEnding.replace(').md', ' 2).md'))).toBe(true);
+    expect(await receive()).toEqual({ path: numbered, outcome: 'written' });
+    expect(api.files.get(FILE.path)?.text).toBe(OTHER_NOTE);
+  });
+
+  it('finds itself at a numbered path too', async () => {
+    const numbered = numberedCapturePath(FILE, 2);
+    const { api, receive } = vault({ [FILE.path]: OTHER_NOTE, [numbered]: FILE.content });
+    expect(await receive()).toEqual({ path: numbered, outcome: 'in-vault' });
+    expect(api.writes).toEqual([]);
+  });
+
+  it('refuses when other messages hold every numbered path, writing nothing', async () => {
+    const taken = Object.fromEntries(
+      [FILE.path, ...[2, 3, 4, 5, 6, 7, 8, 9].map((count) => numberedCapturePath(FILE, count))].map(
+        (path) => [path, OTHER_NOTE],
+      ),
+    );
+    const { api, receive } = vault(taken);
     await expect(receive()).rejects.toThrow(CapturePathTakenError);
     await expect(receive()).rejects.toThrow(
-      'Another note holds the path of slack C0LARK5PUR/1793136000.000100; not writing it',
+      "Other messages' notes hold every path of slack C0LARK5PUR/1793136000.000100; not writing it",
     );
-    expect(api.files.get(FILE.path)?.text).toBe(OTHER_NOTE);
     expect(api.writes).toEqual([]);
   });
 

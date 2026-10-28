@@ -126,18 +126,32 @@ const messageAt = (ts: string) =>
   });
 
 describe('two messages are two notes, whatever their keys hash to', () => {
-  // The path's only key is shortHash, 32-bit FNV-1a (capture-to-atlas.ts:120): these two
-  // keys, 71 seconds apart in one channel, share `0cf0ba11`. With one title the second is
-  // refused `exists` (receive-capture.ts writeUnlessTaken), so it can never be saved.
-  it('saves the second message of a hash collision', async () => {
-    const first = messageAt('1793136261.009000');
-    const second = messageAt('1793136332.080000');
-    expect(mapCapture(first).keyEnding).toBe(mapCapture(second).keyEnding);
+  // The path's only key was shortHash, 32-bit FNV-1a: these two keys, 71 seconds apart in
+  // one channel, shared `0cf0ba11`, and with one title the second was refused `exists`.
+  // (Amended with the fix: the suffix is now 64 bits, so this pair no longer collides, and a
+  // collision that does happen is written at a numbered path. The first assertion of the
+  // attack, that the pair shares an ending, could only hold for the 32-bit hash.)
+  const first = messageAt('1793136261.009000');
+  const second = messageAt('1793136332.080000');
 
+  it('saves the second message of the attack’s pair, whose names no longer clash', async () => {
+    expect(mapCapture(first).keyEnding).not.toBe(mapCapture(second).keyEnding);
     const api = vault();
     expect((await send(api, first)).status).toBe(201);
     const response = await send(api, second);
     expect(response.status).toBe(201);
     expect(bodyOf(response)).toMatchObject({ capture: { outcome: 'written' } });
+  });
+
+  it('saves the second message of a hash collision, at a numbered path', async () => {
+    // The clash made by hand: the first message's note at the second's own path.
+    const taken = mapCapture(second).path;
+    const api = vault({ [taken]: mapCapture(first).content });
+    const response = await send(api, second);
+    expect(response.status).toBe(201);
+    expect(bodyOf(response)).toEqual({
+      capture: { path: taken.replace(').md', ' 2).md'), outcome: 'written' },
+    });
+    expect(api.files.get(taken)?.text).toBe(mapCapture(first).content);
   });
 });

@@ -18,6 +18,18 @@ export type {
   CaptureMessage,
 } from './mapping/capture-payload.ts';
 export { CaptureRefusedError } from './mapping/capture-refusal.ts';
-export { escapeMarkdown, slackToMarkdown, slackToPlain } from './mapping/capture-mrkdwn.ts';
-export { CAPTURES_FOLDER, captureFile, mapCapture } from './mapping/capture-to-atlas.ts';
+export {
+  escapeMarkdown,
+  slackToMarkdown,
+  slackToPlain,
+  trimAddress,
+  wordsMarkdown,
+} from './mapping/capture-mrkdwn.ts';
+export {
+  CAPTURES_FOLDER,
+  captureFile,
+  isNamedForKey,
+  mapCapture,
+  numberedCapturePath,
+} from './mapping/capture-to-atlas.ts';
 export type { CaptureFile, CaptureOptions } from './mapping/capture-to-atlas.ts';

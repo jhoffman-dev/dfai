@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SLACK_PERMALINK, slackCapture, slackSource } from '../../testing/slack-capture.ts';
 import { readCapture } from './capture-payload.ts';
 import { CaptureRefusedError } from './capture-refusal.ts';
-import { captureFile, mapCapture } from './capture-to-atlas.ts';
+import { captureFile, isNamedForKey, mapCapture, numberedCapturePath } from './capture-to-atlas.ts';
 
 const LA = { timeZone: 'America/Los_Angeles' };
 
@@ -10,7 +10,7 @@ describe('mapCapture: a Slack message as its Inbox file (#103)', () => {
   it('writes a task: frontmatter saying where it came from, the message, its thread and its files', () => {
     const file = mapCapture(slackCapture(), LA);
     expect(file.path).toBe(
-      'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn (slack 2db9a3ee).md',
+      'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn (slack 2db9a3ee76a9e132).md',
     );
     expect(file.content).toBe(
       [
@@ -140,7 +140,7 @@ describe('a capture’s title and path', () => {
 
   it('takes the title asked for over the message', () => {
     expect(titled({ title: 'Send the renewal' }).path).toBe(
-      'Inbox/Captures/Send the renewal (slack 2db9a3ee).md',
+      'Inbox/Captures/Send the renewal (slack 2db9a3ee76a9e132).md',
     );
   });
 
@@ -162,7 +162,7 @@ describe('a capture’s title and path', () => {
 
   it('keeps a title that would make a path, a link or a hidden file out of the file name', () => {
     expect(titled({ title: '../.secret/[[x]] #y ^z: a|b' }).path).toBe(
-      'Inbox/Captures/secret x y z a b (slack 2db9a3ee).md',
+      'Inbox/Captures/secret x y z a b (slack 2db9a3ee76a9e132).md',
     );
   });
 
@@ -173,7 +173,9 @@ describe('a capture’s title and path', () => {
   });
 
   it('names a title that cleans away to nothing as a Slack message', () => {
-    expect(titled({ title: '///' }).path).toBe('Inbox/Captures/Slack message (slack 2db9a3ee).md');
+    expect(titled({ title: '///' }).path).toBe(
+      'Inbox/Captures/Slack message (slack 2db9a3ee76a9e132).md',
+    );
   });
 
   it('ends every path of one message in its key, whatever its title, and another message’s in its own', () => {
@@ -191,5 +193,45 @@ describe('a capture’s title and path', () => {
     const name = path.slice('Inbox/Captures/'.length);
     expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255);
     expect(name.endsWith(keyEnding)).toBe(true);
+  });
+});
+
+describe('a capture’s key in its file name (attack on PR #615)', () => {
+  const file = mapCapture(slackCapture());
+
+  it('is 64 bits of the key: 16 hex digits', () => {
+    expect(file.keyEnding).toMatch(/^ \(slack [0-9a-f]{16}\)\.md$/);
+  });
+
+  it('numbers a path after a clash, inside the name’s 255 bytes however long the title', () => {
+    expect(numberedCapturePath(file, 2)).toBe(file.path.replace(').md', ' 2).md'));
+    const long = mapCapture(slackCapture({ title: '\u7A0E'.repeat(200) }));
+    const name = numberedCapturePath(long, 99).split('/').at(-1) ?? '';
+    expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255);
+  });
+
+  it('knows its own names, numbered or not, in any case, and no other', () => {
+    const name = (path: string) => path.split('/').at(-1) ?? '';
+    expect(isNamedForKey(name(file.path), file.keyEnding)).toBe(true);
+    expect(isNamedForKey(name(file.path).toUpperCase(), file.keyEnding)).toBe(true);
+    expect(isNamedForKey(name(numberedCapturePath(file, 12)), file.keyEnding)).toBe(true);
+    expect(isNamedForKey(`x${file.keyEnding.replace(').md', ' two).md')}`, file.keyEnding)).toBe(
+      false,
+    );
+    expect(isNamedForKey(`x${file.keyEnding.replace(').md', ').md.bak')}`, file.keyEnding)).toBe(
+      false,
+    );
+    expect(
+      isNamedForKey(name(mapCapture(slackCapture({ text: 'other' }), {}).path), file.keyEnding),
+    ).toBe(true);
+  });
+
+  it('never names a file with nothing before its key, nor a space', () => {
+    // One grapheme too long for the name, and a title that cleans away to nothing.
+    for (const title of [`e${'\u0301'.repeat(300)}`, '...']) {
+      const name = mapCapture(slackCapture({ title })).path.split('/').at(-1) ?? '';
+      expect(name).toMatch(/^\S/);
+      expect(name.startsWith('Slack message (slack ')).toBe(true);
+    }
   });
 });
