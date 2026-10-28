@@ -12,10 +12,16 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(
 /** The one handler `listen` was given, so a test can deliver an event to it. */
 let deliver: ((event: { payload: ApiRequest }) => void) | null = null;
 const unlisten = vi.fn();
-const listen = vi.fn(async (_event: string, handler: (event: { payload: ApiRequest }) => void) => {
-  deliver = handler;
-  return unlisten;
-});
+const listen = vi.fn(
+  // Typed as Tauri's `UnlistenFn` is used: whatever it returns, the bridge ignores.
+  async (
+    _event: string,
+    handler: (event: { payload: ApiRequest }) => void,
+  ): Promise<() => unknown> => {
+    deliver = handler;
+    return unlisten;
+  },
+);
 vi.mock('@tauri-apps/api/event', () => ({
   listen: (event: string, handler: (event: { payload: ApiRequest }) => void) =>
     listen(event, handler),

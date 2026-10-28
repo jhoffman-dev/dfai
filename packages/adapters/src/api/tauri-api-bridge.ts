@@ -36,7 +36,7 @@ export const tauriApiBridge: ApiBridgePort = {
     try {
       await routerReady(listener, true);
     } catch (error) {
-      unlisten();
+      stopListening(unlisten);
       throw error;
     }
     return () => {
@@ -44,10 +44,22 @@ export const tauriApiBridge: ApiBridgePort = {
         // The host is going away with the page, or never had the API: either
         // way nothing is left to forward requests here.
       });
-      unlisten();
+      stopListening(unlisten);
     };
   },
 };
+
+/**
+ * `UnlistenFn` is typed `void`, but Tauri's returns the promise of a host call
+ * (`plugin:event|unlisten`), which fails when the host is unreachable.
+ */
+function stopListening(unlisten: () => void): void {
+  Promise.resolve(unlisten()).catch(() => {
+    // Safe to ignore: this runs as the page goes away or after the host
+    // refused the router, and the host forgets the page's listeners on the
+    // next page load, so nothing is left forwarding requests here.
+  });
+}
 
 async function respond({ id, status, body }: ApiResponse): Promise<void> {
   await invoke('api_respond', { id, status, body });
