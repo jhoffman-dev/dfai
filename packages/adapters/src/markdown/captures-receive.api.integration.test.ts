@@ -340,8 +340,10 @@ describe('POST /v1/captures: hostile text, over 200 seeded messages, through the
         'sent_at',
       ]);
       expect(remarkMarkdown.frontmatterProblem(frontmatter)).toBeNull();
-      // The name as the contract reads it, cleaned and on one line, comes back exactly.
-      expect(properties['author']).toBe(readCapture(sent).message.author.name);
+      // The name as the contract reads it — cleaned, one line, brackets made parentheses — comes back.
+      expect(properties['author']).toBe(
+        readCapture(sent).message.author.name.replace(/\[/g, '(').replace(/\]/g, ')'),
+      );
 
       const ranges = remarkMarkdown.textRanges(body);
       expect(noteTags({ tagsProperty: undefined, body, ranges })).toEqual([]);

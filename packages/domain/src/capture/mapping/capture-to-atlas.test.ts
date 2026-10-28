@@ -97,7 +97,7 @@ describe('mapCapture: a Slack message as its Inbox file (#103)', () => {
   it('escapes an author’s name in the body and quotes it in the frontmatter', () => {
     const author = { name: "Mara 'Q' [[Quill]] #ops", email: null };
     const { content } = mapCapture(slackCapture({ source: slackSource({ author }) }));
-    expect(content).toContain("author: 'Mara ''Q'' [[Quill]] #ops'");
+    expect(content).toContain("author: 'Mara ''Q'' ((Quill)) #ops'");
     expect(content).toContain("> **Mara 'Q' \\[\\[Quill\\]\\] \\#ops** ·");
     expect(content).not.toContain('author_email');
   });

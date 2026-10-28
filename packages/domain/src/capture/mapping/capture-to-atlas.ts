@@ -139,6 +139,13 @@ function clockIn(timeZone: string): (ts: string) => string {
 /** A YAML scalar every reader takes as text: single-quoted, `'` doubled. */
 const quoted = (text: string) => `'${text.replace(/'/g, "''")}'`;
 
+/**
+ * A sender's words as a frontmatter value: brackets made parentheses, since
+ * the index reads `[[x]]` anywhere in a property as a relation, and a Slack
+ * name of `[[Mara Quill]]` would link a person no address matched.
+ */
+const unlinked = (text: string) => text.replace(/\[/g, '(').replace(/\]/g, ')');
+
 /** A Person's link target the file can hold: one that a `]`, `|`, `#` or `^` would not break. */
 function personLink(writer: FileWriter, author: CaptureAuthor): string | null {
   const target = writer.personFor(author);
@@ -154,9 +161,9 @@ function frontmatter(capture: Capture, writer: FileWriter): string {
     `provider: ${capture.provider}`,
     `external_id: ${quoted(capture.externalId)}`,
     `source: ${quoted(message.url)}`,
-    `author: ${quoted(personLink(writer, message.author) ?? message.author.name)}`,
+    `author: ${quoted(personLink(writer, message.author) ?? unlinked(message.author.name))}`,
     ...(message.author.email === null ? [] : [`author_email: ${quoted(message.author.email)}`]),
-    `channel: ${quoted(channel.name === null ? channel.id : `#${channel.name}`)}`,
+    `channel: ${quoted(channel.name === null ? channel.id : `#${unlinked(channel.name)}`)}`,
     `sent_at: ${quoted(new Date(instantOf(message.ts)).toISOString())}`,
     '---',
   ].join('\n');
