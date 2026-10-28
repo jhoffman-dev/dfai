@@ -102,6 +102,13 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     expect(md('cc <@U0NOBODY99>', users)).toBe('cc @U0NOBODY99');
   });
 
+  it.each(['constructor', '__proto__', 'toString'])(
+    'writes <@%s> as what it says, never a name from the prototype',
+    (id) => {
+      expect(md(`cc <@${id}>`)).toBe(`cc @${id.replace(/_/g, '\\_')}`);
+    },
+  );
+
   it('writes a channel as words, never a tag', () => {
     expect(md('in <#C0LARK5PUR|larkspur-payroll>')).toBe('in \\#larkspur-payroll');
     expect(md('in <#C0LARK5PUR>')).toBe('in \\#C0LARK5PUR');

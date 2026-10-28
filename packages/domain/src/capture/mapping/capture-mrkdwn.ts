@@ -224,7 +224,10 @@ function tokenText(token: string, users: SlackUserNames, writer: Writer): string
   const label = bar === -1 ? '' : oneLineText(decodeSlackEntities(token.slice(bar + 1)));
   if (target.startsWith('@')) {
     const id = target.slice(1);
-    const name = oneLineText(users[id] ?? '') || label.replace(/^@/, '') || id;
+    // Its own names only: `<@constructor>` must not read one from Object.prototype.
+    const named = Object.hasOwn(users, id) ? users[id] : undefined;
+    const name =
+      (typeof named === 'string' ? oneLineText(named) : '') || label.replace(/^@/, '') || id;
     return writer.words(`@${name}`);
   }
   if (target.startsWith('#')) return writer.words(`#${label || target.slice(1)}`);
