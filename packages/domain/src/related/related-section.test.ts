@@ -87,4 +87,22 @@ describe('withRelatedLink', () => {
       '## Related\r\n\r\n- [[A]]\r\n- [[Garden]]\r\n',
     );
   });
+
+  it('adds with the line breaks it is told, where the body alone has none to go by', () => {
+    expect(withRelatedLink('Hello', 'Garden', '\r\n')).toBe(
+      'Hello\r\n\r\n## Related\r\n\r\n- [[Garden]]\r\n',
+    );
+  });
+
+  it('never writes the link inside a code block the section ends in, left open', () => {
+    expect(withRelatedLink('## Related\n\n- [[A]]\n\n```\nscratch', 'B')).toBe(
+      '## Related\n\n- [[A]]\n- [[B]]\n\n```\nscratch',
+    );
+  });
+
+  it('does not count a link inside a code block in the section as listed', () => {
+    expect(withRelatedLink('## Related\n\n```\n- [[B]]\n```\n', 'B')).toBe(
+      '## Related\n\n```\n- [[B]]\n```\n\n- [[B]]\n',
+    );
+  });
 });
