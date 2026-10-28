@@ -41,6 +41,7 @@ function report(): TodayReport {
   return {
     ...todayLists({ tasks: TITLES.map(task), projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
     stalledProjects: 0,

@@ -97,6 +97,7 @@ describe('compileReviewTasksQuery', () => {
         status: 'waiting',
         due: '2026-10-01',
         focus: '2026-10-14',
+        focusIsOwn: false,
         defer: '2026-10-20',
         recurrence: null,
         waitingOn: 'Mara Quill, Tobias Fenn',

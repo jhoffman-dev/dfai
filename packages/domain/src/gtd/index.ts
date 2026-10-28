@@ -46,6 +46,7 @@ export { isTaskNote, TASK_RULE_KEYS, taskRuleChanges } from './task-rules.ts';
 export type { TaskRuleOutcome } from './task-rules.ts';
 export {
   capturedTaskStatus,
+  choosesForToday,
   clarifyVocabulary,
   followsGtd,
   GTD_STATUS_PROPERTY,

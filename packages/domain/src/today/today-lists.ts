@@ -11,7 +11,7 @@ import {
   type ReviewTask,
 } from '../review/weekly-review.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
-import { focusStanding } from './chosen.ts';
+import { focusStanding, laterChoiceOf } from './chosen.ts';
 
 /** The Today page's sections, in the order they are shown and claim their tasks. */
 export const TODAY_SECTIONS = [
@@ -65,6 +65,12 @@ export interface TodayTask extends ReviewTask {
    * any other status.
    */
   readonly waitingDays: number | null;
+  /**
+   * The day still to come it was chosen for (#108), `YYYY-MM-DD`: a choice
+   * of that day's, which its row says and Today moves to today. Null when it
+   * was chosen for no later day, or the vault does not choose.
+   */
+  readonly laterChoice: string | null;
 }
 
 /** Tasks listed together under one name: a project's next actions, or what one person owes. */
@@ -123,16 +129,23 @@ export function todayLists({
   tasks,
   projects,
   at,
+  choosing = true,
 }: {
   tasks: readonly ReviewTask[];
   projects: readonly ReviewProject[];
   at: ReviewMoment;
+  /**
+   * Whether the vault chooses for today (`choosesForToday`): when it does
+   * not, no task is chosen or carried over, whatever its `focus` holds.
+   */
+  choosing?: boolean;
 }): TodayLists {
   let unclaimed = tasks
     .filter((task) => task.status !== FINISHED_TASK_STATUS && !isDeferred(task, at.today))
-    .map(withWaitingDays(at));
+    .map(asListed({ at, choosing }));
   const sections = TODAY_SECTIONS.map((id) => {
-    const claimed = unclaimed.filter((task) => CLAIMS[id](task, at.today));
+    const claims = choosing || !CHOICE_SECTIONS.has(id) ? CLAIMS[id] : NONE;
+    const claimed = unclaimed.filter((task) => claims(task, at.today));
     const taken = new Set(claimed);
     unclaimed = unclaimed.filter((task) => !taken.has(task));
     return { id, count: claimed.length, groups: GROUPS[id](claimed) };
@@ -140,18 +153,28 @@ export function todayLists({
   return { sections, stalledProjects: stalledProjects(projects).length };
 }
 
-const withWaitingDays =
-  (at: ReviewMoment) =>
+const asListed =
+  ({ at, choosing }: { at: ReviewMoment; choosing: boolean }) =>
   (task: ReviewTask): TodayTask => ({
     ...task,
     waitingDays:
       task.status === 'waiting' ? Math.max(0, Math.floor((at.now - task.modified) / DAY_MS)) : null,
+    laterChoice: laterChoiceOf({ ...task, today: at.today, choosing }),
   });
+
+/** The sections a task is in by what it was chosen for. */
+const CHOICE_SECTIONS: ReadonlySet<TodaySectionId> = new Set(['chosen', 'carriedOver']);
+
+const NONE = () => false;
+
+/** Where a task stands with the day: a `focus` that is the person's own is no choice. */
+const standingOf = (task: TodayTask, today: string) =>
+  task.focusIsOwn === true ? 'none' : focusStanding({ focus: task.focus, today });
 
 /** What puts a task in each section, asked in {@link TODAY_SECTIONS} order. */
 const CLAIMS: Readonly<Record<TodaySectionId, (task: TodayTask, today: string) => boolean>> = {
-  chosen: (task, today) => focusStanding({ focus: task.focus, today }) === 'today',
-  carriedOver: (task, today) => focusStanding({ focus: task.focus, today }) === 'carried',
+  chosen: (task, today) => standingOf(task, today) === 'today',
+  carriedOver: (task, today) => standingOf(task, today) === 'carried',
   overdue: isOverdue,
   dueToday: (task, today) => task.due === today && promisesItsDay(task),
   backToday: (task, today) =>

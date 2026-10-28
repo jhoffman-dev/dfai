@@ -57,6 +57,7 @@ function report(): TodayReport {
     ...lists,
     stalledProjects: 2,
     today: TODAY,
+    choosing: true,
     inbox: { count: 3, toFile: 2, toAnswer: 1, more: false },
     truncated: false,
   };
@@ -162,6 +163,7 @@ describe('todayAsPending', () => {
     });
     expect(shown).toMatchObject({
       today: TODAY,
+      choosing: true,
       stalledProjects: 2,
       inbox: read.inbox,
       truncated: false,
@@ -228,6 +230,7 @@ function reportOf(tasks: readonly ReviewTask[]): TodayReport {
   return {
     ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
   };
@@ -237,6 +240,7 @@ describe('todayAsPending, choosing for today (#108)', () => {
   const chosenReport = (tasks: readonly ReviewTask[]): TodayReport => ({
     ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
   });

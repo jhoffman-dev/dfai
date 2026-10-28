@@ -66,6 +66,7 @@ describe('useSteadyCallback, through the Today page', () => {
   const today: TodayReport = {
     ...todayLists({ tasks: [task], projects: [], at: { today: '2026-10-13', now: NOW } }),
     today: '2026-10-13',
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
     stalledProjects: 0,

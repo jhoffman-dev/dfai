@@ -44,6 +44,26 @@ export function focusStanding({
 }
 
 /**
+ * The day still to come a task was chosen for, or null: none, a day passed
+ * or today, or a `focus` that is the person's own — or a vault that does not
+ * choose for today.
+ */
+export function laterChoiceOf({
+  focus,
+  focusIsOwn,
+  today,
+  choosing,
+}: {
+  focus?: string | null | undefined;
+  focusIsOwn?: boolean | undefined;
+  today: string;
+  choosing: boolean;
+}): string | null {
+  if (!choosing || focusIsOwn === true || focus === null || focus === undefined) return null;
+  return focus > today ? focus : null;
+}
+
+/**
  * The change a choice makes to a task: `focus` set to today to choose or
  * keep it, taken out to unchoose or drop it — so a task chosen and then
  * unchosen is written back as it was.

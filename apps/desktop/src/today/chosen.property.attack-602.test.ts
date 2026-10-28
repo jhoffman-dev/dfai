@@ -73,7 +73,8 @@ const MAY_TOUCH: Readonly<Record<Action['kind'], readonly string[]>> = {
   unchoose: ['focus'],
   keep: ['focus'],
   drop: ['focus'],
-  tick: ['status', 'completed', 'lastCompleted', 'due', 'defer'],
+  // Finishing a task, or rolling a repeating one on, ends the day's choice (fix round of #602).
+  tick: ['status', 'completed', 'lastCompleted', 'due', 'defer', 'focus'],
   defer: ['defer'],
   move: ['status', 'completed'],
 };
@@ -175,7 +176,10 @@ async function walk(seed: number) {
       });
       const after = memory.files.get(path) ?? '';
       const stray = changedKeys(before, after).filter(
-        (key) => !MAY_TOUCH[action.kind].includes(key),
+        (key) =>
+          !MAY_TOUCH[action.kind].includes(key) &&
+          // A move into Archive finishes the task, which ends its choice too.
+          !(action.kind === 'move' && action.status === 'archive' && key === 'focus'),
       );
       if (stray.length > 0)
         problems.push(`seed ${seed} step ${step}: ${action.kind} touched ${stray.join(', ')}`);

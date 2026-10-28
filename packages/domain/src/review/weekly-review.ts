@@ -28,6 +28,12 @@ export interface ReviewTask {
    * has none. Absent when the read did not say, which is read as not chosen.
    */
   readonly focus?: string | null;
+  /**
+   * Whether its `focus` holds something other than one day, which is the
+   * person's own and never a choice (`focusIsOwn`). Absent when the read did
+   * not say, which is read as not.
+   */
+  readonly focusIsOwn?: boolean;
   /** Who it waits on, as its `waiting_on` names them; '' for nobody. */
   readonly waitingOn: string;
   /** Its `contexts`, as written, in order; none when it has none. */

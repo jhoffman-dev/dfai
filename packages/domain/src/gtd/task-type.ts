@@ -1,6 +1,6 @@
 import { MEETING_ITEM_TASK_PROPERTIES } from '../meetings/meeting-extraction-properties.ts';
 import { PERSON_TYPE } from '../people/person.ts';
-import { FOCUS_PROPERTY } from '../today/chosen.ts';
+import { declaresFocus, FOCUS_PROPERTY } from '../today/chosen.ts';
 import { FILED_UNDER, type BuiltInTypeFile } from '../types/para.ts';
 import type { ObjectType, PropertyDef } from '../types/property-def.ts';
 import { statusOf } from '../types/status-property.ts';
@@ -198,6 +198,16 @@ export function capturedTaskStatus(type: ObjectType | null): GtdStatus | null {
 /** Whether the vault's tasks start in the Inbox: its Task type has that status (ADR-0029). */
 export const tasksStartInInbox = (types: readonly ObjectType[]): boolean =>
   capturedTaskStatus(taskTypeOf(types)) !== null;
+
+/**
+ * Whether the vault chooses tasks for today (#108): its Task type has
+ * `focus` as a date, which is where a choice is written. A vault with no
+ * Task type yet is taken to have the built-in one, as it would be given. One
+ * whose type took `focus` off, or made it its own kind, never has a choice
+ * written over what it keeps there.
+ */
+export const choosesForToday = (types: readonly ObjectType[]): boolean =>
+  declaresFocus(taskTypeOf(types) ?? TASK_TYPE_FILE.type);
 
 /** The statuses a row may give a task, and where a note made a task starts. */
 export interface ClarifyVocabulary {

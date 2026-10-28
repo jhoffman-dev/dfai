@@ -40,6 +40,12 @@ const firstDay = (key: string) =>
   `(SELECT substr(p.value_date, 1, 10) FROM props AS p WHERE p.path = f.path AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx LIMIT 1)`;
 
 /**
+ * 1 when a property holds something other than one day — words, a number, a
+ * list of several — as `focusIsOwn` reads the file; 0 for none, a blank, or one day.
+ */
+const notOneDay = (key: string) =>
+  `(SELECT CASE WHEN count(*) = 0 OR (count(*) = 1 AND max(p.value_date) IS NOT NULL) THEN 0 ELSE 1 END FROM props AS p WHERE p.path = f.path AND p.key = '${key}' AND coalesce(p.value_text, p.value_json, '') <> '')`;
+/**
  * Every item a property holds, in order, joined by {@link ITEM_SEPARATOR}:
  * text as written, a nested value as its JSON — as the task rules read it.
  */
@@ -60,6 +66,7 @@ export function compileReviewTasksQuery(): CompiledQuery {
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
       `  ${firstDay(TASK_KEYS.focus)} AS "focus",`,
+      `  ${notOneDay(TASK_KEYS.focus)} AS "focusIsOwn",`,
       `  ${singleText(RECURRENCE_KEY)} AS "recurrence",`,
       `  ${allItems(TASK_KEYS.waitingOn)} AS "waitingOn",`,
       `  ${allItems(TASK_KEYS.contexts)} AS "contexts",`,
@@ -148,6 +155,7 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     due: textOrNull(row['due']),
     defer: textOrNull(row['defer']),
     focus: textOrNull(row['focus']),
+    focusIsOwn: Number(row['focusIsOwn']) === 1,
     // Absent when the row did not carry it, which is not knowing it: see ReviewTask.
     ...(Object.hasOwn(row, 'recurrence') && { recurrence: textOrNull(row['recurrence']) }),
     waitingOn: waitingOnNames(row['waitingOn']),

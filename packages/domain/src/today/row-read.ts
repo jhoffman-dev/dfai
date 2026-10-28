@@ -33,6 +33,21 @@ function firstDay(properties: Readonly<Record<string, unknown>>, key: string): s
 }
 
 /**
+ * Whether a task's `focus` is the person's own rather than a choice (#108):
+ * it holds something other than one day — words, a link, a number, a list
+ * of several. A choice never writes over it, nor takes it out. No `focus`,
+ * or a blank one, is not anyone's: choosing may write it.
+ */
+export function focusIsOwn(properties: Readonly<Record<string, unknown>>): boolean {
+  if (!Object.hasOwn(properties, TASK_KEYS.focus)) return false;
+  const held = indexablePropertiesOf({ [TASK_KEYS.focus]: properties[TASK_KEYS.focus] }).filter(
+    (row) => (row.text ?? row.json ?? '') !== '',
+  );
+  if (held.length === 0) return false;
+  return !(held.length === 1 && held[0]?.date !== null);
+}
+
+/**
  * Whether a task still is what a row showed (#111). A row acts on what it
  * showed — a tick on the 13th's occurrence, a move from Next Action — so
  * once the file says otherwise the action is no longer the one asked for:

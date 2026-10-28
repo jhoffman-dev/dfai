@@ -37,8 +37,9 @@ const noPane = { setPropertiesIfOpen: async () => false } as unknown as OpenEdit
 function answer(sql: string, focus: string | null = null): QueryResult {
   if (sql.startsWith(REVIEW_TASKS_QUERY_MARK)) {
     return {
-      columns: ['path', 'title', 'modified', 'status', 'due', 'defer', 'focus'],
-      rows: [[PATH, 'Ship the page', NOW, 'next-action', '2026-10-13', null, focus]],
+      // As the review statement reads every task: its recurrence too, so a change given as a rule is drawn.
+      columns: ['path', 'title', 'modified', 'status', 'due', 'defer', 'recurrence', 'focus'],
+      rows: [[PATH, 'Ship the page', NOW, 'next-action', '2026-10-13', null, null, focus]],
       truncated: false,
     };
   }

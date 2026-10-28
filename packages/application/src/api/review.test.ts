@@ -60,6 +60,7 @@ describe('GET /v1/review/weekly', () => {
         status: 'waiting',
         due: null,
         focus: null,
+        focusIsOwn: false,
         defer: null,
         recurrence: null,
         waitingOn: 'Mara Quill',

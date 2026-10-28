@@ -42,7 +42,11 @@ export type TodayAction =
   | { readonly kind: 'done' }
   | { readonly kind: 'move'; readonly status: string }
   | { readonly kind: 'defer'; readonly days: number }
-  | { readonly kind: TodayChoice };
+  | {
+      readonly kind: TodayChoice;
+      /** The later day it had been chosen for, when a choice is moved from it to today. */
+      readonly was?: string;
+    };
 
 /** The row an action is asked of. */
 interface RowTask {
@@ -75,7 +79,7 @@ export interface TodayPageProps {
   onSetStatus: (args: RowTask & { status: string }) => void;
   onDefer: (args: RowTask & { days: number }) => void;
   /** Chooses a task for today or takes it off; keeps or drops one carried over (#108). */
-  onChoose: (args: RowTask & { choice: TodayChoice }) => void;
+  onChoose: (args: RowTask & { choice: TodayChoice; was?: string }) => void;
   onShowSidebar?: () => void;
   history?: PageHistory;
   /** Today's meetings, drawn above the tasks (ADR-0046); nothing when left out. */
@@ -191,6 +195,9 @@ export function todayActionWords({
 }): string {
   if (action.kind === 'done') return `Finished “${title}”.`;
   if (action.kind === 'move') return `Moved “${title}” to ${statusLabel(action.status)}.`;
+  if (action.kind === 'choose' && action.was !== undefined) {
+    return `“${title}” chosen for today (was ${action.was}).`;
+  }
   if (action.kind !== 'defer') return CHOICE_WORDS[action.kind](title);
   return `Deferred “${title}” by ${action.days === 1 ? '1 day' : `${action.days} days`}.`;
 }
@@ -286,22 +293,35 @@ function Sections(props: TodayPageProps & PlacedProps & { today: TodayReport }) 
     // here, so that the rows themselves are not drawn again to say so (#217).
     <PageBusy.Provider value={busy}>
       <Settling.Provider value={settling}>
-        {today.sections.filter(shownWhenEmpty).map((section) => (
-          <Section
-            key={section.id}
-            section={section}
-            place={props.place}
-            settling={settling}
-            actions={actions}
-          />
-        ))}
+        <Choosing.Provider value={today.choosing}>
+          {today.sections.filter(shownIn(today)).map((section) => (
+            <Section
+              key={section.id}
+              section={section}
+              place={props.place}
+              settling={settling}
+              actions={actions}
+            />
+          ))}
+        </Choosing.Provider>
       </Settling.Provider>
     </PageBusy.Provider>
   );
 }
 
-/** Carried over is drawn only while it holds something: most mornings there is nothing to keep. */
-const shownWhenEmpty = (section: TodaySection) => section.id !== 'carriedOver' || section.count > 0;
+/**
+ * The sections drawn: Chosen for today and Carried over only where the vault
+ * chooses for today (#108), and Carried over only while it holds something —
+ * most mornings there is nothing to keep.
+ */
+const shownIn = (today: TodayReport) => (section: TodaySection) => {
+  if (section.id === 'chosen') return today.choosing;
+  if (section.id === 'carriedOver') return today.choosing && section.count > 0;
+  return true;
+};
+
+/** Whether tasks can be chosen for today, read by each row's choice controls rather than drawn into the row. */
+const Choosing = createContext(true);
 
 /** Whether an action is under way on the page: every row's Done, Move and Defer wait for it. */
 const PageBusy = createContext(false);
@@ -343,12 +363,17 @@ function useRowActions(props: TodayPageProps & PlacedProps): RowActions {
       onDone: (task) => act(task, () => onDone(rowOf(task))),
       onDefer: (task, days) => act(task, () => onDefer({ ...rowOf(task), days })),
       onMove: (task, status) => act(task, () => onSetStatus({ ...rowOf(task), status })),
-      onChoose: (task, choice) => act(task, () => onChoose({ ...rowOf(task), choice })),
+      onChoose: (task, choice) =>
+        act(task, () => onChoose({ ...rowOf(task), choice, ...laterChoiceMoved(task, choice) })),
     };
   }, [actedOn, rowRef, onOpen, onDone, onDefer, onSetStatus, onChoose]);
 }
 
 const rowOf = (task: TodayTask): RowTask => ({ path: task.path, title: task.title });
+
+/** The later day a choice is moved from, when a task chosen for one is chosen for today. */
+const laterChoiceMoved = (task: TodayTask, choice: TodayChoice) =>
+  choice === 'choose' && task.laterChoice !== null ? { was: task.laterChoice } : {};
 
 /** How a row's Move to… menu was first asked for, which decides where its focus starts. */
 type MenuOpening = 'pointer' | 'press' | 'arrow';
@@ -741,11 +766,14 @@ function RowCommands({
   actions,
 }: RowControlProps & { sectionId: TodaySectionId }) {
   const waits = useActionsWait(task.path);
+  // No choice where the vault does not choose, nor over a focus that is the person's own.
+  const chooses = useContext(Choosing) && task.focusIsOwn !== true;
   return (
     <>
-      {sectionId === 'carriedOver'
-        ? carriedChoices({ task, waits, actions })
-        : todayToggle({ task, chosen: sectionId === 'chosen', waits, actions })}
+      {chooses &&
+        (sectionId === 'carriedOver'
+          ? carriedChoices({ task, waits, actions })
+          : todayToggle({ task, chosen: sectionId === 'chosen', waits, actions }))}
       <MoveMenu task={task} busy={waits} onMove={actions.onMove} />
       {TODAY_DEFER_DAYS.map((days) => (
         <button
@@ -865,6 +893,9 @@ function rowDetails({
   if (task.due !== null) pieces.push(dueDay(task, sectionId));
   if (sectionId === 'carriedOver' && task.focus !== undefined && task.focus !== null) {
     pieces.push(<span key="chosen">Chosen for {task.focus}</span>);
+  }
+  if (task.laterChoice !== null) {
+    pieces.push(<span key="later">Chosen for {task.laterChoice}</span>);
   }
   if (sectionId === 'backToday' && task.defer !== null) {
     pieces.push(<span key="back">Deferred until {task.defer}</span>);
