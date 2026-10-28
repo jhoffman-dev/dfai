@@ -17,6 +17,10 @@ function memoryVault(files: Record<string, string> = {}, folders: readonly strin
   const dirs = new Set(folders);
   const trashed: string[] = [];
   const writes: string[] = [];
+  /** Files the host lists but will not read: too large, or not text. */
+  const unreadable = new Set<string>();
+  /** Runs as a folder is listed: another program's write in the middle of a walk. */
+  const onList = new Map<string, () => void>();
   const allDirs = () => {
     const found = new Set(dirs);
     for (const path of [...notes.keys(), ...dirs]) {
@@ -37,6 +41,7 @@ function memoryVault(files: Record<string, string> = {}, folders: readonly strin
   const fs: VaultFsPort = fakeVaultFs({
     listDirectory: async (folder) => {
       if (folder !== '' && !allDirs().has(folder)) throw new VaultAccessError('no such folder');
+      onList.get(folder)?.();
       const under = (path: string) => parentVaultPath(createVaultPath(path)) === folder;
       return [
         ...[...allDirs()].filter(under).map((path) => entry('directory', path)),
@@ -45,6 +50,7 @@ function memoryVault(files: Record<string, string> = {}, folders: readonly strin
     },
     readTextFile: async (path) => {
       const note = notes.get(path);
+      if (unreadable.has(path)) throw new VaultAccessError('the file is not text');
       if (note === undefined) throw new VaultAccessError('no such file');
       return { ...note };
     },
@@ -79,7 +85,7 @@ function memoryVault(files: Record<string, string> = {}, folders: readonly strin
     clock += 1;
     notes.set(path, { text, modified: clock });
   };
-  return { fs, notes, trashed, writes, editOnDisk };
+  return { fs, notes, trashed, writes, editOnDisk, unreadable, onList };
 }
 
 const markdown = fakeMarkdown();
@@ -372,5 +378,149 @@ describe('listSkills and readSkill', () => {
     });
 
     await expect(listSkills({ fs, markdown })).rejects.toThrow('permission denied');
+  });
+});
+
+describe('a folder with no SKILL.md is not a dead end (review of #620)', () => {
+  it('create, for that exact folder, writes its SKILL.md into it', async () => {
+    const vault = memoryVault({}, ['.atlas/skills/weekly-review']);
+
+    const skill = await createSkill({ fs: vault.fs, markdown, draft: DRAFT });
+
+    expect(skill.problems).toEqual([]);
+    expect(vault.notes.get(SKILL_PATH)?.text).toMatch(/^---\nname: weekly-review\n/);
+  });
+
+  it('create still refuses a folder of that name in another case', async () => {
+    const vault = memoryVault({}, ['.atlas/skills/Weekly-Review']);
+
+    await expect(createSkill({ fs: vault.fs, markdown, draft: DRAFT })).rejects.toThrow(
+      'There is already a skill called “weekly-review”.',
+    );
+    expect(vault.writes).toEqual([]);
+  });
+
+  it('save writes the missing SKILL.md, canonically, refusing to overwrite one there now', async () => {
+    const vault = memoryVault({}, ['.atlas/skills/weekly-review']);
+    const empty = await readBack(vault);
+
+    const saved = await saveSkill({ fs: vault.fs, markdown, skill: empty, draft: DRAFT });
+
+    expect(saved.problems).toEqual([]);
+    expect(vault.notes.get(SKILL_PATH)?.text).toBe(
+      '---\nname: weekly-review\ndescription: Walks through the Friday review.\n---\n\n' +
+        'List each project with no next action.\n',
+    );
+    await expect(saveSkill({ fs: vault.fs, markdown, skill: empty, draft: DRAFT })).rejects.toThrow(
+      NoteChangedError,
+    );
+  });
+
+  it('takes away the folder it just made when SKILL.md cannot be written, so a retry works', async () => {
+    const vault = memoryVault({}, ['.atlas']);
+    const failing = {
+      ...vault.fs,
+      createNote: async () => {
+        throw new VaultAccessError('the disk is full');
+      },
+    };
+
+    await expect(createSkill({ fs: failing, markdown, draft: DRAFT })).rejects.toThrow(
+      'the disk is full',
+    );
+
+    expect(vault.trashed).toEqual(['.atlas/skills/weekly-review']);
+    await createSkill({ fs: vault.fs, markdown, draft: DRAFT });
+    expect(vault.notes.has(SKILL_PATH)).toBe(true);
+  });
+
+  it('refuses, as already a skill, a name something else took as the folder was made', async () => {
+    const vault = memoryVault({ '.atlas/skills/weekly-review': 'a file, not a folder' });
+
+    const made = createSkill({ fs: vault.fs, markdown, draft: DRAFT });
+
+    await expect(made).rejects.toThrow(SkillRefusedError);
+    await expect(made).rejects.toThrow('There is already a skill called “weekly-review”.');
+  });
+
+  it('passes on a createFolder failure that is not a clash', async () => {
+    const vault = memoryVault({}, ['.atlas/skills']);
+    const denied = {
+      ...vault.fs,
+      createFolder: async () => {
+        throw new VaultAccessError('permission denied');
+      },
+    };
+
+    await expect(createSkill({ fs: denied, markdown, draft: DRAFT })).rejects.toThrow(
+      'permission denied',
+    );
+  });
+});
+
+describe('a SKILL.md that is there but cannot be read (review of #620)', () => {
+  it('is a file problem, not a missing SKILL.md', async () => {
+    const vault = memoryVault({ [SKILL_PATH]: TEXT });
+    vault.unreadable.add(SKILL_PATH);
+
+    const skill = await readBack(vault);
+
+    expect(skill.problems).toEqual([
+      { field: 'file', message: 'SKILL.md cannot be read: the file is not text' },
+    ]);
+  });
+
+  it('is not trashed or saved over', async () => {
+    const vault = memoryVault({ [SKILL_PATH]: TEXT });
+    vault.unreadable.add(SKILL_PATH);
+    const skill = await readBack(vault);
+
+    await expect(deleteSkill({ fs: vault.fs, skill })).rejects.toThrow(SkillRefusedError);
+    await expect(saveSkill({ fs: vault.fs, markdown, skill, draft: DRAFT })).rejects.toThrow(
+      SkillRefusedError,
+    );
+    expect(vault.trashed).toEqual([]);
+    expect(vault.writes).toEqual([]);
+  });
+
+  it('refuses a delete when SKILL.md stopped being readable after it was read', async () => {
+    const vault = memoryVault({}, ['.atlas/skills/weekly-review']);
+    const empty = await readBack(vault);
+    vault.editOnDisk(SKILL_PATH, TEXT);
+    vault.unreadable.add(SKILL_PATH);
+
+    await expect(deleteSkill({ fs: vault.fs, skill: empty })).rejects.toThrow(NoteChangedError);
+    expect(vault.trashed).toEqual([]);
+  });
+});
+
+describe('deleting, after the review of #620', () => {
+  it('checks SKILL.md after walking the folder, right before the Trash', async () => {
+    const vault = memoryVault({
+      [SKILL_PATH]: TEXT,
+      '.atlas/skills/weekly-review/scripts/run.sh': 'echo',
+    });
+    const skill = await readBack(vault);
+    vault.onList.set('.atlas/skills/weekly-review/scripts', () =>
+      vault.editOnDisk(SKILL_PATH, 'a sync wrote this mid-walk'),
+    );
+
+    await expect(deleteSkill({ fs: vault.fs, skill })).rejects.toThrow(NoteChangedError);
+    expect(vault.trashed).toEqual([]);
+  });
+
+  it('does not name dotfiles among the other files', async () => {
+    const vault = memoryVault({
+      [SKILL_PATH]: TEXT,
+      '.atlas/skills/weekly-review/.DS_Store': 'x',
+      '.atlas/skills/weekly-review/scripts/.DS_Store': 'x',
+      '.atlas/skills/weekly-review/reference.md': 'ref',
+    });
+    const skill = await readBack(vault);
+
+    const deleted = await deleteSkill({ fs: vault.fs, skill });
+
+    expect(deleted.otherFiles).toEqual(['.atlas/skills/weekly-review/reference.md']);
+    expect(vault.trashed).toEqual(['.atlas/skills/weekly-review']);
   });
 });

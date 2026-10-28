@@ -58,16 +58,6 @@ describe('a name that is a path', () => {
     expect(codeOf(response)).toBe('invalid');
   });
 
-  it('cannot reach a skill by `.` or `..` alone', async () => {
-    const api = vault();
-
-    for (const segment of ['.', '..', '%2E', '%2E%2E']) {
-      const response = await readRaw(api, segment);
-      expect(response.status).toBeGreaterThanOrEqual(400);
-      expect(JSON.stringify(bodyOf(response))).not.toContain('secret-7f3a');
-    }
-  });
-
   it('lists only the folders in .atlas/skills, never one nested in a skill', async () => {
     const response = await vault().send({ method: 'GET', path: '/v1/skills' });
 

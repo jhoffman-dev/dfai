@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { joinFrontmatter, splitFrontmatter } from '../markdown/markdown-document.ts';
 import {
   bodyWithInstructions,
+  skillDeletionWarning,
   instructionsOf,
   isSkillNameTaken,
   newSkillBody,
@@ -230,8 +231,15 @@ describe('instructions and the body', () => {
     expect(bodyWithInstructions(body, instructionsOf(body))).toBe(body);
   });
 
+  it('writes changed instructions with the CRLF line ends the body already had', () => {
+    expect(bodyWithInstructions('\r\nOld.\r\nTwo.\r\n', 'New.\nTwo.\n')).toBe(
+      '\r\nNew.\r\nTwo.\r\n',
+    );
+    expect(bodyWithInstructions('\nOld.\n', 'New.\r\nTwo.\n')).toBe('\nNew.\r\nTwo.\n');
+  });
+
   it('keeps the blank line the body had when the instructions change', () => {
-    expect(bodyWithInstructions('\r\nOld.\r\n', 'New.\n')).toBe('\r\nNew.\n');
+    expect(bodyWithInstructions('\r\nOld.\r\n', 'New.\r\n')).toBe('\r\nNew.\r\n');
     expect(bodyWithInstructions('Old.\n', 'New.\n')).toBe('New.\n');
   });
 
@@ -296,5 +304,26 @@ describe('a parse→edit round trip', () => {
     const edited = joinFrontmatter(frontmatter, bodyWithInstructions(body, 'Step two.\n'));
     expect(edited).toBe(`${frontmatter ?? ''}\nStep two.\n`);
     expect(splitFrontmatter(edited).frontmatter).toBe(frontmatter);
+  });
+});
+
+describe('skillDeletionWarning', () => {
+  it('says the whole folder goes, naming its other files and that deeper ones go too', () => {
+    expect(
+      skillDeletionWarning('weekly-review', [
+        '.atlas/skills/weekly-review/reference.md',
+        '.atlas/skills/weekly-review/scripts/run.sh',
+      ]),
+    ).toBe(
+      'Delete “weekly-review”? Its whole folder goes to the Trash, where it can be got back, ' +
+        'with 2 other files: reference.md, scripts/run.sh — and everything in its subfolders, ' +
+        'however deep.',
+    );
+  });
+
+  it('says only SKILL.md goes when the folder holds nothing else', () => {
+    expect(skillDeletionWarning('daily', [])).toBe(
+      'Delete “daily”? Its folder, holding only SKILL.md, goes to the Trash, where it can be got back.',
+    );
   });
 });
