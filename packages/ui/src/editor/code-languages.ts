@@ -30,13 +30,13 @@ export type CodeGrammar = (typeof CODE_GRAMMARS)[number];
 const NAMES: Readonly<Record<CodeGrammar, readonly string[]>> = {
   bash: ['bash', 'sh', 'shell', 'zsh'],
   css: ['css'],
-  json: ['json', 'jsonc'],
+  json: ['json', 'jsonc', 'json5'],
   markdown: ['markdown', 'md', 'mkd', 'mkdown'],
   python: ['python', 'py', 'gyp', 'ipython'],
   rust: ['rust', 'rs'],
   sql: ['sql'],
   typescript: ['typescript', 'ts', 'tsx', 'mts', 'cts', 'javascript', 'js', 'jsx', 'mjs', 'cjs'],
-  xml: ['xml', 'html', 'xhtml', 'svg', 'rss', 'atom', 'plist', 'xsd', 'xsl'],
+  xml: ['xml', 'html', 'xhtml', 'svg', 'rss', 'atom', 'plist', 'xsd', 'xsl', 'xjb', 'wsf'],
   yaml: ['yaml', 'yml'],
 };
 
@@ -72,18 +72,26 @@ export interface CodeLanguages {
    * false when the load failed, and the next ask tries again afresh.
    */
   load(grammar: CodeGrammar): Promise<boolean>;
+  /**
+   * Called with each grammar as it arrives, whoever asked for it: an editor
+   * whose own load of it failed is coloured when another's succeeds.
+   * Returns the way to stop listening.
+   */
+  onReady(listener: (grammar: CodeGrammar) => void): () => void;
 }
 
 export function createCodeLanguages(loadGrammar: LoadGrammar): CodeLanguages {
   const lowlight = createLowlight();
   const pending = new Map<CodeGrammar, Promise<boolean>>();
   const failed = new Set<CodeGrammar>();
+  const listeners = new Set<(grammar: CodeGrammar) => void>();
 
   const fetchOnce = (grammar: CodeGrammar): Promise<boolean> =>
     loadGrammar(grammar, { fresh: failed.has(grammar) }).then(
       (language) => {
         lowlight.register(grammar, language);
         failed.delete(grammar);
+        for (const listener of [...listeners]) listener(grammar);
         return true;
       },
       () => {
@@ -102,6 +110,10 @@ export function createCodeLanguages(loadGrammar: LoadGrammar): CodeLanguages {
         pending.get(grammar) ?? fetchOnce(grammar).finally(() => pending.delete(grammar));
       pending.set(grammar, loading);
       return loading;
+    },
+    onReady: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 }

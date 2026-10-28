@@ -127,4 +127,25 @@ describe('loading a grammar on first use', () => {
     expect(one.highlight('yaml', 'a: 1')).not.toBeNull();
     expect(other.highlight('yaml', 'a: 1')).toBeNull();
   });
+
+  it('tells each listener of every grammar as it arrives, until it stops listening', async () => {
+    const languages = createCodeLanguages(counting().load);
+    const heard: CodeGrammar[] = [];
+    const stop = languages.onReady((grammar) => heard.push(grammar));
+    await languages.load('yaml');
+    await languages.load('yaml');
+    stop();
+    await languages.load('typescript');
+    expect(heard).toEqual(['yaml']);
+  });
+
+  it('tells no listener of a grammar that failed to load', async () => {
+    const languages = createCodeLanguages(
+      vi.fn<LoadGrammar>().mockRejectedValue(new Error('offline')),
+    );
+    const heard: CodeGrammar[] = [];
+    languages.onReady((grammar) => heard.push(grammar));
+    await languages.load('yaml');
+    expect(heard).toEqual([]);
+  });
 });

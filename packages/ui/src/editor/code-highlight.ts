@@ -79,34 +79,36 @@ function sameBlocks(before: PmNode, after: PmNode): boolean {
   return was.length === now.length && was.every((block, at) => block.node === now[at]?.node);
 }
 
-/** Asks for each grammar the note waits on, once per editor; colours the note as each arrives. */
+/**
+ * Asks for each grammar the note waits on, once per editor, and colours the
+ * note whenever one it waits on arrives, whichever editor's ask brought it:
+ * a note whose own fetch failed is coloured once another succeeds.
+ */
 function askForGrammars(languages: CodeLanguages) {
   return (view: { state: EditorState; dispatch: (tr: EditorState['tr']) => void }) => {
     const asked = new Set<CodeGrammar>();
-    let live = true;
-    const ask = (state: EditorState) => {
-      for (const grammar of highlightKey.getState(state)?.waiting ?? []) {
+    const waitsOn = (grammar: CodeGrammar) =>
+      highlightKey.getState(view.state)?.waiting.includes(grammar) === true;
+    const stopListening = languages.onReady((grammar) => {
+      if (!waitsOn(grammar)) return;
+      // Nothing in the note changed: not an edit to save, nor a step to undo.
+      view.dispatch(
+        view.state.tr
+          .setMeta(highlightKey, grammar)
+          .setMeta('preventUpdate', true)
+          .setMeta('addToHistory', false),
+      );
+    });
+    const ask = () => {
+      for (const grammar of highlightKey.getState(view.state)?.waiting ?? []) {
         if (asked.has(grammar)) continue;
         asked.add(grammar);
-        void languages.load(grammar).then((ready) => {
-          if (!ready || !live) return;
-          // Nothing in the note changed: not an edit to save, nor a step to undo.
-          view.dispatch(
-            view.state.tr
-              .setMeta(highlightKey, grammar)
-              .setMeta('preventUpdate', true)
-              .setMeta('addToHistory', false),
-          );
-        });
+        // A failure leaves the code plain; the grammar's arrival, from any ask, colours it.
+        void languages.load(grammar);
       }
     };
-    ask(view.state);
-    return {
-      update: () => ask(view.state),
-      destroy: () => {
-        live = false;
-      },
-    };
+    ask();
+    return { update: ask, destroy: stopListening };
   };
 }
 
