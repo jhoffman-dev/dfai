@@ -8,6 +8,7 @@ import {
   type EditorDocument,
   type VaultPath,
 } from '@dfai/domain';
+import type { BlockPicking } from '@dfai/ui';
 import { useBlockPicking } from './use-block-links.ts';
 
 /**
@@ -35,23 +36,33 @@ const EMPTY: EditorDocument = { type: 'doc', content: [] };
 
 function picker(notePaths: readonly VaultPath[] = VAULT) {
   const readTextFile = vi.fn(async () => ({ text: 'Pack the tent\n', modified: 1 }));
-  const { result } = renderHook(() =>
-    useBlockPicking({
-      fs: fakeVaultFs({ readTextFile }),
-      markdown: { ...fakeMarkdown(), parseBody: () => ({ blocks: [], doc: EMPTY }) },
-      index: fakeIndexPort({ manifest: async () => [] }),
-      notePath: HERE,
-      notePaths,
-      openNotes: OPEN_NOTES,
-      rng: { next: () => 0.5 },
-      onChanged: vi.fn(),
-      onRefused: vi.fn(),
-    }),
+  // Made once, as the app keeps its ports: only the notes change between renders.
+  const ports = {
+    fs: fakeVaultFs({ readTextFile }),
+    markdown: { ...fakeMarkdown(), parseBody: () => ({ blocks: [], doc: EMPTY }) },
+    index: fakeIndexPort({ manifest: async () => [] }),
+    openNotes: OPEN_NOTES,
+    rng: { next: () => 0.5 },
+    onChanged: vi.fn(),
+    onRefused: vi.fn(),
+  };
+  const { result, rerender } = renderHook(
+    ({ paths }: { paths: readonly VaultPath[] }) =>
+      useBlockPicking({ ...ports, notePath: HERE, notePaths: paths }),
+    { initialProps: { paths: notePaths } },
   );
-  return { picking: result.current, readTextFile };
+  return {
+    picking: result.current,
+    readTextFile,
+    /** The picker as the hook hands it over once the vault's notes are these. */
+    over: (paths: readonly VaultPath[]) => {
+      rerender({ paths });
+      return result.current;
+    },
+  };
 }
 
-const pathOf = async (picking: ReturnType<typeof picker>['picking'], target: string) => {
+const pathOf = async (picking: BlockPicking, target: string) => {
   const found = await picking.choicesFor(target);
   if (found === null) return null;
   return found.same ? HERE : found.path;
@@ -96,5 +107,21 @@ describe('useBlockPicking — the note a `#` link names (#225)', () => {
       const expected = typed === 'Larkspur' ? 'Projects/Larkspur.md' : null;
       expect(await pathOf(picking, typed)).toBe(expected);
     }
+  });
+
+  it('forgets a note once it is gone from the vault, and finds it where it was renamed to', async () => {
+    const { picking, over } = picker();
+    expect(await pathOf(picking, 'Larkspur')).toBe('Projects/Larkspur.md');
+
+    // Deleted: only the archived namesake is left, so the name now opens that one…
+    const withoutIt = VAULT.filter((path) => path !== 'Projects/Larkspur.md');
+    expect(await pathOf(over(withoutIt), 'Larkspur')).toBe('Archive/Projects/Larkspur.md');
+    // …and with that gone too, nothing.
+    const neither = withoutIt.filter((path) => !path.endsWith('/Larkspur.md'));
+    expect(await pathOf(over(neither), 'Larkspur')).toBeNull();
+
+    // Renamed into another folder, it is found at its new path.
+    const moved = createVaultPath('Areas/Larkspur.md');
+    expect(await pathOf(over([...neither, moved]), 'Larkspur')).toBe(moved);
   });
 });
