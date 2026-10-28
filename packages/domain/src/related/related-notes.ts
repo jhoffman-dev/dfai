@@ -91,7 +91,8 @@ export function noteCentroid(vectors: readonly Float32Array[]): Float32Array | n
 /**
  * The notes closest in meaning to `note`, best first: each scored by its
  * block closest to where the note points ({@link noteCentroid}), and only
- * those {@link isOfferedAsRelated} lets through. Ties go by path, so the same
+ * those {@link isOfferedAsRelated} lets through, and only those closer than
+ * at right angles (a score above 0). Ties go by path, so the same
  * cache always offers the same notes in the same order. A block whose score
  * is not a finite number is skipped, never ranked.
  */
@@ -114,7 +115,8 @@ export function rankRelatedNotes({
     if (block.vector.length !== centroid.length) continue;
     if (!isOfferedAsRelated(block.path, excluded)) continue;
     const score = cosine(centroid, block.vector);
-    if (!Number.isFinite(score)) continue;
+    // At right angles or pointing away, a block has nothing in common with the note.
+    if (!Number.isFinite(score) || score <= 0) continue;
     const held = best.get(block.path);
     if (held === undefined || score > held) best.set(block.path, score);
   }

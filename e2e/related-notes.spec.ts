@@ -17,7 +17,7 @@ async function openVault(page: Page): Promise<{ host: FakeHost; vault: FakeVault
   await vault.mkdir('Payroll');
   await vault.write('Meetings/Standup.md', STANDUP);
   await vault.write('Payroll/Wages.md', '# Wages\n\nWages are paid on the last Friday.\n');
-  await vault.write('Garden.md', '# Garden\n\nTobias Fenn keeps bees behind the shed.\n');
+  await vault.write('Garden.md', '# Garden\n\nTobias Fenn keeps bees behind the shed on Friday.\n');
   const host = await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
