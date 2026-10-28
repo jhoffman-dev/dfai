@@ -59,7 +59,7 @@ test.describe("today's note", () => {
 
     await expect(page.getByRole('article', { name: today })).toBeVisible();
     await expectFile(vault, `${DAILY}/${today}.md`).toMatch(
-      /^---\ntype: daily\n---\n\n## What happened\n\n## What is next\n$/,
+      /^---\ntype: daily\n---\n\n## Due and overdue\n\n```atlas-query\n[\s\S]*\n## What happened\n\n## What is next\n$/,
     );
   });
 

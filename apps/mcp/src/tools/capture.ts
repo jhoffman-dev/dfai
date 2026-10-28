@@ -10,7 +10,9 @@ export const dailyNote = defineTool({
   title: "Today's daily note",
   description:
     "Get today's daily note, creating it from its template if it does not exist yet. Returns " +
-    '{ note, created }. To add to it, pass its path and "modified" to atlas_append_to_note.',
+    '{ note, created }. Made without a Daily template, it starts with live atlas-query blocks ' +
+    "for the day's due and overdue tasks and its next actions; run a block's query with " +
+    'atlas_query to read its rows. To add to it, pass its path and "modified" to atlas_append_to_note.',
   inputSchema: noInput,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   call: (client) => client.daily(),

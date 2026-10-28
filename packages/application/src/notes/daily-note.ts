@@ -1,7 +1,7 @@
 import {
-  DAILY_NOTE_CONTENTS,
   DAILY_TYPE,
   dailyNoteAmong,
+  dailyNoteContents,
   joinVaultPath,
   noteFileName,
   VAULT_ROOT,
@@ -61,7 +61,8 @@ export async function ensureDailyNote({
   const path = dailyNotePath(today, await ensureFolder({ fs, folder: home }));
 
   const template = findDailyTemplate(templates);
-  const started = template === null ? DAILY_NOTE_CONTENTS : await readTemplate({ fs, template });
+  const started =
+    template === null ? dailyNoteContents(today) : await readTemplate({ fs, template });
   const contents = newNoteTaskRules({ markdown, contents: started, today });
   try {
     await fs.createNote({ path, contents });

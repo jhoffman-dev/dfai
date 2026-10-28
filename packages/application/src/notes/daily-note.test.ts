@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, DAILY_NOTE_CONTENTS, type VaultPath } from '@dfai/domain';
+import { createVaultPath, dailyNoteContents, type VaultPath } from '@dfai/domain';
 import { fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { dailyNotePath, ensureDailyNote } from './daily-note.ts';
 
@@ -81,8 +81,21 @@ describe("today's note", () => {
       templates: [],
     });
 
-    expect(created).toEqual([{ path: 'Daily/2026/2026-09-22.md', contents: DAILY_NOTE_CONTENTS }]);
-    expect(DAILY_NOTE_CONTENTS).toMatch(/^---\ntype: daily\n---\n/);
+    expect(created).toEqual([
+      { path: 'Daily/2026/2026-09-22.md', contents: dailyNoteContents(TODAY) },
+    ]);
+    expect(created[0]?.contents).toMatch(/^---\ntype: daily\n---\n/);
+  });
+
+  // #110: the day's blocks are about the day the clock says, not one fixed in code.
+  it("starts with the clock's day in its query blocks", async () => {
+    const { fs, created } = vault();
+    await ensureDailyNote({ fs, markdown, today: '2026-11-03', notePaths: [], templates: [] });
+
+    const contents = created[0]?.contents ?? '';
+    expect(contents).toContain('```atlas-query\n');
+    expect(contents).toContain('due <= 2026-11-03');
+    expect(contents).not.toContain(TODAY);
   });
 
   it('is held to the task rules: a Daily template that is a task waiting on nobody is made as it is (#202)', async () => {
