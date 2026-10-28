@@ -7,8 +7,15 @@
 import { describe, expect, it } from 'vitest';
 import { apiFixture, bodyOf, codeOf } from '@dfai/application';
 import { atlasQueryIndex } from '@dfai/application/testing/sqlite';
-import { relationsOf, splitFrontmatter, splitWikiLinksAndEmbeds } from '@dfai/domain';
+import {
+  noteTags,
+  relationsOf,
+  slackToMarkdown,
+  splitFrontmatter,
+  splitWikiLinksAndEmbeds,
+} from '@dfai/domain';
 import { SLACK_PERMALINK, slackCapture, slackSource } from '@dfai/domain/testing';
+import { parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
 import { remarkMarkdown } from './markdown-port.ts';
 
 const MARA = '---\ntype: person\nemail: mara.quill@example.com\n---\n\nPayroll lead.\n';
@@ -89,5 +96,49 @@ describe('review #615 MAJOR 2: a link’s address holds no wiki link or embed', 
   it('refuses an attachment whose link holds brackets', async () => {
     const attachments = [{ name: 'a', url: 'https://files.slack.com/[[Mara Quill]].pdf' }];
     expect(await refused(slackCapture({ attachments }))).toBe('invalid');
+  });
+});
+
+/** The body as the editor writes it back once each of its blocks is edited. */
+function editedBack(body: string): string {
+  return parseMarkdownBody(body)
+    .doc.content.map((node) => renderBlock(node))
+    .join('\n\n');
+}
+
+const readAsMarkup = (markdown: string) => ({
+  links: splitWikiLinksAndEmbeds(markdown).filter((piece) => piece.kind !== 'text'),
+  tags: noteTags({
+    tagsProperty: undefined,
+    body: markdown,
+    ranges: remarkMarkdown.textRanges(markdown),
+  }),
+});
+
+describe('review #615 MAJOR 3: a bare address stays words after the paragraph is edited', () => {
+  it.each([
+    ['a wiki link after an address', 'https://example.com/[[Mara]] x'],
+    ['a tag after an address', 'https://example.com/a #tag'],
+    ['an address with no scheme', 'see www.example.com/[[Mara]] and #ops'],
+    ['an address ending a sentence', 'read https://example.com/a. Then [[Mara]] #ops'],
+    ['an address in brackets', '(https://example.com/a) [[Mara]] #ops'],
+    ['an email address', 'mail mara@example.com [[Mara]] #ops'],
+  ])('keeps %s from becoming a link or a tag', (_, text) => {
+    const body = slackToMarkdown(text).join('\n');
+    expect(readAsMarkup(body)).toEqual({ links: [], tags: [] });
+    expect(readAsMarkup(editedBack(body))).toEqual({ links: [], tags: [] });
+  });
+
+  it('holds for the whole note, its quote edited', async () => {
+    const author = { name: 'Tobias Fenn' };
+    const text = await written(
+      slackCapture({
+        text: 'https://example.com/[[Mara]] x #tag',
+        source: slackSource({ author }),
+        thread: [],
+      }),
+    );
+    const edited = editedBack(splitFrontmatter(text).body);
+    expect(readAsMarkup(edited)).toEqual({ links: [], tags: [] });
   });
 });
