@@ -530,32 +530,31 @@ describe('#265 attack: a very long code block', () => {
   const block = (lines: number) =>
     Array.from({ length: lines }, (_, line) => `const row${line} = "${line}"; // hay`).join('\n');
 
-  /** Characters highlighted, and milliseconds taken, for each of `keys` keystrokes in the block. */
+  /** For each of `keys` keystrokes in the block: the characters it highlighted, and the note's code then. */
   async function typeInto(lines: number, keys: number, others = 0) {
     const held = heldGrammars();
     const count = counted(held.languages);
     const extra = Array.from({ length: others }, () => code('ts', block(100)));
     const editor = editorOf([...extra, code('ts', block(lines))], count.languages);
     await held.settle('typescript', 'give');
-    count.resetHighlighted();
-    vi.useRealTimers();
-    const started = performance.now();
+    const perKey: Array<{ highlighted: number; codeSize: number }> = [];
     for (let key = 0; key < keys; key += 1) {
+      count.resetHighlighted();
       editor.view.dispatch(editor.state.tr.insertText('x', lastCodeEnd(editor)));
+      const codeSize = codeTexts(editor).reduce((sum, text) => sum + text.length, 0);
+      perKey.push({ highlighted: count.highlighted(), codeSize });
     }
-    const perKey = (performance.now() - started) / keys;
-    const codeSize = codeTexts(editor).reduce((sum, text) => sum + text.length, 0);
-    return { perKeyChars: count.highlighted() / keys, perKey, codeSize };
+    return perKey;
   }
 
+  // Counted, not timed: one highlight.js pass over the block is most of a keystroke's cost,
+  // so counting the characters it is handed proves the work on any runner, fast or slow.
   it('re-highlights a typed-in block once per keystroke: linear in its size, never more', async () => {
-    const small = await typeInto(2_500, 10);
-    const large = await typeInto(10_000, 10);
-    // Each keystroke highlights the note's code once: no more than its size (plus the keys typed).
-    expect(large.perKeyChars).toBeLessThanOrEqual(large.codeSize);
-    expect(small.perKeyChars).toBeLessThanOrEqual(small.codeSize);
-    // Four times the code, about four times the time: not quadratic (16x). Generous for jsdom noise.
-    expect(large.perKey / small.perKey).toBeLessThan(8);
+    for (const lines of [250, 1_000]) {
+      const keystrokes = await typeInto(lines, 3);
+      // Each keystroke highlights the note's code exactly once: its size, neither less nor more.
+      for (const { highlighted, codeSize } of keystrokes) expect(highlighted).toBe(codeSize);
+    }
   });
 });
 
