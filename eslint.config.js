@@ -50,6 +50,36 @@ const webview = [
   'apps/desktop/src/**/*.{ts,tsx}',
 ];
 
+/** The SQLite test support: SQL run for real through `node:sqlite`, and what is built on it. */
+const sqliteSupport = [
+  'node-sqlite',
+  'sqlite',
+  'sqlite-index',
+  'query-index',
+  'fts-search',
+  'tag-index',
+  'automation-vault',
+  'assistant-vault',
+  'meeting-files',
+];
+
+/**
+ * Test support that runs on Node, by name. Other test support is held to the
+ * webview's rule like the app, since the barrels export it (`@dfai/application`
+ * re-exports its fakes), and nothing else in the webview's code may import these.
+ */
+const nodeSupport = [
+  // Reads the stylesheet's section files from disk, as the build ships them.
+  'apps/desktop/src/styles.test-support.ts',
+  // Two simulated Macs syncing through the real git, over the real disk (U-29).
+  'apps/desktop/src/sync/two-macs.harness.ts',
+  // Judges a rewrite with node:util's deep equality.
+  'packages/adapters/src/markdown/frontmatter-write-cases.attack-454.ts',
+  // Sets the process's time zone, which is how Node takes one.
+  'packages/domain/src/calendar/zones.test-support.ts',
+  ...sqliteSupport.map((name) => `packages/application/src/testing/${name}.ts`),
+];
+
 /**
  * What runs only in Node inside those folders. Everything else that runs in
  * Node — tools/, e2e/, apps/mcp, the configs — is outside them to begin with.
@@ -57,14 +87,31 @@ const webview = [
 const nodeOnly = [
   // Tests run in Vitest, on Node.
   '**/*.test.{ts,tsx}',
-  // Test support (fakes, SQLite): the rule below keeps the app from importing it.
-  'packages/*/src/testing/**',
-  // Support a test imports from beside it, named for it: these read files and run git.
-  '**/*.test-support.ts',
-  '**/*.harness.ts',
-  '**/*.fixture.ts',
-  '**/*.attack-*.ts',
+  ...nodeSupport,
 ];
+
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/**
+ * An import of Node's test support, relative or through an alias. The SQLite
+ * files are matched with their folder, since a production module shares a name
+ * (`meetings/meeting-files.ts`); their siblings' `./` imports are matched below.
+ */
+const supportTails = nodeSupport.map((path) =>
+  path.includes('/testing/')
+    ? `testing/${path.split('/').pop().replace(/\.ts$/, '')}`
+    : path.split('/').pop().replace(/\.ts$/, ''),
+);
+const SUPPORT_MESSAGE =
+  'This test support runs on Node, and the webview has none: import it only from a test (#114).';
+const noNodeSupport = {
+  regex: `(^|/)(${supportTails.map(escapeRegex).join('|')})(\\.ts)?$`,
+  message: SUPPORT_MESSAGE,
+};
+const noSqliteSibling = {
+  regex: `^\\./(${sqliteSupport.map(escapeRegex).join('|')})(\\.ts)?$`,
+  message: SUPPORT_MESSAGE,
+};
 
 /** Each Node-only global, and what the webview has instead. */
 const NODE_GLOBALS = {
@@ -80,7 +127,7 @@ const NODE_GLOBALS = {
 
 const nodeBuiltinNames = builtinModules
   .filter((name) => !name.startsWith('node:'))
-  .map((name) => name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
+  .map(escapeRegex);
 
 /** `node:fs`, `fs`, `fs/promises`, by exact name: `./path` or `pathe` is not Node's. */
 const noNodeModules = {
@@ -94,13 +141,34 @@ const webviewNode = [
     files: [`packages/${layer}/src/**/*.{ts,tsx}`],
     ignores: nodeOnly,
     rules: {
-      'no-restricted-imports': ['error', { patterns: [...layerPatterns(layer), noNodeModules] }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...layerPatterns(layer), noNodeModules, noNodeSupport] },
+      ],
     },
   })),
   {
+    // The rest of the application's test support, beside the SQLite files.
+    files: ['packages/application/src/testing/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...layerPatterns('application'),
+            noNodeModules,
+            noNodeSupport,
+            noSqliteSibling,
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/desktop/src/**/*.{ts,tsx}'],
     ignores: nodeOnly,
-    rules: { 'no-restricted-imports': ['error', { patterns: [noNodeModules] }] },
+    rules: { 'no-restricted-imports': ['error', { patterns: [noNodeModules, noNodeSupport] }] },
   },
   {
     files: webview,

@@ -230,7 +230,8 @@ Dependencies point inward, and ESLint enforces it — each layer has a
 **The webview has no Node.** Vitest runs on Node, so `Buffer`, `process` or an
 import of `node:fs` passes every unit test and fails only in WebKit. ESLint
 forbids Node's globals and modules in the packages and `apps/desktop/src`
-(tests and test support are exempt, by name, in `eslint.config.js`), and
+(tests are exempt, and test support that runs on Node is named in
+`eslint.config.js`, where nothing the app builds may import it), and
 `pnpm check:node-builtins` fails the gate when a built-in or a polyfill of one
 reaches the built bundle anyway (#53, #114).
 
