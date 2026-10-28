@@ -5,6 +5,7 @@ import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import { builtinModules } from 'node:module';
 
 /**
  * The app's state libraries (#238): stores and queries belong to `apps/desktop`,
@@ -27,20 +28,105 @@ const forbidden = {
   ui: ['@dfai/adapters', ...appStateOnly],
 };
 
-const architecture = Object.entries(forbidden).map(([layer, patterns]) => ({
+const layerPatterns = (layer) =>
+  forbidden[layer].map((group) => ({
+    group: [group],
+    message: `packages/${layer} must not import ${group} — dependencies point inward.`,
+  }));
+
+const architecture = Object.keys(forbidden).map((layer) => ({
   files: [`packages/${layer}/**/*.{ts,tsx}`],
-  rules: {
-    'no-restricted-imports': [
-      'error',
-      {
-        patterns: patterns.map((group) => ({
-          group: [group],
-          message: `packages/${layer} must not import ${group} — dependencies point inward.`,
-        })),
-      },
-    ],
-  },
+  rules: { 'no-restricted-imports': ['error', { patterns: layerPatterns(layer) }] },
 }));
+
+/**
+ * Code that runs in Tauri's webview, where there is no Node (#114). Node's
+ * globals and modules pass typecheck and every unit test there, since Vitest
+ * runs on Node, and fail only in WebKit: `Buffer.byteLength` in the domain did
+ * (PR #99). `pnpm check:node-builtins` is the same rule over the built bundle (#53).
+ */
+const webview = [
+  'packages/{domain,application,adapters,ui}/src/**/*.{ts,tsx}',
+  'apps/desktop/src/**/*.{ts,tsx}',
+];
+
+/**
+ * What runs only in Node inside those folders. Everything else that runs in
+ * Node — tools/, e2e/, apps/mcp, the configs — is outside them to begin with.
+ */
+const nodeOnly = [
+  // Tests run in Vitest, on Node.
+  '**/*.test.{ts,tsx}',
+  // Test support (fakes, SQLite): the rule below keeps the app from importing it.
+  'packages/*/src/testing/**',
+  // Support a test imports from beside it, named for it: these read files and run git.
+  '**/*.test-support.ts',
+  '**/*.harness.ts',
+  '**/*.fixture.ts',
+  '**/*.attack-*.ts',
+];
+
+/** Each Node-only global, and what the webview has instead. */
+const NODE_GLOBALS = {
+  Buffer: 'Use TextEncoder/TextDecoder, Uint8Array, or utf8Length from @dfai/domain.',
+  process: 'Use import.meta.env for build flags; ask the host through a port for the rest.',
+  __dirname: 'Use import.meta.url.',
+  __filename: 'Use import.meta.url.',
+  require: 'Use import.',
+  global: 'Use globalThis.',
+  setImmediate: 'Use queueMicrotask or setTimeout.',
+  clearImmediate: 'Use clearTimeout.',
+};
+
+const nodeBuiltinNames = builtinModules
+  .filter((name) => !name.startsWith('node:'))
+  .map((name) => name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
+
+/** `node:fs`, `fs`, `fs/promises`, by exact name: `./path` or `pathe` is not Node's. */
+const noNodeModules = {
+  regex: `^(node:.*|(${nodeBuiltinNames.join('|')})(/.*)?)$`,
+  message:
+    'The webview has no Node: keep this in tools/, a test, or test support, or use a Web API (#114).',
+};
+
+const webviewNode = [
+  ...Object.keys(forbidden).map((layer) => ({
+    files: [`packages/${layer}/src/**/*.{ts,tsx}`],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [...layerPatterns(layer), noNodeModules] }],
+    },
+  })),
+  {
+    files: ['apps/desktop/src/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: { 'no-restricted-imports': ['error', { patterns: [noNodeModules] }] },
+  },
+  {
+    files: webview,
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...Object.entries(NODE_GLOBALS).map(([name, instead]) => ({
+          name,
+          message: `${name} is Node's, and the webview has none (#114). ${instead}`,
+        })),
+      ],
+      // The same globals reached through the global object.
+      'no-restricted-properties': [
+        'error',
+        ...['globalThis', 'window', 'self'].flatMap((object) =>
+          Object.entries(NODE_GLOBALS).map(([property, instead]) => ({
+            object,
+            property,
+            message: `${property} is Node's, and the webview has none (#114). ${instead}`,
+          })),
+        ),
+      ],
+    },
+  },
+];
 
 export default tseslint.config(
   {
@@ -83,6 +169,8 @@ export default tseslint.config(
     },
   },
   ...architecture,
+  // After the architecture, whose rule it repeats for the webview's files with Node added.
+  ...webviewNode,
   {
     // Test support (`@dfai/<package>/testing…`) wraps built-ins, fakes the
     // clock and opens SQLite: it is for tests and test tooling, never for the
