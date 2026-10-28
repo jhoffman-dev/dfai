@@ -8,6 +8,7 @@ import {
   addDays,
   createVaultPath,
   focusChange,
+  focusIsOwn,
   gtdStatusOf,
   splitFrontmatter,
   taskAsRead,
@@ -19,7 +20,9 @@ import {
 } from '@dfai/domain';
 import {
   archiveTaskChange,
+  choiceChange,
   fakeVaultFs,
+  FocusNotChosenError,
   memoryVault,
   setNoteProperties,
   type PropertyChanges,
@@ -58,9 +61,13 @@ function taskText(random: () => number, n: number, today: string): string {
   if (random() < 0.3) lines.push(`defer: ${shift(today, pick([-2, 0, 2]))}`);
   if (random() < 0.3) lines.push('recurrence: every week');
   if (random() < 0.5) lines.push(`focus: ${shift(today, pick([-9, -1, 0, 1, 5]))}`);
+  // A focus of the person's own: words, or a list with a day in it.
+  else if (random() < 0.3) lines.push(pick(OWN_FOCUS));
   if (random() < 0.3) lines.push('contexts:\n  - "@home"   # where it is done');
   return ['---', ...lines, '---', '', `# Task ${n}`, ''].join('\n');
 }
+
+const OWN_FOCUS = ['focus: deep work', `focus: [writing, "${START}"]`];
 
 type Action =
   | { kind: TodayChoice }
@@ -88,7 +95,8 @@ function valuesOf(action: Action, today: string): PropertyChanges {
     case 'move':
       return { status: action.status };
     default:
-      return focusChange({ choice: action.kind, today });
+      // As the page and the API choose: refused over a focus of the person's own.
+      return choiceChange({ choice: action.kind, today });
   }
 }
 
@@ -105,6 +113,7 @@ function asReviewTask(path: string, text: string): ReviewTask {
     due: read.due,
     defer: read.defer,
     focus: read.focus,
+    focusIsOwn: focusIsOwn(properties),
     waitingOn: '',
     contexts: [],
     project: null,
@@ -167,14 +176,34 @@ async function walk(seed: number) {
       const path = pick(Object.keys(initial));
       const action = pick(actions);
       const before = memory.files.get(path) ?? '';
-      await setNoteProperties({
-        fs,
-        markdown: remarkMarkdown,
-        path,
-        values: valuesOf(action, today),
-        today,
-      });
+      try {
+        await setNoteProperties({
+          fs,
+          markdown: remarkMarkdown,
+          path,
+          values: valuesOf(action, today),
+          today,
+        });
+      } catch (error) {
+        // A choice over a focus of the person's own is refused, and writes nothing.
+        if (!(error instanceof FocusNotChosenError)) throw error;
+      }
       const after = memory.files.get(path) ?? '';
+      const focusBefore = propertiesOf(before)['focus'];
+      const focusAfter = propertiesOf(after)['focus'];
+      if (
+        focusIsOwn(propertiesOf(before)) &&
+        JSON.stringify(focusBefore) !== JSON.stringify(focusAfter)
+      ) {
+        problems.push(`seed ${seed} step ${step}: ${action.kind} touched an own focus of ${path}`);
+      }
+      const finishes =
+        action.kind === 'tick' || (action.kind === 'move' && action.status === 'archive');
+      if (finishes && changedKeys(before, after).includes('focus') && focusAfter !== undefined) {
+        problems.push(
+          `seed ${seed} step ${step}: ${action.kind} set focus to ${JSON.stringify(focusAfter)}`,
+        );
+      }
       const stray = changedKeys(before, after).filter(
         (key) =>
           !MAY_TOUCH[action.kind].includes(key) &&
@@ -183,7 +212,7 @@ async function walk(seed: number) {
       );
       if (stray.length > 0)
         problems.push(`seed ${seed} step ${step}: ${action.kind} touched ${stray.join(', ')}`);
-      if (action.kind === 'choose' && propertiesOf(before)['focus'] === undefined) {
+      if (action.kind === 'choose' && focusBefore === undefined) {
         await setNoteProperties({
           fs,
           markdown: remarkMarkdown,
@@ -217,7 +246,8 @@ async function walk(seed: number) {
           `seed ${seed} step ${step}: ${path} ${finished ? 'finished' : 'deferred'} but in ${sections[0]}`,
         );
       }
-      const chosen = !deferred && !finished && task.focus === today;
+      const own = task.focusIsOwn === true;
+      const chosen = !deferred && !finished && !own && task.focus === today;
       if (chosen !== sections.includes('chosen')) {
         problems.push(
           `seed ${seed} step ${step}: ${path} chosen=${chosen} but sections ${sections.join('+')}`,
@@ -226,6 +256,7 @@ async function walk(seed: number) {
       const carried =
         !deferred &&
         !finished &&
+        !own &&
         task.focus !== null &&
         task.focus !== undefined &&
         task.focus < today;
