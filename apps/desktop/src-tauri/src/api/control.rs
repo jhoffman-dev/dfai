@@ -38,9 +38,10 @@ pub struct ApiControl {
     token: SharedToken,
     broker: Arc<Broker>,
     router_ready: RouterReady,
-    /// The routers listening now, by the id each named. `router_ready` is
-    /// whether this is non-empty, kept beside it so the gate reads one flag.
-    listening_routers: Mutex<HashSet<String>>,
+    /// The routers the host has given ids to, and which of them listen.
+    /// `router_ready` is whether any listens, kept beside it so the gate reads
+    /// one flag.
+    routers: Mutex<Routers>,
     /// Held for a whole toggle, so toggles run one at a time. It guards the
     /// port the last one released.
     toggling: Mutex<Option<Released>>,
@@ -53,6 +54,17 @@ pub struct ApiControl {
 struct Inner {
     file: ConnectionFile,
     running: Option<Running>,
+}
+
+/// Every router asks the host for an id before it listens, and names itself
+/// by it. Ids count up and are never reused, so a page load can tell its own
+/// routers from those of the page before it: anything below `this_page_from`
+/// was handed to a page that has gone (#161).
+#[derive(Default)]
+struct Routers {
+    next: u64,
+    this_page_from: u64,
+    listening: HashSet<u64>,
 }
 
 /// The port this server stopped listening on, and when.
@@ -71,7 +83,7 @@ impl ApiControl {
             broker: Arc::default(),
             // Not until the webview says so: it loads after the app starts.
             router_ready: Arc::new(AtomicBool::new(false)),
-            listening_routers: Mutex::default(),
+            routers: Mutex::default(),
             toggling: Mutex::default(),
             release_wait: ReleaseWait::default(),
             inner: Mutex::new(Inner {
@@ -256,35 +268,44 @@ impl ApiControl {
         Ok(inner.file.token.clone())
     }
 
+    /// The id a router in the webview names itself by from now on.
+    pub fn register_router(&self) -> u64 {
+        let mut routers = self.routers();
+        let id = routers.next;
+        routers.next += 1;
+        id
+    }
+
     /// A router in the webview started or stopped listening for requests. The
     /// API is ready while any of them listens, so one stopping never takes
     /// readiness from another — whatever order the two calls arrive in. (Under
     /// React StrictMode the abandoned first router says it stopped after the
     /// second has said it listens: #158.)
-    pub fn set_router_ready(&self, listener: &str, ready: bool) {
-        let mut listening = self.listening_routers();
+    pub fn set_router_ready(&self, listener: u64, ready: bool) {
+        let mut routers = self.routers();
         if ready {
-            listening.insert(listener.to_string());
+            routers.listening.insert(listener);
         } else {
-            listening.remove(listener);
+            routers.listening.remove(&listener);
         }
         // Under the lock, so the flag follows the set in the order it changed.
         self.router_ready
-            .store(!listening.is_empty(), Ordering::SeqCst);
+            .store(!routers.listening.is_empty(), Ordering::SeqCst);
     }
 
     /// The page went away, and every router in it: nothing listens until the
     /// next page says so.
     pub fn forget_routers(&self) {
-        let mut listening = self.listening_routers();
-        listening.clear();
+        let mut routers = self.routers();
+        routers.listening.clear();
+        routers.this_page_from = routers.next;
         self.router_ready.store(false, Ordering::SeqCst);
     }
 
-    fn listening_routers(&self) -> MutexGuard<'_, HashSet<String>> {
-        // Each change is one insert, remove or clear, so a panic elsewhere
-        // cannot leave the set half-updated.
-        self.listening_routers
+    fn routers(&self) -> MutexGuard<'_, Routers> {
+        // Each change is one insert, remove, clear or counter step, so a panic
+        // elsewhere cannot leave the routers half-updated.
+        self.routers
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -328,7 +349,8 @@ mod tests {
 
     /// A router that is listening and answers with the path it was asked for.
     fn echo(control: &Arc<ApiControl>) -> Forward {
-        control.set_router_ready("echo", true);
+        let echo = control.register_router();
+        control.set_router_ready(echo, true);
         let control = Arc::downgrade(control);
         Arc::new(move |request| {
             if let Some(control) = control.upgrade() {
@@ -761,16 +783,18 @@ mod tests {
     #[test]
     fn a_listener_stopping_leaves_the_api_ready_while_another_listens() {
         let (_dir, control) = loaded();
+        let first = control.register_router();
+        let second = control.register_router();
 
-        control.set_router_ready("first", true);
-        control.set_router_ready("second", true);
-        control.set_router_ready("first", false);
+        control.set_router_ready(first, true);
+        control.set_router_ready(second, true);
+        control.set_router_ready(first, false);
 
         assert!(
             router_is_ready(&control),
             "the live listener lost its readiness"
         );
-        control.set_router_ready("second", false);
+        control.set_router_ready(second, false);
         assert!(!router_is_ready(&control), "ready with nothing listening");
     }
 
@@ -778,7 +802,8 @@ mod tests {
     fn is_not_ready_until_a_router_listens() {
         let (_dir, control) = loaded();
         assert!(!router_is_ready(&control));
-        control.set_router_ready("never-listened", false);
+        let never_listened = control.register_router();
+        control.set_router_ready(never_listened, false);
         assert!(!router_is_ready(&control));
     }
 
@@ -787,27 +812,79 @@ mod tests {
     #[test]
     fn a_router_that_says_it_listens_twice_stops_once() {
         let (_dir, control) = loaded();
-        control.set_router_ready("only", true);
-        control.set_router_ready("only", true);
-        control.set_router_ready("only", false);
+        let only = control.register_router();
+        control.set_router_ready(only, true);
+        control.set_router_ready(only, true);
+        control.set_router_ready(only, false);
         assert!(!router_is_ready(&control));
     }
 
     #[test]
     fn a_page_load_forgets_every_router() {
         let (_dir, control) = loaded();
-        control.set_router_ready("first", true);
-        control.set_router_ready("second", true);
+        let first = control.register_router();
+        let second = control.register_router();
+        control.set_router_ready(first, true);
+        control.set_router_ready(second, true);
 
         control.forget_routers();
         assert!(!router_is_ready(&control));
 
         // A router from the gone page saying late that it stopped changes
         // nothing, and the new page's router makes the API ready again.
-        control.set_router_ready("first", false);
+        control.set_router_ready(first, false);
         assert!(!router_is_ready(&control), "a gone page's router came back");
-        control.set_router_ready("next-page", true);
+        let next_page = control.register_router();
+        control.set_router_ready(next_page, true);
         assert!(router_is_ready(&control));
+    }
+
+    /// #161: page A's "I listen" can reach the host after the reload has
+    /// begun. Nothing of A listens by then, so the API must stay not ready
+    /// (requests refused at once) until page B's own router says it listens.
+    #[test]
+    fn a_reloaded_page_s_late_ready_never_marks_the_api_ready() {
+        let (_dir, control) = loaded();
+        let page_a = control.register_router();
+
+        control.forget_routers(); // the reload starts: page B is loading
+        control.set_router_ready(page_a, true);
+        assert!(!router_is_ready(&control), "ready with only page A's ghost");
+
+        let page_b = control.register_router();
+        control.set_router_ready(page_a, true);
+        assert!(!router_is_ready(&control), "page A's ghost beat page B");
+
+        control.set_router_ready(page_b, true);
+        assert!(router_is_ready(&control), "page B listens");
+        control.set_router_ready(page_b, false);
+        assert!(!router_is_ready(&control), "page A's ghost kept it ready");
+    }
+
+    /// The same when page B has gone too — reloaded again, say — before
+    /// either page's late "I listen" lands.
+    #[test]
+    fn late_readies_from_two_gone_pages_never_mark_the_api_ready() {
+        let (_dir, control) = loaded();
+        let page_a = control.register_router();
+        control.set_router_ready(page_a, true);
+
+        control.forget_routers(); // page B starts
+        let page_b = control.register_router();
+        control.forget_routers(); // page B goes before it said it listens
+
+        control.set_router_ready(page_a, true);
+        control.set_router_ready(page_b, true);
+        assert!(!router_is_ready(&control), "a gone page's router came back");
+    }
+
+    /// Only the host hands out ids: one it never gave is nobody's.
+    #[test]
+    fn an_id_the_host_never_gave_never_marks_the_api_ready() {
+        let (_dir, control) = loaded();
+        let given = control.register_router();
+        control.set_router_ready(given + 1, true);
+        assert!(!router_is_ready(&control));
     }
 
     #[test]

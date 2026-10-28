@@ -126,10 +126,10 @@ pub async fn api_token(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub fn api_router_ready(
     state: State<'_, ApiState>,
-    listener: String,
+    listener: u64,
     ready: bool,
 ) -> Result<(), String> {
-    loaded_control(&state)?.set_router_ready(&listener, ready);
+    loaded_control(&state)?.set_router_ready(listener, ready);
     Ok(())
 }
 
