@@ -32,10 +32,13 @@ export interface CaptureOptions {
 
 /** A capture as the file DFAI writes for it. */
 export interface CaptureFile {
-  /** `Inbox/Captures/<title>.md`. */
+  /**
+   * `Inbox/Captures/<title> (slack <hash>).md`. The title is for reading; the
+   * hash of the message's key is what finds it, whatever title it was given.
+   */
   readonly path: string;
-  /** `Inbox/Captures/<title> (slack <hash>).md`: where it goes when another note holds `path`. */
-  readonly collisionPath: string;
+  /** ` (slack <hash>).md`: how every file of this message's name ends, in any folder. */
+  readonly keyEnding: string;
   readonly content: string;
   readonly kind: CaptureKind;
   readonly title: string;
@@ -52,8 +55,10 @@ export function mapCapture(payload: unknown, options: CaptureOptions = {}): Capt
 /**
  * A capture's file: frontmatter that says what it is and where it came from,
  * then the message, its thread and its attachments. The bytes are the
- * capture's and the options' alone — no clock, no randomness — so two Macs,
- * or n8n and the app, write the same file for the same message.
+ * capture's and the options' alone — no clock, no randomness — so writers
+ * that agree on the zone and the Person links write the same file for the
+ * same message; the path depends on neither, so one that does not agree
+ * still finds the first (ADR-0049).
  */
 export function captureFile(capture: Capture, options: CaptureOptions = {}): CaptureFile {
   const title = titleOf(capture);
@@ -103,16 +108,17 @@ function cutAtWord(line: string): string {
   return `${(space > TAKEN_TITLE_LENGTH / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
-function capturePaths(
-  title: string,
-  externalId: string,
-): Pick<CaptureFile, 'path' | 'collisionPath'> {
+/**
+ * Where a capture is written: its title, then its key's hash. Two captures
+ * of one message sent with different titles — n8n's from the first line, a
+ * pasted link's as typed, an edited message's new first line — share the
+ * ending, so the second finds the first by it while the index lags (review
+ * of PR #615).
+ */
+function capturePaths(title: string, externalId: string): Pick<CaptureFile, 'path' | 'keyEnding'> {
   const stem = fileTitle(title) || 'Slack message';
-  const suffix = ` (slack ${shortHash(`slack\n${externalId}`)})`;
-  return {
-    path: `${CAPTURES_FOLDER}/${fitStem(stem, '.md')}.md`,
-    collisionPath: `${CAPTURES_FOLDER}/${fitStem(stem, `${suffix}.md`)}${suffix}.md`,
-  };
+  const keyEnding = ` (slack ${shortHash(`slack\n${externalId}`)}).md`;
+  return { path: `${CAPTURES_FOLDER}/${fitStem(stem, keyEnding)}${keyEnding}`, keyEnding };
 }
 
 /** A Slack ts as the instant it names, in milliseconds. */

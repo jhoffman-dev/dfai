@@ -25,7 +25,8 @@ import { remarkMarkdown } from './markdown-port.ts';
 
 type ApiFixture = ReturnType<typeof apiFixture>;
 
-const PATH = 'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn.md';
+const PATH =
+  'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn (slack 2db9a3ee).md';
 const MARA = [
   '---',
   'type: person',
@@ -150,6 +151,14 @@ describe('POST /v1/captures: the same message twice', () => {
     expect(api.writes).toHaveLength(1);
   });
 
+  it('is written once when sent again under another title before the index has read the first', async () => {
+    const api = vault();
+    expect((await send(api, slackCapture())).status).toBe(201);
+    const retitled = await send(api, slackCapture({ title: 'Renewal, as pasted' }));
+    expect(bodyOf(retitled)).toEqual({ capture: { path: PATH, outcome: 'in-vault' } });
+    expect(api.writes).toHaveLength(1);
+  });
+
   it('is recognised after it was filed under a project, by its channel and ts, not its link', async () => {
     const first = vault();
     await send(first, slackCapture());
@@ -236,7 +245,7 @@ describe('POST /v1/captures: a capture the contract refuses', () => {
     expect(codeOf(await send(vault(), ['not', 'a', 'capture']))).toBe('invalid');
   });
 
-  it('answers exists when both its paths hold other notes', async () => {
+  it('answers exists when another note holds its path', async () => {
     const other = '---\ntype: task\n---\n\nElse.\n';
     const name = 'Can you send the Larkspur renewal by Friday cc @Tobias Fenn';
     const api = vault({ [PATH]: other });

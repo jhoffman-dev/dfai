@@ -5,7 +5,7 @@ import { apiFixture } from '../testing/api-fixture.ts';
 import { fakeMarkdown } from '../testing/fake-ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { QueryResult } from '../index/ports.ts';
-import { CapturePathsTakenError, receiveCapture } from './receive-capture.ts';
+import { CapturePathTakenError, receiveCapture } from './receive-capture.ts';
 
 /*
  * The capture use-case (#103) over fake ports: what it writes, where, and
@@ -76,29 +76,53 @@ describe('receiveCapture (#103)', () => {
     expect(api.writes).toEqual([]);
   });
 
-  it('goes to its collision path when another note holds its title, and never writes over it', async () => {
-    const { api, receive } = vault({ [FILE.path]: OTHER_NOTE });
-    expect(await receive()).toEqual({ path: FILE.collisionPath, outcome: 'written' });
-    expect(api.files.get(FILE.path)?.text).toBe(OTHER_NOTE);
-    expect(api.files.get(FILE.collisionPath)?.text).toBe(FILE.content);
+  it('writes nothing for one written a moment ago under another title, the index not caught up', async () => {
+    // n8n titled it from the first line; a pasted link (#105) asks for a title of its own.
+    const retitled = captureFile(readCapture(slackCapture({ title: 'Renewal, from Slack' })), {
+      timeZone: 'UTC',
+    });
+    expect(retitled.path).not.toBe(FILE.path);
+    const { api, receive } = vault({ [retitled.path]: retitled.content });
+    expect(await receive()).toEqual({ path: retitled.path, outcome: 'in-vault' });
+    expect(api.writes).toEqual([]);
   });
 
-  it('finds itself at its collision path too', async () => {
-    const { api, receive } = vault({ [FILE.path]: OTHER_NOTE, [FILE.collisionPath]: FILE.content });
-    expect(await receive()).toEqual({
-      path: FILE.collisionPath,
+  it('reads only a file whose name ends in the key, and a note of another message there is not it', async () => {
+    const other = captureFile(readCapture(slackCapture({ title: FILE.title })), {
+      timeZone: 'UTC',
+    }).content.replace('1793136000.000100', '1793136000.000999');
+    const { api, receive } = vault({
+      [`Inbox/Captures/Unrelated${FILE.keyEnding.replace('.md', '')} notes.md`]: FILE.content,
+      [`Inbox/Captures/Copy${FILE.keyEnding}`]: other,
+    });
+    expect(await receive()).toEqual({ path: FILE.path, outcome: 'written' });
+    expect(api.writes).toEqual([{ path: FILE.path, contents: FILE.content }]);
+  });
+
+  it('never writes over another note at its path', async () => {
+    const { api, receive } = vault({ [FILE.path]: OTHER_NOTE });
+    await expect(receive()).rejects.toThrow(CapturePathTakenError);
+    await expect(receive()).rejects.toThrow(
+      'Another note holds the path of slack C0LARK5PUR/1793136000.000100; not writing it',
+    );
+    expect(api.files.get(FILE.path)?.text).toBe(OTHER_NOTE);
+    expect(api.writes).toEqual([]);
+  });
+
+  it('is held when another request writes it between the listing and the write', async () => {
+    const api = apiFixture();
+    const fs = {
+      ...api.fs,
+      createNote: async ({ path }: { path: VaultPath }) => {
+        await api.fs.createNote({ path, contents: FILE.content });
+        throw new Error('the file is there');
+      },
+    };
+    const ports = { fs, markdown: quotedMarkdown(), index: indexHolding() };
+    expect(await receiveCapture({ ports, capture: CAPTURE, timeZone: 'UTC' })).toEqual({
+      path: FILE.path,
       outcome: 'in-vault',
     });
-    expect(api.writes).toEqual([]);
-  });
-
-  it('refuses to take a third name when both its paths hold other notes', async () => {
-    const { api, receive } = vault({ [FILE.path]: OTHER_NOTE, [FILE.collisionPath]: OTHER_NOTE });
-    await expect(receive()).rejects.toThrow(CapturePathsTakenError);
-    await expect(receive()).rejects.toThrow(
-      'Other notes hold both paths of slack C0LARK5PUR/1793136000.000100; not writing it',
-    );
-    expect(api.writes).toEqual([]);
   });
 
   it('passes on a write that fails with nothing there', async () => {

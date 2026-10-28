@@ -49,19 +49,32 @@ The permalink must point at the same channel and ts, or the capture is
 refused. The key is written into the note's frontmatter beside
 `atlas_import: capture/v1` and `provider`, and a capture is in the vault when
 the index finds a note holding all three — wherever it has been filed since,
-the Archive included — or when the file at the capture's own path holds
-them (the index lags a write made a moment ago). Then nothing is written,
+the Archive included — or when a file in `Inbox/Captures/` whose name ends
+in the key's hash holds them (the index lags a write made a moment ago, and
+a second sender may title the message otherwise). Then nothing is written,
 and the answer names the note that holds it. A capture never updates a note
 it made: a message saved again with more replies is still the one note.
 
-**The file is the payload's alone: no clock, no randomness.** Its path is
-`Inbox/Captures/<title>.md`, or `<title> (slack <hash of the key>).md` when
-another note holds that name; times are shown on the zone the request names,
-else the Mac's, and `sent_at` is UTC. So the two Macs, or n8n and the app,
-mapping one message write one path with the same bytes: a sync of both
-merges cleanly rather than making a conflict copy. The one part of the bytes
-that depends on the vault is the author's link, below; two Macs on one synced
-vault find the same Person.
+**The file is the payload's and the options' alone: no clock, no randomness.**
+Its path is `Inbox/Captures/<title> (slack <hash of the key>).md`. The title
+is for reading; the hash is what finds the note, so a message sent twice with
+two titles — n8n's from its first line, a pasted link's as typed, or the
+first line of a message edited in between — is still one note. (The first
+build named it `<title>.md` and used the hash only on a clash, so two titles
+for one key made two notes while the index lagged; review of PR #615.)
+Times are shown on the zone the request names, else the Mac's, and
+`sent_at` is UTC.
+
+The same bytes are written for one message only when the writers agree on
+two things besides the payload: **the zone** and **the author's Person
+link**. Two Macs on one synced vault in one zone do: they read the same
+People. n8n does not, as built: it maps on `America/Los_Angeles` with no
+vault to find a Person in, so where the app would write `[[Mara Quill]]`
+n8n writes `Mara Quill`, and a Mac in another zone shows other times. Both
+writers land on the same path, so the second finds the first and writes
+nothing (`in-vault`); only two writers racing before either has synced
+would leave a sync conflict copy. #104 should send to the app when it runs,
+and commit a file itself only as the fallback.
 
 **It lands in the Inbox folder, as a task at `status: inbox` or a plain note.**
 The Inbox is where captures wait (P30-01), and its folder is what puts a note

@@ -1,5 +1,5 @@
 import { CaptureRefusedError, readCapture } from '@dfai/domain';
-import { CapturePathsTakenError, receiveCapture } from '../capture/index.ts';
+import { CapturePathTakenError, receiveCapture } from '../capture/index.ts';
 import { ApiError } from './api-error.ts';
 import { bodyObject, optionalString } from './fields.ts';
 import type { RouteResult, VaultRequest } from './vault-request.ts';
@@ -35,6 +35,6 @@ function captureOf(payload: unknown) {
 /** Why a capture was not taken, as the caller is told it. */
 function refusedCapture(error: unknown): never {
   if (error instanceof CaptureRefusedError) throw new ApiError('invalid', error.message);
-  if (error instanceof CapturePathsTakenError) throw new ApiError('exists', error.message);
+  if (error instanceof CapturePathTakenError) throw new ApiError('exists', error.message);
   throw error;
 }

@@ -10,7 +10,7 @@ describe('mapCapture: a Slack message as its Inbox file (#103)', () => {
   it('writes a task: frontmatter saying where it came from, the message, its thread and its files', () => {
     const file = mapCapture(slackCapture(), LA);
     expect(file.path).toBe(
-      'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn.md',
+      'Inbox/Captures/Can you send the Larkspur renewal by Friday cc @Tobias Fenn (slack 2db9a3ee).md',
     );
     expect(file.content).toBe(
       [
@@ -139,7 +139,9 @@ describe('a capture’s title and path', () => {
     captureFile(readCapture(slackCapture(fields)));
 
   it('takes the title asked for over the message', () => {
-    expect(titled({ title: 'Send the renewal' }).path).toBe('Inbox/Captures/Send the renewal.md');
+    expect(titled({ title: 'Send the renewal' }).path).toBe(
+      'Inbox/Captures/Send the renewal (slack 2db9a3ee).md',
+    );
   });
 
   it('takes the first line with words in it, formatting dropped', () => {
@@ -159,9 +161,9 @@ describe('a capture’s title and path', () => {
   });
 
   it('keeps a title that would make a path, a link or a hidden file out of the file name', () => {
-    const { path, collisionPath } = titled({ title: '../.secret/[[x]] #y ^z: a|b' });
-    expect(path).toBe('Inbox/Captures/secret x y z a b.md');
-    expect(collisionPath).toMatch(/^Inbox\/Captures\/secret x y z a b \(slack [0-9a-f]{8}\)\.md$/);
+    expect(titled({ title: '../.secret/[[x]] #y ^z: a|b' }).path).toBe(
+      'Inbox/Captures/secret x y z a b (slack 2db9a3ee).md',
+    );
   });
 
   it('names a note after a link’s address with its entities read', () => {
@@ -171,22 +173,23 @@ describe('a capture’s title and path', () => {
   });
 
   it('names a title that cleans away to nothing as a Slack message', () => {
-    expect(titled({ title: '///' }).path).toBe('Inbox/Captures/Slack message.md');
+    expect(titled({ title: '///' }).path).toBe('Inbox/Captures/Slack message (slack 2db9a3ee).md');
   });
 
-  it('gives each message its own collision path, and the same one every time', () => {
+  it('ends every path of one message in its key, whatever its title, and another message’s in its own', () => {
     const other = SLACK_PERMALINK.replace('p1793136000000100', 'p1793136000000200');
     const second = titled({ source: slackSource({ ts: '1793136000.000200', url: other }) });
-    expect(second.path).toBe(titled({}).path);
-    expect(second.collisionPath).not.toBe(titled({}).collisionPath);
-    expect(titled({}).collisionPath).toBe(titled({}).collisionPath);
+    const retitled = titled({ title: 'Renewal, from Slack' });
+    expect(retitled.keyEnding).toBe(titled({}).keyEnding);
+    expect(retitled.path.endsWith(titled({}).keyEnding)).toBe(true);
+    expect(second.keyEnding).not.toBe(titled({}).keyEnding);
+    expect(second.path).not.toBe(titled({}).path);
   });
 
   it('keeps a file name of a very long title within 255 bytes', () => {
-    const { path, collisionPath } = titled({ title: '\u7A0E'.repeat(200) });
-    for (const each of [path, collisionPath]) {
-      const name = each.slice('Inbox/Captures/'.length);
-      expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255);
-    }
+    const { path, keyEnding } = titled({ title: '\u7A0E'.repeat(200) });
+    const name = path.slice('Inbox/Captures/'.length);
+    expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255);
+    expect(name.endsWith(keyEnding)).toBe(true);
   });
 });
