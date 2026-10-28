@@ -3,6 +3,8 @@ import {
   createVaultPath,
   formatPropertyDate,
   linkedNames,
+  listAsInput,
+  listFromInput,
   linkedNotes,
   optionColor,
   optionLabel,
@@ -341,14 +343,21 @@ function offeredOptions(options: readonly string[], held: string): readonly stri
   return held === '' || options.includes(held) ? options : [...options, held];
 }
 
+/**
+ * A multi-select as one line, in the shared list codec: commas between the
+ * items, and an item holding a comma of its own — `"Payroll, Larkspur"` —
+ * quoted, so editing one item never cuts another in two (#50).
+ */
 function MultiSelectEditor({ id, row, onChange }: EditorProps) {
-  const typing = useTyping(asList(row.value).join(', '), (typed) => onChange(splitList(typed)));
+  const typing = useTyping(listAsInput(asList(row.value)), (typed) =>
+    onChange(listFromInput(typed)),
+  );
   return (
     <input
       id={id}
       className="props__input"
       type="text"
-      placeholder={row.def.options.join(', ')}
+      placeholder={listAsInput(row.def.options)}
       {...typing}
     />
   );
@@ -554,9 +563,3 @@ const asList = (value: unknown): string[] =>
   value === null || value === undefined
     ? []
     : (Array.isArray(value) ? value : [value]).map((item) => String(item));
-
-const splitList = (value: string): string[] =>
-  value
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item !== '');
