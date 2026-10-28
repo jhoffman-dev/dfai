@@ -205,3 +205,65 @@ Where the build differs from, or settles, what is written above:
   promoted, as any edit to it is (ADR-0003): the editor's checklist node
   holds no marker or numbering, so keeping them would mean a new node
   attribute through the editor, the reader and the writer — not cheap.
+
+## Addendum (#108, 2026-10-28): a task chosen for today carries the day
+
+GTD leaves "what will I do today" to the person; the Today page (#111) showed
+what needs attention but had nowhere to say what was chosen.
+
+- **A choice is a date, `focus`, on the task.** `focus: 2026-10-28` says the
+  task was chosen for that day. A date rather than a flag, so yesterday's
+  choice stops being today's without anything being written at midnight: the
+  page, read again when the day turns, lists it under **Carried over** until
+  it is kept (`focus` set to today) or dropped (the key taken out). Taking the
+  key out, rather than writing it empty, gives a task chosen and then
+  unchosen back byte for byte (ADR-0003). A `focus` on a day still to come is
+  that day's choice: its row says _Chosen for 2026-11-02_, and Today moves the
+  choice to today, the toast naming the day it was.
+- **Finishing ends the choice** (amended in PR #602's fix round). A task
+  finished, or a repeating one rolled on, loses a dated `focus`. A roll is
+  `lastCompleted` written together with `due` or `status`, as the roll writes
+  them; a hand edit of `lastCompleted` alone keeps the choice. A blank
+  `focus:`, as a property template writes it, is no choice and stays, and
+  reopening a task leaves its `focus` as it is. It is a task
+  rule, so every tick does it, from Today, a view, a board or the API. Undo
+  gives the key back as written. Otherwise a ticked repeating task stays
+  under Chosen for today, looking as if the tick did nothing, and a task
+  reopened weeks later comes back under Carried over. The first draft kept
+  `focus` on a finished task so `focus = @today` could count what got done;
+  that count is the price.
+- **Chosen for today leads the page, and claims its tasks whatever their
+  status** — an In Progress task chosen for today is under Chosen alone, as an
+  overdue one is under Overdue alone. Carried over comes next and is drawn
+  only while it holds something. Both are ordered as Overdue is (the earliest
+  due first, then by title); Carried over the most recently chosen first. A
+  hand order (drag to rank) is not kept: it would need a rank key beside the
+  day, and nobody has asked for one yet.
+- **The Task type gains `focus` on opening, not with the move to GTD.** It is
+  added as DFAI's shipped properties are (#162): only lines, never over a key
+  the type has, and never again once it is taken off. GTD's own keys stay the
+  move's offer. Putting `focus` in the move instead would offer every vault
+  already on GTD the move again. Two Macs that both open after the upgrade
+  before syncing write the same lines and the same record. Their syncs merge
+  with no conflict and one `focus` key (`two-macs.task-focus.test.ts`).
+- **A vault chooses only where it keeps the day** (`choosesForToday`). Its
+  Task type has `focus` as a date, or it has no Task type yet and gets the
+  built-in one. A vault whose type took `focus` off, or made it another kind,
+  is offered no Today, Keep or Drop. It has neither choice section, and the
+  API refuses with `invalid`.
+- **A `focus` that is not one day is the person's own** (`focusIsOwn`):
+  words, a link, a number, a list of several. Such a task is never listed as
+  chosen. A choice made through the page or the API is refused against the
+  frontmatter the write reads, so nothing is written over it, and finishing
+  leaves it alone. The index reads the same rule (`focusIsOwn` in the review
+  statement), and a test holds the two to agree.
+- **A row's choice is part of what it showed**: `stillAsRead` compares
+  `focus` too, so a Drop pressed after another Mac kept the task is refused
+  rather than taking today's choice away.
+- **The planning tray lists what was chosen first**: the open tasks whose
+  `focus` is `@today` (the query language's day, as in every view), whatever
+  their status, then the next actions. Within each, the unscheduled come
+  first. A task deferred to a later day is left out, as Today leaves it out.
+- **The API chooses through `POST /v1/today/choose` `{ path, chosen }`**, on
+  the app's clock, through the same write as a property change; MCP's
+  `atlas_choose_for_today` calls it.

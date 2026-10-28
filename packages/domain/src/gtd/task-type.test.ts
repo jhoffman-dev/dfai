@@ -4,6 +4,7 @@ import { statusOf } from '../types/status-property.ts';
 import { GTD_STATUSES } from './gtd-status.ts';
 import {
   capturedTaskStatus,
+  choosesForToday,
   followsGtd,
   GTD_STATUS_PROPERTY,
   TASK_TYPE_FILE,
@@ -101,6 +102,15 @@ describe('taskTypeChange', () => {
 
   it('is nothing to do for a type that already follows GTD', () => {
     expect(taskTypeChange(TASK_TYPE_FILE.type)).toBeNull();
+  });
+
+  it('is nothing to do for a GTD type without `focus`: it is added on opening, not by the move (#108)', () => {
+    expect(TASK_TYPE_FILE.type.properties.find((p) => p.key === 'focus')?.kind).toBe('date');
+    const withoutFocus: ObjectType = {
+      ...TASK_TYPE_FILE.type,
+      properties: TASK_TYPE_FILE.type.properties.filter((p) => p.key !== 'focus'),
+    };
+    expect(taskTypeChange(withoutFocus)).toBeNull();
   });
 
   it('is nothing to do for a GTD type without the meeting keys: they are not the move to GTD’s (#177)', () => {
@@ -217,5 +227,28 @@ describe('taskTypeOf', () => {
     expect(taskTypeOf([project, own])).toBe(own);
     expect(taskTypeOf([project])).toBeNull();
     expect(taskTypeOf([])).toBeNull();
+  });
+});
+
+describe('choosesForToday (#108)', () => {
+  const withFocus = (kind: 'date' | 'text' | null): ObjectType => ({
+    ...TASK_TYPE_FILE.type,
+    properties: TASK_TYPE_FILE.type.properties
+      .filter((p) => p.key !== 'focus')
+      .concat(
+        kind === null
+          ? []
+          : [{ ...TASK_TYPE_FILE.type.properties.find((p) => p.key === 'focus')!, kind }],
+      ),
+  });
+
+  it('chooses only when the Task type has focus as a date', () => {
+    expect(choosesForToday([withFocus('date')])).toBe(true);
+    expect(choosesForToday([withFocus('text')])).toBe(false);
+    expect(choosesForToday([withFocus(null)])).toBe(false);
+  });
+
+  it('chooses in a vault with no Task type yet, as the built-in type it would be given does', () => {
+    expect(choosesForToday([])).toBe(true);
   });
 });

@@ -15,7 +15,7 @@ import { trayDragId, useTrayDrag } from './tray-drag.ts';
  * in place of "Cancelled".
  */
 
-const call: TrayTask = { path: 'Call Mara.md', title: 'Call Mara', schedule: null };
+const call: TrayTask = { path: 'Call Mara.md', title: 'Call Mara', schedule: null, chosen: false };
 
 function move(active: Active, delta = { x: 0, y: 48 }): DragMoveEvent {
   return { active, delta, over: null, collisions: null } as unknown as DragMoveEvent;

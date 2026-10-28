@@ -197,8 +197,14 @@ test('a task’s project, once its type is extended, offers projects and areas a
     name: 'Set your types up for the Inbox',
   });
   await expect(offer).toContainText('task gains Project, linking project or area notes.');
-  // Nothing is written to a type the vault already has until James says so.
-  expect(await vault.read('.atlas/types/task.md')).toBe(TASK_TYPE);
+  // Nothing of PARA's is written to a type the vault already has until James says so:
+  // opening gave the Task type DFAI's own `focus` alone (#108).
+  await expectFile(vault, '.atlas/types/task.md').toBe(
+    TASK_TYPE.replace(
+      '    options: [backlog, doing, done]\n',
+      '    options: [backlog, doing, done]\n  focus:\n    kind: date\n    label: Chosen for\n',
+    ),
+  );
   await offer.getByRole('button', { name: 'Add to the types' }).click();
   await expectFile(vault, '.atlas/types/task.md').toContain('- area');
   expect(await vault.read('.atlas/types/task.md')).toContain(
