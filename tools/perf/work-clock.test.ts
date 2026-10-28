@@ -152,6 +152,34 @@ describe('the work clock', () => {
     );
   });
 
+  it.each([
+    ['just after it starts', 59_999],
+    ['in its middle', 59_500],
+    ['on its last moment', 59_000],
+  ])(
+    'never fires a timer of a minute or more while counting, its due time %s (#243)',
+    async (_where, countFrom) => {
+      const fired: string[] = [];
+      const base = Date.now() - STARTS_AT;
+      const tick = setInterval(() => fired.push('minute tick'), 60_000);
+      setTimeout(() => fired.push('a minute later'), 60_000);
+      // Up to the window's start, uncounted, as the harness's set-up moves time on.
+      await clock().run(null, null, countFrom, 0);
+      expect(fired).toEqual([]);
+      clock().startCounting();
+      setTimeout(() => fired.push('autosave'), 300);
+      // A counted action: its own short timers fire, the minute's do not.
+      await clock().run(null, null, 1_000, 0);
+      clock().stopCounting();
+      expect(Date.now() - STARTS_AT - base).toBe(countFrom + 1_000);
+      expect(fired).toEqual(['autosave']);
+      // The next uncounted step takes them, once each, before anything else.
+      await clock().run(null, null, 0, 0);
+      expect(fired).toEqual(['autosave', 'minute tick', 'a minute later']);
+      clearInterval(tick);
+    },
+  );
+
   it('counts the host commands sent while counting, by name', async () => {
     clock().startCounting();
     void invoke('read_note');
