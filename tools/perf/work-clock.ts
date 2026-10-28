@@ -16,6 +16,13 @@ import { expect, type Page } from '@playwright/test';
  *   `requestAnimationFrame` are kept in a list and run only when the harness
  *   moves time on (`runUntil`), in the order they are due. `Date` is
  *   `startsAt` plus that time. Nothing the app schedules fires on its own.
+ * - **A timer of a minute or more never fires while counting** (#243). The
+ *   app's minute ticks (automations, Today's day check, the panes' clock) are
+ *   due wherever the minute falls, which has nothing to do with the action
+ *   being counted: one that lands in a window adds its commits there, and a
+ *   window starting a little earlier or later moves it to the next action or
+ *   out of every count. Held while counting, it fires on the first step that
+ *   is not counted, so no count depends on where the minute falls.
  * - **The host answers one at a time, in the order it was asked.** A host
  *   command (and a request to the index worker) is sent at once, but its
  *   answer is handed to the app only when the page is quiet — and the oldest
@@ -89,7 +96,10 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     order: number;
     readonly run: () => void;
     readonly every: number | null;
+    /** Held while counting: a minute tick, not the action's own work. */
+    readonly long: boolean;
   }
+  const LONG_TIMER_MS = 60_000;
   interface Question {
     readonly command: string;
     answer: (() => void) | null;
@@ -115,7 +125,8 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   const addTimer = (run: () => void, delay: unknown, every: number | null) => {
     const id = state.nextId++;
     const wait = Math.max(0, Number(delay) || 0);
-    state.timers.set(id, { id, due: state.now + wait, order: state.order++, run, every });
+    const long = wait >= LONG_TIMER_MS;
+    state.timers.set(id, { id, due: state.now + wait, order: state.order++, run, every, long });
     return id;
   };
   const call = (handler: unknown, args: unknown[]) => () => {
@@ -300,11 +311,11 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     }
   }
 
-  /** The timer due first, by `horizon` at the latest. */
+  /** The timer due first, by `horizon` at the latest; never a long one while counting. */
   const dueBy = (horizon: number): Timer | undefined => {
     let first: Timer | undefined;
     for (const timer of state.timers.values()) {
-      if (timer.due > horizon) continue;
+      if (timer.due > horizon || (state.counting && timer.long)) continue;
       if (
         first === undefined ||
         timer.due < first.due ||

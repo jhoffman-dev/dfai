@@ -96,17 +96,13 @@ const ROW_RULES: Partial<Record<BudgetedAction, ActionBudget['rows']>> = {
 };
 
 /**
- * The actions allowed to differ between two counted runs, and by how much:
- * the drag counted 98 commits on one CI run and 96 on the next (#240), each
- * component in the board three renders apart. Host calls matched. What in the
- * drag still runs on the wall clock is not found yet (#243). Opening the
- * vault indexes 2,000 notes: on CI it counted 121 commits on one run and 122
- * on the next, each component one render apart, host calls the same (#130).
- * Every other action must match exactly.
+ * The actions allowed to differ between two counted runs, and by how much.
+ * Opening the vault indexes 2,000 notes: on CI it counted 121 commits on one
+ * run and 122 on the next, each component one render apart, host calls the
+ * same (#130). Every other action must match exactly.
  */
 const RUN_TOLERANCE: Partial<Record<BudgetedAction, RunTolerance>> = {
   'Open a vault': { commits: 2, rendersEach: 2 },
-  'Drag a board card': { commits: 2, rendersEach: 3 },
 };
 
 /** A board of the fixture's 48 projects, all active, by status: what "drag a board card" drags on. */
