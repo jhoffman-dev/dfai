@@ -307,6 +307,7 @@ describe('#611 attack: the blocks compile and run for every type set dayBlocksFi
         expect(() => blockTitles(database, block, types)).not.toThrow();
       }
     }
-    expect(fitting).toBeGreaterThan(250);
+    // About half the sets also hold a type spelt `Task`, which no longer fits (dayBlocksFit).
+    expect(fitting).toBeGreaterThan(100);
   });
 });

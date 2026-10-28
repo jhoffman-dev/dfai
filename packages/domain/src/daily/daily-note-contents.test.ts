@@ -126,6 +126,12 @@ describe('whether the day fits the vault (#110)', () => {
     expect(dayBlocksFit([taskType({ name: 'TASK' })])).toBe(false);
   });
 
+  // FROM task cannot tell task from Task, so a vault holding both gets no blocks.
+  it('does not fit a vault with a second type spelt Task besides task', () => {
+    expect(dayBlocksFit([taskType(), taskType({ name: 'Task' })])).toBe(false);
+    expect(dayBlocksFit([taskType(), taskType()])).toBe(true);
+  });
+
   it.each<[string, ObjectType]>([
     ['statuses of its own', taskType({ options: ['todo', 'doing', 'done'], done: 'done' })],
     ["GTD's statuses in another order", taskType({ options: [...GTD_OPTIONS].reverse() })],

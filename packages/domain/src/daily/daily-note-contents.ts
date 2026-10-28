@@ -106,12 +106,16 @@ const DAY_FIELDS = [TASK_KEYS.due, TASK_KEYS.defer] as const;
  * and `due` and `defer` as dates — everything the queries name. Otherwise a
  * block would show a problem where the day should be, so the note starts
  * without them. The index knows only the types on disk, so a vault with no
- * Task type of its own yet has none for the blocks to read.
+ * Task type of its own yet has none for the blocks to read. Nor does one with
+ * a second type spelt `Task` as well: a query cannot tell the two apart, and
+ * PR #616 refuses `FROM task` there.
  */
 export function dayBlocksFit(types: readonly ObjectType[]): boolean {
   const task = types.find((type) => type.name === TASK_TYPE);
+  const spellings = types.filter((type) => type.name.trim().toLowerCase() === TASK_TYPE);
   return (
     task !== undefined &&
+    spellings.every((type) => type.name === TASK_TYPE) &&
     followsGtd(task) &&
     DAY_FIELDS.every((key) =>
       task.properties.some((property) => property.key === key && property.kind === 'date'),
