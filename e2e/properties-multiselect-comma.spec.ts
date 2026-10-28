@@ -50,7 +50,10 @@ test('an item holding a comma stays one item when another is added in the panel,
   await expect(clients).toHaveValue('"Payroll, Larkspur", Quill');
 
   await clients.click();
-  await clients.press('End');
+  // End does not move the caret in WebKit on macOS; put it after the last item.
+  await clients.evaluate((input: HTMLInputElement) =>
+    input.setSelectionRange(input.value.length, input.value.length),
+  );
   await page.keyboard.type(', Mara');
 
   // The untouched `aliases` line keeps its bytes; the edited list is three items, the first whole.
