@@ -132,6 +132,17 @@ describe('code blocks highlighted on first use', () => {
     expect(drawnClasses(again)[0]).toContain('hljs-keyword');
   });
 
+  it('colours a note whose grammar failed once another editor loads it, without an edit', async () => {
+    const { languages, settle } = heldGrammars();
+    const failed = reading([code('ts', 'const kale = 55;')], languages);
+    await settle('typescript', 'fail');
+    expect(drawnClasses(failed)).toEqual([[]]);
+
+    reading([code('js', 'let a = 1;')], languages);
+    await settle('typescript', 'give');
+    expect(drawnClasses(failed)[0]).toContain('hljs-keyword');
+  });
+
   it('colours a block typed into, and keeps the colours of a block not touched', async () => {
     const { languages, settle } = heldGrammars();
     const editor = reading([paragraph('Prose.'), code('ts', 'let a = 1;')], languages);
