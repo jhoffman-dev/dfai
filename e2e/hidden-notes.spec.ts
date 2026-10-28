@@ -57,9 +57,10 @@ test('a note in a hidden directory is not listed, linked or indexed', async ({ p
   await expect(page.getByRole('alert')).toHaveText('No note called "deleted"');
   await expect(page.getByRole('article', { name: 'deleted' })).toHaveCount(0);
 
-  // Not in the index: two notes reach it — today and the type definition. The
-  // board has a section of its own, so user space leaves it out.
-  await expect(page.getByText('2 notes indexed')).toBeVisible();
+  // Not in the index: three notes reach it — today, the type definition, and
+  // the record of the property DFAI gave that type as the vault opened
+  // (`focus`, #108). The board has a section of its own, so user space leaves it out.
+  await expect(page.getByText('3 notes indexed')).toBeVisible();
 
   // Not a search result.
   await page.keyboard.down('Meta');
