@@ -3,6 +3,16 @@ import { cosine } from '../embeddings/cosine-ranking.ts';
 import { isEmbeddableNote } from '../embeddings/embedding-plan.ts';
 import type { VaultGraph } from '../graph/vault-graph.ts';
 
+/**
+ * The score at or under which a block has nothing in common with the note:
+ * at right angles, or pointing away. Not 0 but just above it, as single
+ * precision rounds a cosine of exactly 0 either way. Deliberately no higher:
+ * a small sentence model's cosines (Arctic Embed XS here, MiniLM-like) sit
+ * well above 0 even for unrelated text, and where "related" starts depends on
+ * the model — a threshold here would be invented, not measured.
+ */
+export const NOTHING_IN_COMMON = 1e-6;
+
 /** How many related notes are offered when not said, and the most ever offered. */
 export const RELATED_NOTES = { fallback: 8, max: 50 } as const;
 
@@ -69,15 +79,19 @@ export function isOfferedAsRelated(candidate: string, excluded: RelatedExclusion
 /**
  * Where a note's meaning points: the mean of its blocks' unit vectors, scaled
  * back to unit length, so one long note is not drawn to whichever of its
- * blocks is longest. Null for a note with no vectors, or whose vectors
- * cancel out or are not numbers: it points nowhere, and nothing is related.
+ * blocks is longest. Blocks not of numbers, or of another length than the
+ * first readable one, are skipped. Null for a note with no readable vectors,
+ * or whose vectors cancel out: it points nowhere, and nothing is related.
  */
 export function noteCentroid(vectors: readonly Float32Array[]): Float32Array | null {
-  const first = vectors[0];
+  // A torn block — a number that is not one, or another model's length — is
+  // skipped, as a candidate's is: one broken block must not hide every suggestion.
+  const readable = vectors.filter((vector) => vector.every(Number.isFinite));
+  const first = readable[0];
   if (first === undefined) return null;
   const sum = new Float32Array(first.length);
-  for (const vector of vectors) {
-    if (vector.length !== sum.length) return null;
+  for (const vector of readable) {
+    if (vector.length !== sum.length) continue;
     for (let at = 0; at < sum.length; at += 1)
       sum[at] = (sum[at] as number) + (vector[at] as number);
   }
@@ -92,7 +106,7 @@ export function noteCentroid(vectors: readonly Float32Array[]): Float32Array | n
  * The notes closest in meaning to `note`, best first: each scored by its
  * block closest to where the note points ({@link noteCentroid}), and only
  * those {@link isOfferedAsRelated} lets through, and only those closer than
- * at right angles (a score above 0). Ties go by path, so the same
+ * at right angles (a score above {@link NOTHING_IN_COMMON}). Ties go by path, so the same
  * cache always offers the same notes in the same order. A block whose score
  * is not a finite number is skipped, never ranked.
  */
@@ -115,8 +129,7 @@ export function rankRelatedNotes({
     if (block.vector.length !== centroid.length) continue;
     if (!isOfferedAsRelated(block.path, excluded)) continue;
     const score = cosine(centroid, block.vector);
-    // At right angles or pointing away, a block has nothing in common with the note.
-    if (!Number.isFinite(score) || score <= 0) continue;
+    if (!Number.isFinite(score) || score <= NOTHING_IN_COMMON) continue;
     const held = best.get(block.path);
     if (held === undefined || score > held) best.set(block.path, score);
   }

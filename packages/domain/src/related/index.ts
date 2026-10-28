@@ -8,6 +8,7 @@ export {
   isOfferedAsRelated,
   linkedEitherWay,
   noteCentroid,
+  NOTHING_IN_COMMON,
   rankRelatedNotes,
   relatedLimit,
   RELATED_NOTES,

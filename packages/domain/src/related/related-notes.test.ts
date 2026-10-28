@@ -107,11 +107,17 @@ describe('noteCentroid', () => {
     expect(centroid![1]).toBeCloseTo(Math.SQRT1_2);
   });
 
-  it('points nowhere for no vectors, vectors that cancel, or vectors of two lengths', () => {
+  it('points nowhere for no vectors, vectors that cancel, or none readable', () => {
     expect(noteCentroid([])).toBeNull();
     expect(noteCentroid([unit(1, 0), unit(-1, 0)])).toBeNull();
-    expect(noteCentroid([unit(1, 0), unit(1, 0, 0)])).toBeNull();
     expect(noteCentroid([Float32Array.from([Number.NaN, 0])])).toBeNull();
+  });
+
+  it('skips a block of another length than the first readable one', () => {
+    expect(Array.from(noteCentroid([unit(1, 0), unit(0, 1, 1)])!)).toEqual([1, 0]);
+    expect(Array.from(noteCentroid([Float32Array.from([Number.NaN, 0, 0]), unit(0, 1)])!)).toEqual([
+      0, 1,
+    ]);
   });
 });
 
