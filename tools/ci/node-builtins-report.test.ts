@@ -94,6 +94,7 @@ describe('nodeBuiltinsReport', () => {
       {
         file: 'assets/index-A1.js',
         packages: [{ name: 'some-lib', pulledInBy: 'packages/adapters/src/vault/reader.ts' }],
+        named: [],
       },
     ]);
   });
@@ -143,6 +144,44 @@ describe('nodeBuiltinsReport', () => {
         importer: 'packages/adapters/src/vault/reader.ts',
         pulledInBy: 'packages/adapters/src/vault/reader.ts',
         chunks: ['assets/index-A1.js'],
+      },
+    ]);
+  });
+
+  it('records what each module’s rendered code names, for the check to say whose a name is', () => {
+    const { window } = nodeBuiltinsReport(ROOT);
+    let written: NodeBuiltinsReport | null = null;
+    const context = {
+      getModuleInfo: () => ({ importers: [] }),
+      emitFile: (file: { source: string }) => {
+        written = JSON.parse(file.source) as NodeBuiltinsReport;
+        return 'ref';
+      },
+    };
+    const modules = {
+      [LIB]: {
+        code: 'process.getBuiltinModule(`fs`);require("os");process.getBuiltinModule(`fs`);',
+      },
+      [MAIN]: { code: 'console.warn(1);' },
+      [INNER]: { code: null },
+    };
+    window.generateBundle.call(
+      context,
+      {},
+      {
+        'assets/index-A1.js': {
+          type: 'chunk',
+          fileName: 'assets/index-A1.js',
+          moduleIds: Object.keys(modules),
+          modules,
+        },
+      },
+    );
+    expect(written!.chunks[0]?.named).toEqual([
+      {
+        module: 'node_modules/.pnpm/some-lib@1.0.0/node_modules/some-lib/index.js',
+        package: 'some-lib',
+        builtins: ['fs', 'os', 'fs'],
       },
     ]);
   });

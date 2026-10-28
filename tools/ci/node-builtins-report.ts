@@ -10,11 +10,26 @@
  */
 import { isBuiltin } from 'node:module';
 import { relative, sep } from 'node:path';
-import type { BuiltinImport, ChunkPackage, NodeBuiltinsReport } from './node-builtins.ts';
+import {
+  builtinsNamedIn,
+  type BuiltinImport,
+  type ChunkPackage,
+  type NamingModule,
+  type NodeBuiltinsReport,
+} from './node-builtins.ts';
 
 /** The few of the bundler's plugin types this uses: `tools/` does not depend on Vite. */
 type ModuleInfo = { importers: readonly string[] };
-type Output = { type: 'chunk'; fileName: string; moduleIds: readonly string[] } | { type: 'asset' };
+/** A rendered module: its code as it stands in the chunk, or null when it renders none. */
+type RenderedModule = { code: string | null };
+type Output =
+  | {
+      type: 'chunk';
+      fileName: string;
+      moduleIds: readonly string[];
+      modules?: Readonly<Record<string, RenderedModule>>;
+    }
+  | { type: 'asset' };
 type BundleContext = {
   getModuleInfo(id: string): ModuleInfo | null;
   emitFile(file: { type: 'asset'; fileName: string; source: string }): string;
@@ -29,7 +44,7 @@ export type ReportPlugin = {
 
 type Seen = {
   imports: Map<string, { module: string; importer: string; pulledInBy?: string; chunks: string[] }>;
-  chunks: Map<string, ChunkPackage[]>;
+  chunks: Map<string, { packages: ChunkPackage[]; named: NamingModule[] }>;
 };
 
 const NODE_MODULES = '/node_modules/';
@@ -93,7 +108,22 @@ function recordStandIns(seen: Seen, chunk: Chunk, { ownFile, importersOf }: Chun
   }
 }
 
-type Chunk = { fileName: string; moduleIds: readonly string[] };
+type Chunk = {
+  fileName: string;
+  moduleIds: readonly string[];
+  modules?: Readonly<Record<string, RenderedModule>>;
+};
+
+/**
+ * Each module whose rendered code names a built-in, and what it names: the
+ * check's text scan finds a name in the chunk, and this says whose it is.
+ */
+function namingModules(chunk: Chunk): NamingModule[] {
+  return Object.entries(chunk.modules ?? {}).flatMap(([module, { code }]) => {
+    const builtins = code === null ? [] : builtinsNamedIn(code);
+    return builtins.length === 0 ? [] : [{ module, package: packageOf(module), builtins }];
+  });
+}
 
 function recordChunk(seen: Seen, chunk: Chunk, context: ChunkContext): void {
   const ids = new Set(chunk.moduleIds);
@@ -103,7 +133,10 @@ function recordChunk(seen: Seen, chunk: Chunk, context: ChunkContext): void {
     if (!found.chunks.includes(chunk.fileName)) found.chunks.push(chunk.fileName);
   }
   recordStandIns(seen, chunk, context);
-  seen.chunks.set(chunk.fileName, packagesIn(chunk.moduleIds, context.ownFile));
+  seen.chunks.set(chunk.fileName, {
+    packages: packagesIn(chunk.moduleIds, context.ownFile),
+    named: namingModules(chunk),
+  });
 }
 
 function reportOf(
@@ -117,9 +150,10 @@ function reportOf(
     pulledInBy: fromRepo(found.pulledInBy ?? ownFile(found.importer)),
     chunks: found.chunks,
   }));
-  const chunks = [...seen.chunks].map(([file, packages]) => ({
+  const chunks = [...seen.chunks].map(([file, { packages, named }]) => ({
     file,
     packages: packages.map(({ name, pulledInBy }) => ({ name, pulledInBy: fromRepo(pulledInBy) })),
+    named: named.map((naming) => ({ ...naming, module: fromRepo(naming.module) })),
   }));
   return { imports, chunks };
 }

@@ -31,9 +31,12 @@ export type BuiltinImport = {
 /** A dependency in one chunk, and the app's own file that drew it in. */
 export type ChunkPackage = { name: string; pulledInBy: string };
 
+/** A module whose rendered code names built-ins, once per time it names one. */
+export type NamingModule = { module: string; package: string | null; builtins: string[] };
+
 export type NodeBuiltinsReport = {
   imports: BuiltinImport[];
-  chunks: { file: string; packages: ChunkPackage[] }[];
+  chunks: { file: string; packages: ChunkPackage[]; named?: NamingModule[] }[];
 };
 
 /** One output file's text, by its path under `dist`. */
@@ -42,7 +45,7 @@ export type ChunkSource = { file: string; source: string };
 export type NodeBuiltinFinding =
   | { kind: 'import'; module: string; importer: string; pulledInBy: string; chunks: string[] }
   | { kind: 'polyfill'; module: string; chunk: string; pulledInBy: string }
-  | { kind: 'external'; module: string; chunk: string };
+  | { kind: 'external'; module: string; chunk: string; namedBy?: string[] };
 
 type LeftInOutput = Extract<NodeBuiltinFinding, { kind: 'external' }>;
 
@@ -63,6 +66,9 @@ const POLYFILL_PACKAGES: ReadonlySet<string> = new Set([
   'https-browserify',
   'querystring-es3',
   'domain-browser',
+  // Whole sets of stand-ins for Node's modules, for edge runtimes and the browser.
+  'unenv',
+  '@jspm/core',
 ]);
 
 export function isNodePolyfill(name: string): boolean {
@@ -71,33 +77,59 @@ export function isNodePolyfill(name: string): boolean {
 
 const escaped = (name: string) => name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
+const BUILTIN_NAME =
+  String.raw`node:[\w/]+|` +
+  builtinModules
+    .filter((name) => !name.startsWith('node:') && !name.startsWith('_'))
+    .map(escaped)
+    .join('|');
+
 /**
  * `from"x"`, `import"x"`, `import("x")`, `require("x")` and
- * `process.getBuiltinModule("x")`, with any quote, `x` a built-in. The last is
- * how the SQLite test support reaches Node without an import (#525).
- *
- * It reads text, not code, so it is a backstop, not the check: it can match
- * a regex literal or a string that spells `require("path")` (a false alarm,
- * let through by KNOWN_NODE_REFERENCES once understood), and it cannot see a
- * built-in named through a variable, such as an aliased
- * `createRequire(import.meta.url)(name)`. The app's own code and its
- * dependencies are covered by the build's record instead, which sees every
- * import as it resolves, by name or through Vite's stand-in.
+ * `process.getBuiltinModule("x")` (or its optional call, `?.(`), with any
+ * quote, `x` a built-in. The last is how the SQLite test support reaches Node
+ * without an import (#525), and how code that may run on either feature-detects it.
  */
 const LEFT_IN_OUTPUT = new RegExp(
-  String.raw`(?:\bfrom|\bimport|\bimport\s*\(|\brequire\s*\(|\bgetBuiltinModule\s*\()\s*(["'\x60])(node:[\w/]+|` +
-    builtinModules
-      .filter((name) => !name.startsWith('node:') && !name.startsWith('_'))
-      .map(escaped)
-      .join('|') +
-    String.raw`)\1`,
+  String.raw`(?:\bfrom|\bimport|\bimport\s*\(|\brequire\s*\(|\bgetBuiltinModule\s*(?:\?\.\s*)?\()\s*(["'\x60])(${BUILTIN_NAME})\1`,
   'g',
 );
 
-/** Every built-in still named in a chunk's text, for the runtime to load. */
-function leftInOutput({ file, source }: ChunkSource): LeftInOutput[] {
-  const modules = new Set([...source.matchAll(LEFT_IN_OUTPUT)].map((match) => match[2]!));
-  return [...modules].sort().map((module) => ({ kind: 'external', module, chunk: file }));
+/**
+ * A `require` hidden from the bundler, `eval("require")(…)` or
+ * `new Function("return require")()(…)`, and the string it is called with, if any.
+ */
+const HIDDEN_REQUIRE = new RegExp(
+  String.raw`(?:\beval\s*\(\s*(["'\x60])\s*require\s*\1\s*\)|\bFunction\s*\(\s*(["'\x60])[^"'\x60]*\brequire\b[^"'\x60]*\2\s*\)\s*\(\s*\))\s*\(\s*(?:(["'\x60])([^"'\x60]*)\3)?`,
+  'g',
+);
+
+/** What a hidden require loads when it names no built-in: unknown, and failed as itself. */
+export const HIDDEN = 'require';
+
+/**
+ * Every built-in `code` names for the runtime to load, once per time it does:
+ * the import and require forms above, and a hidden require (as its built-in,
+ * or as `HIDDEN` when it names none).
+ *
+ * It reads text, not code, so it is a backstop, not the check:
+ * - it scans only `.js` and `.mjs` files, the scripts the webview runs;
+ * - it can match a regex literal or a string that spells `require("path")`
+ *   (a false alarm, let through by KNOWN_NODE_REFERENCES once understood);
+ * - it cannot see a built-in named through a variable, such as an aliased
+ *   `createRequire(import.meta.url)(name)` or a computed `globalThis['proc' + 'ess']`.
+ *
+ * The app's own code and its dependencies' imports are covered by the build's
+ * record instead, which sees every import as it resolves, by name or through
+ * Vite's stand-in. That record is loud too: a package whose `"browser"` field
+ * maps a built-in to false (`{"fs": false}`) is reported though it is safe.
+ */
+export function builtinsNamedIn(code: string): string[] {
+  const named = [...code.matchAll(LEFT_IN_OUTPUT)].map((match) => match[2]!);
+  const hidden = [...code.matchAll(HIDDEN_REQUIRE)].map((match) =>
+    match[4] !== undefined && isBuiltin(match[4]) ? match[4] : HIDDEN,
+  );
+  return [...named, ...hidden];
 }
 
 function polyfills(report: NodeBuiltinsReport): NodeBuiltinFinding[] {
@@ -115,9 +147,8 @@ function polyfills(report: NodeBuiltinsReport): NodeBuiltinFinding[] {
 
 /**
  * Built-ins a dependency names in the output for when it runs on Node, let
- * through by package: a chunk holding the package may name these, and only
- * these. Any other module, or the package in a chunk where its guard is gone,
- * fails as usual.
+ * through by package: the package's own modules may name these, and only
+ * these. The same name from any other module in the chunk fails as usual.
  */
 export type KnownNodeReference = { package: string; modules: readonly string[]; why: string };
 
@@ -129,14 +160,39 @@ export const KNOWN_NODE_REFERENCES: readonly KnownNodeReference[] = [
   },
 ];
 
-const packagesOf = (report: NodeBuiltinsReport, chunk: string) =>
-  report.chunks.find(({ file }) => file === chunk)?.packages.map(({ name }) => name) ?? [];
+const lets = (known: readonly KnownNodeReference[], named: NamingModule, builtin: string) =>
+  known.some((k) => named.package === k.package && k.modules.includes(builtin));
 
-const lets = (k: KnownNodeReference, module: string, packages: readonly string[]) =>
-  packages.includes(k.package) && k.modules.includes(module);
+const count = (names: readonly string[], name: string) => names.filter((n) => n === name).length;
 
-/** Every built-in a chunk's text still names, before any known one is let through. */
-const everyLeftInOutput = (sources: readonly ChunkSource[]) => sources.flatMap(leftInOutput);
+/**
+ * The built-ins one output file names more often than its known modules
+ * account for. The file's text is the truth; the modules' rendered code, as
+ * the build recorded it, says whose each name is.
+ */
+function leftInOutput(
+  { file, source }: ChunkSource,
+  report: NodeBuiltinsReport,
+  known: readonly KnownNodeReference[],
+): LeftInOutput[] {
+  const inFile = builtinsNamedIn(source);
+  const modules = report.chunks.find((chunk) => chunk.file === file)?.named ?? [];
+  const letThrough = (builtin: string) =>
+    modules
+      .filter((named) => lets(known, named, builtin))
+      .reduce((sum, named) => sum + count(named.builtins, builtin), 0);
+  return [...new Set(inFile)]
+    .sort()
+    .filter((builtin) => count(inFile, builtin) > letThrough(builtin))
+    .map((builtin) => ({
+      kind: 'external',
+      module: builtin,
+      chunk: file,
+      namedBy: modules
+        .filter((named) => named.builtins.includes(builtin) && !lets(known, named, builtin))
+        .map((named) => named.module),
+    }));
+}
 
 /** Everything of Node the build let into the bundle; empty when the bundle is clean. */
 export function nodeBuiltinsInBundle(
@@ -144,30 +200,23 @@ export function nodeBuiltinsInBundle(
   sources: readonly ChunkSource[],
   known: readonly KnownNodeReference[] = KNOWN_NODE_REFERENCES,
 ): NodeBuiltinFinding[] {
-  const unknown = everyLeftInOutput(sources).filter(
-    (found) => !known.some((k) => lets(k, found.module, packagesOf(report, found.chunk))),
-  );
   return [
     ...report.imports.map((found) => ({ kind: 'import' as const, ...found })),
     ...polyfills(report),
-    ...unknown,
+    ...sources.flatMap((source) => leftInOutput(source, report, known)),
   ];
 }
 
-/** Each known module no chunk names any more, so the list cannot outlive its reason. */
+/** Each known module the package's own code no longer names, so the list cannot outlive its reason. */
 export function staleKnownReferences(
   report: NodeBuiltinsReport,
-  sources: readonly ChunkSource[],
   known: readonly KnownNodeReference[] = KNOWN_NODE_REFERENCES,
 ): { package: string; module: string }[] {
-  const named = everyLeftInOutput(sources);
+  const named = report.chunks.flatMap((chunk) => chunk.named ?? []);
   return known.flatMap((k) =>
     k.modules
       .filter(
-        (module) =>
-          !named.some(
-            (found) => found.module === module && lets(k, module, packagesOf(report, found.chunk)),
-          ),
+        (module) => !named.some((n) => n.package === k.package && n.builtins.includes(module)),
       )
       .map((module) => ({ package: k.package, module })),
   );
@@ -210,10 +259,16 @@ export function describeNodeBuiltin(finding: NodeBuiltinFinding): string {
         `${finding.module}, a polyfill of a Node built-in, is in ${finding.chunk}, pulled in by ${finding.pulledInBy}.`,
         FIX,
       ].join('\n');
-    case 'external':
-      return [
-        `${finding.chunk} still loads ${finding.module} itself, at run time: the webview has no Node to load it from.`,
-        FIX,
-      ].join('\n');
+    case 'external': {
+      const by =
+        finding.namedBy === undefined || finding.namedBy.length === 0
+          ? ''
+          : ` Named by ${finding.namedBy.join(', ')}.`;
+      const loads =
+        finding.module === HIDDEN
+          ? `${finding.chunk} hides a require from the bundler (eval or Function): it loads a module at run time, and the webview has no Node to load it from.`
+          : `${finding.chunk} still loads ${finding.module} itself, at run time: the webview has no Node to load it from.`;
+      return [`${loads}${by}`, FIX].join('\n');
+    }
   }
 }

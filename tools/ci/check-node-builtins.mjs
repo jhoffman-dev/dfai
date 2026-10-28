@@ -35,7 +35,7 @@ const sources = readdirSync(dist, { recursive: true, encoding: 'utf8' })
 
 const problems = [
   ...nodeBuiltinsInBundle(report, sources).map(describeNodeBuiltin),
-  ...staleKnownReferences(report, sources).map(describeStaleReference),
+  ...staleKnownReferences(report).map(describeStaleReference),
 ];
 if (problems.length > 0) {
   console.error(problems.join('\n\n'));

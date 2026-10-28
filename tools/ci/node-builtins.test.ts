@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  HIDDEN,
   KNOWN_NODE_REFERENCES,
   describeNodeBuiltin,
   describeStaleReference,
@@ -94,8 +95,31 @@ describe('nodeBuiltinsInBundle', () => {
     ],
   ])('finds %s left in a chunk for the runtime to load', (_case, source, module) => {
     expect(nodeBuiltinsInBundle(CLEAN, [{ file: 'assets/index-A1.js', source }])).toEqual([
-      { kind: 'external', module, chunk: 'assets/index-A1.js' },
+      { kind: 'external', module, chunk: 'assets/index-A1.js', namedBy: [] },
     ]);
+  });
+
+  it.each([
+    ['an optional call', 'globalThis.process?.getBuiltinModule?.(`fs`);', 'fs'],
+    ['a require hidden in eval', 'eval(`require`)(`fs`);', 'fs'],
+    ['a require hidden in a Function', 'new Function(`return require`)()(`os`);', 'os'],
+  ])('finds %s', (_case, source, module) => {
+    expect(nodeBuiltinsInBundle(CLEAN, [{ file: 'assets/index-A1.js', source }])).toEqual([
+      { kind: 'external', module, chunk: 'assets/index-A1.js', namedBy: [] },
+    ]);
+  });
+
+  it.each([
+    ['with a name it cannot read', 'eval("require")(name);'],
+    ['with a package rather than a built-in', "new Function('return require')()('left-pad');"],
+  ])('fails a hidden require %s on the idiom itself', (_case, source) => {
+    const found = nodeBuiltinsInBundle(CLEAN, [{ file: 'assets/a.js', source }]);
+    expect(found).toEqual([
+      { kind: 'external', module: HIDDEN, chunk: 'assets/a.js', namedBy: [] },
+    ]);
+    expect(describeNodeBuiltin(found[0]!)).toMatch(
+      /^assets\/a\.js hides a require from the bundler/,
+    );
   });
 
   it('names each module left in a chunk once, however often it is imported', () => {
@@ -106,10 +130,15 @@ describe('nodeBuiltinsInBundle', () => {
 });
 
 describe('isNodePolyfill', () => {
-  it.each(['buffer', 'process', 'events', 'path-browserify', 'node-stdlib-browser'])(
-    'counts %s',
-    (name) => expect(isNodePolyfill(name)).toBe(true),
-  );
+  it.each([
+    'buffer',
+    'process',
+    'events',
+    'path-browserify',
+    'node-stdlib-browser',
+    'unenv',
+    '@jspm/core',
+  ])('counts %s', (name) => expect(isNodePolyfill(name)).toBe(true));
   it.each(['react', '@tiptap/core', 'pathe', 'yaml'])('does not count %s', (name) =>
     expect(isNodePolyfill(name)).toBe(false),
   );
@@ -161,39 +190,57 @@ describe('known references', () => {
     { package: 'pdfjs-dist', modules: ['fs', 'url'], why: 'guarded' },
   ];
   const READERS = 'assets/readers-B2.js';
-  const withPdfjs = (packages: string[]): NodeBuiltinsReport => ({
+  const PDFJS = 'node_modules/pdfjs-dist/legacy/build/pdf.mjs';
+  const OTHER = 'node_modules/other-lib/index.js';
+  /** The readers' chunk, and what each of its modules' rendered code names. */
+  const chunkNaming = (named: Record<string, string[]>): NodeBuiltinsReport => ({
     imports: [],
-    chunks: [{ file: READERS, packages: packages.map((name) => ({ name, pulledInBy: 'x.ts' })) }],
+    chunks: [
+      {
+        file: READERS,
+        packages: [],
+        named: Object.entries(named).map(([module, builtins]) => ({
+          module,
+          package: module.split('/')[1]!,
+          builtins,
+        })),
+      },
+    ],
   });
   const source = (modules: string[]) => [
     { file: READERS, source: modules.map((m) => `process.getBuiltinModule(\`${m}\`);`).join('') },
   ];
 
-  it('lets through what the package is known to name, in a chunk holding it', () => {
-    expect(nodeBuiltinsInBundle(withPdfjs(['pdfjs-dist']), source(['fs', 'url']), KNOWN)).toEqual(
-      [],
-    );
-    expect(staleKnownReferences(withPdfjs(['pdfjs-dist']), source(['fs', 'url']), KNOWN)).toEqual(
-      [],
-    );
+  it('lets through what the package’s own modules are known to name', () => {
+    const report = chunkNaming({ [PDFJS]: ['fs', 'url'] });
+    expect(nodeBuiltinsInBundle(report, source(['fs', 'url']), KNOWN)).toEqual([]);
+    expect(staleKnownReferences(report, KNOWN)).toEqual([]);
   });
 
   it('fails a module the package is not known to name', () => {
-    const found = nodeBuiltinsInBundle(
-      withPdfjs(['pdfjs-dist']),
-      source(['fs', 'child_process']),
-      KNOWN,
-    );
-    expect(found.map((f) => f.module)).toEqual(['child_process']);
+    const report = chunkNaming({ [PDFJS]: ['fs', 'child_process'] });
+    const found = nodeBuiltinsInBundle(report, source(['fs', 'child_process']), KNOWN);
+    expect(found).toEqual([
+      { kind: 'external', module: 'child_process', chunk: READERS, namedBy: [PDFJS] },
+    ]);
   });
 
-  it('fails a known module in a chunk without the package', () => {
-    const found = nodeBuiltinsInBundle(withPdfjs(['react']), source(['fs']), KNOWN);
-    expect(found).toEqual([{ kind: 'external', module: 'fs', chunk: READERS }]);
+  it('fails a known module named by another package in the same chunk, naming that module', () => {
+    const report = chunkNaming({ [PDFJS]: ['fs'], [OTHER]: ['fs'] });
+    const found = nodeBuiltinsInBundle(report, source(['fs', 'fs']), KNOWN);
+    expect(found).toEqual([{ kind: 'external', module: 'fs', chunk: READERS, namedBy: [OTHER] }]);
+    expect(describeNodeBuiltin(found[0]!)).toContain(`Named by ${OTHER}.`);
   });
 
-  it('names a known module no chunk names any more, so the exception goes', () => {
-    const stale = staleKnownReferences(withPdfjs(['pdfjs-dist']), source(['fs']), KNOWN);
+  it('fails a name the chunk holds more often than the known modules account for', () => {
+    const report = chunkNaming({ [PDFJS]: ['fs'] });
+    const found = nodeBuiltinsInBundle(report, source(['fs', 'fs']), KNOWN);
+    expect(found).toEqual([{ kind: 'external', module: 'fs', chunk: READERS, namedBy: [] }]);
+  });
+
+  it('names a known module the package no longer names, though a neighbour does', () => {
+    const report = chunkNaming({ [PDFJS]: ['fs'], [OTHER]: ['url'] });
+    const stale = staleKnownReferences(report, KNOWN);
     expect(stale).toEqual([{ package: 'pdfjs-dist', module: 'url' }]);
     expect(describeStaleReference(stale[0]!)).toMatch(
       /^Stale exception, remove it: pdfjs-dist -> url/,
@@ -213,19 +260,27 @@ describe('pnpm check:node-builtins over a crafted dist', () => {
   afterEach(() => rmSync(dist, { recursive: true, force: true }));
 
   /** The PDF reader's chunk as the real build makes it: pdf.js naming what it is known to. */
-  const readers = {
+  const knownNames = KNOWN_NODE_REFERENCES.flatMap((k) => k.modules);
+  /** The readers' chunk: pdf.js's module naming `names`, and the chunk's text naming them. */
+  const readersNaming = (names: string[]) => ({
     file: 'assets/readers-B2.js',
-    packages: KNOWN_NODE_REFERENCES.map(({ package: name }) => ({ name, pulledInBy: 'x.ts' })),
-  };
-  const readersSource = KNOWN_NODE_REFERENCES.flatMap((k) => k.modules)
-    .map((module) => `process.getBuiltinModule(\`${module}\`);`)
-    .join('');
+    packages: [{ name: 'pdfjs-dist', pulledInBy: 'x.ts' }],
+    named: [
+      {
+        module: 'node_modules/pdfjs-dist/legacy/build/pdf.mjs',
+        package: 'pdfjs-dist',
+        builtins: names,
+      },
+    ],
+  });
+  const textNaming = (names: string[]) =>
+    names.map((module) => `process.getBuiltinModule(\`${module}\`);`).join('');
 
-  const write = (report: NodeBuiltinsReport, chunk: string, pdfjs = readersSource) => {
-    const withReaders = { ...report, chunks: [...report.chunks, readers] };
+  const write = (report: NodeBuiltinsReport, chunk: string, pdfjsNames = knownNames) => {
+    const withReaders = { ...report, chunks: [...report.chunks, readersNaming(pdfjsNames)] };
     writeFileSync(join(dist, '.vite', 'node-builtins.json'), JSON.stringify(withReaders));
     writeFileSync(join(dist, 'assets', 'index-A1.js'), chunk);
-    writeFileSync(join(dist, 'assets', 'readers-B2.js'), pdfjs);
+    writeFileSync(join(dist, 'assets', 'readers-B2.js'), textNaming(pdfjsNames));
   };
   const run = () => {
     try {
@@ -274,7 +329,7 @@ describe('pnpm check:node-builtins over a crafted dist', () => {
   });
 
   it('fails when a known exception matches nothing any more', () => {
-    write(CLEAN, INNOCENT, '');
+    write(CLEAN, INNOCENT, []);
     const { code, out } = run();
     expect(code).toBe(1);
     expect(out).toContain('Stale exception, remove it: pdfjs-dist -> fs');
