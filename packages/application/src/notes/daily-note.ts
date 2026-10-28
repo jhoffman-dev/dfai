@@ -2,6 +2,7 @@ import {
   DAILY_TYPE,
   dailyNoteAmong,
   dailyNoteContents,
+  homeFolderOf,
   joinVaultPath,
   noteFileName,
   VAULT_ROOT,
@@ -13,7 +14,6 @@ import { findDailyTemplate, readTemplate, type NoteTemplate } from '../types/tem
 import { ensureFolder } from '../vault/create-folder.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
-import { homeFolderFor } from './home-folder.ts';
 import type { MarkdownPort } from './ports.ts';
 
 /**
@@ -56,8 +56,9 @@ export async function ensureDailyNote({
   notePaths: readonly VaultPath[];
   templates: readonly NoteTemplate[];
 }): Promise<{ path: VaultPath; created: boolean }> {
-  const home =
-    (await homeFolderFor({ fs, markdown, properties: { type: DAILY_TYPE }, today })) ?? VAULT_ROOT;
+  // Read once: where the note lives, and whether its day's blocks can run.
+  const types = await loadObjectTypes({ fs, markdown });
+  const home = homeFolderOf({ properties: { type: DAILY_TYPE }, types, today }) ?? VAULT_ROOT;
   const existing = dailyNoteAmong(today, notePaths, home);
   if (existing !== null) return { path: existing, created: false };
   const path = dailyNotePath(today, await ensureFolder({ fs, folder: home }));
@@ -65,7 +66,7 @@ export async function ensureDailyNote({
   const template = findDailyTemplate(templates);
   const started =
     template === null
-      ? await builtInContents({ fs, markdown, today })
+      ? dailyNoteContents({ day: today, types })
       : await readTemplate({ fs, template });
   const contents = newNoteTaskRules({ markdown, contents: started, today });
   try {
@@ -78,23 +79,4 @@ export async function ensureDailyNote({
     throw error;
   }
   return { path, created: true };
-}
-
-/**
- * What today's note starts as with no Daily template: the day's blocks when
- * the vault's Task type can run them, judged from the types as they are on
- * disk as the note is made — never from a list still loading, which would
- * look like a vault with no Task type at all.
- */
-async function builtInContents({
-  fs,
-  markdown,
-  today,
-}: {
-  fs: VaultFsPort;
-  markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
-  today: string;
-}): Promise<string> {
-  const types = await loadObjectTypes({ fs, markdown });
-  return dailyNoteContents({ day: today, types });
 }

@@ -1,5 +1,5 @@
-import { GTD_STATUSES, TASK_KEYS, type GtdStatus } from '../gtd/gtd-status.ts';
-import { followsGtd, TASK_TYPE_FILE, taskTypeOf } from '../gtd/task-type.ts';
+import { GTD_STATUSES, TASK_KEYS, TASK_TYPE, type GtdStatus } from '../gtd/gtd-status.ts';
+import { followsGtd } from '../gtd/task-type.ts';
 import { queryBlockFence } from '../query-block/query-block.ts';
 import { promisesItsDay } from '../review/weekly-review.ts';
 import type { ObjectType } from '../types/property-def.ts';
@@ -99,15 +99,17 @@ export function dailyDaySections(day: string): readonly DailyDaySection[] {
 const DAY_FIELDS = [TASK_KEYS.due, TASK_KEYS.defer] as const;
 
 /**
- * Whether the day's blocks can run in a vault of these types: its Task type
- * has GTD's eight statuses and `due` and `defer` as dates — everything the
- * queries name. Otherwise a block would show a problem where the day should
- * be, so the note starts without them. A vault with no Task type yet counts
- * as having the built-in one it would be given, as choosing for today does.
+ * Whether the day's blocks can run in a vault of these types: it has a type
+ * named exactly `task`, as `FROM task` names it, with GTD's eight statuses
+ * and `due` and `defer` as dates — everything the queries name. Otherwise a
+ * block would show a problem where the day should be, so the note starts
+ * without them. The index knows only the types on disk, so a vault with no
+ * Task type of its own yet has none for the blocks to read.
  */
 export function dayBlocksFit(types: readonly ObjectType[]): boolean {
-  const task = taskTypeOf(types) ?? TASK_TYPE_FILE.type;
+  const task = types.find((type) => type.name === TASK_TYPE);
   return (
+    task !== undefined &&
     followsGtd(task) &&
     DAY_FIELDS.every((key) =>
       task.properties.some((property) => property.key === key && property.kind === 'date'),

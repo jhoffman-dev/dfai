@@ -123,7 +123,7 @@ describe('whether the day fits the vault (#110)', () => {
   // `FROM task` names the type exactly, so a type spelt `Task` is no type of that name.
   it('does not fit a GTD Task type whose name is spelt other than task', () => {
     expect(dayBlocksFit([taskType({ name: 'Task' })])).toBe(false);
-    expect(dayBlocksFit([taskType({ name: ' task' })])).toBe(false);
+    expect(dayBlocksFit([taskType({ name: 'TASK' })])).toBe(false);
   });
 
   it.each<[string, ObjectType]>([
