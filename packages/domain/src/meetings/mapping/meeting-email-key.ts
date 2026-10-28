@@ -16,7 +16,7 @@ import { punycodeDecode, punycodeEncode } from './meeting-punycode.ts';
  *   it without case, and DFAI has always compared it so;
  * - composed (NFC), as Granola and calendars send it;
  * - its domain in the ASCII (punycode) form DNS uses, with no final dot
- *   ({@link domainKey});
+ *   ({@link domainKey}); an all-ASCII domain is kept as written, case aside;
  * - a `+tag` kept: `mara+payroll@` is its own address here.
  */
 
@@ -31,16 +31,24 @@ const BRACKETED = /<([^<>]*)>\s*$/u;
 const folded = (text: string): string => text.trim().toLowerCase().normalize('NFC');
 
 /**
- * A label in its ASCII form: a Unicode one encoded, an `xn--` one read and
- * encoded again in the folded form, so either way it arrives is one label.
- * Null for an `xn--` label that is not punycode of a host's characters.
+ * A label in its ASCII form: a Unicode one encoded. An `xn--` one is kept as
+ * written, and only when it is the canonical A-label of a folded Unicode
+ * label: one that is not (`xn--wca` is Ü, `xn---tda` breaks RFC 3492) is
+ * another DNS label, so null — the domain is compared as written, never
+ * folded onto another (PR #604 review).
  */
 function asciiLabel(label: string): string | null {
   if (!ASCII.test(label)) return ACE_PREFIX + punycodeEncode(label);
   if (!label.startsWith(ACE_PREFIX)) return label;
-  const decoded = punycodeDecode(label.slice(ACE_PREFIX.length));
-  if (decoded === null || ASCII.test(decoded) || NOT_A_HOST.test(decoded)) return null;
-  return ACE_PREFIX + punycodeEncode(folded(decoded));
+  const encoded = label.slice(ACE_PREFIX.length);
+  const decoded = punycodeDecode(encoded);
+  const canonical =
+    decoded !== null &&
+    !ASCII.test(decoded) &&
+    !NOT_A_HOST.test(decoded) &&
+    folded(decoded) === decoded &&
+    punycodeEncode(decoded) === encoded;
+  return canonical ? label : null;
 }
 
 /**

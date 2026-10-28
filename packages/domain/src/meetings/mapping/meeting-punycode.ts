@@ -107,14 +107,15 @@ const isCodePoint = (n: number) =>
 
 /** The label a punycode text encodes, or null for text that is not punycode. */
 export function punycodeDecode(text: string): string | null {
+  // §6.2: the last delimiter ends the basic code points only when some come before it.
   const delimiter = text.lastIndexOf('-');
-  const basic = delimiter < 0 ? '' : text.slice(0, delimiter);
+  const basic = delimiter > 0 ? text.slice(0, delimiter) : '';
   if (/\P{ASCII}/u.test(basic)) return null;
   const points = Array.from(basic, (each) => each.codePointAt(0) ?? 0);
   let n = INITIAL_N;
   let i = 0;
   let bias = INITIAL_BIAS;
-  for (let at = delimiter + 1; at < text.length; i++) {
+  for (let at = delimiter > 0 ? delimiter + 1 : 0; at < text.length; i++) {
     const read = readInteger(text, at, bias);
     if (read === null) return null;
     const before = i;
