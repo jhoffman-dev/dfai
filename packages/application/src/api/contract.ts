@@ -297,7 +297,7 @@ export interface ApiRelatedNote {
   readonly title: string;
   /** `[[Note]]`, or `[[Folder/Note]]` where the name is shared: what to write to link it. */
   readonly link: string;
-  /** Cosine similarity of its closest block to the note, from -1 to 1; higher is closer. */
+  /** Cosine similarity of its closest block to the note, above 0 and at most 1; higher is closer. */
   readonly score: number;
 }
 

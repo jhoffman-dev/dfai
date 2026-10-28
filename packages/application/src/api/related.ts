@@ -1,15 +1,11 @@
-import { createVaultPath } from '@dfai/domain';
+import { RELATED_NOTES } from '@dfai/domain';
 import { readVaultGraph } from '../graph/load-graph.ts';
 import { findRelatedNotes, type RelatedNotesState } from '../related/find-related-notes.ts';
 import { ApiError, messageWithoutPaths } from './api-error.ts';
 import type { ApiRelatedNote } from './contract.ts';
 import { countOf } from './fields.ts';
 import { notePathOf, readNote } from './note-io.ts';
-import { isApiNotePath } from './paths.ts';
 import type { RouteResult, VaultRequest } from './vault-request.ts';
-
-/** How many related notes one answer holds when not asked, and the most it ever holds. */
-const RELATED = { fallback: 8, max: 50 };
 
 /**
  * The notes close in meaning to one that are not linked to it yet, either way
@@ -19,7 +15,7 @@ const RELATED = { fallback: 8, max: 50 };
  * Mac by the window, as how its panel reads a note, not in the vault.
  */
 export async function relatedRoute(request: VaultRequest): Promise<RouteResult> {
-  const limit = countOf(request.query['limit'], { field: 'limit', ...RELATED });
+  const limit = countOf(request.query['limit'], { field: 'limit', ...RELATED_NOTES });
   const path = await notePathOf(request);
   await readNote(request, path);
   const state = await relatedState(request, { path, limit });
@@ -29,9 +25,8 @@ export async function relatedRoute(request: VaultRequest): Promise<RouteResult> 
     throw new ApiError('semantic_off', 'Search by meaning is off on this Mac — turn it on from ⌘K');
   if (state.kind === 'not-built')
     return { status: 200, body: { related: [], embedded: false, progress: state.progress } };
-  const related = state.notes
-    .filter((note) => isApiNotePath(createVaultPath(note.path)))
-    .map(toApiRelated);
+  // Only notes of the person's own space are ever offered (`isOfferedAsRelated`), all readable here.
+  const related = state.notes.map(toApiRelated);
   return { status: 200, body: { related, embedded: true, progress: state.progress } };
 }
 

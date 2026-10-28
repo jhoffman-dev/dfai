@@ -146,11 +146,12 @@ export const related = defineTool({
   title: 'Related notes',
   description:
     'List the notes close in meaning to this one that are not linked to it yet, either way — ' +
-    'neither by a [[wiki link]] in either note nor by a relation property — best first, as the ' +
-    "app's Related notes panel offers them. Returns { related: [{ path, title, link, score }], " +
+    'neither by a [[wiki link]] in either note nor by a relation property — best first. Notes the ' +
+    "person dismissed in the app's Related notes panel are kept on their Mac and still listed " +
+    'here. Returns { related: [{ path, title, link, score }], ' +
     'embedded, progress: { done, total, failure } }. "link" is what to write to link one ' +
-    '([[Note]], or [[Folder/Note]] where the name is shared); "score" is from -1 to 1, higher ' +
-    'closer. Archived notes and templates are never listed. "embedded" is false, and "related" ' +
+    '([[Note]], or [[Folder/Note]] where the name is shared); "score" is above 0 and at most 1, ' +
+    'higher closer. Archived notes and templates are never listed. "embedded" is false, and "related" ' +
     'empty, while the note has no meanings cached yet. It works only where the person has turned ' +
     'on search by meaning in the app (⌘K, "By meaning"): this tool never turns it on, and answers ' +
     'semantic_off where it is off, so tell the person. Read-only: to link one, append its "link" ' +
