@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 use crate::vault::{
-    change_in_vault, change_turn, off_main, rename_exclusive, resolve_new, VaultState,
+    change_in_vault, change_turn, is_as_read, off_main, rename_exclusive, resolve_new, BasedOn,
+    VaultState,
 };
 
 /// An entry that is already there, as itself: a link is the link, not what it
@@ -118,7 +119,42 @@ pub(crate) fn trash_entry_at(
     relative: &str,
     trash: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<(), String> {
+    trash_entry_at_unless_changed(root, relative, &[], trash)
+}
+
+/// What a trash is refused with when a file it was to hold still has changed.
+pub(crate) const CHANGED_SINCE_READ: &str =
+    "a file changed on disk since it was read, so nothing was moved to the Trash";
+
+/// A file as the client read it: its time, and the SHA-256 of its bytes.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Unchanged {
+    pub path: String,
+    pub modified: u64,
+    pub digest: String,
+}
+
+/// `trash_entry_at`, only while every file in `unchanged` is as it was read
+/// (#235). The checks and the Trash are one change: nothing else in the vault
+/// changes between them. Which files to hold still is the client's to say;
+/// this only compares, as `write_text_file` does its `expected_modified`.
+pub(crate) fn trash_entry_at_unless_changed(
+    root: &Path,
+    relative: &str,
+    unchanged: &[Unchanged],
+    trash: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
     let _turn = change_turn();
+    for file in unchanged {
+        let read = BasedOn {
+            modified: Some(file.modified),
+            digest: Some(&file.digest),
+        };
+        if !is_as_read(root, &file.path, read)? {
+            return Err(CHANGED_SINCE_READ.into());
+        }
+    }
     let entry = resolve_entry(root, relative)?;
     trash(&entry)
 }
@@ -169,10 +205,20 @@ pub async fn move_entry(
 }
 
 #[tauri::command]
-pub async fn trash_entry(app: AppHandle, path: String, vault: String) -> Result<(), String> {
+pub async fn trash_entry(
+    app: AppHandle,
+    path: String,
+    vault: String,
+    unchanged: Option<Vec<Unchanged>>,
+) -> Result<(), String> {
     off_main(move || {
         change_in_vault(&app.state::<VaultState>(), Some(&vault), |root| {
-            trash_entry_at(root, &path, system_trash)
+            trash_entry_at_unless_changed(
+                root,
+                &path,
+                unchanged.as_deref().unwrap_or_default(),
+                system_trash,
+            )
         })?;
         log::info!("moved {path} to the Trash");
         Ok(())
@@ -705,7 +751,10 @@ mod trash_tests {
         let vault = tempdir().unwrap();
         fs::write(vault.path().join("copy.md"), "---\na: 1\n---\n").unwrap();
         fs::write(vault.path().join("live.md"), "---\na: 1\nb: 2\n---\n").unwrap();
-        let read = vec![as_read(vault.path(), "copy.md"), as_read(vault.path(), "live.md")];
+        let read = vec![
+            as_read(vault.path(), "copy.md"),
+            as_read(vault.path(), "live.md"),
+        ];
         (vault, read)
     }
 
@@ -725,13 +774,20 @@ mod trash_tests {
         let changes: [fn(&Path, &[Unchanged]); 4] = [
             |root, read| {
                 fs::write(root.join("copy.md"), "---\na: 2\n---\n").unwrap();
-                let then = std::time::UNIX_EPOCH + std::time::Duration::from_millis(read[0].modified);
-                let file = fs::File::options().write(true).open(root.join("copy.md")).unwrap();
+                let then =
+                    std::time::UNIX_EPOCH + std::time::Duration::from_millis(read[0].modified);
+                let file = fs::File::options()
+                    .write(true)
+                    .open(root.join("copy.md"))
+                    .unwrap();
                 file.set_modified(then).unwrap();
             },
             |root, _| {
                 let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
-                let file = fs::File::options().write(true).open(root.join("copy.md")).unwrap();
+                let file = fs::File::options()
+                    .write(true)
+                    .open(root.join("copy.md"))
+                    .unwrap();
                 file.set_modified(later).unwrap();
             },
             |root, _| fs::write(root.join("live.md"), "---\na: 1\n---\n").unwrap(),
@@ -753,10 +809,12 @@ mod trash_tests {
     fn refuses_a_named_file_outside_the_vault_without_asking_the_trash() {
         let (vault, mut read) = copy_and_live();
         read[1].path = "../live.md".into();
-        assert!(trash_entry_at_unless_changed(vault.path(), "copy.md", &read, |_| {
-            panic!("the Trash must not be asked")
-        })
-        .is_err());
+        assert!(
+            trash_entry_at_unless_changed(vault.path(), "copy.md", &read, |_| {
+                panic!("the Trash must not be asked")
+            })
+            .is_err()
+        );
         assert!(vault.path().join("copy.md").exists());
     }
 

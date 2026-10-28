@@ -49,6 +49,13 @@ export {
 } from './conflict-copy.ts';
 export type { ConflictStep } from './conflict-copy.ts';
 export {
+  extrasDfaiWrote,
+  jsonHasDuplicateKeys,
+  liveExtras,
+  recordExtrasShipped,
+} from './settled-copy.ts';
+export type { LiveExtras } from './settled-copy.ts';
+export {
   DEFAULT_PULL_INTERVAL_MINUTES,
   DEFAULT_PUSH_DELAY_SECONDS,
   syncAfterLook,

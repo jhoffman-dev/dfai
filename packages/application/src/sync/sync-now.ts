@@ -12,6 +12,7 @@ import {
   type SyncReport,
 } from '@dfai/domain';
 import type { ActivityRecorder } from '../activity/ports.ts';
+import type { UnsettledSaid } from '../meetings/index.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
@@ -53,6 +54,12 @@ export interface SyncPorts {
   readonly files: SyncFilesPort;
   readonly unsaved: UnsavedWorkPort;
   readonly activity: ActivityRecorder;
+  /**
+   * What this Mac has said, this session, of old conflict copies it kept
+   * though they hold nothing more (#235): each is said once, and again when
+   * it changes. Left out, each is said on every sync.
+   */
+  readonly copiesSaid?: UnsettledSaid;
 }
 
 /**
@@ -93,6 +100,7 @@ interface SyncStep {
   readonly markdown: MarkdownPort;
   readonly files: SyncFilesPort;
   readonly activity: ActivityRecorder;
+  readonly copiesSaid: UnsettledSaid | undefined;
   readonly mac: string;
   readonly branch: string;
   readonly message: string;
@@ -100,7 +108,7 @@ interface SyncStep {
 }
 
 async function runSync({
-  ports: { git, fs, files, unsaved, activity, markdown },
+  ports: { git, fs, files, unsaved, activity, markdown, copiesSaid },
   mac,
   clock,
 }: {
@@ -113,7 +121,10 @@ async function runSync({
   const { leftOut, newly, ignored } = await leaveOut({ git, fs, files });
   warn(activity, leftOutWarnings(newly));
   const message = syncCommitMessage({ mac, localNow: clock.localNow() });
-  const step: SyncStep = { git, fs, markdown, files, activity, mac, branch, leftOut, message };
+  const step: SyncStep = {
+    ...{ git, fs, markdown, files, activity, copiesSaid },
+    ...{ mac, branch, leftOut, message },
+  };
   const leftover = await concludeLeftoverMerge(step);
   await followCaseRenames(git, await readStatus(git));
   const committed = (await commitAll({ git, mac, message, leftOut })) || leftover;
@@ -218,11 +229,12 @@ async function mergeFromOrigin(step: SyncStep): Promise<boolean> {
  * is about to report them. Says whether it committed.
  */
 async function clearCopiesThatAddNothing(step: SyncStep): Promise<boolean> {
-  const { git, fs, markdown, files, activity, mac, message, leftOut } = step;
+  const { git, fs, markdown, files, activity, copiesSaid, mac, message, leftOut } = step;
   const { unreported } = await readJournal(files);
   const cleared = await clearSettledCopies({
     ports: { git, fs, markdown, activity },
     keep: new Set(unreported.map(({ copy }) => copy)),
+    ...(copiesSaid !== undefined && { said: copiesSaid }),
   });
   return cleared.length > 0 && (await commitAll({ git, mac, message, leftOut }));
 }

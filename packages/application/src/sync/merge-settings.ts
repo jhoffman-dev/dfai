@@ -1,5 +1,6 @@
 import {
   isSettingsFile,
+  jsonHasDuplicateKeys,
   mergeSettingsText,
   mergeShippedPropertiesRecords,
   parseShippedPropertiesRecord,
@@ -67,6 +68,8 @@ const RECORD_JSON = /\n```json\n([^\n]*)\n```\n/;
 function asAtlasWrote(text: string): ShippedPropertiesRecord | null {
   const record = readRecord(text);
   if (record === null) return null;
+  // A key named twice is read as its last: what the first held would be merged away.
+  if (jsonHasDuplicateKeys(RECORD_JSON.exec(text)?.[1] ?? '')) return null;
   const withoutKeys = (written: string) => written.replace(RECORD_JSON, '\n```json\n```\n');
   if (withoutKeys(text) !== withoutKeys(shippedPropertiesRecordText(record))) return null;
   const json: unknown = JSON.parse(RECORD_JSON.exec(text)?.[1] ?? 'null');
