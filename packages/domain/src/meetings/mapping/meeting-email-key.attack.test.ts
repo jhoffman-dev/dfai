@@ -61,9 +61,16 @@ function randomDomain(random: () => number): string {
   return random() < 0.1 ? `${domain}.` : domain;
 }
 
+/**
+ * Capital sharp s. UTS #46 maps it to ß since Unicode 15.1, and to `ss` before:
+ * Node 22's tables are older than Node 26's. Pinned to the current mapping, so
+ * the oracle reads one standard on every runtime.
+ */
+const CAPITAL_SHARP_S = /\u1e9e/gu;
+
 /** The host DNS resolves (WHATWG URL / UTS #46), final dot aside; null when it is no host. */
 function dnsHost(domain: string): string | null {
-  const host = domainToASCII(domain).replace(/\.$/u, '');
+  const host = domainToASCII(domain.replace(CAPITAL_SHARP_S, '\u00df')).replace(/\.$/u, '');
   // An empty label (`a..b`, or one UTS #46 maps to nothing) is no host to compare.
   return host === '' || host.split('.').includes('') ? null : host;
 }
@@ -95,6 +102,12 @@ describe('emailKey never shares a key between two DNS hosts (property, seeded)',
     expect(emailKey('mara@larkspur.ΟΔΟΣ')).not.toBe(emailKey('mara@larkspur.οδος'));
     expect(emailKey('mara@ΟΔΟΣ-ΕΝΑ.example')).not.toBe(emailKey('mara@οδος-ενα.example'));
     expect(emailKey('mara@ΟΔΟΣ。example')).not.toBe(emailKey('mara@οδος.example'));
+  });
+
+  it('a capital sharp s keys as ß, as UTS #46 maps it since Unicode 15.1, never as ss', () => {
+    expect(emailKey('mara@ẞ.example')).toBe('mara@xn--zca.example');
+    expect(emailKey('mara@straẞe.example')).toBe(emailKey('mara@straße.example'));
+    expect(emailKey('mara@straẞe.example')).not.toBe(emailKey('mara@strasse.example'));
   });
 });
 
