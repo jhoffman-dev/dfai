@@ -188,6 +188,22 @@ describe('acceptRelatedNote', () => {
     expect(writes).toHaveLength(0);
   });
 
+  it.each([
+    ['frontmatter and a body of one line', '---\r\ntype: plan\r\n---\r\nHello', 'Hello\r\n\r\n'],
+    ['frontmatter alone, closed on the last byte', '---\r\ntype: plan\r\n---', '\r\n'],
+  ])('adds CRLF to a CRLF file whose body has no line break: %s', async (_, before, joint) => {
+    const { fs, held } = disk({ 'Plan.md': before });
+    await acceptRelatedNote({
+      fs,
+      index,
+      note: createVaultPath('Plan.md'),
+      target: createVaultPath('Home/Garden.md'),
+    });
+    const after = held.get('Plan.md')!;
+    expect(after.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(after.endsWith(`${joint}## Related\r\n\r\n- [[Garden]]\r\n`)).toBe(true);
+  });
+
   it('writes nothing when the section already links it', async () => {
     const { fs, writes } = disk({ 'Plan.md': '## Related\n\n- [[Garden]]\n' });
     const wrote = await acceptRelatedNote({
