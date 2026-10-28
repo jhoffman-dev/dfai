@@ -76,12 +76,29 @@ describe('the encodings', () => {
     expect(Buffer.from(utf8Bytes('\ud800'))).toEqual(Buffer.from('�', 'utf8'));
   });
 
+  it('reads the smallest and largest of each length, and the points either side of the surrogates', () => {
+    const text = '\u0080\u07ff\u0800\ud7ff\ue000\uffff\u{10000}\u{10ffff}';
+    expect(utf8Text(Buffer.from(text, 'utf8'))).toBe(text);
+  });
+
   it.each([
     ['a lone continuation byte', [0x80]],
     ['a cut-off sequence', [0xe2, 0x82]],
     ['a lead without a continuation', [0xc3, 0x41]],
     ['an overlong lead', [0xc0, 0xaf]],
+    ['an overlong lead C1', [0xc1, 0xbf]],
+    ['an overlong three-byte form', [0xe0, 0x80, 0xaf]],
+    ['an overlong three-byte form at its top', [0xe0, 0x9f, 0xbf]],
+    ['an overlong four-byte form', [0xf0, 0x80, 0x80, 0x80]],
+    ['an overlong four-byte form at its top', [0xf0, 0x8f, 0xbf, 0xbf]],
+    ['an encoded surrogate', [0xed, 0xa0, 0x80]],
+    ['an encoded low surrogate', [0xed, 0xbf, 0xbf]],
+    ['a lead of F5 (past U+10FFFF)', [0xf5, 0x80, 0x80, 0x80]],
+    ['a lead of F4 past U+10FFFF', [0xf4, 0x90, 0x80, 0x80]],
+    ['a five-byte lead', [0xf8, 0x80, 0x80, 0x80]],
+    ['a lead of FF', [0xff]],
   ])('refuses %s as not UTF-8', (_, bytes) => {
+    expect(() => utf8Text(Uint8Array.from(bytes))).toThrow(WebhookRefusal);
     expect(() => utf8Text(Uint8Array.from(bytes))).toThrow(/not UTF-8/);
   });
 });

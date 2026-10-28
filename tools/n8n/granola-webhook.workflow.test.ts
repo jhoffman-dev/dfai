@@ -99,13 +99,16 @@ function ifStatus(name: string, status: number): number {
   return only?.rightValue === status ? 0 : 1;
 }
 
+/** Whether a node is an If on the fetch's status. */
+const readsStatus = (name: string) =>
+  node(name).type === 'n8n-nodes-base.if' &&
+  JSON.stringify(node(name).parameters).includes('$json.statusCode');
+
 /** A run where Granola answers `status` (or never answers), and GitHub as `github` says. */
 function run(granola: number | 'no answer', github: { pathTaken: boolean; commits: boolean }) {
   return walk((name) => {
     if (name === N.fetch) return granola === 'no answer' ? 1 : 0;
-    if (name === N.found || name === N.processing) {
-      return ifStatus(name, granola === 'no answer' ? 0 : granola);
-    }
+    if (readsStatus(name)) return ifStatus(name, granola === 'no answer' ? 0 : granola);
     if (name === N.getPath) return github.pathTaken ? 0 : 1;
     if (name === N.create) return github.commits ? 0 : 1;
     return 0;
@@ -126,16 +129,16 @@ describe('the wiring', () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(path.at(-1)).toBe(N.create);
     expect(answers(path)).toEqual([200]);
-    // The 200 goes before the map and the commit, within Granola's 15 seconds.
-    expect(path.indexOf(N.accepted)).toBeLessThan(path.indexOf(N.map));
+    // The 200 goes as soon as the signature holds, before the fetch: Granola waits 15 seconds.
+    expect(path.indexOf(N.accepted)).toBe(path.indexOf(N.verify) + 1);
+    expect(path.indexOf(N.accepted)).toBeLessThan(path.indexOf(N.fetch));
   });
 
-  it('answers a 404 from Granola (still processing) with a 503, which Granola retries', () => {
-    const path = run(404, FREE);
-    expect(path.at(-1)).toBe(N.retry);
-    expect(answers(path)).toEqual([503]);
-    expect(path).not.toContain(N.map);
-    expect(path).not.toContain(N.notify);
+  it('answers only 200 or 401: nothing spends Granola’s four-day retry budget (ADR-0034)', () => {
+    const codes = committed.nodes
+      .filter((each) => each.type === 'n8n-nodes-base.respondToWebhook')
+      .map((each) => (each.parameters.options as { responseCode: number }).responseCode);
+    expect(codes.sort()).toEqual([200, 401]);
   });
 
   it('answers a GitHub failure with 200 and the failure email', () => {
@@ -145,12 +148,12 @@ describe('the wiring', () => {
     expect(node(N.notify).type).toBe('n8n-nodes-base.gmail');
   });
 
-  it.each([401, 413, 429, 500])(
-    'answers any other Granola status (%i) with 200 and the email: the pull catches it',
+  it.each([404, 401, 413, 429, 500])(
+    'answers a Granola %i with 200 and the email, never a retry: the pull catches it',
     (status) => {
       const path = run(status, FREE);
       expect(answers(path)).toEqual([200]);
-      expect(path.slice(-3)).toEqual([N.acceptedFailing, N.failed, N.notify]);
+      expect(path.slice(-2)).toEqual([N.failed, N.notify]);
       expect(path).not.toContain(N.map);
     },
   );
@@ -234,7 +237,7 @@ describe('the webhook and the fetch', () => {
         response: { response: { fullResponse: true, neverError: true } },
       },
     });
-    expect(FETCH_TIMEOUT_MS).toBeLessThan(15_000);
+    expect(FETCH_TIMEOUT_MS).toBeLessThanOrEqual(10_000);
     expect(fetch.onError).toBe('continueErrorOutput');
   });
 });
