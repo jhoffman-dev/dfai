@@ -6,7 +6,6 @@ import {
   TASK_TYPE,
   todayLists,
   TASK_KEYS,
-  type TaskAsRead,
   type TodayLists,
   type TodayTask,
   type VaultPath,
@@ -105,9 +104,6 @@ function asChanged({
   if ('refused' in ruled) return task;
   changes = ruled.changes;
   const after = taskAsRead({ ...properties, ...changes });
-  // The read holds the change already: drawn as read, the row is the same
-  // object when the change settles, and is not drawn again for it.
-  if (sameAsRead(task, after)) return task;
   return {
     ...task,
     ...after,
@@ -116,12 +112,6 @@ function asChanged({
     laterChoice: laterChoiceOf({ ...task, focus: after.focus, today, choosing }),
   };
 }
-
-const sameAsRead = (task: TodayTask, after: TaskAsRead) =>
-  task.status === after.status &&
-  task.due === after.due &&
-  task.defer === after.defer &&
-  (task.focus ?? null) === after.focus;
 
 /** The sections, each task as `kept` gives it back. */
 function withTasks(
