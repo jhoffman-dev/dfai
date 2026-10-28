@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { apiFixture, bodyOf, codeOf } from '@dfai/application';
 import { atlasQueryIndex } from '@dfai/application/testing/sqlite';
-import { relationsOf, splitFrontmatter } from '@dfai/domain';
+import { relationsOf, splitFrontmatter, splitWikiLinksAndEmbeds } from '@dfai/domain';
 import { SLACK_PERMALINK, slackCapture, slackSource } from '@dfai/domain/testing';
 import { remarkMarkdown } from './markdown-port.ts';
 
@@ -61,5 +61,33 @@ describe('review #615 MAJOR 1: sender text in the frontmatter makes no relation'
     expect(await refused(slackCapture({ source: slackSource({ url }), thread: [] }))).toBe(
       'invalid',
     );
+  });
+});
+
+/** The wiki links and embeds the body holds, as the index reads them. */
+const linksIn = (text: string) =>
+  splitWikiLinksAndEmbeds(splitFrontmatter(text).body).filter((piece) => piece.kind !== 'text');
+
+describe('review #615 MAJOR 2: a link’s address holds no wiki link or embed', () => {
+  it.each([
+    ['a labelled link', '<https://example.com/[[Mara]]|see>'],
+    ['a bare link', '<https://example.com/[[Mara]]>'],
+    ['a mail link', '<mailto:[[Mara]]@example.com>'],
+    ['an embed in a link', '<https://example.com/![[Mara]]|see>'],
+    ['a link amid words', 'see <https://example.com/[[Mara]]|this> now'],
+    ['angle brackets in a link', '<https://example.com/a&lt;b&gt;|see>'],
+  ])('writes %s so the index reads no link in it', async (_, text) => {
+    // An author no Person matches, so the only links there could be are the sender's.
+    const author = { name: 'Tobias Fenn' };
+    const written_ = await written(
+      slackCapture({ text, source: slackSource({ author }), thread: [], attachments: [] }),
+    );
+    expect(linksIn(written_)).toEqual([]);
+    expect(splitFrontmatter(written_).body).toMatch(/\]\(https?:|\]\(mailto:/);
+  });
+
+  it('refuses an attachment whose link holds brackets', async () => {
+    const attachments = [{ name: 'a', url: 'https://files.slack.com/[[Mara Quill]].pdf' }];
+    expect(await refused(slackCapture({ attachments }))).toBe('invalid');
   });
 });
