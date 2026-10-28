@@ -152,7 +152,7 @@ describe('saveTrail, attacked', () => {
     const taken = ['Ideas/Payroll.md', 'Ideas/Trail from Payroll.md'];
     for (let n = 2; n <= 40; n += 1) taken.push(`Ideas/Trail from Payroll ${n}.md`);
     const { fs } = disk(Object.fromEntries(taken.map((path) => [path, ''])));
-    const path = await saveTrail({
+    const { path } = await saveTrail({
       fs,
       index: manifestOf(taken),
       trail: startTrail('Ideas/Payroll.md'),
@@ -164,7 +164,7 @@ describe('saveTrail, attacked', () => {
     const start = `Ideas/${'Mara Quill payroll thoughts '.repeat(9).trim()}.md`;
     expect(utf8Bytes(start.slice('Ideas/'.length))).toBeLessThanOrEqual(255);
     const { fs } = disk({ [start]: '' });
-    const path = await saveTrail({ fs, index: manifestOf([start]), trail: startTrail(start) });
+    const { path } = await saveTrail({ fs, index: manifestOf([start]), trail: startTrail(start) });
     expect(utf8Bytes(path.slice(path.lastIndexOf('/') + 1))).toBeLessThanOrEqual(255);
   });
 
@@ -175,7 +175,7 @@ describe('saveTrail, attacked', () => {
     );
     const notes = ['Ideas/Payroll.md', 'Ideas/Budget.md'];
     const { fs, held } = disk({});
-    const path = await saveTrail({ fs, index: manifestOf(notes), trail });
+    const { path } = await saveTrail({ fs, index: manifestOf(notes), trail });
     const resolve = createWikiLinkResolver(notes.map(createVaultPath));
     const dead = wikiLinkSpans(held.get(path) as string)
       .map((span) => span.link.target)

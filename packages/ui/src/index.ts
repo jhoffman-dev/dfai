@@ -87,7 +87,7 @@ export type { MentionRow, MentionsState } from './note-links.tsx';
 export { RelatedNotesList } from './related-notes.tsx';
 export type { RelatedPanel, RelatedPanelState, RelatedRow } from './related-notes.tsx';
 export { TrailBar } from './trail-bar.tsx';
-export type { TrailNote, TrailWalk } from './trail-bar.tsx';
+export type { SavedTrailNote, TrailNote, TrailWalk } from './trail-bar.tsx';
 export { EditableTitle, HiddenTitle, PageHead } from './page-head.tsx';
 export type { PageHeadProps } from './page-head.tsx';
 export { PageAction, PageBar } from './page-bar.tsx';

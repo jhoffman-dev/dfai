@@ -86,7 +86,12 @@ describe('the trail bar', () => {
     expect(screen.queryByRole('status')).toBeNull();
 
     rerender(
-      <TrailBar trail={{ ...trail, saved: note('Trail from Payroll.md', 'Trail from Payroll') }} />,
+      <TrailBar
+        trail={{
+          ...trail,
+          saved: { ...note('Trail from Payroll.md', 'Trail from Payroll'), gone: 0 },
+        }}
+      />,
     );
     expect(screen.getByRole('status').textContent).toBe('Saved as Trail from Payroll');
     await userEvent.click(screen.getByRole('button', { name: 'Trail from Payroll' }));
@@ -96,5 +101,17 @@ describe('the trail bar', () => {
   it('says why a save failed', () => {
     render(<TrailBar trail={walk({ problem: 'No free name for the trail' })} />);
     expect(screen.getByRole('alert').textContent).toBe('No free name for the trail');
+  });
+
+  it('says how many steps were left out for being gone from the vault', () => {
+    const saved = { ...note('Trail from Payroll.md', 'Trail from Payroll'), gone: 2 };
+    const { rerender } = render(<TrailBar trail={walk({ saved })} />);
+    expect(screen.getByRole('status').textContent).toBe(
+      'Saved as Trail from Payroll — 2 steps no longer in the vault left out',
+    );
+    rerender(<TrailBar trail={walk({ saved: { ...saved, gone: 1 } })} />);
+    expect(screen.getByRole('status').textContent).toBe(
+      'Saved as Trail from Payroll — one step no longer in the vault left out',
+    );
   });
 });

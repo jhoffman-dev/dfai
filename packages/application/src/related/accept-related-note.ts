@@ -1,4 +1,5 @@
 import {
+  isEmbeddableNote,
   lineBreakOf,
   noteTitle,
   splitFrontmatter,
@@ -9,6 +10,14 @@ import {
 import type { IndexPort } from '../index/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { guardTemplateEdit } from '../vault/template-guard.ts';
+
+/** The note asked to be linked could never be related: the note itself, or a template. */
+export class NotRelatableError extends Error {
+  constructor(target: VaultPath) {
+    super(`${noteTitle(target)} cannot be linked as a related note.`);
+    this.name = 'NotRelatableError';
+  }
+}
 
 /** The note to link is no longer in the vault — deleted or renamed since it was offered. */
 export class RelatedNoteGoneError extends Error {
@@ -42,6 +51,9 @@ export async function acceptRelatedNote({
 }): Promise<boolean> {
   // A template is edited on its own, never written into from a suggestion (ADR-0026).
   guardTemplateEdit([note]);
+  // Never the note itself, nor what no link opens — a template, DFAI's own files.
+  // A note in the Archive is never offered, but a link to one is still a link.
+  if (target === note || !isEmbeddableNote(target)) throw new NotRelatableError(target);
   const notes = (await index.manifest()).map((entry) => entry.path as VaultPath);
   // Linking a note that has gone would write a link to nothing, which following makes anew.
   if (!notes.includes(target)) throw new RelatedNoteGoneError(target);

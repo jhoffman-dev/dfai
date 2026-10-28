@@ -1,3 +1,5 @@
+import { fitFileNameStem } from '../vault/file-name-bytes.ts';
+
 /**
  * A trail (P32-03): a line of thought walked across notes, one step at a
  * time, by their links and the notes related to them — kept as a browser
@@ -58,9 +60,19 @@ export function standOn(trail: Trail, index: number): Trail {
     : trail;
 }
 
-/** What a saved trail is named: after the note it starts from. */
+/**
+ * Room kept in a saved trail's name for the number a taken name gets and the
+ * extension — " 9999.md", so up to 9,999 trails from one note are named.
+ */
+const NUMBERED_ENDING = ' 9999.md';
+
+/**
+ * What a saved trail is named: after the note it starts from, cut by whole
+ * characters to leave room for a number and `.md` within the bytes a file
+ * name may have — a note named near that limit has a trail too.
+ */
 export function trailNoteName(startTitle: string): string {
-  return `Trail from ${startTitle}`;
+  return fitFileNameStem(`Trail from ${startTitle}`, NUMBERED_ENDING);
 }
 
 /**

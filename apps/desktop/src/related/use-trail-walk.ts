@@ -13,7 +13,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { saveTrail, type IndexPort, type VaultFsPort } from '@dfai/application';
-import type { RelatedPanelState, TrailNote, TrailWalk } from '@dfai/ui';
+import type { RelatedPanelState, SavedTrailNote, TrailNote, TrailWalk } from '@dfai/ui';
 import type { TrailMemory } from './trail-memory.ts';
 
 /**
@@ -49,7 +49,7 @@ export function useTrailWalk({
   // What the last save came to, for the trail as it was saved: walked on, it is not that note.
   const [saved, setSaved] = useState<{
     for: Trail | null;
-    note: TrailNote | null;
+    note: SavedTrailNote | null;
     problem: string | null;
   }>({ for: null, note: null, problem: null });
   // A save under way: pressed again meanwhile, it would make a second note.
@@ -71,8 +71,8 @@ export function useTrailWalk({
     if (trail === null || saving.current) return;
     saving.current = true;
     saveTrail({ fs, index, trail })
-      .then((note) =>
-        setSaved({ for: trail, note: { path: note, title: titleOf(note) }, problem: null }),
+      .then(({ path: note, gone }) =>
+        setSaved({ for: trail, note: { path: note, title: titleOf(note), gone }, problem: null }),
       )
       .catch((error: unknown) =>
         setSaved({ for: trail, note: null, problem: messageWithoutPaths(error) }),

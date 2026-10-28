@@ -260,7 +260,7 @@ describe('saveTrail', () => {
       startTrail('Ideas/Payroll.md'),
     );
     // Stepped back: the steps ahead are still part of the path saved.
-    const path = await saveTrail({ fs, index, trail: stepBack(walked) });
+    const { path } = await saveTrail({ fs, index, trail: stepBack(walked) });
     expect(path).toBe('Ideas/Trail from Payroll.md');
     expect(held.get(path)).toBe('1. [[Payroll]]\n2. [[Ideas/Budget]]\n3. [[Mara Quill]]\n');
   });
@@ -268,7 +268,7 @@ describe('saveTrail', () => {
   it('numbers the name when a trail from the note is already saved', async () => {
     const { fs } = disk({ 'Ideas/Trail from Payroll.md': '1. [[Payroll]]\n' });
     const taken = manifestOf('Ideas/Payroll.md', 'Ideas/Trail from Payroll.md');
-    const path = await saveTrail({ fs, index: taken, trail: startTrail('Ideas/Payroll.md') });
+    const { path } = await saveTrail({ fs, index: taken, trail: startTrail('Ideas/Payroll.md') });
     expect(path).toBe('Ideas/Trail from Payroll 2.md');
   });
 

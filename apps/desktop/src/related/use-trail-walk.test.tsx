@@ -110,6 +110,17 @@ describe('walking a trail', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
+  it('says how many steps were gone from the vault when it was saved', async () => {
+    const { hook, created } = setUp();
+    act(() => hook.result.current.start());
+    act(() => hook.result.current.walk!.onStep(path('Gone.md')));
+    hook.rerender({ at: path('Gone.md') });
+    act(() => hook.result.current.walk!.onSave());
+    await waitFor(() => expect(hook.result.current.walk!.saved).not.toBeNull());
+    expect(hook.result.current.walk!.saved!.gone).toBe(1);
+    expect(created.get('Trail from Payroll.md')).toBe('1. [[Payroll]]\n');
+  });
+
   it('saves once however many times Save is pressed while it saves', async () => {
     const { hook, attempts } = setUp();
     act(() => hook.result.current.start());

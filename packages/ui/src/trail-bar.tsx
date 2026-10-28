@@ -7,6 +7,11 @@ export interface TrailNote {
   readonly title: string;
 }
 
+/** The note a trail was saved as, and how many of its steps had gone from the vault. */
+export interface SavedTrailNote extends TrailNote {
+  readonly gone: number;
+}
+
 /** The trail the pane is walking, as its page draws it over the note. */
 export interface TrailWalk {
   /** Every step walked, oldest first. */
@@ -18,7 +23,7 @@ export interface TrailWalk {
   /** Notes close in meaning, when they are known: the next steps by meaning. */
   readonly related: readonly TrailNote[];
   /** The saved trail's note, once it has been saved. */
-  readonly saved: TrailNote | null;
+  readonly saved: SavedTrailNote | null;
   /** Why the last save failed, or null. */
   readonly problem: string | null;
   readonly onBack: () => void;
@@ -102,6 +107,8 @@ function TrailStatus({ trail }: { trail: TrailWalk }) {
       <button type="button" className="trail__saved" onClick={trail.onOpenSaved}>
         {trail.saved.title}
       </button>
+      {trail.saved.gone > 0 &&
+        ` — ${trail.saved.gone === 1 ? 'one step' : `${trail.saved.gone} steps`} no longer in the vault left out`}
     </p>
   );
 }
