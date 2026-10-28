@@ -236,7 +236,8 @@ export function createSemanticEngine(deps: SemanticEngineDeps): SemanticEngine {
         return { notes: [], embedded: false, progress: progress() };
       if (opened === null) await start();
       const { blocks } = await opening();
-      return relatedByMeaning({ blocks, progress, resolve }, asked);
+      const inVault = (path: string) => notePaths?.has(path) ?? false;
+      return relatedByMeaning({ blocks, progress, resolve, inVault }, asked);
     },
     progress,
     subscribe(listener) {

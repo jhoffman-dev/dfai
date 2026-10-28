@@ -1,4 +1,4 @@
-export { acceptRelatedNote } from './accept-related-note.ts';
+export { acceptRelatedNote, RelatedNoteGoneError } from './accept-related-note.ts';
 export { findRelatedNotes } from './find-related-notes.ts';
 export type { RelatedNotesState } from './find-related-notes.ts';
 export type { DismissedRelatedStore } from './ports.ts';

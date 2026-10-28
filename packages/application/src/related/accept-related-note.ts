@@ -1,7 +1,22 @@
-import { splitFrontmatter, wikiLinkTargetFor, withRelatedLink, type VaultPath } from '@dfai/domain';
+import {
+  lineBreakOf,
+  noteTitle,
+  splitFrontmatter,
+  wikiLinkTargetFor,
+  withRelatedLink,
+  type VaultPath,
+} from '@dfai/domain';
 import type { IndexPort } from '../index/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { guardTemplateEdit } from '../vault/template-guard.ts';
+
+/** The note to link is no longer in the vault — deleted or renamed since it was offered. */
+export class RelatedNoteGoneError extends Error {
+  constructor(target: VaultPath) {
+    super(`${noteTitle(target)} is no longer in the vault, so it was not linked.`);
+    this.name = 'RelatedNoteGoneError';
+  }
+}
 
 /**
  * Accepts a related note: a real `[[link]]` to `target` is written into
@@ -28,13 +43,17 @@ export async function acceptRelatedNote({
   // A template is edited on its own, never written into from a suggestion (ADR-0026).
   guardTemplateEdit([note]);
   const notes = (await index.manifest()).map((entry) => entry.path as VaultPath);
+  // Linking a note that has gone would write a link to nothing, which following makes anew.
+  if (!notes.includes(target)) throw new RelatedNoteGoneError(target);
   const { text, modified } = await fs.readTextFile(note);
   const { bodyOffset } = splitFrontmatter(text);
-  const body = withRelatedLink(text.slice(bodyOffset), wikiLinkTargetFor(target, notes));
+  // The file's own line break, frontmatter counted: a body of one line has none to go by.
+  const eol = lineBreakOf(text);
+  const body = withRelatedLink(text.slice(bodyOffset), wikiLinkTargetFor(target, notes), eol);
   if (body === null) return false;
   const head = text.slice(0, bodyOffset);
   // Frontmatter closed on the file's last byte has no line break for the new section to start after.
-  const joint = head !== '' && !head.endsWith('\n') ? '\n' : '';
+  const joint = head !== '' && !head.endsWith('\n') ? eol : '';
   await fs.writeTextFile({
     path: note,
     contents: `${head}${joint}${body}`,

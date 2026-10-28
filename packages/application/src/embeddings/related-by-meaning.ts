@@ -43,6 +43,12 @@ export interface RelatedByMeaningDeps {
   readonly blocks: SemanticBlocks;
   readonly progress: () => BuildProgress;
   readonly resolve: () => (target: string) => VaultPath | null;
+  /**
+   * Whether a note is in the vault, as the index says now. The cache can
+   * still hold a note deleted or renamed while its forget waits behind a long
+   * build: it is never offered, or Accept would write a link to nothing.
+   */
+  readonly inVault: (path: string) => boolean;
 }
 
 /**
@@ -57,10 +63,11 @@ export function relatedByMeaning(deps: RelatedByMeaningDeps, asked: RelatedQuery
   if (!embedded) return { notes: [], embedded, progress: deps.progress() };
 
   const ranked = deps.blocks.rankable();
-  const blocks = ranked.blocks.map((block, at) => ({
-    path: block.path,
-    vector: ranked.vectors[at] as Float32Array,
-  }));
+  const blocks = ranked.blocks.flatMap((block, at) =>
+    deps.inVault(block.path)
+      ? [{ path: block.path, vector: ranked.vectors[at] as Float32Array }]
+      : [],
+  );
   const scores = rankRelatedNotes({
     blocks,
     excluded: { note: asked.path, ...asked.exclude },

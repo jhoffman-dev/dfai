@@ -22,29 +22,42 @@ interface Line {
   readonly end: number;
   /** Inside a fenced code block, where a `## Related` is code, not a heading. */
   readonly fenced: boolean;
+  /** A fenced code block is still open after it: a line added here would be code. */
+  readonly openAfter: boolean;
 }
 
 /**
  * The body with `- [[target]]` added to its Related section: after the
  * section's last line when there is one, else under a new `## Related` at
  * the end. Null when the section already lists a link to `target` — the
- * note is already linked, and nothing is written twice. A body written with
- * CRLF line breaks is added to with CRLF.
+ * note is already linked, and nothing is written twice. The lines added end
+ * with `eol` — by default the body's own line break ({@link lineBreakOf}); a
+ * caller holding the whole file passes the file's, as a body of one line has
+ * none to go by.
  */
-export function withRelatedLink(body: string, target: string): string | null {
-  const eol = body.includes('\r\n') ? '\r\n' : '\n';
+export function withRelatedLink(
+  body: string,
+  target: string,
+  eol: string = lineBreakOf(body),
+): string | null {
   const item = `- [[${target}]]`;
   const lines = linesOf(body);
   const heading = lastRelatedHeading(lines);
   if (heading === -1) return `${body}${newSection(body, eol)}${item}${eol}`;
 
   const section = sectionAfter(lines, heading);
-  if (section.some((line) => listsLinkTo(line.text, target))) return null;
-  const last = [...section].reverse().find((line) => line.text.trim() !== '');
+  if (section.some((line) => !line.fenced && listsLinkTo(line.text, target))) return null;
+  // Never into a code block the section ends in, left open: added there it would be code.
+  const last = [...section].reverse().find((line) => line.text.trim() !== '' && !line.openAfter);
   const after = last ?? (lines[heading] as Line);
   const lineBreak = after.end === body.length && !endsWithBreak(body) ? eol : '';
   const gap = last === undefined || !LIST_ITEM.test(last.text) ? eol : '';
   return `${body.slice(0, after.end)}${lineBreak}${gap}${item}${eol}${body.slice(after.end)}`;
+}
+
+/** The line break a text is written with: CRLF where it has one, else LF. */
+export function lineBreakOf(text: string): string {
+  return text.includes('\r\n') ? '\r\n' : '\n';
 }
 
 /** A new section's heading, after a blank line unless the body is empty. */
@@ -67,9 +80,10 @@ function linesOf(body: string): Line[] {
     const opens = fence === null && marker !== null;
     const closes =
       fence !== null && marker !== null && marker[0] === fence[0] && marker.length >= fence.length;
-    lines.push({ text, start, end, fenced: fence !== null || opens });
+    const fenced = fence !== null || opens;
     if (opens) fence = marker;
     else if (closes) fence = null;
+    lines.push({ text, start, end, fenced, openAfter: fence !== null });
     start = end;
   }
   return lines;

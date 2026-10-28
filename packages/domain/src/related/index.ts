@@ -13,7 +13,7 @@ export {
   RELATED_NOTES,
 } from './related-notes.ts';
 export type { RelatableBlock, RelatedExclusions, RelatedScore } from './related-notes.ts';
-export { RELATED_HEADING, withRelatedLink } from './related-section.ts';
+export { lineBreakOf, RELATED_HEADING, withRelatedLink } from './related-section.ts';
 export {
   canStepBack,
   canStepForward,
