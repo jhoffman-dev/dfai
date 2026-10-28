@@ -64,7 +64,9 @@ const inPlay = (day: string) => `(defer IS EMPTY OR defer <= ${day})`;
 /**
  * The day's sections, in the order the note shows them. Each task is listed
  * once, as on the Today page: a next action due by the day is under Due and
- * overdue only.
+ * overdue only. That holds for values written as the app writes them; words
+ * in a date field, a capitalised type or two values in a single field are
+ * read by the query language's rules, which PR #616 brings in line with Today.
  *
  * #108's "Chosen for today" belongs first here once it has merged: a section
  * whose block lists the tasks whose `focus` is the day.
