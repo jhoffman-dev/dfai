@@ -3,7 +3,7 @@ import { createVaultPath, startTrail, stepBack, stepTo, type VaultGraph } from '
 import { fakeIndexPort, fakeVaultFs } from '../testing/fake-ports.ts';
 import { TemplateEditRefusedError } from '../vault/template-guard.ts';
 import type { RelatedAnswer, RelatedQuery } from '../embeddings/related-by-meaning.ts';
-import { acceptRelatedNote } from './accept-related-note.ts';
+import { acceptRelatedNote, RelatedNoteGoneError } from './accept-related-note.ts';
 import { findRelatedNotes } from './find-related-notes.ts';
 import { EmptyTrailError, saveTrail } from './save-trail.ts';
 
@@ -173,6 +173,19 @@ describe('acceptRelatedNote', () => {
       target: createVaultPath('Home/Garden.md'),
     });
     expect(held.get('Plan.md')).toBe('---\ntype: plan\n---\n## Related\n\n- [[Garden]]\n');
+  });
+
+  it('refuses to link a note no longer in the vault, writing nothing', async () => {
+    const { fs, writes } = disk({ 'Plan.md': 'Plan\n' });
+    await expect(
+      acceptRelatedNote({
+        fs,
+        index,
+        note: createVaultPath('Plan.md'),
+        target: createVaultPath('Gone/Bees.md'),
+      }),
+    ).rejects.toThrow(RelatedNoteGoneError);
+    expect(writes).toHaveLength(0);
   });
 
   it('writes nothing when the section already links it', async () => {
