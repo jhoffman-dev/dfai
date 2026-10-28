@@ -34,9 +34,11 @@ function writtenAddress(email: string): string {
   return bracketed.normalize('NFC').trim().toLowerCase();
 }
 
-/** Whether two addresses are one ({@link emailKey}). */
-export const sameAddress = (left: string, right: string): boolean =>
-  emailKey(left) === emailKey(right);
+/** Whether two addresses are one ({@link emailKey}); blank text is no address, so never one. */
+export function sameAddress(left: string, right: string): boolean {
+  const key = emailKey(left);
+  return key !== '' && key === emailKey(right);
+}
 
 /**
  * Whether an address is on more than one Person note: a shared or group
@@ -85,8 +87,8 @@ export function isOwnerAttendee({
 }): boolean {
   if (selfName !== null && sameName(attendee.name, selfName)) return true;
   if (attendee.email === null) return false;
-  const address = emailKey(attendee.email);
-  return selfEmails.some((each) => emailKey(each) === address);
+  const { email } = attendee;
+  return selfEmails.some((each) => sameAddress(email, each));
 }
 
 /**
@@ -120,7 +122,7 @@ export function ownerNotAGroup(
   selfEmails: readonly string[],
 ): readonly MeetingAttendee[] {
   if (selfEmails.length === 0) return attendees;
-  const mine = new Set(selfEmails.map(emailKey));
+  const mine = new Set(selfEmails.map(emailKey).filter((key) => key !== ''));
   return attendees.map((attendee) =>
     attendee.group && attendee.email !== null && mine.has(emailKey(attendee.email))
       ? { ...attendee, group: false }

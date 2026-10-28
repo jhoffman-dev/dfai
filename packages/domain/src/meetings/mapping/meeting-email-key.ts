@@ -10,14 +10,22 @@ import { punycodeDecode, punycodeEncode } from './meeting-punycode.ts';
  *
  * The key of an address:
  * - its `<…>` part, when written as a mail client copies it (`Mara Quill <mara@example.com>`);
+ *   an empty `<>` is no address part, so the whole text is the key, never `''`;
  * - the spaces round it set aside;
- * - in lower case, local part too: an address's local part may be
+ * - composed (NFC), as Granola and calendars send it. NFC also folds a few
+ *   compatibility letters, such as U+212A KELVIN SIGN to `k`: RFC 6532 and
+ *   UTS #46 read them so too, and that is accepted;
+ * - its local part in lower case: an address's local part may be
  *   case-sensitive by RFC 5321, but every provider a meeting comes from reads
- *   it without case, and DFAI has always compared it so;
- * - composed (NFC), as Granola and calendars send it;
+ *   it without case, and DFAI has always compared it so. It is lowered on its
+ *   own, by JavaScript's rules: a capital Σ ending it becomes ς, as a final ς
+ *   typed would be, and σ stays σ. Only case variants meet, never two letters;
  * - its domain in the ASCII (punycode) form DNS uses, with no final dot
  *   ({@link domainKey}); an all-ASCII domain is kept as written, case aside;
  * - a `+tag` kept: `mara+payroll@` is its own address here.
+ *
+ * When unsure, two addresses are kept apart: a missed match can be fixed by
+ * hand, two mailboxes merged cannot be told apart again.
  */
 
 /** IDNA's full stops other than `.` (UTS #46): `bücher。example` is `bücher.example`. */
@@ -26,7 +34,9 @@ const OTHER_FULL_STOPS = /[。．｡]/gu;
 const NOT_A_HOST = /[\s/?#:@[\]\\%\p{Cc}]/u;
 const ASCII = /^\p{ASCII}*$/u;
 const ACE_PREFIX = 'xn--';
-const BRACKETED = /<([^<>]*)>\s*$/u;
+const BRACKETED = /<([^<>]+)>\s*$/u;
+/** Capital sigma: UTS #46 maps it to σ always, where `toLowerCase` makes a final one ς, another host. */
+const CAPITAL_SIGMA = /\u03a3/gu;
 
 const folded = (text: string): string => text.trim().toLowerCase().normalize('NFC');
 
@@ -58,7 +68,9 @@ function asciiLabel(label: string): string | null {
  * punycode, is left folded as written: compared as itself, never as another.
  */
 export function domainKey(written: string): string {
-  const domain = folded(written).replace(OTHER_FULL_STOPS, '.').replace(/\.$/u, '');
+  const domain = folded(written.replace(CAPITAL_SIGMA, '\u03c3'))
+    .replace(OTHER_FULL_STOPS, '.')
+    .replace(/\.$/u, '');
   if (NOT_A_HOST.test(domain)) return domain;
   const labels = domain.split('.').map(asciiLabel);
   return labels.includes(null) ? domain : labels.join('.');
@@ -66,8 +78,9 @@ export function domainKey(written: string): string {
 
 /** An address as two are compared: the same key is the same address (see above). */
 export function emailKey(written: string): string {
-  const address = folded(BRACKETED.exec(written)?.[1] ?? written);
+  const bracketed = BRACKETED.exec(written)?.[1]?.trim() ?? '';
+  const address = (bracketed === '' ? written : bracketed).trim().normalize('NFC');
   const at = address.lastIndexOf('@');
-  if (at <= 0 || at === address.length - 1) return address;
-  return `${address.slice(0, at)}@${domainKey(address.slice(at + 1))}`;
+  if (at <= 0 || at === address.length - 1) return folded(address);
+  return `${folded(address.slice(0, at))}@${domainKey(address.slice(at + 1))}`;
 }

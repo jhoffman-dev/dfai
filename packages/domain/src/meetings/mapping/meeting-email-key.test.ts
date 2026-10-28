@@ -174,3 +174,17 @@ describe('emailKey on all-ASCII domains (property)', () => {
     }
   });
 });
+
+/** PR #604 attack: Σ is case in a local part, and a host only as σ in a domain. */
+describe('emailKey and a capital sigma', () => {
+  it('lowers a local part by case only: ΟΔΟΣ is οδος, and never οδοσ', () => {
+    expect(emailKey('ΟΔΟΣ@example.com')).toBe(emailKey('οδος@example.com'));
+    expect(emailKey('ΟΔΟΣ@example.com')).not.toBe(emailKey('οδοσ@example.com'));
+    expect(emailKey('οδος@example.com')).not.toBe(emailKey('οδοσ@example.com'));
+  });
+
+  it('reads a domain’s Σ as σ, the host DNS resolves, wherever it stands', () => {
+    expect(emailKey('mara@larkspur.ΟΔΟΣ')).toBe(emailKey('mara@larkspur.οδοσ'));
+    expect(domainKey('ΟΔΟΣ.example')).toBe(new URL('http://ΟΔΟΣ.example/').hostname);
+  });
+});

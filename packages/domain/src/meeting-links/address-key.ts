@@ -8,8 +8,9 @@ import { domainKey, emailKey } from '../meetings/mapping/meeting-email-key.ts';
  */
 
 /**
- * A domain as written in a note or an address: `@`, `www.`, a scheme, a path
- * and a port dropped, and the rest as {@link domainKey} compares it.
+ * A company's domain or site as written in a note: `@`, `www.`, a scheme, a
+ * path and a port dropped, and the rest as {@link domainKey} compares it.
+ * Never a mail domain's key: `www.larkspur.example` is another mail domain.
  */
 export function hostKey(written: string): string {
   const host = written
@@ -36,7 +37,7 @@ export function addressParts(written: string): AddressParts | null {
   const at = address.lastIndexOf('@');
   if (at <= 0) return null;
   const local = (address.slice(0, at).split('+')[0] ?? '').trim();
-  const domain = hostKey(address.slice(at + 1));
+  const domain = domainKey(address.slice(at + 1));
   return local === '' || domain === '' ? null : { local, domain };
 }
 
