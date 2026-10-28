@@ -238,6 +238,17 @@ describe('POST /v1/granola/pull', () => {
     expect(granola.pulls).toHaveLength(1);
   });
 
+  it('does not spend the 30 s on a pull that ended not-synced, having asked Granola nothing', async () => {
+    const api = apiFixture();
+    const granola = fakeGranola(api);
+    granola.report = (vault) => ({ ...pulledReport(vault), ended: 'not-synced', written: [] });
+    await pull(api);
+    granola.report = pulledReport;
+
+    expect((await pull(api)).status).toBe(200);
+    expect(granola.pulls).toHaveLength(2);
+  });
+
   it('does not spend the 30 s on a pull refused for want of a key', async () => {
     const api = apiFixture();
     const granola = fakeGranola(api);
