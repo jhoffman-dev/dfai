@@ -1,3 +1,5 @@
+import { emailKey } from '../meetings/mapping/meeting-email-key.ts';
+
 /**
  * Email addresses as the vault's settings hold them and as Settings reads
  * what is typed: strictly, so nothing that is not an address is ever kept as
@@ -42,7 +44,7 @@ export function addressesOf(value: unknown): AddressesSetting {
     else refused.push(text ?? nameOfValue(item));
   }
   if (refused.length > 0) return { addresses: [], problem: notAddresses(refused) };
-  return { addresses: [...new Set(kept)], problem: null };
+  return { addresses: onceEach(kept), problem: null };
 }
 
 /** Typed addresses as read: the addresses, or why they cannot be kept. */
@@ -260,7 +262,7 @@ export function readAddresses(typed: string): AddressesReading {
   const scanner = new AddressScanner(withPlainSpaces(typed));
   scanner.scan();
   if (scanner.refused.length > 0) return { ok: false, problem: notAddresses(scanner.refused) };
-  return { ok: true, emails: [...new Set(scanner.found.map(asKept))] };
+  return { ok: true, emails: onceEach(scanner.found.map(asKept)) };
 }
 
 /**
@@ -270,35 +272,9 @@ export function readAddresses(typed: string): AddressesReading {
  */
 const asKept = (address: string) => address.normalize('NFC').toLowerCase();
 
-/** What a domain may not hold for its ASCII form to be read from a URL: it would be read as a URL's other parts. */
-const NOT_A_HOST = /[\s/?#:@[\]\\%\p{Cc}]/u;
-/** Only printable ASCII: a domain already in the form DNS uses. */
-const ASCII = /^[\x20-\x7E]*$/;
-
-/**
- * A domain in the ASCII (punycode) form DNS uses: `bücher.example` is
- * `xn--bcher-kva.example`. As the browser and Node both read a URL's host,
- * so no table of our own is kept. One that has no ASCII form is left as it
- * is, to be compared as written.
- */
-function asciiDomain(domain: string): string {
-  if (ASCII.test(domain) || NOT_A_HOST.test(domain)) return domain;
-  try {
-    return new URL(`http://${domain}/`).hostname;
-  } catch {
-    // Not a host a URL can hold (IDNA refuses it): compared as written, never as another domain.
-    return domain;
-  }
-}
-
-/**
- * An address as two are compared: composed, trimmed, in lower case, and its
- * domain in its ASCII form, so an address DFAI holds and one a meeting
- * lists are one however either was typed or sent.
- */
-export function comparableAddress(email: string): string {
-  const text = asKept(email.trim());
-  const at = text.lastIndexOf('@');
-  if (at === -1) return text;
-  return `${text.slice(0, at)}@${asciiDomain(text.slice(at + 1))}`;
+/** Each address once, the first as typed: two that are one address ({@link emailKey}) are kept once. */
+function onceEach(addresses: readonly string[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const each of addresses) if (!byKey.has(emailKey(each))) byKey.set(emailKey(each), each);
+  return [...byKey.values()];
 }

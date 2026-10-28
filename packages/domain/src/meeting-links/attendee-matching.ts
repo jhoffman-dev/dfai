@@ -1,5 +1,6 @@
 import type { MeetingAttendee } from '../meetings/meeting-header.ts';
-import { addressKey, hostKey, untaggedAddressKey } from './address-key.ts';
+import { emailKey } from '../meetings/mapping/meeting-email-key.ts';
+import { hostKey, untaggedAddressKey } from './address-key.ts';
 import { vocabularyKey } from '../terms/spelling.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 
@@ -328,13 +329,13 @@ interface NamedPerson {
 }
 
 function personFinder(people: readonly DirectoryPerson[]) {
-  const byEmail = addressIndex(people, addressKey);
+  const byEmail = addressIndex(people, emailKey);
   // A `+tag` reaches the same mailbox: found by it only when no address is written exactly so.
   const byMailbox = addressIndex(people, untaggedAddressKey);
   const byName = nameIndex(people);
   return (attendee: MeetingAttendee): PersonFound | null => {
     const email = attendee.email;
-    const exact = email === null ? [] : (byEmail.get(addressKey(email)) ?? []);
+    const exact = email === null ? [] : (byEmail.get(emailKey(email)) ?? []);
     const mailed =
       exact.length > 0 || email === null
         ? exact
@@ -482,7 +483,7 @@ function guessedCompanies({
 export function attendeeKey(attendee: MeetingAttendee): string {
   return attendee.email === null
     ? `name:${vocabularyKey(attendee.name)}`
-    : `email:${addressKey(attendee.email)}`;
+    : `email:${emailKey(attendee.email)}`;
 }
 
 /** Whether an alias is written as an address: something either side of one `@`, no spaces. */

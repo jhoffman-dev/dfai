@@ -1,5 +1,5 @@
 import type { MeetingAttendee } from '../meetings/meeting-header.ts';
-import { comparableAddress } from '../profile/email-addresses.ts';
+import { emailKey } from '../meetings/mapping/meeting-email-key.ts';
 import { vocabularyKey } from '../terms/spelling.ts';
 import type { DirectoryPerson } from './attendee-matching.ts';
 
@@ -24,18 +24,19 @@ export function sameName(left: string, right: string): boolean {
   return nameForms(left).some((form) => wanted.has(form));
 }
 
-/** An address as written: the part in `<…>` when written as a mail client copies it, composed and case folded. */
+/**
+ * An address as offered to keep in `selfEmails`: the part in `<…>` when
+ * written as a mail client copies it, composed and case folded. What is
+ * shown and kept, not what is compared ({@link emailKey}).
+ */
 function writtenAddress(email: string): string {
   const bracketed = /<([^<>]+)>\s*$/.exec(email)?.[1] ?? email;
   return bracketed.normalize('NFC').trim().toLowerCase();
 }
 
-/** An address as compared: as written, its domain in ASCII ({@link comparableAddress}). */
-const addressKey = (email: string): string => comparableAddress(writtenAddress(email));
-
-/** Whether two addresses are one, as written and with their domains in ASCII. */
+/** Whether two addresses are one ({@link emailKey}). */
 export const sameAddress = (left: string, right: string): boolean =>
-  addressKey(left) === addressKey(right);
+  emailKey(left) === emailKey(right);
 
 /**
  * Whether an address is on more than one Person note: a shared or group
@@ -84,8 +85,8 @@ export function isOwnerAttendee({
 }): boolean {
   if (selfName !== null && sameName(attendee.name, selfName)) return true;
   if (attendee.email === null) return false;
-  const address = addressKey(attendee.email);
-  return selfEmails.some((each) => addressKey(each) === address);
+  const address = emailKey(attendee.email);
+  return selfEmails.some((each) => emailKey(each) === address);
 }
 
 /**
@@ -119,9 +120,9 @@ export function ownerNotAGroup(
   selfEmails: readonly string[],
 ): readonly MeetingAttendee[] {
   if (selfEmails.length === 0) return attendees;
-  const mine = new Set(selfEmails.map(addressKey));
+  const mine = new Set(selfEmails.map(emailKey));
   return attendees.map((attendee) =>
-    attendee.group && attendee.email !== null && mine.has(addressKey(attendee.email))
+    attendee.group && attendee.email !== null && mine.has(emailKey(attendee.email))
       ? { ...attendee, group: false }
       : attendee,
   );

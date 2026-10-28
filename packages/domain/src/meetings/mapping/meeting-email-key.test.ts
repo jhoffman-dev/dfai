@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { domainKey, emailKey } from './email-key.ts';
-import { punycodeDecode, punycodeEncode } from './punycode.ts';
+import { domainKey, emailKey } from './meeting-email-key.ts';
+import { punycodeDecode, punycodeEncode } from './meeting-punycode.ts';
 
 /*
  * #199: one key for every place two addresses are compared — Person
