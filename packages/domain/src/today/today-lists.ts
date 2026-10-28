@@ -117,7 +117,9 @@ export interface TodayLists {
  * for today or dropped, until it is; a choice is of its day, so nothing has
  * to change at midnight for yesterday's to stop being today's. A `focus` on a
  * day still to come is that day's choice, and lists the task where it would
- * be otherwise.
+ * be otherwise, saying the day (`laterChoice`). A `focus` that is the
+ * person's own (`focusIsOwn`) is no choice; in a vault that does not choose,
+ * nothing is chosen or carried over.
  *
  * Back from deferral is a task whose `defer` day is today — or has passed,
  * when no later section would list it: a Backlog or Someday task put off to

@@ -1450,6 +1450,8 @@ export interface ApiReviewTask {
   readonly recurrence?: string | null;
   /** The day it was chosen for (`focus`, #108), `YYYY-MM-DD`, or null. Always read by the API. */
   readonly focus?: string | null;
+  /** Whether its `focus` holds something other than one day: the person's own, which no choice writes over. */
+  readonly focusIsOwn?: boolean;
   /** Who it waits on — a link by what it shows, a plain name as written — joined with ", "; '' for nobody. */
   readonly waitingOn: string;
   /** Its `contexts`, as written, in order. */
@@ -1538,6 +1540,12 @@ export interface ApiToday {
   }[];
   /** Active projects with no Next Action or In Progress task: `projectsWithoutNextAction`, counted. */
   readonly stalledProjects: number;
+  /**
+   * Whether tasks can be chosen for today: the vault's Task type has `focus`
+   * as a date (or there is no Task type yet). When false, `chosen` and
+   * `carriedOver` are empty and `POST /v1/today/choose` is refused.
+   */
+  readonly choosing: boolean;
   /** As the weekly review's `inbox`. */
   readonly inbox: ApiWeeklyReview['inbox'];
   /** The index held tasks back, so a section may be missing tasks. */

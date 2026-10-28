@@ -73,7 +73,10 @@ export const chooseForToday = defineTool({
     '"chosen": true sets its "focus" to today on the app\'s clock, so it heads the page under ' +
     'chosen, and keeps one listed under carriedOver; false takes "focus" out, which also drops ' +
     'one carried over. A choice is of its day: tomorrow it is listed under carriedOver until ' +
-    'kept or dropped. Returns the task note. "path" must be a note of type task.',
+    'kept or dropped. Returns the task note. "path" must be a note of type task. Refused as ' +
+    'invalid, writing nothing, where atlas_today says "choosing": false (the Task type keeps ' +
+    'no "focus" date), and for a task whose "focus" is not one day ("focusIsOwn"). Finishing ' +
+    'a task takes its "focus" out.',
   inputSchema: z.object({
     path: notePath.describe('The task, by its path, e.g. "Tasks/Call the printer.md".'),
     chosen: z.boolean().describe('True to choose it for today; false to take it off today.'),
