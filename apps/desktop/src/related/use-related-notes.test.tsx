@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { createVaultPath, EMPTY_GRAPH, type VaultGraph } from '@dfai/domain';
+import { createVaultPath, EMPTY_GRAPH, type VaultGraph, type VaultPath } from '@dfai/domain';
 import {
   fakeIndexPort,
   fakeVaultFs,
@@ -34,8 +34,18 @@ function setUp({
     ...answer,
   }));
   let shut = !open;
+  const listeners = new Set<() => void>();
+  /** The build moves on: a note written, or one more read for meaning. */
+  const progressMoves = () => act(() => listeners.forEach((listener) => listener()));
   const ports: RelatedPorts = {
-    semantic: { isOn: () => true, related, settled: async () => {} },
+    semantic: {
+      isOn: () => true,
+      related,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
     idle: { idle: async () => {} },
     dismissed: createBrowserDismissedRelatedStore('/vault'),
     panel: { isOpen: () => !shut, setOpen: (to) => (shut = !to) },
@@ -70,19 +80,21 @@ function setUp({
         size: 1,
       })),
   });
-  const hook = renderHook(() =>
-    useRelatedNotes({
-      ports,
-      graph,
-      path: PLAN,
-      fs,
-      index,
-      editor,
-      onChanged,
-      trailHere: false,
-    }),
+  const hook = renderHook(
+    ({ path }: { path: VaultPath }) =>
+      useRelatedNotes({
+        ports,
+        graph,
+        path,
+        fs,
+        index,
+        editor,
+        onChanged,
+        trailHere: false,
+      }),
+    { initialProps: { path: PLAN } },
   );
-  return { hook, related, ports, files, editor, order, onChanged };
+  return { hook, related, ports, files, editor, order, onChanged, progressMoves, listeners };
 }
 
 describe('the open note’s related notes', () => {
@@ -130,17 +142,43 @@ describe('the open note’s related notes', () => {
     expect([...createBrowserDismissedRelatedStore('/vault').dismissed(PLAN)]).toEqual([HONEY]);
   });
 
-  it('looks again once a build still reading the vault settles, and not for a note read empty', async () => {
-    const reading = setUp({
-      answer: { notes: [], embedded: false, progress: { done: 1, total: 9, failure: null } },
+  it('looks again each time the build moves on while the note is not read yet', async () => {
+    const { hook, related, progressMoves } = setUp({
+      answer: { notes: [], embedded: false, progress: { done: 5, total: 9, failure: null } },
     });
-    await waitFor(() => expect(reading.related).toHaveBeenCalledTimes(2));
-    const read = setUp({
+    await waitFor(() => expect(hook.result.current.state.kind).toBe('not-built'));
+    expect(related).toHaveBeenCalledOnce();
+    progressMoves();
+    await waitFor(() => expect(related).toHaveBeenCalledTimes(2));
+  });
+
+  it('looks again for a note read empty once it is written and the build reads it', async () => {
+    const { hook, related, progressMoves } = setUp({
       answer: { notes: [], embedded: false, progress: { done: 9, total: 9, failure: null } },
     });
-    await waitFor(() => expect(read.hook.result.current.state.kind).toBe('not-built'));
-    await act(async () => {});
-    expect(read.related).toHaveBeenCalledOnce();
+    await waitFor(() => expect(hook.result.current.state.kind).toBe('not-built'));
+    progressMoves();
+    await waitFor(() => expect(related).toHaveBeenCalledTimes(2));
+  });
+
+  it('looks again for the note switched to while the build had not moved on', async () => {
+    const { hook, related, progressMoves } = setUp({
+      answer: { notes: [], embedded: false, progress: { done: 5, total: 9, failure: null } },
+    });
+    await waitFor(() => expect(hook.result.current.state.kind).toBe('not-built'));
+    hook.rerender({ path: GARDEN });
+    await waitFor(() => expect(related).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(hook.result.current.state.kind).toBe('not-built'));
+    progressMoves();
+    await waitFor(() => expect(related).toHaveBeenCalledTimes(3));
+    expect(related.mock.calls[2]![0].path).toBe(GARDEN);
+  });
+
+  it('stops listening to the build once the note is read', async () => {
+    const { hook, related, listeners } = setUp();
+    await waitFor(() => expect(hook.result.current.state.kind).toBe('ready'));
+    expect(listeners.size).toBe(0);
+    expect(related).toHaveBeenCalledOnce();
   });
 
   it('says the note is not read for meaning yet, with how far the build is', async () => {
@@ -152,15 +190,19 @@ describe('the open note’s related notes', () => {
     );
   });
 
-  it('says why a link could not be written', async () => {
-    const { hook, editor } = setUp();
+  it('says why a link could not be written on its row, keeps the rest, and looks again', async () => {
+    const { hook, editor, related } = setUp();
     editor.flush.mockRejectedValueOnce(new Error('Plan has unsaved changes'));
     await waitFor(() => expect(hook.result.current.state.kind).toBe('ready'));
     act(() => hook.result.current.accept(GARDEN));
+    await waitFor(() => expect(related).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(hook.result.current.state).toEqual({
-        kind: 'failed',
-        message: 'Plan has unsaved changes',
+        kind: 'ready',
+        notes: [
+          { path: GARDEN, title: 'Garden', problem: 'Plan has unsaved changes' },
+          { path: HONEY, title: 'Honey' },
+        ],
       }),
     );
   });
