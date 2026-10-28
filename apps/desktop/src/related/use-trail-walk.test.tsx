@@ -17,11 +17,14 @@ const LINKS: NoteLinks = {
   ],
 };
 
-function setUp() {
+function setUp({ refuse = false }: { refuse?: boolean } = {}) {
   const memory = createTrailMemory();
   const created = new Map<string, string>();
+  const attempts: string[] = [];
   const fs = fakeVaultFs({
     createNote: async ({ path: at, contents }) => {
+      attempts.push(at);
+      if (refuse) throw new Error('the disk at /Users/someone/vault is full');
       created.set(at, contents);
       return 1;
     },
@@ -55,7 +58,7 @@ function setUp() {
     },
     { initialProps: { at: path('Payroll.md') } },
   );
-  return { hook, memory, opened, created };
+  return { hook, memory, opened, created, attempts };
 }
 
 describe('walking a trail', () => {
@@ -105,5 +108,35 @@ describe('walking a trail', () => {
     expect(memory.get('tab-1')).toBeNull();
     expect(hook.result.current.walk).toBeUndefined();
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('saves once however many times Save is pressed while it saves', async () => {
+    const { hook, attempts } = setUp();
+    act(() => hook.result.current.start());
+    act(() => {
+      hook.result.current.walk!.onSave();
+      hook.result.current.walk!.onSave();
+    });
+    await waitFor(() => expect(hook.result.current.walk!.saved).not.toBeNull());
+    expect(attempts).toEqual(['Trail from Payroll.md']);
+  });
+
+  it('forgets the note it was saved as once the trail walks on', async () => {
+    const { hook } = setUp();
+    act(() => hook.result.current.start());
+    act(() => hook.result.current.walk!.onSave());
+    await waitFor(() => expect(hook.result.current.walk!.saved).not.toBeNull());
+    act(() => hook.result.current.walk!.onStep(path('Budget.md')));
+    hook.rerender({ at: path('Budget.md') });
+    expect(hook.result.current.walk!.saved).toBeNull();
+  });
+
+  it('says why a save failed, without paths', async () => {
+    const { hook } = setUp({ refuse: true });
+    act(() => hook.result.current.start());
+    act(() => hook.result.current.walk!.onSave());
+    await waitFor(() => expect(hook.result.current.walk!.problem).not.toBeNull());
+    expect(hook.result.current.walk!.problem).not.toContain('/Users/someone');
+    expect(hook.result.current.walk!.saved).toBeNull();
   });
 });
