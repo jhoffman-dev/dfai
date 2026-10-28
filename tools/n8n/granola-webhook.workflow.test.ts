@@ -230,7 +230,7 @@ describe('the webhook and the fetch', () => {
     const fetch = node(N.fetch);
     expect(fetch.parameters).toMatchObject({
       method: 'GET',
-      url: `=${GRANOLA_API}/v1/notes/{{ $json.noteId }}`,
+      url: `=${GRANOLA_API}/v1/notes/{{ $('${N.verify}').item.json.noteId }}`,
       queryParameters: { parameters: [{ name: 'include', value: 'transcript' }] },
       options: {
         redirect: { redirect: { followRedirects: false } },

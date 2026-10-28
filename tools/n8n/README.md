@@ -595,27 +595,28 @@ it through the same GitHub nodes as the Gemini workflow. The app's own
 Granola pull stays the safety net: anything this misses, the pull catches.
 
 ```
-Granola webhook → Verify Granola signature → Fetch Granola note → (200) Answer 200 → Map → GitHub branch
-                         └ refused → Answer 401          ├ 404 → Answer 503 (Granola retries)
-                                                          └ anything else, or no answer → Answer 200 → email
+Granola webhook → Verify Granola signature → Answer 200 → Fetch Granola note → (200) Map → GitHub branch
+                         └ refused → Answer 401                     └ anything else, or no answer → email
 ```
 
-| Granola or GitHub says…                           | n8n answers Granola   | Then                                      |
-| ------------------------------------------------- | --------------------- | ----------------------------------------- |
-| A delivery not signed with the secret, or stale   | `401`                 | Nothing (Granola does not retry a 4xx).   |
-| The note (`200`)                                  | `200`, before the map | Map, commit; a failure is emailed.        |
-| `404`: the note is still processing               | `503`                 | Granola retries with backoff.             |
-| Any other status (`401` key, `413`, `429`, `5xx`) | `200`                 | Emailed; the pull catches the meeting.    |
-| No answer in 10 s                                 | `200`                 | Emailed; the pull catches the meeting.    |
-| A refused note, or GitHub fails                   | `200` (already)       | Emailed: "Email me: meeting not in DFAI". |
+| Granola or GitHub says…                                 | n8n answers Granola | Then                                      |
+| ------------------------------------------------------- | ------------------- | ----------------------------------------- |
+| A delivery not signed with the secret, or stale         | `401`               | Nothing (Granola does not retry a 4xx).   |
+| A signed delivery                                       | `200`, at once      | Fetch, map, commit.                       |
+| Granola's fetch: `404` (gone, or still processing)      | `200` (already)     | Emailed; the pull catches the meeting.    |
+| Granola's fetch: any other status (`401`, `413`, `5xx`) | `200` (already)     | Emailed; the pull catches the meeting.    |
+| Granola's fetch: no answer in 10 s                      | `200` (already)     | Emailed; the pull catches the meeting.    |
+| A refused note, or GitHub fails                         | `200` (already)     | Emailed: "Email me: meeting not in DFAI". |
 
-A `200` for a failure is on purpose: Granola retries for four days and then
-**disables the endpoint without replaying what it missed**, so no answer may
-spend that budget on a failure the pull will catch anyway. The `404 → 503`
-case is the one retry worth spending. (ADR-0034 had every answer after the
-signature be a `200`; the issue's acceptance asks for the `503`, which this
-follows. A note deleted while still processing would be retried until
-Granola gives up — rare, and the cost is the endpoint, so watch the emails.)
+The `200` goes the moment the signature holds, before the fetch, as ADR-0034
+says: well inside the 15 seconds Granola waits, however slow n8n is to start
+or Granola's API is to answer. The workflow answers only `200` or `401`, on
+purpose: Granola retries anything else for four days and then **disables
+the endpoint without replaying what it missed**, so no answer may spend that
+budget, not even on a note that is still processing. The ticket asked for a
+`503` on a `404`; that was dropped in favour of the ADR, because a note that
+404s for good (deleted, or never visible to your key) — or Granola's own
+test event — would have spent the whole budget with no email.
 
 ### What only you can do, in n8n and Granola
 
@@ -648,10 +649,13 @@ Granola gives up — rare, and the cost is the endpoint, so watch the emails.)
    this repository, and do not export the workflow with it in. Re-paste it
    whenever you re-import a rebuilt JSON.
 6. **Activate** the workflow, then send Granola's **test event** from the
-   webhook's page. A test event names no real note: expect the run to pass
-   **Verify Granola signature** and get a `404` or `401` from the fetch (an
-   email, or a `503`) — what matters is that it was not answered `401` by the
-   verify node. A real meeting then arrives at `Meetings/<YYYY>/<MM>/`.
+   webhook's page. It should be answered `200`. Then open n8n's
+   **Executions** for the workflow and check the run: it must have passed
+   **Verify Granola signature**. A `401` there sends **no email** — a secret
+   never pasted, or a wrong one, refuses every delivery in silence — so this
+   is the one place to see it. Past the check, a test event that names no real
+   note gets a `404` from the fetch and the failure email; a real meeting
+   arrives at `Meetings/<YYYY>/<MM>/`.
 7. **In DFAI**, set `granola_webhook: true` in the vault's settings, so the
    pull warns when a note it finds should have come by webhook long since (a
    sign Granola disabled the endpoint).

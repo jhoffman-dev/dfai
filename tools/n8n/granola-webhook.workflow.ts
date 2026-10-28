@@ -20,7 +20,10 @@ export const GRANOLA_API_CREDENTIAL = 'Granola API';
 /** The production URL is `https://<your n8n>/webhook/` and this. */
 export const WEBHOOK_PATH = 'granola-to-dfai';
 
-/** How long the fetch may take: Granola waits 15 seconds for an answer, and the check runs first. */
+/**
+ * How long the fetch may take. Granola has its answer by then (it is sent
+ * before the fetch); this bounds how long a run can hang on Granola's API.
+ */
 export const FETCH_TIMEOUT_MS = 10_000;
 
 export const GRANOLA_NODES = {
@@ -28,11 +31,8 @@ export const GRANOLA_NODES = {
   verify: 'Verify Granola signature',
   refuse: 'Answer 401: not signed by Granola',
   fetch: FETCH_NOTE_NODE,
+  accepted: 'Answer 200: signature verified',
   found: 'Granola sent the note?',
-  processing: 'Still processing (404)?',
-  retry: 'Answer 503: Granola retries',
-  accepted: 'Answer 200: note fetched',
-  acceptedFailing: 'Answer 200: email the failure',
   map: MAP_MEETING_NODE,
   ...BRANCH_NODES,
 } as const;
@@ -62,9 +62,10 @@ function webhookNode() {
 }
 
 /**
- * `GET /v1/notes/{id}?include=transcript`. Every answer comes out of the first
- * output with its status (never an error), so the If nodes can tell a 404
- * from the rest; only a timeout or a network failure leaves by the second.
+ * `GET /v1/notes/{id}?include=transcript`, for the id the verified webhook
+ * named. Every answer comes out of the first output with its status (never
+ * an error), so "Granola sent the note?" can tell a note from the rest; only
+ * a timeout or a network failure leaves by the second.
  * No redirect is followed: the key goes to Granola's API and nowhere else.
  */
 function fetchNode() {
@@ -73,10 +74,10 @@ function fetchNode() {
     name: N.fetch,
     type: 'n8n-nodes-base.httpRequest',
     typeVersion: 4.2,
-    position: [440, 0],
+    position: [660, 0],
     parameters: {
       method: 'GET',
-      url: `=${GRANOLA_API}/v1/notes/{{ $json.noteId }}`,
+      url: `=${GRANOLA_API}/v1/notes/{{ $('${N.verify}').item.json.noteId }}`,
       authentication: 'genericCredentialType',
       genericAuthType: 'httpHeaderAuth',
       sendQuery: true,
@@ -92,8 +93,15 @@ function fetchNode() {
   };
 }
 
+interface AnswerSpec {
+  readonly name: string;
+  readonly serial: string;
+  readonly responseCode: 200 | 401;
+  readonly position: Position;
+}
+
 /** Answers Granola's request; the run goes on past it. */
-function answerNode(name: string, serial: string, responseCode: number, position: Position) {
+function answerNode({ name, serial, responseCode, position }: AnswerSpec) {
   return {
     id: granolaId(serial),
     name,
@@ -104,7 +112,15 @@ function answerNode(name: string, serial: string, responseCode: number, position
   };
 }
 
-const statusIs = (name: string, serial: string, status: number, position: Position) =>
+interface StatusSpec {
+  readonly name: string;
+  readonly serial: string;
+  readonly status: number;
+  readonly position: Position;
+}
+
+/** An If node on the fetch's status: true when Granola answered `status`. */
+const statusIs = ({ name, serial, status, position }: StatusSpec) =>
   ifNode({
     name,
     id: granolaId(serial),
@@ -120,23 +136,21 @@ const BRANCH_SHIFT = 880;
 
 const CONNECTIONS = {
   [N.webhook]: { main: [to(N.verify)] },
-  [N.verify]: { main: [to(N.fetch), to(N.refuse)] },
-  [N.fetch]: { main: [to(N.found), to(N.acceptedFailing)] },
-  [N.found]: { main: [to(N.accepted), to(N.processing)] },
-  [N.processing]: { main: [to(N.retry), to(N.acceptedFailing)] },
-  [N.accepted]: { main: [to(N.map)] },
-  [N.acceptedFailing]: { main: [to(N.failed)] },
+  [N.verify]: { main: [to(N.accepted), to(N.refuse)] },
+  [N.accepted]: { main: [to(N.fetch)] },
+  [N.fetch]: { main: [to(N.found), to(N.failed)] },
+  [N.found]: { main: [to(N.map), to(N.failed)] },
   [N.map]: { main: [to(N.getPath), to(N.failed)] },
 };
 
 /**
  * The whole workflow. Its answers to Granola (ADR-0034): `401` to a delivery
- * not signed with the secret (Granola does not retry a 4xx); `503` when the
- * note is still processing (a `404`), so Granola retries it with backoff;
- * `200` for everything else, as soon as the fetch has answered. A later
- * failure — a note the mapper refuses, a GitHub failure, a Granola error
- * other than 404 — is emailed, never answered: the pull catches the meeting,
- * and no answer spends Granola's four-day retry budget on it.
+ * not signed with the secret (Granola does not retry a 4xx), and `200` the
+ * moment the signature holds, before the fetch, well inside Granola's 15
+ * seconds. Every later failure — any Granola status but 200 (a 404 too: the
+ * note is gone or still processing), a timeout, a note the mapper refuses, a
+ * GitHub failure — is emailed, never answered: the pull catches the meeting,
+ * and no answer of ours spends Granola's four-day retry budget.
  */
 export function granolaWebhookWorkflow(scripts: {
   verify: string;
@@ -163,14 +177,11 @@ export function granolaWebhookWorkflow(scripts: {
         position: [220, 0],
         mode: 'runOnceForAllItems',
       }),
-      answerNode(N.refuse, '1003', 401, [440, 160]),
+      answerNode({ name: N.refuse, serial: '1003', responseCode: 401, position: [440, 160] }),
+      answerNode({ name: N.accepted, serial: '1008', responseCode: 200, position: [440, 0] }),
       fetchNode(),
-      statusIs(N.found, '1005', 200, [660, 0]),
-      statusIs(N.processing, '1006', 404, [880, 160]),
-      answerNode(N.retry, '1007', 503, [1100, 240]),
-      answerNode(N.accepted, '1008', 200, [880, -120]),
-      answerNode(N.acceptedFailing, '1009', 200, [1100, 120]),
-      codeNode({ name: N.map, id: granolaId('100a'), jsCode: scripts.map, position: [1100, -120] }),
+      statusIs({ name: N.found, serial: '1005', status: 200, position: [880, 0] }),
+      codeNode({ name: N.map, id: granolaId('100a'), jsCode: scripts.map, position: [1100, 0] }),
       ...branch.nodes,
     ],
     connections: { ...CONNECTIONS, ...branch.connections },

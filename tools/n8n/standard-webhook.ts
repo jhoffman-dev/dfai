@@ -71,12 +71,33 @@ export function utf8Bytes(text: string): Uint8Array {
   return Uint8Array.from(bytes);
 }
 
-/** UTF-8 bytes as text; refused when they are not UTF-8, since a signed body that is not text is not Granola's. */
+/** The length of the sequence a lead byte starts; 0 for a byte no UTF-8 sequence starts with. */
+function sequenceLength(lead: number): number {
+  if (lead < 0x80) return 1;
+  if (lead < 0xc2) return 0; // a continuation byte, or C0/C1, which only start overlong forms
+  if (lead < 0xe0) return 2;
+  if (lead < 0xf0) return 3;
+  // F5 and up decode past U+10FFFF (F8 and up to an overlong form): `holds` refuses them.
+  return 4;
+}
+
+/** The smallest point each length may hold: anything less is an overlong form. */
+const SMALLEST = [0, 0, 0x80, 0x800, 0x10000] as const;
+
+/** Whether a decoded point is one this length may hold: not overlong, not a surrogate, not past U+10FFFF. */
+const holds = (point: number, length: number) =>
+  point >= (SMALLEST[length] ?? 0) && point <= 0x10ffff && (point < 0xd800 || point > 0xdfff);
+
+/**
+ * UTF-8 bytes as text (RFC 3629); refused when they are not UTF-8 — a
+ * stray or missing continuation, an overlong form, an encoded surrogate or a
+ * point past U+10FFFF — since a signed body that is not text is not Granola's.
+ */
 export function utf8Text(bytes: Uint8Array): string {
   let text = '';
   for (let i = 0; i < bytes.length;) {
     const lead = bytes[i] ?? 0;
-    const length = lead < 0x80 ? 1 : lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc2 ? 2 : 0;
+    const length = sequenceLength(lead);
     if (length === 0 || i + length > bytes.length) throw new WebhookRefusal('body: not UTF-8');
     let point = length === 1 ? lead : lead & (0xff >> (length + 1));
     for (let k = 1; k < length; k += 1) {
@@ -84,6 +105,7 @@ export function utf8Text(bytes: Uint8Array): string {
       if ((trail & 0xc0) !== 0x80) throw new WebhookRefusal('body: not UTF-8');
       point = (point << 6) | (trail & 63);
     }
+    if (!holds(point, length)) throw new WebhookRefusal('body: not UTF-8');
     text += String.fromCodePoint(point);
     i += length;
   }
