@@ -83,7 +83,7 @@ export function jsonHasDuplicateKeys(json: string): boolean {
       let end = at + 1;
       while (end < json.length && json[end] !== '"') end += json[end] === '\\' ? 2 : 1;
       const top = open.at(-1);
-      if (top?.keys != null && top.wantsKey) {
+      if (top !== undefined && top.keys !== null && top.wantsKey) {
         const key = JSON.parse(json.slice(at, end + 1)) as string;
         if (top.keys.has(key)) return true;
         top.keys.add(key);
@@ -95,7 +95,7 @@ export function jsonHasDuplicateKeys(json: string): boolean {
     else if (character === '}' || character === ']') open.pop();
     else if (character === ',') {
       const top = open.at(-1);
-      if (top?.keys != null) top.wantsKey = true;
+      if (top !== undefined && top.keys !== null) top.wantsKey = true;
     }
   }
   return false;
