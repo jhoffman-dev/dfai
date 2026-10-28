@@ -8,7 +8,12 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const NODE_RULES = ['no-restricted-globals', 'no-restricted-imports', 'no-restricted-properties'];
+const NODE_RULES = [
+  'no-restricted-globals',
+  'no-restricted-imports',
+  'no-restricted-properties',
+  'no-restricted-syntax',
+];
 
 let eslint: ESLint;
 // Loading the config and its plugins takes seconds on a busy machine, so it is
@@ -76,6 +81,21 @@ describe('Node in the webview’s code (#114)', () => {
         "import { join } from 'path';",
         "import { readFile } from 'fs/promises';",
         'console.warn(readFileSync, join, readFile);',
+      ].join('\n'),
+    );
+    expect(found).toHaveLength(3);
+    expect(found.every((message) => message.includes('The webview has no Node'))).toBe(true);
+  });
+
+  it.each(WEBVIEW)('forbids a dynamic import of a Node built-in in %s', async (path) => {
+    const found = await nodeFindings(
+      path,
+      [
+        "export const a = () => import('node:fs');",
+        "export const b = () => import('fs/promises');",
+        'export const c = () => import(`path`);',
+        "export const d = () => import('./path');",
+        "export const e = () => import('pathe');",
       ].join('\n'),
     );
     expect(found).toHaveLength(3);
