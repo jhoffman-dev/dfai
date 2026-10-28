@@ -180,6 +180,25 @@ describe('the work clock', () => {
     },
   );
 
+  it('keeps a held minute tick on its minute: due plus a minute, not released plus a minute (#243)', async () => {
+    const base = Date.now() - STARTS_AT;
+    const firedAt: number[] = [];
+    const tick = setInterval(() => firedAt.push(Date.now() - STARTS_AT - base), 60_000);
+    await clock().run(null, null, 59_500, 0);
+    // Due at 60,000, inside a window that runs to 60,500: held.
+    clock().startCounting();
+    await clock().run(null, null, 1_000, 0);
+    clock().stopCounting();
+    expect(firedAt).toEqual([]);
+    // Released on the next uncounted step, at 60,500.
+    await clock().run(null, null, 0, 0);
+    expect(firedAt).toEqual([60_500]);
+    // Up to the next minute: it fires once more, on the minute it always had.
+    await clock().run(null, null, 59_500, 0);
+    expect(firedAt).toEqual([60_500, 120_000]);
+    clearInterval(tick);
+  });
+
   it('counts the host commands sent while counting, by name', async () => {
     clock().startCounting();
     void invoke('read_note');
