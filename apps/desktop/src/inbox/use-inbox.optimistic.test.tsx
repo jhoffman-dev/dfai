@@ -454,7 +454,11 @@ describe('useInbox — a filing taken back while the queue is busy (#217)', () =
       index: listing([CALL, PAY, SEND]),
       editors: NO_EDITORS,
     };
-    const options = optionsFor(ports, [...memory.files.keys()].map(createVaultPath));
+    const show = vi.fn<NonNullable<InboxOptions['toasts']>['show']>(() => 1);
+    const options = {
+      ...optionsFor(ports, [...memory.files.keys()].map(createVaultPath)),
+      toasts: { show },
+    };
     const hook = renderHook((given: InboxOptions) => useInbox(given), { initialProps: options });
     await waitFor(() => expect(hook.result.current.contents?.items).toHaveLength(3));
 
@@ -478,10 +482,16 @@ describe('useInbox — a filing taken back while the queue is busy (#217)', () =
     expect(memory.files.get(FILED_CALL)).toContain('[[Tasks/2026/10/Pay Tobias Fenn]]');
     // It moved a note, so the tree and the index are read again.
     expect(options.onSettled).toHaveBeenCalledOnce();
-    // Said on the row where it is now, and it can still be taken back (#225, PR #612).
+    // Said on the row where it is now, and offered to be taken back (#225, PR #612).
     expect(hook.result.current.refusals).toEqual([
       { path: FILED_CALL, reason: expect.stringMatching(/the disk stopped answering/) },
     ]);
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Clarified “Call Mara Quill”.',
+        onUndo: expect.any(Function),
+      }),
+    );
   });
 });
 

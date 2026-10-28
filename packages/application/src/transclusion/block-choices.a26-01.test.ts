@@ -78,16 +78,30 @@ describe('createBlockChoicesReader', () => {
 });
 
 describe('createBlockChoicesReader — a note that is not there (#225, PR #612)', () => {
-  const failing = (listed: readonly string[]) =>
+  /**
+   * A vault whose `Plans.md` cannot be read, as the host has it: its folder
+   * lists every file there, while `readNotes` leaves out one that is not
+   * UTF-8, too large or not readable, as it leaves out one that is gone.
+   */
+  const failing = (onDisk: readonly string[]) =>
     createBlockChoicesReader({
       fs: fakeVaultFs({
-        readTextFile: async () => {
-          throw new Error('the disk stopped answering');
+        readTextFile: async (path) => {
+          throw new Error(
+            onDisk.includes(path) ? 'stream did not contain valid UTF-8' : 'no such entry',
+          );
         },
-        readNotes: async (paths) =>
-          paths
-            .filter((path) => listed.includes(path))
-            .map((path) => ({ path: createVaultPath(path), text: '', modified: 1, size: 0 })),
+        readNotes: async () => [],
+        listDirectory: async (folder) => {
+          if (folder !== '') throw new Error('no such entry');
+          return onDisk.map((path) => ({
+            name: path,
+            path: createVaultPath(path),
+            kind: 'file' as const,
+            modified: 1,
+            size: 1,
+          }));
+        },
       }),
       markdown: fakeMarkdown(),
       index: fakeIndexPort({ manifest: async () => [] }),
@@ -97,7 +111,11 @@ describe('createBlockChoicesReader — a note that is not there (#225, PR #612)'
     await expect(failing([]).read(plans)).resolves.toBeNull();
   });
 
-  it('passes on a failure to read a note that is there', async () => {
-    await expect(failing([plans]).read(plans)).rejects.toThrow('the disk stopped answering');
+  it('answers null for a note whose folder is gone too', async () => {
+    await expect(failing([]).read(createVaultPath('Trips/Plans.md'))).resolves.toBeNull();
+  });
+
+  it('passes on a failure to read a note that is there, even one the index cannot read', async () => {
+    await expect(failing([plans]).read(plans)).rejects.toThrow('valid UTF-8');
   });
 });

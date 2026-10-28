@@ -146,3 +146,48 @@ describe('useInbox — two clarifications asked together (#225, PR #612)', () =>
     expect(files.get(CALL)).toBe(firstWritten);
   });
 });
+
+describe('useInbox — a reason cleared wherever the note was and is (#225, PR #612 review)', () => {
+  const LARKSPUR = createVaultPath('Projects/Larkspur.md');
+
+  it('clears the reason at the Inbox path once a retry files the note cleanly', async () => {
+    const { hook, files } = inbox();
+    // Refused: a project is nobody to wait on.
+    await act(() =>
+      hook.result.current.clarify({
+        path: CALL,
+        clarification: { status: 'waiting', waitingOn: LARKSPUR },
+      }),
+    );
+    expect(hook.result.current.refusals).toEqual([{ path: CALL, reason: expect.any(String) }]);
+
+    await act(() =>
+      hook.result.current.clarify({ path: CALL, clarification: { project: LARKSPUR } }),
+    );
+
+    expect(files.has(FILED)).toBe(true);
+    expect(hook.result.current.refusals).toEqual([]);
+  });
+
+  it('clears the reason at the filed path once the filing is undone', async () => {
+    const { hook, files } = inbox((base) => ({
+      ...base,
+      writeTextFile: async (write) => {
+        if (write.path.startsWith('Tasks/')) throw new Error('Permission denied.');
+        return base.writeTextFile(write);
+      },
+    }));
+    await act(() =>
+      hook.result.current.clarify({ path: CALL, clarification: { project: LARKSPUR } }),
+    );
+    expect(hook.result.current.refusals).toEqual([
+      { path: FILED, reason: expect.stringMatching(/Permission denied/) },
+    ]);
+
+    await act(() => hook.result.current.undo());
+
+    await waitFor(() => expect(files.get(CALL)).toBe(TASK('About the tulips.')));
+    expect(files.has(FILED)).toBe(false);
+    expect(hook.result.current.refusals).toEqual([]);
+  });
+});

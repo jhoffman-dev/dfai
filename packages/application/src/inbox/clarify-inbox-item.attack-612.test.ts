@@ -213,6 +213,23 @@ describe('undoClarifyInboxItem — an edit saved after the clarification wrote (
   });
 });
 
+describe('clarifyInboxItem — the project gone once the properties are written (#225, PR #612 review)', () => {
+  it('resolves, says it was not filed, and can be undone to the note as it was', async () => {
+    const v = vault(TASK, 'project gone meanwhile');
+
+    const outcome = await v.clarify({ status: 'someday', project });
+
+    expect(outcome.path).toBe(CALL);
+    expect(outcome.failed).toEqual([
+      { path: CALL, reason: expect.stringMatching(/^Clarified, but not filed: /) },
+    ]);
+    expect(clarifiedAnything(outcome)).toBe(true);
+    expect(v.files.get(CALL)).toContain('status: someday');
+    await v.undo(outcome);
+    expect(v.files.get(CALL)).toBe(TASK);
+  });
+});
+
 /** The vault's notes compared, but for the project, which sync may take away by itself. */
 function sameFiles(before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>) {
   const notes = (files: ReadonlyMap<string, string>) =>

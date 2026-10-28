@@ -126,6 +126,29 @@ describe('InboxRows — 2,000 rows (#225, PR #612)', () => {
     expect(status('Task 2')?.value).toBe('someday');
   });
 
+  it('forgets the pick of a row whose write was refused once sync has taken it away', async () => {
+    let refuse: (written: boolean) => void = () => {};
+    const onClarify = vi.fn(
+      () =>
+        new Promise<boolean>((settle) => {
+          refuse = settle;
+        }),
+    );
+    const items = tasks(2_000);
+    const without = items.filter((item) => item.title !== 'Task 2');
+    const view = render(<InboxPage {...given(items, onClarify)} />);
+    fireEvent.change(status('Task 2')!, { target: { value: 'someday' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Clarify Task 2' }));
+    // Off the list while written; sync takes the note away meanwhile, and the write is refused.
+    view.rerender(<InboxPage {...given(without, onClarify)} />);
+    await act(async () => refuse(false));
+    // A capture lands later at the same path: a note of its own, never picked.
+    view.rerender(<InboxPage {...given([...without, task('Task 2')], onClarify)} />);
+    scrollPageTo(BOTTOM);
+
+    expect(status('Task 2')?.value).toBe('inbox');
+  });
+
   it('gives a new note at a path sync emptied nothing the old one picked', () => {
     const items = tasks(2_000);
     const view = render(<InboxPage {...given(items)} />);
