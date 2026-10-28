@@ -19,6 +19,8 @@ assembled meeting before any Notion step, and nothing in it can stop the run.
 | `github-file.ts`                                    | Whether a file already at a meeting's path is that meeting (compiled in too). |
 | `validate-meeting.mjs`                              | Checks a file with the validator DFAI runs: `pnpm validate:meeting <file.md>` |
 | `build-workflow.mjs`, `code-node.ts`, `workflow.ts` | Rebuild the JSON after changing the mapper: `pnpm n8n:build`.                 |
+| `granola-webhook.workflow.json`                     | Granola's webhooks into DFAI ("Granola webhooks → DFAI" below).               |
+| `github-branch.ts`                                  | The GitHub nodes both workflows end in.                                       |
 
 The file format is the meeting import contract,
 `vault/docs/contracts/meeting-import-v1.md`.
@@ -583,6 +585,107 @@ read instead), and its other properties. A page's sections the workflow did
 not write, such as a summary you added by hand, go into Notes under their own
 heading, so nothing in the page is dropped.
 
+## Granola webhooks → DFAI
+
+A second workflow, `granola-webhook.workflow.json`, brings a Granola meeting
+into the vault the moment Granola writes its summary, while every Mac is
+asleep (ADR-0034, P28-14). Granola sends `note.generated` to n8n; n8n checks
+the signature, fetches the note, maps it with the app's own mapper and commits
+it through the same GitHub nodes as the Gemini workflow. The app's own
+Granola pull stays the safety net: anything this misses, the pull catches.
+
+```
+Granola webhook → Verify Granola signature → Fetch Granola note → (200) Answer 200 → Map → GitHub branch
+                         └ refused → Answer 401          ├ 404 → Answer 503 (Granola retries)
+                                                          └ anything else, or no answer → Answer 200 → email
+```
+
+| Granola or GitHub says…                           | n8n answers Granola   | Then                                      |
+| ------------------------------------------------- | --------------------- | ----------------------------------------- |
+| A delivery not signed with the secret, or stale   | `401`                 | Nothing (Granola does not retry a 4xx).   |
+| The note (`200`)                                  | `200`, before the map | Map, commit; a failure is emailed.        |
+| `404`: the note is still processing               | `503`                 | Granola retries with backoff.             |
+| Any other status (`401` key, `413`, `429`, `5xx`) | `200`                 | Emailed; the pull catches the meeting.    |
+| No answer in 10 s                                 | `200`                 | Emailed; the pull catches the meeting.    |
+| A refused note, or GitHub fails                   | `200` (already)       | Emailed: "Email me: meeting not in DFAI". |
+
+A `200` for a failure is on purpose: Granola retries for four days and then
+**disables the endpoint without replaying what it missed**, so no answer may
+spend that budget on a failure the pull will catch anyway. The `404 → 503`
+case is the one retry worth spending. (ADR-0034 had every answer after the
+signature be a `200`; the issue's acceptance asks for the `503`, which this
+follows. A note deleted while still processing would be retried until
+Granola gives up — rare, and the cost is the endpoint, so watch the emails.)
+
+### What only you can do, in n8n and Granola
+
+1. **Granola API credential.** In Granola's desktop app, **Settings →
+   Connectors**, make a personal API key (`grn_…`). In n8n: **Credentials →
+   Add credential → Header Auth**, **Name** `Granola API` exactly; header
+   **Name** `Authorization`, **Value** `Bearer grn_…`. The key lives only
+   there and in each Mac's Keychain (rotate it in all of them).
+2. **Import** `granola-webhook.workflow.json` as a new workflow (**Workflows →
+   Import from file**). Point **Email me: meeting not in DFAI** at your
+   address (`NOTIFY_TO` is a placeholder) and its Gmail credential; the
+   GitHub nodes use `GitHub pkm-space (contents)` from step 2 above.
+3. **Map node OPTIONS.** In **Map meeting to DFAI file**, set `OPTIONS` to
+   the vault's settings **byte for byte**: `timeZone` = `granola_time_zone`
+   (default `America/Los_Angeles`), `selfEmails` = your own addresses
+   (`selfEmails`), `groupAddresses` = `granola_group_addresses`. If they differ
+   from the app's, n8n and the app write the same meeting differently and you
+   get a sync conflict copy.
+4. **Register the webhook.** In Granola: **Settings → Connectors →
+   Webhooks**, add the workflow's **production** URL,
+   `https://<your n8n>/webhook/granola-to-dfai` (it must be public HTTPS),
+   with the events **`note.generated`** and **`note.access_granted`** only
+   (never `note.edited`: an imported meeting is not rewritten).
+5. **The secret.** Granola shows the endpoint's signing secret (`whsec_…`).
+   Open **Verify Granola signature** and replace
+   `whsec_PASTE_THE_SECRET_FROM_GRANOLA_HERE` with it. Until you do, the node
+   refuses every delivery with a `401`. The secret is in the node's code
+   because an n8n Code node cannot read a credential; keep your copy of it
+   under the name `Granola webhook secret` in your password manager, never in
+   this repository, and do not export the workflow with it in. Re-paste it
+   whenever you re-import a rebuilt JSON.
+6. **Activate** the workflow, then send Granola's **test event** from the
+   webhook's page. A test event names no real note: expect the run to pass
+   **Verify Granola signature** and get a `404` or `401` from the fetch (an
+   email, or a `503`) — what matters is that it was not answered `401` by the
+   verify node. A real meeting then arrives at `Meetings/<YYYY>/<MM>/`.
+7. **In DFAI**, set `granola_webhook: true` in the vault's settings, so the
+   pull warns when a note it finds should have come by webhook long since (a
+   sign Granola disabled the endpoint).
+
+### What to confirm in the n8n UI (the spike)
+
+The ticket asked whether an n8n Cloud Code node can `require('crypto')`. It
+no longer matters: the signature check is HMAC-SHA256 in plain JavaScript
+(`sha256.ts`, `standard-webhook.ts`), tested against Node's crypto and the
+Standard Webhooks spec's own vector, and run under JavaScriptCore to prove it
+needs no `crypto`, `Buffer` or `TextEncoder`. What the tests here cannot
+reach, and you must see work on the first run:
+
+- **The raw body.** The Webhook node's **Raw Body** option is on, and the
+  verify node reads the bytes with
+  `await this.helpers.getBinaryDataBuffer(0, "data")` (n8n's documented
+  Code-node helper, in "Run Once for All Items" mode). If n8n refuses it, the
+  verify node fails and every delivery is answered `401`: the run's error
+  says why.
+- **Where the note id is.** Granola documents that the payload carries a
+  `note_id`, not where; the check reads it at the top or under `data`. A test
+  event that fails with `body: no note_id` means it is elsewhere: tell the
+  next agent the payload's shape.
+- **The status branches.** The fetch is set to "Include Response Headers and
+  Status" and "Never Error", so its output has `statusCode`; the If nodes read
+  `$json.statusCode`.
+
+### Files
+
+`granola-webhook.workflow.ts` builds the workflow, `granola-code-node.ts` its
+two Code nodes' scripts, `granola-webhook.ts` and `standard-webhook.ts` the
+check, `sha256.ts` the hash. `github-branch.ts` is the GitHub half both
+workflows share, so a change to it changes both JSON files.
+
 ## Changing the mapper
 
 The mapper is `packages/domain/src/meetings/mapping/` (since #93, so the app's
@@ -591,7 +694,10 @@ workflow's own checks. Edit them, run `pnpm n8n:build`, then in n8n replace the
 three Code nodes' code (**Map meeting to DFAI file**, **Same meeting?**,
 **Same meeting at the other path?**) with the new `jsCode` from the JSON — or
 delete the twelve nodes and paste the file again. A test fails while the JSON
-is out of date with the mapper.
+is out of date with the mapper. The Granola workflow's **Map meeting to DFAI
+file**, **Same meeting?** and **Same meeting at the other path?** nodes carry
+the same compiled mapper: replace their code too, keeping your `OPTIONS`, and
+re-paste the secret into **Verify Granola signature** if you re-import it.
 
 The node names the fields are read from are `EXAMPLE_SOURCES` in
 `workflow.ts`; `meetingWorkflow(scripts, sources)` builds the same nodes for
