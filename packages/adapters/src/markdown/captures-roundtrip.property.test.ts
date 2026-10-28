@@ -21,7 +21,7 @@ import {
   splitWikiLinksAndEmbeds,
 } from '@dfai/domain';
 import {
-  hostileText,
+  HOSTILE_PIECES,
   SLACK_PERMALINK,
   SLACK_REPLY_TS,
   seededRandom,
@@ -56,11 +56,51 @@ const FORBIDDEN = new Set([
   'linkReference',
 ]);
 
+/**
+ * The edges of an address the writer's own patterns may not see as GFM does
+ * (second attack on PR #615): a bare `www.` or scheme with what GFM runs an
+ * address on over (`[`, `]`, a space beyond ASCII), an address's start in
+ * any case, a mail address's parts on either side of a mention, angle and
+ * other-scheme forms, and entities for the characters markup is made of.
+ */
+const ADDRESS_EDGES: readonly string[] = [
+  'www.',
+  'WWW.',
+  'https://',
+  'HTTP://',
+  'ftp://',
+  'xmpp:',
+  'mailto:',
+  '@example.com',
+  'mara',
+  '<https://example.com/a>',
+  '[',
+  ']',
+  '(',
+  ')',
+  '.',
+  '\u00a0',
+  '\u2003',
+  'exämple.рф',
+  '&#x5b;&#x5b;',
+  '&lsqb;',
+  '&#35;',
+  '&#33;',
+  '&#124;',
+];
+
+/** As `hostileText` from the domain's testing kit, with the address edges among the pieces. */
+function edgyText(random: () => number, most: number): string {
+  const pieces = [...HOSTILE_PIECES, ...ADDRESS_EDGES, ...ADDRESS_EDGES];
+  const count = 1 + Math.floor(random() * most);
+  return Array.from({ length: count }, () => pieces[Math.floor(random() * pieces.length)]).join('');
+}
+
 /** A payload with hostile text in every field a sender writes. */
 function hostilePayload(random: () => number) {
-  const tokenLabel = () => hostileText(random, 4).replace(/[<>|\n]/g, ' ');
+  const tokenLabel = () => edgyText(random, 4).replace(/[<>|\n]/g, ' ');
   const text = [
-    hostileText(random, 25),
+    edgyText(random, 25),
     `<@U0NOBODY99|${tokenLabel()}>`,
     `<#C0LARK5PUR|${tokenLabel()}>`,
     `<!subteam^S0LARKPAY|${tokenLabel()}>`,
@@ -68,26 +108,26 @@ function hostilePayload(random: () => number) {
     `<javascript:alert(1)|${tokenLabel()}>`,
     `<https://example.com/a|${tokenLabel()}>`,
     '<@U0TOBIAS22>',
-    hostileText(random, 10),
+    edgyText(random, 10),
   ].join(random() < 0.5 ? ' ' : '');
   return slackCapture({
     kind: random() < 0.5 ? 'note' : 'task',
-    title: random() < 0.5 ? hostileText(random, 6) : null,
+    title: random() < 0.5 ? edgyText(random, 6) : null,
     text,
     source: slackSource({
-      channel: { id: 'C0LARK5PUR', name: hostileText(random, 4).slice(0, 70) },
-      author: { name: hostileText(random, 5) },
+      channel: { id: 'C0LARK5PUR', name: edgyText(random, 4).slice(0, 70) },
+      author: { name: edgyText(random, 5) },
       url: SLACK_PERMALINK,
     }),
     thread: [
       {
         ts: SLACK_REPLY_TS,
-        author: { name: hostileText(random, 5) },
-        text: hostileText(random, 20),
+        author: { name: edgyText(random, 5) },
+        text: edgyText(random, 20),
       },
     ],
-    attachments: [{ name: hostileText(random, 4), url: 'https://files.slack.com/a.pdf' }],
-    users: { U0TOBIAS22: hostileText(random, 5) },
+    attachments: [{ name: edgyText(random, 4), url: 'https://files.slack.com/a.pdf' }],
+    users: { U0TOBIAS22: edgyText(random, 5) },
   });
 }
 
@@ -111,8 +151,12 @@ const linksOf = (tree: Root, source: string) =>
       : [],
   );
 
+/** What every link the mapper writes opens: an address, never a path in the vault. */
+const ADDRESS = /^(?:https?:\/\/|mailto:|xmpp:)/i;
+
 function expectOnlyWords(markdown: string, written: ReadonlySet<string>): void {
   const tree = parse(markdown);
+  for (const url of written) expect(url, `a link to no address: ${url}`).toMatch(ADDRESS);
   for (const node of nodesOf(tree)) expect(FORBIDDEN.has(node.type), node.type).toBe(false);
   for (const link of linksOf(tree, markdown)) {
     expect(link.explicit, `a link read from words: ${link.url}`).toBe(true);
@@ -134,7 +178,10 @@ describe('a hostile capture, edited and written back, over 300 seeded payloads',
       const edited = editedBack(body);
       expectOnlyWords(edited, written);
       // Read and written once more, it is what it was: an edit has nothing left to undo.
-      expectOnlyWords(editedBack(edited), written);
+      const again = editedBack(edited);
+      expectOnlyWords(again, written);
+      // However many times more, nothing changes.
+      expect(editedBack(again)).toBe(again);
     },
   );
 });
