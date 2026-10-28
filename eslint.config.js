@@ -129,6 +129,11 @@ const nodeBuiltinNames = builtinModules
   .filter((name) => !name.startsWith('node:'))
   .map(escapeRegex);
 
+/** The same names for a selector, where no `/` may appear: `fs/promises` is `fs` and a subpath. */
+const dynamicNodeModule = `^(node:.*|(${nodeBuiltinNames
+  .filter((name) => !name.includes('/'))
+  .join('|')})(\\x2F.*)?)$`;
+
 /** `node:fs`, `fs`, `fs/promises`, by exact name: `./path` or `pathe` is not Node's. */
 const noNodeModules = {
   regex: `^(node:.*|(${nodeBuiltinNames.join('|')})(/.*)?)$`,
@@ -179,6 +184,18 @@ const webviewNode = [
         ...Object.entries(NODE_GLOBALS).map(([name, instead]) => ({
           name,
           message: `${name} is Node's, and the webview has none (#114). ${instead}`,
+        })),
+      ],
+      // no-restricted-imports does not look at `import()`. A selector's regex
+      // ends at its first `/`, so the subpath's slash is written `\x2F`.
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          'ImportExpression > Literal',
+          'ImportExpression > TemplateLiteral > TemplateElement',
+        ].map((node) => ({
+          selector: `${node}[${node.endsWith('Literal') ? 'value' : 'value.raw'}=/${dynamicNodeModule}/]`,
+          message: noNodeModules.message,
         })),
       ],
       // The same globals reached through the global object.
