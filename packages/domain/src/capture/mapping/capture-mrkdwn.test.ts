@@ -89,9 +89,9 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     expect(md('<javascript:alert(1)>')).toBe('\\<javascript:alert(1)\\>');
   });
 
-  it('keeps a bare address from being a link that would run over the escapes after it', () => {
+  it('writes a bare address as an explicit link, so no link read from words runs over the escapes after it', () => {
     expect(md('see https://example.com/a<b> and www.example.com')).toBe(
-      'see https\\://example.com/a\\<b\\> and www\\.example.com',
+      'see [https\\://example.com/a](https://example.com/a)\\<b\\> and [www\\.example.com](http://www.example.com)',
     );
   });
 
@@ -138,7 +138,11 @@ describe('Slack mrkdwn as DFAI markdown (#103)', () => {
     ['a tag', 'a #tag', 'a \\#tag'],
     ['a wiki link', '[[Secret]]', '\\[\\[Secret\\]\\]'],
     ['an embed', '![[Secret]]', '!\\[\\[Secret\\]\\]'],
-    ['an image', '![x](https://example.com/p.png)', '!\\[x\\](https\\://example.com/p.png)'],
+    [
+      'an image',
+      '![x](https://example.com/p.png)',
+      '!\\[x\\]([https\\://example.com/p.png](https://example.com/p.png))',
+    ],
     ['a block id', 'mine ^t0001', 'mine \\^t0001'],
     ['a table row', '| a | b |', '\\| a \\| b \\|'],
     ['a checkbox', '- [ ] do', '- \\[ \\] do'],

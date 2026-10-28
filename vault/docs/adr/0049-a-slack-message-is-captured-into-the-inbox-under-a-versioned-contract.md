@@ -88,9 +88,16 @@ user, channel and special mentions become their markdown or their text. Then
 every character markdown or DFAI reads as more than itself is escaped — `#`
 (headings, tags), `[` `]` (links, wiki links, embeds, checkboxes), `^` (block
 ids), `<` `>` (HTML), `|` (tables), backticks and tildes (fences), `*` `_` `~`,
-the backslash, an `&` that starts an entity, and the `:` of a bare
-`https://` and the `.` of `www.` (a link read from words runs on over the
-escapes after it). A line of `-`, `=` or `+` is kept from being a rule or a
+the backslash, and an `&` that starts an entity. A bare address in the
+words (`https://…`, `www.…`) is written as an explicit link,
+`[address](address)`, cut where GFM would cut it. Escaping its `:` was the
+first build's answer, and it was wrong (review of PR #615): GFM still reads
+the words as a link, the link runs on over the escapes after it, and once
+the paragraph is edited the editor writes them back without the escapes, as
+a real wiki link or tag. An explicit link is a link node either way, and is
+written back as one. Every link's address is percent-encoded where it holds
+`[`, `]`, `!`, `<`, `>`, a quote, a parenthesis or a backslash, since the
+index reads a wiki link or an embed even inside an address. A line of `-`, `=` or `+` is kept from being a rule or a
 heading's underline. A code block's fence never carries an info string, so a
 message cannot run an `atlas-query`. Only `https://`, `http://` and
 `mailto:` links are written; another scheme keeps its text. Control and

@@ -145,6 +145,34 @@ function proseLine(line: string, users: SlackUserNames, writer: Writer): string 
 /** Inline code, or one of Slack's `<…>` tokens: what is read before the words around it. */
 const TOKEN = /`([^`\n]+)`|<([^<>\n]*)>/g;
 
+/**
+ * An address written as words, as GFM reads one into a link of its own
+ * (`https://…`, `www.…`): taken up to a space, an angle bracket, a square
+ * bracket or a held part, then cut back by {@link bareAddress}.
+ */
+// The character before is matched, not looked behind at: JavaScriptCore reads a
+// lookbehind by code unit, and a letter beyond U+FFFF would let it start mid-word.
+const BARE_ADDRESS = /(^|[^\p{L}\p{N}_])((?:https?:\/\/|www\.)[^\s<>[\]\u0000]+)/giu;
+
+/** What ends a sentence after an address rather than belonging to it, as GFM cuts it. */
+const TRAILING = /[?!.,:;*_~'"]+$/;
+
+/**
+ * An address found in words, and what after it is not part of it: trailing
+ * punctuation, and a `)` the address did not open.
+ */
+function bareAddress(found: string): { address: string; after: string } {
+  let address = found;
+  for (;;) {
+    const cut = address.replace(TRAILING, '');
+    const opens = cut.split('(').length;
+    const closes = cut.split(')').length;
+    const next = cut.endsWith(')') && closes > opens ? cut.slice(0, -1) : cut;
+    if (next === address) return { address, after: found.slice(address.length) };
+    address = next;
+  }
+}
+
 /** Slack's emphasis: a mark at a word's edge, the same mark closing it on the same line. */
 const STYLED = /(^|[^\p{L}\p{N}])([*_~])(?!\s|\2)([^\n]*?[^\s])\2(?![\p{L}\p{N}])/gu;
 
@@ -168,12 +196,20 @@ function inlineText(line: string, users: SlackUserNames, writer: Writer): string
         : writer.code(decodeSlackEntities(code)),
     ),
   );
+  // A bare address is written as an explicit link: GFM would read it as one anyway, and
+  // a link it reads from words runs on over the escapes after it once they are edited.
+  const linked = tokened.replace(BARE_ADDRESS, (_, before: string, found: string) => {
+    const { address, after } = bareAddress(found);
+    const label = decodeSlackEntities(address);
+    const url = /^www\./i.test(label) ? `http://${label}` : label;
+    return `${before}${hold(writer.link(url, label))}${after}`;
+  });
   const styled = (text: string): string =>
     text.replace(STYLED, (_, before: string, mark: '*' | '_' | '~', inner: string) => {
       const written = hold(writer.marks[mark]);
       return `${before}${written}${styled(inner)}${hold(writer.marks[mark])}`;
     });
-  const escaped = writer.words(decodeSlackEntities(styled(tokened)));
+  const escaped = writer.words(decodeSlackEntities(styled(linked)));
   return escaped.replace(HELD, (_, at: string) => held[Number(at)] ?? '');
 }
 

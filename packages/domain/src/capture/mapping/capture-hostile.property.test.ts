@@ -60,10 +60,12 @@ function proseLines(body: string): string[] {
 }
 
 /**
- * A line with its escaped characters and its code spans taken out, read left
- * to right as CommonMark reads them: what markdown reads as markup.
+ * A line with its escaped characters, its code spans and its links' destinations
+ * taken out, read left to right as CommonMark reads them: what markdown reads as markup.
  */
-function markupOf(line: string): string {
+function markupOf(written: string): string {
+  // A link's destination is an address, percent-encoded where it must be, not markup.
+  const line = written.replace(/\]\([^()\s]*\)/g, ']');
   let kept = '';
   for (let at = 0; at < line.length;) {
     const run = /^`+/.exec(line.slice(at))?.[0];
