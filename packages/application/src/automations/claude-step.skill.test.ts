@@ -216,18 +216,18 @@ describe('a skill that cannot be asked with fails the run, asking and writing no
     );
   });
 
-  it('asks with instructions at the cap, their last line end counted as the rule counts it', async () => {
+  it('asks with instructions at the cap, their last line end not counted', async () => {
     const step = setUp({
       notes: {
         ...NOTES,
         [SKILL]: skillFile(
           { name: 'meeting-actions', description: DESCRIPTION },
-          `\n${'a'.repeat(19_999)}\n`,
+          `\n${'a'.repeat(20_000)}\n`,
         ),
       },
     });
     await step.run(BY_SKILL);
-    expect(step.claude.fake.requests[0]?.system).toContain('a'.repeat(19_999));
+    expect(step.claude.fake.requests[0]?.system).toContain('a'.repeat(20_000));
   });
 
   it('fails for blank instructions', async () => {
