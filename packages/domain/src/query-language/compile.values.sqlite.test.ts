@@ -6,6 +6,7 @@ import { compileAtlasQuery } from './compile.ts';
 import { parseAtlasQuery } from './parse.ts';
 import { parseObjectType } from '../types/property-def.ts';
 import { QUERY_TEST_TYPES } from './query-fixtures.ts';
+import { typeViewSelectSql } from './type-view.ts';
 
 /**
  * #110 (attack on PR #611): what a query reads a note's values as, run
@@ -161,5 +162,40 @@ describe('a blank item is no item', () => {
     expect(titles('FROM task WHERE notes IS EMPTY')).not.toContain('Beta and a blank');
     const [row] = rows("FROM task WHERE title = 'Beta and a blank' SHOW notes");
     expect(row?.['notes']).toBe('beta');
+  });
+});
+
+describe("a type's view reads a nested list in written order", () => {
+  // A nested list's items share their outer idx, so written order is idx then rowid.
+  it('holds the first day of a due written as [[later, earlier]], as the query does', () => {
+    const nested = new DatabaseSync(':memory:');
+    nested.exec(`
+      CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
+                          modified INTEGER NOT NULL, size INTEGER NOT NULL, progress INTEGER);
+      CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
+                          value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);`);
+    nested.prepare("INSERT INTO files VALUES ('tasks/Nested.md', 'Nested', '', 0, 1, NULL)").run();
+    for (const row of indexablePropertiesOf({
+      type: 'task',
+      due: [['2026-10-02', '2026-10-01']],
+    })) {
+      nested
+        .prepare('INSERT INTO props VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run('tasks/Nested.md', row.key, row.index, row.text, row.number, row.date, row.json);
+    }
+    const select = typeViewSelectSql({
+      name: 'task',
+      columns: [{ key: 'due', kind: 'date', many: false }],
+      progress: false,
+    });
+    nested.exec(`CREATE VIEW v_task AS ${select ?? ''}`);
+    const compiled = compileAtlasQuery(parseAtlasQuery('FROM task SHOW due'), {
+      types: QUERY_TEST_TYPES,
+      resolveLink: () => null,
+    });
+    const [cell] = nested.prepare(compiled.sql).all(...compiled.parameters);
+    const [view] = nested.prepare('SELECT due FROM v_task').all();
+    expect(cell?.['due']).toBe('2026-10-02');
+    expect(view?.['due']).toBe('2026-10-02');
   });
 });
