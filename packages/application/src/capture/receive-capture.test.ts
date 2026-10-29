@@ -6,7 +6,7 @@ import {
   readCapture,
   type VaultPath,
 } from '@dfai/domain';
-import { slackCapture } from '@dfai/domain/testing';
+import { slackCapture, treeAsJson } from '@dfai/domain/testing';
 import { apiFixture } from '../testing/api-fixture.ts';
 import { fakeMarkdown } from '../testing/fake-ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
@@ -20,7 +20,7 @@ import { CapturePathTakenError, receiveCapture } from './receive-capture.ts';
  */
 
 const CAPTURE = readCapture(slackCapture());
-const FILE = captureFile(CAPTURE, { timeZone: 'UTC' });
+const FILE = captureFile(CAPTURE, { timeZone: 'UTC', writeMarkdown: treeAsJson });
 const OTHER_NOTE = '---\ntype: task\n---\n\nSomething else.\n';
 
 /** `fakeMarkdown`'s `key: value` lines, with a single-quoted value read as YAML reads it. */
@@ -86,6 +86,7 @@ describe('receiveCapture (#103)', () => {
     // n8n titled it from the first line; a pasted link (#105) asks for a title of its own.
     const retitled = captureFile(readCapture(slackCapture({ title: 'Renewal, from Slack' })), {
       timeZone: 'UTC',
+      writeMarkdown: treeAsJson,
     });
     expect(retitled.path).not.toBe(FILE.path);
     const { api, receive } = vault({ [retitled.path]: retitled.content });
@@ -96,6 +97,7 @@ describe('receiveCapture (#103)', () => {
   it('reads only a file whose name ends in the key, and a note of another message there is not it', async () => {
     const other = captureFile(readCapture(slackCapture({ title: FILE.title })), {
       timeZone: 'UTC',
+      writeMarkdown: treeAsJson,
     }).content.replace('1793136000.000100', '1793136000.000999');
     const { api, receive } = vault({
       [`Inbox/Captures/Unrelated${FILE.keyEnding.replace('.md', '')} notes.md`]: FILE.content,
@@ -167,5 +169,25 @@ describe('receiveCapture (#103)', () => {
       'index closed',
     );
     expect(api.writes).toEqual([]);
+  });
+
+  it('runs a capture of a message after one that failed, never stuck behind it', async () => {
+    const api = apiFixture();
+    let fail = true;
+    const fs = {
+      ...api.fs,
+      createNote: async (note: { path: VaultPath; contents: string }) => {
+        if (fail) {
+          fail = false;
+          throw new Error('disk full');
+        }
+        return api.fs.createNote(note);
+      },
+    };
+    const ports = { fs, markdown: quotedMarkdown(), index: indexHolding() };
+    const receive = () => receiveCapture({ ports, capture: CAPTURE, timeZone: 'UTC' });
+    const [first, second] = await Promise.allSettled([receive(), receive()]);
+    expect(first).toMatchObject({ status: 'rejected' });
+    expect(second).toMatchObject({ status: 'fulfilled', value: { outcome: 'written' } });
   });
 });

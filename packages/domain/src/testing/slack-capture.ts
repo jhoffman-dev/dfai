@@ -48,3 +48,10 @@ export function slackSource(
 ): Record<string, unknown> {
   return { ...(slackCapture().source as Record<string, unknown>), ...fields };
 }
+
+/**
+ * A capture's tree written as its JSON: what a domain test maps with, since
+ * the markdown serializer is the adapters' (`writeCaptureMarkdown`). Enough
+ * to tell which tree a mapping wrote; never what the note's bytes are.
+ */
+export const treeAsJson = (root: unknown): string => JSON.stringify(root);

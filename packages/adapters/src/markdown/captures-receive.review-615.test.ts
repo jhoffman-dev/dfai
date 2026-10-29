@@ -10,13 +10,20 @@ import { atlasQueryIndex } from '@dfai/application/testing/sqlite';
 import {
   noteTags,
   relationsOf,
-  slackToMarkdown,
+  slackToBlocks,
   splitFrontmatter,
   splitWikiLinksAndEmbeds,
 } from '@dfai/domain';
 import { SLACK_PERMALINK, slackCapture, slackSource } from '@dfai/domain/testing';
 import { parseBodyToMdast, parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
 import { remarkMarkdown } from './markdown-port.ts';
+import { writeCaptureMarkdown } from './capture-markdown.ts';
+
+/** A message's text as its blocks are written in a capture, a blank line apart. */
+const messageMarkdown = (text: string) =>
+  slackToBlocks(text)
+    .map((block) => writeCaptureMarkdown({ type: 'root', children: [block] }))
+    .join('\n\n');
 
 const MARA = '---\ntype: person\nemail: mara.quill@example.com\n---\n\nPayroll lead.\n';
 
@@ -124,7 +131,7 @@ describe('review #615 MAJOR 3: a bare address stays words after the paragraph is
     ['an address in brackets', '(https://example.com/a) [[Mara]] #ops'],
     ['an email address', 'mail mara@example.com [[Mara]] #ops'],
   ])('keeps %s from becoming a link or a tag', (_, text) => {
-    const body = slackToMarkdown(text).join('\n');
+    const body = messageMarkdown(text);
     expect(readAsMarkup(body)).toEqual({ links: [], tags: [] });
     expect(readAsMarkup(editedBack(body))).toEqual({ links: [], tags: [] });
   });
@@ -176,7 +183,7 @@ describe('review #615 minor: a line under words never makes a table', () => {
   it.each(['x\n:-', 'a\n:-:', 'a\n-:', 'a\n---', 'a | b\n:-|-:'])(
     'reads %j as no table',
     (text) => {
-      const body = slackToMarkdown(text).join('\n');
+      const body = messageMarkdown(text);
       const kinds = JSON.stringify(parseBodyToMdast(body));
       expect(kinds).not.toContain('"table"');
       expect(JSON.stringify(parseBodyToMdast(editedBack(body)))).not.toContain('"table"');

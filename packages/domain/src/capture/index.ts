@@ -18,13 +18,26 @@ export type {
   CaptureMessage,
 } from './mapping/capture-payload.ts';
 export { CaptureRefusedError } from './mapping/capture-refusal.ts';
-export {
-  escapeMarkdown,
-  slackToMarkdown,
-  slackToPlain,
-  trimAddress,
-  wordsMarkdown,
-} from './mapping/capture-mrkdwn.ts';
+export { slackToBlocks, slackToPlain, wordsToPhrasing } from './mapping/capture-mrkdwn.ts';
+export { linkifyPhrasing, linkifyWords } from './mapping/capture-linkify.ts';
+export { encodeAddress } from './mapping/capture-tree.ts';
+export type {
+  MdBlock,
+  MdBlockquote,
+  MdCode,
+  MdHeading,
+  MdInlineCode,
+  MdLink,
+  MdList,
+  MdListItem,
+  MdParagraph,
+  MdPhrasing,
+  MdRoot,
+  MdStyled,
+  MdText,
+  MdWikiLink,
+  WriteMarkdown,
+} from './mapping/capture-tree.ts';
 export {
   CAPTURES_FOLDER,
   captureFile,

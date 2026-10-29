@@ -9,5 +9,6 @@ export {
   SLACK_TS,
   slackCapture,
   slackSource,
+  treeAsJson,
 } from './slack-capture.ts';
 export { HOSTILE_PIECES, hostileText, seededRandom } from './hostile-text.ts';

@@ -3,10 +3,20 @@ import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 import type { Nodes, Root } from 'mdast';
 import { describe, expect, it } from 'vitest';
-import { mapCapture, noteTags, splitFrontmatter, splitWikiLinksAndEmbeds } from '@dfai/domain';
+import {
+  mapCapture as mapDomainCapture,
+  noteTags,
+  splitFrontmatter,
+  splitWikiLinksAndEmbeds,
+} from '@dfai/domain';
 import { slackCapture, SLACK_REPLY_TS } from '@dfai/domain/testing';
 import { parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
 import { remarkMarkdown } from './markdown-port.ts';
+import { writeCaptureMarkdown } from './capture-markdown.ts';
+import type { CaptureOptions } from '@dfai/domain';
+/** The domain's mapper with the editor's serializer, as the app maps a capture (ADR-0049). */
+const mapCapture = (payload: unknown, options: Partial<CaptureOptions> = {}) =>
+  mapDomainCapture(payload, { writeMarkdown: writeCaptureMarkdown, ...options });
 
 /*
  * Second attack on PR #615 (#103), on its one writer of a sender's words.

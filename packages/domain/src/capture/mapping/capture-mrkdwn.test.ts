@@ -1,221 +1,226 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_MESSAGE_LENGTH } from './capture-payload.ts';
-import {
-  escapeMarkdown,
-  slackToMarkdown,
-  slackToPlain,
-  trimAddress,
-  wordsMarkdown,
-} from './capture-mrkdwn.ts';
+import { slackToBlocks, slackToPlain, wordsToPhrasing } from './capture-mrkdwn.ts';
+import type { MdBlock, MdPhrasing } from './capture-tree.ts';
 
-/** One line of a message, as markdown. */
-const md = (text: string, users: Record<string, string> = {}) =>
-  slackToMarkdown(text, users).join('\n');
+/*
+ * Slack's mrkdwn read into a tree (#103, ADR-0049): which nodes a message
+ * makes. How the tree is written as markdown is the editor's serializer's,
+ * tested with it in the adapters (`capture-markdown.test.ts`, and the
+ * round-trip property test). All names are made up.
+ */
 
-describe('Slack mrkdwn as DFAI markdown (#103)', () => {
+/** Phrasing as a short form a test can read: words quoted, nodes by name. */
+function shape(nodes: readonly MdPhrasing[]): string {
+  return nodes
+    .map((node) => {
+      switch (node.type) {
+        case 'text':
+          return JSON.stringify(node.value);
+        case 'inlineCode':
+          return `code(${JSON.stringify(node.value)})`;
+        case 'wikiLink':
+          return `wiki(${node.value})`;
+        case 'link':
+          return `link(${node.url}${node.title === null ? '' : ' titled'}|${shape(node.children)})`;
+        default:
+          return `${node.type}(${shape(node.children)})`;
+      }
+    })
+    .join(' ');
+}
+
+function blockShape(block: MdBlock): string {
+  if (block.type === 'paragraph' || block.type === 'heading') return `p[${shape(block.children)}]`;
+  if (block.type === 'code') return `code[${JSON.stringify(block.value)}]`;
+  if (block.type === 'blockquote') return `quote[${block.children.map(blockShape).join(', ')}]`;
+  return 'list';
+}
+
+const blocks = (text: string, users: Record<string, string> = {}) =>
+  slackToBlocks(text, users).map(blockShape);
+
+/** A one-line message's phrasing. */
+const line = (text: string, users: Record<string, string> = {}) => {
+  const [first] = slackToBlocks(text, users);
+  return first?.type === 'paragraph' ? shape(first.children) : String(first?.type);
+};
+
+describe('Slack mrkdwn as a tree (#103)', () => {
   it.each([
-    ['bold', 'a *firm* yes', 'a **firm** yes'],
-    ['italics', 'a _soft_ yes', 'a *soft* yes'],
-    ['strike', 'a ~old~ plan', 'a ~~old~~ plan'],
-    ['bold italics', 'a *_loud_* yes', 'a ***loud*** yes'],
+    ['bold', 'a *firm* yes', '"a " strong("firm") " yes"'],
+    ['italics', 'a _soft_ yes', '"a " emphasis("soft") " yes"'],
+    ['strike', 'a ~old~ plan', '"a " delete("old") " plan"'],
+    ['bold italics', 'a *_loud_* yes', '"a " strong(emphasis("loud")) " yes"'],
     [
       'emphasis around a link',
       '*see <https://example.com|this>*',
-      '**see [this](https://example.com)**',
+      'strong("see " link(https://example.com|"this"))',
     ],
-  ])('reads %s', (_, slack, markdown) => {
-    expect(md(slack)).toBe(markdown);
+    ['a mark inside a word', 'snake_case_name 2*3*4', '"snake_case_name 2*3*4"'],
+  ])('reads %s', (_, text, phrasing) => {
+    expect(line(text)).toBe(phrasing);
   });
 
-  it('leaves a mark inside a word as the character it is', () => {
-    expect(md('snake_case_name and 2*3*4')).toBe('snake\\_case\\_name and 2\\*3\\*4');
+  it('reads inline code with its entities, as code', () => {
+    expect(line('run `a &lt; b * c`')).toBe('"run " code("a < b * c")');
   });
 
-  it('keeps inline code as written, its entities read back, never escaped', () => {
-    expect(md('run `a &lt; b * c`')).toBe('run `a < b * c`');
-  });
-
-  it('fences inline code holding a backtick with a longer run', () => {
-    expect(slackToMarkdown('x `` y', {})).toEqual(['x \\`\\` y']);
-  });
-
-  it('fences a code block on lines of its own, with no info string, longer than any run inside', () => {
-    expect(slackToMarkdown('see ```atlas-query\nSELECT 1``` done', {})).toEqual([
-      'see ',
-      '```',
-      'atlas-query',
-      'SELECT 1',
-      '```',
-      ' done',
+  it('reads a code block as code, with no language, apart from the lines round it', () => {
+    expect(blocks('see ```atlas-query\nSELECT 1``` done')).toEqual([
+      'p["see "]',
+      'code["atlas-query\\nSELECT 1"]',
+      'p[" done"]',
     ]);
-    expect(slackToMarkdown('```a `` b```', {})).toEqual(['```', 'a `` b', '```']);
-  });
-
-  it('writes an empty code block as an empty fence', () => {
-    expect(slackToMarkdown('``````', {})).toEqual(['```', '```']);
   });
 
   it.each([
     [
       'a link with a label',
       '<https://example.com/a|the plan>',
-      '[the plan](https://example.com/a)',
+      'link(https://example.com/a|"the plan")',
     ],
     [
-      'a bare link',
+      'a link without one, by its address',
       '<https://example.com/a>',
-      '[https\\://example.com/a](https://example.com/a "https://example.com/a")',
+      'link(https://example.com/a titled|"https://example.com/a")',
     ],
     [
       'a mail link',
       '<mailto:mara.quill@example.com|Mara>',
-      '[Mara](mailto:mara.quill@example.com)',
+      'link(mailto:mara.quill@example.com|"Mara")',
     ],
     [
-      'parentheses in a link',
-      '<https://example.com/a_(b)|x>',
-      '[x](https://example.com/a_%28b%29)',
+      'an address’s parentheses and brackets, encoded',
+      '<https://example.com/a_(b)[[c]]|x>',
+      'link(https://example.com/a_%28b%29%5B%5Bc%5D%5D|"x")',
     ],
     [
-      'a label with marks',
-      '<https://example.com|[[Home]] *x*>',
-      '[\\[\\[Home\\]\\] \\*x\\*](https://example.com)',
+      'an address’s entities, read',
+      '<https://example.com/?a=1&amp;b=2|x>',
+      'link(https://example.com/?a=1&b=2|"x")',
     ],
-  ])('writes %s', (_, slack, markdown) => {
-    expect(md(slack)).toBe(markdown);
+    [
+      'an entity-like `&` in an address, encoded',
+      '<https://example.com/?x=&amp;nbsp;y|x>',
+      'link(https://example.com/?x=%26nbsp;y|"x")',
+    ],
+  ])('writes %s', (_, text, phrasing) => {
+    expect(line(text)).toBe(phrasing);
   });
 
-  it('percent-encodes what would make a wiki link, an embed or an end in a link’s address', () => {
-    expect(md("<https://example.com/![[a]]'|see>")).toBe(
-      '[see](https://example.com/%21%5B%5Ba%5D%5D%27)',
-    );
-    expect(md('<mailto:[[a]]@example.com>')).toBe(
-      '[mailto:\\[\\[a\\]\\]@example.com](mailto:%5B%5Ba%5D%5D@example.com "mailto:%5B%5Ba%5D%5D@example.com")',
-    );
-  });
-
-  it('shows a link with no label by its address as Slack shows it, its entities read', () => {
-    expect(md('<https://example.com/?a=1&amp;b=2>')).toBe(
-      '[https\\://example.com/?a=1&b=2](https://example.com/?a=1&b=2 "https://example.com/?a=1&b=2")',
-    );
-    expect(slackToPlain('<https://example.com/?a=1&amp;b=2>')).toBe('https://example.com/?a=1&b=2');
-  });
-
-  it('keeps an address’s entity-like text from being read as its character', () => {
-    // `&nbsp;` in a destination would be read as a no-break space, and written back as one.
-    expect(md('<https://example.com/?x=&amp;nbsp;y|see>')).toBe(
-      '[see](https://example.com/?x=%26nbsp;y)',
-    );
-  });
-
-  it('never writes a link that runs script or leaves the web', () => {
-    expect(md('<javascript:alert(1)|click>')).toBe('click');
-    expect(md('<slack://open|app>')).toBe('app');
-    expect(md('<javascript:alert(1)>')).toBe('\\<javascript:alert(1)\\>');
-  });
-
-  it('writes a bare address as an explicit link, so no link read from words runs over the escapes after it', () => {
-    expect(md('see https://example.com/a<b> and www.example.com')).toBe(
-      'see [https\\://example.com/a](https://example.com/a "https://example.com/a")\\<b\\> and [www\\.example.com](http://www.example.com "http://www.example.com")',
-    );
+  it('never makes a link of another scheme: its label, or the token, as words', () => {
+    expect(line('<javascript:alert(1)|click>')).toBe('"click"');
+    expect(line('<slack://open|app>')).toBe('"app"');
+    expect(line('<javascript:alert(1)>')).toBe('"<javascript:alert(1)>"');
   });
 
   it('names a mentioned user from the names sent, else their label, else their id', () => {
     const users = { U0TOBIAS22: 'Tobias Fenn' };
-    expect(md('cc <@U0TOBIAS22>', users)).toBe('cc @Tobias Fenn');
-    expect(md('cc <@U0NOBODY99|mara>', users)).toBe('cc @mara');
-    expect(md('cc <@U0NOBODY99>', users)).toBe('cc @U0NOBODY99');
+    expect(line('cc <@U0TOBIAS22>', users)).toBe('"cc @Tobias Fenn"');
+    expect(line('cc <@U0NOBODY99|mara>', users)).toBe('"cc @mara"');
+    expect(line('cc <@U0NOBODY99>', users)).toBe('"cc @U0NOBODY99"');
   });
 
   it.each(['constructor', '__proto__', 'toString'])(
-    'writes <@%s> as what it says, never a name from the prototype',
+    'reads <@%s> as what it says, never a name from the prototype',
     (id) => {
-      expect(md(`cc <@${id}>`)).toBe(`cc @${id.replace(/_/g, '\\_')}`);
+      expect(line(`cc <@${id}>`)).toBe(JSON.stringify(`cc @${id}`));
     },
   );
 
-  it('writes a channel as words, never a tag', () => {
-    expect(md('in <#C0LARK5PUR|larkspur-payroll>')).toBe('in \\#larkspur-payroll');
-    expect(md('in <#C0LARK5PUR>')).toBe('in \\#C0LARK5PUR');
-  });
-
   it.each([
-    ['@here', '<!here>', '@here'],
-    ['@channel', '<!channel>', '@channel'],
-    ['a user group', '<!subteam^S0PAYDESK1|@payroll-desk>', '@payroll-desk'],
-    ['a group without its handle', '<!subteam^S0PAYDESK1>', '@subteam'],
-    ['a date by its fallback', '<!date^1793136000^{date_short}|Oct 27>', 'Oct 27'],
-  ])('writes %s by what Slack shows', (_, slack, markdown) => {
-    expect(md(slack)).toBe(markdown);
+    ['a channel', 'in <#C0LARK5PUR|larkspur-payroll>', '"in #larkspur-payroll"'],
+    ['a channel with no name', 'in <#C0LARK5PUR>', '"in #C0LARK5PUR"'],
+    ['@here', '<!here>', '"@here"'],
+    ['a user group', '<!subteam^S0PAYDESK1|@payroll-desk>', '"@payroll-desk"'],
+    ['a group without its handle', '<!subteam^S0PAYDESK1>', '"@subteam"'],
+    ['a date by its fallback', '<!date^1793136000^{date_short}|Oct 27>', '"Oct 27"'],
+    ['emoji, as text', 'done :tada:', '"done :tada:"'],
+    ['entities, as their characters', 'a &amp; b &lt;b&gt;', '"a & b <b>"'],
+    ['HTML, as words', '<img src=x onerror=alert(1)>', '"<img src=x onerror=alert(1)>"'],
+  ])('reads %s', (_, text, phrasing) => {
+    expect(line(text)).toBe(phrasing);
   });
 
-  it('keeps emoji shortcodes as text', () => {
-    expect(md('done :tada: :+1:')).toBe('done :tada: :+1:');
+  it('joins a token’s words to the words beside it, as markdown reads them back', () => {
+    // A mention's `@name` and `@example.com` after it are one address once written.
+    expect(line('mail <@U0TOBIAS22>@example.com', { U0TOBIAS22: 'mara' })).toBe(
+      '"mail @" link(mailto:mara@example.com titled|"mara@example.com")',
+    );
   });
 
-  it('reads the entities Slack writes, and escapes what they stand for', () => {
-    expect(md('a &amp; b &lt;b&gt;bold&lt;/b&gt;')).toBe('a & b \\<b\\>bold\\</b\\>');
+  it('keeps a line’s break, and makes a blank line a new paragraph', () => {
+    expect(blocks('one\ntwo\n\nthree')).toEqual(['p["one\\ntwo"]', 'p["three"]']);
   });
 
-  it('keeps an entity written as text from being read as its character', () => {
-    expect(md('&amp;lt;script&amp;gt; &#60;')).toBe('\\&lt;script\\&gt; \\&\\#60;');
-  });
-
-  it('reads Slack’s quote as a quote', () => {
-    expect(slackToMarkdown('&gt; said\n&gt;\nmine', {})).toEqual(['> said', '>', 'mine']);
-  });
-
-  it.each([
-    ['a heading', '# Not a heading', '\\# Not a heading'],
-    ['a tag', 'a #tag', 'a \\#tag'],
-    ['a wiki link', '[[Secret]]', '\\[\\[Secret\\]\\]'],
-    ['an embed', '![[Secret]]', '!\\[\\[Secret\\]\\]'],
-    [
-      'an image',
-      '![x](https://example.com/p.png)',
-      '!\\[x\\]([https\\://example.com/p.png](https://example.com/p.png "https://example.com/p.png"))',
-    ],
-    ['a block id', 'mine ^t0001', 'mine \\^t0001'],
-    ['a table row', '| a | b |', '\\| a \\| b \\|'],
-    ['a checkbox', '- [ ] do', '- \\[ \\] do'],
-    ['a callout', '[!warning] x', '\\[!warning\\] x'],
-    ['a backslash undoing an escape', '\\[[x]]', '\\\\\\[\\[x\\]\\]'],
-    ['a fence of tildes', '~~~', '\\~\\~\\~'],
-    ['raw HTML', '<img src=x onerror=alert(1)>', '\\<img src=x onerror=alert(1)\\>'],
-  ])('writes %s as words', (_, slack, markdown) => {
-    expect(md(slack)).toBe(markdown);
-  });
-
-  it.each([
-    ['---', '\\---'],
-    ['  - - -', '  - - \\-'],
-    ['===', '\\==='],
-    ['+++', '\\+++'],
-    [':-', '\\:-'],
-    ['-:', '\\-:'],
-    [':-:', '\\:-:'],
-    ['  :--: ', '  \\:--: '],
-    ['1. ---', '1. \\---'],
-    ['1) - - -', '1) - - \\-'],
-    ['- 1. ---', '- 1. \\---'],
-    ['+ ===', '+ \\==='],
-  ])(
-    'keeps the line %j from being a rule, a heading’s underline or a delimiter row',
-    (line, written) => {
-      expect(md(`above\n${line}`).split('\n')[1]).toBe(written);
-    },
-  );
-
-  it('leaves a list item of words as it is', () => {
-    expect(md('- one\n1. two')).toBe('- one\n1. two');
-  });
-
-  it('drops blank lines at either end and keeps those between', () => {
-    expect(slackToMarkdown('\n\none\n\ntwo\n\n', {})).toEqual(['one', '', 'two']);
+  it('reads Slack’s quote as a quote, its blank quoted line a new paragraph in it', () => {
+    expect(blocks('&gt; said\n&gt;\n&gt; more\nmine')).toEqual([
+      'quote[p["said"], p["more"]]',
+      'p["mine"]',
+    ]);
   });
 
   it('takes out control and direction characters before reading anything', () => {
-    expect(md('a\u0000b\u202Ec\u0007d\r\ne')).toBe('abcd\ne');
+    expect(line('a\u0000b‮c\u0007d')).toBe('"abcd"');
+  });
+});
+
+describe('every address in a sender’s words, a link of the mapper’s (third attack on PR #615)', () => {
+  it.each([
+    [
+      'after a space',
+      'see https://example.com/a now',
+      '"see " link(https://example.com/a titled|"https://example.com/a") " now"',
+    ],
+    [
+      'after a letter beyond ASCII',
+      'éhttps://example.com/a',
+      '"é" link(https://example.com/a titled|"https://example.com/a")',
+    ],
+    [
+      'after an underscore',
+      'a_https://example.com/#tag',
+      '"a_" link(https://example.com/#tag titled|"https://example.com/#tag")',
+    ],
+    ['of any case', 'HTTP://MARA', 'link(HTTP://MARA titled|"HTTP://MARA")'],
+    [
+      'www., with its scheme',
+      'www.example.com.',
+      'link(http://www.example.com titled|"www.example.com") "."',
+    ],
+    [
+      'www. run on over brackets, as GFM runs it',
+      'www.]x/[[Payroll secrets]] now',
+      'link(http://www.%5Dx/%5B%5BPayroll titled|"www.]x/[[Payroll") " secrets]] now"',
+    ],
+    [
+      'a mail address',
+      'mail mara@example.com now',
+      '"mail " link(mailto:mara@example.com titled|"mara@example.com") " now"',
+    ],
+    [
+      'a mail address ending in a digit',
+      'x@example.com.1',
+      'link(mailto:x@example.com.1 titled|"x@example.com.1")',
+    ],
+  ])('writes an address %s as a link', (_, text, phrasing) => {
+    expect(line(text)).toBe(phrasing);
+  });
+
+  it.each(['www._', 'www.)', 'www.?', 'https://', 'a@b', 'a@b.c-'])(
+    'makes no link that opens no address of %j',
+    (text) => {
+      for (const node of slackToBlocks(`see ${text} now`)) {
+        const found = JSON.stringify(node).match(/"url":"([^"]*)"/g) ?? [];
+        for (const url of found) expect(url).toMatch(/"url":"(?:https?:\/\/|mailto:)/);
+      }
+    },
+  );
+
+  it('writes the words of a name the same way', () => {
+    expect(shape(wordsToPhrasing('Mara www.example.com'))).toBe(
+      '"Mara " link(http://www.example.com titled|"www.example.com")',
+    );
   });
 });
 
@@ -231,65 +236,10 @@ describe('Slack mrkdwn as plain words (a title)', () => {
   });
 
   it('keeps a code block’s lines and a quote’s words', () => {
-    expect(slackToPlain('&gt; quoted\n```a\nb```', {})).toBe('quoted\n\na\nb');
-  });
-});
-
-describe('escapeMarkdown', () => {
-  it('escapes every character markdown or DFAI reads as more than itself, and nothing else', () => {
-    expect(escapeMarkdown('\\`*_~[]<>#^| plain: words, 1. (x) &amp;')).toBe(
-      '\\\\\\`\\*\\_\\~\\[\\]\\<\\>\\#\\^\\| plain: words, 1. (x) \\&amp;',
-    );
-  });
-});
-
-describe('wordsMarkdown: a sender’s plain words, such as a name', () => {
-  it('escapes them, and writes a bare address in them as an explicit link', () => {
-    expect(wordsMarkdown('Mara https://example.com/[[x]] #ops')).toBe(
-      'Mara [https\\://example.com/](https://example.com/ "https://example.com/")\\[\\[x\\]\\] \\#ops',
-    );
-  });
-});
-
-describe('trimAddress: an address cut where GFM cuts it, in one pass (attack on PR #615)', () => {
-  it.each([
-    ['trailing punctuation', 'https://example.com/a.,!?', 'https://example.com/a', '.,!?'],
-    ['a ) it did not open', 'https://example.com/a)', 'https://example.com/a', ')'],
-    ['a ) it opened', 'https://example.com/a_(b)', 'https://example.com/a_(b)', ''],
-    ['dots then a letter', 'https://example.com/a...b', 'https://example.com/a...b', ''],
-    ['punctuation and ) mixed', 'https://example.com/(a)).', 'https://example.com/(a)', ').'],
-  ])('cuts %s', (_, found, address, after) => {
-    expect(trimAddress(found)).toMatchObject({ address, after });
+    expect(slackToPlain('&gt; quoted\n```a\nb```')).toBe('quoted\n\na\nb');
   });
 
-  it.each([
-    ['closing parentheses', ')'],
-    ['dots and parentheses', '.)'],
-    ['dots', '.'],
-  ])('does work linear in an address followed by %s at Slack’s length', (_, unit) => {
-    const found = `https://example.com/${unit.repeat(Math.ceil(MAX_MESSAGE_LENGTH / unit.length))}`;
-    expect(trimAddress(found).steps).toBeLessThanOrEqual(2 * found.length);
-  });
-});
-
-describe('one writer for a sender’s words, wherever they stand (attack on PR #615)', () => {
-  it.each([
-    [
-      'a mention named by the names sent',
-      'cc <@U0TOBIAS22>',
-      { U0TOBIAS22: 'https://example.com/[[x]]' },
-    ],
-    ['a mention’s label', 'cc <@U0NOBODY99|https://example.com/[[x]]>', {}],
-    ['a channel’s label', '<#C0LARK5PUR|https://example.com/[[x]]>', {}],
-    ['a user group’s label', '<!subteam^S0LARKPAY|https://example.com/[[x]]>', {}],
-    ['a date’s fallback', '<!date^1793136000^{date}|https://example.com/[[x]]>', {}],
-    ['another scheme’s label', '<javascript:alert(1)|https://example.com/[[x]]>', {}],
-    ['words after a letter beyond ASCII', 'éhttps://example.com/[[x]]', {}],
-    ['words after an underscore', 'a_https://example.com/#tag', {}],
-    ['a mail address', 'mail mara@example.com now', {}],
-  ])('writes an address in %s as an explicit, titled link', (_, text, users) => {
-    const written = slackToMarkdown(text, users).join('\n');
-    expect(written).toMatch(/\]\((?:https?|mailto):[^ )]+ "[^"]+"\)/);
-    expect(written).not.toMatch(/(?<![[(":])(?:https?:\/\/|www\.)/);
+  it('shows a link with no label by its address, its entities read', () => {
+    expect(slackToPlain('<https://example.com/?a=1&amp;b=2>')).toBe('https://example.com/?a=1&b=2');
   });
 });

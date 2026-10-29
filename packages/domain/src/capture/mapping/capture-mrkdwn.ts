@@ -1,77 +1,197 @@
 import { pairEmphasis, type EmphasisMark } from './capture-emphasis.ts';
+import { linkifyPhrasing } from './capture-linkify.ts';
 import { cleanText, decodeSlackEntities, oneLineText } from './capture-text.ts';
+import {
+  blockquote,
+  code,
+  link,
+  paragraph,
+  text,
+  type MdBlock,
+  type MdPhrasing,
+} from './capture-tree.ts';
 
 /*
- * Slack's mrkdwn read into DFAI markdown (ADR-0049). Slack writes `*bold*`,
- * `_italic_`, `~strike~`, code, `<url|text>` links and `<@U…>` mentions, and
- * escapes `&`, `<` and `>` as entities. Everything else in a message is the
- * sender's own words, and is written so markdown reads it as words: no
- * heading, tag, wiki link, embed, block id, HTML, table or fence can come out
- * of a message, only the formatting Slack itself shows.
+ * Slack's mrkdwn read into a markdown syntax tree (ADR-0049). Slack writes
+ * `*bold*`, `_italic_`, `~strike~`, code, `<url|text>` links and `<@U…>`
+ * mentions, and escapes `&`, `<` and `>` as entities. Each becomes its node;
+ * everything else a sender wrote is a text node's words, and every address
+ * GFM would read in them a link node of the mapper's (`linkifyPhrasing`).
+ * No markdown is written here: the tree is written by the editor's own
+ * serializer, which escapes what words need escaped.
  */
 
 /** Who a `<@U…>` mention names, by Slack user id: the sender looks them up. */
 export type SlackUserNames = Readonly<Record<string, string>>;
 
-/** How each part of a message is written: as markdown for the note, or as plain words for its title. */
-interface Writer {
-  readonly words: (text: string) => string;
-  readonly marks: { readonly '*': string; readonly _: string; readonly '~': string };
-  readonly code: (content: string) => string;
-  readonly link: (url: string, label: string) => string;
-  readonly codeBlock: (content: string) => string[];
-  readonly line: (line: string) => string;
-  readonly quote: (words: string) => string;
+/** A message's text as blocks: paragraphs, Slack's quotes, and code blocks. */
+export function slackToBlocks(words: string, users: SlackUserNames = {}): MdBlock[] {
+  const blocks: MdBlock[] = [];
+  for (const part of messageParts(cleanText(words))) {
+    if (part.kind === 'code') blocks.push(code(part.value));
+    else blocks.push(...proseBlocks(part.lines, users));
+  }
+  return blocks;
 }
 
-/**
- * Every character markdown or DFAI reads as more than a character, escaped:
- * emphasis and code (`*`, `_`, `~`, a backtick), links, wiki links,
- * embeds, checkboxes and footnotes (`[`, `]`), HTML and quotes (`<`, `>`),
- * headings and tags (`#`), block ids (`^`), tables (`|`), the backslash
- * itself, so a sender's backslash cannot undo one of these, and an `&` that
- * starts an entity (`&lt;`, `&#60;`), which would be read as its character.
- */
-const SPECIAL = /[\\`*_~[\]<>#^|]|&(?=#?[A-Za-z0-9]+;)/g;
+/** A message's text as plain words, for a title: formatting dropped, mentions and links by name. */
+export function slackToPlain(words: string, users: SlackUserNames = {}): string {
+  return messageParts(cleanText(words))
+    .flatMap((part) =>
+      part.kind === 'code'
+        ? part.value.split('\n')
+        : part.lines.map((line) => plainOf(lineToPhrasing(unquoted(line), users))),
+    )
+    .join('\n');
+}
+
+/** A sender's words that are not a message — a name — as phrasing: words, and links for their addresses. */
+export function wordsToPhrasing(words: string): MdPhrasing[] {
+  return linkifyPhrasing([text(words)]);
+}
+
+type MessagePart =
+  | { readonly kind: 'code'; readonly value: string }
+  | { readonly kind: 'prose'; readonly lines: readonly string[] };
+
+/** Slack's code blocks: three backticks either side, across lines, never nested. */
+const CODE_BLOCK = /```([\s\S]*?)```/g;
+
+function messageParts(cleaned: string): MessagePart[] {
+  const parts: MessagePart[] = [];
+  const prose = (from: number, to: number) => {
+    if (to > from) parts.push({ kind: 'prose', lines: cleaned.slice(from, to).split('\n') });
+  };
+  let from = 0;
+  for (const block of cleaned.matchAll(CODE_BLOCK)) {
+    prose(from, block.index);
+    const value = decodeSlackEntities(block[1] ?? '')
+      .replace(/^\n/, '')
+      .replace(/\n$/, '');
+    parts.push({ kind: 'code', value });
+    from = block.index + block[0].length;
+  }
+  prose(from, cleaned.length);
+  return parts;
+}
+
+/** Slack's quote: `>` (sent as `&gt;`) opening a line. */
+const QUOTE = /^(?:&gt;|>) ?/;
+
+const unquoted = (line: string) => line.replace(QUOTE, '');
 
 /**
- * The start of an address GFM would read from words: `http://`, `https://`,
- * `www.`, wherever it stands, in any case — no look behind it, which the
- * app's engine and n8n's would read differently.
+ * Lines as blocks: a run of lines is one paragraph, its lines kept apart by
+ * their line endings; a run of quoted lines is a quote; a blank line, or a
+ * quoted one, ends a paragraph.
  */
-const ADDRESS_START = /(https?)(:\/\/)|(www)(\.)/gi;
+function proseBlocks(lines: readonly string[], users: SlackUserNames): MdBlock[] {
+  const blocks: MdBlock[] = [];
+  let run: { quoted: boolean; paragraphs: string[][] } | null = null;
+  const close = () => {
+    if (run === null) return;
+    const paragraphs = run.paragraphs
+      .filter((each) => each.length > 0)
+      .map((each) => paragraph(linkifyPhrasing(joinedLines(each, users))));
+    if (paragraphs.length > 0) blocks.push(...(run.quoted ? [blockquote(paragraphs)] : paragraphs));
+    run = null;
+  };
+  for (const line of lines) {
+    const quoted = QUOTE.test(line);
+    const words = unquoted(line);
+    if (run !== null && run.quoted !== quoted) close();
+    if (words.trim() === '') {
+      if (quoted) (run ??= { quoted, paragraphs: [[]] }).paragraphs.push([]);
+      else close();
+      continue;
+    }
+    run ??= { quoted, paragraphs: [[]] };
+    run.paragraphs.at(-1)?.push(words);
+  }
+  close();
+  return blocks;
+}
+
+function joinedLines(lines: readonly string[], users: SlackUserNames): MdPhrasing[] {
+  return lines.flatMap((line, at) => [
+    ...(at === 0 ? [] : [text('\n')]),
+    ...lineToPhrasing(line, users),
+  ]);
+}
+
+/** Inline code, or one of Slack's `<…>` tokens: what is read before the words around it. */
+const TOKEN = /`([^`\n]+)`|<([^<>\n]*)>/g;
+
+/** Where a token sits among a line's characters while Slack's emphasis is paired: a mark no text holds. */
+const TOKEN_MARK = '\u0000';
+
+/** One atom of a line: a character of its words, or a token's node. */
+type Atom = string | MdPhrasing;
 
 /**
- * The sender's words as markdown reads them back as words, inside a link's
- * label too: every special character escaped, and every address start
- * broken (`https\://`, `www\.`), so a label holds no address of its own.
+ * One line as phrasing. Code and tokens are read into their nodes first;
+ * then Slack's emphasis is paired over the line, a token standing as one
+ * mark no message holds (`cleanText` takes out control characters); then the
+ * words between are text, their entities read.
  */
-export function escapeMarkdown(text: string): string {
-  return text
-    .replace(SPECIAL, '\\$&')
-    .replace(ADDRESS_START, (_, scheme?: string, slashes?: string, www?: string) =>
-      scheme === undefined ? `${www}\\.` : `${scheme}\\${slashes}`,
+function lineToPhrasing(line: string, users: SlackUserNames): MdPhrasing[] {
+  const atoms: Atom[] = [];
+  let from = 0;
+  for (const found of line.matchAll(TOKEN)) {
+    atoms.push(...Array.from(line.slice(from, found.index)));
+    const [, inline, token] = found;
+    atoms.push(
+      inline === undefined
+        ? tokenNode(token ?? '', users)
+        : { type: 'inlineCode', value: decodeSlackEntities(inline) },
     );
+    from = found.index + found[0].length;
+  }
+  atoms.push(...Array.from(line.slice(from)));
+  const characters = atoms.map((atom) => (typeof atom === 'string' ? atom : TOKEN_MARK));
+  const { closes } = pairEmphasis(characters);
+  return styledRange(atoms, closes, [0, atoms.length]);
 }
 
-/**
- * What may open a line before its words: list markers (`-`, `+`, `1.`, `1)`),
- * each with its spaces. (`*` and `>` are escaped, so they open nothing.)
- */
-const CONTAINERS = /^\s*(?:(?:[-+]|\d{1,9}[.)])\s+)*/;
+const NODE_OF: Readonly<Record<EmphasisMark, 'strong' | 'emphasis' | 'delete'>> = {
+  '*': 'strong',
+  _: 'emphasis',
+  '~': 'delete',
+};
 
 /**
- * What is left of a line, past its list markers, that is only `-`, `=`, `+`
- * or `:` and spaces: a rule, a heading's underline, or — `:-` under a line
- * of words — a table's delimiter row, in a list item as much as alone.
+ * The atoms from `start` to `end` as phrasing: each paired mark the node
+ * Slack's mark makes, around what it pairs; every other run of characters
+ * one text node, its entities read. Pairs never cross (`pairEmphasis`).
  */
-const RULE_REST = /^[-=+:][\s\-=+:]*$/;
-
-/** The line with the first mark of a would-be rule, past any list markers, escaped. */
-function unruled(line: string): string {
-  const prefix = CONTAINERS.exec(line)?.[0] ?? '';
-  const rest = line.slice(prefix.length);
-  return RULE_REST.test(rest) ? `${prefix}\\${rest}` : line;
+function styledRange(
+  atoms: readonly Atom[],
+  closes: ReadonlyMap<number, number>,
+  [start, end]: [number, number],
+): MdPhrasing[] {
+  const nodes: MdPhrasing[] = [];
+  let words = '';
+  const flush = () => {
+    if (words !== '') nodes.push(text(decodeSlackEntities(words)));
+    words = '';
+  };
+  for (let at = start; at < end; at += 1) {
+    const atom = atoms[at] ?? '';
+    const close = closes.get(at);
+    if (close !== undefined && close < end) {
+      flush();
+      const type = NODE_OF[atom as EmphasisMark];
+      nodes.push({ type, children: styledRange(atoms, closes, [at + 1, close]) });
+      at = close;
+    } else if (typeof atom === 'string') {
+      words += atom;
+    } else {
+      flush();
+      nodes.push(atom);
+    }
+  }
+  flush();
+  return nodes;
 }
 
 /** A web or mail address a link may open: `javascript:` and the like are never written as one. */
@@ -80,268 +200,13 @@ const LINKABLE = /^(?:https?:\/\/[^\s/<>]|mailto:[^\s<>])[^\s<>]*$/i;
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 /**
- * The characters a link's destination cannot hold as written, by their
- * percent codes: those that would end it (`(`, `)`, `<`, `>`, a quote), the
- * backslash, `[`, `]` and `!`, which the index would read as a wiki link
- * or an embed inside the address, and an `&` that starts an entity, which
- * markdown would read as its character (`&nbsp;` as a space).
+ * A `<…>` token as its node: a user, a channel or a special mention
+ * (`<!here>`, a user group, a date with its fallback) as its words; a link to
+ * a web or mail address as a link; a link of another scheme as its label's
+ * words alone. Anything else in angle brackets — HTML in text that did not
+ * come from Slack — is words.
  */
-const encodeDestination = (url: string) =>
-  url.replace(
-    /[()\\[\]!<>"'`]|&(?=#?[A-Za-z0-9]+;)/g,
-    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-
-/** The longest run of backticks in `text`. */
-function longestBacktickRun(text: string): number {
-  return Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));
-}
-
-/**
- * A link with its label as words: the label can open nothing, the address
- * only what it says. A link whose label is its own address — a bare address,
- * `<https://…>` — is given that address as its title too: the editor reads a
- * link whose words are its address as an address typed bare, writes it back
- * bare once the line is edited, and GFM then runs it on over the words after
- * it. A link with a title is never read so (`isAutolinkOf` in the adapters).
- */
-export function markdownLink(url: string, label: string): string {
-  const destination = encodeDestination(url);
-  const bare = url === label || url === `mailto:${label}` || url === `http://${label}`;
-  // The encoded address: no quote, bracket or backslash, so the title ends where it should and
-  // holds no wiki link.
-  const title = bare ? ` "${destination}"` : '';
-  return `[${escapeMarkdown(label)}](${destination}${title})`;
-}
-
-const MARKDOWN: Writer = {
-  words: (text) => wordsMarkdown(text),
-  marks: { '*': '**', _: '*', '~': '~~' },
-  code: (content) => {
-    const fence = '`'.repeat(longestBacktickRun(content) + 1);
-    const pad = content.startsWith('`') || content.endsWith('`') ? ' ' : '';
-    return `${fence}${pad}${content}${pad}${fence}`;
-  },
-  link: (url, label) => markdownLink(url, label),
-  // No info string: a sender's first line can never name the fence `atlas-query`.
-  codeBlock: (content) => {
-    const fence = '`'.repeat(Math.max(3, longestBacktickRun(content) + 1));
-    return [fence, ...(content === '' ? [] : content.split('\n')), fence];
-  },
-  line: unruled,
-  quote: (words) => (words === '' ? '>' : `> ${words}`),
-};
-
-const PLAIN: Writer = {
-  words: (text) => text,
-  marks: { '*': '', _: '', '~': '' },
-  code: (content) => content,
-  link: (_, label) => label,
-  codeBlock: (content) => content.split('\n'),
-  line: (line) => line,
-  quote: (words) => words,
-};
-
-/** A message's text as DFAI markdown, line by line: code blocks fenced, every other line escaped. */
-export function slackToMarkdown(text: string, users: SlackUserNames = {}): string[] {
-  return tidyBlankLines(readMessage(text, users, MARKDOWN));
-}
-
-/** A message's text as plain words, for a title: formatting dropped, mentions and links by name. */
-export function slackToPlain(text: string, users: SlackUserNames = {}): string {
-  return readMessage(text, users, PLAIN).join('\n');
-}
-
-/** Slack's code blocks: three backticks either side, across lines, never nested. */
-const CODE_BLOCK = /```([\s\S]*?)```/g;
-
-function readMessage(text: string, users: SlackUserNames, writer: Writer): string[] {
-  const cleaned = cleanText(text);
-  const lines: string[] = [];
-  let from = 0;
-  for (const block of cleaned.matchAll(CODE_BLOCK)) {
-    lines.push(...proseLines(cleaned.slice(from, block.index), users, writer));
-    const content = decodeSlackEntities(block[1] ?? '')
-      .replace(/^\n/, '')
-      .replace(/\n$/, '');
-    lines.push(...writer.codeBlock(content));
-    from = block.index + block[0].length;
-  }
-  lines.push(...proseLines(cleaned.slice(from), users, writer));
-  return lines;
-}
-
-/** The lines between code blocks; none for the empty text a block at an end leaves. */
-function proseLines(prose: string, users: SlackUserNames, writer: Writer): string[] {
-  if (prose === '') return [];
-  return prose.split('\n').map((line) => proseLine(line, users, writer));
-}
-
-/** Slack's quote: `>` (sent as `&gt;`) opening a line. */
-const QUOTE = /^(?:&gt;|>) ?/;
-
-function proseLine(line: string, users: SlackUserNames, writer: Writer): string {
-  const words = writer.line(inlineText(line.replace(QUOTE, ''), users, writer));
-  return QUOTE.test(line) ? writer.quote(words) : words;
-}
-
-/** Inline code, or one of Slack's `<…>` tokens: what is read before the words around it. */
-const TOKEN = /`([^`\n]+)`|<([^<>\n]*)>/g;
-
-/**
- * An address in words (`https://…`, `www.…`), wherever it stands — GFM reads
- * one after any letter beyond ASCII, so none is looked behind for — taken up
- * to a space, an angle bracket, a square bracket or a held part, then cut
- * back by {@link trimAddress}.
- */
-// eslint-disable-next-line no-control-regex -- NUL and SOH mark held parts, which end an address
-const BARE_ADDRESS = /(?:https?:\/\/|www\.)[^\s<>[\]\u0000\u0001]+/gi;
-
-/** What ends a sentence after an address rather than belonging to it, as GFM cuts it. */
-const TRAILING: ReadonlySet<string> = new Set([
-  '?',
-  '!',
-  '.',
-  ',',
-  ':',
-  ';',
-  '*',
-  '_',
-  '~',
-  "'",
-  '"',
-]);
-
-/** An address found in words, what after it is not part of it, and the work it took. */
-export interface TrimmedAddress {
-  readonly address: string;
-  readonly after: string;
-  /** Characters looked at: a test holds it to twice the address's length. */
-  readonly steps: number;
-}
-
-/**
- * Cuts trailing punctuation and every `)` the address did not open off its
- * end, in one pass back from the end after one count forward — linear,
- * where cutting a character at a time and counting again was quadratic.
- */
-export function trimAddress(found: string): TrimmedAddress {
-  let opens = 0;
-  let closes = 0;
-  for (const character of found) {
-    if (character === '(') opens += 1;
-    else if (character === ')') closes += 1;
-  }
-  let end = found.length;
-  let steps = found.length;
-  for (; end > 0; end -= 1) {
-    steps += 1;
-    const last = found[end - 1] ?? '';
-    if (last === ')' && closes > opens) closes -= 1;
-    else if (!TRAILING.has(last)) break;
-  }
-  return { address: found.slice(0, end), after: found.slice(end), steps };
-}
-
-/** Where a part already written sits in the line while the words round it are escaped. */
-// eslint-disable-next-line no-control-regex -- NUL is the mark no cleaned message can hold
-const HELD = /\u0000(\d+)\u0000/g;
-
-/** Where an address {@link wordsMarkdown} wrote sits while the words round it are escaped. */
-// eslint-disable-next-line no-control-regex -- SOH, like NUL, is a mark no cleaned message can hold
-const HELD_WORDS = /\u0001(\d+)\u0001/g;
-
-/**
- * A mail address in words, as GFM reads one into a link of its own: its
- * `mailto:` or `xmpp:` too, if written. GFM finds these in the words once
- * escapes are read, so no escape can stop one; only an explicit link can.
- */
-const BARE_MAIL = /(?:(?:mailto|xmpp):)?[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+/gi;
-
-/** Every bare mail address in `text` replaced by what `link` writes for it. */
-function linkBareMail(text: string, link: (url: string, label: string) => string): string {
-  return text.replace(BARE_MAIL, (found: string) => {
-    const label = found.replace(/\.+$/, '');
-    const url = /^(?:mailto|xmpp):/i.test(label) ? label : `mailto:${label}`;
-    return `${link(url, label)}${found.slice(label.length)}`;
-  });
-}
-
-/** Every bare web and mail address in `text` replaced by what `link` writes for it, its entities read. */
-function linkBareAddresses(text: string, link: (url: string, label: string) => string): string {
-  return linkBareMail(linkBareWeb(text, link), link);
-}
-
-function linkBareWeb(text: string, link: (url: string, label: string) => string): string {
-  return text.replace(BARE_ADDRESS, (found: string) => {
-    const { address, after } = trimAddress(found);
-    if (address === '') return found;
-    const label = decodeSlackEntities(address);
-    const url = /^www\./i.test(label) ? `http://${label}` : label;
-    return `${link(url, label)}${after}`;
-  });
-}
-
-/**
- * The one writer of a sender's words outside a link's label (ADR-0049):
- * message text, a thread's, author and channel names, mention names, every
- * token's label and fallback. Escaped, and every bare address in them
- * written as an explicit link, so editing the line never makes a link or a
- * tag of them, whatever context the words came from.
- */
-export function wordsMarkdown(text: string): string {
-  const held: string[] = [];
-  const linked = linkBareAddresses(
-    text,
-    (url, label) => `\u0001${held.push(markdownLink(url, label)) - 1}\u0001`,
-  );
-  // Its own mark, SOH, not the line's NUL: the words may hold the line's held parts.
-  return escapeMarkdown(linked).replace(HELD_WORDS, (_, at: string) => held[Number(at)] ?? '');
-}
-
-/**
- * One line's words. Code and tokens are written first and held in their
- * places by a mark no message can hold (`cleanText` takes out every control
- * character), then Slack's emphasis, then the words between are escaped, and
- * the held parts are put back.
- */
-function inlineText(line: string, users: SlackUserNames, writer: Writer): string {
-  const held: string[] = [];
-  const hold = (written: string) => `\u0000${held.push(written) - 1}\u0000`;
-  const tokened = line.replace(TOKEN, (_, code: string | undefined, token: string | undefined) =>
-    hold(
-      code === undefined
-        ? tokenText(token ?? '', users, writer)
-        : writer.code(decodeSlackEntities(code)),
-    ),
-  );
-  // A bare address is written as an explicit link: GFM would read it as one anyway, and
-  // a link it reads from words runs on over the escapes after it once they are edited.
-  const linked = linkBareAddresses(tokened, (url, label) => hold(writer.link(url, label)));
-  const escaped = writer.words(
-    decodeSlackEntities(styled(linked, (mark) => hold(writer.marks[mark]))),
-  );
-  return escaped.replace(HELD, (_, at: string) => held[Number(at)] ?? '');
-}
-
-/** The line with each paired emphasis mark written as `mark` writes it, every other character as it is. */
-function styled(line: string, mark: (written: EmphasisMark) => string): string {
-  const characters = Array.from(line);
-  const { closes } = pairEmphasis(characters);
-  const closers = new Set(closes.values());
-  return characters
-    .map((character, at) =>
-      closes.has(at) || closers.has(at) ? mark(character as EmphasisMark) : character,
-    )
-    .join('');
-}
-
-/**
- * A `<…>` token: a user, a channel, a special mention (`<!here>`, a user
- * group, a date with its fallback), or a link. Anything else in angle
- * brackets — HTML in text that did not come from Slack — is words.
- */
-function tokenText(token: string, users: SlackUserNames, writer: Writer): string {
+function tokenNode(token: string, users: SlackUserNames): MdPhrasing {
   const bar = token.indexOf('|');
   const target = bar === -1 ? token : token.slice(0, bar);
   const label = bar === -1 ? '' : oneLineText(decodeSlackEntities(token.slice(bar + 1)));
@@ -349,25 +214,26 @@ function tokenText(token: string, users: SlackUserNames, writer: Writer): string
     const id = target.slice(1);
     // Its own names only: `<@constructor>` must not read one from Object.prototype.
     const named = Object.hasOwn(users, id) ? (users[id] ?? '') : '';
-    const name = oneLineText(named) || label.replace(/^@/, '') || id;
-    return writer.words(`@${name}`);
+    return text(`@${oneLineText(named) || label.replace(/^@/, '') || id}`);
   }
-  if (target.startsWith('#')) return writer.words(`#${label || target.slice(1)}`);
-  if (target.startsWith('!')) {
-    return writer.words(label || `@${target.slice(1).split('^')[0] ?? ''}`);
-  }
+  if (target.startsWith('#')) return text(`#${label || target.slice(1)}`);
+  if (target.startsWith('!')) return text(label || `@${target.slice(1).split('^')[0] ?? ''}`);
   // Slack writes `&` in an address as `&amp;`, as anywhere: the link opens the address it means.
   const address = decodeSlackEntities(target);
-  if (LINKABLE.test(address)) return writer.link(address, label || address);
+  if (LINKABLE.test(address)) return link(address, label || address);
   // Another scheme (`javascript:`, `slack://`) is never a link: what it says, at most.
-  if (label !== '' && SCHEME.test(target)) return writer.words(label);
-  return writer.words(decodeSlackEntities(`<${token}>`));
+  if (label !== '' && SCHEME.test(target)) return text(label);
+  return text(decodeSlackEntities(`<${token}>`));
 }
 
-/** No blank lines at either end. Those inside are kept: a code block's are its own. */
-function tidyBlankLines(lines: readonly string[]): string[] {
-  const kept = [...lines];
-  while ((kept[0] ?? 'x').trim() === '') kept.shift();
-  while ((kept.at(-1) ?? 'x').trim() === '') kept.pop();
-  return kept;
+/** Phrasing as the words a reader sees: a link by its label, code by its text. */
+function plainOf(nodes: readonly MdPhrasing[]): string {
+  return nodes
+    .map((node) => {
+      if (node.type === 'text' || node.type === 'inlineCode' || node.type === 'wikiLink') {
+        return node.value;
+      }
+      return plainOf(node.children);
+    })
+    .join('');
 }

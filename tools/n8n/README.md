@@ -601,7 +601,12 @@ other names. The notification's address is `NOTIFY_TO`, a placeholder.
 
 `mapCaptureScript()` in `code-node.ts` compiles the capture mapper
 (`packages/domain/src/capture/mapping/`, ADR-0049) into one Code node script
-the same way, for #104's Slack workflow. No workflow JSON holds it yet.
+the same way, for #104's Slack workflow. No workflow JSON holds it yet. The
+mapper builds the note's body as a markdown tree; the script holds the app's
+own writer of that tree too (`capture-markdown.bundle.js`, bundled from
+`packages/adapters/src/markdown/capture-markdown.ts` by `pnpm n8n:build`,
+about 59 kB), so n8n writes the bytes the app writes. A test fails while the
+bundle is out of date.
 
 **JavaScriptCore parity is checked on a Mac only.** `capture-code-node.test.ts`
 (and `code-node.jsc.attack.test.ts` for meetings) runs the compiled script

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { relationsOf } from '../../index/relation-rows.ts';
-import { splitWikiLinks } from '../../markdown/wikilink.ts';
 import { hostileText, seededRandom } from '../../testing/hostile-text.ts';
 import {
   SLACK_PERMALINK,
@@ -8,16 +7,19 @@ import {
   slackCapture,
   slackSource,
 } from '../../testing/slack-capture.ts';
+import { linkifyWords } from './capture-linkify.ts';
 import { CaptureRefusedError } from './capture-refusal.ts';
 import { mapCapture, type CaptureFile } from './capture-to-atlas.ts';
+import type { MdRoot } from './capture-tree.ts';
 
 /*
  * A seeded property test (#103): messages, names, titles and channels built
  * from the pieces an attacker would send — frontmatter fences, headings,
  * tags, wiki links, embeds, block ids, HTML, fences, tables, entities,
  * control and direction characters, half surrogates — and the file every one
- * maps to held to the same rules. The real markdown parser's reading of these
- * files is checked in the adapters' integration test.
+ * maps to held to the same rules: its frontmatter, its path, and the tree its
+ * body is written from. How that tree reads once written, and once edited, is
+ * the adapters' round-trip property test's.
  */
 
 function payload(random: () => number) {
@@ -45,9 +47,13 @@ function payload(random: () => number) {
  * The payload's file, or null when the only reasons it is refused are a name
  * that cleans away to nothing: names are hostile text, not prefixed to be safe.
  */
-function mappedUnlessBlank(sent: unknown): CaptureFile | null {
+function mappedUnlessBlank(sent: unknown, trees: MdRoot[]): CaptureFile | null {
   try {
-    return mapCapture(sent, { timeZone: 'America/Los_Angeles' });
+    const writeMarkdown = (root: MdRoot) => {
+      trees.push(root);
+      return JSON.stringify(root);
+    };
+    return mapCapture(sent, { timeZone: 'America/Los_Angeles', writeMarkdown });
   } catch (error) {
     if (!(error instanceof CaptureRefusedError)) throw error;
     for (const reason of error.reasons)
@@ -71,106 +77,79 @@ function propertiesOf(frontmatter: string): Record<string, string> {
 }
 
 const FRONTMATTER_LINE = /^[a-z_]+: (?:'(?:[^'\n]|'')*'|[a-z0-9/]+)$/;
-const OUR_ID = /^\^[mr]\d{10}-\d{6}$/;
 // eslint-disable-next-line no-control-regex -- control characters are exactly what must not survive
 const UNSAFE = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069\uFEFF]/u;
 const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
-/** The body's lines outside fenced code, each with the quote marks before it taken off. */
-function proseLines(body: string): string[] {
-  let fence: string | null = null;
-  const prose: string[] = [];
-  for (const line of body.split('\n')) {
-    const unquoted = line.replace(/^(?:> ?)+/, '');
-    const run = /^(`{3,})\s*$/.exec(unquoted)?.[1];
-    if (fence === null && run !== undefined) fence = run;
-    else if (fence !== null && run !== undefined && run.length >= fence.length) fence = null;
-    else if (fence === null) prose.push(line);
-  }
-  return prose;
+/** Every node in a tree, depth first; a link's label not, since GFM reads no address inside a link. */
+function* nodesOf(node: unknown): Generator<Record<string, unknown>> {
+  if (typeof node !== 'object' || node === null) return;
+  yield node as Record<string, unknown>;
+  if ((node as { type?: string }).type === 'link') return;
+  for (const child of (node as { children?: unknown[] }).children ?? []) yield* nodesOf(child);
 }
 
-/**
- * A line with its escaped characters, its code spans and its links' destinations
- * taken out, read left to right as CommonMark reads them: what markdown reads as markup.
- */
-function markupOf(written: string): string {
-  // A link's destination and title are an address, percent-encoded where it must be, not markup.
-  const line = written.replace(/\]\([^()\s]*(?: "[^"]*")?\)/g, ']');
-  let kept = '';
-  for (let at = 0; at < line.length;) {
-    const run = /^`+/.exec(line.slice(at))?.[0];
-    if (line[at] === '\\') at += 2;
-    else if (run === undefined) kept += line[at++];
-    else {
-      const close = line.slice(at + run.length).search(new RegExp(`(?<!\`)${run}(?!\`)`));
-      if (close === -1) kept += run;
-      at += close === -1 ? run.length : run.length * 2 + close;
-    }
-  }
-  return kept;
-}
+/** What a link's address may hold as written: ASCII, with none of the characters that end or embed one. */
+const ENCODED_ADDRESS = /^(?:https?:\/\/|mailto:)[!-~]+$/i;
 
 const SEEDS = Array.from({ length: 400 }, (_, at) => at + 1);
 
 describe('a capture of hostile text, over 400 seeded payloads', () => {
-  it.each(SEEDS)('seed %i maps to a file that says only what the contract writes', (seed) => {
-    const random = seededRandom(seed);
-    const sent = payload(random);
-    const file = mappedUnlessBlank(sent);
-    if (file === null) return;
-    const [, frontmatter = '', ...rest] = file.content.split(/^---$/m);
-    const body = rest.join('---');
-    const replies = (sent.thread as unknown[]).length;
+  it.each(SEEDS)(
+    'seed %i maps to a file and a tree that say only what the contract writes',
+    (seed) => {
+      const sent = payload(seededRandom(seed));
+      const trees: MdRoot[] = [];
+      const file = mappedUnlessBlank(sent, trees);
+      if (file === null) return;
+      const [, frontmatter = ''] = file.content.split(/^---$/m);
+      const replies = (sent.thread as unknown[]).length;
 
-    // The frontmatter is the contract's keys, one line each, every free value quoted.
-    const lines = frontmatter.trim().split('\n');
-    for (const line of lines) expect(line).toMatch(FRONTMATTER_LINE);
-    const keys = lines.map((line) => line.slice(0, line.indexOf(':')));
-    const task = sent.kind === 'task' ? ['type', 'status'] : [];
-    expect(keys).toEqual([
-      ...task,
-      'atlas_import',
-      'provider',
-      'external_id',
-      'source',
-      'author',
-      'author_email',
-      'channel',
-      'sent_at',
-    ]);
-    expect(file.content.split(/^---$/m).length).toBe(3 + (body.match(/^---$/gm)?.length ?? 0));
-    expect(body).not.toMatch(/^---$/m);
+      // The frontmatter is the contract's keys, one line each, every free value quoted.
+      const lines = frontmatter.trim().split('\n');
+      for (const line of lines) expect(line).toMatch(FRONTMATTER_LINE);
+      const keys = lines.map((line) => line.slice(0, line.indexOf(':')));
+      const task = sent.kind === 'task' ? ['type', 'status'] : [];
+      expect(keys).toEqual([
+        ...task,
+        'atlas_import',
+        'provider',
+        'external_id',
+        'source',
+        'author',
+        'author_email',
+        'channel',
+        'sent_at',
+      ]);
+      // No value a sender wrote is read as a relation (review of PR #615).
+      expect(relationsOf(propertiesOf(frontmatter), () => null)).toEqual([]);
 
-    // No value a sender wrote is read as a relation (review of PR #615).
-    expect(relationsOf(propertiesOf(frontmatter), () => null)).toEqual([]);
+      // Nothing unsafe survives, anywhere in the file or its name.
+      expect(file.content).not.toMatch(UNSAFE);
+      expect(file.content).not.toMatch(LONE);
+      expect(file.path).not.toMatch(UNSAFE);
 
-    // Nothing unsafe survives, anywhere in the file or its name.
-    expect(file.content).not.toMatch(UNSAFE);
-    expect(file.content).not.toMatch(LONE);
-    expect(file.path).not.toMatch(UNSAFE);
+      // The body is written a block at a time: each message, its thread's heading, its files.
+      const blockquotes = trees.filter((tree) => tree.children[0]?.type === 'blockquote');
+      expect(blockquotes).toHaveLength(1 + replies);
+      expect(file.content.match(/^\^[mr]\d{10}-\d{6}$/gm)).toHaveLength(1 + replies);
+      for (const node of trees.flatMap((tree) => [...nodesOf(tree)])) {
+        // Words hold no address GFM could read: each is a link of the mapper's.
+        if (node['type'] === 'text')
+          expect(linkifyWords(String(node['value'])).pieces).toHaveLength(
+            String(node['value']) === '' ? 0 : 1,
+          );
+        if (node['type'] === 'link') expect(String(node['url'])).toMatch(ENCODED_ADDRESS);
+        if (node['type'] === 'code') expect(node['lang']).toBeNull();
+        expect(['html', 'image', 'table', 'thematicBreak']).not.toContain(node['type']);
+      }
 
-    // Every prose line is one the mapper writes: a quote, an id, a heading of its own, a file.
-    for (const line of proseLines(body)) {
-      expect(
-        line === '' ||
-          line.startsWith('>') ||
-          OUR_ID.test(line) ||
-          /^## (?:Thread|Attachments)$/.test(line) ||
-          line.startsWith('- ['),
-      ).toBe(true);
-      const bare = markupOf(line);
-      if (!OUR_ID.test(line)) expect(bare).not.toMatch(/\^[A-Za-z0-9-]+\s*$/);
-      expect(bare).not.toMatch(/#[\p{L}\p{N}]|<|\[\[/u);
-    }
-    expect(body.split('\n').filter((line) => OUR_ID.test(line))).toHaveLength(1 + replies);
-    expect(splitWikiLinks(body).filter((piece) => piece.kind === 'wikiLink')).toEqual([]);
-
-    // The same message maps to the same bytes, at a path of the Inbox's.
-    expect(mapCapture(sent, { timeZone: 'America/Los_Angeles' })).toEqual(file);
-    const name = file.path.slice('Inbox/Captures/'.length);
-    expect(file.path.startsWith('Inbox/Captures/')).toBe(true);
-    expect(name).not.toMatch(/^\.|\/|[[\]#^|]/);
-    expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255);
-  });
+      // The same message maps to the same bytes, at a path of the Inbox's.
+      expect(mappedUnlessBlank(sent, [])).toEqual(file);
+      const name = file.path.slice('Inbox/Captures/'.length);
+      expect(file.path.startsWith('Inbox/Captures/')).toBe(true);
+      expect(name).not.toMatch(/^\.|^\s|\/|[[\]#^|]/);
+      expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255);
+    },
+  );
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { slackCapture } from '../../testing/slack-capture.ts';
-import { slackToMarkdown } from './capture-mrkdwn.ts';
+import { slackCapture, treeAsJson } from '../../testing/slack-capture.ts';
+import { slackToBlocks } from './capture-mrkdwn.ts';
 import { mapCapture } from './capture-to-atlas.ts';
 
 /*
@@ -24,7 +24,7 @@ describe('a message within Slack’s 40,000 characters maps in linear time', () 
     'an address followed by %s',
     (_, text) => {
       const started = performance.now();
-      slackToMarkdown(text);
+      slackToBlocks(text);
       expect(performance.now() - started).toBeLessThan(250);
     },
     60_000,
@@ -37,7 +37,9 @@ describe('a file name never starts with a space', () => {
   // before the cut, so the name is ` (slack <hash>).md`.
   it('a title of one grapheme longer than the name allows', () => {
     const title = `e${'́'.repeat(300)}`;
-    const name = mapCapture(slackCapture({ title })).path.split('/').at(-1) ?? '';
+    const name =
+      mapCapture(slackCapture({ title }), { writeMarkdown: treeAsJson }).path.split('/').at(-1) ??
+      '';
     expect(name).not.toMatch(/^\s/);
   });
 });

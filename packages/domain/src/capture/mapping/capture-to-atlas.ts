@@ -1,7 +1,8 @@
 import { fileTitle, fitStem } from '../../meetings/mapping/meeting-file-name.ts';
 import { MeetingMappingError } from '../../meetings/mapping/meeting-mapping-error.ts';
 import { wallClockIn } from '../../meetings/mapping/meeting-when.ts';
-import { markdownLink, slackToMarkdown, slackToPlain, wordsMarkdown } from './capture-mrkdwn.ts';
+import { linkifyPhrasing } from './capture-linkify.ts';
+import { slackToBlocks, slackToPlain, wordsToPhrasing } from './capture-mrkdwn.ts';
 import {
   CAPTURE_V1,
   readCapture,
@@ -12,6 +13,17 @@ import {
 } from './capture-payload.ts';
 import { CaptureRefusedError } from './capture-refusal.ts';
 import { oneLineText } from './capture-text.ts';
+import {
+  blockquote,
+  bulletList,
+  heading,
+  link,
+  paragraph,
+  text,
+  type MdBlock,
+  type MdPhrasing,
+  type WriteMarkdown,
+} from './capture-tree.ts';
 
 /**
  * Where a capture lands (ADR-0049): a folder of the Inbox, so it waits there
@@ -28,6 +40,12 @@ export interface CaptureOptions {
    * out — n8n has no vault to look in — every author is written by name.
    */
   readonly personFor?: (author: CaptureAuthor) => string | null;
+  /**
+   * What writes the body's tree as markdown, a block at a time: the editor's
+   * own serializer, with its settings (the adapters' `writeCaptureMarkdown`;
+   * in n8n, the same bundled into the Code node).
+   */
+  readonly writeMarkdown: WriteMarkdown;
 }
 
 /** A capture as the file DFAI writes for it. */
@@ -48,7 +66,7 @@ export interface CaptureFile {
 }
 
 /** A payload, read as capture/v1 and written as its file. Throws a `CaptureRefusedError` when refused. */
-export function mapCapture(payload: unknown, options: CaptureOptions = {}): CaptureFile {
+export function mapCapture(payload: unknown, options: CaptureOptions): CaptureFile {
   return captureFile(readCapture(payload), options);
 }
 
@@ -60,14 +78,14 @@ export function mapCapture(payload: unknown, options: CaptureOptions = {}): Capt
  * same message; the path depends on neither, so one that does not agree
  * still finds the first (ADR-0049).
  */
-export function captureFile(capture: Capture, options: CaptureOptions = {}): CaptureFile {
+export function captureFile(capture: Capture, options: CaptureOptions): CaptureFile {
   const title = titleOf(capture);
   const writer = {
     capture,
     shownAt: clockIn(options.timeZone ?? 'UTC'),
     personFor: options.personFor ?? (() => null),
   };
-  const content = `${frontmatter(capture, writer)}\n\n${body(writer).join('\n')}\n`;
+  const content = `${frontmatter(capture, writer)}\n\n${body(writer, options.writeMarkdown)}\n`;
   return {
     ...capturePaths(title, capture.externalId),
     content,
@@ -216,19 +234,38 @@ function frontmatter(capture: Capture, writer: FileWriter): string {
   ].join('\n');
 }
 
-function body(writer: FileWriter): string[] {
+/** A block of the body, and the block id written on the line after it, if any. */
+interface BodyBlock {
+  readonly block: MdBlock;
+  readonly id?: string;
+}
+
+/**
+ * The body: each block written alone by `writeMarkdown`, as the editor writes
+ * a block, with its id's line after it as the editor writes one (ADR-0022),
+ * the blocks a blank line apart.
+ */
+function body(writer: FileWriter, writeMarkdown: WriteMarkdown): string {
+  return bodyBlocks(writer)
+    .map(({ block, id }) => {
+      const written = writeMarkdown({ type: 'root', children: [block] });
+      return id === undefined ? written : `${written}\n\n^${id}`;
+    })
+    .join('\n\n');
+}
+
+function bodyBlocks(writer: FileWriter): BodyBlock[] {
   const { message, thread, attachments } = writer.capture;
-  const lines = messageBlock(writer, message, `m${blockIdOf(message.ts)}`);
+  const blocks: BodyBlock[] = [messageBlock(writer, message, `m${blockIdOf(message.ts)}`)];
   if (thread.length > 0) {
-    lines.push('', '## Thread');
-    for (const reply of thread)
-      lines.push('', ...messageBlock(writer, reply, `r${blockIdOf(reply.ts)}`));
+    blocks.push({ block: heading('Thread') });
+    for (const reply of thread) blocks.push(messageBlock(writer, reply, `r${blockIdOf(reply.ts)}`));
   }
   if (attachments.length > 0) {
-    lines.push('', '## Attachments', '');
-    for (const { name, url } of attachments) lines.push(`- ${markdownLink(url, name)}`);
+    blocks.push({ block: heading('Attachments') });
+    blocks.push({ block: bulletList(attachments.map(({ name, url }) => [link(url, name)])) });
   }
-  return lines;
+  return blocks;
 }
 
 /** A ts as a block id's tail: `1761600000.000100` is `1761600000-000100`, the same for every writer. */
@@ -236,16 +273,18 @@ const blockIdOf = (ts: string) => ts.replace('.', '-');
 
 /**
  * One message as a quote: who sent it and when, a link back to it, and its
- * words; then its block id on a line of its own (ADR-0022), so each message
- * is citable as `[[Note#^r1761600300-000200]]`.
+ * words; then its block id (ADR-0022), so each message is citable as
+ * `[[Note#^r1761600300-000200]]`.
  */
-function messageBlock(writer: FileWriter, message: CaptureMessage, id: string): string[] {
-  const author = personLink(writer, message.author) ?? wordsMarkdown(message.author.name);
-  const link = message.url === null ? '' : ` · ${markdownLink(message.url, 'Open in Slack')}`;
-  const words = slackToMarkdown(message.text, writer.capture.users);
-  const quote = [
-    `**${author}** · ${writer.shownAt(message.ts)}${link}`,
-    ...(words.length > 0 ? ['', ...words] : []),
-  ];
-  return [...quote.map((line) => (line === '' ? '>' : `> ${line}`)), '', `^${id}`];
+function messageBlock(writer: FileWriter, message: CaptureMessage, id: string): BodyBlock {
+  const person = personLink(writer, message.author);
+  const author: MdPhrasing[] =
+    person === null ? wordsToPhrasing(message.author.name) : [{ type: 'wikiLink', value: person }];
+  const header = linkifyPhrasing([
+    { type: 'strong', children: author },
+    text(` · ${writer.shownAt(message.ts)}`),
+    ...(message.url === null ? [] : [text(' · '), link(message.url, 'Open in Slack')]),
+  ]);
+  const words = slackToBlocks(message.text, writer.capture.users);
+  return { block: blockquote([paragraph(header), ...words]), id };
 }

@@ -1,8 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { SLACK_PERMALINK, slackCapture, slackSource } from '../../testing/slack-capture.ts';
-import { readCapture } from './capture-payload.ts';
-import { CaptureRefusedError } from './capture-refusal.ts';
-import { captureFile, isNamedForKey, mapCapture, numberedCapturePath } from './capture-to-atlas.ts';
+import {
+  CaptureRefusedError,
+  captureFile as captureDomainFile,
+  isNamedForKey,
+  mapCapture as mapDomainCapture,
+  numberedCapturePath,
+  readCapture,
+  type Capture,
+  type CaptureOptions,
+} from '@dfai/domain';
+import { SLACK_PERMALINK, slackCapture, slackSource } from '@dfai/domain/testing';
+import { writeCaptureMarkdown } from './capture-markdown.ts';
+
+/*
+ * A capture's file (#103, ADR-0049): the domain's mapper, its tree written by
+ * the editor's serializer as the app writes it — frontmatter, body, path.
+ * All names are made up.
+ */
+
+const withWriter = (options: Partial<CaptureOptions>): CaptureOptions => ({
+  writeMarkdown: writeCaptureMarkdown,
+  ...options,
+});
+const mapCapture = (payload: unknown, options: Partial<CaptureOptions> = {}) =>
+  mapDomainCapture(payload, withWriter(options));
+const captureFile = (capture: Capture, options: Partial<CaptureOptions> = {}) =>
+  captureDomainFile(capture, withWriter(options));
 
 const LA = { timeZone: 'America/Los_Angeles' };
 
@@ -94,11 +117,12 @@ describe('mapCapture: a Slack message as its Inbox file (#103)', () => {
     },
   );
 
-  it('escapes an author’s name in the body and quotes it in the frontmatter', () => {
+  it('writes an author’s name as words in the body, and quotes it in the frontmatter', () => {
     const author = { name: "Mara 'Q' [[Quill]] #ops", email: null };
     const { content } = mapCapture(slackCapture({ source: slackSource({ author }) }));
     expect(content).toContain("author: 'Mara ''Q'' ((Quill)) #ops'");
-    expect(content).toContain("> **Mara 'Q' \\[\\[Quill\\]\\] \\#ops** ·");
+    // The serializer's escapes: `[` always, `]` where it could close something, and `#` before a word.
+    expect(content).toContain("> **Mara 'Q' \\[\\[Quill]] \\#ops** ·");
     expect(content).not.toContain('author_email');
   });
 

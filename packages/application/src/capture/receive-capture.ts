@@ -10,6 +10,7 @@ import {
   parentVaultPath,
   splitFrontmatter,
   type Capture,
+  type MdRoot,
   type CaptureFile,
   vaultPathName,
   type VaultPath,
@@ -24,7 +25,7 @@ import { listVaultNotes } from '../vault/read-vault.ts';
 /** What a capture needs of the vault: its files, how frontmatter reads, and the index. */
 export interface CapturePorts {
   readonly fs: VaultFsPort;
-  readonly markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
+  readonly markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'writeTree'>;
   readonly index: Pick<IndexPort, 'query'>;
 }
 
@@ -55,14 +56,50 @@ export class CapturePathTakenError extends Error {
  * written at the next numbered path (`… (slack <hash> 2).md`). Throws a
  * {@link CapturePathTakenError} when every one is taken.
  */
-export async function receiveCapture({
+export async function receiveCapture(request: {
+  ports: CapturePorts;
+  capture: Capture;
+  /** The zone the note shows times on. */
+  timeZone: string;
+}): Promise<CaptureReceipt> {
+  const { capture } = request;
+  return oneAtATime(`${capture.provider}\n${capture.externalId}`, () => receiveNow(request));
+}
+
+/**
+ * The captures of each message being received now, by key, each waiting on
+ * the one before (second attack on PR #615): two captures of one message at
+ * once — n8n's and a pasted link's, under two titles — would each find the
+ * folder empty and write a note. One after the other, the second finds the
+ * first by its key's file name. This holds within one app; two Macs
+ * capturing one message at once still meet only in the folder check, after a
+ * sync (ADR-0049).
+ */
+const receiving = new Map<string, Promise<unknown>>();
+
+async function oneAtATime<T>(key: string, receive: () => Promise<T>): Promise<T> {
+  const before = receiving.get(key) ?? Promise.resolve();
+  const run = before.then(receive, receive);
+  // The next waits for this one to settle, however it settles; its own failure is passed on below.
+  const settled = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  receiving.set(key, settled);
+  try {
+    return await run;
+  } finally {
+    if (receiving.get(key) === settled) receiving.delete(key);
+  }
+}
+
+async function receiveNow({
   ports,
   capture,
   timeZone,
 }: {
   ports: CapturePorts;
   capture: Capture;
-  /** The zone the note shows times on. */
   timeZone: string;
 }): Promise<CaptureReceipt> {
   const held = await heldInVault(ports, capture);
@@ -70,7 +107,8 @@ export async function receiveCapture({
   const notePaths = await listVaultNotes({ fs: ports.fs });
   const { people } = await loadLinkDirectory({ index: ports.index });
   const personFor = capturePeople({ capture, people, notePaths });
-  const file = captureFile(capture, { timeZone, personFor });
+  const writeMarkdown = (root: MdRoot) => ports.markdown.writeTree(root);
+  const file = captureFile(capture, { timeZone, personFor, writeMarkdown });
   const folder = await ensureFolder({
     fs: ports.fs,
     folder: parentVaultPath(createVaultPath(file.path)),

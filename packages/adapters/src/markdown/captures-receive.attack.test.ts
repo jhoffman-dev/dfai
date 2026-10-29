@@ -5,10 +5,19 @@ import type { Nodes, Root } from 'mdast';
 import { describe, expect, it } from 'vitest';
 import { apiFixture, bodyOf } from '@dfai/application';
 import { atlasQueryIndex } from '@dfai/application/testing/sqlite';
-import { mapCapture, splitFrontmatter, splitWikiLinksAndEmbeds } from '@dfai/domain';
+import {
+  mapCapture as mapDomainCapture,
+  splitFrontmatter,
+  splitWikiLinksAndEmbeds,
+} from '@dfai/domain';
 import { slackCapture, slackSource } from '@dfai/domain/testing';
 import { parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
 import { remarkMarkdown } from './markdown-port.ts';
+import { writeCaptureMarkdown } from './capture-markdown.ts';
+import type { CaptureOptions } from '@dfai/domain';
+/** The domain's mapper with the editor's serializer, as the app maps a capture (ADR-0049). */
+const mapCapture = (payload: unknown, options: Partial<CaptureOptions> = {}) =>
+  mapDomainCapture(payload, { writeMarkdown: writeCaptureMarkdown, ...options });
 
 /*
  * Adversarial cases for POST /v1/captures (#103, attack on PR #615). Each

@@ -4,7 +4,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CaptureRefusedError, mapCapture } from '@dfai/domain';
+import { CaptureRefusedError, mapCapture as mapDomainCapture } from '@dfai/domain';
+import { writeCaptureMarkdown } from '../../packages/adapters/src/markdown/capture-markdown.ts';
+import { bundleCaptureMarkdown, CAPTURE_MARKDOWN_BUNDLE } from './capture-bundle.ts';
 import {
   hostileText,
   seededRandom,
@@ -25,9 +27,17 @@ const modules = readdirSync(mapping).filter(
   (name) => name.endsWith('.ts') && !name.endsWith('.test.ts'),
 );
 const OPTIONS = { timeZone: 'America/Los_Angeles' };
-const RUN = `return mapCapture($json, ${JSON.stringify(OPTIONS)});`;
+const RUN = `return mapCapture($json, { ...${JSON.stringify(OPTIONS)}, writeMarkdown: dfaiCaptureMarkdown.writeCaptureMarkdown });`;
+
+/** The capture mapped as the app maps it: the domain's mapper, the adapters' writer. */
+const mapCapture = (payload: unknown, options: typeof OPTIONS = OPTIONS) =>
+  mapDomainCapture(payload, { ...options, writeMarkdown: writeCaptureMarkdown });
 
 describe('the capture mapper compiled into a Code node', () => {
+  it('holds the writer bundled from the app’s own, up to date (`pnpm n8n:build`)', async () => {
+    expect(readFileSync(CAPTURE_MARKDOWN_BUNDLE, 'utf8')).toBe(await bundleCaptureMarkdown());
+  }, 60_000);
+
   it.each(modules)('%s imports nothing but its own modules and the meeting mapper’s', (name) => {
     const text = readFileSync(new URL(name, mapping), 'utf8');
     const sources = [...text.matchAll(/^import\s[^;]*?from\s+'([^']+)'/gm)].map((each) => each[1]);
@@ -96,7 +106,7 @@ function hostileCaptures(count: number): Record<string, unknown>[] {
 
 /** Each capture's file, or its refusal, as the compiled script answers under JavaScriptCore. */
 function inJavaScriptCore(captures: readonly unknown[]): unknown[] {
-  const dir = mkdtempSync(join(tmpdir(), 'atlas-jsc-'));
+  const dir = mkdtempSync(join(tmpdir(), 'dfai-capture-jsc-'));
   const driver = [
     `function mapInNode($json) {\n${captureCodeNodeScript(RUN)}\n}`,
     `const captures = ${JSON.stringify(captures)};`,

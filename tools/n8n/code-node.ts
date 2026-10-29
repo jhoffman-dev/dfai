@@ -42,6 +42,8 @@ const CAPTURE_MODULES = [
   `${CAPTURE_MAPPING}capture-refusal.ts`,
   `${CAPTURE_MAPPING}capture-text.ts`,
   `${CAPTURE_MAPPING}capture-emphasis.ts`,
+  `${CAPTURE_MAPPING}capture-tree.ts`,
+  `${CAPTURE_MAPPING}capture-linkify.ts`,
   `${CAPTURE_MAPPING}capture-mrkdwn.ts`,
   `${CAPTURE_MAPPING}capture-payload.ts`,
   `${CAPTURE_MAPPING}capture-to-atlas.ts`,
@@ -104,7 +106,9 @@ const CAPTURE_HEADER = [
 
 /** The capture mapper as one plain-JavaScript script, followed by `run`, the node's own lines. */
 export function captureCodeNodeScript(run: string): string {
-  return `${CAPTURE_HEADER}\n\n${CAPTURE_MODULES.map(moduleScript).join('\n')}\n// --- n8n ---\n${run}\n`;
+  const writer = readFileSync(new URL('capture-markdown.bundle.js', import.meta.url), 'utf8');
+  const modules = CAPTURE_MODULES.map(moduleScript).join('\n');
+  return `${CAPTURE_HEADER}\n\n${writer}\n${modules}\n// --- n8n ---\n${run}\n`;
 }
 
 /** A Slack capture's Code node (#104): the payload n8n assembles, as the file DFAI would write. */
@@ -112,7 +116,8 @@ export function mapCaptureScript(): string {
   return captureCodeNodeScript(
     [
       '// timeZone: the zone the times in the note are shown on.',
-      `const OPTIONS = { timeZone: '${DEFAULT_TIME_ZONE}' };`,
+      // writeMarkdown: the app's own writer of a capture's tree, bundled above.
+      `const OPTIONS = { timeZone: '${DEFAULT_TIME_ZONE}', writeMarkdown: dfaiCaptureMarkdown.writeCaptureMarkdown };`,
       'return { json: mapCapture($json, OPTIONS) };',
     ].join('\n'),
   );

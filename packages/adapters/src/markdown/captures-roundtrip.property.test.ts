@@ -15,7 +15,7 @@ import type { Nodes, Root } from 'mdast';
 import { describe, expect, it } from 'vitest';
 import {
   CaptureRefusedError,
-  mapCapture,
+  mapCapture as mapDomainCapture,
   noteTags,
   splitFrontmatter,
   splitWikiLinksAndEmbeds,
@@ -30,6 +30,11 @@ import {
 } from '@dfai/domain/testing';
 import { parseMarkdownBody, renderBlock } from './markdown-blocks.ts';
 import { remarkMarkdown } from './markdown-port.ts';
+import { writeCaptureMarkdown } from './capture-markdown.ts';
+import type { CaptureOptions } from '@dfai/domain';
+/** The domain's mapper with the editor's serializer, as the app maps a capture (ADR-0049). */
+const mapCapture = (payload: unknown, options: Partial<CaptureOptions> = {}) =>
+  mapDomainCapture(payload, { writeMarkdown: writeCaptureMarkdown, ...options });
 
 const editedBack = (body: string) =>
   parseMarkdownBody(body)

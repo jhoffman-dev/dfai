@@ -82,6 +82,15 @@ nothing (`in-vault`); only two writers racing before either has synced
 would leave a sync conflict copy. #104 should send to the app when it runs,
 and commit a file itself only as the fallback.
 
+**One capture of a message at a time, on each Mac.** Two captures of one
+message at once — n8n's and a pasted link's, under two titles — would each
+find the folder empty. `receiveCapture` holds a lock per key in the app, so
+the second waits for the first and then finds its file by the key's name
+(second attack on PR #615). Two Macs capturing one message at the same
+moment still meet only in that folder check, once a sync has brought one's
+file to the other; until then each may write its note, and the sync keeps
+both (a conflict copy where the two bytes differ).
+
 **It lands in the Inbox folder, as a task at `status: inbox` or a plain note.**
 The Inbox is where captures wait (P30-01), and its folder is what puts a note
 there. The issue asked for a note "tagged inbox"; no tag is written, since a
@@ -101,52 +110,71 @@ then its words — with its block id on the next line (ADR-0022,
 (`^r<ts>`), so a reply is citable; `## Attachments` lists the files as links,
 never downloaded.
 
-**Slack's formatting is markdown; everything else a sender wrote is words.**
-`*bold*`, `_italics_`, `~strike~`, code, code blocks, `<url|text>` links,
-user, channel and special mentions become their markdown or their text. Then
-every character markdown or DFAI reads as more than itself is escaped — `#`
-(headings, tags), `[` `]` (links, wiki links, embeds, checkboxes), `^` (block
-ids), `<` `>` (HTML), `|` (tables), backticks and tildes (fences), `*` `_` `~`,
-the backslash, and an `&` that starts an entity.
+**The body is a markdown tree, written by the editor's own serializer.** The
+mapper never writes markdown text. It builds an mdast tree — paragraphs,
+quotes, code, a heading, a list; text, strong, emphasis, delete, inline
+code, links, and the one wiki link it makes itself, a Person's — and a
+sender's words are only ever a `text` node's value or a link's label. Slack's
+`*bold*`, `_italics_`, `~strike~`, code, code blocks (never with a language,
+so no `atlas-query`), `<url|text>` links (only `https://`, `http://` and
+`mailto:`; another scheme keeps its label as words), and mentions become
+their nodes; a token is a node, never text joined to the words beside it.
+The tree is written a block at a time by `writeCaptureMarkdown`
+(`packages/adapters/src/markdown/capture-markdown.ts`), which is
+`mdast-util-to-markdown` with GFM's extension and the settings, handlers
+and escape rules the editor's `renderBlock` writes every block with
+(`stringify-settings.ts`, shared by both), plus one escape the editor does
+not need: `#` before a word, which the editor writes only for a tag. So the
+library escapes `[`, `*`, `_`, a rule, an underline, a list marker, a
+table's delimiter row and `^`, and a capture's bytes are what the editor
+would write for its tree. The domain has no markdown library, so it is
+handed the writer (`CaptureOptions.writeMarkdown`; in the app the markdown
+port's `writeTree`; in n8n the same writer bundled into the Code node by
+`pnpm n8n:build`, `tools/n8n/capture-markdown.bundle.js`, about 59 kB, which
+JavaScriptCore runs to the same bytes as Node).
 
-**Every piece of a sender's words goes through one writer** (`wordsMarkdown`):
-a message's and its thread's text, author and channel names, the names sent
-for mentions, and every token's label or fallback (`<@U…|…>`, `<#C…|…>`,
-`<!subteam…|…>`, a date's, another scheme's link's). It escapes them as
-above and writes every bare address in them — `http://`, `https://`,
-`www.` and mail addresses, wherever they stand, with nothing looked behind —
-as an explicit link, cut where GFM would cut it, linearly. When the link's
-words are its own address (`[https://x](https://x)`), it is given the
-encoded address as a title as well: the editor reads a link whose words
-are its address as one typed bare, writes it back bare once the line is
-edited, and GFM then runs it on over the words after it; a link with a title
-it keeps. Inside a link's label, where no link can be read, the address's
-start is broken instead (`https\://`, `www\.`).
-
-This replaced two attempts that each leaked (review and attack on PR #615):
-escaping a bare address's `:`, which GFM reads past, since it finds
-addresses in the words once escapes are read; and linking addresses only in
-a message's text, after a character that was not a letter, which left
-names, labels, and an address after `é` or `_` to GFM. A seeded property
-test now maps hostile payloads, edits every block and writes it back, and
-reads it again: no link the mapper did not write, and no wiki link, embed,
-tag, rule, table or HTML, before or after.
-
+**Every address a reader could find in the words is a link the mapper made.**
+GFM reads addresses twice: its syntax reads them in the source, where an
+escape stops it, and its mdast transform reads them in a text node's words
+once escapes are read, where nothing does; and the editor may write a
+line's words back without their escapes once it is edited. So before the
+tree is written, `linkifyPhrasing` joins neighbouring text nodes, as
+markdown reads them back, and makes a link of every address either reading
+could take — `http(s)://` with any domain, `www.`, and `name@domain.tld`,
+after any character and in any case, run on to the next space and cut as
+GFM cuts trailing punctuation. A link more than GFM would make is only an
+address made a link; one fewer is a sender's words read as one. Its scans
+are linear (a test holds their steps to 8 × the words), where GFM's own
+patterns retry from every character. A link whose label is its own address
+(`[www.x](http://www.x)`) is given its encoded address as a title: the
+editor reads a link like that as an address typed bare, writes it back bare,
+and GFM then runs it on into the words after it; a titled link it keeps.
 Every link's address is percent-encoded where it holds `[`, `]`, `!`, `<`,
-`>`, a quote, a parenthesis, a backslash, or an `&` that starts an entity,
-since the index reads a wiki link or an embed even inside an address, and
-markdown reads `&nbsp;` there as a space. A line that is only `-`, `=`, `+`
-or `:` past any list markers (`-`, `+`, `1.`, `1)`) has that first mark
-escaped, so it is no rule, heading underline or table delimiter row, in a
-list item or out of one. A file name never starts with a space or holds
-nothing before its key: a title that leaves nothing once fitted is
-`Slack message`. A code block's fence never carries an info string, so a
-message cannot run an `atlas-query`. Only `https://`, `http://` and
-`mailto:` links are written; another scheme keeps its text. Control and
-direction characters, and half surrogate pairs, are taken out before
-anything reads the text. Frontmatter values are single-quoted. A seeded
-property test holds the mapper to this over hostile text, and the adapters'
-integration test reads the files back through the real parser.
+`>`, a quote, a parenthesis, a backslash, a space, a character beyond ASCII,
+or an `&` that starts an entity.
+
+**Why hand-written escaping failed, three times** (review and attacks on PR
+#615). The first build escaped special characters in the words and broke a
+bare address's `:`; GFM's transform reads an address after escapes are
+read, so the link ran on over the escapes after it, and an edit wrote them
+back raw. The second linked addresses in a message's text only, after a
+character that was not a letter; names, labels, an address after `é` or
+`_`, and an address split by a token's edge were left to GFM. The third put
+every piece of words through one writer; its address pattern still stopped
+where GFM's does not (`]`, `[`, a no-break space, a held token), and a mail
+address across a mention's edge was never seen whole. Each was a second
+reading of markdown beside the library's, and they drifted. The tree leaves
+one reading. The acceptance test is the attackers' property test
+(`captures-roundtrip.property.test.ts`): hostile payloads in every field,
+mapped, every block parsed as the editor holds it and written back, three
+times — no link the mapper did not write, no link to anything but an
+address, no wiki link, embed, tag, rule, table or HTML, and a fixed point.
+
+Control and direction characters, and half surrogate pairs, are taken out
+before anything reads the text. Frontmatter values are single-quoted, a
+sender's brackets in them made parentheses. A file name never starts with a
+space or holds nothing before its key: a title that leaves nothing once
+fitted is `Slack message`.
 
 **Refusals name every reason**, each with its field, quoting at most 40
 characters of what was sent, and nothing is written.
