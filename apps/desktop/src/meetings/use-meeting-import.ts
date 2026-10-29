@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MeetingsWaiting, PullStanding } from '@dfai/domain';
+import {
+  NO_POST_PROCESSING,
+  type MeetingsWaiting,
+  type PostProcessingLedger,
+  type PullStanding,
+  type VaultPath,
+} from '@dfai/domain';
 import {
   createMeetingImporter,
   createMeetingLinker,
@@ -50,6 +56,7 @@ export function useMeetingImport({
   namedElsewhere,
   onWaiting,
   onWritten,
+  postProcessing = NO_NEWS,
 }: {
   changes: NoteChanges;
   ports: MeetingImportPorts;
@@ -86,6 +93,13 @@ export function useMeetingImport({
   onWaiting: (vault: string, waiting: MeetingsWaiting | null) => void;
   /** Re-reads the tree and the index once the import has written or moved a note. */
   onWritten: () => void;
+  /**
+   * What the rules that write summaries have finished with, and why this
+   * Mac's own step cannot reach Claude (#182): what the count adds pending
+   * meetings from, and what the Mac that runs the automations says. Left
+   * out, no rule writes summaries.
+   */
+  postProcessing?: PostProcessingNews;
 }): void {
   const { standing, acts, countGate } = pulledFiles;
   // Imports only once the owner is known, as if this Mac did not import until then.
@@ -101,6 +115,7 @@ export function useMeetingImport({
     countGate,
     namedElsewhere,
     onWaiting,
+    postProcessing,
   });
   latest.current = {
     ports,
@@ -113,6 +128,7 @@ export function useMeetingImport({
     countGate,
     namedElsewhere,
     onWaiting,
+    postProcessing,
   };
   const [importer, setImporter] = useState<MeetingImporter | null>(null);
 
@@ -144,6 +160,12 @@ export function useMeetingImport({
         namedElsewhere: () => latest.current.namedElsewhere,
         countGate: (vault) => latest.current.countGate(vault),
         said: (vault, waiting) => latest.current.onWaiting(vault, waiting),
+        postProcessing: () => latest.current.postProcessing.ledger(),
+        rulesTake: (_vault, asked) => latest.current.postProcessing.take(asked),
+        stepFailing: () => {
+          const { unavailable, mac } = latest.current.postProcessing;
+          return unavailable === null ? null : { problem: unavailable, mac };
+        },
       },
     });
     setImporter(made);
@@ -181,6 +203,72 @@ export function useMeetingImport({
     namedElsewhere,
     onWaiting,
   });
+  useRecountOnPostProcessing({
+    importer,
+    vaultKey,
+    importing,
+    namedElsewhere,
+    news: postProcessing,
+  });
+}
+
+/** What the rules that write summaries say, as the count reads it (#182). */
+export interface PostProcessingNews {
+  /** Moves whenever what they have finished with does. */
+  readonly mark: string;
+  /** Why this Mac's own step cannot reach Claude; null while it can, or it has not been tried. */
+  readonly unavailable: string | null;
+  /** The Mac's name, when it runs the automations; null otherwise or when the settings keep none. */
+  readonly mac: string | null;
+  /** What they have finished with, read when a count is judged. */
+  readonly ledger: () => PostProcessingLedger;
+  /** Which of these meetings their own queries take, asked of the index; null when it cannot say. */
+  readonly take: (asked: {
+    readonly paths: readonly VaultPath[];
+    readonly generation: number;
+  }) => Promise<PostProcessingLedger['taken'] | null>;
+}
+
+const NO_NEWS: PostProcessingNews = {
+  mark: '',
+  unavailable: null,
+  mac: null,
+  ledger: () => NO_POST_PROCESSING,
+  take: async () => null,
+};
+
+/**
+ * Says again what waits, importing nothing, when what the rules that write
+ * summaries have finished with changes, or whether this Mac's step reaches
+ * Claude (#182) — on a Mac that counts, or on the one that imports while its
+ * step fails or just stopped failing. Elsewhere no line could show, so
+ * nothing is asked. The vault's first news is the catch-up's to judge.
+ */
+function useRecountOnPostProcessing({
+  importer,
+  vaultKey,
+  importing,
+  namedElsewhere,
+  news,
+}: {
+  importer: MeetingImporter | null;
+  vaultKey: string | null;
+  importing: boolean;
+  namedElsewhere: { readonly name: string | null } | null;
+  news: PostProcessingNews;
+}): void {
+  const { mark, unavailable } = news;
+  const heard = useRef<{ vault: string; mark: string; unavailable: string | null } | null>(null);
+  useEffect(() => {
+    if (importer === null || vaultKey === null) return;
+    const before = heard.current;
+    heard.current = { vault: vaultKey, mark, unavailable };
+    if (before === null || before.vault !== vaultKey) return;
+    if (before.mark === mark && before.unavailable === unavailable) return;
+    const counting = !importing && namedElsewhere !== null;
+    const failingHere = importing && (unavailable !== null || before.unavailable !== null);
+    if (counting || failingHere) void importer.recount(vaultKey);
+  }, [importer, vaultKey, mark, unavailable, importing, namedElsewhere]);
 }
 
 /** What the count is asked again for: the pull, a sleep since it, the pause, and who is named. */

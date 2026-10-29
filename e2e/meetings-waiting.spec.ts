@@ -269,3 +269,114 @@ test('two Macs that press "Process here" before either syncs leave one named: th
 
   await laptop.close();
 });
+
+const RULE = '.atlas/automations/After a meeting.md';
+const PROMPT = '.atlas/prompts/after-a-meeting.md';
+const RULE_FILE = [
+  '---',
+  'atlas: automation',
+  'name: After a meeting',
+  'id: After a meeting',
+  'enabled: true',
+  'when: a meeting is created',
+  'which: FROM meeting',
+  'do: claude',
+  `prompt: ${PROMPT}`,
+  'output: meeting-items',
+  'apply: mine',
+  '---',
+  '',
+].join('\n');
+const PROMPT_TEXT = 'List what somebody now has to do, what was decided, and what to chase.\n';
+/** Today on this Mac's clock, as the rule's `date >= @-14d` counts it. */
+const TODAY = new Date().toLocaleDateString('sv-SE');
+/** A meeting the import let in today, so the rule's 14 days reach it, that no rule has summarised. */
+const IMPORTED_TODAY = STAMPED.replace(/^date: .*$/m, `date: '${TODAY}'`);
+
+test('a Mac that is not named counts an imported meeting whose summary and tasks are still pending (#182)', async ({
+  page,
+}) => {
+  const { vault, host } = await openVault(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Set up sync with GitHub' }).click();
+  await expect(page.getByTestId('sync-status')).toContainText('Synced at');
+  await page.keyboard.press('Escape');
+
+  // The laptop takes the automations and pushes the "After a meeting" rule and a meeting it let
+  // in but never summarised: its Claude is unavailable, so the stamp alone would count nothing.
+  const laptop = await otherMac(host.git, host.git.remote(basename(vault.root)), 'Laptop');
+  await mkdir(join(laptop.root, 'Inbox/Meetings'), { recursive: true });
+  await mkdir(join(laptop.root, '.atlas/automations'), { recursive: true });
+  await mkdir(join(laptop.root, '.atlas/prompts'), { recursive: true });
+  await writeFile(join(laptop.root, '.atlas/settings.md'), LAPTOP_SETTINGS);
+  await writeFile(join(laptop.root, RULE), RULE_FILE);
+  await writeFile(join(laptop.root, PROMPT), PROMPT_TEXT);
+  await writeFile(join(laptop.root, 'Inbox/Meetings/2026-10-26 Platform sync.md'), IMPORTED_TODAY);
+  await laptop.commitAndPush('DFAI sync from Laptop 2026-10-28 09:00');
+
+  await syncNow(page);
+  await expect(page.getByTestId('automations-mac')).toContainText('Laptop');
+  await page.keyboard.press('Escape');
+  await openInbox(page);
+
+  await expect(bannerLine(page)).toHaveText('1 meeting waiting for Laptop');
+  await goTo(page).getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(
+    page
+      .getByRole('article', { name: 'Activity' })
+      .getByRole('listitem')
+      .filter({ hasText: '1 meeting is waiting for Laptop to process it.' }),
+  ).toHaveCount(1);
+});
+
+test('the Mac that runs the step says once when Claude is unavailable, and nothing once a run gets through (#182)', async ({
+  page,
+}) => {
+  const { vault, host } = await openVault(page);
+  await vault.mkdir('.atlas/automations');
+  await vault.mkdir('.atlas/prompts');
+  await vault.write('.atlas/settings.md', '---\nprofileName: Mara Quill\n---\n');
+  await vault.write(RULE, RULE_FILE);
+  await vault.write(PROMPT, PROMPT_TEXT);
+  await emitVaultChanged(page, ['.atlas/settings.md', RULE, PROMPT]);
+  host.claude.loggedIn(false);
+
+  // A meeting arrives: the import lets it in, and the step cannot reach Claude.
+  const meeting = 'Inbox/Meetings/2026-10-27 Larkspur weekly.md';
+  await vault.write(meeting, VALID);
+  await emitVaultChanged(page, [meeting]);
+  await expect.poll(() => vault.read(meeting)).toContain('atlas_import_outcome: imported');
+
+  await openInbox(page);
+  await expect(bannerLine(page)).toHaveText(
+    'Claude is unavailable on this Mac: summaries and tasks are pending.',
+  );
+  await expect(banner(page)).toContainText('Fix:');
+  await expect(banner(page).getByRole('button')).toHaveCount(0);
+  await goTo(page)
+    .getByRole('button', { name: /^Activity/ })
+    .click();
+  const said = page
+    .getByRole('article', { name: 'Activity' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Claude is unavailable on this Mac: summaries and tasks are pending.' });
+  await expect(said).toHaveCount(1);
+
+  // Logged in, a run by hand gets through: the summary is written and the line goes.
+  host.claude.loggedIn(true);
+  host.claude.reply(JSON.stringify({ summary: 'Nothing to chase.', key_points: [], items: [] }));
+  await goTo(page).getByRole('button', { name: 'Automations' }).click();
+  const screen = page.getByRole('article', { name: 'Automations' });
+  await screen.getByRole('button', { name: 'After a meeting', exact: true }).click();
+  await screen
+    .getByRole('region', { name: 'Automation' })
+    .getByRole('button', { name: 'Run now' })
+    .click();
+  await expect.poll(() => vault.read(meeting)).toContain('<!-- atlas:summary v1 -->');
+  await openInbox(page);
+  await expect(banner(page)).toHaveCount(0);
+  await goTo(page)
+    .getByRole('button', { name: /^Activity/ })
+    .click();
+  await expect(said).toHaveCount(1);
+});

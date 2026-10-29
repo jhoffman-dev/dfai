@@ -2304,6 +2304,8 @@ function AppWindow({
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
           sync={syncStore}
+          automations={automationsStore}
+          rulePorts={automationPorts}
           waiting={meetingsWaiting}
           changes={noteChanges}
           ports={archivePorts}

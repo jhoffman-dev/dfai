@@ -33,7 +33,9 @@ const sameJudged = (one: Judged | null, other: Judged) =>
  * The Inbox's banner on a Mac that is not named (ADR-0035 parts 1 and 2):
  * the line the meeting import last said, and "Process here", refused while
  * the facts that judged the line say a claim could not be shared. Once the
- * claim names this Mac, the import stops counting and the banner goes.
+ * claim names this Mac, the import stops counting and the banner goes. On
+ * the named Mac it says instead that its step cannot reach Claude, and what
+ * fixes it (#182).
  */
 export function useMeetingsWaitingBanner({
   waiting: store,
@@ -75,6 +77,8 @@ export function useMeetingsWaitingBanner({
     if (claim?.pending) return { line: claimUnsharedLine(claim.pending.was), processHere: null };
     const line = waiting === null ? null : meetingsWaitingLine(waiting);
     if (waiting === null || line === null) return null;
+    // The named Mac's own step is failing: there is nothing to claim, only what to fix.
+    if (waiting.kind === 'failing') return { line, detail: waiting.problem, processHere: null };
     if (claim === null) return { line, processHere: null };
     // A press's problem is dropped once what it was answered against has changed.
     const current = sameJudged(pressed?.against ?? null, { waiting, refused });

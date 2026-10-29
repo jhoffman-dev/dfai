@@ -388,13 +388,15 @@ export interface ProcessHereProps {
 /** What waits for the named Mac, on another Mac, and the way to take it (ADR-0035 parts 1 and 2). */
 export interface MeetingsWaitingProps {
   readonly line: string;
+  /** What to do about it, under the line: on the named Mac, the step's fix-it line (#182). */
+  readonly detail?: string | null;
   /** Null until sync says where the vault stands. */
   readonly processHere: ProcessHereProps | null;
 }
 
 /** What waits for the Mac that runs the automations, on another Mac (ADR-0035 part 1). */
-function MeetingsWaiting({ line, processHere }: MeetingsWaitingProps) {
-  const why = processHere?.refused ?? processHere?.problem ?? null;
+function MeetingsWaiting({ line, detail = null, processHere }: MeetingsWaitingProps) {
+  const why = processHere?.refused ?? processHere?.problem ?? detail;
   return (
     <aside
       className="notice-bar inbox__offer inbox__offer--warning"

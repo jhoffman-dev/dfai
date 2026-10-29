@@ -152,4 +152,15 @@ describe('useMeetingsWaitingBanner (ADR-0035 parts 1 and 2, #176)', () => {
     act(() => publishSync(sync, VAULT, { ...controller, claimPending: null }));
     expect(hook.result.current).toBeNull();
   });
+
+  it('on the named Mac, says its step cannot reach Claude, with the fix-it words and nothing to press (#182)', () => {
+    const { hook } = setUp({
+      waiting: { kind: 'failing', mac: 'Studio', count: 2, problem: 'Fix: claude auth login' },
+    });
+    expect(hook.result.current).toEqual({
+      line: 'Claude is unavailable on Studio: summaries and tasks are pending for 2 meetings.',
+      detail: 'Fix: claude auth login',
+      processHere: null,
+    });
+  });
 });

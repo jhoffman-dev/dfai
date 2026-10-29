@@ -1,10 +1,12 @@
 import {
   declaresImport,
   importOutcomeOf,
+  postProcessingFactsOf,
   splitFrontmatter,
   type VaultPath,
   type WaitingMeetingFile,
 } from '@dfai/domain';
+import { postProcessingKeyOf } from '../automations/post-processing-ledger.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { readFrontmatter } from './meeting-reading.ts';
@@ -48,7 +50,8 @@ async function readWaitingMeeting(
     // Unreadable, or gone since it was listed: not the import's to settle, so it never counts.
     return { path, read: null };
   }
-  const reading = readFrontmatter(ports.markdown, splitFrontmatter(read.text).frontmatter);
+  const { frontmatter, body } = splitFrontmatter(read.text);
+  const reading = readFrontmatter(ports.markdown, frontmatter);
   // Frontmatter that does not read cannot be stamped either.
   if (reading.problem !== null) return { path, read: null };
   return {
@@ -57,6 +60,11 @@ async function readWaitingMeeting(
       importDeclared: declaresImport(reading.properties),
       importOutcome: importOutcomeOf(reading.properties),
       modifiedAt: read.modified,
+      postProcessing: postProcessingFactsOf({
+        body,
+        properties: reading.properties,
+        key: postProcessingKeyOf({ text: read.text, properties: reading.properties }),
+      }),
     },
   };
 }

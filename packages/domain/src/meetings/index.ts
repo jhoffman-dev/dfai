@@ -116,13 +116,28 @@ export { tasksJoined, tasksParted } from './meeting-task-links.ts';
 export {
   MEETING_SUMMARY_STATES,
   meetingSummaryState,
-  SUMMARY_PENDING_DAYS,
   writesSummaries,
 } from './meeting-summary-state.ts';
 export type { MeetingSummaryState, SummaryStepFacts } from './meeting-summary-state.ts';
 export {
+  answeredIn,
+  meetingReachFrom,
+  NO_POST_PROCESSING,
+  SUMMARY_PENDING_DAYS,
+  postProcessingFactsOf,
+  postProcessingPending,
+  summaryStillComing,
+} from './post-processing-pending.ts';
+export type {
+  PendingSigns,
+  PostProcessingFacts,
+  PostProcessingLedger,
+} from './post-processing-pending.ts';
+export {
+  failingWarningDue,
   meetingsWaitingLine,
   meetingsWaitingReport,
+  postProcessingFailingReport,
   processHereRefusal,
   waitingCountGate,
   touchesWaitingMeetings,
@@ -137,4 +152,5 @@ export type {
   UncountedWhy,
   WaitingCountGate,
   WaitingMeetingFile,
+  WaitingTally,
 } from './meetings-waiting.ts';
