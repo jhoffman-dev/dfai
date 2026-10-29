@@ -1,4 +1,12 @@
-import type { BoardRow, GtdStatus, TaskRowFacts } from '@dfai/domain';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  rowToFocusAfter,
+  type BoardRow,
+  type GtdStatus,
+  type TaskRowFacts,
+  type VaultPath,
+} from '@dfai/domain';
+import { CONTROLS, useRowHandles } from '../row-handles.ts';
 import { heldWhile, MoveMenu, todayToggle } from '../task-row-commands.tsx';
 
 /** What one task row's controls draw (#107): the task's facts, and where its last change stands. */
@@ -23,20 +31,63 @@ export interface TaskRowControls {
   readonly onToday: (row: BoardRow, chosen: boolean) => void;
 }
 
+/** Where the focus is among a result's task rows, by row (#107), as on the Today page. */
+export interface TaskRowFocus {
+  /** A row's handle: its done box, where the focus lands when the row is focused. */
+  readonly rowRef: (path: VaultPath) => (element: HTMLElement | null) => void;
+  /** Says the focus is on one of a row's controls. */
+  readonly onFocusRow: (path: VaultPath) => void;
+}
+
+/**
+ * Keeps the focus among a result's task rows (#107): when the row a control
+ * of which had the focus leaves the result — ticked out of Next actions, say
+ * — the focus goes to the row under it, or the one above when it was last
+ * (`rowToFocusAfter`), as on Today; never to the top of the page. Left alone
+ * when the person has put the focus on another control since.
+ */
+export function useTaskRowFocus(rows: readonly BoardRow[]): TaskRowFocus {
+  // A row's path is a vault path as the index answers it.
+  const order = useMemo(() => rows.map((row) => row.path as VaultPath), [rows]);
+  const { rowRef, focusRow } = useRowHandles(order);
+  const focused = useRef<VaultPath | null>(null);
+  const before = useRef(order);
+  useEffect(() => {
+    const was = before.current;
+    before.current = order;
+    const left = focused.current;
+    if (left === null || order.includes(left)) return;
+    focused.current = null;
+    if (document.activeElement?.matches(CONTROLS) === true) return;
+    const staying = was.filter((path) => path === left || order.includes(path));
+    const next = rowToFocusAfter({ order: staying, acted: left });
+    if (next !== null) focusRow(next);
+  }, [order, focusRow]);
+  const onFocusRow = useCallback((path: VaultPath) => {
+    focused.current = path;
+  }, []);
+  return useMemo(() => ({ rowRef, onFocusRow }), [rowRef, onFocusRow]);
+}
+
 interface RowControlsGiven {
   readonly row: BoardRow;
   readonly shown: TaskRowShown;
   readonly controls: TaskRowControls;
+  readonly focus: TaskRowFocus;
 }
+
+const pathOf = (row: BoardRow) => row.path as VaultPath;
 
 /**
  * A task row's done box: a real checkbox, so Space ticks it and a screen
  * reader says what it does. Elements, not components, here and below: each
  * component a row holds is a render the work budgets count.
  */
-export function taskDoneBox({ row, shown, controls }: RowControlsGiven) {
+export function taskDoneBox({ row, shown, controls, focus }: RowControlsGiven) {
   return (
     <input
+      ref={focus.rowRef(pathOf(row))}
+      onFocus={() => focus.onFocusRow(pathOf(row))}
       type="checkbox"
       className="done-check"
       aria-label={`Mark ${row.title} done`}
@@ -53,10 +104,10 @@ export function taskDoneBox({ row, shown, controls }: RowControlsGiven) {
 }
 
 /** A task row's Today toggle, where the task can be chosen, and its Move to… menu. */
-export function taskCommands({ row, shown, controls }: RowControlsGiven) {
+export function taskCommands({ row, shown, controls, focus }: RowControlsGiven) {
   const { chosen } = shown;
   return (
-    <span className="qresult__commands">
+    <span className="qresult__commands" onFocus={() => focus.onFocusRow(pathOf(row))}>
       {chosen !== null &&
         todayToggle({
           title: row.title,

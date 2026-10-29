@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   withNoteNames,
   type BoardLane,
@@ -19,7 +19,9 @@ import {
   taskCommands,
   taskDoneBox,
   taskRefusal,
+  useTaskRowFocus,
   type TaskRowControls,
+  type TaskRowFocus,
 } from './task-row-controls.tsx';
 
 export interface ResultField {
@@ -52,13 +54,25 @@ export interface GroupedResultProps {
  * groups are header rows with their counts and column summaries, a board's
  * groups are its columns and its sub-groups the swimlanes across them.
  */
-export function GroupedResult(props: GroupedResultProps) {
-  if (props.rows.length === 0)
+export function GroupedResult(given: GroupedResultProps) {
+  const focus = useTaskRowFocus(given.rows);
+  const tasks = useMemo(
+    () => (given.tasks === undefined ? undefined : { ...given.tasks, focus }),
+    [given.tasks, focus],
+  );
+  const shared: ResultProps = { ...given, tasks };
+  if (given.rows.length === 0)
     return <p className="table__empty">Nothing matches this query yet.</p>;
-  if (props.layout === 'board') return <ResultBoard {...props} />;
-  if (props.layout === 'list') return <ResultList {...props} />;
-  return <ResultTable {...props} />;
+  if (given.layout === 'board') return <ResultBoard {...shared} />;
+  if (given.layout === 'list') return <ResultList {...shared} />;
+  return <ResultTable {...shared} />;
 }
+
+/** The result's task controls, with where the focus is among its rows. */
+type TasksGiven = TaskRowControls & { readonly focus: TaskRowFocus };
+
+/** The result's props inside it: its task controls with where the focus is. */
+type ResultProps = Omit<GroupedResultProps, 'tasks'> & { readonly tasks?: TasksGiven | undefined };
 
 function GroupHeading({
   group,
@@ -105,7 +119,7 @@ function Levels({
 }: {
   groups: readonly RowGroup[];
   level: 1 | 2;
-  shared: GroupedResultProps;
+  shared: ResultProps;
   rows: (rows: readonly BoardRow[]) => React.ReactNode;
 }) {
   return groups.map((group) => {
@@ -134,7 +148,7 @@ function Levels({
   });
 }
 
-function ResultTable(props: GroupedResultProps) {
+function ResultTable(props: ResultProps) {
   // State, not a ref: the rows' virtualiser looks for its scroller in a
   // layout effect, which runs before the sheet's ref is set.
   const [sheet, setSheet] = useState<HTMLDivElement | null>(null);
@@ -250,7 +264,7 @@ function propertyKindOf(kind: FieldKind | undefined): PropertyKind | undefined {
   return kind === 'number' || kind === 'checkbox' ? kind : undefined;
 }
 
-function ResultList(props: GroupedResultProps) {
+function ResultList(props: ResultProps) {
   const list = (rows: readonly BoardRow[]) => <RowsList rows={rows} shared={props} />;
   if (props.groups.length === 0) return list(props.rows);
   return (
@@ -270,7 +284,7 @@ function useMeta(fields: readonly ResultField[]) {
       .join(' · ');
 }
 
-function RowsList({ rows, shared }: { rows: readonly BoardRow[]; shared: GroupedResultProps }) {
+function RowsList({ rows, shared }: { rows: readonly BoardRow[]; shared: ResultProps }) {
   const meta = useMeta(shared.fields);
   return (
     <ul className="list-view qresult__list" aria-label="Notes">
@@ -296,7 +310,7 @@ function RowsList({ rows, shared }: { rows: readonly BoardRow[]; shared: Grouped
   );
 }
 
-function ResultBoard(props: GroupedResultProps) {
+function ResultBoard(props: ResultProps) {
   if (props.lanes !== undefined && props.lanes.length > 0) {
     return (
       <BoardLanes
@@ -346,7 +360,7 @@ function Cards({
   quiet = false,
 }: {
   rows: readonly BoardRow[];
-  shared: GroupedResultProps;
+  shared: ResultProps;
   /** An empty lane cell says nothing: a row of "Nothing here yet" is noise. */
   quiet?: boolean;
 }) {
@@ -394,7 +408,9 @@ function Cards({
 }
 
 /** A row's task controls, when the result has them and the row is a task it can act on. */
-function taskControlsOf(tasks: TaskRowControls | undefined, row: BoardRow) {
+function taskControlsOf(tasks: TasksGiven | undefined, row: BoardRow) {
   const shown = tasks?.of(row);
-  return tasks === undefined || shown === undefined ? null : { row, shown, controls: tasks };
+  return tasks === undefined || shown === undefined
+    ? null
+    : { row, shown, controls: tasks, focus: tasks.focus };
 }

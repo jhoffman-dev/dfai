@@ -1,6 +1,6 @@
 import {
   FINISHED_TASK_STATUS,
-  holdsStatus,
+  isStatus,
   RECURRENCE_KEY,
   REOPENED_TASK_STATUS,
   TASK_KEYS,
@@ -37,7 +37,7 @@ export function taskRowChange(action: TaskRowAction): PropertyChanges {
     case 'reopen':
       // Only a finished task is taken back: unticking open work changes nothing.
       return (properties) =>
-        holdsStatus(properties[TASK_KEYS.status], FINISHED_TASK_STATUS)
+        isStatus(properties[TASK_KEYS.status], FINISHED_TASK_STATUS)
           ? { [TASK_KEYS.status]: REOPENED_TASK_STATUS }
           : {};
     case 'move':
@@ -95,7 +95,7 @@ export function taskRowStillOffers({
 function finishing(): PropertyChanges {
   const tick = archiveTaskChange();
   return (properties) => {
-    if (holdsStatus(properties[TASK_KEYS.status], FINISHED_TASK_STATUS)) return {};
+    if (isStatus(properties[TASK_KEYS.status], FINISHED_TASK_STATUS)) return {};
     return typeof tick === 'function' ? tick(properties) : tick;
   };
 }

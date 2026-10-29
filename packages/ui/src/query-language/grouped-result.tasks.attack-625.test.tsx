@@ -98,7 +98,8 @@ describe.each(['list', 'table', 'board'] as const)('a %s of tasks, by keyboard',
     view.rerender(element(layout, tasks, [FEED, SOW]));
     expect(document.activeElement).not.toBe(document.body);
     expect(
-      document.activeElement?.closest('[role="row"], li, article, [class*="card"]')?.textContent,
+      document.activeElement?.closest('tr, [role="row"], li, article, [class*="card"]')
+        ?.textContent,
     ).toContain('Sow the beans');
   });
 });

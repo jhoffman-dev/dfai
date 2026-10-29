@@ -98,7 +98,9 @@ test('a query view’s rows tick done, roll a repeating task on, and undo byte f
   await openView(page, 'Next actions');
   await expect(box(page, 'Call the printer')).toBeVisible();
 
-  await box(page, 'Call the printer').click();
+  // From the keyboard, so the focus is on its box when the row leaves.
+  await box(page, 'Call the printer').focus();
+  await page.keyboard.press('Space');
   await expectFile(vault, 'Tasks/Call the printer.md').toBe(
     task([
       'status: archive',
@@ -109,6 +111,8 @@ test('a query view’s rows tick done, roll a repeating task on, and undo byte f
   await expect(toastSaying(page, 'Finished “Call the printer”.')).toBeVisible();
   // Finished, it is no next action: once the index has it, the view lets it go.
   await expect(box(page, 'Call the printer')).toHaveCount(0);
+  // The focus goes to the row under it, not to the top of the page.
+  await expect(box(page, 'Water the beds')).toBeFocused();
 
   // A repeating task chosen for today rolls on to its next day, and the choice ends.
   // From the keyboard. Rolled on, it is open work again, so its box is clear the moment

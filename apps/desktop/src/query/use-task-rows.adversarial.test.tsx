@@ -117,15 +117,19 @@ describe('useTaskRows under attack (PR #625)', () => {
   });
 
   it('a press whose write changed nothing does not hold the row waiting for an index that never moves', async () => {
-    const memory = memoryVault({ [PATH]: MIXED });
-    const view = viewOf(memory, rowOf(MIXED_READ));
-    act(() => view.controls().onDone(view.row(), true));
+    // Since the tick reads [archive, next-action] as no status too (the case above), the
+    // press that comes to nothing is an untick of open work, which leaves it as it is.
+    const OPEN = '---\ntype: task\nstatus: next-action\n---\n\nBody.\n';
+    const OPEN_READ = { status: 'next-action' };
+    const memory = memoryVault({ [PATH]: OPEN });
+    const view = viewOf(memory, rowOf(OPEN_READ));
+    act(() => view.controls().onDone(view.row(), false));
     await flush();
     await flush();
     // Nothing was written, so the index has no news: the view's re-run reads it as before.
     expect(view.writes()).toBe(0);
-    view.runAgain(rowOf(MIXED_READ), false);
-    view.runAgain(rowOf(MIXED_READ), false);
+    view.runAgain(rowOf(OPEN_READ), false);
+    view.runAgain(rowOf(OPEN_READ), false);
     expect(view.shown()).toMatchObject({ done: false, waits: false });
   });
 

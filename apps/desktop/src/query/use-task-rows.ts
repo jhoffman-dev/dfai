@@ -34,6 +34,7 @@ import {
   type TodayAction,
 } from '@dfai/ui';
 import { withGiveUpRecorded } from '../activity/with-give-up-recorded.ts';
+import { useDayOf } from '../today/use-day-of.ts';
 import type { Toasts } from '../toasts/toasts.ts';
 import { errorMessage } from './error-message.ts';
 import type { QueryPagePorts } from './use-query-page.ts';
@@ -121,12 +122,14 @@ export function useTaskRows(options: TaskRowsOptions): {
   const held = useRef(here);
   held.current = here;
   const act = useAct({ latest, held, setState });
+  // Drawn against the day it is drawn on: the view is drawn again as the day
+  // turns, as Today is (`useDayOf`), and any drawing reads the clock afresh.
+  useDayOf(clock, enabled);
+  const today = clock.today();
   const controls = useMemo(
     () =>
-      enabled
-        ? rowControls({ rows: shownRows, here, read, today: clock.today(), choosing, act })
-        : undefined,
-    [enabled, shownRows, here, read, clock, choosing, act],
+      enabled ? rowControls({ rows: shownRows, here, read, today, choosing, act }) : undefined,
+    [enabled, shownRows, here, read, today, choosing, act],
   );
   return { rows: shownRows, controls };
 }
@@ -247,6 +250,11 @@ function useAct({
       const guarded = whileAsRead({ values, row: task.asRead });
       writeRow({ options, path: row.path, values: guarded, today }).then(
         (made) => {
+          // Nothing came of it: no file changed, so no read will stand for it. Let the row go now.
+          if (!made.wrote) {
+            change((was) => withoutOwn(was, row.path, pending));
+            return;
+          }
           const landed = { ...pending, landed: { at: options.runsBegun(), indexKey: asked } };
           change((was) => replacing(was, row.path, pending, landed));
           announce({ options, made, title: row.title, said, path: row.path });
@@ -278,6 +286,12 @@ function withPending(
     pending: new Map([...unread, [path, pending]]),
     refused: without(was.refused, path),
   };
+}
+
+/** Without the row's pending change, unless another has taken its place since. */
+function withoutOwn(was: RowsState, path: string, pending: Pending): RowsState {
+  if (was.pending.get(path) !== pending) return was;
+  return { ...was, pending: without(was.pending, path) };
 }
 
 /** With a row's change refused: drawn as read again, and why said on it. */

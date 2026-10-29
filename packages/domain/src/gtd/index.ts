@@ -7,6 +7,8 @@ export {
   indexedTexts,
   isBlankValue,
   isGtdStatus,
+  isStatus,
+  singleTextOf,
   NEW_TASK_STATUS,
   REOPENED_TASK_STATUS,
   TASK_KEYS,

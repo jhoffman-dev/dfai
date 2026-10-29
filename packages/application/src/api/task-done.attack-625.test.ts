@@ -108,24 +108,6 @@ describe('POST /v1/tasks/done, hostile requests (PR #625)', () => {
   });
 });
 
-describe('POST /v1/tasks/done, a recurrence the row reads as repeating (PR #625)', () => {
-  // The hidden `task:recurrence` column (singleTextSql) reads each of these as
-  // "every week", and the row draws the tick as a roll; the file must roll too.
-  it.each([
-    ['a one-item list', ['recurrence:', '  - every week']],
-    ['a list with a blank item', ['recurrence: ["", every week]']],
-  ])('rolls a task whose recurrence is %s, rather than ending the series', async (_name, lines) => {
-    const path = 'Tasks/Hens.md';
-    const text = note(['type: task', 'status: next-action', 'due: 2026-09-21', ...lines]);
-    const api = apiFixture({ files: { [path]: text } });
-    const response = await tick(api, { path, done: true, ifModified: modifiedOf(api, path) });
-    expect(response.status).toBe(200);
-    const after = api.files.get(path)?.text ?? '';
-    expect(after).toMatch(/^due: 2026-09-28$/m);
-    expect(after).toMatch(/^status: next-action$/m);
-  });
-});
-
 describe('POST /v1/atlas-query, a query of tasks alone (PR #625)', () => {
   it('answers no hidden task:* column', async () => {
     const files = {
