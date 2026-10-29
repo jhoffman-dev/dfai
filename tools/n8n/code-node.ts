@@ -15,6 +15,8 @@ const MODULES = [
   `${MAPPING}meeting-instant.ts`,
   `${MAPPING}meeting-stated.ts`,
   `${MAPPING}meeting-when.ts`,
+  `${MAPPING}meeting-punycode.ts`,
+  `${MAPPING}meeting-email-key.ts`,
   `${MAPPING}meeting-attendees.ts`,
   `${MAPPING}meeting-text.ts`,
   `${MAPPING}meeting-sections.ts`,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { SyncPhase, SyncReport } from '@dfai/domain';
 import {
   checkRemote,
+  createUnsettledSaid,
   inspectSync,
   syncNow,
   type ActivityRecorder,
@@ -11,6 +12,7 @@ import {
   type MarkdownPort,
   type SyncFilesPort,
   type SyncSetup,
+  type UnsettledSaid,
   type VaultFsPort,
 } from '@dfai/application';
 import { errorMessage } from '../query/error-message.ts';
@@ -98,11 +100,22 @@ export interface RunContext {
  * Syncs, one at a time, and looks at GitHub for other Macs' changes between
  * them: a look that finds some starts a sync to bring them in.
  */
+/** The record of what was said for `vault`, made afresh when another vault opened since. */
+function saidFor(
+  held: { current: { vault: string; said: UnsettledSaid } | null },
+  vault: string,
+): UnsettledSaid {
+  if (held.current?.vault !== vault) held.current = { vault, said: createUnsettledSaid() };
+  return held.current.said;
+}
+
 export function useSyncRuns(context: RunContext) {
   const { git, files, thisMac, vaultKey, fs, markdown, clock, activity, flushAll } = context;
   const { setPhase, setBehind, markSynced, exclusive, pulls } = context;
   const lastSyncAt = useRef<number | null>(null);
   const lastCheckAt = useRef<number | null>(null);
+  // What this window has said of copies sync kept (#235), for the vault open: said once each.
+  const copiesSaid = useRef<{ vault: string; said: UnsettledSaid } | null>(null);
   const openVault = useRef(vaultKey);
   openVault.current = vaultKey;
   const pulled = useRef(context.onPulled);
@@ -131,6 +144,7 @@ export function useSyncRuns(context: RunContext) {
       files,
       unsaved: { flushAll },
       activity: activity.inVault(vaultKey),
+      copiesSaid: saidFor(copiesSaid, vaultKey),
     };
     const current = () => openVault.current === vaultKey;
     return exclusive.start('sync', async () => {
