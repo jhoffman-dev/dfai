@@ -74,7 +74,12 @@ export type GranolaWebhookCheck =
   | { readonly signed: false; readonly reason: string }
   | { readonly signed: true; readonly webhookId: string; readonly noteId: string };
 
-/** The delivery's signature, held to the size cap first: a refusal is an answer, not a failure. */
+/**
+ * The delivery's signature, held to the size cap first. Until it is proven
+ * the request may be anyone's, so every failure here — a refusal, or a fault
+ * — is a refusal (answered 401, never emailed): no one but Granola can make
+ * the workflow send mail.
+ */
 function signature(delivery: WebhookDelivery, check: WebhookCheck): GranolaWebhookCheck | string {
   try {
     if (delivery.body.length > MAX_BODY_BYTES) {
@@ -83,15 +88,15 @@ function signature(delivery: WebhookDelivery, check: WebhookCheck): GranolaWebho
     return verifyStandardWebhook(delivery, check);
   } catch (error) {
     if (error instanceof WebhookRefusal) return { signed: false, reason: error.message };
-    throw error;
+    return { signed: false, reason: `a fault before the signature was proven: ${String(error)}` };
   }
 }
 
 /**
  * A delivery checked, then read: the body's note id is trusted only once its
- * signature is. A refusal comes back as `signed: false` (the workflow answers
- * it 401, in silence); a signed body that names no note throws
- * {@link UnreadableWebhookBody}; anything else that throws is a fault.
+ * signature is. A refusal, or any fault before the signature is proven, comes
+ * back as `signed: false` (the workflow answers it 401, in silence); a signed
+ * body that names no note throws {@link UnreadableWebhookBody} (200 + email).
  */
 export function verifyGranolaWebhook(
   delivery: WebhookDelivery,
@@ -107,4 +112,41 @@ export function verifyGranolaWebhook(
       `signed by Granola, but ${error.message}; it begins: ${bodyExcerpt(delivery.body)}`,
     );
   }
+}
+
+/** The body as n8n hands it over: the bytes of any view of them; null for anything else, or none. */
+export function bodyBytes(value: unknown): Uint8Array | null {
+  // ArrayBuffer.isView, not instanceof: n8n's Buffer may come from another realm than the Code node's.
+  if (!ArrayBuffer.isView(value)) return null;
+  return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+}
+
+export interface GranolaDelivery extends WebhookCheck {
+  /** The request's headers, names in lower case. */
+  readonly headers: unknown;
+  /** n8n's `getBinaryDataBuffer(0, "data")`: the bytes as sent, if Raw Body put them there. */
+  readonly readBody: () => Promise<unknown>;
+}
+
+/**
+ * The verify node's whole check: the body read, then {@link verifyGranolaWebhook}.
+ * The body is read before the signature is proven, so a request that leaves
+ * none (Raw Body off, a multipart with no file) could be anyone's: it is a
+ * refusal, answered 401 in silence, never an email.
+ */
+export async function checkGranolaDelivery({
+  headers,
+  readBody,
+  ...check
+}: GranolaDelivery): Promise<GranolaWebhookCheck> {
+  let body: Uint8Array | null;
+  try {
+    body = bodyBytes(await readBody());
+  } catch {
+    // Safe to drop: the request is not yet proven to be Granola's, and a body it
+    // never sent is refused below, exactly as one that is not bytes.
+    body = null;
+  }
+  if (body === null) return { signed: false, reason: 'body: missing (is Raw Body on?)' };
+  return verifyGranolaWebhook({ headers, body }, check);
 }

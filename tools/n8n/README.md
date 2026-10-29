@@ -596,8 +596,8 @@ Granola pull stays the safety net: anything this misses, the pull catches.
 
 ```
 Granola webhook → Verify Granola signature → Signed by Granola? → Answer 200 → Fetch Granola note → (200) Map → GitHub branch
-                         │                          └ no → Answer 401                └ anything else, or no answer → email
-                         └ signed but unreadable, or a fault → Answer 200 → email
+                         │                          └ no, or a fault → Answer 401    └ anything else, or no answer → email
+                         └ signed, but the body names no note → Answer 200 → email
 ```
 
 | Granola or GitHub says…                                 | n8n answers Granola | Then                                      |
@@ -606,7 +606,7 @@ Granola webhook → Verify Granola signature → Signed by Granola? → Answer 2
 | A body over 64 KB (refused before it is hashed)         | `401`               | Nothing.                                  |
 | A signed delivery                                       | `200`, at once      | Fetch, map, commit.                       |
 | Signed, but the body names no note (or is not JSON)     | `200`               | Emailed, quoting its first 200 bytes.     |
-| A fault in the check (no Raw Body, no binary)           | `200`               | Emailed with n8n's error.                 |
+| No body, or a fault before the signature is proven      | `401`               | Nothing: see Executions.                  |
 | Granola's fetch: `404` (gone, or still processing)      | `200` (already)     | Emailed; the pull catches the meeting.    |
 | Granola's fetch: any other status (`401`, `413`, `5xx`) | `200` (already)     | Emailed; the pull catches the meeting.    |
 | Granola's fetch: no answer in 10 s                      | `200` (already)     | Emailed; the pull catches the meeting.    |
@@ -622,16 +622,21 @@ budget, not even on a note that is still processing. The ticket asked for a
 404s for good (deleted, or never visible to your key) — or Granola's own
 test event — would have spent the whole budget with no email.
 
-Only a delivery the check refuses — a bad or missing signature, a stale or
-missing timestamp, the secret not pasted, a body over 64 KB (Granola's
-payload holds only a note id) — is answered `401` in silence: that is what
-keeps a forger from filling your mailbox. A delivery Granola did sign but
-whose body the check cannot read, and any fault in the verify node itself
-(n8n cannot hand over the raw body), leave by the node's error output and
-are answered **`200` and emailed**. The two cannot be told apart there
-without reading n8n's error text, and a `200` asks Granola for nothing more,
-as a `401` would; a `500` would spend the retry budget. The email quotes the
-body's first 200 bytes, printable ASCII only (`\xNN` for every other byte).
+**Only a delivery Granola is proven to have sent can make the workflow
+email you.** Until the signature holds, the request may be anyone's — the
+webhook URL is public — so everything that goes wrong before then is
+answered `401` in silence: a bad or missing signature, a stale or missing
+timestamp, the secret not pasted, a body over 64 KB (Granola's payload
+holds only a note id), and **any fault before the signature is proven** —
+no body, no binary (Raw Body off, or a multipart request with no file
+part), n8n's `getBinaryDataBuffer` failing. Otherwise anyone could send
+such a request and have it mail you every time (PR #623's review). Those
+show only in n8n's **Executions**. A delivery Granola did sign but whose
+body names no note (or is not JSON, or not UTF-8) leaves by the verify
+node's error output and is answered **`200` and emailed**: a `200` asks
+Granola for nothing more, and a `500` would spend the retry budget. The
+email quotes the body's first 200 bytes, printable ASCII only (`\xNN` for
+every other byte).
 
 Every value the failure email interpolates — a meeting's title, its source
 id, the error, the workflow's name — has its control characters (CR, LF,
@@ -695,9 +700,9 @@ reach, and you must see work on the first run:
 - **The raw body.** The Webhook node's **Raw Body** option is on, and the
   verify node reads the bytes with
   `await this.helpers.getBinaryDataBuffer(0, "data")` (n8n's documented
-  Code-node helper, in "Run Once for All Items" mode). If n8n refuses it, the
-  verify node fails: every delivery is answered `200` and you get the failure
-  email with n8n's error.
+  Code-node helper, in "Run Once for All Items" mode). If n8n refuses it,
+  every delivery is refused `401` with **no email** (`body: missing (is Raw
+Body on?)` in the run): check Executions after the test event.
 - **Where the note id is.** Granola documents that the payload carries a
   `note_id`, not where; the check reads it at the top or under `data`. A test
   event emailed as `signed by Granola, but body: no note_id` means it is elsewhere: tell the

@@ -65,9 +65,12 @@ describe('a verified Granola webhook', () => {
     expect(run).toThrow(`it begins: ${body}`);
   });
 
-  it('throws other faults as they are, never as a refusal', () => {
+  it('refuses, never throws, a fault before the signature is proven: it may not be Granola’s', () => {
     const delivery = { headers: vectorHeaders(), body: null as unknown as Uint8Array };
-    expect(() => verifyGranolaWebhook(delivery, check)).toThrow(TypeError);
+    expect(verifyGranolaWebhook(delivery, check)).toEqual({
+      signed: false,
+      reason: expect.stringMatching(/^a fault before the signature was proven: TypeError/),
+    });
   });
 
   it('reads a signed body that is not UTF-8 as unreadable', () => {
