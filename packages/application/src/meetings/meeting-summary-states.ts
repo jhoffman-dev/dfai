@@ -52,7 +52,7 @@ export async function readMeetingSummaryStates({
   if (paths.length === 0) return { states: new Map(), pendingWhy: '' };
   const { automations } = await loadAutomations({ fs, markdown, notePaths });
   const summarising = automations.filter(({ rule }) => writesSummaries(rule));
-  const ledger = postProcessingLedgerOf(automations, today);
+  const ledger = postProcessingLedgerOf(automations, () => today);
   const files = await fs.readNotes(paths);
   const states = new Map<VaultPath, MeetingSummaryState>();
   for (const file of files) {

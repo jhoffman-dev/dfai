@@ -18,6 +18,7 @@ import {
   type WaitingMeetingFile,
 } from '@dfai/domain';
 import type { ActivityRecorder } from '../activity/ports.ts';
+import { postProcessingMark } from '../automations/post-processing-ledger.ts';
 import { meetingInboxNotes } from './meeting-inbox.ts';
 import { readWaitingMeetings, type WaitingMeetingPorts } from './waiting-meeting-files.ts';
 
@@ -74,7 +75,18 @@ export interface WaitingCounter {
    * keeps failing so, with how many meetings are pending, warning once per
    * failure; says nothing — reading nothing — while it does not.
    */
-  judgeHere(vault: string, run: WaitingCounterRun): Promise<MeetingsWaiting | null>;
+  judgeHere(
+    vault: string,
+    run: WaitingCounterRun,
+    options?: {
+      /**
+       * Whether what it would judge may have moved: news named a meeting
+       * file, or this is a catch-up or a recount. Left false, it judges
+       * again only when the failure or the rules' ledger changed.
+       */
+      readonly fresh?: boolean;
+    },
+  ): Promise<MeetingsWaiting | null>;
 }
 
 /**
@@ -102,6 +114,8 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
   const warned = new Map<string, Set<number>>();
   // The failure last warned of for each vault while its step keeps failing: Activity hears each once.
   const warnedFailing = new Map<string, string>();
+  // What the failing line was last judged on, for each vault: the failure and the rules' ledger.
+  const judgedHere = new Map<string, string>();
   const ledgerOf = (vault: string) => watch.postProcessing?.(vault) ?? NO_POST_PROCESSING;
 
   const say = (vault: string, waiting: MeetingsWaiting | null) => {
@@ -172,20 +186,25 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
       .pending;
   };
 
-  const judgeHere = async (vault: string, run: WaitingCounterRun) => {
+  const judgeHere = async (vault: string, run: WaitingCounterRun, fresh: boolean) => {
     const failing = watch.stepFailing?.(vault) ?? null;
     if (failing === null) {
       warnedFailing.delete(vault);
+      judgedHere.delete(vault);
       return say(vault, null);
     }
     const { problem } = failing;
+    const on = `${problem}\n${postProcessingMark(ledgerOf(vault))}`;
+    const before = last(vault);
+    // News of other notes, with the failure and the ledger as they were: what was said stands, the gate unasked.
+    if (!fresh && before?.kind === 'failing' && judgedHere.get(vault) === on) return before;
+    judgedHere.set(vault, on);
     const mac = failing.mac?.trim() || 'this Mac';
     if (failingWarningDue({ problem, warned: warnedFailing.get(vault) ?? null })) {
       run.activity.record(postProcessingFailingReport({ mac, problem }));
       warnedFailing.set(vault, problem);
     }
     const counted = await pendingHere(vault, run);
-    const before = last(vault);
     // While a pull is under way, a count already said stands.
     const count =
       counted === 'pulling' ? (before?.kind === 'failing' ? before.count : null) : counted;
@@ -213,7 +232,7 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
       if (known?.vault !== vault) return;
       for (const path of paths) known.files.set(path, null);
     },
-    judgeHere: (vault, run) => judgeHere(vault, run),
+    judgeHere: (vault, run, options) => judgeHere(vault, run, options?.fresh ?? true),
     judge: async (vault, run) => {
       const named = watch.namedElsewhere(vault);
       if (named === null) return say(vault, null);

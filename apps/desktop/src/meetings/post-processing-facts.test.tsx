@@ -53,7 +53,11 @@ const controller = (
     { reason: string; failures: number; retryAt: null; unavailable?: string }
   > = new Map(),
 ) => ({ listing: read, pauses }) as unknown as AutomationsController;
-const clock = { today: () => '2026-10-08' };
+const clock = {
+  today: () => '2026-10-08',
+  localNow: () => '2026-10-08T09:00:00',
+  now: () => Date.parse('2026-10-08T09:00:00Z'),
+};
 
 describe('post-processing facts from the automations store (#182)', () => {
   it('reads the ledger of what the rules last listed, and nothing before they are', () => {

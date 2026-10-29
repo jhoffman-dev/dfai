@@ -1,13 +1,14 @@
 import { useStore } from 'zustand';
 import {
+  clockForRule,
   postProcessingLedgerOf,
   postProcessingMark,
   stepUnavailable,
   type AutomationListing,
-  type Clock,
+  type RunClock,
 } from '@dfai/application';
-import { NO_POST_PROCESSING, type PostProcessingLedger } from '@dfai/domain';
-import type { AutomationsStore } from '../automations/automations-store.ts';
+import { NO_POST_PROCESSING, type AutomationRule, type PostProcessingLedger } from '@dfai/domain';
+import type { AutomationsState, AutomationsStore } from '../automations/automations-store.ts';
 
 /** A listing's post-processing ledger, worked out once per listing read and per day. */
 const worked = new WeakMap<
@@ -15,11 +16,20 @@ const worked = new WeakMap<
   { today: string; ledger: PostProcessingLedger; mark: string }
 >();
 
-function ledgerFor(listing: AutomationListing | null, today: string) {
+/**
+ * The ledger the runner's rules give, each rule's reach counted on the clock
+ * the runner runs it on (`clockForRule`, the plan zone's for a rule that
+ * keeps it), so the count and the rule never disagree by a day.
+ */
+function ledgerFor(state: AutomationsState, clock: RunClock) {
+  const listing = state.automations?.listing ?? null;
   if (listing === null) return { ledger: NO_POST_PROCESSING, mark: '' };
+  const planZone = state.automations?.planZone ?? null;
+  const todayOf = (rule: AutomationRule) => clockForRule({ rule, clock, planZone }).today();
+  const today = listing.automations.map(({ rule }) => todayOf(rule)).join(',');
   const known = worked.get(listing);
   if (known?.today === today) return known;
-  const ledger = postProcessingLedgerOf(listing.automations, today);
+  const ledger = postProcessingLedgerOf(listing.automations, todayOf);
   const made = { today, ledger, mark: postProcessingMark(ledger) };
   worked.set(listing, made);
   return made;
@@ -30,11 +40,8 @@ function ledgerFor(listing: AutomationListing | null, today: string) {
  * automations runner last read them (#182): read when a count is judged, so
  * nothing is drawn for it.
  */
-export function readPostProcessing(
-  store: AutomationsStore,
-  clock: Pick<Clock, 'today'>,
-): PostProcessingLedger {
-  return ledgerFor(store.getState().automations?.listing ?? null, clock.today()).ledger;
+export function readPostProcessing(store: AutomationsStore, clock: RunClock): PostProcessingLedger {
+  return ledgerFor(store.getState(), clock).ledger;
 }
 
 /**
@@ -44,12 +51,9 @@ export function readPostProcessing(
  */
 export function usePostProcessingNews(
   store: AutomationsStore,
-  clock: Pick<Clock, 'today'>,
+  clock: RunClock,
 ): { readonly mark: string; readonly unavailable: string | null } {
-  const mark = useStore(
-    store,
-    (state) => ledgerFor(state.automations?.listing ?? null, clock.today()).mark,
-  );
+  const mark = useStore(store, (state) => ledgerFor(state, clock).mark);
   const unavailable = useStore(store, (state) => {
     const automations = state.automations;
     if (automations === null || automations.listing === null) return null;

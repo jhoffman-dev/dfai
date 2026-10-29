@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   backoffMinutes,
+  unavailableBackoffMinutes,
   dueTrigger,
   gatedByFreshPull,
   isAutomationPath,
@@ -35,6 +36,7 @@ import {
   VaultChangedError,
   type ActivityLog,
   type AutomationListing,
+  type ModelProvider,
   type AutomationPorts,
   type NoteChangeNews,
   type NoteChanges,
@@ -224,7 +226,13 @@ export function useAutomations(options: AutomationsOptions) {
     [onSettled],
   );
 
-  const { clear: clearPause, record: recordFailure } = pauses;
+  const { clear: clearPause, record: recordFailure, isUnavailable } = pauses;
+  const recheck = useClaudeRecheck({
+    tick,
+    pauses,
+    provider: () => ports.claude.provider(),
+    scheduled: options.scheduled,
+  });
   // Read when a queued run's turn comes, not when it was queued.
   const runsHere = useRef(options.scheduled ?? true);
   runsHere.current = options.scheduled ?? true;
@@ -263,7 +271,8 @@ export function useAutomations(options: AutomationsOptions) {
         heldForPull.current.delete(rule.id);
         try {
           const entry = await carryOut(vault);
-          clearPause(rule.id);
+          // Run now that fails while Claude is out of reach leaves the pause, and its warning, as they are.
+          if (!(entry?.kind === 'failed' && isUnavailable(rule.id))) clearPause(rule.id);
           return entry;
         } catch (cause) {
           if (cause instanceof HeldForPullError) {
@@ -274,7 +283,7 @@ export function useAutomations(options: AutomationsOptions) {
           throw cause;
         }
       }, options),
-    [exclusive, clearPause, recordFailure],
+    [exclusive, clearPause, recordFailure, isUnavailable],
   );
   const runRule = useCallback(
     (rule: AutomationRule, trigger: RunTrigger) =>
@@ -387,6 +396,7 @@ export function useAutomations(options: AutomationsOptions) {
     ...options,
     listing: current,
     tick,
+    recheck,
     runOnNotes,
     sayLetGo,
     isPaused: pauses.isPaused,
@@ -473,7 +483,70 @@ function usePauses(vaultKey: string | null, clock: Pick<Clock, 'localNow'>) {
     return pause !== undefined && (pause.retryAt === null || now < pause.retryAt);
   }, []);
 
-  return { all, clear, record, isPaused };
+  /** Whether the rule is held back because its Claude step could not reach Claude (#182). */
+  const isUnavailable = useCallback(
+    (id: string) => latest.current.get(id)?.unavailable !== undefined,
+    [],
+  );
+
+  return { all, clear, record, isPaused, isUnavailable };
+}
+
+/**
+ * Asks again at each tick whether Claude can be reached, while a rule is held
+ * back because it could not (#182, the PR #637 review): asking is local and
+ * asks Claude nothing. Once it can, those pauses go and their news runs at
+ * once, rather than when the backoff ends. Once this Mac no longer runs the
+ * automations, such a pause is dropped: it says nothing of the Mac named next.
+ * Answers with a count that moves each time it let pauses go.
+ */
+function useClaudeRecheck({
+  tick,
+  pauses,
+  provider,
+  scheduled,
+}: {
+  tick: number;
+  pauses: Pick<ReturnType<typeof usePauses>, 'all' | 'clear'>;
+  provider: () => Pick<ModelProvider, 'status'>;
+  scheduled: boolean | null | undefined;
+}): number {
+  const [letGo, setLetGo] = useState(0);
+  const { all, clear } = pauses;
+  const held = useRef(all);
+  held.current = all;
+  const ask = useRef(provider);
+  ask.current = provider;
+
+  useEffect(() => {
+    const waiting = [...held.current].flatMap(([id, pause]) =>
+      pause.unavailable === undefined ? [] : [id],
+    );
+    if (waiting.length === 0) return;
+    if (scheduled === false) {
+      for (const id of waiting) clear(id);
+      return;
+    }
+    let cancelled = false;
+    ask
+      .current()
+      .status()
+      .then(
+        (status) => {
+          if (cancelled || !status.ready) return;
+          for (const id of waiting) clear(id);
+          setLetGo((count) => count + 1);
+        },
+        () => {
+          // Safe to ignore: the next tick asks again, and the backoff's own end still tries.
+        },
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [tick, scheduled, clear]);
+
+  return letGo;
 }
 
 /** A rule's pause after one more failure. */
@@ -494,12 +567,15 @@ function pauseAfter(previous: RulePause | undefined, cause: unknown, now: LocalT
       retryAt: null,
     };
   }
-  const retryAt = localTimeOf((localTimeMs(now) ?? 0) + backoffMinutes(failures) * 60_000);
+  const unavailable = cause instanceof ClaudeUnavailableError;
+  // Out of reach, Claude is asked after again at each tick too: the wait is only a safety net.
+  const minutes = unavailable ? unavailableBackoffMinutes(failures) : backoffMinutes(failures);
+  const retryAt = localTimeOf((localTimeMs(now) ?? 0) + minutes * 60_000);
   return {
     reason: `Could not run (${errorMessage(cause)}); it is tried again at ${retryAt.slice(11, 16)}.`,
     failures,
     retryAt,
-    ...(cause instanceof ClaudeUnavailableError && { unavailable: cause.entry.problem }),
+    ...(unavailable && { unavailable: cause.entry.problem }),
   };
 }
 
@@ -717,6 +793,7 @@ function useNoteRuns({
   clock,
   listing,
   tick,
+  recheck,
   runOnNotes,
   sayLetGo,
   isPaused,
@@ -726,6 +803,8 @@ function useNoteRuns({
 }: AutomationsOptions & {
   listing: AutomationListing | null;
   tick: number;
+  /** Moves when pauses for Claude were let go: their news runs then, not at the next tick. */
+  recheck: number;
   runOnNotes: (rule: AutomationRule, news: HeldNews) => Promise<boolean>;
   sayLetGo: (rule: AutomationRule, count: number) => void;
   isPaused: (id: string, now: LocalTime) => boolean;
@@ -817,7 +896,18 @@ function useNoteRuns({
       letGo.current.byRule = new Map();
     }
     for (const id of queues.current.keys()) void runQueue(id);
-  }, [heard, tick, scheduled, vaultKey, indexReady, listing, runQueue, sayLetGo, standing]);
+  }, [
+    heard,
+    tick,
+    recheck,
+    scheduled,
+    vaultKey,
+    indexReady,
+    listing,
+    runQueue,
+    sayLetGo,
+    standing,
+  ]);
 }
 
 /** News let go and not yet said: before any rule could hear it, and from each rule's queue; and the minute it was last said in. */

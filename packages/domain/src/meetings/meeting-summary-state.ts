@@ -28,13 +28,6 @@ export const MEETING_SUMMARY_STATES: readonly MeetingSummaryState[] = [
   'none',
 ];
 
-/**
- * How far back the rule that writes summaries reaches: the "After a meeting"
- * preset takes meetings of the last 14 days (`date >= @-14d`, ADR-0036). An
- * older meeting without a summary is `none`, not waiting on anything.
- */
-export const SUMMARY_PENDING_DAYS = 14;
-
 /** What the vault's summarising rule means for one meeting, as its caller read it. */
 export interface SummaryStepFacts {
   /** Whether an enabled rule writes meetings' summaries ({@link writesSummaries}). */
@@ -62,7 +55,7 @@ export function writesSummaries(rule: Pick<AutomationRule, 'enabled' | 'action'>
  * whatever the rule does now. With none, it is `pending` only for a meeting
  * the rule will still summarise: let in by the import (not a copy, not one
  * that failed), out of the Archive, with transcript turns to read, dated
- * within the rule's reach (or undated), and not answered yet.
+ * within the rule's reach, and not answered yet.
  */
 export function meetingSummaryState({
   path,

@@ -815,3 +815,33 @@ which broke "never overwriting one" in spirit: two drafts of one brief.
 - **The Friday review preset** puts these together: `fridays at 15:00`, its
   prompt `.atlas/prompts/friday-review.md` (written once, never over yours),
   `output: note` into `Reviews/`, `data: weekly-review`, no query.
+
+## Amendment, 2026-10-29: a Claude step that cannot reach Claude is retried (#182, PR #637)
+
+Applies to every rule a note sets off whose step is `claude`, not only the
+declared meeting step.
+
+- **Claude out of reach is a failure the runner hears.** The provider is not
+  ready (Claude Code not installed, logged out, no key), or it says so
+  part-way through an ask. The run is logged as `failed` with the fix-it
+  line, as before. It is then **raised** (`ClaudeUnavailableError`), so the
+  runner pauses the rule, holds the news it heard (up to 20 syncs' worth) and
+  tries again when the pause ends. The wait doubles from a minute, as for any
+  failing rule, but is **capped at 15 minutes** (`unavailableBackoffMinutes`)
+  rather than six hours. While such a pause stands, the runner also **asks the
+  provider's status at each minute's tick**. That is local and asks Claude
+  nothing. Once it is ready, the pause goes and the held news runs at once.
+- **A bad answer or a timeout settles.** An answer that does not parse, a
+  deadline missed or an API failure (`ModelProviderError` `failed`) is logged
+  as `failed` and settles, with no pause and no news held. Asking again would
+  spend asks on the same words.
+- **Run now never raises.** Run by hand, the step settles with its `failed`
+  entry. If the rule is already paused because Claude is out of reach, that
+  failure leaves the pause and its warning as they are, so the line does not
+  flicker and Activity does not say it again.
+- **The pause lives in memory.** After a restart, the rule is caught up on
+  opening (missed arrivals, for a rule set off by `created`). If Claude is
+  still out of reach, that run fails and the pause comes back. A rule that is
+  not set off by `created` has no catch-up, so its pause, and the named
+  Mac's line, return only with its next run. A Mac that stops being the named
+  one drops such pauses.

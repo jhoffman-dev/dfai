@@ -24,8 +24,13 @@ const PULLED: CountableStanding = {
   namedAfter: false,
 };
 const BEFORE_PULL = 900_000;
-/** A meeting with turns, no summary yet, undated: what the step would still post-process. */
-const UNPROCESSED: PostProcessingFacts = { summary: 'none', hasTurns: true, date: null, key: null };
+/** A meeting with turns, no summary yet, dated within reach: what the step would still post-process. */
+const UNPROCESSED: PostProcessingFacts = {
+  summary: 'none',
+  hasTurns: true,
+  date: '2026-10-20',
+  key: null,
+};
 const NONE = NO_POST_PROCESSING;
 const AFTER_PULL = 1_100_000;
 

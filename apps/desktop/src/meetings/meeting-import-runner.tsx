@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo } from 'react';
 import type { MeetingsWaiting } from '@dfai/domain';
+import type { RunClock } from '@dfai/application';
 import type { AutomationsStore } from '../automations/automations-store.ts';
 import { useSyncForRunners, type SyncStore } from '../sync/sync-store.ts';
 import { readPostProcessing, usePostProcessingNews } from './post-processing-facts.ts';
@@ -8,8 +9,10 @@ import { useMeetingImport } from './use-meeting-import.ts';
 
 export type MeetingImportRunnerProps = Omit<
   Parameters<typeof useMeetingImport>[0],
-  'active' | 'pulledFiles' | 'namedElsewhere' | 'onWaiting' | 'postProcessing'
+  'active' | 'pulledFiles' | 'namedElsewhere' | 'onWaiting' | 'postProcessing' | 'clock'
 > & {
+  /** The Mac's clock: the rules' reach is counted on it, or on the plan zone's for a rule that keeps it. */
+  readonly clock: RunClock;
   /** Where the automations runner says what the rules have finished with, and how its runs went (#182). */
   readonly automations: AutomationsStore;
   /** Where sync says whether this Mac runs the vault's automations, and what a pull brought in. */

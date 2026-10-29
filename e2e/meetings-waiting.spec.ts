@@ -288,8 +288,10 @@ const RULE_FILE = [
   '',
 ].join('\n');
 const PROMPT_TEXT = 'List what somebody now has to do, what was decided, and what to chase.\n';
-/** A meeting the import let in, undated so the rule's 14 days always reach it, that no rule has summarised. */
-const IMPORTED_UNDATED = STAMPED.replace(/^date: .*\n/m, '');
+/** Today on this Mac's clock, as the rule's `date >= @-14d` counts it. */
+const TODAY = new Date().toLocaleDateString('sv-SE');
+/** A meeting the import let in today, so the rule's 14 days reach it, that no rule has summarised. */
+const IMPORTED_TODAY = STAMPED.replace(/^date: .*$/m, `date: '${TODAY}'`);
 
 test('a Mac that is not named counts an imported meeting whose summary and tasks are still pending (#182)', async ({
   page,
@@ -309,10 +311,7 @@ test('a Mac that is not named counts an imported meeting whose summary and tasks
   await writeFile(join(laptop.root, '.atlas/settings.md'), LAPTOP_SETTINGS);
   await writeFile(join(laptop.root, RULE), RULE_FILE);
   await writeFile(join(laptop.root, PROMPT), PROMPT_TEXT);
-  await writeFile(
-    join(laptop.root, 'Inbox/Meetings/2026-10-26 Platform sync.md'),
-    IMPORTED_UNDATED,
-  );
+  await writeFile(join(laptop.root, 'Inbox/Meetings/2026-10-26 Platform sync.md'), IMPORTED_TODAY);
   await laptop.commitAndPush('DFAI sync from Laptop 2026-10-28 09:00');
 
   await syncNow(page);

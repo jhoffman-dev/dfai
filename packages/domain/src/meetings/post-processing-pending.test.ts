@@ -152,6 +152,11 @@ describe('meetingReachFrom: how far back a rule that writes summaries reaches (#
     );
   });
 
+  it('reads no reach off an upper bound on the date', () => {
+    expect(meetingReachFrom('FROM meeting WHERE date <= @-3d', TODAY)).toBe('2026-10-15');
+    expect(meetingReachFrom('FROM meeting WHERE date = @-3d', TODAY)).toBe('2026-10-15');
+  });
+
   it('is the 14 days for a `which` that does not read', () => {
     expect(meetingReachFrom('FROM meeting WHERE (', TODAY)).toBe('2026-10-15');
   });

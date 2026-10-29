@@ -765,7 +765,7 @@ describe('useAutomations: a Claude step that cannot reach Claude backs off and i
     // Its query, run by hand, finds the meeting as the index would, whatever it is handed.
     const index = {
       ...vault.ports.index,
-      query: async (sql: string, parameters: readonly unknown[]) =>
+      query: async (sql: string, parameters: readonly (string | number | null)[]) =>
         sql.startsWith('/* meetings */')
           ? vault.ports.index.query(sql, parameters)
           : {
@@ -787,10 +787,11 @@ describe('useAutomations: a Claude step that cannot reach Claude backs off and i
     const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
       initialProps: options,
     });
+    /** Logged in; the status takes a second to answer, as a process the host starts does. */
     const logIn = () => {
-      provider.status = async () => {
+      provider.status = () => {
         statusAsked.count += 1;
-        return { ready: true };
+        return new Promise((resolve) => setTimeout(() => resolve({ ready: true }), 1000));
       };
     };
     return { at, claude, hook, options, logIn, statusAsked };
@@ -803,9 +804,16 @@ describe('useAutomations: a Claude step that cannot reach Claude backs off and i
 
     // Still 09:00, the pause says 09:01: only the status, asked at each tick, can let it go.
     logIn();
+    // One tick, and the second its answer takes: well before the next tick, the run is made.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS);
     });
+    // The recheck's answer, then the run's own look at the status.
+    for (let answer = 0; answer < 2; answer += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    }
     await settle();
 
     expect(hook.result.current.pauses.size).toBe(0);

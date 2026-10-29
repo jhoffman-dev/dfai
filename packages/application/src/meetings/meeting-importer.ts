@@ -136,12 +136,14 @@ export function createMeetingImporter({
     outcome: MeetingImportOutcome | null,
   ): Promise<MeetingImportOutcome | null> => {
     if (countWaiting === null) return outcome;
-    if (news !== null) countWaiting.heard(vault, news);
-    countWaiting.wrote(vault, outcome?.happenings.map(({ path }) => path) ?? []);
-    const said = await countWaiting.judgeHere(vault, {
-      ports: ports(),
-      activity: activity.inVault(vault),
-    });
+    const written = outcome?.happenings.map(({ path }) => path) ?? [];
+    const touched = news === null || countWaiting.heard(vault, news) || written.length > 0;
+    countWaiting.wrote(vault, written);
+    const said = await countWaiting.judgeHere(
+      vault,
+      { ports: ports(), activity: activity.inVault(vault) },
+      { fresh: touched },
+    );
     if (outcome === null)
       return said === null ? null : { happenings: [], wrote: false, waiting: said };
     return said === null ? outcome : { ...outcome, waiting: said };

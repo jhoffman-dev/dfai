@@ -1,11 +1,11 @@
 import {
-  addDays,
   answeredMeetingOf,
   digestOf,
+  meetingReachFrom,
   MEETING_DIGEST_OUTPUT,
   proposalSchemaNamed,
-  SUMMARY_PENDING_DAYS,
   writesSummaries,
+  type AutomationRule,
   type PostProcessingLedger,
 } from '@dfai/domain';
 import type { LoadedAutomation } from './load-automations.ts';
@@ -14,12 +14,15 @@ import type { LoadedAutomation } from './load-automations.ts';
  * What the vault's rules that write summaries have finished with (#182,
  * ADR-0036): the meetings their handled ledgers and the runs their logs still
  * hold have handled or answered, and the words they keep an answer for whose
- * writes are not done. Read from rules already loaded, so it costs no read;
- * whether one meeting is pending is the domain's (`postProcessingPending`).
+ * writes are not done, and how far back the most reaching of them takes
+ * meetings, each from its own `which` on the day its own clock says
+ * (`todayOf`, as `clockForRule` reads it). Read from rules already loaded,
+ * so it costs no read; whether one meeting is pending is the domain's
+ * (`postProcessingPending`).
  */
 export function postProcessingLedgerOf(
   automations: readonly LoadedAutomation[],
-  today: string,
+  todayOf: (rule: AutomationRule) => string,
 ): PostProcessingLedger {
   const summarising = automations.filter(({ rule }) => writesSummaries(rule));
   const answered = new Set<string>();
@@ -33,9 +36,11 @@ export function postProcessingLedgerOf(
       for (const version of entry.versions ?? []) answered.add(version.path);
     }
   }
+  const reaches = summarising.map(({ rule }) => meetingReachFrom(rule.which, todayOf(rule)));
   return {
     summarising: summarising.length > 0,
-    from: addDays(today, -SUMMARY_PENDING_DAYS) ?? today,
+    // Nothing is pending with no rule that summarises, so no day is needed.
+    from: reaches.length === 0 ? '' : reaches.reduce((a, b) => (a < b ? a : b)),
     answered,
     stored,
   };
