@@ -5,7 +5,8 @@ import {
   meetingsWaitingReport,
   waitingCountGate,
   waitingMacLabel,
-  waitingMeetingCount,
+  touchesWaitingMeetings,
+  waitingMeetingTally,
   waitsForImport,
   type CountableStanding,
   type WaitingMeetingFile,
@@ -83,17 +84,45 @@ describe('waitsForImport', () => {
   });
 });
 
-describe('waitingMeetingCount', () => {
-  it('counts the unstamped files alone in a mixed folder', () => {
+describe('waitingMeetingTally', () => {
+  it('counts the unstamped files alone in a mixed folder, and those left for the next pull', () => {
     const second = file('Inbox/Meetings/2026-10-28 Platform sync.md');
     const late = file('Inbox/Meetings/2026-10-28 Late.md', { modifiedAt: AFTER_PULL });
+    const lateStamped = file('Inbox/Meetings/2026-10-28 Late stamped.md', {
+      modifiedAt: AFTER_PULL,
+      importOutcome: 'imported',
+    });
     expect(
-      waitingMeetingCount([UNSTAMPED, STAMPED, CONFLICT, UNREADABLE, second, late], PULLED),
-    ).toBe(2);
+      waitingMeetingTally(
+        [UNSTAMPED, STAMPED, CONFLICT, UNREADABLE, second, late, lateStamped],
+        PULLED,
+      ),
+    ).toEqual({ count: 2, deferred: 1 });
   });
 
-  it('is 0 for an empty folder', () => {
-    expect(waitingMeetingCount([], PULLED)).toBe(0);
+  it('is nothing for an empty folder', () => {
+    expect(waitingMeetingTally([], PULLED)).toEqual({ count: 0, deferred: 0 });
+  });
+});
+
+describe('touchesWaitingMeetings', () => {
+  const change = (path: string, kind: 'added' | 'changed' | 'removed' = 'changed') => ({
+    kind,
+    path,
+    type: null,
+    digest: 'x',
+  });
+
+  it('is news of any file where meetings land, a removed one included', () => {
+    expect(touchesWaitingMeetings([change('Inbox/Meetings/a.md', 'removed')])).toBe(true);
+    expect(touchesWaitingMeetings([change('Meetings/2026/10/b.md')])).toBe(true);
+  });
+
+  it('is not news of notes elsewhere, the Archive included', () => {
+    expect(
+      touchesWaitingMeetings([change('Inbox/Call Mara.md'), change('Archive/Inbox/Meetings/a.md')]),
+    ).toBe(false);
+    expect(touchesWaitingMeetings([])).toBe(false);
   });
 });
 
@@ -110,7 +139,10 @@ describe('waitingCountGate', () => {
   it('gives no count before a pull completes, during one, or after the Mac slept', () => {
     const shut = { open: false, why: 'no-pull' };
     expect(waitingCountGate({ standing: null, ...awake })).toEqual(shut);
-    expect(waitingCountGate({ standing: { kind: 'pulling' }, ...awake })).toEqual(shut);
+    expect(waitingCountGate({ standing: { kind: 'pulling' }, ...awake })).toEqual({
+      open: false,
+      why: 'pulling',
+    });
     expect(waitingCountGate({ standing: PULLED, asleepNowMs: 65_000, paused: false })).toEqual(
       shut,
     );
@@ -169,6 +201,12 @@ describe('meetingsWaitingLine', () => {
     expect(meetingsWaitingLine({ kind: 'uncounted', mac, why: 'settings-unreadable' })).toBeNull();
   });
 
+  it('during a pull says what it says before one', () => {
+    expect(meetingsWaitingLine({ kind: 'uncounted', mac, why: 'pulling' })).toBe(
+      'Meetings may be waiting for Studio: they are counted after the next sync.',
+    );
+  });
+
   it('says nothing in a vault that does not sync', () => {
     expect(meetingsWaitingLine({ kind: 'uncounted', mac, why: 'not-synced' })).toBeNull();
   });
@@ -176,19 +214,23 @@ describe('meetingsWaitingLine', () => {
 
 describe('meetingsWaitingReport', () => {
   it('is a meeting warning naming the count and the Mac', () => {
-    expect(meetingsWaitingReport({ count: 3, mac: 'Studio' })).toEqual({
+    expect(meetingsWaitingReport({ count: 3, mac: 'Studio', lastCount: null })).toEqual({
       level: 'warning',
       kind: 'meeting',
       message: '3 meetings are waiting for Studio to process them.',
       subject: null,
     });
-    expect(meetingsWaitingReport({ count: 1, mac: 'Studio' })?.message).toBe(
+    expect(meetingsWaitingReport({ count: 1, mac: 'Studio', lastCount: 4 })?.message).toBe(
       '1 meeting is waiting for Studio to process it.',
     );
   });
 
   it('is nothing when none waits', () => {
-    expect(meetingsWaitingReport({ count: 0, mac: 'Studio' })).toBeNull();
+    expect(meetingsWaitingReport({ count: 0, mac: 'Studio', lastCount: 3 })).toBeNull();
+  });
+
+  it('is nothing when the count is the one last said: only a change is news', () => {
+    expect(meetingsWaitingReport({ count: 3, mac: 'Studio', lastCount: 3 })).toBeNull();
   });
 });
 

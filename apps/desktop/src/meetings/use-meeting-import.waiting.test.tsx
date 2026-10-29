@@ -77,13 +77,33 @@ const pulled = (): Extract<PullStanding, { kind: 'pulled' }> => ({
   namedAfter: false,
 });
 
-/** The gates as they stand at a pull: the count is judged against it. */
-const gateAt = (standing: PullStanding | null): PulledFilesGate => ({
+/**
+ * The gates as they stand at a pull, as the real gate judges a count: shut
+ * while sync is paused, during a pull, and once the Mac has slept since the
+ * pull started — though the standing is still that pull's.
+ */
+const gateAt = (
+  standing: PullStanding | null,
+  { slept = false, paused = false } = {},
+): PulledFilesGate => ({
   standing,
+  slept,
+  paused,
   acts: async () => false,
-  countGate: async (): Promise<WaitingCountGate> =>
-    standing?.kind === 'pulled' ? { open: true, standing } : { open: false, why: 'no-pull' },
+  countGate: async (): Promise<WaitingCountGate> => {
+    if (paused) return { open: false, why: 'paused' };
+    if (standing?.kind === 'pulling') return { open: false, why: 'pulling' };
+    return standing?.kind === 'pulled' && !slept
+      ? { open: true, standing }
+      : { open: false, why: 'no-pull' };
+  },
 });
+
+/** The index hearing of the meeting file changing, as a pull or a save makes it. */
+const meetingNews = {
+  vault: VAULT,
+  changes: [{ kind: 'changed' as const, path: MEETING, type: 'meeting', digest: 'x' }],
+};
 
 interface Props {
   pulledFiles: PulledFilesGate;
@@ -164,32 +184,67 @@ describe('useMeetingImport on a Mac that is not named (#175)', () => {
     expect(reads).toHaveLength(readsAfter);
   });
 
-  it('warns again after the next pull, and keeps the count while a pull is under way', async () => {
+  it('keeps the count while a pull is under way, though the pull’s news arrives, and warns of nothing new after it', async () => {
     const props = { pulledFiles: gateAt(pulled()), namedElsewhere: STUDIO, active: false };
-    const { rerender, warnings, lastSaid } = render(props);
+    const { rerender, warnings, lastSaid, changes } = render(props);
     await settled();
     expect(warnings()).toHaveLength(1);
 
     rerender({ ...props, pulledFiles: gateAt({ kind: 'pulling' }) });
     await settled();
+    changes.publish(meetingNews);
+    await settled();
     expect(lastSaid()).toEqual({ kind: 'counted', mac: 'Studio', count: 1 });
-    expect(warnings()).toHaveLength(1);
 
+    // The pull completes with the same count: said again, not warned again.
     rerender({ ...props, pulledFiles: gateAt(pulled()) });
     await settled();
-    expect(warnings()).toHaveLength(2);
+    expect(lastSaid()).toEqual({ kind: 'counted', mac: 'Studio', count: 1 });
+    expect(warnings()).toHaveLength(1);
   });
 
-  it('on the named Mac says nothing waits and reads nothing to count', async () => {
-    const { lastSaid, warnings, onWaiting } = render({
+  it('after a wake, with the standing still the last pull’s, gives no number until a pull completes (#627 review)', async () => {
+    const standing = pulled();
+    const props = { pulledFiles: gateAt(standing), namedElsewhere: STUDIO, active: false };
+    const { rerender, lastSaid } = render(props);
+    await settled();
+    expect(lastSaid()).toMatchObject({ kind: 'counted' });
+
+    rerender({ ...props, pulledFiles: gateAt(standing, { slept: true }) });
+    await settled();
+
+    expect(lastSaid()).toEqual({ kind: 'uncounted', mac: 'Studio', why: 'no-pull' });
+  });
+
+  it('once sync is paused, with the standing still the last pull’s, gives no number until it resumes', async () => {
+    const standing = pulled();
+    const props = { pulledFiles: gateAt(standing), namedElsewhere: STUDIO, active: false };
+    const { rerender, lastSaid } = render(props);
+    await settled();
+
+    rerender({ ...props, pulledFiles: gateAt(standing, { paused: true }) });
+    await settled();
+    expect(lastSaid()).toEqual({ kind: 'uncounted', mac: 'Studio', why: 'paused' });
+
+    rerender({ ...props, pulledFiles: gateAt(standing) });
+    await settled();
+    expect(lastSaid()).toEqual({ kind: 'counted', mac: 'Studio', count: 1 });
+  });
+
+  it('on the named Mac, with its gates shut, a run says nothing waits and reads nothing to count', async () => {
+    const { reads, warnings, onWaiting, changes } = render({
       pulledFiles: gateAt(pulled()),
       namedElsewhere: null,
-      active: false,
+      active: true,
     });
     await settled();
 
-    expect(onWaiting.mock.calls.every(([, waiting]) => waiting === null)).toBe(true);
-    expect(lastSaid() ?? null).toBeNull();
+    changes.publish(meetingNews);
+    await settled();
+
+    // A run was made, and it said nothing waits.
+    expect(onWaiting).toHaveBeenCalledWith(VAULT, null);
+    expect(reads).toEqual([]);
     expect(warnings()).toEqual([]);
   });
 
