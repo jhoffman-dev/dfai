@@ -71,7 +71,7 @@ describe('postProcessingLedgerOf', () => {
     };
     const read = postProcessingLedgerOf(
       [loaded(SUMMARISING, { ledger, log: [ran('Meetings/C.md')] })],
-      '2026-10-15',
+      () => '2026-10-15',
     );
 
     expect(read).toEqual({
@@ -89,7 +89,7 @@ describe('postProcessingLedgerOf', () => {
         loaded(PROPOSING, { log: [ran('Meetings/C.md')] }),
         loaded(off, { log: [ran('Meetings/D.md')] }),
       ],
-      '2026-10-15',
+      () => '2026-10-15',
     );
 
     expect(read.summarising).toBe(false);
@@ -97,19 +97,36 @@ describe('postProcessingLedgerOf', () => {
   });
 });
 
+describe('postProcessingLedgerOf: the reach is each rule’s own, on its own clock (#637 review)', () => {
+  it('reaches as far back as the most reaching summarising rule, from the day its clock says', () => {
+    const narrow = { ...SUMMARISING, id: 'narrow', which: 'FROM meeting WHERE date >= @-7d' };
+    const days: string[] = [];
+    const todayOf = (rule: AutomationRule) => {
+      days.push(rule.id);
+      return '2026-10-29';
+    };
+
+    expect(postProcessingLedgerOf([loaded(narrow)], todayOf).from).toBe('2026-10-22');
+    expect(postProcessingLedgerOf([loaded(narrow), loaded(SUMMARISING)], todayOf).from).toBe(
+      '2026-10-15',
+    );
+    expect(days).toContain('narrow');
+  });
+});
+
 describe('postProcessingMark', () => {
   it('moves when what was answered moves, and not for the same ledger read again', () => {
     const one = postProcessingLedgerOf(
       [loaded(SUMMARISING, { log: [ran('Meetings/C.md')] })],
-      '2026-10-15',
+      () => '2026-10-15',
     );
     const again = postProcessingLedgerOf(
       [loaded(SUMMARISING, { log: [ran('Meetings/C.md')] })],
-      '2026-10-15',
+      () => '2026-10-15',
     );
     const more = postProcessingLedgerOf(
       [loaded(SUMMARISING, { log: [ran('Meetings/C.md'), ran('Meetings/E.md')] })],
-      '2026-10-15',
+      () => '2026-10-15',
     );
 
     expect(postProcessingMark(again)).toBe(postProcessingMark(one));

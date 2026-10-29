@@ -735,6 +735,113 @@ describe('useAutomations: a Claude step that cannot reach Claude backs off and i
     fix: 'claude auth login',
   };
 
+  /** The vault with one meeting the rule missed, Claude logged out, and a clock the test moves. */
+  const openLoggedOut = (scheduled: boolean | null = true) => {
+    const at = { now: '2026-10-08T09:00:00' };
+    const ticking = {
+      today: () => at.now.slice(0, 10),
+      localNow: () => at.now,
+      now: () => Date.parse(`${at.now}Z`),
+    };
+    const vault = memoryVault(
+      {
+        [ASK_RULE]: ASK_RULE_TEXT,
+        '.atlas/prompts/actions.md': 'List the action items.\n',
+        [MEETING]: LET_IN,
+      },
+      { [ASK_RULE]: 100, [MEETING]: 200 },
+    );
+    const claude = fakeClaudeStepPorts({
+      status: NOT_LOGGED_IN,
+      rounds: [[{ type: 'text', text: JSON.stringify({ proposals: [] }) }]],
+    });
+    const statusAsked = { count: 0 };
+    const provider = claude.provider();
+    const notReady = provider.status;
+    provider.status = async () => {
+      statusAsked.count += 1;
+      return notReady();
+    };
+    // Its query, run by hand, finds the meeting as the index would, whatever it is handed.
+    const index = {
+      ...vault.ports.index,
+      query: async (sql: string, parameters: readonly unknown[]) =>
+        sql.startsWith('/* meetings */')
+          ? vault.ports.index.query(sql, parameters)
+          : {
+              columns: ['path', 'title', 'type'],
+              rows: [[MEETING, MEETING, 'meeting']],
+              truncated: false,
+            },
+    };
+    const options: AutomationsOptions = {
+      ports: { ...vault.ports, index, claude },
+      clock: ticking,
+      vaultKey: VAULT,
+      indexKey: '1',
+      indexReady: true,
+      activity: recordingActivity(),
+      onSettled: vi.fn(),
+      scheduled,
+    };
+    const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
+      initialProps: options,
+    });
+    const logIn = () => {
+      provider.status = async () => {
+        statusAsked.count += 1;
+        return { ready: true };
+      };
+    };
+    return { at, claude, hook, options, logIn, statusAsked };
+  };
+
+  it('once Claude is logged in, runs at the next tick, long before the pause would end (#637 review)', async () => {
+    const { claude, hook, logIn } = openLoggedOut();
+    await settle();
+    expect([...hook.result.current.pauses.values()][0]?.unavailable).toBeDefined();
+
+    // Still 09:00, the pause says 09:01: only the status, asked at each tick, can let it go.
+    logIn();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS);
+    });
+    await settle();
+
+    expect(hook.result.current.pauses.size).toBe(0);
+    expect(claude.fake.requests).toHaveLength(1);
+  });
+
+  it('keeps the pause, and why, when Run now fails the same way (#637 review)', async () => {
+    const { hook, statusAsked } = openLoggedOut();
+    await settle();
+    const rule = hook.result.current.listing!.automations[0]!.rule;
+    const before = { ...[...hook.result.current.pauses.values()][0] };
+    const asks = statusAsked.count;
+
+    let entry: unknown = null;
+    await act(async () => {
+      entry = await hook.result.current.runNow(rule);
+    });
+    await settle();
+
+    expect(entry).toMatchObject({ kind: 'failed' });
+    // The pause stands as it was: the held news is not let go to fail again at once.
+    expect([...hook.result.current.pauses.values()][0]).toEqual(before);
+    expect(statusAsked.count - asks).toBe(1);
+  });
+
+  it('lets go of a pause for Claude once this Mac no longer runs the automations (#637 review)', async () => {
+    const { hook, options } = openLoggedOut();
+    await settle();
+    expect(hook.result.current.pauses.size).toBe(1);
+
+    hook.rerender({ ...options, scheduled: false });
+    await settle();
+
+    expect([...hook.result.current.pauses.values()].some((pause) => pause.unavailable)).toBe(false);
+  });
+
   it('pauses with the fix-it line, keeps its look for the arrival, and runs it once the pause is over', async () => {
     let now = '2026-10-08T09:00:00';
     const ticking = {

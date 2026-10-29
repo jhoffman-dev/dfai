@@ -67,8 +67,8 @@ describe('meetingSummaryState', () => {
 
   it('is pending for an imported meeting with turns the rule has yet to answer', () => {
     expect(state()).toBe('pending');
-    // An undated one is within reach.
-    expect(state({ properties: { atlas_import_outcome: 'imported' } })).toBe('pending');
+    // An undated one is not: the rule's `date >= …` never matches it (#637 review).
+    expect(state({ properties: { atlas_import_outcome: 'imported' } })).toBe('none');
     // So is one dated on the first day the rule takes.
     expect(state({ properties: { ...IMPORTED, date: '2026-10-01' } })).toBe('pending');
   });

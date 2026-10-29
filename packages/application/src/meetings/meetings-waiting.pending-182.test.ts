@@ -84,11 +84,15 @@ function setUp({
     gate: { open: true, standing: PULL } as WaitingCountGate,
     ledger: LEDGER,
     failing: null as string | null,
+    gateCalls: 0,
   };
   const said: (MeetingsWaiting | null)[] = [];
   const watch: MeetingsWaitingWatch = {
     namedElsewhere: () => state.named,
-    countGate: async () => state.gate,
+    countGate: async () => {
+      state.gateCalls += 1;
+      return state.gate;
+    },
     said: (_, waiting) => void said.push(waiting),
     postProcessing: () => state.ledger,
     stepFailing: () => (state.failing === null ? null : { problem: state.failing, mac: 'Studio' }),
@@ -155,7 +159,7 @@ describe('the waiting count with post-processing pending, on a Mac that is not n
 
 describe('the Mac that runs the automations, when its step cannot reach Claude (#182)', () => {
   it('healthy: says nothing, and asks the host nothing', async () => {
-    const { importer, said, host, warnings } = setUp({ named: null, importing: true });
+    const { importer, said, host, warnings, state } = setUp({ named: null, importing: true });
     const listings = host.listings;
     const reads = host.reads.length;
 
@@ -166,6 +170,7 @@ describe('the Mac that runs the automations, when its step cannot reach Claude (
       listings: 0,
       reads: 0,
     });
+    expect(state.gateCalls).toBe(0);
     expect(warnings()).toEqual([]);
   });
 
@@ -233,5 +238,46 @@ describe('the Mac that runs the automations, when its step cannot reach Claude (
 
     expect(host.reads.slice(reads)).not.toContain(ANSWERED);
     expect(host.reads.slice(reads)).toContain(PENDING);
+  });
+
+  it('asks the gate nothing for news of a note that is no meeting, saying what it said (#637 review)', async () => {
+    const { importer, state, said } = setUp({ named: null, importing: true });
+    state.failing = NOT_LOGGED_IN;
+    await importer.recount(VAULT);
+    const calls = state.gateCalls;
+
+    const outcome = await importer.hear({
+      vault: VAULT,
+      changes: [
+        { kind: 'changed', path: createVaultPath('Inbox/Call Mara.md'), type: 'task', digest: 'y' },
+      ],
+    });
+
+    expect(state.gateCalls).toBe(calls);
+    expect(outcome?.waiting).toEqual(said.at(-1));
+    expect(outcome?.waiting).toMatchObject({ kind: 'failing', count: 1 });
+  });
+
+  it('judges again for news of a meeting, or when the failure changes', async () => {
+    const { importer, state } = setUp({ named: null, importing: true });
+    state.failing = NOT_LOGGED_IN;
+    await importer.recount(VAULT);
+    const calls = state.gateCalls;
+
+    await importer.hear({
+      vault: VAULT,
+      changes: [{ kind: 'changed', path: createVaultPath(PENDING), type: 'meeting', digest: 'z' }],
+    });
+    expect(state.gateCalls).toBeGreaterThan(calls);
+
+    const after = state.gateCalls;
+    state.failing = 'Claude Code is not installed on this Mac.';
+    await importer.hear({
+      vault: VAULT,
+      changes: [
+        { kind: 'changed', path: createVaultPath('Inbox/Call Mara.md'), type: 'task', digest: 'w' },
+      ],
+    });
+    expect(state.gateCalls).toBeGreaterThan(after);
   });
 });

@@ -19,7 +19,7 @@ import {
   type ClaudeAction,
   type NoteChange,
 } from '@dfai/domain';
-import type { ModelEvent } from '../chat/ports.ts';
+import { ModelProviderError, type ModelEvent } from '../chat/ports.ts';
 import { automationVault, jsonNote, TASK_TYPES } from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
@@ -78,13 +78,13 @@ const NOT_LOGGED_IN = {
 const FIX_IT = 'Claude Code is installed but not logged in. Fix: claude auth login';
 const MEETING = meetingAt(13);
 
-function setUp() {
-  const claude = fakeClaudeStepPorts({
-    rounds: [NOTHING],
-    model: CHAT_MODEL,
-    today: TODAY,
-    status: NOT_LOGGED_IN,
-  });
+type FakeClaude = NonNullable<Parameters<typeof fakeClaudeStepPorts>[0]>;
+
+function setUp({
+  rounds = [NOTHING],
+  status = NOT_LOGGED_IN,
+}: { rounds?: FakeClaude['rounds']; status?: FakeClaude['status'] } = {}) {
+  const claude = fakeClaudeStepPorts({ rounds, model: CHAT_MODEL, today: TODAY, status });
   const notes: Record<string, string> = {
     [AFTER_A_MEETING_PROMPT]: builtInPromptAt(AFTER_A_MEETING_PROMPT)!.contents,
     [MEETING]: meeting(13),
@@ -106,7 +106,7 @@ function setUp() {
     const log = await readRuleLog(vault.ports.fs, RULE);
     const ledger = postProcessingLedgerOf(
       [{ rule: RULE, log: log.entries, ledger: log.ledger, idWritten: true }],
-      TODAY,
+      () => TODAY,
     );
     const text = vault.files.get(MEETING)!;
     const { frontmatter, body } = splitFrontmatter(text);
@@ -171,5 +171,34 @@ describe('the declared step when Claude Code cannot be reached (#182)', () => {
     expect(entry?.kind).toBe('run');
     expect(claude.fake.requests).toHaveLength(1);
     expect(await pending()).toBe(false);
+  });
+});
+
+describe('a provider that fails part-way through an ask (#637 review)', () => {
+  it('raises a mid-ask "not logged in" as Claude out of reach', async () => {
+    const { arrived } = setUp({
+      status: { ready: true },
+      rounds: [
+        new ModelProviderError('not_logged_in', 'Claude Code is installed but not logged in.'),
+      ],
+    });
+
+    const raised = await arrived().catch((cause: unknown) => cause);
+
+    expect(raised).toBeInstanceOf(ClaudeUnavailableError);
+  });
+
+  it('settles a timeout or an API failure as a failed run, raising nothing', async () => {
+    const { arrived } = setUp({
+      status: { ready: true },
+      rounds: [new ModelProviderError('failed', 'Claude did not finish within 10 minutes.')],
+    });
+
+    const entry = await arrived();
+
+    expect(entry).toMatchObject({
+      kind: 'failed',
+      problem: 'Claude did not finish within 10 minutes.',
+    });
   });
 });

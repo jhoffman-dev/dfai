@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SUMMARY_DIGEST_KEY } from './meeting-summary-block.ts';
 import {
   answeredIn,
+  meetingReachFrom,
   NO_POST_PROCESSING,
   postProcessingFactsOf,
   postProcessingPending,
@@ -87,10 +88,13 @@ describe('postProcessingPending', () => {
     expect(pending({ facts: { ...FACTS, hasTurns: false } })).toBe(false);
   });
 
-  it('is not pending before the rule’s reach, and is on its first day and undated', () => {
+  it('is not pending before the rule’s reach, and is on its first day', () => {
     expect(pending({ facts: { ...FACTS, date: '2026-10-14' } })).toBe(false);
     expect(pending({ facts: { ...FACTS, date: '2026-10-15' } })).toBe(true);
-    expect(pending({ facts: { ...FACTS, date: null } })).toBe(true);
+  });
+
+  it('is not pending undated: the rule’s `date >= …` never matches a meeting with no date (#637 review)', () => {
+    expect(pending({ facts: { ...FACTS, date: null } })).toBe(false);
   });
 });
 
@@ -122,5 +126,33 @@ describe('postProcessingFactsOf', () => {
       key: null,
     });
     expect(facts).toEqual({ summary: 'edited', hasTurns: false, date: null, key: null });
+  });
+});
+
+describe('meetingReachFrom: how far back a rule that writes summaries reaches (#637 review)', () => {
+  const TODAY = '2026-10-29';
+
+  it('is the preset’s 14 days for the preset’s `date >= @-14d`', () => {
+    expect(meetingReachFrom('FROM meeting WHERE date >= @-14d', TODAY)).toBe('2026-10-15');
+  });
+
+  it('is the rule’s own, narrower reach', () => {
+    expect(meetingReachFrom('FROM meeting WHERE date >= @-7d', TODAY)).toBe('2026-10-22');
+    expect(meetingReachFrom('FROM meeting WHERE date >= @weekAgo', TODAY)).toBe('2026-10-22');
+    expect(meetingReachFrom('FROM meeting WHERE kind = Standup AND date > 2026-10-20', TODAY)).toBe(
+      '2026-10-21',
+    );
+  });
+
+  it('never reaches past 14 days, whatever the rule takes', () => {
+    expect(meetingReachFrom('FROM meeting WHERE date >= @-30d', TODAY)).toBe('2026-10-15');
+    expect(meetingReachFrom('FROM meeting', TODAY)).toBe('2026-10-15');
+    expect(meetingReachFrom('FROM meeting WHERE date >= @-7d OR kind = Standup', TODAY)).toBe(
+      '2026-10-15',
+    );
+  });
+
+  it('is the 14 days for a `which` that does not read', () => {
+    expect(meetingReachFrom('FROM meeting WHERE (', TODAY)).toBe('2026-10-15');
   });
 });

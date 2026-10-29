@@ -83,11 +83,16 @@ const PULLED: PullStanding = {
   finishedAt: 10,
   namedAfter: false,
 };
+/** How often the import asked whether this Mac may act: each run, recount included, asks once. */
+const asked = { acts: 0 };
 const gate = (acts: boolean): PulledFilesGate => ({
   standing: PULLED,
   slept: false,
   paused: false,
-  acts: async () => acts,
+  acts: async () => {
+    asked.acts += 1;
+    return acts;
+  },
   countGate: async (): Promise<WaitingCountGate> => ({ open: true, standing: PULLED }),
 });
 
@@ -193,10 +198,13 @@ describe('useMeetingImport and post-processing (#182)', () => {
     const { rerender, reads } = render({ named: true, postProcessing: news() });
     await settled();
     const readsBefore = reads.length;
+    const actsBefore = asked.acts;
 
     rerender({ named: true, postProcessing: news([MEETING]) });
     await settled();
 
     expect(reads).toHaveLength(readsBefore);
+    // No run was made for it at all: a healthy Mac that imports has no line to say.
+    expect(asked.acts).toBe(actsBefore);
   });
 });
