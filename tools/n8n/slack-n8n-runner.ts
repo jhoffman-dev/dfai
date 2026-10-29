@@ -20,7 +20,7 @@ export interface NodeRun {
   readonly input: readonly Item[];
   /** Earlier nodes' items, by name, as `$('<name>')` reads them. */
   readonly nodes?: Readonly<Record<string, readonly Item[]>>;
-  /** The raw body the Webhook node put in its `data` binary. */
+  /** The raw body the Webhook node put in its `data` binary; left out, there is none. */
   readonly binary?: readonly number[];
   /** Now, in milliseconds, as the script's `Date.now()` answers. */
   readonly now?: number;
@@ -37,7 +37,15 @@ async function runNode(run) {
     if (found === undefined) throw new Error('no node ' + name);
     return { first: () => found[0], item: found[0], all: () => found };
   };
-  const helpers = { getBinaryDataBuffer: async () => Uint8Array.from(run.binary || []) };
+  // n8n throws when the item has no such binary: a multipart request with no file part, say.
+  const helpers = {
+    getBinaryDataBuffer: async () => {
+      if (run.binary === undefined) {
+        throw new Error("This operation expects the node's input data to contain a binary file 'data', but none was found");
+      }
+      return Uint8Array.from(run.binary);
+    },
+  };
   const FixedDate = class extends Date {
     static now() {
       return run.now;

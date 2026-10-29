@@ -113,15 +113,18 @@ describe('the capture/v1 payload', () => {
       { replies: { ok: false, error: 'missing_scope' } },
       /conversations.replies said missing_scope/,
     ],
-    [
-      'a person',
-      { users: [{ ok: false, error: 'user_not_found' }] },
-      /users.info said user_not_found/,
-    ],
     ['the thread, with no answer', { replies: 'nope' }, /conversations.replies said no answer/],
   ])('is refused, naming Slack’s reason, when %s is not ok', (_, override, reason) => {
     expect(() => slackCapturePayload({ ...answers, ...override })).toThrow(SlackApiError);
     expect(() => slackCapturePayload({ ...answers, ...override })).toThrow(reason);
+  });
+
+  it('names by id a person whose lookup Slack refused, and still saves the message', () => {
+    const users = [usersAnswers[0], { ok: false, error: 'user_not_found' }, usersAnswers[2]];
+    const payload = slackCapturePayload({ ...answers, users });
+    expect(payload.source.author).toEqual({ id: 'U0MARAQ111', name: 'U0MARAQ111', email: null });
+    expect(payload.thread[0]?.author.name).toBe('Tobias Fenn');
+    expect(() => readCapture(payload)).not.toThrow();
   });
 
   it('is refused when the message is not among what Slack sent (deleted, or not visible)', () => {

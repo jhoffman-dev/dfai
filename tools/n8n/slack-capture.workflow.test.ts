@@ -109,6 +109,18 @@ describe('the committed workflow', () => {
   });
 });
 
+describe('the send to DFAI', () => {
+  it('retries a slow DFAI before falling back, so a note DFAI wrote is not committed again', () => {
+    expect(node(N.send)).toMatchObject({ retryOnFail: true, maxTries: 3, waitBetweenTries: 2000 });
+  });
+
+  it('follows no redirect with the bearer token', () => {
+    expect(node(N.send).parameters.options).toMatchObject({
+      redirect: { redirect: { followRedirects: false } },
+    });
+  });
+});
+
 describe('the Slack app manifest', () => {
   const manifest = JSON.parse(
     readFileSync(new URL('slack-app.manifest.json', import.meta.url), 'utf8'),
@@ -363,6 +375,32 @@ describe('the Code nodes, run as n8n runs them', () => {
       signed: false,
       reason: 'x-slack-signature: does not match',
     });
+  });
+
+  it.each([
+    ['with no signature', { 'content-type': 'multipart/form-data; boundary=x' }],
+    [
+      'signed for some body, fresh',
+      { ...signedHeaders('{}'), 'content-type': 'multipart/form-data; boundary=x' },
+    ],
+  ])(
+    'refuse in silence (401, no email) a request with no raw body — multipart with no file part — %s',
+    async (_, headers) => {
+      const run = {
+        ...verifyRun('{}'),
+        input: json({ headers, body: { field: 'x' } }),
+        binary: undefined,
+      };
+      expect(items(await runInNode(run))[0]?.json).toEqual({
+        signed: false,
+        reason: 'no raw body',
+      });
+    },
+  );
+
+  it('refuse in silence a request whose item has no headers at all', async () => {
+    const run = { ...verifyRun('{}'), input: json({}) };
+    expect(items(await runInNode(run))[0]?.json).toMatchObject({ signed: false });
   });
 
   it('as committed, refuse everything until the secret is pasted in', async () => {

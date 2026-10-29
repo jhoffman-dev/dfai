@@ -131,8 +131,44 @@ describe('a request Slack signed that cannot be read', () => {
     expect(() => verifySlackRequest(delivery, check)).toThrow(/not UTF-8/);
   });
 
-  it('is unreadable while OWNER is the placeholder: the workflow is not set up', () => {
+  it('quotes no verification token: Slack’s deprecated `token` is redacted', () => {
+    const body =
+      '{"token":"xyzz0WbapA4vBCDEFasx0q6G","type":"event_callback","event":{"type":"reaction_added","user":"nope"}}';
+    expect(() => read(body)).toThrow(/"token":"…"/);
+    expect(() => read(body)).not.toThrow(/xyzz0Wbap/);
+    const form = `token=xyzz0WbapA4vBCDEFasx0q6G&payload=%7Bnope`;
+    expect(() => read(form)).not.toThrow(/xyzz0Wbap/);
+  });
+});
+
+describe('a workflow not set up', () => {
+  it('answers a plain 200 while OWNER is the placeholder: no email for every reaction', () => {
     const settings = { ...SETTINGS, ownerUserId: OWNER_PLACEHOLDER };
-    expect(() => read(reactionBody(), settings)).toThrow(/OWNER is not set/);
+    expect(read(reactionBody(), settings)).toEqual({
+      signed: true,
+      action: 'ignore',
+      reason: 'OWNER is not set: paste your Slack member id into "Verify Slack signature"',
+    });
+  });
+
+  it('refuses in silence when reading the headers fails, before any signature is proven', () => {
+    const headers = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('no headers');
+        },
+      },
+    );
+    expect(verifySlackRequest({ headers, body: utf8('{}') }, check)).toMatchObject({
+      signed: false,
+    });
+  });
+
+  it('refuses in silence when there is no raw body', () => {
+    expect(verifySlackRequest({ headers: signedHeaders('{}'), body: null }, check)).toEqual({
+      signed: false,
+      reason: 'no raw body',
+    });
   });
 });
