@@ -1,5 +1,6 @@
 import { isArchivedPath } from '../archive/archive.ts';
 import type { MeetingAttendee } from '../meetings/meeting-header.ts';
+import { emailKey } from '../meetings/mapping/meeting-email-key.ts';
 import type { ProposalConfidence } from '../proposals/proposal.ts';
 import { paraOf } from '../types/para-value.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
@@ -139,9 +140,9 @@ export function participantOwnerOf({
   selfEmails: readonly string[];
 }): ParticipantOwner {
   const emails = [...new Set([...selfEmails, ...ownerAddresses(people, selfName)])];
-  const mine = new Set(emails.map(folded));
+  const mine = new Set(emails.map(emailKey));
   const own = people.filter(
-    (person) => isOwnerNote(person, selfName) || person.emails.some((e) => mine.has(folded(e))),
+    (person) => isOwnerNote(person, selfName) || person.emails.some((e) => mine.has(emailKey(e))),
   );
   const names = [selfName, ...own.flatMap((person) => [person.name, ...person.aliases])].filter(
     (name): name is string => name !== null && name.trim() !== '',
@@ -163,8 +164,6 @@ export function isOwnerKnown(owner: ParticipantOwner): boolean {
   return owner.names.length > 0 || owner.selfEmails.length > 0 || owner.notes.length > 0;
 }
 
-const folded = (email: string) => email.trim().toLowerCase();
-
 /**
  * Who was at a meeting besides the vault's owner, as keys two meetings can
  * share: each attendee's address (their name when they have none) and each
@@ -184,7 +183,7 @@ export function meetingParticipants({
   const listed = attendees
     .filter((attendee) => !isOwnerParticipant(attendee, owner))
     .map(({ name, email }) =>
-      email === null ? `name:${seriesTitle(name)}` : `email:${folded(email)}`,
+      email === null ? `name:${seriesTitle(name)}` : `email:${emailKey(email)}`,
     );
   const linked = people
     .map((path) => path.toLowerCase())
