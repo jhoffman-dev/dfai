@@ -25,6 +25,13 @@ describe('taskRowChange (#107): the one change each row action makes', () => {
     ).toEqual({ status: 'next-action', due: '2026-11-04', lastCompleted: '2026-10-28' });
   });
 
+  it('leaves a task that is already finished as it is when ticked', () => {
+    const done = taskRowChange({ kind: 'done' });
+    expect(
+      applied(done, { status: 'archive', recurrence: 'every week', due: '2026-10-28' }),
+    ).toEqual({});
+  });
+
   it('makes a move to Archive a tick, so a repeating task rolls on from the menu too', () => {
     const moved = taskRowChange({ kind: 'move', status: 'archive' });
     expect(applied(moved, { recurrence: 'every week', due: '2026-10-28' })).toEqual(

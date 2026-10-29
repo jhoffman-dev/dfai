@@ -17,11 +17,19 @@ const BEDS = note([
   'recurrence: every week',
 ]);
 const DONE = note(['type: task', 'status: archive', 'completed: 2026-09-01']);
+const STOPPED = note([
+  'type: task',
+  'status: archive',
+  'due: 2026-09-21',
+  'recurrence: every week',
+  'completed: 2026-09-14',
+]);
 
 const FILES = {
   'Tasks/Call the printer.md': PRINTER,
   'Tasks/Water the beds.md': BEDS,
   'Tasks/Order chairs.md': DONE,
+  'Tasks/Stopped series.md': STOPPED,
   'Tasks/Draft.md': note(['type: task', 'status: in-progress']),
   'Notes/Lease.md': note(['type: note']),
 };
@@ -61,6 +69,16 @@ describe('POST /v1/tasks/done', () => {
 
     expect(codeOf(await tick(api, { path, done: true, ifModified: read }))).toBe('conflict');
     expect(text(api, path)).toBe(rolled);
+  });
+
+  it('changes nothing when a finished task is ticked again, a repeating one included', async () => {
+    const api = apiFixture({ files: FILES });
+    for (const path of ['Tasks/Stopped series.md', 'Tasks/Order chairs.md']) {
+      const response = await tick(api, { path, done: true, ifModified: modifiedOf(api, path) });
+      expect(response.status, path).toBe(200);
+    }
+    expect(text(api, 'Tasks/Stopped series.md')).toBe(STOPPED);
+    expect(text(api, 'Tasks/Order chairs.md')).toBe(DONE);
   });
 
   it('needs ifModified to tick, writing nothing without it', async () => {

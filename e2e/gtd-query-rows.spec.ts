@@ -111,8 +111,11 @@ test('a query view’s rows tick done, roll a repeating task on, and undo byte f
   await expect(box(page, 'Call the printer')).toHaveCount(0);
 
   // A repeating task chosen for today rolls on to its next day, and the choice ends.
-  // Rolled on, it is open work again, so its box is clear the moment it is ticked.
-  await box(page, 'Water the beds').click();
+  // From the keyboard. Rolled on, it is open work again, so its box is clear the moment
+  // it is ticked — and keeps the focus while the tick is written, so the keyboard carries on.
+  await box(page, 'Water the beds').focus();
+  await page.keyboard.press('Space');
+  await expect(box(page, 'Water the beds')).toBeFocused();
   await expectFile(vault, 'Tasks/Water the beds.md').toBe(
     task([
       'status: next-action',
@@ -121,6 +124,7 @@ test('a query view’s rows tick done, roll a repeating task on, and undo byte f
       'lastCompleted: 2026-10-28',
     ]),
   );
+  await expect(box(page, 'Water the beds')).toBeFocused();
   await toastSaying(page, 'Finished “Water the beds”.')
     .getByRole('button', { name: 'Undo' })
     .click();

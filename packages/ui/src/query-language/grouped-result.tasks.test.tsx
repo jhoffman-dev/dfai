@@ -117,17 +117,20 @@ describe.each(['list', 'table', 'board'] as const)('a %s of tasks', (layout) => 
         : shown({ refusal: { message: 'This task has changed since.', onRetry: retry } }),
     );
     draw(layout, tasks);
-    expect(
-      (screen.getByRole('checkbox', { name: 'Mark Call Tobias done' }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole('button', { name: 'Move Call Tobias to…' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole('button', { name: 'Choose Call Tobias for today' }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    // Held, not disabled: a control with the focus keeps it, and pressing it asks nothing.
+    const held = [
+      screen.getByRole('checkbox', { name: 'Mark Call Tobias done' }),
+      screen.getByRole('button', { name: 'Move Call Tobias to…' }),
+      screen.getByRole('button', { name: 'Choose Call Tobias for today' }),
+    ] as HTMLButtonElement[];
+    for (const control of held) {
+      expect(control.getAttribute('aria-disabled'), control.ariaLabel ?? '').toBe('true');
+      expect(control.disabled).toBe(false);
+      await userEvent.click(control);
+    }
+    expect(tasks.onDone).not.toHaveBeenCalled();
+    expect(tasks.onToday).not.toHaveBeenCalled();
+    expect(screen.queryAllByRole('menuitem')).toEqual([]);
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain('This task has changed since.');
     await userEvent.click(within(alert).getByRole('button', { name: 'Try again: Weed the beds' }));

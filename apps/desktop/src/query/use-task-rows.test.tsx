@@ -51,10 +51,14 @@ interface Toast {
 function rows(text: string, read: Readonly<Record<string, unknown>> = { status: 'next-action' }) {
   const memory = memoryVault({ [CALL]: text });
   let failing: string | null = null;
+  let writes = 0;
+  // The day the clock says now: moved on in a test, as midnight passing would.
+  let day = TODAY;
   const fs = fakeVaultFs({
     ...memory.fs,
     writeTextFile: async (write) => {
       if (failing !== null) throw new Error(failing);
+      writes += 1;
       return memory.fs.writeTextFile(write);
     },
   });
@@ -70,7 +74,7 @@ function rows(text: string, read: Readonly<Record<string, unknown>> = { status: 
     enabled: true,
     scope: ['index', 'Views/Next actions.md'],
     ports: { fs, markdown: remarkMarkdown, editors: noPane, activity },
-    clock: { today: () => TODAY },
+    clock: { today: () => day },
     types: TYPES,
     toasts: {
       show: (toast) => {
@@ -95,7 +99,14 @@ function rows(text: string, read: Readonly<Record<string, unknown>> = { status: 
     toasts,
     activity,
     file: () => memory.files.get(CALL),
+    /** Changes the file behind the view's back, as another app would. */
+    writeFile: (text: string) => memory.files.set(CALL, text),
+    writes: () => writes,
     changes: () => changed,
+    /** Midnight passes: the clock says another day, and nothing draws the view again. */
+    turnDay: (next: string) => {
+      day = next;
+    },
     fail: (message: string | null) => {
       failing = message;
     },
@@ -145,6 +156,56 @@ describe('useTaskRows', () => {
     act(() => view.hook.result.current.controls?.onMove(view.row(), 'waiting'));
     await waitFor(() => expect(view.toasts).toHaveLength(1));
     expect(view.file()).toContain('status: archive');
+    // Everything asked has settled: one write, one toast, one re-read asked for.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(view.writes()).toBe(1);
+    expect(view.toasts).toHaveLength(1);
+    expect(view.changes()).toBe(1);
+  });
+
+  it('chooses for the day the Today toggle is pressed, not the day the view was drawn', async () => {
+    const view = rows(TASK);
+    expect(view.shown()?.chosen).toBe(false);
+    view.turnDay('2026-10-29');
+    act(() => view.hook.result.current.controls?.onToday(view.row(), false));
+    await waitFor(() => expect(view.toasts).toHaveLength(1));
+    expect(view.file()).toContain('focus: 2026-10-29\n');
+    expect(view.toasts[0]?.message).toBe('Chose “Call Tobias” for today.');
+  });
+
+  it('tries a refused choice again on the day Try again is pressed', async () => {
+    const moved = TASK.replace('next-action', 'waiting');
+    const view = rows(moved);
+    act(() => view.hook.result.current.controls?.onToday(view.row(), false));
+    await waitFor(() => expect(view.shown()?.refusal).not.toBeNull());
+    view.writeFile(TASK);
+    view.turnDay('2026-10-29');
+    act(() => view.shown()?.refusal?.onRetry());
+    await waitFor(() => expect(view.toasts).toHaveLength(1));
+    expect(view.file()).toContain('focus: 2026-10-29\n');
+  });
+
+  it('does not tick a repeating task again when Try again finds it already rolled on elsewhere', async () => {
+    const weekly = `---\ntype: task\nstatus: next-action\ndue: 2026-10-28\nrecurrence: every week\n---\n`;
+    const read = { status: 'next-action', due: '2026-10-28', recurrence: 'every week' };
+    const view = rows(weekly, read);
+    // Ticked on Today in another pane first: the file has rolled, the view has not read it.
+    const rolled = `---\ntype: task\nstatus: next-action\ndue: 2026-11-04\nrecurrence: every week\nlastCompleted: 2026-10-28\n---\n`;
+    view.writeFile(rolled);
+    act(() => view.hook.result.current.controls?.onDone(view.row(), true));
+    await waitFor(() => expect(view.shown()?.refusal).not.toBeNull());
+
+    view.readAgain({ ...read, due: '2026-11-04' });
+    act(() => view.shown()?.refusal?.onRetry());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(view.file()).toBe(rolled);
+    expect(view.writes()).toBe(0);
+    // Nothing is said to try again: the row shows the task as it is now.
+    expect(view.shown()?.refusal).toBeNull();
   });
 
   it('rolls a repeating task on and ends the day’s choice, drawn where the roll puts it', async () => {

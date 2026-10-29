@@ -5,6 +5,7 @@ import { toBoardRows } from '../query/group-rows.ts';
 import { compileAtlasQuery, resultFields } from '../query-language/compile.ts';
 import { parseAtlasQuery } from '../query-language/parse.ts';
 import { compileReviewTasksQuery, reviewTask } from '../review/review-query.ts';
+import { taskAsRead } from '../today/row-read.ts';
 import { TASK_TYPE_FILE } from './task-type.ts';
 import { TASK_ROW_COLUMNS, taskRowState } from './task-row.ts';
 
@@ -28,6 +29,14 @@ const NOTES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
     focus: 'when the rain stops',
   },
   'Tasks/Two days.md': { type: 'task', status: [' waiting '], focus: ['2026-10-28', '2026-10-29'] },
+  // A blank item is no item: this holds next-action (#616).
+  'Tasks/With a blank.md': {
+    type: 'task',
+    status: ['next-action', ''],
+    recurrence: ['', 'every day'],
+  },
+  // A nested list of two is two items, though both share their outer place: no one status.
+  'Tasks/Nested.md': { type: 'task', status: [['next-action', 'waiting']] },
   'Projects/Larkspur.md': { type: 'project', status: 'next-action' },
 };
 
@@ -81,7 +90,13 @@ describe('a query of tasks asked for its rows’ task state (#107)', () => {
     // Not a column the result draws: only what SHOW names, and the type.
     expect(resultFields(compiled).map((field) => field.key)).toEqual(['type', 'status']);
     const read = new Map(review().map((task) => [String(task.path), task]));
-    expect(rows.map((row) => row.title)).toEqual(['Call Tobias', 'Plan the garden', 'Two days']);
+    expect(rows.map((row) => row.title)).toEqual([
+      'Call Tobias',
+      'Nested',
+      'Plan the garden',
+      'Two days',
+      'With a blank',
+    ]);
     for (const row of rows) {
       const state = taskRowState(row.values);
       const today = read.get(row.path);
@@ -96,12 +111,27 @@ describe('a query of tasks asked for its rows’ task state (#107)', () => {
         focusIsOwn: today?.focusIsOwn,
         recurrence: today?.recurrence,
       });
+      // And as the write reads the file, so a row is never refused as changed when it is not.
+      expect(state?.asRead, row.path).toEqual(taskAsRead(NOTES[row.path] ?? {}));
     }
+  });
+
+  it('reads a blank item as no item, and a nested list of two as no one status', () => {
+    const { rows } = vaultIndex().run('FROM task SORT BY title', true);
+    const stateOf = (title: string) =>
+      taskRowState(rows.find((row) => row.title === title)?.values ?? {});
+    expect(stateOf('With a blank')).toMatchObject({
+      asRead: { status: 'next-action' },
+      recurrence: 'every day',
+    });
+    expect(stateOf('Nested')?.asRead.status).toBeNull();
   });
 
   it('reads the dates as days, a focus of words as the person’s own, and a list of two as theirs too', () => {
     const { rows } = vaultIndex().run('FROM task SORT BY title', true);
-    const [call, garden, two] = rows.map((row) => taskRowState(row.values));
+    const stateOf = (title: string) =>
+      taskRowState(rows.find((row) => row.title === title)?.values ?? {});
+    const [call, garden, two] = ['Call Tobias', 'Plan the garden', 'Two days'].map(stateOf);
     expect(call).toMatchObject({
       asRead: { status: 'next-action', due: '2026-11-02', focus: '2026-10-28' },
       focusIsOwn: false,
@@ -122,6 +152,6 @@ describe('a query of tasks asked for its rows’ task state (#107)', () => {
     const several = run('FROM task, project SORT BY title', true);
     expect(several.compiled.taskRows).toBe(false);
     expect(several.columns).not.toContain(TASK_ROW_COLUMNS.status);
-    expect(several.rows).toHaveLength(4);
+    expect(several.rows).toHaveLength(6);
   });
 });
