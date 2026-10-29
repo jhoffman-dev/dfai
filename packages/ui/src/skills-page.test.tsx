@@ -325,6 +325,11 @@ describe('SkillsPage', () => {
     expect(screen.getByRole('button', { name: 'Saving…' })).toHaveProperty('disabled', true);
   });
 
+  it('holds a new skill’s name still while it is made', () => {
+    show({ editor: editorOf({ mode: 'new', saving: true, canSave: false }) });
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).readOnly).toBe(true);
+  });
+
   it('keeps every field but the name editable while not saving', () => {
     show({ selected: 'weekly-review', editor: editorOf() });
     for (const name of [/Description/, /Instructions/]) {

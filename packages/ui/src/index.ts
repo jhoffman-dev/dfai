@@ -234,6 +234,8 @@ export type {
   ListedOr,
   PromptListing,
   SkillDeleteQuestion,
+  SkillDiscardQuestion,
+  SkillFocus,
   SkillEditorState,
   SkillListing,
   SkillsPageProps,

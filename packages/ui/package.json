@@ -23,7 +23,7 @@
     "@dfai/domain": "workspace:*",
     "@base-ui/react": "^1.8.0",
     "@dnd-kit/core": "^6.3.1",
-    "@tanstack/react-virtual": "^3.13.12",
+    "@tanstack/react-virtual": "3.14.13",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-code-block-lowlight": "^3.31.3",
     "@tiptap/extension-list": "^3.31.3",

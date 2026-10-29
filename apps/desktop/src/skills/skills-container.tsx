@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from 'react';
-import { hideOverlay, showOverlay } from '../overlay-store.ts';
+import { hideOverlay, showOverlay, useOverlayUp } from '../overlay-store.ts';
 import { LoadedLater } from '../page-frame-fallback.tsx';
 import { skillsPage } from '../pages-on-first-use.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
-import { useSkillsPage } from './use-skills-page.ts';
+import { useSkillsPage, type SkillOverlay } from './use-skills-page.ts';
 
 const SkillsPage = skillsPage.Component;
 
@@ -17,15 +17,25 @@ export function SkillsContainer({ wiring, chrome }: PageContainerProps) {
   const { pages, pane, overlays } = wiring;
   const overlay = useMemo(
     () => ({
-      show: () => showOverlay(overlays, 'skill-delete'),
-      hide: () => hideOverlay(overlays, 'skill-delete'),
+      show: (which: SkillOverlay) => showOverlay(overlays, which),
+      hide: (which: SkillOverlay) => hideOverlay(overlays, which),
     }),
     [overlays],
   );
-  // A tab closed with its question up takes the question down with it, or it would hold the screen.
-  useEffect(() => () => hideOverlay(overlays, 'skill-delete'), [overlays]);
+  // The questions are drawn from the window's store, the one place that says what is up.
+  const deleteUp = useOverlayUp(overlays, 'skill-delete');
+  const discardUp = useOverlayUp(overlays, 'skill-discard');
+  // A tab closed with a question up takes it down with it, or it would hold the screen.
+  useEffect(
+    () => () => {
+      hideOverlay(overlays, 'skill-delete');
+      hideOverlay(overlays, 'skill-discard');
+    },
+    [overlays],
+  );
   const page = useSkillsPage({
     ports: { fs: pages.ports.fs, markdown: pane.notes.markdown, overlay },
+    overlayUp: deleteUp ? 'skill-delete' : discardUp ? 'skill-discard' : null,
     vault: pane.vault,
     onOpenNote: pages.openNote,
   });

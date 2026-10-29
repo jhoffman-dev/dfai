@@ -23,6 +23,7 @@ export type Overlay =
   | 'template-delete'
   | 'template-to-note'
   | 'skill-delete'
+  | 'skill-discard'
   | PeopleOverlay
   | ExportOverlay
   | QueryPopupOverlay
@@ -80,6 +81,7 @@ const MODAL: ReadonlySet<Overlay> = new Set([
   'template-delete',
   'template-to-note',
   'skill-delete',
+  'skill-discard',
   'merge-people',
   'people-duplicates',
   'export-notes',

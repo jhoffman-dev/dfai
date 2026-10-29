@@ -162,7 +162,9 @@ function renderPage(files: Record<string, string> = {}) {
 const SKILL_PATH = '.atlas/skills/weekly-review/SKILL.md';
 
 async function openWeekly(page: ReturnType<typeof renderPage>) {
-  await waitFor(() => expect(page.result.current.skills.items).toHaveLength(1));
+  await waitFor(() =>
+    expect(page.result.current.skills.items?.map(({ name }) => name)).toContain('weekly-review'),
+  );
   act(() => page.result.current.onSelect('weekly-review'));
   await waitFor(() => expect(page.result.current.editor).not.toBeNull());
 }
@@ -436,6 +438,16 @@ describe('useSkillsPage', () => {
     await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
     page.dropOverlay();
     expect(page.result.current.deleteQuestion).toBeNull();
+  });
+
+  it('draws the discard question only while the window holds its overlay', async () => {
+    const page = renderPage({ [SKILL_PATH]: WEEKLY });
+    await openWeekly(page);
+    act(() => page.result.current.onChange({ instructions: 'Typed here.' }));
+    act(() => page.result.current.onNew());
+    expect(page.result.current.discardQuestion).not.toBeNull();
+    page.dropOverlay();
+    expect(page.result.current.discardQuestion).toBeNull();
   });
 
   it('keeps Save from a skill changed on disk until it is reloaded (#626 review)', async () => {

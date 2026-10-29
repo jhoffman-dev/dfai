@@ -7,7 +7,7 @@
  * refused rather than flushed from inside React's commit.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, renderHook } from '@testing-library/react';
 import type { Rect, Virtualizer } from '@tanstack/react-virtual';
 import { useRangeVirtualizer, type RangeVirtualizerOptions } from './range-virtualizer.ts';
 
@@ -43,11 +43,9 @@ function observers() {
 function List({
   options,
   onRender,
-  measured = false,
 }: {
   options: Partial<RangeVirtualizerOptions>;
   onRender: () => void;
-  measured?: boolean;
 }) {
   const scroller = document.body;
   const virtualizer = useRangeVirtualizer({
@@ -61,11 +59,7 @@ function List({
   return (
     <div data-testid="rows">
       {virtualizer.getVirtualItems().map((item) => (
-        <div
-          key={item.key}
-          data-index={item.index}
-          ref={measured ? virtualizer.measureElement : undefined}
-        >
+        <div key={item.key} data-index={item.index}>
           {item.index}
         </div>
       ))}
@@ -119,7 +113,15 @@ describe('useRangeVirtualizer', () => {
 
   it('refuses to measure rows: it draws rows of a fixed height only', () => {
     const { options } = observers();
-    expect(() => render(<List options={options} onRender={() => {}} measured />)).toThrow(
+    const { result } = renderHook(() =>
+      useRangeVirtualizer({
+        count: 10,
+        getScrollElement: () => document.body,
+        estimateSize: () => ROW,
+        ...options,
+      }),
+    );
+    expect(() => result.current.measureElement(document.createElement('div'))).toThrow(
       /fixed-height rows/,
     );
   });

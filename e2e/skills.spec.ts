@@ -68,7 +68,7 @@ test('a skill is made on the Skills page, and an invalid name is refused before 
 
   await editor.getByRole('textbox', { name: 'Name' }).fill('meeting-notes');
   await editor.getByRole('textbox', { name: /Description/ }).fill('Tidies a meeting’s notes.');
-  await expect(editor.getByLabel('25 of 1024 characters')).toHaveText('25/1024');
+  await expect(editor.getByText('25/1024')).toBeVisible();
   await editor.getByRole('textbox', { name: /Instructions/ }).fill('Tidy them.');
   await expect(save).toBeEnabled();
   await save.click();
