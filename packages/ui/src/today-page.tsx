@@ -1,15 +1,4 @@
-import {
-  createContext,
-  Fragment,
-  memo,
-  useContext,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
-import { Menu } from '@base-ui/react/menu';
+import { createContext, Fragment, memo, useContext, useMemo, useRef, type ReactNode } from 'react';
 import {
   GTD_STATUS_LABELS,
   isGtdStatus,
@@ -26,7 +15,7 @@ import {
 } from '@dfai/domain';
 import type { TodayReport } from '@dfai/application';
 import { Icon } from './icon.tsx';
-import { MenuItems, type MenuCommand } from './menu-items.tsx';
+import { MoveMenu, todayToggle } from './task-row-commands.tsx';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
 import { ROW_SCROLLER_MARK, RowScrollerContext } from './row-scroller.ts';
@@ -375,104 +364,6 @@ const rowOf = (task: TodayTask): RowTask => ({ path: task.path, title: task.titl
 const laterChoiceMoved = (task: TodayTask, choice: TodayChoice) =>
   choice === 'choose' && task.laterChoice !== null ? { was: task.laterChoice } : {};
 
-/** How a row's Move to… menu was first asked for, which decides where its focus starts. */
-type MenuOpening = 'pointer' | 'press' | 'arrow';
-
-/** A row's Move to… button and menu: the statuses the domain offers this task. */
-function MoveMenu({
-  task,
-  busy,
-  onMove,
-}: {
-  task: TodayTask;
-  busy: boolean;
-  onMove: (task: TodayTask, status: string) => void;
-}) {
-  // Built the first time it is opened: a Base UI menu on each of hundreds of
-  // rows was most of what a tick drew again (#217). Kept once built, so focus
-  // goes back to its button when it shuts.
-  const [opening, setOpening] = useState<MenuOpening | null>(null);
-  if (opening !== null) {
-    return <MoveMenuOpened task={task} busy={busy} onMove={onMove} opening={opening} />;
-  }
-  return (
-    <button
-      type="button"
-      className="btn btn--ghost btn--sm"
-      aria-label={`Move ${task.title} to…`}
-      aria-haspopup="menu"
-      aria-expanded={false}
-      disabled={busy}
-      onKeyDown={(event) => {
-        // The built trigger opens on ArrowDown as well as on a press.
-        if (event.key !== 'ArrowDown') return;
-        event.preventDefault();
-        setOpening('arrow');
-      }}
-      // Enter and Space press a button with no pointer, which leaves `detail` 0.
-      onClick={(event) => setOpening(event.detail === 0 ? 'press' : 'pointer')}
-    >
-      Move to…
-    </button>
-  );
-}
-
-/**
- * The menu itself. Open state, focus, typeahead and Escape are Base UI's
- * (ADR-0015). Built from a keyboard, its trigger takes the focus the plain
- * button had and is given the same key again, so Base UI opens it as it
- * would from the keyboard — focus on the first item — and not as from a pointer.
- */
-function MoveMenuOpened({
-  task,
-  busy,
-  onMove,
-  opening,
-}: {
-  task: TodayTask;
-  busy: boolean;
-  onMove: (task: TodayTask, status: string) => void;
-  opening: MenuOpening;
-}) {
-  const chosen = useRef<MenuCommand | null>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => {
-    const button = trigger.current;
-    if (opening === 'pointer' || button === null) return;
-    // Before the browser paints: the focus never rests on the page between the two buttons.
-    button.focus();
-    if (opening === 'press') button.click();
-    else {
-      button.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
-      );
-    }
-  }, [opening]);
-  const items = todayMovesFor(task.status).map((status) => ({
-    label: GTD_STATUS_LABELS[status],
-    onSelect: () => onMove(task, status),
-  }));
-  return (
-    <Menu.Root defaultOpen={opening === 'pointer'}>
-      <Menu.Trigger
-        ref={trigger}
-        className="btn btn--ghost btn--sm"
-        aria-label={`Move ${task.title} to…`}
-        disabled={busy}
-      >
-        Move to…
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner className="menu-positioner" side="bottom" align="end" sideOffset={4}>
-          <Menu.Popup className="menu" aria-label={`Move ${task.title} to`} render={<ul />}>
-            <MenuItems items={items} chosen={chosen} />
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
-  );
-}
-
 const NONE_SETTLING: ReadonlySet<VaultPath> = new Set();
 
 /** What every row can do. */
@@ -773,8 +664,19 @@ function RowCommands({
       {chooses &&
         (sectionId === 'carriedOver'
           ? carriedChoices({ task, waits, actions })
-          : todayToggle({ task, chosen: sectionId === 'chosen', waits, actions }))}
-      <MoveMenu task={task} busy={waits} onMove={actions.onMove} />
+          : todayToggle({
+              title: task.title,
+              chosen: sectionId === 'chosen',
+              disabled: waits,
+              onToggle: () =>
+                actions.onChoose(task, sectionId === 'chosen' ? 'unchoose' : 'choose'),
+            }))}
+      <MoveMenu
+        title={task.title}
+        statuses={todayMovesFor(task.status)}
+        busy={waits}
+        onMove={(status) => actions.onMove(task, status)}
+      />
       {TODAY_DEFER_DAYS.map((days) => (
         <button
           key={days}
@@ -794,23 +696,6 @@ function RowCommands({
 
 interface ChoiceControls extends RowControlProps {
   readonly waits: boolean;
-}
-
-/** Today, pressed while the task is chosen for today: pressing it chooses the task, or takes it off. */
-function todayToggle({ task, chosen, waits, actions }: ChoiceControls & { chosen: boolean }) {
-  return (
-    <button
-      type="button"
-      className="btn btn--ghost btn--sm today__choose"
-      aria-pressed={chosen}
-      aria-label={chosen ? `Take ${task.title} off today` : `Choose ${task.title} for today`}
-      title={chosen ? 'Take off today' : 'Choose for today'}
-      disabled={waits}
-      onClick={() => actions.onChoose(task, chosen ? 'unchoose' : 'choose')}
-    >
-      Today
-    </button>
-  );
 }
 
 /** Keep, which chooses a task carried over for today, and Drop, which lets the choice go. */

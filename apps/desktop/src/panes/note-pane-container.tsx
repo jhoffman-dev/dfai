@@ -641,6 +641,8 @@ export function useNotePane({
     viewPaths: context.viewPaths,
     onChanged,
     onOpenNote: (target) => onOpenNote(createVaultPath(target)),
+    clock: localClock,
+    toasts: context.toasts,
   });
   const viewRows = useMemo(() => rowPaths(savedView.result), [savedView.result]);
   const choosing = useViewChoosing({

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import {
   choosesForToday,
-  TASK_KEYS,
   taskDeferral,
   tasksStartInInbox,
   taskTypeOf,
@@ -12,11 +11,10 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import {
-  archiveTaskChange,
   changeUndoably,
-  choiceChange,
   readAnswers,
   readToday,
+  taskRowChange,
   todayAsPending,
   whileAsRead,
   type IndexPort,
@@ -289,7 +287,8 @@ export function useToday(options: TodayOptions) {
   );
 
   const done = useCallback(
-    (task: Row) => void change({ ...task, action: { kind: 'done' }, values: archiveTaskChange() }),
+    (task: Row) =>
+      void change({ ...task, action: { kind: 'done' }, values: taskRowChange({ kind: 'done' }) }),
     [change],
   );
   const setStatus = useCallback(
@@ -297,7 +296,7 @@ export function useToday(options: TodayOptions) {
       void change({
         ...task,
         action: { kind: 'move', status },
-        values: { [TASK_KEYS.status]: status },
+        values: taskRowChange({ kind: 'move', status }),
       }),
     [change],
   );
@@ -319,7 +318,7 @@ export function useToday(options: TodayOptions) {
       void change({
         ...task,
         action: { kind: choice, ...(was !== undefined && { was }) },
-        values: choiceChange({ choice, today: clock.today() }),
+        values: taskRowChange({ kind: 'choice', choice, today: clock.today() }),
       });
     },
     [change, clock, choosing, setProblem],

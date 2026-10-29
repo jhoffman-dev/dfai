@@ -5,3 +5,5 @@ export type { UndoableChange } from './today-actions.ts';
 export { todayAsPending } from './today-as-pending.ts';
 export { todayScope } from './today-scope.ts';
 export { choiceChange, FocusNotChosenError } from './choose-for-today.ts';
+export { taskRowAsChanged, taskRowChange } from './task-row-change.ts';
+export type { TaskRowAction, TaskRowProperties } from './task-row-change.ts';

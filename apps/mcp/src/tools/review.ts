@@ -1,6 +1,6 @@
 /**
  * The weekly review and the Today page: `GET /v1/review/weekly` (P30-07),
- * `GET /v1/today` (#111), and choosing a task for today, `POST /v1/today/choose` (#108).
+ * `GET /v1/today` (#111), and choosing a task for today, `POST /v1/today/choose` (#108), and ticking a task done, `POST /v1/tasks/done` (#107).
  */
 
 import { z } from 'zod';
@@ -86,4 +86,31 @@ export const chooseForToday = defineTool({
   call: (client, input) => client.chooseForToday(input),
 });
 
-export const reviewTools = [weeklyReview, today, chooseForToday];
+export const tickTask = defineTool({
+  name: 'atlas_tick_task',
+  title: 'Tick a task done',
+  description:
+    'Tick a task done, or untick it, as its done box does on the Today page and in a GTD view: ' +
+    '"done": true finishes it — status archive with "completed" today on the app\'s clock — ' +
+    'and a repeating one (with "recurrence") rolls on to its next "due" and back to next-action ' +
+    'instead; either way a "focus" of one day is taken out. "done": false takes a finished task ' +
+    'back to next-action, and leaves open work as it is. Ticking needs "ifModified", the ' +
+    'task\'s "modified" as read: a tick sent twice would roll a repeating task on twice, so ' +
+    'the second is refused as conflict. To set any other status, use atlas_update_properties. ' +
+    'Returns the task note. "path" must be a note of type task.',
+  inputSchema: z.object({
+    path: notePath.describe('The task, by its path, e.g. "Tasks/Call the printer.md".'),
+    done: z.boolean().describe('True to tick it done; false to untick a finished one.'),
+    ifModified: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('The task\'s "modified" as read; required when "done" is true.'),
+  }),
+  // A tick rolls a repeating task on, so the same call twice is not the same as once.
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  call: (client, input) => client.tickTask(input),
+});
+
+export const reviewTools = [weeklyReview, today, chooseForToday, tickTask];

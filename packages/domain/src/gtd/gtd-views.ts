@@ -68,6 +68,6 @@ export const GTD_VIEW_FILES: readonly GtdViewFile[] = [
       'GROUP BY status',
       'SHOW status, project',
     ].join('\n'),
-    body: '# Someday and Longterm\n\nIdeas kept for later, and work that is a long way off. Drag a card between the two.\n',
+    body: '# Someday and Longterm\n\nIdeas kept for later, and work that is a long way off. Move a card between the two with its Move to….\n',
   },
 ];

@@ -28,6 +28,7 @@ import { quickAddRoute, quickAddTypesRoute } from './quick-add.ts';
 import { searchRoute } from './search.ts';
 import { scheduleTaskRoute } from './schedule-task.ts';
 import { chooseForTodayRoute } from './today-choose.ts';
+import { taskDoneRoute } from './task-done.ts';
 import { refreshSourceRoute } from './sources.ts';
 import { statusRoute } from './status.ts';
 import { renameTagRoute, taggedNotesRoute, tagsRoute } from './tags.ts';
@@ -134,6 +135,7 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
     'proposedSpec' in answer.body ? answer.body.proposedSpec.proposal !== null : false,
   ),
   'GET /v1/today': vaultRoute(todayRoute),
+  'POST /v1/tasks/done': vaultWrite(taskDoneRoute),
   'POST /v1/today/choose': vaultWrite(chooseForTodayRoute),
   'GET /v1/automations': vaultRoute(automationsRoute),
   'GET /v1/automations/{id}/log': vaultRoute(automationLogRoute),

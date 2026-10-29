@@ -43,6 +43,14 @@ export type { StatusMapping, TaskStatusMove } from './status-mapping.ts';
 export { automationStatusRewrite, rewrittenQuery, viewStatusRewrite } from './status-references.ts';
 export type { StatusesInUse, StatusRewrite } from './status-references.ts';
 export { isTaskNote, TASK_RULE_KEYS, taskRuleChanges } from './task-rules.ts';
+export {
+  listsTasksAlone,
+  TASK_ROW_COLUMNS,
+  taskRowFacts,
+  taskRowState,
+  taskRowWithChanges,
+} from './task-row.ts';
+export type { TaskRowFacts, TaskRowState } from './task-row.ts';
 export type { TaskRuleOutcome } from './task-rules.ts';
 export {
   capturedTaskStatus,
