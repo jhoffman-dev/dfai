@@ -843,6 +843,47 @@ export interface ApiCaptureReceipt {
   readonly outcome: 'written' | 'in-vault';
 }
 
+/** Who wrote a Slack message or a reply, as capture/v1 names them. */
+export interface ApiCaptureAuthor {
+  /** Slack's user id: `U…`, `W…` or `B…`. */
+  readonly id?: string;
+  readonly name: string;
+  /** Links the author to the Person note holding it as `email` or `other_emails`. */
+  readonly email?: string;
+}
+
+/**
+ * A Slack message sent to `POST /v1/captures` (#103, ADR-0049), as n8n, a
+ * pasted link and `atlas_capture` all send it. The domain's `readCapture`
+ * holds it to the contract; this only names its fields.
+ */
+export interface ApiReceiveCaptureBody {
+  readonly contract: 'capture/v1';
+  readonly kind: 'note' | 'task';
+  readonly title?: string;
+  readonly source: {
+    readonly provider: 'slack';
+    readonly channel: { readonly id: string; readonly name?: string };
+    readonly ts: string;
+    /** The message's permalink: it must point at `channel` and `ts`. */
+    readonly url: string;
+    readonly author: ApiCaptureAuthor;
+  };
+  /** The message as Slack sends it, in mrkdwn. */
+  readonly text: string;
+  readonly thread?: readonly {
+    readonly ts: string;
+    readonly author: ApiCaptureAuthor;
+    readonly text: string;
+    readonly url?: string;
+  }[];
+  readonly attachments?: readonly { readonly name: string; readonly url: string }[];
+  /** Names for the `<@U…>` mentions in the text, by user id. */
+  readonly users?: Readonly<Record<string, string>>;
+  /** The IANA zone times are shown on. Omitted: the zone this Mac keeps time in. */
+  readonly timeZone?: string;
+}
+
 /**
  * A proposal waiting in `Inbox/Proposals/` (P29-02, ADR-0028): what Claude or
  * an automation suggested, and what accepting it would write.

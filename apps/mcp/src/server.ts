@@ -21,6 +21,7 @@ import { queryTools } from './tools/queries.ts';
 import { scheduleTools } from './tools/schedule.ts';
 import { reviewTools } from './tools/review.ts';
 import { skillTools } from './tools/skills.ts';
+import { slackCaptureTools } from './tools/slack-capture.ts';
 import { sourceTools } from './tools/sources.ts';
 import { tagTools } from './tools/tags.ts';
 import { templateTools } from './tools/templates.ts';
@@ -38,6 +39,7 @@ export const ATLAS_TOOLS = [
   ...queryTools,
   ...viewTools,
   ...captureTools,
+  ...slackCaptureTools,
   ...artifactTools,
   ...imageTools,
   ...sourceTools,
