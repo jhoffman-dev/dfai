@@ -104,7 +104,13 @@ test('a vault whose tasks follow GTD gets the Block type as it opens', async ({ 
   await expectFile(vault, '.atlas/types/block.md').toContain('name: block\n');
   const type = await vault.read('.atlas/types/block.md');
   expect(type).toContain('  tasks:\n    kind: relation\n    target: task\n    many: true\n');
-  expect(await vault.read('.atlas/types/task.md')).toBe(TASK_TYPE);
+  // The Task type gains DFAI's own `focus` alone (#108); nothing of its own changes.
+  await expectFile(vault, '.atlas/types/task.md').toBe(
+    TASK_TYPE.replace(
+      '    label: Estimate (minutes)\n',
+      '    label: Estimate (minutes)\n  focus:\n    kind: date\n    label: Chosen for\n',
+    ),
+  );
 });
 
 test('a 2h task split over 1h, 30m and 30m blocks reads 2h scheduled of 2h', async ({ page }) => {

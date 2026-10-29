@@ -22,6 +22,17 @@ export const NEXT_ACTIONS_QUERY = [
   'SHOW status, contexts, due, project',
 ].join('\n');
 
+/**
+ * The open tasks chosen for today (#108), as the planning tray reads them:
+ * `@today` is the query language's, as it is in every view. One deferred to
+ * a later day is left out, as Today leaves it out.
+ */
+export const CHOSEN_TODAY_QUERY = [
+  'FROM task',
+  'WHERE focus = @today AND status != archive AND (defer IS EMPTY OR defer <= @today)',
+  'SORT BY due',
+].join('\n');
+
 export const GTD_VIEW_FILES: readonly GtdViewFile[] = [
   {
     name: 'Inbox',

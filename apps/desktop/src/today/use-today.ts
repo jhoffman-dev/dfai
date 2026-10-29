@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import {
+  choosesForToday,
   TASK_KEYS,
   taskDeferral,
   tasksStartInInbox,
   taskTypeOf,
   type ObjectType,
   type TaskAsRead,
+  type TodayChoice,
   type VaultPath,
 } from '@dfai/domain';
 import {
   archiveTaskChange,
   changeUndoably,
+  choiceChange,
   readAnswers,
   readToday,
   todayAsPending,
@@ -30,6 +33,10 @@ import type { Toasts } from '../toasts/toasts.ts';
 
 /** How often an open page asks the clock whether the day has turned. */
 const DAY_CHECK_MS = 60_000;
+
+/** Why nothing was chosen, in a vault whose Task type has no `focus` as a date: the page offers no choice there. */
+const NOT_CHOOSING =
+  'This vault’s Task type has no Chosen for date, so tasks cannot be chosen for today.';
 
 /** The page's one place in the window's toasts: a change takes the place of the one before (#320). */
 const TODAY_TOAST = 'today';
@@ -116,6 +123,8 @@ export function useToday(options: TodayOptions) {
   const day = useDayOf(clock, open);
   // The types the sidebar's Inbox count is read with, so the page's Inbox link counts the same.
   const startInInbox = tasksStartInInbox(types);
+  // Whether tasks can be chosen for today (#108): worked out once, from the vault's Task type.
+  const choosing = choosesForToday(types);
   const { busy, problem, setProblem, actOn } = useReviewWrites({
     ports,
     editors,
@@ -143,14 +152,26 @@ export function useToday(options: TodayOptions) {
       });
       setSettling((rows) => withoutSettledBy(rows, { begun, key: indexKey }));
     };
-    readToday({ index, fs, markdown, clock, tasksStartInInbox: startInInbox })
+    readToday({ index, fs, markdown, clock, tasksStartInInbox: startInInbox, choosing })
       .then((report) => land({ report, error: null }))
       .catch((cause: unknown) => land({ report: null, error: errorMessage(cause) }));
     return () => {
       cancelled = true;
     };
     // `day` is here to read again when it turns; the read takes the day from the clock itself.
-  }, [index, fs, markdown, clock, vaultKey, indexKey, indexReady, open, day, startInInbox]);
+  }, [
+    index,
+    fs,
+    markdown,
+    clock,
+    vaultKey,
+    indexKey,
+    indexReady,
+    open,
+    day,
+    startInInbox,
+    choosing,
+  ]);
 
   // Only what was read of the vault now open: another vault's paths are not this one's.
   const ofThisVault = (from: OfAVault) => sameVault(from, { index: ports.index, vaultKey });
@@ -288,6 +309,21 @@ export function useToday(options: TodayOptions) {
     },
     [change, clock, setProblem],
   );
+  // Chosen for the clock's day, which is the page's own once it has read again at midnight.
+  const choose = useCallback(
+    ({ choice, was, ...task }: Row & { choice: TodayChoice; was?: string }) => {
+      if (!choosing) {
+        setProblem(NOT_CHOOSING);
+        return;
+      }
+      void change({
+        ...task,
+        action: { kind: choice, ...(was !== undefined && { was }) },
+        values: choiceChange({ choice, today: clock.today() }),
+      });
+    },
+    [change, clock, choosing, setProblem],
+  );
   const undo = useCallback(
     async () => (undoable === null ? undefined : undoChange(undoable)),
     [undoable, undoChange],
@@ -325,6 +361,7 @@ export function useToday(options: TodayOptions) {
       onDone: done,
       onSetStatus: setStatus,
       onDefer: defer,
+      onChoose: choose,
     },
   };
 }
@@ -357,8 +394,8 @@ function rowsAsRead(report: TodayReport | null): ReadonlyMap<VaultPath, TaskAsRe
   const rows = new Map<VaultPath, TaskAsRead>();
   for (const section of report?.sections ?? []) {
     for (const group of section.groups) {
-      for (const { path, status, due, defer } of group.tasks)
-        rows.set(path, { status, due, defer });
+      for (const { path, status, due, defer, focus } of group.tasks)
+        rows.set(path, { status, due, defer, focus: focus ?? null });
     }
   }
   return rows;

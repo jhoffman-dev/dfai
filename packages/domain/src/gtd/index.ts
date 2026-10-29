@@ -14,7 +14,7 @@ export {
   WAITING_STATUS,
 } from './gtd-status.ts';
 export type { GtdStatus } from './gtd-status.ts';
-export { GTD_VIEW_FILES, NEXT_ACTIONS_QUERY } from './gtd-views.ts';
+export { CHOSEN_TODAY_QUERY, GTD_VIEW_FILES, NEXT_ACTIONS_QUERY } from './gtd-views.ts';
 export type { GtdViewFile } from './gtd-views.ts';
 export {
   mergedRecord,
@@ -46,6 +46,7 @@ export { isTaskNote, TASK_RULE_KEYS, taskRuleChanges } from './task-rules.ts';
 export type { TaskRuleOutcome } from './task-rules.ts';
 export {
   capturedTaskStatus,
+  choosesForToday,
   clarifyVocabulary,
   followsGtd,
   GTD_STATUS_PROPERTY,

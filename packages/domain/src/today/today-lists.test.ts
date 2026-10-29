@@ -96,7 +96,7 @@ describe('todayLists', () => {
       Next: 'nextActions',
       Chase: 'waiting',
     });
-    expect(lists(tasks).sections.map((found) => found.count)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(lists(tasks).sections.map((found) => found.count)).toEqual([0, 0, 1, 1, 1, 1, 1, 1]);
   });
 
   it('lists a task once, in the first section that claims it', () => {
