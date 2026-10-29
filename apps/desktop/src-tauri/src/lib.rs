@@ -21,6 +21,7 @@ mod navigation;
 mod opener;
 mod rename_migration;
 mod secrets;
+mod slack;
 mod sleep_clock;
 mod sqlite_source;
 // Public for its integration test, which pictures a real page on the main thread.
@@ -104,6 +105,10 @@ pub fn run() {
             granola::granola_set_key,
             granola::granola_forget_key,
             granola::granola_request,
+            slack::slack_status,
+            slack::slack_connect,
+            slack::slack_disconnect,
+            slack::slack_request,
             kindle::kindle_connect,
             kindle::kindle_disconnect,
             kindle::kindle_fetch_notebook,

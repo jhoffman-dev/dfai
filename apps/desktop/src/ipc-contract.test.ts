@@ -152,6 +152,22 @@ describe('IPC contract', () => {
     expect(tokenCommands.sort()).toEqual(['api_rotate_token', 'api_token']);
   });
 
+  // #105: Slack's user token stays in the host as Granola's key does (ADR-0034,
+  // ADR-0017). These commands answer whether a token is kept and a read-only
+  // method's answer with the token struck; that none carries it is tested in
+  // Rust (`no_answer_or_failure_handed_to_the_webview_carries_the_token`). This
+  // holds the list, so a command that could is not added without being seen.
+  it('exposes only the Slack commands that answer without a token, each off the main thread', () => {
+    const slack = [...commandsExposedByRust()].filter((name) => /slack/i.test(name));
+    expect(slack.sort()).toEqual([
+      'slack_connect',
+      'slack_disconnect',
+      'slack_request',
+      'slack_status',
+    ]);
+    expect(slack.filter((name) => threadOf(name) === 'main')).toEqual([]);
+  });
+
   // #135: a command that is not async runs on the host's main thread, which is
   // the window's. Building the index walks the vault, reads every note and
   // writes every row through these, so one of them left on the main thread

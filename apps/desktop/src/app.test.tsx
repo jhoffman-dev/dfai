@@ -9,6 +9,7 @@ import {
   memoryIndexPort,
   fakeGoogleCalendar,
   fakeGranola,
+  fakeSlack,
   failed,
   fakeSleepClock,
   memorySyncFiles,
@@ -195,6 +196,9 @@ const granola = {
   records: { read: () => ({ watermark: null, lastPullAt: null }), write: () => {} },
 };
 
+/** Slack with no token kept: nothing in these tests pastes a Slack link. */
+const slack = fakeSlack(() => ({ ok: true }), { hasToken: false });
+
 /** Nothing in these tests fetches; a source that did would say so by throwing. */
 const sources: SourcePorts = {
   http: {
@@ -310,6 +314,7 @@ const renderApp = (
       sync={noSync}
       googleCalendar={googleCalendar}
       granola={granola}
+      slack={slack}
       globalCapture={globalCapture.ports}
     />,
   );
@@ -790,6 +795,7 @@ describe('the palettes and the shortcuts around them', () => {
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -1034,6 +1040,7 @@ describe('the Activity log, adversarial (U-28)', () => {
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -1136,6 +1143,7 @@ describe('opening a vault while its index is still being built (ADR-0034)', () =
         sync={sync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -1241,6 +1249,7 @@ describe('reading the vault after a change (#259)', () => {
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -1380,6 +1389,7 @@ describe('the window’s kept reads, attacked (#259, PR 272)', () => {
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -1624,6 +1634,7 @@ describe('⌘K held in the overlay store (#261, attack)', () => {
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -2156,6 +2167,7 @@ describe('pages as tabs', () => {
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -2612,6 +2624,7 @@ describe('each pane reads what it shows, and nothing for a note saved elsewhere 
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );
@@ -2773,6 +2786,7 @@ describe("a highlight's comment typed, then the window closed (#534)", () => {
         sync={noSync}
         googleCalendar={googleCalendar}
         granola={granola}
+        slack={slack}
         globalCapture={fakeGlobalCapture().ports}
       />,
     );

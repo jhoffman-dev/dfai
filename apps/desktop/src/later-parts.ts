@@ -22,6 +22,7 @@ export { AskScreen } from './ask/ask-screen.tsx';
 export { SidebarChat } from './chat/sidebar-chat.tsx';
 export { GoogleCalendarSettingsCard } from './settings/google-calendar-settings-card.tsx';
 export { GranolaSettingsCard } from './settings/granola-settings-card.tsx';
+export { SlackSettingsCard } from './settings/slack-settings-card.tsx';
 export { KindleSettingsCard } from './settings/kindle-settings-card.tsx';
 export { ImageSettingsPanel } from './settings/image-settings-panel.tsx';
 export { ProfileSettingsCard } from './profile/profile-settings-card.tsx';

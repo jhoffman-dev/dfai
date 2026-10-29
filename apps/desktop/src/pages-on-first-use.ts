@@ -120,6 +120,7 @@ export const settingsDialog = later(laterParts, (m) => m.SettingsDialog, Setting
 export const globalCaptureSettings = later(laterParts, (m) => m.GlobalCaptureSettings);
 export const googleCalendarSettingsCard = later(laterParts, (m) => m.GoogleCalendarSettingsCard);
 export const granolaSettingsCard = later(laterParts, (m) => m.GranolaSettingsCard);
+export const slackSettingsCard = later(laterParts, (m) => m.SlackSettingsCard);
 export const kindleSettingsCard = later(laterParts, (m) => m.KindleSettingsCard);
 export const imageSettingsPanel = later(laterParts, (m) => m.ImageSettingsPanel);
 export const profileSettingsCard = later(laterParts, (m) => m.ProfileSettingsCard);
