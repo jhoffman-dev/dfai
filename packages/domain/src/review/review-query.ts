@@ -1,5 +1,6 @@
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { FINISHED_TASK_STATUS, gtdStatusOf, TASK_KEYS, TASK_TYPE } from '../gtd/gtd-status.ts';
+import { firstDaySql, notOneDaySql, singleTextSql } from '../gtd/task-row.ts';
 import { splitWikiLinks, wikiLinkLabel } from '../markdown/wikilink.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import { FILED_UNDER_KEY, PROJECT_TYPE } from '../types/para.ts';
@@ -31,24 +32,10 @@ function inUseOfTypeSql(column: string, typeParameter: string): string {
   ].join('\n');
 }
 
-/**
- * A property's one value as text: null when it has none, or holds a list of
- * several — a blank item being no item, as gtdStatusOf and a query's FROM
- * read it (follow-up to #110).
- */
-const singleText = (key: string, column = 'f.path') =>
-  `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND COALESCE(p.value_text, p.value_json, '') <> '')`;
+const singleText = (key: string, column = 'f.path') => singleTextSql(key, column);
+const firstDay = (key: string) => firstDaySql(key, 'f.path');
+const notOneDay = (key: string) => notOneDaySql(key, 'f.path');
 
-/** A date property's first day, `YYYY-MM-DD`; null when it holds no date. */
-const firstDay = (key: string) =>
-  `(SELECT substr(p.value_date, 1, 10) FROM props AS p WHERE p.path = f.path AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx LIMIT 1)`;
-
-/**
- * 1 when a property holds something other than one day — words, a number, a
- * list of several — as `focusIsOwn` reads the file; 0 for none, a blank, or one day.
- */
-const notOneDay = (key: string) =>
-  `(SELECT CASE WHEN count(*) = 0 OR (count(*) = 1 AND max(p.value_date) IS NOT NULL) THEN 0 ELSE 1 END FROM props AS p WHERE p.path = f.path AND p.key = '${key}' AND coalesce(p.value_text, p.value_json, '') <> '')`;
 /**
  * Every item a property holds, in order, joined by {@link ITEM_SEPARATOR}:
  * text as written, a nested value as its JSON — as the task rules read it.

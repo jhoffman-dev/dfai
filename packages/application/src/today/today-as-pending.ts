@@ -1,9 +1,6 @@
 import {
   laterChoiceOf,
-  RECURRENCE_KEY,
   taskAsRead,
-  taskRuleChanges,
-  TASK_TYPE,
   todayLists,
   TASK_KEYS,
   type TodayLists,
@@ -12,6 +9,7 @@ import {
 } from '@dfai/domain';
 import type { PropertyChanges } from '../query/set-property.ts';
 import type { TodayReport } from './read-today.ts';
+import { taskRowAsChanged } from './task-row-change.ts';
 
 /**
  * The Today page as it is drawn while the page's own changes are being
@@ -82,27 +80,23 @@ function asChanged({
   newest: number;
   report: Pick<TodayReport, 'today' | 'choosing'>;
 }): TodayTask {
-  if (typeof values === 'function' && task.recurrence === undefined) return task;
+  const changes = taskRowAsChanged({
+    task: {
+      asRead: { ...task, focus: task.focus ?? null },
+      focusIsOwn: task.focusIsOwn === true,
+      recurrence: task.recurrence,
+    },
+    values,
+    today,
+  });
+  // Not known before it is written, or refused: the row stays as read, and the write says why.
+  if (changes === null) return task;
   const properties = {
     [TASK_KEYS.status]: task.status,
     [TASK_KEYS.due]: task.due,
     [TASK_KEYS.defer]: task.defer,
-    // A focus that is the person's own is not a choice the rules could end.
     ...(task.focusIsOwn !== true && { [TASK_KEYS.focus]: task.focus ?? null }),
-    ...(task.recurrence !== undefined && { [RECURRENCE_KEY]: task.recurrence }),
   };
-  let changes: Readonly<Record<string, unknown>>;
-  try {
-    changes = typeof values === 'function' ? values(properties) : values;
-  } catch {
-    // Refused against the row as read: the write refuses it as well, and says why.
-    return task;
-  }
-  // The rules judge a task: the row is one, whatever its read carried.
-  const ruled = taskRuleChanges({ before: { type: TASK_TYPE, ...properties }, changes, today });
-  // Refused by the rules: the write refuses it too, and the row stays as read.
-  if ('refused' in ruled) return task;
-  changes = ruled.changes;
   const after = taskAsRead({ ...properties, ...changes });
   return {
     ...task,

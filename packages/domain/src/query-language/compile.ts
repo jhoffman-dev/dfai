@@ -9,6 +9,7 @@
 
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { foldedTypeName, foldedTypeSql } from '../types/note-type-sql.ts';
+import { listsTasksAlone, taskRowColumnsSql } from '../gtd/task-row.ts';
 import { PROJECT_TYPE } from '../types/para.ts';
 import { outsideParaArchiveSql } from '../types/para-value.ts';
 import { foldedLinkName } from '../markdown/resolve-wikilink.ts';
@@ -52,6 +53,11 @@ export interface CompiledAtlasQuery extends CompiledQuery {
   readonly columns: readonly QueryField[];
   /** The fields the rows are grouped by, then sub-grouped by; each is also a column. */
   readonly groups: readonly GroupField[];
+  /**
+   * Whether each row also carries its task's state in the hidden
+   * `TASK_ROW_COLUMNS` (#107): asked for, on a query of tasks alone.
+   */
+  readonly taskRows: boolean;
 }
 
 /** A field the rows are grouped by, and which way its groups run. */
@@ -66,6 +72,12 @@ export interface AtlasQueryContext {
   readonly resolveLink: (target: string) => string | null;
   /** The note the query is shown on, which `this` names; none, and `this` is refused. */
   readonly thisNote?: string | null;
+  /**
+   * Whether a query of tasks alone (`FROM task`) should carry each task's
+   * state as well, for its row's controls (#107). Off unless asked: what a
+   * query answers through the API is what it shows.
+   */
+  readonly taskRows?: boolean;
 }
 
 export function compileAtlasQuery(
@@ -82,13 +94,14 @@ export function compileAtlasQuery(
     direction: directionOf(query, found, field),
   }));
 
-  const statement = sql`${fixed(ATLAS_QUERY_MARK)} SELECT ${selection(columns, from)}
+  const taskRows = context.taskRows === true && listsTasksAlone(from);
+  const statement = sql`${fixed(ATLAS_QUERY_MARK)} SELECT ${selection(columns, from, taskRows)}
 FROM files AS n
 WHERE ${conditions(query, field, context)}
 ORDER BY ${ordering(query, field)}
 LIMIT ${bound(queryRowLimit(query.limit ?? DEFAULT_QUERY_LIMIT))}`;
 
-  return { sql: statement.text, parameters: statement.values, columns, groups };
+  return { sql: statement.text, parameters: statement.values, columns, groups, taskRows };
 }
 
 /** Which way a group field's groups run: as the query sorts that field, else ascending. */
@@ -141,13 +154,18 @@ function mentioned(expression: Expression | null): FieldRef[] {
   return expression.operands.flatMap(mentioned);
 }
 
-function selection(columns: readonly QueryField[], from: readonly string[]): Fragment {
+function selection(
+  columns: readonly QueryField[],
+  from: readonly string[],
+  taskRows: boolean,
+): Fragment {
   return joined(
     [
       fixed('n.path AS "path"'),
       fixed('n.title AS "title"'),
       sql`(SELECT ${typeNamed(from)} FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND ${fixed(FOLDED_NOTE_TYPE)} IN (${typeList(from)}) ORDER BY t.idx, t.rowid LIMIT 1) AS "type"`,
       ...columns.map((column) => sql`${cellOf(column)} AS ${fixed(`"${column.text}"`)}`),
+      ...(taskRows ? taskRowColumnsSql('n.path').map(fixed) : []),
     ],
     ', ',
   );

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import {
   choosesForToday,
-  TASK_KEYS,
   taskDeferral,
   tasksStartInInbox,
   taskTypeOf,
@@ -12,11 +11,10 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import {
-  archiveTaskChange,
   changeUndoably,
-  choiceChange,
   readAnswers,
   readToday,
+  taskRowChange,
   todayAsPending,
   whileAsRead,
   type IndexPort,
@@ -27,12 +25,10 @@ import {
 import { todayActionWords, type TodayAction } from '@dfai/ui';
 import { errorMessage } from '../query/error-message.ts';
 import { keptTodayReport } from './kept-today-report.ts';
+import { useDayOf } from './use-day-of.ts';
 import { createTodayWrites, NOTHING_SETTLING, type TodayWrites } from './today-writes.ts';
 import { useReviewWrites, type ReviewWritesOptions } from '../review/use-review-writes.ts';
 import type { Toasts } from '../toasts/toasts.ts';
-
-/** How often an open page asks the clock whether the day has turned. */
-const DAY_CHECK_MS = 60_000;
 
 /** Why nothing was chosen, in a vault whose Task type has no `focus` as a date: the page offers no choice there. */
 const NOT_CHOOSING =
@@ -289,7 +285,8 @@ export function useToday(options: TodayOptions) {
   );
 
   const done = useCallback(
-    (task: Row) => void change({ ...task, action: { kind: 'done' }, values: archiveTaskChange() }),
+    (task: Row) =>
+      void change({ ...task, action: { kind: 'done' }, values: taskRowChange({ kind: 'done' }) }),
     [change],
   );
   const setStatus = useCallback(
@@ -297,7 +294,7 @@ export function useToday(options: TodayOptions) {
       void change({
         ...task,
         action: { kind: 'move', status },
-        values: { [TASK_KEYS.status]: status },
+        values: taskRowChange({ kind: 'move', status }),
       }),
     [change],
   );
@@ -319,7 +316,7 @@ export function useToday(options: TodayOptions) {
       void change({
         ...task,
         action: { kind: choice, ...(was !== undefined && { was }) },
-        values: choiceChange({ choice, today: clock.today() }),
+        values: taskRowChange({ kind: 'choice', choice, today: clock.today() }),
       });
     },
     [change, clock, choosing, setProblem],
@@ -364,29 +361,6 @@ export function useToday(options: TodayOptions) {
       onChoose: choose,
     },
   };
-}
-
-/**
- * The clock's day, asked again each minute and whenever the window is looked
- * at again, while the page is open: a page left open overnight — the Mac
- * asleep, timers and all — turns to the new day when it is next seen.
- */
-function useDayOf(clock: Pick<TodayOptions['clock'], 'today'>, open: boolean): string {
-  const [day, setDay] = useState(() => clock.today());
-  useEffect(() => {
-    if (!open) return;
-    const ask = () => setDay(clock.today());
-    ask();
-    const timer = setInterval(ask, DAY_CHECK_MS);
-    window.addEventListener('focus', ask);
-    document.addEventListener('visibilitychange', ask);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', ask);
-      document.removeEventListener('visibilitychange', ask);
-    };
-  }, [clock, open]);
-  return day;
 }
 
 /** What each row on the page was read as, by its task's path. */

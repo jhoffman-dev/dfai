@@ -8,3 +8,4 @@ export type { ComposerMode, QueryComposerProps } from './query-composer.tsx';
 export { QueryBuilder } from './query-builder.tsx';
 export type { QueryBuilderProps } from './query-builder.tsx';
 export { QueryText } from './query-text.tsx';
+export type { TaskRowControls, TaskRowShown } from './task-row-controls.tsx';

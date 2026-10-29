@@ -48,3 +48,18 @@ describe('repeatingTaskUpdate', () => {
     ).toMatchObject({ state: 'todo' });
   });
 });
+
+describe('repeatingTaskUpdate on a recurrence written as a list (#107)', () => {
+  it('rolls a task whose one rule is written as a list', () => {
+    const update = repeatingTaskUpdate({
+      properties: { recurrence: ['', 'every week'], due: '2026-10-28' },
+      statusKey: 'status',
+      resetStatus: 'next-action',
+    });
+    expect(update).toEqual({
+      due: '2026-11-04',
+      status: 'next-action',
+      lastCompleted: '2026-10-28',
+    });
+  });
+});
