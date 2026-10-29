@@ -626,6 +626,30 @@ fn write_text(root: &Path, path: &str, contents: &str, based_on: BasedOn) -> Res
 
 const CHANGED_ON_DISK: &str = "the note changed on disk since it was opened";
 
+/// Whether the file at `relative` is still the version `read` names: its time,
+/// and its bytes when a digest is given (#235). A file that is gone is not.
+pub(crate) fn is_as_read(root: &Path, relative: &str, read: BasedOn) -> Result<bool, String> {
+    match fs::symlink_metadata(resolve_new(root, relative)?) {
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("cannot read: {error}")),
+        Ok(_) => {}
+    }
+    let file = resolve(root, relative)?;
+    let metadata = fs::metadata(&file).map_err(|error| format!("cannot read: {error}"))?;
+    let modified = modified_ms(&metadata)?;
+    if read.modified.is_some_and(|expected| expected != modified) {
+        return Ok(false);
+    }
+    match read
+        .digest
+        .map(|expected| refuse_other_bytes(&file, expected))
+    {
+        Some(Err(error)) if error == CHANGED_ON_DISK => Ok(false),
+        Some(Err(error)) => Err(error),
+        _ => Ok(true),
+    }
+}
+
 /// Refuses a save when the note's bytes are not the ones it was read as.
 ///
 /// Read only once the time has matched, so a stale save the time already

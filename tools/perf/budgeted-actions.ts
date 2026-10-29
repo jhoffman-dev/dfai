@@ -43,6 +43,8 @@ export const BUDGETED_ACTIONS = [
   // On a literature note of 500 highlights, each drawn as its quote and a comment to type in (#534).
   'Open a 500-highlight literature note',
   'Save a comment in a 500-highlight note',
+  // A note of code in five languages, each language's grammar loaded on first use (#265).
+  'Open a note with code in 5 languages',
   // Last on the main fixture: once on, the cache of meanings follows every later write (P32-02).
   '⌘K by meaning + 5 keys',
 ] as const;

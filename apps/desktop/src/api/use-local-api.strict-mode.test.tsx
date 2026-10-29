@@ -30,6 +30,8 @@ const host = vi.hoisted(() => {
   const state = {
     /** Listeners the host was told are ready, by the id each named. */
     ready: new Set<unknown>(),
+    /** The id `api_router_register` gives next. */
+    nextId: 0,
     /** Event listeners registered for API requests. */
     handlers: new Set<(event: { payload: unknown }) => void>(),
     /** `api_router_ready` calls the host has applied but not yet answered. */
@@ -47,6 +49,7 @@ vi.mock('@tauri-apps/api/core', async (importOriginal) => ({
       host.responses.push(args);
       return null;
     }
+    if (command === 'api_router_register') return host.nextId++;
     if (command !== 'api_router_ready') throw new Error(`no host command ${command} here`);
     if (args.ready) host.ready.add(args.listener);
     else host.ready.delete(args.listener);
