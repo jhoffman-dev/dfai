@@ -209,8 +209,8 @@ function slackReads() {
 /**
  * `POST /v1/captures` on the Mac n8n's Docker runs on (README, "API
  * destination"). Every answer comes out of the first output with its
- * status; no answer at all — DFAI closed, a placeholder port, an n8n that is
- * not on the Mac — leaves by the second, to the commit.
+ * status; no answer after three tries — DFAI closed, a placeholder port, an
+ * n8n that is not on the Mac — leaves by the second, to the commit.
  */
 function sendNode() {
   return {
@@ -232,11 +232,16 @@ function sendNode() {
       specifyBody: 'json',
       jsonBody: '={{ $json }}',
       options: {
+        redirect: { redirect: { followRedirects: false } },
         response: { response: { fullResponse: true, neverError: true } },
         timeout: FETCH_TIMEOUT_MS,
       },
     },
     credentials: { httpBearerAuth: { name: DFAI_API_CREDENTIAL } },
+    // A slow DFAI that wrote the note answers in-vault on a retry; only after the last does it commit.
+    retryOnFail: true,
+    maxTries: 3,
+    waitBetweenTries: 2000,
     ...ERROR_OUTPUT,
   };
 }
@@ -509,9 +514,9 @@ const CONNECTIONS = {
  * with the signing secret, in silence; `200` the moment the signature holds
  * — the URL check's challenge, nothing for a request that saves nothing
  * (another emoji, another person), or an empty 200 before any fetch for a
- * message to save, well inside Slack's 3 seconds. A signed request that
- * cannot be read, and any fault in the verify node, are answered `200` and
- * emailed. Every later failure is never answered: it is emailed, and James
+ * message to save, well inside Slack's 3 seconds. Only a request proven
+ * Slack's that cannot be read (or a fault once the signature is proven) is
+ * answered `200` and emailed; no raw body is a silent `401`. Every later failure is never answered: it is emailed, and James
  * is told in Slack, so a message is never lost in silence.
  */
 export function slackCaptureWorkflow(scripts: SlackScripts) {

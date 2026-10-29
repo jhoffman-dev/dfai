@@ -66,6 +66,8 @@ interface Person {
   readonly email: string | null;
 }
 
+const isOk = (answer: unknown) => isFields(answer) && answer['ok'] === true;
+
 /** A `users.info` answer as a name and address: the display name, else the real name. */
 function personOf(answer: unknown): [string, Person] {
   const user = okAnswer(answer, 'users.info')['user'];
@@ -135,7 +137,8 @@ export function slackCapturePayload(answers: SlackAnswers) {
       'the message is not in the thread Slack sent (deleted, or not yours to see)',
     );
   }
-  const people = new Map(answers.users.map(personOf));
+  // A lookup Slack refused (a profile hidden from James, say) names that person by id instead.
+  const people = new Map(answers.users.filter(isOk).map(personOf));
   const others = messages.filter((each) => each !== message && typeof each['ts'] === 'string');
   return {
     contract: 'capture/v1',

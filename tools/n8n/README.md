@@ -641,22 +641,29 @@ not saved and why. A failure is emailed too.
 | `slack-code-node.ts`, `*.workflow.ts`, `slack-app-manifest.ts` | Build the JSON: `pnpm n8n:build`.                                       |
 
 `sha256.ts`, `standard-webhook.ts` and `n8n-nodes.ts` are byte-for-byte
-copies of PR #617's (the Granola webhook), so the two PRs merge in either
-order without a conflict in them.
+copies of PR #617's (the Granola webhook), so those files merge cleanly.
+**`build-workflow.mjs` does conflict with PR #617**: both add their
+workflow to it. Merge PR #617 first, then this one, keeping both sides of
+`build-workflow.mjs` (and of this README), then run `pnpm n8n:build` and
+check that nothing changes.
 
 ### What it answers Slack
 
-- **`401`, in silence**, to a request not signed with the signing secret, or
-  signed more than five minutes from now. No email: a forger cannot fill your
-  mailbox. While the secret is still the placeholder, every request is a
-  `401`, so check the first run in n8n's **Executions**.
+- **`401`, in silence**, to any request not proven Slack's: not signed with
+  the signing secret, signed more than five minutes from now, with no raw
+  body to check (a multipart request with no file part, say), or with
+  headers that cannot be read. No email: a forger cannot fill your mailbox.
+  While the secret is still the placeholder, every request is a `401`, so
+  check the first run in n8n's **Executions**.
 - **`200` with the challenge** to the Events API's URL check.
 - **`200`, nothing else**, to a request that saves nothing: another emoji,
-  someone else's reaction or shortcut, another event.
+  someone else's reaction or shortcut, another event — and every request
+  while `OWNER` is still the placeholder (no email, or every reaction in your
+  channels would be one; the execution in n8n says `OWNER is not set`).
 - **`200` the moment the signature holds**, before any fetch, for a message
   to save: Slack wants an answer within 3 seconds and retries otherwise.
-- **`200` and an email** for a request Slack signed that cannot be read, or
-  while `OWNER` is not set.
+- **`200` and an email** only for a request proven Slack's — signature and
+  fresh timestamp checked over its bytes — that cannot be read.
 
 Everything after the `200` is never answered to Slack: a failure is emailed
 and DMed. Saving one message twice (a retry, both emoji, the shortcut after
@@ -707,7 +714,12 @@ the emoji, a note then a task) writes one Inbox item: DFAI answers
      in place of `U_PASTE_YOUR_SLACK_MEMBER_ID`. Only your shortcuts and
      reactions save; anyone else's are ignored;
    - `EMOJI`, if you want others (names without colons).
-     Re-paste them whenever you re-import a rebuilt JSON.
+     Re-paste **all three** whenever you re-import a rebuilt JSON: with the
+     secret back but `OWNER` still the placeholder, nothing is saved.
+     **Every reaction anyone adds in a conversation you are in starts one n8n
+     execution** (the event cannot be narrowed to your own, or to one emoji);
+     all but yours are answered and end at once, but a hosted n8n plan that
+     bills per execution counts each.
 7. **Activate** the workflow. In the Slack app's **Event Subscriptions**,
    Slack checks the Request URL as soon as it is saved: it should say
    **Verified** (that is the challenge answer). **Interactivity &
@@ -729,8 +741,9 @@ what you saw:
 
 - **Raw Body for a shortcut.** The Webhook node's **Raw Body** option puts
   the bytes in its `data` binary for a form-encoded shortcut as for a JSON
-  event. If not, a shortcut fails the verify node: answered `200` and
-  emailed with n8n's error, while reactions still work.
+  event. If not, every shortcut is refused `401` in silence (`no raw body`
+  in the execution), while reactions still work: the shortcut shows Slack's
+  error, and n8n's **Executions** say why.
 - **Three seconds.** The `200` goes after the verify node only. A cold n8n
   could be slow; n8n's **Executions** show the timing. A late answer makes
   Slack retry; the retry is saved once, but the shortcut may show an error.
@@ -760,8 +773,10 @@ what you saw:
 - Two saves racing on the commit (both emoji at once) may both find the path
   free; the second commit fails, is emailed, and the DM says not saved,
   though the first is there.
-- A send to DFAI that times out after DFAI wrote the note goes on to commit,
-  which cannot see the Mac's file yet: a sync conflict copy is possible
-  (ADR-0049, "the zone and the author's Person link").
+- **Send to DFAI** is tried three times, 2 seconds apart, so a slow DFAI
+  that wrote the note answers `in-vault` on a retry. Only a DFAI that wrote
+  it and then failed to answer all three, within 10 seconds each, is
+  followed by a commit, which cannot see the Mac's file yet: a sync conflict
+  copy is possible (ADR-0049, "the zone and the author's Person link").
 - The channel's name is not fetched (one fewer scope): the note shows the
   channel's id.

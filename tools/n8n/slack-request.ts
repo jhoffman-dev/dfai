@@ -53,10 +53,7 @@ export type SlackAction =
 export type SlackCheck =
   { readonly signed: false; readonly reason: string } | ({ readonly signed: true } & SlackAction);
 
-/**
- * A request Slack signed that cannot be read, or a workflow not set up: it is
- * answered 200 and emailed, never refused, since the sender is Slack.
- */
+/** A request Slack signed that cannot be read: answered 200 and emailed, never refused, since the sender is Slack. */
 export class UnreadableSlackRequest extends Error {
   override readonly name = 'UnreadableSlackRequest';
 }
@@ -173,7 +170,13 @@ export function slackAction(body: string, settings: SlackCaptureSettings): Slack
 /** How much of an unreadable body the failure email quotes. */
 const EXCERPT_BYTES = 200;
 
-/** The body's first bytes, printable ASCII kept and every other byte as `\xNN`: safe in an email. */
+/** Slack's deprecated verification token, as a JSON field or a form field: never quoted. */
+const TOKEN_FIELD = /("token"\s*:\s*")[^"]*|((?:^|&)token=)[^&]*/g;
+
+/**
+ * The body's first bytes, printable ASCII kept and every other byte as
+ * `\xNN`, its `token` redacted: safe in an email.
+ */
 export function slackBodyExcerpt(body: Uint8Array): string {
   let text = '';
   for (const byte of body.subarray(0, EXCERPT_BYTES)) {
@@ -182,52 +185,64 @@ export function slackBodyExcerpt(body: Uint8Array): string {
         ? String.fromCharCode(byte)
         : `\\x${byte.toString(16).padStart(2, '0')}`;
   }
-  return body.length > EXCERPT_BYTES ? `${text}…` : text;
+  const redacted = text.replace(
+    TOKEN_FIELD,
+    (_, json?: string, form?: string) => `${json ?? form}…`,
+  );
+  return body.length > EXCERPT_BYTES ? `${redacted}…` : redacted;
 }
 
-/** The signature, held to the size cap first: a refusal is an answer (401), not a failure. */
+/** A request as n8n hands it over: the body is null when the Webhook node kept no raw bytes. */
+export interface RawSlackDelivery {
+  readonly headers: unknown;
+  readonly body: Uint8Array | null;
+}
+
+/**
+ * Why the request is not proven Slack's, or null once it is. Anything that
+ * goes wrong before the proof — headers that cannot be read, say — is a
+ * refusal too (a silent 401): only a request proven Slack's may cost
+ * an email.
+ */
 function signatureRefusal(delivery: SlackDelivery, check: SlackSignatureCheck): string | null {
+  const { body } = delivery;
   try {
-    if (delivery.body.length > MAX_SLACK_BODY_BYTES) {
-      throw new WebhookRefusal(`body: over ${MAX_SLACK_BODY_BYTES} bytes`);
-    }
-    verifySlackSignature(delivery, check);
+    if (body.length > MAX_SLACK_BODY_BYTES) return `body: over ${MAX_SLACK_BODY_BYTES} bytes`;
+    verifySlackSignature({ headers: delivery.headers, body }, check);
     return null;
   } catch (error) {
-    if (error instanceof WebhookRefusal) return error.message;
-    throw error;
+    return error instanceof WebhookRefusal ? error.message : 'the signature could not be checked';
   }
 }
 
-/** The settings, refused as unreadable while the member id is still the placeholder. */
-function checkedSettings(settings: SlackCaptureSettings): SlackCaptureSettings {
-  if (!USER_ID.test(settings.ownerUserId)) {
-    throw new UnreadableSlackRequest(
-      'OWNER is not set: paste your Slack member id into "Verify Slack signature"',
-    );
-  }
-  return settings;
-}
+/** Why nothing is saved while the member id is still the placeholder: answered a plain 200. */
+export const OWNER_NOT_SET =
+  'OWNER is not set: paste your Slack member id into "Verify Slack signature"';
 
 /**
  * A request checked, then read: its body is trusted only once its signature
  * is. A refusal comes back as `signed: false` (answered 401, in silence); a
- * signed body that cannot be read, or a workflow whose OWNER is not set,
- * throws {@link UnreadableSlackRequest} (answered 200 and emailed).
+ * workflow whose OWNER is not set saves nothing (a plain 200, no email, or
+ * every reaction would be one); a signed body that cannot be read throws
+ * {@link UnreadableSlackRequest} (answered 200 and emailed).
  */
 export function verifySlackRequest(
-  delivery: SlackDelivery,
+  delivery: RawSlackDelivery,
   check: SlackSignatureCheck & { readonly settings: SlackCaptureSettings },
 ): SlackCheck {
-  const reason = signatureRefusal(delivery, check);
+  const { headers, body } = delivery;
+  if (body === null) return { signed: false, reason: 'no raw body' };
+  const reason = signatureRefusal({ headers, body }, check);
   if (reason !== null) return { signed: false, reason };
-  const settings = checkedSettings(check.settings);
+  if (!USER_ID.test(check.settings.ownerUserId)) {
+    return { signed: true, action: 'ignore', reason: OWNER_NOT_SET };
+  }
   try {
-    return { signed: true, ...slackAction(utf8Text(delivery.body), settings) };
+    return { signed: true, ...slackAction(utf8Text(body), check.settings) };
   } catch (error) {
     if (!(error instanceof WebhookRefusal)) throw error;
     throw new UnreadableSlackRequest(
-      `signed by Slack, but ${error.message}; it begins: ${slackBodyExcerpt(delivery.body)}`,
+      `signed by Slack, but ${error.message}; it begins: ${slackBodyExcerpt(body)}`,
     );
   }
 }

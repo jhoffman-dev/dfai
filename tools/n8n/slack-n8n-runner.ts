@@ -21,7 +21,7 @@ export interface NodeRun {
   /** Earlier nodes' items, by name, as `$('<name>')` reads them. */
   readonly nodes?: Readonly<Record<string, readonly Item[]>>;
   /** The raw body the Webhook node put in its `data` binary; left out, there is none. */
-  readonly binary?: readonly number[];
+  readonly binary?: readonly number[] | undefined;
   /** Now, in milliseconds, as the script's `Date.now()` answers. */
   readonly now?: number;
 }

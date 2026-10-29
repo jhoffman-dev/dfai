@@ -132,8 +132,7 @@ describe('a request Slack signed that cannot be read', () => {
   });
 
   it('quotes no verification token: Slack’s deprecated `token` is redacted', () => {
-    const body =
-      '{"token":"xyzz0WbapA4vBCDEFasx0q6G","type":"event_callback","event":{"type":"reaction_added","user":"nope"}}';
+    const body = '{"token":"xyzz0WbapA4vBCDEFasx0q6G","type":"url_verification"}';
     expect(() => read(body)).toThrow(/"token":"…"/);
     expect(() => read(body)).not.toThrow(/xyzz0Wbap/);
     const form = `token=xyzz0WbapA4vBCDEFasx0q6G&payload=%7Bnope`;
