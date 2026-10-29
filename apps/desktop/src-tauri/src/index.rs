@@ -3274,6 +3274,150 @@ ORDER BY m.type DESC, m.name, p.cid";
         }
     }
 
+    /// Attack on PR #616 (head 8e0e3ddd): the index now runs the `SELECT`
+    /// TypeScript sends for each type's view, behind `is_identifier` and a
+    /// `SELECT ` prefix.
+    mod attack_616b {
+        use super::*;
+
+        fn view_names(index: &Connection) -> Vec<String> {
+            let mut statement = index
+                .prepare("SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name")
+                .unwrap();
+            let names = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            names
+        }
+
+        fn select_of(name: &str, select: &str) -> TypeSpec {
+            TypeSpec {
+                name: name.into(),
+                select: select.into(),
+            }
+        }
+
+        /// FAILING: `.atlas/types` may hold two types whose names differ only
+        /// in case (check.ts refuses them in a FROM, `refuseSpellings`). Their
+        /// views, `v_Task` and `v_task`, are one name to SQLite, so the second
+        /// CREATE VIEW fails, the transaction rolls back, and no type has a
+        /// view: every type's table, quick-view count and widget is broken by
+        /// one stray type file, on an index first made with no views at all.
+        #[test]
+        fn two_types_named_alike_in_any_case_leave_every_other_type_its_view() {
+            let index = empty_index();
+            let result = rebuild_views(
+                &index,
+                &[
+                    company_type(),
+                    spec_of("Task", false, Vec::new()),
+                    spec_of("task", false, Vec::new()),
+                ],
+            );
+            assert!(result.is_ok(), "{result:?}");
+            assert!(view_names(&index).contains(&"v_company".to_string()));
+        }
+
+        /// Text that is no single SELECT makes no view and changes nothing:
+        /// a CTE that writes, a second statement after `;`, whitespace or a
+        /// comment, an ATTACH, and a NUL before a second statement.
+        #[test]
+        fn a_view_text_never_runs_a_second_statement_or_a_write() {
+            let mut index = empty_index();
+            put_notes(
+                &mut index,
+                &[note_with_rows("a.md", &[("type", 0, "task", None)])],
+            )
+            .unwrap();
+            let hostile = [
+                "WITH x AS (SELECT 1) DELETE FROM files",
+                "SELECT 1; DELETE FROM files",
+                "SELECT 1;\n\n  DELETE FROM files",
+                "SELECT 1 /* c */; DELETE FROM files",
+                "SELECT 1 -- c\n; DELETE FROM files",
+                "SELECT 1; ATTACH ':memory:' AS other",
+                "SELECT 1\0; DELETE FROM files",
+                " SELECT 1",
+                "select 1",
+            ];
+            for text in hostile {
+                let _ = rebuild_views(&index, &[select_of("task", text)]);
+                let files: i64 = index
+                    .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+                    .unwrap();
+                assert_eq!(files, 1, "{text:?} changed the files");
+                let attached: i64 = index
+                    .query_row("SELECT COUNT(*) FROM pragma_database_list", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap();
+                assert_eq!(attached, 1, "{text:?} attached a database");
+            }
+            // A trailing comment or `;` is still the one SELECT.
+            rebuild_views(&index, &[select_of("task", "SELECT 1 AS one; -- end\n")]).unwrap();
+            assert_eq!(view_names(&index), vec!["v_task".to_string()]);
+        }
+
+        /// An index main made (no `props_type_fold`, main's own views) opened
+        /// by this branch: the fold index is made, the next rebuild leaves
+        /// only the views it was sent, and the notes are kept (same version).
+        /// Then main's writes and its view text still run with the extra
+        /// index in place, as they would after a roll back.
+        #[test]
+        fn an_index_made_on_main_gains_the_fold_index_and_loses_its_stale_views() {
+            let vault = tempfile::tempdir().unwrap();
+            {
+                let (mut index, _) = open_database(vault.path()).unwrap();
+                put_notes(
+                    &mut index,
+                    &[note_with_rows("a.md", &[("type", 0, "Task", None)])],
+                )
+                .unwrap();
+                index
+                    .execute_batch(
+                        "DROP INDEX IF EXISTS props_type_fold;
+                         CREATE VIEW \"v_task\" AS SELECT path FROM files;
+                         CREATE VIEW \"v_gone\" AS SELECT path FROM files;",
+                    )
+                    .unwrap();
+            }
+            let (mut index, opened) = open_database(vault.path()).unwrap();
+            assert!(!opened.fresh);
+            let folds: i64 = index
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'props_type_fold'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(folds, 1);
+            let folded = "SELECT n.path AS \"path\" FROM files AS n WHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND lower(trim(value_text)) = 'task')";
+            rebuild_views(&index, &[select_of("task", folded)]).unwrap();
+            assert_eq!(view_names(&index), vec!["v_task".to_string()]);
+            let rows = run_query(&index, "SELECT path FROM v_task", &[]).unwrap();
+            assert_eq!(rows.rows.len(), 1);
+
+            // Main's code on the same file: its writes and its view text.
+            put_notes(
+                &mut index,
+                &[
+                    note_with_rows("a.md", &[("type", 0, " TASK ", None)]),
+                    note_with_rows("b.md", &[("type", 0, "task", None)]),
+                ],
+            )
+            .unwrap();
+            rebuild_views(&index, &[spec_of("task", false, Vec::new())]).unwrap();
+            let rows = run_query(&index, "SELECT path FROM v_task", &[]).unwrap();
+            assert_eq!(rows.rows.len(), 1);
+            let integrity: String = index
+                .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(integrity, "ok");
+        }
+    }
+
     /// Attacks on #135 (PR #138): what the index does now that its commands
     /// can overlap, and what the search-table shortcut left behind.
     mod attack_135 {
