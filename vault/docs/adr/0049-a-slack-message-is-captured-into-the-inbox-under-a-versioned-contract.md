@@ -209,3 +209,23 @@ characters of what was sent, and nothing is written.
   them, as meeting linking does, is a follow-up.
 - A second provider is v2's, or a new value of `provider` with its own
   reading of `text`; v1 files keep reading as they are.
+
+## Amendment, 2026-10-28: how #104 sends and falls back
+
+- **n8n sends to `POST /v1/captures` first** and commits the file to
+  pkm-space only when DFAI does not take it: no answer, or any status but
+  `200`/`201`. The commit is the app's own mapper, compiled into the Code
+  node (`mapCaptureScript`), on `America/Los_Angeles` with no Person links.
+- **The commit's "is it there?" is the folder listing of `Inbox/Captures/`**:
+  a file whose name ends in the key's hash, numbered or not, in any case, is
+  taken as the message's, and nothing is written. It does not read the file
+  to compare `external_id`s: a 64-bit clash inside one folder is not worth a
+  fetch per candidate, and the reply names the path it found, so a wrong
+  skip is never silent.
+- **A dropped file is still not marked a duplicate of one already filed**
+  (Consequences, above). The commit runs only when DFAI is not there, and
+  only a message saved again after its note was filed out of the Inbox
+  lands twice; the README lists it as a known gap.
+- **James is told in Slack by the app's bot**, a DM (`chat.postMessage` to
+  his member id): it works in every conversation, the bot a member of none,
+  where an ephemeral reply needs the bot in the channel.

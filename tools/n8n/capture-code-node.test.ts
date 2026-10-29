@@ -49,7 +49,7 @@ describe('the capture mapper compiled into a Code node', () => {
   });
 
   it('is every module in the folder, and every meeting module they import, so none is left out', () => {
-    const script = mapCaptureScript();
+    const script = mapCaptureScript('Build the capture');
     for (const name of modules) expect(script).toContain(`// ${name}\n`);
     const shared = modules.flatMap((name) =>
       [
@@ -74,9 +74,17 @@ describe('the capture mapper compiled into a Code node', () => {
     expect(() => mapCapture(slackCapture({ kind: 'memo' }))).toThrow(CaptureRefusedError);
   });
 
-  it('wraps the node’s answer for n8n', () => {
-    const node = new Function('$json', mapCaptureScript()) as (json: unknown) => { json: unknown };
-    expect(node(slackCapture()).json).toEqual({ ...mapCapture(slackCapture(), OPTIONS) });
+  it('wraps the node’s answer for n8n: the built payload’s file, and none held in a new folder', () => {
+    const node = new Function('$input', '$', mapCaptureScript('Build the capture')) as (
+      input: unknown,
+      named: unknown,
+    ) => { json: unknown }[];
+    const built = { first: () => ({ json: slackCapture() }) };
+    const listing = { first: () => ({ json: { statusCode: 404, body: {} } }) };
+    expect(node(listing, () => built)[0]?.json).toEqual({
+      ...mapCapture(slackCapture(), OPTIONS),
+      held: null,
+    });
   });
 });
 
