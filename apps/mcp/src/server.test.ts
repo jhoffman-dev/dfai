@@ -35,6 +35,7 @@ const ALL_TOOLS = [
   'atlas_backlinks',
   'atlas_brief',
   'atlas_calendar',
+  'atlas_capture',
   'atlas_capture_task',
   'atlas_clarify_inbox_item',
   'atlas_create_note',

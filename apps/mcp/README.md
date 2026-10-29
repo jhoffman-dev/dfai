@@ -95,6 +95,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_run_query`             | `POST /v1/atlas-query`                                                       | no      |
 | `atlas_sql`                   | `POST /v1/sql`                                                               | no      |
 | `atlas_daily_note`            | `POST /v1/daily`                                                             | yes     |
+| `atlas_capture`               | `POST /v1/captures`                                                          | yes     |
 | `atlas_capture_task`          | `POST /v1/capture`                                                           | yes     |
 | `atlas_save_artifact`         | `POST /v1/artifacts`, then `PUT /v1/artifacts/{path}/files/{name}` per chunk | yes     |
 | `atlas_add_image`             | `PUT /v1/notes/{path}/images/{name}` per chunk, then `.../append`            | yes     |
@@ -182,6 +183,14 @@ what it captures in the Inbox, and `atlas_inbox` lists what waits there —
 every note in `Inbox/`, and every task still at `status: inbox` wherever it
 lives — each meeting with what the import made of it and each task with what
 it already says; proposals are listed by `atlas_proposals`, not by it.
+
+`atlas_capture` saves one Slack message — and its thread, when asked — that
+the model read through a Slack connector, as `POST /v1/captures` does for n8n:
+a task or a note in `Inbox/Captures/`, once per message (its channel and ts),
+so asking again answers `in-vault` with the note that holds it. Its description
+tells the model to pass the permalink, channel id and ts, to choose task or
+note from the person's words, and to pass only what it read. A call without
+`source.url` is refused before any request.
 
 `atlas_clarify_inbox_item` is GTD's clarify step for one item, as a row of the
 Inbox page does it: status, `waitingOn`, `defer`, `due` and `contexts` are

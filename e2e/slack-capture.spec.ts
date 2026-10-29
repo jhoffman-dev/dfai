@@ -1,5 +1,9 @@
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { connectInMemoryMcp } from '../apps/mcp/src/testing/in-memory-mcp.ts';
 import { expect, test, type Page } from './fixtures.ts';
 import {
+  type ApiCall,
   createVault,
   expectFile,
   installHost,
@@ -94,4 +98,61 @@ test('a malformed capture is refused with its reasons, and nothing reaches the I
   );
   expect(JSON.stringify(refused.body)).toContain('source.url: missing');
   expect(await vault.exists(PATH)).toBe(false);
+});
+
+/**
+ * #106: Claude, holding a message it read through a Slack connector, saves it
+ * with `atlas_capture`. The MCP server's requests go to the stub host, so the
+ * app's own router, use-case and vault write answer them.
+ */
+function throughHost(host: FakeHost): typeof fetch {
+  return async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    const answer = await host.api.send({
+      method: (init?.method ?? 'GET') as ApiCall['method'],
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+    });
+    return new Response(JSON.stringify(answer.body), { status: answer.status });
+  };
+}
+
+test('Claude saves a Slack message with atlas_capture once, however often it asks', async ({
+  page,
+}) => {
+  const { host, vault } = await openVault(page);
+  await turnApiOn(page);
+  const mcp = await connectInMemoryMcp(throughHost(host));
+  // The payload less what the tool fills in itself: the contract and the provider.
+  const { channel, ts, url, author } = CAPTURE.source;
+  const toolArguments = { ...CAPTURE, contract: undefined, source: { channel, ts, url, author } };
+  const saveIt = async () => {
+    const result = await mcp.callTool({
+      name: 'atlas_capture',
+      arguments: toolArguments,
+    });
+    expect(result.isError ?? false).toBe(false);
+    const [first] = result.content as { text: string }[];
+    return JSON.parse(first?.text ?? '') as unknown;
+  };
+
+  expect(await saveIt()).toEqual({ capture: { path: PATH, outcome: 'written' } });
+  await expectFile(vault, PATH).toContain(`source: '${PERMALINK}'`);
+  await page
+    .getByRole('list', { name: 'Go to' })
+    .getByRole('button', { name: /^Inbox/ })
+    .click();
+  // Any capture of this message, under any title or number, is a row starting so.
+  const rows = page
+    .getByRole('article', { name: 'Inbox' })
+    .getByRole('button', { name: /^Send the Larkspur renewal by Friday \(slack / });
+  await expect(rows).toHaveCount(1);
+
+  expect(await saveIt()).toEqual({ capture: { path: PATH, outcome: 'in-vault' } });
+  // The answer comes once the write would have landed: the folder still holds the one note.
+  expect(await readdir(join(vault.root, 'Inbox/Captures'))).toEqual([PATH.split('/').pop()]);
+  expect(host.writesTo(PATH)).toBe(1);
+  await expect(rows).toHaveCount(1);
+  await mcp.close();
 });
