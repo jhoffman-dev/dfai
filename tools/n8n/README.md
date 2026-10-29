@@ -666,9 +666,27 @@ check that nothing changes.
   fresh timestamp checked over its bytes — that cannot be read.
 
 Everything after the `200` is never answered to Slack: a failure is emailed
-and DMed. Saving one message twice (a retry, both emoji, the shortcut after
-the emoji, a note then a task) writes one Inbox item: DFAI answers
-`in-vault`, and the commit finds a file already named for the message.
+and DMed, at most one email a run. Saving one message twice (a retry, both
+emoji, the shortcut after the emoji, a note then a task) writes one Inbox
+item: DFAI answers `in-vault`, and the commit finds a file already named for
+the message.
+
+**One odd detail never loses the message.** What Slack sends is fitted to
+capture/v1 before the contract reads it, by the contract's own rules
+(imported from `capture-payload.ts`, so they cannot drift):
+
+- a `users.info` lookup that fails, or names nobody, leaves that person
+  named by id; it never fails the capture;
+- an address the contract will not hold (an apostrophe, say) is left out,
+  and the person kept by name;
+- a name that cleans to nothing (only direction or zero-width marks) falls
+  back to the real name, the handle, then the id; every name is cut to 200
+  characters between code points;
+- the first 100 files are kept (the contract's most);
+- a thread holding more than 1,000,000 characters keeps the saved message
+  whole and leaves out the replies farthest from it first. The note cannot
+  say so (capture/v1 has no place for it); the DM does: `(N replies were
+left out: …)`.
 
 ### What only you can do, in Slack and n8n
 
@@ -756,15 +774,25 @@ what you saw:
 - **The bot's DM.** `chat.postMessage` to your member id with the bot token
   lands in the app's **Messages** tab. If Slack answers `ok: false`, it is
   emailed (`Slack took the reply?`).
-- **A thread of more than 1,000 messages** keeps its first 1,000; a capture
-  of more than 100 people names the rest by id.
-- **`Inbox/Captures/` of more than 1,000 files**: GitHub lists only 1,000,
-  so the commit could miss a file already there and write a second. File
-  your Inbox, or send to DFAI, which finds it anywhere in the vault.
+- **A capture of more than 100 people** names the rest by id. Whoever
+  asked and the saved message's author are always looked up first.
 - **The email's expressions** are PR #617's: if n8n's expression editor
   refuses one, the email node fails (it stops nothing).
 
 ### Known gaps
+
+- **Replies past 1,000 cannot be saved.** One `conversations.replies` call
+  asks for Slack's most, 1,000 messages; a longer thread keeps the first
+  1,000 (the parent among them), and the rest are not in the note.
+- **Slack's retries** (`x-slack-retry-num`) are not told apart: a retry is
+  saved again, and the key (`<channel>/<ts>`) makes it the same one note.
+- **`Retry-After` is not honoured.** A Slack `429` is retried three times,
+  two seconds apart, whatever Slack asks; past that the capture fails, is
+  emailed and DMed.
+- **A listing of 1,000 files** in `Inbox/Captures/` is GitHub's most and
+  may be cut short, so the commit refuses it rather than risk a second file:
+  the capture fails, is emailed and DMed. File your Inbox, or send to DFAI,
+  which finds a message anywhere in the vault.
 
 - The commit cannot see a note filed out of `Inbox/Captures/`: a message
   saved again by commit after you filed it lands in the Inbox a second time.

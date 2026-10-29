@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { readCapture } from '@dfai/domain';
 import { heldCapturePath, ListingError } from './capture-github.ts';
 import { MAX_LOOKUPS, SlackApiError, slackCapturePayload, usersToLookUp } from './slack-capture.ts';
-import { committedReply, failedReply, heldReply, savedReply, slackLine } from './slack-reply.ts';
+import {
+  committedReply,
+  failedReply,
+  heldReply,
+  leftOutNote,
+  savedReply,
+  slackLine,
+} from './slack-reply.ts';
 import type { SlackCaptureAction } from './slack-request.ts';
 import {
   CHANNEL,
@@ -133,10 +140,12 @@ describe('the capture/v1 payload', () => {
     ).toThrow(/not in the thread Slack sent/);
   });
 
-  it('is refused when a person answered has no id', () => {
-    expect(() =>
-      slackCapturePayload({ ...answers, users: [{ ok: true, user: { profile: {} } }] }),
-    ).toThrow(/said nothing of whose/);
+  it('skips a person answered with no id, naming the author by id instead', () => {
+    const payload = slackCapturePayload({
+      ...answers,
+      users: [{ ok: true, user: { profile: {} } }],
+    });
+    expect(payload.source.author).toEqual({ id: 'U0MARAQ111', name: 'U0MARAQ111', email: null });
   });
 
   it('writes a person with no address as having none', () => {
@@ -215,6 +224,15 @@ describe('the replies in Slack', () => {
     );
     expect(failedReply({ error: { message: 'timeout' } })).toMatch(/: timeout\./);
     expect(failedReply({ status: 500 })).toMatch(/\{"status":500\}/);
+  });
+
+  it('say how many replies a too-long thread left out, and nothing when none were', () => {
+    const thread = repliesAnswer();
+    expect(leftOutNote(thread, { thread: [{}, {}] })).toBe('');
+    expect(leftOutNote(thread, { thread: [{}] })).toBe(
+      ' (1 reply was left out: the thread is longer than a capture holds)',
+    );
+    expect(leftOutNote(thread, { thread: [] })).toMatch(/^ \(2 replies were left out/);
   });
 
   it('cut a long reason, and take out every control character', () => {

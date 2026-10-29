@@ -257,6 +257,17 @@ describe('the wiring', () => {
     ).toBe('={{ $json.statusCode === 200 || $json.statusCode === 201 }}');
   });
 
+  it('sends at most one email a run, however many items reach it', () => {
+    expect(node(N.notify)).toMatchObject({ executeOnce: true });
+  });
+
+  it('keeps every lookup on one route: a failed one is an item for Build, never a failure', () => {
+    expect(node(N.names)).toMatchObject({ onError: 'continueRegularOutput' });
+    expect(outputsOf(N.names).map((targets) => targets.map((each) => each.node))).toEqual([
+      [N.build],
+    ]);
+  });
+
   it('commits only when pkm-space holds no file for the message', () => {
     expect(outputsOf(N.held).map((targets) => targets.map((each) => each.node))).toEqual([
       [N.replyHeld],
@@ -480,6 +491,8 @@ describe('the Code nodes, run as n8n runs them', () => {
         [N.verify]: json(verified),
         [N.map]: json({ path: 'Inbox/Captures/R (slack 01).md' }),
         [N.send]: json({ error: 'connect ECONNREFUSED' }),
+        [N.thread]: json(repliesAnswer()),
+        [N.build]: json({ thread: [{}, {}] }),
       },
     });
     expect(items(reply)[0]?.json).toEqual({
@@ -527,6 +540,8 @@ describe.skipIf(!existsSync(JSC))('the Code nodes in JavaScriptCore', () => {
         [N.verify]: json(verified),
         [N.map]: json({ path: 'P.md', held: 'H.md' }),
         [N.send]: json({ statusCode: 503 }),
+        [N.thread]: json(repliesAnswer()),
+        [N.build]: json({ thread: [] }),
       },
     }));
     const runs: NodeRun[] = [

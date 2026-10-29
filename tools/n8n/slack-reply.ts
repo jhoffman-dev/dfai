@@ -64,3 +64,20 @@ export function heldReply(path: string): string {
 export function failedReply(item: unknown): string {
   return `Not saved to DFAI: ${slackLine(failureReason(item))}. The details are in your email.`;
 }
+
+const countOf = (value: unknown, name: string) => {
+  const list =
+    typeof value === 'object' && value !== null ? (value as Record<string, unknown>)[name] : null;
+  return Array.isArray(list) ? list.length : 0;
+};
+
+/**
+ * What the DM adds when the thread was too long to save whole: capture/v1
+ * has no place in the note to say so. Empty when every reply was saved.
+ */
+export function leftOutNote(replies: unknown, payload: unknown): string {
+  // Slack lists the saved message itself among the thread's messages.
+  const leftOut = countOf(replies, 'messages') - 1 - countOf(payload, 'thread');
+  if (leftOut <= 0) return '';
+  return ` (${leftOut} ${leftOut === 1 ? 'reply was' : 'replies were'} left out: the thread is longer than a capture holds)`;
+}

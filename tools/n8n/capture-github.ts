@@ -17,7 +17,10 @@ export interface FolderListing {
   readonly body: unknown;
 }
 
-/** A listing GitHub did not give: never taken for "nothing there", which would write twice. */
+/** The most files GitHub's contents API lists in a folder: a listing that long may be cut short. */
+export const GITHUB_LISTING_LIMIT = 1000;
+
+/** A listing GitHub did not give, or gave cut short: never taken for "nothing there", which would write twice. */
 export class ListingError extends Error {
   override readonly name = 'ListingError';
 }
@@ -28,6 +31,11 @@ function namesIn(listing: FolderListing): string[] {
   if (listing.statusCode !== 200 || !Array.isArray(listing.body)) {
     throw new ListingError(
       `GitHub answered ${String(listing.statusCode)} listing ${CAPTURES_FOLDER}, not its files`,
+    );
+  }
+  if (listing.body.length >= GITHUB_LISTING_LIMIT) {
+    throw new ListingError(
+      `GitHub listed ${listing.body.length} files in ${CAPTURES_FOLDER}, its most, so maybe not all: file your Inbox, or send to DFAI`,
     );
   }
   return listing.body.flatMap((entry: unknown) => {

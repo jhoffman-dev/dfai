@@ -1,3 +1,11 @@
+import {
+  fittedAttachments,
+  fittedEmail,
+  fittedName,
+  fittedThread,
+  holdsLink,
+  type Attachment,
+} from './slack-fit.ts';
 import type { SlackCaptureAction } from './slack-request.ts';
 
 /*
@@ -46,12 +54,16 @@ export function threadMessages(replies: unknown): readonly Fields[] {
 
 /**
  * Whose names the capture needs: whoever asked (always one, so n8n's lookup
- * runs at least once), every author and everyone mentioned, at most
- * {@link MAX_LOOKUPS}.
+ * runs at least once), the saved message's author, then every other author
+ * and everyone mentioned, at most {@link MAX_LOOKUPS}.
  */
 export function usersToLookUp(action: SlackCaptureAction, replies: unknown): string[] {
+  const messages = threadMessages(replies);
+  const saved = messages.find((message) => message['ts'] === action.ts)?.['user'];
+  // The saved message's author first: the cap must never leave out whose message it is.
   const ids = new Set<string>([action.userId]);
-  for (const message of threadMessages(replies)) {
+  if (typeof saved === 'string' && USER_ID.test(saved)) ids.add(saved);
+  for (const message of messages) {
     const author = message['user'];
     if (typeof author === 'string' && USER_ID.test(author)) ids.add(author);
     for (const mention of String(message['text'] ?? '').matchAll(MENTION)) {
@@ -66,21 +78,23 @@ interface Person {
   readonly email: string | null;
 }
 
-const isOk = (answer: unknown) => isFields(answer) && answer['ok'] === true;
-
-/** A `users.info` answer as a name and address: the display name, else the real name. */
-function personOf(answer: unknown): [string, Person] {
-  const user = okAnswer(answer, 'users.info')['user'];
+/**
+ * A `users.info` answer as a name and address, or null when it names nobody:
+ * the display name, else the real name, else the handle, else the id, each
+ * as the contract holds a name; an address it would refuse is left out.
+ */
+function personOf(answer: unknown): [string, Person] | null {
+  const user = field(answer, 'user');
   const profile = field(user, 'profile');
   const id = text(field(user, 'id'));
-  if (id === null) throw new SlackApiError("Slack's users.info said nothing of whose it was");
-  const name =
-    text(field(profile, 'display_name')) ??
-    text(field(profile, 'real_name')) ??
-    text(field(user, 'real_name')) ??
-    text(field(user, 'name')) ??
-    id;
-  return [id, { name: name.trim(), email: text(field(profile, 'email')) }];
+  if (field(answer, 'ok') !== true || id === null) return null;
+  const names = [
+    field(profile, 'display_name'),
+    field(profile, 'real_name'),
+    field(user, 'real_name'),
+    field(user, 'name'),
+  ];
+  return [id, { name: fittedName(names, id), email: fittedEmail(field(profile, 'email')) }];
 }
 
 /** A message's author: a person looked up, a bot by its name, or the id alone. */
@@ -90,22 +104,23 @@ function authorOf(message: Fields, people: ReadonlyMap<string, Person>) {
   if (userId !== null)
     return { id: userId, name: person?.name ?? userId, email: person?.email ?? null };
   const botId = text(message['bot_id']);
-  const name = text(field(message['bot_profile'], 'name')) ?? text(message['username']) ?? 'a bot';
+  const name = fittedName([field(message['bot_profile'], 'name'), message['username']], 'a bot');
   return { id: botId, name, email: null };
 }
 
 /** Every file shared in the thread, by its permalink (a link for a person, never the file's bytes). */
-function attachmentsOf(messages: readonly Fields[]) {
+function attachmentsOf(messages: readonly Fields[]): Attachment[] {
   const seen = new Set<string>();
-  return messages.flatMap((message) => {
+  const all = messages.flatMap((message) => {
     const files = Array.isArray(message['files']) ? message['files'].filter(isFields) : [];
     return files.flatMap((file) => {
       const url = text(file['permalink']);
-      if (url === null || !url.startsWith('https://') || seen.has(url)) return [];
+      if (url === null || !holdsLink(url) || seen.has(url)) return [];
       seen.add(url);
-      return [{ name: text(file['name']) ?? text(file['title']) ?? 'file', url }];
+      return [{ name: fittedName([file['name'], file['title']], 'file'), url }];
     });
   });
+  return fittedAttachments(all);
 }
 
 /** What the Slack API answered for one capture, as the build node gathers it. */
@@ -138,8 +153,17 @@ export function slackCapturePayload(answers: SlackAnswers) {
     );
   }
   // A lookup Slack refused (a profile hidden from James, say) names that person by id instead.
-  const people = new Map(answers.users.filter(isOk).map(personOf));
-  const others = messages.filter((each) => each !== message && typeof each['ts'] === 'string');
+  const people = new Map<string, Person>(
+    answers.users.flatMap((answer) => {
+      const person = personOf(answer);
+      return person === null ? [] : [person];
+    }),
+  );
+  const replies = messages
+    .filter((each) => each !== message && typeof each['ts'] === 'string')
+    .map((reply) => ({ reply, ts: String(reply['ts']), text: String(reply['text'] ?? '') }));
+  const savedText = String(message['text'] ?? '');
+  const thread = fittedThread(replies, { ts: action.ts, text: savedText });
   return {
     contract: 'capture/v1',
     kind: action.kind,
@@ -150,13 +174,13 @@ export function slackCapturePayload(answers: SlackAnswers) {
       url,
       author: authorOf(message, people),
     },
-    text: String(message['text'] ?? ''),
-    thread: others.map((reply) => ({
-      ts: reply['ts'],
+    text: savedText,
+    thread: thread.map(({ reply, ts, text: words }) => ({
+      ts,
       author: authorOf(reply, people),
-      text: String(reply['text'] ?? ''),
+      text: words,
     })),
-    attachments: attachmentsOf([message, ...others]),
+    attachments: attachmentsOf([message, ...thread.map(({ reply }) => reply)]),
     users: Object.fromEntries([...people].map(([id, person]) => [id, person.name])),
   };
 }

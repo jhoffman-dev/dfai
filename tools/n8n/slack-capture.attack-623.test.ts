@@ -189,9 +189,19 @@ describe('attack-623: who may save', () => {
   });
 
   it('reads a form body’s first payload field, and never an event beside it', () => {
-    const shortcut = shortcutBody({ user: { id: OTHER } });
-    const both = `${shortcut}&event=${encodeURIComponent(reactionBody())}`;
-    expect(signed(both)).toMatchObject({ action: 'ignore', reason: 'not your shortcut' });
+    const event = `event=${encodeURIComponent(reactionBody())}`;
+    const others = shortcutBody({ user: { id: OTHER } });
+    // The owner's event, before the shortcut and after it: reading it would save.
+    for (const both of [`${event}&${others}`, `${others}&${event}`]) {
+      expect(signed(both)).toEqual({ signed: true, action: 'ignore', reason: 'not your shortcut' });
+    }
+    // And the other way round: the owner's shortcut is read, not someone else's event.
+    const othersEvent = `event=${encodeURIComponent(reactionBody({ user: OTHER }))}`;
+    expect(signed(`${othersEvent}&${shortcutBody()}`)).toMatchObject({
+      action: 'capture',
+      via: 'shortcut',
+      kind: 'task',
+    });
   });
 
   it('refuses a payload that is an array, a string, or deep nesting, as unreadable (signed)', () => {

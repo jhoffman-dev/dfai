@@ -30,7 +30,7 @@ const header = (what: string, from: string) =>
 
 /** Modules here as one plain-JavaScript script, followed by `run`, the node's own lines. */
 function slackScript(what: string, modules: readonly string[], run: readonly string[]): string {
-  const from = `tools/n8n/${modules.map((each) => each.slice(2)).join(', ')}`;
+  const from = modules.map((each) => each.slice(each.lastIndexOf('/') + 1)).join(', ');
   return `${header(what, from)}\n\n${modules.map(moduleScript).join('\n')}\n// --- n8n ---\n${run.join('\n')}\n`;
 }
 
@@ -86,41 +86,47 @@ export function verifySlackScript(node: VerifyNodeSettings = PLACEHOLDER_SETTING
   );
 }
 
+const CONTRACT = '../../packages/domain/src/capture/mapping/';
+
+/** The payload's modules: the contract's own rules and limits first, which the fitting reads. */
+const CAPTURE_MODULES = [
+  `${CONTRACT}capture-refusal.ts`,
+  `${CONTRACT}capture-text.ts`,
+  `${CONTRACT}capture-payload.ts`,
+  './slack-fit.ts',
+  './slack-capture.ts',
+] as const;
+
 /** The "Who is in it?" node: one item per person to look up, whoever asked always among them. */
 export function usersToLookUpScript(): string {
-  return slackScript(
-    'who to look up',
-    ['./slack-capture.ts'],
-    [
-      `const action = $('${N.verify}').first().json;`,
-      `return usersToLookUp(action, $('${N.thread}').first().json).map((userId) => ({ json: { userId } }));`,
-    ],
-  );
+  return slackScript('who to look up', CAPTURE_MODULES, [
+    `const action = $('${N.verify}').first().json;`,
+    `return usersToLookUp(action, $('${N.thread}').first().json).map((userId) => ({ json: { userId } }));`,
+  ]);
 }
 
 /** The "Build the capture" node: everything Slack sent, as one capture/v1 payload. */
 export function buildCaptureScript(): string {
-  return slackScript(
-    'the capture/v1 payload',
-    ['./slack-capture.ts'],
-    [
-      'const payload = slackCapturePayload({',
-      `  action: $('${N.verify}').first().json,`,
-      `  permalink: $('${N.permalink}').first().json,`,
-      `  replies: $('${N.thread}').first().json,`,
-      '  users: $input.all().map((each) => each.json),',
-      '});',
-      'return [{ json: payload }];',
-    ],
-  );
+  return slackScript('the capture/v1 payload', CAPTURE_MODULES, [
+    'const payload = slackCapturePayload({',
+    `  action: $('${N.verify}').first().json,`,
+    `  permalink: $('${N.permalink}').first().json,`,
+    `  replies: $('${N.thread}').first().json,`,
+    '  users: $input.all().map((each) => each.json),',
+    '});',
+    'return [{ json: payload }];',
+  ]);
 }
 
 /** The reply each outcome DMs, as an n8n Code node's lines: `text` is the reply's words. */
 export type ReplyOutcome = 'saved' | 'committed' | 'held' | 'failed';
 
+/** How many of the thread's replies the capture could not hold, as the reply says. */
+const LEFT_OUT = `leftOutNote($('${N.thread}').first().json, $('${N.build}').first().json)`;
+
 const REPLY_TEXT: Readonly<Record<ReplyOutcome, string>> = {
-  saved: 'savedReply($input.first().json)',
-  committed: `committedReply($('${N.map}').first().json.path, $('${N.send}').first().json)`,
+  saved: `savedReply($input.first().json) + ${LEFT_OUT}`,
+  committed: `committedReply($('${N.map}').first().json.path, $('${N.send}').first().json) + ${LEFT_OUT}`,
   held: `heldReply($('${N.map}').first().json.held)`,
   failed: 'failedReply($input.first().json)',
 };

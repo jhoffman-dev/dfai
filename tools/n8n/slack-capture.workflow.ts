@@ -195,14 +195,19 @@ function slackReads() {
         { name: 'limit', value: String(THREAD_LIMIT) },
       ],
     }),
-    slackRead({
-      name: N.names,
-      serial: '2013',
-      position: [1760, 0],
-      method: 'users.info',
-      query: [{ name: 'user', value: '={{ $json.userId }}' }],
-      batched: true,
-    }),
+    {
+      ...slackRead({
+        name: N.names,
+        serial: '2013',
+        position: [1760, 0],
+        method: 'users.info',
+        query: [{ name: 'user', value: '={{ $json.userId }}' }],
+        batched: true,
+      }),
+      // One item per person: a failed lookup must not split the run into "saved" and "not
+      // saved". Its error stays an item, and "Build the capture" names that person by id.
+      onError: 'continueRegularOutput',
+    },
   ];
 }
 
@@ -357,6 +362,8 @@ function notifyNode() {
       options: { appendAttribution: false },
     },
     credentials: { gmailOAuth2: { name: GMAIL_CREDENTIAL } },
+    // At most one email per run, however many items reach it.
+    executeOnce: true,
     ...ERROR_OUTPUT,
   };
 }
@@ -492,7 +499,7 @@ const CONNECTIONS = {
   [N.permalink]: { main: [to(N.thread), to(N.failed)] },
   [N.thread]: { main: [to(N.lookUp), to(N.failed)] },
   [N.lookUp]: { main: [to(N.names), to(N.failed)] },
-  [N.names]: { main: [to(N.build), to(N.failed)] },
+  [N.names]: { main: [to(N.build)] },
   [N.build]: { main: [to(N.send), to(N.failed)] },
   [N.send]: { main: [to(N.sent), to(N.list)] },
   [N.sent]: { main: [to(N.replySaved), to(N.list)] },
