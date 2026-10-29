@@ -6,6 +6,7 @@ import {
   joinVaultPath,
   newSkillBody,
   SKILL_FILE,
+  SKILL_FILE_UNREADABLE,
   skillDraftProblems,
   skillFrontmatterChanges,
   SKILLS_DIRECTORY,
@@ -97,7 +98,8 @@ async function makeSkillFolder(fs: VaultFsPort, name: string): Promise<VaultPath
  * A folder of exactly that name with no SKILL.md yet is the skill's: its
  * SKILL.md is written into it. Refused when the draft breaks a rule, or
  * another folder has the name in any case or form. When the folder is made
- * but its SKILL.md cannot be, the folder is taken away again.
+ * but its SKILL.md cannot be, the folder is taken away again while it is
+ * still empty.
  */
 export async function createSkill({
   fs,
@@ -110,26 +112,50 @@ export async function createSkill({
 }): Promise<SkillFile> {
   refuseUnlessValid(draft);
   const folders = await listSkillFolders(fs);
+  const names = folders.map((folder) => folder.name);
   const own = folders.find((folder) => folder.name === draft.name);
   if (own !== undefined) {
     const there = await readSkillFileAt(fs, joinVaultPath(own.path, SKILL_FILE));
     if (there.kind !== 'missing') throw taken(draft.name);
-    return writeSkillFile({ fs, markdown, folder: own, draft });
+    return writeOrExplain({ fs, markdown, folder: own, draft, made: false });
   }
-  if (
-    isSkillNameTaken(
-      draft.name,
-      folders.map((folder) => folder.name),
-    )
-  )
-    throw taken(draft.name);
+  if (isSkillNameTaken(draft.name, names)) throw taken(draft.name);
   const path = await makeSkillFolder(fs, draft.name);
+  return writeOrExplain({ fs, markdown, folder: { name: draft.name, path }, draft, made: true });
+}
+
+/**
+ * Writes the new SKILL.md, and when that fails, looks at the folder again
+ * before deciding what the failure was. A SKILL.md there now is another
+ * program's, made since the folder was read: a name already taken, and
+ * nothing is trashed. A folder this create `made` that is still empty is
+ * taken away, so it does not hold the name; one that holds anything at all is
+ * left as it is.
+ */
+async function writeOrExplain({
+  fs,
+  markdown,
+  folder,
+  draft,
+  made,
+}: {
+  fs: VaultFsPort;
+  markdown: SkillMarkdown;
+  folder: { readonly name: string; readonly path: VaultPath };
+  draft: SkillDraft;
+  made: boolean;
+}): Promise<SkillFile> {
   try {
-    return await writeSkillFile({ fs, markdown, folder: { name: draft.name, path }, draft });
+    return await writeSkillFile({ fs, markdown, folder, draft });
   } catch (cause) {
-    // The folder was empty a moment ago; left, it would hold the name. If it
-    // cannot be trashed, a retry still writes into it, as above.
-    await fs.trashEntry({ path }).catch(() => undefined);
+    // A folder that cannot be listed is left alone, and the write's own failure passed on.
+    const held = await fs.listDirectory(folder.path).catch(() => null);
+    const skillFile = SKILL_FILE.toLowerCase();
+    if (held?.some((entry) => entry.name.toLowerCase() === skillFile)) throw taken(draft.name);
+    if (made && held?.length === 0) {
+      // Safe to ignore: a folder left behind is empty, and a retry writes into it.
+      await fs.trashEntry({ path: folder.path }).catch(() => undefined);
+    }
     throw cause;
   }
 }
@@ -146,16 +172,14 @@ async function refuseUnlessUnchanged(
   const same =
     now.kind === 'read'
       ? now.modified === skill.modified && now.text === skill.text
-      : now.kind === 'missing' && skill.modified === null && skill.readFailure === null;
+      : now.kind === 'missing' && skill.modified === null && !skill.unreadable;
   if (!same) throw new NoteChangedError(skill.path);
 }
 
 /** Refuses a skill whose SKILL.md is there but could not be read: nothing is done to it here. */
 function refuseUnreadable(skill: SkillFile, doing: string): void {
-  if (skill.readFailure !== null) {
-    throw new SkillRefusedError(
-      `${SKILL_FILE} cannot be read (${skill.readFailure}), so it is not ${doing} here.`,
-    );
+  if (skill.unreadable) {
+    throw new SkillRefusedError(`${SKILL_FILE_UNREADABLE} It is not ${doing} here.`);
   }
 }
 
@@ -171,7 +195,7 @@ function editedText(markdown: SkillMarkdown, skill: SkillFile, draft: SkillDraft
     Object.keys(changes).length === 0
       ? frontmatter
       : markdown.updateFrontmatter(frontmatter, changes);
-  return joinFrontmatter(written, bodyWithInstructions(body, draft.instructions));
+  return joinFrontmatter(written, bodyWithInstructions(body, draft.instructions, skill.text));
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HIDDEN_DIRECTORY_NAMES,
   isAtlasNote,
+  isSkillPath,
   isTemplateNote,
   templateEditRefusal,
   isVisibleEntry,
@@ -141,6 +142,20 @@ describe('isAtlasNote', () => {
     expect(isAtlasNote('tasks/P16-04.md')).toBe(false);
     expect(isAtlasNote('.atlas-notes/Mine.md')).toBe(false);
     expect(isAtlasNote('Projects/.atlas/Note.md')).toBe(false);
+  });
+});
+
+describe('isSkillPath', () => {
+  it('is true for the skills folder and anything in it, in any case', () => {
+    expect(isSkillPath('.atlas/skills')).toBe(true);
+    expect(isSkillPath('.atlas/skills/weekly/SKILL.md')).toBe(true);
+    expect(isSkillPath('.atlas/Skills/weekly/references/Board.md')).toBe(true);
+  });
+
+  it('is false for a name that only starts the same, or a skills folder elsewhere', () => {
+    expect(isSkillPath('.atlas/skills-old/SKILL.md')).toBe(false);
+    expect(isSkillPath('Projects/.atlas/skills/x/SKILL.md')).toBe(false);
+    expect(isSkillPath('.atlas/dashboards/Skills.md')).toBe(false);
   });
 });
 

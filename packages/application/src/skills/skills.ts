@@ -37,15 +37,15 @@ export interface SkillFile extends SkillSummary {
   readonly modified: number | null;
   /** Why its frontmatter cannot be read, or null: such a skill is not saved over. */
   readonly frontmatterProblem: string | null;
-  /** Why SKILL.md, though there, could not be read at all, or null: such a skill is not saved over or deleted. */
-  readonly readFailure: string | null;
+  /** Whether SKILL.md, though there, could not be read at all: such a skill is not saved over or deleted. */
+  readonly unreadable: boolean;
 }
 
 /** What reading a SKILL.md found: its text, nothing there, or a file that cannot be read. */
 export type SkillFileRead =
   | { readonly kind: 'read'; readonly text: string; readonly modified: number }
   | { readonly kind: 'missing' }
-  | { readonly kind: 'unreadable'; readonly reason: string };
+  | { readonly kind: 'unreadable' };
 
 type SkillPorts = {
   fs: Pick<VaultFsPort, 'listDirectory' | 'readTextFile'>;
@@ -58,7 +58,11 @@ function byName(left: VaultEntry, right: VaultEntry): number {
   return left.name < right.name ? -1 : 1;
 }
 
-/** The folders in `.atlas/skills`, dotted ones aside; none when the vault has no such folder. */
+/**
+ * The folders in `.atlas/skills`, dotted ones aside; none when the vault has
+ * no such folder. One that `.atlas` lists but the host will not is a failure,
+ * not a vault without skills.
+ */
 export async function listSkillFolders(
   fs: Pick<VaultFsPort, 'listDirectory'>,
 ): Promise<VaultEntry[]> {
@@ -67,8 +71,9 @@ export async function listSkillFolders(
     entries = await fs.listDirectory(createVaultPath(SKILLS_DIRECTORY));
   } catch (error) {
     // A vault with no skills folder simply has no skills.
-    if (error instanceof VaultAccessError) return [];
-    throw error;
+    if (!(error instanceof VaultAccessError)) throw error;
+    if (await isListed(fs, createVaultPath(SKILLS_DIRECTORY), 'directory')) throw error;
+    return [];
   }
   return entries
     .filter((entry) => entry.kind === 'directory' && !entry.name.startsWith('.'))
@@ -124,13 +129,13 @@ export function skillFileOf({
     return {
       ...skillReadingOf({
         folder: folder.name,
-        file: unreadable ? { unreadable: read.reason } : null,
+        file: unreadable ? { unreadable: true } : null,
       }),
       ...place,
       text: '',
       modified: null,
       frontmatterProblem: null,
-      readFailure: unreadable ? read.reason : null,
+      unreadable,
     };
   }
   const { frontmatter, body } = splitFrontmatter(read.text);
@@ -142,7 +147,7 @@ export function skillFileOf({
     text: read.text,
     modified: read.modified,
     frontmatterProblem,
-    readFailure: null,
+    unreadable: false,
   };
 }
 
@@ -160,22 +165,24 @@ export async function readSkillFileAt(
     return { kind: 'read', text, modified };
   } catch (error) {
     if (!(error instanceof VaultAccessError)) throw error;
-    return (await isListed(fs, path))
-      ? { kind: 'unreadable', reason: error.message }
-      : { kind: 'missing' };
+    return (await isListed(fs, path, 'file')) ? { kind: 'unreadable' } : { kind: 'missing' };
   }
 }
 
-/** Whether `path`'s folder lists it as a file, in any case as the Mac's disk reads a name. */
-async function isListed(fs: Pick<VaultFsPort, 'listDirectory'>, path: VaultPath): Promise<boolean> {
+/** Whether `path`'s folder lists it, as a `kind`, in any case as the Mac's disk reads a name. */
+async function isListed(
+  fs: Pick<VaultFsPort, 'listDirectory'>,
+  path: VaultPath,
+  kind: VaultEntry['kind'],
+): Promise<boolean> {
   let entries: readonly VaultEntry[];
   try {
     entries = await fs.listDirectory(parentVaultPath(path));
   } catch (error) {
-    // A folder that has gone holds no SKILL.md.
+    // A folder that has gone holds nothing.
     if (error instanceof VaultAccessError) return false;
     throw error;
   }
   const name = vaultPathName(path).toLowerCase();
-  return entries.some((entry) => entry.kind === 'file' && entry.name.toLowerCase() === name);
+  return entries.some((entry) => entry.kind === kind && entry.name.toLowerCase() === name);
 }

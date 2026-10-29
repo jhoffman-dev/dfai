@@ -51,11 +51,17 @@ function nameIsLegal(name: string): boolean {
 /** An XML 1.0 start, end or empty-element tag, its name in any script. */
 const XML_TAG_ORACLE = /<\/?[\p{L}_:][\p{L}\p{N}\p{M}_.:\-·]*(?:\s[^<>]*)?\/?>/u;
 
+/**
+ * Comments, CDATA sections and processing instructions: refused too, as
+ * ADR-0050 decided after this attack, so a description is plain text.
+ */
+const XML_OTHER_ORACLE = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\p{L}_:][\s\S]*?\?>/u;
+
 /** The Agent Skills description rule, written from the rule's words. */
 function descriptionIsLegal(description: string): boolean {
   if (description.trim() === '') return false;
   if ([...description].length > MAX_SKILL_DESCRIPTION_LENGTH) return false;
-  return !XML_TAG_ORACLE.test(description);
+  return !XML_TAG_ORACLE.test(description) && !XML_OTHER_ORACLE.test(description);
 }
 
 /** Whether APFS (case- and normalization-insensitive) holds two names as one. */
@@ -190,6 +196,15 @@ describe('the description rule against the Agent Skills oracle', () => {
       'A skill’s description cannot hold XML tags.',
     );
   });
+
+  it.each(['a <!-- note --> here', 'raw <![CDATA[ x ]]> text', 'a <?pi x?> here'])(
+    'refuses %j, XML that is not a tag, as ADR-0050 decided',
+    (description) => {
+      expect(skillDescriptionProblem(description)).toBe(
+        'A skill’s description cannot hold XML tags.',
+      );
+    },
+  );
 
   it('counts its length in characters, so 1024 emoji are a legal description', () => {
     const description = '\u{1F600}'.repeat(MAX_SKILL_DESCRIPTION_LENGTH);

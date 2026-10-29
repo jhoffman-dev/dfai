@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, parentVaultPath, vaultPathName, type VaultEntry } from '@dfai/domain';
+import {
+  createVaultPath,
+  parentVaultPath,
+  SKILL_FILE_UNREADABLE,
+  vaultPathName,
+  type VaultEntry,
+} from '@dfai/domain';
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
@@ -477,9 +483,7 @@ describe('a SKILL.md that is there but cannot be read (review of #620)', () => {
 
     const skill = await readBack(vault);
 
-    expect(skill.problems).toEqual([
-      { field: 'file', message: 'SKILL.md cannot be read: the file is not text' },
-    ]);
+    expect(skill.problems).toEqual([{ field: 'file', message: SKILL_FILE_UNREADABLE }]);
   });
 
   it('is not trashed or saved over', async () => {
@@ -534,5 +538,63 @@ describe('deleting, after the review of #620', () => {
 
     expect(deleted.otherFiles).toEqual(['.atlas/skills/weekly-review/reference.md']);
     expect(vault.trashed).toEqual(['.atlas/skills/weekly-review']);
+  });
+});
+
+describe('after the attack on #620', () => {
+  it('never trashes the person’s own empty folder when writing SKILL.md into it fails', async () => {
+    const vault = memoryVault({}, ['.atlas/skills/weekly-review']);
+    const failing = {
+      ...vault.fs,
+      createNote: async () => {
+        throw new VaultAccessError('the disk is full');
+      },
+    };
+
+    await expect(createSkill({ fs: failing, markdown, draft: DRAFT })).rejects.toThrow(
+      'the disk is full',
+    );
+    expect(vault.trashed).toEqual([]);
+  });
+
+  it.each([
+    ['a folder it made', [] as string[]],
+    ['the person’s own empty folder', ['.atlas/skills/weekly-review']],
+  ])(
+    'refuses as already a skill a SKILL.md that appeared in %s as it was written',
+    async (_label, folders) => {
+      const vault = memoryVault({}, ['.atlas/skills', ...folders]);
+      const racing = {
+        ...vault.fs,
+        createNote: async () => {
+          vault.editOnDisk(SKILL_PATH, 'theirs');
+          throw new VaultAccessError('a note with that name already exists');
+        },
+      };
+
+      const made = createSkill({ fs: racing, markdown, draft: DRAFT });
+
+      await expect(made).rejects.toThrow(SkillRefusedError);
+      await expect(made).rejects.toThrow('There is already a skill called “weekly-review”.');
+      expect(vault.trashed).toEqual([]);
+      expect(vault.notes.get(SKILL_PATH)?.text).toBe('theirs');
+    },
+  );
+
+  it('writes changed instructions with CRLF when the file is, though its body is not', async () => {
+    const text =
+      '---\r\nname: weekly-review\r\ndescription: Walks.\r\nlicense: MIT\r\n---\r\nStep one.\n';
+    const vault = memoryVault({ [SKILL_PATH]: text });
+    const skill = await readBack(vault);
+
+    await saveSkill({
+      fs: vault.fs,
+      markdown,
+      skill,
+      // The fake port reads `key: value` lines ending in LF only; the body is what is checked.
+      draft: { name: skill.name, description: 'Walks.', instructions: 'A.\nB.\n' },
+    });
+
+    expect(vault.notes.get(SKILL_PATH)?.text.endsWith('\nA.\r\nB.\r\n')).toBe(true);
   });
 });

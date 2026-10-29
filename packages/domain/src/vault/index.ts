@@ -15,6 +15,7 @@ export {
   ATLAS_DIRECTORY,
   isAtlasNote,
   templateEditRefusal,
+  isSkillPath,
   isSystemFolder,
   isTemplateNote,
   isUserSpaceNote,

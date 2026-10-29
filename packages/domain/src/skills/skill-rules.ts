@@ -30,8 +30,27 @@ export const RESERVED_SKILL_WORDS: readonly string[] = ['claude', 'anthropic'];
 /** Lowercase letters and digits in runs, joined by single hyphens. */
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** An opening, closing or empty XML tag: `<example>`, `</b>`, `<br/>`. */
-const XML_TAG = /<\/?[A-Za-z_][\w.:-]*(?:\s[^<>]*)?\/?>/;
+/**
+ * XML markup, as Agent Skills refuse it in a description: an opening, closing
+ * or empty tag whose name starts with any letter, `_` or `:`, as XML 1.0
+ * names do (`<example>`, `</b>`, `<br/>`, `<résumé>`, `<名前>`); and, so the
+ * description stays plain text wherever it is taken, a comment, a CDATA
+ * section or a processing instruction (ADR-0050).
+ */
+const XML_MARKUP = [
+  /<\/?[\p{L}_:][\p{L}\p{N}\p{M}_.:\-·]*(?:\s[^<>]*)?\/?>/u,
+  /<!--[\s\S]*?-->/,
+  /<!\[CDATA\[[\s\S]*?\]\]>/,
+  /<\?[\p{L}_:][\s\S]*?\?>/u,
+];
+
+/**
+ * A text's length in characters (Unicode code points), as the Agent Skills
+ * validator counts: an emoji is one, not the two UTF-16 units `.length` says.
+ */
+export function characterCount(text: string): number {
+  return Array.from(text).length;
+}
 
 /** Which part of a skill a problem is with: `file` is SKILL.md itself. */
 export type SkillField = 'name' | 'description' | 'instructions' | 'file';
@@ -71,7 +90,7 @@ export interface SkillFileContents {
 /** Why `name` cannot be a skill's name, or null. */
 export function skillNameProblem(name: string): string | null {
   if (name === '') return 'Name the skill.';
-  if (name.length > MAX_SKILL_NAME_LENGTH) {
+  if (characterCount(name) > MAX_SKILL_NAME_LENGTH) {
     return `A skill’s name may be at most ${MAX_SKILL_NAME_LENGTH} characters.`;
   }
   if (!SKILL_NAME.test(name)) {
@@ -84,16 +103,18 @@ export function skillNameProblem(name: string): string | null {
 /** Why `description` cannot be a skill's description, or null. */
 export function skillDescriptionProblem(description: string): string | null {
   if (description.trim() === '') return 'Say what the skill does and when to use it.';
-  if (description.length > MAX_SKILL_DESCRIPTION_LENGTH) {
+  if (characterCount(description) > MAX_SKILL_DESCRIPTION_LENGTH) {
     return `A skill’s description may be at most ${MAX_SKILL_DESCRIPTION_LENGTH} characters.`;
   }
-  return XML_TAG.test(description) ? 'A skill’s description cannot hold XML tags.' : null;
+  return XML_MARKUP.some((markup) => markup.test(description))
+    ? 'A skill’s description cannot hold XML tags.'
+    : null;
 }
 
 /** Why `instructions` cannot be a skill's instructions, or null. */
 export function skillInstructionsProblem(instructions: string): string | null {
   if (instructions.trim() === '') return 'Write the skill’s instructions.';
-  return instructions.length > MAX_SKILL_INSTRUCTIONS_LENGTH
+  return characterCount(instructions) > MAX_SKILL_INSTRUCTIONS_LENGTH
     ? `A skill’s instructions may be at most ${MAX_SKILL_INSTRUCTIONS_LENGTH} characters.`
     : null;
 }
@@ -153,16 +174,28 @@ export function instructionsOf(body: string): string {
   return body.slice(leadingBreak(body).length);
 }
 
+/** Whether most of a file's lines end in CRLF: the file was written that way, whatever its body holds. */
+export function isWrittenWithCrlf(text: string): boolean {
+  const crlf = text.split('\r\n').length - 1;
+  const lf = text.split('\n').length - 1 - crlf;
+  return crlf > lf;
+}
+
 /**
  * The body that holds `instructions` in place of `body`: `body` itself when
  * they are what it already holds, so an untouched skill is written back byte
  * for byte, and otherwise the instructions after the blank line it had —
- * with its CRLF line ends, when it used them and the instructions came with
- * bare ones, as an editor's form sends them.
+ * with CRLF line ends when the file (`fileText`, the body's own by default)
+ * is written with them and the instructions came with bare ones, as an
+ * editor's form sends them.
  */
-export function bodyWithInstructions(body: string, instructions: string): string {
+export function bodyWithInstructions(
+  body: string,
+  instructions: string,
+  fileText: string = body,
+): string {
   if (instructionsOf(body) === instructions) return body;
-  const crlf = body.includes('\r\n') && !instructions.includes('\r');
+  const crlf = isWrittenWithCrlf(fileText) && !instructions.includes('\r');
   return leadingBreak(body) + (crlf ? instructions.replace(/\n/g, '\r\n') : instructions);
 }
 
@@ -205,7 +238,13 @@ function declaredNameProblem(folder: string, declared: string | null): SkillProb
 }
 
 /** What SKILL.md was when its folder was read: its contents, unreadable, or not there. */
-export type SkillFileState = SkillFileContents | { readonly unreadable: string } | null;
+export type SkillFileState = SkillFileContents | { readonly unreadable: true } | null;
+
+/**
+ * What is said of a SKILL.md that is there but cannot be read: DFAI's own
+ * words, never the host's, which can name the Mac's folders (ADR-0017).
+ */
+export const SKILL_FILE_UNREADABLE = `${SKILL_FILE} is there but cannot be read: it may be too large, not text, or not allowed.`;
 
 /** What is wrong with a folder's own name, which is the skill's. */
 function folderNameProblems(folder: string): SkillProblem[] {
@@ -248,7 +287,7 @@ export function skillReadingOf({
 }): SkillReading {
   if (file === null) return emptyReading(folder, `The folder has no ${SKILL_FILE}.`);
   if ('unreadable' in file) {
-    return emptyReading(folder, `${SKILL_FILE} cannot be read: ${file.unreadable}`);
+    return emptyReading(folder, SKILL_FILE_UNREADABLE);
   }
   const declaredName = textOrNull(file.properties['name']);
   const description = textOrNull(file.properties['description']) ?? '';

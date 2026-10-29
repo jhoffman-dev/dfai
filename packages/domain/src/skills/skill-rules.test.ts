@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { joinFrontmatter, splitFrontmatter } from '../markdown/markdown-document.ts';
 import {
   bodyWithInstructions,
+  isWrittenWithCrlf,
   skillDeletionWarning,
   instructionsOf,
   isSkillNameTaken,
@@ -96,6 +97,11 @@ describe('skillInstructionsProblem', () => {
 
   it.each(['', '\n\n  '])('refuses blank instructions %j', (instructions) => {
     expect(skillInstructionsProblem(instructions)).toMatch(/Write the skill’s instructions/);
+  });
+
+  it('counts instructions in characters, so 20,000 emoji are allowed and 20,001 are not', () => {
+    expect(skillInstructionsProblem('\u{1F600}'.repeat(20_000))).toBeNull();
+    expect(skillInstructionsProblem('\u{1F600}'.repeat(20_001))).toMatch(/at most 20000/);
   });
 
   it('refuses instructions longer than 20,000 characters', () => {
@@ -238,6 +244,14 @@ describe('instructions and the body', () => {
     expect(bodyWithInstructions('\nOld.\n', 'New.\r\nTwo.\n')).toBe('\nNew.\r\nTwo.\n');
   });
 
+  it('looks at the whole file for CRLF, not the body alone', () => {
+    const file = '---\r\nname: daily\r\ndescription: d\r\n---\r\nOld.\n';
+    expect(bodyWithInstructions('Old.\n', 'New.\nTwo.\n', file)).toBe('New.\r\nTwo.\r\n');
+    expect(
+      bodyWithInstructions('\r\nOld.\r\n', 'New.\n', '---\nname: a\nb: c\nd: e\n---\r\nOld.\r\n'),
+    ).toBe('\r\nNew.\n');
+  });
+
   it('keeps the blank line the body had when the instructions change', () => {
     expect(bodyWithInstructions('\r\nOld.\r\n', 'New.\r\n')).toBe('\r\nNew.\r\n');
     expect(bodyWithInstructions('Old.\n', 'New.\n')).toBe('New.\n');
@@ -325,5 +339,13 @@ describe('skillDeletionWarning', () => {
     expect(skillDeletionWarning('daily', [])).toBe(
       'Delete “daily”? Its folder, holding only SKILL.md, goes to the Trash, where it can be got back.',
     );
+  });
+});
+
+describe('isWrittenWithCrlf', () => {
+  it('is whether most line ends are CRLF', () => {
+    expect(isWrittenWithCrlf('a\r\nb\r\nc\n')).toBe(true);
+    expect(isWrittenWithCrlf('a\r\nb\nc\n')).toBe(false);
+    expect(isWrittenWithCrlf('no line end')).toBe(false);
   });
 });

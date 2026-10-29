@@ -90,6 +90,18 @@ export function isTemplateNote(path: string): boolean {
 }
 
 /**
+ * Whether a path is a skill's folder or anything in one (ADR-0050). A skill's
+ * folder may hold references — an example dashboard, a sample view — that wear
+ * the marks of what they describe, and none is a view or a dashboard; nor is
+ * any of it read or listed outside the Skills page and the API.
+ */
+export function isSkillPath(path: string): boolean {
+  // In any case: the Mac's disk takes `.atlas/Skills` for the skills folder.
+  const folded = path.toLowerCase();
+  return folded === SKILLS_DIRECTORY || folded.startsWith(`${SKILLS_DIRECTORY}/`);
+}
+
+/**
  * Why a note flow — a rename, a new note — may not change `path`: a template
  * is what every new note of its type is made from, so it is renamed, made and
  * deleted only on the Templates page, whose use-cases do not come this way

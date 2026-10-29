@@ -43,8 +43,14 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
      normalisation, so two folders can never be told apart only by how a name
      was typed. A lookup by name takes the exact folder first, else one equal
      in that comparison.
-   - _Description:_ required, at most 1,024 characters, and no XML tags
-     (`<example>`, `</b>`; a lone `<` or `a < b > c` is not a tag).
+   - _Description:_ required, at most 1,024 characters, and no XML: no tag
+     whose name starts with any letter, `_` or `:` as XML 1.0 names do
+     (`<example>`, `</b>`, `<résumé>`, `<名前>`), and — so a description is
+     plain text wherever it is taken — no comment, CDATA section or
+     processing instruction either. A lone `<` or `a < b > c` is not XML.
+   - _Lengths are counted in characters_ (Unicode code points), as the Agent
+     Skills validator counts them, so an emoji is one. Prompt notes still
+     count UTF-16 units, as they did.
    - _Instructions:_ not blank, and at most 20,000 characters:
      `MAX_PROMPT_CHARACTERS`, which moves from the application's Claude step
      into the domain so a prompt note and a skill share one limit. Either is
@@ -57,8 +63,10 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
      the name with no SKILL.md yet is the skill's, and its SKILL.md is written
      into it; saving such a folder's skill does the same. Both write through
      `createNote`, which never overwrites. When a create makes the folder but
-     not its SKILL.md, it trashes the empty folder again, so no half-made skill
-     holds the name. A folder clash the listing could not see (a file of that
+     not its SKILL.md, it lists the folder again: a SKILL.md there now is
+     another program's, and the create is refused as a name already taken;
+     a folder it made that is still empty is trashed, so no half-made skill
+     holds the name; one holding anything at all is left alone. A folder clash the listing could not see (a file of that
      name, a folder made since) is refused as a name already taken.
    - _Save_ is byte-preserving (ADR-0003): only the frontmatter keys that
      changed are rewritten, through `updateFrontmatter` (which keeps comments,
@@ -78,11 +86,21 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
    - _Missing is not unreadable._ The host refuses a file that is gone, too
      large or not text with one error, so a refused read is told apart by
      whether the folder still lists SKILL.md. One that is there but cannot be
-     read is a `file` problem, and such a skill is neither saved over nor
-     deleted here.
-   - An edit of a body written with CRLF line ends keeps them. The host's `trashEntry` has no guard of its own, so the guard is
-     the use-case's re-read; the window between that read and the Trash is the
+     read is a `file` problem, said in DFAI's own words (never the host's,
+     which can name the Mac's folders), and such a skill is neither saved over
+     nor deleted here. A `.atlas/skills` that `.atlas` lists but the host will
+     not is a failure, not a vault with no skills.
+   - The host's `trashEntry` has no guard of its own, so the guard is the
+     use-case's re-read; the window between that read and the Trash is the
      one every other undo and delete here already has.
+   - _Line endings._ Changed instructions take CRLF when most of the file's
+     lines end that way. The shared frontmatter writer now keeps each
+     untouched line's own ending, gives a changed line the ending of the line
+     it replaced, and a new line the ending most of the block's lines have,
+     so a block edited on two machines keeps its mixed endings.
+   - _Not yet: links._ The host's listings do not say whether a SKILL.md is a
+     symbolic link, so one is read as the file it points to; refusing links
+     needs the host to report them (a follow-up).
 
 4. **`.atlas/prompts` is not migrated.** Prompt notes keep working exactly as
    before; a rule's `prompt:` is unchanged. Letting a rule name a `skill:`
@@ -101,7 +119,11 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
 6. **Read on demand.** The window's reads gain a `skills` facet, made stale by
    any change under `.atlas/skills`. Nothing reads it at launch: only a page
    that asks for skills does, so no host call is added at start-up and the
-   work budgets hold.
+   work budgets hold. The sidebar's walk of `.atlas`, which does run at
+   launch, stops at `.atlas/skills` — it neither lists nor reads a skill's
+   folder — and nothing in one is ever a view or a dashboard, however its
+   references are marked (`isSkillPath`, as `isTemplateNote` is for
+   templates).
 
 7. **The API and MCP read; they never write.** `GET /v1/skills`,
    `GET /v1/skills/{name}`, and the MCP tools `atlas_list_skills` and
