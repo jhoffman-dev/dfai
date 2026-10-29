@@ -5,7 +5,9 @@ import {
   locateFragment,
   newBlockId,
   noteLabelForNotice,
+  parentVaultPath,
   splitFrontmatter,
+  VAULT_ROOT,
   withAnchorAt,
   type NodePath,
   type OutlineEntry,
@@ -26,7 +28,8 @@ export type BlockLinkPanes = Pick<OpenEditorsPort, 'state'> & {
 
 /** A note's headings and blocks for the `#` picker, kept while its file is the same version. */
 export interface BlockChoicesReader {
-  read(path: VaultPath): Promise<OutlineEntry[]>;
+  /** Null when there is no note there to read: deleted, say, before the tree caught up. */
+  read(path: VaultPath): Promise<OutlineEntry[] | null>;
 }
 
 /**
@@ -53,13 +56,45 @@ export function createBlockChoicesReader({
       const known = (await modifiedTimes(index)).get(path);
       const held = kept.get(path);
       if (held !== undefined && known === held.modified) return held.entries;
-      const file = await fs.readTextFile(path);
+      const file = await readIfThere(fs, path);
+      if (file === null) {
+        kept.delete(path);
+        return null;
+      }
       if (held !== undefined && file.modified === held.modified) return held.entries;
       const entries = blockOutline(markdown.parseBody(splitFrontmatter(file.text).body).doc);
       kept.set(path, { modified: file.modified, entries });
       return entries;
     },
   };
+}
+
+/**
+ * A note's text, or null when there is no note there to read. The host words
+ * a missing file as it words any failure, so its folder is asked: a file the
+ * folder lists — one too large, not text, not readable — is there, and the
+ * failure to read it is passed on.
+ */
+async function readIfThere(fs: VaultFsPort, path: VaultPath) {
+  try {
+    return await fs.readTextFile(path);
+  } catch (cause) {
+    // The read's own failure is the one to show: one in asking the folder only means it may be there.
+    if (await isThere(fs, path).catch(() => true)) throw cause;
+    return null;
+  }
+}
+
+/** Whether the folder a path is in lists it; a folder no longer there lists nothing. */
+async function isThere(fs: VaultFsPort, path: VaultPath): Promise<boolean> {
+  if (path === VAULT_ROOT) return true;
+  const folder = parentVaultPath(path);
+  try {
+    return (await fs.listDirectory(folder)).some((entry) => entry.path === path);
+  } catch (cause) {
+    if (await isThere(fs, folder)) throw cause;
+    return false;
+  }
 }
 
 /** The block a link was about to name is not where, or what, it was when it was offered. */

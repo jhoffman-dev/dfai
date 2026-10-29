@@ -1,6 +1,6 @@
 import { splitWikiLinks } from '../markdown/wikilink.ts';
 import { digestOf } from '../sources/merge.ts';
-import { addressKey } from '../meeting-links/address-key.ts';
+import { emailKey } from '../meetings/mapping/meeting-email-key.ts';
 import {
   PERSON_EMAIL_KEY,
   PERSON_OTHER_EMAILS_KEY,
@@ -212,15 +212,15 @@ function mergeEmails(
 ): { changes: Record<string, unknown>; added: string[] } {
   const own = texts(kept.properties[PERSON_EMAIL_KEY]);
   const others = texts(kept.properties[PERSON_OTHER_EMAILS_KEY]);
-  const seen = new Set([...own, ...others].map(addressKey));
+  const seen = new Set([...own, ...others].map(emailKey));
   const added: string[] = [];
   for (const duplicate of duplicates) {
     for (const address of [
       ...texts(duplicate.properties[PERSON_EMAIL_KEY]),
       ...texts(duplicate.properties[PERSON_OTHER_EMAILS_KEY]),
     ]) {
-      if (seen.has(addressKey(address))) continue;
-      seen.add(addressKey(address));
+      if (seen.has(emailKey(address))) continue;
+      seen.add(emailKey(address));
       added.push(address.trim());
     }
   }

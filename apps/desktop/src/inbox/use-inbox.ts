@@ -17,6 +17,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import {
+  clarifiedAnything,
   clarifyInboxItem,
   ClarifyRefusedError,
   listInbox,
@@ -251,12 +252,22 @@ export function useInbox(options: InboxOptions) {
               today: clock.today(),
             }),
           );
+          // What could not be done is said on the row, not in Activity: an outcome with
+          // its undo is no give-up, as Archive says a note moved but not stamped.
           const reason = outcomeProblem(outcome);
+          // Said on the row the note is on now — filed, its new path's — and cleared where it was.
+          const row = { path: outcome.path, was: path, reason };
+          const changed = clarifiedAnything(outcome);
           // Clarified but not filed — the move refused, say — the row comes back to say why.
-          if (reason === null && leaves) writes.written(asked, path);
+          if (reason === null && leaves && changed) writes.written(asked, path);
           else writes.stay(asked, path);
+          // Nothing changed is nothing to call clarified, nor to take back.
+          if (!changed) {
+            say(asked, { problem: null, row, last: 'kept' });
+            return NOT_WRITTEN;
+          }
           const clarified = { title: noteTitle(path), undo: outcome.undo };
-          say(asked, { problem: null, row: { path, reason }, last: clarified });
+          say(asked, { problem: null, row, last: clarified });
           announce(clarified);
           return { done: reason === null, wrote: true };
         } catch (cause) {
@@ -310,7 +321,11 @@ export function useInbox(options: InboxOptions) {
                 ? {
                     ...before,
                     problem: null,
-                    refusals: withRowSaid(before.refusals, { path: taken.undo.from, reason: null }),
+                    refusals: withRowSaid(before.refusals, {
+                      path: taken.undo.from,
+                      was: taken.undo.to,
+                      reason: null,
+                    }),
                     last: null,
                   }
                 : before,
@@ -392,12 +407,9 @@ export function useInbox(options: InboxOptions) {
   };
 }
 
-/** The refusals said, with one row's said again: its reason now, or none. */
-function withRowSaid(
-  refusals: readonly InboxRefusal[],
-  row: { readonly path: VaultPath; readonly reason: string | null },
-): readonly InboxRefusal[] {
-  const others = refusals.filter((each) => each.path !== row.path);
+/** The refusals said, with one row's said again: its reason now, or none — and none where it was. */
+function withRowSaid(refusals: readonly InboxRefusal[], row: SaidRow): readonly InboxRefusal[] {
+  const others = refusals.filter((each) => each.path !== row.path && each.path !== row.was);
   return row.reason === null ? others : [...others, { path: row.path, reason: row.reason }];
 }
 
@@ -598,6 +610,13 @@ interface Choices {
   readonly error: string | null;
 }
 
+/** One row's reason said again; `was` is where the note was, when it has moved, cleared too. */
+interface SaidRow {
+  readonly path: VaultPath;
+  readonly was?: VaultPath;
+  readonly reason: string | null;
+}
+
 /**
  * What an action leaves to say: `row` says again what one row's clarification
  * left — why it was refused, or nothing — and every other row keeps what it
@@ -605,7 +624,7 @@ interface Choices {
  */
 interface Result {
   readonly problem: string | null;
-  readonly row?: { readonly path: VaultPath; readonly reason: string | null };
+  readonly row?: SaidRow;
   readonly last: InboxSaid['last'] | 'kept';
 }
 

@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { nodeBuiltinsReport } from '../../tools/ci/node-builtins-report.ts';
 
 const pkg = (name: string) =>
   fileURLToPath(new URL(`../../packages/${name}/src/index.ts`, import.meta.url));
@@ -152,8 +153,13 @@ function buildCommit(): string | null {
   }
 }
 
+/** What the build drew in of Node, for `pnpm check:node-builtins` (#53). */
+const nodeBuiltins = nodeBuiltinsReport(fileURLToPath(new URL('../../', import.meta.url)));
+
 export default defineConfig({
-  plugins: [react(), chunkFilesMeta(), pdfjsFiles()],
+  plugins: [react(), chunkFilesMeta(), pdfjsFiles(), nodeBuiltins.window],
+  // The worker is a build of its own, so it records into the same report (#53).
+  worker: { plugins: () => [nodeBuiltins.worker] },
   // The MCP server's path in this checkout, so Settings can offer a command that
   // runs it. Only right for a build made from source, which is how DFAI is run.
   define: {

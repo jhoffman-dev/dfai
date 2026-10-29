@@ -12,6 +12,7 @@ import { FrontmatterRefusedError } from '../notes/frontmatter-refused-error.ts';
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { UnsavedTypingError } from '../vault/update-links.ts';
 import {
+  clarifiedAnything,
   clarifyInboxItem,
   ClarifyRefusedError,
   undoClarifyInboxItem,
@@ -406,5 +407,26 @@ describe('undoClarifyInboxItem — tried again', () => {
     v.failWrites(null);
     await v.undo(undo);
     expect(v.files.get(CALL)).toBe(CAPTURED);
+  });
+});
+
+describe('clarifiedAnything (#225)', () => {
+  const at = createVaultPath('Inbox/Call the bank.md');
+  const filed = createVaultPath('Tasks/2026/10/Call the bank.md');
+  const text = '---\ntype: task\nstatus: inbox\n---\n';
+  const undo = { from: at, to: at, before: text, after: text };
+
+  it('is false when the note neither moved nor changed: a filing alone that failed', () => {
+    expect(clarifiedAnything({ undo })).toBe(false);
+  });
+
+  it('is true once its properties were written, though it did not move', () => {
+    expect(
+      clarifiedAnything({ undo: { ...undo, after: text.replace('inbox', 'next-action') } }),
+    ).toBe(true);
+  });
+
+  it('is true once it moved, though its text is the same', () => {
+    expect(clarifiedAnything({ undo: { ...undo, to: filed } })).toBe(true);
   });
 });
