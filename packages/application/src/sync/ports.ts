@@ -74,7 +74,13 @@ export interface GitPort {
   /** `cat-file blob <oid>`: a blob's bytes, as text — a side of a settings file both Macs changed. */
   readBlob(oid: string): Promise<GitResult>;
   /**
-   * `cat-file blob origin/<branch>:.atlas/settings.md`: the settings note on
+   * `cat-file -e refs/remotes/origin/<branch>:.atlas/settings.md`: whether
+   * GitHub, as the last fetch left it, holds the settings note — by exit code,
+   * never git's words, which are in the person's language.
+   */
+  remoteSettingsExist(branch: string): Promise<GitResult>;
+  /**
+   * `cat-file blob refs/remotes/origin/<branch>:.atlas/settings.md`: the settings note on
    * GitHub as the last fetch left it, one blob (#630). The host reads it only
    * for the branch checked out.
    */

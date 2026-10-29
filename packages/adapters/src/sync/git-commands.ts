@@ -18,8 +18,15 @@ const identityArgs = (identity: GitIdentity | null): string[] =>
     ? []
     : ['-c', `user.name=${identity.name}`, '-c', `user.email=${identity.email}`];
 
+/**
+ * The other Macs' branch by its full name: the short `origin/<branch>` is
+ * outranked by a local branch or tag of that spelling, and the host refuses
+ * it (#630).
+ */
+const remoteBranch = (branch: string) => `refs/remotes/origin/${branch}`;
+
 const revOf = (rev: TreeRev): string =>
-  rev.kind === 'head' ? 'HEAD' : rev.kind === 'remote' ? `origin/${rev.branch}` : rev.oid;
+  rev.kind === 'head' ? 'HEAD' : rev.kind === 'remote' ? remoteBranch(rev.branch) : rev.oid;
 
 /**
  * The argument shapes of every git step a sync takes (U-29, A29-01), each
@@ -41,7 +48,7 @@ export function gitCommands(git: RunGit): Omit<GitPort, 'createGitHubRepository'
         'merge',
         '--no-edit',
         '--allow-unrelated-histories',
-        `origin/${branch}`,
+        remoteBranch(branch),
       ),
     push: () => git('push', '--quiet', '--set-upstream', 'origin', 'HEAD'),
     remoteUrl: () => git('remote', 'get-url', 'origin'),
@@ -49,8 +56,8 @@ export function gitCommands(git: RunGit): Omit<GitPort, 'createGitHubRepository'
     currentBranch: () => git('symbolic-ref', '--quiet', '--short', 'HEAD'),
     head: () => git('log', '-1', '--format=%H%x00%ct'),
     mergeInProgress: () => git('rev-parse', '--verify', '--quiet', 'MERGE_HEAD'),
-    remoteSubject: (branch) => git('log', '-1', '--format=%s', `origin/${branch}`, '--'),
-    remoteBranchExists: (branch) => git('rev-parse', '--verify', '--quiet', `origin/${branch}`),
+    remoteSubject: (branch) => git('log', '-1', '--format=%s', remoteBranch(branch), '--'),
+    remoteBranchExists: (branch) => git('rev-parse', '--verify', '--quiet', remoteBranch(branch)),
     // Drops `seen`: the guard lives in the host, and only `tauriGit`, which overrides this, runs in production.
     checkout: ({ side, path }) => git(...checkoutArgs(side, path)),
     config: (key) => git('config', '--get', key),
@@ -59,16 +66,19 @@ export function gitCommands(git: RunGit): Omit<GitPort, 'createGitHubRepository'
     indexEntries: () => git('ls-files', '-z', '--stage'),
     move: ({ from, to }) => git('mv', '--', from, to),
     tree: (rev) => git('ls-tree', '-r', '-z', revOf(rev)),
-    mergeBase: (branch) => git('merge-base', 'HEAD', `origin/${branch}`),
+    mergeBase: (branch) => git('merge-base', 'HEAD', remoteBranch(branch)),
     hashFile: (path) => git('hash-object', '--no-filters', '--', path),
     readBlob: (oid) => git('cat-file', 'blob', oid),
-    remoteSettings: (branch) => git('cat-file', 'blob', `origin/${branch}:${VAULT_SETTINGS_PATH}`),
+    remoteSettingsExist: (branch) =>
+      git('cat-file', '-e', `${remoteBranch(branch)}:${VAULT_SETTINGS_PATH}`),
+    remoteSettings: (branch) =>
+      git('cat-file', 'blob', `${remoteBranch(branch)}:${VAULT_SETTINGS_PATH}`),
     stageBlob: ({ mode, oid, path }) =>
       git('update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`),
     writeFromIndex: (path) => git('checkout-index', '--', path),
     untrack: (path) => git('rm', '--cached', '--quiet', '--', path),
     unstage: (path) => git('reset', '--quiet', '--', path),
-    resetSoftTo: (branch) => git('reset', '--quiet', '--soft', `origin/${branch}`),
+    resetSoftTo: (branch) => git('reset', '--quiet', '--soft', remoteBranch(branch)),
     largeUnpushed: (bytes) =>
       git(
         'rev-list',

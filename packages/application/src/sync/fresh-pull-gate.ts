@@ -94,6 +94,8 @@ export interface FreshPullGate {
   claimUnshared(vault: string): boolean;
   /** The Mac a claim not yet shared was taken from, by the name GitHub's settings keep; null when not known. */
   claimWas(vault: string): string | null;
+  /** Whether GitHub's settings, as the last pull read them, name this Mac: its claim is GitHub's. */
+  namedOnGitHub(vault: string): boolean;
   /**
    * Whether a reading of the sleep counter since the vault's last pull shows
    * the Mac slept after that pull started: the gates are shut though the
@@ -308,6 +310,10 @@ export function createFreshPullGate({
     },
     claimUnshared: claims.unshared,
     claimWas: claims.was,
+    namedOnGitHub: (vault) => {
+      const thisMacId = here.thisMacId();
+      return thisMacId !== null && claims.namedOnGitHub(vault, thisMacId);
+    },
     sleptSincePull: (vault) => record.vault === vault && record.slept,
   };
 }

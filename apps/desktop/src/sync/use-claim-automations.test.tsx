@@ -91,6 +91,7 @@ function setUp({
     claimRefusal,
     claimed,
     claimUnsharedNow: () => shared.unshared,
+    namedOnGitHub: () => !shared.unshared,
     claimUnshared: false,
     exclusive: recordingExclusive(vault.order, open),
     activity,
@@ -408,6 +409,14 @@ describe('useClaimAutomations: a claim from before a restart (#630 review)', () 
     hook.rerender({ ...options, named: true, claimUnshared: false });
     hook.rerender({ ...options, named: true, claimUnshared: true });
     hook.rerender({ ...options, named: false, claimUnshared: false });
+    expect(messages()).not.toContain(NOW_RUNS);
+  });
+
+  it('says nothing while the settings drawn still name this Mac but git read another on GitHub (#630 round 2)', () => {
+    // The sync that brought Studio's claim in has ended the claim; the settings note is read again just after.
+    const { hook, options, messages } = setUp();
+    hook.rerender({ ...options, named: true, claimUnshared: true });
+    hook.rerender({ ...options, named: true, claimUnshared: false, namedOnGitHub: () => false });
     expect(messages()).not.toContain(NOW_RUNS);
   });
 

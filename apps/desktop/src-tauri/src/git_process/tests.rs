@@ -1109,6 +1109,17 @@ fn the_settings_on_github_are_read_for_the_branch_checked_out_only() {
         )
         .unwrap_err();
     assert!(refused.contains("not the branch checked out"), "{refused}");
+    let asked = host
+        .git_in_vault(
+            &a,
+            &args(&[
+                "cat-file",
+                "-e",
+                "refs/remotes/origin/main:.atlas/settings.md",
+            ]),
+        )
+        .unwrap_err();
+    assert!(asked.contains("not the branch checked out"), "{asked}");
 }
 
 /// Two Macs change one note differently and another note on one side; the
@@ -2736,7 +2747,9 @@ fn adversarial_a_merge_as_atlas_takes_only_a_plain_branch_of_origin() {
         "refs/remotes/origin/main\n",
         "refs/remotes/origin/main\u{7f}",
         "upstream/main",
-        "refs/remotes/origin/main",
+        // The short name, which a local branch or tag of that spelling outranks (#630).
+        "origin/main",
+        "refs/heads/origin/main",
         "Origin/main",
         "-origin/main",
         "main",

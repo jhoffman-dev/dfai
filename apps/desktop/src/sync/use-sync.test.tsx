@@ -156,7 +156,11 @@ function setUpHook({
   query?: ReturnType<typeof queryWrapper>;
 } = {}) {
   // GitHub holds the settings this Mac has: a claim made here is shared (#630 attack).
-  const onGitHub: GitScript = { remoteSettings: said(`---\n${settings}\n---\n`) };
+  const onGitHub: GitScript = {
+    remoteBranchExists: said(`${'f'.repeat(40)}\n`),
+    remoteSettingsExist: OK,
+    remoteSettings: said(`---\n${settings}\n---\n`),
+  };
   const { git, called } = scriptedGit({ script: { ...onGitHub, ...script } });
   const order: string[] = [];
   const closeTasks: (() => Promise<void>)[] = [];

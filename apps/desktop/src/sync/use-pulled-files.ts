@@ -78,6 +78,7 @@ export function usePulledFiles({
   claimRefusal: FreshPullGate['claimRefusal'];
   claimed: FreshPullGate['claimed'];
   claimUnsharedNow: FreshPullGate['claimUnshared'];
+  namedOnGitHub: FreshPullGate['namedOnGitHub'];
   /** Whether this Mac's claim of the open vault's automations is written here and not yet pushed. */
   claimUnshared: boolean;
   /** The Mac that claim was taken from, by name; null when not known. */
@@ -147,6 +148,7 @@ export function usePulledFiles({
     claimRefusal: fresh.claimRefusal,
     claimed: fresh.claimed,
     claimUnsharedNow: fresh.claimUnshared,
+    namedOnGitHub: fresh.namedOnGitHub,
     claimUnshared: vaultKey !== null && fresh.claimUnshared(vaultKey),
     claimWas: vaultKey === null ? null : fresh.claimWas(vaultKey),
   };

@@ -66,6 +66,7 @@ function setUp() {
       claimRefusal: gate.claimRefusal,
       claimed: gate.claimed,
       claimUnsharedNow: gate.claimUnshared,
+      namedOnGitHub: gate.namedOnGitHub,
       claimUnshared: gate.claimUnshared(vaultKey),
       exclusive,
       activity,

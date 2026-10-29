@@ -317,6 +317,7 @@ export function scriptedGit({
       return answer('readBlob', oid, text === undefined ? failed('not a blob', 128) : said(text));
     },
     // GitHub holds no settings note unless a test says what it holds.
+    remoteSettingsExist: async (branch) => answer('remoteSettingsExist', branch, failed('', 128)),
     remoteSettings: async (branch) =>
       answer(
         'remoteSettings',

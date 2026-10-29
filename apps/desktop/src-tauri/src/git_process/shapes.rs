@@ -21,7 +21,9 @@ enum Slot {
     Message,
     /// A remote's address.
     Url,
-    /// A remote-tracking branch, `origin/<branch>`.
+    /// A remote-tracking branch, in full: `refs/remotes/origin/<branch>`. The
+    /// short `origin/<branch>` is refused: a local branch or tag of that
+    /// spelling outranks it (#630).
     Ref,
     /// A path inside the vault, after `--`.
     VaultPath,
@@ -32,7 +34,7 @@ enum Slot {
     CloneName,
     /// `<mode>,<blob id>,<path in the vault>`, what `--cacheinfo` takes as one argument.
     CacheInfo,
-    /// What `ls-tree` lists: `HEAD`, `origin/<branch>` or a commit id.
+    /// What `ls-tree` lists: `HEAD`, `refs/remotes/origin/<branch>` or a commit id.
     Rev,
     /// A local branch's new name, as git allows it.
     Branch,
@@ -41,7 +43,7 @@ enum Slot {
     /// A blob's id, as `cat-file blob` takes it.
     Blob,
     /// The settings note on GitHub as the last fetch left it:
-    /// `origin/<branch>:.atlas/settings.md`, that path and no other.
+    /// `refs/remotes/origin/<branch>:.atlas/settings.md`, that path and no other.
     RemoteSettings,
 }
 
@@ -197,8 +199,10 @@ const IN_VAULT: &[Shape] = &[
     // One side of a settings file both Macs changed, to merge by its keys.
     (&[Is("cat-file"), Is("blob"), Blob], Reach::Local),
     // Who the settings on GitHub name, as the last fetch left them (#630):
-    // one blob, never a listing of the tree.
+    // one blob, never a listing of the tree; and whether it is there at all,
+    // by exit code, so no word of git's, in any language, is read.
     (&[Is("cat-file"), Is("blob"), RemoteSettings], Reach::Local),
+    (&[Is("cat-file"), Is("-e"), RemoteSettings], Reach::Local),
     // A blob already in the repository, put in the index under a new path.
     (
         &[
@@ -437,11 +441,15 @@ fn is_message(message: &str) -> bool {
 /// Where the settings note sits in every vault.
 const SETTINGS_PATH: &str = ".atlas/settings.md";
 
-/// The branch of `origin/<branch>:.atlas/settings.md`, when the argument is
-/// exactly that; the branch spelled as git allows, never an option or a range.
+/// Where the other Macs' branches are, as the last fetch left them.
+const REMOTE_BRANCHES: &str = "refs/remotes/origin/";
+
+/// The branch of `refs/remotes/origin/<branch>:.atlas/settings.md`, when the
+/// argument is exactly that; the branch spelled as git allows, never an
+/// option or a range.
 fn remote_settings_branch_of(arg: &str) -> Option<&str> {
     let rev = arg.strip_suffix(SETTINGS_PATH)?.strip_suffix(':')?;
-    let branch = rev.strip_prefix("origin/")?;
+    let branch = rev.strip_prefix(REMOTE_BRANCHES)?;
     is_branch(branch).then_some(branch)
 }
 
@@ -449,14 +457,19 @@ fn remote_settings_branch_of(arg: &str) -> Option<&str> {
 /// holds to the branch checked out before it runs.
 pub fn remote_settings_branch(args: &[String]) -> Option<&str> {
     match args {
-        [verb, kind, arg] if verb == "cat-file" && kind == "blob" => remote_settings_branch_of(arg),
+        [verb, kind, arg] if verb == "cat-file" && (kind == "blob" || kind == "-e") => {
+            remote_settings_branch_of(arg)
+        }
         _ => None,
     }
 }
 
-/// `origin/<branch>`, spelled as git allows and never as an option or a range.
+/// `refs/remotes/origin/<branch>`, spelled as git allows and never as an
+/// option or a range: the full name, which no local branch or tag outranks.
 fn is_remote_branch(reference: &str) -> bool {
-    reference.strip_prefix("origin/").is_some_and(is_branch)
+    reference
+        .strip_prefix(REMOTE_BRANCHES)
+        .is_some_and(is_branch)
 }
 
 /// A branch name as `git check-ref-format --branch` allows it, and never an

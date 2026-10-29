@@ -12,17 +12,17 @@ export interface AutomationsOnGitHub {
   readonly automationsMacName: string | null;
 }
 
-/** The git steps the read takes: both local, on what the last fetch left in `origin/<branch>`. */
-export type GitHubSettingsGit = Pick<GitPort, 'currentBranch' | 'remoteSettings'>;
-
-/** What git says when `origin/<branch>` has no settings note: GitHub's settings then name no Mac. */
-const NO_SUCH_PATH = /does not exist in '|exists on disk, but not in '/;
+/** The git steps the read takes: all local, on what the last fetch left in `refs/remotes/origin/<branch>`. */
+export type GitHubSettingsGit = Pick<
+  GitPort,
+  'currentBranch' | 'remoteBranchExists' | 'remoteSettingsExist' | 'remoteSettings'
+>;
 
 /**
  * What the settings note on GitHub says of who runs the automations, as the
  * last fetch left `origin/<branch>` (#630 attack): the other Mac's last word,
  * which a claim written here and not pushed has not changed. One blob, read
- * by the host's narrow `cat-file blob origin/<branch>:.atlas/settings.md`,
+ * by the host's narrow `cat-file blob refs/remotes/origin/<branch>:.atlas/settings.md`,
  * never a listing of the tree. Read from git, so it holds across a restart
  * and a vault switch. Throws when it cannot be read; the gates then count a
  * claim as not shared.
@@ -35,11 +35,13 @@ export async function automationsOnGitHub({
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>;
 }): Promise<AutomationsOnGitHub> {
   const branch = await currentBranch(git);
-  const read = await git.remoteSettings(branch);
-  if (read.code !== 0 && NO_SUCH_PATH.test(read.stderr)) {
+  // A branch not on GitHub yet has no word from the other Mac: a read that failed, not "none named".
+  expectOk('find this branch on GitHub', await git.remoteBranchExists(branch));
+  // Asked by exit code, so a git that speaks another language is read the same (#630 round 2).
+  if ((await git.remoteSettingsExist(branch)).code !== 0) {
     return { automationsMac: null, automationsMacName: null };
   }
-  const text = expectOk('read the settings GitHub holds', read);
+  const text = expectOk('read the settings GitHub holds', await git.remoteSettings(branch));
   const { automationsMac, automationsMacName } = syncSettingsOf(settingsOfText(markdown, text));
   return { automationsMac, automationsMacName };
 }

@@ -29,6 +29,8 @@ export interface UnsharedClaims {
   judge(vault: string, here: AutomationsSettingsNow, thisMacId: string): boolean;
   unshared(vault: string): boolean;
   was(vault: string): string | null;
+  /** Whether GitHub's settings, at the last pull that read them, named this Mac. */
+  namedOnGitHub(vault: string, thisMacId: string): boolean;
 }
 
 /**
@@ -110,5 +112,6 @@ export function createUnsharedClaims({
     },
     unshared: (vault) => known.get(vault)?.unshared ?? false,
     was: (vault) => known.get(vault)?.was ?? null,
+    namedOnGitHub: (vault, thisMacId) => known.get(vault)?.onGitHub === thisMacId.trim(),
   };
 }

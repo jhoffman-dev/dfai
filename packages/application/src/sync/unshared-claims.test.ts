@@ -118,6 +118,26 @@ describe('createUnsharedClaims: a claim judged from git (#630 attack)', () => {
     const { claims } = claimsReading(async () => laptopOnGitHub);
     await claims.learn({ vault: VAULT, here: here(LAPTOP), thisMacId: LAPTOP, pushed: false });
     expect(claims.judge(VAULT, here(LAPTOP), LAPTOP)).toBe(false);
+    expect(claims.namedOnGitHub(VAULT, LAPTOP)).toBe(true);
+  });
+
+  it('forgets that GitHub named this Mac once the settings here name another (#630 round 2)', async () => {
+    let github = laptopOnGitHub;
+    const { claims } = claimsReading(async () => github);
+    await claims.learn({ vault: VAULT, here: here(LAPTOP), thisMacId: LAPTOP, pushed: true });
+    expect(claims.namedOnGitHub(VAULT, LAPTOP)).toBe(true);
+    github = studioOnGitHub;
+    await claims.learn({ vault: VAULT, here: here('mac-studio'), thisMacId: LAPTOP, pushed: true });
+    expect(claims.namedOnGitHub(VAULT, LAPTOP)).toBe(false);
+  });
+
+  it('does not take a claim that ended because another Mac’s came in as GitHub naming this Mac (#630 round 2)', async () => {
+    const { claims } = claimsReading(async () => studioOnGitHub);
+    await claims.learn({ vault: VAULT, here: here(LAPTOP), thisMacId: LAPTOP, pushed: false });
+    // The sync brings Studio's claim in: the settings here name Studio now.
+    await claims.learn({ vault: VAULT, here: here('mac-studio'), thisMacId: LAPTOP, pushed: true });
+    expect(claims.unshared(VAULT)).toBe(false);
+    expect(claims.namedOnGitHub(VAULT, LAPTOP)).toBe(false);
   });
 
   it('marks a claim at its write, and keeps it by vault', () => {

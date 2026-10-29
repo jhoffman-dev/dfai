@@ -375,7 +375,7 @@ impl GitHost {
             Ok(())
         } else {
             Err(format!(
-                "origin/{branch} is not the branch checked out, so its settings are not read"
+                "{branch} is not the branch checked out, so its settings on GitHub are not read"
             ))
         }
     }

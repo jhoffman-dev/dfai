@@ -38,6 +38,8 @@ export interface ClaimAutomationsOptions {
   readonly claimed: (vault: string, was: string | null) => void;
   /** Whether the gates know a claim not yet pushed, now. */
   readonly claimUnsharedNow: (vault: string) => boolean;
+  /** Whether GitHub's settings, as the last pull read them, name this Mac. */
+  readonly namedOnGitHub: (vault: string) => boolean;
   /** The same, as last drawn: a sync that pushes the claim draws it false. */
   readonly claimUnshared: boolean;
   readonly exclusive: Exclusive;
@@ -216,8 +218,10 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
 
 /**
  * A claim this session did not make — written before a restart — found
- * unshared by git and then seen shared, in the same vault: said once, as a
- * claim made here is (#630 review). A claim this session made says it itself.
+ * unshared by git and then seen shared, in the same vault, with this Mac
+ * still named: said once, as a claim made here is (#630 review). A claim
+ * that ends because another Mac's claim came in is not this Mac's to say.
+ * A claim this session made says it itself.
  */
 function useSharedAfterRestart({
   vaultKey,
@@ -239,7 +243,10 @@ function useSharedAfterRestart({
     seen.current = { vault: vaultKey, unshared: claimUnshared };
     if (vaultKey === null || was.vault !== vaultKey || !was.unshared || claimUnshared) return;
     const mac = latest.current.thisMac;
+    // Not unshared any more is not shared: another Mac's claim, fetched, ends it too (#630 round 2).
+    // Only GitHub naming this Mac, as git read it, and the settings here naming it make it this Mac's.
     if (claimedHere.current.has(vaultKey) || mac === null) return;
+    if (!latest.current.named || !latest.current.namedOnGitHub(vaultKey)) return;
     latest.current.activity.inVault(vaultKey).record(claimSharedReport(mac));
   }, [vaultKey, claimUnshared, claimedHere, latest]);
 }

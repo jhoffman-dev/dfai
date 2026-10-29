@@ -8,15 +8,9 @@ export function githubHolding(settings: () => string | null): GitHubSettingsGit 
   const ok = (stdout: string) => ({ code: 0, stdout, stderr: '' });
   return {
     currentBranch: async () => ok('main\n'),
-    remoteSettings: async (branch) => {
-      const text = settings();
-      return text === null
-        ? {
-            code: 128,
-            stdout: '',
-            stderr: `fatal: path '.atlas/settings.md' does not exist in 'origin/${branch}'`,
-          }
-        : ok(text);
-    },
+    remoteBranchExists: async () => ok(`${'f'.repeat(40)}\n`),
+    remoteSettingsExist: async () =>
+      settings() === null ? { code: 1, stdout: '', stderr: '' } : ok(''),
+    remoteSettings: async () => ok(settings() ?? ''),
   };
 }

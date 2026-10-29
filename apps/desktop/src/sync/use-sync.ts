@@ -160,6 +160,7 @@ export function useSync(options: SyncOptions): SyncController {
     claimUnsharedNow,
     claimUnshared,
     claimWas,
+    namedOnGitHub,
   } = usePulledFiles({
     vaultKey,
     sleepClock: host.sleepClock,
@@ -221,6 +222,7 @@ export function useSync(options: SyncOptions): SyncController {
     claimRefusal,
     claimed,
     claimUnsharedNow,
+    namedOnGitHub,
     claimUnshared,
     exclusive,
     activity: options.activity,
