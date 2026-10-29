@@ -149,6 +149,7 @@ describe('readSkillDraft: an echo of the fence gives the skill back (attack-634)
       const reading = readSkillDraft({
         answer: echo(current, 'meeting-notes'),
         fixedName: 'meeting-notes',
+        current,
       });
       expect(reading, `seed run ${run}`).toEqual({ ok: true, draft: current, ignoredName: null });
     }
@@ -165,6 +166,7 @@ describe('readSkillDraft: an echo of the fence gives the skill back (attack-634)
     const reading = readSkillDraft({
       answer: echo(current, 'meeting-notes'),
       fixedName: 'meeting-notes',
+      current,
     });
     expect(reading.ok && reading.draft.instructions).toBe(current.instructions);
   });
@@ -179,6 +181,7 @@ describe('readSkillDraft: an echo of the fence gives the skill back (attack-634)
     const reading = readSkillDraft({
       answer: echo(current, 'meeting-notes'),
       fixedName: 'meeting-notes',
+      current,
     });
     expect(reading.ok && reading.draft.instructions).toBe(current.instructions);
   });

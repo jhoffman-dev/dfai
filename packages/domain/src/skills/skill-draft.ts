@@ -149,20 +149,38 @@ function parsedObject(answer: string): Record<string, unknown> | null {
 
 const textOf = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
+/** Without the line breaks at either end; spaces, an indented first line and NBSP are kept. */
+const withoutOuterLineBreaks = (text: string): string => text.replace(/^[\r\n]+|[\r\n]+$/g, '');
+
+/**
+ * One of Claude's texts as the editor takes it. Claude's echo of the text it
+ * was shown, differing only at its ends, is that text exactly, so an
+ * unchanged indented first line or closing blank line survives Accept and
+ * Save. Anything else loses only the line breaks round it.
+ */
+function asWritten(answered: string, shown: string | null): string {
+  if (shown !== null && answered.trim() === shown.trim()) return shown;
+  return withoutOuterLineBreaks(answered);
+}
+
 /**
  * Claude's answer as a skill the editor could take: one JSON object, alone
  * or in one code fence, whose `name`, `description` and `instructions` are
  * text. Other keys are ignored. The draft is held to the editor's rules; an
  * existing skill keeps `fixedName`, and a different name in the answer is
- * ignored and said. Outer blank space is trimmed from the description and
- * the instructions, as a model's answer often ends with a line break.
+ * ignored and said. Each text is `asWritten`: what the skill already said
+ * when Claude only echoed it, or else without the line breaks a model leaves
+ * round an answer. The rules are held to the text as Save would write it.
  */
 export function readSkillDraft({
   answer,
   fixedName,
+  current = null,
 }: {
   answer: string;
   fixedName: string | null;
+  /** The skill as Claude was shown it; null when it was shown none. */
+  current?: SkillDraft | null;
 }): SkillDraftReading {
   const parsed = parsedObject(answer);
   if (parsed === null) return { ok: false, problems: [NOT_A_SKILL] };
@@ -174,8 +192,8 @@ export function readSkillDraft({
   }
   const draft = {
     name: fixedName ?? name ?? '',
-    description: description.trim(),
-    instructions: instructions.trim(),
+    description: asWritten(description, current?.description ?? null),
+    instructions: asWritten(instructions, current?.instructions ?? null),
   };
   // An existing skill's name is its folder's, whatever it is: only what Claude wrote is checked.
   const problems = skillDraftProblems(draft).filter(

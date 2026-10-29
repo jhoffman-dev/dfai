@@ -186,6 +186,20 @@ describe('draftSkill', () => {
     });
   });
 
+  it('keeps the skill’s own ends when Claude echoes it trimmed', async () => {
+    const indented: SkillDraft = {
+      ...CURRENT,
+      instructions: '    $ summarise --meeting\n\nThen list the decisions.\n',
+    };
+    const trimmed = { ...indented, instructions: indented.instructions.trim() };
+    const model = fakeModel([said(JSON.stringify(trimmed))]);
+    await expect(ask(model, { current: indented })).resolves.toEqual({
+      kind: 'drafted',
+      draft: indented,
+      ignoredName: null,
+    });
+  });
+
   it('asks nothing about a skill too long to be shown, and says why', async () => {
     const model = fakeModel([]);
     const huge = { ...CURRENT, instructions: 'i'.repeat(40_000) };

@@ -94,7 +94,7 @@ export async function draftSkill({
       onEvent: () => {},
     });
     if (outcome.stopped || signal.aborted) return { kind: 'stopped' };
-    const reading = readSkillDraft({ answer: answerOf(outcome.added), fixedName });
+    const reading = readSkillDraft({ answer: answerOf(outcome.added), fixedName, current });
     return reading.ok
       ? { kind: 'drafted', draft: reading.draft, ignoredName: reading.ignoredName }
       : { kind: 'refused', problems: reading.problems };

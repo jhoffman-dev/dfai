@@ -65,15 +65,67 @@ describe('readSkillDraft', () => {
     });
   });
 
-  it('trims the outer blank space a model leaves on the description and the instructions', () => {
+  it('takes off only the line breaks a model leaves round its texts', () => {
     const loose = {
       ...DRAFT,
-      description: ` ${DRAFT.description}\n`,
-      instructions: `\n${DRAFT.instructions}\n\n`,
+      description: `${DRAFT.description}\n`,
+      instructions: `\r\n${DRAFT.instructions}\n\n`,
     };
     expect(readSkillDraft({ answer: answer(loose), fixedName: null })).toMatchObject({
       ok: true,
       draft: DRAFT,
+    });
+  });
+
+  it('keeps spaces, an indented first line, NBSP, U+3000 and U+FEFF at the ends', () => {
+    const kept = {
+      ...DRAFT,
+      description: `\u00a0${DRAFT.description}\u3000`,
+      instructions: `    $ summarise\n\nThen list it.\ufeff `,
+    };
+    expect(readSkillDraft({ answer: answer(kept), fixedName: null })).toMatchObject({
+      ok: true,
+      draft: kept,
+    });
+  });
+
+  describe('an echo of the skill Claude was shown', () => {
+    const shown = {
+      ...DRAFT,
+      description: ` ${DRAFT.description}`,
+      instructions: `    $ summarise\n\n${DRAFT.instructions}\n`,
+    };
+
+    it('is the skill exactly, when only its ends differ', () => {
+      const trimmed = {
+        ...shown,
+        description: shown.description.trim(),
+        instructions: shown.instructions.trim(),
+      };
+      expect(
+        readSkillDraft({ answer: answer(trimmed), fixedName: 'meeting-notes', current: shown }),
+      ).toEqual({ ok: true, draft: shown, ignoredName: null });
+    });
+
+    it('is not, when Claude changed it: then only line breaks come off', () => {
+      const changed = { ...shown, instructions: `    $ summarise --short\n` };
+      expect(
+        readSkillDraft({ answer: answer(changed), fixedName: 'meeting-notes', current: shown }),
+      ).toMatchObject({ ok: true, draft: { instructions: '    $ summarise --short' } });
+    });
+
+    it('is held to the caps as Save would write it, kept ends and all', () => {
+      const atCap = { ...DRAFT, instructions: `${'i'.repeat(19_999)}\n` };
+      const overCap = { ...DRAFT, instructions: `${'i'.repeat(20_000)}\n` };
+      for (const [current, ok] of [
+        [atCap, true],
+        [overCap, false],
+      ] as const) {
+        const echoed = answer({ ...current, instructions: current.instructions.trim() });
+        expect(
+          readSkillDraft({ answer: echoed, fixedName: 'meeting-notes', current }),
+        ).toMatchObject({ ok });
+      }
     });
   });
 
