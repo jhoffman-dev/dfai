@@ -383,9 +383,10 @@ describe('useClaimAutomations: a claim from before a restart (#630 review)', () 
 
   it('says this Mac runs the automations once git shows the claim shared', () => {
     const { hook, options, messages } = setUp();
-    hook.rerender({ ...options, claimUnshared: true });
-    hook.rerender({ ...options, claimUnshared: false });
-    hook.rerender({ ...options, claimUnshared: false });
+    hook.rerender({ ...options, named: true, claimUnshared: true });
+    // Shared, and this Mac still named: GitHub has its claim.
+    hook.rerender({ ...options, named: true, claimUnshared: false });
+    hook.rerender({ ...options, named: true, claimUnshared: false });
     expect(messages()).toEqual([NOW_RUNS]);
   });
 

@@ -40,7 +40,7 @@ describe('tauriGit', () => {
         '-m',
         'm',
       ],
-      ['merge', '--no-edit', '--allow-unrelated-histories', 'origin/main'],
+      ['merge', '--no-edit', '--allow-unrelated-histories', 'refs/remotes/origin/main'],
       [
         '-c',
         'user.name=DFAI on Mac',
@@ -49,9 +49,9 @@ describe('tauriGit', () => {
         'merge',
         '--no-edit',
         '--allow-unrelated-histories',
-        'origin/main',
+        'refs/remotes/origin/main',
       ],
-      ['rev-parse', '--verify', '--quiet', 'origin/main'],
+      ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main'],
       ['checkout', '--theirs', '--', 'Ideas.md'],
       ['remote', 'set-url', 'origin', 'git@github.com:j/n.git'],
       ['remote', 'add', 'origin', 'git@github.com:j/n.git'],
@@ -109,21 +109,23 @@ describe('tauriGit', () => {
     await git.largeUnpushed(99_614_720);
     await git.remoteHead();
     await git.renameBranch('master');
+    await git.remoteSettingsExist('main');
+    await git.remoteSettings('main');
     // The same shapes, word for word, as `ACCEPTED` in the host's tests.
     expect(invoke.mock.calls.map(([, args]) => (args as { args: string[] }).args)).toEqual([
       ['-c', 'core.ignoreCase=false', 'ls-files', '-z', '--others', '--exclude-standard'],
       ['ls-files', '-z', '--stage'],
       ['mv', '--', 'idea.md', 'idea (conflict from Laptop).md'],
       ['ls-tree', '-r', '-z', 'HEAD'],
-      ['ls-tree', '-r', '-z', 'origin/main'],
+      ['ls-tree', '-r', '-z', 'refs/remotes/origin/main'],
       ['ls-tree', '-r', '-z', oid],
-      ['merge-base', 'HEAD', 'origin/main'],
+      ['merge-base', 'HEAD', 'refs/remotes/origin/main'],
       ['hash-object', '--no-filters', '--', 'Notes/Idea.md'],
       ['update-index', '--add', '--cacheinfo', `100644,${oid},Idea (conflict from Studio).md`],
       ['checkout-index', '--', 'Idea (conflict from Studio).md'],
       ['rm', '--cached', '--quiet', '--', 'Attachments/talk.mov'],
       ['reset', '--quiet', '--', 'Data/dump.bin'],
-      ['reset', '--quiet', '--soft', 'origin/main'],
+      ['reset', '--quiet', '--soft', 'refs/remotes/origin/main'],
       [
         'rev-list',
         '--objects',
@@ -135,6 +137,8 @@ describe('tauriGit', () => {
       ],
       ['ls-remote', '--symref', 'origin', 'HEAD'],
       ['branch', '-m', 'master'],
+      ['cat-file', '-e', 'refs/remotes/origin/main:.atlas/settings.md'],
+      ['cat-file', 'blob', 'refs/remotes/origin/main:.atlas/settings.md'],
     ]);
   });
 

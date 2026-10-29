@@ -65,7 +65,7 @@ const ACCEPTED: &[&[&str]] = &[
         "merge",
         "--no-edit",
         "--allow-unrelated-histories",
-        "origin/main",
+        "refs/remotes/origin/main",
     ],
     &[
         "-c",
@@ -75,7 +75,7 @@ const ACCEPTED: &[&[&str]] = &[
         "merge",
         "--no-edit",
         "--allow-unrelated-histories",
-        "origin/main",
+        "refs/remotes/origin/main",
     ],
     &["push", "--quiet", "--set-upstream", "origin", "HEAD"],
     &["remote", "get-url", "origin"],
@@ -93,12 +93,17 @@ const ACCEPTED: &[&[&str]] = &[
     ],
     &["symbolic-ref", "--quiet", "--short", "HEAD"],
     &["log", "-1", "--format=%H%x00%ct"],
-    &["log", "-1", "--format=%s", "origin/main", "--"],
+    &["log", "-1", "--format=%s", "refs/remotes/origin/main", "--"],
     &["checkout", "--ours", "--", "Notes/Ideas.md"],
     &["checkout", "--theirs", "--", "Attachments/photo 1.png"],
     &["config", "--get", "user.name"],
     &["config", "--get", "user.email"],
-    &["rev-parse", "--verify", "--quiet", "origin/feature/x"],
+    &[
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "refs/remotes/origin/feature/x",
+    ],
     &["rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
     &[
         "-c",
@@ -111,22 +116,30 @@ const ACCEPTED: &[&[&str]] = &[
     &["ls-files", "-z", "--stage"],
     &["mv", "--", "idea.md", "idea (conflict from Laptop).md"],
     &["ls-tree", "-r", "-z", "HEAD"],
-    &["ls-tree", "-r", "-z", "origin/main"],
+    &["ls-tree", "-r", "-z", "refs/remotes/origin/main"],
     &[
         "ls-tree",
         "-r",
         "-z",
         "0123456789abcdef0123456789abcdef01234567",
     ],
-    &["merge-base", "HEAD", "origin/main"],
+    &["merge-base", "HEAD", "refs/remotes/origin/main"],
     &["hash-object", "--no-filters", "--", "Notes/Idea.md"],
     &[
         "cat-file",
         "blob",
         "0123456789abcdef0123456789abcdef01234567",
     ],
-    &["cat-file", "blob", "origin/main:.atlas/settings.md"],
-    &["cat-file", "blob", "origin/feature/x:.atlas/settings.md"],
+    &[
+        "cat-file",
+        "blob",
+        "refs/remotes/origin/main:.atlas/settings.md",
+    ],
+    &[
+        "cat-file",
+        "blob",
+        "refs/remotes/origin/feature/x:.atlas/settings.md",
+    ],
     &[
         "update-index",
         "--add",
@@ -136,7 +149,7 @@ const ACCEPTED: &[&[&str]] = &[
     &["checkout-index", "--", "Idea (conflict from Studio).md"],
     &["rm", "--cached", "--quiet", "--", "Attachments/talk.mov"],
     &["reset", "--quiet", "--", "Data/dump.bin"],
-    &["reset", "--quiet", "--soft", "origin/main"],
+    &["reset", "--quiet", "--soft", "refs/remotes/origin/main"],
     &[
         "rev-list",
         "--objects",
@@ -184,7 +197,7 @@ fn a_shape_missing_or_gaining_an_argument_is_refused() {
 fn reading_a_blob_takes_only_a_blob_id() {
     for refused in [
         &["cat-file", "blob", "HEAD"][..],
-        &["cat-file", "blob", "origin/main:secret.md"],
+        &["cat-file", "blob", "refs/remotes/origin/main:secret.md"],
         &["cat-file", "-p", "0123456789abcdef0123456789abcdef01234567"],
         &["cat-file", "--batch"],
         &[
@@ -231,8 +244,8 @@ fn options_that_run_programs_are_refused_everywhere() {
         &["diff", "--output=/tmp/owned"],
         &["log", "-1", "--output=/tmp/owned"],
         &["submodule", "update"],
-        &["rebase", "origin/main"],
-        &["reset", "--hard", "origin/main"],
+        &["rebase", "refs/remotes/origin/main"],
+        &["reset", "--hard", "refs/remotes/origin/main"],
     ] {
         assert!(!vault_ok(attack), "{attack:?}");
     }
@@ -285,7 +298,7 @@ fn a_merge_author_is_only_a_name_and_an_email_without_line_breaks() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ])
     };
     assert!(with("user.name=A", "user.email=a@b"));
@@ -308,20 +321,20 @@ fn a_merge_only_takes_a_branch_of_origin() {
             reference,
         ])
     };
-    assert!(merge("origin/main"));
-    assert!(merge("origin/release-1.2_x"));
+    assert!(merge("refs/remotes/origin/main"));
+    assert!(merge("refs/remotes/origin/release-1.2_x"));
     for refused in [
         "main",
-        "origin/",
-        "origin/-x",
-        "origin//x",
-        "origin/a..b",
-        "origin/x/",
-        "origin/../x",
+        "refs/remotes/origin/",
+        "refs/remotes/origin/-x",
+        "refs/remotes/origin//x",
+        "refs/remotes/origin/a..b",
+        "refs/remotes/origin/x/",
+        "refs/remotes/origin/../x",
         "upstream/main",
         "--strategy=ours",
-        "origin/a b",
-        &format!("origin/{}", "b".repeat(201)),
+        "refs/remotes/origin/a b",
+        &format!("refs/remotes/origin/{}", "b".repeat(201)),
     ] {
         assert!(!merge(refused), "{refused:?}");
     }
@@ -1072,7 +1085,11 @@ fn the_settings_on_github_are_read_for_the_branch_checked_out_only() {
     let read = ok(host
         .git_in_vault(
             &a,
-            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+            &args(&[
+                "cat-file",
+                "blob",
+                "refs/remotes/origin/main:.atlas/settings.md",
+            ]),
         )
         .unwrap());
     assert_eq!(read.stdout, settings);
@@ -1084,7 +1101,11 @@ fn the_settings_on_github_are_read_for_the_branch_checked_out_only() {
     let refused = host
         .git_in_vault(
             &a,
-            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+            &args(&[
+                "cat-file",
+                "blob",
+                "refs/remotes/origin/main:.atlas/settings.md",
+            ]),
         )
         .unwrap_err();
     assert!(refused.contains("not the branch checked out"), "{refused}");
@@ -1169,7 +1190,7 @@ fn a_conflict_round_trip_keeps_both_versions_and_leaves_no_markers() {
                 "merge",
                 "--no-edit",
                 "--allow-unrelated-histories",
-                "origin/main",
+                "refs/remotes/origin/main",
             ]),
         )
         .unwrap();
@@ -1254,7 +1275,7 @@ fn a_conflict_round_trip_keeps_both_versions_and_leaves_no_markers() {
                 "merge",
                 "--no-edit",
                 "--allow-unrelated-histories",
-                "origin/main",
+                "refs/remotes/origin/main",
             ]),
         )
         .unwrap());
@@ -1355,16 +1376,16 @@ fn adversarial_a_merge_ref_never_escapes_origin() {
             reference,
         ])
     };
-    assert!(merge("origin/main"));
-    assert!(merge("origin/feature/x"));
+    assert!(merge("refs/remotes/origin/main"));
+    assert!(merge("refs/remotes/origin/feature/x"));
     for refused in [
-        "origin/",
-        "origin/main..origin/x",
-        "origin/-x",
-        "origin/main@{1}",
-        "origin/main^",
-        "origin/main~1",
-        "origin//main",
+        "refs/remotes/origin/",
+        "refs/remotes/origin/main..origin/x",
+        "refs/remotes/origin/-x",
+        "refs/remotes/origin/main@{1}",
+        "refs/remotes/origin/main^",
+        "refs/remotes/origin/main~1",
+        "refs/remotes/origin//main",
         "main",
         "upstream/main",
     ] {
@@ -1440,7 +1461,11 @@ fn adversarial_a_vault_opened_through_a_symlink_can_be_asked_where_it_sits() {
 /// `rev-parse --verify origin/<branch>`, with a message about arguments.
 #[test]
 fn adversarial_a_branch_git_allows_can_be_merged() {
-    for branch in ["origin/notes+work", "origin/caf\u{e9}", "origin/james@home"] {
+    for branch in [
+        "refs/remotes/origin/notes+work",
+        "refs/remotes/origin/caf\u{e9}",
+        "refs/remotes/origin/james@home",
+    ] {
         assert!(
             vault_ok(&["rev-parse", "--verify", "--quiet", branch]),
             "{branch:?} is a branch git allows"
@@ -1571,25 +1596,25 @@ fn a_stopped_local_run_leaves_an_older_lock_alone() {
 #[test]
 fn a_branch_git_refuses_is_refused() {
     for branch in [
-        "origin/a..b",
-        "origin/-x",
-        "origin/x.lock",
-        "origin/a@{1}",
-        "origin/a~1",
-        "origin/a^",
-        "origin/a:b",
-        "origin/a b",
-        "origin/.hidden",
-        "origin/a/.b",
-        "origin/a*",
-        "origin/a?",
-        "origin/a[b",
-        "origin/a\\b",
-        "origin/a/",
-        "origin/a.",
-        "origin/@",
-        "origin/a//b",
-        "origin/a\u{7f}",
+        "refs/remotes/origin/a..b",
+        "refs/remotes/origin/-x",
+        "refs/remotes/origin/x.lock",
+        "refs/remotes/origin/a@{1}",
+        "refs/remotes/origin/a~1",
+        "refs/remotes/origin/a^",
+        "refs/remotes/origin/a:b",
+        "refs/remotes/origin/a b",
+        "refs/remotes/origin/.hidden",
+        "refs/remotes/origin/a/.b",
+        "refs/remotes/origin/a*",
+        "refs/remotes/origin/a?",
+        "refs/remotes/origin/a[b",
+        "refs/remotes/origin/a\\b",
+        "refs/remotes/origin/a/",
+        "refs/remotes/origin/a.",
+        "refs/remotes/origin/@",
+        "refs/remotes/origin/a//b",
+        "refs/remotes/origin/a\u{7f}",
     ] {
         assert!(
             !vault_ok(&["rev-parse", "--verify", "--quiet", branch]),
@@ -1808,22 +1833,22 @@ fn a_vault_under_var_is_spelled_under_private_var() {
 #[test]
 fn reading_the_settings_on_github_takes_only_origin_and_the_settings_note() {
     for refused in [
-        "origin/main:Inbox/a.md",
-        "origin/main:.atlas/settings.md.bak",
-        "origin/main:./.atlas/settings.md",
-        "origin/main:.atlas//settings.md",
-        "origin/main:.ATLAS/settings.md",
-        "origin/main:.atlas/settings.md\n",
-        "origin/main:",
-        "origin/main",
+        "refs/remotes/origin/main:Inbox/a.md",
+        "refs/remotes/origin/main:.atlas/settings.md.bak",
+        "refs/remotes/origin/main:./.atlas/settings.md",
+        "refs/remotes/origin/main:.atlas//settings.md",
+        "refs/remotes/origin/main:.ATLAS/settings.md",
+        "refs/remotes/origin/main:.atlas/settings.md\n",
+        "refs/remotes/origin/main:",
+        "refs/remotes/origin/main",
         "HEAD:.atlas/settings.md",
         "main:.atlas/settings.md",
-        "origin/main^:.atlas/settings.md",
-        "origin/main~1:.atlas/settings.md",
-        "origin/a..b:.atlas/settings.md",
-        "origin/-x:.atlas/settings.md",
-        "origin/@{1}:.atlas/settings.md",
-        "origin/:.atlas/settings.md",
+        "refs/remotes/origin/main^:.atlas/settings.md",
+        "refs/remotes/origin/main~1:.atlas/settings.md",
+        "refs/remotes/origin/a..b:.atlas/settings.md",
+        "refs/remotes/origin/-x:.atlas/settings.md",
+        "refs/remotes/origin/@{1}:.atlas/settings.md",
+        "refs/remotes/origin/:.atlas/settings.md",
         "upstream/main:.atlas/settings.md",
         ":.atlas/settings.md",
         "-origin/main:.atlas/settings.md",
@@ -1833,12 +1858,12 @@ fn reading_the_settings_on_github_takes_only_origin_and_the_settings_note() {
     assert!(!vault_ok(&[
         "cat-file",
         "-p",
-        "origin/main:.atlas/settings.md"
+        "refs/remotes/origin/main:.atlas/settings.md"
     ]));
     assert!(!folder_ok(&[
         "cat-file",
         "blob",
-        "origin/main:.atlas/settings.md"
+        "refs/remotes/origin/main:.atlas/settings.md"
     ]));
 }
 
@@ -2016,7 +2041,7 @@ fn a_git_write_inside_a_change_turn_runs_rather_than_waiting_on_itself() {
         "merge",
         "--no-edit",
         "--allow-unrelated-histories",
-        "origin/main",
+        "refs/remotes/origin/main",
     ]);
     let output = crate::vault::one_change_at_a_time(|| host.git_in_vault(vault.path(), &merge));
     assert_eq!(output.unwrap().code, Some(0));
@@ -2071,7 +2096,10 @@ fn a_command_after_leading_settings_is_known_by_its_own_verb() {
         overwritten_path(&set(&["checkout-index", "--", "Note.md"])),
         None
     );
-    assert_eq!(overwritten_path(&set(&["merge", "origin/main"])), None);
+    assert_eq!(
+        overwritten_path(&set(&["merge", "refs/remotes/origin/main"])),
+        None
+    );
 }
 
 #[test]
@@ -2185,7 +2213,7 @@ const MERGE: &[&str] = &[
     "merge",
     "--no-edit",
     "--allow-unrelated-histories",
-    "origin/main",
+    "refs/remotes/origin/main",
 ];
 
 /// Runs the system git directly, for setting a repository up; the host's
@@ -2497,7 +2525,7 @@ const MERGE_MAIN: &[&str] = &[
     "merge",
     "--no-edit",
     "--allow-unrelated-histories",
-    "origin/main",
+    "refs/remotes/origin/main",
 ];
 
 #[test]
@@ -2554,7 +2582,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2564,7 +2592,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2578,7 +2606,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2590,7 +2618,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2602,7 +2630,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-cuser.name=A",
@@ -2611,7 +2639,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "--config-env=user.name=X",
@@ -2620,7 +2648,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2629,7 +2657,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2639,7 +2667,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "merge",
             "--allow-unrelated-histories",
             "--no-edit",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2649,7 +2677,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "commit",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
         &[
             "-c",
@@ -2659,7 +2687,7 @@ fn adversarial_a_merge_with_swapped_doubled_or_missing_settings_is_refused() {
             "pull",
             "--no-edit",
             "--allow-unrelated-histories",
-            "origin/main",
+            "refs/remotes/origin/main",
         ],
     ];
     for list in refused {
@@ -2675,7 +2703,7 @@ fn adversarial_nothing_may_follow_the_branch_of_a_merge_as_atlas() {
         "--strategy=ours",
         "-X",
         "--no-verify",
-        "origin/other",
+        "refs/remotes/origin/other",
         "HEAD",
         "",
     ] {
@@ -2689,24 +2717,24 @@ fn adversarial_nothing_may_follow_the_branch_of_a_merge_as_atlas() {
 #[test]
 fn adversarial_a_merge_as_atlas_takes_only_a_plain_branch_of_origin() {
     for reference in [
-        "origin/-x",
-        "origin/--upload-pack=sh",
-        "origin/../evil",
-        "origin/a/../b",
-        "origin/a b",
-        "origin/",
+        "refs/remotes/origin/-x",
+        "refs/remotes/origin/--upload-pack=sh",
+        "refs/remotes/origin/../evil",
+        "refs/remotes/origin/a/../b",
+        "refs/remotes/origin/a b",
+        "refs/remotes/origin/",
         "origin",
-        "origin//main",
-        "origin/main.lock",
-        "origin/.hidden",
-        "origin/main..other",
-        "origin/main@{1}",
-        "origin/@",
-        "origin/main^",
-        "origin/main~1",
-        "origin/ma:in",
-        "origin/main\n",
-        "origin/main\u{7f}",
+        "refs/remotes/origin//main",
+        "refs/remotes/origin/main.lock",
+        "refs/remotes/origin/.hidden",
+        "refs/remotes/origin/main..other",
+        "refs/remotes/origin/main@{1}",
+        "refs/remotes/origin/@",
+        "refs/remotes/origin/main^",
+        "refs/remotes/origin/main~1",
+        "refs/remotes/origin/ma:in",
+        "refs/remotes/origin/main\n",
+        "refs/remotes/origin/main\u{7f}",
         "upstream/main",
         "refs/remotes/origin/main",
         "Origin/main",
@@ -2895,7 +2923,10 @@ fn the_settings_on_github_are_read_from_the_remote_tracking_ref_though_a_local_r
         println!("skipped: no git in {GIT_DIRS:?}");
         return;
     };
-    for shadow in [["branch", "origin/main"], ["tag", "origin/main"]] {
+    for shadow in [
+        ["branch", "refs/remotes/origin/main"],
+        ["tag", "refs/remotes/origin/main"],
+    ] {
         let work = tempfile::tempdir().unwrap();
         let (host, a, settings) = vault_with_settings_on_origin(work.path(), &git_dir);
         // A local ref spelled `origin/main`, naming this Mac: not what GitHub holds.
@@ -2909,7 +2940,11 @@ fn the_settings_on_github_are_read_from_the_remote_tracking_ref_though_a_local_r
 
         let read = host.git_in_vault(
             &a,
-            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+            &args(&[
+                "cat-file",
+                "blob",
+                "refs/remotes/origin/main:.atlas/settings.md",
+            ]),
         );
         let read = read.map(|output| output.stdout);
         assert!(
@@ -2934,7 +2969,11 @@ fn the_settings_on_github_are_not_read_with_head_detached() {
     let refused = host
         .git_in_vault(
             &a,
-            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+            &args(&[
+                "cat-file",
+                "blob",
+                "refs/remotes/origin/main:.atlas/settings.md",
+            ]),
         )
         .unwrap_err();
     assert!(refused.contains("not the branch checked out"), "{refused}");
@@ -2969,7 +3008,7 @@ fn reading_the_settings_on_github_refuses_branch_spellings_that_reach_another_ob
         "a[b]",
         "\u{7f}",
     ] {
-        let arg = format!("origin/{branch}:.atlas/settings.md");
+        let arg = format!("refs/remotes/origin/{branch}:.atlas/settings.md");
         assert!(!vault_ok(&["cat-file", "blob", &arg]), "{arg:?}");
     }
     for path in [
@@ -2983,13 +3022,114 @@ fn reading_the_settings_on_github_refuses_branch_spellings_that_reach_another_ob
         " .atlas/settings.md",
         ".atlas/settings.md ",
     ] {
-        let arg = format!("origin/main:{path}");
+        let arg = format!("refs/remotes/origin/main:{path}");
         assert!(!vault_ok(&["cat-file", "blob", &arg]), "{arg:?}");
     }
     // Unicode is a branch git allows, and still only that one path.
     assert!(vault_ok(&[
         "cat-file",
         "blob",
-        "origin/café/日本:.atlas/settings.md"
+        "refs/remotes/origin/café/日本:.atlas/settings.md"
     ]));
+}
+
+/// PR #630 round 2: `origin/<branch>` is git's short name, which a local
+/// branch or tag of that spelling outranks. Every slot that names the other
+/// Macs' branch takes the full `refs/remotes/origin/<branch>` alone.
+#[test]
+fn the_other_macs_branch_is_named_in_full_never_by_its_short_name() {
+    for refused in [
+        &[
+            "merge",
+            "--no-edit",
+            "--allow-unrelated-histories",
+            "origin/main",
+        ][..],
+        &["log", "-1", "--format=%s", "origin/main", "--"],
+        &["rev-parse", "--verify", "--quiet", "origin/main"],
+        &["ls-tree", "-r", "-z", "origin/main"],
+        &["merge-base", "HEAD", "origin/main"],
+        &["reset", "--quiet", "--soft", "origin/main"],
+        &["cat-file", "blob", "origin/main:.atlas/settings.md"],
+        &["cat-file", "-e", "origin/main:.atlas/settings.md"],
+        &["merge-base", "HEAD", "refs/heads/origin/main"],
+        &["merge-base", "HEAD", "refs/tags/origin/main"],
+        &["merge-base", "HEAD", "refs/remotes/upstream/main"],
+    ] {
+        assert!(!vault_ok(refused), "{refused:?}");
+    }
+}
+
+/// PR #630 round 2: what the full name resolves to is the remote-tracking
+/// branch, though a local branch is spelled `origin/main`.
+#[test]
+fn the_full_name_resolves_to_the_remote_tracking_branch_though_a_local_branch_shares_its_short_name(
+) {
+    let Some(git_dir) = real_git_dir() else {
+        println!("skipped: no git in {GIT_DIRS:?}");
+        return;
+    };
+    let work = tempfile::tempdir().unwrap();
+    let (host, a, _) = vault_with_settings_on_origin(work.path(), &git_dir);
+    let pushed = Command::new(git_dir.join("git"))
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&a)
+        .output()
+        .unwrap();
+    let pushed = String::from_utf8(pushed.stdout).unwrap();
+    fs::write(a.join("Local.md"), "here only\n").unwrap();
+    raw_git(&git_dir, &a, &["add", "--all"]);
+    raw_git(&git_dir, &a, &["commit", "--quiet", "-m", "local only"]);
+    raw_git(&git_dir, &a, &["branch", "origin/main", "HEAD"]);
+
+    let resolved = ok(host
+        .git_in_vault(
+            &a,
+            &args(&[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/main",
+            ]),
+        )
+        .unwrap());
+    assert_eq!(resolved.stdout, pushed);
+}
+
+/// PR #630 round 2: whether the settings note is on GitHub is asked by
+/// `cat-file -e`, whose answer is its exit code, never git's words.
+#[test]
+fn whether_the_settings_are_on_github_is_asked_by_exit_code() {
+    let Some(git_dir) = real_git_dir() else {
+        println!("skipped: no git in {GIT_DIRS:?}");
+        return;
+    };
+    let work = tempfile::tempdir().unwrap();
+    let (host, a, _) = vault_with_settings_on_origin(work.path(), &git_dir);
+    let there = host
+        .git_in_vault(
+            &a,
+            &args(&[
+                "cat-file",
+                "-e",
+                "refs/remotes/origin/main:.atlas/settings.md",
+            ]),
+        )
+        .unwrap();
+    assert_eq!(there.code, Some(0), "{there:?}");
+    raw_git(&git_dir, &a, &["rm", "--quiet", ".atlas/settings.md"]);
+    raw_git(&git_dir, &a, &["commit", "--quiet", "-m", "no settings"]);
+    raw_git(&git_dir, &a, &["push", "--quiet", "origin", "HEAD"]);
+    raw_git(&git_dir, &a, &["fetch", "--quiet", "origin"]);
+    let gone = host
+        .git_in_vault(
+            &a,
+            &args(&[
+                "cat-file",
+                "-e",
+                "refs/remotes/origin/main:.atlas/settings.md",
+            ]),
+        )
+        .unwrap();
+    assert_ne!(gone.code, Some(0), "{gone:?}");
 }
