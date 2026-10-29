@@ -31,9 +31,13 @@ function inUseOfTypeSql(column: string, typeParameter: string): string {
   ].join('\n');
 }
 
-/** A property's one value as text: null when it has none, or holds a list of several. */
+/**
+ * A property's one value as text: null when it has none, or holds a list of
+ * several — a blank item being no item, as gtdStatusOf and a query's FROM
+ * read it (follow-up to #110).
+ */
 const singleText = (key: string, column = 'f.path') =>
-  `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = ${column} AND p.key = '${key}')`;
+  `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND COALESCE(p.value_text, p.value_json, '') <> '')`;
 
 /** A date property's first day, `YYYY-MM-DD`; null when it holds no date. */
 const firstDay = (key: string) =>
@@ -75,10 +79,10 @@ export function compileReviewTasksQuery(): CompiledQuery {
       `  (SELECT group_concat(n, char(31)) FROM (SELECT r.name AS n FROM relations AS r WHERE r.src = f.path AND r.key = '${FILED_UNDER_KEY}' ORDER BY r.idx)) AS "projectLinks"`,
       `FROM files AS f`,
       `WHERE ${inUseOfTypeSql('f.path', '?')}`,
-      // `+` keeps the planner off `props_key (key, value_text)`, which would walk
-      // every finished task in the vault for each open one; a note's own rows
-      // are found by `props_path (path, key)`.
-      `  AND NOT EXISTS (SELECT 1 FROM props AS s WHERE s.path = f.path AND s.key = '${TASK_KEYS.status}' AND +s.value_text = ?)`,
+      // Finished is a status of archive, read as its one value: a status
+      // written as a list is no status, so the task is open work, shown rather
+      // than hidden — as a query's `status != archive` lists it.
+      `  AND COALESCE(${singleText(TASK_KEYS.status)}, '') <> ?`,
       `ORDER BY f.path`,
     ].join('\n'),
     parameters: [TASK_TYPE, FINISHED_TASK_STATUS],
@@ -218,7 +222,7 @@ export function compileReviewDoneQuery(since: number, bounds?: ReviewWeekBounds)
       `WHERE EXISTS (SELECT 1 FROM props AS ty WHERE ty.path = f.path AND ty.key = 'type'`,
       `    AND lower(trim(ty.value_text)) = ?)`,
       `  AND ${userSpaceNoteSql('f.path')}`,
-      `  AND EXISTS (SELECT 1 FROM props AS s WHERE s.path = f.path AND s.key = '${TASK_KEYS.status}' AND +s.value_text = ?)`,
+      `  AND ${singleText(TASK_KEYS.status)} = ?`,
       `  AND CASE WHEN ${firstDay(TASK_KEYS.completed)} IS NOT NULL`,
       `    THEN ${firstDay(TASK_KEYS.completed)} BETWEEN ? AND ?`,
       `    ELSE f.modified >= ? AND f.modified < ? END`,

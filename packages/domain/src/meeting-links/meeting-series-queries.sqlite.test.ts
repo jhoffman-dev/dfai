@@ -109,6 +109,19 @@ describe('compileSeriesMeetingsQuery', () => {
     expect(rows[0]).toMatchObject({ start: '09:30', provider: 'gemini', projectStatus: 'active' });
   });
 
+  // Follow-up to #110: a type in any case, as FROM finds it.
+  it('reads a meeting whose type is written in capitals or with spaces', () => {
+    const { note, all } = index();
+    note('Meetings/a.md', { ...MEETING, type: 'Meeting', date: '2026-10-01' });
+    note('Meetings/b.md', { ...MEETING, type: ' MEETING ', date: '2026-10-02' });
+    note('Meetings/c.md', { ...MEETING, type: 'meetings', date: '2026-10-03' });
+    const { sql, parameters } = compileSeriesMeetingsQuery(0);
+    expect(meetingRows(all(sql, parameters)).map((row) => row.path)).toEqual([
+      'Meetings/a.md',
+      'Meetings/b.md',
+    ]);
+  });
+
   it('pages: a page past the last is empty', () => {
     const { note, all } = index();
     note('Meetings/a.md', { ...MEETING, date: '2026-10-01' });

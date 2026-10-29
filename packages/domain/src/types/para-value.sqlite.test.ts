@@ -63,7 +63,8 @@ describe('paraProjectSql', () => {
 });
 
 describe('compileParaValuesQuery', () => {
-  it('lists each note of the type holding a PARA, and what it says', () => {
+  // `type: Project` is a project here too, as FROM project finds it (follow-up to #110).
+  it('lists each note of the type holding a PARA, in any case, and what it says', () => {
     const { sql, parameters } = compileParaValuesQuery('project');
     const rows = indexOf(NOTES)
       .prepare(sql)
@@ -72,6 +73,7 @@ describe('compileParaValuesQuery', () => {
       ['Home.md', 'area'],
       ['Manual.md', 'resource'],
       ['Old.md', 'archive'],
+      ['Shouting.md', 'ARCHIVE'],
       ['Someday.md', 'someday'],
     ]);
   });

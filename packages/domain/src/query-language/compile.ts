@@ -8,6 +8,7 @@
  */
 
 import { outsideArchiveSql } from '../archive/archive.ts';
+import { foldedTypeName, foldedTypeSql } from '../types/note-type-sql.ts';
 import { PROJECT_TYPE } from '../types/para.ts';
 import { outsideParaArchiveSql } from '../types/para-value.ts';
 import { foldedLinkName } from '../markdown/resolve-wikilink.ts';
@@ -29,10 +30,12 @@ import { checkAtlasQuery } from './check.ts';
 import {
   comparedValue,
   fieldRows,
+  isOwnSingle,
+  ownValueSql,
   presentValue,
   rowOrder,
   shownValue,
-  sortedValue,
+  sortKeySql,
 } from './field-sql.ts';
 import { resolveField, type FieldKind, type QueryField } from './fields.ts';
 import { movingDateSql } from './moving-date.ts';
@@ -143,15 +146,43 @@ function selection(columns: readonly QueryField[], from: readonly string[]): Fra
     [
       fixed('n.path AS "path"'),
       fixed('n.title AS "title"'),
-      sql`(SELECT t.value_text FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (${typeList(from)}) ORDER BY t.idx LIMIT 1) AS "type"`,
+      sql`(SELECT ${typeNamed(from)} FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND ${fixed(FOLDED_NOTE_TYPE)} IN (${typeList(from)}) ORDER BY t.idx, t.rowid LIMIT 1) AS "type"`,
       ...columns.map((column) => sql`${cellOf(column)} AS ${fixed(`"${column.text}"`)}`),
     ],
     ', ',
   );
 }
 
+/**
+ * The types a note's `type` names, as the rest of DFAI reads it — in any case
+ * and spacing (`taskTypeOf`, the Today page, the review): a note that says
+ * `type: Task` is a task to `FROM task` too.
+ */
 function typeList(from: readonly string[]): Fragment {
-  return joined(from.map(bound), ', ');
+  return joined(
+    from.map((name) => foldedName(name)),
+    ', ',
+  );
+}
+
+const FOLDED_NOTE_TYPE = foldedTypeSql('t.value_text');
+
+/**
+ * A note's type as the result names it: the vault's own name for the type it
+ * is listed as, however the note spells it — so `GROUP BY type` puts `type:
+ * Task` and `type: task` in one group, called as the vault calls it.
+ */
+function typeNamed(from: readonly string[]): Fragment {
+  const cases = from.map((name) => sql` WHEN ${foldedName(name)} THEN ${bound(name)}`);
+  return sql`CASE ${fixed(FOLDED_NOTE_TYPE)}${joined(cases, '')} END`;
+}
+
+/** The `type` field's value, compared as FROM compares it: folded. */
+const FOLDED_TYPE = foldedTypeSql('p.value_text');
+
+/** A type's name as a folded type is compared with it. */
+function foldedName(name: string): Fragment {
+  return bound(foldedTypeName(name));
 }
 
 /** One value, or several joined as a type's view joins them: `a, b`. */
@@ -162,6 +193,7 @@ function cellOf(field: QueryField): Fragment {
     const numbered = sql`SELECT g.name AS name, g.tag AS tag, row_number() OVER (ORDER BY ${fixed(rowOrder(field))}) AS at ${fieldRows(field)}`;
     return sql`(SELECT group_concat(name, ', ') FROM (SELECT '#' || MIN(name) AS name FROM (${numbered}) GROUP BY tag ORDER BY MIN(at)))`;
   }
+  if (isOwnSingle(field)) return ownValueSql(field, shownValue(field));
   const rows = fieldRows(field);
   const order = fixed(rowOrder(field));
   const value = fixed(shownValue(field));
@@ -187,7 +219,8 @@ function conditions(
   const from = query.from.map((name) => name.text);
   return joined(
     [
-      sql`EXISTS (SELECT 1 FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND t.value_text IN (${typeList(from)}))`,
+      // The type's notes, found through props_type_fold, rather than every file asked its type.
+      sql`n.path IN (SELECT t.path FROM props AS t WHERE t.key = 'type' AND ${fixed(FOLDED_NOTE_TYPE)} IN (${typeList(from)}))`,
       fixed(userSpaceNoteSql('n.path')),
       ...(query.includeArchived ? [] : archivedLeftOut(from)),
       ...(query.where === null ? [] : [sql`(${expressionSql(query.where, field, context)})`]),
@@ -247,7 +280,10 @@ function conditionSql(
   context: AtlasQueryContext,
 ): Fragment {
   if (condition.kind === 'empty') {
-    // A multi-valued field is empty when none of its rows holds anything.
+    // A field of one value is empty when its cell is; one of many when no item holds anything.
+    if (isOwnSingle(field)) {
+      return sql`${ownValueSql(field, shownValue(field))} ${fixed(condition.negated ? 'IS NOT NULL' : 'IS NULL')}`;
+    }
     return anyRow(fieldRows(field), fixed(presentValue(field)), !condition.negated);
   }
   const { op, value } = condition;
@@ -255,8 +291,15 @@ function conditionSql(
   if (field.kind === 'checkbox') return checkboxCondition(field, op, value);
   if (field.kind === 'relation') return relationCondition(field, op, value, context);
 
-  const compared = fixed(comparedValue(field));
-  const operand = operandOf(field, value);
+  const compared = fixed(field.kind === 'type' ? FOLDED_TYPE : comparedValue(field));
+  const operand = field.kind === 'type' ? foldedName(valueText(value)) : operandOf(field, value);
+  if (isOwnSingle(field)) {
+    const value = ownValueSql(field, comparedValue(field));
+    // "Is not" means the value is not: a note with none is not `done`, so it is listed.
+    if (op === '!=') return sql`COALESCE(${value} = ${operand}, 0) = 0`;
+    // No value compares as false, not unknown, so NOT (…) around it still lists the note.
+    return sql`COALESCE(${comparisonSql(op, value, operand)}, 0)`;
+  }
   // "Is not" means no value is: a note without one is not `done`, so it is listed.
   if (op === '!=') return anyRow(fieldRows(field), sql`${compared} = ${operand}`, true);
   return anyRow(fieldRows(field), comparisonSql(op, compared, operand));
@@ -357,7 +400,12 @@ function tagCondition(field: QueryField, op: Comparison, value: QueryValue): Fra
 /** Unticked is anything but `true` — a note that never had the box is not done. */
 function checkboxCondition(field: QueryField, op: Comparison, value: QueryValue): Fragment {
   const ticked = value.kind === 'boolean' && value.value;
-  return anyRow(fieldRows(field), fixed("p.value_text = 'true'"), (op === '=') !== ticked);
+  const none = (op === '=') !== ticked;
+  if (isOwnSingle(field)) {
+    const isTrue = sql`COALESCE(${ownValueSql(field, 'p.value_text')} = 'true', 0)`;
+    return sql`${isTrue} = ${fixed(none ? '0' : '1')}`;
+  }
+  return anyRow(fieldRows(field), fixed("p.value_text = 'true'"), none);
 }
 
 /**
@@ -387,8 +435,7 @@ function relationCondition(
 function ordering(query: AtlasQuery, field: (ref: FieldRef) => QueryField): Fragment {
   const keys = query.sort.map((key) => {
     const resolved = field(key.field);
-    const { rows, value, order } = sortedValue(resolved);
-    const first = sql`(SELECT ${fixed(value)} ${rows} ORDER BY ${fixed(order)} LIMIT 1)`;
+    const first = sortKeySql(resolved);
     const collate = isTextual(resolved) ? ' COLLATE NOCASE' : '';
     const direction = key.direction === 'desc' ? 'DESC' : 'ASC';
     // Blank last, as missing is: IS EMPTY calls both empty, so the sort does too.

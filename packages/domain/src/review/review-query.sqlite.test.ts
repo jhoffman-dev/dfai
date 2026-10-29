@@ -210,6 +210,33 @@ describe('compileReviewTasksQuery', () => {
   });
 });
 
+// Follow-up to #110 (PR #616): a status is read as FROM reads it — written as
+// a list it is no status, so the task is open work and shown, not hidden;
+// a blank item is no item.
+describe('compileReviewTasksQuery, a status written as a list', () => {
+  it('reads [archive, next-action] as no status, so the task is open, not finished', () => {
+    const tasks = tasksOf({
+      'Tasks/Listed.md': { frontmatter: { type: 'task', status: ['archive', 'next-action'] } },
+    });
+    expect(tasks.map((task) => [task.path, task.status])).toEqual([['Tasks/Listed.md', null]]);
+  });
+
+  it('reads [next-action, ""] as next-action: a blank item is no item', () => {
+    const tasks = tasksOf({
+      'Tasks/Blank item.md': { frontmatter: { type: 'task', status: ['next-action', ''] } },
+    });
+    expect(tasks.map((task) => task.status)).toEqual(['next-action']);
+  });
+
+  it('still leaves out a task whose one status is archive, a blank item beside it or not', () => {
+    const tasks = tasksOf({
+      'Tasks/Done.md': { frontmatter: { type: 'task', status: 'archive' } },
+      'Tasks/Done too.md': { frontmatter: { type: 'task', status: ['archive', ''] } },
+    });
+    expect(tasks).toEqual([]);
+  });
+});
+
 describe('compileReviewProjectsQuery', () => {
   it('reads only the Project notes that are projects: not an area, a resource or one archived by PARA (#213)', () => {
     const paths = projectsOf({
@@ -326,6 +353,23 @@ describe('the Friday review draft’s statements (#40)', () => {
       { path: 'Archive/Tasks/Filed.md', title: 'Filed' },
       { path: 'Tasks/Shipped.md', title: 'Shipped' },
     ]);
+  });
+
+  it('does not count a task whose status lists archive among others as finished', () => {
+    const done = sourcesOf(
+      {
+        'Tasks/Listed.md': {
+          frontmatter: { type: 'task', status: ['archive', 'next-action'] },
+          modified: 5_000,
+        },
+        'Tasks/Blank item.md': {
+          frontmatter: { type: 'task', status: ['archive', ''] },
+          modified: 5_000,
+        },
+      },
+      compileReviewDoneQuery(1_000),
+    );
+    expect(done.map((source) => source.path)).toEqual(['Tasks/Blank item.md']);
   });
 
   it('counts a task finished at the moment itself as finished since it', () => {

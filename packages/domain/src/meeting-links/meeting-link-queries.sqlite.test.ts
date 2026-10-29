@@ -109,6 +109,20 @@ describe('the meeting-link directory, read from the index’s tables', () => {
     });
   });
 
+  // Follow-up to #110: a type in any case, as FROM finds it.
+  it('takes a person or company whose type is written in capitals or with spaces', () => {
+    const { note, all } = index();
+    note('People/Mara Quill.md', { type: 'Person' });
+    note('Companies/Larkspur Payroll.md', { type: ' COMPANY ' });
+    note('Notes/People.md', { type: 'persons' });
+    const rows = all(compileLinkDirectoryQuery(0).sql, compileLinkDirectoryQuery(0).parameters);
+    const directory = linkDirectoryOf(rows as LinkDirectoryRow[]);
+    expect(directory.people.map((person) => person.path)).toEqual(['People/Mara Quill.md']);
+    expect(directory.companies.map((company) => company.path)).toEqual([
+      'Companies/Larkspur Payroll.md',
+    ]);
+  });
+
   it('pages: the second page starts where the first ended', () => {
     const { note, all } = index();
     note('People/Mara Quill.md', { type: 'person' });

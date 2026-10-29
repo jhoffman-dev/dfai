@@ -1,3 +1,4 @@
+import { foldedTypeSql } from '../types/note-type-sql.ts';
 import { MEETING_TYPE } from '../meetings/meeting-header.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
@@ -55,7 +56,7 @@ export function compileMeetingCandidatesQuery({
        (SELECT start.value_text FROM props AS start
          WHERE start.path = files.path AND start.key = 'start' ORDER BY start.idx LIMIT 1) AS "start"
   FROM files JOIN props AS day ON day.path = files.path AND day.key = 'date' AND day.idx = 0
- WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = ?)
+ WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = ?)
    AND substr(day.value_text, 1, 10) BETWEEN ? AND ?
    AND ${userSpaceNoteSql('files.path')}
  ORDER BY files.path`,

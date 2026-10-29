@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseObjectType } from '@dfai/domain';
+import { parseObjectType, typeViewSelectSql } from '@dfai/domain';
 import { viewSpecsFor } from './run-view.ts';
 
 describe('viewSpecsFor', () => {
@@ -11,12 +11,15 @@ describe('viewSpecsFor', () => {
     expect(viewSpecsFor([task])).toEqual([
       {
         name: 'task',
-        columns: [
-          { key: 'due', kind: 'date', many: false },
-          { key: 'points', kind: 'number', many: false },
-          { key: 'tags', kind: 'text', many: true },
-        ],
-        progress: true,
+        select: typeViewSelectSql({
+          name: 'task',
+          columns: [
+            { key: 'due', kind: 'date', many: false },
+            { key: 'points', kind: 'number', many: false },
+            { key: 'tags', kind: 'text', many: true },
+          ],
+          progress: true,
+        }),
       },
     ]);
   });
@@ -26,10 +29,14 @@ describe('viewSpecsFor', () => {
     expect(viewSpecsFor([goal])).toEqual([
       {
         name: 'goal',
-        columns: [{ key: 'Progress', kind: 'number', many: false }],
-        progress: false,
+        select: typeViewSelectSql({
+          name: 'goal',
+          columns: [{ key: 'Progress', kind: 'number', many: false }],
+          progress: false,
+        }),
       },
     ]);
+    expect(viewSpecsFor([goal])[0]?.select).not.toContain('n.progress');
   });
 
   // A type file written by hand can declare a key the editor refuses; its
@@ -40,6 +47,24 @@ describe('viewSpecsFor', () => {
       name: 'task',
       properties: { modified: 'date', path: 'text', title: 'text', summary: 'text', due: 'date' },
     });
-    expect(viewSpecsFor([task])[0]?.columns.map((column) => column.key)).toEqual(['due']);
+    const select = viewSpecsFor([task])[0]?.select ?? '';
+    expect(select).toContain('AS "due"');
+    for (const key of ['modified', 'path', 'title', 'summary']) {
+      expect(select).not.toContain(`p.key = '${key}' AND COALESCE`);
+    }
+  });
+
+  it('makes no view for a type whose name is no identifier', () => {
+    expect(viewSpecsFor([parseObjectType({ name: 'drop table', properties: {} })])).toEqual([]);
+  });
+
+  // SQLite names views in any case: Task and task would ask for one view.
+  it('makes no view for either of two types spelt alike, and keeps every other', () => {
+    const specs = viewSpecsFor([
+      parseObjectType({ name: 'Task', properties: {} }),
+      parseObjectType({ name: 'task', properties: {} }),
+      parseObjectType({ name: 'project', properties: {} }),
+    ]);
+    expect(specs.map((spec) => spec.name)).toEqual(['project']);
   });
 });
