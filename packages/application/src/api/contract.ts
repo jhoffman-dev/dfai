@@ -821,6 +821,16 @@ export interface ApiMeetingReceipt {
 }
 
 /**
+ * What became of a capture (#103, ADR-0049): `written` into `Inbox/Captures/`
+ * at `path` as a note or a task, or already `in-vault` at `path` — the same
+ * message, wherever it was filed since — with nothing written.
+ */
+export interface ApiCaptureReceipt {
+  readonly path: string;
+  readonly outcome: 'written' | 'in-vault';
+}
+
+/**
  * A proposal waiting in `Inbox/Proposals/` (P29-02, ADR-0028): what Claude or
  * an automation suggested, and what accepting it would write.
  */
@@ -1891,6 +1901,7 @@ export type ApiSuccessBody =
       readonly next: number | null;
     }
   | { readonly meeting: ApiMeetingReceipt }
+  | { readonly capture: ApiCaptureReceipt }
   | {
       readonly proposals: readonly ApiProposal[];
       /** Answered, yet still in Inbox/Proposals: the Archive refused them. */
@@ -2221,6 +2232,12 @@ export const API_ROUTES = [
     path: '/v1/meetings',
     summary:
       'Send a meeting, as n8n assembles it: mapped and written into Inbox/Meetings, once per provider and id.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/captures',
+    summary:
+      'Save a Slack message, and its thread, as an Inbox note or task (capture/v1): once per message.',
   },
   {
     method: 'GET',

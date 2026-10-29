@@ -17,6 +17,7 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `domain/schedule`           | Recurrence and critical path.                                                                 | 8, 11   |
 | `domain/sources`            | Decides what gets written over your notes.                                                    | 12      |
 | `domain/meetings`           | Decides whether a meeting is let in, what it says, and how its words are put right and back.  | 28      |
+| `domain/capture`            | Reads a Slack capture, refuses it with reasons, writes its file safe from hostile text.       | #103    |
 | `application/sources`       | Writes files into your vault from outside it.                                                 | 12      |
 | `desktop/notes/*stranded*`  | Holds unsaved work the vault does not have, across a quit.                                    | 13      |
 | `mcp/{connection,client}`   | Handles the API token; every failure an AI tool is told.                                      | 15      |
@@ -32,6 +33,7 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `application/automations`   | Runs rules: archives or rewrites notes, writes Claude's proposals, logs it.                   | 25, 29  |
 | `application/sync`          | Merges other Macs' changes into notes; settles conflicts; never loses a side.                 | U-29    |
 | `application/meetings`      | Marks, archives and corrects meeting files that arrived, by itself; undoes corrections.       | 28      |
+| `application/capture`       | Saves a Slack message into the Inbox once, its author linked by email, never over a note.     | #103    |
 | `tools/n8n/*.ts`            | The n8n meeting mapper: commits files into your vault from outside DFAI.                      | 28      |
 | `domain/terms`              | The vocabulary: decides how every name in a transcript is spelt.                              | 28      |
 | `application/terms`         | Adds terms as notes and rewrites their variants in the frontmatter.                           | 28      |

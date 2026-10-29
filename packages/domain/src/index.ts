@@ -46,6 +46,7 @@ export * from './meetings/index.ts';
 export * from './terms/index.ts';
 export * from './proposals/index.ts';
 export * from './meeting-links/index.ts';
+export * from './capture/index.ts';
 export * from './export/index.ts';
 export * from './google-calendar/index.ts';
 export * from './daily/index.ts';

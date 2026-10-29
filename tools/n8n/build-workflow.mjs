@@ -12,6 +12,10 @@ const { mapGranolaScript, verifyGranolaScript } = await import('./granola-code-n
 const { meetingWorkflow } = await import('./workflow.ts');
 const { granolaWebhookWorkflow } = await import('./granola-webhook.workflow.ts');
 
+const { bundleCaptureMarkdown, CAPTURE_MARKDOWN_BUNDLE } = await import('./capture-bundle.ts');
+await writeFile(CAPTURE_MARKDOWN_BUNDLE, await bundleCaptureMarkdown());
+console.log(`Wrote ${CAPTURE_MARKDOWN_BUNDLE.pathname}`);
+
 const github = { same: sameMeetingScript(), sameOther: sameMeetingAtOtherPathScript() };
 
 async function write(file, workflow) {
