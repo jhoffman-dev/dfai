@@ -625,6 +625,21 @@ export interface FakeHost {
     requests(): readonly { path: string; query: Readonly<Record<string, string>> }[];
   };
   /**
+   * Slack, as `slack.rs` answers for it (#105): a user token kept per vault,
+   * and a Web API method answered with what a test served for it — for
+   * `users.info`, served per user id — as a 200, or `ok: false` where nothing
+   * was. The Keychain item, the pinned origin, the list of methods and the
+   * token struck from every answer are Rust's, tested there against a fake Slack.
+   */
+  readonly slack: {
+    serve(method: string, body: unknown, options?: { status?: number; retryAfter?: number }): void;
+    serveUser(id: string, body: unknown): void;
+    hasToken(): boolean;
+    requests(): readonly { method: string; query: Readonly<Record<string, string>> }[];
+    /** How many times the app asked whether a token is kept. */
+    statusCalls(): number;
+  };
+  /**
    * Kindle, as `kindle.rs` answers for it (#508): Connect makes the session
    * at once (the sign-in window, its own WebKit store and the hidden window
    * are AppKit's and checked by hand), Disconnect deletes it, and each
@@ -911,6 +926,25 @@ export async function installHost(
       granolaRefusals.delete(root);
     }
     return answer;
+  };
+  /** Slack tokens by vault root, what each method answers, and every request. */
+  const slackTokens = new Map<string, string>();
+  const slackAnswers = new Map<
+    string,
+    { status: number; body: string; retryAfter: number | null }
+  >();
+  const slackRequests: { method: string; query: Readonly<Record<string, string>> }[] = [];
+  let slackStatusCalls = 0;
+  const slackGet = (method: string, query: Record<string, string>) => {
+    slackRequests.push({ method, query });
+    const key = method === 'users.info' ? `${method}|${query['user'] ?? ''}` : method;
+    return (
+      slackAnswers.get(key) ?? {
+        status: 200,
+        body: '{"ok":false,"error":"not_served"}',
+        retryAfter: null,
+      }
+    );
   };
   const databases = new Map<string, { columns: string[]; rows: unknown[][] }>();
   const sqliteQueries: { file: string; sql: string }[] = [];
@@ -1709,6 +1743,28 @@ export async function installHost(
         const { path, query } = args as { path: string; query: Record<string, string> };
         return granolaGet(root, path, query);
       }
+      case 'slack_status':
+        slackStatusCalls += 1;
+        return { hasToken: slackTokens.has(writeRoot(args)) };
+      case 'slack_connect': {
+        const root = writeRoot(args);
+        const { token } = args as { token: string };
+        if (!/^(xoxp-|xoxe\.xoxp-)[\x21-\x7e]+$/.test(token)) {
+          return { [REJECT]: { kind: 'invalid', message: 'that is not a Slack user token' } };
+        }
+        slackTokens.set(root, token);
+        return { hasToken: true };
+      }
+      case 'slack_disconnect':
+        slackTokens.delete(writeRoot(args));
+        return { hasToken: false };
+      case 'slack_request': {
+        if (!slackTokens.has(writeRoot(args))) {
+          return { [REJECT]: { kind: 'no_token', message: 'no Slack token is kept' } };
+        }
+        const { method, query } = args as { method: string; query: Record<string, string> };
+        return slackGet(method, query);
+      }
       case 'kindle_connect':
         kindleSession = true;
         return null;
@@ -2320,6 +2376,23 @@ export async function installHost(
       },
       hasKey: () => granolaKeys.size > 0,
       requests: () => [...granolaRequests],
+    },
+    slack: {
+      serve: (method, body, { status = 200, retryAfter } = {}) =>
+        void slackAnswers.set(method, {
+          status,
+          body: JSON.stringify(body),
+          retryAfter: retryAfter ?? null,
+        }),
+      serveUser: (id, body) =>
+        void slackAnswers.set(`users.info|${id}`, {
+          status: 200,
+          body: JSON.stringify(body),
+          retryAfter: null,
+        }),
+      hasToken: () => slackTokens.size > 0,
+      requests: () => [...slackRequests],
+      statusCalls: () => slackStatusCalls,
     },
     kindle: {
       serveLibrary: (html) => void kindlePages.set('library', html),
