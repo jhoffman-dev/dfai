@@ -396,7 +396,7 @@
   padding: 4px 0;
 }
 
-.chat__skill-picker button {
+.chat__skill-picker [role='option'] {
   align-items: center;
   background: none;
   border: 0;
@@ -412,8 +412,8 @@
   width: 100%;
 }
 
-.chat__skill-picker button:hover,
-.chat__skill-picker button:focus-visible {
+.chat__skill-picker [role='option']:hover,
+.chat__skill-picker [role='option'][aria-selected='true'] {
   background: var(--hover);
   color: var(--ink);
 }

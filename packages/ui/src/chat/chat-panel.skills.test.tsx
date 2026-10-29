@@ -82,7 +82,7 @@ describe('the chat panel’s skill', () => {
     const skills = skillsView();
     render(<Panel skills={skills} />);
     expect(skills.onWanted).not.toHaveBeenCalled();
-    expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
+    expect(screen.queryByRole('listbox', { name: 'Skills' })).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: 'Use a skill' }));
     expect(skills.onWanted).toHaveBeenCalled();
@@ -91,7 +91,7 @@ describe('the chat panel’s skill', () => {
     await userEvent.click(within(picker).getByRole('option', { name: 'weekly-review' }));
 
     expect(skills.onAttach).toHaveBeenCalledWith('weekly-review');
-    expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
+    expect(screen.queryByRole('listbox', { name: 'Skills' })).toBeNull();
   });
 
   it('shows the attached skill as a chip that can be taken off', async () => {
@@ -134,13 +134,10 @@ describe('the chat panel’s skill', () => {
   it('says when no skill starts with what was typed, and closes on Escape', async () => {
     render(<Panel skills={skillsView()} />);
     await userEvent.type(box(), '/zzz');
-    expect(
-      within(screen.getByRole('listbox', { name: 'Skills' })).getByText(
-        'No skill starts with /zzz.',
-      ),
-    ).toBeTruthy();
+    const picker = () => document.querySelector('.chat__skill-picker');
+    expect(picker()?.textContent).toBe('No skill starts with /zzz.');
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
+    expect(picker()).toBeNull();
     expect((box() as HTMLTextAreaElement).value).toBe('/zzz');
   });
 
@@ -148,7 +145,7 @@ describe('the chat panel’s skill', () => {
     const onSend = vi.fn();
     render(<Panel skills={skillsView()} onSend={onSend} />);
     await userEvent.type(box(), '/weekly-review what did I finish?');
-    expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
+    expect(screen.queryByRole('listbox', { name: 'Skills' })).toBeNull();
     await userEvent.keyboard('{Enter}');
     expect(onSend).toHaveBeenCalledWith('/weekly-review what did I finish?');
   });
@@ -157,7 +154,7 @@ describe('the chat panel’s skill', () => {
     render(<Panel />);
     expect(screen.queryByRole('button', { name: 'Use a skill' })).toBeNull();
     await userEvent.type(box(), '/week');
-    expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
+    expect(screen.queryByRole('listbox', { name: 'Skills' })).toBeNull();
   });
 });
 

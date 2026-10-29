@@ -621,12 +621,22 @@ describe('a chat session, and /name (#169)', () => {
 
 describe('a chat session, and a skill read that is still under way (PR #635 review)', () => {
   const REVIEW: SkillToUse = { kind: 'usable', name: 'weekly-review', instructions: 'Review.' };
-  /** A skill port whose reads are answered by hand, one at a time. */
+  /** A skill port whose reads are answered by hand, in order; an answer given early waits for its read. */
   function heldSkills() {
     const waiting: ((found: SkillToUse) => void)[] = [];
+    const early: SkillToUse[] = [];
     return {
-      port: () => new Promise<SkillToUse>((resolve) => waiting.push(resolve)),
-      answer: (found: SkillToUse) => waiting.shift()?.(found),
+      port: () =>
+        new Promise<SkillToUse>((resolve) => {
+          const given = early.shift();
+          if (given === undefined) waiting.push(resolve);
+          else resolve(given);
+        }),
+      answer: (found: SkillToUse) => {
+        const read = waiting.shift();
+        if (read === undefined) early.push(found);
+        else read(found);
+      },
       pending: () => waiting.length,
     };
   }

@@ -144,7 +144,13 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
    `<chosen_skill>` tag that its text, a note's or a tool result's can neither
    open nor close (`neutralizeFraming`). A skill with a problem, or over the
    run cap measured as `skillRunProblem` measures it, is refused before
-   Claude is asked; the chip and the turn say why. The chat note records
+   Claude is asked; the chip and the turn say why. A `/name` question is
+   shown as typed and holds the chat busy while its skill is read, so a
+   second send is refused and a past chat is not opened meanwhile; New chat
+   meanwhile leaves it with the chat it was asked in, as it leaves any
+   question still being answered. A `/word` is the question as typed when
+   no skill is called that or the skills cannot be read. A host refusal is
+   "could not be read"; any other error is a bug and is not dressed as one. The chat note records
    "Used the skill <name>" with each answer. A skill is **not kept with a
    chat**: a reopened chat starts without one (restoring it would mean a new
    chat-note key read back on open, more than v1 needs). The picker reads the

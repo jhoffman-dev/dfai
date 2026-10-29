@@ -312,7 +312,8 @@ export function Composer({
   rows = 2,
   skills,
 }: {
-  state: Pick<ChatPanelState, 'busy' | 'context'>;
+  /** `error`: the turn's own alert, which says a refused skill's problem itself. */
+  state: Pick<ChatPanelState, 'busy' | 'context' | 'error'>;
   actions: Pick<ChatActions, 'onSend' | 'onStop' | 'onRemoveContext'>;
   draft?: ChatDraft;
   focusOnMount: boolean;
@@ -337,12 +338,12 @@ export function Composer({
     setDraft('');
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Escape' && picker.showing) {
+    if (isImeKey(event)) return;
+    if (picker.onKey(event)) {
       event.preventDefault();
-      picker.close();
       return;
     }
-    if (event.key !== 'Enter' || event.shiftKey || isImeKey(event)) return;
+    if (event.key !== 'Enter' || event.shiftKey) return;
     event.preventDefault();
     send();
   };
@@ -370,13 +371,11 @@ export function Composer({
           </button>
         )}
       </div>
-      {picker.showing && skills !== undefined && (
-        <SkillPicker
-          choices={skills.choices}
-          query={picker.query}
-          onPick={picker.pick}
-          onClose={picker.close}
-        />
+      {picker.showing && <SkillPicker picker={picker} onPick={picker.pick} />}
+      {skills !== undefined && (
+        <p className="visually-hidden" role="status">
+          {skillSaying({ picker, attached: skills.attached, error: state.error })}
+        </p>
       )}
       <div className="chat__ask">
         <textarea
@@ -387,6 +386,10 @@ export function Composer({
           placeholder={skills === undefined ? 'Ask Claude…' : 'Ask Claude… (/ for a skill)'}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={onKeyDown}
+          aria-controls={picker.showing ? picker.listId : undefined}
+          aria-activedescendant={
+            picker.matches.length > 0 ? picker.optionId(picker.active) : undefined
+          }
         />
         {sendButton({
           busy: state.busy,
@@ -397,6 +400,23 @@ export function Composer({
       </div>
     </footer>
   );
+}
+
+/**
+ * What the composer's live region says: the picker's count while it shows,
+ * else the attached skill's problem — unless the turn's own alert says it.
+ */
+function skillSaying({
+  picker,
+  attached,
+  error,
+}: {
+  picker: { showing: boolean; saying: string };
+  attached: ChatSkillsView['attached'];
+  error: ChatPanelState['error'];
+}): string {
+  if (picker.showing) return picker.saying;
+  return error === null ? (attached?.problem ?? '') : '';
 }
 
 function ContextChip({

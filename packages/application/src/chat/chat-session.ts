@@ -14,7 +14,7 @@ import {
 import type { ActivityLog, ActivityRecorder } from '../activity/ports.ts';
 import type { Clock } from '../ports.ts';
 import type { SkillToUse } from '../skills/skill-to-use.ts';
-import type { VaultFsPort } from '../vault/ports.ts';
+import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
 import { readChat, recordChatEntries, type ChatRecord } from './chat-history.ts';
 import { ModelProviderError, type ModelProvider, type ProviderProblem } from './ports.ts';
 import type { AppliedProposal, Proposal } from './proposals.ts';
@@ -149,7 +149,10 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
   let state = EMPTY;
   let messages: ModelMessage[] = [];
   let contextRemoved = false;
-  /** Attaches and removals of a skill: a read that finishes after a later one is dropped. */
+  /**
+   * Attaches and removals of a skill, and new or reopened chats: a skill read
+   * that finishes after a later one is dropped.
+   */
   let skillPicks = 0;
   let record: ChatRecord | null = null;
   let controller: AbortController | null = null;
@@ -248,7 +251,9 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     if (chip === null) return null;
     const pick = skillPicks;
     const found = await readSkillNamed(chip.name);
-    if (pick === skillPicks) set({ skill: chipOf(chip.name, found) });
+    // Taken off or changed while read: the turn asks with what the chip says now.
+    if (pick !== skillPicks) return skillForTurn();
+    set({ skill: chipOf(chip.name, found) });
     return found.kind === 'usable'
       ? { name: found.name, instructions: found.instructions }
       : { problem: skillProblem(chip.name, found) };
@@ -257,7 +262,9 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
   async function readSkillNamed(name: string): Promise<SkillToUse> {
     try {
       return await ports.skill(name);
-    } catch {
+    } catch (error) {
+      // Anything but the host's refusal is a bug, and goes on as one.
+      if (!(error instanceof VaultAccessError)) throw error;
       // Not the host's words: they can name the Mac's folders. The chip says what DFAI knows.
       return { kind: 'unreadable' };
     }
@@ -265,18 +272,65 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
 
   /**
    * `/name question`: attaches the skill `name` and gives the question after
-   * it ('' for none). A `/word` that names no skill is the question itself.
+   * it ('' for none). A `/word` that no skill can be shown to be — none is
+   * called that, or the skills cannot be read — is the question itself.
    */
   async function takeSkillCommand(
     command: { name: string; rest: string },
     asked: string,
   ): Promise<string> {
     const pick = (skillPicks += 1);
-    const began = generation;
     const found = await readSkillNamed(command.name);
-    if (found.kind === 'missing') return asked;
-    if (pick === skillPicks && began === generation) set({ skill: chipOf(command.name, found) });
+    if (found.kind === 'missing' || found.kind === 'unreadable') return asked;
+    // A chip taken off, another attached, or a new chat (which counts as a pick) since: dropped.
+    if (pick === skillPicks) set({ skill: chipOf(command.name, found) });
     return command.rest;
+  }
+
+  /** The question as the model and the transcript take it, in item `id` (a new one, or the one shown while its skill was read). */
+  function ask(question: string, id: string): void {
+    const told = decisions.length === 0 ? '' : `(${decisions.join(' ')})\n\n`;
+    decisions = [];
+    messages = [...messages, { role: 'user', text: told + question }];
+    questionKept = false;
+    const item: ChatItem = { kind: 'user', id, text: question };
+    const shown = state.items.some((each) => each.id === id);
+    set({
+      items: shown
+        ? state.items.map((each) => (each.id === id ? item : each))
+        : [...state.items, item],
+    });
+  }
+
+  /**
+   * `/name question`. Shown as typed at once, and busy until asked, so nothing
+   * sent meanwhile overtakes it and a past chat picked meanwhile is refused.
+   * New chat meanwhile leaves it with the chat it was asked in, as New chat
+   * leaves any question still being answered.
+   */
+  async function sendWithSkill(command: { name: string; rest: string }, asked: string) {
+    const id = ports.newId();
+    const began = generation;
+    set({ busy: true, error: null, items: [...state.items, { kind: 'user', id, text: asked }] });
+    let question: string;
+    try {
+      question = await takeSkillCommand(command, asked);
+    } catch (error) {
+      if (generation !== began) return;
+      // A bug, said as the turn's failure: the question stays, to retry as typed.
+      ask(asked, id);
+      set({ busy: false, error: { message: messageOf(error), problem: 'failed' } });
+      return;
+    }
+    if (generation !== began) return;
+    if (question === '') {
+      set({ busy: false, items: state.items.filter((item) => item.id !== id) });
+      return;
+    }
+    // runTurn marks it busy again before it waits on anything.
+    set({ busy: false });
+    ask(question, id);
+    await runTurn(question);
   }
 
   /** A past chat, read from its note, as the conversation now showing. */
@@ -420,16 +474,10 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     async send(text) {
       const asked = text.trim();
       if (asked === '' || state.busy) return;
-      // Only a `/name` waits on a read: any other question is in the transcript at once.
       const command = skillCommandOf(asked);
-      const question = command === null ? asked : await takeSkillCommand(command, asked);
-      if (question === '' || state.busy) return;
-      const told = decisions.length === 0 ? '' : `(${decisions.join(' ')})\n\n`;
-      decisions = [];
-      messages = [...messages, { role: 'user', text: told + question }];
-      questionKept = false;
-      set({ items: [...state.items, { kind: 'user', id: ports.newId(), text: question }] });
-      await runTurn(question);
+      if (command !== null) return sendWithSkill(command, asked);
+      ask(asked, ports.newId());
+      await runTurn(asked);
     },
     stop() {
       controller?.abort();
@@ -452,10 +500,10 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     },
     async attachSkill(name) {
       const pick = (skillPicks += 1);
-      const began = generation;
       set({ skill: { name, problem: null } });
       const found = await readSkillNamed(name);
-      if (pick === skillPicks && began === generation) set({ skill: chipOf(name, found) });
+      // A new chat or a reopened one counts as a pick, so this drops a read they came after too.
+      if (pick === skillPicks) set({ skill: chipOf(name, found) });
     },
     removeSkill() {
       skillPicks += 1;

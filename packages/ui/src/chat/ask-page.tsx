@@ -90,6 +90,7 @@ export function AskPage(props: AskPageProps) {
             draft={props.draft}
             actions={actions}
             busy={state.busy}
+            error={state.error}
             {...(props.skills !== undefined && { skills: props.skills })}
           />
           {!asked && <StartFoot {...props} />}
@@ -187,15 +188,17 @@ function AskBox({
   draft,
   actions,
   busy,
+  error,
   skills,
 }: Pick<AskPageProps, 'draft' | 'actions' | 'skills'> & {
   box: RefObject<HTMLDivElement | null>;
   busy: boolean;
+  error: AskState['error'];
 }) {
   return (
     <div className="ask__box" ref={box}>
       <Composer
-        state={{ busy, context: null }}
+        state={{ busy, context: null, error }}
         // Ask is opened on no page, so there is never a context chip to remove.
         actions={{ ...actions, onRemoveContext: () => {} }}
         draft={draft}
