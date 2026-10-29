@@ -167,7 +167,7 @@ describe('skillReadingOf', () => {
       name: 'weekly-review',
       declaredName: 'weekly-review',
       description: DRAFT.description,
-      instructions: 'Do the thing.\n',
+      instructions: 'Do the thing.',
       problems: [],
     });
   });
@@ -226,10 +226,11 @@ describe('skillReadingOf', () => {
 });
 
 describe('instructions and the body', () => {
-  it('reads the instructions after the blank line that parts them from the frontmatter', () => {
-    expect(instructionsOf('\nStep one.\n')).toBe('Step one.\n');
-    expect(instructionsOf('\r\nStep one.\r\n')).toBe('Step one.\r\n');
-    expect(instructionsOf('Step one.\n')).toBe('Step one.\n');
+  it('reads the instructions between the blank line and the last line’s ending', () => {
+    expect(instructionsOf('\nStep one.\n')).toBe('Step one.');
+    expect(instructionsOf('\r\nStep one.\r\n')).toBe('Step one.');
+    expect(instructionsOf('Step one.')).toBe('Step one.');
+    expect(instructionsOf('\nStep one.\n\n')).toBe('Step one.\n');
   });
 
   it('keeps the body byte for byte when the instructions did not change', () => {
@@ -238,29 +239,36 @@ describe('instructions and the body', () => {
   });
 
   it('writes changed instructions with the CRLF line ends the body already had', () => {
-    expect(bodyWithInstructions('\r\nOld.\r\nTwo.\r\n', 'New.\nTwo.\n')).toBe(
-      '\r\nNew.\r\nTwo.\r\n',
-    );
-    expect(bodyWithInstructions('\nOld.\n', 'New.\r\nTwo.\n')).toBe('\nNew.\r\nTwo.\n');
+    expect(bodyWithInstructions('\r\nOld.\r\nTwo.\r\n', 'New.\nTwo.')).toBe('\r\nNew.\r\nTwo.\r\n');
+    expect(bodyWithInstructions('\nOld.\n', 'New.\r\nTwo.')).toBe('\nNew.\r\nTwo.\r\n');
   });
 
   it('looks at the whole file for CRLF, not the body alone', () => {
     const file = '---\r\nname: daily\r\ndescription: d\r\n---\r\nOld.\n';
-    expect(bodyWithInstructions('Old.\n', 'New.\nTwo.\n', file)).toBe('New.\r\nTwo.\r\n');
+    expect(bodyWithInstructions('Old.\n', 'New.\nTwo.', file)).toBe('New.\r\nTwo.\r\n');
     expect(
-      bodyWithInstructions('\r\nOld.\r\n', 'New.\n', '---\nname: a\nb: c\nd: e\n---\r\nOld.\r\n'),
+      bodyWithInstructions('\r\nOld.\r\n', 'New.', '---\nname: a\nb: c\nd: e\n---\r\nOld.\r\n'),
     ).toBe('\r\nNew.\n');
   });
 
   it('keeps the blank line the body had when the instructions change', () => {
-    expect(bodyWithInstructions('\r\nOld.\r\n', 'New.\r\n')).toBe('\r\nNew.\r\n');
-    expect(bodyWithInstructions('Old.\n', 'New.\n')).toBe('New.\n');
+    expect(bodyWithInstructions('\r\nOld.\r\n', 'New.')).toBe('\r\nNew.\r\n');
+    expect(bodyWithInstructions('Old.\n', 'New.')).toBe('New.\n');
   });
 
-  it('writes a new skill’s body in one form: a blank line, then lines that end', () => {
+  it('writes a new skill’s body in one form: a blank line, the instructions, one line ending', () => {
     expect(newSkillBody('Step one.')).toBe('\nStep one.\n');
-    expect(newSkillBody('Step one.\n')).toBe('\nStep one.\n');
   });
+
+  it.each(['Step one.', 'Step one.\n', 'a\n\nb', ''])(
+    'reads back exactly what it wrote, %j, new or changed',
+    (instructions) => {
+      expect(instructionsOf(newSkillBody(instructions))).toBe(instructions);
+      expect(instructionsOf(bodyWithInstructions('\nOld.\n', instructions))).toBe(instructions);
+      const crlf = bodyWithInstructions('\r\nOld.\r\n', instructions);
+      expect(instructionsOf(crlf).replace(/\r\n/g, '\n')).toBe(instructions);
+    },
+  );
 });
 
 describe('skillFrontmatterChanges', () => {
@@ -315,7 +323,7 @@ describe('a parse→edit round trip', () => {
 
   it('changes only the body, leaving every frontmatter byte, when only the instructions change', () => {
     const { frontmatter, body } = reread(TEXT);
-    const edited = joinFrontmatter(frontmatter, bodyWithInstructions(body, 'Step two.\n'));
+    const edited = joinFrontmatter(frontmatter, bodyWithInstructions(body, 'Step two.'));
     expect(edited).toBe(`${frontmatter ?? ''}\nStep two.\n`);
     expect(splitFrontmatter(edited).frontmatter).toBe(frontmatter);
   });

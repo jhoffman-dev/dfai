@@ -43,7 +43,7 @@ describe('a skill through the real markdown port', () => {
     expect(skill).toMatchObject({
       declaredName: 'weekly-review',
       description: draft.description,
-      instructions: 'Step one.\n\n- Step two.\n',
+      instructions: draft.instructions,
       problems: [],
     });
     expect(fixture.files.get(PATH)?.text).toMatch(
