@@ -180,3 +180,73 @@ test('the Skills page is in ⌘K', async ({ page }) => {
   const skills = page.getByRole('article', { name: 'Skills' });
   await expect(skillRow(skills, 'weekly-review')).toBeVisible();
 });
+
+/** Every command the app sends the host, with its arguments as JSON, from the first one. */
+async function recordHostCalls(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    if (window !== window.top) return;
+    const calls: { command: string; args: string }[] = [];
+    const internals = (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (...args: unknown[]) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__;
+    const invoke = internals.invoke;
+    internals.invoke = (command, ...rest) => {
+      if (typeof command === 'string' && !command.startsWith('plugin:event')) {
+        let args: string;
+        try {
+          args = JSON.stringify(rest[0] ?? {});
+        } catch {
+          // An argument JSON cannot hold (bytes) names no path worth counting here.
+          args = '';
+        }
+        calls.push({ command, args });
+      }
+      return invoke(command, ...rest);
+    };
+    Object.assign(window, { __skillCalls: calls });
+  });
+}
+
+/** The host calls so far that name the prompt notes' folder or a note in it. */
+const promptCalls = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as { __skillCalls: { command: string; args: string }[] }).__skillCalls
+      .filter(({ args }) => args.includes('.atlas/prompts'))
+      .map(({ command, args }) => `${command} ${args}`),
+  );
+
+test('the prompt notes are read when the page opens, never at launch (#626 review)', async ({
+  page,
+}) => {
+  const vault = await createVault();
+  await vault.mkdir('.atlas/prompts');
+  await vault.write('.atlas/prompts/morning-brief.md', 'Brief me.\n');
+  await vault.write('Plain.md', '# Plain\n');
+  await installHost(page, vault);
+  await recordHostCalls(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+  const listings = async () =>
+    (await promptCalls(page)).filter((call) => call === 'list_directory {"path":".atlas/prompts"}')
+      .length;
+  // Settled first: the count is of everything launch asks, not of a moment in it.
+  let seen = -1;
+  await expect
+    .poll(async () => {
+      const now = (await promptCalls(page)).length;
+      const quiet = now === seen;
+      seen = now;
+      return quiet;
+    })
+    .toBe(true);
+  // The one listing launch makes is the index's walk of the vault, which indexes prompt
+  // notes as it does every note; the page's own read would be a second.
+  expect(await listings()).toBe(1);
+
+  const skills = await openSkills(page);
+  await expect(skills.getByRole('button', { name: 'Open morning-brief prompt' })).toBeVisible();
+  expect(await listings()).toBe(2);
+});

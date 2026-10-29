@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { SkillDraft, SkillProblem } from '@dfai/domain';
 import { SkillsPage, type SkillEditorState, type SkillsPageProps } from './skills-page.tsx';
@@ -39,6 +39,8 @@ function editorOf(overrides: Partial<SkillEditorState> = {}): SkillEditorState {
     descriptionLimit: 1024,
     changedOnDisk: false,
     saving: false,
+    canSave: true,
+    justCreated: false,
     ...overrides,
   };
 }
@@ -51,6 +53,9 @@ function show(overrides: Partial<SkillsPageProps> = {}) {
     editor: null,
     notice: null,
     deleteQuestion: null,
+    discardQuestion: null,
+    focusTarget: null,
+    onFocused: vi.fn(),
     onSelect: vi.fn(),
     onNew: vi.fn(),
     onChange: vi.fn(),
@@ -87,10 +92,14 @@ function Editing({
         mode,
         draft,
         problems: problemsOf(draft),
+        canSave: problemsOf(draft).length === 0,
         descriptionLength: Array.from(draft.description).length,
       })}
       notice={null}
       deleteQuestion={null}
+      discardQuestion={null}
+      focusTarget={null}
+      onFocused={vi.fn()}
       onSelect={vi.fn()}
       onNew={vi.fn()}
       onChange={(change) => setDraft((was) => ({ ...was, ...change }))}
@@ -149,16 +158,14 @@ describe('SkillsPage', () => {
 
   it('counts the description against its limit, and marks it when over', () => {
     show({ selected: 'weekly-review', editor: editorOf({ descriptionLength: 17 }) });
-    const count = screen.getByLabelText('17 of 1024 characters');
+    const count = screen.getByText('17/1024');
     expect(count.textContent).toBe('17/1024');
     expect(count.className).not.toContain('skills__count--over');
   });
 
   it('marks a count over the limit', () => {
     show({ selected: 'weekly-review', editor: editorOf({ descriptionLength: 1025 }) });
-    expect(screen.getByLabelText('1025 of 1024 characters').className).toContain(
-      'skills__count--over',
-    );
+    expect(screen.getByText('1025/1024').className).toContain('skills__count--over');
   });
 
   it('counts what is typed as the length it is handed, emoji as one character', async () => {
@@ -166,7 +173,7 @@ describe('SkillsPage', () => {
     const description = screen.getByRole('textbox', { name: /Description/ });
     await userEvent.clear(description);
     await userEvent.type(description, 'Hi 🌿');
-    expect(screen.getByLabelText('4 of 1024 characters').textContent).toBe('4/1024');
+    expect(screen.getByText('4/1024')).toBeTruthy();
   });
 
   it('shows a field’s problem under it and keeps Save off while there is any', async () => {
@@ -202,6 +209,7 @@ describe('SkillsPage', () => {
           { field: 'description', message: 'A skill’s description cannot hold XML tags.' },
         ],
         fileProblems: ['SKILL.md says its name is “weekly”.'],
+        canSave: false,
       }),
     });
     const editor = screen.getByRole('form', { name: 'Skill weekly-review' });
@@ -278,5 +286,108 @@ describe('SkillsPage', () => {
   it('says why the last command failed', () => {
     show({ notice: 'The skill could not be saved: denied' });
     expect(screen.getByRole('alert').textContent).toBe('The skill could not be saved: denied');
+  });
+
+  describe('the description’s counter (#626 review)', () => {
+    it('describes the description field, so it is read with it', () => {
+      show({ selected: 'weekly-review', editor: editorOf({ descriptionLength: 17 }) });
+      const description = screen.getByRole('textbox', { name: /Description/ });
+      const count = screen.getByText('17/1024');
+      expect(count.id).not.toBe('');
+      expect(description.getAttribute('aria-describedby')?.split(' ')).toContain(count.id);
+      expect(count.hasAttribute('aria-label')).toBe(false);
+    });
+
+    it('says politely how many are left near the limit, and nothing far from it', () => {
+      show({ selected: 'weekly-review', editor: editorOf({ descriptionLength: 17 }) });
+      const quiet = document.querySelector('[aria-live="polite"].skills__count-live');
+      expect(quiet).not.toBeNull();
+      expect(quiet?.textContent).toBe('');
+      cleanup();
+      show({ selected: 'weekly-review', editor: editorOf({ descriptionLength: 1000 }) });
+      const live = document.querySelector('[aria-live="polite"].skills__count-live');
+      expect(live?.textContent).toBe('24 characters left');
+    });
+
+    it('says how far over the limit a description is', () => {
+      show({ selected: 'weekly-review', editor: editorOf({ descriptionLength: 1030 }) });
+      expect(document.querySelector('.skills__count-live')?.textContent).toBe(
+        '6 characters over the limit',
+      );
+    });
+  });
+
+  it('holds the fields still while the skill is saved (#626 review)', () => {
+    show({ selected: 'weekly-review', editor: editorOf({ saving: true, canSave: false }) });
+    for (const name of ['Name', /Description/, /Instructions/]) {
+      expect((screen.getByRole('textbox', { name }) as HTMLInputElement).readOnly).toBe(true);
+    }
+    expect(screen.getByRole('button', { name: 'Saving…' })).toHaveProperty('disabled', true);
+  });
+
+  it('keeps every field but the name editable while not saving', () => {
+    show({ selected: 'weekly-review', editor: editorOf() });
+    for (const name of [/Description/, /Instructions/]) {
+      expect((screen.getByRole('textbox', { name }) as HTMLInputElement).readOnly).toBe(false);
+    }
+  });
+
+  it('keeps Save off with Reload first while the file changed on disk (#626 review)', () => {
+    show({ selected: 'weekly-review', editor: editorOf({ changedOnDisk: true, canSave: false }) });
+    expect(screen.getByRole('status').textContent).toContain('Reload first');
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true);
+  });
+
+  it('asks before typing is thrown away, Keep editing first (#626 review)', async () => {
+    const onKeep = vi.fn();
+    const onDiscard = vi.fn();
+    show({
+      selected: 'weekly-review',
+      editor: editorOf(),
+      discardQuestion: { name: 'weekly-review', onKeep, onDiscard },
+    });
+    const question = screen.getByRole('alertdialog', { name: 'Discard your changes?' });
+    expect(question.textContent).toContain('weekly-review');
+    await userEvent.click(within(question).getByRole('button', { name: 'Keep editing' }));
+    expect(onKeep).toHaveBeenCalledOnce();
+    expect(onDiscard).not.toHaveBeenCalled();
+  });
+
+  it('discards the typing only on Discard', async () => {
+    const onDiscard = vi.fn();
+    show({
+      editor: editorOf({ mode: 'new' }),
+      discardQuestion: { name: null, onKeep: vi.fn(), onDiscard },
+    });
+    const question = screen.getByRole('alertdialog', { name: 'Discard your changes?' });
+    expect(question.textContent).toContain('the new skill');
+    await userEvent.click(within(question).getByRole('button', { name: 'Discard' }));
+    expect(onDiscard).toHaveBeenCalledOnce();
+  });
+
+  describe('where focus goes (#626 review)', () => {
+    it('puts it in the description of a skill just made', () => {
+      show({ selected: 'notes', editor: editorOf({ justCreated: true }) });
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: /Description/ }));
+    });
+
+    it('leaves it alone for a skill only opened', () => {
+      show({ selected: 'weekly-review', editor: editorOf({ justCreated: false }) });
+      expect(document.activeElement).toBe(document.body);
+    });
+
+    it('puts it on the row it is sent to, and says so', () => {
+      const props = show({ focusTarget: { kind: 'row', name: 'Draft-Notes' } });
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Draft-Notes/ }));
+      expect(props.onFocused).toHaveBeenCalledOnce();
+    });
+
+    it('puts it on the list’s heading when no skill is left', () => {
+      const props = show({ skills: { items: [], error: null }, focusTarget: { kind: 'list' } });
+      expect(document.activeElement).toBe(
+        screen.getByRole('heading', { name: 'Skills', level: 2 }),
+      );
+      expect(props.onFocused).toHaveBeenCalledOnce();
+    });
   });
 });

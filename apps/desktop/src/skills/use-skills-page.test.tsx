@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createVaultPath, parentVaultPath, vaultPathName, type VaultEntry } from '@dfai/domain';
 import { fakeVaultFs, VaultAccessError } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { readAgain, vaultReadKey } from '../reads/query-client.ts';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
-import { useSkillsPage } from './use-skills-page.ts';
+import { useSkillsPage, type SkillOverlay } from './use-skills-page.ts';
 
 const VAULT = '/vaults/larkspur';
 const WEEKLY = [
@@ -29,6 +30,12 @@ function memoryVault(files: Record<string, string>) {
   const notes = new Map(Object.entries(files).map(([path, text]) => [path, { text, modified: 1 }]));
   const dirs = new Set<string>();
   const trashed: string[] = [];
+  /** What the host is told to refuse, or to hold until let go, to test what the page does meanwhile. */
+  const controls = {
+    refuseTrash: false,
+    refuseListing: null as string | null,
+    hold: null as Promise<void> | null,
+  };
   const folders = () => {
     const found = new Set(dirs);
     for (const path of [...notes.keys(), ...dirs]) {
@@ -47,6 +54,7 @@ function memoryVault(files: Record<string, string>) {
     }) as VaultEntry;
   const fs = fakeVaultFs({
     listDirectory: async (folder) => {
+      if (folder === controls.refuseListing) throw new Error('the host went away');
       if (folder !== '' && !folders().has(folder)) throw new VaultAccessError('no such folder');
       const under = (path: string) => parentVaultPath(createVaultPath(path)) === folder;
       return [
@@ -69,12 +77,14 @@ function memoryVault(files: Record<string, string>) {
       return clock;
     },
     writeTextFile: async ({ path, contents, expectedModified }) => {
+      await controls.hold;
       if (notes.get(path)?.modified !== expectedModified) throw new Error('changed');
       clock += 1;
       notes.set(path, { text: contents, modified: clock });
       return clock;
     },
     trashEntry: async ({ path }) => {
+      if (controls.refuseTrash) throw new Error('the Trash is not allowed');
       trashed.push(path);
       for (const key of [...notes.keys()]) if (key.startsWith(`${path}/`)) notes.delete(key);
       for (const key of [...dirs]) if (key === path || key.startsWith(`${path}/`)) dirs.delete(key);
@@ -85,26 +95,68 @@ function memoryVault(files: Record<string, string>) {
     clock += 1;
     notes.set(path, { text, modified: clock });
   };
-  return { fs, notes, trashed, writeOnDisk };
+  /** Holds every write until the answer is let go. */
+  const holdWrites = () => {
+    let release = () => {};
+    controls.hold = new Promise((done) => {
+      release = done;
+    });
+    return () => {
+      controls.hold = null;
+      release();
+    };
+  };
+  const deleteOnDisk = (path: string) => {
+    notes.delete(path);
+    dirs.delete(parentVaultPath(createVaultPath(path)));
+  };
+  return { fs, notes, trashed, writeOnDisk, deleteOnDisk, holdWrites, controls };
 }
 
 function renderPage(files: Record<string, string> = {}) {
   const vault = memoryVault(files);
   const { client, wrapper } = queryWrapper();
-  const overlay = { show: vi.fn(), hide: vi.fn() };
+  const shown = { show: vi.fn(), hide: vi.fn() };
   const onOpenNote = vi.fn();
+  /** The window's overlay store, as one overlay at a time; `dropOverlay` is the window closing it. */
+  let dropOverlay = () => {};
   const view = renderHook(
-    () =>
-      useSkillsPage({
-        ports: { fs: vault.fs, markdown: remarkMarkdown, overlay },
+    () => {
+      const [up, setUp] = useState<SkillOverlay | null>(null);
+      dropOverlay = () => setUp(null);
+      return useSkillsPage({
+        ports: {
+          fs: vault.fs,
+          markdown: remarkMarkdown,
+          overlay: {
+            show: (which) => {
+              shown.show(which);
+              setUp(which);
+            },
+            hide: (which) => {
+              shown.hide(which);
+              setUp((was) => (was === which ? null : was));
+            },
+          },
+        },
+        overlayUp: up,
         vault: VAULT,
         onOpenNote,
-      }),
+      });
+    },
     { wrapper },
   );
+  const overlay = shown;
   /** What the window does when its watcher sees a change under `.atlas/skills`. */
   const changedOnDisk = () => act(() => readAgain(client, vaultReadKey(VAULT, 'skills')));
-  return { ...view, ...vault, overlay, onOpenNote, changedOnDisk };
+  return {
+    ...view,
+    ...vault,
+    overlay,
+    onOpenNote,
+    changedOnDisk,
+    dropOverlay: () => act(dropOverlay),
+  };
 }
 
 const SKILL_PATH = '.atlas/skills/weekly-review/SKILL.md';
@@ -277,13 +329,13 @@ describe('useSkillsPage', () => {
     await openWeekly(page);
     act(() => page.result.current.onDelete());
     await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
-    expect(page.overlay.show).toHaveBeenCalledOnce();
+    expect(page.overlay.show).toHaveBeenCalledExactlyOnceWith('skill-delete');
     expect(page.result.current.deleteQuestion?.warning).toContain('1 other file: scripts/run.sh');
     expect(page.trashed).toEqual([]);
 
     act(() => page.result.current.deleteQuestion?.onConfirm());
     await waitFor(() => expect(page.trashed).toEqual(['.atlas/skills/weekly-review']));
-    expect(page.overlay.hide).toHaveBeenCalledOnce();
+    expect(page.overlay.hide).toHaveBeenCalledExactlyOnceWith('skill-delete');
     await waitFor(() => expect(page.result.current.editor).toBeNull());
     await waitFor(() => expect(page.result.current.skills.items).toEqual([]));
   });
@@ -295,7 +347,7 @@ describe('useSkillsPage', () => {
     await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
     act(() => page.result.current.deleteQuestion?.onCancel());
     expect(page.result.current.deleteQuestion).toBeNull();
-    expect(page.overlay.hide).toHaveBeenCalledOnce();
+    expect(page.overlay.hide).toHaveBeenCalledExactlyOnceWith('skill-delete');
     expect(page.trashed).toEqual([]);
     expect(page.result.current.editor).not.toBeNull();
   });
@@ -308,5 +360,202 @@ describe('useSkillsPage', () => {
     act(() => page.result.current.onClose());
     expect(page.result.current.editor).toBeNull();
     expect(page.result.current.selected).toBeNull();
+  });
+
+  describe('unsaved typing (#626 review)', () => {
+    const MEETING = WEEKLY.replace(/weekly-review/g, 'meeting-notes');
+    const MEETING_PATH = '.atlas/skills/meeting-notes/SKILL.md';
+
+    it('keeps the typing when the skill already open is chosen again', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY });
+      await openWeekly(page);
+      act(() => page.result.current.onChange({ instructions: 'Typed here.' }));
+      act(() => page.result.current.onSelect('weekly-review'));
+      expect(page.result.current.discardQuestion).toBeNull();
+      expect(page.result.current.editor?.draft.instructions).toBe('Typed here.');
+    });
+
+    it('asks before another skill throws the typing away: Keep stays, Discard goes', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY, [MEETING_PATH]: MEETING });
+      await waitFor(() => expect(page.result.current.skills.items).toHaveLength(2));
+      await openWeekly(page);
+      act(() => page.result.current.onChange({ instructions: 'Typed here.' }));
+
+      act(() => page.result.current.onSelect('meeting-notes'));
+      expect(page.overlay.show).toHaveBeenCalledWith('skill-discard');
+      expect(page.result.current.discardQuestion?.name).toBe('weekly-review');
+      expect(page.result.current.selected).toBe('weekly-review');
+      act(() => page.result.current.discardQuestion?.onKeep());
+      expect(page.result.current.discardQuestion).toBeNull();
+      expect(page.result.current.editor?.draft.instructions).toBe('Typed here.');
+
+      act(() => page.result.current.onSelect('meeting-notes'));
+      act(() => page.result.current.discardQuestion?.onDiscard());
+      expect(page.result.current.selected).toBe('meeting-notes');
+      await waitFor(() => expect(page.result.current.editor?.draft.name).toBe('meeting-notes'));
+      expect(page.overlay.hide).toHaveBeenCalledWith('skill-discard');
+    });
+
+    it('asks before New or Close throws the typing away too', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY });
+      await openWeekly(page);
+      act(() => page.result.current.onChange({ instructions: 'Typed here.' }));
+      act(() => page.result.current.onNew());
+      expect(page.result.current.editor?.mode).toBe('edit');
+      expect(page.result.current.discardQuestion).not.toBeNull();
+      act(() => page.result.current.discardQuestion?.onKeep());
+      act(() => page.result.current.onClose());
+      expect(page.result.current.editor).not.toBeNull();
+      act(() => page.result.current.discardQuestion?.onDiscard());
+      expect(page.result.current.editor).toBeNull();
+    });
+
+    it('drops a save’s answer when another skill was chosen while it was written', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY, [MEETING_PATH]: MEETING });
+      await waitFor(() => expect(page.result.current.skills.items).toHaveLength(2));
+      await openWeekly(page);
+      act(() => page.result.current.onChange({ description: 'Saved later.' }));
+      const release = page.holdWrites();
+      act(() => page.result.current.onSave());
+      expect(page.result.current.editor?.saving).toBe(true);
+      act(() => page.result.current.onSelect('meeting-notes'));
+      act(() => page.result.current.discardQuestion?.onDiscard());
+      await waitFor(() => expect(page.result.current.editor?.draft.name).toBe('meeting-notes'));
+
+      await act(async () => release());
+      await waitFor(() => expect(page.notes.get(SKILL_PATH)?.text).toContain('Saved later.'));
+      expect(page.result.current.selected).toBe('meeting-notes');
+      expect(page.result.current.editor?.draft.name).toBe('meeting-notes');
+    });
+  });
+
+  it('draws the delete question only while the window holds its overlay (#626 review)', async () => {
+    const page = renderPage({ [SKILL_PATH]: WEEKLY });
+    await openWeekly(page);
+    act(() => page.result.current.onDelete());
+    await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
+    page.dropOverlay();
+    expect(page.result.current.deleteQuestion).toBeNull();
+  });
+
+  it('keeps Save from a skill changed on disk until it is reloaded (#626 review)', async () => {
+    const page = renderPage({ [SKILL_PATH]: WEEKLY });
+    await openWeekly(page);
+    expect(page.result.current.editor?.canSave).toBe(true);
+    act(() => page.result.current.onChange({ instructions: 'Typed here.' }));
+    page.writeOnDisk(SKILL_PATH, WEEKLY.replace('Reviews the week.', 'Elsewhere.'));
+    await page.changedOnDisk();
+    await waitFor(() => expect(page.result.current.editor?.changedOnDisk).toBe(true));
+    expect(page.result.current.editor?.canSave).toBe(false);
+    act(() => page.result.current.onReload());
+    await waitFor(() => expect(page.result.current.editor?.canSave).toBe(true));
+  });
+
+  it('keeps Save off while the draft has problems or is being saved', async () => {
+    const page = renderPage({ [SKILL_PATH]: WEEKLY });
+    await openWeekly(page);
+    act(() => page.result.current.onChange({ description: '' }));
+    expect(page.result.current.editor?.canSave).toBe(false);
+    act(() => page.result.current.onChange({ description: 'Back.' }));
+    const release = page.holdWrites();
+    act(() => page.result.current.onSave());
+    expect(page.result.current.editor?.canSave).toBe(false);
+    await act(async () => release());
+    await waitFor(() => expect(page.result.current.editor?.canSave).toBe(true));
+  });
+
+  describe('where focus goes (#626 review)', () => {
+    it('says a skill was just made, so its editor can take the focus', async () => {
+      const page = renderPage();
+      await waitFor(() => expect(page.result.current.skills.items).toEqual([]));
+      act(() => page.result.current.onNew());
+      expect(page.result.current.editor?.justCreated).toBe(false);
+      act(() =>
+        page.result.current.onChange({ name: 'notes', description: 'Notes.', instructions: 'Go.' }),
+      );
+      await act(async () => page.result.current.onSave());
+      await waitFor(() => expect(page.result.current.editor?.justCreated).toBe(true));
+    });
+
+    it('sends the focus to the next skill after a delete, or to the list when none is left', async () => {
+      const page = renderPage({
+        '.atlas/skills/alpha/SKILL.md': WEEKLY.replace(/weekly-review/g, 'alpha'),
+        [SKILL_PATH]: WEEKLY,
+        '.atlas/skills/zeta/SKILL.md': WEEKLY.replace(/weekly-review/g, 'zeta'),
+      });
+      await waitFor(() => expect(page.result.current.skills.items).toHaveLength(3));
+      const remove = async (name: string) => {
+        act(() => page.result.current.onSelect(name));
+        await waitFor(() => expect(page.result.current.editor?.draft.name).toBe(name));
+        act(() => page.result.current.onDelete());
+        await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
+        act(() => page.result.current.deleteQuestion?.onConfirm());
+        await waitFor(() => expect(page.result.current.editor).toBeNull());
+      };
+      await remove('weekly-review');
+      expect(page.result.current.focusTarget).toEqual({ kind: 'row', name: 'zeta' });
+      act(() => page.result.current.onFocused());
+      expect(page.result.current.focusTarget).toBeNull();
+      await waitFor(() => expect(page.result.current.skills.items).toHaveLength(2));
+      await remove('zeta');
+      expect(page.result.current.focusTarget).toEqual({ kind: 'row', name: 'alpha' });
+      await waitFor(() => expect(page.result.current.skills.items).toHaveLength(1));
+      await remove('alpha');
+      expect(page.result.current.focusTarget).toEqual({ kind: 'list' });
+    });
+  });
+
+  describe('a delete that fails (#626 review)', () => {
+    it('says so when the folder cannot be walked, and asks nothing', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY });
+      await openWeekly(page);
+      page.controls.refuseListing = '.atlas/skills/weekly-review';
+      act(() => page.result.current.onDelete());
+      await waitFor(() =>
+        expect(page.result.current.notice).toBe(
+          'The skill could not be deleted: the host went away',
+        ),
+      );
+      expect(page.result.current.deleteQuestion).toBeNull();
+      expect(page.overlay.show).not.toHaveBeenCalled();
+    });
+
+    it('says so when the Trash refuses, and keeps the skill open', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY });
+      await openWeekly(page);
+      act(() => page.result.current.onDelete());
+      await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
+      page.controls.refuseTrash = true;
+      act(() => page.result.current.deleteQuestion?.onConfirm());
+      await waitFor(() =>
+        expect(page.result.current.notice).toBe(
+          'The skill could not be deleted: the Trash is not allowed',
+        ),
+      );
+      expect(page.result.current.editor?.draft.name).toBe('weekly-review');
+      expect(page.trashed).toEqual([]);
+    });
+  });
+
+  describe('a skill deleted on disk while it is open', () => {
+    it('closes the editor when nothing was typed', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY });
+      await openWeekly(page);
+      page.deleteOnDisk(SKILL_PATH);
+      await page.changedOnDisk();
+      await waitFor(() => expect(page.result.current.editor).toBeNull());
+    });
+
+    it('keeps the typing and offers Reload, which closes it', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY });
+      await openWeekly(page);
+      act(() => page.result.current.onChange({ instructions: 'Typed here.' }));
+      page.deleteOnDisk(SKILL_PATH);
+      await page.changedOnDisk();
+      await waitFor(() => expect(page.result.current.editor?.changedOnDisk).toBe(true));
+      expect(page.result.current.editor?.draft.instructions).toBe('Typed here.');
+      act(() => page.result.current.onReload());
+      expect(page.result.current.editor).toBeNull();
+    });
   });
 });
