@@ -43,7 +43,7 @@ describe('a skill through the real markdown port', () => {
     expect(skill).toMatchObject({
       declaredName: 'weekly-review',
       description: draft.description,
-      instructions: 'Step one.\n\n- Step two.\n',
+      instructions: draft.instructions,
       problems: [],
     });
     expect(fixture.files.get(PATH)?.text).toMatch(
@@ -100,5 +100,54 @@ describe('a skill through the real markdown port', () => {
       }),
     ).rejects.toThrow(/cannot be read/);
     expect(fixture.files.get(PATH)?.text).toBe(text);
+  });
+});
+
+describe('instructions at the limit, through the real markdown port (#620)', () => {
+  const AT_LIMIT = 'i'.repeat(20_000);
+
+  it.each([
+    ['LF', '---\nname: weekly-review\ndescription: d\n---\n\nold\n'],
+    ['CRLF', '---\r\nname: weekly-review\r\ndescription: d\r\n---\r\n\r\nold\r\n'],
+  ])('reads back the 20,000 characters it saved, with no problem (%s)', async (_label, text) => {
+    const { fixture, read } = vault({ [PATH]: text });
+    const before = await read();
+
+    await saveSkill({
+      fs: fixture.fs,
+      markdown: remarkMarkdown,
+      skill: before,
+      draft: { name: 'weekly-review', description: 'd', instructions: AT_LIMIT },
+    });
+
+    const after = await read();
+    expect(after.instructions).toBe(AT_LIMIT);
+    expect(after.problems).toEqual([]);
+  });
+
+  it('creates a skill of 20,000 characters that reads back as 20,000, with no problem', async () => {
+    const { fixture, read } = vault();
+
+    await createSkill({
+      fs: fixture.fs,
+      markdown: remarkMarkdown,
+      draft: { name: 'weekly-review', description: 'd', instructions: AT_LIMIT },
+    });
+
+    const skill = await read();
+    expect(skill.instructions).toHaveLength(20_000);
+    expect(skill.problems).toEqual([]);
+  });
+
+  it('refuses 20,001 characters', async () => {
+    const { fixture } = vault();
+
+    await expect(
+      createSkill({
+        fs: fixture.fs,
+        markdown: remarkMarkdown,
+        draft: { name: 'weekly-review', description: 'd', instructions: `${AT_LIMIT}i` },
+      }),
+    ).rejects.toThrow(/at most 20000/);
   });
 });
