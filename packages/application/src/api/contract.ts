@@ -675,6 +675,19 @@ export interface ApiChooseForTodayBody {
   readonly chosen: boolean;
 }
 
+/**
+ * `POST /v1/tasks/done` (#107): tick a task done, or untick it, as a row's
+ * done box does on the Today page and in a query view.
+ */
+export interface ApiTaskDoneBody {
+  /** The task's vault-relative path: a note of type task. */
+  readonly path: string;
+  /** True to finish it (a repeating task rolls on instead); false to take a finished one back to Next Action. */
+  readonly done: boolean;
+  /** The task's `modified` as read: required to tick, so a tick sent twice never rolls a task on twice. */
+  readonly ifModified?: number | undefined;
+}
+
 /** What a batch of archiving, unarchiving or processing the Inbox did. */
 export interface ApiArchiveOutcome {
   /** Every note that moved, in the order asked, from where it was to where it went. */
@@ -2130,6 +2143,12 @@ export const API_ROUTES = [
     path: '/v1/today',
     summary:
       'The Today page: chosen, carried over, overdue, due today, back, in progress, next, waiting.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/tasks/done',
+    summary:
+      'Tick a task done, or untick it, as its done box does: a repeating task rolls on. Answers the task.',
   },
   {
     method: 'POST',

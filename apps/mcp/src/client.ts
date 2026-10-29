@@ -51,6 +51,7 @@ import type {
   ApiClarifyOutcome,
   ApiScheduleTaskBody,
   ApiChooseForTodayBody,
+  ApiTaskDoneBody,
   ApiPromoteLineBody,
   ApiProfile,
   ApiQueryBody,
@@ -485,6 +486,9 @@ export class AtlasClient {
 
   chooseForToday = (body: ApiChooseForTodayBody) =>
     this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/today/choose', body });
+
+  tickTask = (body: ApiTaskDoneBody) =>
+    this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/tasks/done', body });
 
   brief = (query: BriefQuery) =>
     this.json<{ brief: ApiBrief }>({
