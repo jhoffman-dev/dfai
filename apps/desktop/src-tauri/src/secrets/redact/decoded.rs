@@ -1,27 +1,18 @@
-//! An answer read the way a reader of it would: entities and JSON escapes
-//! decoded, and base64 that was wrapped into lines joined up, with a map from
-//! every position in what was read back to the text it came from.
+//! An answer read the way a reader of it would: HTML entities decoded, JSON
+//! escapes decoded, base64 that was wrapped into lines joined up — each a
+//! layer, read alone or with the others — with a map from every position in
+//! what was read back to the text it came from.
 //!
-//! Read in one pass, once per answer, however many secrets are looked for in
-//! it. Text that needs no decoding is copied as it is and mapped by offset,
-//! so the map holds one entry per decoded piece, not per byte.
+//! The layers are readings of their own because each changes text: one that
+//! decodes `\t` or joins a line break also changes a secret whose own text
+//! holds them, so a secret echoed with an entity must be looked for in the
+//! reading that decodes entities and nothing else (review of PR #631, round 2).
+//!
+//! A reading is made in one pass, at most once per answer. Text that needs no
+//! decoding is copied as it is, and the map holds only the decoded pieces —
+//! twelve bytes each — the copied stretches between them implied.
 
-/// One stretch of what was read and the stretch of the original it came
-/// from: copied as it is (`copied`), or one decoded character, or a line
-/// break taken out of wrapped base64 (nothing read, `read_len` 0).
-#[derive(Debug, Clone, Copy)]
-struct Segment {
-    read_start: usize,
-    read_len: usize,
-    original_start: usize,
-    original_len: usize,
-    copied: bool,
-}
-
-/// Which readings a text gets: HTML entities decoded, JSON escapes decoded,
-/// wrapped base64 joined. Each is a reading of its own, alone or with the
-/// others, so one layer's change to a secret's own text cannot hide it from
-/// another's.
+/// Which layers a reading decodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Layers {
     pub entities: bool,
@@ -30,30 +21,70 @@ pub struct Layers {
 }
 
 impl Layers {
-    pub const ALL: Layers = Layers {
-        entities: true,
-        json: true,
-        join: true,
-    };
+    /// Every reading there is: each layer alone, and each mixture of them.
+    pub fn every_reading() -> impl Iterator<Item = Layers> {
+        (1..8u8).map(|bits| Layers {
+            entities: bits & 1 != 0,
+            json: bits & 2 != 0,
+            join: bits & 4 != 0,
+        })
+    }
+
+    /// Whether `text` holds a piece of every layer this reading decodes —
+    /// for joining, a line break written in a way this reading reads: a
+    /// reading without one is another reading's, and is not made.
+    pub fn present_in(self, text: &str) -> bool {
+        let breaks = || {
+            LINE_BREAKS
+                .iter()
+                .any(|(written, layer)| self.reads(*layer) && text.contains(written))
+        };
+        (!self.entities || text.contains('&'))
+            && (!self.json || text.contains('\\'))
+            && (!self.join || breaks())
+    }
+
+    /// A byte that starts something this reading decodes: every other byte is
+    /// copied as it is. All are ASCII, so a stretch between them is whole
+    /// characters.
+    fn starts_a_piece(self, byte: u8) -> bool {
+        (self.entities && byte == b'&')
+            || (self.json && byte == b'\\')
+            || (self.join && matches!(byte, b'\n' | b'\r'))
+    }
 }
 
-/// The text as read, and where each piece of it came from.
+/// One decoded piece of what was read and the bytes of the original it came
+/// from: a character, or a line break taken out of wrapped base64 (nothing
+/// read). Offsets are 32 bits: an answer longer than that is not read.
+#[derive(Debug, Clone, Copy)]
+struct Piece {
+    read_start: u32,
+    original_start: u32,
+    original_len: u16,
+    read_len: u8,
+}
+
+impl Piece {
+    fn read_end(&self) -> usize {
+        self.read_start as usize + usize::from(self.read_len)
+    }
+
+    fn original_end(&self) -> usize {
+        self.original_start as usize + usize::from(self.original_len)
+    }
+}
+
+/// The text as read, and where each decoded piece of it came from.
 pub struct Decoded {
     text: String,
-    segments: Vec<Segment>,
+    pieces: Vec<Piece>,
 }
 
 /// What base64 is written in, both alphabets and padding: the characters a
 /// wrapped line break may sit between.
 fn is_base64(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '-' | '_')
-}
-
-/// A byte that starts an entity, an escape or a line break: every other byte
-/// is copied as it is. All are ASCII, so a stretch between them is whole
-/// characters.
-fn starts_a_piece(byte: u8) -> bool {
-    matches!(byte, b'&' | b'\\' | b'\n' | b'\r')
 }
 
 /// The five named entities an HTML escaper writes.
@@ -144,32 +175,50 @@ fn json_escape(rest: &str) -> Option<(char, usize)> {
     Some((pair, 12))
 }
 
-/// The ways one line break is written, longest first: as itself, JSON-escaped,
-/// or as entities.
-const LINE_BREAKS: [&str; 15] = [
-    "&#13;&#10;",
-    "&#xD;&#xA;",
-    "&#xd;&#xa;",
-    "\\r\\n",
-    "&#10;",
-    "&#13;",
-    "&#xA;",
-    "&#xa;",
-    "&#xD;",
-    "&#xd;",
-    "\r\n",
-    "\\n",
-    "\\r",
-    "\n",
-    "\r",
+/// The ways one line break is written, longest first: as itself, and as
+/// entities and JSON escapes for a reading that decodes those.
+const LINE_BREAKS: [(&str, Layer); 15] = [
+    ("&#13;&#10;", Layer::Entities),
+    ("&#xD;&#xA;", Layer::Entities),
+    ("&#xd;&#xa;", Layer::Entities),
+    ("\\r\\n", Layer::Json),
+    ("&#10;", Layer::Entities),
+    ("&#13;", Layer::Entities),
+    ("&#xA;", Layer::Entities),
+    ("&#xa;", Layer::Entities),
+    ("&#xD;", Layer::Entities),
+    ("&#xd;", Layer::Entities),
+    ("\r\n", Layer::Raw),
+    ("\\n", Layer::Json),
+    ("\\r", Layer::Json),
+    ("\n", Layer::Raw),
+    ("\r", Layer::Raw),
 ];
+
+/// Which layer a line break is written in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Layer {
+    Raw,
+    Entities,
+    Json,
+}
+
+impl Layers {
+    fn reads(self, layer: Layer) -> bool {
+        match layer {
+            Layer::Raw => true,
+            Layer::Entities => self.entities,
+            Layer::Json => self.json,
+        }
+    }
+}
 
 /// The length of the line break at the start of `rest`, with the indent that
 /// follows it, when what follows is more base64: a wrap, not a paragraph.
-fn wrap_at(rest: &str) -> Option<usize> {
-    let line_break = LINE_BREAKS
+fn wrap_at(rest: &str, layers: Layers) -> Option<usize> {
+    let (line_break, _) = LINE_BREAKS
         .iter()
-        .find(|written| rest.starts_with(*written))?;
+        .find(|(written, layer)| layers.reads(*layer) && rest.starts_with(written))?;
     let after = &rest[line_break.len()..];
     let indent = after
         .bytes()
@@ -180,41 +229,60 @@ fn wrap_at(rest: &str) -> Option<usize> {
 }
 
 impl Decoded {
-    /// `text` read with its entities and escapes decoded and its wrapped lines
-    /// joined, or None when nothing in it reads otherwise.
-    pub fn of(text: &str, _layers: Layers) -> Option<Decoded> {
-        if !text.bytes().any(starts_a_piece) {
+    /// `text` in the reading `layers` makes of it, or None when nothing in it
+    /// reads otherwise there.
+    pub fn of(text: &str, layers: Layers) -> Option<Decoded> {
+        if u32::try_from(text.len()).is_err() || !layers.present_in(text) {
             return None;
         }
         let mut read = Reading::default();
         let mut at = 0;
         while let Some(c) = text[at..].chars().next() {
             let rest = &text[at..];
-            if !starts_a_piece(rest.as_bytes()[0]) {
-                // Copied a stretch at a time: only these bytes start anything read otherwise.
-                let plain = rest.bytes().position(starts_a_piece).unwrap_or(rest.len());
-                read.copied(&rest[..plain], at);
+            if !layers.starts_a_piece(rest.as_bytes()[0]) {
+                let plain = rest
+                    .bytes()
+                    .position(|byte| layers.starts_a_piece(byte))
+                    .unwrap_or(rest.len());
+                read.text.push_str(&rest[..plain]);
                 at += plain;
                 continue;
             }
-            let wraps = read.text.chars().last().is_some_and(is_base64);
-            if let Some(len) = wraps.then(|| wrap_at(rest)).flatten() {
-                read.decoded(None, at, len);
-                at += len;
-            } else if let Some((c, len)) = (c == '&').then(|| entity(rest)).flatten() {
-                read.decoded(Some(c), at, len);
-                at += len;
-            } else if let Some((c, len)) = (c == '\\').then(|| json_escape(rest)).flatten() {
-                read.decoded(Some(c), at, len);
-                at += len;
-            } else {
-                read.copied(&rest[..c.len_utf8()], at);
-                at += c.len_utf8();
+            let wraps = layers.join && read.text.chars().last().is_some_and(is_base64);
+            let piece = wraps
+                .then(|| wrap_at(rest, layers).map(|len| (None, len)))
+                .flatten()
+                .or_else(|| {
+                    (layers.entities && c == '&')
+                        .then(|| entity(rest))
+                        .flatten()
+                        .map(|(c, len)| (Some(c), len))
+                })
+                .or_else(|| {
+                    (layers.json && c == '\\')
+                        .then(|| json_escape(rest))
+                        .flatten()
+                        .map(|(c, len)| (Some(c), len))
+                });
+            match piece {
+                Some((decoded, len)) if u16::try_from(len).is_ok() => {
+                    read.decoded(decoded, at, len);
+                    at += len;
+                }
+                _ => {
+                    read.text.push(c);
+                    at += c.len_utf8();
+                }
             }
         }
-        read.decoded_any.then_some(Decoded {
+        if read.pieces.is_empty() {
+            return None;
+        }
+        read.text.shrink_to_fit();
+        read.pieces.shrink_to_fit();
+        Some(Decoded {
             text: read.text,
-            segments: read.segments,
+            pieces: read.pieces,
         })
     }
 
@@ -223,34 +291,44 @@ impl Decoded {
     }
 
     /// What this reading holds on to: its text and its map.
+    #[cfg(test)]
     pub fn retained_bytes(&self) -> usize {
-        self.text.capacity() + self.segments.capacity() * std::mem::size_of::<Segment>()
+        self.text.capacity() + self.pieces.capacity() * std::mem::size_of::<Piece>()
     }
 
-    /// The segment that read position `at` lies in.
-    fn segment_holding(&self, at: usize) -> &Segment {
+    /// The last decoded piece that starts at or before read position `at`.
+    fn piece_before(&self, at: usize) -> Option<&Piece> {
         let after = self
-            .segments
-            .partition_point(|segment| segment.read_start + segment.read_len <= at);
-        &self.segments[after.min(self.segments.len() - 1)]
+            .pieces
+            .partition_point(|piece| piece.read_start as usize <= at);
+        after.checked_sub(1).map(|last| &self.pieces[last])
+    }
+
+    /// Where read position `at` came from in the original: the start of the
+    /// piece it lies in, or its place in the copied stretch after a piece.
+    fn original_at(&self, at: usize, widen_to_end: bool) -> usize {
+        match self.piece_before(at) {
+            None => at + usize::from(widen_to_end),
+            Some(piece) if at < piece.read_end() => {
+                if widen_to_end {
+                    piece.original_end()
+                } else {
+                    piece.original_start as usize
+                }
+            }
+            Some(piece) => {
+                piece.original_end() + (at - piece.read_end()) + usize::from(widen_to_end)
+            }
+        }
     }
 
     /// The span of the original text that `start..end` of what was read came
     /// from, widened to whole entities and escapes. `start < end`, both on
     /// character boundaries of what was read.
     pub fn original_span(&self, start: usize, end: usize) -> (usize, usize) {
-        let first = self.segment_holding(start);
-        let from = if first.copied {
-            first.original_start + (start - first.read_start)
-        } else {
-            first.original_start
-        };
-        let last = self.segment_holding(end - 1);
-        let to = if last.copied {
-            last.original_start + (end - last.read_start)
-        } else {
-            last.original_start + last.original_len
-        };
+        let from = self.original_at(start, false);
+        // The end is one past the last byte read: where that byte came from, and one on.
+        let to = self.original_at(end - 1, true);
         (from, to)
     }
 }
@@ -259,46 +337,22 @@ impl Decoded {
 #[derive(Default)]
 struct Reading {
     text: String,
-    segments: Vec<Segment>,
-    decoded_any: bool,
+    pieces: Vec<Piece>,
 }
 
 impl Reading {
-    /// Text copied as it is, joined to the copied stretch before it.
-    fn copied(&mut self, piece: &str, original_at: usize) {
-        let len = piece.len();
-        let read_start = self.text.len();
-        self.text.push_str(piece);
-        if let Some(last) = self.segments.last_mut() {
-            let follows = last.original_start + last.original_len == original_at;
-            if last.copied && follows {
-                last.read_len += len;
-                last.original_len += len;
-                return;
-            }
-        }
-        self.segments.push(Segment {
-            read_start,
-            read_len: len,
-            original_start: original_at,
-            original_len: len,
-            copied: true,
-        });
-    }
-
     /// `original_len` bytes at `original_at` read as `c`, or as nothing.
     fn decoded(&mut self, c: Option<char>, original_at: usize, original_len: usize) {
         let read_start = self.text.len();
         if let Some(c) = c {
             self.text.push(c);
         }
-        self.decoded_any = true;
-        self.segments.push(Segment {
-            read_start,
-            read_len: c.map_or(0, char::len_utf8),
-            original_start: original_at,
-            original_len,
-            copied: false,
+        // The answer is at most u32::MAX long and a piece at most u16::MAX, both checked above.
+        self.pieces.push(Piece {
+            read_start: read_start as u32,
+            original_start: original_at as u32,
+            original_len: original_len as u16,
+            read_len: c.map_or(0, |c| c.len_utf8() as u8),
         });
     }
 }
@@ -372,23 +426,34 @@ REVG",
         let text = "&#1; ".repeat(400_000);
         let decoded = Decoded::of(&text, ENTITIES).unwrap();
         assert!(
-            decoded.retained_bytes() <= 4 * text.len(),
+            decoded.retained_bytes() <= 3 * text.len(),
             "{} bytes held for {}",
             decoded.retained_bytes(),
             text.len()
         );
     }
 
+    /// The reading of every layer `text` has pieces of, or `text` itself.
     fn read(text: &str) -> String {
-        Decoded::of(text, Layers::ALL)
+        whole(text)
             .map(|decoded| decoded.text().to_string())
             .unwrap_or_else(|| text.to_string())
+    }
+
+    fn whole(text: &str) -> Option<Decoded> {
+        let mut layers = Layers {
+            entities: text.contains('&'),
+            json: text.contains('\\'),
+            join: true,
+        };
+        layers.join = layers.present_in(text);
+        Decoded::of(text, layers)
     }
 
     #[test]
     fn text_with_nothing_to_decode_is_not_read_again() {
         for text in ["plain words", "a&b c", "50% off", "no breaks here"] {
-            assert!(Decoded::of(text, Layers::ALL).is_none(), "{text:?}");
+            assert!(whole(text).is_none(), "{text:?}");
         }
     }
 
@@ -487,7 +552,7 @@ REVG",
     #[test]
     fn a_span_of_what_was_read_maps_to_the_whole_original_pieces() {
         let text = "x&amp;y&#x41;z";
-        let decoded = Decoded::of(text, Layers::ALL).unwrap();
+        let decoded = whole(text).unwrap();
         assert_eq!(decoded.text(), "x&yAz");
         // "&" came from "&amp;", "A" from "&#x41;".
         assert_eq!(decoded.original_span(1, 2), (1, 6));
@@ -499,14 +564,14 @@ REVG",
     #[test]
     fn a_joined_line_maps_back_across_its_break() {
         let text = "QUJD\r\n  REVG";
-        let decoded = Decoded::of(text, Layers::ALL).unwrap();
+        let decoded = whole(text).unwrap();
         assert_eq!(decoded.original_span(2, 6), (2, 10));
     }
 
     #[test]
     fn every_span_maps_to_character_boundaries_of_the_original() {
         let text = "é&#x1F600;ü&eacute;\\u00e9€&#10;QUJD\nREVG&quot;日本";
-        let decoded = Decoded::of(text, Layers::ALL).unwrap();
+        let decoded = whole(text).unwrap();
         let read = decoded.text();
         let boundaries: Vec<usize> = (0..=read.len())
             .filter(|at| read.is_char_boundary(*at))

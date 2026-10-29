@@ -11,25 +11,33 @@
 //! still found; so is its base64, in both alphabets, padded or not, at each of
 //! the three alignments it can sit at.
 //!
-//! A secret of 8 characters or more is also read loosely. The answer is
-//! decoded once, whatever the number of secrets — HTML numeric entities
-//! (decimal or hex, any number of digits, the `;` optional), the five named
-//! ones (`&amp;` `&lt;` `&gt;` `&quot;` `&apos;`), JSON's `\uXXXX` (a
-//! surrogate pair as one character) and short escapes — and base64 wrapped
-//! into lines is joined: a break of LF, CR or CRLF, as itself, JSON-escaped
-//! or as entities, with the indent of a continuation line, between two
-//! base64 characters. Each secret is looked for in that reading too, in any
-//! case of its ASCII letters, and only the original text a match was read
-//! from is struck, widened to whole entities and escapes, never the run
-//! around it. A secret shorter than 8 characters is found only as it is and
-//! in the escaped and base64 forms above: read loosely, a short one would
-//! match ordinary text by chance and strike it.
+//! A secret of 8 characters or more is also read loosely, in readings of
+//! the answer: HTML entities decoded — numeric (decimal or hex, any number of
+//! digits, the `;` optional) and the five named ones (`&amp;` `&lt;` `&gt;`
+//! `&quot;` `&apos;`) — JSON escapes decoded (`\uXXXX`, a surrogate pair as
+//! one character, and the short ones), and base64 wrapped into lines joined (a
+//! break of LF, CR or CRLF, as itself or, in a reading that decodes them, as
+//! entities or JSON-escaped, with a continuation line's indent, between two
+//! base64 characters). Each layer is a reading alone and in every mixture with
+//! the others, because each changes text: a secret whose own text holds a line
+//! break or a `\t` would be changed by the layer that joins or decodes it, and
+//! echoed with an entity, found by no reading but the one of entities alone
+//! (review of PR #631, round 2). A reading is made only when the answer holds
+//! a piece of each of its layers, and at most once for an answer, however many
+//! secrets are looked for. Each secret is looked for in every reading too, in
+//! any case of its ASCII letters, and only the original text a match was read
+//! from is struck, widened to whole entities and escapes, never the run around
+//! it. A secret shorter than 8 characters is found only as it is and in the
+//! escaped and base64 forms above: read loosely, a short one would match
+//! ordinary text by chance and strike it.
 //!
 //! What is deliberately not looked for, and why that is acceptable:
 //!
-//! - hex, `\x` and `\u{…}` escapes, named entities past the five, a
-//!   Unicode case-folded or NFD-normalised copy, base64 of the
-//!   percent-encoded value, a percent- or `\u`-escaped copy in another case,
+//! - an entity written under a JSON escape (`\u0026#83;`), and named
+//!   entities in upper case (`&AMP;`, `&QUOT;`) or past the five;
+//! - hex, `\x` and `\u{…}` escapes, a Unicode case-folded or NFD-normalised
+//!   copy, base64 of the percent-encoded value, a percent- or `\u`-escaped
+//!   copy in another case,
 //!   base64 wrapped by a blank line or text between its lines, and an echo
 //!   cut short.
 //!
@@ -58,7 +66,7 @@ use regex::{Regex, RegexBuilder};
 
 mod decoded;
 
-use decoded::Decoded;
+use decoded::{Decoded, Layers};
 
 /// Handed back in place of a response that could not be checked. Nothing is
 /// better than something that might hold a secret.
@@ -106,20 +114,22 @@ const SHORTEST_FOR_BASE64: usize = 8;
 /// came back, in any of the forms described above.
 pub fn redact(text: &str, used: &[(String, String)]) -> String {
     let used: Vec<&(String, String)> = used.iter().filter(|(_, value)| !value.is_empty()).collect();
-    // Read once, before any secret is looked for, and only for one long
-    // enough to be read loosely.
-    let decoded = used
-        .iter()
-        .any(|(_, value)| read_loosely(value))
-        .then(|| decoded_once(text))
-        .flatten();
+    // Each reading made once, before any secret is looked for, and only for
+    // one long enough to be read loosely.
+    let readings: Vec<Decoded> = if used.iter().any(|(_, value)| read_loosely(value)) {
+        Layers::every_reading()
+            .filter_map(|layers| decoded_once(text, layers))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let mut found: Vec<(usize, usize, &str)> = Vec::new();
     for (name, value) in used {
         let Ok(matcher) = matchers().for_value(value, matcher) else {
             return UNCHECKED.to_string();
         };
         found.extend(scanned(&matcher, text).map(|(start, end)| (start, end, name.as_str())));
-        if let Some(decoded) = decoded.as_ref().filter(|_| read_loosely(value)) {
+        for decoded in readings.iter().filter(|_| read_loosely(value)) {
             found.extend(
                 scanned(&matcher, decoded.text())
                     .map(|(start, end)| decoded.original_span(start, end))
@@ -139,10 +149,13 @@ fn read_loosely(value: &str) -> bool {
     value.chars().count() >= SHORTEST_READ_LOOSELY
 }
 
-fn decoded_once(text: &str) -> Option<Decoded> {
+fn decoded_once(text: &str, layers: Layers) -> Option<Decoded> {
+    if !layers.present_in(text) {
+        return None;
+    }
     #[cfg(test)]
     DECODES.with(|count| count.set(count.get() + 1));
-    Decoded::of(text, decoded::Layers::ALL)
+    Decoded::of(text, layers)
 }
 
 /// Every match of `matcher` in `text`, as byte spans.
@@ -1054,28 +1067,28 @@ mod tests {
         }
 
         /// What eight secrets cost against hostile bodies, counted rather than
-        /// timed: the answer is decoded once, and each secret's matcher reads
-        /// at most the answer and what was decoded from it — within twice the
-        /// one read each had before.
+        /// timed: each reading the answer has a piece for is made once, and
+        /// each secret's matcher reads the answer and each reading once.
         #[test]
-        fn eight_secrets_read_a_hostile_answer_at_most_twice_each() {
+        fn eight_secrets_read_a_hostile_answer_once_in_each_reading_it_has() {
             let secrets: Vec<(String, String)> = (0..8)
                 .map(|at| (format!("s{at}"), format!("{LONG}{at}")))
                 .collect();
-            for body in [
-                "&#65;".repeat(40_000),
-                "&#1; ".repeat(40_000),
-                "a\nb ".repeat(50_000),
-                "a\\nb ".repeat(40_000),
-                format!("{}\n", &LONG[..20]).repeat(8_000),
+            for (body, readings) in [
+                ("&#65;".repeat(40_000), 1),
+                ("&#1; ".repeat(40_000), 1),
+                ("a\nb ".repeat(50_000), 1),
+                ("a\\nb ".repeat(40_000), 2),
+                ("QUJD&#10;REVG ".repeat(20_000), 2),
+                (format!("{}\n", &LONG[..20]).repeat(8_000), 1),
             ] {
                 let decodes = DECODES.with(|count| count.get());
                 let scanned = SCANNED_BYTES.with(|count| count.get());
                 let _ = redact(&body, &secrets);
-                assert_eq!(DECODES.with(|count| count.get()) - decodes, 1);
+                assert_eq!(DECODES.with(|count| count.get()) - decodes, readings);
                 let read = SCANNED_BYTES.with(|count| count.get()) - scanned;
                 assert!(
-                    read <= 8 * 2 * body.len(),
+                    read <= 8 * (1 + readings) * body.len(),
                     "{read} bytes read for {}",
                     body.len()
                 );
