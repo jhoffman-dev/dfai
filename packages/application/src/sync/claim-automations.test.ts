@@ -268,6 +268,12 @@ describe('no other code path writes automationsMac (#176)', () => {
     expect(NAMES_A_MAC.test('readonly automationsMac: string | null;')).toBe(false);
   });
 
+  it('catches a save destructured off the settings, as use-sync.ts already calls it (PR #630 attack)', () => {
+    // use-sync.ts: `const { save } = settings;` then `save({ pullIntervalMinutes: minutes })`.
+    expect(NAMES_A_MAC.test('const { save } = settings;\nsave({ automationsMac: id })')).toBe(true);
+    expect(NAMES_A_MAC.test('update(() => ({ automationsMacName: name }))')).toBe(true);
+  });
+
   it('names the Mac only through the claim, and through set-up when no Mac is named yet', () => {
     expect(writers).toEqual([
       // The keys and the set-up rule are defined here, and only read by Settings → Sync.
