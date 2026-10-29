@@ -328,7 +328,9 @@ const folded = (value: string) => asciiLower(value.replace(/^ +| +$/g, ''));
  * value when it is one number; any other single field's when it is written
  * as one (singleText); every row of a field that holds many.
  */
-function heldRows(rows: readonly IndexableProperty[], kind: string): IndexableProperty[] {
+function heldRows(written: readonly IndexableProperty[], kind: string): IndexableProperty[] {
+  // A blank item is no item.
+  const rows = written.filter((row) => (row.text ?? row.json ?? '') !== '');
   if (kind === 'date') return rows.filter((row) => row.date !== null).slice(0, 1);
   if (MANY.has(kind)) return [...rows];
   if (rows.length !== 1) return [];

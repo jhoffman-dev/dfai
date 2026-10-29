@@ -70,39 +70,77 @@ const HOP_IN_USER_SPACE = userSpaceNoteSql('h.dst');
  * the weekly review read them, so a query, a cell and a sort all agree with
  * them (follow-up to #110):
  *
+ * - A blank item is no item: `status: [next-action, ""]` holds next-action.
  * - A date field holds the days it can read. A value written as words, `TBD`,
  *   or a day no calendar has, `2026-02-30`, is no date (`firstDay`). One that
  *   holds a single date holds its first real one, so a `due` written as two
  *   days is the first of them. A number field likewise holds only numbers:
  *   `estimate: lots` is no number, as its cell shows none.
  * - Any other field that holds one value holds it only when it is written as
- *   one: `status: [next, done]` is no status (`singleText`, `gtdStatusOf`).
+ *   one: `status: [next, done]`, or `[[next, done]]`, is no status
+ *   (`singleText`, `gtdStatusOf`).
  * - A field that holds many — a multi-select, tags, links, a relation, and a
- *   note's `type`, which may list several — holds every value written.
+ *   note's `type`, which may list several — holds every item written.
  *
- * Each rule asks about the row's own note (`p.path`), so it holds through a
- * hop too: `project.due` is each linked project's first day.
+ * These are the rows {@link fieldRows} reads. Each rule asks about the row's
+ * own note (`p.path`), so it holds through a hop too: `project.due` is each
+ * linked project's first day. A field of the note's own that holds one value
+ * is read in one subquery instead ({@link ownValueSql}), which is how a
+ * condition, a cell and a sort of it cost no more than reading its row.
  */
 export function valueRowsSql(field: Pick<QueryField, 'kind' | 'many' | 'valueMany'>): string {
-  const holdsMany = MANY_KINDS.includes(field.kind) || (field.valueMany ?? field.many);
-  if (field.kind === 'date') return holdsMany ? DATED : `${DATED} AND ${FIRST_DATE}`;
-  const numbered = field.kind === 'number' ? NUMBERED : '';
-  return holdsMany ? numbered : `${numbered} AND ${ONLY_ROW}`;
+  const kindRows = field.kind === 'date' ? DATED : field.kind === 'number' ? NUMBERED : '';
+  if (holdsMany(field)) return `${HELD_ROW}${kindRows}`;
+  return `${HELD_ROW}${kindRows} AND ${field.kind === 'date' ? FIRST_DATE : ONLY_ROW}`;
+}
+
+/** Whether a field holds several values: every item written is one of them. */
+export function holdsMany(field: Pick<QueryField, 'kind' | 'many' | 'valueMany'>): boolean {
+  return MANY_KINDS.includes(field.kind) || (field.valueMany ?? field.many);
 }
 
 /** Kinds read as several values whatever the property says. */
 const MANY_KINDS: readonly FieldKind[] = ['type', 'relation', 'multiSelect'];
 
+/** A row that holds anything: a blank or null item is no item. */
+const HELD = "COALESCE(p.value_text, p.value_json, '') <> ''";
+
+const HELD_ROW = ` AND ${HELD}`;
+
 const DATED = ' AND p.value_date IS NOT NULL';
 
 const NUMBERED = ' AND p.value_num IS NOT NULL';
 
-/** idx is unique for a key within a note, so MIN(idx) is the first row as written. */
+/**
+ * No real day before this one. A nested list gives each inner item its outer
+ * `idx` (property-value.ts), so rows are told apart by `rowid` within one.
+ */
 const FIRST_DATE =
-  'p.idx = (SELECT MIN(q.idx) FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_date IS NOT NULL)';
+  'NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_date IS NOT NULL AND (q.idx < p.idx OR (q.idx = p.idx AND q.rowid < p.rowid)))';
 
+/** No other item held: a list of two, nested or not, holds no one value. */
 const ONLY_ROW =
-  'NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.idx <> p.idx)';
+  "NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND COALESCE(q.value_text, q.value_json, '') <> '' AND q.rowid <> p.rowid)";
+
+/** Whether a field is one value of the note's own, read by {@link ownValueSql}. */
+export function isOwnSingle(field: QueryField): boolean {
+  return field.via === null && valueTable(field) === 'props' && !holdsMany(field);
+}
+
+/**
+ * The one value a note holds of a field of its own, as `expression` reads its
+ * row, or null when it holds none — by the rules of {@link valueRowsSql}, in
+ * one subquery on the note's rows (`props_path`): a date its first real day;
+ * anything else its one held item (`singleText`'s count), a number's only
+ * when that item is a number.
+ */
+export function ownValueSql(field: QueryField, expression: string): Fragment {
+  const rows = sql`FROM props AS p WHERE p.path = n.path AND p.key = ${bound(field.key)} AND ${fixed(HELD)}`;
+  if (field.kind === 'date') {
+    return sql`(SELECT ${fixed(expression)} ${rows} AND p.value_date IS NOT NULL ORDER BY p.idx, p.rowid LIMIT 1)`;
+  }
+  return sql`(SELECT CASE WHEN count(*) = 1 THEN max(${fixed(expression)}) END ${rows})`;
+}
 
 /** The order a field's rows are read in: as written, and for a hop, by the link first. */
 export function rowOrder(field: QueryField, table: RowTable = valueTable(field)): string {
@@ -157,23 +195,22 @@ function sortedBy(field: QueryField): string {
 const TARGET_IN_USER_SPACE = userSpaceNoteSql('r.dst');
 
 /**
- * What a field is sorted by: its first value — for a relation, the title of
- * the note it points at, or the link as written when it points nowhere — or
- * at a note outside user space, whose title is not the query's to read.
+ * What a field is sorted by: its value — for a relation, the title of the
+ * note it first points at, or the link as written when it points nowhere or
+ * at a note outside user space, whose title is not the query's to read; for
+ * a field that holds many, its first item.
  */
-export function sortedValue(field: QueryField): { rows: Fragment; value: string; order: string } {
+export function sortKeySql(field: QueryField): Fragment {
+  if (isOwnSingle(field)) return ownValueSql(field, sortedBy(field));
   if (field.kind === 'relation') {
-    return {
-      rows: fieldRows(
-        field,
-        'relations',
-        ` LEFT JOIN files AS f ON f.path = r.dst AND ${TARGET_IN_USER_SPACE}`,
-      ),
-      value: 'COALESCE(f.title, r.target)',
-      order: rowOrder(field, 'relations'),
-    };
+    const rows = fieldRows(
+      field,
+      'relations',
+      ` LEFT JOIN files AS f ON f.path = r.dst AND ${TARGET_IN_USER_SPACE}`,
+    );
+    return sql`(SELECT COALESCE(f.title, r.target) ${rows} ORDER BY ${fixed(rowOrder(field, 'relations'))} LIMIT 1)`;
   }
-  return { rows: fieldRows(field), value: sortedBy(field), order: rowOrder(field) };
+  return sql`(SELECT ${fixed(sortedBy(field))} ${fieldRows(field)} ORDER BY ${fixed(rowOrder(field))} LIMIT 1)`;
 }
 
 /** Whether a row holds anything: a blank or null property is no value. */

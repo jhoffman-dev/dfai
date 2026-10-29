@@ -134,9 +134,7 @@ describe('tauriIndex', () => {
   });
 
   it('rebuilds the views for the types it is given', async () => {
-    const types = [
-      { name: 'task', columns: [{ key: 'status', kind: 'select', many: false }], progress: true },
-    ];
+    const types = [{ name: 'task', select: 'SELECT n.path AS "path" FROM files AS n' }];
     await tauriIndex.rebuildViews(types);
     expect(invoke).toHaveBeenCalledWith('index_rebuild_views', { types });
   });

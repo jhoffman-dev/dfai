@@ -85,11 +85,12 @@ describe("FROM reads a note's type as DFAI does: in any case and spacing", () =>
     expect(found.map((row) => row['title'])).toContain('Plain task');
   });
 
-  it('names the type as the note writes it when a query reads from several', () => {
+  // GROUP BY type groups by it, so every spelling is named as the vault names the type.
+  it('names the type as the vault does when a query reads from several', () => {
     const capital = rows('FROM task, project WHERE due = 2026-10-01').find(
       (row) => row['title'] === 'Capital task',
     );
-    expect(capital?.['type']).toBe('Task');
+    expect(capital?.['type']).toBe('task');
   });
 });
 

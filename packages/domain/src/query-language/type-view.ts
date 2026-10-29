@@ -1,5 +1,5 @@
 import { foldedTypeName, foldedTypeSql } from '../types/note-type-sql.ts';
-import { shownValue, valueRowsSql } from './field-sql.ts';
+import { holdsMany, shownValue } from './field-sql.ts';
 import type { FieldKind, QueryField } from './fields.ts';
 
 /** A column of a type's view: a property the type declares. */
@@ -23,11 +23,13 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * sidebar's quick-view counts and dashboard widgets read it — holding each
  * note as a query's cells hold it (follow-up to #110): its notes found by
  * `type` in any case and spacing, and each column the value a `SHOW` of it
- * draws, read by the same rules ({@link valueRowsSql}).
+ * draws, by the same rules as `valueRowsSql`.
  *
- * The index builds the view (index.rs, `replace_views`) from the same
- * spec, as this text; `type-view.pin.test.ts` holds the two to one text.
- * Names that are not identifiers are left out, as the index leaves them.
+ * It is one grouped pass over the notes' rows, a pivot, with no subquery per
+ * cell: a type's table of thousands of notes reads as fast as a pivot of each
+ * row's MAX did. TypeScript sends this text and the index (index.rs,
+ * `replace_views`) only runs it, so the rules live here alone. Names that are
+ * not identifiers are left out.
  */
 export function typeViewSelectSql(spec: TypeViewSpec): string | null {
   if (!IDENTIFIER.test(spec.name)) return null;
@@ -38,23 +40,40 @@ export function typeViewSelectSql(spec: TypeViewSpec): string | null {
     .join('');
   return [
     'SELECT n.path AS "path",',
-    `       COALESCE((SELECT p.value_text FROM props AS p WHERE p.path = n.path AND p.key = 'title' ORDER BY p.idx, p.rowid LIMIT 1), n.title) AS "title",`,
+    `       COALESCE(MAX(CASE WHEN p.key = 'title' THEN p.value_text END), n.title) AS "title",`,
     '       n.summary AS "summary",',
     `       n.modified AS "modified"${progress}${columns}`,
-    'FROM files AS n',
+    'FROM files AS n JOIN props AS p ON p.path = n.path',
     `WHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = '${foldedTypeName(spec.name)}')`,
+    'GROUP BY n.path',
   ].join('\n');
 }
 
-/** One column's cell, as `cellOf` draws a field of the note's own. */
+/** A row of the column's key that holds anything: a blank item is no item. */
+const heldOf = (key: string) =>
+  `p.key = '${key}' AND COALESCE(p.value_text, p.value_json, '') <> ''`;
+
+/**
+ * The row first in written order, as text that sorts by it: `idx`, then
+ * `rowid` (a nested list's items share their `idx`), each 20 digits wide.
+ */
+const ORDERED = "printf('%020d%020d', p.idx, p.rowid)";
+
+/** One column's cell, as the query draws the field (`cellOf`), out of the grouped rows. */
 function columnSql(column: TypeViewColumn): string {
   const field = asField(column);
-  const rows = `FROM props AS p WHERE p.path = n.path AND p.key = '${column.key}'${valueRowsSql(field)}`;
+  const held = heldOf(column.key);
   const value = shownValue(field);
-  if (!field.many) return `(SELECT ${value} ${rows} ORDER BY p.idx, p.rowid LIMIT 1)`;
-  return `(SELECT group_concat(v, ', ') FROM (SELECT ${value} AS v ${rows} ORDER BY p.idx, p.rowid))`;
+  if (field.many)
+    return `group_concat(CASE WHEN ${held} THEN ${value} END, ', ' ORDER BY p.idx, p.rowid)`;
+  if (holdsMany(field) || field.kind === 'date') {
+    // The first held item (a date's first real day): the least written-order key, its value after it.
+    const dated = field.kind === 'date' ? ' AND p.value_date IS NOT NULL' : '';
+    return `substr(min(CASE WHEN ${held}${dated} THEN ${ORDERED} || ${value} END), 41)`;
+  }
+  // One value only when one item is held, as singleText counts.
+  return `CASE WHEN count(CASE WHEN ${held} THEN 1 END) = 1 THEN max(CASE WHEN ${held} THEN ${value} END) END`;
 }
-
 /** A column as the field a query names, of the kinds a view is made of. */
 function asField(column: TypeViewColumn): QueryField {
   const kind = column.kind as FieldKind;

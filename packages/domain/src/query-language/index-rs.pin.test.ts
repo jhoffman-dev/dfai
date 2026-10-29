@@ -3,15 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { parseObjectType } from '../types/property-def.ts';
 import { compileAtlasQuery } from './compile.ts';
 import { parseAtlasQuery } from './parse.ts';
-import { typeViewSelectSql, type TypeViewSpec } from './type-view.ts';
 
 /**
  * The index's own tests (apps/desktop/src-tauri/src/index.rs) hold SQL that
  * TypeScript writes: the query budget tests (#143) run DFAI queries "as
- * compileAtlasQuery compiles them", and the type views are built to
- * `typeViewSelectSql`'s text. Copied by hand, that SQL went stale when the
- * query language changed (follow-up to #110), so the budgets measured SQL
- * that no longer ships. Here each copy is held to what TypeScript writes now.
+ * compileAtlasQuery compiles them". Copied by hand, that SQL went stale when
+ * the query language changed (follow-up to #110), so the budgets measured SQL
+ * that no longer ships. Here each copy, and the count of what it binds, is
+ * held to what TypeScript writes now.
  */
 const root = new URL('../../../../', import.meta.url);
 const INDEX_RS = readFileSync(new URL('apps/desktop/src-tauri/src/index.rs', root), 'utf8');
@@ -41,12 +40,20 @@ const TYPES = [
   }),
 ];
 
-const compiled = (text: string) =>
+const compiledOf = (text: string) =>
   compileAtlasQuery(parseAtlasQuery(text), {
     types: TYPES,
     resolveLink: () => null,
     thisNote: 'people/Mara Quill.md',
-  }).sql;
+  });
+const compiled = (text: string) => compiledOf(text).sql;
+
+/** How many values index.rs binds where it runs `name`: the `json!` items after it. */
+function rustBound(name: string): number {
+  const found = new RegExp(`\\n\\s*${name},\\n\\s*&\\[([\\s\\S]*?)\\n\\s*\\],`).exec(INDEX_RS);
+  if (found?.[1] === undefined) throw new Error(`index.rs never runs ${name}`);
+  return (found[1].match(/serde_json::json!\(/g) ?? []).length;
+}
 
 const BUDGET_QUERIES: Readonly<Record<string, string>> = {
   LINKED_NOTES_OF_A_PERSON:
@@ -63,38 +70,16 @@ describe("the index's query budgets run the SQL a DFAI query compiles to", () =>
     '%s is %s, as compileAtlasQuery writes it',
     (name, query) => {
       expect(rustConstant(name)).toBe(compiled(query));
+      expect(rustBound(name)).toBe(compiledOf(query).parameters.length);
     },
   );
 
   it("NOTES_OF_A_TYPE asks of each note what every query's FROM asks", () => {
-    const asked =
-      /const NOTES_OF_A_TYPE: &str = "[\s\S]*?(WHERE EXISTS \(SELECT 1 FROM props AS t[\s\S]*?IN \(\?\)\))/.exec(
-        INDEX_RS,
-      )?.[1];
-    expect(asked?.replace(/\s+/g, ' ')).toBe(
-      /WHERE EXISTS \(SELECT 1 FROM props AS t[^\n]*\)\)/.exec(compiled('FROM task'))?.[0],
-    );
-  });
-});
-
-/** Every kind a view column can be, single and many. */
-export const PINNED_VIEW: TypeViewSpec = {
-  name: 'task',
-  columns: [
-    { key: 'status', kind: 'select', many: false },
-    { key: 'due', kind: 'date', many: false },
-    { key: 'estimate', kind: 'number', many: false },
-    { key: 'contexts', kind: 'multiSelect', many: false },
-    { key: 'project', kind: 'relation', many: false },
-    { key: 'flagged', kind: 'checkbox', many: false },
-    { key: 'dates', kind: 'date', many: true },
-    { key: 'sizes', kind: 'number', many: true },
-  ],
-  progress: true,
-};
-
-describe("the index's type views are typeViewSelectSql's text", () => {
-  it('VIEW_OF_A_TYPE, the view index.rs builds for this spec, is what TypeScript describes', () => {
-    expect(rustConstant('VIEW_OF_A_TYPE')).toBe(typeViewSelectSql(PINNED_VIEW));
+    const pick = /WHERE n\.path IN \(SELECT t\.path FROM props AS t[\s\S]*?IN \(\?\)\)/;
+    const rust = /const NOTES_OF_A_TYPE: &str = "([\s\S]*?)";/.exec(INDEX_RS)?.[1] ?? '';
+    const asked = pick.exec(rust)?.[0];
+    const asks = pick.exec(compiled('FROM task'))?.[0];
+    expect(asks).toBeDefined();
+    expect(asked?.replace(/\s+/g, ' ')).toBe(asks);
   });
 });

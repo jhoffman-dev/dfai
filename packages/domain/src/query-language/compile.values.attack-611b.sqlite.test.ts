@@ -147,7 +147,10 @@ const isTask = (rows: readonly IndexableProperty[]) =>
  * (`singleText`), and a number's only when it is a number.
  */
 function rowsOf(rows: readonly IndexableProperty[], key: SingleField): IndexableProperty[] {
-  const own = rows.filter((row) => row.key === key).sort((left, right) => left.index - right.index);
+  // A blank item is no item (decided with PR #616's review).
+  const own = rows
+    .filter((row) => row.key === key && (row.text ?? row.json ?? '') !== '')
+    .sort((left, right) => left.index - right.index);
   if (SINGLE_FIELDS[key] === 'date') return own.filter((row) => row.date !== null).slice(0, 1);
   if (own.length !== 1) return [];
   return SINGLE_FIELDS[key] === 'number' ? own.filter((row) => row.number !== null) : own;
@@ -331,15 +334,13 @@ describe('#611b attack: a single-valued field is compared on the value its cell 
 describe('#611b attack: a value the cell shows blank is empty', () => {
   // The first row is what the cell shows and what `=` asks about; IS EMPTY
   // still asks whether any row holds something (compile.ts conditionSql).
-  it('a single text whose first item is blank is empty, as its cell is', () => {
+  // A blank item is no item (decided with PR #616's review): ['', 'alpha'] holds alpha.
+  it('a single text whose first item is blank holds the other, in its cell and its conditions', () => {
     const database = index({ 'Brief Tobias Fenn': { type: 'task', notes: ['', 'alpha'] } });
     const [row] = run(database, 'FROM task SHOW notes');
-    // Written as a list, a single text holds no value (singleText), so its cell is blank.
-    expect(row?.['notes']).toBeNull();
-    expect(titlesOf(run(database, 'FROM task WHERE notes = alpha'))).toEqual([]);
-    expect(titlesOf(run(database, 'FROM task WHERE notes IS EMPTY'))).toEqual([
-      'Brief Tobias Fenn',
-    ]);
+    expect(row?.['notes']).toBe('alpha');
+    expect(titlesOf(run(database, 'FROM task WHERE notes = alpha'))).toEqual(['Brief Tobias Fenn']);
+    expect(titlesOf(run(database, 'FROM task WHERE notes IS EMPTY'))).toEqual([]);
   });
 
   // A date that is words is no date (the PR's rule 1); a number that is
@@ -386,28 +387,16 @@ describe('#611b attack: the type field reads a type as FROM does', () => {
 });
 
 describe('#611b attack: FROM in any case costs no more reads per note', () => {
-  // Before the PR, FROM's type test sought props_path by (path, key,
-  // value_text): one index probe per note. lower(trim(value_text)) cannot be
-  // sought, so each note's every type row is read and tested instead.
-  it("FROM's type test seeks the note's type rows by the type's value", () => {
+  // Settled with PR #616's review: FROM picks the type's notes through
+  // props_type_fold (key, folded type, path), then seeks each by its path;
+  // type-index.plan.sqlite.test.ts holds that plan with the index in place.
+  it('every per-note read seeks by the note, and no file is walked to ask its type', () => {
     const database = new DatabaseSync(':memory:');
     database.exec(SCHEMA);
     const compiled = compileAtlasQuery(parseAtlasQuery('FROM task WHERE status = doing'), {
       types: QUERY_TEST_TYPES,
       resolveLink: () => null,
     });
-    const plan = database
-      .prepare(`EXPLAIN QUERY PLAN ${compiled.sql}`)
-      .all(...(compiled.parameters as never[])) as { detail: string }[];
-    const typeTest = plan.map((step) => step.detail).filter((detail) => /^SEARCH t\b/.test(detail));
-    expect(typeTest.length).toBeGreaterThan(0);
-    // Matched in any case, the type cannot be sought by its exact value_text.
-    // It is sought by the note and the key instead — the note's own type
-    // rows, one for nearly every note — never a scan of other notes' rows.
-    for (const detail of typeTest) {
-      expect(detail).toContain('(path=? AND key=?)');
-    }
-    // Every per-note read still seeks by the note's path: no scan was introduced.
     for (const detail of correlatedReads(database, compiled)) expect(detail).toMatch(/\(path=\?/);
   });
 });
@@ -421,8 +410,8 @@ describe("#611b attack: a type's table and a FROM query read one note alike", ()
   // first row"; the view kept the old rule.
   function withTaskView(notes: Readonly<Record<string, Frontmatter>>): DatabaseSync {
     const database = index(notes);
-    // The view as the index builds it now: from typeViewSelectSql, which the
-    // Rust builder is pinned to (type-view.pin.test.ts).
+    // The view as the index makes it now: the SELECT typeViewSelectSql writes,
+    // which TypeScript sends and index.rs runs as it is.
     const select = typeViewSelectSql({
       name: 'task',
       columns: [{ key: 'due', kind: 'date', many: false }],

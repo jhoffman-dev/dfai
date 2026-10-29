@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
-import { typeViewSelectSql } from '../packages/domain/src/index.ts';
+import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
 
 /** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
@@ -120,30 +120,19 @@ interface StoredNote {
   }[];
 }
 
-/** A declared property as the index is told it, to become a column of its type's view. */
-interface ViewColumn {
-  key: string;
-  kind: string;
-  many: boolean;
-}
-
-/** A type's view as the index is told to build it. */
+/** A type's view as the index is told to make it: the SELECT TypeScript wrote for it. */
 interface ViewSpec {
-  columns: readonly ViewColumn[];
-  /** Whether it carries each note's checklist progress. */
-  progress: boolean;
+  select: string;
 }
 
 /**
  * A statement written by hand, run for real by SQLite over what was indexed.
  *
- * The tables are the real index's (`files`, `props`, `relations`), and each `v_<type>` view
- * is built the way `rebuild_views` in `src-tauri/src/index.rs` builds it: its
- * own `path`, `title`, `summary` and `modified` (and `progress`, when told
- * to carry it), then a column per declared
- * property — a number's from `value_num`, a date's from `value_date`, the rest
- * from `value_text`, several values joined with ", ". A key the type does not
- * declare is not a column, as in the app. The read-only guard is reduced to
+ * The tables are the real index's (`files`, `props`, `relations`), with its
+ * indexes, and each `v_<type>` view is made as `rebuild_views` in
+ * `src-tauri/src/index.rs` makes it: from the SELECT TypeScript sent for the
+ * type (`typeViewSelectSql`), run as it is — so a type's table holds each
+ * note as a query's cells do, here as in the app. The read-only guard is reduced to
  * "reads only" — the real guard (the authorizer and `readonly`) is the Rust
  * tests' to prove. A compiled view that reads `relations` runs here too, with
  * what it binds.
@@ -168,9 +157,8 @@ function runHandWrittenSql(
     }
   }
   for (const [type, spec] of types) {
-    // The view as the index builds it: typeViewSelectSql, pinned to index.rs.
-    const select = typeViewSelectSql({ name: type, ...spec });
-    if (select !== null) database.exec(`CREATE VIEW "v_${type}" AS ${select};`);
+    // As the index makes it: the SELECT TypeScript sent (typeViewSelectSql), run as it is.
+    database.exec(`CREATE VIEW "v_${type}" AS ${spec.select};`);
   }
   const prepared = database.prepare(statement);
   const columns = prepared.columns().map((column) => column.name);
@@ -191,7 +179,8 @@ function filesAndProps(notes: Iterable<StoredNote>): DatabaseSync {
                         value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
     -- As index.rs indexes them: a note's own rows are sought, not scanned.
     CREATE INDEX props_path ON props(path, key, value_text);
-    CREATE INDEX props_key ON props(key, value_text);`);
+    CREATE INDEX props_key ON props(key, value_text);
+    ${PROPS_TYPE_FOLD_INDEX};`);
   const file = database.prepare('INSERT INTO files VALUES (?, ?, ?, ?, ?, ?)');
   const prop = database.prepare('INSERT INTO props VALUES (?, ?, ?, ?, ?, ?, NULL)');
   for (const note of notes) {
@@ -1398,7 +1387,7 @@ export async function installHost(
           // Milliseconds since the epoch are all 13 digits wide, so ordering them
           // as text below orders them in time.
           if (column === 'modified') return note.modified ?? 0;
-          if (column === 'progress' && views.get(type)?.progress === true) {
+          if (column === 'progress' && views.get(type)?.select.includes('n.progress') === true) {
             return note.progress ?? null;
           }
           if (column === 'title') {
@@ -1410,7 +1399,7 @@ export async function installHost(
           // view's group_concat joins it.
           const items = (note.properties ?? []).filter((item) => item.key === column);
           const many =
-            views.get(type)?.columns.find((declared) => declared.key === column)?.many ?? false;
+            views.get(type)?.select.includes(`group_concat(CASE WHEN p.key = '${column}'`) ?? false;
           if (many && items.length > 0) return items.map((item) => item.text).join(', ');
           return items[0]?.text ?? null;
         };
@@ -1503,8 +1492,11 @@ export async function installHost(
         const wanted = (args as { type: string }).type;
         return [...indexed.values()]
           .filter((note) =>
+            // As notes_of_type folds a type: in any case and spacing.
             (note.properties ?? []).some(
-              (property) => property.key === 'type' && property.text === wanted,
+              (property) =>
+                property.key === 'type' &&
+                property.text?.trim().toLowerCase() === wanted.trim().toLowerCase(),
             ),
           )
           .map((note) => ({ path: note.path, title: note.title }))
