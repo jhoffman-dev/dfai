@@ -24,6 +24,9 @@ async function openBook(page: Page, bytes: Buffer): Promise<{ hits: string[] }> 
   const vault = await createVault();
   await installHost(page, vault);
   await page.goto('/');
+  // The app has finished loading before the book is added, as it has on a slow runner: a 500 ms lull
+  // in its start-up lets Playwright call the network idle before the app's later requests.
+  await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Add EPUB');
