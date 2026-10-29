@@ -36,6 +36,7 @@ const ALL_TOOLS = [
   'atlas_brief',
   'atlas_calendar',
   'atlas_capture_task',
+  'atlas_choose_for_today',
   'atlas_clarify_inbox_item',
   'atlas_create_note',
   'atlas_daily_note',
@@ -766,6 +767,20 @@ describe('tools/call → REST', () => {
     ],
     ['atlas_automations', {}, 'GET', '/v1/automations', null],
     ['atlas_weekly_review', {}, 'GET', '/v1/review/weekly', null],
+    [
+      'atlas_choose_for_today',
+      { path: 'Tasks/Call the printer.md', chosen: true },
+      'POST',
+      '/v1/today/choose',
+      { path: 'Tasks/Call the printer.md', chosen: true },
+    ],
+    [
+      'atlas_choose_for_today',
+      { path: 'Tasks/Call the printer.md', chosen: false },
+      'POST',
+      '/v1/today/choose',
+      { path: 'Tasks/Call the printer.md', chosen: false },
+    ],
     ['atlas_today', {}, 'GET', '/v1/today', null],
     ['atlas_automation_log', { id: 'tidy' }, 'GET', '/v1/automations/tidy/log', null],
     [

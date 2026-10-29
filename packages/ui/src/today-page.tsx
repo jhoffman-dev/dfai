@@ -17,6 +17,7 @@ import {
   TODAY_SECTION_LABELS,
   todayMovesFor,
   todayRowOrder,
+  type TodayChoice,
   type TodayGroup,
   type TodaySection,
   type TodaySectionId,
@@ -40,7 +41,12 @@ import { delayedSpinner } from './delayed-spinner.tsx';
 export type TodayAction =
   | { readonly kind: 'done' }
   | { readonly kind: 'move'; readonly status: string }
-  | { readonly kind: 'defer'; readonly days: number };
+  | { readonly kind: 'defer'; readonly days: number }
+  | {
+      readonly kind: TodayChoice;
+      /** The later day it had been chosen for, when a choice is moved from it to today. */
+      readonly was?: string;
+    };
 
 /** The row an action is asked of. */
 interface RowTask {
@@ -72,6 +78,8 @@ export interface TodayPageProps {
   onDone: (task: RowTask) => void;
   onSetStatus: (args: RowTask & { status: string }) => void;
   onDefer: (args: RowTask & { days: number }) => void;
+  /** Chooses a task for today or takes it off; keeps or drops one carried over (#108). */
+  onChoose: (args: RowTask & { choice: TodayChoice; was?: string }) => void;
   onShowSidebar?: () => void;
   history?: PageHistory;
   /** Today's meetings, drawn above the tasks (ADR-0046); nothing when left out. */
@@ -79,9 +87,10 @@ export interface TodayPageProps {
 }
 
 /**
- * The Today page (#111): what needs you today on one screen — what is late,
- * due, back from being put off, under way, next, and waited for — each row a
- * tick, a move or a defer from being dealt with.
+ * The Today page (#111): what needs you today on one screen — what was chosen
+ * for today (#108) and carried over from an earlier day, what is late, due,
+ * back from being put off, under way, next, and waited for — each row a tick,
+ * a move, a defer or a choice from being dealt with.
  */
 export function TodayPage(props: TodayPageProps) {
   // Held here, above the sections: they come and go while the index is read again,
@@ -185,11 +194,20 @@ export function todayActionWords({
   action: TodayAction;
 }): string {
   if (action.kind === 'done') return `Finished “${title}”.`;
-  if (action.kind === 'defer') {
-    return `Deferred “${title}” by ${action.days === 1 ? '1 day' : `${action.days} days`}.`;
+  if (action.kind === 'move') return `Moved “${title}” to ${statusLabel(action.status)}.`;
+  if (action.kind === 'choose' && action.was !== undefined) {
+    return `“${title}” chosen for today (was ${action.was}).`;
   }
-  return `Moved “${title}” to ${statusLabel(action.status)}.`;
+  if (action.kind !== 'defer') return CHOICE_WORDS[action.kind](title);
+  return `Deferred “${title}” by ${action.days === 1 ? '1 day' : `${action.days} days`}.`;
 }
+
+const CHOICE_WORDS: Readonly<Record<TodayChoice, (title: string) => string>> = {
+  choose: (title) => `Chose “${title}” for today.`,
+  unchoose: (title) => `Took “${title}” off today.`,
+  keep: (title) => `Kept “${title}” for today.`,
+  drop: (title) => `Dropped “${title}” from today.`,
+};
 
 const statusLabel = (status: string) => (isGtdStatus(status) ? GTD_STATUS_LABELS[status] : status);
 
@@ -256,6 +274,8 @@ function Elsewhere({
 
 /** What each section says when it holds nothing. */
 const EMPTY: Readonly<Record<TodaySectionId, string>> = {
+  chosen: 'Nothing chosen yet. Press Today on a task below to choose it.',
+  carriedOver: 'Nothing carried over.',
   overdue: 'Nothing is late.',
   dueToday: 'Nothing is due today.',
   backToday: 'Nothing is back from being put off.',
@@ -273,19 +293,35 @@ function Sections(props: TodayPageProps & PlacedProps & { today: TodayReport }) 
     // here, so that the rows themselves are not drawn again to say so (#217).
     <PageBusy.Provider value={busy}>
       <Settling.Provider value={settling}>
-        {today.sections.map((section) => (
-          <Section
-            key={section.id}
-            section={section}
-            place={props.place}
-            settling={settling}
-            actions={actions}
-          />
-        ))}
+        <Choosing.Provider value={today.choosing}>
+          {today.sections.filter(shownIn(today)).map((section) => (
+            <Section
+              key={section.id}
+              section={section}
+              place={props.place}
+              settling={settling}
+              actions={actions}
+            />
+          ))}
+        </Choosing.Provider>
       </Settling.Provider>
     </PageBusy.Provider>
   );
 }
+
+/**
+ * The sections drawn: Chosen for today and Carried over only where the vault
+ * chooses for today (#108), and Carried over only while it holds something —
+ * most mornings there is nothing to keep.
+ */
+const shownIn = (today: TodayReport) => (section: TodaySection) => {
+  if (section.id === 'chosen') return today.choosing;
+  if (section.id === 'carriedOver') return today.choosing && section.count > 0;
+  return true;
+};
+
+/** Whether tasks can be chosen for today, read by each row's choice controls rather than drawn into the row. */
+const Choosing = createContext(true);
 
 /** Whether an action is under way on the page: every row's Done, Move and Defer wait for it. */
 const PageBusy = createContext(false);
@@ -315,6 +351,7 @@ function useRowActions(props: TodayPageProps & PlacedProps): RowActions {
   const onDone = useSteadyCallback(props.onDone);
   const onDefer = useSteadyCallback(props.onDefer);
   const onSetStatus = useSteadyCallback(props.onSetStatus);
+  const onChoose = useSteadyCallback(props.onChoose);
   return useMemo(() => {
     const act = (task: TodayTask, action: () => void) => {
       actedOn(task.path);
@@ -326,11 +363,17 @@ function useRowActions(props: TodayPageProps & PlacedProps): RowActions {
       onDone: (task) => act(task, () => onDone(rowOf(task))),
       onDefer: (task, days) => act(task, () => onDefer({ ...rowOf(task), days })),
       onMove: (task, status) => act(task, () => onSetStatus({ ...rowOf(task), status })),
+      onChoose: (task, choice) =>
+        act(task, () => onChoose({ ...rowOf(task), choice, ...laterChoiceMoved(task, choice) })),
     };
-  }, [actedOn, rowRef, onOpen, onDone, onDefer, onSetStatus]);
+  }, [actedOn, rowRef, onOpen, onDone, onDefer, onSetStatus, onChoose]);
 }
 
 const rowOf = (task: TodayTask): RowTask => ({ path: task.path, title: task.title });
+
+/** The later day a choice is moved from, when a task chosen for one is chosen for today. */
+const laterChoiceMoved = (task: TodayTask, choice: TodayChoice) =>
+  choice === 'choose' && task.laterChoice !== null ? { was: task.laterChoice } : {};
 
 /** How a row's Move to… menu was first asked for, which decides where its focus starts. */
 type MenuOpening = 'pointer' | 'press' | 'arrow';
@@ -439,6 +482,7 @@ interface RowActions {
   readonly onDone: (task: TodayTask) => void;
   readonly onDefer: (task: TodayTask, days: number) => void;
   readonly onMove: (task: TodayTask, status: string) => void;
+  readonly onChoose: (task: TodayTask, choice: TodayChoice) => void;
 }
 
 /** What a section hands each row: what the rows can do, and which have yet to be read back. */
@@ -685,7 +729,7 @@ const TaskRow = memo(function TaskRow({
         {rowDetails({ task, sectionId, onOpen: actions.onOpen })}
       </td>
       <td className="review__actions">
-        <RowCommands task={task} actions={actions} />
+        <RowCommands task={task} sectionId={sectionId} actions={actions} />
       </td>
     </>
   );
@@ -711,11 +755,25 @@ function DoneBox({ task, actions }: RowControlProps) {
   );
 }
 
-/** A row's Move to… and Defer buttons. */
-function RowCommands({ task, actions }: RowControlProps) {
+/**
+ * A row's choice for today, Move to… and Defer buttons. Elements, not
+ * components of their own: each component a row holds is a render "Open
+ * Today" is counted by (tools/perf/budgets.json).
+ */
+function RowCommands({
+  task,
+  sectionId,
+  actions,
+}: RowControlProps & { sectionId: TodaySectionId }) {
   const waits = useActionsWait(task.path);
+  // No choice where the vault does not choose, nor over a focus that is the person's own.
+  const chooses = useContext(Choosing) && task.focusIsOwn !== true;
   return (
     <>
+      {chooses &&
+        (sectionId === 'carriedOver'
+          ? carriedChoices({ task, waits, actions })
+          : todayToggle({ task, chosen: sectionId === 'chosen', waits, actions }))}
       <MoveMenu task={task} busy={waits} onMove={actions.onMove} />
       {TODAY_DEFER_DAYS.map((days) => (
         <button
@@ -734,8 +792,61 @@ function RowCommands({ task, actions }: RowControlProps) {
   );
 }
 
+interface ChoiceControls extends RowControlProps {
+  readonly waits: boolean;
+}
+
+/** Today, pressed while the task is chosen for today: pressing it chooses the task, or takes it off. */
+function todayToggle({ task, chosen, waits, actions }: ChoiceControls & { chosen: boolean }) {
+  return (
+    <button
+      type="button"
+      className="btn btn--ghost btn--sm today__choose"
+      aria-pressed={chosen}
+      aria-label={chosen ? `Take ${task.title} off today` : `Choose ${task.title} for today`}
+      title={chosen ? 'Take off today' : 'Choose for today'}
+      disabled={waits}
+      onClick={() => actions.onChoose(task, chosen ? 'unchoose' : 'choose')}
+    >
+      Today
+    </button>
+  );
+}
+
+/** Keep, which chooses a task carried over for today, and Drop, which lets the choice go. */
+function carriedChoices({ task, waits, actions }: ChoiceControls) {
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        aria-label={`Keep ${task.title} for today`}
+        disabled={waits}
+        onClick={() => actions.onChoose(task, 'keep')}
+      >
+        Keep
+      </button>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        aria-label={`Drop ${task.title} from today`}
+        disabled={waits}
+        onClick={() => actions.onChoose(task, 'drop')}
+      >
+        Drop
+      </button>
+    </>
+  );
+}
+
 /** The sections whose tasks are of mixed statuses, so each row says its own. */
-const SAYS_STATUS: ReadonlySet<TodaySectionId> = new Set(['overdue', 'dueToday', 'backToday']);
+const SAYS_STATUS: ReadonlySet<TodaySectionId> = new Set([
+  'chosen',
+  'carriedOver',
+  'overdue',
+  'dueToday',
+  'backToday',
+]);
 
 /**
  * What a row says of its task beside the name: its status where the section
@@ -780,6 +891,12 @@ function rowDetails({
     pieces.push(<span key="on">On {task.waitingOn}</span>);
   }
   if (task.due !== null) pieces.push(dueDay(task, sectionId));
+  if (sectionId === 'carriedOver' && task.focus !== undefined && task.focus !== null) {
+    pieces.push(<span key="chosen">Chosen for {task.focus}</span>);
+  }
+  if (task.laterChoice !== null) {
+    pieces.push(<span key="later">Chosen for {task.laterChoice}</span>);
+  }
   if (sectionId === 'backToday' && task.defer !== null) {
     pieces.push(<span key="back">Deferred until {task.defer}</span>);
   }

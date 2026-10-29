@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createVaultPath,
+  focusChange,
   taskDeferral,
   todayLists,
   TASK_KEYS,
@@ -56,6 +57,7 @@ function report(): TodayReport {
     ...lists,
     stalledProjects: 2,
     today: TODAY,
+    choosing: true,
     inbox: { count: 3, toFile: 2, toAnswer: 1, more: false },
     truncated: false,
   };
@@ -161,6 +163,7 @@ describe('todayAsPending', () => {
     });
     expect(shown).toMatchObject({
       today: TODAY,
+      choosing: true,
       stalledProjects: 2,
       inbox: read.inbox,
       truncated: false,
@@ -186,7 +189,9 @@ describe('todayAsPending', () => {
       report: report(),
       pending: pending(['Send the figures', rule]),
     });
-    expect(seen).toEqual([{ status: 'next-action', due: TODAY, defer: null, recurrence: null }]);
+    expect(seen).toEqual([
+      { status: 'next-action', due: TODAY, defer: null, focus: null, recurrence: null },
+    ]);
     // Someday promises no day, so a task due today that is put to Someday leaves the page.
     expect(titlesIn(shown, 'dueToday')).toEqual([]);
   });
@@ -225,7 +230,82 @@ function reportOf(tasks: readonly ReviewTask[]): TodayReport {
   return {
     ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
   };
 }
+
+describe('todayAsPending, choosing for today (#108)', () => {
+  const chosenReport = (tasks: readonly ReviewTask[]): TodayReport => ({
+    ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
+    today: TODAY,
+    choosing: true,
+    inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
+    truncated: false,
+  });
+
+  it('draws a task being chosen under Chosen for today at once, and out of Next actions', () => {
+    const shown = todayAsPending({
+      report: report(),
+      pending: pending(['Call the bank', focusChange({ choice: 'choose', today: TODAY })]),
+    });
+    expect(titlesIn(shown, 'chosen')).toEqual(['Call the bank']);
+    expect(titlesIn(shown, 'nextActions')).toEqual(['Sow the beans']);
+  });
+
+  it('draws a chosen task being taken off back in the section of its status', () => {
+    const read = chosenReport([
+      task('Draft the plan', { status: 'in-progress', focus: TODAY }),
+      task('Sow the beans', {}),
+    ]);
+    expect(titlesIn(read, 'chosen')).toEqual(['Draft the plan']);
+    const shown = todayAsPending({
+      report: read,
+      pending: pending(['Draft the plan', focusChange({ choice: 'unchoose', today: TODAY })]),
+    });
+    expect(titlesIn(shown, 'chosen')).toEqual([]);
+    expect(titlesIn(shown, 'inProgress')).toEqual(['Draft the plan']);
+  });
+
+  it('draws one carried over as kept under Chosen, or as dropped where its status puts it', () => {
+    const read = chosenReport([
+      task('Call the bank', { focus: '2026-10-12' }),
+      task('Sow the beans', { focus: '2026-10-12' }),
+    ]);
+    expect(titlesIn(read, 'carriedOver')).toEqual(['Call the bank', 'Sow the beans']);
+    const shown = todayAsPending({
+      report: read,
+      pending: pending(
+        ['Call the bank', focusChange({ choice: 'keep', today: TODAY })],
+        ['Sow the beans', focusChange({ choice: 'drop', today: TODAY })],
+      ),
+    });
+    expect(titlesIn(shown, 'chosen')).toEqual(['Call the bank']);
+    expect(titlesIn(shown, 'carriedOver')).toEqual([]);
+    expect(titlesIn(shown, 'nextActions')).toEqual(['Sow the beans']);
+  });
+});
+
+describe('todayAsPending, ticking a chosen task (#108 fix round)', () => {
+  it('draws a chosen repeating task ticked as rolled on and off Chosen, as the task rules leave it', () => {
+    const read: TodayReport = {
+      ...todayLists({
+        tasks: [task('Water the beds', { focus: TODAY, due: TODAY, recurrence: 'every week' })],
+        projects: [],
+        at: { today: TODAY, now: NOW },
+      }),
+      today: TODAY,
+      choosing: true,
+      inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
+      truncated: false,
+    };
+    expect(titlesIn(read, 'chosen')).toEqual(['Water the beds']);
+    const shown = todayAsPending({
+      report: read,
+      pending: pending(['Water the beds', archiveTaskChange()]),
+    });
+    expect(titlesIn(shown, 'chosen')).toEqual([]);
+    expect(titlesIn(shown, 'nextActions')).toEqual(['Water the beds']);
+  });
+});

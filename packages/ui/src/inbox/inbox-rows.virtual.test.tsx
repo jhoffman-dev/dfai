@@ -31,6 +31,18 @@ const note = (title: string): InboxItem => ({
 });
 const notes = (count: number, prefix = 'Note') =>
   Array.from({ length: count }, (_, at) => note(`${prefix} ${at}`));
+const task = (title: string): InboxItem => ({
+  ...note(title),
+  type: 'task',
+  task: {
+    status: 'inbox',
+    project: null,
+    waitingOn: null,
+    waitingOnNames: '',
+    defer: null,
+    due: null,
+  },
+});
 // Kept the same lists while they say the same, as the app keeps them.
 const FILING = [{ path: 'Projects/DFAI.md', title: 'DFAI' }];
 const PEOPLE = [{ path: 'People/Mara Quill.md', title: 'Mara Quill' }];
@@ -55,6 +67,16 @@ function given(
 const pickers = () => screen.getAllByRole('combobox', { name: /^File .* under$/ });
 /** The row the focus is in, by its place among the table's rows (the header is the first). */
 const focusedRow = () => document.activeElement?.closest('tr')?.getAttribute('aria-rowindex');
+
+/** Scrolls the page the list is in, as far as the virtualiser can tell: jsdom cannot scroll. */
+function scrollPageTo(top: number) {
+  const scroller = document.querySelector<HTMLElement>('.panel__body');
+  if (scroller === null) throw new Error('no scroller');
+  Object.defineProperty(scroller, 'scrollTop', { configurable: true, writable: true, value: top });
+  act(() => {
+    fireEvent.scroll(scroller);
+  });
+}
 
 /** A walk of a hundred key presses takes seconds on a loaded CI shard. */
 const KEYBOARD_WALK_MS = 30_000;
@@ -119,5 +141,24 @@ describe('InboxRows — an Inbox of hundreds (#238)', () => {
     expect(document.activeElement?.textContent).toContain('Note 1');
     // The one row that comes into the page at the bottom as the filed one leaves.
     expect(renders['InboxRow']).toBe(1);
+  });
+
+  it('keeps what was picked on a row that is scrolled out of the page and back (#225)', () => {
+    const items = Array.from({ length: 500 }, (_, at) => task(`Task ${at}`));
+    render(<InboxPage {...given(items)} />);
+    const status = () => screen.queryByRole('combobox', { name: 'Status of Task 2' });
+    fireEvent.change(status()!, { target: { value: 'someday' } });
+    expect((status() as HTMLSelectElement).value).toBe('someday');
+
+    scrollPageTo(200_000);
+    // Gone from the page while the list is scrolled far below it, as a virtual row is.
+    expect(status()).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Status of Task 499' })).toBeDefined();
+
+    scrollPageTo(0);
+    expect((status() as HTMLSelectElement).value).toBe('someday');
+    expect(
+      (screen.getByRole('combobox', { name: 'Status of Task 1' }) as HTMLSelectElement).value,
+    ).toBe('inbox');
   });
 });

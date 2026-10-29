@@ -34,7 +34,8 @@ export async function weeklyReviewRoute(request: VaultRequest): Promise<RouteRes
 /**
  * The Today page (#111), as the app shows it: the same read, on the app's
  * clock. It writes nothing; a tick, a move and a defer are the routes that
- * already write, as the weekly review's actions are.
+ * already write, as the weekly review's actions are, and choosing a task for
+ * today is `POST /v1/today/choose` (#108).
  */
 export async function todayRoute(request: VaultRequest): Promise<RouteResult> {
   const { index, fs, markdown, clock } = request;

@@ -162,6 +162,20 @@ describe('setNoteProperties', () => {
 
     expect(writes).toHaveLength(0);
   });
+
+  it('writes nothing when its changes leave every byte as it was (#225, PR #612)', async () => {
+    const { fs, writes } = vault('---\nstatus: doing\n---\n\nBody.\n');
+    await setNoteProperties({
+      today: '2026-10-08',
+      fs,
+      markdown: fakeMarkdown(),
+      path: 'Tasks/ship.md',
+      // A value set to what it is, and a key taken away that is not there.
+      values: { status: 'doing', due: null },
+    });
+
+    expect(writes).toHaveLength(0);
+  });
 });
 
 describe('setNoteProperty', () => {

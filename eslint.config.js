@@ -324,6 +324,25 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    // A <StrictMode> inside a test's wrapper does not run effects twice under
+    // React 19, so a test that means the double mount must ask for it (#159).
+    files: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          "ImportDeclaration[source.value='react'] > ImportSpecifier[imported.name='StrictMode']",
+          "MemberExpression[object.name='React'][property.name='StrictMode']",
+          "JSXMemberExpression[object.name='React'][property.name='StrictMode']",
+        ].map((selector) => ({
+          selector,
+          message:
+            'Render with `{ reactStrictMode: true }` (render or renderHook) to mount twice as main.tsx does.',
+        })),
+      ],
+    },
+  },
+  {
     // e2e/fixtures.ts's `test` removes the temp folders a test's host made (issue #397).
     files: ['e2e/**/*.spec.ts', 'tools/perf/**/*.spec.ts', 'tools/design/**/*.spec.ts'],
     rules: {

@@ -267,7 +267,7 @@ function CellFor({
   if (editor === undefined) {
     return (
       <span className="table__cell" title={fullValue(text)}>
-        <CellFace text={text} value={value} look={face} colors={colors} />
+        {cellFace({ text, value, look: face, colors })}
       </span>
     );
   }
@@ -341,7 +341,7 @@ function Cell({
         if (press.opens(event)) editor.start(at);
       }}
     >
-      <CellFace text={text} value={value} look={face} colors={colors} />
+      {cellFace({ text, value, look: face, colors })}
     </button>
   );
 }
@@ -377,7 +377,12 @@ function faceOf({
   return propertyRole(column) === 'person' && isYou(value) ? 'you' : 'text';
 }
 
-function CellFace({
+/**
+ * What a cell shows of its value. A function its cell calls, not a component:
+ * a table draws one per cell, and each component a cell holds is a render
+ * "Open the 420-row table" is counted by (tools/perf/budgets.json).
+ */
+function cellFace({
   text,
   value,
   look,

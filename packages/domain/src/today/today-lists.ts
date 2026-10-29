@@ -11,9 +11,12 @@ import {
   type ReviewTask,
 } from '../review/weekly-review.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
+import { focusStanding, laterChoiceOf } from './chosen.ts';
 
 /** The Today page's sections, in the order they are shown and claim their tasks. */
 export const TODAY_SECTIONS = [
+  'chosen',
+  'carriedOver',
   'overdue',
   'dueToday',
   'backToday',
@@ -26,6 +29,8 @@ export type TodaySectionId = (typeof TODAY_SECTIONS)[number];
 
 /** What each section is called, on the page and to whoever reads it through the API. */
 export const TODAY_SECTION_LABELS: Readonly<Record<TodaySectionId, string>> = {
+  chosen: 'Chosen for today',
+  carriedOver: 'Carried over',
   overdue: 'Overdue',
   dueToday: 'Due today',
   backToday: 'Back from deferral',
@@ -60,6 +65,12 @@ export interface TodayTask extends ReviewTask {
    * any other status.
    */
   readonly waitingDays: number | null;
+  /**
+   * The day still to come it was chosen for (#108), `YYYY-MM-DD`: a choice
+   * of that day's, which its row says and Today moves to today. Null when it
+   * was chosen for no later day, or the vault does not choose.
+   */
+  readonly laterChoice: string | null;
 }
 
 /** Tasks listed together under one name: a project's next actions, or what one person owes. */
@@ -100,6 +111,16 @@ export interface TodayLists {
  * Someday and Longterm promise no day. A finished task is in no section
  * (ADR-0029), whatever rows the caller hands over.
  *
+ * The page leads with what was chosen for today (#108): a task whose
+ * `focus` is today, whatever its status, is under Chosen for today alone. One
+ * chosen on an earlier day and still open is under Carried over, to be kept
+ * for today or dropped, until it is; a choice is of its day, so nothing has
+ * to change at midnight for yesterday's to stop being today's. A `focus` on a
+ * day still to come is that day's choice, and lists the task where it would
+ * be otherwise, saying the day (`laterChoice`). A `focus` that is the
+ * person's own (`focusIsOwn`) is no choice; in a vault that does not choose,
+ * nothing is chosen or carried over.
+ *
  * Back from deferral is a task whose `defer` day is today — or has passed,
  * when no later section would list it: a Backlog or Someday task put off to
  * a day the app was never opened still wakes up somewhere, and stays until
@@ -110,16 +131,23 @@ export function todayLists({
   tasks,
   projects,
   at,
+  choosing = true,
 }: {
   tasks: readonly ReviewTask[];
   projects: readonly ReviewProject[];
   at: ReviewMoment;
+  /**
+   * Whether the vault chooses for today (`choosesForToday`): when it does
+   * not, no task is chosen or carried over, whatever its `focus` holds.
+   */
+  choosing?: boolean;
 }): TodayLists {
   let unclaimed = tasks
     .filter((task) => task.status !== FINISHED_TASK_STATUS && !isDeferred(task, at.today))
-    .map(withWaitingDays(at));
+    .map(asListed({ at, choosing }));
   const sections = TODAY_SECTIONS.map((id) => {
-    const claimed = unclaimed.filter((task) => CLAIMS[id](task, at.today));
+    const claims = choosing || !CHOICE_SECTIONS.has(id) ? CLAIMS[id] : NONE;
+    const claimed = unclaimed.filter((task) => claims(task, at.today));
     const taken = new Set(claimed);
     unclaimed = unclaimed.filter((task) => !taken.has(task));
     return { id, count: claimed.length, groups: GROUPS[id](claimed) };
@@ -127,16 +155,28 @@ export function todayLists({
   return { sections, stalledProjects: stalledProjects(projects).length };
 }
 
-const withWaitingDays =
-  (at: ReviewMoment) =>
+const asListed =
+  ({ at, choosing }: { at: ReviewMoment; choosing: boolean }) =>
   (task: ReviewTask): TodayTask => ({
     ...task,
     waitingDays:
       task.status === 'waiting' ? Math.max(0, Math.floor((at.now - task.modified) / DAY_MS)) : null,
+    laterChoice: laterChoiceOf({ ...task, today: at.today, choosing }),
   });
+
+/** The sections a task is in by what it was chosen for. */
+const CHOICE_SECTIONS: ReadonlySet<TodaySectionId> = new Set(['chosen', 'carriedOver']);
+
+const NONE = () => false;
+
+/** Where a task stands with the day: a `focus` that is the person's own is no choice. */
+const standingOf = (task: TodayTask, today: string) =>
+  task.focusIsOwn === true ? 'none' : focusStanding({ focus: task.focus, today });
 
 /** What puts a task in each section, asked in {@link TODAY_SECTIONS} order. */
 const CLAIMS: Readonly<Record<TodaySectionId, (task: TodayTask, today: string) => boolean>> = {
+  chosen: (task, today) => standingOf(task, today) === 'today',
+  carriedOver: (task, today) => standingOf(task, today) === 'carried',
   overdue: isOverdue,
   dueToday: (task, today) => task.due === today && promisesItsDay(task),
   backToday: (task, today) =>
@@ -152,6 +192,8 @@ const CLAIMS: Readonly<Record<TodaySectionId, (task: TodayTask, today: string) =
 const LISTED_BY_STATUS: ReadonlySet<GtdStatus> = new Set(['in-progress', 'next-action', 'waiting']);
 
 const GROUPS: Readonly<Record<TodaySectionId, (tasks: TodayTask[]) => TodayGroup[]>> = {
+  chosen: (tasks) => together(tasks.sort(byDueThenTitle)),
+  carriedOver: (tasks) => together(tasks.sort(byFocusThenTitle)),
   overdue: (tasks) => together(tasks.sort(byDueThenTitle)),
   dueToday: (tasks) => together(tasks.sort(byTitle)),
   backToday: (tasks) => together(tasks.sort(byDeferThenTitle)),
@@ -223,6 +265,11 @@ function namedFirstByLabel(left: TodayGroup, right: TodayGroup): number {
 /** Today's first, then the most recently passed. */
 function byDeferThenTitle(left: TodayTask, right: TodayTask): number {
   return (right.defer ?? '').localeCompare(left.defer ?? '') || byTitle(left, right);
+}
+
+/** The most recently chosen first: yesterday's before last week's. */
+function byFocusThenTitle(left: TodayTask, right: TodayTask): number {
+  return (right.focus ?? '').localeCompare(left.focus ?? '') || byTitle(left, right);
 }
 
 /** The earliest day first; a task with no day after every task with one. */

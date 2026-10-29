@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { StrictMode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { createVaultPath } from '@dfai/domain';
@@ -470,7 +469,8 @@ describe('useIndex under StrictMode (#238)', () => {
     changes.subscribe((news) => heard.push(news.changes.length));
     const ports = vaultOf(3);
     const { result } = renderHook(() => useIndex({ ports, vaultKey: VAULT, activity, changes }), {
-      wrapper: StrictMode,
+      // StrictMode at the root, as main.tsx renders it (issue #159).
+      reactStrictMode: true,
     });
     await waitFor(() => expect(result.current.status.kind).toBe('ready'));
     // The first build found the three notes; StrictMode's second ask found nothing new.

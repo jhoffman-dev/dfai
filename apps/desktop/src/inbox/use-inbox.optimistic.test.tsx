@@ -433,7 +433,7 @@ describe('useInbox — a filing taken back while the queue is busy (#217)', () =
   it('knows where a filing that failed after its move left the note', async () => {
     const FILED_CALL = createVaultPath('Tasks/2026/10/Call Mara Quill.md');
     const memory = memoryVault(files);
-    let readsOfFiled = 0;
+    let writesOfFiled = 0;
     const ports: ArchivePorts = {
       fs: fakeVaultFs({
         ...memory.fs,
@@ -442,19 +442,23 @@ describe('useInbox — a filing taken back while the queue is busy (#217)', () =
             const text = memory.files.get(path);
             return text === undefined ? [] : [{ path, text, modified: 1, size: text.length }];
           }),
-        // Moved and stamped, the filed note cannot be read back: the filing throws after its move.
-        readTextFile: async (path) => {
-          if (path === FILED_CALL && (readsOfFiled += 1) === 2) {
+        // Moved, the filed note cannot be stamped where it landed: the filing fails after its move.
+        writeTextFile: async (write) => {
+          if (write.path === FILED_CALL && (writesOfFiled += 1) === 1) {
             throw new Error('the disk stopped answering');
           }
-          return memory.fs.readTextFile(path);
+          return memory.fs.writeTextFile(write);
         },
       }),
       markdown: fakeMarkdown(),
       index: listing([CALL, PAY, SEND]),
       editors: NO_EDITORS,
     };
-    const options = optionsFor(ports, [...memory.files.keys()].map(createVaultPath));
+    const show = vi.fn<NonNullable<InboxOptions['toasts']>['show']>(() => 1);
+    const options = {
+      ...optionsFor(ports, [...memory.files.keys()].map(createVaultPath)),
+      toasts: { show },
+    };
     const hook = renderHook((given: InboxOptions) => useInbox(given), { initialProps: options });
     await waitFor(() => expect(hook.result.current.contents?.items).toHaveLength(3));
 
@@ -478,9 +482,16 @@ describe('useInbox — a filing taken back while the queue is busy (#217)', () =
     expect(memory.files.get(FILED_CALL)).toContain('[[Tasks/2026/10/Pay Tobias Fenn]]');
     // It moved a note, so the tree and the index are read again.
     expect(options.onSettled).toHaveBeenCalledOnce();
+    // Said on the row where it is now, and offered to be taken back (#225, PR #612).
     expect(hook.result.current.refusals).toEqual([
-      { path: CALL, reason: 'the disk stopped answering' },
+      { path: FILED_CALL, reason: expect.stringMatching(/the disk stopped answering/) },
     ]);
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Clarified “Call Mara Quill”.',
+        onUndo: expect.any(Function),
+      }),
+    );
   });
 });
 

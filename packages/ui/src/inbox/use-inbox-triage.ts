@@ -4,10 +4,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type FocusEvent,
   type MutableRefObject,
   type KeyboardEvent,
   type PointerEvent,
+  type SetStateAction,
 } from 'react';
 import { useRowHandles } from '../row-handles.ts';
 import { useSteadyCallback } from '../steady-callback.ts';
@@ -118,6 +120,14 @@ export function useInboxTriage({
 
   // The app makes its callback anew on many of its renders; the rows' actions stay the same.
   const clarify = useSteadyCallback(onClarify);
+  // The rows being written, by how many writes each: one that leaves the list
+  // meanwhile is the app's, which brings it back, picks and all, should it be refused.
+  const writing = useRef(new Map<VaultPath, number>());
+  // Rows whose write was refused. The app brings such a row back as it refuses, so a
+  // refused row the list then lacks was taken away meanwhile — by sync, say — and its
+  // picks go with it. Read after the render that follows, when the list is the app's answer.
+  const refused = useRef(new Set<VaultPath>());
+  const [refusals, setRefusals] = useState(0);
 
   const focusRow = useCallback(
     (path: VaultPath) => {
@@ -137,6 +147,7 @@ export function useInboxTriage({
   useEffect(() => {
     const before = listed.current;
     listed.current = items;
+    forgetPicksOfRowsGone({ before, items, writing: writing.current, setDrafts });
     const back = stranded.current;
     if (back !== null && items.some((item) => item.path === back)) {
       // Its write refused, the last row is back: the next key is for it, unless the focus has gone elsewhere.
@@ -155,6 +166,19 @@ export function useInboxTriage({
     else if (before.some((item) => item.path === path)) stranded.current = path;
   }, [items, focusRow, stranded]);
 
+  useEffect(() => {
+    const gone = [...refused.current].filter(
+      (path) => !writing.current.has(path) && !listed.current.some((item) => item.path === path),
+    );
+    refused.current.clear();
+    if (gone.length === 0) return;
+    setDrafts((held) =>
+      Object.fromEntries(
+        Object.entries(held).filter(([path]) => !gone.includes(path as VaultPath)),
+      ),
+    );
+  }, [refusals]);
+
   // The last row leaving empties the list, and the page draws no rows at all:
   // what held the focus is kept where the page can give it back.
   useEffect(
@@ -168,7 +192,18 @@ export function useInboxTriage({
   const act = useCallback(
     async (path: VaultPath, clarification: Clarification) => {
       const next = rowAfter(listed.current, path);
-      if (!(await clarify({ path, clarification }))) return;
+      writing.current.set(path, (writing.current.get(path) ?? 0) + 1);
+      const done = await clarify({ path, clarification }).finally(() => {
+        const left = (writing.current.get(path) ?? 1) - 1;
+        if (left === 0) writing.current.delete(path);
+        else writing.current.set(path, left);
+      });
+      if (!done) {
+        // Looked at once the app's own answer to the refusal is drawn: see `refused`.
+        refused.current.add(path);
+        setRefusals((count) => count + 1);
+        return;
+      }
       setDrafts((held) => Object.fromEntries(Object.entries(held).filter(([at]) => at !== path)));
       // Focus that has gone elsewhere since — another note opened, say — is left there.
       const at = document.activeElement;
@@ -391,6 +426,35 @@ export function useInboxTriage({
     ),
     keyAction,
   };
+}
+
+/**
+ * Forgets what was picked on rows that left the list while not being written —
+ * taken away by sync, say — so a note that lands at the same path later is a
+ * row of its own, picked nothing. A row scrolled out of the page is still on
+ * the list, so it keeps its picks (#238).
+ */
+function forgetPicksOfRowsGone({
+  before,
+  items,
+  writing,
+  setDrafts,
+}: {
+  before: readonly InboxItem[];
+  items: readonly InboxItem[];
+  writing: ReadonlyMap<VaultPath, number>;
+  setDrafts: Dispatch<SetStateAction<Readonly<Record<string, InboxDraft>>>>;
+}): void {
+  const listed = new Set(items.map((item) => item.path));
+  const gone = new Set(
+    before.map((item) => item.path).filter((path) => !listed.has(path) && !writing.has(path)),
+  );
+  if (gone.size === 0) return;
+  setDrafts((held) =>
+    Object.keys(held).some((path) => gone.has(path as VaultPath))
+      ? Object.fromEntries(Object.entries(held).filter(([path]) => !gone.has(path as VaultPath)))
+      : held,
+  );
 }
 
 /** Whether the focus went with a row that left the DOM: it falls back to the page then. */
