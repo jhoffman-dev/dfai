@@ -70,7 +70,7 @@ export const MAX_NAME_LENGTH = 200;
 const MAX_TITLE_LENGTH = 500;
 export const MAX_URL_LENGTH = 2_000;
 
-const CHANNEL_ID = /^[CDG][A-Z0-9]{8,20}$/;
+export const CHANNEL_ID = /^[CDG][A-Z0-9]{8,20}$/;
 const USER_ID = /^[UWB][A-Z0-9]{8,20}$/;
 export const TS = /^\d{10}\.\d{6}$/;
 /**

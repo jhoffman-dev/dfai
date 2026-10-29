@@ -34,7 +34,9 @@ type SlackAnswerFailureKind =
   /** Any other refusal; the message is Slack's code for it. */
   | 'slack_error'
   /** A token pasted into Settings that is not a user token, refused before the host is asked. */
-  | 'not_a_user_token';
+  | 'not_a_user_token'
+  /** A reply further down its thread than DFAI reads; the message is how far that is. */
+  | 'past_thread_limit';
 
 export type SlackHostFailureKind = (typeof SLACK_HOST_FAILURE_KINDS)[number];
 export type SlackFailureKind = SlackHostFailureKind | SlackAnswerFailureKind;
@@ -204,6 +206,11 @@ const WORDS: Readonly<Record<SlackFailureKind, (failure: SlackFailure) => Words>
       'You cannot read this message in Slack: it was deleted, or it is in a conversation you are not in.',
     paste: `${KEPT_LINK} Only the link was saved.`,
     settings: 'Check the token is yours, for the workspace you read in.',
+  }),
+  past_thread_limit: (failure) => ({
+    problem: `This reply is past the first ${failure.message} messages of its thread, which is as far as DFAI reads.`,
+    paste: `${KEPT_LINK} Only the link was saved.`,
+    settings: 'Try a link to an earlier message of the thread.',
   }),
   rate_limited: (failure) => ({
     problem: 'Slack asked DFAI to slow down.',

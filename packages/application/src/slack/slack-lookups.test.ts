@@ -163,3 +163,28 @@ describe('a reply past the first THREAD_LIMIT messages of its thread', () => {
     expect(pages.slice(1)).toEqual(pages.slice(1).map((_, at) => `p${at + 2}`));
   });
 });
+
+describe('a lookup that ends the read while others are still out', () => {
+  it('stops the others asking for more', async () => {
+    let lookups = 0;
+    const port: SlackPort = {
+      status: async () => ({ hasToken: true }),
+      connect: async () => ({ hasToken: true }),
+      disconnect: async () => ({ hasToken: false }),
+      async call({ method, query }) {
+        if (method === 'auth.test') return { ok: true, user_id: READER };
+        if (method === 'conversations.replies') return replies;
+        if (method === 'chat.getPermalink') return slackPermalinkAnswer();
+        lookups += 1;
+        const first = lookups === 1;
+        // The others answer a while after the first has failed.
+        for (let turn = 0; turn < (first ? 1 : 10); turn += 1) await Promise.resolve();
+        if (first) throw new SlackError({ kind: 'unreachable', message: 'offline' });
+        return { ok: true, user: { id: query['user'], profile: { display_name: 'x' } } };
+      },
+    };
+    await expect(read(port)).rejects.toMatchObject({ failure: { kind: 'unreachable' } });
+    for (let turn = 0; turn < 200; turn += 1) await Promise.resolve();
+    expect(lookups).toBe(LOOKUPS_AT_ONCE);
+  });
+});

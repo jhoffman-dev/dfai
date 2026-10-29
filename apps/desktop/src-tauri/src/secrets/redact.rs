@@ -9,12 +9,17 @@
 //! as `%XX` or `%25XX` in either case of hex, as a JSON `\uXXXX` or short
 //! escape, and a space as `+`, so a value written in any mixture of those is
 //! still found; so is its base64, in both alphabets, padded or not, at each of
-//! the three alignments it can sit at.
+//! the three alignments it can sit at. The value itself is found in either
+//! case. Two forms are found by reading the answer rather than by a longer
+//! matcher, which would cap how long a secret may be (attack on PR #631): a
+//! run of text holding HTML numeric entities is read with them decoded, and a
+//! run of base64 wrapped into lines (CRLF or LF, as itself or JSON-escaped,
+//! wherever it falls) is read with the breaks taken out; either run is struck
+//! whole when the secret is in it.
 //!
 //! What is deliberately not looked for, and why that is acceptable:
 //!
-//! - hex, HTML entities, `\x` and `\u{…}` escapes, a case-folded or
-//!   NFD-normalised copy, base64 wrapped across lines, base64 of the
+//! - hex, `\x` and `\u{…}` escapes, an NFD-normalised copy, base64 of the
 //!   percent-encoded value, and an echo cut short.
 //!
 //! Each is a server going out of its way to transform what it was sent, and
@@ -52,7 +57,9 @@ const UNCHECKED: &str = "[the response could not be checked for secrets, so it i
 /// signed token's letters, digits, `-`, `_` and `.` up to some 2.7 KB. Past
 /// that a token fits or not by its length (how its base64 forms align): one
 /// of 3,000 bytes builds and one of 2,900 does not.
-const MATCHER_SIZE_LIMIT: usize = 12 * 1024 * 1024;
+/// Raised from 12 MiB when the value in another case was added to every
+/// matcher (attack on PR #631), so that no secret kept before is refused now.
+const MATCHER_SIZE_LIMIT: usize = 14 * 1024 * 1024;
 
 /// A value longer than this is refused without trying to build its matcher.
 /// Building one writes and parses the whole pattern before the size limit is
@@ -87,8 +94,79 @@ pub fn redact(text: &str, used: &[(String, String)]) -> String {
                 .find_iter(text)
                 .map(|at| (at.start(), at.end(), name.as_str())),
         );
+        found.extend(
+            runs_read_otherwise(text)
+                .filter(|(_, _, read)| matcher.is_match(read))
+                .map(|(start, end, _)| (start, end, name.as_str())),
+        );
     }
     strike(text, found)
+}
+
+/// One HTML numeric entity, decimal or hex.
+const ENTITY: &str = r"&#(?:[xX][0-9a-fA-F]{1,6}|[0-9]{1,7});";
+
+/// A run of text holding at least one HTML numeric entity: no white space,
+/// quote or angle bracket, which end a value in JSON or HTML.
+fn entity_runs() -> &'static Regex {
+    static RUNS: OnceLock<Regex> = OnceLock::new();
+    RUNS.get_or_init(|| {
+        let piece = format!(r#"(?:[^\s"'<>&]|{ENTITY})"#);
+        Regex::new(&format!("{piece}*{ENTITY}{piece}*")).expect("the entity-run pattern compiles")
+    })
+}
+
+fn one_entity() -> &'static Regex {
+    static ONE: OnceLock<Regex> = OnceLock::new();
+    ONE.get_or_init(|| {
+        Regex::new(r"&#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}));")
+            .expect("the entity pattern compiles")
+    })
+}
+
+/// A line break a base64 encoder wraps at: CRLF or LF, as itself or JSON-escaped.
+const LINE_BREAK: &str = r"\r?\n|\\r\\n|\\n";
+
+/// A run of base64 broken into lines, wherever the breaks fall.
+fn wrapped_runs() -> &'static Regex {
+    static RUNS: OnceLock<Regex> = OnceLock::new();
+    RUNS.get_or_init(|| {
+        Regex::new(&format!(
+            r"[A-Za-z0-9+/=_-]+(?:(?:{LINE_BREAK})[A-Za-z0-9+/=_-]+)+"
+        ))
+        .expect("the wrapped-run pattern compiles")
+    })
+}
+
+fn line_breaks() -> &'static Regex {
+    static BREAKS: OnceLock<Regex> = OnceLock::new();
+    BREAKS.get_or_init(|| Regex::new(LINE_BREAK).expect("the line-break pattern compiles"))
+}
+
+/// The character an entity names, or nothing for one that names none.
+fn entity_char(entity: &regex::Captures) -> String {
+    let code = match (entity.get(1), entity.get(2)) {
+        (Some(hex), _) => u32::from_str_radix(hex.as_str(), 16).ok(),
+        (_, Some(decimal)) => decimal.as_str().parse().ok(),
+        _ => None,
+    };
+    code.and_then(char::from_u32)
+        .map(String::from)
+        .unwrap_or_default()
+}
+
+/// Each run's span in `text`, and the run read with its entities decoded or
+/// its line breaks taken out.
+fn runs_read_otherwise(text: &str) -> impl Iterator<Item = (usize, usize, String)> + '_ {
+    let decoded = entity_runs().find_iter(text).map(|run| {
+        let read = one_entity().replace_all(run.as_str(), entity_char);
+        (run.start(), run.end(), read.into_owned())
+    });
+    let joined = wrapped_runs().find_iter(text).map(|run| {
+        let read = line_breaks().replace_all(run.as_str(), "");
+        (run.start(), run.end(), read.into_owned())
+    });
+    decoded.chain(joined)
 }
 
 /// Builds the matcher that strikes `value`, unless it is already held, so
@@ -296,8 +374,28 @@ fn compiled(value: &str) -> Result<Regex, regex::Error> {
 /// way its characters are sent. Building writes and parses all of it before
 /// the size limit can refuse it, so its length is what trying costs.
 fn pattern(value: &str) -> String {
-    let alternatives: Vec<String> = forms(value).iter().map(|form| spelled(form)).collect();
+    let mut alternatives: Vec<String> = forms(value).iter().map(|form| spelled(form)).collect();
+    // The value in another case: a server that upper-cases what it echoes
+    // must not hand it back in the clear (attack on PR #631). Its letters as
+    // classes of two and nothing else, since every escape in both cases would
+    // make the matcher larger, and so the longest secret DFAI keeps shorter.
+    if value.chars().any(|c| c.is_ascii_alphabetic()) {
+        alternatives.push(any_case(value));
+    }
     alternatives.join("|")
+}
+
+/// `text` with each ASCII letter in either case, and nothing else escaped.
+fn any_case(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_ascii_alphabetic() {
+                format!("[{}{}]", c.to_ascii_lowercase(), c.to_ascii_uppercase())
+            } else {
+                regex::escape(&c.to_string())
+            }
+        })
+        .collect()
 }
 
 /// The text a secret is sent as: as it is, and, when it is long enough to

@@ -94,7 +94,10 @@ describe('a reply past the first page of its thread', () => {
       disconnect: async () => ({ hasToken: false }),
       async call({ method, query }) {
         if (method === 'auth.test') return { ok: true, user_id: MARA_ID };
-        if (method === 'chat.getPermalink') return slackPermalinkAnswer();
+        // As Slack answers: the link of the message asked for, here the late reply's.
+        if (method === 'chat.getPermalink') {
+          return slackPermalinkAnswer(`${replyLink.url.split('&cid')[0]}`);
+        }
         if (method === 'users.info') return slackUserAnswer(query['user'] ?? '');
         const first = slackRepliesAnswer();
         if (query['cursor'] === 'page-2') {

@@ -26,12 +26,23 @@ export interface SlackMessagePreview {
 export const LOOKUPS_AT_ONCE = 4;
 
 /**
- * Failures that end the read, even for one person's name: the rest would
- * fail alike. Any other refusal of a lookup — a profile hidden from the
- * reader — writes that person by id; so does every lookup after Slack asks
- * DFAI to slow down, which stops asking rather than losing the message.
+ * Failures that end the read, even for one person's name: every other lookup
+ * would fail alike — the token, the vault, the Keychain, the network, or a
+ * missing `users:read` — so the first ends the read with its own message and
+ * no more are asked. A refusal of one profile (`user_not_found`, a profile
+ * hidden from the reader) writes that person by id; so does every lookup
+ * after Slack asks DFAI to slow down, which stops asking rather than losing
+ * the message.
  */
-const ENDS_THE_READ = new Set(['no_token', 'refused', 'invalid', 'keychain']);
+const ENDS_THE_READ = new Set([
+  'no_token',
+  'refused',
+  'invalid',
+  'keychain',
+  'unreachable',
+  'timeout',
+  'missing_scope',
+]);
 
 /**
  * Each id's `users.info` answer, or null for one not read, at most
@@ -43,16 +54,17 @@ async function lookUpAll(
 ): Promise<unknown[]> {
   const answers: unknown[] = ids.map(() => null);
   let next = 0;
-  let slowedDown = false;
+  let stopped = false;
   const worker = async () => {
-    while (next < ids.length && !slowedDown) {
+    while (next < ids.length && !stopped) {
       const at = next;
       next += 1;
       try {
         answers[at] = await read(ids[at] as string);
       } catch (error) {
-        if (!(error instanceof SlackError) || ENDS_THE_READ.has(error.failure.kind)) throw error;
-        if (error.failure.kind === 'rate_limited') slowedDown = true;
+        const ends = !(error instanceof SlackError) || ENDS_THE_READ.has(error.failure.kind);
+        if (ends || error.failure.kind === 'rate_limited') stopped = true;
+        if (ends) throw error;
       }
     }
   };
@@ -65,6 +77,55 @@ async function readerOf(slack: SlackPort, vault: string): Promise<string | null>
   const answer = await slack.call({ vault, method: 'auth.test', query: {} });
   const id = (answer as Readonly<Record<string, unknown>> | null)?.['user_id'];
   return typeof id === 'string' ? id : null;
+}
+
+type Fields = Readonly<Record<string, unknown>>;
+const fieldsOf = (value: unknown): Fields =>
+  typeof value === 'object' && value !== null ? (value as Fields) : {};
+
+/** One page of `conversations.replies`: its messages, and where the next starts (null on the last). */
+function pageOf(answer: unknown): { messages: unknown[]; cursor: string | null } {
+  const fields = fieldsOf(answer);
+  const messages = Array.isArray(fields['messages']) ? fields['messages'] : [];
+  const cursor = fieldsOf(fields['response_metadata'])['next_cursor'];
+  const more = fields['has_more'] === true && typeof cursor === 'string' && cursor !== '';
+  return { messages, cursor: more ? (cursor as string) : null };
+}
+
+/**
+ * The thread `link` is in, as one `conversations.replies` answer: read a
+ * page at a time until the linked message is among them, the thread ends,
+ * or {@link THREAD_LIMIT} messages are read. A reply past the limit is a
+ * {@link SlackError} saying so — it is there, only further than DFAI reads.
+ * The first page is the one n8n reads, so a message on it is shaped alike.
+ */
+async function readThread({
+  slack,
+  vault,
+  link,
+}: {
+  slack: SlackPort;
+  vault: string;
+  link: SlackPermalink;
+}): Promise<Fields> {
+  const messages: unknown[] = [];
+  let cursor: string | null = null;
+  const holdsLinked = () => messages.some((message) => fieldsOf(message)['ts'] === link.ts);
+  do {
+    const query: Record<string, string> = {
+      channel: link.channel,
+      ts: link.threadTs ?? link.ts,
+      limit: String(THREAD_LIMIT - messages.length),
+    };
+    if (cursor !== null) query['cursor'] = cursor;
+    const page = pageOf(await slack.call({ vault, method: 'conversations.replies', query }));
+    messages.push(...page.messages.slice(0, THREAD_LIMIT - messages.length));
+    cursor = page.cursor;
+  } while (cursor !== null && !holdsLinked() && messages.length < THREAD_LIMIT);
+  if (!holdsLinked() && cursor !== null) {
+    throw new SlackError({ kind: 'past_thread_limit', message: String(THREAD_LIMIT) });
+  }
+  return { ok: true, messages };
 }
 
 /** The payload, the message being missing from Slack's answer read as Slack's not-found. */
@@ -98,11 +159,7 @@ export async function readSlackMessage({
 }): Promise<SlackMessagePreview> {
   const { channel, ts } = link;
   const reader = await readerOf(slack, vault);
-  const replies = await slack.call({
-    vault,
-    method: 'conversations.replies',
-    query: { channel, ts: link.threadTs ?? ts, limit: String(THREAD_LIMIT) },
-  });
+  const replies = await readThread({ slack, vault, link });
   const permalink = await slack.call({
     vault,
     method: 'chat.getPermalink',
