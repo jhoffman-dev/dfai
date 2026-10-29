@@ -823,8 +823,8 @@ should be able to use one instead of a prompt note.
 
 - **`skill: <name>` in place of `prompt:`.** A rule names one or the other.
   One that names both is refused with _"Name one: prompt:
-  .atlas/prompts/<name>.md, or skill: <name>, not both."_ — a blank or null
-  `prompt:` beside a skill counts as none. The name is held to a skill's name
+  .atlas/prompts/<name>.md, or skill: <name>, not both."_ — a blank, null or
+  quoted-blank (`'  '`) key counts as none, `skill:` and `prompt:` alike. The name is held to a skill's name
   rule (`skillNameProblem`) when the rule is read, so a path or a capital never
   reaches the run.
 - **One path, either way.** `ClaudeAction` gains an optional `skill`; its
@@ -845,14 +845,30 @@ should be able to use one instead of a prompt note.
   prompt note's body is. The same instructions as a prompt note give the same
   system prompt. A skill that is gone, has no `SKILL.md`, cannot be read, or
   has any problem the Skills page shows (no description, a `name:` that is
-  not its folder's, instructions over 20,000 characters as the skills count
-  them) fails the run before Claude is asked, and nothing is written.
+  not its folder's) fails the run before Claude is asked, and nothing is
+  written (`skillRunProblem`).
+- **One measure for what is handed over.** At run time a skill's
+  instructions are held to the prompt note's limit as a prompt note is:
+  20,000 UTF-16 units (`.length`), where an emoji is two — the one argument
+  of ADR-0021. The Skills page keeps its own rule in characters (code points,
+  as Agent Skills count), so a skill the page passes can fail the run; the
+  run says _"Its instructions are 30000 characters as Claude is handed them,
+  an emoji counting as two; a prompt may be at most 20000."_ The limit lives
+  in `domain/chat` (`MAX_PROMPT_CHARACTERS`), which neither automations nor
+  skills is, so each takes it from there.
 - **Seen where skills are.** The editor's **Asks with** picks a prompt note or
-  a skill and hides the prompt path for a skill; a skill a rule names that the
-  vault no longer has stays in the list, so the rule reads as it is. The
-  Skills page lists, under each skill, the rules that use it (in any case),
-  from the runner's own reading of the rules — no more is read — and the
-  delete question warns that they will fail.
+  a skill and hides the prompt path for a skill. A skill a run could not ask
+  with is marked _(has problems)_ or _(too long to run)_ but can still be
+  picked, and a skill a rule names that the vault no longer has stays in the
+  list, so the rule reads as it is. The Skills page lists, under each skill,
+  the rules that use it (in any case), from the runner's own reading of the
+  rules — no more is read — and the delete question warns that they will
+  fail. A broken rule counts when its `skill:` still reads as a name
+  (`BrokenAutomation.skill`, `namedSkill`): fixing its other key must not
+  find the skill gone. The page draws again only when which rules use which
+  skill changes, compared by content, never for the runner's minute or a
+  run. `usesSkill` and `skillUsers` are the skills module's: automations
+  depend on skills, never the other way.
 - **API and MCP.** `ApiClaudeStep` gains `skill` (the name, or null), on
   `/v1/automations` and in the dry run's `claude`; the MCP tools' words say
   so. Rules stay read-only through the API.

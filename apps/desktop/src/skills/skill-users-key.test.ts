@@ -11,7 +11,8 @@ import { skillUsersKey, skillUsersOf } from './skill-users-key.ts';
 
 const rule = (name: string, skill?: string): AutomationRule => ({
   id: name,
-  path: createVaultPath(`.atlas/automations/${name}.md`),
+  // The file's name is beside the point here: a rule's name may hold what a path cannot.
+  path: createVaultPath('.atlas/automations/rule.md'),
   name,
   enabled: true,
   when: { kind: 'manual' },

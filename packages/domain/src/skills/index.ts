@@ -23,7 +23,7 @@ export {
   skillNameKey,
   skillNameProblem,
 } from './skill-rules.ts';
-export { skillInUseWarning, skillUsers } from './skill-users.ts';
+export { skillInUseWarning, skillUsers, usesSkill } from './skill-users.ts';
 export type { SkillUser } from './skill-users.ts';
 export type {
   SkillDraft,

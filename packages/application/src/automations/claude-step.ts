@@ -24,6 +24,7 @@ import {
   MEETING_TYPE,
   meetingSummaryOf,
   messageWithoutPaths,
+  skillRunProblem,
   NOTE_ANSWER_INSTRUCTIONS,
   noteTitle,
   nothingCitedProblem,
@@ -510,8 +511,9 @@ async function readPrompt(
 /**
  * The instructions of the skill `name` (#169, ADR-0050): its SKILL.md's body,
  * the frontmatter left out, or why it cannot be asked with — gone, unreadable,
- * or breaking a skill's rules (an instruction over the prompt's 20,000
- * characters among them). The skill is found as the Skills page finds it.
+ * breaking a skill's rules, or longer than a prompt note may be, measured as
+ * a prompt note is (`skillRunProblem`). The skill is found as the Skills page
+ * finds it.
  */
 async function readSkillInstructions(
   { fs, markdown }: Pick<StepArgs, 'fs' | 'markdown'>,
@@ -526,11 +528,10 @@ async function readSkillInstructions(
     return { problem: `Its skill ${name} could not be read.` };
   }
   if (skill === null) return { problem: `Its skill ${name} is not in .atlas/skills.` };
-  const [first] = skill.problems;
-  if (first !== undefined) {
-    return { problem: `Its skill ${name} cannot be used: ${first.message}` };
-  }
-  return skill.instructions.trim();
+  const unusable = skillRunProblem(skill);
+  return unusable === null
+    ? skill.instructions.trim()
+    : { problem: `Its skill ${name} cannot be used: ${unusable.message}` };
 }
 
 /** The notes a run read, and each one's file as it was read: when, and its properties. */

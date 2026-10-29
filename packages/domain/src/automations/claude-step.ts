@@ -31,14 +31,13 @@
 
 import { isChatReadTool, CHAT_READ_TOOLS, type ChatReadTool } from '../chat/read-tool-names.ts';
 import { createVaultPath, InvalidVaultPathError, type VaultPath } from '../vault/vault-path.ts';
-import { skillFilePath, skillNameKey, skillNameProblem } from '../skills/skill-rules.ts';
+import { MAX_PROMPT_CHARACTERS } from '../chat/index.ts';
+import { skillFilePath, skillNameProblem } from '../skills/index.ts';
 import { claudeWriteRefusal } from './claude-write-folder.ts';
 import { PROPOSAL_SCHEMAS } from './proposal-schemas.ts';
 
 /** Where a rule's prompts live. */
 export const PROMPTS_DIRECTORY = '.atlas/prompts';
-
-export { MAX_PROMPT_CHARACTERS } from './prompt-limit.ts';
 
 /** The most notes one Claude step reads: each is a model's reading, not a file move. */
 export const CLAUDE_NOTES_PER_RUN = 10;
@@ -213,14 +212,30 @@ function readInstructions(
   frontmatter: Readonly<Record<string, unknown>>,
 ): { path: VaultPath; skill?: string } | string {
   const skill = frontmatter['skill'];
-  if (skill === undefined || skill === null || skill === '') {
-    return readPrompt(frontmatter['prompt']);
-  }
-  const prompt = frontmatter['prompt'];
-  if (prompt !== undefined && prompt !== null && String(prompt).trim() !== '') {
+  if (isBlank(skill)) return readPrompt(frontmatter['prompt']);
+  if (!isBlank(frontmatter['prompt'])) {
     return 'Name one: prompt: .atlas/prompts/<name>.md, or skill: <name>, not both.';
   }
   return readSkill(skill);
+}
+
+/** A key left out, null, or only spaces: none, as a file that does not write it is read. */
+function isBlank(value: unknown): boolean {
+  return value === undefined || value === null || String(value).trim() === '';
+}
+
+/**
+ * The skill a Claude step's frontmatter names, when its `skill:` reads as
+ * one; null otherwise. Asked of a rule that is broken for another reason, so
+ * it still counts as using its skill (#629 review).
+ */
+export function namedSkill(frontmatter: Readonly<Record<string, unknown>>): string | null {
+  const does = String(frontmatter['do'] ?? '')
+    .trim()
+    .toLowerCase();
+  if (does !== 'claude' || isBlank(frontmatter['skill'])) return null;
+  const read = readSkill(frontmatter['skill']);
+  return typeof read === 'string' ? null : read.skill;
 }
 
 /** The skill a rule names, as its SKILL.md and name, or why it cannot be one. */
@@ -386,14 +401,30 @@ export function withClaudeSkill(action: ClaudeAction, skill: string | null): Cla
   return { ...rest, prompt: named === undefined ? action.prompt : '' };
 }
 
-/** Whether a rule's action asks with the skill `name`, in any case and form, as skills are told apart. */
-export function usesSkill(
-  action: { readonly kind: string; readonly skill?: string },
-  name: string,
-): boolean {
-  return (
-    action.kind === 'claude' &&
-    action.skill !== undefined &&
-    skillNameKey(action.skill) === skillNameKey(name)
-  );
+/** Why a skill cannot be run: it has problems the Skills page shows, or is too long to hand over. */
+export interface SkillRunProblem {
+  readonly kind: 'problems' | 'too-long';
+  readonly message: string;
+}
+
+/**
+ * Why a step cannot ask with a skill as read, or null when it can (#169). Its
+ * first problem the Skills page shows; else instructions over the prompt
+ * note's limit, measured as a prompt note's are (`.length`, an emoji two,
+ * ADR-0021) — not in the characters the Skills page counts, so a skill the
+ * page passes can still be too long to run.
+ */
+export function skillRunProblem(skill: {
+  readonly problems: readonly { readonly message: string }[];
+  readonly instructions: string;
+}): SkillRunProblem | null {
+  const [first] = skill.problems;
+  if (first !== undefined) return { kind: 'problems', message: first.message };
+  const length = skill.instructions.trim().length;
+  return length > MAX_PROMPT_CHARACTERS
+    ? {
+        kind: 'too-long',
+        message: `Its instructions are ${length} characters as Claude is handed them, an emoji counting as two; a prompt may be at most ${MAX_PROMPT_CHARACTERS}.`,
+      }
+    : null;
 }

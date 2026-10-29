@@ -12,12 +12,19 @@ import {
   type ClaudeData,
   type NoteEvent,
   type Schedule,
+  type SkillRunProblem,
   type Weekday,
 } from '@dfai/domain';
 import { SegmentedControl } from '../segmented-control.tsx';
 import { Toggle } from '../toggle.tsx';
 import type { DryRunView, LogEntryView } from './automation-views.ts';
 import { DryRunResult, RunLog } from './run-log-view.tsx';
+
+/** A skill the picker offers, and why a run could not ask with it, if it could not (#169). */
+export interface SkillChoice {
+  readonly name: string;
+  readonly unusable: SkillRunProblem['kind'] | null;
+}
 
 export interface AutomationEditorProps {
   readonly draft: AutomationDraft;
@@ -34,8 +41,8 @@ export interface AutomationEditorProps {
   readonly claudeTools: readonly string[];
   /** The proposal schemas a Claude step can answer with, by name: `proposals` first. */
   readonly claudeOutputs: readonly string[];
-  /** The vault's skills, by name: what a Claude step may ask with in place of a prompt (#169). */
-  readonly skills: readonly string[];
+  /** The vault's skills: what a Claude step may ask with in place of a prompt (#169). */
+  readonly skills: readonly SkillChoice[];
   readonly busy: boolean;
   readonly onSave: () => void;
   readonly onCancel: () => void;
@@ -509,6 +516,12 @@ function ClaudeFields({ draft, onChange, claudeTools, claudeOutputs, skills }: A
   );
 }
 
+/** How the picker marks a skill a run could not ask with, so it is not picked unknowing. */
+const UNUSABLE_LABELS: Readonly<Record<SkillRunProblem['kind'], string>> = {
+  problems: 'has problems',
+  'too-long': 'too long to run',
+};
+
 /** Ask with a prompt note, or one of the vault's skills (#169); a skill gone from the vault stays shown. */
 function SkillPicker({
   action,
@@ -516,11 +529,12 @@ function SkillPicker({
   onChange,
 }: {
   action: ClaudeAction;
-  skills: readonly string[];
+  skills: readonly SkillChoice[];
   onChange: (action: ClaudeAction) => void;
 }) {
   const named = action.skill;
-  const offered = named === undefined || skills.includes(named) ? skills : [named, ...skills];
+  const listed = named === undefined || skills.some((skill) => skill.name === named);
+  const offered = listed ? skills : [{ name: named, unusable: null }, ...skills];
   return (
     <label className="automation-editor__inline">
       Asks with
@@ -533,9 +547,9 @@ function SkillPicker({
         }
       >
         <option value="">A prompt note</option>
-        {offered.map((skill) => (
-          <option key={skill} value={skill}>
-            Skill: {skill}
+        {offered.map(({ name, unusable }) => (
+          <option key={name} value={name}>
+            {`Skill: ${name}${unusable === null ? '' : ` (${UNUSABLE_LABELS[unusable]})`}`}
           </option>
         ))}
       </select>

@@ -25,6 +25,7 @@ import { AUTOMATIONS_DIRECTORY } from '../vault/vault-visibility.ts';
 import {
   claudeActionFields,
   describeClaudeAction,
+  namedSkill,
   readClaudeAction,
   readsData,
   type ClaudeAction,
@@ -74,6 +75,8 @@ export interface BrokenAutomation {
   readonly path: VaultPath;
   readonly name: string;
   readonly problem: string;
+  /** The skill its Claude step names, when `skill:` reads as one: it still uses it (#169). */
+  readonly skill?: string;
 }
 
 /** The longest id a rule may have: it names a file. */
@@ -151,12 +154,14 @@ export function parseAutomationRule(
     : typeof written === 'string' || typeof written === 'number'
       ? String(written)
       : '';
+  const skill = namedSkill(frontmatter);
+  const broken = (problem: string) => ({
+    broken: { path, name, problem, ...(skill !== null && { skill }) },
+  });
   const idProblem = automationIdProblem(id);
-  if (idProblem !== null) return { broken: { path, name, problem: idProblem } };
+  if (idProblem !== null) return broken(idProblem);
   const read = readDraft({ ...frontmatter, name });
-  return 'draft' in read
-    ? { rule: { ...read.draft, id, path }, idWritten }
-    : { broken: { path, name, problem: read.problem } };
+  return 'draft' in read ? { rule: { ...read.draft, id, path }, idWritten } : broken(read.problem);
 }
 
 function readDraft(

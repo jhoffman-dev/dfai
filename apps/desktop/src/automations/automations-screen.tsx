@@ -14,7 +14,7 @@ import {
   type RuleQueryPorts,
 } from '@dfai/application';
 import { AutomationEditor, AutomationsPage, QueryComposer, type PageHistory } from '@dfai/ui';
-import { useSkillNames } from '../skills/use-skill-names.ts';
+import { useSkillChoices } from '../skills/use-skill-choices.ts';
 import { localTimeZone } from '../today.ts';
 import { automationRows, logViews } from './automation-rows.ts';
 import { useAutomationEditor } from './use-automation-editor.ts';
@@ -52,7 +52,7 @@ export function AutomationsScreen({
 }) {
   const editor = useAutomationEditor({ automations, ports, clock, indexKey, activity });
   // Read only while a rule is open in the editor: the list itself needs no skills.
-  const skills = useSkillNames({
+  const skills = useSkillChoices({
     fs: ports.fs,
     markdown: ports.markdown,
     vault,

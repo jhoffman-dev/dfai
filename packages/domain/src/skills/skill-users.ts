@@ -5,12 +5,21 @@
  * told apart.
  */
 
-import { usesSkill } from '../automations/claude-step.ts';
+import { skillNameKey } from './skill-rules.ts';
 
 /** A rule as far as using a skill goes: its name, and what it does. */
 export interface SkillUser {
   readonly name: string;
   readonly action: { readonly kind: string; readonly skill?: string };
+}
+
+/** Whether a rule's action asks with the skill `name`, in any case and form, as skills are told apart. */
+export function usesSkill(action: SkillUser['action'], name: string): boolean {
+  return (
+    action.kind === 'claude' &&
+    action.skill !== undefined &&
+    skillNameKey(action.skill) === skillNameKey(name)
+  );
 }
 
 /** The names of the rules that ask with `skill`, each once, by name. */

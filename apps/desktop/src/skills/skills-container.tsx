@@ -1,15 +1,12 @@
 import { useEffect, useMemo } from 'react';
-import type { SkillUser } from '@dfai/domain';
-import { useAutomationListing } from '../automations/automations-store.ts';
 import { hideOverlay, showOverlay, useOverlayUp } from '../overlay-store.ts';
 import { LoadedLater } from '../page-frame-fallback.tsx';
 import { skillsPage } from '../pages-on-first-use.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
+import { useSkillUsers } from './skill-users-key.ts';
 import { useSkillsPage, type SkillOverlay } from './use-skills-page.ts';
 
 const SkillsPage = skillsPage.Component;
-
-const NO_RULES: readonly SkillUser[] = [];
 
 /**
  * The Skills page as a tab (#169, ADR-0050): it reads the skills and the
@@ -37,12 +34,8 @@ export function SkillsContainer({ wiring, chrome }: PageContainerProps) {
     },
     [overlays],
   );
-  // Which rules use each skill: the runner's own read of them, so the page reads no more.
-  const listing = useAutomationListing(pages.automations.store);
-  const rules = useMemo(
-    () => listing?.automations.map((automation) => automation.rule) ?? NO_RULES,
-    [listing],
-  );
+  // Which rules use each skill, from the runner's own read: drawn again only when that changes.
+  const rules = useSkillUsers(pages.automations.store);
   const page = useSkillsPage({
     ports: { fs: pages.ports.fs, markdown: pane.notes.markdown, overlay },
     rules,
