@@ -18,6 +18,25 @@ struct Segment {
     copied: bool,
 }
 
+/// Which readings a text gets: HTML entities decoded, JSON escapes decoded,
+/// wrapped base64 joined. Each is a reading of its own, alone or with the
+/// others, so one layer's change to a secret's own text cannot hide it from
+/// another's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Layers {
+    pub entities: bool,
+    pub json: bool,
+    pub join: bool,
+}
+
+impl Layers {
+    pub const ALL: Layers = Layers {
+        entities: true,
+        json: true,
+        join: true,
+    };
+}
+
 /// The text as read, and where each piece of it came from.
 pub struct Decoded {
     text: String,
@@ -163,7 +182,7 @@ fn wrap_at(rest: &str) -> Option<usize> {
 impl Decoded {
     /// `text` read with its entities and escapes decoded and its wrapped lines
     /// joined, or None when nothing in it reads otherwise.
-    pub fn of(text: &str) -> Option<Decoded> {
+    pub fn of(text: &str, _layers: Layers) -> Option<Decoded> {
         if !text.bytes().any(starts_a_piece) {
             return None;
         }
@@ -201,6 +220,11 @@ impl Decoded {
 
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    /// What this reading holds on to: its text and its map.
+    pub fn retained_bytes(&self) -> usize {
+        self.text.capacity() + self.segments.capacity() * std::mem::size_of::<Segment>()
     }
 
     /// The segment that read position `at` lies in.
@@ -281,10 +305,82 @@ impl Reading {
 
 #[cfg(test)]
 mod tests {
-    use super::Decoded;
+    use super::{Decoded, Layers};
+
+    const ENTITIES: Layers = Layers {
+        entities: true,
+        json: false,
+        join: false,
+    };
+    const JSON: Layers = Layers {
+        entities: false,
+        json: true,
+        join: false,
+    };
+    const JOIN: Layers = Layers {
+        entities: false,
+        json: false,
+        join: true,
+    };
+
+    fn read_as(text: &str, layers: Layers) -> Option<String> {
+        Decoded::of(text, layers).map(|decoded| decoded.text().to_string())
+    }
+
+    #[test]
+    fn each_layer_reads_only_its_own_pieces() {
+        let text = r"a\tb&#99;d";
+        assert_eq!(read_as(text, ENTITIES).as_deref(), Some(r"a\tbcd"));
+        assert_eq!(read_as(text, JSON).as_deref(), Some("a\tb&#99;d"));
+        assert_eq!(read_as(text, JOIN), None);
+    }
+
+    #[test]
+    fn an_entity_line_break_is_itself_unless_joining_and_joined_only_with_entities() {
+        assert_eq!(
+            read_as("user1&#10;pass2", ENTITIES).as_deref(),
+            Some("user1\npass2")
+        );
+        assert_eq!(read_as("QUJD&#10;REVG", JOIN), None);
+        let both = Layers {
+            entities: true,
+            json: false,
+            join: true,
+        };
+        assert_eq!(read_as("QUJD&#10;REVG", both).as_deref(), Some("QUJDREVG"));
+        assert_eq!(read_as(r"QUJD\nREVG", both), None);
+        assert_eq!(read_as(r"QUJD\nREVG", JOIN), None);
+        assert_eq!(read_as("QUJD\nREVG", JOIN).as_deref(), Some("QUJDREVG"));
+    }
+
+    #[test]
+    fn a_layer_whose_pieces_are_not_in_the_text_is_not_read() {
+        assert_eq!(
+            read_as(
+                "plain QUJD
+REVG",
+                ENTITIES
+            ),
+            None
+        );
+        assert_eq!(read_as("a &amp; b", JSON), None);
+    }
+
+    /// Review of PR #631, round 2: 145 MB held for an 8 MB answer of entities.
+    #[test]
+    fn a_reading_of_an_answer_dense_with_entities_holds_a_few_times_its_size() {
+        let text = "&#1; ".repeat(400_000);
+        let decoded = Decoded::of(&text, ENTITIES).unwrap();
+        assert!(
+            decoded.retained_bytes() <= 4 * text.len(),
+            "{} bytes held for {}",
+            decoded.retained_bytes(),
+            text.len()
+        );
+    }
 
     fn read(text: &str) -> String {
-        Decoded::of(text)
+        Decoded::of(text, Layers::ALL)
             .map(|decoded| decoded.text().to_string())
             .unwrap_or_else(|| text.to_string())
     }
@@ -292,7 +388,7 @@ mod tests {
     #[test]
     fn text_with_nothing_to_decode_is_not_read_again() {
         for text in ["plain words", "a&b c", "50% off", "no breaks here"] {
-            assert!(Decoded::of(text).is_none(), "{text:?}");
+            assert!(Decoded::of(text, Layers::ALL).is_none(), "{text:?}");
         }
     }
 
@@ -391,7 +487,7 @@ mod tests {
     #[test]
     fn a_span_of_what_was_read_maps_to_the_whole_original_pieces() {
         let text = "x&amp;y&#x41;z";
-        let decoded = Decoded::of(text).unwrap();
+        let decoded = Decoded::of(text, Layers::ALL).unwrap();
         assert_eq!(decoded.text(), "x&yAz");
         // "&" came from "&amp;", "A" from "&#x41;".
         assert_eq!(decoded.original_span(1, 2), (1, 6));
@@ -403,14 +499,14 @@ mod tests {
     #[test]
     fn a_joined_line_maps_back_across_its_break() {
         let text = "QUJD\r\n  REVG";
-        let decoded = Decoded::of(text).unwrap();
+        let decoded = Decoded::of(text, Layers::ALL).unwrap();
         assert_eq!(decoded.original_span(2, 6), (2, 10));
     }
 
     #[test]
     fn every_span_maps_to_character_boundaries_of_the_original() {
         let text = "é&#x1F600;ü&eacute;\\u00e9€&#10;QUJD\nREVG&quot;日本";
-        let decoded = Decoded::of(text).unwrap();
+        let decoded = Decoded::of(text, Layers::ALL).unwrap();
         let read = decoded.text();
         let boundaries: Vec<usize> = (0..=read.len())
             .filter(|at| read.is_char_boundary(*at))

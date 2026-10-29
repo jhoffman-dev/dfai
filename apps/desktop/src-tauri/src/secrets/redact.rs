@@ -142,7 +142,7 @@ fn read_loosely(value: &str) -> bool {
 fn decoded_once(text: &str) -> Option<Decoded> {
     #[cfg(test)]
     DECODES.with(|count| count.set(count.get() + 1));
-    Decoded::of(text)
+    Decoded::of(text, decoded::Layers::ALL)
 }
 
 /// Every match of `matcher` in `text`, as byte spans.
@@ -945,6 +945,112 @@ mod tests {
                     );
                 }
             }
+        }
+
+        /// Review of PR #631, round 2: a secret whose own text holds a line
+        /// break or a backslash escape, echoed with an entity, is struck.
+        #[test]
+        fn a_secret_holding_a_break_or_an_escape_echoed_with_an_entity_is_struck() {
+            for (value, echo) in [
+                (
+                    "-----BEGIN-----\nMIIEabc\n-----END-----",
+                    "-----BEGIN-----&#10;MIIEabc&#10;-----END-----",
+                ),
+                ("user1\npass2word", "user1&#10;pass2word"),
+                (r"C:\temp\fileKey9", r"C:\temp\fil&#101;Key9"),
+                (r"\bC4NxzRFYF\BKc2L", r"\bC4Nx&#122;RFYF\BKc2L"),
+                (r"GHQHD8\nBzU4tK", r"GHQHD&#x38\nBzU4tK"),
+            ] {
+                let out = struck(&format!("<{echo}>"), value);
+                assert_eq!(out, "<[secret k removed]>", "{value:?} echoed as {echo:?}");
+            }
+        }
+
+        /// The reviewer's seeded fuzz: 5,000 secrets of 8 to 19 characters,
+        /// each written with entities or with JSON escapes at random places,
+        /// between sentinels. Every one is struck, and no sentinel is touched.
+        #[test]
+        fn a_seeded_fuzz_of_entity_and_json_echoes_leaks_nothing() {
+            let alphabet: Vec<char> = ('A'..='Z')
+                .chain('a'..='z')
+                .chain('0'..='9')
+                .chain(['€', 'é', '&', '<', '"', ' ', '\\', '\n', '😀'])
+                .collect();
+            let mut seed = 5u64;
+            let mut next = move || {
+                seed = seed
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                (seed >> 33) as usize
+            };
+            let mut leaked = Vec::new();
+            for case in 0..5_000 {
+                let len = 8 + next() % 12;
+                let value: String = (0..len)
+                    .map(|_| alphabet[next() % alphabet.len()])
+                    .collect();
+                let chars: Vec<char> = value.chars().collect();
+                let html = next() % 2 == 0;
+                let mut echo = String::new();
+                for (at, &c) in chars.iter().enumerate() {
+                    let before_alnum = chars.get(at + 1).is_some_and(|n| n.is_ascii_alphanumeric());
+                    let pick = next() % 4;
+                    echo += &if html {
+                        match (pick, c) {
+                            (0, _) => format!("&#{};", c as u32),
+                            (1, _) if !before_alnum => format!("&#x{:X}", c as u32),
+                            (2, '<') => "&lt;".into(),
+                            (2, '"') => "&quot;".into(),
+                            (_, '&') => "&amp;".into(),
+                            _ => c.to_string(),
+                        }
+                    } else {
+                        match (pick, c) {
+                            (_, '\\') => "\\\\".into(),
+                            (_, '"') => "\\\"".into(),
+                            (_, '\n') => "\\n".into(),
+                            (0, _) if (c as u32) < 0x10000 => format!("\\u{:04x}", c as u32),
+                            (1, '😀') => "\\ud83d\\ude00".into(),
+                            _ => c.to_string(),
+                        }
+                    };
+                }
+                let body = format!("«L{case}» {echo} «R{case}»");
+                let out = struck(&body, &value);
+                let kept = out.starts_with(&format!("«L{case}» "))
+                    && out.ends_with(&format!(" «R{case}»"));
+                if !out.contains("[secret k removed]") || !kept {
+                    leaked.push((value, body, out));
+                }
+            }
+            assert!(
+                leaked.is_empty(),
+                "{} of 5,000: {:?}",
+                leaked.len(),
+                &leaked[..leaked.len().min(3)]
+            );
+        }
+
+        /// Every reading is decoded at most once for a call, however many
+        /// secrets: for an answer holding entities, escapes and breaks, at most
+        /// one decode for each of the seven readings, and each secret reads the
+        /// answer and each reading once.
+        #[test]
+        fn each_reading_is_decoded_once_a_call() {
+            let secrets: Vec<(String, String)> = (0..8)
+                .map(|at| (format!("s{at}"), format!("{LONG}{at}")))
+                .collect();
+            let body = "a&#65;b\\u0041c\nQUJD\r\nREVG ".repeat(20_000);
+            let decodes = DECODES.with(|count| count.get());
+            let scanned = SCANNED_BYTES.with(|count| count.get());
+            let _ = redact(&body, &secrets);
+            assert!(DECODES.with(|count| count.get()) - decodes <= 7);
+            let read = SCANNED_BYTES.with(|count| count.get()) - scanned;
+            assert!(
+                read <= 8 * 8 * body.len(),
+                "{read} bytes read for {}",
+                body.len()
+            );
         }
 
         /// What eight secrets cost against hostile bodies, counted rather than
