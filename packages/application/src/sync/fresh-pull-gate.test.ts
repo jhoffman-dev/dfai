@@ -291,3 +291,43 @@ describe('createFreshPullGate: one vault at a time', () => {
     expect(gate.standing('/Users/j/Work')).toBeNull();
   });
 });
+
+describe('createFreshPullGate: counting what waits on a Mac that is not named (ADR-0035 part 3)', () => {
+  const OTHER = '---\nsync: github\nautomationsMac: mac-laptop\nautomationsMacName: Laptop\n---\n';
+
+  it('opens against the pull on a Mac that is not named, which the import’s gate never does', async () => {
+    const { gate, runs } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    expect(await gate.verdict(VAULT)).toEqual({ open: false, shut: 'not-named' });
+    expect(await gate.countGate(VAULT)).toEqual({ open: true, standing: gate.standing(VAULT) });
+  });
+
+  it('gives no count before a pull completes, after a sleep, or while sync is paused', async () => {
+    const { gate, runs, sleep, vault } = gateOn({ settings: OTHER });
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'no-pull' });
+    await runs({ kind: 'synced' });
+    sleep.sleep(60 * 60_000);
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'no-pull' });
+    await runs({ kind: 'synced' });
+    vault.paused = true;
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'paused' });
+  });
+
+  it('gives none for a vault that does not sync, never reading the counter for it', async () => {
+    const { gate, sleep } = gateOn({ settings: OTHER });
+    gate.inspected(VAULT, false);
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'not-synced' });
+    expect(sleep.reads()).toBe(0);
+  });
+
+  it('is judged against a pull that started while the counter was read', async () => {
+    const { gate, runs, sleep } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    const port = sleep.port.asleepMs;
+    sleep.port.asleepMs = async () => {
+      gate.started(VAULT);
+      return port();
+    };
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'no-pull' });
+  });
+});

@@ -17,6 +17,7 @@ import {
 import { remarkMarkdown } from '@dfai/adapters';
 import { useIndexReady } from '../index/index-status-store.ts';
 import { useIndex } from '../index/use-index.ts';
+import type { PulledFilesGate } from '../sync/use-pulled-files.ts';
 import { useMeetingImport } from './use-meeting-import.ts';
 
 const VAULT = '/Users/j/Vault';
@@ -30,9 +31,13 @@ const ARRIVED: NoteChange = {
 };
 
 /** The gates of ADR-0035 part 4, as a vault that does not sync has them: always open. */
-const NOT_SYNCED: Gate = { standing: { kind: 'not-synced' }, acts: async () => true };
+const NOT_SYNCED: Gate = {
+  standing: { kind: 'not-synced' },
+  acts: async () => true,
+  countGate: async () => ({ open: false, why: 'not-synced' }),
+};
 
-type Gate = { standing: PullStanding | null; acts: (vault: string) => Promise<boolean> };
+type Gate = Pick<PulledFilesGate, 'standing' | 'acts' | 'countGate'>;
 
 /** A pull that completed, which the gates judge by: a new one each time, as each pull leaves. */
 const pulled = (): PullStanding => ({
@@ -115,6 +120,8 @@ function render(initial: {
         active,
         indexReady,
         pulledFiles,
+        namedElsewhere: null,
+        onWaiting: () => undefined,
         onWritten,
       }),
     {
@@ -224,7 +231,7 @@ describe('useMeetingImport', () => {
 
 describe('useMeetingImport: only on fresh sync state (ADR-0035 part 4)', () => {
   it('imports nothing before a pull has completed, and catches up once one has', async () => {
-    const shut = { standing: null, acts: vi.fn(async () => false) };
+    const shut = { ...NOT_SYNCED, standing: null, acts: vi.fn(async () => false) };
     const { rerender, changes, written } = render({
       active: true,
       indexReady: false,
@@ -240,17 +247,24 @@ describe('useMeetingImport: only on fresh sync state (ADR-0035 part 4)', () => {
     expect(shut.acts).toHaveBeenCalledOnce();
     expect(written).toEqual([]);
 
-    const pulling = { standing: { kind: 'pulling' } as const, acts: vi.fn(async () => false) };
+    const pulling = {
+      ...NOT_SYNCED,
+      standing: { kind: 'pulling' } as const,
+      acts: vi.fn(async () => false),
+    };
     rerender({ ...props, pulledFiles: pulling });
     await settled();
     expect(pulling.acts).not.toHaveBeenCalled();
 
-    rerender({ ...props, pulledFiles: { standing: pulled(), acts: async () => true } });
+    rerender({
+      ...props,
+      pulledFiles: { ...NOT_SYNCED, standing: pulled(), acts: async () => true },
+    });
     await waitFor(() => expect(written).toEqual([BROKEN]));
   });
 
   it('drops what it hears while the gates are shut, and settles it in the catch-up after the next pull', async () => {
-    const first: Gate = { standing: pulled(), acts: async () => true };
+    const first: Gate = { ...NOT_SYNCED, standing: pulled(), acts: async () => true };
     const { rerender, changes, written } = render({
       active: true,
       indexReady: false,
@@ -266,7 +280,10 @@ describe('useMeetingImport: only on fresh sync state (ADR-0035 part 4)', () => {
     await settled();
     expect(written).toEqual([BROKEN]);
 
-    rerender({ ...props, pulledFiles: { standing: pulled(), acts: async () => true } });
+    rerender({
+      ...props,
+      pulledFiles: { ...NOT_SYNCED, standing: pulled(), acts: async () => true },
+    });
     await waitFor(() => expect(written).toEqual([BROKEN, BROKEN]));
   });
 
@@ -276,6 +293,7 @@ describe('useMeetingImport: only on fresh sync state (ADR-0035 part 4)', () => {
       active: true,
       indexReady: false,
       pulledFiles: {
+        ...NOT_SYNCED,
         standing: pulled(),
         acts: async (vault) => {
           asked.push(vault);
@@ -294,7 +312,7 @@ describe('useMeetingImport: only on fresh sync state (ADR-0035 part 4)', () => {
     const { changes, written } = render({
       active: false,
       indexReady: true,
-      pulledFiles: { standing: pulled(), acts },
+      pulledFiles: { ...NOT_SYNCED, standing: pulled(), acts },
     });
     changes.publish({ vault: VAULT, changes: [ARRIVED] });
     await settled();
@@ -357,6 +375,8 @@ describe('useMeetingImport: adversarial, round 3', () => {
           active: true,
           indexReady,
           pulledFiles: NOT_SYNCED,
+          namedElsewhere: null,
+          onWaiting: () => undefined,
           onWritten: () => undefined,
         });
       },
@@ -394,6 +414,8 @@ describe('useMeetingImport: adversarial, round 3', () => {
         active: true,
         indexReady: useIndexReady(index.store, VAULT),
         pulledFiles: NOT_SYNCED,
+        namedElsewhere: null,
+        onWaiting: () => undefined,
         onWritten: () => undefined,
       });
       return index;

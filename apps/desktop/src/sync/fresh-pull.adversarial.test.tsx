@@ -126,6 +126,8 @@ function wire({
         active: true,
         indexReady,
         pulledFiles: gate,
+        namedElsewhere: null,
+        onWaiting: () => undefined,
         onWritten,
       });
       return pulls;

@@ -1,5 +1,4 @@
 import { useMemo, useRef, useState } from 'react';
-import type { PullStanding } from '@dfai/domain';
 import {
   createFreshPullGate,
   type ActivityLog,
@@ -10,6 +9,7 @@ import {
   type SleepClockPort,
   type VaultFsPort,
 } from '@dfai/application';
+import type { PullStanding, WaitingCountGate } from '@dfai/domain';
 
 /**
  * The gates of ADR-0035 part 4 for the open vault, as the meeting import and
@@ -21,6 +21,8 @@ export interface PulledFilesGate {
   readonly standing: PullStanding | null;
   /** Whether this Mac may act on the vault's files now: on these notes, or on one file as it arrived. */
   readonly acts: (vault: string, arrival?: Arrival) => Promise<boolean>;
+  /** Whether a Mac that is not named may count the meetings waiting for the one that is, and against which pull. */
+  readonly countGate: (vault: string) => Promise<WaitingCountGate>;
 }
 
 /** What the vault's runs of git tell the gates. Each is a no-op for a vault no longer open. */
@@ -91,6 +93,9 @@ export function usePulledFiles({
   // From the render a vault opens on, the gates know only that vault, and nothing of it yet.
   fresh.opened(vaultKey);
   const standing = vaultKey === null ? null : fresh.standing(vaultKey);
-  const gate = useMemo(() => ({ standing, acts: fresh.acts }), [standing, fresh]);
+  const gate = useMemo(
+    () => ({ standing, acts: fresh.acts, countGate: fresh.countGate }),
+    [standing, fresh],
+  );
   return { gate, pulls: fresh };
 }

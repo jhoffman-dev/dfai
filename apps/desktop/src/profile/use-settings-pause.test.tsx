@@ -41,7 +41,11 @@ const READABLE = '---\nprofileName: Mara Quill\nselfEmails: [mara.quill@example.
 
 /** One each, as the window holds them: a new object each render would start the import over. */
 const CLOCK = { today: () => '2026-10-14' };
-const NOT_SYNCED = { standing: { kind: 'not-synced' as const }, acts: async () => true };
+const NOT_SYNCED = {
+  standing: { kind: 'not-synced' as const },
+  acts: async () => true,
+  countGate: async () => ({ open: false as const, why: 'not-synced' as const }),
+};
 const NOTHING = () => undefined;
 
 const folder = (path: string, name: string) => ({
@@ -127,6 +131,8 @@ function render(settings: { text: string }) {
         active: true,
         indexReady,
         pulledFiles: NOT_SYNCED,
+        namedElsewhere: null,
+        onWaiting: () => undefined,
         onWritten: NOTHING,
       });
       return { profile, ownerKnown, unreadable };

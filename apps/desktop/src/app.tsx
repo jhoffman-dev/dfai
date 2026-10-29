@@ -308,6 +308,7 @@ import { useMeetingProjects } from './meetings/use-meeting-projects.ts';
 import { AutomationsRunner } from './automations/automations-runner.tsx';
 import { createAutomationsStore, useOwnerNeeded } from './automations/automations-store.ts';
 import { MeetingImportRunner } from './meetings/meeting-import-runner.tsx';
+import { createMeetingsWaitingStore } from './meetings/meetings-waiting-store.ts';
 import { archiveCommand, withCommandBeforeDelete } from './archive/archive-menu.ts';
 import { paletteArchiveCommands, runPaletteArchiveCommand } from './archive/palette-archive.ts';
 import { ChatPane, ClaudeSettingsCard } from './chat/chat-pane.tsx';
@@ -520,6 +521,8 @@ function AppWindow({
   // be refused half-done (U-29).
   const [syncStore] = useState(createSyncStore);
   const [automationsStore] = useState(createAutomationsStore);
+  // What the meeting import says waits for the named Mac, read by the Inbox alone (ADR-0035 part 1).
+  const [meetingsWaiting] = useState(createMeetingsWaitingStore);
   // The Inbox and Proposals tabs hold their background writes here: a switch
   // waits for the clarifications and answers still being written behind those
   // pages, which the host would refuse once another vault is open (#217, #166).
@@ -2149,6 +2152,7 @@ function AppWindow({
     () => ({
       closing: closing.writes,
       pendingWrites,
+      meetingsWaiting,
       onOpenSource: followSource,
       typesOffer:
         typesOffer === null
@@ -2180,6 +2184,7 @@ function AppWindow({
     [
       closing.writes,
       pendingWrites,
+      meetingsWaiting,
       followSource,
       typesOffer,
       taskMigration,
@@ -2231,6 +2236,7 @@ function AppWindow({
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
           sync={syncStore}
+          waiting={meetingsWaiting}
           changes={noteChanges}
           ports={archivePorts}
           clock={localClock}

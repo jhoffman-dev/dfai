@@ -15,6 +15,7 @@ import {
 
 // One of each, as a runner's state holds them across its draws.
 const SYNCED: ReadonlySet<string> = new Set();
+const NO_COUNT: PulledFilesGate['countGate'] = async () => ({ open: false, why: 'no-pull' });
 const PULLS: ReadonlyMap<string, number> = new Map();
 
 /** A runner's controller as far as the window reads it; the rest is never touched here. */
@@ -26,7 +27,7 @@ function controller(overrides: Partial<SyncController> = {}): SyncController {
     automationsHere: false,
     syncedThisSession: SYNCED,
     syncPulls: PULLS,
-    pulledFiles: { standing: null, acts: async () => true },
+    pulledFiles: { standing: null, acts: async () => true, countGate: NO_COUNT },
     settle: async () => {},
     ...overrides,
   } as SyncController;
@@ -56,7 +57,9 @@ describe('sync as the window reads it (#326)', () => {
     act(() =>
       store.setState({
         vault: '/v',
-        controller: controller({ pulledFiles: { standing: null, acts: first } }),
+        controller: controller({
+          pulledFiles: { standing: null, acts: first, countGate: NO_COUNT },
+        }),
       }),
     );
     const gate = hook.result.current.pulledFiles;
@@ -66,7 +69,9 @@ describe('sync as the window reads it (#326)', () => {
     act(() =>
       store.setState({
         vault: '/v',
-        controller: controller({ pulledFiles: { standing: null, acts: second } }),
+        controller: controller({
+          pulledFiles: { standing: null, acts: second, countGate: NO_COUNT },
+        }),
       }),
     );
     expect(draws()).toBe(drawn);
@@ -82,7 +87,9 @@ describe('sync as the window reads it (#326)', () => {
     const standing = { pulledAt: 1 } as unknown as PulledFilesGate['standing'];
     act(() =>
       store.setState({
-        controller: controller({ pulledFiles: { standing, acts: async () => true } }),
+        controller: controller({
+          pulledFiles: { standing, acts: async () => true, countGate: NO_COUNT },
+        }),
       }),
     );
     expect(hook.result.current.pulledFiles.standing).toBe(standing);
@@ -123,7 +130,7 @@ describe('sync as the window reads it (#326)', () => {
         thisMac: 'Studio',
         settings: {} as SyncController['settings'],
         automationsHere: true,
-        pulledFiles: { standing: null, acts },
+        pulledFiles: { standing: null, acts, countGate: NO_COUNT },
       }),
     );
     const hook = renderHook(({ vault }: { vault: string }) => useSyncForRunners(store, vault), {

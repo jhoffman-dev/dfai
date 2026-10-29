@@ -20,6 +20,7 @@ import {
   type MeetingImport,
   type MeetingImportError,
   type MeetingImportHappening,
+  type MeetingsWaiting,
   type NoteChange,
   type VaultPath,
 } from '@dfai/domain';
@@ -100,6 +101,8 @@ export interface MeetingImportOutcome {
   readonly happenings: readonly MeetingImportHappening[];
   /** Whether any note was written or moved, so what shows the vault reads it again. */
   readonly wrote: boolean;
+  /** On a Mac that is not named, which imports nothing: what waits for the one that is (ADR-0035). */
+  readonly waiting?: MeetingsWaiting;
 }
 
 /** Why the problem was not written into a file, as a clause the Activity line ends a sentence with. */
