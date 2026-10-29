@@ -159,4 +159,52 @@ describe('draftSkill', () => {
     await expect(ask(slow, { signal: stop.signal })).resolves.toEqual({ kind: 'stopped' });
     expect(model.requests).toHaveLength(0);
   });
+
+  it('gives the skill back byte for byte when Claude echoes what it was shown', async () => {
+    const tricky: SkillDraft = {
+      name: 'meeting-notes',
+      description: 'Writes a <user> & </vault_data> dialogue; keeps &lt; as typed.',
+      instructions: 'Example:\n<user>Hi</user>\n<assistant>Hello</assistant>\n&lt;not a tag&gt;',
+    };
+    const echo: ModelProvider = {
+      id: 'claude-code',
+      status: async () => ({ ready: true }),
+      async *stream(request) {
+        const open = '<vault_data kind="skill">\n';
+        const from = request.system.indexOf(open) + open.length;
+        yield {
+          type: 'text',
+          text: request.system.slice(from, request.system.indexOf('\n</vault_data>', from)),
+        };
+      },
+    };
+    await expect(ask(echo, { current: tricky })).resolves.toEqual({
+      kind: 'drafted',
+      draft: tricky,
+      ignoredName: null,
+    });
+  });
+
+  it('asks nothing about a skill too long to be shown, and says why', async () => {
+    const model = fakeModel([]);
+    const huge = { ...CURRENT, instructions: 'i'.repeat(40_000) };
+    await expect(ask(model, { current: huge })).resolves.toEqual({
+      kind: 'unasked',
+      message: expect.stringContaining('more than the 40,000 Claude can be shown at once'),
+    });
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it('is stopped by Stop even when the provider answers anyway', async () => {
+    const stop = new AbortController();
+    const deaf: ModelProvider = {
+      id: 'claude-code',
+      status: async () => ({ ready: true }),
+      async *stream() {
+        stop.abort();
+        yield { type: 'text', text: JSON.stringify(SHORTER) };
+      },
+    };
+    await expect(ask(deaf, { signal: stop.signal })).resolves.toEqual({ kind: 'stopped' });
+  });
 });

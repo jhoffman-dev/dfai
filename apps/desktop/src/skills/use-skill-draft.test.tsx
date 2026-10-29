@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import type { SkillDraft } from '@dfai/domain';
 import {
   ChatCancelled,
+  ModelProviderError,
   type ModelEvent,
   type ModelProvider,
   type ModelRequest,
@@ -28,24 +29,34 @@ const SHORTER = {
   instructions: 'List the decisions.',
 };
 
-/** A model whose each answer is handed over by the test, and which stops when told. */
-function heldModel(status: ProviderStatus = { ready: true }) {
+/**
+ * A model whose each answer is handed over by the test. Told to stop, it
+ * stops; a `deaf` one answers anyway, as a provider that ignores the signal
+ * might. `settle` waits until every answer handed over has been read.
+ */
+function heldModel(status: ProviderStatus = { ready: true }, { deaf = false } = {}) {
   const requests: ModelRequest[] = [];
   const answers: ((text: string) => void)[] = [];
   let stopped = 0;
+  let given = 0;
+  let read = 0;
   const provider: ModelProvider = {
     id: 'claude-code',
     status: async () => status,
     async *stream(request, signal): AsyncIterable<ModelEvent> {
       requests.push(request);
-      const text = await new Promise<string>((resolve, reject) => {
-        answers.push(resolve);
-        signal.addEventListener('abort', () => {
-          stopped += 1;
-          reject(new ChatCancelled());
+      try {
+        const text = await new Promise<string>((resolve, reject) => {
+          answers.push(resolve);
+          signal.addEventListener('abort', () => {
+            stopped += 1;
+            if (!deaf) reject(new ChatCancelled());
+          });
         });
-      });
-      yield { type: 'text', text };
+        yield { type: 'text', text };
+      } finally {
+        read += 1;
+      }
     },
   };
   return {
@@ -54,7 +65,14 @@ function heldModel(status: ProviderStatus = { ready: true }) {
     stopped: () => stopped,
     answer: async (value: unknown) => {
       await vi.waitFor(() => expect(answers.length).toBeGreaterThan(0));
+      given += 1;
       answers.shift()?.(typeof value === 'string' ? value : JSON.stringify(value));
+    },
+    /** Every answer given has been read, and what the page does with it is done. */
+    settle: async () => {
+      await vi.waitFor(() => expect(read).toBeGreaterThanOrEqual(given));
+      // One task later every promise the answer started has run its course.
+      await act(() => new Promise((done) => setTimeout(done, 0)));
     },
   };
 }
@@ -76,25 +94,39 @@ function editorOf(mode: 'new' | 'edit', draft: SkillDraft): SkillEditorState {
   };
 }
 
-/** The Skills page's editor and Ask Claude, with the editor's draft held as the page holds it. */
+const BLANK: SkillDraft = { name: '', description: '', instructions: '' };
+
+/**
+ * The Skills page's editor and Ask Claude, with the editor's draft held as
+ * the page holds it, and New opening a fresh new skill as the page does.
+ */
 function Harness({
   provider,
-  mode,
+  mode: startMode,
   start,
   onSave,
+  onChanged,
 }: {
   provider: ModelProvider;
   mode: 'new' | 'edit';
   start: SkillDraft;
   onSave: () => void;
+  onChanged: (change: Partial<SkillDraft>) => void;
 }) {
-  const [draft, setDraft] = useState(start);
+  const [{ mode, draft, opening }, setShown] = useState({
+    mode: startMode,
+    draft: start,
+    opening: 1,
+  });
   const editor = editorOf(mode, draft);
-  const onChange = (change: Partial<SkillDraft>) => setDraft((was) => ({ ...was, ...change }));
+  const onChange = (change: Partial<SkillDraft>) => {
+    onChanged(change);
+    setShown((was) => ({ ...was, draft: { ...was.draft, ...change } }));
+  };
   const ask = useSkillDraft({
     ports: { provider: () => provider, model: () => 'claude-opus-5-5' },
     editor,
-    selected: mode === 'edit' ? draft.name : null,
+    opening,
     onChange,
   });
   return (
@@ -109,7 +141,7 @@ function Harness({
       focusTarget={null}
       onFocused={() => {}}
       onSelect={() => {}}
-      onNew={() => {}}
+      onNew={() => setShown((was) => ({ mode: 'new', draft: BLANK, opening: was.opening + 1 }))}
       onChange={onChange}
       onSave={onSave}
       onDelete={() => {}}
@@ -125,11 +157,21 @@ function setUp({
   mode = 'edit' as 'new' | 'edit',
   start = SAVED,
   status,
-}: { mode?: 'new' | 'edit'; start?: SkillDraft; status?: ProviderStatus } = {}) {
-  const model = heldModel(status);
+  deaf = false,
+}: { mode?: 'new' | 'edit'; start?: SkillDraft; status?: ProviderStatus; deaf?: boolean } = {}) {
+  const model = heldModel(status, { deaf });
   const onSave = vi.fn();
-  render(<Harness provider={model.provider} mode={mode} start={start} onSave={onSave} />);
-  return { model, onSave };
+  const onChanged = vi.fn();
+  render(
+    <Harness
+      provider={model.provider}
+      mode={mode}
+      start={start}
+      onSave={onSave}
+      onChanged={onChanged}
+    />,
+  );
+  return { model, onSave, onChanged };
 }
 
 const field = (name: RegExp | string) =>
@@ -261,25 +303,28 @@ describe('Ask Claude on the Skills page', () => {
     expect(model.requests).toHaveLength(0);
   });
 
-  it('opening another skill stops the ask under way and forgets it', async () => {
-    const model = heldModel();
+  function hooked(model: ReturnType<typeof heldModel>) {
     const ports = { provider: () => model.provider, model: () => 'claude-opus-5-5' };
     const onChange = vi.fn();
-    const { result, rerender } = renderHook(
-      ({ selected }: { selected: string }) =>
-        useSkillDraft({
-          ports,
-          editor: editorOf('edit', { ...SAVED, name: selected }),
-          selected,
-          onChange,
-        }),
-      { initialProps: { selected: 'meeting-notes' } },
+    const view = renderHook(
+      ({ opening }: { opening: number }) =>
+        useSkillDraft({ ports, editor: editorOf('edit', SAVED), opening, onChange }),
+      { initialProps: { opening: 1 } },
     );
-    act(() => result.current?.onOpen());
-    act(() => result.current?.onRequestChange('Make this shorter'));
-    act(() => result.current?.onAsk());
-    await vi.waitFor(() => expect(model.requests).toHaveLength(1));
-    rerender({ selected: 'weekly-review' });
+    const askNow = async () => {
+      act(() => view.result.current?.onOpen());
+      act(() => view.result.current?.onRequestChange('Make this shorter'));
+      act(() => view.result.current?.onAsk());
+      await vi.waitFor(() => expect(model.requests).toHaveLength(1));
+    };
+    return { ...view, onChange, askNow };
+  }
+
+  it('opening another editor stops the ask under way and forgets it', async () => {
+    const model = heldModel();
+    const { result, rerender, askNow } = hooked(model);
+    await askNow();
+    rerender({ opening: 2 });
     expect(model.stopped()).toBe(1);
     expect(result.current).toMatchObject({
       open: false,
@@ -287,5 +332,119 @@ describe('Ask Claude on the Skills page', () => {
       asking: false,
       preview: null,
     });
+  });
+
+  it('an ask on a new skill does not survive New: its answer never reaches the next one', async () => {
+    const typed = { name: 'standup-notes', description: 'Tidies standups.', instructions: 'Tidy.' };
+    const { model, onChanged } = setUp({ mode: 'new', start: typed, deaf: true });
+    await askFor('Make this shorter');
+    await vi.waitFor(() => expect(model.requests).toHaveLength(1));
+    await userEvent.click(screen.getByRole('button', { name: 'New skill' }));
+    expect(model.stopped()).toBe(1);
+    await model.answer({ ...SHORTER, name: 'standup-notes' });
+    await model.settle();
+    expect(screen.queryByRole('region', { name: 'Ask Claude' })).toBeNull();
+    expect(field('Name').value).toBe('');
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it('a late answer after Stop shows no draft and changes nothing', async () => {
+    const { model, onChanged } = setUp({ deaf: true });
+    await askFor('Make this shorter');
+    await vi.waitFor(() => expect(model.requests).toHaveLength(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    await model.answer(SHORTER);
+    await model.settle();
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Claude’s draft' })).toBeNull();
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it('a stopped ask answering late does not end the ask made after it', async () => {
+    const { model } = setUp({ deaf: true });
+    await askFor('Make this shorter');
+    await vi.waitFor(() => expect(model.requests).toHaveLength(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
+    await vi.waitFor(() => expect(model.requests).toHaveLength(2));
+    await model.answer(SHORTER);
+    await model.settle();
+    expect(screen.getByRole('status').textContent).toBe('Asking Claude…');
+    await model.answer({ ...SHORTER, instructions: 'Decisions only.' });
+    const draft = await screen.findByRole('region', { name: 'Claude’s draft' });
+    expect(within(draft).getByText('Decisions only.')).toBeTruthy();
+  });
+
+  it('a late answer after Close, or after the page has gone, changes nothing', async () => {
+    const closing = heldModel(undefined, { deaf: true });
+    const closed = hooked(closing);
+    await closed.askNow();
+    act(() => closed.result.current?.onClose());
+    expect(closing.stopped()).toBe(1);
+    await closing.answer(SHORTER);
+    await closing.settle();
+    expect(closed.result.current).toMatchObject({ open: false, asking: false, preview: null });
+    expect(closed.onChange).not.toHaveBeenCalled();
+
+    const leaving = heldModel(undefined, { deaf: true });
+    const gone = hooked(leaving);
+    await gone.askNow();
+    gone.unmount();
+    expect(leaving.stopped()).toBe(1);
+    await leaving.answer(SHORTER);
+    await leaving.settle();
+    expect(gone.onChange).not.toHaveBeenCalled();
+  });
+
+  it('typing while Claude is asked shows in the preview, and Accept gives the draft', async () => {
+    const { model } = setUp();
+    await askFor('Make this shorter');
+    await userEvent.type(field(/^Description/), ' Typed meanwhile.');
+    await model.answer(SHORTER);
+    const draft = await screen.findByRole('region', { name: 'Claude’s draft' });
+    const description = within(draft).getByRole('group', { name: 'Description' });
+    expect(
+      within(description)
+        .getAllByRole('listitem')
+        .map((line) => line.textContent),
+    ).toEqual([`Removed: ${SAVED.description} Typed meanwhile.`, `Added: ${SHORTER.description}`]);
+    await userEvent.click(within(draft).getByRole('button', { name: 'Accept' }));
+    expect(field(/^Description/).value).toBe(SHORTER.description);
+  });
+
+  it('says a failure in its own words, as the chat does', async () => {
+    const broken: ModelProvider = {
+      id: 'claude-code',
+      status: async () => ({ ready: true }),
+      // eslint-disable-next-line require-yield -- a stream that fails before its first word
+      async *stream() {
+        throw new ModelProviderError('failed', 'Claude Code could not answer: overloaded');
+      },
+    };
+    const buggy: ModelProvider = {
+      ...broken,
+      // eslint-disable-next-line require-yield -- a stream that fails before its first word
+      async *stream() {
+        throw new TypeError('the host went away');
+      },
+    };
+    for (const [provider, said] of [
+      [broken, 'Claude Code could not answer: overloaded'],
+      [buggy, 'the host went away'],
+    ] as const) {
+      cleanup();
+      render(
+        <Harness
+          provider={provider}
+          mode="edit"
+          start={SAVED}
+          onSave={vi.fn()}
+          onChanged={vi.fn()}
+        />,
+      );
+      await askFor('Make this shorter');
+      const alert = await screen.findByRole('alert');
+      expect(alert.querySelector('p')?.textContent).toBe(said);
+    }
   });
 });
