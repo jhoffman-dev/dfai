@@ -306,7 +306,10 @@ async fn the_token_is_read_off_the_async_worker() {
             self.inner.set(account, value)
         }
         fn get(&self, account: &str) -> Result<Option<String>, String> {
-            self.read_on.lock().unwrap().push(std::thread::current().id());
+            self.read_on
+                .lock()
+                .unwrap()
+                .push(std::thread::current().id());
             self.inner.get(account)
         }
         fn delete(&self, account: &str) -> Result<(), String> {
@@ -354,4 +357,3 @@ fn a_vault_switched_mid_call_is_said_as_slack_not_asked() {
         "no vault is open"
     );
 }
-

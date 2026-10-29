@@ -16,6 +16,7 @@ import { useSlackPasteListener } from './slack-paste-listener.ts';
  */
 
 const answering = (call: SlackCall): unknown => {
+  if (call.method === 'auth.test') return { ok: true, user_id: 'U0MARAQ111', user: 'mara' };
   if (call.method === 'conversations.replies') return slackRepliesAnswer();
   if (call.method === 'chat.getPermalink') return slackPermalinkAnswer();
   return slackUserAnswer(call.query['user'] ?? '');

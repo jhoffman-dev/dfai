@@ -60,6 +60,7 @@ describe('reading a pasted Slack link', () => {
     const slack = slackAnswering();
     const preview = await read(slack);
     expect(slack.calls).toEqual([
+      { method: 'auth.test', query: {} },
       {
         method: 'conversations.replies',
         query: { channel: SLACK_CHANNEL, ts: SLACK_TS, limit: '1000' },
@@ -83,7 +84,7 @@ describe('reading a pasted Slack link', () => {
       `https://larkspur.slack.com/archives/${SLACK_CHANNEL}/p1793136300000200?thread_ts=${SLACK_TS}`,
     ) as SlackPermalink;
     const preview = await read(slack, reply);
-    expect(slack.calls[0]?.query['ts']).toBe(SLACK_TS);
+    expect(slack.calls[1]?.query['ts']).toBe(SLACK_TS);
     expect(preview.author).toBe('Tobias Fenn');
     expect(readCapture(preview.payload).message.ts).toBe(SLACK_REPLY_TS);
   });
@@ -112,11 +113,15 @@ describe('reading a pasted Slack link', () => {
     expect((failure as SlackError).failure.kind).toBe('refused');
   });
 
-  it('writes someone whose profile Slack will not give by their id, but stops when rate limited', async () => {
+  it('writes someone whose profile Slack will not give by their id, as when it asks to slow down', async () => {
     const hiddenProfile = slackAnswering({ 'users.info': { ok: false, error: 'user_not_found' } });
     expect((await read(hiddenProfile)).author).toBe(MARA_ID);
     const limited = slackAnswering({ 'users.info': { ok: false, error: 'ratelimited' } });
-    await expect(read(limited)).rejects.toMatchObject({ failure: { kind: 'rate_limited' } });
+    expect((await read(limited)).author).toBe(MARA_ID);
+    const stopped = slackAnswering({
+      'conversations.replies': { ok: false, error: 'ratelimited' },
+    });
+    await expect(read(stopped)).rejects.toMatchObject({ failure: { kind: 'rate_limited' } });
   });
 });
 

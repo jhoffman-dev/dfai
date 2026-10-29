@@ -3,19 +3,12 @@ import { SlackError } from '@dfai/application';
 import type { SlackOfferView } from '@dfai/ui';
 import { errorMessage } from '../query/error-message.ts';
 
-/** Failures whose fix is in Settings → Slack: the offer then has an Open Settings. */
-const FIXED_IN_SETTINGS = new Set(['no_token', 'refused', 'missing_scope', 'keychain']);
-
 /** A read or save that failed, as the offer draws it: what went wrong and what to do. */
 export function problemOf(cause: unknown): SlackOfferView {
   if (cause instanceof SlackError) {
-    const { problem, fix } = explainSlackFailure(cause.failure);
-    return {
-      state: 'problem',
-      problem,
-      fix,
-      inSettings: FIXED_IN_SETTINGS.has(cause.failure.kind),
-    };
+    // The domain says whether the fix is in Settings → Slack: the offer then has an Open Settings.
+    const { problem, fix, inSettings } = explainSlackFailure(cause.failure, 'paste');
+    return { state: 'problem', problem, fix, inSettings };
   }
   if (cause instanceof CaptureRefusedError) {
     return {

@@ -32,7 +32,9 @@ type SlackAnswerFailureKind =
   /** Slack asked DFAI to slow down; `retryAfter` says for how long, when it did. */
   | 'rate_limited'
   /** Any other refusal; the message is Slack's code for it. */
-  | 'slack_error';
+  | 'slack_error'
+  /** A token pasted into Settings that is not a user token, refused before the host is asked. */
+  | 'not_a_user_token';
 
 export type SlackHostFailureKind = (typeof SLACK_HOST_FAILURE_KINDS)[number];
 export type SlackFailureKind = SlackHostFailureKind | SlackAnswerFailureKind;
@@ -118,71 +120,146 @@ export const SLACK_SCOPES = [
   'users:read.email',
 ] as const;
 
-/** What went wrong, in the person's words, and what to do. */
+/** What went wrong, in the person's words, what to do, and whether the fix is in Settings → Slack. */
 export interface SlackProblem {
   readonly problem: string;
   readonly fix: string;
+  readonly inSettings: boolean;
+}
+
+/**
+ * Where a failure is shown: the card a pasted link opens, where the link
+ * stays as it was pasted, or Settings → Slack, where nothing was pasted.
+ */
+export type SlackFailureContext = 'paste' | 'settings';
+
+/** What a user token starts with: one Slack issues with rotation on, too. Never a bot's (`xoxb-`). */
+const USER_TOKEN = /^(?:xoxp-|xoxe\.xoxp-)[\x21-\x7e]+$/;
+
+const NOT_A_USER_TOKEN =
+  'That is not a Slack user token: paste the User OAuth Token, which starts xoxp-.';
+
+/**
+ * Why a token pasted into Settings → Slack cannot be one, or null when it
+ * can. The host checks again (`slack/token.rs`), as the backstop for a
+ * webview that skipped this; the words are this one's.
+ */
+export function slackTokenProblem(token: string): string | null {
+  return USER_TOKEN.test(token) ? null : NOT_A_USER_TOKEN;
 }
 
 const CONNECT = 'Connect Slack in Settings → Slack, with a user token (xoxp-…).';
 const KEPT_LINK = 'The link stays as you pasted it.';
+const NEW_TOKEN = 'Make a new one and paste it in Settings → Slack.';
 
 function waitWords(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return 'Try again in a minute.';
   return seconds <= 1 ? 'Try again in a second.' : `Try again in ${seconds} seconds.`;
 }
 
+/**
+ * One failure's words: what went wrong, the fix on the paste card and in
+ * Settings, and whether that fix is made in Settings → Slack.
+ */
+interface Words {
+  readonly problem: string;
+  readonly paste: string;
+  readonly settings: string;
+  readonly inSettings?: boolean;
+}
+
+const RECONNECT = 'Check the connection, then press Connect again.';
+
 /** Each failure's words; a function where they depend on what was said. */
-const PROBLEMS: Readonly<Record<SlackFailureKind, (failure: SlackFailure) => SlackProblem>> = {
-  no_token: () => ({ problem: 'Slack is not connected on this Mac.', fix: CONNECT }),
+const WORDS: Readonly<Record<SlackFailureKind, (failure: SlackFailure) => Words>> = {
+  no_token: () => ({
+    problem: 'Slack is not connected on this Mac.',
+    paste: CONNECT,
+    settings: 'Paste a user token (xoxp-…) and press Connect.',
+    inSettings: true,
+  }),
+  not_a_user_token: () => ({
+    problem: NOT_A_USER_TOKEN,
+    paste: CONNECT,
+    settings: 'Copy it from the Slack app’s OAuth & Permissions page.',
+    inSettings: true,
+  }),
   refused: () => ({
     problem: 'Slack refused the token: it was revoked, expired, or is not a user token.',
-    fix: `Make a new one and paste it in Settings → Slack. ${KEPT_LINK}`,
+    paste: `${NEW_TOKEN} ${KEPT_LINK}`,
+    settings: 'Make a new one in the Slack app and paste it here.',
+    inSettings: true,
   }),
-  missing_scope: () => ({
-    problem: 'The Slack token is missing a scope DFAI needs to read this message.',
-    fix: `Add the user token scopes ${SLACK_SCOPES.join(', ')} to the Slack app, reinstall it, and paste the new token in Settings → Slack.`,
-  }),
+  missing_scope: () => {
+    const scopes = `Add the user token scopes ${SLACK_SCOPES.join(', ')} to the Slack app, reinstall it,`;
+    return {
+      problem: 'The Slack token is missing a scope DFAI needs to read this message.',
+      paste: `${scopes} and paste the new token in Settings → Slack.`,
+      settings: `${scopes} and paste the new token here.`,
+      inSettings: true,
+    };
+  },
   not_found: () => ({
     problem:
       'You cannot read this message in Slack: it was deleted, or it is in a conversation you are not in.',
-    fix: `${KEPT_LINK} Only the link was saved.`,
+    paste: `${KEPT_LINK} Only the link was saved.`,
+    settings: 'Check the token is yours, for the workspace you read in.',
   }),
   rate_limited: (failure) => ({
     problem: 'Slack asked DFAI to slow down.',
-    fix: waitWords(failure.retryAfter),
+    paste: waitWords(failure.retryAfter),
+    settings: waitWords(failure.retryAfter),
   }),
   slack_error: (failure) => ({
-    problem: `Slack could not send the message (${failure.message}).`,
-    fix: `Try again later. ${KEPT_LINK}`,
+    problem: `Slack could not answer (${failure.message}).`,
+    paste: `Try again later. ${KEPT_LINK}`,
+    settings: 'Try again later.',
   }),
   invalid: (failure) => ({
-    problem: `DFAI could not ask Slack: ${failure.message}.`,
-    fix: KEPT_LINK,
+    problem: `DFAI could not read Slack: ${failure.message}.`,
+    paste: KEPT_LINK,
+    settings: 'Open Settings again and try once more.',
   }),
   keychain: (failure) => ({
     problem: `The Keychain did not give DFAI the Slack token: ${failure.message}.`,
-    fix: 'Unlock the Keychain, or paste the token again in Settings → Slack.',
+    paste: 'Unlock the Keychain, or paste the token again in Settings → Slack.',
+    settings: 'Unlock the Keychain, or paste the token again.',
+    inSettings: true,
   }),
   unreachable: () => ({
     problem: 'Slack could not be reached.',
-    fix: `Check the connection and paste the link again. ${KEPT_LINK}`,
+    paste: `Check the connection and paste the link again. ${KEPT_LINK}`,
+    settings: RECONNECT,
   }),
   timeout: () => ({
     problem: 'Slack did not answer in time.',
-    fix: `Check the connection and paste the link again. ${KEPT_LINK}`,
+    paste: `Check the connection and paste the link again. ${KEPT_LINK}`,
+    settings: RECONNECT,
   }),
   too_large: () => ({
     problem: 'Slack answered with more than DFAI will read.',
-    fix: KEPT_LINK,
+    paste: KEPT_LINK,
+    settings: 'Try again later.',
   }),
   malformed: (failure) => ({
     problem: `Slack answered in a way DFAI does not understand: ${failure.message}.`,
-    fix: KEPT_LINK,
+    paste: KEPT_LINK,
+    settings: 'Try again later.',
   }),
 };
 
-/** The person's problem and what to do about it, for any failure. */
-export function explainSlackFailure(failure: SlackFailure): SlackProblem {
-  return (PROBLEMS[failure.kind] ?? PROBLEMS.malformed)(failure);
+/**
+ * The person's problem, what to do about it where it is shown, and whether
+ * the fix is in Settings → Slack (the paste card then offers a way there).
+ */
+export function explainSlackFailure(
+  failure: SlackFailure,
+  during: SlackFailureContext = 'paste',
+): SlackProblem {
+  const words = (WORDS[failure.kind] ?? WORDS.malformed)(failure);
+  return {
+    problem: words.problem,
+    fix: during === 'paste' ? words.paste : words.settings,
+    inSettings: words.inSettings === true,
+  };
 }

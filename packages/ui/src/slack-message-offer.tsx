@@ -53,7 +53,8 @@ export function SlackMessageOffer({
   onDismiss: () => void;
 }) {
   return (
-    <section className="slack-offer" aria-label="Slack message" aria-live="polite">
+    // Not a live region itself: its status and alert lines speak, once each.
+    <section className="slack-offer" aria-label="Slack message">
       <OfferBody view={view} onSave={onSave} onOpen={onOpen} onOpenSettings={onOpenSettings} />
       <button className="btn btn--ghost slack-offer__dismiss" type="button" onClick={onDismiss}>
         Dismiss
@@ -75,7 +76,11 @@ function OfferBody({
 }) {
   switch (view.state) {
     case 'reading':
-      return <p className="slack-offer__status">Reading the Slack message…</p>;
+      return (
+        <p className="slack-offer__status" role="status">
+          Reading the Slack message…
+        </p>
+      );
     case 'ready': {
       const thread = threadLine(view.replies, view.attachments);
       return (

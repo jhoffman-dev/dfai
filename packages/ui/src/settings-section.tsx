@@ -26,6 +26,22 @@ export function SettingsSection({
 }
 
 /**
+ * How far ahead of the screen a section's body is drawn: more than the
+ * section above it is tall, so that Tab from its last control lands in this
+ * one's first, rather than past it into the next section (review of PR #631).
+ */
+const DRAWN_BEFORE_REACHED = '400px 0px';
+
+/** The nearest element `element` scrolls in, or null for the window. */
+function scrollerOf(element: HTMLElement): HTMLElement | null {
+  for (let at = element.parentElement; at !== null; at = at.parentElement) {
+    const { overflowY } = getComputedStyle(at);
+    if (overflowY === 'auto' || overflowY === 'scroll') return at;
+  }
+  return null;
+}
+
+/**
  * A part of Settings whose body is drawn only once it is shown — scrolled
  * into view, or chosen in the dialog's list, which scrolls to it. Until then
  * it is its heading alone, so a section that asks the host or a service
@@ -48,11 +64,16 @@ export function SettingsSectionWhenShown({
       setShown(true);
       return;
     }
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      observer.disconnect();
-      setShown(true);
-    });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        setShown(true);
+      },
+      // The margin reaches past the screen only when measured against the
+      // pane the sections scroll in: against the window, the pane clips it.
+      { root: scrollerOf(element), rootMargin: DRAWN_BEFORE_REACHED },
+    );
     observer.observe(element);
     return () => observer.disconnect();
   }, []);

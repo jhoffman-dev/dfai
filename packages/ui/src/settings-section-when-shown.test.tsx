@@ -77,5 +77,7 @@ describe('SettingsSectionWhenShown', () => {
       </SettingsSectionWhenShown>,
     );
     expect(options[0]?.rootMargin).toBe('400px 0px');
+    // Against the pane it scrolls in: none here, so the window.
+    expect(options[0]?.root).toBeNull();
   });
 });

@@ -13,13 +13,15 @@
 //! `/api/`, and GET.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use reqwest::Url;
 use serde::Serialize;
 use tauri::State;
 
 use crate::secrets::{
-    ensure_strikable_off_worker, redact_off_worker, vault_scope, SecretState, SecretStore,
+    ensure_strikable_off_worker, on_blocking_thread, redact_off_worker, vault_scope, SecretState,
+    SecretStore,
 };
 use crate::vault::{root_for_write, VaultState};
 
@@ -48,11 +50,20 @@ pub struct SlackAnswer {
     pub retry_after: Option<u64>,
 }
 
-/// Slack, for one vault's token.
+/// Slack, for one vault's token. The store is shared so the Keychain is
+/// read and written on a thread kept for blocking work: it can wait on a
+/// prompt, and a paste reads it once for each of a thread's people.
 pub struct Session<'a> {
     pub origin: &'a Url,
-    pub store: &'a dyn SecretStore,
+    pub store: Arc<dyn SecretStore>,
     pub scope: &'a str,
+}
+
+fn keychain_gone() -> SlackFailure {
+    SlackFailure::new(
+        FailureKind::Keychain,
+        "the Keychain could not be asked: DFAI is shutting down",
+    )
 }
 
 fn no_token() -> SlackFailure {
@@ -72,22 +83,37 @@ fn too_long_to_protect() -> SlackFailure {
 }
 
 impl Session<'_> {
-    pub fn status(&self) -> Result<SlackStatus, SlackFailure> {
+    /// The vault's token, read off the async worker.
+    async fn load(&self) -> Result<Option<String>, SlackFailure> {
+        let (store, scope) = (self.store.clone(), self.scope.to_string());
+        on_blocking_thread(
+            move || token::load(store.as_ref(), &scope),
+            Err(keychain_gone()),
+        )
+        .await
+    }
+
+    pub async fn status(&self) -> Result<SlackStatus, SlackFailure> {
         Ok(SlackStatus {
-            has_token: token::load(self.store, self.scope)?.is_some(),
+            has_token: self.load().await?.is_some(),
         })
     }
 
     /// Keeps the token, replacing any kept before. Whether Slack accepts it
     /// is asked by TypeScript next, with `auth.test`, like any other call.
     pub async fn connect(&self, token: &str) -> Result<SlackStatus, SlackFailure> {
-        token::save(self.store, self.scope, token).await?;
+        token::save(self.store.as_ref(), self.scope, token).await?;
         log::info!("Slack token stored");
         Ok(SlackStatus { has_token: true })
     }
 
-    pub fn disconnect(&self) -> Result<SlackStatus, SlackFailure> {
-        token::forget(self.store, self.scope)?;
+    pub async fn disconnect(&self) -> Result<SlackStatus, SlackFailure> {
+        let (store, scope) = (self.store.clone(), self.scope.to_string());
+        on_blocking_thread(
+            move || token::forget(store.as_ref(), &scope),
+            Err(keychain_gone()),
+        )
+        .await?;
         log::info!("Slack token removed");
         Ok(SlackStatus { has_token: false })
     }
@@ -100,7 +126,7 @@ impl Session<'_> {
         query: &BTreeMap<String, String>,
     ) -> Result<SlackAnswer, SlackFailure> {
         let url = api::call_url(self.origin, method, query)?;
-        let token = token::load(self.store, self.scope)?.ok_or_else(no_token)?;
+        let token = self.load().await?.ok_or_else(no_token)?;
         ensure_strikable_off_worker(token.clone())
             .await
             .map_err(|_| too_long_to_protect())?;
@@ -126,27 +152,37 @@ fn pinned_origin() -> Url {
     Url::parse(ORIGIN).expect("Slack's fixed origin parses")
 }
 
+/// The vault check's refusal, said of Slack: the check is shared with every
+/// write, and words a vault switched mid-call as a write that was not made.
+pub fn vault_refusal(message: String) -> SlackFailure {
+    let said = if message.starts_with("another vault was opened") {
+        "another vault was opened before Slack could be asked".to_string()
+    } else {
+        message
+    };
+    SlackFailure::new(FailureKind::Invalid, said)
+}
+
 /// The vault a command names, checked to be the open one, as its Keychain
 /// scope: a call that lands after a switch is refused, never sent with the
 /// other vault's token.
 fn scope_of(state: &VaultState, vault: &str) -> Result<String, SlackFailure> {
-    let root = root_for_write(state.root(), Some(vault))
-        .map_err(|message| SlackFailure::new(FailureKind::Invalid, message))?;
+    let root = root_for_write(state.root(), Some(vault)).map_err(vault_refusal)?;
     Ok(vault_scope(&root))
 }
 
 fn session<'a>(origin: &'a Url, secrets: &'a SecretState, scope: &'a str) -> Session<'a> {
     Session {
         origin,
-        store: secrets.store(),
+        store: secrets.shared(),
         scope,
     }
 }
 
 // The commands are async so that the Keychain, which can block on a prompt,
-// is never asked from the main thread. None is named for the token: the IPC
-// contract test holds every command with "token" in its name to the local
-// API's own.
+// is never asked from the main thread. Their names say what each does — none
+// hands a token back: connect only takes one in — and the IPC contract test
+// holds the exact list of Slack commands, so one that could is seen.
 
 #[tauri::command]
 pub async fn slack_status(
@@ -155,7 +191,7 @@ pub async fn slack_status(
     vault: String,
 ) -> Result<SlackStatus, SlackFailure> {
     let scope = scope_of(&vaults, &vault)?;
-    session(&pinned_origin(), &secrets, &scope).status()
+    session(&pinned_origin(), &secrets, &scope).status().await
 }
 
 /// Keeps the token the person pasted, replacing any kept before.
@@ -179,7 +215,9 @@ pub async fn slack_disconnect(
     vault: String,
 ) -> Result<SlackStatus, SlackFailure> {
     let scope = scope_of(&vaults, &vault)?;
-    session(&pinned_origin(), &secrets, &scope).disconnect()
+    session(&pinned_origin(), &secrets, &scope)
+        .disconnect()
+        .await
 }
 
 /// One GET of a Web API method, as TypeScript names it, with its query, each

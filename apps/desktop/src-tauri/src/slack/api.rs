@@ -8,6 +8,7 @@
 //! needs still cannot post, edit or delete through DFAI.
 
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, RETRY_AFTER};
@@ -72,9 +73,16 @@ pub fn call_url(
     Ok(url)
 }
 
-fn client() -> Result<Client, SlackFailure> {
+/// One client for every Slack request, so a paste's lookups share its
+/// connections rather than each opening its own. Built on first use; a
+/// build that fails is tried again by the next request.
+fn client() -> Result<&'static Client, SlackFailure> {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client);
+    }
     // No redirect is followed: following one could carry the token elsewhere.
-    Client::builder()
+    let built = Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .user_agent(USER_AGENT)
         .redirect(redirect::Policy::none())
@@ -84,7 +92,8 @@ fn client() -> Result<Client, SlackFailure> {
                 FailureKind::Unreachable,
                 format!("cannot prepare the request: {error}"),
             )
-        })
+        })?;
+    Ok(CLIENT.get_or_init(|| built))
 }
 
 /// Without the URL, as everywhere a request may go wrong (ADR-0017): its

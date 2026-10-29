@@ -192,8 +192,14 @@ test('Tab from the Granola key reaches the Slack token field', async ({ page }) 
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const granolaKey = settings.getByLabel('Granola API key', { exact: true });
+  const slackToken = settings.getByLabel('Slack user token', { exact: true });
+  // Granola's field at the very foot of the pane, Slack's heading still below it.
+  await granolaKey.evaluate((field) => field.scrollIntoView({ block: 'end' }));
+  await expect(settings.getByRole('heading', { name: 'Slack' })).not.toBeInViewport();
   await granolaKey.focus();
   await expect(granolaKey).toBeFocused();
+  // With Granola's field on screen, Slack's body is drawn before Slack is reached.
+  await expect(slackToken).toBeAttached();
   await page.keyboard.press('Tab');
-  await expect(settings.getByLabel('Slack user token', { exact: true })).toBeFocused();
+  await expect(slackToken).toBeFocused();
 });

@@ -29,7 +29,7 @@ interface Known {
 /** A failure in the card's words: Slack's problem and its fix, or what went wrong. */
 const wordsOf = (cause: unknown) => {
   if (!(cause instanceof SlackError)) return errorMessage(cause);
-  const { problem, fix } = explainSlackFailure(cause.failure);
+  const { problem, fix } = explainSlackFailure(cause.failure, 'settings');
   return `${problem} ${fix}`;
 };
 

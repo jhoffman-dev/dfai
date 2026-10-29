@@ -22,9 +22,10 @@ fn keychain(error: String) -> SlackFailure {
     )
 }
 
-/// The backstop for what TypeScript already checked and words for the
-/// person: a user token, and nothing that could break the header it is
-/// written into. The token is never quoted back.
+/// The backstop for `slackTokenProblem` in the domain, which checks the same
+/// shape before the webview hands a token over and words it for the person:
+/// a user token, and nothing that could break the header it is written into.
+/// The token is never quoted back.
 pub fn check(token: &str) -> Result<(), SlackFailure> {
     let prefixed = TOKEN_PREFIXES
         .iter()

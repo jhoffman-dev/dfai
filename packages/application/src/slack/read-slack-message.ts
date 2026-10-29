@@ -22,20 +22,49 @@ export interface SlackMessagePreview {
   readonly attachments: number;
 }
 
+/** How many people are looked up at once: users.info allows about 100 a minute. */
+export const LOOKUPS_AT_ONCE = 4;
+
 /**
  * Failures that end the read, even for one person's name: the rest would
- * fail alike, or Slack has asked DFAI to stop. Any other refusal of a
- * lookup — a profile hidden from the reader — writes that person by id.
+ * fail alike. Any other refusal of a lookup — a profile hidden from the
+ * reader — writes that person by id; so does every lookup after Slack asks
+ * DFAI to slow down, which stops asking rather than losing the message.
  */
-const ENDS_THE_READ = new Set(['no_token', 'refused', 'rate_limited', 'invalid', 'keychain']);
+const ENDS_THE_READ = new Set(['no_token', 'refused', 'invalid', 'keychain']);
 
-async function lookUp(read: (id: string) => Promise<unknown>, id: string): Promise<unknown> {
-  try {
-    return await read(id);
-  } catch (error) {
-    if (error instanceof SlackError && !ENDS_THE_READ.has(error.failure.kind)) return null;
-    throw error;
-  }
+/**
+ * Each id's `users.info` answer, or null for one not read, at most
+ * {@link LOOKUPS_AT_ONCE} out at a time, in the order asked.
+ */
+async function lookUpAll(
+  read: (id: string) => Promise<unknown>,
+  ids: readonly string[],
+): Promise<unknown[]> {
+  const answers: unknown[] = ids.map(() => null);
+  let next = 0;
+  let slowedDown = false;
+  const worker = async () => {
+    while (next < ids.length && !slowedDown) {
+      const at = next;
+      next += 1;
+      try {
+        answers[at] = await read(ids[at] as string);
+      } catch (error) {
+        if (!(error instanceof SlackError) || ENDS_THE_READ.has(error.failure.kind)) throw error;
+        if (error.failure.kind === 'rate_limited') slowedDown = true;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(LOOKUPS_AT_ONCE, ids.length) }, worker));
+  return answers;
+}
+
+/** Whoever the token reads as, looked up first as n8n looks up whoever asked; null if Slack does not say. */
+async function readerOf(slack: SlackPort, vault: string): Promise<string | null> {
+  const answer = await slack.call({ vault, method: 'auth.test', query: {} });
+  const id = (answer as Readonly<Record<string, unknown>> | null)?.['user_id'];
+  return typeof id === 'string' ? id : null;
 }
 
 /** The payload, the message being missing from Slack's answer read as Slack's not-found. */
@@ -68,6 +97,7 @@ export async function readSlackMessage({
   kind: CaptureKind;
 }): Promise<SlackMessagePreview> {
   const { channel, ts } = link;
+  const reader = await readerOf(slack, vault);
   const replies = await slack.call({
     vault,
     method: 'conversations.replies',
@@ -79,7 +109,7 @@ export async function readSlackMessage({
     query: { channel, message_ts: ts },
   });
   const readUser = (user: string) => slack.call({ vault, method: 'users.info', query: { user } });
-  const users = await Promise.all(usersToLookUp({ ts, replies }).map((id) => lookUp(readUser, id)));
+  const users = await lookUpAll(readUser, usersToLookUp({ ts, replies, first: reader }));
   const payload = payloadOf({ message: { channel, ts, kind }, permalink, replies, users });
   return { payload, ...previewOf(readCapture(payload)) };
 }

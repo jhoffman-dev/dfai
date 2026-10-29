@@ -57,8 +57,8 @@ describe('useSlackSettings', () => {
     await waitFor(() => expect(hook.result.current.view.tokenState).toBe('none'));
     act(() => hook.result.current.connect('xoxb-1111-bot'));
     await waitFor(() => expect(hook.result.current.view.problem).not.toBeNull());
-    expect(hook.result.current.view.problem).toBe(
-      'That is not a Slack user token: paste the User OAuth Token, which starts xoxp-.',
+    expect(hook.result.current.view.problem).toMatch(
+      /^That is not a Slack user token: paste the User OAuth Token, which starts xoxp-\. /,
     );
     expect(connect).not.toHaveBeenCalled();
     expect(hook.result.current.view.tokenState).toBe('none');
