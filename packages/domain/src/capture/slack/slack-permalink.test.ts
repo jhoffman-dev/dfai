@@ -54,3 +54,27 @@ describe('a Slack message link', () => {
     }
   });
 });
+
+describe('a Slack message link as a browser or Slack writes it (attack on PR #631)', () => {
+  it('is read with its host in any case, a trailing slash, or a fragment', () => {
+    for (const text of [
+      'https://Larkspur.Slack.COM/archives/C0LARK5PUR/p1793136000000100',
+      `${BASE}/`,
+      `${BASE}#reply`,
+      `${BASE}?thread_ts=1793135900.000050#reply`,
+    ]) {
+      expect(readSlackPermalink(text), text).toMatchObject({
+        channel: 'C0LARK5PUR',
+        ts: '1793136000.000100',
+      });
+    }
+  });
+
+  it('is not the web client’s address, which is a page, not a message link', () => {
+    expect(
+      readSlackPermalink(
+        'https://app.slack.com/client/T0LARK/C0LARK5PUR/thread/C0LARK5PUR-1793136000.000100',
+      ),
+    ).toBeNull();
+  });
+});

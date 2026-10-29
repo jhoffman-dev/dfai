@@ -84,3 +84,14 @@ describe('a token pasted into Settings → Slack', () => {
     );
   });
 });
+
+describe('a reply past the first messages of its thread (attack on PR #631)', () => {
+  it('says exactly that, not that it was deleted', () => {
+    const { problem, fix } = explainSlackFailure({ kind: 'past_thread_limit', message: '1000' });
+    expect(problem).toBe(
+      'This reply is past the first 1000 messages of its thread, which is as far as DFAI reads.',
+    );
+    expect(problem).not.toMatch(/deleted/);
+    expect(fix).toContain('The link stays as you pasted it.');
+  });
+});

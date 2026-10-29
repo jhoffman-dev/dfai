@@ -127,3 +127,39 @@ describe('connecting with a token that is not a user token', () => {
 it('the fixture names the channel the link names', () => {
   expect(LINK.channel).toBe(SLACK_CHANNEL);
 });
+
+describe('a reply past the first THREAD_LIMIT messages of its thread', () => {
+  it('fails as past_thread_limit, naming the limit, after reading pages up to it', async () => {
+    const reply = readSlackPermalink(
+      `${SLACK_PERMALINK.replace(/p\d{16}/, 'p1793139999000100')}?thread_ts=${SLACK_TS}`,
+    ) as SlackPermalink;
+    const pages: (string | undefined)[] = [];
+    const port: SlackPort = {
+      status: async () => ({ hasToken: true }),
+      connect: async () => ({ hasToken: true }),
+      disconnect: async () => ({ hasToken: false }),
+      async call({ method, query }) {
+        if (method === 'auth.test') return { ok: true, user_id: READER };
+        if (method !== 'conversations.replies') return { ok: true };
+        pages.push(query['cursor']);
+        const page = pages.length;
+        const messages = Array.from({ length: Number(query['limit']) }, (_, at) => ({
+          ts: `${1793100000 + page * 1000 + at}.000100`,
+          user: READER,
+          text: 'x',
+        }));
+        return {
+          ok: true,
+          has_more: true,
+          messages,
+          response_metadata: { next_cursor: `p${page + 1}` },
+        };
+      },
+    };
+    await expect(
+      readSlackMessage({ slack: port, vault: '/vaults/larkspur', link: reply, kind: 'note' }),
+    ).rejects.toMatchObject({ failure: { kind: 'past_thread_limit', message: '1000' } });
+    expect(pages[0]).toBeUndefined();
+    expect(pages.slice(1)).toEqual(pages.slice(1).map((_, at) => `p${at + 2}`));
+  });
+});
