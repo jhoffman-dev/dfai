@@ -89,6 +89,7 @@ function setUp({
     phaseNow: () => phase,
     claimRefusal,
     claimed,
+    claimUnsharedNow: () => shared.unshared,
     claimUnshared: false,
     exclusive: recordingExclusive(vault.order, open),
     activity,
@@ -113,6 +114,7 @@ function setUp({
     options,
     drawGate,
     messages,
+    shared,
   };
 }
 
@@ -147,17 +149,19 @@ describe('useClaimAutomations: "Process here" (ADR-0035 part 2, #176)', () => {
     drawGate();
 
     expect(messages()).toEqual(['Process here is set on this Mac but not yet shared with Studio.']);
-    expect(hook.result.current.pending).toBe('Studio');
+    expect(hook.result.current.pending).toMatchObject({ was: 'Studio' });
   });
 
   it('says it runs here once a later sync shares the claim, and only once', async () => {
-    const { hook, messages, drawGate } = setUp({ synced: false });
+    const { hook, messages, drawGate, shared } = setUp({ synced: false });
     await press(hook);
     drawGate();
+    expect(hook.result.current.pending).not.toBeNull();
 
     // A scheduled sync succeeds later: the gate says the claim is shared.
-    drawGate({ claimUnshared: false });
-    drawGate({ claimUnshared: false });
+    shared.unshared = false;
+    drawGate();
+    drawGate();
 
     expect(messages()).toEqual([
       'Process here is set on this Mac but not yet shared with Studio.',

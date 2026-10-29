@@ -139,7 +139,7 @@ describe('useMeetingsWaitingBanner (ADR-0035 parts 1 and 2, #176)', () => {
   it('says the claim is set here but not yet shared, with no button, until it is (#630 review)', () => {
     const { hook, sync, controller, waitingStore } = setUp();
     act(() => {
-      publishSync(sync, VAULT, { ...controller, claimPending: 'Studio' });
+      publishSync(sync, VAULT, { ...controller, claimPending: { was: 'Studio' } });
       // Named here now, the import counts nothing.
       sayMeetingsWaiting(waitingStore, VAULT, null);
     });

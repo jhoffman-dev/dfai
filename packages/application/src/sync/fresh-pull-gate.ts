@@ -79,6 +79,14 @@ export interface FreshPullGate {
    */
   claimRefusal(vault: string, phase: SyncPhase): Promise<ClaimRefusal | null>;
   /**
+   * This Mac's claim of the automations is written in the vault's settings
+   * here (#176): the gates stay shut until a sync completes, which pushed it.
+   * A look that brings nothing completes a pull but pushes nothing.
+   */
+  claimed(vault: string): void;
+  /** Whether this Mac's claim is written here and no sync has pushed it yet. */
+  claimUnshared(vault: string): boolean;
+  /**
    * Whether a reading of the sleep counter since the vault's last pull shows
    * the Mac slept after that pull started: the gates are shut though the
    * standing is the same, until a pull started since completes.
@@ -103,13 +111,17 @@ export interface FreshPullHere {
   readonly paused: (vault: string) => boolean;
 }
 
-/** One vault's record: whether it is known to sync, its standing, the wait last said in Activity, and a sleep seen since. */
+/**
+ * One vault's record: whether it is known to sync, its standing, the wait
+ * last said in Activity, a sleep seen since, and a claim not yet pushed.
+ */
 interface VaultRecord {
   readonly vault: string | null;
   readonly syncs: boolean;
   readonly standing: PullStanding | null;
   readonly said: FreshPullShut | null;
   readonly slept: boolean;
+  readonly claimUnshared: boolean;
 }
 
 const NOT_SYNCED: PullStanding = { kind: 'not-synced' };
@@ -140,6 +152,7 @@ export function createFreshPullGate({
     standing: null,
     said: null,
     slept: false,
+    claimUnshared: false,
   });
   let record: VaultRecord = fresh(null);
 
@@ -194,6 +207,14 @@ export function createFreshPullGate({
     ports.activity.inVault(vault).record(report);
   };
 
+  const unshared = (vault: string) => record.vault === vault && record.claimUnshared;
+  /** Marks or clears a claim not yet pushed, telling whatever waits on the standing. */
+  const markClaim = (vault: string, claimUnshared: boolean) => {
+    if (record.vault !== vault || record.claimUnshared === claimUnshared) return;
+    record = { ...record, claimUnshared };
+    onStanding(vault, record.standing);
+  };
+
   const pausedHere = (vault: string) =>
     record.vault === vault && record.syncs && here.paused(vault);
 
@@ -206,6 +227,7 @@ export function createFreshPullGate({
       asleepNowMs: pulled ? await readAsleep() : null,
       arrivedAt: pulled ? await arrivedAt(arrival) : null,
       paused: pausedHere(vault),
+      claimUnshared: unshared(vault),
     };
     // A pull started or ended while the facts were read: they are judged against it instead.
     if (standingOf(vault) !== standing) return verdict(vault, arrival);
@@ -248,6 +270,8 @@ export function createFreshPullGate({
       const effect = pullEndEffect(end);
       if (effect === 'keeps') return;
       if (effect === 'voids') return stand(vault, null);
+      // A sync that completed pushed what was committed here, a claim among it; a look pushes nothing.
+      if (end.kind === 'synced') markClaim(vault, false);
       const finishedAt = ports.clock.now();
       const thisMacId = here.thisMacId();
       if (startedAsleepMs === null || thisMacId === null) return stand(vault, null);
@@ -262,6 +286,10 @@ export function createFreshPullGate({
     acts: async (vault, arrival) => (await verdict(vault, arrival)).open,
     countGate,
     claimRefusal: refusal,
+    claimed: (vault) => {
+      if (record.vault === vault && record.syncs) markClaim(vault, true);
+    },
+    claimUnshared: unshared,
     sleptSincePull: (vault) => record.vault === vault && record.slept,
   };
 }

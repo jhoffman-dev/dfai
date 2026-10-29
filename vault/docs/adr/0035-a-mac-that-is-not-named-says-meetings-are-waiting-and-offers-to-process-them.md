@@ -204,12 +204,24 @@ _(Amended 2026-10-28, #176.)_ How the claim is made:
 - **Settings → Sync is not gated.** The disabled rule of part 2 is the
   button's. The manual move stays the person's own (ADR-0025).
 - **In the vault's git turn, then a sync.** The claim waits for any sync or
-  look under way, asks the gates, reads the settings, asks the gates again
-  and writes, with no pull in between. It then syncs at once, so the claim
-  reaches GitHub as early as it can and the window in which both Macs
-  believe they are named is as short as it can be. Until that sync
-  completes the gates stay shut on this Mac too (the last pull's settings
-  named the other Mac), so the catch-ups run after it.
+  look under way, asks the gates (with how sync stands at that moment, not
+  as last drawn), reads the settings, asks the gates again and writes, with
+  no pull in between. It then syncs at once, unless sync is paused here: a
+  paused Mac writes the claim and leaves it for the sync after it resumes.
+- **Not yet shared until a sync pushes it.** From the write until a sync
+  completes, the claim is said as "Process here is set on this Mac but not
+  yet shared with <Mac>" on the banner and in Activity, and the gates stay
+  shut on this Mac (`claim-unshared`). A look at GitHub that finds nothing
+  completes a pull but pushes nothing, so it does not open them; a failed
+  sync does not either. The first sync that completes pushed the claim:
+  the gates open, Activity says "<Mac> now runs the automations", and the
+  catch-ups run once. What is known of an unpushed claim lives in this
+  session: a claim written and not pushed before DFAI quits is pushed by the
+  first sync after it opens, and until then a look that finds nothing can
+  open the gates, as before the claim's own sync.
+- **Settings → Sync shows its claim.** It is busy while the claim waits its
+  turn, and the card says why one named no Mac (a refused write, settings
+  that cannot be read, or this Mac's id not read yet).
 - **Nothing written** when the settings cannot be read, when they already
   name this Mac by id (a renamed Mac is still named), or when another vault
   opened before the write's turn.

@@ -117,6 +117,8 @@ export {
   claimRefusal,
   claimRefusalLine,
   claimReport,
+  claimSharedReport,
+  claimUnsharedLine,
   namesThisMac,
   syncFailing,
 } from './automations-claim.ts';

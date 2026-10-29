@@ -134,16 +134,16 @@ describe('what the banner and Activity say of a claim', () => {
   });
 
   it('records the claim as not yet shared, naming the other Mac, and a failed write as a warning (#630 review)', () => {
-    expect(claimReport({ kind: 'claimed', was: 'Studio' }, MAC)).toEqual({
+    expect(claimReport({ kind: 'claimed', was: 'Studio' })).toEqual({
       level: 'info',
       kind: 'sync',
       message: 'Process here is set on this Mac but not yet shared with Studio.',
       subject: null,
     });
-    expect(claimReport({ kind: 'claimed', was: null }, MAC)?.message).toBe(
+    expect(claimReport({ kind: 'claimed', was: null })?.message).toBe(
       'Process here is set on this Mac but not yet shared with the other Mac.',
     );
-    expect(claimReport({ kind: 'write-failed', reason: 'disk full' }, MAC)).toMatchObject({
+    expect(claimReport({ kind: 'write-failed', reason: 'disk full' })).toMatchObject({
       level: 'warning',
       message: expect.stringMatching(/disk full$/) as string,
     });
@@ -168,7 +168,7 @@ describe('what the banner and Activity say of a claim', () => {
       { kind: 'unreadable' },
       { kind: 'vault-closed' },
     ];
-    for (const outcome of quiet) expect(claimReport(outcome, MAC)).toBeNull();
+    for (const outcome of quiet) expect(claimReport(outcome)).toBeNull();
   });
 });
 

@@ -1,6 +1,9 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  claimProblem,
   claimReport,
+  claimSharedReport,
+  type ClaimingMac,
   type ClaimOutcome,
   type ClaimRefusal,
   type SyncPhase,
@@ -22,10 +25,18 @@ export interface ClaimAutomationsOptions {
   readonly thisMac: ThisMac | null;
   /** Whether the open vault's sync is set up here. */
   readonly syncs: boolean;
-  /** How this Mac's sync of the vault last stood. */
-  readonly phase: SyncPhase;
+  /** Whether sync is paused on this Mac: the claim is written and left for the next sync. */
+  readonly paused: boolean;
+  /** How this Mac's sync of the vault stands at the moment it is asked, not as last drawn. */
+  readonly phaseNow: () => SyncPhase;
   /** The gates' answer to whether this Mac may claim now (ADR-0035 part 2). */
   readonly claimRefusal: (vault: string, phase: SyncPhase) => Promise<ClaimRefusal | null>;
+  /** Tells the gates a claim is written here and not yet pushed: they stay shut until a sync pushes it. */
+  readonly claimed: (vault: string) => void;
+  /** Whether the gates know a claim not yet pushed, now. */
+  readonly claimUnsharedNow: (vault: string) => boolean;
+  /** The same, as last drawn: a sync that pushes the claim draws it false. */
+  readonly claimUnshared: boolean;
   readonly exclusive: Exclusive;
   readonly activity: Pick<ActivityLog, 'inVault'>;
   /** Reads the settings note again, so the claim shows at once. */
@@ -34,45 +45,148 @@ export interface ClaimAutomationsOptions {
   readonly run: () => Promise<SyncReport | null>;
 }
 
+/** A claim written here and not yet pushed: the Mac it was taken from, by its name. */
+interface Pending {
+  readonly vault: string;
+  readonly mac: ClaimingMac;
+  readonly was: string | null;
+}
+
+/** Something said of one vault, so it is never shown for another. */
+interface Said<T> {
+  readonly vault: string;
+  readonly value: T;
+}
+
+export interface ClaimAutomations {
+  /** Settings → Sync: the person's own move (ADR-0025), not gated. */
+  readonly claimAutomations: () => void;
+  /** "Process here": refused while the gates say a claim could not be shared. */
+  readonly processHere: () => Promise<ClaimOutcome>;
+  /** Whether a claim is waiting for its turn or being written. */
+  readonly claiming: boolean;
+  /** Why the last Settings → Sync claim named no Mac; null when it did. */
+  readonly problem: string | null;
+  /** While the claim is set here and not yet shared: the name of the Mac it was taken from. */
+  readonly pending: { readonly was: string | null } | null;
+}
+
 /**
  * The two ways this Mac takes the vault's automations (ADR-0035 part 2):
- * Settings → Sync, the person's own move (ADR-0025), and "Process here" on
- * the Inbox, refused while the gates say a claim could not be shared. Both
- * are the one claim (`claimAutomations`), made in the vault's git turn so no
- * pull lands while it is decided, then synced at once: the sooner the claim
- * reaches GitHub, the shorter the time both Macs believe they are named.
+ * Settings → Sync and "Process here". Both are the one claim
+ * (`claimAutomations`), made in the vault's git turn so no pull lands while
+ * it is decided, then synced at once unless sync is paused. Until a sync has
+ * pushed it, the gates stay shut and the claim is said as set here but not
+ * yet shared; once one has, Activity says this Mac runs the automations.
  */
-export function useClaimAutomations(options: ClaimAutomationsOptions) {
+export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAutomations {
   const latest = useRef(options);
   latest.current = options;
-  const claim = useCallback(async (gated: boolean): Promise<ClaimOutcome> => {
-    const { vaultKey: vault, thisMac: mac, exclusive } = latest.current;
-    if (vault === null || !exclusive.open()) return { kind: 'vault-closed' };
-    // The Mac's id is read as the app starts; until it is, nothing names it.
-    if (mac === null) return { kind: 'refused', why: 'no-pull' };
-    const { fs, markdown } = latest.current;
-    const stillOpen = () => latest.current.vaultKey === vault;
-    const outcome = await exclusive.start('claim', () =>
-      claimAutomations({
-        ports: { settings: vaultSettingsWriter({ fs, markdown }), fs, markdown },
-        mac,
-        syncs: latest.current.syncs,
-        stillOpen,
-        ...(gated && {
-          refusal: () => latest.current.claimRefusal(vault, latest.current.phase),
-        }),
-      }),
-    );
-    const report = claimReport(outcome, mac);
-    if (report !== null) latest.current.activity.inVault(vault).record(report);
-    if (outcome.kind === 'claimed' && stillOpen()) {
-      await latest.current.readAgain();
-      void latest.current.run();
-    }
-    return outcome;
+  const { vaultKey, claimUnshared } = options;
+  const [claiming, setClaiming] = useState<Said<number> | null>(null);
+  const [problem, setProblem] = useState<Said<string> | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const pendingNow = useRef<Pending | null>(null);
+
+  /** Says, once, that the claim has reached GitHub. */
+  const sayShared = useCallback((claim: Pending) => {
+    if (pendingNow.current !== claim) return;
+    pendingNow.current = null;
+    setPending(null);
+    latest.current.activity.inVault(claim.vault).record(claimSharedReport(claim.mac));
   }, []);
+  const settled = useCallback(
+    (claim: Pending) => {
+      if (!latest.current.claimUnsharedNow(claim.vault)) sayShared(claim);
+    },
+    [sayShared],
+  );
+  // A later sync, after a paused or failed one, pushes it too.
+  useEffect(() => {
+    if (pending !== null && !claimUnshared) settled(pending);
+  }, [pending, claimUnshared, settled]);
+
+  const afterClaim = useCallback(
+    async (vault: string, mac: ClaimingMac, outcome: ClaimOutcome) => {
+      const report = claimReport(outcome);
+      if (outcome.kind !== 'claimed') {
+        if (report !== null) latest.current.activity.inVault(vault).record(report);
+        return;
+      }
+      if (latest.current.vaultKey !== vault) return;
+      if (!latest.current.syncs) {
+        latest.current.activity.inVault(vault).record(claimSharedReport(mac));
+        await latest.current.readAgain();
+        return;
+      }
+      const claim: Pending = { vault, mac, was: outcome.was };
+      latest.current.claimed(vault);
+      pendingNow.current = claim;
+      setPending(claim);
+      if (report !== null) latest.current.activity.inVault(vault).record(report);
+      await latest.current.readAgain();
+      if (latest.current.paused || latest.current.vaultKey !== vault) return;
+      await latest.current.run();
+      settled(claim);
+    },
+    [settled],
+  );
+
+  const claim = useCallback(
+    async (gated: boolean): Promise<ClaimOutcome> => {
+      const { vaultKey: vault, thisMac: mac, exclusive } = latest.current;
+      if (vault === null || !exclusive.open()) return { kind: 'vault-closed' };
+      if (mac === null) return { kind: 'refused', why: 'mac-unknown' };
+      const { fs, markdown } = latest.current;
+      const stillOpen = () => latest.current.vaultKey === vault;
+      const outcome = await exclusive.start('claim', () =>
+        claimAutomations({
+          ports: { settings: vaultSettingsWriter({ fs, markdown }), fs, markdown },
+          mac,
+          syncs: latest.current.syncs,
+          stillOpen,
+          ...(gated && {
+            refusal: () => latest.current.claimRefusal(vault, latest.current.phaseNow()),
+          }),
+        }),
+      );
+      await afterClaim(vault, mac, outcome);
+      return outcome;
+    },
+    [afterClaim],
+  );
+
+  /** Settings → Sync's claim, busy while it waits its turn, saying on the card why it named no Mac. */
+  const claimFromSettings = useCallback(() => {
+    const vault = latest.current.vaultKey;
+    if (vault === null) return;
+    const busy = (by: number) =>
+      setClaiming((was) => {
+        const count = (was?.vault === vault ? was.value : 0) + by;
+        return count === 0 ? null : { vault, value: count };
+      });
+    busy(1);
+    setProblem(null);
+    void claim(false)
+      .then(
+        (outcome) => claimProblem(outcome),
+        (cause: unknown) =>
+          claimProblem({
+            kind: 'write-failed',
+            reason: cause instanceof Error ? cause.message : String(cause),
+          }),
+      )
+      .then((said) => {
+        busy(-1);
+        if (said !== null) setProblem({ vault, value: said });
+      });
+  }, [claim]);
+
   return {
-    claimAutomations: useCallback(() => void claim(false), [claim]),
+    claimAutomations: claimFromSettings,
     processHere: useCallback(() => claim(true), [claim]),
+    claiming: claiming?.vault === vaultKey,
+    problem: problem?.vault === vaultKey ? problem.value : null,
+    pending: pending?.vault === vaultKey ? pending : null,
   };
 }

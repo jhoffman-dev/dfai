@@ -29,6 +29,7 @@ import { useVaultSetting } from '../settings/use-vault-setting.ts';
 import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 import type { SyncPauseStore } from './browser-sync-pause.ts';
 import { useClaimAutomations } from './use-claim-automations.ts';
+import { usePhase } from './use-phase.ts';
 import { usePulledFiles, type PulledFilesGate } from './use-pulled-files.ts';
 import { useExclusive, useInspection, useSyncRuns, type ThisMac } from './use-sync-runs.ts';
 import { useSyncSchedule } from './use-sync-schedule.ts';
@@ -117,6 +118,13 @@ export interface SyncController {
    * while sync is paused, failing or has not pulled since launch or wake.
    */
   readonly processHere: () => Promise<ClaimOutcome>;
+  /** Whether a claim of the automations is waiting for its turn or being written. */
+  readonly claiming: boolean;
+  /**
+   * While this Mac's claim is written here and no sync has pushed it: the
+   * name of the Mac it was taken from, which still believes it is named.
+   */
+  readonly claimPending: { readonly was: string | null } | null;
   /** Settles once any sync, or setting one up, under way has finished: another vault must not open under it. */
   readonly settle: () => Promise<void>;
 }
@@ -133,7 +141,7 @@ export function useSync(options: SyncOptions): SyncController {
   const thisMac = useThisMac(host.thisMac);
   const settings = useSyncSettings(options);
   const [setup, setSetup] = useState<SyncSetup | null>(null);
-  const [phase, setPhase] = useState<SyncPhase>({ kind: 'unknown' });
+  const { phase, setPhase, phaseNow } = usePhase();
   const [behind, setBehind] = useState(0);
   const { paused, setPaused } = usePause(host.pause, vaultKey);
   const git = useMemo(() => (vaultKey === null ? null : host.git(vaultKey)), [host, vaultKey]);
@@ -148,6 +156,9 @@ export function useSync(options: SyncOptions): SyncController {
     gate: pulledFiles,
     pulls,
     claimRefusal,
+    claimed,
+    claimUnsharedNow,
+    claimUnshared,
   } = usePulledFiles({
     vaultKey,
     sleepClock: host.sleepClock,
@@ -191,8 +202,12 @@ export function useSync(options: SyncOptions): SyncController {
     vaultKey,
     thisMac,
     syncs: setup?.kind === 'set-up',
-    phase,
+    paused,
+    phaseNow,
     claimRefusal,
+    claimed,
+    claimUnsharedNow,
+    claimUnshared,
     exclusive,
     activity: options.activity,
     readAgain: settings.readAgain,
@@ -209,7 +224,7 @@ export function useSync(options: SyncOptions): SyncController {
     syncPulls,
     pulledFiles,
     automationsHere,
-    problem: problem ?? settings.problem,
+    problem: claims.problem ?? problem ?? settings.problem,
     repositories: repositories.list,
     loadRepositories: repositories.load,
     setUp,
@@ -222,6 +237,8 @@ export function useSync(options: SyncOptions): SyncController {
     setPaused,
     claimAutomations: claims.claimAutomations,
     processHere: claims.processHere,
+    claiming: claims.claiming,
+    claimPending: claims.pending,
     settle: exclusive.settle,
   };
 }

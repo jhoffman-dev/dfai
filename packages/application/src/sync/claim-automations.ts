@@ -52,8 +52,12 @@ export async function claimAutomations({
   const refusedBefore = await asked();
   if (refusedBefore !== null) return { kind: 'refused', why: refusedBefore };
   let named: string | null;
+  let was: string | null;
   try {
-    ({ automationsMac: named } = await loadSyncSettings({ ...ports, required: syncs }));
+    ({ automationsMac: named, automationsMacName: was } = await loadSyncSettings({
+      ...ports,
+      required: syncs,
+    }));
   } catch {
     // Nothing written, and said by the banner: the vault's to fix, as the gates say.
     return { kind: 'unreadable' };
@@ -61,7 +65,7 @@ export async function claimAutomations({
   if (namesThisMac(named, mac)) return { kind: 'already-named' };
   const refusedNow = await asked();
   if (refusedNow !== null) return { kind: 'refused', why: refusedNow };
-  return write({ settings: ports.settings, mac, stillOpen });
+  return write({ settings: ports.settings, mac, stillOpen, was });
 }
 
 /** The claim's write, in the writer's turn: abandoned there if another vault opened while it queued. */
@@ -69,10 +73,13 @@ async function write({
   settings,
   mac,
   stillOpen,
+  was,
 }: {
   settings: Pick<SettingsWriter, 'update'>;
   mac: ClaimingMac;
   stillOpen: () => boolean;
+  /** The name the settings kept for the Mac named before. */
+  was: string | null;
 }): Promise<ClaimOutcome> {
   if (!stillOpen()) return { kind: 'vault-closed' };
   try {
@@ -84,5 +91,5 @@ async function write({
     if (cause instanceof VaultClosedBeforeClaim) return { kind: 'vault-closed' };
     return { kind: 'write-failed', reason: cause instanceof Error ? cause.message : String(cause) };
   }
-  return { kind: 'claimed' };
+  return { kind: 'claimed', was };
 }

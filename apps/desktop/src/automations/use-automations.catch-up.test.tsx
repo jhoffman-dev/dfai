@@ -382,6 +382,8 @@ describe('useAutomations: a Claude step waits for fresh sync state (ADR-0035 par
       acts: async () => standing.kind === 'pulled' && standing.namedAfter,
     });
     const { claude, hook, options } = open({ path: ASK_RULE, text: ASK_RULE_TEXT }, gateAt(before));
+    // Named once in this session, then another Mac took the automations.
+    await settle();
     hook.rerender({ ...options, scheduled: false });
     await settle();
 

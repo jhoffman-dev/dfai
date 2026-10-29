@@ -68,6 +68,10 @@ export function usePulledFiles({
   gate: PulledFilesGate;
   pulls: PullRecorder;
   claimRefusal: FreshPullGate['claimRefusal'];
+  claimed: FreshPullGate['claimed'];
+  claimUnsharedNow: FreshPullGate['claimUnshared'];
+  /** Whether this Mac's claim of the open vault's automations is written here and not yet pushed. */
+  claimUnshared: boolean;
 } {
   const latest = useRef({ sleepClock, fs, markdown, thisMacId, paused, clock, activity });
   latest.current = { sleepClock, fs, markdown, thisMacId, paused, clock, activity };
@@ -110,5 +114,12 @@ export function usePulledFiles({
     () => ({ standing, acts: fresh.acts, countGate: fresh.countGate, slept, paused: pausedNow }),
     [standing, fresh, slept, pausedNow],
   );
-  return { gate, pulls: fresh, claimRefusal: fresh.claimRefusal };
+  return {
+    gate,
+    pulls: fresh,
+    claimRefusal: fresh.claimRefusal,
+    claimed: fresh.claimed,
+    claimUnsharedNow: fresh.claimUnshared,
+    claimUnshared: vaultKey !== null && fresh.claimUnshared(vaultKey),
+  };
 }

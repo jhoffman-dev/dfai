@@ -394,7 +394,7 @@ export interface MeetingsWaitingProps {
 
 /** What waits for the Mac that runs the automations, on another Mac (ADR-0035 part 1). */
 function MeetingsWaiting({ line, processHere }: MeetingsWaitingProps) {
-  const why = processHere?.problem ?? processHere?.refused ?? null;
+  const why = processHere?.refused ?? processHere?.problem ?? null;
   return (
     <aside
       className="notice-bar inbox__offer inbox__offer--warning"

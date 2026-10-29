@@ -585,6 +585,37 @@ describe('useSync: sending and bringing in by itself (A29-01)', () => {
     expect(onDisk).toContain('automationsMacName: Desk');
   });
 
+  it('shows on the card why a Settings → Sync claim named no Mac, busy while it waited (#630 review)', async () => {
+    const { hook, options } = setUpHook({ script: modelGit().script, macId: 'mac-laptop' });
+    let refuse: () => void = () => undefined;
+    const refused = new Promise<void>((resolve) => (refuse = resolve));
+    hook.rerender({
+      ...options,
+      fs: {
+        ...options.fs,
+        readTextFile: async () => ({ text: `---\n${SET_UP}\n---\n`, modified: 1 }),
+        writeTextFile: async () => {
+          await refused;
+          throw new Error('the disk is full');
+        },
+        listDirectory: async () => [],
+      },
+    });
+    await waitFor(() => expect(hook.result.current.phase.kind).toBe('synced'));
+    await waitFor(() => expect(hook.result.current.settings).not.toBeNull());
+
+    act(() => hook.result.current.claimAutomations());
+    await waitFor(() => expect(syncSettingsView(hook.result.current, 'Notes').claiming).toBe(true));
+    refuse();
+
+    await waitFor(() =>
+      expect(syncSettingsView(hook.result.current, 'Notes').problem).toMatch(
+        /could not be named.*the disk is full$/,
+      ),
+    );
+    expect(syncSettingsView(hook.result.current, 'Notes').claiming).toBe(false);
+  });
+
   it('lists the person’s GitHub repositories for the picker, and says why it cannot', async () => {
     const { hook, listRepositories } = setUpHook({ script: { topLevel: NOT_A_REPO } });
     await waitFor(() => expect(hook.result.current.phase.kind).toBe('not-set-up'));

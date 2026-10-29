@@ -36,7 +36,9 @@ export type ClaimRefusal =
   /** The settings the last pull left cannot be read. */
   | 'settings-unreadable'
   /** The vault does not sync: every Mac it is open on runs the automations. */
-  | 'not-synced';
+  | 'not-synced'
+  /** This Mac's id, which the claim writes, has not been read yet. */
+  | 'mac-unknown';
 
 /** This Mac, as the claim names it: by the id it keeps for itself, with its name to show. */
 export interface ClaimingMac {
@@ -93,13 +95,18 @@ export function claimRefusalLine(why: ClaimRefusal): string {
       return 'The vault’s settings cannot be read, so this Mac cannot be named.';
     case 'not-synced':
       return 'This vault does not sync: the automations already run on this Mac.';
+    case 'mac-unknown':
+      return 'This Mac’s id has not been read yet, so it cannot be named. Try again in a moment.';
   }
 }
 
 /** How a claim ended. */
 export type ClaimOutcome =
-  /** The settings now name this Mac. */
-  | { readonly kind: 'claimed' }
+  /**
+   * The settings here now name this Mac; the other Mac hears of it once a
+   * sync pushes them. `was` is the name kept for the Mac named before.
+   */
+  | { readonly kind: 'claimed'; readonly was: string | null }
   /** They already named this Mac, by its id: nothing was written. */
   | { readonly kind: 'already-named' }
   /** Refused before anything was written. */
@@ -137,16 +144,30 @@ export function claimProblem(outcome: ClaimOutcome): string | null {
   }
 }
 
-/** Activity's line for a claim that named this Mac, or one whose write failed; null for the rest. */
-export function claimReport(outcome: ClaimOutcome, mac: ClaimingMac): ActivityReport | null {
+/**
+ * What the banner and Activity say from the claim until a sync has pushed it
+ * (#630 review): until then the other Mac still believes it is named.
+ */
+export function claimUnsharedLine(was: string | null): string {
+  const other = was?.trim() ? was.trim() : 'the other Mac';
+  return `Process here is set on this Mac but not yet shared with ${other}.`;
+}
+
+/** Activity's line for a claim, set here but not yet shared, or one whose write failed; null for the rest. */
+export function claimReport(outcome: ClaimOutcome): ActivityReport | null {
   if (outcome.kind === 'claimed') {
-    return {
-      level: 'info',
-      kind: 'sync',
-      message: `${mac.name} now runs the automations: meetings that waited are processed here after the next sync.`,
-      subject: null,
-    };
+    return { level: 'info', kind: 'sync', message: claimUnsharedLine(outcome.was), subject: null };
   }
   if (outcome.kind !== 'write-failed') return null;
   return { level: 'warning', kind: 'sync', message: claimProblem(outcome) ?? '', subject: null };
+}
+
+/** Activity's line once a sync has pushed the claim: from then on this Mac runs the automations. */
+export function claimSharedReport(mac: ClaimingMac): ActivityReport {
+  return {
+    level: 'info',
+    kind: 'sync',
+    message: `${mac.name} now runs the automations: meetings that waited are processed here.`,
+    subject: null,
+  };
 }

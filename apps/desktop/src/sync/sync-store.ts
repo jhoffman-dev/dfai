@@ -153,6 +153,8 @@ export function useAutomationsHere(store: SyncStore, vaultKey: string | null): b
 export interface ProcessHereSync {
   readonly failing: boolean;
   readonly processHere: SyncController['processHere'];
+  /** While this Mac's claim is set here and not yet shared, the Mac it was taken from. */
+  readonly pending: SyncController['claimPending'];
 }
 
 /**
@@ -168,15 +170,19 @@ export function useProcessHereSync(
     useShallow((state) => {
       const controller = controllerFor(state, vaultKey);
       return controller === null
-        ? { failing: false, processHere: null }
-        : { failing: syncFailing(controller.phase), processHere: controller.processHere };
+        ? { failing: false, processHere: null, pending: null }
+        : {
+            failing: syncFailing(controller.phase),
+            processHere: controller.processHere,
+            pending: controller.claimPending,
+          };
     }),
   );
   return useMemo(
     () =>
       facts.processHere === null
         ? null
-        : { failing: facts.failing, processHere: facts.processHere },
+        : { failing: facts.failing, processHere: facts.processHere, pending: facts.pending },
     [facts],
   );
 }
