@@ -1,15 +1,19 @@
 import {
   chatReport,
   chatSystemPrompt,
+  skillCommandOf,
+  usedSkillLine,
   type ChatContext,
   type ChatNoteEntry,
   type ChatNoteMessage,
+  type ChatSkill,
   type ModelMessage,
   type ProfileState,
   type VaultPath,
 } from '@dfai/domain';
 import type { ActivityLog, ActivityRecorder } from '../activity/ports.ts';
 import type { Clock } from '../ports.ts';
+import type { SkillToUse } from '../skills/skill-to-use.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { readChat, recordChatEntries, type ChatRecord } from './chat-history.ts';
 import { ModelProviderError, type ModelProvider, type ProviderProblem } from './ports.ts';
@@ -46,10 +50,21 @@ export interface ChatState {
   readonly error: { readonly message: string; readonly problem: ProviderProblem | 'failed' } | null;
   /** What the chat was opened knowing; null once removed, or when there was nothing. */
   readonly context: ChatContext | null;
+  /**
+   * The skill the person attached (#169): asked with on every turn until
+   * removed. Null when none is, after a new chat, and in a reopened one.
+   */
+  readonly skill: ChatSkillChip | null;
   /** The note this chat is kept in, once its first turn is written. */
   readonly chatPath: VaultPath | null;
   /** Why the chat's note could not be written, if it could not. */
   readonly notice: string | null;
+}
+
+/** The attached skill as its chip shows it: its name, and why it cannot be asked with, if it cannot. */
+export interface ChatSkillChip {
+  readonly name: string;
+  readonly problem: string | null;
 }
 
 /** What a chat session is given. Read at the moment of use, so a vault switch or a setting change applies to the next question. */
@@ -69,6 +84,8 @@ export interface ChatSessionPorts {
   readonly vault: () => { fs: VaultFsPort; notePaths: readonly VaultPath[] } | null;
   readonly accept: (proposal: Proposal) => Promise<AppliedProposal>;
   readonly undo: (applied: AppliedProposal) => Promise<void>;
+  /** The skill `name` as it is now on disk, read when it is attached and again for each turn. */
+  readonly skill: (name: string) => Promise<SkillToUse>;
   /** When the chat began, as the chat note writes it. */
   readonly stamp: () => string;
   readonly newId: () => string;
@@ -89,6 +106,10 @@ export interface ChatSession {
   /** The window's context, taken only before anything is asked. */
   offerContext(context: ChatContext | null): void;
   removeContext(): void;
+  /** Attaches the skill `name` (#169): the person's choice, the only way a skill reaches the model. */
+  attachSkill(name: string): Promise<void>;
+  /** Takes the skill out: the next turn is asked without it. */
+  removeSkill(): void;
   accept(id: string): Promise<void>;
   reject(id: string): void;
   undo(id: string): Promise<void>;
@@ -113,6 +134,7 @@ const EMPTY: ChatState = {
   busy: false,
   error: null,
   context: null,
+  skill: null,
   chatPath: null,
   notice: null,
 };
@@ -127,6 +149,8 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
   let state = EMPTY;
   let messages: ModelMessage[] = [];
   let contextRemoved = false;
+  /** Attaches and removals of a skill: a read that finishes after a later one is dropped. */
+  let skillPicks = 0;
   let record: ChatRecord | null = null;
   let controller: AbortController | null = null;
   /**
@@ -175,6 +199,14 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     try {
       const profile = await ports.profile();
       if (!live()) return;
+      const skill = await skillForTurn();
+      if (!live()) return;
+      if (skill !== null && 'problem' in skill) {
+        // Refused before Claude is asked: the question stays, to retry once the skill is put right.
+        set({ busy: false, error: { message: skill.problem, problem: 'failed' } });
+        return;
+      }
+      if (skill !== null) turn.activity.push(usedSkillLine(skill.name));
       const outcome = await runChatTurn({
         provider: ports.provider(),
         toolbox,
@@ -182,6 +214,7 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
         system: chatSystemPrompt({
           today: ports.clock.today(),
           context: state.context,
+          skill,
           profile,
         }),
         history: messages,
@@ -206,6 +239,46 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     }
   }
 
+  /**
+   * The attached skill, read again for this turn so an edit since applies; null
+   * when none is attached. One that cannot be asked with marks its chip.
+   */
+  async function skillForTurn(): Promise<ChatSkill | { problem: string } | null> {
+    const chip = state.skill;
+    if (chip === null) return null;
+    const pick = skillPicks;
+    const found = await readSkillNamed(chip.name);
+    if (pick === skillPicks) set({ skill: chipOf(chip.name, found) });
+    return found.kind === 'usable'
+      ? { name: found.name, instructions: found.instructions }
+      : { problem: skillProblem(chip.name, found) };
+  }
+
+  async function readSkillNamed(name: string): Promise<SkillToUse> {
+    try {
+      return await ports.skill(name);
+    } catch {
+      // Not the host's words: they can name the Mac's folders. The chip says what DFAI knows.
+      return { kind: 'unreadable' };
+    }
+  }
+
+  /**
+   * `/name question`: attaches the skill `name` and gives the question after
+   * it ('' for none). A `/word` that names no skill is the question itself.
+   */
+  async function takeSkillCommand(
+    command: { name: string; rest: string },
+    asked: string,
+  ): Promise<string> {
+    const pick = (skillPicks += 1);
+    const began = generation;
+    const found = await readSkillNamed(command.name);
+    if (found.kind === 'missing') return asked;
+    if (pick === skillPicks && began === generation) set({ skill: chipOf(command.name, found) });
+    return command.rest;
+  }
+
   /** A past chat, read from its note, as the conversation now showing. */
   function showChat(path: VaultPath, read: readonly ChatNoteMessage[]): void {
     generation += 1;
@@ -218,6 +291,8 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     decisions = [];
     record = { path };
     contextRemoved = true;
+    // A skill is not kept with a chat: a reopened one is asked without, until one is attached again.
+    skillPicks += 1;
     applied.clear();
     set({
       ...EMPTY,
@@ -343,7 +418,11 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
       return () => listeners.delete(listener);
     },
     async send(text) {
-      const question = text.trim();
+      const asked = text.trim();
+      if (asked === '' || state.busy) return;
+      // Only a `/name` waits on a read: any other question is in the transcript at once.
+      const command = skillCommandOf(asked);
+      const question = command === null ? asked : await takeSkillCommand(command, asked);
       if (question === '' || state.busy) return;
       const told = decisions.length === 0 ? '' : `(${decisions.join(' ')})\n\n`;
       decisions = [];
@@ -370,6 +449,17 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     removeContext() {
       contextRemoved = true;
       set({ context: null });
+    },
+    async attachSkill(name) {
+      const pick = (skillPicks += 1);
+      const began = generation;
+      set({ skill: { name, problem: null } });
+      const found = await readSkillNamed(name);
+      if (pick === skillPicks && began === generation) set({ skill: chipOf(name, found) });
+    },
+    removeSkill() {
+      skillPicks += 1;
+      set({ skill: null });
     },
     async accept(id) {
       const item = state.items.find((candidate) => candidate.id === id);
@@ -432,6 +522,7 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
       decisions = [];
       record = null;
       contextRemoved = false;
+      skillPicks += 1;
       applied.clear();
       set(EMPTY);
     },
@@ -459,6 +550,25 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
 
 /** Why a past chat is not opened while an answer is still arriving. */
 const OPEN_WHILE_BUSY = 'Wait for the answer to finish before opening another chat.';
+
+/** The chip of the skill `name` as it was just read. */
+function chipOf(name: string, found: SkillToUse): ChatSkillChip {
+  return found.kind === 'usable'
+    ? { name: found.name, problem: null }
+    : { name, problem: skillProblem(name, found) };
+}
+
+/** Why the skill `name` is not asked with, as its chip and the refused turn say it. */
+function skillProblem(name: string, found: Exclude<SkillToUse, { kind: 'usable' }>): string {
+  switch (found.kind) {
+    case 'unreadable':
+      return `The skill ${name} could not be read.`;
+    case 'missing':
+      return `The skill ${name} is not in .atlas/skills.`;
+    case 'unusable':
+      return `The skill ${name} cannot be used: ${found.message}`;
+  }
+}
 
 function describeProposal(proposal: Proposal): string {
   return proposal.kind === 'edit'

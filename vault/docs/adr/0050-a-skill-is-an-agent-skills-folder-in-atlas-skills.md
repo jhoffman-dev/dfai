@@ -134,6 +134,25 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
    joined into a path. ADR-0016's addendum for #169 says why making, editing
    and deleting stay in the app.
 
+8. **The chat asks with a skill only the person attached** (fourth pull
+   request). A picker by the box, or `/name` at the start of a message,
+   attaches one; it shows as a chip whose × takes it out of the next turn.
+   The model is never shown the vault's skills to choose from, so a note or a
+   tool result cannot bring one in. The skill is read again for every turn
+   (`readSkillToUse`, shared with automations) and goes into the system
+   prompt after DFAI's own rules, which still hold, inside a
+   `<chosen_skill>` tag that its text, a note's or a tool result's can neither
+   open nor close (`neutralizeFraming`). A skill with a problem, or over the
+   run cap measured as `skillRunProblem` measures it, is refused before
+   Claude is asked; the chip and the turn say why. The chat note records
+   "Used the skill <name>" with each answer. A skill is **not kept with a
+   chat**: a reopened chat starts without one (restoring it would mean a new
+   chat-note key read back on open, more than v1 needs). The picker reads the
+   skills only once it is first opened, through the Skills page's own read.
+   The API and MCP need nothing new: a chat is the app's, and a client
+   already reads a skill's instructions (`atlas_read_skill`) to use as it
+   likes.
+
 ## James to confirm
 
 These were chosen as the recommended answers and are open until James says:

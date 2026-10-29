@@ -8,7 +8,9 @@ import type {
   ChatHistoryView,
   ChatPanelState,
   ChatProblemView,
+  ChatSkillsView,
 } from './chat-view.ts';
+import { SkillChip, SkillPicker, useSkillPicker } from './chat-skills.tsx';
 import { ProposalCard } from './proposal-card.tsx';
 
 /** The nudge to set a name, and what Claude writes until there is one. */
@@ -32,6 +34,7 @@ export function ChatPanel({
   nameHint = null,
   draft,
   focusOnMount = true,
+  skills,
 }: {
   state: ChatPanelState;
   model: string;
@@ -52,6 +55,8 @@ export function ChatPanel({
    * mount nobody asked for — the Claude tab remembered across a launch.
    */
   focusOnMount?: boolean;
+  /** The skill attached and the vault's to pick from (#169); none offered when not given. */
+  skills?: ChatSkillsView;
 }) {
   const lastAnswer = [...state.items].reverse().find((item) => item.kind === 'answer');
   // Held across streamed words, so an answer already finished is not drawn again.
@@ -102,6 +107,7 @@ export function ChatPanel({
         actions={actions}
         focusOnMount={focusOnMount}
         {...(draft !== undefined && { draft })}
+        {...(skills !== undefined && { skills })}
       />
     </aside>
   );
@@ -294,13 +300,17 @@ export interface ChatDraft {
   readonly onChange: (text: string) => void;
 }
 
-/** The box a question is typed in, with Send (or Stop) and the chip of what the chat knows. */
+/**
+ * The box a question is typed in, with Send (or Stop), the chip of what the
+ * chat knows, and the skill attached with a way to pick one (#169).
+ */
 export function Composer({
   state,
   actions,
   draft: kept,
   focusOnMount,
   rows = 2,
+  skills,
 }: {
   state: Pick<ChatPanelState, 'busy' | 'context'>;
   actions: Pick<ChatActions, 'onSend' | 'onStop' | 'onRemoveContext'>;
@@ -308,11 +318,13 @@ export function Composer({
   focusOnMount: boolean;
   /** How tall the box starts: Ask's is bigger than the sidebar's. */
   rows?: number;
+  skills?: ChatSkillsView;
 }) {
   const [own, setOwn] = useState('');
   const draft = kept?.text ?? own;
   const setDraft = kept?.onChange ?? setOwn;
   const box = useRef<HTMLTextAreaElement>(null);
+  const picker = useSkillPicker({ skills, draft, setDraft, box });
   // On mount only, by the app's say at that moment: an ask takes the keys, a remembered seat does not.
   useEffect(() => {
     if (focusOnMount) box.current?.focus();
@@ -325,6 +337,11 @@ export function Composer({
     setDraft('');
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape' && picker.showing) {
+      event.preventDefault();
+      picker.close();
+      return;
+    }
     if (event.key !== 'Enter' || event.shiftKey || isImeKey(event)) return;
     event.preventDefault();
     send();
@@ -332,20 +349,34 @@ export function Composer({
 
   return (
     <footer className="chat__composer">
-      {state.context !== null && (
-        <span className="chat__context">
-          <Icon name={state.context.kind === 'note' ? 'doc' : 'table'} size={13} />
-          <span className="chat__context-title">{state.context.title}</span>
+      <div className="chat__chips">
+        {state.context !== null && (
+          <ContextChip context={state.context} onRemove={actions.onRemoveContext} />
+        )}
+        {skills !== undefined && skills.attached !== null && (
+          <SkillChip chip={skills.attached} onRemove={skills.onRemove} />
+        )}
+        {skills !== undefined && (
           <button
             type="button"
-            className="chat__context-remove"
-            aria-label={`Remove ${state.context.title} from the chat`}
-            title="Leave this out"
-            onClick={actions.onRemoveContext}
+            className="chat__skill-add"
+            aria-label="Use a skill"
+            aria-expanded={picker.showing}
+            title="Use a skill (or type /name)"
+            onClick={picker.toggle}
           >
-            <Icon name="close" size={11} />
+            <Icon name="skill" size={13} />
+            {skills.attached === null && <span>Skill</span>}
           </button>
-        </span>
+        )}
+      </div>
+      {picker.showing && skills !== undefined && (
+        <SkillPicker
+          choices={skills.choices}
+          query={picker.query}
+          onPick={picker.pick}
+          onClose={picker.close}
+        />
       )}
       <div className="chat__ask">
         <textarea
@@ -353,34 +384,72 @@ export function Composer({
           value={draft}
           rows={rows}
           aria-label="Ask Claude"
-          placeholder="Ask Claude…"
+          placeholder={skills === undefined ? 'Ask Claude…' : 'Ask Claude… (/ for a skill)'}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={onKeyDown}
         />
-        {state.busy ? (
-          <button
-            type="button"
-            className="chat__send"
-            aria-label="Stop"
-            title="Stop"
-            onClick={actions.onStop}
-          >
-            <Icon name="stop" size={14} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="chat__send"
-            aria-label="Send"
-            title="Send (Enter)"
-            disabled={draft.trim() === ''}
-            onClick={send}
-          >
-            <Icon name="up" size={15} />
-          </button>
-        )}
+        {sendButton({
+          busy: state.busy,
+          disabled: draft.trim() === '',
+          onSend: send,
+          onStop: actions.onStop,
+        })}
       </div>
     </footer>
+  );
+}
+
+function ContextChip({
+  context,
+  onRemove,
+}: {
+  context: NonNullable<ChatPanelState['context']>;
+  onRemove: () => void;
+}) {
+  return (
+    <span className="chat__context">
+      <Icon name={context.kind === 'note' ? 'doc' : 'table'} size={13} />
+      <span className="chat__context-title">{context.title}</span>
+      <button
+        type="button"
+        className="chat__context-remove"
+        aria-label={`Remove ${context.title} from the chat`}
+        title="Leave this out"
+        onClick={onRemove}
+      >
+        <Icon name="close" size={11} />
+      </button>
+    </span>
+  );
+}
+
+/** Send, or Stop while an answer arrives: drawn by the box itself, as no component of its own. */
+function sendButton({
+  busy,
+  disabled,
+  onSend,
+  onStop,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  onSend: () => void;
+  onStop: () => void;
+}) {
+  return busy ? (
+    <button type="button" className="chat__send" aria-label="Stop" title="Stop" onClick={onStop}>
+      <Icon name="stop" size={14} />
+    </button>
+  ) : (
+    <button
+      type="button"
+      className="chat__send"
+      aria-label="Send"
+      title="Send (Enter)"
+      disabled={disabled}
+      onClick={onSend}
+    >
+      <Icon name="up" size={15} />
+    </button>
   );
 }
 

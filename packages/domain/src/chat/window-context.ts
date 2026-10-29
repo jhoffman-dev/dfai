@@ -1,5 +1,6 @@
 import type { ProfileState } from '../profile/profile.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
+import { skillSection, type ChatSkill } from './chat-skill.ts';
 import { ownerSection } from './owner-section.ts';
 import { neutralizeFraming } from './tool-call-text.ts';
 
@@ -93,10 +94,13 @@ function cutSaying(context: ChatContext, left: number): string {
 export function chatSystemPrompt({
   today,
   context,
+  skill = null,
   profile,
 }: {
   today: string;
   context: ChatContext | null;
+  /** The skill the person attached, read for this turn; placed after DFAI's rules, which still hold. */
+  skill?: ChatSkill | null;
   /** Who the person is, from Settings → Profile: the only name the model may use for them. */
   profile: ProfileState;
 }): string {
@@ -124,6 +128,7 @@ export function chatSystemPrompt({
     '',
     ownerSection(profile),
   ];
+  if (skill !== null) parts.push('', skillSection(skill));
   if (context !== null) parts.push('', contextSection(context));
   return parts.join('\n');
 }

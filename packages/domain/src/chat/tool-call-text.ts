@@ -13,7 +13,7 @@ export const TOOL_OPEN = '<atlas_tool>';
 export const TOOL_CLOSE = '</atlas_tool>';
 
 /** The tags this protocol frames things with; text from the vault may not close or open them. */
-const FRAMING_TAG = /<(\/?)(user|assistant|tool_result|atlas_tool|vault_data)\b/gi;
+const FRAMING_TAG = /<(\/?)(user|assistant|tool_result|atlas_tool|vault_data|chosen_skill)\b/gi;
 
 /** One piece of a reply as it streams: words to show, or a tool call to run. */
 export type ScannedPiece =

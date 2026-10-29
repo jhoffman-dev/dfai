@@ -21,15 +21,16 @@ export function useSkillChoices({
   vault,
   enabled,
 }: {
-  fs: VaultFsPort;
+  /** Null while no vault is open: nothing is read. */
+  fs: VaultFsPort | null;
   markdown: MarkdownPort;
   vault: string | null;
   enabled: boolean;
 }): readonly SkillChoice[] {
   const { data } = useQuery({
     queryKey: vaultReadKey(vault ?? '', 'skills'),
-    queryFn: () => listSkills({ fs, markdown }),
-    enabled: enabled && vault !== null,
+    queryFn: () => (fs === null ? [] : listSkills({ fs, markdown })),
+    enabled: enabled && vault !== null && fs !== null,
   });
   return useMemo(
     () =>

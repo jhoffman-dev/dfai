@@ -302,6 +302,8 @@ export type {
   ChatItemView,
   ChatPanelState,
   ChatProblemView,
+  ChatSkillChipView,
+  ChatSkillsView,
   ProposalView,
 } from './chat/chat-view.ts';
 export { ClaudeSettings } from './chat/claude-settings.tsx';

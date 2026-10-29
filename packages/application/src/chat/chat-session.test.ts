@@ -5,6 +5,7 @@ import { blockMarkdown } from '../testing/block-markdown.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeModel, type ScriptedRound } from '../testing/fake-model.ts';
 import { createChatSession, type ChatItem } from './chat-session.ts';
+import type { SkillToUse } from '../skills/skill-to-use.ts';
 import { ModelProviderError } from './ports.ts';
 import { acceptProposal, undoProposal } from './proposals.ts';
 import { createChatToolbox } from './toolbox.ts';
@@ -22,7 +23,12 @@ function session(
   {
     vaultOpen = true,
     profile = () => Promise.resolve(EMPTY_PROFILE),
-  }: { vaultOpen?: boolean; profile?: () => Promise<ProfileState> } = {},
+    skill = () => Promise.resolve({ kind: 'missing' }),
+  }: {
+    vaultOpen?: boolean;
+    profile?: () => Promise<ProfileState>;
+    skill?: (name: string) => Promise<SkillToUse>;
+  } = {},
 ) {
   const fixture = apiFixture({ files: { 'Plan.md': PLAN }, markdown: blockMarkdown() });
   const markdown = blockMarkdown();
@@ -41,6 +47,7 @@ function session(
     vault: () => (vaultOpen ? { fs: fixture.fs, notePaths: [] } : null),
     accept: (proposal) => acceptProposal({ fs: fixture.fs, openNotes, proposal }),
     undo: (applied) => undoProposal({ fs: fixture.fs, openNotes, applied }),
+    skill,
     stamp: () => '2026-09-22 09:00',
     newId,
     activity,
@@ -430,5 +437,183 @@ describe('a chat session in the Activity log', () => {
     expect(message).toBe('The chat could not be saved to Chats/.');
     expect(message).not.toContain('Tobias');
     expect(message).not.toContain(tried);
+  });
+});
+
+describe('a chat session, and the skill the person attached (#169)', () => {
+  const REVIEW = 'Group what Mara Quill finished by project.';
+  /** Skills as the vault holds them now: changed between turns as a person edits one. */
+  function skills(initial: Record<string, SkillToUse>) {
+    const held = new Map(Object.entries(initial));
+    const reads: string[] = [];
+    return {
+      held,
+      reads,
+      port: (name: string) => {
+        reads.push(name);
+        return Promise.resolve(held.get(name) ?? ({ kind: 'missing' } as const));
+      },
+    };
+  }
+  const usable = (instructions: string): SkillToUse => ({
+    kind: 'usable',
+    name: 'weekly-review',
+    instructions,
+  });
+
+  it('asks with the skill after DFAI’s rules, says so in the chat note, and leaves it out once removed', async () => {
+    const vault = skills({ 'weekly-review': usable(REVIEW) });
+    const { chat, model, fixture } = session(
+      [[{ type: 'text', text: 'Reviewed.' }], [{ type: 'text', text: 'Plain.' }]],
+      { skill: vault.port },
+    );
+
+    await chat.attachSkill('weekly-review');
+    expect(chat.state().skill).toEqual({ name: 'weekly-review', problem: null });
+    await chat.send('Review my week');
+
+    const system = model.requests[0]?.system ?? '';
+    expect(system).toContain(`<chosen_skill name="weekly-review">\n${REVIEW}\n</chosen_skill>`);
+    expect(system.indexOf('chosen_skill')).toBeGreaterThan(system.indexOf('Your tools only read.'));
+    const chatPath = chat.state().chatPath;
+    expect(chatPath).not.toBeNull();
+    expect(fixture.files.get(chatPath ?? '')?.text).toContain('> Used the skill weekly-review');
+
+    chat.removeSkill();
+    expect(chat.state().skill).toBeNull();
+    await chat.send('And without it?');
+    expect(model.requests[1]?.system).not.toContain('chosen_skill');
+    expect(model.requests[1]?.system).not.toContain(REVIEW);
+  });
+
+  it('reads the skill again for each turn, so an edit since applies', async () => {
+    const vault = skills({ 'weekly-review': usable('First version.') });
+    const { chat, model } = session(
+      [[{ type: 'text', text: 'One.' }], [{ type: 'text', text: 'Two.' }]],
+      { skill: vault.port },
+    );
+    await chat.attachSkill('weekly-review');
+    await chat.send('Once');
+    vault.held.set('weekly-review', usable('Second version.'));
+    await chat.send('Twice');
+    expect(model.requests[1]?.system).toContain('Second version.');
+    expect(model.requests[1]?.system).not.toContain('First version.');
+  });
+
+  it('refuses a skill too long to hand over before Claude is asked, on the chip and in the chat', async () => {
+    const tooLong: SkillToUse = {
+      kind: 'unusable',
+      message: 'Its instructions are 20001 characters.',
+    };
+    const vault = skills({ 'weekly-review': tooLong });
+    const { chat, model } = session([[{ type: 'text', text: 'Never.' }]], { skill: vault.port });
+
+    await chat.attachSkill('weekly-review');
+    const refusal =
+      'The skill weekly-review cannot be used: Its instructions are 20001 characters.';
+    expect(chat.state().skill).toEqual({ name: 'weekly-review', problem: refusal });
+    await chat.send('Review my week');
+
+    expect(model.requests).toHaveLength(0);
+    expect(chat.state().error?.message).toBe(refusal);
+    expect(chat.state().busy).toBe(false);
+    // The question stays, to retry once the skill is put right.
+    expect(kinds(chat.state().items)).toEqual(['user']);
+  });
+
+  it('refuses a skill that became unusable since it was attached, and retries once it is put right', async () => {
+    const vault = skills({ 'weekly-review': usable(REVIEW) });
+    const { chat, model } = session([[{ type: 'text', text: 'Reviewed.' }]], {
+      skill: vault.port,
+    });
+    await chat.attachSkill('weekly-review');
+    vault.held.delete('weekly-review');
+    await chat.send('Review my week');
+    expect(model.requests).toHaveLength(0);
+    expect(chat.state().skill?.problem).toBe('The skill weekly-review is not in .atlas/skills.');
+
+    vault.held.set('weekly-review', usable(REVIEW));
+    await chat.retry();
+    expect(model.requests).toHaveLength(1);
+    expect(chat.state().skill?.problem).toBeNull();
+    expect(chat.state().error).toBeNull();
+  });
+
+  it('says a skill the host refused could not be read, in DFAI’s words', async () => {
+    const { chat } = session([], {
+      skill: () => Promise.reject(new Error('/Users/mara/vault: permission denied')),
+    });
+    await chat.attachSkill('weekly-review');
+    expect(chat.state().skill?.problem).toBe('The skill weekly-review could not be read.');
+  });
+
+  it('drops an attach read after the skill was removed, or a new chat begun', async () => {
+    let finish: (found: SkillToUse) => void = () => {};
+    const { chat } = session([], {
+      skill: () => new Promise<SkillToUse>((resolve) => (finish = resolve)),
+    });
+    const attaching = chat.attachSkill('weekly-review');
+    chat.removeSkill();
+    finish(usable(REVIEW));
+    await attaching;
+    expect(chat.state().skill).toBeNull();
+
+    const again = chat.attachSkill('weekly-review');
+    chat.newChat();
+    finish(usable(REVIEW));
+    await again;
+    expect(chat.state().skill).toBeNull();
+  });
+
+  it('starts a new chat without the skill', async () => {
+    const vault = skills({ 'weekly-review': usable(REVIEW) });
+    const { chat, model } = session([[{ type: 'text', text: 'Plain.' }]], { skill: vault.port });
+    await chat.attachSkill('weekly-review');
+    chat.newChat();
+    await chat.send('Hello');
+    expect(model.requests[0]?.system).not.toContain('chosen_skill');
+  });
+
+  it('reopens a past chat without its skill: a skill is not kept with a chat', async () => {
+    const vault = skills({ 'weekly-review': usable(REVIEW) });
+    const { chat } = session([[{ type: 'text', text: 'Reviewed.' }]], { skill: vault.port });
+    await chat.attachSkill('weekly-review');
+    await chat.send('Review my week');
+    const kept = chat.state().chatPath;
+    if (kept === null) throw new Error('the chat was not kept');
+    expect(chat.state().skill?.name).toBe('weekly-review');
+    await chat.open(kept);
+    expect(chat.state().items.length).toBeGreaterThan(0);
+    expect(chat.state().skill).toBeNull();
+  });
+});
+
+describe('a chat session, and /name (#169)', () => {
+  const REVIEW: SkillToUse = { kind: 'usable', name: 'weekly-review', instructions: 'Review.' };
+  const port = (name: string): Promise<SkillToUse> =>
+    Promise.resolve(name === 'weekly-review' ? REVIEW : { kind: 'missing' });
+
+  it('attaches the skill /name names, and asks the question after it with it', async () => {
+    const { chat, model } = session([[{ type: 'text', text: 'Done.' }]], { skill: port });
+    await chat.send('/weekly-review What did I finish?');
+    expect(chat.state().skill).toEqual({ name: 'weekly-review', problem: null });
+    expect(chat.state().items[0]).toMatchObject({ kind: 'user', text: 'What did I finish?' });
+    expect(model.requests[0]?.system).toContain('<chosen_skill name="weekly-review">');
+  });
+
+  it('only attaches when /name stands alone, asking nothing', async () => {
+    const { chat, model } = session([], { skill: port });
+    await chat.send('/weekly-review');
+    expect(chat.state().skill?.name).toBe('weekly-review');
+    expect(chat.state().items).toHaveLength(0);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it('asks a /word that names no skill as the question it is', async () => {
+    const { chat, model } = session([[{ type: 'text', text: 'Hm.' }]], { skill: port });
+    await chat.send('/standup notes?');
+    expect(chat.state().skill).toBeNull();
+    expect(chat.state().items[0]).toMatchObject({ kind: 'user', text: '/standup notes?' });
+    expect(model.requests[0]?.system).not.toContain('chosen_skill');
   });
 });

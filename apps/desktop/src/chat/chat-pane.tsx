@@ -40,6 +40,7 @@ export function ChatPane({
         nameHint={nameHint}
         draft={chat.draft}
         focusOnMount={chat.focusOnMount}
+        skills={chat.skills}
         actions={{
           onSend: (text) => void session.send(text),
           onStop: () => session.stop(),

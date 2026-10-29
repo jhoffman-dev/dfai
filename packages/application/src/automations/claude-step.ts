@@ -24,7 +24,6 @@ import {
   MEETING_TYPE,
   meetingSummaryOf,
   messageWithoutPaths,
-  skillRunProblem,
   NOTE_ANSWER_INSTRUCTIONS,
   noteTitle,
   nothingCitedProblem,
@@ -87,8 +86,8 @@ import {
   proposalMadeAlready,
   type ProposalWritePorts,
 } from '../proposals/write-proposals.ts';
-import { readSkill } from '../skills/skills.ts';
-import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
+import { readSkillToUse } from '../skills/skill-to-use.ts';
+import type { VaultFsPort } from '../vault/ports.ts';
 import { planNote, type PlannedNote } from './claude-writes.ts';
 import { readMadeItems } from '../meetings/made-items.ts';
 import { MeetingSummaryRefused, writeMeetingSummary } from '../meetings/write-meeting-summary.ts';
@@ -519,21 +518,17 @@ async function readSkillInstructions(
   { fs, markdown }: Pick<StepArgs, 'fs' | 'markdown'>,
   name: string,
 ): Promise<string | { problem: string }> {
-  let skill: Awaited<ReturnType<typeof readSkill>>;
-  try {
-    skill = await readSkill({ fs, markdown, name });
-  } catch (error) {
-    if (!(error instanceof VaultAccessError)) throw error;
-    // The host's words can name the Mac's folders: the person is told what DFAI knows.
-    return { problem: `Its skill ${name} could not be read.` };
+  const skill = await readSkillToUse({ fs, markdown, name });
+  switch (skill.kind) {
+    case 'usable':
+      return skill.instructions;
+    case 'unreadable':
+      return { problem: `Its skill ${name} could not be read.` };
+    case 'missing':
+      return { problem: `Its skill ${name} is not in .atlas/skills.` };
+    case 'unusable':
+      return { problem: `Its skill ${name} cannot be used: ${skill.message}` };
   }
-  if (skill === null) return { problem: `Its skill ${name} is not in .atlas/skills.` };
-  const unusable = skillRunProblem(skill);
-  // Trimmed as a prompt note's body is, and as skillRunProblem measures it: instructionsOf takes
-  // off only one blank line and one line end, so spaces and further blank lines would remain.
-  return unusable === null
-    ? skill.instructions.trim()
-    : { problem: `Its skill ${name} cannot be used: ${unusable.message}` };
 }
 
 /** The notes a run read, and each one's file as it was read: when, and its properties. */
