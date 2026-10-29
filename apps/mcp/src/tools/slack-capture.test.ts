@@ -236,13 +236,26 @@ describe('atlas_capture as listed', () => {
             author: { additionalProperties: false },
           },
         },
+        // A list that may be null is listed as either a list or null.
         thread: {
-          items: {
-            additionalProperties: false,
-            properties: { author: { additionalProperties: false } },
-          },
+          anyOf: expect.arrayContaining([
+            expect.objectContaining({
+              items: expect.objectContaining({
+                additionalProperties: false,
+                properties: expect.objectContaining({
+                  author: expect.objectContaining({ additionalProperties: false }),
+                }),
+              }),
+            }),
+          ]),
         },
-        attachments: { items: { additionalProperties: false } },
+        attachments: {
+          anyOf: expect.arrayContaining([
+            expect.objectContaining({
+              items: expect.objectContaining({ additionalProperties: false }),
+            }),
+          ]),
+        },
       },
     });
   });

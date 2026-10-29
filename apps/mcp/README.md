@@ -190,7 +190,9 @@ a task or a note in `Inbox/Captures/`, once per message (its channel and ts),
 so asking again answers `in-vault` with the note that holds it. Its description
 tells the model to pass the permalink, channel id and ts, to choose task or
 note from the person's words, and to pass only what it read. A call without
-`source.url` is refused before any request.
+`source.url`, or with a field the contract does not have (a misspelt
+`replies` for `thread`), is refused before any request; a `null` is taken as
+left out.
 
 `atlas_clarify_inbox_item` is GTD's clarify step for one item, as a row of the
 Inbox page does it: status, `waitingOn`, `defer`, `due` and `contexts` are

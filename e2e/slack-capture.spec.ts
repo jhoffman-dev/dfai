@@ -126,13 +126,14 @@ test('Claude saves a Slack message with atlas_capture once, however often it ask
   const mcp = await connectInMemoryMcp({ fetch: throughHost(host) });
   // The payload less what the tool fills in itself: the contract and the provider.
   const { channel, ts, url, author } = CAPTURE.source;
-  const toolArguments = { ...CAPTURE, contract: undefined, source: { channel, ts, url, author } };
+  const { kind, text, thread } = CAPTURE;
+  const toolArguments = { kind, text, thread, source: { channel, ts, url, author } };
   const saveIt = async () => {
     const result = await mcp.callTool({
       name: 'atlas_capture',
       arguments: toolArguments,
     });
-    expect(result.isError ?? false).toBe(false);
+    expect(result.isError ?? false, JSON.stringify(result.content)).toBe(false);
     const [first] = result.content as { text: string }[];
     return JSON.parse(first?.text ?? '') as unknown;
   };
