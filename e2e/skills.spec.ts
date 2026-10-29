@@ -119,7 +119,7 @@ test('a skill changed on disk under typing offers Reload, which takes the change
   await skillRow(skills, 'weekly-review').click();
   const editor = skills.getByRole('form', { name: 'Skill weekly-review' });
   const instructions = editor.getByRole('textbox', { name: /Instructions/ });
-  await expect(instructions).toHaveValue('Read the week’s notes.\n');
+  await expect(instructions).toHaveValue('Read the week’s notes.');
   await instructions.fill('Typed here.');
 
   await vault.write(SKILL_PATH, WEEKLY.replace('Reviews the week.', 'Reviewed elsewhere.'));
@@ -134,7 +134,7 @@ test('a skill changed on disk under typing offers Reload, which takes the change
   await expect(editor.getByRole('textbox', { name: /Description/ })).toHaveValue(
     'Reviewed elsewhere.',
   );
-  await expect(instructions).toHaveValue('Read the week’s notes.\n');
+  await expect(instructions).toHaveValue('Read the week’s notes.');
   await expect(editor.getByRole('button', { name: 'Reload' })).toHaveCount(0);
 });
 
