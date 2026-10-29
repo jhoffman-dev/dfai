@@ -11,6 +11,7 @@ import type { PageChrome } from '../page-frame-fallback.tsx';
 import type { PaneContext } from '../panes/note-pane-container.tsx';
 import type { RevealStore } from '../panes/reveals.ts';
 import type { QueryWiring } from '../query/query-container.tsx';
+import type { SkillsWiring } from '../skills/skills-container.tsx';
 import type { TagsWiring } from '../tags/tags-container.tsx';
 import type { TemplatesWiring } from '../templates/templates-container.tsx';
 import type { TermsWiring } from '../terms/terms-container.tsx';
@@ -45,6 +46,7 @@ export interface PageWiring {
   readonly terms: TermsWiring;
   readonly activity: ActivityWiring;
   readonly automations: AutomationsWiring;
+  readonly skills: SkillsWiring;
   readonly graph: GraphWiring;
   readonly query: QueryWiring;
   readonly tags: TagsWiring;
@@ -75,6 +77,7 @@ const KIND_WIRING: readonly (keyof PageWiring & PagePlace['kind'])[] = [
   'terms',
   'activity',
   'automations',
+  'skills',
   'graph',
   'query',
   'tags',
