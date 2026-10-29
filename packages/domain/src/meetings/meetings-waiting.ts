@@ -24,7 +24,8 @@ import {
   pulledSinceLastSleep,
   type PullStanding,
 } from '../sync/pull-freshness.ts';
-import { isMeetingArrival, type ImportOutcome } from './meeting-arrival.ts';
+import type { NoteChange } from '../index/note-changes.ts';
+import { isMeetingArrival, isMeetingInboxPath, type ImportOutcome } from './meeting-arrival.ts';
 
 /** One file where meetings land, as the import read it: null when it could not be read, frontmatter included. */
 export interface WaitingMeetingFile {
@@ -42,26 +43,49 @@ export interface WaitingMeetingFile {
 /** A completed pull: what a count is judged against. */
 export type CountableStanding = Extract<PullStanding, { kind: 'pulled' }>;
 
-/** Whether one file waits for the named Mac to import it, judged against the pull that lets it be counted. */
-export function waitsForImport(file: WaitingMeetingFile, standing: CountableStanding): boolean {
-  if (isConflictCopyPath(file.path) || file.read === null) return false;
+/**
+ * What one file is to the count: it waits for the named Mac to import it, it
+ * would but changed here after the pull and is left for the next one
+ * (gate 1, never guessed at), or it is not the count's.
+ */
+function standingOfFile(
+  file: WaitingMeetingFile,
+  standing: CountableStanding,
+): 'waits' | 'deferred' | 'not' {
+  if (isConflictCopyPath(file.path) || file.read === null) return 'not';
   const { importDeclared, importOutcome, modifiedAt } = file.read;
-  if (!isMeetingArrival({ path: file.path, importDeclared, importOutcome })) return false;
-  if (importOutcome !== null) return false;
-  // Changed here after the pull: judged by the next one, never guessed at.
-  return pulledAfterArrival({ standing, modifiedAt });
+  if (!isMeetingArrival({ path: file.path, importDeclared, importOutcome })) return 'not';
+  if (importOutcome !== null) return 'not';
+  return pulledAfterArrival({ standing, modifiedAt }) ? 'waits' : 'deferred';
 }
 
-/** How many of the files wait for the named Mac to import them. */
-export function waitingMeetingCount(
+/** Whether one file waits for the named Mac to import it, judged against the pull that lets it be counted. */
+export function waitsForImport(file: WaitingMeetingFile, standing: CountableStanding): boolean {
+  return standingOfFile(file, standing) === 'waits';
+}
+
+/** How many of the files wait for the named Mac, and how many are left for the next pull to judge. */
+export function waitingMeetingTally(
   files: readonly WaitingMeetingFile[],
   standing: CountableStanding,
-): number {
-  return files.filter((file) => waitsForImport(file, standing)).length;
+): { readonly count: number; readonly deferred: number } {
+  const judged = files.map((file) => standingOfFile(file, standing));
+  return {
+    count: judged.filter((each) => each === 'waits').length,
+    deferred: judged.filter((each) => each === 'deferred').length,
+  };
+}
+
+/**
+ * Whether news of notes may change the count: some note where meetings land
+ * was added, changed or removed. Any other note's never can.
+ */
+export function touchesWaitingMeetings(changes: readonly Pick<NoteChange, 'path'>[]): boolean {
+  return changes.some((change) => isMeetingInboxPath(change.path));
 }
 
 /** Why no count is given: not yet, or — for a vault that does not sync — never. */
-export type UncountedWhy = 'paused' | 'no-pull' | 'settings-unreadable' | 'not-synced';
+export type UncountedWhy = 'paused' | 'no-pull' | 'pulling' | 'settings-unreadable' | 'not-synced';
 
 export type WaitingCountGate =
   | { readonly open: true; readonly standing: CountableStanding }
@@ -86,6 +110,8 @@ export function waitingCountGate({
   if (standing?.kind === 'not-synced') return { open: false, why: 'not-synced' };
   if (paused) return { open: false, why: 'paused' };
   if (standing?.kind === 'settings-unreadable') return { open: false, why: 'settings-unreadable' };
+  // Said apart from no pull: what is shown is kept until the pull completes, never flipped mid-pull.
+  if (standing?.kind === 'pulling') return { open: false, why: 'pulling' };
   if (standing?.kind !== 'pulled' || !pulledSinceLastSleep({ standing, asleepNowMs })) {
     return { open: false, why: 'no-pull' };
   }
@@ -119,6 +145,7 @@ export function meetingsWaitingLine(waiting: MeetingsWaiting): string | null {
     case 'paused':
       return `Meetings may be waiting for ${waiting.mac}: they are counted once sync resumes.`;
     case 'no-pull':
+    case 'pulling':
       return `Meetings may be waiting for ${waiting.mac}: they are counted after the next sync.`;
     case 'settings-unreadable':
     case 'not-synced':
@@ -126,15 +153,23 @@ export function meetingsWaitingLine(waiting: MeetingsWaiting): string | null {
   }
 }
 
-/** Activity's warning, once per pull while meetings wait; null when none does. */
+/**
+ * Activity's warning when meetings wait and their count is news: the first
+ * count said in this session for the vault, or one that differs from the
+ * last. A pull that changes nothing — a look at GitHub about once a minute —
+ * is not news. Null otherwise.
+ */
 export function meetingsWaitingReport({
   count,
   mac,
+  lastCount,
 }: {
   count: number;
   mac: string;
+  /** The count last said for the vault in this session; null when none was. */
+  lastCount: number | null;
 }): ActivityReport | null {
-  if (count === 0) return null;
+  if (count === 0 || count === lastCount) return null;
   const verb = count === 1 ? 'is waiting for' : 'are waiting for';
   const them = count === 1 ? 'it' : 'them';
   return {

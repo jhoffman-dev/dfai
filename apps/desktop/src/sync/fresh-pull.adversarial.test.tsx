@@ -111,6 +111,7 @@ function wire({
         markdown: remarkMarkdown,
         thisMacId: THIS_MAC,
         paused: () => false,
+        pausedNow: false,
         clock: pullClock,
         activity,
       });

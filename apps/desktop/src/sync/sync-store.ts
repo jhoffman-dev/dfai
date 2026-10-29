@@ -37,6 +37,8 @@ const NO_PULL_YET: PulledFilesGate = {
   standing: null,
   acts: async () => false,
   countGate: async () => ({ open: false, why: 'no-pull' }),
+  slept: false,
+  paused: false,
 };
 const NONE_SYNCED: ReadonlySet<string> = new Set();
 const NO_PULLS: ReadonlyMap<string, number> = new Map();
@@ -97,7 +99,7 @@ function controllerFor(state: SyncState, vault: string | null): SyncController |
  * did, draws nothing.
  */
 export function useSyncForRunners(store: SyncStore, vaultKey: string | null): SyncForRunners {
-  const { standing, ...facts } = useStore(
+  const { standing, slept, paused, ...facts } = useStore(
     store,
     useShallow((state) => {
       const controller = controllerFor(state, vaultKey);
@@ -110,6 +112,8 @@ export function useSyncForRunners(store: SyncStore, vaultKey: string | null): Sy
         namedElsewhere: macKnown && !automationsHere,
         namedMacName: controller?.settings?.automationsMacName ?? null,
         standing: controller?.pulledFiles.standing ?? null,
+        slept: controller?.pulledFiles.slept ?? false,
+        paused: controller?.pulledFiles.paused ?? false,
       };
     }),
   );
@@ -123,8 +127,10 @@ export function useSyncForRunners(store: SyncStore, vaultKey: string | null): Sy
         ),
       countGate: (vault) =>
         (controllerFor(store.getState(), vaultKey)?.pulledFiles ?? NO_PULL_YET).countGate(vault),
+      slept,
+      paused,
     }),
-    [store, standing, vaultKey],
+    [store, standing, slept, paused, vaultKey],
   );
   return { ...facts, pulledFiles };
 }

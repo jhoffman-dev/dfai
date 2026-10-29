@@ -74,7 +74,7 @@ function setUp({
     active: false,
     gateCalls: 0,
     /** Awaited as each file is read, before it answers: what happens while the count reads. */
-    onRead: async (_path: string): Promise<void> => undefined,
+    onRead: (async () => undefined) as (path: string) => Promise<void>,
   };
   const said: (MeetingsWaiting | null)[] = [];
   const watch: MeetingsWaitingWatch = {
@@ -160,7 +160,10 @@ describe('createMeetingImporter on a Mac that is not named (ADR-0035 parts 1 and
 
     // A third meeting arrives: the count changes, and that is warned of.
     const THIRD = 'Inbox/Meetings/2026-10-08 Retro two.md';
-    vault.files.set(THIRD, meetingFile({ ...MEETING_HEADER, external_id: 'gemini-33cc44dd' }));
+    await vault.ports.fs.createNote({
+      path: createVaultPath(THIRD),
+      contents: meetingFile({ ...MEETING_HEADER, external_id: 'gemini-33cc44dd' }),
+    });
     expect((await hearOf(THIRD))?.waiting).toMatchObject({ count: 3 });
     expect(warnings()).toEqual([
       '2 meetings are waiting for Studio to process them.',
@@ -343,12 +346,14 @@ describe('createMeetingImporter on a Mac that is not named (ADR-0035 parts 1 and
     expect(said.at(-1)).toBeNull();
   });
 
-  it('counts again, and warns, when the named Mac’s name changes within one pull', async () => {
-    const { importer, state, warnings } = setUp();
+  it('names the Mac anew when the settings rename it, warning of nothing while the count holds', async () => {
+    const { importer, state, warnings, reads } = setUp();
     await importer.catchUp(VAULT);
+    const readsAfterFirst = reads.length;
     state.named = { name: 'Laptop' };
     expect((await importer.catchUp(VAULT))?.waiting).toMatchObject({ mac: 'Laptop', count: 2 });
-    expect(warnings()).toHaveLength(2);
+    expect(warnings()).toHaveLength(1);
+    expect(reads).toHaveLength(readsAfterFirst);
   });
 
   it('without a watch, drops a run it may not make, as before', async () => {

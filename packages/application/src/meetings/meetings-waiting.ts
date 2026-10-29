@@ -1,21 +1,16 @@
 import {
-  declaresImport,
-  importOutcomeOf,
   meetingsWaitingReport,
-  splitFrontmatter,
+  touchesWaitingMeetings,
   waitingMacLabel,
-  waitingMeetingCount,
+  waitingMeetingTally,
   type CountableStanding,
   type MeetingsWaiting,
-  type VaultPath,
+  type NoteChange,
   type WaitingCountGate,
-  type WaitingMeetingFile,
 } from '@dfai/domain';
 import type { ActivityRecorder } from '../activity/ports.ts';
-import type { MarkdownPort } from '../notes/ports.ts';
-import type { VaultFsPort } from '../vault/ports.ts';
 import { meetingInboxNotes } from './meeting-inbox.ts';
-import { readFrontmatter } from './meeting-reading.ts';
+import { readWaitingMeetings, type WaitingMeetingPorts } from './waiting-meeting-files.ts';
 
 /**
  * What the importer is told of a Mac that is not named, so it says what
@@ -29,95 +24,117 @@ export interface MeetingsWaitingWatch {
   readonly namedElsewhere: (vault: string) => { readonly name: string | null } | null;
   /** Whether a count may be given now, and against which pull. */
   readonly countGate: (vault: string) => Promise<WaitingCountGate>;
-  /** Told what waits each time it is judged: null when nothing is to be said, as on the named Mac. */
+  /** Told what waits each time it is judged anew: null when nothing is to be said, as on the named Mac. */
   readonly said: (vault: string, waiting: MeetingsWaiting | null) => void;
-}
-
-/** What the files where meetings land hold, as the import reads them: the same listing and the same reads. */
-export async function readWaitingMeetings(ports: {
-  readonly fs: VaultFsPort;
-  readonly markdown: MarkdownPort;
-}): Promise<WaitingMeetingFile[]> {
-  const paths = await meetingInboxNotes(ports.fs);
-  return Promise.all(paths.map((path) => readWaitingMeeting(ports, path)));
-}
-
-async function readWaitingMeeting(
-  ports: Parameters<typeof readWaitingMeetings>[0],
-  path: VaultPath,
-): Promise<WaitingMeetingFile> {
-  let read: Awaited<ReturnType<VaultFsPort['readTextFile']>>;
-  try {
-    read = await ports.fs.readTextFile(path);
-  } catch {
-    // A file that cannot be read is not the import's to settle, so it never counts: the rule says so.
-    return { path, read: null };
-  }
-  const reading = readFrontmatter(ports.markdown, splitFrontmatter(read.text).frontmatter);
-  // Frontmatter that does not read cannot be stamped either.
-  if (reading.problem !== null) return { path, read: null };
-  return {
-    path,
-    read: {
-      importDeclared: declaresImport(reading.properties),
-      importOutcome: importOutcomeOf(reading.properties),
-      modifiedAt: read.modified,
-    },
-  };
 }
 
 /** What a counter is handed for each vault judged: its ports, and where its warning is said. */
 export interface WaitingCounterRun {
-  readonly ports: Parameters<typeof readWaitingMeetings>[0];
+  readonly ports: WaitingMeetingPorts;
   readonly activity: ActivityRecorder;
 }
 
 /**
  * Says what waits for the named Mac, on a Mac that is not named: the line
- * the Inbox shows, and Activity's warning once per pull while meetings wait.
- * The files are read once per pull: asked again for the same pull, as every
- * change the index hears asks, it answers what it counted then and says
- * nothing new.
+ * the Inbox shows, and Activity's warning when the count is news.
  */
-export function createWaitingCounter(
-  watch: MeetingsWaitingWatch,
-): (vault: string, run: WaitingCounterRun) => Promise<MeetingsWaiting | null> {
-  let last: { vault: string; standing: CountableStanding; waiting: MeetingsWaiting } | null = null;
-  return async (vault, { ports, activity }) => {
-    const named = watch.namedElsewhere(vault);
-    if (named === null) {
-      watch.said(vault, null);
-      return null;
-    }
-    const mac = waitingMacLabel(named.name);
-    const gate = await watch.countGate(vault);
-    if (!gate.open) {
-      const waiting: MeetingsWaiting = { kind: 'uncounted', mac, why: gate.why };
-      watch.said(vault, waiting);
-      return waiting;
-    }
-    const known = last?.vault === vault && last.standing === gate.standing ? last.waiting : null;
-    const waiting: MeetingsWaiting =
-      known?.kind === 'counted' && known.mac === mac
-        ? known
-        : await countAndSay({ ports, activity, standing: gate.standing, mac });
-    last = { vault, standing: gate.standing, waiting };
+export interface WaitingCounter {
+  /** News of notes; whether it may change the count, which is then read again when next judged. */
+  heard(vault: string, changes: readonly NoteChange[]): boolean;
+  /** What was last said for the vault; null when nothing was. */
+  last(vault: string): MeetingsWaiting | null;
+  /** Says nothing waits: this Mac imports now. */
+  clear(vault: string): void;
+  /** Judges what waits now, says it, and warns when the count is news. */
+  judge(vault: string, run: WaitingCounterRun): Promise<MeetingsWaiting | null>;
+}
+
+/** The last count made, and the pull it was made against. */
+interface Counted {
+  readonly vault: string;
+  readonly standing: CountableStanding;
+  readonly count: number;
+  /** Files left for the next pull to judge (changed here after this one). */
+  readonly deferred: number;
+}
+
+/**
+ * The files are read again only when the count may have changed: news named
+ * a meeting file, the gates opened again after being shut, or a file was left
+ * for the next pull and a pull has completed. A pull that brought nothing — a
+ * look at GitHub, about once a minute — reuses the count. While a pull is
+ * under way, what was said stands.
+ */
+export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounter {
+  let counted: Counted | null = null;
+  let stale = false;
+  let said: { vault: string; waiting: MeetingsWaiting | null } | null = null;
+  // The count last said for each vault this session: Activity hears only a change.
+  const lastCount = new Map<string, number>();
+
+  const say = (vault: string, waiting: MeetingsWaiting | null) => {
+    said = { vault, waiting };
     watch.said(vault, waiting);
     return waiting;
   };
-}
+  const last = (vault: string) => (said?.vault === vault ? said.waiting : null);
+  const recountDue = (vault: string, standing: CountableStanding) =>
+    counted?.vault !== vault || stale || (counted.deferred > 0 && counted.standing !== standing);
 
-async function countAndSay({
-  ports,
-  activity,
-  standing,
-  mac,
-}: WaitingCounterRun & {
-  standing: CountableStanding;
-  mac: string;
-}): Promise<MeetingsWaiting> {
-  const count = waitingMeetingCount(await readWaitingMeetings(ports), standing);
-  const report = meetingsWaitingReport({ count, mac });
-  if (report !== null) activity.record(report);
-  return { kind: 'counted', mac, count };
+  const uncounted = async (
+    vault: string,
+    { ports }: WaitingCounterRun,
+    waiting: Extract<MeetingsWaiting, { kind: 'uncounted' }>,
+  ) => {
+    stale = true;
+    // Nothing to say where no meeting file lands at all; listing is local and reads no file.
+    const listed = await meetingInboxNotes(ports.fs);
+    return say(vault, listed.length === 0 ? null : waiting);
+  };
+
+  const count = async (
+    vault: string,
+    run: WaitingCounterRun,
+    { standing, mac }: { standing: CountableStanding; mac: string },
+  ): Promise<MeetingsWaiting | null> => {
+    const files = await readWaitingMeetings(run.ports, await meetingInboxNotes(run.ports.fs));
+    const after = await watch.countGate(vault);
+    // The pull moved, or the gates shut, while the files were read: this count is not said.
+    if (!after.open || after.standing !== standing) return last(vault);
+    const tally = waitingMeetingTally(files, standing);
+    counted = { vault, standing, ...tally };
+    stale = false;
+    const report = meetingsWaitingReport({
+      count: tally.count,
+      mac,
+      lastCount: lastCount.get(vault) ?? null,
+    });
+    if (report !== null) run.activity.record(report);
+    lastCount.set(vault, tally.count);
+    return say(vault, { kind: 'counted', mac, count: tally.count });
+  };
+
+  return {
+    heard: (vault, changes) => {
+      const touches = touchesWaitingMeetings(changes);
+      if (touches && counted?.vault === vault) stale = true;
+      return touches;
+    },
+    last,
+    clear: (vault) => void say(vault, null),
+    judge: async (vault, run) => {
+      const named = watch.namedElsewhere(vault);
+      if (named === null) return say(vault, null);
+      const mac = waitingMacLabel(named.name);
+      const gate = await watch.countGate(vault);
+      if (!gate.open) {
+        if (gate.why === 'pulling') return last(vault);
+        return uncounted(vault, run, { kind: 'uncounted', mac, why: gate.why });
+      }
+      if (!recountDue(vault, gate.standing) && counted !== null) {
+        return say(vault, { kind: 'counted', mac, count: counted.count });
+      }
+      return count(vault, run, { standing: gate.standing, mac });
+    },
+  };
 }

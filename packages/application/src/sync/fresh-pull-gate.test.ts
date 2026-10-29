@@ -355,6 +355,6 @@ describe('createFreshPullGate: counting what waits on a Mac that is not named (A
       gate.started(VAULT);
       return port();
     };
-    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'no-pull' });
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'pulling' });
   });
 });

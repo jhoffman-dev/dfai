@@ -35,9 +35,11 @@ const NOT_SYNCED: Gate = {
   standing: { kind: 'not-synced' },
   acts: async () => true,
   countGate: async () => ({ open: false, why: 'not-synced' }),
+  slept: false,
+  paused: false,
 };
 
-type Gate = Pick<PulledFilesGate, 'standing' | 'acts' | 'countGate'>;
+type Gate = Pick<PulledFilesGate, 'standing' | 'acts' | 'countGate' | 'slept' | 'paused'>;
 
 /** A pull that completed, which the gates judge by: a new one each time, as each pull leaves. */
 const pulled = (): PullStanding => ({

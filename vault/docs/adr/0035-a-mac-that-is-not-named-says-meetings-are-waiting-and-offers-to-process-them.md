@@ -152,22 +152,31 @@ Four parts:
      if its content changes. Without this, the catch-up after every pull
      would repeat the line each time.
 
-**What the banner says (parts 1 and 3).** _(Amended 2026-10-28, #175.)_ What it says before the gates hold
-(the "Unknown" below): "Meetings may be waiting for <Mac>: they are
-counted after the next sync." — or, while sync is paused here, "… they
-are counted once sync resumes." It never gives a number until a pull that
-started since the last launch or wake has completed; a file modified here
-after that pull is left out until the next one. With none waiting, while
-the settings cannot be read (the Inbox already says so), and in a vault
-that does not sync, it shows nothing. The Mac is named by
+**What the banner says (parts 1 and 3).** _(Amended 2026-10-28, #175.)_
+Before the gates hold (the "Unknown" below) it says "Meetings may be
+waiting for <Mac>: they are counted after the next sync.", or, while sync is
+paused here, "… they are counted once sync resumes." It gives a number only
+while a pull that started since the last launch or wake has completed and
+sync is not paused. A wake or a pause seen since that pull takes the number
+away again, though no new pull has completed. A file modified here after
+the pull is left out until the next one. During a pull the line stays as it
+was. It shows nothing when none waits, when no meeting file lands in the
+vault at all, while the settings cannot be read (the Inbox already says so),
+and in a vault that does not sync. The Mac is named by
 `automationsMacName`; one the settings keep no name for is "the Mac that
-runs the automations", never its id. Unimported meetings are counted
-wherever the import would settle them: `Inbox/Meetings/` and the month
-folders under `Meetings/` (#214) whose files declare the contract. A file
-whose frontmatter does not read counts as one that cannot be read. The
-count is made once per completed pull from the import's own listing and
-reads, only on a Mac that is not named; Activity's warning is said once
-for each such pull while meetings wait.
+runs the automations", never its id.
+
+Unimported meetings are counted wherever the import would settle them:
+`Inbox/Meetings/` and the month folders under `Meetings/` (#214) whose files
+declare the contract. A file whose frontmatter does not read counts as one
+that cannot be read. The count uses the import's own listing and reads, eight
+files at a time, only on a Mac that is not named. The files are read again
+only when the count may have changed: news named a file where meetings land,
+the gates opened again after being shut, or a file left for the next pull
+has had that pull. A pull that brings nothing (a look at GitHub, about once a
+minute) reuses the count. Activity's warning is news only: it is said the
+first time a count of one or more is made in a session for the vault, and
+again only when the count changes.
 
 **Catch-up on a claim.** The import's catch-up needs no change:
 `use-meeting-import.ts` already clears its `caughtUp` while this Mac is not

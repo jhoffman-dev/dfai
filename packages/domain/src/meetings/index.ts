@@ -124,8 +124,9 @@ export {
   meetingsWaitingLine,
   meetingsWaitingReport,
   waitingCountGate,
+  touchesWaitingMeetings,
   waitingMacLabel,
-  waitingMeetingCount,
+  waitingMeetingTally,
   waitsForImport,
 } from './meetings-waiting.ts';
 export type {

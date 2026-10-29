@@ -1,6 +1,7 @@
 import {
   meetingImportStoppedReport,
   messageWithoutPaths,
+  type NoteChange,
   type VaultPath,
   type Vocabulary,
 } from '@dfai/domain';
@@ -102,16 +103,27 @@ export function createMeetingImporter({
   const unsettledSaid = createUnsettledSaid();
   const countWaiting = waiting === undefined ? null : createWaitingCounter(waiting);
 
-  /** What a run this Mac may not make says instead of nothing: what waits, on a Mac that is not named. */
-  const notImporting = async (vault: string): Promise<MeetingImportOutcome | null> => {
+  /**
+   * What a run this Mac may not make says instead of nothing: what waits, on
+   * a Mac that is not named. News that names no meeting file cannot change
+   * that, and asks nothing — no gate, no read.
+   */
+  const notImporting = async (
+    vault: string,
+    news: readonly NoteChange[] | null,
+  ): Promise<MeetingImportOutcome | null> => {
     if (countWaiting === null) return null;
-    const said = await countWaiting(vault, { ports: ports(), activity: activity.inVault(vault) });
+    const said =
+      news !== null && !countWaiting.heard(vault, news)
+        ? countWaiting.last(vault)
+        : await countWaiting.judge(vault, { ports: ports(), activity: activity.inVault(vault) });
     return said === null ? null : { happenings: [], wrote: false, waiting: said };
   };
 
   const runFor = (
     vault: string,
     importing: (run: MeetingImportRun) => Promise<MeetingImportOutcome>,
+    news: readonly NoteChange[] | null,
   ): Promise<MeetingImportOutcome | null> => {
     const next = queue.then(async () => {
       if (openVault() !== vault) return null;
@@ -120,8 +132,8 @@ export function createMeetingImporter({
       if (openVault() !== vault) return null;
       const recorder = activity.inVault(vault);
       try {
-        if (!mayImport) return await notImporting(vault);
-        waiting?.said(vault, null);
+        if (!mayImport) return await notImporting(vault, news);
+        countWaiting?.clear(vault);
         const outcome = await importing({
           ports: ports(),
           today: clock.today(),
@@ -152,8 +164,12 @@ export function createMeetingImporter({
 
   return {
     hear: (news) =>
-      runFor(news.vault, (run) => importArrivedMeetings({ ...run, changes: news.changes })),
-    catchUp: (vault) => runFor(vault, catchUpMeetings),
+      runFor(
+        news.vault,
+        (run) => importArrivedMeetings({ ...run, changes: news.changes }),
+        news.changes,
+      ),
+    catchUp: (vault) => runFor(vault, catchUpMeetings, null),
   };
 }
 

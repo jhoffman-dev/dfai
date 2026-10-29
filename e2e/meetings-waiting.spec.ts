@@ -118,4 +118,14 @@ test('a Mac that is not named says how many meetings wait for the named one, and
   await expect(banner(page)).toHaveText('2 meetings waiting for Laptop');
   await goTo(page).getByRole('button', { name: 'Activity', exact: true }).click();
   await expect(warnings).toHaveCount(1);
+
+  // A sync that brings nothing new keeps the count and warns of nothing (#627 review).
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await syncCard(page).getByRole('button', { name: 'Sync now' }).click();
+  await expect(page.getByTestId('sync-status')).toContainText('Synced at');
+  await page.keyboard.press('Escape');
+  await openInbox(page);
+  await expect(banner(page)).toHaveText('2 meetings waiting for Laptop');
+  await goTo(page).getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(warnings).toHaveCount(1);
 });

@@ -45,6 +45,8 @@ const NOT_SYNCED = {
   standing: { kind: 'not-synced' as const },
   acts: async () => true,
   countGate: async () => ({ open: false as const, why: 'not-synced' as const }),
+  slept: false,
+  paused: false,
 };
 const NOTHING = () => undefined;
 

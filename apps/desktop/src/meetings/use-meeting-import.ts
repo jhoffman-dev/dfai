@@ -75,7 +75,7 @@ export function useMeetingImport({
    */
   ownerKnown: boolean;
   /** Whether this Mac may act on what sync brought in, and the pull that says so (ADR-0035 part 4). */
-  pulledFiles: Pick<PulledFilesGate, 'standing' | 'acts' | 'countGate'>;
+  pulledFiles: Pick<PulledFilesGate, 'standing' | 'acts' | 'countGate' | 'slept' | 'paused'>;
   /**
    * The name the settings keep for the Mac they name, when that is another
    * Mac than this one (compared by id); null when this Mac is named, or that
@@ -173,49 +173,72 @@ export function useMeetingImport({
     void importer.catchUp(vaultKey);
   }, [importer, importing, readyHere, vaultKey, standing]);
 
-  useCountWaiting({ importer, vaultKey, standing, importing, namedElsewhere, onWaiting });
+  useCountWaiting({
+    importer,
+    vaultKey,
+    gate: pulledFiles,
+    importing,
+    namedElsewhere,
+    onWaiting,
+  });
 }
 
+/** What the count is asked again for: the pull, a sleep since it, the pause, and who is named. */
+interface CountAsked {
+  readonly vault: string;
+  readonly standing: PullStanding | null;
+  readonly slept: boolean;
+  readonly paused: boolean;
+  readonly name: string | null;
+}
+
+const sameAsk = (one: CountAsked | null, other: CountAsked) =>
+  one !== null &&
+  one.vault === other.vault &&
+  one.standing === other.standing &&
+  one.slept === other.slept &&
+  one.paused === other.paused &&
+  one.name === other.name;
+
 /**
- * On a Mac that is not named, asks the importer once per pull — and once as
- * the vault opens, before any pull — what waits for the named Mac. A run it
- * may not make counts instead of importing. Nothing is asked while a pull is
- * under way: what it brings is judged once it completes. Once this Mac is
- * named, or the settings stop naming another, nothing waits any more.
+ * On a Mac that is not named, asks the importer what waits for the named
+ * Mac as the vault opens, after each pull, and whenever the gates shut or
+ * open without a pull — a sleep since it, or the pause — so a number is
+ * never shown while they do not hold. A run it may not make counts instead
+ * of importing. Nothing is asked while a pull is under way: what it brings is
+ * judged once it completes. Once this Mac is named, or the settings stop
+ * naming another, nothing waits any more.
  */
 function useCountWaiting({
   importer,
   vaultKey,
-  standing,
+  gate,
   importing,
   namedElsewhere,
   onWaiting,
 }: {
   importer: MeetingImporter | null;
   vaultKey: string | null;
-  standing: PullStanding | null;
+  gate: Pick<PulledFilesGate, 'standing' | 'slept' | 'paused'>;
   importing: boolean;
   namedElsewhere: { readonly name: string | null } | null;
   onWaiting: (vault: string, waiting: MeetingsWaiting | null) => void;
 }): void {
   const counting = !importing && namedElsewhere !== null;
   const name = namedElsewhere?.name ?? null;
-  const counted = useRef<{
-    vault: string;
-    standing: PullStanding | null;
-    name: string | null;
-  } | null>(null);
+  const { standing, slept, paused } = gate;
+  const asked = useRef<CountAsked | null>(null);
   useEffect(() => {
     if (vaultKey === null) return;
     if (!counting) {
-      if (counted.current !== null) onWaiting(vaultKey, null);
-      counted.current = null;
+      if (asked.current !== null) onWaiting(vaultKey, null);
+      asked.current = null;
       return;
     }
     if (importer === null || standing?.kind === 'pulling') return;
-    const last = counted.current;
-    if (last?.vault === vaultKey && last.standing === standing && last.name === name) return;
-    counted.current = { vault: vaultKey, standing, name };
+    const now = { vault: vaultKey, standing, slept, paused, name };
+    if (sameAsk(asked.current, now)) return;
+    asked.current = now;
     void importer.catchUp(vaultKey);
-  }, [importer, counting, vaultKey, standing, name, onWaiting]);
+  }, [importer, counting, vaultKey, standing, slept, paused, name, onWaiting]);
 }
