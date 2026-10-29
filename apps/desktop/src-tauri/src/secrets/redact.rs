@@ -9,18 +9,29 @@
 //! as `%XX` or `%25XX` in either case of hex, as a JSON `\uXXXX` or short
 //! escape, and a space as `+`, so a value written in any mixture of those is
 //! still found; so is its base64, in both alphabets, padded or not, at each of
-//! the three alignments it can sit at. The value itself is found in either
-//! case. Two forms are found by reading the answer rather than by a longer
-//! matcher, which would cap how long a secret may be (attack on PR #631): a
-//! run of text holding HTML numeric entities is read with them decoded, and a
-//! run of base64 wrapped into lines (CRLF or LF, as itself or JSON-escaped,
-//! wherever it falls) is read with the breaks taken out; either run is struck
-//! whole when the secret is in it.
+//! the three alignments it can sit at.
+//!
+//! A secret of 8 characters or more is also read loosely. The answer is
+//! decoded once, whatever the number of secrets — HTML numeric entities
+//! (decimal or hex, any number of digits, the `;` optional), the five named
+//! ones (`&amp;` `&lt;` `&gt;` `&quot;` `&apos;`), JSON's `\uXXXX` (a
+//! surrogate pair as one character) and short escapes — and base64 wrapped
+//! into lines is joined: a break of LF, CR or CRLF, as itself, JSON-escaped
+//! or as entities, with the indent of a continuation line, between two
+//! base64 characters. Each secret is looked for in that reading too, in any
+//! case of its ASCII letters, and only the original text a match was read
+//! from is struck, widened to whole entities and escapes, never the run
+//! around it. A secret shorter than 8 characters is found only as it is and
+//! in the escaped and base64 forms above: read loosely, a short one would
+//! match ordinary text by chance and strike it.
 //!
 //! What is deliberately not looked for, and why that is acceptable:
 //!
-//! - hex, `\x` and `\u{…}` escapes, an NFD-normalised copy, base64 of the
-//!   percent-encoded value, and an echo cut short.
+//! - hex, `\x` and `\u{…}` escapes, named entities past the five, a
+//!   Unicode case-folded or NFD-normalised copy, base64 of the
+//!   percent-encoded value, a percent- or `\u`-escaped copy in another case,
+//!   base64 wrapped by a blank line or text between its lines, and an echo
+//!   cut short.
 //!
 //! Each is a server going out of its way to transform what it was sent, and
 //! every form added makes every secret's matcher larger and slower. The
@@ -47,6 +58,8 @@ use regex::{Regex, RegexBuilder};
 
 mod decoded;
 
+use decoded::Decoded;
+
 /// Handed back in place of a response that could not be checked. Nothing is
 /// better than something that might hold a secret.
 const UNCHECKED: &str = "[the response could not be checked for secrets, so it is not shown]";
@@ -55,20 +68,23 @@ const UNCHECKED: &str = "[the response could not be checked for secrets, so it i
 /// and so how long a secret DFAI keeps may be: a value whose matcher will
 /// not build within it is refused when it is saved, and never sent. Every
 /// character may be written several ways, so what fits depends on which
-/// characters they are — some 2.2 KB of printable ASCII in no order, and a
-/// signed token's letters, digits, `-`, `_` and `.` up to some 2.7 KB. Past
-/// that a token fits or not by its length (how its base64 forms align): one
-/// of 3,000 bytes builds and one of 2,900 does not.
-/// Raised from 12 MiB when the value in another case was added to every
-/// matcher (attack on PR #631), so that no secret kept before is refused now.
+/// characters they are — measured at this limit (review of PR #631): 2,640
+/// bytes of printable ASCII in no order, a signed token's letters, digits,
+/// `-`, `_` and `.` to 3,399 bytes and past, 5,010 of `€` and 5,091 of CJK.
+/// Near its end a token fits or not by its length (how its base64 forms
+/// align). Raised from 12 MiB when the value in another case was added to
+/// the matcher of every secret read loosely (attack on PR #631), so that no
+/// secret kept before is refused now
+/// (`every_secret_length_that_built_before_still_builds`). With
+/// `HELD_AT_MOST` matchers held, the most they take is 112 MiB, where it was
+/// 96.
 const MATCHER_SIZE_LIMIT: usize = 14 * 1024 * 1024;
 
 /// A value longer than this is refused without trying to build its matcher.
 /// Building one writes and parses the whole pattern before the size limit is
 /// reached, which takes seconds for a value of a few times this; and no value
-/// of more than some 4.3 KB (of `€`, the cheapest character per byte) has
-/// been seen to fit `MATCHER_SIZE_LIMIT`, so this refuses nothing that would
-/// build.
+/// of more than some 5.1 KB (5,091 bytes of CJK, 5,010 of `€`) has been seen
+/// to fit `MATCHER_SIZE_LIMIT`, so this refuses nothing that would build.
 const NEVER_BUILDS_PAST: usize = 6 * 1024;
 
 /// How many values' matchers are held at once.
@@ -79,6 +95,9 @@ const HELD_AT_MOST: usize = 8;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TooLongToProtect;
 
+/// A secret shorter than this is not read loosely (`read_loosely`).
+const SHORTEST_READ_LOOSELY: usize = 8;
+
 /// A secret shorter than this is not looked for as base64: the base64 of one
 /// or two bytes is a character or two, which ordinary text is full of.
 const SHORTEST_FOR_BASE64: usize = 8;
@@ -86,89 +105,51 @@ const SHORTEST_FOR_BASE64: usize = 8;
 /// Replaces every secret that went into a request wherever it appears in what
 /// came back, in any of the forms described above.
 pub fn redact(text: &str, used: &[(String, String)]) -> String {
+    let used: Vec<&(String, String)> = used.iter().filter(|(_, value)| !value.is_empty()).collect();
+    // Read once, before any secret is looked for, and only for one long
+    // enough to be read loosely.
+    let decoded = used
+        .iter()
+        .any(|(_, value)| read_loosely(value))
+        .then(|| decoded_once(text))
+        .flatten();
     let mut found: Vec<(usize, usize, &str)> = Vec::new();
-    for (name, value) in used.iter().filter(|(_, value)| !value.is_empty()) {
+    for (name, value) in used {
         let Ok(matcher) = matchers().for_value(value, matcher) else {
             return UNCHECKED.to_string();
         };
-        found.extend(
-            matcher
-                .find_iter(text)
-                .map(|at| (at.start(), at.end(), name.as_str())),
-        );
-        found.extend(
-            runs_read_otherwise(text)
-                .filter(|(_, _, read)| matcher.is_match(read))
-                .map(|(start, end, _)| (start, end, name.as_str())),
-        );
+        found.extend(scanned(&matcher, text).map(|(start, end)| (start, end, name.as_str())));
+        if let Some(decoded) = decoded.as_ref().filter(|_| read_loosely(value)) {
+            found.extend(
+                scanned(&matcher, decoded.text())
+                    .map(|(start, end)| decoded.original_span(start, end))
+                    .map(|(start, end)| (start, end, name.as_str())),
+            );
+        }
     }
     strike(text, found)
 }
 
-/// One HTML numeric entity, decimal or hex.
-const ENTITY: &str = r"&#(?:[xX][0-9a-fA-F]{1,6}|[0-9]{1,7});";
-
-/// A run of text holding at least one HTML numeric entity: no white space,
-/// quote or angle bracket, which end a value in JSON or HTML.
-fn entity_runs() -> &'static Regex {
-    static RUNS: OnceLock<Regex> = OnceLock::new();
-    RUNS.get_or_init(|| {
-        let piece = format!(r#"(?:[^\s"'<>&]|{ENTITY})"#);
-        Regex::new(&format!("{piece}*{ENTITY}{piece}*")).expect("the entity-run pattern compiles")
-    })
+/// A secret is read loosely — decoded from entities and escapes, across
+/// wrapped lines, and in another case — only when it is long enough that a
+/// chance match in ordinary text is not likely. A shorter one is found only
+/// as it is and in the escaped and base64 forms it always was, so a short
+/// named secret never strikes a word that merely looks like it.
+fn read_loosely(value: &str) -> bool {
+    value.chars().count() >= SHORTEST_READ_LOOSELY
 }
 
-fn one_entity() -> &'static Regex {
-    static ONE: OnceLock<Regex> = OnceLock::new();
-    ONE.get_or_init(|| {
-        Regex::new(r"&#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}));")
-            .expect("the entity pattern compiles")
-    })
+fn decoded_once(text: &str) -> Option<Decoded> {
+    #[cfg(test)]
+    DECODES.with(|count| count.set(count.get() + 1));
+    Decoded::of(text)
 }
 
-/// A line break a base64 encoder wraps at: CRLF or LF, as itself or JSON-escaped.
-const LINE_BREAK: &str = r"\r?\n|\\r\\n|\\n";
-
-/// A run of base64 broken into lines, wherever the breaks fall.
-fn wrapped_runs() -> &'static Regex {
-    static RUNS: OnceLock<Regex> = OnceLock::new();
-    RUNS.get_or_init(|| {
-        Regex::new(&format!(
-            r"[A-Za-z0-9+/=_-]+(?:(?:{LINE_BREAK})[A-Za-z0-9+/=_-]+)+"
-        ))
-        .expect("the wrapped-run pattern compiles")
-    })
-}
-
-fn line_breaks() -> &'static Regex {
-    static BREAKS: OnceLock<Regex> = OnceLock::new();
-    BREAKS.get_or_init(|| Regex::new(LINE_BREAK).expect("the line-break pattern compiles"))
-}
-
-/// The character an entity names, or nothing for one that names none.
-fn entity_char(entity: &regex::Captures) -> String {
-    let code = match (entity.get(1), entity.get(2)) {
-        (Some(hex), _) => u32::from_str_radix(hex.as_str(), 16).ok(),
-        (_, Some(decimal)) => decimal.as_str().parse().ok(),
-        _ => None,
-    };
-    code.and_then(char::from_u32)
-        .map(String::from)
-        .unwrap_or_default()
-}
-
-/// Each run's span in `text`, and the run read with its entities decoded or
-/// its line breaks taken out.
-fn runs_read_otherwise(text: &str) -> impl Iterator<Item = (usize, usize, String)> + '_ {
-    let decoded = entity_runs().find_iter(text).map(|run| {
-        let read = one_entity().replace_all(run.as_str(), entity_char);
-        (run.start(), run.end(), read.into_owned())
-    });
-    let joined = wrapped_runs().find_iter(text).map(|run| {
-        let read = line_breaks().replace_all(run.as_str(), "");
-        (run.start(), run.end(), read.into_owned())
-    });
-    decoded.chain(joined)
+/// Every match of `matcher` in `text`, as byte spans.
+fn scanned<'a>(matcher: &'a Regex, text: &'a str) -> impl Iterator<Item = (usize, usize)> + 'a {
+    #[cfg(test)]
+    SCANNED_BYTES.with(|count| count.set(count.get() + text.len()));
+    matcher.find_iter(text).map(|at| (at.start(), at.end()))
 }
 
 /// Builds the matcher that strikes `value`, unless it is already held, so
@@ -349,8 +330,8 @@ fn matcher_with(
     build(value).map_err(|_| TooLongToProtect)
 }
 
-/// How many times an answer was decoded, and how many bytes the matchers
-/// read, on this thread: what redacting costs, counted rather than timed.
+// How many times an answer was decoded, and how many bytes the matchers
+// read, on this thread: what redacting costs, counted rather than timed.
 #[cfg(test)]
 thread_local! {
     pub(super) static DECODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -389,7 +370,7 @@ fn pattern(value: &str) -> String {
     // must not hand it back in the clear (attack on PR #631). Its letters as
     // classes of two and nothing else, since every escape in both cases would
     // make the matcher larger, and so the longest secret DFAI keeps shorter.
-    if value.chars().any(|c| c.is_ascii_alphabetic()) {
+    if read_loosely(value) && value.chars().any(|c| c.is_ascii_alphabetic()) {
         alternatives.push(any_case(value));
     }
     alternatives.join("|")
@@ -702,7 +683,7 @@ mod tests {
     /// ceiling refuses nothing that would build — a value as long as the
     /// ceiling, of the character cheapest per byte, already does not — and
     /// sits close enough to what does that one much past it is not tried.
-    const LONGEST_SEEN_TO_BUILD: usize = 4_293;
+    const LONGEST_SEEN_TO_BUILD: usize = 5_010;
 
     /// Whether `matcher_with` tried to build `value`'s matcher at all.
     fn tried_to_build(value: &str) -> (Result<(), TooLongToProtect>, bool) {
@@ -722,7 +703,7 @@ mod tests {
         let at_the_ceiling = "€".repeat(NEVER_BUILDS_PAST / '€'.len_utf8());
         assert!(compiled(&at_the_ceiling).is_err(), "the ceiling builds");
 
-        // Half as long again as the longest value seen to build (4,293 bytes
+        // Half as long again as the longest value seen to build (5,010 bytes
         // of `€`) is refused at once, not after seconds of trying.
         let half_again = "~".repeat(LONGEST_SEEN_TO_BUILD * 3 / 2);
         assert_eq!(tried_to_build(&half_again), (Err(TooLongToProtect), false));
@@ -796,9 +777,7 @@ mod tests {
         use base64::Engine;
         use regex::RegexBuilder;
 
-        use super::super::{
-            compiled, forms, redact, spelled, DECODES, MATCHER_SIZE_LIMIT, SCANNED_BYTES,
-        };
+        use super::super::{compiled, forms, redact, spelled, DECODES, SCANNED_BYTES};
         use crate::secrets::tests::a_signed_token;
 
         const LONG: &str = "Fict10nal-Larkspur_Secret.42";
@@ -892,6 +871,15 @@ mod tests {
             assert_eq!(struck("KEY1 and key1", "Key1"), "KEY1 and key1");
             assert_eq!(struck("abc\ndef ghi", "abcdef"), "abc\ndef ghi");
             assert_eq!(struck("ab&#99;def", "abcdef"), "ab&#99;def");
+            // Beside a long secret, which has the answer decoded, a short one is still not read loosely.
+            let both = vec![
+                ("short".to_string(), "abcdef".to_string()),
+                ("long".to_string(), LONG.to_string()),
+            ];
+            assert_eq!(
+                redact("ab&#99;def and abc\ndef", &both),
+                "ab&#99;def and abc\ndef"
+            );
             assert_eq!(
                 struck("x Key1 %4B%65y1 y", "Key1"),
                 "x [secret k removed] [secret k removed] y"
@@ -939,7 +927,6 @@ mod tests {
                     .build()
                     .is_ok()
             };
-            assert!(MATCHER_SIZE_LIMIT >= 12 * 1024 * 1024);
             let printable: String = (' '..='~').cycle().take(4_000).collect();
             let mut values: Vec<String> =
                 (2_500..=3_400).step_by(100).map(a_signed_token).collect();

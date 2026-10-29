@@ -1,27 +1,281 @@
 //! An answer read the way a reader of it would: entities and JSON escapes
 //! decoded, and base64 that was wrapped into lines joined up, with a map from
 //! every position in what was read back to the text it came from.
+//!
+//! Read in one pass, once per answer, however many secrets are looked for in
+//! it. Text that needs no decoding is copied as it is and mapped by offset,
+//! so the map holds one entry per decoded piece, not per byte.
+
+/// One stretch of what was read and the stretch of the original it came
+/// from: copied as it is (`copied`), or one decoded character, or a line
+/// break taken out of wrapped base64 (nothing read, `read_len` 0).
+#[derive(Debug, Clone, Copy)]
+struct Segment {
+    read_start: usize,
+    read_len: usize,
+    original_start: usize,
+    original_len: usize,
+    copied: bool,
+}
 
 /// The text as read, and where each piece of it came from.
 pub struct Decoded {
     text: String,
+    segments: Vec<Segment>,
+}
+
+/// What base64 is written in, both alphabets and padding: the characters a
+/// wrapped line break may sit between.
+fn is_base64(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '-' | '_')
+}
+
+/// A byte that starts an entity, an escape or a line break: every other byte
+/// is copied as it is. All are ASCII, so a stretch between them is whole
+/// characters.
+fn starts_a_piece(byte: u8) -> bool {
+    matches!(byte, b'&' | b'\\' | b'\n' | b'\r')
+}
+
+/// The five named entities an HTML escaper writes.
+const NAMED: [(&str, char); 5] = [
+    ("&amp;", '&'),
+    ("&lt;", '<'),
+    ("&gt;", '>'),
+    ("&quot;", '"'),
+    ("&apos;", '\''),
+];
+
+/// The value of a run of digits in `radix`, or None past what a character can be.
+fn digits_value(digits: &str, radix: u32) -> Option<u32> {
+    digits.chars().try_fold(0u32, |value, digit| {
+        let value = value
+            .checked_mul(radix)?
+            .checked_add(digit.to_digit(radix)?)?;
+        (value <= 0x10_FFFF).then_some(value)
+    })
+}
+
+/// A numeric entity at the start of `rest` — `&#65;`, `&#x41;`, any number of
+/// digits, the `;` optional — as the character it names and its length. A
+/// surrogate, zero or a value past Unicode names none, and is left as written.
+fn numeric_entity(rest: &str) -> Option<(char, usize)> {
+    let after = rest.strip_prefix("&#")?;
+    let (radix, digits_from) = match after.as_bytes().first() {
+        Some(b'x' | b'X') => (16, 3),
+        _ => (10, 2),
+    };
+    let digits_len = rest[digits_from..]
+        .bytes()
+        .take_while(|byte| (*byte as char).is_digit(radix))
+        .count();
+    if digits_len == 0 {
+        return None;
+    }
+    let digits = &rest[digits_from..digits_from + digits_len];
+    let code = digits_value(digits, radix).filter(|code| *code != 0)?;
+    let mut len = digits_from + digits_len;
+    if rest[len..].starts_with(';') {
+        len += 1;
+    }
+    Some((char::from_u32(code)?, len))
+}
+
+fn entity(rest: &str) -> Option<(char, usize)> {
+    NAMED
+        .iter()
+        .find(|(name, _)| rest.starts_with(name))
+        .map(|(name, c)| (*c, name.len()))
+        .or_else(|| numeric_entity(rest))
+}
+
+/// Four hex digits after `\u` at the start of `rest`, as a UTF-16 unit.
+fn unit(rest: &str) -> Option<u16> {
+    let hex = rest.strip_prefix("\\u")?.get(..4)?;
+    if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    u16::from_str_radix(hex, 16).ok()
+}
+
+/// A JSON escape at the start of `rest`, as the character it writes and its
+/// length. A surrogate pair is one character; half of one is left as written.
+fn json_escape(rest: &str) -> Option<(char, usize)> {
+    let short = match rest.as_bytes().get(..2)? {
+        b"\\n" => Some('\n'),
+        b"\\r" => Some('\r'),
+        b"\\t" => Some('\t'),
+        b"\\\"" => Some('"'),
+        b"\\\\" => Some('\\'),
+        b"\\/" => Some('/'),
+        b"\\b" => Some('\u{8}'),
+        b"\\f" => Some('\u{c}'),
+        _ => None,
+    };
+    if let Some(c) = short {
+        return Some((c, 2));
+    }
+    let high = unit(rest)?;
+    if let Some(c) = char::from_u32(u32::from(high)) {
+        return Some((c, 6));
+    }
+    let low = unit(&rest[6..]).filter(|low| (0xDC00..0xE000).contains(low))?;
+    // A low surrogate first, or a high one twice, decodes to an error: left as written.
+    let pair = char::decode_utf16([high, low]).next()?.ok()?;
+    Some((pair, 12))
+}
+
+/// The ways one line break is written, longest first: as itself, JSON-escaped,
+/// or as entities.
+const LINE_BREAKS: [&str; 15] = [
+    "&#13;&#10;",
+    "&#xD;&#xA;",
+    "&#xd;&#xa;",
+    "\\r\\n",
+    "&#10;",
+    "&#13;",
+    "&#xA;",
+    "&#xa;",
+    "&#xD;",
+    "&#xd;",
+    "\r\n",
+    "\\n",
+    "\\r",
+    "\n",
+    "\r",
+];
+
+/// The length of the line break at the start of `rest`, with the indent that
+/// follows it, when what follows is more base64: a wrap, not a paragraph.
+fn wrap_at(rest: &str) -> Option<usize> {
+    let line_break = LINE_BREAKS
+        .iter()
+        .find(|written| rest.starts_with(*written))?;
+    let after = &rest[line_break.len()..];
+    let indent = after
+        .bytes()
+        .take_while(|byte| matches!(byte, b' ' | b'\t'))
+        .count();
+    let next = after[indent..].chars().next()?;
+    is_base64(next).then_some(line_break.len() + indent)
 }
 
 impl Decoded {
     /// `text` read with its entities and escapes decoded and its wrapped lines
     /// joined, or None when nothing in it reads otherwise.
-    pub fn of(_text: &str) -> Option<Decoded> {
-        None
+    pub fn of(text: &str) -> Option<Decoded> {
+        if !text.bytes().any(starts_a_piece) {
+            return None;
+        }
+        let mut read = Reading::default();
+        let mut at = 0;
+        while let Some(c) = text[at..].chars().next() {
+            let rest = &text[at..];
+            if !starts_a_piece(rest.as_bytes()[0]) {
+                // Copied a stretch at a time: only these bytes start anything read otherwise.
+                let plain = rest.bytes().position(starts_a_piece).unwrap_or(rest.len());
+                read.copied(&rest[..plain], at);
+                at += plain;
+                continue;
+            }
+            let wraps = read.text.chars().last().is_some_and(is_base64);
+            if let Some(len) = wraps.then(|| wrap_at(rest)).flatten() {
+                read.decoded(None, at, len);
+                at += len;
+            } else if let Some((c, len)) = (c == '&').then(|| entity(rest)).flatten() {
+                read.decoded(Some(c), at, len);
+                at += len;
+            } else if let Some((c, len)) = (c == '\\').then(|| json_escape(rest)).flatten() {
+                read.decoded(Some(c), at, len);
+                at += len;
+            } else {
+                read.copied(&rest[..c.len_utf8()], at);
+                at += c.len_utf8();
+            }
+        }
+        read.decoded_any.then_some(Decoded {
+            text: read.text,
+            segments: read.segments,
+        })
     }
 
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    /// The segment that read position `at` lies in.
+    fn segment_holding(&self, at: usize) -> &Segment {
+        let after = self
+            .segments
+            .partition_point(|segment| segment.read_start + segment.read_len <= at);
+        &self.segments[after.min(self.segments.len() - 1)]
+    }
+
     /// The span of the original text that `start..end` of what was read came
-    /// from, widened to whole entities, escapes and line breaks.
+    /// from, widened to whole entities and escapes. `start < end`, both on
+    /// character boundaries of what was read.
     pub fn original_span(&self, start: usize, end: usize) -> (usize, usize) {
-        (start, end)
+        let first = self.segment_holding(start);
+        let from = if first.copied {
+            first.original_start + (start - first.read_start)
+        } else {
+            first.original_start
+        };
+        let last = self.segment_holding(end - 1);
+        let to = if last.copied {
+            last.original_start + (end - last.read_start)
+        } else {
+            last.original_start + last.original_len
+        };
+        (from, to)
+    }
+}
+
+/// What has been read so far.
+#[derive(Default)]
+struct Reading {
+    text: String,
+    segments: Vec<Segment>,
+    decoded_any: bool,
+}
+
+impl Reading {
+    /// Text copied as it is, joined to the copied stretch before it.
+    fn copied(&mut self, piece: &str, original_at: usize) {
+        let len = piece.len();
+        let read_start = self.text.len();
+        self.text.push_str(piece);
+        if let Some(last) = self.segments.last_mut() {
+            let follows = last.original_start + last.original_len == original_at;
+            if last.copied && follows {
+                last.read_len += len;
+                last.original_len += len;
+                return;
+            }
+        }
+        self.segments.push(Segment {
+            read_start,
+            read_len: len,
+            original_start: original_at,
+            original_len: len,
+            copied: true,
+        });
+    }
+
+    /// `original_len` bytes at `original_at` read as `c`, or as nothing.
+    fn decoded(&mut self, c: Option<char>, original_at: usize, original_len: usize) {
+        let read_start = self.text.len();
+        if let Some(c) = c {
+            self.text.push(c);
+        }
+        self.decoded_any = true;
+        self.segments.push(Segment {
+            read_start,
+            read_len: c.map_or(0, char::len_utf8),
+            original_start: original_at,
+            original_len,
+            copied: false,
+        });
     }
 }
 
@@ -97,7 +351,14 @@ mod tests {
 
     #[test]
     fn a_lone_or_reversed_surrogate_escape_stays_as_it_is() {
-        for text in [r"\uD83D", r"\uDE00\uD83D", r"\uD83Dx", r"\u12", r"\uZZZZ"] {
+        for text in [
+            r"\uD83D",
+            r"\uDE00\uD83D",
+            r"\uDE00\uDE01",
+            r"\uD83Dx",
+            r"\u12",
+            r"\uZZZZ",
+        ] {
             assert_eq!(read(text), text, "{text:?}");
         }
     }
