@@ -6,7 +6,7 @@
  * for another. After every step both must draw the same rows at the same
  * places, and the wrapper must never have drawn more often than the library.
  */
-import { StrictMode, useState } from 'react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import {
@@ -195,15 +195,9 @@ function harness(strict: boolean) {
       </>
     );
   }
-  const view = render(
-    strict ? (
-      <StrictMode>
-        <Both />
-      </StrictMode>
-    ) : (
-      <Both />
-    ),
-  );
+  // Mounted twice as main.tsx mounts the app: a <StrictMode> in the tree does not run
+  // effects twice under React 19, the option does (#159).
+  const view = render(<Both />, { reactStrictMode: strict });
   let shared: Shared = { count: 200, which: 0, held: -1, scrollMargin: 0 };
   const update = (change: Partial<Shared>) => {
     shared = { ...shared, ...change };
