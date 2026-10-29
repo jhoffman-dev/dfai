@@ -21,6 +21,7 @@ import {
   type EmbeddingPort,
   type IdlePort,
 } from './ports.ts';
+import { relatedByMeaning } from './related-by-meaning.ts';
 import { createSemanticBlocks, type SemanticBlocks } from './semantic-blocks.ts';
 import {
   CacheMismatchError,
@@ -228,6 +229,15 @@ export function createSemanticEngine(deps: SemanticEngineDeps): SemanticEngine {
         await rebuild(cause instanceof CacheDamagedError ? 'damaged' : 'mismatch');
         return { hits: [], progress: progress() };
       }
+    },
+    async related(asked) {
+      // Never the first use: turning search by meaning on is the person's, from ⌘K (ADR-0031).
+      if (opened === null && !deps.optIn.isOn(deps.vault))
+        return { notes: [], embedded: false, progress: progress() };
+      if (opened === null) await start();
+      const { blocks } = await opening();
+      const inVault = (path: string) => notePaths?.has(path) ?? false;
+      return relatedByMeaning({ blocks, progress, resolve, inVault }, asked);
     },
     progress,
     subscribe(listener) {

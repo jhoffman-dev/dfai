@@ -293,6 +293,16 @@ export interface ApiSemanticHit {
   readonly archived?: true;
 }
 
+/** A note close in meaning to another and not linked to it yet (`/v1/notes/{path}/related`, P32-03). */
+export interface ApiRelatedNote {
+  readonly path: string;
+  readonly title: string;
+  /** `[[Note]]`, or `[[Folder/Note]]` where the name is shared: what to write to link it. */
+  readonly link: string;
+  /** Cosine similarity of its closest block to the note, above 0 and at most 1; higher is closer. */
+  readonly score: number;
+}
+
 /** How far the embeddings cache is built: while `done < total`, notes not yet embedded cannot be found. */
 export interface ApiSemanticProgress {
   readonly done: number;
@@ -1784,6 +1794,12 @@ export type ApiSuccessBody =
     }
   | { readonly hits: readonly ApiSearchHit[] }
   | { readonly hits: readonly ApiSemanticHit[]; readonly progress: ApiSemanticProgress }
+  | {
+      readonly related: readonly ApiRelatedNote[];
+      /** False while the note has no meanings cached yet: nothing can be related to it. */
+      readonly embedded: boolean;
+      readonly progress: ApiSemanticProgress;
+    }
   | { readonly types: readonly ApiType[] }
   | { readonly views: readonly ApiView[] }
   | {
@@ -1917,6 +1933,11 @@ export const API_ROUTES = [
     summary: 'Replace the body. Requires ifModified.',
   },
   { method: 'GET', path: '/v1/notes/{path}/backlinks', summary: 'Notes that link to this one.' },
+  {
+    method: 'GET',
+    path: '/v1/notes/{path}/related',
+    summary: 'Notes close in meaning and not linked to it yet, either way. Query: limit.',
+  },
   {
     method: 'POST',
     path: '/v1/notes/{path}/promote',

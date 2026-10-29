@@ -9,10 +9,14 @@ import type {
 
 const PROGRESS = { done: 3, total: 5, failure: null };
 
+/** Related notes, which these searches are never asked for. */
+const unrelated = async () => ({ notes: [], embedded: false, progress: PROGRESS });
+
 function recordingSearch(answer: Partial<SemanticAnswer> = {}) {
   const asked: SemanticQuery[] = [];
   const search: SemanticAccess = {
     isOn: () => true,
+    related: unrelated,
     search: async (query) => {
       asked.push(query);
       return {
@@ -151,6 +155,7 @@ describe('GET /v1/search?mode=semantic', () => {
     const api = apiFixture({
       semantic: () => ({
         isOn: () => true,
+        related: unrelated,
         search: async () => {
           throw new EmbeddingError('the model could not be fetched: offline');
         },

@@ -25,6 +25,7 @@ import { profileRoute } from './profile.ts';
 import { acceptProposalRoute, proposalsRoute, rejectProposalRoute } from './proposals.ts';
 import { queryRoute, sqlRoute } from './query.ts';
 import { quickAddRoute, quickAddTypesRoute } from './quick-add.ts';
+import { relatedRoute } from './related.ts';
 import { searchRoute } from './search.ts';
 import { scheduleTaskRoute } from './schedule-task.ts';
 import { granolaStatusRoute, pullGranolaRoute } from './granola.ts';
@@ -89,6 +90,7 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'POST /v1/notes/{path}/append': vaultWrite(appendRoute),
   'PUT /v1/notes/{path}/body': vaultWrite(replaceBodyRoute),
   'GET /v1/notes/{path}/backlinks': vaultRoute(backlinksRoute),
+  'GET /v1/notes/{path}/related': vaultRoute(relatedRoute),
   'POST /v1/notes/{path}/promote': vaultWrite(promoteLineRoute),
   'GET /v1/notes/{path}/export': vaultRoute(exportNoteRoute),
   'PUT /v1/notes/{path}/images/{name}': vaultWrite(noteImageRoute, created),
