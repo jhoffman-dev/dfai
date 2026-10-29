@@ -795,10 +795,20 @@ export async function installHost(
   // Rust's and is tested there; this answers the commands the app calls.
   const api = { enabled: false, token: 'token-1', rotations: 0, file: '/stub/api.json' };
   /**
-   * The routers that said they listen (`api_router_ready`), by the id each
-   * named. The real host refuses every request while this is empty (#158).
+   * The routers that said they listen (`api_router_ready`), by the id
+   * `api_router_register` gave each. The real host refuses every request while
+   * this is empty (#158). As there, a page load forgets them and refuses the
+   * ids it gave before, so a gone page's late "I listen" counts for nothing
+   * (#161).
    */
-  const routerListeners = new Set<unknown>();
+  const routerListeners = new Set<number>();
+  const routerIds = { next: 0, thisPageFrom: 0 };
+  page.on('request', (request) => {
+    // A document load, not an in-page route change: the host's `PageLoadEvent::Started`.
+    if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return;
+    routerListeners.clear();
+    routerIds.thisPageFrom = routerIds.next;
+  });
   const apiStatus = () => ({
     enabled: api.enabled,
     port: api.enabled ? STUB_API_PORT : null,
@@ -1922,10 +1932,13 @@ export async function installHost(
         api.rotations += 1;
         api.token = `token-${api.rotations + 1}`;
         return api.token;
+      case 'api_router_register':
+        return routerIds.next++;
       case 'api_router_ready': {
-        const { listener, ready } = args as { listener: unknown; ready: boolean };
-        if (ready) routerListeners.add(listener);
-        else routerListeners.delete(listener);
+        const { listener, ready } = args as { listener: number; ready: boolean };
+        const thisPage = listener >= routerIds.thisPageFrom && listener < routerIds.next;
+        if (ready && thisPage) routerListeners.add(listener);
+        else if (!ready) routerListeners.delete(listener);
         return null;
       }
       case 'global_capture_status':
