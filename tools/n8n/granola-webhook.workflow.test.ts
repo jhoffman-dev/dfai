@@ -264,15 +264,21 @@ const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor a
 
 /** The verify node run on a delivery, `this.helpers` handing over the raw body as n8n does. */
 function verifyIn(jsCode: string, headers: unknown, body: string) {
+  return verifyWith(jsCode, headers, (index, property) => {
+    expect([index, property]).toEqual([0, 'data']);
+    return Promise.resolve(Buffer.from(body));
+  });
+}
+
+/** The verify node run with `getBinaryDataBuffer` as given: how n8n hands over, or fails to hand over, the body. */
+function verifyWith(
+  jsCode: string,
+  headers: unknown,
+  getBinaryDataBuffer: (index: number, property: string) => Promise<unknown>,
+) {
   const code = new AsyncFunction('$input', jsCode);
-  const helpers = {
-    getBinaryDataBuffer: (index: number, property: string) => {
-      expect([index, property]).toEqual([0, 'data']);
-      return Promise.resolve(Buffer.from(body));
-    },
-  };
-  const $input = { first: () => ({ json: { headers, body: JSON.parse(body) as unknown } }) };
-  return code.call({ helpers }, $input);
+  const $input = { first: () => ({ json: { headers } }) };
+  return code.call({ helpers: { getBinaryDataBuffer } }, $input);
 }
 
 describe('the verify node', () => {
@@ -320,6 +326,37 @@ describe('the verify node', () => {
     await expect(verifyIn(verifyGranolaScript(VECTOR.secret), signedHuge, huge)).resolves.toEqual(
       refusal(/^body: over 65536 bytes$/),
     );
+  });
+
+  // PR #623's review: the body is read before the signature is proven, so a request
+  // anyone can send (multipart with no file part) must not reach the email.
+  it.each([
+    [
+      'the helper rejects (no binary)',
+      () => Promise.reject(new Error('No binary data with field data found')),
+    ],
+    ['no binary at all', () => Promise.resolve(undefined)],
+    ['a binary that is not bytes', () => Promise.resolve({ data: 'filesystem-v2' })],
+    ['text, not bytes', () => Promise.resolve(NOTE_BODY)],
+  ])('refuses in silence, never emails, when %s', async (_, getBinaryDataBuffer) => {
+    for (const headers of [vectorHeaders({ 'webhook-signature': signature(NOTE_BODY) }), {}]) {
+      await expect(
+        verifyWith(verifyGranolaScript(VECTOR.secret), headers, getBinaryDataBuffer),
+      ).resolves.toEqual([
+        { json: { signed: false, reason: expect.stringMatching(/^body: missing/) } },
+      ]);
+    }
+  });
+
+  it('reads the body from any view of bytes n8n hands over, in its own bounds', async () => {
+    const headers = vectorHeaders({ 'webhook-signature': signature(NOTE_BODY) });
+    const padded = Buffer.from(`xx${NOTE_BODY}yy`);
+    const view = new DataView(padded.buffer, padded.byteOffset + 2, NOTE_BODY.length);
+    await expect(
+      verifyWith(verifyGranolaScript(VECTOR.secret), headers, () => Promise.resolve(view)),
+    ).resolves.toEqual([
+      { json: { signed: true, webhookId: VECTOR.id, noteId: 'not_4kTq2mWxLp4Rz7' } },
+    ]);
   });
 
   it('refuses everything as committed, until James pastes the secret in', async () => {

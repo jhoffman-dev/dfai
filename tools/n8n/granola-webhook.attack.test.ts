@@ -396,12 +396,16 @@ describe('a delivery that is signed by Granola but cannot be read', () => {
     expect(path).toContain(N.notify);
   });
 
-  it('is emailed, not refused 401 in silence, when n8n cannot hand the verify node the raw body', async () => {
+  // Superseded by PR #623's review: the body is read before the signature is proven, so a
+  // request with no binary (anyone can send one) is refused 401 in silence, never emailed.
+  it('is refused 401 in silence, never emailed, when n8n cannot hand the verify node the raw body', async () => {
     const output = await verifyOutput(vectorHeaders(), () =>
       Promise.reject(new Error('No binary data with field data found')),
     );
-    const path = walk((name) => (name === N.verify ? output : 0));
-    expect(path).toContain(N.notify);
+    expect(output).toBe(0);
+    const path = walk((name) => (name === N.verify ? output : name === N.signed ? 1 : 0));
+    expect(answers(path)).toEqual([401]);
+    expect(path).not.toContain(N.notify);
   });
 });
 
