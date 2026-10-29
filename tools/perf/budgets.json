@@ -217,8 +217,8 @@
       }
     },
     "Drag a board card": {
-      "commits": 44,
-      "renders": 1146,
+      "commits": 42,
+      "renders": 1126,
       "calls": {
         "index_manifest": 3,
         "index_notes_of_type": 3,
