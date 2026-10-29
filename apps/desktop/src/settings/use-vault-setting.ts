@@ -18,6 +18,8 @@ export interface VaultSetting<Value> {
   readonly save: (value: Value) => void;
   /** As `save`, for a caller that waits on the write: settles once it has, with why it failed or null. */
   readonly write: (value: Value) => Promise<string | null>;
+  /** Reads the settings note again, for a write made past this setting's own (the automations claim). */
+  readonly readAgain: () => Promise<void>;
   /** Why the last save failed. */
   readonly problem: string | null;
   /** Why the settings note cannot be read; while it cannot, nothing is written to it. */
@@ -149,6 +151,7 @@ export function useVaultSetting<Value>({
     answered: vaultKey !== null && answeredFor === vaultKey,
     save,
     write,
+    readAgain,
     problem: problem?.vault === vaultKey ? problem.value : null,
     unreadable: unreadable?.vault === vaultKey ? unreadable.value : null,
   };

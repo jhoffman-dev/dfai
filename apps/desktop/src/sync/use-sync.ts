@@ -3,6 +3,7 @@ import {
   DEFAULT_PULL_INTERVAL_MINUTES,
   DEFAULT_PUSH_DELAY_SECONDS,
   runsAutomationsHere,
+  type ClaimOutcome,
   type SyncPhase,
 } from '@dfai/domain';
 import {
@@ -17,6 +18,7 @@ import {
   type SyncFilesPort,
   type SyncRemoteChoice,
   type SyncSettings,
+  type SyncTimingChanges,
   type SleepClockPort,
   type SyncSetup,
   type ThisMacPort,
@@ -26,6 +28,7 @@ import {
 import { useVaultSetting } from '../settings/use-vault-setting.ts';
 import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 import type { SyncPauseStore } from './browser-sync-pause.ts';
+import { useClaimAutomations } from './use-claim-automations.ts';
 import { usePulledFiles, type PulledFilesGate } from './use-pulled-files.ts';
 import { useExclusive, useInspection, useSyncRuns, type ThisMac } from './use-sync-runs.ts';
 import { useSyncSchedule } from './use-sync-schedule.ts';
@@ -107,7 +110,13 @@ export interface SyncController {
   readonly setPullInterval: (minutes: number) => void;
   readonly setPushDelay: (seconds: number) => void;
   readonly setPaused: (paused: boolean) => void;
+  /** Settings → Sync: names this Mac as the one that runs the automations (ADR-0025). */
   readonly claimAutomations: () => void;
+  /**
+   * "Process here" on the Inbox (ADR-0035 part 2): the same claim, refused
+   * while sync is paused, failing or has not pulled since launch or wake.
+   */
+  readonly processHere: () => Promise<ClaimOutcome>;
   /** Settles once any sync, or setting one up, under way has finished: another vault must not open under it. */
   readonly settle: () => Promise<void>;
 }
@@ -135,7 +144,11 @@ export function useSync(options: SyncOptions): SyncController {
     thisMac !== null &&
     settings.value !== null &&
     runsAutomationsHere({ automationsMac: settings.value.automationsMac, thisMacId: thisMac.id });
-  const { gate: pulledFiles, pulls } = usePulledFiles({
+  const {
+    gate: pulledFiles,
+    pulls,
+    claimRefusal,
+  } = usePulledFiles({
     vaultKey,
     sleepClock: host.sleepClock,
     fs: options.fs,
@@ -172,6 +185,19 @@ export function useSync(options: SyncOptions): SyncController {
   const { setUp, problem } = useSetUp({ ...shared, folders: host.folders, setSetup });
   const repositories = useRepositories(host.github);
   const { save } = settings;
+  const claims = useClaimAutomations({
+    fs: options.fs,
+    markdown: options.markdown,
+    vaultKey,
+    thisMac,
+    syncs: setup?.kind === 'set-up',
+    phase,
+    claimRefusal,
+    exclusive,
+    activity: options.activity,
+    readAgain: settings.readAgain,
+    run,
+  });
   return {
     phase,
     setup,
@@ -194,9 +220,8 @@ export function useSync(options: SyncOptions): SyncController {
     ),
     setPushDelay: useCallback((seconds: number) => save({ pushDelaySeconds: seconds }), [save]),
     setPaused,
-    claimAutomations: useCallback(() => {
-      if (thisMac !== null) save({ automationsMac: thisMac.id, automationsMacName: thisMac.name });
-    }, [save, thisMac]),
+    claimAutomations: claims.claimAutomations,
+    processHere: claims.processHere,
     settle: exclusive.settle,
   };
 }
@@ -247,11 +272,18 @@ function usePause(store: SyncPauseStore, vaultKey: string | null) {
   return { paused, setPaused };
 }
 
-/** The vault's sync settings, read from its settings note and saved through its one writer. */
+/**
+ * The vault's sync settings, read from its settings note; its timing saved
+ * through its one writer. Who runs the automations is changed by the claim
+ * alone (`useClaimAutomations`), which reads them again once it has written.
+ */
 function useSyncSettings({ fs, markdown, vaultKey, activity }: SyncOptions) {
   const store = useCallback(
-    (value: SyncSettings) =>
-      saveSyncSettings({ settings: vaultSettingsWriter({ fs, markdown }), changes: value }),
+    ({ pullIntervalMinutes, pushDelaySeconds }: SyncSettings) =>
+      saveSyncSettings({
+        settings: vaultSettingsWriter({ fs, markdown }),
+        changes: { pullIntervalMinutes, pushDelaySeconds },
+      }),
     [fs, markdown],
   );
   const setting = useVaultSetting({
@@ -264,7 +296,7 @@ function useSyncSettings({ fs, markdown, vaultKey, activity }: SyncOptions) {
   });
   const { value, save: saveWhole } = setting;
   const save = useCallback(
-    (changes: Partial<SyncSettings>) =>
+    (changes: SyncTimingChanges) =>
       saveWhole({
         pullIntervalMinutes:
           changes.pullIntervalMinutes ??
@@ -272,10 +304,15 @@ function useSyncSettings({ fs, markdown, vaultKey, activity }: SyncOptions) {
           DEFAULT_PULL_INTERVAL_MINUTES,
         pushDelaySeconds:
           changes.pushDelaySeconds ?? value?.pushDelaySeconds ?? DEFAULT_PUSH_DELAY_SECONDS,
-        automationsMac: changes.automationsMac ?? value?.automationsMac ?? null,
-        automationsMacName: changes.automationsMacName ?? value?.automationsMacName ?? null,
+        automationsMac: value?.automationsMac ?? null,
+        automationsMacName: value?.automationsMacName ?? null,
       }),
     [saveWhole, value],
   );
-  return { value, save, problem: setting.problem ?? setting.unreadable };
+  return {
+    value,
+    save,
+    readAgain: setting.readAgain,
+    problem: setting.problem ?? setting.unreadable,
+  };
 }

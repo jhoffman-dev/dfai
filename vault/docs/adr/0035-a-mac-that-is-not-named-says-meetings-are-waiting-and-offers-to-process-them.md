@@ -194,6 +194,34 @@ clears when `scheduled` goes **false to true** for this vault, and the
 catch-up reruns. That covers the button and a move made in Settings → Sync
 alike; it is not tied to the button.
 
+_(Amended 2026-10-28, #176.)_ How the claim is made:
+
+- **One writer.** `claimAutomations` (application, `sync/`) is the only code
+  that changes `automationsMac` once sync is set up; set-up's hand-over
+  names a Mac only when none is named. "Process here" and Settings → Sync
+  both call it, and Settings → Sync's own save writes only the timing keys.
+  A test holds this.
+- **Settings → Sync is not gated.** The disabled rule of part 2 is the
+  button's. The manual move stays the person's own (ADR-0025).
+- **In the vault's git turn, then a sync.** The claim waits for any sync or
+  look under way, asks the gates, reads the settings, asks the gates again
+  and writes, with no pull in between. It then syncs at once, so the claim
+  reaches GitHub as early as it can and the window in which both Macs
+  believe they are named is as short as it can be. Until that sync
+  completes the gates stay shut on this Mac too (the last pull's settings
+  named the other Mac), so the catch-ups run after it.
+- **Nothing written** when the settings cannot be read, when they already
+  name this Mac by id (a renamed Mac is still named), or when another vault
+  opened before the write's turn.
+- **Two claims within one sync interval.** Both change the same key, which
+  the settings merge (#233) never merges, so it is settled as every settings
+  conflict is: the Mac whose sync merges keeps its own copy and pushes it,
+  and the other's is copied aside. The first to push then fast-forwards and
+  stands down. **The Mac that syncs second wins**; there is always one. A
+  setting the other Mac only added meanwhile merges in beside the claim. The
+  other Mac still running when the claim lands stands down at its next pull,
+  and any step already under way stops at its next ask of the gates.
+
 **This amends no accepted statement in a way that changes who writes.**
 ADR-0025's "A Mac connecting to a vault never takes the automations from
 another Mac" stays true: a person's click is not the Mac taking anything. The

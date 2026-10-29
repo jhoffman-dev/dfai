@@ -18,6 +18,7 @@
  */
 
 import type { ActivityReport } from '../activity/activity-event.ts';
+import type { ClaimRefusal } from '../sync/automations-claim.ts';
 import { isConflictCopyPath } from '../sync/conflict-copy.ts';
 import {
   pulledAfterArrival,
@@ -192,4 +193,24 @@ export function meetingsWaitingReport({
     message: `${meetingsOf(count)} ${verb} ${mac} to process ${them}.`,
     subject: null,
   };
+}
+
+/**
+ * Whether the banner's "Process here" is refused now, and why (ADR-0035
+ * part 2): on the facts that judged its line — a count is given only while a
+ * pull since the last launch or wake has completed and sync is not paused —
+ * and a last sync or look that failed. The claim asks the gates again as it
+ * is pressed (`claimRefusal`).
+ */
+export function processHereRefusal({
+  waiting,
+  failing,
+}: {
+  waiting: MeetingsWaiting;
+  /** Whether this Mac's last sync or look at GitHub failed. */
+  failing: boolean;
+}): ClaimRefusal | null {
+  if (waiting.kind === 'uncounted' && waiting.why === 'paused') return 'paused';
+  if (failing) return 'failing';
+  return waiting.kind === 'counted' ? null : waiting.why;
 }

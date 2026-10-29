@@ -1,14 +1,17 @@
 import {
+  claimRefusal,
   freshPullVerdict,
   freshPullWaitReport,
   pullEndEffect,
   pulledSinceLastSleep,
   standingAfterPull,
   waitingCountGate,
+  type ClaimRefusal,
   type FreshPullShut,
   type FreshPullVerdict,
   type PullEnd,
   type PullStanding,
+  type SyncPhase,
   type WaitingCountGate,
 } from '@dfai/domain';
 import type { ActivityLog } from '../activity/ports.ts';
@@ -69,6 +72,12 @@ export interface FreshPullGate {
    * sleep gates, without asking whether this Mac is named.
    */
   countGate(vault: string): Promise<WaitingCountGate>;
+  /**
+   * Why this Mac may not claim the automations now, or null when it may
+   * (ADR-0035 part 2): the pull and sleep gates and the pause, as for the
+   * count, and `phase`, how its last sync or look ended.
+   */
+  claimRefusal(vault: string, phase: SyncPhase): Promise<ClaimRefusal | null>;
   /**
    * Whether a reading of the sleep counter since the vault's last pull shows
    * the Mac slept after that pull started: the gates are shut though the
@@ -213,6 +222,14 @@ export function createFreshPullGate({
     return waitingCountGate({ standing, asleepNowMs, paused: pausedHere(vault) });
   };
 
+  const refusal = async (vault: string, phase: SyncPhase): Promise<ClaimRefusal | null> => {
+    const standing = standingOf(vault);
+    const asleepNowMs = standing?.kind === 'pulled' ? await readAsleep() : null;
+    // As for the count: a pull started or ended meanwhile is judged instead.
+    if (standingOf(vault) !== standing) return refusal(vault, phase);
+    return claimRefusal({ standing, asleepNowMs, paused: pausedHere(vault), phase });
+  };
+
   const inspected = (vault: string, syncs: boolean) => {
     if (record.vault !== vault) return;
     record = { ...record, syncs };
@@ -244,6 +261,7 @@ export function createFreshPullGate({
     verdict,
     acts: async (vault, arrival) => (await verdict(vault, arrival)).open,
     countGate,
+    claimRefusal: refusal,
     sleptSincePull: (vault) => record.vault === vault && record.slept,
   };
 }

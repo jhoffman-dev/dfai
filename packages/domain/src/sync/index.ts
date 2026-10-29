@@ -111,6 +111,16 @@ export type {
   PullStanding,
   SettingsReading,
 } from './pull-freshness.ts';
+export {
+  claimedSettings,
+  claimProblem,
+  claimRefusal,
+  claimRefusalLine,
+  claimReport,
+  namesThisMac,
+  syncFailing,
+} from './automations-claim.ts';
+export type { ClaimingMac, ClaimOutcome, ClaimRefusal } from './automations-claim.ts';
 export { syncActivityMessage, syncBadge, syncStanding } from './sync-state.ts';
 export type {
   ConflictCopy,

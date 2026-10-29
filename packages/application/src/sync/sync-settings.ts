@@ -75,12 +75,17 @@ export async function automationsSettingsReading({
     : 'names-another-mac';
 }
 
+/** What Settings → Sync changes of the shared timing. Who runs the automations is the claim's alone (`claimAutomations`). */
+export type SyncTimingChanges = Partial<
+  Pick<SyncSettings, 'pullIntervalMinutes' | 'pushDelaySeconds'>
+>;
+
 export async function saveSyncSettings({
   settings,
   changes,
 }: {
   settings: SettingsWriter;
-  changes: Partial<SyncSettings>;
+  changes: SyncTimingChanges;
 }): Promise<void> {
   await settings.save({
     ...(changes.pullIntervalMinutes !== undefined && {
@@ -88,10 +93,6 @@ export async function saveSyncSettings({
     }),
     ...(changes.pushDelaySeconds !== undefined && {
       [SYNC_PUSH_DELAY_KEY]: pushDelaySeconds(changes.pushDelaySeconds),
-    }),
-    ...(changes.automationsMac !== undefined && { [AUTOMATIONS_MAC_KEY]: changes.automationsMac }),
-    ...(changes.automationsMacName !== undefined && {
-      [AUTOMATIONS_MAC_NAME_KEY]: changes.automationsMacName,
     }),
   });
 }

@@ -64,7 +64,11 @@ export function usePulledFiles({
   pausedNow: boolean;
   clock: Pick<Clock, 'now'>;
   activity: Pick<ActivityLog, 'inVault'>;
-}): { gate: PulledFilesGate; pulls: PullRecorder } {
+}): {
+  gate: PulledFilesGate;
+  pulls: PullRecorder;
+  claimRefusal: FreshPullGate['claimRefusal'];
+} {
   const latest = useRef({ sleepClock, fs, markdown, thisMacId, paused, clock, activity });
   latest.current = { sleepClock, fs, markdown, thisMacId, paused, clock, activity };
   // Bumped as the standing changes, so whatever waits on a pull renders again.
@@ -106,5 +110,5 @@ export function usePulledFiles({
     () => ({ standing, acts: fresh.acts, countGate: fresh.countGate, slept, paused: pausedNow }),
     [standing, fresh, slept, pausedNow],
   );
-  return { gate, pulls: fresh };
+  return { gate, pulls: fresh, claimRefusal: fresh.claimRefusal };
 }

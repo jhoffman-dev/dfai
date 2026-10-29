@@ -358,3 +358,48 @@ describe('createFreshPullGate: counting what waits on a Mac that is not named (A
     expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'pulling' });
   });
 });
+
+describe('createFreshPullGate: whether "Process here" may claim (ADR-0035 part 2, #176)', () => {
+  const OTHER = '---\nsync: github\nautomationsMac: mac-laptop\nautomationsMacName: Laptop\n---\n';
+  const READY = { kind: 'ready' } as const;
+  const FAILED = { kind: 'failed', reason: 'offline', at: 1 } as const;
+
+  it('lets a Mac that is not named claim once a pull since launch has completed', async () => {
+    const { gate, runs } = gateOn({ settings: OTHER });
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('no-pull');
+    await runs({ kind: 'synced' });
+    expect(await gate.claimRefusal(VAULT, READY)).toBeNull();
+  });
+
+  it('refuses after a sleep, while paused, while failing, and during a pull', async () => {
+    const { gate, runs, sleep, vault } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    expect(await gate.claimRefusal(VAULT, FAILED)).toBe('failing');
+    gate.started(VAULT);
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('pulling');
+    await runs({ kind: 'synced' });
+    sleep.sleep(60 * 60_000);
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('no-pull');
+    await runs({ kind: 'synced' });
+    vault.paused = true;
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('paused');
+  });
+
+  it('is judged against a pull that started while the counter was read', async () => {
+    const { gate, runs, sleep } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    const port = sleep.port.asleepMs;
+    sleep.port.asleepMs = async () => {
+      gate.started(VAULT);
+      return port();
+    };
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('pulling');
+  });
+
+  it('refuses for a vault that does not sync, never reading the counter for it', async () => {
+    const { gate, sleep } = gateOn({ settings: OTHER });
+    gate.inspected(VAULT, false);
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('not-synced');
+    expect(sleep.reads()).toBe(0);
+  });
+});

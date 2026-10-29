@@ -36,6 +36,7 @@ export {
   saveSyncSettings,
   syncSettingsOf,
 } from './sync-settings.ts';
-export type { SyncSettings } from './sync-settings.ts';
+export type { SyncSettings, SyncTimingChanges } from './sync-settings.ts';
+export { claimAutomations } from './claim-automations.ts';
 export { checkRemote } from './check-remote.ts';
 export { listGitHubRepositories } from './list-repositories.ts';
