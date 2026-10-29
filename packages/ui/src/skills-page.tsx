@@ -10,6 +10,8 @@ export interface SkillListing {
   readonly name: string;
   readonly description: string;
   readonly problems: readonly string[];
+  /** The automations that ask with it (#169), by name; none, or left out, when none does. */
+  readonly usedBy?: readonly string[];
 }
 
 /** A prompt note in `.atlas/prompts`, listed beside the skills. */
@@ -243,6 +245,9 @@ function SkillList({
               </span>
               {skill.description !== '' && (
                 <span className="skills__description">{skill.description}</span>
+              )}
+              {skill.usedBy !== undefined && skill.usedBy.length > 0 && (
+                <span className="skills__used-by">Used by {skill.usedBy.join(', ')}</span>
               )}
               {skill.problems.map((problem) => (
                 <span key={problem} className="skills__row-problem">

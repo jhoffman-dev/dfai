@@ -8,7 +8,7 @@
  * changes in it. Nothing here reads or writes a file.
  */
 
-import { MAX_PROMPT_CHARACTERS } from '../automations/claude-step.ts';
+import { MAX_PROMPT_CHARACTERS } from '../chat/index.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
 import { SKILLS_DIRECTORY } from '../vault/vault-visibility.ts';
 

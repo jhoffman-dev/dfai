@@ -14,6 +14,7 @@ import {
   type RuleQueryPorts,
 } from '@dfai/application';
 import { AutomationEditor, AutomationsPage, QueryComposer, type PageHistory } from '@dfai/ui';
+import { useSkillChoices } from '../skills/use-skill-choices.ts';
 import { localTimeZone } from '../today.ts';
 import { automationRows, logViews } from './automation-rows.ts';
 import { useAutomationEditor } from './use-automation-editor.ts';
@@ -33,6 +34,7 @@ export function AutomationsScreen({
   clock,
   indexKey,
   activity,
+  vault,
   onOpenNote,
   onShowSidebar,
   history,
@@ -42,11 +44,20 @@ export function AutomationsScreen({
   clock: Pick<Clock, 'today' | 'now' | 'localNow'>;
   indexKey: string;
   activity: ActivityLog;
+  /** The open vault: whose skills the editor offers. */
+  vault: string | null;
   onOpenNote: (path: VaultPath) => void;
   onShowSidebar?: () => void;
   history?: PageHistory;
 }) {
   const editor = useAutomationEditor({ automations, ports, clock, indexKey, activity });
+  // Read only while a rule is open in the editor: the list itself needs no skills.
+  const skills = useSkillChoices({
+    fs: ports.fs,
+    markdown: ports.markdown,
+    vault,
+    enabled: editor.editing !== null,
+  });
   const { listing, watchingSince, pauses, planZone } = automations;
   const planNow = planNowOf(clock, planZone);
   const planClock = planClockLabel({ planZone, macZone: localTimeZone() });
@@ -90,6 +101,7 @@ export function AutomationsScreen({
       editor={
         editor.editing === null ? null : (
           <AutomationEditor
+            key={editor.opened}
             draft={editor.editing.draft}
             onChange={editor.change}
             isNew={editor.editing.kind === 'new'}
@@ -98,6 +110,7 @@ export function AutomationsScreen({
             typeNames={ports.types.map((type) => type.name)}
             claudeTools={CHAT_READ_TOOLS}
             claudeOutputs={CLAUDE_OUTPUTS}
+            skills={skills}
             busy={automations.busy}
             onSave={editor.save}
             onCancel={editor.close}

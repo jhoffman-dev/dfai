@@ -17,13 +17,14 @@ import {
   DIGEST_REDUCE_INSTRUCTIONS,
   DIGEST_REDUCE_PROMPT,
   digestReduceData,
-  isPromptPath,
+  isClaudeStepPrompt,
   keepCitedItems,
   MAX_PROMPT_CHARACTERS,
   MAX_PROPOSALS_PER_ANSWER,
   MEETING_TYPE,
   meetingSummaryOf,
   messageWithoutPaths,
+  skillRunProblem,
   NOTE_ANSWER_INSTRUCTIONS,
   noteTitle,
   nothingCitedProblem,
@@ -86,7 +87,8 @@ import {
   proposalMadeAlready,
   type ProposalWritePorts,
 } from '../proposals/write-proposals.ts';
-import type { VaultFsPort } from '../vault/ports.ts';
+import { readSkill } from '../skills/skills.ts';
+import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
 import { planNote, type PlannedNote } from './claude-writes.ts';
 import { readMadeItems } from '../meetings/made-items.ts';
 import { MeetingSummaryRefused, writeMeetingSummary } from '../meetings/write-meeting-summary.ts';
@@ -330,13 +332,20 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
   // Defence in depth: the action a run is handed is checked as the file that wrote it was.
   const output = outputOf(action);
   if (typeof output === 'string') return fail(output);
-  if (!isPromptPath(action.prompt)) {
-    return fail(`Its prompt ${JSON.stringify(action.prompt)} is not a note in .atlas/prompts.`);
+  if (!isClaudeStepPrompt(action)) {
+    return fail(
+      action.skill === undefined
+        ? `Its prompt ${JSON.stringify(action.prompt)} is not a note in .atlas/prompts.`
+        : `Its skill ${JSON.stringify(action.skill)} is not a skill in .atlas/skills.`,
+    );
   }
   const provider = ports.provider();
   const status = await provider.status();
   if (!status.ready) return fail(fixIt(status));
-  const prompt = await readPrompt(args.fs, createVaultPath(action.prompt));
+  const prompt =
+    action.skill === undefined
+      ? await readPrompt(args.fs, createVaultPath(action.prompt))
+      : await readSkillInstructions(args, action.skill);
   if (typeof prompt !== 'string') return fail(prompt.problem);
   const read = await readAnswered(args, args.paths);
   // Only the declared step writes a summary (ADR-0036): any other rule is told so, and asks for none.
@@ -497,6 +506,34 @@ async function readPrompt(
         problem: `Its prompt ${path} is ${body.length} characters; a prompt may be at most ${MAX_PROMPT_CHARACTERS}.`,
       }
     : body;
+}
+
+/**
+ * The instructions of the skill `name` (#169, ADR-0050): its SKILL.md's body,
+ * the frontmatter left out, or why it cannot be asked with — gone, unreadable,
+ * breaking a skill's rules, or longer than a prompt note may be, measured as
+ * a prompt note is (`skillRunProblem`). The skill is found as the Skills page
+ * finds it.
+ */
+async function readSkillInstructions(
+  { fs, markdown }: Pick<StepArgs, 'fs' | 'markdown'>,
+  name: string,
+): Promise<string | { problem: string }> {
+  let skill: Awaited<ReturnType<typeof readSkill>>;
+  try {
+    skill = await readSkill({ fs, markdown, name });
+  } catch (error) {
+    if (!(error instanceof VaultAccessError)) throw error;
+    // The host's words can name the Mac's folders: the person is told what DFAI knows.
+    return { problem: `Its skill ${name} could not be read.` };
+  }
+  if (skill === null) return { problem: `Its skill ${name} is not in .atlas/skills.` };
+  const unusable = skillRunProblem(skill);
+  // Trimmed as a prompt note's body is, and as skillRunProblem measures it: instructionsOf takes
+  // off only one blank line and one line end, so spaces and further blank lines would remain.
+  return unusable === null
+    ? skill.instructions.trim()
+    : { problem: `Its skill ${name} cannot be used: ${unusable.message}` };
 }
 
 /** The notes a run read, and each one's file as it was read: when, and its properties. */
