@@ -17,6 +17,7 @@ import {
 import {
   adoptAutomations,
   AutomationLogError,
+  ClaudeUnavailableError,
   clockForRule,
   planNowOf,
   refreshBuiltInPrompts,
@@ -128,6 +129,11 @@ export interface RulePause {
   readonly failures: number;
   /** When the clock may try it again; null until it is run by hand. */
   readonly retryAt: LocalTime | null;
+  /**
+   * Set when its Claude step could not reach Claude (#182): why, as its log
+   * says it — what the Mac that runs the automations says until it runs.
+   */
+  readonly unavailable?: string;
 }
 
 /** The vault's automations as last read, and which vault they were read from. */
@@ -493,6 +499,7 @@ function pauseAfter(previous: RulePause | undefined, cause: unknown, now: LocalT
     reason: `Could not run (${errorMessage(cause)}); it is tried again at ${retryAt.slice(11, 16)}.`,
     failures,
     retryAt,
+    ...(cause instanceof ClaudeUnavailableError && { unavailable: cause.entry.problem }),
   };
 }
 

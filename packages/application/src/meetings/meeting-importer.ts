@@ -52,6 +52,11 @@ export interface MeetingImporter {
   hear(news: NoteChangeNews): Promise<MeetingImportOutcome | null>;
   /** Settles once every unsettled file in the vault's meeting folder is, or what waits is counted; null when dropped. */
   catchUp(vault: string): Promise<MeetingImportOutcome | null>;
+  /**
+   * Says again what waits, importing nothing (#182): for when what the rules
+   * have finished with, or whether this Mac's step reaches Claude, changed.
+   */
+  recount(vault: string): Promise<MeetingImportOutcome | null>;
 }
 
 export function createMeetingImporter({
@@ -120,9 +125,31 @@ export function createMeetingImporter({
     return said === null ? null : { happenings: [], wrote: false, waiting: said };
   };
 
+  /**
+   * What the Mac that imports says once a run is done (#182): that its step
+   * cannot reach Claude, while that holds. The files the run wrote or moved
+   * are read again when next judged, and news that named others has them read again.
+   */
+  const afterImport = async (
+    vault: string,
+    news: readonly NoteChange[] | null,
+    outcome: MeetingImportOutcome | null,
+  ): Promise<MeetingImportOutcome | null> => {
+    if (countWaiting === null) return outcome;
+    if (news !== null) countWaiting.heard(vault, news);
+    countWaiting.wrote(vault, outcome?.happenings.map(({ path }) => path) ?? []);
+    const said = await countWaiting.judgeHere(vault, {
+      ports: ports(),
+      activity: activity.inVault(vault),
+    });
+    if (outcome === null)
+      return said === null ? null : { happenings: [], wrote: false, waiting: said };
+    return said === null ? outcome : { ...outcome, waiting: said };
+  };
+
   const runFor = (
     vault: string,
-    importing: (run: MeetingImportRun) => Promise<MeetingImportOutcome>,
+    importing: ((run: MeetingImportRun) => Promise<MeetingImportOutcome>) | null,
     news: readonly NoteChange[] | null,
   ): Promise<MeetingImportOutcome | null> => {
     const next = queue.then(async () => {
@@ -133,7 +160,7 @@ export function createMeetingImporter({
       const recorder = activity.inVault(vault);
       try {
         if (!mayImport) return await notImporting(vault, news);
-        countWaiting?.clear(vault);
+        if (importing === null) return await afterImport(vault, null, null);
         const outcome = await importing({
           ports: ports(),
           today: clock.today(),
@@ -151,7 +178,7 @@ export function createMeetingImporter({
           }),
         });
         if (outcome.wrote) onWritten();
-        return outcome;
+        return await afterImport(vault, news, outcome);
       } catch (cause) {
         // Not one file, which the run says itself: the run could not start, or the folder be read.
         recorder.record(meetingImportStoppedReport(messageWithoutPaths(cause)));
@@ -170,6 +197,7 @@ export function createMeetingImporter({
         news.changes,
       ),
     catchUp: (vault) => runFor(vault, catchUpMeetings, null),
+    recount: (vault) => runFor(vault, null, null),
   };
 }
 

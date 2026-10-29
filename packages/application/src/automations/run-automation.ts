@@ -32,7 +32,12 @@ import { AtlasQueryError } from '../query/run-atlas-query.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import { changeProperties, type PropertyOutcome } from './apply-changes.ts';
 import { withHandledKeys } from './handled-keys.ts';
-import { ClaudeStepFailed, runClaudeStep, type ClaudeStepPorts } from './claude-step.ts';
+import {
+  ClaudeStepFailed,
+  ClaudeUnavailableError,
+  runClaudeStep,
+  type ClaudeStepPorts,
+} from './claude-step.ts';
 import { holdUnlessFresh, type FreshPullCheck } from './fresh-pull-hold.ts';
 import { briefEachMeeting } from './meeting-briefs.ts';
 import { PeriodNoteArrived, periodStateOf } from './period-state.ts';
@@ -527,6 +532,8 @@ async function askClaude({
     await append(failed, cause.stored);
     // Stopped by something other than the answer — a disk that refused — is raised once it is on record.
     if (cause.interruption !== undefined) throw cause.interruption;
+    // Claude out of reach on a run news set off: raised, so the runner backs off and keeps the news.
+    if (cause.unavailable && trigger === 'note') throw new ClaudeUnavailableError(failed);
     return failed;
   }
 }

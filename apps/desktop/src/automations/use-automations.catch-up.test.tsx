@@ -712,3 +712,80 @@ describe('useAutomations: a Claude step the clock or opening sets off waits for 
     expect(claude.fake.requests).toHaveLength(1);
   });
 });
+
+describe('useAutomations: a Claude step that cannot reach Claude backs off and is tried again (#182)', () => {
+  const ASK_RULE = '.atlas/automations/Actions.md';
+  const ASK_RULE_TEXT = [
+    '---',
+    'atlas: automation',
+    'name: Actions',
+    'enabled: true',
+    'when: a meeting is created',
+    'which: FROM meeting',
+    'do: claude',
+    'prompt: .atlas/prompts/actions.md',
+    'output: proposals',
+    '---',
+    '',
+  ].join('\n');
+  const NOT_LOGGED_IN = {
+    ready: false as const,
+    problem: 'not_logged_in' as const,
+    message: 'Claude Code is installed but not logged in.',
+    fix: 'claude auth login',
+  };
+
+  it('pauses with the fix-it line, keeps its look for the arrival, and runs it once the pause is over', async () => {
+    let now = '2026-10-08T09:00:00';
+    const ticking = {
+      today: () => now.slice(0, 10),
+      localNow: () => now,
+      now: () => Date.parse(`${now}Z`),
+    };
+    const vault = memoryVault(
+      {
+        [ASK_RULE]: ASK_RULE_TEXT,
+        '.atlas/prompts/actions.md': 'List the action items.\n',
+        [MEETING]: LET_IN,
+      },
+      { [ASK_RULE]: 100, [MEETING]: 200 },
+    );
+    const claude = fakeClaudeStepPorts({
+      status: NOT_LOGGED_IN,
+      rounds: [[{ type: 'text', text: JSON.stringify({ proposals: [] }) }]],
+    });
+    const options: AutomationsOptions = {
+      ports: { ...vault.ports, claude },
+      clock: ticking,
+      vaultKey: VAULT,
+      indexKey: '1',
+      indexReady: true,
+      activity: recordingActivity(),
+      onSettled: vi.fn(),
+      scheduled: true,
+    };
+    const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
+      initialProps: options,
+    });
+    await settle();
+
+    const [pause] = [...hook.result.current.pauses.values()];
+    expect(pause).toMatchObject({
+      failures: 1,
+      retryAt: '2026-10-08T09:01:00',
+      unavailable: 'Claude Code is installed but not logged in. Fix: claude auth login',
+    });
+    expect(claude.fake.requests).toHaveLength(0);
+
+    // Logged in, and the minute the pause named comes and goes.
+    claude.provider().status = async () => ({ ready: true });
+    now = '2026-10-08T09:02:00';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS * 2);
+    });
+    await settle();
+
+    expect(claude.fake.requests).toHaveLength(1);
+    expect(hook.result.current.pauses.size).toBe(0);
+  });
+});

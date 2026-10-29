@@ -46,6 +46,7 @@ import {
   type ClaudeAction,
   type ClaudeRunInfo,
   type DoneAction,
+  type LogEntry,
   type DroppedItem,
   type LocalTime,
   type MeetingTally,
@@ -158,6 +159,8 @@ export interface ClaudeStepAftermath {
   readonly cause?: unknown;
   /** The answers it read in full before it stopped, to be kept so its retry asks nothing again (ADR-0036). */
   readonly stored?: readonly StoredAnswerDraft[];
+  /** Whether Claude could not be reached at all — not installed, logged out, no key — rather than answering badly (#182). */
+  readonly unavailable?: boolean;
 }
 
 /**
@@ -170,17 +173,33 @@ export class ClaudeStepFailed extends Error {
   /** Set when an error other than the model's answer stopped it: raised after the log is written. */
   readonly interruption: unknown;
   readonly stored: readonly StoredAnswerDraft[];
+  /** Claude could not be reached: the step is retried by backoff, and the Mac says so (#182). */
+  readonly unavailable: boolean;
 
   constructor(
     message: string,
     readonly claude: ClaudeRunInfo,
-    { made = [], cause, stored = [] }: ClaudeStepAftermath = {},
+    { made = [], cause, stored = [], unavailable = false }: ClaudeStepAftermath = {},
   ) {
     super(truncated(message));
     this.name = 'ClaudeStepFailed';
     this.made = made;
     this.interruption = cause;
     this.stored = [...stored];
+    this.unavailable = unavailable;
+  }
+}
+
+/**
+ * A run a note set off whose Claude step could not reach Claude (#182,
+ * ADR-0036 "Failure modes"): its failure is on record in the rule's log, and
+ * it is raised so the runner backs off and holds the news for the retry, as
+ * it does for any run that fails — rather than settling as if it had run.
+ */
+export class ClaudeUnavailableError extends Error {
+  constructor(readonly entry: Extract<LogEntry, { kind: 'failed' }>) {
+    super(entry.problem);
+    this.name = 'ClaudeUnavailableError';
   }
 }
 
@@ -326,8 +345,8 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
     ...(alreadyMade > 0 && { alreadyMade }),
     ...(meetings.length > 0 && { meetings }),
   });
-  const fail = (message: string): never => {
-    throw new ClaudeStepFailed(message, claudeRun(), { stored: toStore });
+  const fail = (message: string, unavailable = false): never => {
+    throw new ClaudeStepFailed(message, claudeRun(), { stored: toStore, unavailable });
   };
   // Defence in depth: the action a run is handed is checked as the file that wrote it was.
   const output = outputOf(action);
@@ -337,7 +356,7 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
   }
   const provider = ports.provider();
   const status = await provider.status();
-  if (!status.ready) return fail(fixIt(status));
+  if (!status.ready) return fail(fixIt(status), true);
   const prompt = await readPrompt(args.fs, createVaultPath(action.prompt));
   if (typeof prompt !== 'string') return fail(prompt.problem);
   const read = await readAnswered(args, args.paths);
@@ -539,7 +558,7 @@ type Asking = StepArgs & {
   model: string;
   prompt: string;
   output: StepOutput;
-  fail: (message: string) => never;
+  fail: (message: string, unavailable?: boolean) => never;
   /** Aborts when the run's one deadline passes. */
   signal: AbortSignal;
 };
@@ -593,7 +612,9 @@ async function askModel({
   } catch (error) {
     if (error instanceof ToolOutsideRule) return fail(error.message);
     // Claude Code's own words can quote its stderr, paths and all.
-    if (error instanceof ModelProviderError) return fail(messageWithoutPaths(error));
+    if (error instanceof ModelProviderError) {
+      return fail(messageWithoutPaths(error), error.problem !== 'failed');
+    }
     throw error;
   }
 }

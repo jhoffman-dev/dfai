@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { PullStanding } from '../sync/pull-freshness.ts';
+import { NO_POST_PROCESSING, type PostProcessingFacts } from './post-processing-pending.ts';
 import {
+  failingWarningDue,
   meetingsWaitingLine,
   meetingsWaitingReport,
+  postProcessingFailingReport,
   waitingCountGate,
   waitingMacLabel,
   touchesWaitingMeetings,
@@ -21,6 +24,9 @@ const PULLED: CountableStanding = {
   namedAfter: false,
 };
 const BEFORE_PULL = 900_000;
+/** A meeting with turns, no summary yet, undated: what the step would still post-process. */
+const UNPROCESSED: PostProcessingFacts = { summary: 'none', hasTurns: true, date: null, key: null };
+const NONE = NO_POST_PROCESSING;
 const AFTER_PULL = 1_100_000;
 
 function file(
@@ -32,7 +38,13 @@ function file(
     read:
       read === null
         ? null
-        : { importDeclared: true, importOutcome: null, modifiedAt: BEFORE_PULL, ...read },
+        : {
+            importDeclared: true,
+            importOutcome: null,
+            modifiedAt: BEFORE_PULL,
+            postProcessing: UNPROCESSED,
+            ...read,
+          },
   };
 }
 
@@ -43,46 +55,46 @@ const UNREADABLE = file('Inbox/Meetings/2026-10-25 Quarterly review.md', null);
 
 describe('waitsForImport', () => {
   it('counts a meeting file with no import stamp', () => {
-    expect(waitsForImport(UNSTAMPED, PULLED)).toBe(true);
+    expect(waitsForImport(UNSTAMPED, PULLED, NONE)).toBe(true);
   });
 
   it('never counts a stamped one, whatever the stamp says', () => {
-    expect(waitsForImport(STAMPED, PULLED)).toBe(false);
+    expect(waitsForImport(STAMPED, PULLED, NONE)).toBe(false);
     expect(
-      waitsForImport(file('Inbox/Meetings/a.md', { importOutcome: 'duplicate' }), PULLED),
+      waitsForImport(file('Inbox/Meetings/a.md', { importOutcome: 'duplicate' }), PULLED, NONE),
     ).toBe(false);
-    expect(waitsForImport(file('Inbox/Meetings/a.md', { importOutcome: 'error' }), PULLED)).toBe(
-      false,
-    );
+    expect(
+      waitsForImport(file('Inbox/Meetings/a.md', { importOutcome: 'error' }), PULLED, NONE),
+    ).toBe(false);
   });
 
   it('never counts a sync-conflict copy, which a claim cannot clear', () => {
-    expect(waitsForImport(CONFLICT, PULLED)).toBe(false);
+    expect(waitsForImport(CONFLICT, PULLED, NONE)).toBe(false);
   });
 
   it('never counts a file that cannot be read', () => {
-    expect(waitsForImport(UNREADABLE, PULLED)).toBe(false);
+    expect(waitsForImport(UNREADABLE, PULLED, NONE)).toBe(false);
   });
 
   it('counts a file only once a pull finished after it was modified here (gate 1)', () => {
-    expect(waitsForImport(file('Inbox/Meetings/a.md', { modifiedAt: AFTER_PULL }), PULLED)).toBe(
-      false,
-    );
     expect(
-      waitsForImport(file('Inbox/Meetings/a.md', { modifiedAt: PULLED.finishedAt }), PULLED),
+      waitsForImport(file('Inbox/Meetings/a.md', { modifiedAt: AFTER_PULL }), PULLED, NONE),
+    ).toBe(false);
+    expect(
+      waitsForImport(file('Inbox/Meetings/a.md', { modifiedAt: PULLED.finishedAt }), PULLED, NONE),
     ).toBe(false);
   });
 
   it('counts what the import would judge: a hand-made note in a month folder is not a meeting arrival', () => {
     const handMade = file('Meetings/2026/10/Catch-up with Mara.md', { importDeclared: false });
-    expect(waitsForImport(handMade, PULLED)).toBe(false);
+    expect(waitsForImport(handMade, PULLED, NONE)).toBe(false);
     const declared = file('Meetings/2026/10/Catch-up with Mara.md');
-    expect(waitsForImport(declared, PULLED)).toBe(true);
+    expect(waitsForImport(declared, PULLED, NONE)).toBe(true);
   });
 
   it('counts nothing outside where meetings land, the Archive included', () => {
-    expect(waitsForImport(file('Inbox/Call Mara.md'), PULLED)).toBe(false);
-    expect(waitsForImport(file('Archive/Inbox/Meetings/a.md'), PULLED)).toBe(false);
+    expect(waitsForImport(file('Inbox/Call Mara.md'), PULLED, NONE)).toBe(false);
+    expect(waitsForImport(file('Archive/Inbox/Meetings/a.md'), PULLED, NONE)).toBe(false);
   });
 });
 
@@ -98,12 +110,112 @@ describe('waitingMeetingTally', () => {
       waitingMeetingTally(
         [UNSTAMPED, STAMPED, CONFLICT, UNREADABLE, second, late, lateStamped],
         PULLED,
+        NONE,
       ),
-    ).toEqual({ count: 2, deferred: 1 });
+    ).toEqual({ count: 2, unimported: 2, pending: 0, deferred: 1 });
   });
 
   it('is nothing for an empty folder', () => {
-    expect(waitingMeetingTally([], PULLED)).toEqual({ count: 0, deferred: 0 });
+    expect(waitingMeetingTally([], PULLED, NONE)).toEqual({
+      count: 0,
+      unimported: 0,
+      pending: 0,
+      deferred: 0,
+    });
+  });
+});
+
+describe('waitingMeetingTally with post-processing pending (#182)', () => {
+  const PROCESSING = {
+    summarising: true,
+    from: '2026-10-14',
+    answered: new Set<string>(['Meetings/2026/10/Answered.md']),
+    stored: new Set<string>(['meeting:gemini:m-3:transcript:aa']),
+  };
+  const imported = (path: string, read: Partial<NonNullable<WaitingMeetingFile['read']>> = {}) =>
+    file(path, { importOutcome: 'imported', ...read });
+  const pending = imported('Meetings/2026/10/Pending.md');
+  const answered = imported('Meetings/2026/10/Answered.md');
+  const storedButAnswered = imported('Meetings/2026/10/Answered.md', {
+    postProcessing: { ...UNPROCESSED, key: 'meeting:gemini:m-3:transcript:aa' },
+  });
+  const summarised = imported('Meetings/2026/10/Summarised.md', {
+    postProcessing: { ...UNPROCESSED, summary: 'written' },
+  });
+  const latePending = imported('Meetings/2026/10/Late.md', { modifiedAt: AFTER_PULL });
+
+  it('sums the meetings not imported and the ones imported whose summary and tasks are pending', () => {
+    expect(
+      waitingMeetingTally([UNSTAMPED, pending, answered, summarised, CONFLICT], PULLED, PROCESSING),
+    ).toEqual({ count: 2, unimported: 1, pending: 1, deferred: 0 });
+  });
+
+  it('counts an answered meeting again while an answer stored for its words waits to be written', () => {
+    expect(waitingMeetingTally([storedButAnswered], PULLED, PROCESSING).pending).toBe(1);
+  });
+
+  it('leaves a pending meeting changed here after the pull for the next pull (gate 1)', () => {
+    expect(waitingMeetingTally([latePending], PULLED, PROCESSING)).toEqual({
+      count: 0,
+      unimported: 0,
+      pending: 0,
+      deferred: 1,
+    });
+  });
+
+  it('counts no imported meeting while no rule writes summaries', () => {
+    expect(waitingMeetingTally([pending, storedButAnswered], PULLED, NONE).count).toBe(0);
+  });
+
+  it('never counts a conflict copy of a pending meeting', () => {
+    const copy = imported('Meetings/2026/10/Pending (conflict from Studio).md');
+    expect(waitingMeetingTally([copy], PULLED, PROCESSING).count).toBe(0);
+  });
+
+  it('a pending meeting is not one waiting for its import', () => {
+    expect(waitsForImport(pending, PULLED, PROCESSING)).toBe(false);
+  });
+});
+
+describe('the named Mac’s line while its step cannot reach Claude (#182)', () => {
+  const failing = (count: number | null) =>
+    ({ kind: 'failing', mac: 'Studio', count, problem: 'Claude Code is not logged in.' }) as const;
+
+  it('says how many meetings’ summaries and tasks are pending', () => {
+    expect(meetingsWaitingLine(failing(1))).toBe(
+      'Claude is unavailable on Studio: summaries and tasks are pending for 1 meeting.',
+    );
+    expect(meetingsWaitingLine(failing(3))).toBe(
+      'Claude is unavailable on Studio: summaries and tasks are pending for 3 meetings.',
+    );
+  });
+
+  it('says it with no count before the gates let one be given, and with none pending', () => {
+    const line = 'Claude is unavailable on Studio: summaries and tasks are pending.';
+    expect(meetingsWaitingLine(failing(null))).toBe(line);
+    expect(meetingsWaitingLine(failing(0))).toBe(line);
+  });
+
+  it('offers no claim: this Mac is already named', () => {
+    expect(processHereRefusal({ waiting: failing(2), failing: true })).toBeNull();
+  });
+
+  it('is warned of once per failure: the same problem again is not news, another is', () => {
+    expect(failingWarningDue({ problem: 'a', warned: null })).toBe(true);
+    expect(failingWarningDue({ problem: 'a', warned: 'a' })).toBe(false);
+    expect(failingWarningDue({ problem: 'b', warned: 'a' })).toBe(true);
+  });
+
+  it('warns in Activity with the fix-it line', () => {
+    expect(
+      postProcessingFailingReport({ mac: 'Studio', problem: 'Fix: claude auth login' }),
+    ).toEqual({
+      level: 'warning',
+      kind: 'meeting',
+      message:
+        'Claude is unavailable on Studio: summaries and tasks are pending. Fix: claude auth login',
+      subject: null,
+    });
   });
 });
 

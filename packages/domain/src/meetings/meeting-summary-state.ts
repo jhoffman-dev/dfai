@@ -13,11 +13,10 @@
 import type { AutomationRule } from '../automations/automation-rule.ts';
 import { claudeStepOutput } from '../automations/claude-step-budget.ts';
 import { MEETING_DIGEST_OUTPUT } from '../automations/meeting-digest.ts';
-import { isArchivedPath } from '../archive/archive.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { importOutcomeOf } from './meeting-arrival.ts';
 import { summaryWritten, SUMMARY_DIGEST_KEY } from './meeting-summary-block.ts';
-import { meetingTurnsOf } from './meeting-turns.ts';
+import { postProcessingFactsOf, summaryStillComing } from './post-processing-pending.ts';
 
 export type MeetingSummaryState = 'written' | 'pending' | 'edited' | 'none';
 
@@ -94,11 +93,14 @@ function summaryComing({
   properties: Readonly<Record<string, unknown>>;
   step: SummaryStepFacts;
 }): boolean {
-  if (!step.summarising || step.answered || isArchivedPath(path)) return false;
-  if (importOutcomeOf(properties) !== 'imported') return false;
-  const date = properties['date'];
-  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && date < step.from) {
-    return false;
-  }
-  return meetingTurnsOf(body).length > 0;
+  const facts = postProcessingFactsOf({ body, properties, key: null });
+  return summaryStillComing(
+    {
+      path,
+      importOutcome: importOutcomeOf(properties),
+      hasTurns: facts.hasTurns,
+      date: facts.date,
+    },
+    step,
+  );
 }

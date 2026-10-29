@@ -1,0 +1,126 @@
+import { describe, expect, it } from 'vitest';
+import { SUMMARY_DIGEST_KEY } from './meeting-summary-block.ts';
+import {
+  answeredIn,
+  NO_POST_PROCESSING,
+  postProcessingFactsOf,
+  postProcessingPending,
+  type PostProcessingFacts,
+  type PostProcessingLedger,
+} from './post-processing-pending.ts';
+
+/**
+ * #182: the one definition of a meeting whose post-processing is pending —
+ * what the waiting count adds, and what the Inbox row calls "summary pending".
+ */
+
+const PATH = 'Meetings/2026/10/2026-10-27 Larkspur weekly.md';
+const KEY = 'meeting:gemini:gemini-7f3a9c21:transcript:9f8e';
+const FACTS: PostProcessingFacts = {
+  summary: 'none',
+  hasTurns: true,
+  date: '2026-10-27',
+  key: KEY,
+};
+const LEDGER: PostProcessingLedger = {
+  summarising: true,
+  from: '2026-10-15',
+  answered: new Set(),
+  stored: new Set(),
+};
+
+const pending = ({
+  facts = FACTS,
+  ledger = LEDGER,
+  path = PATH,
+  importOutcome = 'imported' as const,
+}: {
+  facts?: PostProcessingFacts;
+  ledger?: PostProcessingLedger;
+  path?: string;
+  importOutcome?: 'imported' | 'duplicate' | 'error' | null;
+} = {}) => postProcessingPending({ path, importOutcome, facts, ledger });
+
+describe('postProcessingPending', () => {
+  it('is pending for an imported meeting the rule has not answered', () => {
+    expect(pending()).toBe(true);
+  });
+
+  it('is pending while an answer stored for its words waits to be written, though its path was answered', () => {
+    const ledger = { ...LEDGER, answered: new Set([PATH]), stored: new Set([KEY]) };
+    expect(pending({ ledger })).toBe(true);
+  });
+
+  it('clears once the rule has answered it and keeps no answer waiting', () => {
+    expect(pending({ ledger: { ...LEDGER, answered: new Set([PATH]) } })).toBe(false);
+  });
+
+  it('is not pending under another meeting’s stored answer', () => {
+    const ledger = {
+      ...LEDGER,
+      answered: new Set([PATH]),
+      stored: new Set(['meeting:x:y:transcript:z']),
+    };
+    expect(pending({ ledger })).toBe(false);
+  });
+
+  it('is not pending once a summary block is there, Claude’s or the person’s', () => {
+    expect(pending({ facts: { ...FACTS, summary: 'written' } })).toBe(false);
+    expect(pending({ facts: { ...FACTS, summary: 'edited' } })).toBe(false);
+  });
+
+  it('is not pending while no rule writes summaries', () => {
+    expect(pending({ ledger: NO_POST_PROCESSING })).toBe(false);
+  });
+
+  it('is not pending for a meeting the import did not let in', () => {
+    expect(pending({ importOutcome: null })).toBe(false);
+    expect(pending({ importOutcome: 'duplicate' })).toBe(false);
+    expect(pending({ importOutcome: 'error' })).toBe(false);
+  });
+
+  it('is not pending in the Archive', () => {
+    expect(pending({ path: `Archive/${PATH}` })).toBe(false);
+  });
+
+  it('is not pending with no transcript turns to read', () => {
+    expect(pending({ facts: { ...FACTS, hasTurns: false } })).toBe(false);
+  });
+
+  it('is not pending before the rule’s reach, and is on its first day and undated', () => {
+    expect(pending({ facts: { ...FACTS, date: '2026-10-14' } })).toBe(false);
+    expect(pending({ facts: { ...FACTS, date: '2026-10-15' } })).toBe(true);
+    expect(pending({ facts: { ...FACTS, date: null } })).toBe(true);
+  });
+});
+
+describe('answeredIn', () => {
+  it('is answered only with the path known and no answer stored for its key', () => {
+    const ledger = { answered: new Set([PATH]), stored: new Set([KEY]) };
+    expect(answeredIn(ledger, { path: PATH, key: KEY })).toBe(false);
+    expect(answeredIn(ledger, { path: PATH, key: null })).toBe(true);
+    expect(answeredIn(ledger, { path: 'Other.md', key: null })).toBe(false);
+  });
+});
+
+describe('postProcessingFactsOf', () => {
+  const body = '## Transcript\n\n**Mara Quill** (00:00:05): Morning.\n';
+
+  it('reads the turns, a date that is a day, and no summary', () => {
+    expect(postProcessingFactsOf({ body, properties: { date: '2026-10-27' }, key: KEY })).toEqual({
+      summary: 'none',
+      hasTurns: true,
+      date: '2026-10-27',
+      key: KEY,
+    });
+  });
+
+  it('leaves out a date that is not a day, and says a recorded digest with no block is the person’s', () => {
+    const facts = postProcessingFactsOf({
+      body: 'No transcript here.\n',
+      properties: { date: 'next Tuesday', [SUMMARY_DIGEST_KEY]: 'abcd' },
+      key: null,
+    });
+    expect(facts).toEqual({ summary: 'edited', hasTurns: false, date: null, key: null });
+  });
+});

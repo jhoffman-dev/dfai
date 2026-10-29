@@ -1,7 +1,10 @@
 import {
   createVaultPath,
+  failingWarningDue,
   isMeetingInboxPath,
   meetingsWaitingReport,
+  NO_POST_PROCESSING,
+  postProcessingFailingReport,
   touchesWaitingMeetings,
   waitingMacLabel,
   waitingMeetingTally,
@@ -9,6 +12,8 @@ import {
   type CountableStanding,
   type MeetingsWaiting,
   type NoteChange,
+  type PostProcessingLedger,
+  type VaultPath,
   type WaitingCountGate,
   type WaitingMeetingFile,
 } from '@dfai/domain';
@@ -30,6 +35,19 @@ export interface MeetingsWaitingWatch {
   readonly countGate: (vault: string) => Promise<WaitingCountGate>;
   /** Told what waits each time it is judged anew: null when nothing is to be said, as on the named Mac. */
   readonly said: (vault: string, waiting: MeetingsWaiting | null) => void;
+  /**
+   * What the vault's rules that write summaries have finished with (#182),
+   * from the rules already read; left out, no rule writes them.
+   */
+  readonly postProcessing?: (vault: string) => PostProcessingLedger;
+  /**
+   * On the Mac that runs the automations: why its own step could not reach
+   * Claude, and the Mac's name, while it keeps failing so; null while it does
+   * not. Left out, it never says so.
+   */
+  readonly stepFailing?: (
+    vault: string,
+  ) => { readonly problem: string; readonly mac: string | null } | null;
 }
 
 /** What a counter is handed for each vault judged: its ports, and where its warning is said. */
@@ -47,10 +65,16 @@ export interface WaitingCounter {
   heard(vault: string, changes: readonly NoteChange[]): boolean;
   /** What was last said for the vault; null when nothing was. */
   last(vault: string): MeetingsWaiting | null;
-  /** Says nothing waits, and forgets what the files held: this Mac imports now, and writes them. */
-  clear(vault: string): void;
+  /** Marks the files this Mac's import wrote or moved to be read again when next judged. */
+  wrote(vault: string, paths: readonly VaultPath[]): void;
   /** Judges what waits now, says it, and warns when the count is news. */
   judge(vault: string, run: WaitingCounterRun): Promise<MeetingsWaiting | null>;
+  /**
+   * On the Mac that imports: says its step cannot reach Claude while it
+   * keeps failing so, with how many meetings are pending, warning once per
+   * failure; says nothing — reading nothing — while it does not.
+   */
+  judgeHere(vault: string, run: WaitingCounterRun): Promise<MeetingsWaiting | null>;
 }
 
 /**
@@ -76,6 +100,9 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
   let said: { vault: string; waiting: MeetingsWaiting | null } | null = null;
   // The counts warned of for each vault this session: Activity hears each count once.
   const warned = new Map<string, Set<number>>();
+  // The failure last warned of for each vault while its step keeps failing: Activity hears each once.
+  const warnedFailing = new Map<string, string>();
+  const ledgerOf = (vault: string) => watch.postProcessing?.(vault) ?? NO_POST_PROCESSING;
 
   const say = (vault: string, waiting: MeetingsWaiting | null) => {
     said = { vault, waiting };
@@ -121,9 +148,48 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
     const named = watch.namedElsewhere(vault);
     if (named === null) return say(vault, null);
     const mac = waitingMacLabel(named.name);
-    const tally = waitingMeetingTally([...files.values()].filter(isRead), standing);
+    const tally = waitingMeetingTally(
+      [...files.values()].filter(isRead),
+      standing,
+      ledgerOf(vault),
+    );
     warnIfNews(vault, run, { ...tally, mac });
     return say(vault, { kind: 'counted', mac, count: tally.count });
+  };
+
+  /** How many meetings' summaries and tasks are pending, under the gates; null while they are shut. */
+  const pendingHere = async (
+    vault: string,
+    run: WaitingCounterRun,
+  ): Promise<number | null | 'pulling'> => {
+    const gate = await watch.countGate(vault);
+    if (!gate.open) return gate.why === 'pulling' ? 'pulling' : null;
+    const { files } = await knownFor(vault, run);
+    await readUnread(files, run);
+    const after = await watch.countGate(vault);
+    if (!after.open || after.standing !== gate.standing) return 'pulling';
+    return waitingMeetingTally([...files.values()].filter(isRead), gate.standing, ledgerOf(vault))
+      .pending;
+  };
+
+  const judgeHere = async (vault: string, run: WaitingCounterRun) => {
+    const failing = watch.stepFailing?.(vault) ?? null;
+    if (failing === null) {
+      warnedFailing.delete(vault);
+      return say(vault, null);
+    }
+    const { problem } = failing;
+    const mac = failing.mac?.trim() || 'this Mac';
+    if (failingWarningDue({ problem, warned: warnedFailing.get(vault) ?? null })) {
+      run.activity.record(postProcessingFailingReport({ mac, problem }));
+      warnedFailing.set(vault, problem);
+    }
+    const counted = await pendingHere(vault, run);
+    const before = last(vault);
+    // While a pull is under way, a count already said stands.
+    const count =
+      counted === 'pulling' ? (before?.kind === 'failing' ? before.count : null) : counted;
+    return say(vault, { kind: 'failing', mac, count, problem });
   };
 
   const uncounted = async (
@@ -143,10 +209,11 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
       return touches;
     },
     last,
-    clear: (vault) => {
-      known = null;
-      say(vault, null);
+    wrote: (vault, paths) => {
+      if (known?.vault !== vault) return;
+      for (const path of paths) known.files.set(path, null);
     },
+    judgeHere: (vault, run) => judgeHere(vault, run),
     judge: async (vault, run) => {
       const named = watch.namedElsewhere(vault);
       if (named === null) return say(vault, null);
