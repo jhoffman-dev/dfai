@@ -33,6 +33,7 @@ function Editor({ onChange }: { onChange: (draft: AutomationDraft) => void }) {
       typeNames={['task', 'meeting']}
       claudeTools={['atlas_search']}
       claudeOutputs={['proposals']}
+      skills={[]}
       busy={false}
       onSave={() => {}}
       onCancel={() => {}}

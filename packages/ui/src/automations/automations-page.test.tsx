@@ -180,6 +180,7 @@ function Editor({
       typeNames={['task', 'meeting']}
       claudeTools={['atlas_search', 'atlas_read_note', 'atlas_backlinks']}
       claudeOutputs={['proposals']}
+      skills={[]}
       busy={false}
       onSave={() => {}}
       onCancel={() => {}}

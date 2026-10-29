@@ -34,6 +34,15 @@ export function publishAutomations(
   store.setState((was) => (shallow(was.automations, automations) ? was : { automations }));
 }
 
+/**
+ * The rules as last read, or null before they are: for a page that only
+ * reads them (the Skills page's "Used by", #169), drawn only when they are
+ * read again, never for a run or the clock's minute.
+ */
+export function useAutomationListing(store: AutomationsStore) {
+  return useStore(store, (state) => state.automations?.listing ?? null);
+}
+
 /** The runner and its commands, for the Automations page. */
 export function useAutomationsController(store: AutomationsStore): AutomationsController | null {
   return useStore(store, (state) => state.automations);

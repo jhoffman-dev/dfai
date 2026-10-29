@@ -32,7 +32,8 @@ export const automations = defineTool({
     '"note" is { type, on: ["created" and/or "changed"] } for a rule a note sets off, which runs ' +
     'once per version of each note of that type its query matches, or null. "which" is the ' +
     'DFAI query naming its notes; "do" is "archive", "set" or "claude", with "set" the values ' +
-    'it writes, and "claude" { prompt, tools, output, folder, data }: the prompt note, the read tools ' +
+    'it writes, and "claude" { prompt, skill, tools, output, folder, data }: the prompt note — or, ' +
+    'for a step that names a skill, "skill" (its name, else null) with its SKILL.md as "prompt" — the read tools ' +
     'Claude may call, and what it writes — "proposals" or "meeting-items" (a meeting\'s action ' +
     'items, decisions, follow-ups and suggested glossary terms, each citing a transcript turn) waiting in the Inbox, or ' +
     '"note", one new note in "folder"; "data" is "weekly-review" for a step handed the weekly review, ' +
@@ -89,7 +90,7 @@ export const automationDryRun = defineTool({
     'handled as they are now: { automation: { id, name }, plan: { do, set, claude, summary, notes: ' +
     '[{ path, title }], passedOver: [{ path, reason }], passedOverMore, capped, cap } }. "notes" ' +
     'are the notes it would archive, set "set" on — a note that already holds those values is ' +
-    'left out — or ask Claude about, with the prompt and tools under "claude"; Claude is not ' +
+    'left out — or ask Claude about, with the prompt, skill and tools under "claude"; Claude is not ' +
     'asked. "capped" is ' +
     'true when more matched than one run may do ("cap"). "passedOver" lists at most 500 notes it ' +
     'would leave alone; "passedOverMore" counts the rest. A rule whose query does not read is ' +

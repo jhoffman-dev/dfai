@@ -106,6 +106,7 @@ export {
   CLAUDE_DATA,
   CLAUDE_NOTES_PER_RUN,
   claudeActionFields,
+  isClaudeStepPrompt,
   isPromptPath,
   describeClaudeAction,
   outputHasItems,
@@ -115,6 +116,8 @@ export {
   readsData,
   withClaudeChoices,
   withClaudeData,
+  withClaudeSkill,
+  usesSkill,
 } from './claude-step.ts';
 export type { ClaudeAction, ClaudeApply, ClaudeData, ClaudeOutput } from './claude-step.ts';
 export {

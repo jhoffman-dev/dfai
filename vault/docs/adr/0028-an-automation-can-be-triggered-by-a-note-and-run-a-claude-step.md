@@ -815,3 +815,44 @@ which broke "never overwriting one" in spirit: two drafts of one brief.
 - **The Friday review preset** puts these together: `fridays at 15:00`, its
   prompt `.atlas/prompts/friday-review.md` (written once, never over yours),
   `output: note` into `Reviews/`, `data: weekly-review`, no query.
+
+## Amendment, 2026-10-28: a Claude step can ask with a skill (#169, ADR-0050)
+
+Skills (ADR-0050) are instructions the person writes once and reuses; a rule
+should be able to use one instead of a prompt note.
+
+- **`skill: <name>` in place of `prompt:`.** A rule names one or the other.
+  One that names both is refused with _"Name one: prompt:
+  .atlas/prompts/<name>.md, or skill: <name>, not both."_ — a blank or null
+  `prompt:` beside a skill counts as none. The name is held to a skill's name
+  rule (`skillNameProblem`) when the rule is read, so a path or a capital never
+  reaches the run.
+- **One path, either way.** `ClaudeAction` gains an optional `skill`; its
+  `prompt` holds the skill's `SKILL.md` (`.atlas/skills/<name>/SKILL.md`), so
+  everything that shows or plans a step reads one field. A rule with a prompt
+  carries no `skill` key at all, and its file is saved byte for byte as
+  before (tested through the real markdown port). `claudeActionFields` writes
+  `skill:` and clears `prompt:` for a step with a skill, and writes a null
+  `skill` (which takes nothing out of a file without one) for one with a
+  prompt.
+- **The run's check is widened, not loosened.** `isClaudeStepPrompt` accepts
+  a prompt note for a step with no skill, exactly as before — a `SKILL.md`
+  named as `prompt:` is still refused — and, for a step with a skill, only
+  that skill's own `SKILL.md`.
+- **What Claude is handed.** The run finds the skill as the Skills page does
+  (`readSkill`: the folder exactly, else in any case) and asks with its
+  instructions — `SKILL.md`'s body, the frontmatter left out — trimmed, as a
+  prompt note's body is. The same instructions as a prompt note give the same
+  system prompt. A skill that is gone, has no `SKILL.md`, cannot be read, or
+  has any problem the Skills page shows (no description, a `name:` that is
+  not its folder's, instructions over 20,000 characters as the skills count
+  them) fails the run before Claude is asked, and nothing is written.
+- **Seen where skills are.** The editor's **Asks with** picks a prompt note or
+  a skill and hides the prompt path for a skill; a skill a rule names that the
+  vault no longer has stays in the list, so the rule reads as it is. The
+  Skills page lists, under each skill, the rules that use it (in any case),
+  from the runner's own reading of the rules — no more is read — and the
+  delete question warns that they will fail.
+- **API and MCP.** `ApiClaudeStep` gains `skill` (the name, or null), on
+  `/v1/automations` and in the dry run's `claude`; the MCP tools' words say
+  so. Rules stay read-only through the API.

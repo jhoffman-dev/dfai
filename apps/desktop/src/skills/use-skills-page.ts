@@ -3,7 +3,10 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import {
   createVaultPath,
   skillDeletionWarning,
+  skillInUseWarning,
+  skillUsers,
   type SkillDraft,
+  type SkillUser,
   type VaultPath,
 } from '@dfai/domain';
 import {
@@ -67,10 +70,12 @@ function useSkillLists({
   fs,
   markdown,
   vault,
+  rules,
 }: {
   fs: VaultFsPort;
   markdown: MarkdownPort;
   vault: string | null;
+  rules: readonly SkillUser[];
 }) {
   const skills = useQuery({
     queryKey: vaultReadKey(vault ?? '', 'skills'),
@@ -90,11 +95,15 @@ function useSkillLists({
         { data: skillsRead, error: skillsError },
         'The skills could not be read',
         (list) =>
-          list.map(({ name, description, problems }) => ({
-            name,
-            description,
-            problems: problems.map(({ message }) => message),
-          })),
+          list.map(({ name, description, problems }) => {
+            const usedBy = skillUsers(rules, name);
+            return {
+              name,
+              description,
+              problems: problems.map(({ message }) => message),
+              ...(usedBy.length > 0 && { usedBy }),
+            };
+          }),
       ),
       prompts: listedOf(
         { data: promptsRead, error: promptsError },
@@ -102,7 +111,7 @@ function useSkillLists({
         (list) => list,
       ),
     }),
-    [skillsRead, skillsError, promptsRead, promptsError],
+    [skillsRead, skillsError, promptsRead, promptsError, rules],
   );
 }
 
@@ -248,11 +257,14 @@ function useSelection({
  */
 export function useSkillsPage({
   ports,
+  rules,
   overlayUp,
   vault,
   onOpenNote,
 }: {
   ports: SkillsPagePorts;
+  /** The vault's automations: which use each skill (#169). */
+  rules: readonly SkillUser[];
   /** Which of this page's questions the window's overlay store holds up, if either. */
   overlayUp: SkillOverlay | null;
   /** The open vault, whose reads these are; null while none is. */
@@ -261,7 +273,7 @@ export function useSkillsPage({
 }): Omit<SkillsPageProps, 'onShowSidebar' | 'history'> {
   const { fs, markdown, overlay } = ports;
   const client = useQueryClient();
-  const lists = useSkillLists({ fs, markdown, vault });
+  const lists = useSkillLists({ fs, markdown, vault, rules });
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -327,6 +339,7 @@ export function useSkillsPage({
     vault,
     base: editing?.base ?? null,
     names: (lists.skills.items ?? []).map((skill) => skill.name),
+    rules,
     overlay,
     overlayUp,
     generation,
@@ -438,6 +451,7 @@ function useDeleteSkill({
   vault,
   base,
   names,
+  rules,
   overlay,
   overlayUp,
   generation,
@@ -450,6 +464,7 @@ function useDeleteSkill({
   vault: string | null;
   base: SkillFile | null;
   names: readonly string[];
+  rules: readonly SkillUser[];
   overlay: SkillsPagePorts['overlay'];
   overlayUp: SkillOverlay | null;
   generation: { readonly current: number };
@@ -479,11 +494,13 @@ function useDeleteSkill({
     skillOtherFiles({ fs, skill: base })
       .then((others) => {
         if (!mounted.current || generation.current !== chosen) return;
-        setAsked(skillDeletionWarning(base.name, others));
+        const inUse = skillInUseWarning(skillUsers(rules, base.name));
+        const warning = skillDeletionWarning(base.name, others);
+        setAsked(inUse === null ? warning : `${warning} ${inUse}`);
         overlay.show('skill-delete');
       }, failed)
       .finally(() => setBusy(false));
-  }, [base, busy, generation, fs, mounted, overlay, failed]);
+  }, [base, busy, generation, fs, mounted, overlay, failed, rules]);
   const question = useMemo(() => {
     if (!standing || asked === null || base === null || vault === null) return null;
     if (overlayUp !== 'skill-delete') return null;

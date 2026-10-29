@@ -5,6 +5,7 @@ import {
   outputHasItems,
   withClaudeChoices,
   withClaudeData,
+  withClaudeSkill,
   type AutomationAction,
   type AutomationDraft,
   type ClaudeAction,
@@ -33,6 +34,8 @@ export interface AutomationEditorProps {
   readonly claudeTools: readonly string[];
   /** The proposal schemas a Claude step can answer with, by name: `proposals` first. */
   readonly claudeOutputs: readonly string[];
+  /** The vault's skills, by name: what a Claude step may ask with in place of a prompt (#169). */
+  readonly skills: readonly string[];
   readonly busy: boolean;
   readonly onSave: () => void;
   readonly onCancel: () => void;
@@ -153,6 +156,7 @@ export function AutomationEditor(props: AutomationEditorProps) {
           onChange={onChange}
           claudeTools={props.claudeTools}
           claudeOutputs={props.claudeOutputs}
+          skills={props.skills}
         />
       </div>
       {props.problem !== null && (
@@ -328,7 +332,7 @@ function AgeField({ draft, onChange }: Pick<AutomationEditorProps, 'draft' | 'on
 
 type ActionProps = Pick<
   AutomationEditorProps,
-  'draft' | 'onChange' | 'claudeTools' | 'claudeOutputs'
+  'draft' | 'onChange' | 'claudeTools' | 'claudeOutputs' | 'skills'
 >;
 
 /** What picking an action starts from: a Claude step reads the note with the first schema. */
@@ -343,7 +347,7 @@ function actionOf(kind: AutomationAction['kind'], outputs: readonly string[]): A
   };
 }
 
-function ActionField({ draft, onChange, claudeTools, claudeOutputs }: ActionProps) {
+function ActionField({ draft, onChange, claudeTools, claudeOutputs, skills }: ActionProps) {
   const { action } = draft;
   const [key = '', value = ''] =
     action.kind === 'set' ? (Object.entries(action.values)[0] ?? []) : [];
@@ -389,14 +393,15 @@ function ActionField({ draft, onChange, claudeTools, claudeOutputs }: ActionProp
           onChange={onChange}
           claudeTools={claudeTools}
           claudeOutputs={claudeOutputs}
+          skills={skills}
         />
       )}
     </div>
   );
 }
 
-/** A Claude step's prompt, what it writes, and the read tools it may call. */
-function ClaudeFields({ draft, onChange, claudeTools, claudeOutputs }: ActionProps) {
+/** A Claude step's prompt or skill, what it writes, and the read tools it may call. */
+function ClaudeFields({ draft, onChange, claudeTools, claudeOutputs, skills }: ActionProps) {
   const { action } = draft;
   if (action.kind !== 'claude') return null;
   const change = (next: Partial<typeof action>) =>
@@ -404,16 +409,23 @@ function ClaudeFields({ draft, onChange, claudeTools, claudeOutputs }: ActionPro
   const output = action.output.kind === 'note' ? NOTE_OUTPUT : action.output.schema;
   return (
     <div className="automation-editor__claude">
-      <label className="automation-editor__inline">
-        Prompt
-        <input
-          className="field"
-          aria-label="Prompt"
-          placeholder=".atlas/prompts/meeting-actions.md"
-          value={action.prompt}
-          onChange={(event) => change({ prompt: event.target.value })}
-        />
-      </label>
+      <SkillPicker
+        action={action}
+        skills={skills}
+        onChange={(next) => onChange({ ...draft, action: next })}
+      />
+      {action.skill === undefined && (
+        <label className="automation-editor__inline">
+          Prompt
+          <input
+            className="field"
+            aria-label="Prompt"
+            placeholder=".atlas/prompts/meeting-actions.md"
+            value={action.prompt}
+            onChange={(event) => change({ prompt: event.target.value })}
+          />
+        </label>
+      )}
       <label className="automation-editor__inline">
         Writes
         <select
@@ -494,6 +506,40 @@ function ClaudeFields({ draft, onChange, claudeTools, claudeOutputs }: ActionPro
         ))}
       </fieldset>
     </div>
+  );
+}
+
+/** Ask with a prompt note, or one of the vault's skills (#169); a skill gone from the vault stays shown. */
+function SkillPicker({
+  action,
+  skills,
+  onChange,
+}: {
+  action: ClaudeAction;
+  skills: readonly string[];
+  onChange: (action: ClaudeAction) => void;
+}) {
+  const named = action.skill;
+  const offered = named === undefined || skills.includes(named) ? skills : [named, ...skills];
+  return (
+    <label className="automation-editor__inline">
+      Asks with
+      <select
+        className="field automation-editor__small"
+        aria-label="Skill"
+        value={named ?? ''}
+        onChange={(event) =>
+          onChange(withClaudeSkill(action, event.target.value === '' ? null : event.target.value))
+        }
+      >
+        <option value="">A prompt note</option>
+        {offered.map((skill) => (
+          <option key={skill} value={skill}>
+            Skill: {skill}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

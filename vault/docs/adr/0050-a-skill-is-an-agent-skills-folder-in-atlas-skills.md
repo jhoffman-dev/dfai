@@ -104,7 +104,8 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
 
 4. **`.atlas/prompts` is not migrated.** Prompt notes keep working exactly as
    before; a rule's `prompt:` is unchanged. Letting a rule name a `skill:`
-   instead is the third pull request.
+   instead is the third pull request, recorded in ADR-0028's amendment of
+   2026-10-28.
 
 5. **Skills are a sectioned path.** `.atlas/skills` joins
    `SECTIONED_ATLAS_PATHS`, so a skill is not in the sidebar, Pages, search,

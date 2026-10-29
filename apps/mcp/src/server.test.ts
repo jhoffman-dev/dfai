@@ -274,8 +274,11 @@ describe('tools/list', () => {
     const described = (name: string) => tools.find((t) => t.name === name)?.description ?? '';
 
     expect(described('atlas_automations')).toContain(
-      '"claude" { prompt, tools, output, folder, data }',
+      '"claude" { prompt, skill, tools, output, folder, data }',
     );
+    // A step may name a skill in place of a prompt note (#169).
+    expect(described('atlas_automations')).toContain('for a step that names a skill, "skill"');
+    expect(described('atlas_automation_dry_run')).toContain('the prompt, skill and tools');
     expect(described('atlas_automations')).toContain('A Claude step never edits a note.');
     expect(described('atlas_automation_log')).toContain('{ kind: "proposed" or "created", path }');
     expect(described('atlas_automation_log')).toContain('"claude" is { model, ms }');

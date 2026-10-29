@@ -13,6 +13,7 @@ import { fakeVaultFs, VaultAccessError } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { createOverlayStore, overlayNow } from '../overlay-store.ts';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
+import { createAutomationsStore } from '../automations/automations-store.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { SkillsContainer } from './skills-container.tsx';
 
@@ -48,7 +49,11 @@ function oneSkillVault() {
 function showTab(fs: ReturnType<typeof fakeVaultFs>) {
   const overlays = createOverlayStore();
   const wiring = {
-    pages: { ports: { fs }, openNote: () => {} },
+    pages: {
+      ports: { fs },
+      openNote: () => {},
+      automations: { store: createAutomationsStore() },
+    },
     pane: { vault: '/vaults/larkspur', notes: { markdown: remarkMarkdown } },
     overlays,
   } as unknown as PageContainerProps['wiring'];

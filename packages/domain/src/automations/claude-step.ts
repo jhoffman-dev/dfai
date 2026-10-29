@@ -23,22 +23,22 @@
  * `output: note`, and every list item of that note must link one of those
  * notes (`cited-items.ts`). A step with data needs no query: `which:` may be
  * left out, and it reads its data alone.
+ *
+ * `skill: weekly-notes` (#169, ADR-0050) asks with a skill's instructions in
+ * place of a prompt note: `.atlas/skills/weekly-notes/SKILL.md`, its body
+ * without its frontmatter. A rule names one or the other, never both.
  */
 
 import { isChatReadTool, CHAT_READ_TOOLS, type ChatReadTool } from '../chat/read-tool-names.ts';
 import { createVaultPath, InvalidVaultPathError, type VaultPath } from '../vault/vault-path.ts';
+import { skillFilePath, skillNameKey, skillNameProblem } from '../skills/skill-rules.ts';
 import { claudeWriteRefusal } from './claude-write-folder.ts';
 import { PROPOSAL_SCHEMAS } from './proposal-schemas.ts';
 
 /** Where a rule's prompts live. */
 export const PROMPTS_DIRECTORY = '.atlas/prompts';
 
-/**
- * The longest a prompt note may be: a rule's instructions, not a document. A
- * skill's instructions are held to the same length (ADR-0050), since either
- * is handed to the model as one argument (ADR-0021).
- */
-export const MAX_PROMPT_CHARACTERS = 20_000;
+export { MAX_PROMPT_CHARACTERS } from './prompt-limit.ts';
 
 /** The most notes one Claude step reads: each is a model's reading, not a file move. */
 export const CLAUDE_NOTES_PER_RUN = 10;
@@ -54,8 +54,16 @@ export type ClaudeOutput =
 
 export interface ClaudeAction {
   readonly kind: 'claude';
-  /** The prompt note, in {@link PROMPTS_DIRECTORY}. */
+  /**
+   * The prompt note, in {@link PROMPTS_DIRECTORY}; for a step that names a
+   * {@link skill}, that skill's SKILL.md.
+   */
   readonly prompt: string;
+  /**
+   * The skill it asks with instead of a prompt note (#169, ADR-0050): its
+   * name, as `skill:` writes it. Left out, the prompt note is what it asks.
+   */
+  readonly skill?: string;
   /**
    * The read tools it may call; none, and it reads only the notes it is
    * handed. Each is one of {@link CHAT_READ_TOOLS} once read from its file.
@@ -98,7 +106,7 @@ const NEVER_EDITS =
 export function readClaudeAction(
   frontmatter: Readonly<Record<string, unknown>>,
 ): ClaudeAction | string {
-  const prompt = readPrompt(frontmatter['prompt']);
+  const prompt = readInstructions(frontmatter);
   if (typeof prompt === 'string') return prompt;
   const tools = readTools(frontmatter['tools']);
   if (typeof tools === 'string') return tools;
@@ -113,6 +121,7 @@ export function readClaudeAction(
   return {
     kind: 'claude',
     prompt: prompt.path,
+    ...(prompt.skill !== undefined && { skill: prompt.skill }),
     tools,
     output,
     ...(apply !== null && { apply }),
@@ -199,6 +208,30 @@ function readModel(value: unknown): string | null | Refusal {
       };
 }
 
+/** What a step asks with: the prompt note `prompt:` names, or the skill `skill:` does — one, never both. */
+function readInstructions(
+  frontmatter: Readonly<Record<string, unknown>>,
+): { path: VaultPath; skill?: string } | string {
+  const skill = frontmatter['skill'];
+  if (skill === undefined || skill === null || skill === '') {
+    return readPrompt(frontmatter['prompt']);
+  }
+  const prompt = frontmatter['prompt'];
+  if (prompt !== undefined && prompt !== null && String(prompt).trim() !== '') {
+    return 'Name one: prompt: .atlas/prompts/<name>.md, or skill: <name>, not both.';
+  }
+  return readSkill(skill);
+}
+
+/** The skill a rule names, as its SKILL.md and name, or why it cannot be one. */
+function readSkill(value: unknown): { path: VaultPath; skill: string } | string {
+  if (typeof value !== 'string')
+    return 'Write skill: as one skill’s name, like skill: weekly-notes.';
+  const name = value.trim();
+  const problem = skillNameProblem(name);
+  return problem === null ? { path: skillFilePath(name), skill: name } : `skill: ${problem}`;
+}
+
 function readPrompt(value: unknown): { path: VaultPath } | string {
   const written = typeof value === 'string' ? value.trim() : '';
   const wanted = 'Name its prompt: prompt: .atlas/prompts/<name>.md.';
@@ -206,6 +239,16 @@ function readPrompt(value: unknown): { path: VaultPath } | string {
   const full = written.includes('/') ? written : `${PROMPTS_DIRECTORY}/${written}`;
   const path = pathOrNull(/\.md$/i.test(full) ? full : `${full}.md`);
   return path !== null && isPromptPath(path) ? { path } : wanted;
+}
+
+/**
+ * Whether a step's `prompt` is one it may ask with: a prompt note, or — for a
+ * step that names a skill — exactly that skill's SKILL.md. Asked again when
+ * the step runs, as {@link isPromptPath} is.
+ */
+export function isClaudeStepPrompt(action: Pick<ClaudeAction, 'prompt' | 'skill'>): boolean {
+  if (action.skill === undefined) return isPromptPath(action.prompt);
+  return skillNameProblem(action.skill) === null && action.prompt === skillFilePath(action.skill);
 }
 
 /**
@@ -264,10 +307,16 @@ function pathOrNull(raw: string): VaultPath | null {
   }
 }
 
-/** The step as its rule's file writes it; every key, so a rule that stops being one loses them. */
+/**
+ * The step as its rule's file writes it; every key, so a rule that stops
+ * being one loses them. A step with a skill writes `skill:` and no
+ * `prompt:`, so its file never names both.
+ */
 export function claudeActionFields(action: ClaudeAction | null): Record<string, unknown> {
+  const skill = action?.skill ?? null;
   return {
-    prompt: action?.prompt ?? null,
+    prompt: skill === null ? (action?.prompt ?? null) : null,
+    skill,
     tools: action === null ? null : [...action.tools],
     output: action === null ? null : outputName(action.output),
     folder: action?.output.kind === 'note' ? action.output.folder : null,
@@ -289,6 +338,7 @@ export function withClaudeChoices(
   return {
     kind: 'claude',
     prompt: action.prompt,
+    ...(action.skill !== undefined && { skill: action.skill }),
     tools: action.tools,
     output: action.output,
     ...(apply !== null && { apply }),
@@ -302,6 +352,7 @@ export function withClaudeData(action: ClaudeAction, data: ClaudeData | null): C
   return {
     kind: 'claude',
     prompt: action.prompt,
+    ...(action.skill !== undefined && { skill: action.skill }),
     tools: action.tools,
     output: action.output,
     ...(action.apply !== undefined && { apply: action.apply }),
@@ -318,6 +369,31 @@ function outputName(output: ClaudeOutput): string {
 export function describeClaudeAction(action: ClaudeAction): string {
   const what =
     action.output.kind === 'note' ? `a note in ${action.output.folder}` : action.output.schema;
-  const name = action.prompt.slice(action.prompt.lastIndexOf('/') + 1).replace(/\.md$/i, '');
+  const name =
+    action.skill ?? action.prompt.slice(action.prompt.lastIndexOf('/') + 1).replace(/\.md$/i, '');
   return `Ask Claude (${name}) for ${what}`;
+}
+
+/**
+ * The step with the skill `skill` in place of its prompt note, or with none:
+ * an empty prompt to type, as a new step has (#169). Whatever else it holds
+ * stays.
+ */
+export function withClaudeSkill(action: ClaudeAction, skill: string | null): ClaudeAction {
+  const { skill: named, ...rest } = action;
+  if (skill !== null) return { ...rest, prompt: skillFilePath(skill), skill };
+  // A skill let go leaves its SKILL.md, which is no prompt note: the prompt is typed afresh.
+  return { ...rest, prompt: named === undefined ? action.prompt : '' };
+}
+
+/** Whether a rule's action asks with the skill `name`, in any case and form, as skills are told apart. */
+export function usesSkill(
+  action: { readonly kind: string; readonly skill?: string },
+  name: string,
+): boolean {
+  return (
+    action.kind === 'claude' &&
+    action.skill !== undefined &&
+    skillNameKey(action.skill) === skillNameKey(name)
+  );
 }

@@ -1328,8 +1328,10 @@ export interface ApiBrokenAutomation {
  * new note in `folder`. It never edits a note.
  */
 export interface ApiClaudeStep {
-  /** The prompt note, in `.atlas/prompts/`. */
+  /** The prompt note, in `.atlas/prompts/`; for a step that names a skill, that skill's `SKILL.md`. */
   readonly prompt: string;
+  /** The skill it asks with in place of a prompt note (#169), by name; null for a prompt note. */
+  readonly skill: string | null;
   readonly tools: readonly string[];
   /** `note`, or the name of a proposal schema: `proposals`, or `meeting-items` (what Claude pulls out of a meeting). */
   readonly output: string;

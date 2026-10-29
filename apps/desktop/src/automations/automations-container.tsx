@@ -42,6 +42,7 @@ export function AutomationsContainer({ wiring, chrome }: PageContainerProps) {
         clock={localClock}
         indexKey={indexKey}
         activity={pane.activity}
+        vault={pane.vault}
         onOpenNote={pages.openNote}
         {...chrome}
       />
