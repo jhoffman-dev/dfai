@@ -85,7 +85,7 @@ describe('GET /v1/skills/{name}', () => {
         path: '.atlas/skills/weekly-review/SKILL.md',
         description: 'Walks Mara Quill through the Friday review.',
         problems: [],
-        instructions: 'List each project with no next action.\n',
+        instructions: 'List each project with no next action.',
       },
     });
   });

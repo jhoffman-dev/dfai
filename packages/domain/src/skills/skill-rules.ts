@@ -169,9 +169,14 @@ function leadingBreak(body: string): string {
   return /^\r?\n/.exec(body)?.[0] ?? '';
 }
 
-/** A skill's instructions: its body, less the blank line that parts it from the frontmatter. */
+/**
+ * A skill's instructions: its body, less the blank line that parts it from
+ * the frontmatter and the one line ending the writer puts after the last
+ * line — so instructions saved at N characters read back as N.
+ */
 export function instructionsOf(body: string): string {
-  return body.slice(leadingBreak(body).length);
+  const rest = body.slice(leadingBreak(body).length);
+  return rest.slice(0, rest.length - (/\r?\n$/.exec(rest)?.[0].length ?? 0));
 }
 
 /** Whether most of a file's lines end in CRLF: the file was written that way, whatever its body holds. */
@@ -184,10 +189,10 @@ export function isWrittenWithCrlf(text: string): boolean {
 /**
  * The body that holds `instructions` in place of `body`: `body` itself when
  * they are what it already holds, so an untouched skill is written back byte
- * for byte, and otherwise the instructions after the blank line it had —
- * with CRLF line ends when the file (`fileText`, the body's own by default)
- * is written with them and the instructions came with bare ones, as an
- * editor's form sends them.
+ * for byte, and otherwise the instructions after the blank line it had, then
+ * one line ending, which {@link instructionsOf} does not count. Line ends are
+ * CRLF when the file (`fileText`, the body's own by default) is written with
+ * them and the instructions came with bare ones, as an editor's form sends them.
  */
 export function bodyWithInstructions(
   body: string,
@@ -196,15 +201,17 @@ export function bodyWithInstructions(
 ): string {
   if (instructionsOf(body) === instructions) return body;
   const crlf = isWrittenWithCrlf(fileText) && !instructions.includes('\r');
-  return leadingBreak(body) + (crlf ? instructions.replace(/\n/g, '\r\n') : instructions);
+  const written = crlf ? instructions.replace(/\n/g, '\r\n') : instructions;
+  const ending = crlf || instructions.includes('\r\n') ? '\r\n' : '\n';
+  return leadingBreak(body) + written + ending;
 }
 
 /**
  * The body a new skill is written with, in its one canonical form: a blank
- * line after the frontmatter, then the instructions, ending their last line.
+ * line after the frontmatter, then the instructions, then one line ending.
  */
 export function newSkillBody(instructions: string): string {
-  return `\n${instructions.endsWith('\n') ? instructions : `${instructions}\n`}`;
+  return `\n${instructions}\n`;
 }
 
 /**

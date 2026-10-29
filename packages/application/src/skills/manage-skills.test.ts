@@ -177,7 +177,7 @@ describe('saveSkill', () => {
       fs: vault.fs,
       markdown: port,
       skill,
-      draft: { name: skill.name, description: skill.description, instructions: 'Step two.\n' },
+      draft: { name: skill.name, description: skill.description, instructions: 'Step two.' },
     });
 
     expect(vault.notes.get(SKILL_PATH)?.text).toBe(TEXT.replace('Step one.', 'Step two.'));
@@ -592,7 +592,7 @@ describe('after the attack on #620', () => {
       markdown,
       skill,
       // The fake port reads `key: value` lines ending in LF only; the body is what is checked.
-      draft: { name: skill.name, description: 'Walks.', instructions: 'A.\nB.\n' },
+      draft: { name: skill.name, description: 'Walks.', instructions: 'A.\nB.' },
     });
 
     expect(vault.notes.get(SKILL_PATH)?.text.endsWith('\nA.\r\nB.\r\n')).toBe(true);
