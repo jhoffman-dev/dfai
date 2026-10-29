@@ -227,6 +227,7 @@ function readPlace(value: unknown): NavigationPlace | null {
     case 'activity':
     case 'templates':
     case 'terms':
+    case 'skills':
     case 'library':
     case 'highlights':
     case 'ask':

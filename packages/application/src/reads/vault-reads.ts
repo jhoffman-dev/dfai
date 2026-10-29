@@ -1,6 +1,7 @@
 import {
   ATLAS_DIRECTORY,
   INDEX_FACETS,
+  PROMPTS_DIRECTORY,
   PROPOSALS_FOLDER,
   SKILLS_DIRECTORY,
   TEMPLATES_DIRECTORY,
@@ -13,8 +14,9 @@ import {
 /**
  * A whole-vault read the window keeps until something it is made from
  * changes (ADR-0040): the graph and the tags from the index, the type
- * definitions, the templates and the skills from their folders (the skills
- * read only when a page asks for them, never at launch), the vault's settings
+ * definitions, the templates, the skills and the prompt notes from their folders
+ * (the skills and the prompts read only when a page asks for them, never at
+ * launch), the vault's settings
  * from their note, and the sidebar's catalogue and counts (#293) — the
  * notes under `.atlas` it walks, the marks the index holds (a view, a
  * dashboard, a star), how many notes each type has, the Today and Inbox
@@ -26,6 +28,7 @@ export type VaultRead =
   | 'types'
   | 'templates'
   | 'skills'
+  | 'prompts'
   | 'settings'
   | 'sidebar-atlas'
   | 'sidebar-marks'
@@ -38,6 +41,7 @@ export const VAULT_READS: readonly VaultRead[] = [
   'types',
   'templates',
   'skills',
+  'prompts',
   'settings',
   'sidebar-atlas',
   'sidebar-marks',
@@ -56,6 +60,7 @@ const PATH_READS: readonly (readonly [string, readonly VaultRead[]])[] = [
   [TYPES_DIRECTORY, ['types']],
   [TEMPLATES_DIRECTORY, ['templates']],
   [SKILLS_DIRECTORY, ['skills']],
+  [PROMPTS_DIRECTORY, ['prompts']],
   [VAULT_SETTINGS_PATH, ['settings']],
   [ATLAS_DIRECTORY, ['sidebar-atlas', 'quick-counts']],
   [PROPOSALS_FOLDER, ['inbox-waiting']],

@@ -43,6 +43,13 @@ async function openVault(page: Page): Promise<FakeVault> {
   await vault.write('.atlas/types/task.md', TASK_TYPE);
   await vault.write('.atlas/views/Board.md', VIEW);
   await vault.write('.atlas/dashboards/Progress.md', DASHBOARD);
+  await vault.mkdir('.atlas/skills/weekly-review');
+  await vault.write(
+    '.atlas/skills/weekly-review/SKILL.md',
+    ['---', 'name: weekly-review', 'description: Reviews the week.', '---', '', 'Read.', ''].join(
+      '\n',
+    ),
+  );
   await vault.write('Notes/Ship it.md', task('Ship it', 'todo'));
   await vault.write('Notes/Write it.md', task('Write it', 'done'));
 
@@ -119,11 +126,24 @@ test('Pages is the vault, minus only what another section already lists', async 
 
   await expect(userSpace.getByRole('treeitem', { name: 'types', exact: true })).toBeVisible();
 
-  // Views, dashboards and templates are not, since each has a place of its own
-  // that lists them (ADR-0026 for templates).
+  // Views, dashboards, templates and skills are not, since each has a place of
+  // its own that lists them (ADR-0026 for templates, ADR-0050 for skills).
   await expect(userSpace.getByRole('treeitem', { name: 'views', exact: true })).toHaveCount(0);
   await expect(userSpace.getByRole('treeitem', { name: 'dashboards', exact: true })).toHaveCount(0);
   await expect(userSpace.getByRole('treeitem', { name: 'templates', exact: true })).toHaveCount(0);
+  await expect(userSpace.getByRole('treeitem', { name: 'skills', exact: true })).toHaveCount(0);
+  await expect(userSpace.getByRole('treeitem', { name: 'SKILL', exact: true })).toHaveCount(0);
+});
+
+test('the Skills page is a row of its own, marked while it is open (#169)', async ({ page }) => {
+  await openVault(page);
+  const row = page.getByRole('list', { name: 'Go to' }).getByRole('button', { name: 'Skills' });
+  await expect(row).not.toHaveAttribute('aria-current', 'page');
+  await row.click();
+  await expect(row).toHaveAttribute('aria-current', 'page');
+  await expect(
+    page.getByRole('article', { name: 'Skills' }).getByRole('button', { name: /^weekly-review/ }),
+  ).toBeVisible();
 });
 
 test('a type definition can be reached from the sidebar', async ({ page }) => {

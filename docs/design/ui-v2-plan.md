@@ -160,6 +160,7 @@ Conventions for every slice: one PR, opened as a draft, mergeable on its own aga
   | `quick-add.css`         | Quick add (U-13)                                                                                                                                                       |
   | `templates.css`         | Templates (ADR-0026)                                                                                                                                                   |
   | `terms.css`             | Corrections (P28-06); Terms (P28-05)                                                                                                                                   |
+  | `skills.css`            | Skills (#169)                                                                                                                                                          |
   | `archive.css`           | the Archive (U-22)                                                                                                                                                     |
   | `research.css`          | the Library and All highlights (#507)                                                                                                                                  |
   | `inbox.css`             | the Inbox (P30-01)                                                                                                                                                     |

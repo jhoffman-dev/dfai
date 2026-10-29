@@ -7,7 +7,7 @@
  * key pressed, with the latest handlers.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createVaultPath, type SidebarTreeRow, type VaultEntry } from '@dfai/domain';
 import { DndContext } from '@dnd-kit/core';
@@ -259,5 +259,50 @@ describe('VaultTree — a row’s menu from the keyboard', () => {
     });
     // The counter was on and saw the menu drawn, so the zeros above are not a counter that saw nothing.
     expect(renders['EntryMenu'] ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('VaultTree — what a scroll draws', () => {
+  const MANY = Array.from({ length: 300 }, (_, at) =>
+    noteRow(`Note ${String(at).padStart(3, '0')}`),
+  );
+
+  /** Scrolls the tree's own scroller to `top`, and lets the scroll settle as it would. */
+  function scrollTo(scroller: HTMLElement, top: number) {
+    scroller.scrollTop = top;
+    scroller.dispatchEvent(new Event('scroll'));
+    act(() => vi.advanceTimersByTime(500));
+  }
+
+  it('draws nothing again for a scroll that keeps the same rows drawn (#169)', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(tree({ rows: MANY }));
+      const scroller = container.querySelector<HTMLElement>('.tree');
+      expect(scroller).not.toBeNull();
+      const before = screen.getAllByRole('treeitem').length;
+      expect(before).toBeGreaterThan(0);
+      startCountingRenders();
+      // A few pixels: no row comes into view or leaves it, so none comes or goes.
+      scrollTo(scroller as HTMLElement, 10);
+      const { renders } = stopCountingRenders();
+      expect(renders['VaultTree'] ?? 0).toBe(0);
+      expect(screen.getAllByRole('treeitem')).toHaveLength(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('draws the rows a long scroll brings into view', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(tree({ rows: MANY }));
+      const scroller = container.querySelector<HTMLElement>('.tree') as HTMLElement;
+      expect(screen.queryByRole('treeitem', { name: 'Note 250' })).toBeNull();
+      scrollTo(scroller, 250 * 29);
+      expect(screen.getByRole('treeitem', { name: 'Note 250' })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

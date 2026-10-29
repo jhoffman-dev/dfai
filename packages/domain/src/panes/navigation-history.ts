@@ -23,6 +23,8 @@ export type NavigationPlace =
   | { readonly kind: 'activity' }
   | { readonly kind: 'templates' }
   | { readonly kind: 'terms' }
+  /** The Skills page (#169, ADR-0050). */
+  | { readonly kind: 'skills' }
   | { readonly kind: 'library' }
   | { readonly kind: 'highlights' }
   | { readonly kind: 'ask' }
@@ -81,6 +83,8 @@ export function samePlace(left: NavigationPlace, right: NavigationPlace): boolea
       return right.kind === 'templates';
     case 'terms':
       return right.kind === 'terms';
+    case 'skills':
+      return right.kind === 'skills';
     case 'library':
       return right.kind === 'library';
     case 'highlights':

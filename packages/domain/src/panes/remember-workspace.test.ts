@@ -40,6 +40,7 @@ const EVERY_PLACE: readonly NavigationPlace[] = [
   { kind: 'templates' },
   { kind: 'document', path: createVaultPath('Library/The Lantern Keepers.pdf') },
   { kind: 'terms' },
+  { kind: 'skills' },
   { kind: 'ask' },
 ];
 
