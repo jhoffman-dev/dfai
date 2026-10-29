@@ -37,6 +37,7 @@ import {
   type ActivityLog,
   type AutomationListing,
   type ModelProvider,
+  type UnavailableFoundBy,
   type AutomationPorts,
   type NoteChangeNews,
   type NoteChanges,
@@ -136,6 +137,12 @@ export interface RulePause {
    * says it — what the Mac that runs the automations says until it runs.
    */
   readonly unavailable?: string;
+  /**
+   * How that was found: by the status, which the tick asks again and lets
+   * the pause go when it says ready; or by a refused ask, which the status
+   * cannot see end, so the pause keeps its backoff (#637 attack).
+   */
+  readonly unavailableBy?: UnavailableFoundBy;
 }
 
 /** The vault's automations as last read, and which vault they were read from. */
@@ -519,14 +526,17 @@ function useClaudeRecheck({
   ask.current = provider;
 
   useEffect(() => {
-    const waiting = [...held.current].flatMap(([id, pause]) =>
-      pause.unavailable === undefined ? [] : [id],
-    );
-    if (waiting.length === 0) return;
+    const forClaude = [...held.current].filter(([, pause]) => pause.unavailable !== undefined);
+    if (forClaude.length === 0) return;
     if (scheduled === false) {
-      for (const id of waiting) clear(id);
+      for (const [id] of forClaude) clear(id);
       return;
     }
+    // Only what the status found can the status say is over.
+    const waiting = forClaude.flatMap(([id, pause]) =>
+      pause.unavailableBy === 'status' ? [id] : [],
+    );
+    if (waiting.length === 0) return;
     let cancelled = false;
     ask
       .current()
@@ -575,7 +585,7 @@ function pauseAfter(previous: RulePause | undefined, cause: unknown, now: LocalT
     reason: `Could not run (${errorMessage(cause)}); it is tried again at ${retryAt.slice(11, 16)}.`,
     failures,
     retryAt,
-    ...(unavailable && { unavailable: cause.entry.problem }),
+    ...(unavailable && { unavailable: cause.entry.problem, unavailableBy: cause.foundBy }),
   };
 }
 

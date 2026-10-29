@@ -47,13 +47,18 @@ function dayOf(value: QueryValue, today: string): string | null {
   return null;
 }
 
-/** The latest lower bound on `date` a condition all of whose parts must hold sets; null for none. */
-function lowerDateBound(where: Expression, today: string): string | null {
+/**
+ * The earliest day a condition takes every day from, up to today, when that
+ * can be proved from the condition alone: a lower bound on `date` (`>=` or
+ * `>` a day), or several joined by AND, each one of them. Null for anything
+ * else — OR, NOT, an upper bound, a condition on another field — whose days
+ * only the index can tell (#637 attack).
+ */
+function provenLowerBound(where: Expression, today: string): string | null {
   if (where.kind === 'and') {
-    const bounds = where.operands
-      .map((operand) => lowerDateBound(operand, today))
-      .filter((bound): bound is string => bound !== null);
-    return bounds.length === 0 ? null : bounds.reduce((a, b) => (a > b ? a : b));
+    const bounds = where.operands.map((operand) => provenLowerBound(operand, today));
+    if (bounds.some((bound) => bound === null)) return null;
+    return (bounds as string[]).reduce((a, b) => (a > b ? a : b));
   }
   if (where.kind !== 'compare' || where.field.via !== null || where.field.name.text !== 'date') {
     return null;
@@ -65,24 +70,30 @@ function lowerDateBound(where: Expression, today: string): string | null {
 }
 
 /**
- * The earliest meeting date (`YYYY-MM-DD`) a rule that writes summaries
- * still takes, on `today` as the rule's own clock reads it: its `which`'s
- * lower bound on `date` where one can be read off (`date >= @-7d`, `date >
- * 2026-10-20`, or one of several conditions joined by AND), never earlier
- * than {@link SUMMARY_PENDING_DAYS} back. A `which` that does not read, or
- * whose bound sits under OR or NOT, is held to the 14 days.
+ * The earliest meeting date (`YYYY-MM-DD`) from which a rule that writes
+ * summaries takes every meeting up to `today`, as the rule's own clock reads
+ * it, when that can be read off its `which` alone: no condition, a lower
+ * bound on `date` (`date >= @-7d`, `date > 2026-10-20`), or several such
+ * joined by AND — never earlier than {@link SUMMARY_PENDING_DAYS} back. For a
+ * `which` that does not read, or whose days only the index can tell (OR,
+ * NOT, an upper bound, another field), it is the day after `today`: nothing
+ * is pending on it until the index says what the rule takes
+ * ({@link PostProcessingLedger.taken}). A later day than `today` means none.
  */
 export function meetingReachFrom(which: string, today: string): string {
   const floor = addDays(today, -SUMMARY_PENDING_DAYS) ?? today;
+  const none = addDays(today, 1) ?? today;
   let where: Expression | null;
   try {
     where = parseAtlasQuery(which).where;
   } catch {
-    // A `which` that does not read never runs; the floor is all there is to go on.
-    return floor;
+    // A `which` that does not read never runs: no meeting waits on it.
+    return none;
   }
-  const bound = where === null ? null : lowerDateBound(where, today);
-  return bound !== null && bound > floor ? bound : floor;
+  if (where === null) return floor;
+  const bound = provenLowerBound(where, today);
+  if (bound === null) return none;
+  return bound > floor ? bound : floor;
 }
 
 /** What one meeting file holds that says whether its post-processing is still to come: kept small, a file per meeting. */
@@ -91,7 +102,7 @@ export interface PostProcessingFacts {
   readonly summary: SummaryWritten;
   /** Whether its transcript has turns for the step to read. */
   readonly hasTurns: boolean;
-  /** Its `date` when it is a `YYYY-MM-DD`; null otherwise. */
+  /** The day its `date` names, read by its first ten characters as the rules' queries read it; null for none. */
   readonly date: string | null;
   /** The words the step knows it by (`meeting:<provider>:<id>:transcript:<digest>`); null when it has none. */
   readonly key: string | null;
@@ -101,8 +112,19 @@ export interface PostProcessingFacts {
 export interface PostProcessingLedger {
   /** Whether an enabled rule writes meetings' summaries (`writesSummaries`). */
   readonly summarising: boolean;
-  /** The earliest meeting date (`YYYY-MM-DD`) it still takes. */
+  /**
+   * The earliest meeting date (`YYYY-MM-DD`) from which its `which` alone
+   * proves it takes every meeting ({@link meetingReachFrom}): what is judged
+   * by when the index has not said what it takes.
+   */
   readonly from: string;
+  /**
+   * What the rules' own queries take, as the index answered them among the
+   * meetings dated from `from` (the 14 days back) — a meeting counts as
+   * pending only if one takes it. Left out when the index was not asked, or
+   * could not answer.
+   */
+  readonly taken?: { readonly paths: ReadonlySet<string>; readonly from: string };
   /** The meetings it has handled or answered, by path. */
   readonly answered: ReadonlySet<string>;
   /** The words it holds an answer for whose writes are not done yet, by key. */
@@ -116,6 +138,18 @@ export const NO_POST_PROCESSING: PostProcessingLedger = {
   answered: new Set(),
   stored: new Set(),
 };
+
+/**
+ * The day a `date` property names, as the rules' queries compare it
+ * (`substr(date, 1, 10)`): a datetime, with a zone or not, by its day; a list
+ * by its first item. Null for a value that names no day.
+ */
+function dayOfDate(value: unknown): string | null {
+  const first = Array.isArray(value) ? (value as unknown[])[0] : value;
+  if (typeof first !== 'string') return null;
+  const day = first.slice(0, 10);
+  return PLAIN_DAY.test(day) ? day : null;
+}
 
 /** The facts {@link postProcessingPending} judges, from a meeting's body and frontmatter. */
 export function postProcessingFactsOf({
@@ -133,7 +167,7 @@ export function postProcessingFactsOf({
   return {
     summary: summaryWritten(body, typeof recorded === 'string' ? recorded : null),
     hasTurns: meetingTurnsOf(body).length > 0,
-    date: typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
+    date: dayOfDate(date),
     key,
   };
 }
@@ -185,9 +219,12 @@ export function postProcessingPending({
   ledger: PostProcessingLedger;
 }): boolean {
   if (facts.summary !== 'none') return false;
+  const { taken } = ledger;
+  // The index said what the rules take: only those wait, within the 14 days.
+  if (taken !== undefined && !taken.paths.has(path)) return false;
   const answered = answeredIn(ledger, { path, key: facts.key });
   return summaryStillComing(
     { path, importOutcome, hasTurns: facts.hasTurns, date: facts.date },
-    { summarising: ledger.summarising, from: ledger.from, answered },
+    { summarising: ledger.summarising, from: taken?.from ?? ledger.from, answered },
   );
 }

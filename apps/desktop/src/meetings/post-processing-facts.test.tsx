@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import {
   AFTER_A_MEETING_PROMPT,
@@ -7,13 +7,17 @@ import {
   type AutomationRule,
   type LogEntry,
 } from '@dfai/domain';
-import type { AutomationListing } from '@dfai/application';
+import type { AutomationListing, RuleQueryPorts } from '@dfai/application';
 import {
   createAutomationsStore,
   publishAutomations,
   type AutomationsController,
 } from '../automations/automations-store.ts';
-import { readPostProcessing, usePostProcessingNews } from './post-processing-facts.ts';
+import {
+  readPostProcessing,
+  rulesTakeFrom,
+  usePostProcessingNews,
+} from './post-processing-facts.ts';
 
 /** #182: what the meeting import reads of the automations runner, without the window drawing. */
 
@@ -96,5 +100,44 @@ describe('post-processing facts from the automations store (#182)', () => {
 
     expect(hook.result.current.mark).not.toBe(before);
     expect(hook.result.current.unavailable).toBe('Fix: claude auth login');
+  });
+});
+
+describe('rulesTakeFrom (#637 attack)', () => {
+  const asked = { paths: [createVaultPath('Meetings/A.md')], generation: 3 };
+
+  it('asks nothing while the index is not ready, nor before the rules are read', async () => {
+    const store = createAutomationsStore();
+    const take = vi.fn(async () => ({ paths: new Set<string>(), from: '' }));
+    const ports = {} as RuleQueryPorts;
+    const ready = { now: false };
+    const ask = rulesTakeFrom({ store, clock, ports, indexReady: () => ready.now, take });
+
+    publishAutomations(store, controller(listing([])));
+    expect(await ask(asked)).toBeNull();
+    ready.now = true;
+    publishAutomations(store, null);
+    expect(await ask(asked)).toBeNull();
+    expect(take).not.toHaveBeenCalled();
+  });
+
+  it('asks with the rules last read, on each rule’s day, once the index is ready', async () => {
+    const store = createAutomationsStore();
+    const answer = { paths: new Set(['Meetings/A.md']), from: '2026-09-24' };
+    const take = vi.fn<
+      (args: { todayOf: (rule: AutomationRule) => string }) => Promise<typeof answer>
+    >(async () => answer);
+    const ports = {} as RuleQueryPorts;
+    publishAutomations(store, controller(listing([])));
+    const ask = rulesTakeFrom({ store, clock, ports, indexReady: () => true, take });
+
+    expect(await ask(asked)).toBe(answer);
+    const [args] = take.mock.calls[0] as unknown as [
+      Parameters<typeof take>[0] & Record<string, unknown>,
+    ];
+    expect(args).toMatchObject({ ports, generation: 3, paths: asked.paths });
+    expect((args as { todayOf: (rule: AutomationRule) => string }).todayOf(RULE)).toBe(
+      '2026-10-08',
+    );
   });
 });

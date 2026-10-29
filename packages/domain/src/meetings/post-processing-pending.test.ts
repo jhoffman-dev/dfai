@@ -139,7 +139,7 @@ describe('meetingReachFrom: how far back a rule that writes summaries reaches (#
   it('is the rule’s own, narrower reach', () => {
     expect(meetingReachFrom('FROM meeting WHERE date >= @-7d', TODAY)).toBe('2026-10-22');
     expect(meetingReachFrom('FROM meeting WHERE date >= @weekAgo', TODAY)).toBe('2026-10-22');
-    expect(meetingReachFrom('FROM meeting WHERE kind = Standup AND date > 2026-10-20', TODAY)).toBe(
+    expect(meetingReachFrom('FROM meeting WHERE date >= @-14d AND date > 2026-10-20', TODAY)).toBe(
       '2026-10-21',
     );
   });
@@ -147,17 +147,48 @@ describe('meetingReachFrom: how far back a rule that writes summaries reaches (#
   it('never reaches past 14 days, whatever the rule takes', () => {
     expect(meetingReachFrom('FROM meeting WHERE date >= @-30d', TODAY)).toBe('2026-10-15');
     expect(meetingReachFrom('FROM meeting', TODAY)).toBe('2026-10-15');
-    expect(meetingReachFrom('FROM meeting WHERE date >= @-7d OR kind = Standup', TODAY)).toBe(
-      '2026-10-15',
+  });
+
+  it('proves no reach where only the index can tell the days: nothing is pending on it alone (#637 attack)', () => {
+    const none = '2026-10-30';
+    expect(meetingReachFrom('FROM meeting WHERE date >= @-7d OR kind = Standup', TODAY)).toBe(none);
+    expect(meetingReachFrom('FROM meeting WHERE date >= @-7d AND kind = Standup', TODAY)).toBe(
+      none,
     );
+    expect(meetingReachFrom('FROM meeting WHERE NOT (date < @-7d)', TODAY)).toBe(none);
+    expect(meetingReachFrom('FROM meeting WHERE date <= @-3d', TODAY)).toBe(none);
+    expect(meetingReachFrom('FROM meeting WHERE date = @-3d', TODAY)).toBe(none);
   });
 
-  it('reads no reach off an upper bound on the date', () => {
-    expect(meetingReachFrom('FROM meeting WHERE date <= @-3d', TODAY)).toBe('2026-10-15');
-    expect(meetingReachFrom('FROM meeting WHERE date = @-3d', TODAY)).toBe('2026-10-15');
+  it('takes no meeting for a `which` that does not read, which never runs', () => {
+    expect(meetingReachFrom('FROM meeting WHERE (', TODAY)).toBe('2026-10-30');
+  });
+});
+
+describe('postProcessingPending with what the index says the rules take (#637 attack)', () => {
+  const taken = (paths: string[]) => ({
+    ...LEDGER,
+    from: '2026-10-30',
+    taken: { paths: new Set(paths), from: '2026-10-15' },
   });
 
-  it('is the 14 days for a `which` that does not read', () => {
-    expect(meetingReachFrom('FROM meeting WHERE (', TODAY)).toBe('2026-10-15');
+  it('counts a meeting the rules’ own queries take, from the 14 days, whatever the `which` proves', () => {
+    expect(pending({ ledger: taken([PATH]) })).toBe(true);
+  });
+
+  it('counts none the queries do not take, nor one before the 14 days', () => {
+    expect(pending({ ledger: taken(['Meetings/Other.md']) })).toBe(false);
+    expect(pending({ ledger: taken([PATH]), facts: { ...FACTS, date: '2026-10-14' } })).toBe(false);
+  });
+});
+
+describe('postProcessingFactsOf reads the day as the query does (#637 attack)', () => {
+  it('reads a datetime by its day, and a list by its first item', () => {
+    const of = (date: unknown) =>
+      postProcessingFactsOf({ body: '', properties: { date }, key: null }).date;
+    expect(of('2026-10-28T10:00:00-04:00')).toBe('2026-10-28');
+    expect(of(['2026-10-27', '2026-10-28'])).toBe('2026-10-27');
+    expect(of('28/10/2026')).toBeNull();
+    expect(of(20261028)).toBeNull();
   });
 });

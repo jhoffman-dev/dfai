@@ -1,13 +1,20 @@
 import { useStore } from 'zustand';
 import {
   clockForRule,
+  type createRulesTakeCache,
   postProcessingLedgerOf,
   postProcessingMark,
   stepUnavailable,
   type AutomationListing,
+  type RuleQueryPorts,
   type RunClock,
 } from '@dfai/application';
-import { NO_POST_PROCESSING, type AutomationRule, type PostProcessingLedger } from '@dfai/domain';
+import {
+  NO_POST_PROCESSING,
+  type AutomationRule,
+  type PostProcessingLedger,
+  type VaultPath,
+} from '@dfai/domain';
 import type { AutomationsState, AutomationsStore } from '../automations/automations-store.ts';
 
 /** A listing's post-processing ledger, worked out once per listing read and per day. */
@@ -24,8 +31,7 @@ const worked = new WeakMap<
 function ledgerFor(state: AutomationsState, clock: RunClock) {
   const listing = state.automations?.listing ?? null;
   if (listing === null) return { ledger: NO_POST_PROCESSING, mark: '' };
-  const planZone = state.automations?.planZone ?? null;
-  const todayOf = (rule: AutomationRule) => clockForRule({ rule, clock, planZone }).today();
+  const todayOf = todayOfRules(state, clock);
   const today = listing.automations.map(({ rule }) => todayOf(rule)).join(',');
   const known = worked.get(listing);
   if (known?.today === today) return known;
@@ -33,6 +39,47 @@ function ledgerFor(state: AutomationsState, clock: RunClock) {
   const made = { today, ledger, mark: postProcessingMark(ledger) };
   worked.set(listing, made);
   return made;
+}
+
+/** The day each rule's clock says: the plan zone's for a rule that keeps it, else the Mac's. */
+function todayOfRules(state: AutomationsState, clock: RunClock) {
+  const planZone = state.automations?.planZone ?? null;
+  return (rule: AutomationRule) => clockForRule({ rule, clock, planZone }).today();
+}
+
+/**
+ * Which of the meetings asked about the runner's rules that write summaries
+ * take, by their own queries (#637 attack), asked of the index through
+ * `take` — the cache that asks again only when the rules, their days, the
+ * meetings or `generation` moved. Null while the index is not ready.
+ */
+export function rulesTakeFrom({
+  store,
+  clock,
+  ports,
+  indexReady,
+  take,
+}: {
+  store: AutomationsStore;
+  clock: RunClock;
+  ports: RuleQueryPorts;
+  indexReady: () => boolean;
+  take: ReturnType<typeof createRulesTakeCache>;
+}) {
+  return async (asked: {
+    readonly paths: readonly VaultPath[];
+    readonly generation: number;
+  }): Promise<PostProcessingLedger['taken'] | null> => {
+    const state = store.getState();
+    const listing = state.automations?.listing ?? null;
+    if (!indexReady() || listing === null) return null;
+    return take({
+      ports,
+      automations: listing.automations,
+      todayOf: todayOfRules(state, clock),
+      ...asked,
+    });
+  };
 }
 
 /**

@@ -85,6 +85,9 @@ function setUp({
     ledger: LEDGER,
     failing: null as string | null,
     gateCalls: 0,
+    /** What the index says the rules take; undefined leaves the watch without it. */
+    taken: undefined as PostProcessingLedger['taken'] | null | undefined,
+    takeAsked: [] as { paths: readonly string[]; generation: number }[],
   };
   const said: (MeetingsWaiting | null)[] = [];
   const watch: MeetingsWaitingWatch = {
@@ -96,6 +99,10 @@ function setUp({
     said: (_, waiting) => void said.push(waiting),
     postProcessing: () => state.ledger,
     stepFailing: () => (state.failing === null ? null : { problem: state.failing, mac: 'Studio' }),
+    rulesTake: async (_, asked) => {
+      state.takeAsked.push(asked);
+      return state.taken;
+    },
   };
   const importer = createMeetingImporter({
     ports: () => ports,
@@ -305,5 +312,61 @@ describe('the healthy Mac that runs the automations, at each index sync (attack 
     expect(host.reads.slice(reads).filter((read) => read !== PENDING)).toEqual([]);
     expect(host.listings - listings).toBe(0);
     expect(said.at(-1)).toBeNull();
+  });
+});
+
+describe('the count with what the index says the rules take (#637 attack)', () => {
+  it('counts a pending meeting only if the rules’ own queries take it', async () => {
+    const { importer, state } = setUp();
+    state.taken = { paths: new Set(), from: '2026-09-24' };
+
+    expect((await importer.catchUp(VAULT))?.waiting).toMatchObject({ count: 1 });
+    // Only the imported meetings that could be pending, answered or not, are asked about: never the unimported.
+    expect(state.takeAsked.map(({ paths }) => [...paths].sort())).toEqual([[ANSWERED, PENDING]]);
+
+    state.taken = { paths: new Set([PENDING]), from: '2026-09-24' };
+    expect((await importer.recount(VAULT))?.waiting).toMatchObject({ count: 2 });
+  });
+
+  it('judges by the ledger alone when the index cannot say', async () => {
+    const { importer, state } = setUp();
+    state.taken = null;
+
+    expect((await importer.catchUp(VAULT))?.waiting).toMatchObject({ count: 2 });
+  });
+
+  it('moves the generation it asks with only when a meeting file changed', async () => {
+    const { importer, state } = setUp();
+    state.taken = { paths: new Set([PENDING]), from: '2026-09-24' };
+    await importer.catchUp(VAULT);
+    await importer.recount(VAULT);
+    await importer.hear({
+      vault: VAULT,
+      changes: [
+        { kind: 'changed', path: createVaultPath('Inbox/Call Mara.md'), type: 'task', digest: 'a' },
+      ],
+    });
+    await importer.hear({
+      vault: VAULT,
+      changes: [{ kind: 'changed', path: createVaultPath(PENDING), type: 'meeting', digest: 'b' }],
+    });
+
+    const [first, second, third] = state.takeAsked.map(({ generation }) => generation);
+    expect(second).toBe(first);
+    expect(third).toBeGreaterThan(first!);
+    expect(state.takeAsked).toHaveLength(3);
+  });
+
+  it('asks the index nothing on a healthy named Mac, nor while no rule writes summaries', async () => {
+    const named = setUp({ named: null, importing: true });
+    named.state.taken = { paths: new Set(), from: '2026-09-24' };
+    await named.importer.catchUp(VAULT);
+    await named.importer.recount(VAULT);
+    expect(named.state.takeAsked).toEqual([]);
+
+    const other = setUp();
+    other.state.ledger = NO_POST_PROCESSING;
+    await other.importer.catchUp(VAULT);
+    expect(other.state.takeAsked).toEqual([]);
   });
 });

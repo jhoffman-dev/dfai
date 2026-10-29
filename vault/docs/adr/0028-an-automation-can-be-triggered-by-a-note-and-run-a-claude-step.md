@@ -828,9 +828,14 @@ declared meeting step.
   runner pauses the rule, holds the news it heard (up to 20 syncs' worth) and
   tries again when the pause ends. The wait doubles from a minute, as for any
   failing rule, but is **capped at 15 minutes** (`unavailableBackoffMinutes`)
-  rather than six hours. While such a pause stands, the runner also **asks the
-  provider's status at each minute's tick**. That is local and asks Claude
-  nothing. Once it is ready, the pause goes and the held news runs at once.
+  rather than six hours. The pause records how Claude was found out of
+  reach. If the **status** said not ready, the runner asks the status again
+  at each minute's tick. That is local and asks Claude nothing. Once it says
+  ready, the pause goes and the held news runs at once. If the status said
+  ready and a real **ask** was refused (a revoked key, an expired token), the
+  status cannot see that end. The pause then keeps its backoff and its
+  failure count, so Claude is asked at most once per backoff and the
+  warning is said once (amended after the PR #637 attack).
 - **A bad answer or a timeout settles.** An answer that does not parse, a
   deadline missed or an API failure (`ModelProviderError` `failed`) is logged
   as `failed` and settles, with no pause and no news held. Asking again would

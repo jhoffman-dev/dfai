@@ -533,7 +533,9 @@ async function askClaude({
     // Stopped by something other than the answer — a disk that refused — is raised once it is on record.
     if (cause.interruption !== undefined) throw cause.interruption;
     // Claude out of reach on a run news set off: raised, so the runner backs off and keeps the news.
-    if (cause.unavailable && trigger === 'note') throw new ClaudeUnavailableError(failed);
+    if (cause.unavailable !== null && trigger === 'note') {
+      throw new ClaudeUnavailableError(failed, cause.unavailable);
+    }
     return failed;
   }
 }

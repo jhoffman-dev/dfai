@@ -107,6 +107,7 @@ const news = (answered: string[] = [], unavailable: string | null = null): PostP
   unavailable,
   mac: 'Studio',
   ledger: () => ledger(answered),
+  take: async () => null,
 });
 
 interface Props {

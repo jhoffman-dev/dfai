@@ -6,11 +6,14 @@ export { changeProperties, UNSAVED_TYPING } from './apply-changes.ts';
 export type { PropertyChange, PropertyOutcome } from './apply-changes.ts';
 export { loadAutomations } from './load-automations.ts';
 export {
+  createRulesTakeCache,
+  meetingsTheRulesTake,
   postProcessingKeyOf,
   postProcessingLedgerOf,
   postProcessingMark,
   stepUnavailable,
 } from './post-processing-ledger.ts';
+export type { RulesTakeArgs } from './post-processing-ledger.ts';
 export type { AutomationListing, LoadedAutomation } from './load-automations.ts';
 export { dryRunAutomation, withPeriodNote } from './dry-run-automation.ts';
 export { NoteRunsCappedError, planRuleNow } from './note-runs.ts';
@@ -36,6 +39,7 @@ export {
   ClaudeUnavailableError,
   runClaudeStep,
 } from './claude-step.ts';
+export type { UnavailableFoundBy } from './claude-step.ts';
 export type { ClaudeStepOutcome, ClaudeStepPorts } from './claude-step.ts';
 export {
   applyMeetingCleanup,

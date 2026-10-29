@@ -1,14 +1,18 @@
 import {
+  addDays,
   answeredMeetingOf,
   digestOf,
   meetingReachFrom,
   MEETING_DIGEST_OUTPUT,
   proposalSchemaNamed,
+  SUMMARY_PENDING_DAYS,
   writesSummaries,
   type AutomationRule,
   type PostProcessingLedger,
+  type VaultPath,
 } from '@dfai/domain';
 import type { LoadedAutomation } from './load-automations.ts';
+import { matchedPaths, type RuleQueryPorts } from './plan-run.ts';
 
 /**
  * What the vault's rules that write summaries have finished with (#182,
@@ -94,4 +98,70 @@ export function stepUnavailable(
     if (unavailable !== undefined) return unavailable;
   }
   return null;
+}
+
+/** What finding the meetings the rules take needs, besides the index and the vault's types. */
+export interface RulesTakeArgs {
+  readonly ports: RuleQueryPorts;
+  readonly automations: readonly LoadedAutomation[];
+  /** The day each rule's clock says (`clockForRule`): its moving dates are pinned to it. */
+  readonly todayOf: (rule: AutomationRule) => string;
+  /** The meetings to ask about: those that could be pending, whatever the rules take. */
+  readonly paths: readonly VaultPath[];
+}
+
+/**
+ * Which of `paths` the rules that write summaries take (#637 attack): each
+ * rule's own query, its moving dates pinned to its day, asked of the index
+ * among those meetings alone, as a run set off by them would ask it — with
+ * the 14 days back from the earliest of their days. Null when the index
+ * could not answer (not ready, or a query refused), so the caller judges by
+ * what the `which` proves instead. One query a rule; none when no rule
+ * writes summaries or no meeting is asked about.
+ */
+export async function meetingsTheRulesTake({
+  ports,
+  automations,
+  todayOf,
+  paths,
+}: RulesTakeArgs): Promise<NonNullable<PostProcessingLedger['taken']> | null> {
+  const rules = automations.filter(({ rule }) => writesSummaries(rule)).map(({ rule }) => rule);
+  const days = rules.map((rule) => addDays(todayOf(rule), -SUMMARY_PENDING_DAYS) ?? todayOf(rule));
+  const from = days.length === 0 ? '' : days.reduce((a, b) => (a < b ? a : b));
+  if (rules.length === 0 || paths.length === 0) return { paths: new Set(), from };
+  const taken = new Set<string>();
+  try {
+    for (const rule of rules) {
+      const matched = await matchedPaths({ ports, rule, today: todayOf(rule), among: paths });
+      for (const path of matched) taken.add(path);
+    }
+  } catch {
+    // Safe to go without: the count then judges by what each rule's `which` proves on its own.
+    return null;
+  }
+  return { paths: taken, from };
+}
+
+/**
+ * {@link meetingsTheRulesTake}, asked again only when what it depends on
+ * moved: the rules' texts and days, the meetings asked about, and the
+ * caller's `generation` — moved whenever a meeting file changed, since a
+ * property the query reads may have.
+ */
+export function createRulesTakeCache() {
+  let last: { key: string; answer: NonNullable<PostProcessingLedger['taken']> | null } | null =
+    null;
+  return async (
+    args: RulesTakeArgs & { readonly generation: number },
+  ): Promise<NonNullable<PostProcessingLedger['taken']> | null> => {
+    const rules = args.automations
+      .filter(({ rule }) => writesSummaries(rule))
+      .map(({ rule }) => `${rule.id}\u0000${rule.which}\u0000${args.todayOf(rule)}`);
+    const key = [args.generation, ...rules, '', ...args.paths].join('\u0001');
+    if (last?.key === key) return last.answer;
+    const answer = await meetingsTheRulesTake(args);
+    // An answer the index could not give is asked again next time.
+    if (answer !== null) last = { key, answer };
+    return answer;
+  };
 }

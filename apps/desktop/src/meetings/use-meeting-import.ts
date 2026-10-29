@@ -4,6 +4,7 @@ import {
   type MeetingsWaiting,
   type PostProcessingLedger,
   type PullStanding,
+  type VaultPath,
 } from '@dfai/domain';
 import {
   createMeetingImporter,
@@ -160,6 +161,7 @@ export function useMeetingImport({
         countGate: (vault) => latest.current.countGate(vault),
         said: (vault, waiting) => latest.current.onWaiting(vault, waiting),
         postProcessing: () => latest.current.postProcessing.ledger(),
+        rulesTake: (_vault, asked) => latest.current.postProcessing.take(asked),
         stepFailing: () => {
           const { unavailable, mac } = latest.current.postProcessing;
           return unavailable === null ? null : { problem: unavailable, mac };
@@ -220,6 +222,11 @@ export interface PostProcessingNews {
   readonly mac: string | null;
   /** What they have finished with, read when a count is judged. */
   readonly ledger: () => PostProcessingLedger;
+  /** Which of these meetings their own queries take, asked of the index; null when it cannot say. */
+  readonly take: (asked: {
+    readonly paths: readonly VaultPath[];
+    readonly generation: number;
+  }) => Promise<PostProcessingLedger['taken'] | null>;
 }
 
 const NO_NEWS: PostProcessingNews = {
@@ -227,6 +234,7 @@ const NO_NEWS: PostProcessingNews = {
   unavailable: null,
   mac: null,
   ledger: () => NO_POST_PROCESSING,
+  take: async () => null,
 };
 
 /**

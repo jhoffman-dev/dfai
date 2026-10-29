@@ -1,6 +1,7 @@
 import {
   createVaultPath,
   failingWarningDue,
+  isConflictCopyPath,
   isMeetingInboxPath,
   meetingsWaitingReport,
   NO_POST_PROCESSING,
@@ -46,6 +47,16 @@ export interface MeetingsWaitingWatch {
    * Claude, and the Mac's name, while it keeps failing so; null while it does
    * not. Left out, it never says so.
    */
+  /**
+   * Which of these meetings the rules that write summaries take, by their own
+   * queries (#637 attack); `generation` moves whenever a meeting file has
+   * changed. Null when the index cannot say. Left out, the count judges by
+   * what each rule's `which` proves on its own.
+   */
+  readonly rulesTake?: (
+    vault: string,
+    asked: { readonly paths: readonly VaultPath[]; readonly generation: number },
+  ) => Promise<PostProcessingLedger['taken'] | null>;
   readonly stepFailing?: (
     vault: string,
   ) => { readonly problem: string; readonly mac: string | null } | null;
@@ -117,6 +128,25 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
   // What the failing line was last judged on, for each vault: the failure and the rules' ledger.
   const judgedHere = new Map<string, string>();
   const ledgerOf = (vault: string) => watch.postProcessing?.(vault) ?? NO_POST_PROCESSING;
+  // Moves whenever a meeting file changed, as news or this Mac's import says: what the rules take may have.
+  let generation = 0;
+
+  /**
+   * The ledger with what the rules take among the meetings that could be
+   * pending, asked of the index once a judgement — and only when a rule
+   * writes summaries and some meeting could wait on it.
+   */
+  const ledgerWithTaken = async (
+    vault: string,
+    files: readonly WaitingMeetingFile[],
+  ): Promise<PostProcessingLedger> => {
+    const ledger = ledgerOf(vault);
+    if (!ledger.summarising || watch.rulesTake === undefined) return ledger;
+    const paths = files.filter(couldBePending).map(({ path }) => createVaultPath(path));
+    if (paths.length === 0) return ledger;
+    const taken = await watch.rulesTake(vault, { paths, generation });
+    return taken === null || taken === undefined ? ledger : { ...ledger, taken };
+  };
 
   const say = (vault: string, waiting: MeetingsWaiting | null) => {
     said = { vault, waiting };
@@ -156,17 +186,15 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
   ): Promise<MeetingsWaiting | null> => {
     const { files } = await knownFor(vault, run);
     await readUnread(files, run);
+    const read = [...files.values()].filter(isRead);
+    const ledger = await ledgerWithTaken(vault, read);
     // The pull moved, the gates shut, or another Mac is no longer the one named, while the files were read.
     const after = await watch.countGate(vault);
     if (!after.open || after.standing !== standing) return last(vault);
     const named = watch.namedElsewhere(vault);
     if (named === null) return say(vault, null);
     const mac = waitingMacLabel(named.name);
-    const tally = waitingMeetingTally(
-      [...files.values()].filter(isRead),
-      standing,
-      ledgerOf(vault),
-    );
+    const tally = waitingMeetingTally(read, standing, ledger);
     warnIfNews(vault, run, { ...tally, mac });
     return say(vault, { kind: 'counted', mac, count: tally.count });
   };
@@ -180,10 +208,11 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
     if (!gate.open) return gate.why === 'pulling' ? 'pulling' : null;
     const { files } = await knownFor(vault, run);
     await readUnread(files, run);
+    const read = [...files.values()].filter(isRead);
+    const ledger = await ledgerWithTaken(vault, read);
     const after = await watch.countGate(vault);
     if (!after.open || after.standing !== gate.standing) return 'pulling';
-    return waitingMeetingTally([...files.values()].filter(isRead), gate.standing, ledgerOf(vault))
-      .pending;
+    return waitingMeetingTally(read, gate.standing, ledger).pending;
   };
 
   const judgeHere = async (vault: string, run: WaitingCounterRun, fresh: boolean) => {
@@ -224,11 +253,13 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
   return {
     heard: (vault, changes) => {
       const touches = touchesWaitingMeetings(changes);
+      if (touches) generation += 1;
       if (touches && known?.vault === vault) forget(known.files, changes);
       return touches;
     },
     last,
     wrote: (vault, paths) => {
+      if (paths.length > 0) generation += 1;
       if (known?.vault !== vault) return;
       for (const path of paths) known.files.set(path, null);
     },
@@ -250,6 +281,19 @@ export function createWaitingCounter(watch: MeetingsWaitingWatch): WaitingCounte
 type CountedNow = { readonly count: number; readonly deferred: number; readonly mac: string };
 
 const isRead = (file: WaitingMeetingFile | null): file is WaitingMeetingFile => file !== null;
+
+/**
+ * Whether a meeting could wait on a rule that writes summaries, whatever its
+ * query takes: let in, with turns, dated, and no summary block. Only these
+ * are asked of the index.
+ */
+const couldBePending = (file: WaitingMeetingFile): boolean =>
+  file.read !== null &&
+  !isConflictCopyPath(file.path) &&
+  file.read.importOutcome === 'imported' &&
+  file.read.postProcessing.summary === 'none' &&
+  file.read.postProcessing.hasTurns &&
+  file.read.postProcessing.date !== null;
 
 /** Marks the meeting files news names to be read again, and forgets the ones removed. */
 function forget(files: Known['files'], changes: readonly NoteChange[]): void {

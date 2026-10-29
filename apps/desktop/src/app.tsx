@@ -2239,6 +2239,7 @@ function AppWindow({
         <MeetingImportRunner
           sync={syncStore}
           automations={automationsStore}
+          rulePorts={automationPorts}
           waiting={meetingsWaiting}
           changes={noteChanges}
           ports={archivePorts}
