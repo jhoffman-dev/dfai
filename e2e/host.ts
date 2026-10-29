@@ -1177,6 +1177,29 @@ export async function installHost(
         // that it went nowhere else. Never a permanent delete.
         const { rename, mkdir: makeDirectory } = await import('node:fs/promises');
         const entry = containedPath(writeRoot(args), path);
+        // As `vault_entries.rs` does (#235): nothing moves unless each file named is as read.
+        const { unchanged = [] } = args as {
+          unchanged?: { path: string; modified: number; digest: string }[];
+        };
+        for (const file of unchanged) {
+          const { readFile, stat: statFile } = await import('node:fs/promises');
+          const { createHash } = await import('node:crypto');
+          const named = containedPath(writeRoot(args), file.path);
+          const info = await statFile(named).catch(() => null);
+          const digest =
+            info === null
+              ? null
+              : createHash('sha256')
+                  .update(await readFile(named))
+                  .digest('hex');
+          if (
+            info === null ||
+            Math.floor(info.mtimeMs) !== file.modified ||
+            digest !== file.digest
+          ) {
+            throw 'a file changed on disk since it was read, so nothing was moved to the Trash';
+          }
+        }
         // Removed with the test's folders, whichever test bins first (#486).
         removeWithTempFolders(trashRoot);
         await makeDirectory(trashRoot, { recursive: true });

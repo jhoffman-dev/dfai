@@ -130,6 +130,7 @@ export {
   addablePropertyKeys,
   declaredPropertyKeys,
   keysRecorded,
+  keysRecordedForType,
   NO_SHIPPED_PROPERTIES_RECORD,
   parseShippedPropertiesRecord,
   PROPERTIES_NOT_A_MAP,
