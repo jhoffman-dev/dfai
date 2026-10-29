@@ -210,6 +210,26 @@ characters of what was sent, and nothing is written.
 - A second provider is v2's, or a new value of `provider` with its own
   reading of `text`; v1 files keep reading as they are.
 
+## Amendment, 2026-10-28: how #104 sends and falls back
+
+- **n8n sends to `POST /v1/captures` first** and commits the file to
+  pkm-space only when DFAI does not take it: no answer, or any status but
+  `200`/`201`. The commit is the app's own mapper, compiled into the Code
+  node (`mapCaptureScript`), on `America/Los_Angeles` with no Person links.
+- **The commit's "is it there?" is the folder listing of `Inbox/Captures/`**:
+  a file whose name ends in the key's hash, numbered or not, in any case, is
+  taken as the message's, and nothing is written. It does not read the file
+  to compare `external_id`s: a 64-bit clash inside one folder is not worth a
+  fetch per candidate, and the reply names the path it found, so a wrong
+  skip is never silent.
+- **A dropped file is still not marked a duplicate of one already filed**
+  (Consequences, above). The commit runs only when DFAI is not there, and
+  only a message saved again after its note was filed out of the Inbox
+  lands twice; the README lists it as a known gap.
+- **James is told in Slack by the app's bot**, a DM (`chat.postMessage` to
+  his member id): it works in every conversation, the bot a member of none,
+  where an ephemeral reply needs the bot in the channel.
+
 ## Amendment, 2026-10-28: a pasted link, and one shaping of Slack's answers (#105)
 
 A Slack message link pasted into a note or quick capture is read by the
@@ -223,16 +243,15 @@ kept. What Slack's answers mean — `ok: false` and its code, a 429 and its
 `Retry-After` — is the domain's (`slackAnswerFailure`), and so is what the
 person is told.
 
-The answers become a capture/v1 payload in the domain:
+The answers become a capture/v1 payload in the domain, in one copy:
 `slackCapturePayload`, `usersToLookUp` and the fitting to the contract's
-limits, written for n8n in PR #623, are copied into
+limits, written for n8n in PR #623, live in
 `packages/domain/src/capture/slack/`, beside the mapping folder and
-importing only from it, and a pasted link shapes its message with them,
-`chat.getPermalink`'s link included. The payload goes through
-`receiveCapture` like `POST /v1/captures`'s: one code path, one dedupe.
-The merge order is #615, #617, #623, #631: once #631 lands after #104, n8n
-imports these from the domain and its own copy in `tools/n8n/` is deleted;
-until then, #104 carries a copy, and a fix to one must be made to both.
-The two read one person differently in a thread of more than 100 people
-only if their lookups differ; a pasted link looks up its reader first, as
-n8n looks up whoever asked, so both spend the same 100 lookups.
+importing only from it. A pasted link shapes its message with them,
+`chat.getPermalink`'s link included, and n8n's Code node imports the same
+modules, bundled in as the mapper is (PR #631 deleted #104's copies in
+`tools/n8n/`), so a fix reaches both senders at once. The payload goes
+through `receiveCapture` like `POST /v1/captures`'s: one code path, one
+dedupe. A pasted link looks up its reader first, as n8n looks up whoever
+asked, so in a thread of more than 100 people both spend the same 100
+lookups and name the same people.

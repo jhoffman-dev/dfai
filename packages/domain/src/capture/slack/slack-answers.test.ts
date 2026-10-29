@@ -150,6 +150,21 @@ describe('a thread too long for a capture', () => {
     expect(keptOffsets).toEqual([...keptOffsets].sort((a, b) => a - b));
   });
 
+  // Moved with the fitting from tools/n8n/slack-fit.test.ts (PR #623).
+  it('leaves out the older of two replies equally far, on a tie', () => {
+    const before = reply(-60, SIZE);
+    const after = reply(60, SIZE);
+    const filler = Array.from({ length: fits - 1 }, (_, at) => reply(1 + at, SIZE));
+    const kept = fittedThread([before, ...filler, after], saved);
+    expect(kept).toContain(after);
+    expect(kept).not.toContain(before);
+  });
+
+  it('keeps every reply of a thread within the limits, as it came', () => {
+    const replies = [reply(60, 10), reply(120, 10)];
+    expect(fittedThread(replies, saved)).toEqual(replies);
+  });
+
   it('holds at most the contract’s number of replies, and none over Slack’s length', () => {
     const many = Array.from({ length: MAX_REPLIES + 5 }, (_, at) => reply(at + 1, 1));
     expect(fittedThread(many, saved)).toHaveLength(MAX_REPLIES);
