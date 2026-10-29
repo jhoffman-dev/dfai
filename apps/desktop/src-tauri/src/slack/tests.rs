@@ -357,3 +357,327 @@ fn a_vault_switched_mid_call_is_said_as_slack_not_asked() {
         "no vault is open"
     );
 }
+
+/// Attack on PR #631 (#105): a scripted Slack on loopback that answers raw
+/// bytes, with pauses, so hostile answers can be sent exactly as written.
+mod attack {
+    use std::collections::BTreeMap;
+    use std::net::Ipv4Addr;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    use base64::Engine;
+    use reqwest::Url;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    use super::super::{FailureKind, Session, SlackAnswer, SlackFailure};
+    use super::TOKEN;
+    use crate::secrets::MemoryStore;
+
+    const STRUCK: &str = "[secret slack-user-token removed]";
+
+    #[derive(Clone)]
+    enum Step {
+        Send(Vec<u8>),
+        Wait(Duration),
+        Close,
+    }
+
+    struct Scripted {
+        origin: Url,
+        heads: Arc<Mutex<Vec<String>>>,
+    }
+
+    /// Answers every connection with `steps`, then holds it open.
+    async fn scripted(steps: Vec<Step>) -> Scripted {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let heads = Arc::new(Mutex::new(Vec::new()));
+        let recorded = heads.clone();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let (steps, recorded) = (steps.clone(), recorded.clone());
+                tokio::spawn(async move {
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        if stream.read(&mut byte).await.unwrap_or(0) == 0 {
+                            return;
+                        }
+                        head.push(byte[0]);
+                    }
+                    recorded
+                        .lock()
+                        .unwrap()
+                        .push(String::from_utf8_lossy(&head).into_owned());
+                    for step in steps {
+                        match step {
+                            Step::Send(bytes) => {
+                                if stream.write_all(&bytes).await.is_err() {
+                                    return;
+                                }
+                            }
+                            Step::Wait(time) => tokio::time::sleep(time).await,
+                            Step::Close => return,
+                        }
+                    }
+                    std::future::pending::<()>().await;
+                });
+            }
+        });
+        Scripted {
+            origin: Url::parse(&format!("http://127.0.0.1:{port}")).unwrap(),
+            heads,
+        }
+    }
+
+    fn answer_with(headers: &str, body: &[u8]) -> Vec<Step> {
+        let mut bytes = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n{headers}\r\n",
+            body.len()
+        )
+        .into_bytes();
+        bytes.extend_from_slice(body);
+        vec![Step::Send(bytes)]
+    }
+
+    async fn ask(
+        server: &Scripted,
+        method: &str,
+        query: &BTreeMap<String, String>,
+    ) -> Result<SlackAnswer, SlackFailure> {
+        let store = Arc::new(MemoryStore::default());
+        let session = Session {
+            origin: &server.origin,
+            store,
+            scope: "v1",
+        };
+        session.connect(TOKEN).await.unwrap();
+        session.request(method, query).await
+    }
+
+    /// A small seeded generator: the same seed, the same forms.
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            self.0 >> 33
+        }
+        fn coin(&mut self) -> bool {
+            self.next() % 2 == 0
+        }
+    }
+
+    fn percent(c: char, upper: bool) -> String {
+        let hex = format!("%{:02X}", c as u32);
+        if upper {
+            hex
+        } else {
+            hex.to_lowercase()
+        }
+    }
+
+    /// One form the redaction says it strikes: per character plain, percent
+    /// (either case, once or twice), or `\u`; or the whole as base64 after a
+    /// prefix of any length, in any of the four alphabets; or JSON inside JSON.
+    fn guarded_form(rng: &mut Lcg, token: &str) -> String {
+        match rng.next() % 4 {
+            0 => token
+                .chars()
+                .map(|c| match rng.next() % 4 {
+                    0 => c.to_string(),
+                    1 => percent(c, rng.coin()),
+                    2 => percent(c, rng.coin()).replacen('%', "%25", 1),
+                    _ => {
+                        let hex = format!("{:04x}", c as u32);
+                        let hex = if rng.coin() { hex.to_uppercase() } else { hex };
+                        format!("\\u{hex}")
+                    }
+                })
+                .collect(),
+            1 => {
+                let prefix: String = "Bearer xyz"
+                    .chars()
+                    .take((rng.next() % 8) as usize)
+                    .collect();
+                let plain = format!("{prefix}{token}");
+                let engines = [STANDARD, URL_SAFE, STANDARD_NO_PAD, URL_SAFE_NO_PAD];
+                engines[(rng.next() % 4) as usize].encode(plain)
+            }
+            2 => {
+                let inner = serde_json::to_string(&serde_json::json!({ "auth": token })).unwrap();
+                let once = serde_json::to_string(&inner).unwrap();
+                once[1..once.len() - 1].to_string()
+            }
+            _ => token.replace('-', "\\u002d"),
+        }
+    }
+
+    /// #105's acceptance, over 64 seeded encodings of the token: no answer
+    /// handed back holds it in any form the redaction claims to strike.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn no_seeded_encoding_of_the_token_reaches_the_webview() {
+        let mut rng = Lcg(0x5EED_0105);
+        for round in 0..64 {
+            let form = guarded_form(&mut rng, TOKEN);
+            let body = format!(r#"{{"ok":true,"echo":"{form}"}}"#);
+            let server = scripted(answer_with("", body.as_bytes())).await;
+            let answer = ask(&server, "auth.test", &BTreeMap::new()).await.unwrap();
+            assert!(
+                answer.body.contains(STRUCK) && !answer.body.contains(&form),
+                "round {round}: {form} was not struck: {}",
+                answer.body
+            );
+        }
+    }
+
+    /// The answer handed back for a body echoing `form`, which is the token.
+    async fn handed_back_for(form: &str) -> String {
+        let body = format!(r#"{{"ok":true,"echo":"{form}"}}"#);
+        let server = scripted(answer_with("", body.as_bytes())).await;
+        ask(&server, "auth.test", &BTreeMap::new())
+            .await
+            .unwrap()
+            .body
+    }
+
+    /// Outside the forms the redaction lists: HTML numeric entities.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_token_as_html_entities_is_struck() {
+        let form: String = TOKEN.chars().map(|c| format!("&#{};", c as u32)).collect();
+        let body = handed_back_for(&form).await;
+        assert!(!body.contains(&form), "the token went back as {body}");
+    }
+
+    /// Outside the forms the redaction lists: base64 wrapped into lines.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_token_as_line_wrapped_base64_is_struck() {
+        let encoded = STANDARD.encode(format!(r#"{{"authorization":"Bearer {TOKEN}"}}"#));
+        let form = encoded
+            .as_bytes()
+            .chunks(20)
+            .map(|line| std::str::from_utf8(line).unwrap())
+            .collect::<Vec<_>>()
+            .join("\\r\\n");
+        let body = handed_back_for(&form).await;
+        assert!(!body.contains(&form), "the token went back as {body}");
+    }
+
+    /// Outside the forms the redaction lists: the token upper-cased.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_token_upper_cased_is_struck() {
+        let form = TOKEN.to_uppercase();
+        let body = handed_back_for(&form).await;
+        assert!(!body.contains(&form), "the token went back as {body}");
+    }
+
+    /// The request is GET, to the method's path, with exactly the host's
+    /// headers: no query value, however written, adds or splits a header.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn no_query_value_adds_a_header_or_leaves_the_query() {
+        let server = scripted(answer_with("", br#"{"ok":true}"#)).await;
+        let hostile = [
+            "a&b=c#d",
+            "x\r\nX-Injected: 1",
+            "%00\u{0}",
+            "ünï\u{1F980}",
+            &"L".repeat(8_000),
+        ];
+        let query: BTreeMap<String, String> = hostile
+            .iter()
+            .enumerate()
+            .map(|(at, value)| (format!("k{at}\r\nX-Name: 1"), value.to_string()))
+            .collect();
+        ask(&server, "users.info", &query).await.unwrap();
+        let head = server.heads.lock().unwrap()[0].clone();
+        let mut lines = head.split("\r\n").filter(|line| !line.is_empty());
+        let request_line = lines.next().unwrap();
+        assert!(
+            request_line.starts_with("GET /api/users.info?"),
+            "{request_line}"
+        );
+        assert!(request_line.ends_with(" HTTP/1.1"), "{request_line}");
+        let names: Vec<String> = lines
+            .map(|line| line.split(':').next().unwrap().to_ascii_lowercase())
+            .collect();
+        assert_eq!(
+            names,
+            ["authorization", "accept", "user-agent", "host"],
+            "{head}"
+        );
+        let target = request_line
+            .trim_start_matches("GET ")
+            .trim_end_matches(" HTTP/1.1");
+        let sent = Url::parse(&format!("http://h{target}")).unwrap();
+        let pairs: BTreeMap<String, String> = sent.query_pairs().into_owned().collect();
+        assert_eq!(pairs, query);
+        assert_eq!(sent.fragment(), None);
+    }
+
+    /// A Slack that sends its headers and then one byte every few seconds,
+    /// forever, is cut off by the request's time limit.
+    #[tokio::test(start_paused = true)]
+    async fn an_answer_dripped_a_byte_at_a_time_is_cut_off_by_the_time_limit() {
+        let mut steps = vec![Step::Send(
+            b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n".to_vec(),
+        )];
+        for _ in 0..1_000 {
+            steps.push(Step::Send(b"1\r\n \r\n".to_vec()));
+            steps.push(Step::Wait(Duration::from_secs(5)));
+        }
+        // Ends the answer well past 30 s, so a limit that never fires fails, not hangs.
+        steps.push(Step::Send(b"0\r\n\r\n".to_vec()));
+        steps.push(Step::Close);
+        let server = scripted(steps).await;
+        let failure = ask(&server, "auth.test", &BTreeMap::new())
+            .await
+            .unwrap_err();
+        assert_eq!(failure.kind, FailureKind::Timeout, "{}", failure.message);
+    }
+
+    /// A chunked answer with no length is held to the same cap as one that
+    /// says its length.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_chunked_answer_past_the_cap_is_refused() {
+        let chunk = vec![b' '; 1024 * 1024];
+        let mut framed = format!("{:x}\r\n", chunk.len()).into_bytes();
+        framed.extend_from_slice(&chunk);
+        framed.extend_from_slice(b"\r\n");
+        let mut steps = vec![Step::Send(
+            b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n".to_vec(),
+        )];
+        steps.extend(std::iter::repeat_n(Step::Send(framed), 17));
+        let server = scripted(steps).await;
+        let failure = ask(&server, "auth.test", &BTreeMap::new())
+            .await
+            .unwrap_err();
+        assert_eq!(failure.kind, FailureKind::TooLarge, "{}", failure.message);
+    }
+
+    /// Only a whole number of seconds is passed back as Slack's wait.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_retry_after_that_is_not_whole_seconds_is_none() {
+        for (sent, read) in [
+            ("30", Some(30)),
+            (" 7 ", Some(7)),
+            ("30.5", None),
+            ("-1", None),
+            ("Wed, 21 Oct 2026 07:28:00 GMT", None),
+            ("18446744073709551616", None),
+            ("", None),
+        ] {
+            let server = scripted(answer_with(
+                &format!("retry-after: {sent}\r\n"),
+                br#"{"ok":false,"error":"ratelimited"}"#,
+            ))
+            .await;
+            let answer = ask(&server, "auth.test", &BTreeMap::new()).await.unwrap();
+            assert_eq!(answer.retry_after, read, "Retry-After {sent:?}");
+        }
+    }
+}
