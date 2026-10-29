@@ -126,10 +126,23 @@ export const bulletList = (items: readonly (readonly MdPhrasing[])[]): MdList =>
  * codes: those that would end it (`(`, `)`, `<`, `>`, a quote), the
  * backslash, `[`, `]` and `!`, which the index reads as a wiki link or an
  * embed even inside an address, a space or a character beyond ASCII, and an
- * `&` that starts an entity, which markdown would read as its character.
+ * `&` that starts an entity, which markdown would read as its character. An
+ * IPv6 host's brackets are kept (third attack on PR #615): one `[` is no
+ * wiki link, and encoded the address opens nothing.
  */
 export function encodeAddress(url: string): string {
-  return url.replace(/[()\\[\]!<>"'`\s]|&(?=#?[A-Za-z0-9]+;)|[^ -~]/gu, (character) =>
+  const ipv6 = IPV6_HOST.exec(url);
+  if (ipv6 === null) return encodeCharacters(url);
+  // The brackets of an IPv6 host are the address's own: encoded, no browser opens it.
+  const [, scheme = '', userinfo = '', host = '', rest = ''] = ipv6;
+  return `${scheme}${encodeCharacters(userinfo)}${host}${encodeCharacters(rest)}`;
+}
+
+/** A web address whose host is an IPv6 literal: its scheme, user info, `[host]:port`, and the rest. */
+const IPV6_HOST = /^(https?:\/\/)([^/?#@]*@)?(\[[0-9A-Fa-f:.]+\](?::\d*)?)((?:[/?#].*)?)$/i;
+
+function encodeCharacters(text: string): string {
+  return text.replace(/[()\\[\]!<>"'`\s]|&(?=#?[A-Za-z0-9]+;)|[^ -~]/gu, (character) =>
     encodeURIComponent(character).replace(/[!'()]/g, percent),
   );
 }

@@ -89,7 +89,9 @@ the second waits for the first and then finds its file by the key's name
 (second attack on PR #615). Two Macs capturing one message at the same
 moment still meet only in that folder check, once a sync has brought one's
 file to the other; until then each may write its note, and the sync keeps
-both (a conflict copy where the two bytes differ).
+both (a conflict copy where the two bytes differ). The lock has no time limit: a write
+that never answers holds that message's lock — only that message's — for
+the life of the app's process, and a later capture of it waits behind it.
 
 **It lands in the Inbox folder, as a task at `status: inbox` or a plain note.**
 The Inbox is where captures wait (P30-01), and its folder is what puts a note
@@ -151,7 +153,22 @@ editor reads a link like that as an address typed bare, writes it back bare,
 and GFM then runs it on into the words after it; a titled link it keeps.
 Every link's address is percent-encoded where it holds `[`, `]`, `!`, `<`,
 `>`, a quote, a parenthesis, a backslash, a space, a character beyond ASCII,
-or an `&` that starts an entity.
+or an `&` that starts an entity. An IPv6 host's brackets are kept, so a browser opens it: one `[` is no
+wiki link (third attack on PR #615).
+
+**Bold or italic side by side never runs into an address.** The editor
+writes the second of two neighbouring marks with `_` (A21-03), and `_` is a
+character of a mail address's name: `**Mara**__Quill__@example.com` was a
+mail link to GFM, the bold gone — in a capture and in the editor's own save
+(third attack on PR #615). A run of neighbours that would end in a `_` with
+an `@` and a dotted domain after it now starts with `_` instead, so it ends
+in a `*`. The markers are worked out once per parent, in one pass, where
+the old rule asked about every earlier neighbour for each node: cubic, and
+recursive, on a message of ten thousand marks. The handler is the editor's
+too; every other note it writes is byte for byte what main wrote, held by
+`editor-writes.main-parity.test.ts` against a frozen fixture of main's
+writes (the round-trip corpus, 3,000 seeded documents, and the repo's
+markdown).
 
 **Why hand-written escaping failed, three times** (review and attacks on PR
 #615). The first build escaped special characters in the words and broke a
