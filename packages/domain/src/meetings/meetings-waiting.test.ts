@@ -7,6 +7,7 @@ import {
   waitingMacLabel,
   touchesWaitingMeetings,
   waitingMeetingTally,
+  waitingWarningDue,
   waitsForImport,
   type CountableStanding,
   type WaitingMeetingFile,
@@ -214,23 +215,41 @@ describe('meetingsWaitingLine', () => {
 
 describe('meetingsWaitingReport', () => {
   it('is a meeting warning naming the count and the Mac', () => {
-    expect(meetingsWaitingReport({ count: 3, mac: 'Studio', lastCount: null })).toEqual({
+    expect(meetingsWaitingReport({ count: 3, mac: 'Studio' })).toEqual({
       level: 'warning',
       kind: 'meeting',
       message: '3 meetings are waiting for Studio to process them.',
       subject: null,
     });
-    expect(meetingsWaitingReport({ count: 1, mac: 'Studio', lastCount: 4 })?.message).toBe(
+    expect(meetingsWaitingReport({ count: 1, mac: 'Studio' })?.message).toBe(
       '1 meeting is waiting for Studio to process it.',
     );
   });
 
   it('is nothing when none waits', () => {
-    expect(meetingsWaitingReport({ count: 0, mac: 'Studio', lastCount: 3 })).toBeNull();
+    expect(meetingsWaitingReport({ count: 0, mac: 'Studio' })).toBeNull();
+  });
+});
+
+describe('waitingWarningDue', () => {
+  const warned = (...counts: number[]) => new Set(counts);
+
+  it('is due for a count not yet warned of in the session', () => {
+    expect(waitingWarningDue({ count: 3, deferred: 0, warned: warned() })).toBe(true);
+    expect(waitingWarningDue({ count: 4, deferred: 0, warned: warned(3) })).toBe(true);
+    expect(waitingWarningDue({ count: 2, deferred: 0, warned: warned(3) })).toBe(true);
   });
 
-  it('is nothing when the count is the one last said: only a change is news', () => {
-    expect(meetingsWaitingReport({ count: 3, mac: 'Studio', lastCount: 3 })).toBeNull();
+  it('is not due for a count already warned of, nor for none', () => {
+    expect(waitingWarningDue({ count: 3, deferred: 0, warned: warned(3, 5) })).toBe(false);
+    expect(waitingWarningDue({ count: 0, deferred: 0, warned: warned() })).toBe(false);
+  });
+
+  it('is not due for a drop that the files left for the next pull explain', () => {
+    expect(waitingWarningDue({ count: 2, deferred: 1, warned: warned(3) })).toBe(false);
+    expect(waitingWarningDue({ count: 1, deferred: 2, warned: warned(3) })).toBe(false);
+    // More gone than were deferred: a real drop.
+    expect(waitingWarningDue({ count: 1, deferred: 1, warned: warned(3) })).toBe(true);
   });
 });
 

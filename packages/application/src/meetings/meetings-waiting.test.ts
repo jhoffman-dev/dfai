@@ -10,6 +10,7 @@ import {
 import { automationVault, jsonNote } from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { MEETING_HEADER, meetingFile } from '../testing/meeting-files.ts';
+import { meetingInboxNotes } from './meeting-inbox.ts';
 import { createMeetingImporter } from './meeting-importer.ts';
 import type { MeetingsWaitingWatch } from './meetings-waiting.ts';
 
@@ -55,10 +56,16 @@ function setUp({
 } = {}) {
   const vault = automationVault({ notes, today: TODAY });
   const reads: string[] = [];
+  /** Every folder listed. */
+  const listings = { count: 0 };
   const ports = {
     ...vault.ports,
     fs: {
       ...vault.ports.fs,
+      listDirectory: async (path: VaultPath) => {
+        listings.count += 1;
+        return vault.ports.fs.listDirectory(path);
+      },
       readTextFile: async (path: VaultPath) => {
         reads.push(path);
         await state.onRead(path);
@@ -102,7 +109,7 @@ function setUp({
       vault: VAULT,
       changes: [{ kind: 'changed', path, type: 'meeting', digest: digestOf(path) }],
     });
-  return { vault, importer, state, said, warnings, reads, hearOf };
+  return { vault, importer, state, said, warnings, reads, hearOf, listings, ports };
 }
 
 describe('createMeetingImporter on a Mac that is not named (ADR-0035 parts 1 and 3)', () => {
@@ -117,6 +124,44 @@ describe('createMeetingImporter on a Mac that is not named (ADR-0035 parts 1 and
     expect(said).toEqual([waiting]);
     // It imports nothing: no file is written.
     expect(vault.files.get(UNSTAMPED)).toBe(meetingFile());
+  });
+
+  it('opening a vault, then its first pull and the looks after, walks the meeting folders once (#627 attack)', async () => {
+    const { importer, state, listings, said, ports } = setUp({
+      gate: { open: false, why: 'no-pull' },
+    });
+    await importer.catchUp(VAULT);
+    expect(said.at(-1)).toMatchObject({ kind: 'uncounted' });
+
+    state.gate = { open: true, standing: PULL };
+    await importer.catchUp(VAULT);
+    for (let minute = 1; minute <= 3; minute += 1) {
+      state.gate = { open: true, standing: pulledAt(PULL.finishedAt + minute * 60_000) };
+      await importer.catchUp(VAULT);
+    }
+
+    expect(said.at(-1)).toEqual({ kind: 'counted', mac: 'Studio', count: 2 });
+    // As many folders as one walk lists, and no more.
+    const counted = listings.count;
+    listings.count = 0;
+    await meetingInboxNotes(ports.fs);
+    expect(counted).toBe(listings.count);
+    expect(counted).toBeGreaterThan(0);
+  });
+
+  it('forgets a meeting file removed, reading nothing for it (#627 attack)', async () => {
+    const { importer, vault, reads } = setUp();
+    await importer.catchUp(VAULT);
+    const readsAfterFirst = reads.length;
+
+    vault.files.delete(UNSTAMPED);
+    const outcome = await importer.hear({
+      vault: VAULT,
+      changes: [{ kind: 'removed', path: UNSTAMPED, type: 'meeting', digest: digestOf('') }],
+    });
+
+    expect(outcome?.waiting).toMatchObject({ count: 1 });
+    expect(reads).toHaveLength(readsAfterFirst);
   });
 
   it('news of a note outside where meetings land asks nothing: no gate, no read, no line', async () => {
@@ -182,17 +227,19 @@ describe('createMeetingImporter on a Mac that is not named (ADR-0035 parts 1 and
     expect((await importer.catchUp(VAULT))?.waiting).toMatchObject({ count: 1 });
   });
 
-  it('counts again when the gates open after being shut, though the pull is the same', async () => {
-    const { importer, state, reads } = setUp();
+  it('says the count again once the gates reopen, from what it knows, reading nothing (#627 attack)', async () => {
+    const { importer, state, reads, said } = setUp();
     await importer.catchUp(VAULT);
     const readsAfterFirst = reads.length;
 
     state.gate = { open: false, why: 'paused' };
     await importer.catchUp(VAULT);
+    expect(said.at(-1)).toMatchObject({ kind: 'uncounted', why: 'paused' });
     state.gate = { open: true, standing: PULL };
     await importer.catchUp(VAULT);
 
-    expect(reads.length).toBeGreaterThan(readsAfterFirst);
+    expect(said.at(-1)).toEqual({ kind: 'counted', mac: 'Studio', count: 2 });
+    expect(reads).toHaveLength(readsAfterFirst);
   });
 
   it('while a pull is under way, keeps what it said: news it hears changes no line', async () => {

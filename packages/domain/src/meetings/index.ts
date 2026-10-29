@@ -127,6 +127,7 @@ export {
   touchesWaitingMeetings,
   waitingMacLabel,
   waitingMeetingTally,
+  waitingWarningDue,
   waitsForImport,
 } from './meetings-waiting.ts';
 export type {

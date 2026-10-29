@@ -154,22 +154,36 @@ export function meetingsWaitingLine(waiting: MeetingsWaiting): string | null {
 }
 
 /**
- * Activity's warning when meetings wait and their count is news: the first
- * count said in this session for the vault, or one that differs from the
- * last. A pull that changes nothing — a look at GitHub about once a minute —
- * is not news. Null otherwise.
+ * Whether a count is news to Activity (#175: "once per sync" read as "once
+ * per count"). Activity warns at most once per distinct count in a session
+ * for the vault: a pull that changes nothing, about once a minute, is never
+ * news. Nor is a drop that deferral alone explains — files edited here are
+ * left for the next pull to judge, and come back then — so the count with
+ * the deferred files put back must not be one already warned of.
  */
+export function waitingWarningDue({
+  count,
+  deferred,
+  warned,
+}: {
+  count: number;
+  deferred: number;
+  /** The counts already warned of for the vault in this session. */
+  warned: ReadonlySet<number>;
+}): boolean {
+  if (count === 0 || warned.has(count)) return false;
+  return ![...warned].some((said) => said > count && said <= count + deferred);
+}
+
+/** Activity's warning that meetings wait for the named Mac; null when none does. */
 export function meetingsWaitingReport({
   count,
   mac,
-  lastCount,
 }: {
   count: number;
   mac: string;
-  /** The count last said for the vault in this session; null when none was. */
-  lastCount: number | null;
 }): ActivityReport | null {
-  if (count === 0 || count === lastCount) return null;
+  if (count === 0) return null;
   const verb = count === 1 ? 'is waiting for' : 'are waiting for';
   const them = count === 1 ? 'it' : 'them';
   return {

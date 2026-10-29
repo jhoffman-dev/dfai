@@ -63,8 +63,18 @@ export function conflictCopyPath({
   }
 }
 
-/** A name {@link conflictCopyPath} gives: ` (conflict from <Mac>)`, maybe numbered, before the extension. */
-const CONFLICT_COPY_NAME = / \(conflict from [^/)]+\)(?: \d+)?(?:\.[^./]+)?$/;
+/**
+ * A name {@link conflictCopyPath} gives: ` (conflict from <Mac>)`, maybe
+ * numbered, before the extension, in the file's own name. The Mac's part is
+ * {@link macLabel}'s: up to {@link MAX_MAC_LABEL} characters of anything but
+ * a slash — brackets included, as in "Mara's MacBook Pro (2)" — so it is
+ * matched lazily and the end of the name decides where it stops (#627). A
+ * name that ends in a dot keeps an empty extension.
+ */
+const CONFLICT_COPY_NAME = new RegExp(
+  ` \\(conflict from [^/]{1,${MAX_MAC_LABEL}}?\\)(?: \\d+)?(?:\\.[^./]*)?$`,
+  'u',
+);
 
 /** Whether a path is the other Mac's version of a file a merge could not settle, kept beside it. */
 export function isConflictCopyPath(path: string): boolean {

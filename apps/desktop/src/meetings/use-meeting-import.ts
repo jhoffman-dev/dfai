@@ -235,7 +235,8 @@ function useCountWaiting({
       asked.current = null;
       return;
     }
-    if (importer === null || standing?.kind === 'pulling') return;
+    // A pause shuts the gates mid-pull too: weighed before the pull is waited for.
+    if (importer === null || (standing?.kind === 'pulling' && !paused)) return;
     const now = { vault: vaultKey, standing, slept, paused, name };
     if (sameAsk(asked.current, now)) return;
     asked.current = now;

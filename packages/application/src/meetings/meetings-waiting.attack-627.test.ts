@@ -330,8 +330,10 @@ describe('the waiting count against #175 (attack on PR #627)', () => {
 
     const waiting = await judge();
 
-    // The copy is the person's to merge; a claim never clears it (#175).
-    expect(waiting).toEqual(null);
+    // The copy is the person's to merge; a claim never clears it (#175). None waits, so
+    // the Inbox shows no line (`meetingsWaitingLine` of a count of 0 is null), and the
+    // count is 0 as the oracle above has it.
+    expect(waiting).toEqual({ kind: 'counted', mac: 'Studio', count: 0 });
   });
 });
 

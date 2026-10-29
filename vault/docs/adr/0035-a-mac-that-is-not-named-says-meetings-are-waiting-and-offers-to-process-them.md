@@ -168,15 +168,21 @@ runs the automations", never its id.
 
 Unimported meetings are counted wherever the import would settle them:
 `Inbox/Meetings/` and the month folders under `Meetings/` (#214) whose files
-declare the contract. A file whose frontmatter does not read counts as one
-that cannot be read. The count uses the import's own listing and reads, eight
-files at a time, only on a Mac that is not named. The files are read again
-only when the count may have changed: news named a file where meetings land,
-the gates opened again after being shut, or a file left for the next pull
-has had that pull. A pull that brings nothing (a look at GitHub, about once a
-minute) reuses the count. Activity's warning is news only: it is said the
-first time a count of one or more is made in a session for the vault, and
-again only when the count changes.
+declare the contract. A sync-conflict copy is never counted, whatever the
+other Mac is called; its name is recognised for any Mac label, brackets
+included (#627). A file whose frontmatter does not read counts as one that
+cannot be read. The count uses the import's own listing and reads, only on a
+Mac that is not named. The folders are listed once per vault opened, and each
+file is read once, eight at a time. After that, news that names a meeting
+file has that file alone read again, and a removed one is forgotten. Each
+judgement tallies what is known against the pull, so a pull that brings
+nothing (a look at GitHub, about once a minute) lists and reads nothing. In a
+vault that does not sync, or while the settings cannot be read, nothing is
+listed or read.
+
+Activity warns at most once per distinct count in a session for the vault.
+A drop that deferral alone explains is not news: files edited here are left
+for the next pull and come back then.
 
 **Catch-up on a claim.** The import's catch-up needs no change:
 `use-meeting-import.ts` already clears its `caughtUp` while this Mac is not
