@@ -151,11 +151,13 @@ describe('Settings → Profile, saving one field', () => {
     const hook = renderProfile({ fs, vaultKey: 'v' });
     expect(hook.result.current.loaded).toBe(false);
 
-    // The card is on screen with empty fields; the person fills in "Preferred name".
-    savePreferred(hook, 'Ada');
+    // The card is on screen with empty fields; the person fills in "Preferred name" —
+    // with a name the note does not hold yet, so the write has to land before the load.
+    savePreferred(hook, 'Countess');
     await waitFor(() => expect(file.modified).toBe(2));
     release();
 
+    expect(file.text).toContain('profilePreferredName: Countess');
     expect(file.text).toContain('profileName: Ada Lovelace');
   });
 });

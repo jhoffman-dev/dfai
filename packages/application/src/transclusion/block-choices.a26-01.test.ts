@@ -54,7 +54,7 @@ describe('createBlockChoicesReader', () => {
     const vault = reader({ [plans]: 'Pack the tent\nBook the train\n' });
     for (let key = 0; key < 5; key += 1) {
       const entries = await vault.choices.read(plans);
-      expect(entries.map((entry) => entry.text)).toEqual(['Pack the tent', 'Book the train']);
+      expect(entries?.map((entry) => entry.text)).toEqual(['Pack the tent', 'Book the train']);
     }
     expect(vault.counts()).toEqual({ reads: 1, parses: 1 });
   });
@@ -64,7 +64,7 @@ describe('createBlockChoicesReader', () => {
     await vault.choices.read(plans);
     vault.save(plans, 'Pack the big tent\n');
     const entries = await vault.choices.read(plans);
-    expect(entries.map((entry) => entry.text)).toEqual(['Pack the big tent']);
+    expect(entries?.map((entry) => entry.text)).toEqual(['Pack the big tent']);
     expect(vault.counts()).toEqual({ reads: 2, parses: 2 });
   });
 
@@ -74,5 +74,48 @@ describe('createBlockChoicesReader', () => {
     await vault.choices.read(other);
     await vault.choices.read(other);
     expect(vault.counts().reads).toBe(2);
+  });
+});
+
+describe('createBlockChoicesReader — a note that is not there (#225, PR #612)', () => {
+  /**
+   * A vault whose `Plans.md` cannot be read, as the host has it: its folder
+   * lists every file there, while `readNotes` leaves out one that is not
+   * UTF-8, too large or not readable, as it leaves out one that is gone.
+   */
+  const failing = (onDisk: readonly string[]) =>
+    createBlockChoicesReader({
+      fs: fakeVaultFs({
+        readTextFile: async (path) => {
+          throw new Error(
+            onDisk.includes(path) ? 'stream did not contain valid UTF-8' : 'no such entry',
+          );
+        },
+        readNotes: async () => [],
+        listDirectory: async (folder) => {
+          if (folder !== '') throw new Error('no such entry');
+          return onDisk.map((path) => ({
+            name: path,
+            path: createVaultPath(path),
+            kind: 'file' as const,
+            modified: 1,
+            size: 1,
+          }));
+        },
+      }),
+      markdown: fakeMarkdown(),
+      index: fakeIndexPort({ manifest: async () => [] }),
+    });
+
+  it('answers null for a note deleted before the tree caught up', async () => {
+    await expect(failing([]).read(plans)).resolves.toBeNull();
+  });
+
+  it('answers null for a note whose folder is gone too', async () => {
+    await expect(failing([]).read(createVaultPath('Trips/Plans.md'))).resolves.toBeNull();
+  });
+
+  it('passes on a failure to read a note that is there, even one the index cannot read', async () => {
+    await expect(failing([plans]).read(plans)).rejects.toThrow('valid UTF-8');
   });
 });
