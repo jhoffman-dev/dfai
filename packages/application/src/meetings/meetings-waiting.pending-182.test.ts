@@ -281,3 +281,29 @@ describe('the Mac that runs the automations, when its step cannot reach Claude (
     expect(state.gateCalls).toBeGreaterThan(after);
   });
 });
+
+describe('the healthy Mac that runs the automations, at each index sync (attack on PR #637)', () => {
+  it('asks the gate nothing and reads nothing for news of meetings and other notes alike', async () => {
+    const { importer, state, host, said } = setUp({ named: null, importing: true });
+    await importer.catchUp(VAULT);
+    const calls = state.gateCalls;
+    const reads = host.reads.length;
+    const listings = host.listings;
+
+    for (const [path, type] of [
+      ['Inbox/Call Mara.md', 'task'],
+      ['Inbox/Call Mara.md', 'task'],
+      [PENDING, 'meeting'],
+    ] as const) {
+      await importer.hear({
+        vault: VAULT,
+        changes: [{ kind: 'changed', path: createVaultPath(path), type, digest: path }],
+      });
+    }
+
+    expect(state.gateCalls - calls).toBe(0);
+    expect(host.reads.slice(reads).filter((read) => read !== PENDING)).toEqual([]);
+    expect(host.listings - listings).toBe(0);
+    expect(said.at(-1)).toBeNull();
+  });
+});
