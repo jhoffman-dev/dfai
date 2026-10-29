@@ -21,7 +21,6 @@ import {
   sameName,
 } from '../meeting-links/vault-owner.ts';
 import type { MeetingAttendee } from '../meetings/meeting-header.ts';
-import { comparableAddress } from '../profile/email-addresses.ts';
 import { isSelfSpeaker, isUnnamedSpeaker } from '../meetings/transcript.ts';
 import { vocabularyKey } from '../terms/spelling.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
@@ -173,8 +172,7 @@ function attendeesNamed(owner: { name: string; email: string | null }, directory
   const all = directory.attendees;
   if (owner.email !== null) {
     const addressed = all.filter(
-      (each) =>
-        each.email !== null && comparableAddress(each.email) === comparableAddress(owner.email!),
+      (each) => each.email !== null && sameAddress(each.email, owner.email!),
     );
     if (addressed.length > 0) return addressed;
   }

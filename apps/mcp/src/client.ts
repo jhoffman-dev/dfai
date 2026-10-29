@@ -50,6 +50,7 @@ import type {
   ApiClarifyInboxBody,
   ApiClarifyOutcome,
   ApiScheduleTaskBody,
+  ApiChooseForTodayBody,
   ApiPromoteLineBody,
   ApiProfile,
   ApiQueryBody,
@@ -477,6 +478,9 @@ export class AtlasClient {
     this.json<{ review: ApiWeeklyReview }>({ method: 'GET', path: '/v1/review/weekly' });
 
   today = () => this.json<{ today: ApiToday }>({ method: 'GET', path: '/v1/today' });
+
+  chooseForToday = (body: ApiChooseForTodayBody) =>
+    this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/today/choose', body });
 
   brief = (query: BriefQuery) =>
     this.json<{ brief: ApiBrief }>({

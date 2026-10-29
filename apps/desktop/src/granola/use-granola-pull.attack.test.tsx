@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 // Adversarial probes for PR #156 (P28-12). Diagnose only: a red test here is a defect.
-import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { type GranolaNote } from '@dfai/domain';
@@ -111,8 +110,10 @@ function setUp({
   const { wrapper: reads, client } = queryWrapper();
   const hook = renderHook((props: GranolaPullOptions) => useGranolaPull(props), {
     initialProps: options,
-    wrapper: ({ children }: { children: ReactNode }) =>
-      reads({ children: strict ? <StrictMode>{children}</StrictMode> : children }),
+    wrapper: reads,
+    // StrictMode at the root, as main.tsx renders it. A <StrictMode> nested in a
+    // wrapper does not run effects twice under React 19 (issue #159).
+    reactStrictMode: strict,
   });
   const lists = () => granola.count('list');
   /** The settings note changed: the window reads it again, as its reads say for its path. */
@@ -135,7 +136,10 @@ function setUp({
 const fifteenMinutes = () => act(async () => vi.advanceTimersByTime(GRANOLA_PULL_INTERVAL_MS));
 
 beforeEach(() => vi.useFakeTimers({ now: FIXED_NOW }));
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe('useGranolaPull, attacked (PR #156)', () => {
   it('ATTACK: says it is pulling during a Sync now after the vault was closed and reopened mid-pull', async () => {
@@ -180,19 +184,37 @@ describe('useGranolaPull, attacked (PR #156)', () => {
   });
 
   it('ATTACK: React StrictMode (as main.tsx renders) lists Granola once on open', async () => {
-    const { hook, lists } = setUp({ strict: true });
+    const catchUpIndex = vi.fn(async () => true);
+    const { hook, lists } = setUp({ strict: true, catchUpIndex });
     await settles(() => expect(hook.result.current.report?.ended).toBe('pulled'));
     await act(async () => undefined);
     expect(lists()).toBe(1);
+    // The double mount reaches the catch-up ask (the pull waits for its answer), so it is asked once.
+    expect(catchUpIndex).toHaveBeenCalledOnce();
   });
 
   it('ATTACK: StrictMode keeps one 15-minute timer', async () => {
+    // Two timers firing together list once (the puller joins the second pull to the
+    // first), so the listings alone cannot tell: count the 15-minute timers running.
+    // (The double mount itself ends before the timer can start: it waits for the key
+    // and the index, so a missing cleanup is not what this catches.)
+    const started = vi.spyOn(window, 'setInterval');
+    const cleared = vi.spyOn(window, 'clearInterval');
+    const running = () => {
+      const gone = new Set(cleared.mock.calls.map(([id]) => id));
+      return started.mock.calls.filter(
+        ([, ms], call) =>
+          ms === GRANOLA_PULL_INTERVAL_MS && !gone.has(started.mock.results[call]?.value),
+      ).length;
+    };
     const { lists } = setUp({ strict: true });
     await settles(() => expect(lists()).toBe(1));
+    expect(running()).toBe(1);
     await fifteenMinutes();
     await settles(() => expect(lists()).toBe(2));
     await act(async () => undefined);
     expect(lists()).toBe(2);
+    expect(running()).toBe(1);
   });
 
   it('ATTACK: timer + Sync now + key save at the same moment list at most twice', async () => {

@@ -187,6 +187,16 @@ export type { GroupOption } from './view-settings-popovers.tsx';
 export { QueryPage } from './query-page.tsx';
 export type { AddToDashboard, QueryChoice, QueryPageProps, SaveAsView } from './query-page.tsx';
 export { LinkedNote, NoteNamesProvider, useNoteNames } from './note-names.tsx';
+export { CodeLanguagesProvider } from './editor/code-languages-context.ts';
+export {
+  CODE_GRAMMARS,
+  createCodeLanguages,
+  grammarFor,
+  type CodeGrammar,
+  type CodeLanguages,
+  type LoadGrammar,
+} from './editor/code-languages.ts';
+export { CODE_GRAMMAR_IMPORTS } from './editor/code-grammars.ts';
 export { LinkHintsProvider, useLinkHints } from './link-suggest/link-hints.tsx';
 export type { LinkHintsSource } from './link-suggest/link-hints.tsx';
 export { ArtifactViewer, ARTIFACT_SANDBOX } from './artifact-viewer.tsx';

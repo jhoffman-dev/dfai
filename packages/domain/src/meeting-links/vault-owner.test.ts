@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { comparableAddress } from '../profile/email-addresses.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
 import {
   isOwnerAttendee,
@@ -74,39 +73,6 @@ describe('isOwnerAttendee', () => {
         selfEmails: [],
       }),
     ).toBe(false);
-  });
-});
-
-/** #173 review: addresses compared in one form, their domains in ASCII. */
-describe('comparableAddress', () => {
-  it('reads a Unicode domain as its ASCII (punycode) form, and leaves an ASCII one as it is', () => {
-    expect(comparableAddress('Mara@Bücher.Example')).toBe('mara@xn--bcher-kva.example');
-    expect(comparableAddress('mara@xn--bcher-kva.example')).toBe('mara@xn--bcher-kva.example');
-    expect(comparableAddress(' Mara.Quill@Example.com ')).toBe('mara.quill@example.com');
-  });
-
-  it('composes the address, so one typed decomposed is the one a meeting lists', () => {
-    expect(comparableAddress('re\u0301n@example.com')).toBe('r\u00e9n@example.com');
-  });
-
-  it('leaves the local part as it is: only the domain has an ASCII form', () => {
-    expect(comparableAddress('rén@bücher.example')).toBe('rén@xn--bcher-kva.example');
-  });
-
-  it('never reads a domain holding what a URL would take apart as another domain', () => {
-    expect(comparableAddress('mara@bücher.example/evil.example')).toBe(
-      'mara@bücher.example/evil.example',
-    );
-    expect(comparableAddress('mara@bücher.example:80')).toBe('mara@bücher.example:80');
-    expect(comparableAddress('mara@bü\tcher.example')).toBe('mara@bü\tcher.example');
-  });
-
-  it('leaves a domain IDNA refuses as it is written', () => {
-    expect(comparableAddress('mara@xn--a.bü')).toBe('mara@xn--a.bü');
-  });
-
-  it('leaves text with no @ as it is, case folded', () => {
-    expect(comparableAddress('Mara')).toBe('mara');
   });
 });
 

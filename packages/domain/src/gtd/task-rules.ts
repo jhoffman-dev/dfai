@@ -6,7 +6,8 @@ import {
   TASK_KEYS,
   TASK_TYPE,
 } from './gtd-status.ts';
-import { DUE_KEY, RECURRENCE_KEY } from '../query/repeating-task.ts';
+import { DUE_KEY, LAST_COMPLETED_KEY, RECURRENCE_KEY } from '../query/repeating-task.ts';
+import { focusIsOwn } from '../today/row-read.ts';
 
 type Properties = Readonly<Record<string, unknown>>;
 
@@ -76,6 +77,10 @@ function spelledAsStatus(before: Properties, changes: Properties): Properties {
  *   `completed:` today, unless the note it leaves says a day; one taken out
  *   of Archive loses its day, unless the change says one, so unticking
  *   leaves nothing stale behind.
+ * - Finishing ends the day's choice (#108): a task finished, or a repeating
+ *   one rolled on (the roll writes `lastCompleted` with `due` or `status`),
+ *   loses a `focus` that is a day, unless the change names `focus` itself.
+ *   One that is the person's own, or blank, is left as it is.
  *
  * A status is read as the index reads it — trimmed, a one-item list as its
  * item — so a spelling the Archive rule reads is held to it too, and a GTD
@@ -105,14 +110,49 @@ function heldToRules({
   changes: Properties;
   today: string;
 }): TaskRuleOutcome {
+  return { changes: withChoiceEnded(before, datedOnFinishing({ before, changes, today })) };
+}
+
+function datedOnFinishing({
+  before,
+  changes,
+  today,
+}: {
+  before: Properties;
+  changes: Properties;
+  today: string;
+}): Properties {
   const after = changed(before, changes);
   const completed = TASK_KEYS.completed;
   if (isFinished(after) && !isFinished(before) && isBlankValue(after[completed])) {
-    return { changes: { ...changes, [completed]: today } };
+    return { ...changes, [completed]: today };
   }
   const reopened = isFinished(before) && !isFinished(after) && isTaskNote(after);
   if (reopened && !has(changes, completed) && !isBlankValue(before[completed])) {
-    return { changes: { ...changes, [completed]: null } };
+    return { ...changes, [completed]: null };
   }
-  return { changes };
+  return changes;
 }
+
+/**
+ * The change, taking a dated `focus` out of a task it finishes or rolls on.
+ * A blank `focus:` — as a property template writes it — is no choice, and stays.
+ */
+function withChoiceEnded(before: Properties, changes: Properties): Properties {
+  const focus = TASK_KEYS.focus;
+  if (!has(before, focus) || has(changes, focus)) return changes;
+  if (isBlankValue(before[focus]) || focusIsOwn(before)) return changes;
+  const after = changed(before, changes);
+  const finished = isFinished(after) && !isFinished(before);
+  return finished || isRoll(after, changes) ? { ...changes, [focus]: null } : changes;
+}
+
+/**
+ * Whether a change is a repeating task's roll: `lastCompleted` written with
+ * the next `due` or the status it goes back to, as the roll writes them — not
+ * `lastCompleted` edited alone by hand.
+ */
+const isRoll = (after: Properties, changes: Properties) =>
+  isTaskNote(after) &&
+  has(changes, LAST_COMPLETED_KEY) &&
+  (has(changes, DUE_KEY) || has(changes, TASK_KEYS.status));

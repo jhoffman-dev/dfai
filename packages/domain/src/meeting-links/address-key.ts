@@ -1,28 +1,19 @@
+import { domainKey, emailKey } from '../meetings/mapping/meeting-email-key.ts';
+
 /**
  * How an email address is compared, everywhere a person is found by one —
  * meeting import, a merge of people, the possible-duplicates list (#464) —
  * so a merge never keeps an address import would read as another, nor drops
- * one it would read as theirs.
+ * one it would read as theirs. The address itself is {@link emailKey} (#199).
  */
-
-/** The address itself: the part in `<…>` when written as a mail client copies it, composed and trimmed. */
-function writtenAddress(written: string): string {
-  const bracketed = /<([^<>]+)>\s*$/u.exec(written)?.[1] ?? written;
-  return bracketed.normalize('NFC').trim();
-}
 
 /**
- * An address as two are the same one: written alike once its case and the
- * spaces round it are set aside. `mara+payroll@` is not `mara@` here: it is
- * kept as its own address, and only matched to `mara@` by {@link untaggedAddressKey}.
+ * A company's domain or site as written in a note: `@`, `www.`, a scheme, a
+ * path and a port dropped, and the rest as {@link domainKey} compares it.
+ * Never a mail domain's key: `www.larkspur.example` is another mail domain.
  */
-export function addressKey(written: string): string {
-  return writtenAddress(written).toLowerCase();
-}
-
-/** A domain as written in a note or an address: `@`, `www.`, a scheme, a path and a final dot dropped. */
 export function hostKey(written: string): string {
-  return written
+  const host = written
     .normalize('NFC')
     .trim()
     .toLowerCase()
@@ -30,8 +21,8 @@ export function hostKey(written: string): string {
     .replace(/[/?#].*$/u, '')
     .replace(/:\d*$/u, '')
     .replace(/^@/u, '')
-    .replace(/^www\./u, '')
-    .replace(/\.$/u, '');
+    .replace(/^www\./u, '');
+  return domainKey(host);
 }
 
 /** An address split for comparing: its local part, its `+tag` dropped, and its domain, both folded. */
@@ -42,11 +33,11 @@ export interface AddressParts {
 
 /** {@link AddressParts} of an address, or null for text with no `@` or nothing either side. */
 export function addressParts(written: string): AddressParts | null {
-  const address = addressKey(written);
+  const address = emailKey(written);
   const at = address.lastIndexOf('@');
   if (at <= 0) return null;
   const local = (address.slice(0, at).split('+')[0] ?? '').trim();
-  const domain = hostKey(address.slice(at + 1));
+  const domain = domainKey(address.slice(at + 1));
   return local === '' || domain === '' ? null : { local, domain };
 }
 
