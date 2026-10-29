@@ -1,6 +1,8 @@
 import {
   characterCount,
   MAX_SKILL_DESCRIPTION_LENGTH,
+  SKILL_FILE,
+  SKILL_FILE_UNREADABLE,
   skillDraftProblems,
   type SkillDraft,
 } from '@dfai/domain';
@@ -82,17 +84,35 @@ export function followed(was: Editing, opened: SkillFile | null): Editing | null
   return opened === null ? null : fresh(opened);
 }
 
+/**
+ * Why no save can write the skill as it was read, in the words the save's
+ * refusal uses (`saveSkill`): SKILL.md or its frontmatter cannot be read, so
+ * it is not saved over. Null when a save can.
+ */
+function saveRefusalOf(base: SkillFile | null): string | null {
+  if (base === null) return null;
+  if (base.unreadable) return `${SKILL_FILE_UNREADABLE} It is not saved here.`;
+  if (base.frontmatterProblem !== null) {
+    return `${SKILL_FILE} cannot be read, so it is not saved over: ${base.frontmatterProblem}`;
+  }
+  return null;
+}
+
 /** The editor's state as the page draws it: the draft, and the domain's words on it. */
 export function editorStateOf({
   editing,
   mode,
   saving,
+  deleting,
 }: {
   editing: Editing;
   mode: 'new' | 'edit';
   saving: boolean;
+  /** Whether a delete is under way, from its walk of the folder to the Trash's answer. */
+  deleting: boolean;
 }): SkillEditorState {
   const problems = skillDraftProblems(editing.draft);
+  const saveRefusal = saveRefusalOf(editing.base);
   return {
     mode,
     draft: editing.draft,
@@ -105,8 +125,10 @@ export function editorStateOf({
     descriptionLimit: MAX_SKILL_DESCRIPTION_LENGTH,
     changedOnDisk: editing.changedOnDisk,
     saving,
-    // A save over a file changed on disk is refused, so it waits for Reload.
-    canSave: problems.length === 0 && !saving && !editing.changedOnDisk,
+    // A save over a file changed on disk, or one that cannot be read, is refused: it waits.
+    canSave: problems.length === 0 && !saving && !editing.changedOnDisk && saveRefusal === null,
+    saveRefusal,
+    deleting,
     justCreated: editing.justCreated,
   };
 }

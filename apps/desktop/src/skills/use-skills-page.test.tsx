@@ -568,6 +568,8 @@ describe('useSkillsPage', () => {
       expect(page.result.current.editor?.draft.instructions).toBe('Typed here.');
       act(() => page.result.current.onReload());
       expect(page.result.current.editor).toBeNull();
+      // The editor it was in has gone, and so has the skill's row: the focus goes to the list.
+      expect(page.result.current.focusTarget).toEqual({ kind: 'list' });
     });
   });
 });

@@ -21,6 +21,8 @@ function editorOf(overrides: Partial<SkillEditorState> = {}): SkillEditorState {
     saving: false,
     canSave: true,
     justCreated: false,
+    saveRefusal: null,
+    deleting: false,
     ...overrides,
   };
 }

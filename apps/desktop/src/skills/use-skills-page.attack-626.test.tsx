@@ -197,10 +197,13 @@ describe('Skills page editor, attacked (#626)', () => {
     const trash = gate();
     page.controls.holdTrash = trash.wait;
     act(() => page.now().deleteQuestion?.onConfirm());
-    // The editor is still drawn, Delete with it: pressed again, it asks again.
+    // The editor is still drawn, Delete with it, but off while the Trash runs: one delete at
+    // a time (the coordinator's call on the fix). Pressed anyway, it asks nothing.
     expect(page.now().editor?.mode).toBe('edit');
+    expect(page.now().editor?.deleting).toBe(true);
     act(() => page.now().onDelete());
-    await waitFor(() => expect(page.up()).toBe('skill-delete'));
+    await settle();
+    expect(page.up()).toBeNull();
 
     await act(async () => trash.open());
     await settle();

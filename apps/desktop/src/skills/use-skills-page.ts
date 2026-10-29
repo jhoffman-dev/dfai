@@ -9,6 +9,7 @@ import {
 import {
   createSkill,
   deleteSkill,
+  isChangedOnDiskRefusal,
   listPromptNotes,
   listSkills,
   NoteChangedError,
@@ -146,6 +147,28 @@ function useMounted() {
 }
 
 /**
+ * Keeps an overlay's life to its question's: the moment the question is gone,
+ * for whatever reason — answered, its skill gone from disk, its page moved
+ * on — the overlay is taken down, so the window is never held by a question
+ * nobody can see or answer.
+ */
+function useOverlayFollows({
+  overlay,
+  which,
+  up,
+  asked,
+}: {
+  overlay: SkillsPagePorts['overlay'];
+  which: SkillOverlay;
+  up: SkillOverlay | null;
+  asked: boolean;
+}) {
+  useEffect(() => {
+    if (!asked && up === which) overlay.hide(which);
+  }, [asked, up, which, overlay]);
+}
+
+/**
  * Which skill the editor holds, and leaving it: choosing the open skill again
  * does nothing, and leaving typing unsaved asks first (Keep or Discard).
  * `generation` counts each choice, so a write that answers after another was
@@ -157,12 +180,14 @@ function useSelection({
   overlay,
   overlayUp,
   setNotice,
+  setFocusTarget,
 }: {
   editing: Editing | null;
   setEditing: (editing: Editing | null) => void;
   overlay: SkillsPagePorts['overlay'];
   overlayUp: SkillOverlay | null;
   setNotice: (notice: string | null) => void;
+  setFocusTarget: (focus: SkillFocus) => void;
 }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [leaving, setLeaving] = useState<{ readonly to: Selection | null } | null>(null);
@@ -176,14 +201,26 @@ function useSelection({
     },
     [setEditing, setNotice],
   );
+  /** Goes to `to`; closing the editor from inside it sends the focus to the skill's row, or the list. */
+  const go = useCallback(
+    (to: Selection | null) => {
+      if (to === null && selection !== null) {
+        setFocusTarget(
+          selection.kind === 'skill' ? { kind: 'row', name: selection.name } : { kind: 'list' },
+        );
+      }
+      choose(to);
+    },
+    [selection, choose, setFocusTarget],
+  );
   const leaveFor = useCallback(
     (to: Selection | null) => {
       if (to?.kind === 'skill' && selection?.kind === 'skill' && to.name === selection.name) return;
-      if (!isDirty(editing)) return choose(to);
+      if (!isDirty(editing)) return go(to);
       setLeaving({ to });
       overlay.show('skill-discard');
     },
-    [selection, editing, choose, overlay],
+    [selection, editing, go, overlay],
   );
   const discardQuestion = useMemo(() => {
     if (leaving === null || overlayUp !== 'skill-discard') return null;
@@ -196,10 +233,10 @@ function useSelection({
       onKeep: close,
       onDiscard: () => {
         close();
-        choose(leaving.to);
+        go(leaving.to);
       },
     };
-  }, [leaving, overlayUp, overlay, editing, choose]);
+  }, [leaving, overlayUp, overlay, editing, go]);
   return { selection, choose, leaveFor, discardQuestion, generation };
 }
 
@@ -229,7 +266,14 @@ export function useSkillsPage({
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [focusTarget, setFocusTarget] = useState<SkillFocus | null>(null);
-  const picked = useSelection({ editing, setEditing, overlay, overlayUp, setNotice });
+  const picked = useSelection({
+    editing,
+    setEditing,
+    overlay,
+    overlayUp,
+    setNotice,
+    setFocusTarget,
+  });
   const { selection, choose, leaveFor, generation } = picked;
   const name = selection?.kind === 'skill' ? selection.name : null;
   const opened = useQuery({
@@ -237,11 +281,20 @@ export function useSkillsPage({
     queryFn: async () => (await readSkill({ fs, markdown, name: name ?? '' })) ?? null,
     enabled: vault !== null && name !== null,
   });
+  const waiting = name !== null && editing?.base === null;
   useFollowRead({
-    opened: opened.data,
-    waiting: name !== null && editing?.base === null,
+    // Opening a skill waits for a read under way: one held from before may say it is gone.
+    opened: waiting && opened.isFetching ? undefined : opened.data,
+    waiting,
     setEditing,
   });
+  // The open skill gone from disk, its editor closed: nothing is chosen, so a click opens it again.
+  const gone = name !== null && editing === null;
+  useEffect(() => {
+    if (!gone) return;
+    setFocusTarget({ kind: 'list' });
+    choose(null);
+  }, [gone, choose]);
 
   const onChange = useCallback(
     (change: Partial<SkillDraft>) =>
@@ -250,8 +303,10 @@ export function useSkillsPage({
   );
   const latest = opened.data;
   const onReload = useCallback(() => {
-    if (latest === null) choose(null);
-    else if (latest !== undefined) setEditing(fresh(latest));
+    if (latest === null) {
+      setFocusTarget({ kind: 'list' });
+      choose(null);
+    } else if (latest !== undefined) setEditing(fresh(latest));
     if (vault !== null && name !== null) void readAgain(client, skillKey(vault, name));
   }, [latest, choose, vault, name, client]);
   const onSave = useSaveSkill({
@@ -286,7 +341,12 @@ export function useSkillsPage({
     editor:
       editing === null || (selection?.kind === 'skill' && editing.base === null)
         ? null
-        : editorStateOf({ editing, mode: selection?.kind === 'new' ? 'new' : 'edit', saving }),
+        : editorStateOf({
+            editing,
+            mode: selection?.kind === 'new' ? 'new' : 'edit',
+            saving,
+            deleting: deleting.busy,
+          }),
     notice:
       notice ?? (opened.error ? `The skill could not be read: ${messageOf(opened.error)}` : null),
     deleteQuestion: deleting.question,
@@ -350,7 +410,8 @@ function useSaveSkill({
         },
         (cause: unknown) => {
           if (generation.current !== chosen) return;
-          if (!(cause instanceof NoteChangedError)) {
+          // Refused by the use-case's re-read, or by the host's own check at the write.
+          if (!(cause instanceof NoteChangedError) && !isChangedOnDiskRefusal(cause)) {
             setNotice(`The skill could not be saved: ${messageOf(cause)}`);
             return;
           }
@@ -365,9 +426,11 @@ function useSaveSkill({
 
 /**
  * Delete: walks the folder for what goes with it, asks in the domain's words
- * — drawn only while the window holds the question up — and on yes puts the
- * folder in the Trash and sends the focus on. An answer for a page gone, or
- * a skill no longer chosen, puts nothing up.
+ * — drawn only while the window holds the question up, and the question taken
+ * down the moment its skill is no longer the one open — and on yes puts the
+ * folder in the Trash. One delete at a time: Delete is off from the walk to
+ * the Trash's answer. An answer for a page gone, or a skill no longer chosen,
+ * changes nothing on the page.
  */
 function useDeleteSkill({
   fs,
@@ -394,41 +457,70 @@ function useDeleteSkill({
   setNotice: (notice: string | null) => void;
   setFocusTarget: (focus: SkillFocus | null) => void;
 }) {
-  const [warning, setWarning] = useState<string | null>(null);
+  /** The question's words, while it is asked: it stands only while a skill is open to delete. */
+  const [asked, setAsked] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const mounted = useMounted();
+  const standing = asked !== null && base !== null && vault !== null;
+  useOverlayFollows({ overlay, which: 'skill-delete', up: overlayUp, asked: standing });
+  useEffect(() => {
+    if (asked !== null && !standing) setAsked(null);
+  }, [asked, standing]);
   const failed = useCallback(
-    (cause: unknown) => setNotice(`The skill could not be deleted: ${messageOf(cause)}`),
-    [setNotice],
+    (cause: unknown) => {
+      if (mounted.current) setNotice(`The skill could not be deleted: ${messageOf(cause)}`);
+    },
+    [mounted, setNotice],
   );
   const ask = useCallback(() => {
-    if (base === null) return;
+    if (base === null || busy) return;
     const chosen = generation.current;
-    skillOtherFiles({ fs, skill: base }).then((others) => {
-      if (!mounted.current || generation.current !== chosen) return;
-      setWarning(skillDeletionWarning(base.name, others));
-      overlay.show('skill-delete');
-    }, failed);
-  }, [base, generation, fs, mounted, overlay, failed]);
+    setBusy(true);
+    skillOtherFiles({ fs, skill: base })
+      .then((others) => {
+        if (!mounted.current || generation.current !== chosen) return;
+        setAsked(skillDeletionWarning(base.name, others));
+        overlay.show('skill-delete');
+      }, failed)
+      .finally(() => setBusy(false));
+  }, [base, busy, generation, fs, mounted, overlay, failed]);
   const question = useMemo(() => {
-    if (warning === null || base === null || vault === null || overlayUp !== 'skill-delete') {
-      return null;
-    }
+    if (!standing || asked === null || base === null || vault === null) return null;
+    if (overlayUp !== 'skill-delete') return null;
     const close = () => {
       overlay.hide('skill-delete');
-      setWarning(null);
+      setAsked(null);
     };
-    return {
-      warning,
-      onCancel: close,
-      onConfirm: () => {
-        close();
-        deleteSkill({ fs, skill: base }).then(() => {
+    const confirm = () => {
+      close();
+      const chosen = generation.current;
+      setBusy(true);
+      deleteSkill({ fs, skill: base })
+        .then(() => {
           settle(client, vault, null, base.name);
+          // Another skill, or New, was opened while the Trash ran: its editor is left as it is.
+          if (!mounted.current || generation.current !== chosen) return;
           setFocusTarget(focusAfterDelete(names, base.name));
           choose(null);
-        }, failed);
-      },
+        }, failed)
+        .finally(() => setBusy(false));
     };
-  }, [warning, base, vault, overlayUp, overlay, fs, client, names, choose, failed, setFocusTarget]);
-  return { ask, question };
+    return { warning: asked, onCancel: close, onConfirm: confirm };
+  }, [
+    standing,
+    asked,
+    base,
+    vault,
+    overlayUp,
+    overlay,
+    generation,
+    fs,
+    client,
+    mounted,
+    names,
+    choose,
+    failed,
+    setFocusTarget,
+  ]);
+  return { ask, question, busy };
 }

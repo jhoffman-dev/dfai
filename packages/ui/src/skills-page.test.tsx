@@ -41,6 +41,8 @@ function editorOf(overrides: Partial<SkillEditorState> = {}): SkillEditorState {
     saving: false,
     canSave: true,
     justCreated: false,
+    saveRefusal: null,
+    deleting: false,
     ...overrides,
   };
 }
@@ -394,5 +396,23 @@ describe('SkillsPage', () => {
       );
       expect(props.onFocused).toHaveBeenCalledOnce();
     });
+  });
+
+  it('keeps Delete off while a delete is under way (#626 attack)', () => {
+    show({ selected: 'weekly-review', editor: editorOf({ deleting: true }) });
+    expect(screen.getByRole('button', { name: 'Delete…' })).toHaveProperty('disabled', true);
+  });
+
+  it('says why Save is off for a file no save can write (#626 attack)', () => {
+    const why = 'SKILL.md cannot be read, so it is not saved over: a bad colon.';
+    show({ selected: 'weekly-review', editor: editorOf({ canSave: false, saveRefusal: why }) });
+    expect(screen.getByText(why)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true);
+  });
+
+  it('sends the focus to the heading when the row it was sent to is not in the list', () => {
+    const props = show({ focusTarget: { kind: 'row', name: 'gone-skill' } });
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Skills', level: 2 }));
+    expect(props.onFocused).toHaveBeenCalledOnce();
   });
 });

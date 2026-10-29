@@ -43,6 +43,10 @@ export interface SkillEditorState {
   readonly canSave: boolean;
   /** Whether the skill was made a moment ago: its editor takes the focus as it opens. */
   readonly justCreated: boolean;
+  /** Why no save can write the skill as it was read, or null: said beside the Save that is off. */
+  readonly saveRefusal: string | null;
+  /** Whether a delete is under way: Delete is off until it answers. */
+  readonly deleting: boolean;
 }
 
 /** The question before typing not saved is thrown away. */
@@ -159,7 +163,10 @@ function useFocusSent({
       focusTarget.kind === 'row'
         ? `[data-skill="${CSS.escape(focusTarget.name)}"]`
         : '#skills-heading';
-    const target = lists.current.querySelector<HTMLElement>(selector);
+    // A row not in the list once it is read — the skill went too — sends the focus to the heading.
+    const target =
+      lists.current.querySelector<HTMLElement>(selector) ??
+      (skills.items === null ? null : lists.current.querySelector<HTMLElement>('#skills-heading'));
     if (target === null) return;
     target.focus();
     onFocused();
@@ -297,8 +304,9 @@ const NEAR_THE_LIMIT = 100;
 
 /** What the counter says aloud near the limit, and nothing before: a count at every key is noise. */
 function countSpoken(length: number, limit: number): string {
-  if (length > limit) return `${length - limit} characters over the limit`;
-  return limit - length <= NEAR_THE_LIMIT ? `${limit - length} characters left` : '';
+  const characters = (count: number) => (count === 1 ? '1 character' : `${count} characters`);
+  if (length > limit) return `${characters(length - limit)} over the limit`;
+  return limit - length <= NEAR_THE_LIMIT ? `${characters(limit - length)} left` : '';
 }
 
 function SkillEditor({
@@ -330,6 +338,11 @@ function SkillEditor({
   return (
     <form className="skills__editor" aria-label={label} onSubmit={submit}>
       {editor.changedOnDisk && <ChangedOnDisk onReload={onReload} />}
+      {editor.saveRefusal !== null && (
+        <p className="skills__refusal" role="status">
+          {editor.saveRefusal}
+        </p>
+      )}
       {editor.fileProblems.length > 0 && (
         <ul className="skills__file-problems" aria-label="Problems with SKILL.md">
           {editor.fileProblems.map((problem) => (
@@ -384,6 +397,7 @@ function SkillEditor({
           <button
             type="button"
             className="btn btn--ghost btn--sm skills__delete"
+            disabled={editor.deleting}
             onClick={onDelete}
           >
             Delete…
