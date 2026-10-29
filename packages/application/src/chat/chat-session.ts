@@ -157,6 +157,11 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
   let record: ChatRecord | null = null;
   let controller: AbortController | null = null;
   /**
+   * The turn not yet asking the model: its Stop ends it at once. Once the
+   * model is asked, a Stop ends the turn as the model's answer stops.
+   */
+  let waiting: AbortController | null = null;
+  /**
    * Which conversation is showing. A new chat, a vault switch or an opened
    * chat moves it on, and a turn or an Accept begun under an older one drops
    * what it finishes with rather than touch this conversation or its note.
@@ -183,33 +188,44 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
   const setItem = (id: string, change: (item: ChatItem) => ChatItem) =>
     set({ items: state.items.map((item) => (item.id === id ? change(item) : item)) });
 
-  async function runTurn(question: string): Promise<void> {
+  /**
+   * Asks the model `question`. A `/name` send hands over the turn it began —
+   * its Stop — and the skill it just read and attached, so it is not read
+   * twice; else the turn begins here and reads the chip's skill.
+   */
+  async function runTurn(
+    question: string,
+    { own = beginTurn(), read }: { own?: AbortController; read?: TurnSkill } = {},
+  ): Promise<void> {
     const toolbox = ports.toolbox();
     const vault = ports.vault();
     // Taken before the turn waits: its lines belong to this vault, whatever opens meanwhile.
     const activity = ports.activity.inOpenVault();
     if (toolbox === null) {
-      set({ error: { message: 'Open a vault to chat about it.', problem: 'unavailable' } });
+      if (controller === own) controller = null;
+      set({
+        busy: false,
+        error: { message: 'Open a vault to chat about it.', problem: 'unavailable' },
+      });
       return;
     }
-    turnsBegun += 1;
-    const own = new AbortController();
     const began = generation;
     const live = () => generation === began;
-    controller = own;
     set({ busy: true, error: null });
     const turn: Turn = { activity: [], answer: '', tools: new Map() };
     try {
       const profile = await ports.profile();
-      if (!live()) return;
-      const skill = await skillForTurn();
-      if (!live()) return;
+      // Stopped before the model was asked: nothing is asked, and nothing kept.
+      if (!live() || own.signal.aborted) return;
+      const skill = read ?? (await skillForTurn());
+      if (!live() || own.signal.aborted) return;
       if (skill !== null && 'problem' in skill) {
         // Refused before Claude is asked: the question stays, to retry once the skill is put right.
         set({ busy: false, error: { message: skill.problem, problem: 'failed' } });
         return;
       }
       if (skill !== null) turn.activity.push(usedSkillLine(skill.name));
+      if (waiting === own) waiting = null;
       const outcome = await runChatTurn({
         provider: ports.provider(),
         toolbox,
@@ -239,6 +255,7 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
       set({ busy: false, error: { message, problem } });
     } finally {
       if (controller === own) controller = null;
+      if (waiting === own) waiting = null;
     }
   }
 
@@ -246,7 +263,7 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
    * The attached skill, read again for this turn so an edit since applies; null
    * when none is attached. One that cannot be asked with marks its chip.
    */
-  async function skillForTurn(): Promise<ChatSkill | { problem: string } | null> {
+  async function skillForTurn(): Promise<TurnSkill> {
     const chip = state.skill;
     if (chip === null) return null;
     const pick = skillPicks;
@@ -254,9 +271,7 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     // Taken off or changed while read: the turn asks with what the chip says now.
     if (pick !== skillPicks) return skillForTurn();
     set({ skill: chipOf(chip.name, found) });
-    return found.kind === 'usable'
-      ? { name: found.name, instructions: found.instructions }
-      : { problem: skillProblem(chip.name, found) };
+    return turnSkillOf(chip.name, found);
   }
 
   async function readSkillNamed(name: string): Promise<SkillToUse> {
@@ -271,20 +286,42 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
   }
 
   /**
+   * A turn begun: counted, so a past chat picked before it is not shown over
+   * it, and given its Stop. Until the model is asked, Stop also ends the
+   * wait at once — a read that never lands holds nothing.
+   */
+  function beginTurn(onStopped = () => {}): AbortController {
+    turnsBegun += 1;
+    const own = new AbortController();
+    controller = own;
+    waiting = own;
+    own.signal.addEventListener('abort', () => {
+      if (waiting !== own) return;
+      waiting = null;
+      onStopped();
+      set({ busy: false });
+    });
+    return own;
+  }
+
+  /**
    * `/name question`: attaches the skill `name` and gives the question after
-   * it ('' for none). A `/word` that no skill can be shown to be — none is
-   * called that, or the skills cannot be read — is the question itself.
+   * it ('' for none), with the skill as read when it was attached. A `/word`
+   * that no skill can be shown to be — none is called that, or the skills
+   * cannot be read — is the question itself, asked with the chip as it is.
    */
   async function takeSkillCommand(
     command: { name: string; rest: string },
     asked: string,
-  ): Promise<string> {
+    signal: AbortSignal,
+  ): Promise<{ question: string; read?: TurnSkill }> {
     const pick = (skillPicks += 1);
     const found = await readSkillNamed(command.name);
-    if (found.kind === 'missing' || found.kind === 'unreadable') return asked;
+    if (found.kind === 'missing' || found.kind === 'unreadable') return { question: asked };
     // A chip taken off, another attached, or a new chat (which counts as a pick) since: dropped.
-    if (pick === skillPicks) set({ skill: chipOf(command.name, found) });
-    return command.rest;
+    if (pick !== skillPicks || signal.aborted) return { question: command.rest };
+    set({ skill: chipOf(command.name, found) });
+    return { question: command.rest, read: turnSkillOf(command.name, found) };
   }
 
   /** The question as the model and the transcript take it, in item `id` (a new one, or the one shown while its skill was read). */
@@ -311,26 +348,37 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
   async function sendWithSkill(command: { name: string; rest: string }, asked: string) {
     const id = ports.newId();
     const began = generation;
+    // Stopped while its skill is read: shown as typed, as a stopped question stays, and never asked.
+    const own = beginTurn(() => ask(asked, id));
     set({ busy: true, error: null, items: [...state.items, { kind: 'user', id, text: asked }] });
-    let question: string;
+    const done = () => {
+      if (controller === own) controller = null;
+      if (waiting === own) waiting = null;
+    };
+    let taken: Awaited<ReturnType<typeof takeSkillCommand>>;
     try {
-      question = await takeSkillCommand(command, asked);
+      taken = await takeSkillCommand(command, asked, own.signal);
     } catch (error) {
-      if (generation !== began) return;
+      done();
+      if (generation !== began || own.signal.aborted) return;
       // A bug, said as the turn's failure: the question stays, to retry as typed.
       ask(asked, id);
       set({ busy: false, error: { message: messageOf(error), problem: 'failed' } });
       return;
     }
     if (generation !== began) return;
+    if (own.signal.aborted) {
+      done();
+      return;
+    }
+    const { question, read } = taken;
     if (question === '') {
+      done();
       set({ busy: false, items: state.items.filter((item) => item.id !== id) });
       return;
     }
-    // runTurn marks it busy again before it waits on anything.
-    set({ busy: false });
     ask(question, id);
-    await runTurn(question);
+    await runTurn(question, { own, ...(read !== undefined && { read }) });
   }
 
   /** A past chat, read from its note, as the conversation now showing. */
@@ -598,6 +646,15 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
 
 /** Why a past chat is not opened while an answer is still arriving. */
 const OPEN_WHILE_BUSY = 'Wait for the answer to finish before opening another chat.';
+
+/** A turn's skill: the one to ask with, why it cannot be, or none. */
+type TurnSkill = ChatSkill | { problem: string } | null;
+
+function turnSkillOf(name: string, found: SkillToUse): TurnSkill {
+  return found.kind === 'usable'
+    ? { name: found.name, instructions: found.instructions }
+    : { problem: skillProblem(name, found) };
+}
 
 /** The chip of the skill `name` as it was just read. */
 function chipOf(name: string, found: SkillToUse): ChatSkillChip {

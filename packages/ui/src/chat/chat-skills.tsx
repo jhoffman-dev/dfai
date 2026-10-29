@@ -78,7 +78,8 @@ export function SkillPicker({
 }
 
 /** What the picker says of its matches: the count, or why there are none. */
-function matchesSaying(count: number, query: string): string {
+function matchesSaying(count: number, query: string, loading: boolean): string {
+  if (loading) return 'Reading skills…';
   if (count === 1) return '1 skill matches';
   if (count > 1) return `${count} skills match`;
   return query === ''
@@ -129,9 +130,11 @@ export function useSkillPicker({
   const showing = skills !== undefined && (openedOver === draft || slash);
   const query = slash ? typed : '';
   const wanted = query.toLowerCase();
-  const matches = showing
-    ? (skills?.choices ?? []).filter((choice) => choice.name.toLowerCase().startsWith(wanted))
-    : [];
+  const loading = showing && skills?.loading === true;
+  const matches =
+    showing && !loading
+      ? (skills?.choices ?? []).filter((choice) => choice.name.toLowerCase().startsWith(wanted))
+      : [];
   const active = arrowed.over === draft ? Math.min(arrowed.at, matches.length - 1) : 0;
   const onWanted = skills?.onWanted;
   useEffect(() => {
@@ -157,8 +160,11 @@ export function useSkillPicker({
       setArrowed({ over: draft, at: Math.max(0, Math.min(matches.length - 1, active + step)) });
       return true;
     }
+    if (event.key !== 'Enter' || event.shiftKey) return false;
+    // Still being matched: held, as the picker says, never sent as a question meanwhile.
+    if (loading) return true;
     const chosen = matches[active];
-    if (event.key !== 'Enter' || event.shiftKey || chosen === undefined) return false;
+    if (chosen === undefined) return false;
     pick(chosen.name);
     return true;
   };
@@ -168,7 +174,7 @@ export function useSkillPicker({
     matches,
     active,
     optionId: (at) => `${listId}-${at}`,
-    saying: matchesSaying(matches.length, query),
+    saying: matchesSaying(matches.length, query, loading),
     onKey,
     toggle: () => {
       setOpenedOver((over) => (over === draft ? null : draft));

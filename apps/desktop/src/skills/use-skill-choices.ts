@@ -15,24 +15,29 @@ const NONE: readonly SkillChoice[] = [];
  * nothing is read at launch. A read that fails offers no skills: the picker
  * still shows the one a rule names, and its run says what is wrong.
  */
-export function useSkillChoices({
-  fs,
-  markdown,
-  vault,
-  enabled,
-}: {
+export function useSkillChoices(read: SkillChoicesRead): readonly SkillChoice[] {
+  return useSkillChoicesRead(read).choices;
+}
+
+interface SkillChoicesRead {
   /** Null while no vault is open: nothing is read. */
   fs: VaultFsPort | null;
   markdown: MarkdownPort;
   vault: string | null;
   enabled: boolean;
-}): readonly SkillChoice[] {
-  const { data } = useQuery({
+}
+
+/** The same read, and whether it is still under way: the chat's picker says so (#169). */
+export function useSkillChoicesRead({ fs, markdown, vault, enabled }: SkillChoicesRead): {
+  readonly choices: readonly SkillChoice[];
+  readonly loading: boolean;
+} {
+  const { data, isLoading } = useQuery({
     queryKey: vaultReadKey(vault ?? '', 'skills'),
     queryFn: () => (fs === null ? [] : listSkills({ fs, markdown })),
     enabled: enabled && vault !== null && fs !== null,
   });
-  return useMemo(
+  const choices = useMemo(
     () =>
       data === undefined
         ? NONE
@@ -42,4 +47,5 @@ export function useSkillChoices({
           })),
     [data],
   );
+  return useMemo(() => ({ choices, loading: isLoading }), [choices, isLoading]);
 }

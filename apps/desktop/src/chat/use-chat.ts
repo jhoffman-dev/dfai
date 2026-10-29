@@ -18,7 +18,7 @@ import {
 } from '@dfai/application';
 import { chatModelOrDefault, type ProfileState, type VaultPath } from '@dfai/domain';
 import type { ChatDraft, ChatProblemView, ChatSkillsView } from '@dfai/ui';
-import { useSkillChoices } from '../skills/use-skill-choices.ts';
+import { useSkillChoicesRead } from '../skills/use-skill-choices.ts';
 import { localClock } from '../today.ts';
 import type { ClipboardWriter } from '../settings/clipboard.ts';
 import type { ChatSettings, ChatSettingsStore } from './chat-settings-store.ts';
@@ -238,7 +238,7 @@ function useChatSkills({
   attached: ChatState['skill'];
 }): ChatSkillsView {
   const [wanted, setWanted] = useState(false);
-  const choices = useSkillChoices({
+  const { choices, loading } = useSkillChoicesRead({
     fs: vault.fs,
     markdown: vault.markdown,
     vault: vault.vaultKey,
@@ -249,11 +249,12 @@ function useChatSkills({
     () => ({
       attached,
       choices,
+      loading,
       onWanted,
       onAttach: (name: string) => void session.attachSkill(name),
       onRemove: () => session.removeSkill(),
     }),
-    [attached, choices, onWanted, session],
+    [attached, choices, loading, onWanted, session],
   );
 }
 

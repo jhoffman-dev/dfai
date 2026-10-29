@@ -148,7 +148,14 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
    shown as typed and holds the chat busy while its skill is read, so a
    second send is refused and a past chat is not opened meanwhile; New chat
    meanwhile leaves it with the chat it was asked in, as it leaves any
-   question still being answered. A `/word` is the question as typed when
+   question still being answered. It counts as a turn begun from the
+   start, so a past chat picked before it is not shown over it, and it owns
+   the turn's Stop: Stop during the read frees the chat at once, keeps the
+   question as typed, and the read, landing late, attaches nothing and asks
+   nothing. A turn stopped before the model is asked asks nothing and keeps
+   nothing, so no "Used the skill" line is written for it. While the
+   picker's skills are being read it says "Reading skills…", and Enter holds
+   a `/word` rather than send it. A `/word` is the question as typed when
    no skill is called that or the skills cannot be read. A host refusal is
    "could not be read"; any other error is a bug and is not dressed as one. The chat note records
    "Used the skill <name>" with each answer. A skill is **not kept with a

@@ -765,3 +765,86 @@ describe('a chat session, and a skill read that is still under way (PR #635 revi
     expect(model.requests).toHaveLength(0);
   });
 });
+
+describe('Stop before the model is asked (PR #635 attack)', () => {
+  it('a turn stopped while it waits asks nothing, keeps nothing, and is free at once', async () => {
+    let release: () => void = () => {};
+    const profile = () =>
+      new Promise<ProfileState>((resolve) => (release = () => resolve(EMPTY_PROFILE)));
+    const { chat, model, fixture } = session([[{ type: 'text', text: 'Never.' }]], { profile });
+    const asking = chat.send('Review my week');
+    chat.stop();
+    expect(chat.state().busy).toBe(false);
+    release();
+    await asking;
+    expect(model.requests).toHaveLength(0);
+    expect([...fixture.files.keys()].some((path) => path.startsWith('Chats/'))).toBe(false);
+    expect(chat.state().items).toMatchObject([{ kind: 'user', text: 'Review my week' }]);
+  });
+
+  it('a /name send stopped during its read keeps the question as typed, to ask again', async () => {
+    let answer: (found: SkillToUse) => void = () => {};
+    const { chat, model } = session([[{ type: 'text', text: 'Asked again.' }]], {
+      skill: () => new Promise<SkillToUse>((resolve) => (answer = resolve)),
+    });
+    const asking = chat.send('/weekly-review What did I finish?');
+    chat.stop();
+    answer({ kind: 'usable', name: 'weekly-review', instructions: 'Review.' });
+    await asking;
+    expect(chat.state().skill).toBeNull();
+    expect(chat.state().items).toMatchObject([
+      { kind: 'user', text: '/weekly-review What did I finish?' },
+    ]);
+    expect(model.requests).toHaveLength(0);
+    await chat.retry();
+    expect(model.requests[0]?.messages.at(-1)).toMatchObject({
+      text: '/weekly-review What did I finish?',
+    });
+  });
+});
+
+describe('Stop, before and after the model is asked (PR #635 attack)', () => {
+  it('a turn stopped while it waits does not read the skill at all', async () => {
+    let release: () => void = () => {};
+    let reads = 0;
+    let waitOnProfile = false;
+    const profile = () =>
+      waitOnProfile
+        ? new Promise<ProfileState>((resolve) => (release = () => resolve(EMPTY_PROFILE)))
+        : Promise.resolve(EMPTY_PROFILE);
+    const { chat } = session([], {
+      profile,
+      skill: () => {
+        reads += 1;
+        return Promise.resolve({ kind: 'usable', name: 'weekly-review', instructions: 'Review.' });
+      },
+    });
+    await chat.attachSkill('weekly-review');
+    waitOnProfile = true;
+    const asking = chat.send('Review my week');
+    chat.stop();
+    release();
+    await asking;
+    expect(reads).toBe(1);
+  });
+
+  it('a turn stopped mid-answer stays busy until the answer has stopped, so nothing overtakes it', async () => {
+    let finish: () => void = () => {};
+    const held = new Promise<void>((resolve) => (finish = resolve));
+    const { chat } = session([
+      async function* () {
+        yield { type: 'text' as const, text: 'Part' };
+        await held;
+        yield { type: 'text' as const, text: ' more' };
+      },
+    ]);
+    const asking = chat.send('Review my week');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(chat.state().items.some((item) => item.kind === 'assistant')).toBe(true);
+    chat.stop();
+    expect(chat.state().busy).toBe(true);
+    finish();
+    await asking;
+    expect(chat.state().busy).toBe(false);
+  });
+});

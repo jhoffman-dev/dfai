@@ -260,3 +260,58 @@ describe('Ask’s skill', () => {
     expect(screen.getByRole('listbox', { name: 'Skills' })).toBeTruthy();
   });
 });
+
+describe('the skill picker while the skills are read (PR #635 attack)', () => {
+  function Loading({ onSend }: { onSend: (text: string) => void }) {
+    const [loading, setLoading] = useState(true);
+    const skills = skillsView({
+      loading,
+      choices: loading ? [] : CHOICES,
+      onWanted: () => setTimeout(() => setLoading(false), 0),
+    });
+    return <Panel skills={skills} onSend={onSend} />;
+  }
+
+  it('says it is reading the skills, and holds Enter rather than send the /word', async () => {
+    const onSend = vi.fn();
+    const skills = skillsView({ loading: true, choices: [] });
+    render(<Panel skills={skills} onSend={onSend} />);
+    await userEvent.type(box(), '/wee');
+    expect(screen.getByRole('status').textContent).toBe('Reading skills…');
+    expect(document.querySelector('.chat__skill-empty')?.textContent).toBe('Reading skills…');
+    await userEvent.keyboard('{Enter}');
+    expect(onSend).not.toHaveBeenCalled();
+    expect((box() as HTMLTextAreaElement).value).toBe('/wee');
+  });
+
+  it('lists the matches once the skills are read', async () => {
+    const onSend = vi.fn();
+    render(<Loading onSend={onSend} />);
+    await userEvent.type(box(), '/wee');
+    await screen.findByRole('option', { name: 'weekly-review' });
+    expect(screen.getByRole('status').textContent).toBe('1 skill matches');
+  });
+
+  it('says a refused skill’s problem neither while its turn is asked nor once its alert shows', () => {
+    const problem = 'The skill weekly-review is not in .atlas/skills.';
+    const skills = skillsView({ attached: { name: 'weekly-review', problem } });
+    const { rerender } = render(<ChatPanelFor skills={skills} busy={true} />);
+    expect(document.querySelector('.chat__skill-said')?.textContent).toBe('');
+    rerender(<ChatPanelFor skills={skills} busy={false} />);
+    expect(screen.getByRole('status').textContent).toBe(problem);
+  });
+});
+
+function ChatPanelFor({ skills, busy }: { skills: ChatSkillsView; busy: boolean }) {
+  return (
+    <ChatPanel
+      state={{ ...IDLE, busy }}
+      model="claude-opus-5-5"
+      problem={null}
+      history={{ chats: [], open: false, onOpenChange: vi.fn(), onPick: vi.fn(), problem: null }}
+      actions={actions()}
+      loadImage={async () => null}
+      skills={skills}
+    />
+  );
+}

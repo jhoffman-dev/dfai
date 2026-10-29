@@ -373,8 +373,14 @@ export function Composer({
       </div>
       {picker.showing && <SkillPicker picker={picker} onPick={picker.pick} />}
       {skills !== undefined && (
-        <p className="visually-hidden" role="status">
-          {skillSaying({ picker, attached: skills.attached, error: state.error })}
+        // Always there and polite, so it speaks as it changes; while a turn runs, the log's
+        // "Claude is working…" is the one status.
+        <p
+          className="visually-hidden chat__skill-said"
+          role={state.busy ? undefined : 'status'}
+          aria-live="polite"
+        >
+          {skillSaying({ picker, attached: skills.attached, state })}
         </p>
       )}
       <div className="chat__ask">
@@ -404,19 +410,21 @@ export function Composer({
 
 /**
  * What the composer's live region says: the picker's count while it shows,
- * else the attached skill's problem — unless the turn's own alert says it.
+ * else the attached skill's problem — but not while the turn's own alert says
+ * it, nor while a turn that could say it is under way, so each send says it
+ * once.
  */
 function skillSaying({
   picker,
   attached,
-  error,
+  state,
 }: {
   picker: { showing: boolean; saying: string };
   attached: ChatSkillsView['attached'];
-  error: ChatPanelState['error'];
+  state: Pick<ChatPanelState, 'busy' | 'error'>;
 }): string {
   if (picker.showing) return picker.saying;
-  return error === null ? (attached?.problem ?? '') : '';
+  return state.error === null && !state.busy ? (attached?.problem ?? '') : '';
 }
 
 function ContextChip({

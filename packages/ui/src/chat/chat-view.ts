@@ -80,6 +80,8 @@ export interface ChatSkillsView {
   readonly attached: ChatSkillChipView | null;
   /** Empty until the picker has been wanted and the skills read. */
   readonly choices: readonly SkillChoice[];
+  /** The skills are being read: the picker says so, and `/word` is not sent meanwhile. False when not given. */
+  readonly loading?: boolean;
   /** The picker opened, or `/` was typed: the app reads the skills then. */
   readonly onWanted: () => void;
   readonly onAttach: (name: string) => void;

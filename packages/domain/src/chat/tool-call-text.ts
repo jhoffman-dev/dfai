@@ -12,8 +12,13 @@ import type { ModelMessage, ModelToolSpec, ToolCall } from './messages.ts';
 export const TOOL_OPEN = '<atlas_tool>';
 export const TOOL_CLOSE = '</atlas_tool>';
 
-/** The tags this protocol frames things with; text from the vault may not close or open them. */
-const FRAMING_TAG = /<(\/?)(user|assistant|tool_result|atlas_tool|vault_data|chosen_skill)\b/gi;
+/**
+ * The tags this protocol frames things with; text from the vault may not close
+ * or open them — not even with the whitespace a model reads straight past,
+ * `< /vault_data`.
+ */
+const FRAMING_TAG =
+  /<(\s*\/?\s*)(user|assistant|tool_result|atlas_tool|vault_data|chosen_skill)\b/gi;
 
 /** One piece of a reply as it streams: words to show, or a tool call to run. */
 export type ScannedPiece =
