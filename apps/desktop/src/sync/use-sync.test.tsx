@@ -155,7 +155,15 @@ function setUpHook({
   edits?: { feed: SyncOptions['edits']; tell: () => void };
   query?: ReturnType<typeof queryWrapper>;
 } = {}) {
-  const { git, called } = scriptedGit({ script });
+  // GitHub holds the settings this Mac has: a claim made here is shared (#630 attack).
+  const onGitHub: GitScript = {
+    tree: (rev: unknown) =>
+      (rev as { kind: string }).kind === 'remote'
+        ? said(`100644 blob ${'b'.repeat(40)}\t.atlas/settings.md\0`)
+        : said(''),
+    readBlob: () => said(`---\n${settings}\n---\n`),
+  };
+  const { git, called } = scriptedGit({ script: { ...onGitHub, ...script } });
   const order: string[] = [];
   const closeTasks: (() => Promise<void>)[] = [];
   const activity = recordingActivity();
@@ -428,6 +436,31 @@ describe('useSync: sending and bringing in by itself (A29-01)', () => {
     await settles(() => expect(called('merge').length).toBe(merges + 1));
     await settles(() => expect(onPulled).toHaveBeenCalledOnce());
     expect(hook.result.current.behind).toBe(0);
+  });
+
+  it('syncs at once when a look finds this Mac’s claim not on GitHub, and not while paused (#630 attack)', async () => {
+    vi.useFakeTimers({ now: START });
+    const model = modelGit();
+    // The claim is here; GitHub, as the last fetch left it, still names the desk Mac.
+    const desk = said(
+      '---\nsync: github\nautomationsMac: mac-desk\nautomationsMacName: Desk\n---\n',
+    );
+    const { hook, called, clock, pauses } = setUpHook({
+      script: { ...model.script, readBlob: desk },
+    });
+    await settles(() => expect(hook.result.current.phase.kind).toBe('synced'));
+    const syncs = called('addAll').length;
+
+    await wait(clock, 60_000);
+
+    // The look, then the sync it asked for, which pushes the claim.
+    await settles(() => expect(called('addAll').length).toBe(syncs + 1));
+    expect(hook.result.current.claimPending).toEqual({ was: 'Desk' });
+
+    pauses.set('/Users/j/Notes', true);
+    const whilePaused = called('addAll').length;
+    await wait(clock, 60_000);
+    expect(called('addAll').length).toBe(whilePaused);
   });
 
   it('waits for typing to stop before bringing other Macs’ changes in, showing the vault behind', async () => {

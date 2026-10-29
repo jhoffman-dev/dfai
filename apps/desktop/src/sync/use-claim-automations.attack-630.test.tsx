@@ -38,6 +38,7 @@ function setUp() {
       markdown: remarkMarkdown,
       clock: { now: () => 1_000 },
       activity: recordingActivity(),
+      onGitHub: null,
     },
     here: { thisMacId: () => 'mac-laptop', paused: () => true },
   });
@@ -54,6 +55,7 @@ function setUp() {
     gate.opened(vaultKey);
     gate.inspected(vaultKey, true);
     return {
+      named: false,
       fs,
       markdown: remarkMarkdown,
       vaultKey,

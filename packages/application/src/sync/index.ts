@@ -38,5 +38,7 @@ export {
 } from './sync-settings.ts';
 export type { SyncSettings, SyncTimingChanges } from './sync-settings.ts';
 export { claimAutomations } from './claim-automations.ts';
+export { automationsOnGitHub } from './automations-on-github.ts';
+export type { AutomationsOnGitHub, GitHubSettingsGit } from './automations-on-github.ts';
 export { checkRemote } from './check-remote.ts';
 export { listGitHubRepositories } from './list-repositories.ts';

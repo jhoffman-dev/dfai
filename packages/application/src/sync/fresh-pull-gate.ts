@@ -20,7 +20,9 @@ import type { Clock } from '../ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { programWasMissing } from './git-steps.ts';
 import type { SleepClockPort } from './ports.ts';
-import { automationsSettingsReading } from './sync-settings.ts';
+import type { AutomationsOnGitHub } from './automations-on-github.ts';
+import { automationsSettingsNow } from './sync-settings.ts';
+import { createUnsharedClaims } from './unshared-claims.ts';
 
 /**
  * What is about to be acted on, for gate 1: one file, by when it was last
@@ -83,9 +85,14 @@ export interface FreshPullGate {
    * here (#176): the gates stay shut until a sync completes, which pushed it.
    * A look that brings nothing completes a pull but pushes nothing.
    */
-  claimed(vault: string): void;
-  /** Whether this Mac's claim is written here and no sync has pushed it yet. */
+  claimed(vault: string, was?: string | null): void;
+  /**
+   * Whether this Mac's claim is written here and not on GitHub, as git showed
+   * at the last pull or the claim's write showed since. Kept by vault.
+   */
   claimUnshared(vault: string): boolean;
+  /** The Mac a claim not yet shared was taken from, by the name GitHub's settings keep; null when not known. */
+  claimWas(vault: string): string | null;
   /**
    * Whether a reading of the sleep counter since the vault's last pull shows
    * the Mac slept after that pull started: the gates are shut though the
@@ -101,6 +108,13 @@ export interface FreshPullGatePorts {
   readonly markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>;
   readonly clock: Pick<Clock, 'now'>;
   readonly activity: Pick<ActivityLog, 'inVault'>;
+  /**
+   * The vault's settings on GitHub, as the last fetch left them (#630
+   * attack): a claim is shared once they name this Mac. Null where there is
+   * no git to read, as in tests of the other gates; then a completed sync is
+   * taken to have pushed it.
+   */
+  readonly onGitHub: ((vault: string) => Promise<AutomationsOnGitHub>) | null;
 }
 
 /** What the gate reads of this Mac as it decides. */
@@ -111,17 +125,13 @@ export interface FreshPullHere {
   readonly paused: (vault: string) => boolean;
 }
 
-/**
- * One vault's record: whether it is known to sync, its standing, the wait
- * last said in Activity, a sleep seen since, and a claim not yet pushed.
- */
+/** One vault's record: whether it is known to sync, its standing, the wait last said in Activity, and a sleep seen since. */
 interface VaultRecord {
   readonly vault: string | null;
   readonly syncs: boolean;
   readonly standing: PullStanding | null;
   readonly said: FreshPullShut | null;
   readonly slept: boolean;
-  readonly claimUnshared: boolean;
 }
 
 const NOT_SYNCED: PullStanding = { kind: 'not-synced' };
@@ -140,11 +150,14 @@ export function createFreshPullGate({
   here,
   onStanding = () => undefined,
   onSlept = () => undefined,
+  onClaimUnshared = () => undefined,
 }: {
   ports: FreshPullGatePorts;
   here: FreshPullHere;
   onStanding?: (vault: string, standing: PullStanding | null) => void;
   onSlept?: (vault: string) => void;
+  /** Told when a look finds this Mac's claim not on GitHub: something must sync to push it. */
+  onClaimUnshared?: (vault: string) => void;
 }): FreshPullGate {
   const fresh = (vault: string | null): VaultRecord => ({
     vault,
@@ -152,7 +165,6 @@ export function createFreshPullGate({
     standing: null,
     said: null,
     slept: false,
-    claimUnshared: false,
   });
   let record: VaultRecord = fresh(null);
 
@@ -183,7 +195,7 @@ export function createFreshPullGate({
       return null;
     }
     const syncs = standing.kind === 'pulled';
-    return automationsSettingsReading({ ...ports, thisMacId, syncs });
+    return automationsSettingsNow({ ...ports, thisMacId, syncs });
   };
 
   /** The latest time the files about to be acted on were modified here; null for none, or none there to read. */
@@ -207,13 +219,11 @@ export function createFreshPullGate({
     ports.activity.inVault(vault).record(report);
   };
 
-  const unshared = (vault: string) => record.vault === vault && record.claimUnshared;
-  /** Marks or clears a claim not yet pushed, telling whatever waits on the standing. */
-  const markClaim = (vault: string, claimUnshared: boolean) => {
-    if (record.vault !== vault || record.claimUnshared === claimUnshared) return;
-    record = { ...record, claimUnshared };
-    onStanding(vault, record.standing);
-  };
+  const claims = createUnsharedClaims({
+    onGitHub: ports.onGitHub,
+    // Told as whatever waits on the standing is: the banner says a claim not yet shared.
+    onChange: (vault) => onStanding(vault, standingOf(vault)),
+  });
 
   const pausedHere = (vault: string) =>
     record.vault === vault && record.syncs && here.paused(vault);
@@ -221,13 +231,16 @@ export function createFreshPullGate({
   const verdict = async (vault: string, arrival?: Arrival): Promise<FreshPullVerdict> => {
     const standing = standingOf(vault);
     const pulled = standing?.kind === 'pulled';
+    const now = await settingsNow(standing);
+    const thisMacId = here.thisMacId();
     const facts = {
       standing,
-      settingsNow: await settingsNow(standing),
+      settingsNow: now?.reading ?? null,
       asleepNowMs: pulled ? await readAsleep() : null,
       arrivedAt: pulled ? await arrivedAt(arrival) : null,
       paused: pausedHere(vault),
-      claimUnshared: unshared(vault),
+      claimUnshared:
+        record.syncs && now !== null && thisMacId !== null && claims.judge(vault, now, thisMacId),
     };
     // A pull started or ended while the facts were read: they are judged against it instead.
     if (standingOf(vault) !== standing) return verdict(vault, arrival);
@@ -270,13 +283,15 @@ export function createFreshPullGate({
       const effect = pullEndEffect(end);
       if (effect === 'keeps') return;
       if (effect === 'voids') return stand(vault, null);
-      // A sync that completed pushed what was committed here, a claim among it; a look pushes nothing.
-      if (end.kind === 'synced') markClaim(vault, false);
       const finishedAt = ports.clock.now();
       const thisMacId = here.thisMacId();
       if (startedAsleepMs === null || thisMacId === null) return stand(vault, null);
-      const settings = await automationsSettingsReading({ ...ports, thisMacId, syncs: true });
-      stand(vault, standingAfterPull({ startedAsleepMs, finishedAt, settings }));
+      const now = await automationsSettingsNow({ ...ports, thisMacId, syncs: true });
+      // What git shows of a claim: here against GitHub, as this pull's fetch left it.
+      const pushed = end.kind === 'synced';
+      const unshared = await claims.learn({ vault, here: now, thisMacId, pushed });
+      stand(vault, standingAfterPull({ startedAsleepMs, finishedAt, settings: now.reading }));
+      if (unshared && !pushed && !here.paused(vault)) onClaimUnshared(vault);
     },
     inspected,
     inspectionFailed: (vault, cause) => {
@@ -286,10 +301,11 @@ export function createFreshPullGate({
     acts: async (vault, arrival) => (await verdict(vault, arrival)).open,
     countGate,
     claimRefusal: refusal,
-    claimed: (vault) => {
-      if (record.vault === vault && record.syncs) markClaim(vault, true);
+    claimed: (vault, was = null) => {
+      if (record.vault === vault && record.syncs) claims.claimed(vault, was);
     },
-    claimUnshared: unshared,
+    claimUnshared: claims.unshared,
+    claimWas: claims.was,
     sleptSincePull: (vault) => record.vault === vault && record.slept,
   };
 }

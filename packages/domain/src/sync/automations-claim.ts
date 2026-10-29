@@ -171,3 +171,25 @@ export function claimSharedReport(mac: ClaimingMac): ActivityReport {
     subject: null,
   };
 }
+
+/**
+ * Whether this Mac's claim is written here and not on GitHub (#630 attack):
+ * the settings here name this Mac, by id, and those the last fetch brought
+ * from GitHub do not. Until GitHub has it the other Mac still believes it is
+ * named. Judged from git, so it holds across a restart and a vault switch;
+ * GitHub's settings not read (`undefined`) never count as naming this Mac.
+ */
+export function claimUnsharedOf({
+  here,
+  onGitHub,
+  thisMacId,
+}: {
+  /** The Mac the settings here name, by id. */
+  here: string | null;
+  /** The Mac GitHub's settings name, as the last fetch left them; undefined when not read. */
+  onGitHub: string | null | undefined;
+  thisMacId: string;
+}): boolean {
+  const mine = automationsMacOf(here);
+  return mine !== null && mine === thisMacId.trim() && automationsMacOf(onGitHub) !== mine;
+}

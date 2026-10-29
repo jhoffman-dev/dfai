@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_PULL_INTERVAL_MINUTES,
   DEFAULT_PUSH_DELAY_SECONDS,
@@ -159,6 +159,7 @@ export function useSync(options: SyncOptions): SyncController {
     claimed,
     claimUnsharedNow,
     claimUnshared,
+    claimWas,
   } = usePulledFiles({
     vaultKey,
     sleepClock: host.sleepClock,
@@ -169,9 +170,16 @@ export function useSync(options: SyncOptions): SyncController {
     pausedNow: paused,
     clock: options.clock,
     activity: options.activity,
+    gitOf: host.git,
+    // A claim a look found not on GitHub is pushed now, not at the next edit (#630 attack).
+    onClaimUnshared: (vault) => {
+      if (vault === vaultKey && !host.pause.read(vault)) void runNow.current();
+    },
   });
   const shared = { ...options, git, files, thisMac, setPhase, markSynced, exclusive, pulls };
   const { run, check, lastSyncAt, lastCheckAt } = useSyncRuns({ ...shared, setBehind });
+  const runNow = useRef(run);
+  runNow.current = run;
   useInspection({
     ...shared,
     folders: host.folders,
@@ -196,7 +204,13 @@ export function useSync(options: SyncOptions): SyncController {
   const { setUp, problem } = useSetUp({ ...shared, folders: host.folders, setSetup });
   const repositories = useRepositories(host.github);
   const { save } = settings;
+  // After a restart only git knows of the claim: shown from what the gates found.
+  const gitPending = useMemo(
+    () => (claimUnshared ? { was: claimWas } : null),
+    [claimUnshared, claimWas],
+  );
   const claims = useClaimAutomations({
+    named: automationsHere,
     fs: options.fs,
     markdown: options.markdown,
     vaultKey,
@@ -213,6 +227,7 @@ export function useSync(options: SyncOptions): SyncController {
     readAgain: settings.readAgain,
     run,
   });
+  const claimPending = claims.pending ?? gitPending;
   return {
     phase,
     setup,
@@ -238,7 +253,7 @@ export function useSync(options: SyncOptions): SyncController {
     claimAutomations: claims.claimAutomations,
     processHere: claims.processHere,
     claiming: claims.claiming,
-    claimPending: claims.pending,
+    claimPending,
     settle: exclusive.settle,
   };
 }

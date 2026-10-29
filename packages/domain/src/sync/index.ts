@@ -119,6 +119,7 @@ export {
   claimReport,
   claimSharedReport,
   claimUnsharedLine,
+  claimUnsharedOf,
   namesThisMac,
   syncFailing,
 } from './automations-claim.ts';

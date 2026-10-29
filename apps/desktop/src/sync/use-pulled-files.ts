@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
 import {
+  automationsOnGitHub,
   createFreshPullGate,
   type ActivityLog,
   type Arrival,
   type Clock,
   type FreshPullGate,
+  type GitHubSettingsGit,
   type MarkdownPort,
   type SleepClockPort,
   type VaultFsPort,
@@ -51,6 +53,8 @@ export function usePulledFiles({
   pausedNow,
   clock,
   activity,
+  gitOf,
+  onClaimUnshared,
 }: {
   vaultKey: string | null;
   sleepClock: SleepClockPort;
@@ -64,6 +68,10 @@ export function usePulledFiles({
   pausedNow: boolean;
   clock: Pick<Clock, 'now'>;
   activity: Pick<ActivityLog, 'inVault'>;
+  /** A vault's git, to read the settings GitHub holds as the last fetch left them (#630 attack). */
+  gitOf: (vault: string) => GitHubSettingsGit;
+  /** Told when a look finds this Mac's claim not on GitHub: a sync pushes it. */
+  onClaimUnshared: (vault: string) => void;
 }): {
   gate: PulledFilesGate;
   pulls: PullRecorder;
@@ -72,9 +80,22 @@ export function usePulledFiles({
   claimUnsharedNow: FreshPullGate['claimUnshared'];
   /** Whether this Mac's claim of the open vault's automations is written here and not yet pushed. */
   claimUnshared: boolean;
+  /** The Mac that claim was taken from, by name; null when not known. */
+  claimWas: string | null;
 } {
-  const latest = useRef({ sleepClock, fs, markdown, thisMacId, paused, clock, activity });
-  latest.current = { sleepClock, fs, markdown, thisMacId, paused, clock, activity };
+  const now = {
+    sleepClock,
+    fs,
+    markdown,
+    thisMacId,
+    paused,
+    clock,
+    activity,
+    gitOf,
+    onClaimUnshared,
+  };
+  const latest = useRef(now);
+  latest.current = now;
   // Bumped as the standing changes, so whatever waits on a pull renders again.
   const [, setChanges] = useState(0);
   const [fresh] = useState(() =>
@@ -97,6 +118,11 @@ export function usePulledFiles({
         },
         clock: { now: () => latest.current.clock.now() },
         activity: { inVault: (vault) => latest.current.activity.inVault(vault) },
+        onGitHub: (vault) =>
+          automationsOnGitHub({
+            git: latest.current.gitOf(vault),
+            markdown: latest.current.markdown,
+          }),
       },
       here: {
         thisMacId: () => latest.current.thisMacId,
@@ -104,6 +130,7 @@ export function usePulledFiles({
       },
       onStanding: () => setChanges((count) => count + 1),
       onSlept: () => setChanges((count) => count + 1),
+      onClaimUnshared: (vault) => latest.current.onClaimUnshared(vault),
     }),
   );
   // From the render a vault opens on, the gates know only that vault, and nothing of it yet.
@@ -121,5 +148,6 @@ export function usePulledFiles({
     claimed: fresh.claimed,
     claimUnsharedNow: fresh.claimUnshared,
     claimUnshared: vaultKey !== null && fresh.claimUnshared(vaultKey),
+    claimWas: vaultKey === null ? null : fresh.claimWas(vaultKey),
   };
 }

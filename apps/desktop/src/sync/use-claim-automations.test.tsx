@@ -80,6 +80,7 @@ function setUp({
   });
   const readAgain = vi.fn(async () => void vault.order.push('read again'));
   const options: ClaimAutomationsOptions = {
+    named: false,
     fs: vault.fs,
     markdown: remarkMarkdown,
     vaultKey: VAULT,
@@ -168,6 +169,18 @@ describe('useClaimAutomations: "Process here" (ADR-0035 part 2, #176)', () => {
       'Laptop now runs the automations: meetings that waited are processed here.',
     ]);
     expect(hook.result.current.pending).toBeNull();
+  });
+
+  it('never says this Mac runs them while another vault is open (#630 attack)', async () => {
+    const { hook, messages, drawGate, shared } = setUp({ synced: false });
+    await press(hook);
+    drawGate();
+
+    // Another vault opens; the gates hold nothing unshared for it.
+    shared.unshared = false;
+    drawGate({ vaultKey: '/Users/j/Other' });
+
+    expect(messages()).toEqual(['Process here is set on this Mac but not yet shared with Studio.']);
   });
 
   it('asks the gates how sync stands at the moment it asks, not as last drawn (#630 review)', async () => {
@@ -292,7 +305,7 @@ describe('useClaimAutomations: Settings → Sync (ADR-0025)', () => {
     await vi.waitFor(() => expect(file.text).toContain('automationsMac: mac-laptop'));
     await act(async () => undefined);
 
-    expect(claimed).toHaveBeenCalledWith(VAULT);
+    expect(claimed).toHaveBeenCalledWith(VAULT, 'Studio');
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -334,6 +347,32 @@ describe('useClaimAutomations: Settings → Sync (ADR-0025)', () => {
     hook.rerender({ ...options, thisMac: { id: 'mac-laptop', name: 'Laptop' } });
     act(() => hook.result.current.claimAutomations());
     await vi.waitFor(() => expect(hook.result.current.claiming).toBe(false));
+
+    expect(hook.result.current.problem).toBeNull();
+  });
+
+  it('drops "not read yet" once this Mac’s id is read, with no claim made since (#630 attack)', async () => {
+    const { hook, options } = setUp({ thisMac: null });
+    act(() => hook.result.current.claimAutomations());
+    await vi.waitFor(() => expect(hook.result.current.problem).toMatch(/id has not been read yet/));
+
+    hook.rerender({ ...options, thisMac: { id: 'mac-laptop', name: 'Laptop' } });
+
+    expect(hook.result.current.problem).toBeNull();
+  });
+
+  it('drops a failed claim’s problem once the settings name this Mac by another path (#630 attack)', async () => {
+    const { hook, options } = setUp();
+    const fs = {
+      ...options.fs,
+      writeTextFile: vi.fn().mockRejectedValue(new Error('the disk is full')),
+    };
+    hook.rerender({ ...options, fs });
+    act(() => hook.result.current.claimAutomations());
+    await vi.waitFor(() => expect(hook.result.current.problem).toMatch(/disk is full/));
+
+    // Named from Settings → Sync on reopening, or by set-up: the settings now name this Mac.
+    hook.rerender({ ...options, fs, named: true });
 
     expect(hook.result.current.problem).toBeNull();
   });

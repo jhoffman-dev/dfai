@@ -89,7 +89,7 @@ export async function repositoryPlace({
 }
 
 /** The branch checked out, which is what is pushed and merged. */
-export async function currentBranch(git: GitPort): Promise<string> {
+export async function currentBranch(git: Pick<GitPort, 'currentBranch'>): Promise<string> {
   const branch = firstLine(await git.currentBranch());
   if (branch === null) {
     throw new SyncError('The vault’s repository isn’t on a branch, so DFAI won’t sync it.');

@@ -243,9 +243,13 @@ describe('no other code path writes automationsMac (#176)', () => {
       if (statSync(path).isDirectory()) return sources(path);
       return /\.tsx?$/.test(name) && !/\.test\.tsx?$|test-support|testing/.test(path) ? [path] : [];
     });
-  /** The settings keys, as their constants or written out, or the set-up rule and the claim's keys. */
+  /**
+   * The settings keys, as their constants or written out, or the set-up rule
+   * and the claim's keys: in any `save(` or `update(` call, a method or one
+   * destructured off the writer. A computed key (`[key]:`) is not caught.
+   */
   const NAMES_A_MAC =
-    /AUTOMATIONS_MAC_KEY|AUTOMATIONS_MAC_NAME_KEY|automationsHandover|claimedSettings\(|['"`]automationsMac(?:Name)?['"`]|\.(?:save|update)\([^;]*?\bautomationsMac(?:Name)?\s*:/s;
+    /AUTOMATIONS_MAC_KEY|AUTOMATIONS_MAC_NAME_KEY|automationsHandover|claimedSettings\(|['"`]automationsMac(?:Name)?['"`]|\b(?:save|update)\([^;]*?\bautomationsMac(?:Name)?\s*:/s;
   const writers = [
     join(packagesRoot, 'domain/src'),
     join(packagesRoot, 'application/src'),

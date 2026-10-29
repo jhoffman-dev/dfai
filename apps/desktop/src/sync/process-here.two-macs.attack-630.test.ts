@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { automationsMacOf, syncAfterLook, type PullEnd, type SyncPhase } from '@dfai/domain';
 import {
+  automationsOnGitHub,
   checkRemote,
   claimAutomations,
   createFreshPullGate,
@@ -47,13 +48,19 @@ async function namedOnGitHub(bare: string, env: NodeJS.ProcessEnv): Promise<stri
  * session: the gates, the schedule's memory of edits and the claim's
  * "not yet shared" are gone; the pause, kept per Mac, is not.
  */
-function macApp(mac: Mac, world: { bare: string; env: NodeJS.ProcessEnv }) {
+function macApp(
+  mac: Mac,
+  world: { bare: string; env: NodeJS.ProcessEnv },
+  /** Whether a look that finds this Mac's claim not on GitHub syncs to push it, as `useSync` does. */
+  { pushesUnshared = false } = {},
+) {
   const id = IDS[mac.name] ?? mac.name;
   const fs = vaultFsOf(mac);
   let now = 1_000;
   const tick = () => (now += 1_000);
   let paused = false;
   let online = true;
+  let pushWanted = false;
   const session = {
     gate: null as FreshPullGate | null,
     lastSyncAt: null as number | null,
@@ -71,8 +78,11 @@ function macApp(mac: Mac, world: { bare: string; env: NodeJS.ProcessEnv }) {
         markdown: remarkMarkdown,
         clock: { now: () => now },
         activity: { inVault: () => ({ record: () => undefined }) },
+        // What the app wires (#630 attack fix): GitHub's settings as the fetch left them.
+        onGitHub: () => automationsOnGitHub({ git: mac.git, markdown: remarkMarkdown }),
       },
       here: { thisMacId: () => id, paused: () => paused },
+      onClaimUnshared: () => void (pushWanted = pushesUnshared),
     });
   const gate = () => {
     if (session.gate === null) throw new Error(`${mac.name} is not running`);
@@ -113,7 +123,9 @@ function macApp(mac: Mac, world: { bare: string; env: NodeJS.ProcessEnv }) {
     }
     await ended({ kind: 'looked', behind: found.behind });
     const since = { lastSyncAt: session.lastSyncAt, lastEditAt: session.lastEditAt };
-    if (syncAfterLook({ ...found, ...since })) await sync();
+    const pushNow = pushWanted;
+    pushWanted = false;
+    if (pushNow || syncAfterLook({ ...found, ...since })) await sync();
   };
 
   /** `useSyncSchedule`'s push timer: a sync once an edit this session has settled. */
@@ -206,10 +218,10 @@ function macApp(mac: Mac, world: { bare: string; env: NodeJS.ProcessEnv }) {
   };
 }
 
-async function world() {
+async function world(options: { pushesUnshared?: boolean } = {}) {
   const made = await twoMacs({ [SETTINGS]: STUDIO_NAMED, 'Inbox/a.md': 'a\n' });
-  const studio = macApp(made.studio, made);
-  const laptop = macApp(made.laptop, made);
+  const studio = macApp(made.studio, made, options);
+  const laptop = macApp(made.laptop, made, options);
   await studio.launch();
   await laptop.launch();
   return { ...made, studio, laptop };
@@ -263,6 +275,29 @@ describe('Process here across a restart before the claim is pushed (PR #630 atta
 
       expect(await namedOnGitHub(bare, env)).toBe('mac-studio');
       expect(bothOpen).toBe(0);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('a claim not yet pushed is pushed by the next look (PR #630 attack fix)', () => {
+  it(
+    'after a restart while paused and a resume, the first look pushes the claim; the laptop opens only once GitHub names it, and Studio stands down',
+    async () => {
+      const { laptop, studio, bare, env } = await world({ pushesUnshared: true });
+      laptop.setPaused(true);
+      await laptop.claim(false);
+      await laptop.restart();
+      expect(laptop.claimUnshared()).toBe(false);
+      laptop.setPaused(false);
+
+      await laptop.look();
+
+      expect(await namedOnGitHub(bare, env)).toBe('mac-laptop');
+      expect(await laptop.open()).toBe(true);
+      expect(await laptop.openWithoutWord()).toBe(false);
+      await studio.look();
+      expect(await studio.open()).toBe(false);
     },
     TIMEOUT,
   );
@@ -326,22 +361,26 @@ function seeded(seed: number): () => number {
 }
 
 const SEEDS = Array.from(
-  { length: Number(process.env['CLAIM_PROPERTY_SEEDS'] ?? 6) },
+  { length: Number(process.env['CLAIM_PROPERTY_SEEDS'] ?? 8) },
   (_, at) => at + 1,
 );
-const STEPS = 30;
+const STEPS = 50;
 /** Each action with its weight: the moves that change who is named, and the looks that judge it, come often. */
 const ACTIONS = [
   ['claim-gated', 2],
-  ['claim-settings', 2],
+  ['claim-settings', 3],
   ['sync', 2],
-  ['look', 4],
+  ['look', 5],
   ['push-timer', 2],
-  ['pause', 1],
-  ['resume', 2],
-  ['offline', 2],
+  // A claim left unpushed — paused, offline, then a restart — is what the gates must hold shut on.
+  ['pause', 4],
+  ['resume', 3],
+  ['offline', 3],
   ['online', 2],
-  ['restart', 1],
+  ['restart', 3],
+  // Quit while paused and come back, then resume: nothing is sent on the way out or in, and the
+  // schedule's first tick after the resume is a look.
+  ['restart-paused', 3],
   ['edit-settings', 1],
   ['edit-note', 2],
 ] as const;
@@ -360,14 +399,16 @@ describe('Process here as a seeded schedule over two real clones (PR #630 attack
   it.each(SEEDS)(
     'seed %i: no Mac runs the automations without GitHub having named it at its last pull, and one Mac stays named',
     async (seed) => {
-      const { studio, laptop, bare, env } = await world();
+      // A third of the seeds push a claim a look finds unshared, as the app does; the rest leave it to
+      // the schedule, which is where a claim stays unshared long enough for the gates to matter.
+      const { studio, laptop, bare, env } = await world({ pushesUnshared: seed % 3 === 0 });
       const random = seeded(seed);
       const steps: string[] = [];
       const breaches: string[] = [];
       let mac = laptop;
       for (let step = 0; step < STEPS; step += 1) {
         // A Mac keeps the turn for a while, so a sequence on one Mac plays out.
-        if (random() < 0.3) mac = mac === laptop ? studio : laptop;
+        if (random() < 0.15) mac = mac === laptop ? studio : laptop;
         const action = pick(random);
         // A claim is made where it changes something: on a Mac whose own settings do not name it.
         if (action.startsWith('claim') && (await mac.localNamed()) === mac.id) {
@@ -384,6 +425,12 @@ describe('Process here as a seeded schedule over two real clones (PR #630 attack
         if (action === 'offline') mac.setOnline(false);
         if (action === 'online') mac.setOnline(true);
         if (action === 'restart') await mac.restart();
+        if (action === 'restart-paused') {
+          mac.setPaused(true);
+          await mac.restart();
+          mac.setPaused(false);
+          await mac.look();
+        }
         if (action === 'edit-settings') await mac.editSettings(30 + step);
         if (action === 'edit-note') await mac.editNote(`${mac.name} ${step}\n`);
         for (const each of [studio, laptop]) {

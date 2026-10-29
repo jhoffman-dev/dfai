@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   claimProblem,
+  claimRefusalLine,
   claimReport,
   claimSharedReport,
   type ClaimingMac,
@@ -19,6 +20,8 @@ import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 import type { Exclusive, ThisMac } from './use-sync-runs.ts';
 
 export interface ClaimAutomationsOptions {
+  /** Whether the settings, as drawn, name this Mac: by a claim here or any other way. */
+  readonly named: boolean;
   readonly fs: VaultFsPort;
   readonly markdown: MarkdownPort;
   readonly vaultKey: string | null;
@@ -31,8 +34,8 @@ export interface ClaimAutomationsOptions {
   readonly phaseNow: () => SyncPhase;
   /** The gates' answer to whether this Mac may claim now (ADR-0035 part 2). */
   readonly claimRefusal: (vault: string, phase: SyncPhase) => Promise<ClaimRefusal | null>;
-  /** Tells the gates a claim is written here and not yet pushed: they stay shut until a sync pushes it. */
-  readonly claimed: (vault: string) => void;
+  /** Tells the gates a claim is written here and not yet pushed: they stay shut until GitHub has it. */
+  readonly claimed: (vault: string, was: string | null) => void;
   /** Whether the gates know a claim not yet pushed, now. */
   readonly claimUnsharedNow: (vault: string) => boolean;
   /** The same, as last drawn: a sync that pushes the claim draws it false. */
@@ -44,6 +47,8 @@ export interface ClaimAutomationsOptions {
   /** A sync now: it pushes the claim and pulls, after which the named Mac's catch-ups run. */
   readonly run: () => Promise<SyncReport | null>;
 }
+
+const MAC_UNKNOWN = claimRefusalLine('mac-unknown');
 
 /** A claim written here and not yet pushed: the Mac it was taken from, by its name. */
 interface Pending {
@@ -85,12 +90,24 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
   const { vaultKey, claimUnshared } = options;
   const [claiming, setClaiming] = useState<Said<number> | null>(null);
   const [problem, setProblem] = useState<Said<string> | null>(null);
+  const clearProblem = useCallback(
+    (vault: string) => setProblem((was) => (was?.vault === vault ? null : was)),
+    [],
+  );
+  // Once this Mac's id is read, "not read yet" no longer holds; once it is named, by any path, none does.
+  const macKnown = options.thisMac !== null;
+  const { named } = options;
+  useEffect(() => {
+    if (named) setProblem(null);
+    else if (macKnown) setProblem((was) => (was?.value === MAC_UNKNOWN ? null : was));
+  }, [macKnown, named]);
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingNow = useRef<Pending | null>(null);
 
   /** Says, once, that the claim has reached GitHub. */
   const sayShared = useCallback((claim: Pending) => {
-    if (pendingNow.current !== claim) return;
+    // Only for the vault open now: one left is not synced, and its claim waits there (#630 attack).
+    if (pendingNow.current !== claim || latest.current.vaultKey !== claim.vault) return;
     pendingNow.current = null;
     setPending(null);
     latest.current.activity.inVault(claim.vault).record(claimSharedReport(claim.mac));
@@ -109,6 +126,8 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
   const afterClaim = useCallback(
     async (vault: string, mac: ClaimingMac, outcome: ClaimOutcome) => {
       const report = claimReport(outcome);
+      // Named now, by this claim or before it: the card's old problem no longer holds.
+      if (outcome.kind === 'claimed' || outcome.kind === 'already-named') clearProblem(vault);
       if (outcome.kind !== 'claimed') {
         if (report !== null) latest.current.activity.inVault(vault).record(report);
         return;
@@ -120,7 +139,7 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
         return;
       }
       const claim: Pending = { vault, mac, was: outcome.was };
-      latest.current.claimed(vault);
+      latest.current.claimed(vault, outcome.was);
       pendingNow.current = claim;
       setPending(claim);
       if (report !== null) latest.current.activity.inVault(vault).record(report);
@@ -129,7 +148,7 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
       await latest.current.run();
       settled(claim);
     },
-    [settled],
+    [settled, clearProblem],
   );
 
   const claim = useCallback(

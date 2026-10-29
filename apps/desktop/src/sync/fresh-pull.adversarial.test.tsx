@@ -22,6 +22,7 @@ import {
 import { remarkMarkdown } from '@dfai/adapters';
 import { useMeetingImport } from '../meetings/use-meeting-import.ts';
 import { usePulledFiles } from './use-pulled-files.ts';
+import { githubHolding } from './github-settings.test-support.ts';
 
 const VAULT = '/Users/j/Notes';
 const THIS_MAC = 'mac-studio';
@@ -114,6 +115,9 @@ function wire({
         pausedNow: false,
         clock: pullClock,
         activity,
+        // GitHub holds what this Mac's settings hold: no claim waits to be pushed.
+        gitOf: () => githubHolding(() => SETTINGS),
+        onClaimUnshared: () => undefined,
       });
       useMeetingImport({
         changes,

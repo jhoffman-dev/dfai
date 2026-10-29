@@ -208,17 +208,20 @@ _(Amended 2026-10-28, #176.)_ How the claim is made:
   as last drawn), reads the settings, asks the gates again and writes, with
   no pull in between. It then syncs at once, unless sync is paused here: a
   paused Mac writes the claim and leaves it for the sync after it resumes.
-- **Not yet shared until a sync pushes it.** From the write until a sync
-  completes, the claim is said as "Process here is set on this Mac but not
-  yet shared with <Mac>" on the banner and in Activity, and the gates stay
-  shut on this Mac (`claim-unshared`). A look at GitHub that finds nothing
-  completes a pull but pushes nothing, so it does not open them; a failed
-  sync does not either. The first sync that completes pushed the claim:
-  the gates open, Activity says "<Mac> now runs the automations", and the
-  catch-ups run once. What is known of an unpushed claim lives in this
-  session: a claim written and not pushed before DFAI quits is pushed by the
-  first sync after it opens, and until then a look that finds nothing can
-  open the gates, as before the claim's own sync.
+- **Not yet shared until GitHub has it.** A claim is unshared while the
+  settings here name this Mac, by id, and the settings on GitHub, as the
+  last fetch left `origin/<branch>`, do not. It is judged from git at every
+  pull that completes (a sync, or a look that finds nothing) and as the
+  gates are asked, so a claim written while paused or offline, committed or
+  not, is found again after a restart or after opening another vault and
+  coming back (#630 attack). While it holds, the banner and Activity say
+  "Process here is set on this Mac but not yet shared with <Mac>", the
+  gates stay shut on this Mac (`claim-unshared`), and a look that finds it
+  starts a sync at once unless sync is paused. GitHub's settings that
+  cannot be read count as not naming this Mac: nothing runs on a guess.
+  Once GitHub names this Mac the gates open, Activity says "<Mac> now runs
+  the automations" (only for the vault open now), and the catch-ups run
+  once.
 - **Settings → Sync shows its claim.** It is busy while the claim waits its
   turn, and the card says why one named no Mac (a refused write, settings
   that cannot be read, or this Mac's id not read yet).

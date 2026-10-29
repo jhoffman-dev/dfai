@@ -42,7 +42,15 @@ export async function readVaultSettings({
     throw new Error(`${VAULT_SETTINGS_PATH} is not there, or cannot be read as text.`);
   }
   if (file === undefined) return {};
-  const { frontmatter } = splitFrontmatter(file.text);
+  return settingsOfText(markdown, file.text);
+}
+
+/** What a settings note's text says; refused as unreadable when its frontmatter does not parse. */
+export function settingsOfText(
+  markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>,
+  text: string,
+): Readonly<Record<string, unknown>> {
+  const { frontmatter } = splitFrontmatter(text);
   refuseUnreadable(markdown, frontmatter);
   return markdown.frontmatterProperties(frontmatter);
 }
