@@ -400,6 +400,16 @@ describe('useClaimAutomations: a claim from before a restart (#630 review)', () 
     expect(messages().filter((message) => message === NOW_RUNS)).toHaveLength(1);
   });
 
+  it('says nothing when the claim stops being unshared because another Mac took over (PR #630 round 2 attack)', () => {
+    // After a restart this Mac's old claim reads "not shared" once Studio's claim is fetched;
+    // the sync that brings Studio's claim in ends it, with this Mac no longer named.
+    const { hook, options, messages } = setUp();
+    hook.rerender({ ...options, named: true, claimUnshared: false });
+    hook.rerender({ ...options, named: true, claimUnshared: true });
+    hook.rerender({ ...options, named: false, claimUnshared: false });
+    expect(messages()).not.toContain(NOW_RUNS);
+  });
+
   it('says nothing across a vault switch, or for a vault that never held one', () => {
     const { hook, options, messages } = setUp();
     hook.rerender({ ...options, claimUnshared: true });

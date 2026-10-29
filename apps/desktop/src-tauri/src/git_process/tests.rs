@@ -2849,3 +2849,147 @@ fn adversarial_a_merge_author_that_reads_like_settings_runs_nothing() {
     ok(host.git_in_vault(&vault, &list).unwrap());
     assert!(!pwned.exists(), "nothing named in the value ran");
 }
+
+/// PR #630 round 2 attack: a vault with Studio's settings on `origin/main`,
+/// pushed, and git run straight (not through the host) to shape refs.
+fn vault_with_settings_on_origin(work: &Path, git_dir: &Path) -> (GitHost, PathBuf, String) {
+    let home = work.join("home");
+    fs::create_dir(&home).unwrap();
+    let host = host_in(&[git_dir], Some(home), NO_LIMIT);
+    let a = work.join("A");
+    let bare = work.join("remote.git");
+    fs::create_dir(&a).unwrap();
+    let made = Command::new(git_dir.join("git"))
+        .args(["init", "--quiet", "--bare", "--initial-branch=main"])
+        .arg(&bare)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    ok(host
+        .git_in_vault(&a, &args(&["init", "--quiet", "--initial-branch=main"]))
+        .unwrap());
+    fs::create_dir(a.join(".atlas")).unwrap();
+    let settings = "---\nautomationsMac: mac-studio\nautomationsMacName: Studio\n---\n".to_string();
+    fs::write(a.join(".atlas/settings.md"), &settings).unwrap();
+    commit(&host, &a, "DFAI sync set up");
+    let remote = bare.display().to_string();
+    ok(host
+        .git_in_vault(&a, &args(&["remote", "add", "origin", &remote]))
+        .unwrap());
+    ok(host
+        .git_in_vault(
+            &a,
+            &args(&["push", "--quiet", "--set-upstream", "origin", "HEAD"]),
+        )
+        .unwrap());
+    (host, a, settings)
+}
+
+/// PR #630 round 2 attack: `origin/main` is git's short name, which a local
+/// branch or tag spelled `origin/main` outranks; the read must still come
+/// from `refs/remotes/origin/main`, the settings the last fetch left.
+#[test]
+fn the_settings_on_github_are_read_from_the_remote_tracking_ref_though_a_local_ref_shares_its_name()
+{
+    let Some(git_dir) = real_git_dir() else {
+        println!("skipped: no git in {GIT_DIRS:?}");
+        return;
+    };
+    for shadow in [["branch", "origin/main"], ["tag", "origin/main"]] {
+        let work = tempfile::tempdir().unwrap();
+        let (host, a, settings) = vault_with_settings_on_origin(work.path(), &git_dir);
+        // A local ref spelled `origin/main`, naming this Mac: not what GitHub holds.
+        fs::write(
+            a.join(".atlas/settings.md"),
+            "---\nautomationsMac: mac-laptop\n---\n",
+        )
+        .unwrap();
+        raw_git(&git_dir, &a, &["commit", "--quiet", "-am", "local only"]);
+        raw_git(&git_dir, &a, &[shadow[0], shadow[1], "HEAD"]);
+
+        let read = host.git_in_vault(
+            &a,
+            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+        );
+        let read = read.map(|output| output.stdout);
+        assert!(
+            matches!(&read, Ok(text) if *text == settings) || read.is_err(),
+            "a local {} named origin/main was read as GitHub's settings: {read:?}",
+            shadow[0]
+        );
+    }
+}
+
+/// PR #630 round 2 attack: with HEAD detached, or the branch tracking a
+/// remote not named origin, nothing is read as GitHub's settings.
+#[test]
+fn the_settings_on_github_are_not_read_with_head_detached() {
+    let Some(git_dir) = real_git_dir() else {
+        println!("skipped: no git in {GIT_DIRS:?}");
+        return;
+    };
+    let work = tempfile::tempdir().unwrap();
+    let (host, a, _) = vault_with_settings_on_origin(work.path(), &git_dir);
+    raw_git(&git_dir, &a, &["checkout", "--quiet", "--detach", "HEAD"]);
+    let refused = host
+        .git_in_vault(
+            &a,
+            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+        )
+        .unwrap_err();
+    assert!(refused.contains("not the branch checked out"), "{refused}");
+}
+
+/// PR #630 round 2 attack: branch spellings meant to break `<rev>:<path>`, or
+/// to reach another object, are refused by the shape before git runs.
+#[test]
+fn reading_the_settings_on_github_refuses_branch_spellings_that_reach_another_object() {
+    for branch in [
+        "a:b",
+        "a b",
+        "a\0b",
+        "a\nb",
+        "a\tb",
+        "main@{u}",
+        "@",
+        "main^{tree}",
+        "main~",
+        "-",
+        "--output=x",
+        ".hidden",
+        "a/.b",
+        "a.lock",
+        "a/",
+        "/a",
+        "a//b",
+        "a.",
+        "a\\b",
+        "a*",
+        "a?",
+        "a[b]",
+        "\u{7f}",
+    ] {
+        let arg = format!("origin/{branch}:.atlas/settings.md");
+        assert!(!vault_ok(&["cat-file", "blob", &arg]), "{arg:?}");
+    }
+    for path in [
+        ".atlas/settings.md/",
+        ".atlas/Settings.md",
+        ".atlas/settings.MD",
+        "./.atlas/settings.md",
+        ".atlas/./settings.md",
+        ".atlas/../.atlas/settings.md",
+        "/.atlas/settings.md",
+        " .atlas/settings.md",
+        ".atlas/settings.md ",
+    ] {
+        let arg = format!("origin/main:{path}");
+        assert!(!vault_ok(&["cat-file", "blob", &arg]), "{arg:?}");
+    }
+    // Unicode is a branch git allows, and still only that one path.
+    assert!(vault_ok(&[
+        "cat-file",
+        "blob",
+        "origin/café/日本:.atlas/settings.md"
+    ]));
+}
