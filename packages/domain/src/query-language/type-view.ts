@@ -43,21 +43,25 @@ export function typeViewSelectSql(spec: TypeViewSpec): string | null {
     `       COALESCE(MAX(CASE WHEN p.key = 'title' THEN p.value_text END), n.title) AS "title",`,
     '       n.summary AS "summary",',
     `       n.modified AS "modified"${progress}${columns}`,
-    'FROM files AS n JOIN props AS p ON p.path = n.path',
+    // Blank items are no items: left out once, as the rows are joined, not in every cell.
+    `FROM files AS n JOIN props AS p ON p.path = n.path AND ${HELD}`,
     `WHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = '${foldedTypeName(spec.name)}')`,
     'GROUP BY n.path',
   ].join('\n');
 }
 
-/** A row of the column's key that holds anything: a blank item is no item. */
-const heldOf = (key: string) =>
-  `p.key = '${key}' AND COALESCE(p.value_text, p.value_json, '') <> ''`;
+/** A row that holds anything: a blank item is no item. */
+const HELD = "COALESCE(p.value_text, p.value_json, '') <> ''";
+
+/** A row of the column's key; the join has left out blank items already. */
+const heldOf = (key: string) => `p.key = '${key}'`;
 
 /**
- * The row first in written order, as text that sorts by it: `idx`, then
- * `rowid` (a nested list's items share their `idx`), each 20 digits wide.
+ * The row first in written order, as 19 digits that sort by it: `idx`, then
+ * `rowid` (a nested list's items share their `idx`). Cheaper than printf,
+ * which the pivot would call on every row of the column.
  */
-const ORDERED = "printf('%020d%020d', p.idx, p.rowid)";
+const ORDERED = '(p.idx * 4294967296 + p.rowid + 1000000000000000000)';
 
 /** One column's cell, as the query draws the field (`cellOf`), out of the grouped rows. */
 function columnSql(column: TypeViewColumn): string {
@@ -69,11 +73,12 @@ function columnSql(column: TypeViewColumn): string {
   if (holdsMany(field) || field.kind === 'date') {
     // The first held item (a date's first real day): the least written-order key, its value after it.
     const dated = field.kind === 'date' ? ' AND p.value_date IS NOT NULL' : '';
-    return `substr(min(CASE WHEN ${held}${dated} THEN ${ORDERED} || ${value} END), 41)`;
+    return `substr(min(CASE WHEN ${held}${dated} THEN ${ORDERED} || ${value} END), 20)`;
   }
   // One value only when one item is held, as singleText counts.
   return `CASE WHEN count(CASE WHEN ${held} THEN 1 END) = 1 THEN max(CASE WHEN ${held} THEN ${value} END) END`;
 }
+
 /** A column as the field a query names, of the kinds a view is made of. */
 function asField(column: TypeViewColumn): QueryField {
   const kind = column.kind as FieldKind;
