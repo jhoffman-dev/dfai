@@ -59,7 +59,9 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
 3. **Use-cases in `application/skills`: list, read, create, save, delete.**
    - _Create_ writes the folder and a SKILL.md in one canonical form: `name`
      and `description` through `MarkdownPort.updateFrontmatter`, a blank
-     line, then the instructions ending their last line. A folder of exactly
+     line, then the instructions and one line ending, which a reading does not
+     count, so instructions saved at N characters read back as N (a skill at
+     the 20,000 limit stays within it). A folder of exactly
      the name with no SKILL.md yet is the skill's, and its SKILL.md is written
      into it; saving such a folder's skill does the same. Both write through
      `createNote`, which never overwrites. When a create makes the folder but

@@ -209,7 +209,7 @@ describe('useSkillsPage', () => {
     expect(editor?.draft).toEqual({
       name: 'weekly-review',
       description: 'Reviews the week.',
-      instructions: 'Read the week’s notes.\n',
+      instructions: 'Read the week’s notes.',
     });
     expect(editor?.descriptionLength).toBe(17);
     expect(editor?.descriptionLimit).toBe(1024);
@@ -312,7 +312,7 @@ describe('useSkillsPage', () => {
     expect(page.result.current.editor?.draft).toEqual({
       name: 'weekly-review',
       description: 'Reviews it.',
-      instructions: 'Read the week’s notes.\n',
+      instructions: 'Read the week’s notes.',
     });
   });
 
@@ -408,6 +408,35 @@ describe('useSkillsPage', () => {
     act(() => page.result.current.onClose());
     expect(page.result.current.editor).toBeNull();
     expect(page.result.current.selected).toBeNull();
+  });
+
+  it('round-trips instructions of exactly the cap, and a description at its limit, with no problem', async () => {
+    const page = renderPage();
+    await waitFor(() => expect(page.result.current.skills.items).toEqual([]));
+    const instructions = `${'a'.repeat(19_999)}.`;
+    const description = 'd'.repeat(1024);
+    act(() => page.result.current.onNew());
+    act(() => page.result.current.onChange({ name: 'long-one', description, instructions }));
+    expect(page.result.current.editor?.problems).toEqual([]);
+    expect(page.result.current.editor?.descriptionLength).toBe(1024);
+    await act(async () => page.result.current.onSave());
+    await waitFor(() => expect(page.result.current.editor?.mode).toBe('edit'));
+    act(() => page.result.current.onClose());
+    await waitFor(() =>
+      expect(page.result.current.skills.items).toEqual([
+        { name: 'long-one', description, problems: [] },
+      ]),
+    );
+
+    act(() => page.result.current.onSelect('long-one'));
+    await waitFor(() => expect(page.result.current.editor?.draft.name).toBe('long-one'));
+    const editor = page.result.current.editor;
+    expect(editor?.draft.instructions).toBe(instructions);
+    expect(editor?.draft.instructions).toHaveLength(20_000);
+    expect(editor?.problems).toEqual([]);
+    expect(editor?.fileProblems).toEqual([]);
+    expect(editor?.descriptionLength).toBe(1024);
+    expect(editor?.canSave).toBe(true);
   });
 
   describe('unsaved typing (#626 review)', () => {
