@@ -243,16 +243,15 @@ kept. What Slack's answers mean — `ok: false` and its code, a 429 and its
 `Retry-After` — is the domain's (`slackAnswerFailure`), and so is what the
 person is told.
 
-The answers become a capture/v1 payload in the domain:
+The answers become a capture/v1 payload in the domain, in one copy:
 `slackCapturePayload`, `usersToLookUp` and the fitting to the contract's
-limits, written for n8n in PR #623, are copied into
+limits, written for n8n in PR #623, live in
 `packages/domain/src/capture/slack/`, beside the mapping folder and
-importing only from it, and a pasted link shapes its message with them,
-`chat.getPermalink`'s link included. The payload goes through
-`receiveCapture` like `POST /v1/captures`'s: one code path, one dedupe.
-The merge order is #615, #617, #623, #631: once #631 lands after #104, n8n
-imports these from the domain and its own copy in `tools/n8n/` is deleted;
-until then, #104 carries a copy, and a fix to one must be made to both.
-The two read one person differently in a thread of more than 100 people
-only if their lookups differ; a pasted link looks up its reader first, as
-n8n looks up whoever asked, so both spend the same 100 lookups.
+importing only from it. A pasted link shapes its message with them,
+`chat.getPermalink`'s link included, and n8n's Code node imports the same
+modules, bundled in as the mapper is (PR #631 deleted #104's copies in
+`tools/n8n/`), so a fix reaches both senders at once. The payload goes
+through `receiveCapture` like `POST /v1/captures`'s: one code path, one
+dedupe. A pasted link looks up its reader first, as n8n looks up whoever
+asked, so in a thread of more than 100 people both spend the same 100
+lookups and name the same people.

@@ -6,7 +6,7 @@ import { writeCaptureMarkdown } from '../../packages/adapters/src/markdown/captu
 import { HOSTILE_PIECES, seededRandom } from '../../packages/domain/src/testing/index.ts';
 import { heldCapturePath } from './capture-github.ts';
 import { DEFAULT_TIME_ZONE, mapCaptureScript } from './code-node.ts';
-import { slackCapturePayload, usersToLookUp, type SlackAnswers } from './slack-capture.ts';
+import { captureFor, lookUpFor, type SlackActionAnswers } from './slack-action-answers.ts';
 import { buildCaptureScript, verifySlackScript } from './slack-code-node.ts';
 import { SLACK_NODES as N } from './slack-capture.workflow.ts';
 import {
@@ -230,7 +230,7 @@ const reaction: SlackCaptureAction = {
 function answersWith(change: {
   messages?: readonly Record<string, unknown>[];
   users?: readonly unknown[];
-}): SlackAnswers {
+}): SlackActionAnswers {
   return {
     action: reaction,
     permalink: permalinkAnswer,
@@ -240,8 +240,8 @@ function answersWith(change: {
 }
 
 /** What the fallback commit would write; throws as the Map node would. */
-const mapped = (answers: SlackAnswers) =>
-  mapCapture(slackCapturePayload(answers), { timeZone: LA, writeMarkdown: writeCaptureMarkdown });
+const mapped = (answers: SlackActionAnswers) =>
+  mapCapture(captureFor(answers), { timeZone: LA, writeMarkdown: writeCaptureMarkdown });
 
 const parent = (fields: Record<string, unknown> = {}) => ({
   type: 'message',
@@ -309,7 +309,7 @@ describe('attack-623: one odd detail in a thread does not lose the message', () 
     }));
     const saved = replies.at(-1);
     const action = { ...reaction, ts: String(saved?.ts) };
-    const ids = usersToLookUp(action, repliesAnswer([parent(), ...replies]));
+    const ids = lookUpFor(action, repliesAnswer([parent(), ...replies]));
     expect(ids).toHaveLength(100);
     expect(ids).toContain(saved?.user);
   });
