@@ -266,7 +266,13 @@ export { TemplateToNoteDialog } from './template-to-note-dialog.tsx';
 export type { TemplateNotice } from './template-banner.tsx';
 export { lostUsesText, templateUsesText } from './template-words.ts';
 export type { ArchiveContents, ArchivePageProps } from './archive-page.tsx';
-export type { InboxContents, InboxPageProps, InboxTypesOffer } from './inbox-page.tsx';
+export type {
+  InboxContents,
+  InboxPageProps,
+  InboxTypesOffer,
+  MeetingsWaitingProps,
+  ProcessHereProps,
+} from './inbox-page.tsx';
 export type { InboxOfferReading } from './inbox-offer.ts';
 export type { InboxRefusal } from './inbox/inbox-rows.tsx';
 export type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';

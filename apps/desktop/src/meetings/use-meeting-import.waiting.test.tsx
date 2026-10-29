@@ -109,6 +109,8 @@ interface Props {
   pulledFiles: PulledFilesGate;
   namedElsewhere: { readonly name: string | null } | null;
   active: boolean;
+  /** The index's status; a ready one counts once it has been seen working since the vault opened. */
+  indexReady?: boolean;
 }
 
 function render(initial: Props) {
@@ -119,7 +121,7 @@ function render(initial: Props) {
   const onWaiting = vi.fn<(vault: string, waiting: MeetingsWaiting | null) => void>();
   const clock = { today: () => '2026-10-08' };
   const hook = renderHook(
-    ({ pulledFiles, namedElsewhere, active }: Props) =>
+    ({ pulledFiles, namedElsewhere, active, indexReady = true }: Props) =>
       useMeetingImport({
         changes,
         ports,
@@ -130,7 +132,7 @@ function render(initial: Props) {
         selfEmails: [],
         ownerKnown: true,
         active,
-        indexReady: true,
+        indexReady,
         pulledFiles,
         namedElsewhere,
         onWaiting,
@@ -257,5 +259,50 @@ describe('useMeetingImport on a Mac that is not named (#175)', () => {
     rerender({ ...props, namedElsewhere: null, active: true });
     await settled();
     expect(lastSaid()).toBeNull();
+  });
+});
+
+describe('useMeetingImport once "Process here" names this Mac (ADR-0035, "Catch-up on a claim", #176)', () => {
+  /** The real gate's rule, in short: it opens only on a pull whose settings named this Mac. */
+  const gateNaming = (standing: Extract<PullStanding, { kind: 'pulled' }>): PulledFilesGate => ({
+    ...gateAt(standing),
+    acts: async () => standing.namedAfter,
+  });
+
+  it('catches up once, after the pull that shows the claim, and not again for the same pull', async () => {
+    const before = pulled();
+    const props = { pulledFiles: gateNaming(before), namedElsewhere: STUDIO, active: false };
+    const { rerender, reads, lastSaid } = render({ ...props, indexReady: false });
+    await settled();
+    rerender(props);
+    await settled();
+    expect(lastSaid()).toEqual({ kind: 'counted', mac: 'Studio', count: 1 });
+    const counted = reads.length;
+
+    // The claim is written: this Mac is named, but the last pull's settings named Studio.
+    rerender({ pulledFiles: gateNaming(before), namedElsewhere: null, active: true });
+    await settled();
+    expect(lastSaid()).toBeNull();
+    expect(reads).toHaveLength(counted);
+
+    // The sync the claim starts completes, its settings naming this Mac: the waiting meeting is imported.
+    const after = { ...pulled(), finishedAt: 20, namedAfter: true };
+    rerender({ pulledFiles: gateNaming(after), namedElsewhere: null, active: true });
+    await settled();
+    const imported = reads.length;
+    expect(imported).toBeGreaterThan(counted);
+    expect(reads.slice(counted)).toContain(MEETING);
+
+    // The index works and is ready again, with no new pull: no second catch-up.
+    rerender({
+      pulledFiles: gateNaming(after),
+      namedElsewhere: null,
+      active: true,
+      indexReady: false,
+    });
+    await settled();
+    rerender({ pulledFiles: gateNaming(after), namedElsewhere: null, active: true });
+    await settled();
+    expect(reads).toHaveLength(imported);
   });
 });

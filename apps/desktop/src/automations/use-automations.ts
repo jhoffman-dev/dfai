@@ -774,6 +774,9 @@ function useNoteRuns({
 
   useEffect(() => {
     if (scheduled === false) {
+      // Named again later — "Process here" or Settings → Sync alike — the missed
+      // arrivals are caught up again (ADR-0035, "Catch-up on a claim").
+      caughtUp.current = null;
       incoming.current = [];
       queues.current = new Map();
       letGo.current = { unheard: 0, byRule: new Map(), saidAt: tick };

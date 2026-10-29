@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { expect, test, type Page } from './fixtures.ts';
-import { createVault, emitVaultChanged, installHost } from './host.ts';
-import { otherMac } from './git-host.ts';
+import { expect, test, type Browser, type Page } from './fixtures.ts';
+import { createVault, emitVaultChanged, installHost, type FakeVault } from './host.ts';
+import { gitIn, otherMac } from './git-host.ts';
 
 /**
  * #175 (ADR-0035 part 1): a Mac that is not named stops dropping meetings
@@ -29,9 +29,11 @@ const LAPTOP_SETTINGS =
 const goTo = (page: Page) => page.getByRole('list', { name: 'Go to' });
 const inboxPage = (page: Page) => page.getByRole('article', { name: 'Inbox' });
 const banner = (page: Page) => inboxPage(page).getByRole('status', { name: 'Meetings waiting' });
+/** The banner's line itself, without the button beside it. */
+const bannerLine = (page: Page) => banner(page).locator('p').first();
 const syncCard = (page: Page) => page.getByRole('region', { name: 'Sync' });
 
-async function openVault(page: Page) {
+async function openVault(page: Page, macName?: string) {
   await page.setViewportSize({ width: 1440, height: 900 });
   const vault = await createVault();
   for (const folder of ['.atlas/types', '.atlas/views', 'Inbox/Meetings']) {
@@ -43,10 +45,33 @@ async function openVault(page: Page) {
   await vault.write('.atlas/views/Inbox.md', shipped('.atlas/views/Inbox.md'));
   await vault.write('Inbox/Call Mara.md', '---\ntype: task\nstatus: backlog\n---\n\n# Call Mara\n');
   const host = await installHost(page, vault);
+  if (macName !== undefined) host.git.setMacName(macName);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
   return { vault, host };
+}
+
+/** A second Mac running DFAI, in a window of its own: its own id, and a clone of the vault's repository. */
+async function secondMac(browser: Browser, remote: string, env: NodeJS.ProcessEnv, name: string) {
+  const context = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const vault: FakeVault = await createVault();
+  const cloned = await gitIn(vault.root, ['clone', '--quiet', remote, '.'], env);
+  if (cloned.code !== 0) throw new Error(`the second Mac could not clone: ${cloned.stderr}`);
+  const host = await installHost(page, vault);
+  host.git.setMacName(name);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+  return { page, vault, host, close: () => context.close() };
+}
+
+async function syncNow(page: Page) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await syncCard(page).getByRole('button', { name: 'Sync now' }).click();
+  await expect(page.getByTestId('sync-status')).toContainText('Synced at');
 }
 
 /** The laptop names itself in the vault's settings and pushes meetings this Mac has not imported. */
@@ -97,7 +122,7 @@ test('a Mac that is not named says how many meetings wait for the named one, and
   await page.keyboard.press('Escape');
 
   // Two unstamped meetings wait; the stamped one and the conflict copy are not counted.
-  await expect(banner(page)).toHaveText('2 meetings waiting for Laptop');
+  await expect(bannerLine(page)).toHaveText('2 meetings waiting for Laptop');
   // This Mac imported nothing.
   expect(await vault.read('Inbox/Meetings/2026-10-27 Larkspur weekly.md')).toBe(VALID);
 
@@ -115,7 +140,7 @@ test('a Mac that is not named says how many meetings wait for the named one, and
   await emitVaultChanged(page, ['Inbox/Water the beds.md']);
   await openInbox(page);
   await expect(inboxPage(page).getByText('Water the beds', { exact: true })).toBeVisible();
-  await expect(banner(page)).toHaveText('2 meetings waiting for Laptop');
+  await expect(bannerLine(page)).toHaveText('2 meetings waiting for Laptop');
   await goTo(page).getByRole('button', { name: 'Activity', exact: true }).click();
   await expect(warnings).toHaveCount(1);
 
@@ -125,7 +150,122 @@ test('a Mac that is not named says how many meetings wait for the named one, and
   await expect(page.getByTestId('sync-status')).toContainText('Synced at');
   await page.keyboard.press('Escape');
   await openInbox(page);
-  await expect(banner(page)).toHaveText('2 meetings waiting for Laptop');
+  await expect(bannerLine(page)).toHaveText('2 meetings waiting for Laptop');
   await goTo(page).getByRole('button', { name: 'Activity', exact: true }).click();
   await expect(warnings).toHaveCount(1);
+});
+
+const STUDIO_SETTINGS =
+  '---\nsync: github\nautomationsMac: studio-0000\nautomationsMacName: Studio\n---\n';
+const LARKSPUR = 'Inbox/Meetings/2026-10-27 Larkspur weekly.md';
+const VENDOR = 'Inbox/Meetings/2026-10-28 Vendor call.md';
+const PLANNING = 'Inbox/Meetings/2026-10-29 Planning.md';
+
+test('"Process here" names this Mac, imports what waited, and the other Mac then says meetings wait for it (#176)', async ({
+  page,
+  browser,
+}) => {
+  // The desk Mac sets sync up; Studio, a Mac the test drives with git alone, then takes the
+  // automations and pushes two meetings neither DFAI window has imported.
+  const desk = await openVault(page, 'Desk');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Set up sync with GitHub' }).click();
+  await expect(page.getByTestId('sync-status')).toContainText('Synced at');
+  await page.keyboard.press('Escape');
+  const remote = desk.host.git.remote(basename(desk.vault.root));
+  const studio = await otherMac(desk.host.git, remote, 'Studio');
+  await mkdir(join(studio.root, 'Inbox/Meetings'), { recursive: true });
+  await writeFile(join(studio.root, '.atlas/settings.md'), STUDIO_SETTINGS);
+  await writeFile(join(studio.root, LARKSPUR), VALID);
+  await writeFile(join(studio.root, VENDOR), VALID.replace('gemini-7f3a9c21', 'gemini-11aa22bb'));
+  await studio.commitAndPush('DFAI sync from Studio 2026-10-28 09:00');
+
+  // The laptop opens its own clone and is told what waits for Studio.
+  const laptop = await secondMac(browser, remote, desk.host.git.env, 'Laptop');
+  await syncNow(laptop.page);
+  await expect(laptop.page.getByTestId('automations-mac')).toContainText('Studio');
+  await laptop.page.keyboard.press('Escape');
+  await openInbox(laptop.page);
+  await expect(bannerLine(laptop.page)).toHaveText('2 meetings waiting for Studio');
+  const processHere = banner(laptop.page).getByRole('button', { name: 'Process here' });
+  await expect(processHere).toBeEnabled();
+
+  await processHere.click();
+
+  // The banner goes, the claim is in the settings, and the import catches up on both meetings.
+  await expect(banner(laptop.page)).toHaveCount(0);
+  await expect
+    .poll(() => laptop.vault.read('.atlas/settings.md'))
+    .toContain('automationsMacName: Laptop');
+  for (const meeting of [LARKSPUR, VENDOR]) {
+    await expect.poll(() => laptop.vault.read(meeting)).toContain('atlas_import_outcome:');
+  }
+  await goTo(laptop.page).getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(
+    laptop.page
+      .getByRole('article', { name: 'Activity' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Laptop now runs the automations' }),
+  ).toHaveCount(1);
+  // Its stamps go to GitHub.
+  await syncNow(laptop.page);
+  await laptop.page.keyboard.press('Escape');
+
+  // A new meeting lands. The desk Mac pulls: the laptop is named, and the desk imports nothing.
+  await studio.pull();
+  await writeFile(join(studio.root, PLANNING), VALID.replace('gemini-7f3a9c21', 'gemini-33cc44dd'));
+  await studio.commitAndPush('DFAI sync from Studio 2026-10-29 09:00');
+  await syncNow(page);
+  await expect(page.getByTestId('automations-mac')).toContainText('Laptop');
+  await page.keyboard.press('Escape');
+  await openInbox(page);
+  await expect(bannerLine(page)).toHaveText('1 meeting waiting for Laptop');
+  await expect(banner(page).getByRole('button', { name: 'Process here' })).toBeEnabled();
+  expect(await desk.vault.read(PLANNING)).toBe(VALID.replace('gemini-7f3a9c21', 'gemini-33cc44dd'));
+  expect(await desk.vault.read(LARKSPUR)).toContain('atlas_import_outcome:');
+
+  await laptop.close();
+});
+
+test('two Macs that press "Process here" before either syncs leave one named: the one whose sync comes second (#176)', async ({
+  page,
+  browser,
+}) => {
+  const desk = await openVault(page, 'Desk');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Set up sync with GitHub' }).click();
+  await expect(page.getByTestId('sync-status')).toContainText('Synced at');
+  await page.keyboard.press('Escape');
+  const remote = desk.host.git.remote(basename(desk.vault.root));
+  const studio = await otherMac(desk.host.git, remote, 'Studio');
+  await mkdir(join(studio.root, 'Inbox/Meetings'), { recursive: true });
+  await writeFile(join(studio.root, '.atlas/settings.md'), STUDIO_SETTINGS);
+  await writeFile(join(studio.root, LARKSPUR), VALID);
+  await studio.commitAndPush('DFAI sync from Studio 2026-10-28 09:00');
+  const laptop = await secondMac(browser, remote, desk.host.git.env, 'Laptop');
+  for (const each of [page, laptop.page]) {
+    await syncNow(each);
+    await each.keyboard.press('Escape');
+    await openInbox(each);
+    await expect(bannerLine(each)).toHaveText('1 meeting waiting for Studio');
+  }
+  /** Who the settings on GitHub name. */
+  const namedOnGitHub = async () =>
+    (await gitIn(remote, ['show', 'main:.atlas/settings.md'], desk.host.git.env)).stdout;
+
+  // The desk presses, and its sync takes the claim to GitHub.
+  await banner(page).getByRole('button', { name: 'Process here' }).click();
+  await expect.poll(namedOnGitHub).toContain('automationsMacName: Desk');
+  // The laptop, which has not pulled since, presses too: its sync merges, keeping its own.
+  await banner(laptop.page).getByRole('button', { name: 'Process here' }).click();
+  await expect.poll(namedOnGitHub).toContain('automationsMacName: Laptop');
+
+  // The desk's next sync brings the laptop's claim in, and the desk stands down.
+  await syncNow(page);
+  await expect(page.getByTestId('automations-mac')).toContainText('Laptop');
+  expect(await desk.vault.read('.atlas/settings.md')).toContain('automationsMacName: Laptop');
+  await syncNow(laptop.page);
+  await expect(laptop.page.getByTestId('automations-mac')).toContainText('Laptop');
+
+  await laptop.close();
 });

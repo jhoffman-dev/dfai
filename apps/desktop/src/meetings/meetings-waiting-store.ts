@@ -1,6 +1,6 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { shallow } from 'zustand/shallow';
-import { meetingsWaitingLine, type MeetingsWaiting } from '@dfai/domain';
+import type { MeetingsWaiting } from '@dfai/domain';
 
 /**
  * What the meeting import last said waits for the named Mac, for the vault
@@ -29,12 +29,10 @@ export function sayMeetingsWaiting(
   );
 }
 
-/** The Inbox's line for the vault at `vaultKey`; null when nothing is to be said, or it was said of another vault. */
-export function useMeetingsWaitingLine(
+/** What waits for the named Mac in the vault at `vaultKey`; null when nothing is said, or it was said of another vault. */
+export function useMeetingsWaiting(
   store: MeetingsWaitingStore,
   vaultKey: string | null,
-): string | null {
-  return useStore(store, ({ vault, waiting }) =>
-    vault !== vaultKey || waiting === null ? null : meetingsWaitingLine(waiting),
-  );
+): MeetingsWaiting | null {
+  return useStore(store, ({ vault, waiting }) => (vault === vaultKey ? waiting : null));
 }

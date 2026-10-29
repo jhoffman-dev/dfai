@@ -4,27 +4,27 @@ import { act, renderHook } from '@testing-library/react';
 import {
   createMeetingsWaitingStore,
   sayMeetingsWaiting,
-  useMeetingsWaitingLine,
+  useMeetingsWaiting,
 } from './meetings-waiting-store.ts';
 
 const VAULT = '/Users/j/Vault';
 
 describe('the meetings-waiting store (#175)', () => {
-  it('gives the Inbox the line for its own vault, and none for another vault’s', () => {
+  it('gives the Inbox what waits in its own vault, and nothing of another vault’s', () => {
     const store = createMeetingsWaitingStore();
-    const here = renderHook(() => useMeetingsWaitingLine(store, VAULT));
-    const other = renderHook(() => useMeetingsWaitingLine(store, '/Users/j/Other'));
+    const here = renderHook(() => useMeetingsWaiting(store, VAULT));
+    const other = renderHook(() => useMeetingsWaiting(store, '/Users/j/Other'));
     expect(here.result.current).toBeNull();
 
     act(() => sayMeetingsWaiting(store, VAULT, { kind: 'counted', mac: 'Studio', count: 4 }));
 
-    expect(here.result.current).toBe('4 meetings waiting for Studio');
+    expect(here.result.current).toEqual({ kind: 'counted', mac: 'Studio', count: 4 });
     expect(other.result.current).toBeNull();
   });
 
-  it('gives no line once nothing is to be said', () => {
+  it('gives nothing once nothing is to be said', () => {
     const store = createMeetingsWaitingStore();
-    const here = renderHook(() => useMeetingsWaitingLine(store, VAULT));
+    const here = renderHook(() => useMeetingsWaiting(store, VAULT));
     act(() => sayMeetingsWaiting(store, VAULT, { kind: 'counted', mac: 'Studio', count: 4 }));
 
     act(() => sayMeetingsWaiting(store, VAULT, null));

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { shallow } from 'zustand/shallow';
+import { syncFailing } from '@dfai/domain';
 import { useShallow } from 'zustand/react/shallow';
 import type { SyncController } from './use-sync.ts';
 import type { PulledFilesGate } from './use-pulled-files.ts';
@@ -145,6 +146,44 @@ export function useAutomationsHere(store: SyncStore, vaultKey: string | null): b
   return useStore(
     store,
     (state) => vaultKey !== null && (controllerFor(state, vaultKey)?.automationsHere ?? false),
+  );
+}
+
+/** What "Process here" acts with (ADR-0035 part 2): the claim, and whether the last sync or look failed. */
+export interface ProcessHereSync {
+  readonly failing: boolean;
+  readonly processHere: SyncController['processHere'];
+  /** While this Mac's claim is set here and not yet shared, the Mac it was taken from. */
+  readonly pending: SyncController['claimPending'];
+}
+
+/**
+ * "Process here" for the vault at `vaultKey`; null until sync says where that
+ * vault stands, never the last vault's (#419). Drawn only when one changes.
+ */
+export function useProcessHereSync(
+  store: SyncStore,
+  vaultKey: string | null,
+): ProcessHereSync | null {
+  const facts = useStore(
+    store,
+    useShallow((state) => {
+      const controller = controllerFor(state, vaultKey);
+      return controller === null
+        ? { failing: false, processHere: null, pending: null }
+        : {
+            failing: syncFailing(controller.phase),
+            processHere: controller.processHere,
+            pending: controller.claimPending,
+          };
+    }),
+  );
+  return useMemo(
+    () =>
+      facts.processHere === null
+        ? null
+        : { failing: facts.failing, processHere: facts.processHere, pending: facts.pending },
+    [facts],
   );
 }
 

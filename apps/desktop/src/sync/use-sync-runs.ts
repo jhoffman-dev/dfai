@@ -24,8 +24,11 @@ export interface ThisMac {
   readonly id: string;
 }
 
-/** What the vault's one git run at a time is doing. */
-export type RunKind = 'sync' | 'check' | 'set-up';
+/**
+ * What the vault's one git run at a time is doing. A claim of the
+ * automations takes the same turn, so no pull lands while it is decided.
+ */
+export type RunKind = 'sync' | 'check' | 'set-up' | 'claim';
 
 /**
  * How long a vault being left takes no new git run, once its switch has

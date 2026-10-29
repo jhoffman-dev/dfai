@@ -34,6 +34,8 @@ export interface SyncSettingsView {
   /** The Mac that runs automations, by name; null when none is named. */
   readonly automationsMac: string | null;
   readonly automationsHere: boolean;
+  /** Whether this Mac's claim of the automations is waiting for its turn or being written. */
+  readonly claiming: boolean;
   /** Files the last sync could not leave in one place, and where the other version went. */
   readonly conflicts: readonly {
     readonly path: string;
@@ -313,7 +315,7 @@ function SyncedControls({
         <Toggle
           label="Run automations on this Mac"
           checked={view.automationsHere}
-          disabled={view.automationsHere}
+          disabled={view.automationsHere || view.claiming}
           onChange={onClaimAutomations}
         />
       </div>
