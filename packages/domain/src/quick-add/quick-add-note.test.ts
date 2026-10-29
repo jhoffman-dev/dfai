@@ -110,6 +110,17 @@ describe('quickAddProperties', () => {
       quickAddProperties({ type: { name: 'task' }, fields: [tags], values: { tags: 'a,, b,' } }),
     ).toEqual({ type: 'task', tags: ['a', 'b'] });
   });
+
+  it('keeps a multi-select choice typed in quotes whole, comma and all (#50)', () => {
+    const clients = property('clients', 'multiSelect', { required: true });
+    expect(
+      quickAddProperties({
+        type: { name: 'task' },
+        fields: [clients],
+        values: { clients: '"Payroll, Larkspur", Quill' },
+      }),
+    ).toEqual({ type: 'task', clients: ['Payroll, Larkspur', 'Quill'] });
+  });
 });
 
 describe('quickAddBeside', () => {

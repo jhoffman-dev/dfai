@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { VaultAccessError } from '@dfai/application';
+import { EntryChangedError, VaultAccessError } from '@dfai/application';
 import { InvalidVaultPathError, VAULT_ROOT, createVaultPath } from '@dfai/domain';
 
 const invoke = vi.fn();
@@ -257,6 +257,46 @@ describe('tauriVaultFs writes', () => {
     await expect(
       tauriVaultFs.createNote({ path: notes, contents: '', vault: '/vaults/a' }),
     ).rejects.toThrow('already exists');
+  });
+
+  it('asks the host to trash only while each file named is as it was read, its text as a digest (#235)', async () => {
+    await tauriVaultFs.trashEntry({
+      path: notes,
+      vault: '/vaults/a',
+      unchanged: [
+        { path: notes, modified: 7, text: 'abc' },
+        { path: createVaultPath('.atlas/settings.md'), modified: 9, text: '' },
+      ],
+    });
+    expect(invoke).toHaveBeenCalledWith('trash_entry', {
+      path: 'notes.md',
+      vault: '/vaults/a',
+      unchanged: [
+        {
+          path: 'notes.md',
+          modified: 7,
+          digest: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+        },
+        {
+          path: '.atlas/settings.md',
+          modified: 9,
+          digest: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        },
+      ],
+    });
+  });
+
+  it('surfaces the host finding a file changed before the Trash as EntryChangedError (#235)', async () => {
+    invoke.mockImplementation(() =>
+      Promise.reject('a file changed on disk since it was read, so nothing was moved to the Trash'),
+    );
+    await expect(
+      tauriVaultFs.trashEntry({
+        path: notes,
+        vault: '/a',
+        unchanged: [{ path: notes, modified: 7, text: 'abc' }],
+      }),
+    ).rejects.toThrow(EntryChangedError);
   });
 
   it('surfaces a refused delete as an error, never as success', async () => {

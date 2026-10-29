@@ -92,6 +92,14 @@ export function keysRecorded(
   return Object.hasOwn(byType, name) ? (byType[name] ?? []) : [];
 }
 
+/** The keys a record holds for the type named `name` as a type file writes it: by its folded name, as the record keys it. */
+export function keysRecordedForType(
+  byType: Readonly<Record<string, readonly string[]>>,
+  name: string,
+): readonly string[] {
+  return keysRecorded(byType, folded(name));
+}
+
 /** The keys a type file's `properties` declares, as the file writes them — whether or not DFAI can read each. */
 export function declaredPropertyKeys(frontmatter: Readonly<Record<string, unknown>>): Set<string> {
   const declared = frontmatter['properties'];
