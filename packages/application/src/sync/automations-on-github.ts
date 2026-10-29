@@ -1,4 +1,3 @@
-import { parseTree, VAULT_SETTINGS_PATH } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { settingsOfText } from '../settings/index.ts';
 import { currentBranch, expectOk } from './git-steps.ts';
@@ -13,15 +12,20 @@ export interface AutomationsOnGitHub {
   readonly automationsMacName: string | null;
 }
 
-/** The git steps the read takes: all local, on what the last fetch left in `origin/<branch>`. */
-export type GitHubSettingsGit = Pick<GitPort, 'currentBranch' | 'tree' | 'readBlob'>;
+/** The git steps the read takes: both local, on what the last fetch left in `origin/<branch>`. */
+export type GitHubSettingsGit = Pick<GitPort, 'currentBranch' | 'remoteSettings'>;
+
+/** What git says when `origin/<branch>` has no settings note: GitHub's settings then name no Mac. */
+const NO_SUCH_PATH = /does not exist in '|exists on disk, but not in '/;
 
 /**
  * What the settings note on GitHub says of who runs the automations, as the
  * last fetch left `origin/<branch>` (#630 attack): the other Mac's last word,
- * which a claim written here and not pushed has not changed. Read from git,
- * so it holds across a restart and a vault switch. Throws when it cannot be
- * read; the gates then count a claim as not shared.
+ * which a claim written here and not pushed has not changed. One blob, read
+ * by the host's narrow `cat-file blob origin/<branch>:.atlas/settings.md`,
+ * never a listing of the tree. Read from git, so it holds across a restart
+ * and a vault switch. Throws when it cannot be read; the gates then count a
+ * claim as not shared.
  */
 export async function automationsOnGitHub({
   git,
@@ -31,10 +35,11 @@ export async function automationsOnGitHub({
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>;
 }): Promise<AutomationsOnGitHub> {
   const branch = await currentBranch(git);
-  const listed = expectOk('list what GitHub holds', await git.tree({ kind: 'remote', branch }));
-  const entry = parseTree(listed).get(VAULT_SETTINGS_PATH);
-  if (entry === undefined) return { automationsMac: null, automationsMacName: null };
-  const text = expectOk('read the settings GitHub holds', await git.readBlob(entry.oid));
+  const read = await git.remoteSettings(branch);
+  if (read.code !== 0 && NO_SUCH_PATH.test(read.stderr)) {
+    return { automationsMac: null, automationsMacName: null };
+  }
+  const text = expectOk('read the settings GitHub holds', read);
   const { automationsMac, automationsMacName } = syncSettingsOf(settingsOfText(markdown, text));
   return { automationsMac, automationsMacName };
 }

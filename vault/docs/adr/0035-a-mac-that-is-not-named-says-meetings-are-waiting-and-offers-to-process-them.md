@@ -217,11 +217,16 @@ _(Amended 2026-10-28, #176.)_ How the claim is made:
   coming back (#630 attack). While it holds, the banner and Activity say
   "Process here is set on this Mac but not yet shared with <Mac>", the
   gates stay shut on this Mac (`claim-unshared`), and a look that finds it
-  starts a sync at once unless sync is paused. GitHub's settings that
-  cannot be read count as not naming this Mac: nothing runs on a guess.
+  starts a sync at once unless sync is paused. GitHub's settings are read
+  as one blob, `cat-file blob origin/<branch>:.atlas/settings.md`, a host
+  shape that takes that path alone and only for the branch checked out;
+  nothing lists the tree. Settings that cannot be read count as not naming
+  this Mac, so nothing runs on a guess, and Activity says so once a vault
+  ("Automations wait: DFAI could not read this vault's settings on GitHub
+  to confirm the claim."), again only after a read has succeeded since.
   Once GitHub names this Mac the gates open, Activity says "<Mac> now runs
-  the automations" (only for the vault open now), and the catch-ups run
-  once.
+  the automations" (only for the vault open now; after a restart, once git
+  shows the claim shared), and the catch-ups run once.
 - **Settings → Sync shows its claim.** It is busy while the claim waits its
   turn, and the card says why one named no Mac (a refused write, settings
   that cannot be read, or this Mac's id not read yet).

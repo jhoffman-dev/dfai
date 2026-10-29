@@ -193,3 +193,17 @@ export function claimUnsharedOf({
   const mine = automationsMacOf(here);
   return mine !== null && mine === thisMacId.trim() && automationsMacOf(onGitHub) !== mine;
 }
+
+/**
+ * Activity's line when GitHub's settings could not be read to confirm a claim
+ * (#630 review): the gates wait rather than guess, and the person should know.
+ */
+export function githubSettingsUnreadableReport(): ActivityReport {
+  return {
+    level: 'warning',
+    kind: 'sync',
+    message:
+      'Automations wait: DFAI could not read this vault’s settings on GitHub to confirm the claim.',
+    subject: null,
+  };
+}

@@ -40,10 +40,14 @@ enum Slot {
     BlobLimit,
     /// A blob's id, as `cat-file blob` takes it.
     Blob,
+    /// The settings note on GitHub as the last fetch left it:
+    /// `origin/<branch>:.atlas/settings.md`, that path and no other.
+    RemoteSettings,
 }
 
 use Slot::{
-    Blob, BlobLimit, Branch, CacheInfo, CloneName, Identity, Is, Message, Ref, Rev, Url, VaultPath,
+    Blob, BlobLimit, Branch, CacheInfo, CloneName, Identity, Is, Message, Ref, RemoteSettings, Rev,
+    Url, VaultPath,
 };
 
 type Shape = (&'static [Slot], Reach);
@@ -192,6 +196,9 @@ const IN_VAULT: &[Shape] = &[
     ),
     // One side of a settings file both Macs changed, to merge by its keys.
     (&[Is("cat-file"), Is("blob"), Blob], Reach::Local),
+    // Who the settings on GitHub name, as the last fetch left them (#630):
+    // one blob, never a listing of the tree.
+    (&[Is("cat-file"), Is("blob"), RemoteSettings], Reach::Local),
     // A blob already in the repository, put in the index under a new path.
     (
         &[
@@ -402,6 +409,7 @@ fn check(slot: Slot, arg: &str) -> Result<(), String> {
         Rev => arg == "HEAD" || is_remote_branch(arg) || is_oid(arg),
         Branch => is_branch(arg),
         Blob => is_oid(arg),
+        RemoteSettings => remote_settings_branch_of(arg).is_some(),
         BlobLimit => arg
             .strip_prefix("--filter=blob:limit=")
             .is_some_and(|bytes| {
@@ -424,6 +432,26 @@ fn is_message(message: &str) -> bool {
         && !message.starts_with('-')
         && !message.contains('\0')
         && message.chars().count() <= MAX_MESSAGE
+}
+
+/// Where the settings note sits in every vault.
+const SETTINGS_PATH: &str = ".atlas/settings.md";
+
+/// The branch of `origin/<branch>:.atlas/settings.md`, when the argument is
+/// exactly that; the branch spelled as git allows, never an option or a range.
+fn remote_settings_branch_of(arg: &str) -> Option<&str> {
+    let rev = arg.strip_suffix(SETTINGS_PATH)?.strip_suffix(':')?;
+    let branch = rev.strip_prefix("origin/")?;
+    is_branch(branch).then_some(branch)
+}
+
+/// The branch a vetted read of the settings on GitHub names, which the host
+/// holds to the branch checked out before it runs.
+pub fn remote_settings_branch(args: &[String]) -> Option<&str> {
+    match args {
+        [verb, kind, arg] if verb == "cat-file" && kind == "blob" => remote_settings_branch_of(arg),
+        _ => None,
+    }
 }
 
 /// `origin/<branch>`, spelled as git allows and never as an option or a range.

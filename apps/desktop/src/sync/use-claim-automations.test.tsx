@@ -377,3 +377,34 @@ describe('useClaimAutomations: Settings → Sync (ADR-0025)', () => {
     expect(hook.result.current.problem).toBeNull();
   });
 });
+
+describe('useClaimAutomations: a claim from before a restart (#630 review)', () => {
+  const NOW_RUNS = 'Laptop now runs the automations: meetings that waited are processed here.';
+
+  it('says this Mac runs the automations once git shows the claim shared', () => {
+    const { hook, options, messages } = setUp();
+    hook.rerender({ ...options, claimUnshared: true });
+    hook.rerender({ ...options, claimUnshared: false });
+    hook.rerender({ ...options, claimUnshared: false });
+    expect(messages()).toEqual([NOW_RUNS]);
+  });
+
+  it('says it once for a claim this session made, though the gate is drawn unshared then shared', async () => {
+    const { hook, messages, drawGate } = setUp();
+    act(() => {
+      void hook.result.current.processHere();
+    });
+    await vi.waitFor(() => expect(messages()).toContain(NOW_RUNS));
+    drawGate({ claimUnshared: true });
+    drawGate({ claimUnshared: false });
+    expect(messages().filter((message) => message === NOW_RUNS)).toHaveLength(1);
+  });
+
+  it('says nothing across a vault switch, or for a vault that never held one', () => {
+    const { hook, options, messages } = setUp();
+    hook.rerender({ ...options, claimUnshared: true });
+    hook.rerender({ ...options, vaultKey: '/Users/j/Other', claimUnshared: false });
+    hook.rerender({ ...options, claimUnshared: false });
+    expect(messages()).toEqual([]);
+  });
+});

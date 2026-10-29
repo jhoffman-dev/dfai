@@ -156,13 +156,7 @@ function setUpHook({
   query?: ReturnType<typeof queryWrapper>;
 } = {}) {
   // GitHub holds the settings this Mac has: a claim made here is shared (#630 attack).
-  const onGitHub: GitScript = {
-    tree: (rev: unknown) =>
-      (rev as { kind: string }).kind === 'remote'
-        ? said(`100644 blob ${'b'.repeat(40)}\t.atlas/settings.md\0`)
-        : said(''),
-    readBlob: () => said(`---\n${settings}\n---\n`),
-  };
+  const onGitHub: GitScript = { remoteSettings: said(`---\n${settings}\n---\n`) };
   const { git, called } = scriptedGit({ script: { ...onGitHub, ...script } });
   const order: string[] = [];
   const closeTasks: (() => Promise<void>)[] = [];
@@ -446,7 +440,7 @@ describe('useSync: sending and bringing in by itself (A29-01)', () => {
       '---\nsync: github\nautomationsMac: mac-desk\nautomationsMacName: Desk\n---\n',
     );
     const { hook, called, clock, pauses } = setUpHook({
-      script: { ...model.script, readBlob: desk },
+      script: { ...model.script, remoteSettings: desk },
     });
     await settles(() => expect(hook.result.current.phase.kind).toBe('synced'));
     const syncs = called('addAll').length;

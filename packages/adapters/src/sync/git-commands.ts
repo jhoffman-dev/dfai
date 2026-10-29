@@ -1,4 +1,5 @@
 import type { ConflictSide, GitIdentity, GitPort, GitResult, TreeRev } from '@dfai/application';
+import { VAULT_SETTINGS_PATH } from '@dfai/domain';
 
 /** Runs git with these arguments, in the vault, as the host does. */
 export type RunGit = (...args: string[]) => Promise<GitResult>;
@@ -61,6 +62,7 @@ export function gitCommands(git: RunGit): Omit<GitPort, 'createGitHubRepository'
     mergeBase: (branch) => git('merge-base', 'HEAD', `origin/${branch}`),
     hashFile: (path) => git('hash-object', '--no-filters', '--', path),
     readBlob: (oid) => git('cat-file', 'blob', oid),
+    remoteSettings: (branch) => git('cat-file', 'blob', `origin/${branch}:${VAULT_SETTINGS_PATH}`),
     stageBlob: ({ mode, oid, path }) =>
       git('update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`),
     writeFromIndex: (path) => git('checkout-index', '--', path),

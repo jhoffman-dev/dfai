@@ -103,6 +103,8 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
   }, [macKnown, named]);
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingNow = useRef<Pending | null>(null);
+  // The vaults this session claimed in: their claims say "now runs" themselves.
+  const claimedHere = useRef(new Set<string>());
 
   /** Says, once, that the claim has reached GitHub. */
   const sayShared = useCallback((claim: Pending) => {
@@ -122,6 +124,7 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
   useEffect(() => {
     if (pending !== null && !claimUnshared) settled(pending);
   }, [pending, claimUnshared, settled]);
+  useSharedAfterRestart({ vaultKey, claimUnshared, claimedHere, latest });
 
   const afterClaim = useCallback(
     async (vault: string, mac: ClaimingMac, outcome: ClaimOutcome) => {
@@ -139,6 +142,7 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
         return;
       }
       const claim: Pending = { vault, mac, was: outcome.was };
+      claimedHere.current.add(vault);
       latest.current.claimed(vault, outcome.was);
       pendingNow.current = claim;
       setPending(claim);
@@ -208,4 +212,34 @@ export function useClaimAutomations(options: ClaimAutomationsOptions): ClaimAuto
     problem: problem?.vault === vaultKey ? problem.value : null,
     pending: pending?.vault === vaultKey ? pending : null,
   };
+}
+
+/**
+ * A claim this session did not make — written before a restart — found
+ * unshared by git and then seen shared, in the same vault: said once, as a
+ * claim made here is (#630 review). A claim this session made says it itself.
+ */
+function useSharedAfterRestart({
+  vaultKey,
+  claimUnshared,
+  claimedHere,
+  latest,
+}: {
+  vaultKey: string | null;
+  claimUnshared: boolean;
+  claimedHere: { readonly current: ReadonlySet<string> };
+  latest: { readonly current: ClaimAutomationsOptions };
+}) {
+  const seen = useRef<{ vault: string | null; unshared: boolean }>({
+    vault: null,
+    unshared: false,
+  });
+  useEffect(() => {
+    const was = seen.current;
+    seen.current = { vault: vaultKey, unshared: claimUnshared };
+    if (vaultKey === null || was.vault !== vaultKey || !was.unshared || claimUnshared) return;
+    const mac = latest.current.thisMac;
+    if (claimedHere.current.has(vaultKey) || mac === null) return;
+    latest.current.activity.inVault(vaultKey).record(claimSharedReport(mac));
+  }, [vaultKey, claimUnshared, claimedHere, latest]);
 }

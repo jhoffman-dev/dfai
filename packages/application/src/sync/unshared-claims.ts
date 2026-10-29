@@ -43,12 +43,19 @@ export interface UnsharedClaims {
 export function createUnsharedClaims({
   onGitHub,
   onChange,
+  onUnreadable,
 }: {
   onGitHub: ((vault: string) => Promise<AutomationsOnGitHub>) | null;
   /** Told as a vault's claim becomes unshared or shared. */
   onChange: (vault: string) => void;
+  /**
+   * Told when GitHub's settings for a vault could not be read: once a vault,
+   * and again only after a read of them has succeeded since.
+   */
+  onUnreadable: (vault: string) => void;
 }): UnsharedClaims {
   const known = new Map<string, ClaimKnown>();
+  const saidUnreadable = new Set<string>();
   const set = (vault: string, next: ClaimKnown) => {
     const was = known.get(vault);
     known.set(vault, next);
@@ -56,8 +63,18 @@ export function createUnsharedClaims({
   };
   const readGitHub = async (vault: string): Promise<AutomationsOnGitHub | undefined> => {
     if (onGitHub === null) return undefined;
-    // Not read: the claim counts as not shared, so nothing runs on a guess.
-    return onGitHub(vault).catch(() => undefined);
+    try {
+      const read = await onGitHub(vault);
+      saidUnreadable.delete(vault);
+      return read;
+    } catch {
+      // Not read: the claim counts as not shared, so nothing runs on a guess; said once.
+      if (!saidUnreadable.has(vault)) {
+        saidUnreadable.add(vault);
+        onUnreadable(vault);
+      }
+      return undefined;
+    }
   };
   return {
     claimed: (vault, was) =>

@@ -120,6 +120,7 @@ export {
   claimSharedReport,
   claimUnsharedLine,
   claimUnsharedOf,
+  githubSettingsUnreadableReport,
   namesThisMac,
   syncFailing,
 } from './automations-claim.ts';

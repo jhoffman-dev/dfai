@@ -1,5 +1,6 @@
 import {
   claimRefusal,
+  githubSettingsUnreadableReport,
   freshPullVerdict,
   freshPullWaitReport,
   pullEndEffect,
@@ -223,6 +224,7 @@ export function createFreshPullGate({
     onGitHub: ports.onGitHub,
     // Told as whatever waits on the standing is: the banner says a claim not yet shared.
     onChange: (vault) => onStanding(vault, standingOf(vault)),
+    onUnreadable: (vault) => ports.activity.inVault(vault).record(githubSettingsUnreadableReport()),
   });
 
   const pausedHere = (vault: string) =>
