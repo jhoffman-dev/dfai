@@ -45,6 +45,8 @@ use base64::engine::general_purpose::{
 use base64::Engine;
 use regex::{Regex, RegexBuilder};
 
+mod decoded;
+
 /// Handed back in place of a response that could not be checked. Nothing is
 /// better than something that might hold a secret.
 const UNCHECKED: &str = "[the response could not be checked for secrets, so it is not shown]";
@@ -345,6 +347,14 @@ fn matcher_with(
         return Err(TooLongToProtect);
     }
     build(value).map_err(|_| TooLongToProtect)
+}
+
+/// How many times an answer was decoded, and how many bytes the matchers
+/// read, on this thread: what redacting costs, counted rather than timed.
+#[cfg(test)]
+thread_local! {
+    pub(super) static DECODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    pub(super) static SCANNED_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// How many matchers were built, here and on this thread: a test tells a
@@ -778,5 +788,205 @@ mod tests {
         .await;
 
         assert_eq!(answered, Err("refused"));
+    }
+
+    /// The decoding layer, end to end (review of PR #631's redaction).
+    mod decoding {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+        use regex::RegexBuilder;
+
+        use super::super::{
+            compiled, forms, redact, spelled, DECODES, MATCHER_SIZE_LIMIT, SCANNED_BYTES,
+        };
+        use crate::secrets::tests::a_signed_token;
+
+        const LONG: &str = "Fict10nal-Larkspur_Secret.42";
+
+        fn used(value: &str) -> Vec<(String, String)> {
+            vec![("k".to_string(), value.to_string())]
+        }
+
+        fn struck(text: &str, value: &str) -> String {
+            redact(text, &used(value))
+        }
+
+        /// A seeded generator: the same seed, the same bytes.
+        fn seeded_bytes(len: usize, mut seed: u64) -> Vec<u8> {
+            (0..len)
+                .map(|_| {
+                    seed = seed
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    (seed >> 56) as u8
+                })
+                .collect()
+        }
+
+        fn wrapped(text: &str, width: usize, line_break: &str) -> String {
+            text.as_bytes()
+                .chunks(width)
+                .map(|line| std::str::from_utf8(line).unwrap())
+                .collect::<Vec<_>>()
+                .join(line_break)
+        }
+
+        #[test]
+        fn a_secret_written_with_html_entities_named_or_numeric_is_struck() {
+            let value = r#"ab"cd&ef<gh>9xyz12"#;
+            for form in [
+                "ab&quot;cd&amp;ef&lt;gh&gt;9xyz12".to_string(),
+                "ab&#34;cd&#x26;ef&#60;gh&#x3e;9xy&#122;12".to_string(),
+                "ab&#x0000022;cd&#38ef&lt;gh&gt;9xyz12".to_string(),
+            ] {
+                let out = struck(&format!("<p>{form}</p>"), value);
+                assert_eq!(out, "<p>[secret k removed]</p>", "{form}");
+            }
+        }
+
+        #[test]
+        fn a_secret_with_a_space_or_quote_and_one_entity_is_struck() {
+            let value = "pass wor9xyz'12";
+            let out = struck("said: pass wor9xy&#122;&apos;12 then", value);
+            assert_eq!(out, "said: [secret k removed] then");
+        }
+
+        #[test]
+        fn base64_of_a_secret_wrapped_any_way_is_struck() {
+            let encoded = STANDARD.encode(format!("Bearer {LONG}"));
+            for line_break in ["\n", "\r\n", "\r", "\\n", "\\r\\n", "&#10;", "\n    "] {
+                let form = wrapped(&encoded, 6, line_break);
+                let out = struck(&format!("x {form} y"), LONG);
+                assert!(!out.contains(&form), "{line_break:?}: {out}");
+                assert!(
+                    out.starts_with("x ") && out.ends_with(" y"),
+                    "{line_break:?}: {out}"
+                );
+            }
+        }
+
+        #[test]
+        fn only_the_secret_is_struck_from_a_field_of_many_lines() {
+            let mut lines: Vec<String> = (0..2_000).map(|at| format!("id-{at:05}")).collect();
+            lines.push(LONG.to_string());
+            let field = lines.join("\\n");
+            let out = struck(&format!(r#"{{"log":"{field}"}}"#), LONG);
+            let kept = lines[..2_000].join("\\n");
+            assert_eq!(out, format!(r#"{{"log":"{kept}\n[secret k removed]"}}"#));
+        }
+
+        #[test]
+        fn an_answer_with_no_secret_in_it_comes_back_byte_for_byte() {
+            let image = wrapped(&STANDARD.encode(seeded_bytes(750_000, 7)), 76, "\r\n");
+            let json_image = wrapped(&STANDARD.encode(seeded_bytes(750_000, 8)), 76, "\\n");
+            let lines: Vec<String> = (0..2_000)
+                .map(|at| format!("line {at} &amp; more"))
+                .collect();
+            for body in [image, json_image, lines.join("\\n")] {
+                assert_eq!(struck(&body, LONG), body);
+            }
+        }
+
+        #[test]
+        fn a_short_secret_is_found_only_as_it_is_and_in_the_forms_it_always_was() {
+            assert_eq!(struck("KEY1 and key1", "Key1"), "KEY1 and key1");
+            assert_eq!(struck("abc\ndef ghi", "abcdef"), "abc\ndef ghi");
+            assert_eq!(struck("ab&#99;def", "abcdef"), "ab&#99;def");
+            assert_eq!(
+                struck("x Key1 %4B%65y1 y", "Key1"),
+                "x [secret k removed] [secret k removed] y"
+            );
+        }
+
+        /// Short named secrets against seeded base64 blobs, as JSON escapes
+        /// them: a chance hit strikes a few bytes, never a run.
+        #[test]
+        fn a_short_secret_strikes_seeded_blobs_rarely_and_only_where_it_is() {
+            let alphabet: Vec<char> = ('a'..='z').collect();
+            let blob = wrapped(&STANDARD.encode(seeded_bytes(150_000, 3)), 76, "\\n");
+            let mut touched = 0;
+            for seed in 0..40u64 {
+                let value: String = seeded_bytes(4, seed + 100)
+                    .iter()
+                    .map(|byte| alphabet[*byte as usize % alphabet.len()])
+                    .collect();
+                let out = struck(&blob, &value);
+                if out != blob {
+                    touched += 1;
+                    let removed = blob.len() as isize - out.len() as isize;
+                    let marks = out.matches("[secret k removed]").count() as isize;
+                    // Each strike takes the secret's own few bytes, not a line or a run.
+                    assert!(
+                        removed + marks * 18 <= marks * 4 * 3,
+                        "{value}: {removed} bytes for {marks}"
+                    );
+                }
+            }
+            assert!(
+                touched <= 6,
+                "{touched} of 40 short secrets touched the blob"
+            );
+        }
+
+        /// Every secret that built under the old limit, with the old matcher,
+        /// still builds now: none kept before is refused.
+        #[test]
+        fn every_secret_length_that_built_before_still_builds() {
+            let old = |value: &str| {
+                let pattern: Vec<String> = forms(value).iter().map(|form| spelled(form)).collect();
+                RegexBuilder::new(&pattern.join("|"))
+                    .size_limit(12 * 1024 * 1024)
+                    .build()
+                    .is_ok()
+            };
+            assert!(MATCHER_SIZE_LIMIT >= 12 * 1024 * 1024);
+            let printable: String = (' '..='~').cycle().take(4_000).collect();
+            let mut values: Vec<String> =
+                (2_500..=3_400).step_by(100).map(a_signed_token).collect();
+            values.extend(
+                (2_300..=2_700)
+                    .step_by(80)
+                    .map(|len| printable[..len].to_string()),
+            );
+            values.extend((4_000..=5_100).step_by(366).map(|len| "€".repeat(len / 3)));
+            for value in values {
+                if old(&value) {
+                    assert!(
+                        compiled(&value).is_ok(),
+                        "{} bytes built before",
+                        value.len()
+                    );
+                }
+            }
+        }
+
+        /// What eight secrets cost against hostile bodies, counted rather than
+        /// timed: the answer is decoded once, and each secret's matcher reads
+        /// at most the answer and what was decoded from it — within twice the
+        /// one read each had before.
+        #[test]
+        fn eight_secrets_read_a_hostile_answer_at_most_twice_each() {
+            let secrets: Vec<(String, String)> = (0..8)
+                .map(|at| (format!("s{at}"), format!("{LONG}{at}")))
+                .collect();
+            for body in [
+                "&#65;".repeat(40_000),
+                "&#1; ".repeat(40_000),
+                "a\nb ".repeat(50_000),
+                "a\\nb ".repeat(40_000),
+                format!("{}\n", &LONG[..20]).repeat(8_000),
+            ] {
+                let decodes = DECODES.with(|count| count.get());
+                let scanned = SCANNED_BYTES.with(|count| count.get());
+                let _ = redact(&body, &secrets);
+                assert_eq!(DECODES.with(|count| count.get()) - decodes, 1);
+                let read = SCANNED_BYTES.with(|count| count.get()) - scanned;
+                assert!(
+                    read <= 8 * 2 * body.len(),
+                    "{read} bytes read for {}",
+                    body.len()
+                );
+            }
+        }
     }
 }
