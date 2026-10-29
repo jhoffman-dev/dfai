@@ -59,6 +59,8 @@ export const TASK_KEYS = {
   completed: 'completed',
   estimate: 'estimate',
   source: 'source',
+  /** The day it was chosen to be done on (#108): `YYYY-MM-DD`, or absent when it is not chosen. */
+  focus: 'focus',
 } as const;
 
 const STATUSES: ReadonlySet<string> = new Set(GTD_STATUSES);
