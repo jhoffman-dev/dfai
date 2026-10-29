@@ -12,6 +12,7 @@ export {
   FeedView,
   GlobalCaptureSettings,
   SettingsDialog,
+  SkillsPage,
   TemplatesPage,
   TermsPage,
   TimelineView,

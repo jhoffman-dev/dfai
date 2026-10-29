@@ -1,0 +1,214 @@
+/* Skills (#169, ADR-0050).
+   One of the section files styles/index.css imports in cascade order; the
+   section-to-file table is in docs/design/ui-v2-plan.md under slice 0b. */
+
+/* ---- Skills ----
+   Two columns on a wide page: the lists at the left — the skills, then the
+   automations' prompt notes, each a group of hairline rows under a header in
+   ink-3 — and the editor of one skill at the right. The chrome stays neutral;
+   only the chips are tinted, in the muted hues (tokens.css --hue-*), so a
+   skill with problems and a prompt note are found again by eye. Narrow, the
+   editor drops under the lists. */
+
+.skills__layout {
+  align-items: start;
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+}
+
+@media (max-width: 760px) {
+  .skills__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.skills__lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.skills__heading {
+  color: var(--ink-3);
+  font-size: var(--text-header);
+  font-weight: 500;
+  margin: 0 0 var(--space-1);
+}
+
+.skills__list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.skills__row,
+.skills__prompt {
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--radius-row);
+  color: var(--ink);
+  display: flex;
+  gap: var(--space-1);
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.skills__row {
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  cursor: pointer;
+  flex-direction: column;
+  font: inherit;
+}
+
+.skills__row:hover {
+  background: var(--hover);
+}
+
+.skills__row--on {
+  background: var(--selected);
+}
+
+.skills__row-head,
+.skills__prompt {
+  align-items: center;
+}
+
+.skills__row-head {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.skills__name {
+  font-size: var(--text-body);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skills__prompt .skills__name {
+  flex: 1 1 auto;
+}
+
+.skills__description {
+  color: var(--ink-3);
+  display: -webkit-box;
+  font-size: var(--text-meta);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.skills__row-problem,
+.skills__problem {
+  color: var(--danger);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  margin: 0;
+}
+
+.skills__chip--problem {
+  background: var(--hue-red-bg);
+  color: var(--hue-red-ink);
+}
+
+.skills__chip--prompt {
+  background: var(--hue-purple-bg);
+  color: var(--hue-purple-ink);
+}
+
+.skills__empty {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+  margin: var(--space-1) 0;
+}
+
+.skills__notice {
+  color: var(--danger);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  margin: 0 0 var(--space-3);
+}
+
+.skills__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.skills__field,
+.skills__label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skills__label-row {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+}
+
+.skills__count,
+.skills__hint {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.skills__count--over {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.skills__editor textarea {
+  resize: vertical;
+}
+
+.skills__instructions {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  line-height: 1.55;
+  min-height: 240px;
+}
+
+.skills__changed {
+  align-items: center;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  display: flex;
+  font-size: var(--text-meta);
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+}
+
+.skills__file-problems {
+  color: var(--warning);
+  font-size: var(--text-meta);
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.skills__actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/* Delete stands apart, at the left, from what keeps the work. */
+.skills__delete {
+  color: var(--danger);
+  margin-right: auto;
+}

@@ -22,6 +22,7 @@ export type Overlay =
   | 'open-from-github'
   | 'template-delete'
   | 'template-to-note'
+  | 'skill-delete'
   | PeopleOverlay
   | ExportOverlay
   | QueryPopupOverlay
@@ -78,6 +79,7 @@ const MODAL: ReadonlySet<Overlay> = new Set([
   'delete-dialog',
   'template-delete',
   'template-to-note',
+  'skill-delete',
   'merge-people',
   'people-duplicates',
   'export-notes',

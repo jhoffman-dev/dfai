@@ -227,6 +227,24 @@ describe('Sidebar', () => {
     expect(onOpenTerms).toHaveBeenCalledOnce();
   });
 
+  it('opens the Skills page from its row, marked only while it is open (#169)', async () => {
+    const onOpenSkills = vi.fn();
+    const { unmount } = show({ onOpenSkills, active: null });
+    expect(screen.getByRole('button', { name: 'Skills' }).getAttribute('aria-current')).toBeNull();
+    unmount();
+    show({ onOpenSkills, active: { kind: 'skills' } });
+    const row = screen.getByRole('button', { name: 'Skills' });
+    expect(row.getAttribute('aria-current')).toBe('page');
+    await userEvent.click(row);
+    expect(onOpenSkills).toHaveBeenCalledOnce();
+  });
+
+  it('has no Skills row when nothing opens the page', () => {
+    show();
+    expect(screen.getByRole('button', { name: 'Search' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Skills' })).toBeNull();
+  });
+
   it('has no Terms row when nothing opens the page', () => {
     show();
     expect(screen.getByRole('button', { name: 'Search' })).toBeTruthy();

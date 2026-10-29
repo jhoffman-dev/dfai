@@ -1,5 +1,6 @@
 export {
   bodyWithInstructions,
+  characterCount,
   instructionsOf,
   isSkillNameTaken,
   isWrittenWithCrlf,

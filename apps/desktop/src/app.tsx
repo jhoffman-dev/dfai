@@ -334,6 +334,7 @@ import { browserClipboard } from './settings/clipboard.ts';
 
 const OPEN_TEMPLATES = 'open-templates';
 const OPEN_TERMS = 'open-terms';
+const OPEN_SKILLS = 'open-skills';
 const OPEN_LIBRARY = 'open-library';
 const OPEN_HIGHLIGHTS = 'open-highlights';
 const ADD_PDF = 'add-pdf';
@@ -354,6 +355,8 @@ const PALETTE_COMMANDS = [
   { id: 'new-artifact', label: 'New artifact', keywords: ['claude', 'save', 'link', 'html'] },
   { id: OPEN_TEMPLATES, label: 'Templates', keywords: ['template', 'edit templates'] },
   { id: OPEN_TERMS, label: 'Terms', keywords: ['glossary', 'spelling', 'vocabulary', 'aliases'] },
+  // No keyword holds a "t", for the same reason as the comment below (#169).
+  { id: OPEN_SKILLS, label: 'Skills', keywords: ['skill', 'claude', 'ai'] },
   // No word with a "t" in it: the palette's work budget types "tobia" (tools/perf/budgets.spec.ts).
   { id: ADD_PDF, label: 'Add PDF…', keywords: ['pdf', 'book', 'paper', 'library', 'reader'] },
   { id: ADD_EPUB, label: 'Add EPUB…', keywords: ['epub', 'ebook', 'book', 'library', 'reader'] },
@@ -2026,6 +2029,7 @@ function AppWindow({
     }
     if (id === OPEN_TEMPLATES) openPage({ kind: 'templates' });
     else if (id === OPEN_TERMS) openPage({ kind: 'terms' });
+    else if (id === OPEN_SKILLS) openPage({ kind: 'skills' });
     else if (id === OPEN_LIBRARY) openPage({ kind: 'library' });
     else if (id === OPEN_HIGHLIGHTS) openPage({ kind: 'highlights' });
     else if (id === ADD_PDF) {
@@ -2326,6 +2330,7 @@ function AppWindow({
                     onOpen={openNote}
                     onOpenTemplates={() => openPage({ kind: 'templates' })}
                     onOpenTerms={() => openPage({ kind: 'terms' })}
+                    onOpenSkills={() => openPage({ kind: 'skills' })}
                     {...(inboxRowShown && { inbox: { onOpen: openInbox, count: waiting } })}
                     {...(tasksShown && { onOpenReview: () => openPage({ kind: 'review' }) })}
                     {...(tasksShown && { onOpenToday: () => openPage({ kind: 'today' }) })}
