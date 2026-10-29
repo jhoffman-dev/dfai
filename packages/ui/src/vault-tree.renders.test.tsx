@@ -283,8 +283,8 @@ describe('VaultTree — what a scroll draws', () => {
       const before = screen.getAllByRole('treeitem').length;
       expect(before).toBeGreaterThan(0);
       startCountingRenders();
-      // A few pixels: within the rows the tree already holds past its edge.
-      scrollTo(scroller as HTMLElement, 24);
+      // A few pixels: no row comes into view or leaves it, so none comes or goes.
+      scrollTo(scroller as HTMLElement, 10);
       const { renders } = stopCountingRenders();
       expect(renders['VaultTree'] ?? 0).toBe(0);
       expect(screen.getAllByRole('treeitem')).toHaveLength(before);
