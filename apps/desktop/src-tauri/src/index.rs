@@ -8,6 +8,7 @@
 //! which properties it has and where a link points are all settled in TypeScript
 //! and handed here as rows.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -1139,7 +1140,21 @@ fn replace_views(connection: &Connection, types: &[TypeSpec]) -> Result<(), Stri
             .map_err(|error| error.to_string())?;
     }
 
+    // SQLite names views in any case, so two types spelt alike (`Task`,
+    // `task`) would ask for one view twice, and the second would undo every
+    // view of the rebuild. Neither gets one; TypeScript refuses a query that
+    // names them, and every other type keeps its view.
+    let mut spellings: HashMap<String, usize> = HashMap::new();
     for spec in types {
+        *spellings.entry(spec.name.to_ascii_lowercase()).or_default() += 1;
+    }
+    for spec in types {
+        if spellings
+            .get(&spec.name.to_ascii_lowercase())
+            .is_some_and(|count| *count > 1)
+        {
+            continue;
+        }
         // A name that is no identifier, or text that is no SELECT, is not
         // written into a statement: the backstop to TypeScript's own check.
         // `execute` runs one statement, so the text cannot carry a second.
@@ -3803,6 +3818,65 @@ LIMIT ?"#;
             assert_eq!(found, Ok(300));
         }
 
+        /// `FROM task WHERE project.status = doing LIMIT 5000`, as
+        /// `compileAtlasQuery` compiles it: a condition read through a link.
+        const TASKS_BY_THEIR_PROJECTS_STATUS: &str = r#"/* atlas-query */ SELECT n.path AS "path", n.title AS "title", (SELECT CASE lower(trim(t.value_text)) WHEN ? THEN ? END FROM props AS t WHERE t.path = n.path AND t.key = 'type' AND lower(trim(t.value_text)) IN (?) ORDER BY t.idx, t.rowid LIMIT 1) AS "type", (SELECT p.value_text FROM relations AS h CROSS JOIN props AS p ON p.path = h.dst WHERE h.src = n.path AND h.key = ? AND instr('/' || h.dst, '/.') = 0 AND instr('/' || lower(h.dst) || '/', '/node_modules/') = 0 AND p.key = ? AND COALESCE(p.value_text, p.value_json, '') <> '' AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND COALESCE(q.value_text, q.value_json, '') <> '' AND q.rowid <> p.rowid) ORDER BY h.idx, p.idx, p.rowid LIMIT 1) AS "project.status"
+FROM files AS n
+WHERE n.path IN (SELECT t.path FROM props AS t WHERE t.key = 'type' AND lower(trim(t.value_text)) IN (?))
+  AND instr('/' || n.path, '/.') = 0 AND instr('/' || lower(n.path) || '/', '/node_modules/') = 0
+  AND lower(substr(n.path, 1, 8)) <> 'archive/'
+  AND (EXISTS (SELECT 1 FROM relations AS h CROSS JOIN props AS p ON p.path = h.dst WHERE h.src = n.path AND h.key = ? AND instr('/' || h.dst, '/.') = 0 AND instr('/' || lower(h.dst) || '/', '/node_modules/') = 0 AND p.key = ? AND COALESCE(p.value_text, p.value_json, '') <> '' AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND COALESCE(q.value_text, q.value_json, '') <> '' AND q.rowid <> p.rowid) AND p.value_text = ?))
+ORDER BY n.title COLLATE NOCASE ASC, n.path ASC
+LIMIT ?"#;
+
+        /// Attack 616b: a condition through a link must seek the task's own
+        /// links and then the linked note by path. Driven from the value
+        /// instead (props_key), every project holding the status was read
+        /// once per task, and 8,000 tasks ran into the query budget.
+        #[test]
+        fn eight_thousand_tasks_asked_through_their_project_stay_within_the_query_budget() {
+            let mut notes: Vec<IndexedNote> = (0..50)
+                .map(|at| IndexedNote {
+                    properties: vec![property("type", "project"), property("status", "doing")],
+                    ..note(
+                        &format!("projects/{at:02}.md"),
+                        &format!("Project {at:02}"),
+                        "",
+                    )
+                })
+                .collect();
+            // The tasks share their projects' status: the rows a value-driven plan walks.
+            notes.extend((0..8_000).map(|at| IndexedNote {
+                properties: vec![property("type", "task"), property("status", "doing")],
+                relations: vec![relation(
+                    "project",
+                    0,
+                    &format!("Project {:02}", at % 50),
+                    Some(&format!("projects/{:02}.md", at % 50)),
+                )],
+                ..note(&format!("tasks/{at:04}.md"), &format!("Task {at:04}"), "")
+            }));
+
+            let found = rows_found(
+                &notes,
+                TASKS_BY_THEIR_PROJECTS_STATUS,
+                &[
+                    serde_json::json!("task"),
+                    serde_json::json!("task"),
+                    serde_json::json!("task"),
+                    serde_json::json!("project"),
+                    serde_json::json!("status"),
+                    serde_json::json!("task"),
+                    serde_json::json!("project"),
+                    serde_json::json!("status"),
+                    serde_json::json!("doing"),
+                    serde_json::json!(5_000),
+                ],
+            );
+
+            assert_eq!(found, Ok(5_000));
+        }
+
         /// The Open tasks section of a person's page (P30-06), as
         /// `linkedSectionPlans('person', …)` writes it and `compileAtlasQuery`
         /// compiles it: `FROM task WHERE CONNECTED TO this AND status != done
@@ -3959,9 +4033,18 @@ LIMIT ?"#;
                 .with_connection(|connection| rebuild_views(connection, &[spec("task")]))
                 .unwrap();
 
-            // The second of two views of one name cannot be made, after the old ones are dropped.
+            // The second view cannot be made, after the old ones are dropped.
             let failed = index.with_connection(|connection| {
-                rebuild_views(connection, &[spec("meeting"), spec("meeting")])
+                rebuild_views(
+                    connection,
+                    &[
+                        spec("meeting"),
+                        TypeSpec {
+                            name: "project".into(),
+                            select: "SELECT FROM WHERE".into(),
+                        },
+                    ],
+                )
             });
 
             assert!(failed.is_err());

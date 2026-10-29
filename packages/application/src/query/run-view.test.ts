@@ -57,4 +57,14 @@ describe('viewSpecsFor', () => {
   it('makes no view for a type whose name is no identifier', () => {
     expect(viewSpecsFor([parseObjectType({ name: 'drop table', properties: {} })])).toEqual([]);
   });
+
+  // SQLite names views in any case: Task and task would ask for one view.
+  it('makes no view for either of two types spelt alike, and keeps every other', () => {
+    const specs = viewSpecsFor([
+      parseObjectType({ name: 'Task', properties: {} }),
+      parseObjectType({ name: 'task', properties: {} }),
+      parseObjectType({ name: 'project', properties: {} }),
+    ]);
+    expect(specs.map((spec) => spec.name)).toEqual(['project']);
+  });
 });

@@ -43,7 +43,10 @@ function planOf(sql: string, parameters: readonly unknown[] = []): string[] {
 describe('one source for the fold index', () => {
   it('index.rs makes the index the domain names, as the e2e host does', () => {
     expect(read('apps/desktop/src-tauri/src/index.rs')).toContain(PROPS_TYPE_FOLD_INDEX);
-    expect(read('e2e/host.ts')).toContain('PROPS_TYPE_FOLD_INDEX');
+    // Made where the host makes the props table, not merely imported.
+    expect(read('e2e/host.ts')).toMatch(
+      /CREATE TABLE props \([^`]*?\);[^`]*?\$\{PROPS_TYPE_FOLD_INDEX\};`\);/,
+    );
   });
 });
 

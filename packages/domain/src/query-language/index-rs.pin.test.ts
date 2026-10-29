@@ -29,13 +29,17 @@ const TYPES = [
     properties: { attendees: { kind: 'relation', target: 'person', many: true } },
   }),
   parseObjectType({ name: 'person', properties: {} }),
-  parseObjectType({ name: 'project', properties: {} }),
+  parseObjectType({
+    name: 'project',
+    properties: { status: { kind: 'select', options: ['doing', 'done'] } },
+  }),
   parseObjectType({
     name: 'task',
     properties: {
       status: { kind: 'select', options: ['next', 'waiting', 'done'] },
       due: 'date',
       waiting_on: { kind: 'relation', target: 'person' },
+      project: { kind: 'relation', target: 'project' },
     },
   }),
 ];
@@ -63,6 +67,7 @@ const BUDGET_QUERIES: Readonly<Record<string, string>> = {
   MEETINGS_WITH_AN_ATTENDEE_CONNECTED_TO_THIS: 'FROM meeting WHERE attendees CONNECTED TO this',
   OPEN_TASKS_OF_A_PERSON:
     'FROM task WHERE CONNECTED TO this AND status != done AND NOT (status = waiting AND waiting_on = this) SORT BY due, title GROUP BY status SHOW due LIMIT 202',
+  TASKS_BY_THEIR_PROJECTS_STATUS: 'FROM task WHERE project.status = doing LIMIT 5000',
 };
 
 describe("the index's query budgets run the SQL a DFAI query compiles to", () => {

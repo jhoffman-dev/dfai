@@ -60,7 +60,10 @@ export function fieldRows(
   if (field.via === null) {
     return sql`FROM ${from}${fixed(join)} WHERE ${fixed(`${alias}.${owner}`)} = n.path${key}`;
   }
-  return sql`FROM relations AS h JOIN ${from} ON ${fixed(`${alias}.${owner}`)} = h.dst${fixed(join)} WHERE h.src = n.path AND h.key = ${bound(field.via)} AND ${fixed(HOP_IN_USER_SPACE)}${key}`;
+  // CROSS JOIN keeps the task's own links the outer loop: the linked notes are
+  // sought by path. Left to choose, SQLite can drive from props_key instead —
+  // every row in the vault holding the value, once per task (attack 616b).
+  return sql`FROM relations AS h CROSS JOIN ${from} ON ${fixed(`${alias}.${owner}`)} = h.dst${fixed(join)} WHERE h.src = n.path AND h.key = ${bound(field.via)} AND ${fixed(HOP_IN_USER_SPACE)}${key}`;
 }
 
 const HOP_IN_USER_SPACE = userSpaceNoteSql('h.dst');
