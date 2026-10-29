@@ -99,6 +99,7 @@ describe('IPC contract', () => {
       'api_set_enabled',
       'api_token',
       'api_rotate_token',
+      'api_router_register',
       'api_router_ready',
     ];
     expect(needed.filter((name) => !called.has(name))).toEqual([]);
@@ -188,6 +189,9 @@ describe('IPC contract', () => {
 
   it('tells where a command runs from how it is declared', () => {
     expect(threadOf('api_router_ready')).toBe('main');
+    // On the main thread with the page load that forgets the routers (#161),
+    // so an id is never given out half-way through one.
+    expect(threadOf('api_router_register')).toBe('main');
     expect(threadOf('activity_read')).toBe('blocking pool');
     const declared = (source: string) => threadDeclaredBy(source, 'probe');
     expect(declared('#[tauri::command]\npub fn probe() {}')).toBe('main');
