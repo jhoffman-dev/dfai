@@ -31,6 +31,12 @@ const button = (name: string) => within(offer()).getByRole('button', { name });
 const noButton = (name: string) => within(offer()).queryByRole('button', { name });
 
 describe('SlackMessageOffer', () => {
+  it('is announced once: its status and alert lines speak, the card itself does not', () => {
+    renderWith({ state: 'reading' });
+    expect(offer().getAttribute('aria-live')).toBeNull();
+    expect(within(offer()).getByRole('status').textContent).toBe('Reading the Slack message…');
+  });
+
   it('while reading, says so and offers nothing to save yet', () => {
     renderWith({ state: 'reading' });
     expect(offer().textContent).toContain('Reading the Slack message…');

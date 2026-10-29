@@ -32,6 +32,8 @@ pub enum Reply {
     NotText,
     /// One byte more than the host will read.
     Oversized,
+    /// Accepts the request and never answers it.
+    Silent,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +80,8 @@ fn answer_of(status: u16, body: impl Into<Bytes>) -> Answer {
     response
 }
 
-fn reply_to(slack: &Slack, authorization: &str) -> Answer {
+/// What the fake says to one request, or None when it says nothing at all.
+fn reply_to(slack: &Slack, authorization: &str) -> Option<Answer> {
     let echo = if slack.echoes {
         format!(r#","authorization":"{authorization}""#)
     } else {
@@ -89,12 +92,12 @@ fn reply_to(slack: &Slack, authorization: &str) -> Answer {
         .as_ref()
         .is_some_and(|token| authorization == format!("Bearer {token}"));
     if !honoured {
-        return answer_of(
+        return Some(answer_of(
             200,
             format!(r#"{{"ok":false,"error":"invalid_auth"{echo}}}"#),
-        );
+        ));
     }
-    match &slack.reply {
+    Some(match &slack.reply {
         Reply::Ok => answer_of(
             200,
             format!(r#"{{"ok":true,"team":"Larkspur Payroll","user":"mara"{echo}}}"#),
@@ -120,7 +123,8 @@ fn reply_to(slack: &Slack, authorization: &str) -> Answer {
         }
         Reply::NotText => answer_of(200, vec![0xff, 0xfe, 0x00]),
         Reply::Oversized => answer_of(200, vec![b' '; MAX_ANSWER_BYTES + 1]),
-    }
+        Reply::Silent => return None,
+    })
 }
 
 async fn answer(slack: Arc<Mutex<Slack>>, request: Request<Incoming>) -> Answer {
@@ -130,13 +134,19 @@ async fn answer(slack: Arc<Mutex<Slack>>, request: Request<Incoming>) -> Answer 
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_string();
-    let mut slack = slack.lock().unwrap();
-    slack.heard.push(Heard {
-        method: request.method().to_string(),
-        target: request.uri().to_string(),
-        authorization: authorization.clone(),
-    });
-    reply_to(&slack, &authorization)
+    let replied = {
+        let mut slack = slack.lock().unwrap();
+        slack.heard.push(Heard {
+            method: request.method().to_string(),
+            target: request.uri().to_string(),
+            authorization: authorization.clone(),
+        });
+        reply_to(&slack, &authorization)
+    };
+    match replied {
+        Some(reply) => reply,
+        None => std::future::pending().await,
+    }
 }
 
 impl FakeSlack {

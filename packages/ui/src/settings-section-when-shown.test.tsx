@@ -11,10 +11,12 @@ type Watching = (entries: { isIntersecting: boolean }[]) => void;
 /** An IntersectionObserver the test says the section is seen by. */
 function observerSeeing() {
   const watching: Watching[] = [];
+  const options: (IntersectionObserverInit | undefined)[] = [];
   const disconnect = vi.fn();
   class FakeObserver {
-    constructor(callback: Watching) {
+    constructor(callback: Watching, init?: IntersectionObserverInit) {
       watching.push(callback);
+      options.push(init);
     }
     observe() {}
     disconnect = disconnect;
@@ -24,7 +26,7 @@ function observerSeeing() {
     act(() => {
       for (const callback of watching) callback([{ isIntersecting }]);
     });
-  return { see, disconnect };
+  return { see, disconnect, options };
 }
 
 afterEach(() => {
@@ -65,5 +67,15 @@ describe('SettingsSectionWhenShown', () => {
       </SettingsSectionWhenShown>,
     );
     expect(screen.getByText('Slack body')).toBeTruthy();
+  });
+
+  it('draws its body well before it is reached, so Tab from the section above lands in it', () => {
+    const { options } = observerSeeing();
+    render(
+      <SettingsSectionWhenShown section={SETTINGS_SECTIONS.slack}>
+        <p>Slack body</p>
+      </SettingsSectionWhenShown>,
+    );
+    expect(options[0]?.rootMargin).toBe('400px 0px');
   });
 });

@@ -186,3 +186,14 @@ test('opening Settings asks nothing about Slack until its section is shown', asy
   await expect(settings.getByTestId('slack-token')).toHaveText('Not connected on this Mac');
   expect(host.slack.statusCalls()).toBe(1);
 });
+
+test('Tab from the Granola key reaches the Slack token field', async ({ page }) => {
+  await openVault(page);
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const granolaKey = settings.getByLabel('Granola API key', { exact: true });
+  await granolaKey.focus();
+  await expect(granolaKey).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(settings.getByLabel('Slack user token', { exact: true })).toBeFocused();
+});
