@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.ts';
-import { frameOf } from './reader-frame.ts';
+import { frameOf, rendered } from './reader-frame.ts';
 import { createVault, installHost } from './host.ts';
 import { fixtureEpub, HARE_AND_TORTOISE, HOSTILE_ORIGIN } from '../tools/epub/fixture-epub.ts';
 
@@ -24,6 +24,9 @@ async function openBook(page: Page, bytes: Buffer): Promise<{ hits: string[] }> 
   const vault = await createVault();
   await installHost(page, vault);
   await page.goto('/');
+  // Added once the app has loaded, as on a slow runner, where a lull in start-up let Playwright call
+  // the network idle too soon and lose it for good: what these tests check must not hang on that.
+  await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Add EPUB');
@@ -69,7 +72,7 @@ test("an SVG presentation attribute keeps no other site's address, however CSS s
   expect(attributes).toHaveLength(4);
   expect(attributes.join('\n')).not.toContain('beacon.example.com');
   await frame.locator('.probe').nth(2).hover();
-  await page.waitForLoadState('networkidle');
+  await rendered(frame);
   expect(hits).toEqual([]);
 });
 
