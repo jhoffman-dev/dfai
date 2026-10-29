@@ -403,3 +403,51 @@ describe('createFreshPullGate: whether "Process here" may claim (ADR-0035 part 2
     expect(sleep.reads()).toBe(0);
   });
 });
+
+describe('createFreshPullGate: a claim not yet pushed keeps the gates shut (#630 review)', () => {
+  it('stays shut after a look that brings nothing, though the settings name this Mac', async () => {
+    const { gate, runs } = gateOn();
+    await runs({ kind: 'synced' });
+    gate.claimed(VAULT);
+
+    await runs({ kind: 'looked', behind: 0 });
+
+    expect(gate.claimUnshared(VAULT)).toBe(true);
+    expect(await gate.verdict(VAULT)).toEqual({ open: false, shut: 'claim-unshared' });
+  });
+
+  it('stays shut after a sync that failed, and opens once one succeeds, which pushed the claim', async () => {
+    const { gate, runs } = gateOn();
+    await runs({ kind: 'synced' });
+    gate.claimed(VAULT);
+    await runs({ kind: 'sync-failed' });
+    expect(gate.claimUnshared(VAULT)).toBe(true);
+
+    await runs({ kind: 'synced' });
+
+    expect(gate.claimUnshared(VAULT)).toBe(false);
+    expect(await gate.verdict(VAULT)).toEqual({ open: true });
+  });
+
+  it('forgets a claim of a vault no longer open, and marks none in a vault that does not sync', async () => {
+    const { gate } = gateOn();
+    gate.claimed(VAULT);
+    gate.opened('/Users/j/Other');
+    expect(gate.claimUnshared(VAULT)).toBe(false);
+
+    gate.opened(VAULT);
+    gate.inspected(VAULT, false);
+    gate.claimed(VAULT);
+    expect(gate.claimUnshared(VAULT)).toBe(false);
+  });
+
+  it('tells whatever draws the banner as the claim is marked and as it is shared', async () => {
+    const { gate, runs, told } = gateOn();
+    await runs({ kind: 'synced' });
+    const before = told.length;
+    gate.claimed(VAULT);
+    expect(told.length).toBe(before + 1);
+    await runs({ kind: 'synced' });
+    expect(told.length).toBeGreaterThan(before + 1);
+  });
+});

@@ -635,6 +635,15 @@ describe('InboxPage: "Process here" on the banner (ADR-0035 part 2, #176)', () =
     expect((button() as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('shows the live refusal before an older press’s problem (#630 review)', () => {
+    page({
+      meetingsWaiting: offer({ refused: 'Sync is paused on this Mac.', problem: 'Older problem.' }),
+    });
+
+    expect(within(banner()).getByText('Sync is paused on this Mac.')).toBeTruthy();
+    expect(within(banner()).queryByText('Older problem.')).toBeNull();
+  });
+
   it('shows no button until sync says where the vault stands', () => {
     page({ meetingsWaiting: { line: '2 meetings waiting for Studio', processHere: null } });
 

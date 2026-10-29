@@ -559,6 +559,32 @@ describe('useSync: sending and bringing in by itself (A29-01)', () => {
     await waitFor(() => expect(written.at(-1)).toContain('syncInterval: 5'));
   });
 
+  it('leaves who runs the automations as the file has it when the timing is saved (#630 review)', async () => {
+    // The note as read when the vault opened names Studio; a pull since brought the desk Mac's claim.
+    let onDisk = `---\n${SET_UP}\n---\n`;
+    const { hook, options } = setUpHook({ script: modelGit().script });
+    hook.rerender({
+      ...options,
+      fs: {
+        ...options.fs,
+        writeTextFile: async ({ contents }) => {
+          onDisk = contents;
+          return 2;
+        },
+        readTextFile: async () => ({ text: onDisk, modified: 1 }),
+        listDirectory: async () => [],
+      },
+    });
+    await waitFor(() => expect(hook.result.current.settings?.automationsMac).toBe('mac-studio'));
+    onDisk = '---\nsync: github\nautomationsMac: mac-desk\nautomationsMacName: Desk\n---\n';
+
+    act(() => hook.result.current.setPullInterval(15));
+
+    await waitFor(() => expect(onDisk).toContain('syncInterval: 15'));
+    expect(onDisk).toContain('automationsMac: mac-desk');
+    expect(onDisk).toContain('automationsMacName: Desk');
+  });
+
   it('lists the person’s GitHub repositories for the picker, and says why it cannot', async () => {
     const { hook, listRepositories } = setUpHook({ script: { topLevel: NOT_A_REPO } });
     await waitFor(() => expect(hook.result.current.phase.kind).toBe('not-set-up'));

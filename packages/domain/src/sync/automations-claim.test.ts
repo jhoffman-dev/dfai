@@ -5,6 +5,8 @@ import {
   claimRefusal,
   claimRefusalLine,
   claimReport,
+  claimSharedReport,
+  claimUnsharedLine,
   namesThisMac,
   syncFailing,
   type ClaimOutcome,
@@ -101,9 +103,15 @@ describe('what the banner and Activity say of a claim', () => {
     'pulling',
     'settings-unreadable',
     'not-synced',
+    'mac-unknown',
   ])('says which reason refuses it: %s', (why) => {
     expect(claimRefusalLine(why)).not.toBe('');
     expect(claimProblem({ kind: 'refused', why })).toBe(claimRefusalLine(why));
+  });
+
+  it('says a Mac whose id is not read yet as that, not as waiting for a sync (#630 review)', () => {
+    expect(claimRefusalLine('mac-unknown')).toMatch(/id has not been read yet/);
+    expect(claimRefusalLine('mac-unknown')).not.toMatch(/sync/);
   });
 
   it('tells paused, failing and waiting for a pull apart', () => {
@@ -114,7 +122,8 @@ describe('what the banner and Activity say of a claim', () => {
   });
 
   it('says nothing for a claim that named this Mac, or found it named, or whose vault closed', () => {
-    for (const kind of ['claimed', 'already-named', 'vault-closed'] as const) {
+    expect(claimProblem({ kind: 'claimed', was: 'Studio' })).toBeNull();
+    for (const kind of ['already-named', 'vault-closed'] as const) {
       expect(claimProblem({ kind })).toBeNull();
     }
   });
@@ -124,17 +133,31 @@ describe('what the banner and Activity say of a claim', () => {
     expect(claimProblem({ kind: 'write-failed', reason: 'disk full' })).toMatch(/disk full$/);
   });
 
-  it('records the claim in Activity, and a failed write as a warning', () => {
-    expect(claimReport({ kind: 'claimed' }, MAC)).toEqual({
+  it('records the claim as not yet shared, naming the other Mac, and a failed write as a warning (#630 review)', () => {
+    expect(claimReport({ kind: 'claimed', was: 'Studio' }, MAC)).toEqual({
       level: 'info',
       kind: 'sync',
-      message:
-        'Laptop now runs the automations: meetings that waited are processed here after the next sync.',
+      message: 'Process here is set on this Mac but not yet shared with Studio.',
       subject: null,
     });
+    expect(claimReport({ kind: 'claimed', was: null }, MAC)?.message).toBe(
+      'Process here is set on this Mac but not yet shared with the other Mac.',
+    );
     expect(claimReport({ kind: 'write-failed', reason: 'disk full' }, MAC)).toMatchObject({
       level: 'warning',
       message: expect.stringMatching(/disk full$/) as string,
+    });
+  });
+
+  it('says the claim runs here only once it has been shared', () => {
+    expect(claimUnsharedLine('Studio')).toBe(
+      'Process here is set on this Mac but not yet shared with Studio.',
+    );
+    expect(claimSharedReport(MAC)).toEqual({
+      level: 'info',
+      kind: 'sync',
+      message: 'Laptop now runs the automations: meetings that waited are processed here.',
+      subject: null,
     });
   });
 

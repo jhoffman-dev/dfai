@@ -374,6 +374,40 @@ describe('useAutomations: a Claude step waits for fresh sync state (ADR-0035 par
     expect(claude.fake.requests).toHaveLength(1);
   });
 
+  it('in a syncing vault, once claimed, holds the catch-up while the last pull named the other Mac, then asks once after the claim’s sync (#630 review)', async () => {
+    const before: PullStanding = { ...PULLED, namedAfter: false };
+    // The real gate's rule in short: open only on a pull whose settings named this Mac.
+    const gateAt = (standing: PullStanding): Gate => ({
+      standing,
+      acts: async () => standing.kind === 'pulled' && standing.namedAfter,
+    });
+    const { claude, hook, options } = open({ path: ASK_RULE, text: ASK_RULE_TEXT }, gateAt(before));
+    hook.rerender({ ...options, scheduled: false });
+    await settle();
+
+    // "Process here" names this Mac; the last pull still named the other.
+    hook.rerender({ ...options, scheduled: true, pulledFiles: gateAt(before) });
+    await settle();
+    expect(claude.fake.requests).toHaveLength(0);
+
+    // The claim's sync completes, its settings naming this Mac.
+    const after: PullStanding = { ...PULLED, finishedAt: 2, namedAfter: true };
+    hook.rerender({ ...options, scheduled: true, pulledFiles: gateAt(after) });
+    await settle();
+    expect(claude.fake.requests).toHaveLength(1);
+
+    // Drawn again on the same pull, and on the next: asked no more.
+    hook.rerender({ ...options, scheduled: true, pulledFiles: gateAt(after) });
+    await settle();
+    hook.rerender({
+      ...options,
+      scheduled: true,
+      pulledFiles: gateAt({ ...PULLED, finishedAt: 3, namedAfter: true }),
+    });
+    await settle();
+    expect(claude.fake.requests).toHaveLength(1);
+  });
+
   it('does not hold a rule that asks no Claude', async () => {
     const shut = vi.fn(async () => false);
     const { vault } = open({ path: RULE, text: RULE_TEXT }, { standing: null, acts: shut });

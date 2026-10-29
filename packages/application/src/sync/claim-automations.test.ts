@@ -59,7 +59,8 @@ describe('claimAutomations (ADR-0035 part 2, #176)', () => {
   it('writes this Mac’s id and name through the settings writer, keeping every other setting', async () => {
     const vault = vaultHolding({ ...STUDIO_NAMED, syncInterval: 15 });
 
-    await expect(claim(vault)).resolves.toEqual({ kind: 'claimed' });
+    // It says which Mac it took them from, for the banner's "not yet shared with Studio".
+    await expect(claim(vault)).resolves.toEqual({ kind: 'claimed', was: 'Studio' });
 
     expect(vault.said()).toEqual({
       sync: 'github',
@@ -72,7 +73,7 @@ describe('claimAutomations (ADR-0035 part 2, #176)', () => {
 
   it('names this Mac in a vault whose settings named none', async () => {
     const vault = vaultHolding({ sync: 'github' });
-    await expect(claim(vault)).resolves.toEqual({ kind: 'claimed' });
+    await expect(claim(vault)).resolves.toEqual({ kind: 'claimed', was: null });
     expect(vault.said()).toMatchObject({ automationsMac: 'mac-laptop' });
   });
 
@@ -87,7 +88,7 @@ describe('claimAutomations (ADR-0035 part 2, #176)', () => {
 
   it('writes the claim though another Mac shares this one’s name: ids compare, never names', async () => {
     const vault = vaultHolding({ automationsMac: 'mac-other', automationsMacName: 'Laptop' });
-    await expect(claim(vault)).resolves.toEqual({ kind: 'claimed' });
+    await expect(claim(vault)).resolves.toMatchObject({ kind: 'claimed' });
     expect(vault.said()).toMatchObject({ automationsMac: 'mac-laptop' });
   });
 
@@ -161,7 +162,7 @@ describe('claimAutomations (ADR-0035 part 2, #176)', () => {
     it('writes once they say nothing', async () => {
       const vault = vaultHolding(STUDIO_NAMED);
       const refusal = vi.fn(async (): Promise<ClaimRefusal | null> => null);
-      await expect(claim(vault, { refusal })).resolves.toEqual({ kind: 'claimed' });
+      await expect(claim(vault, { refusal })).resolves.toMatchObject({ kind: 'claimed' });
       expect(refusal).toHaveBeenCalledTimes(2);
     });
 
@@ -175,7 +176,7 @@ describe('claimAutomations (ADR-0035 part 2, #176)', () => {
 
     it('is not asked at all for Settings → Sync, the person’s own move', async () => {
       const vault = vaultHolding(STUDIO_NAMED);
-      await expect(claim(vault)).resolves.toEqual({ kind: 'claimed' });
+      await expect(claim(vault)).resolves.toMatchObject({ kind: 'claimed' });
     });
   });
 
@@ -225,7 +226,7 @@ describe('claimAutomations (ADR-0035 part 2, #176)', () => {
 
   it('two presses in a row write once and then find this Mac named', async () => {
     const vault = vaultHolding(STUDIO_NAMED);
-    await expect(claim(vault)).resolves.toEqual({ kind: 'claimed' });
+    await expect(claim(vault)).resolves.toMatchObject({ kind: 'claimed' });
     await expect(claim(vault)).resolves.toEqual({ kind: 'already-named' });
     expect(vault.file.writes).toBe(1);
   });
@@ -242,20 +243,30 @@ describe('no other code path writes automationsMac (#176)', () => {
       if (statSync(path).isDirectory()) return sources(path);
       return /\.tsx?$/.test(name) && !/\.test\.tsx?$|test-support|testing/.test(path) ? [path] : [];
     });
+  /** The settings keys, as their constants or written out, or the set-up rule and the claim's keys. */
+  const NAMES_A_MAC =
+    /AUTOMATIONS_MAC_KEY|AUTOMATIONS_MAC_NAME_KEY|automationsHandover|claimedSettings\(|['"`]automationsMac(?:Name)?['"`]|\.(?:save|update)\([^;]*?\bautomationsMac(?:Name)?\s*:/s;
   const writers = [
     join(packagesRoot, 'domain/src'),
     join(packagesRoot, 'application/src'),
+    join(packagesRoot, 'adapters/src'),
     join(packagesRoot, 'ui/src'),
     join(repoRoot, 'apps'),
   ]
     .flatMap(sources)
-    .filter((path) =>
-      /AUTOMATIONS_MAC_KEY|AUTOMATIONS_MAC_NAME_KEY|automationsHandover|claimedSettings\(/.test(
-        readFileSync(path, 'utf8'),
-      ),
-    )
+    .filter((path) => NAMES_A_MAC.test(readFileSync(path, 'utf8')))
     .map((path) => relative(repoRoot, path))
     .sort();
+
+  it('catches the key written out, as an adapter or a save might write it (#630 review)', () => {
+    expect(NAMES_A_MAC.test("settings.save({ 'automationsMac': id })")).toBe(true);
+    expect(NAMES_A_MAC.test('settings.save({ automationsMac: id, x: 1 })')).toBe(true);
+    expect(NAMES_A_MAC.test('await writer.update(() => ({\n  automationsMacName: name }))')).toBe(
+      true,
+    );
+    expect(NAMES_A_MAC.test('settings.update({ automationsMacName: name })')).toBe(true);
+    expect(NAMES_A_MAC.test('readonly automationsMac: string | null;')).toBe(false);
+  });
 
   it('names the Mac only through the claim, and through set-up when no Mac is named yet', () => {
     expect(writers).toEqual([

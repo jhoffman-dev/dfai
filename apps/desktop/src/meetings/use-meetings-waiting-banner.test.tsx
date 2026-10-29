@@ -13,7 +13,7 @@ const COUNTED: MeetingsWaiting = { kind: 'counted', mac: 'Studio', count: 2 };
 function setUp({
   waiting = COUNTED,
   phase = { kind: 'ready' },
-  outcome = { kind: 'claimed' },
+  outcome = { kind: 'claimed', was: 'Studio' },
 }: { waiting?: MeetingsWaiting | null; phase?: SyncPhase; outcome?: ClaimOutcome } = {}) {
   const waitingStore = createMeetingsWaitingStore();
   const sync = createSyncStore();
@@ -24,7 +24,7 @@ function setUp({
         answer = resolve;
       }),
   );
-  const controller = { phase, processHere } as unknown as SyncController;
+  const controller = { phase, processHere, claimPending: null } as unknown as SyncController;
   publishSync(sync, VAULT, controller);
   sayMeetingsWaiting(waitingStore, VAULT, waiting);
   const hook = renderHook(
@@ -68,7 +68,7 @@ describe('useMeetingsWaitingBanner (ADR-0035 parts 1 and 2, #176)', () => {
     expect(hook.result.current?.processHere?.busy).toBe(true);
     expect(processHere).toHaveBeenCalledTimes(1);
 
-    await settle({ kind: 'claimed' });
+    await settle({ kind: 'claimed', was: 'Studio' });
 
     expect(hook.result.current?.processHere).toMatchObject({ busy: false, problem: null });
   });
@@ -111,5 +111,45 @@ describe('useMeetingsWaitingBanner (ADR-0035 parts 1 and 2, #176)', () => {
     expect(hook.result.current).toBeNull();
     hook.rerender({ vaultKey: VAULT });
     expect(hook.result.current?.processHere?.problem).toMatch(/stale$/);
+  });
+
+  it('drops a press’s problem once the reason for it has gone, so a recovered sync is not called failing (#630 review)', async () => {
+    const failing: SyncPhase = { kind: 'failed', reason: 'offline', at: 1 };
+    const { hook, press, settle, sync, controller } = setUp({ phase: failing });
+    // Pressed as the look failed, before the banner was drawn refused.
+    press();
+    await settle({ kind: 'refused', why: 'failing' });
+
+    act(() => publishSync(sync, VAULT, { ...controller, phase: { kind: 'ready' } }));
+
+    expect(hook.result.current?.processHere).toMatchObject({ refused: null, problem: null });
+  });
+
+  it('drops it as well once what waits changes', async () => {
+    const { hook, press, settle, waitingStore } = setUp();
+    press();
+    await settle({ kind: 'write-failed', reason: 'stale' });
+    expect(hook.result.current?.processHere?.problem).toMatch(/stale$/);
+
+    act(() => sayMeetingsWaiting(waitingStore, VAULT, { ...COUNTED, count: 3 }));
+
+    expect(hook.result.current?.processHere?.problem).toBeNull();
+  });
+
+  it('says the claim is set here but not yet shared, with no button, until it is (#630 review)', () => {
+    const { hook, sync, controller, waitingStore } = setUp();
+    act(() => {
+      publishSync(sync, VAULT, { ...controller, claimPending: 'Studio' });
+      // Named here now, the import counts nothing.
+      sayMeetingsWaiting(waitingStore, VAULT, null);
+    });
+
+    expect(hook.result.current).toEqual({
+      line: 'Process here is set on this Mac but not yet shared with Studio.',
+      processHere: null,
+    });
+
+    act(() => publishSync(sync, VAULT, { ...controller, claimPending: null }));
+    expect(hook.result.current).toBeNull();
   });
 });

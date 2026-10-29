@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import type { ClaimRefusal, SyncPhase } from '@dfai/domain';
+import type { ClaimRefusal, SyncPhase, SyncReport } from '@dfai/domain';
 import { fakeVaultFs, recordingActivity } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { useClaimAutomations, type ClaimAutomationsOptions } from './use-claim-automations.ts';
@@ -51,19 +51,32 @@ function setUp({
   phase = { kind: 'ready' },
   thisMac = { id: 'mac-laptop', name: 'Laptop' },
   open = true,
+  paused = false,
+  synced = true,
 }: {
   settings?: string | null;
   refusal?: ClaimRefusal | null;
   phase?: SyncPhase;
   thisMac?: ClaimAutomationsOptions['thisMac'];
   open?: boolean;
+  paused?: boolean;
+  /** Whether the sync the claim starts succeeds, pushing the claim. */
+  synced?: boolean;
 } = {}) {
   const vault = vaultWithSettings(settings);
   const activity = recordingActivity();
   const claimRefusal = vi.fn(async () => refusal);
-  const run = vi.fn(async () => {
+  // What the gate knows: the claim is unshared from its write until a sync succeeds.
+  const shared = { unshared: false };
+  const claimed = vi.fn(() => {
+    vault.order.push('claimed');
+    shared.unshared = true;
+  });
+  const run = vi.fn(async (): Promise<SyncReport | null> => {
     vault.order.push('sync');
-    return null;
+    if (!synced) return null;
+    shared.unshared = false;
+    return {} as SyncReport;
   });
   const readAgain = vi.fn(async () => void vault.order.push('read again'));
   const options: ClaimAutomationsOptions = {
@@ -72,8 +85,11 @@ function setUp({
     vaultKey: VAULT,
     thisMac,
     syncs: true,
-    phase,
+    paused,
+    phaseNow: () => phase,
     claimRefusal,
+    claimed,
+    claimUnshared: false,
     exclusive: recordingExclusive(vault.order, open),
     activity,
     readAgain,
@@ -82,25 +98,85 @@ function setUp({
   const hook = renderHook((props: ClaimAutomationsOptions) => useClaimAutomations(props), {
     initialProps: options,
   });
-  return { ...vault, activity, claimRefusal, run, readAgain, hook, options };
+  /** Draws the hook as the window would after the gate changed. */
+  const drawGate = (over: Partial<ClaimAutomationsOptions> = {}) =>
+    hook.rerender({ ...options, claimUnshared: shared.unshared, ...over });
+  const messages = () => activity.reports.map((report) => report.message);
+  return {
+    ...vault,
+    activity,
+    claimRefusal,
+    claimed,
+    run,
+    readAgain,
+    hook,
+    options,
+    drawGate,
+    messages,
+  };
 }
 
+const press = async (hook: ReturnType<typeof setUp>['hook']) => {
+  let outcome;
+  await act(async () => {
+    outcome = await hook.result.current.processHere();
+  });
+  return outcome;
+};
+
 describe('useClaimAutomations: "Process here" (ADR-0035 part 2, #176)', () => {
-  it('claims in the vault’s git turn, says so in Activity, shows it, then syncs at once', async () => {
-    const { hook, file, order, activity } = setUp();
+  it('claims in the vault’s git turn, tells the gate, shows it, then syncs at once', async () => {
+    const { hook, file, order, messages, drawGate } = setUp();
 
-    let outcome;
-    await act(async () => {
-      outcome = await hook.result.current.processHere();
-    });
+    expect(await press(hook)).toEqual({ kind: 'claimed', was: 'Studio' });
+    drawGate();
 
-    expect(outcome).toEqual({ kind: 'claimed' });
     expect(file.text).toContain('automationsMac: mac-laptop');
     expect(file.text).toContain('automationsMacName: Laptop');
-    expect(order).toEqual(['turn:claim', 'write', 'read again', 'sync']);
-    expect(activity.reports.map((report) => report.message)).toEqual([
-      'Laptop now runs the automations: meetings that waited are processed here after the next sync.',
+    expect(order).toEqual(['turn:claim', 'write', 'claimed', 'read again', 'sync']);
+    expect(messages()).toEqual([
+      'Process here is set on this Mac but not yet shared with Studio.',
+      'Laptop now runs the automations: meetings that waited are processed here.',
     ]);
+  });
+
+  it('offline, says the claim is set here but not yet shared, never that this Mac runs them (#630 review)', async () => {
+    const { hook, messages, drawGate } = setUp({ synced: false });
+
+    await press(hook);
+    drawGate();
+
+    expect(messages()).toEqual(['Process here is set on this Mac but not yet shared with Studio.']);
+    expect(hook.result.current.pending).toBe('Studio');
+  });
+
+  it('says it runs here once a later sync shares the claim, and only once', async () => {
+    const { hook, messages, drawGate } = setUp({ synced: false });
+    await press(hook);
+    drawGate();
+
+    // A scheduled sync succeeds later: the gate says the claim is shared.
+    drawGate({ claimUnshared: false });
+    drawGate({ claimUnshared: false });
+
+    expect(messages()).toEqual([
+      'Process here is set on this Mac but not yet shared with Studio.',
+      'Laptop now runs the automations: meetings that waited are processed here.',
+    ]);
+    expect(hook.result.current.pending).toBeNull();
+  });
+
+  it('asks the gates how sync stands at the moment it asks, not as last drawn (#630 review)', async () => {
+    const failed: SyncPhase = { kind: 'failed', reason: 'offline', at: 1 };
+    let now: SyncPhase = { kind: 'ready' };
+    const { hook, options, claimRefusal } = setUp();
+    hook.rerender({ ...options, phaseNow: () => now });
+    // A look that was under way fails just before the claim's turn.
+    now = failed;
+
+    await press(hook);
+
+    expect(claimRefusal).toHaveBeenCalledWith(VAULT, failed);
   });
 
   it('asks the gates with how sync last stood, and writes nothing while they refuse', async () => {
@@ -110,12 +186,7 @@ describe('useClaimAutomations: "Process here" (ADR-0035 part 2, #176)', () => {
       phase: failed,
     });
 
-    let outcome;
-    await act(async () => {
-      outcome = await hook.result.current.processHere();
-    });
-
-    expect(outcome).toEqual({ kind: 'refused', why: 'failing' });
+    expect(await press(hook)).toEqual({ kind: 'refused', why: 'failing' });
     expect(claimRefusal).toHaveBeenCalledWith(VAULT, failed);
     expect(file.writes).toBe(0);
     expect(run).not.toHaveBeenCalled();
@@ -164,7 +235,7 @@ describe('useClaimAutomations: "Process here" (ADR-0035 part 2, #176)', () => {
     await act(async () => {
       await expect(unknown.hook.result.current.processHere()).resolves.toEqual({
         kind: 'refused',
-        why: 'no-pull',
+        why: 'mac-unknown',
       });
     });
     expect(leaving.file.writes + unknown.file.writes).toBe(0);
@@ -208,5 +279,58 @@ describe('useClaimAutomations: Settings → Sync (ADR-0025)', () => {
 
     expect(file.text).toContain('automationsMac: mac-laptop');
     expect(claimRefusal).not.toHaveBeenCalled();
+  });
+
+  it('while sync is paused, writes the claim and leaves it unsent: nothing is pushed or pulled (#630 review)', async () => {
+    const { hook, file, run, claimed } = setUp({ paused: true });
+
+    act(() => hook.result.current.claimAutomations());
+    await vi.waitFor(() => expect(file.text).toContain('automationsMac: mac-laptop'));
+    await act(async () => undefined);
+
+    expect(claimed).toHaveBeenCalledWith(VAULT);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('is busy while the claim waits its turn, and says why a refused write named no Mac (#630 review)', async () => {
+    const { hook, options } = setUp();
+    let land: () => void = () => undefined;
+    const landed = new Promise<void>((resolve) => (land = resolve));
+    const fs = {
+      ...options.fs,
+      writeTextFile: async () => {
+        await landed;
+        throw new Error('the disk is full');
+      },
+    };
+    hook.rerender({ ...options, fs });
+
+    act(() => hook.result.current.claimAutomations());
+    expect(hook.result.current.claiming).toBe(true);
+    land();
+    await vi.waitFor(() => expect(hook.result.current.claiming).toBe(false));
+
+    expect(hook.result.current.problem).toMatch(/could not be named.*the disk is full$/);
+  });
+
+  it('says a Mac whose id is not read yet cannot be named yet', async () => {
+    const { hook, file } = setUp({ thisMac: null });
+
+    act(() => hook.result.current.claimAutomations());
+    await vi.waitFor(() => expect(hook.result.current.problem).toMatch(/id has not been read yet/));
+
+    expect(file.writes).toBe(0);
+  });
+
+  it('clears what it said at the next claim', async () => {
+    const { hook, options } = setUp({ thisMac: null });
+    act(() => hook.result.current.claimAutomations());
+    await vi.waitFor(() => expect(hook.result.current.problem).not.toBeNull());
+
+    hook.rerender({ ...options, thisMac: { id: 'mac-laptop', name: 'Laptop' } });
+    act(() => hook.result.current.claimAutomations());
+    await vi.waitFor(() => expect(hook.result.current.claiming).toBe(false));
+
+    expect(hook.result.current.problem).toBeNull();
   });
 });
