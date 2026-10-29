@@ -1,5 +1,5 @@
 import type { BoardRow, GtdStatus, TaskRowFacts } from '@dfai/domain';
-import { MoveMenu, todayToggle } from '../task-row-commands.tsx';
+import { heldWhile, MoveMenu, todayToggle } from '../task-row-commands.tsx';
 
 /** What one task row's controls draw (#107): the task's facts, and where its last change stands. */
 export interface TaskRowShown extends TaskRowFacts {
@@ -41,8 +41,11 @@ export function taskDoneBox({ row, shown, controls }: RowControlsGiven) {
       className="done-check"
       aria-label={`Mark ${row.title} done`}
       checked={shown.done}
-      disabled={shown.waits}
-      onChange={() => controls.onDone(row, !shown.done)}
+      // Held, not disabled, while its change is written: the focus stays on it (#107).
+      {...heldWhile(shown.waits, true)}
+      onChange={() => {
+        if (!shown.waits) controls.onDone(row, !shown.done);
+      }}
       // A press on the box is a tick, never the start of a drag or an open.
       onPointerDown={(event) => event.stopPropagation()}
     />
@@ -59,12 +62,14 @@ export function taskCommands({ row, shown, controls }: RowControlsGiven) {
           title: row.title,
           chosen,
           disabled: shown.waits,
+          holdFocus: true,
           onToggle: () => controls.onToday(row, chosen),
         })}
       <MoveMenu
         title={row.title}
         statuses={shown.moves}
         busy={shown.waits}
+        holdFocus
         onMove={(status) => controls.onMove(row, status)}
       />
     </span>

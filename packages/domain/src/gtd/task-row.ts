@@ -8,9 +8,14 @@ import {
   type GtdStatus,
 } from './gtd-status.ts';
 
-/** A property's one value as text: null when it has none, or holds a list of several. */
+/**
+ * A property's one value as text: null when it has none, or holds a list of
+ * several — a blank item being no item, as gtdStatusOf and a query's FROM
+ * read it (follow-up to #110, as PR #616 reads it). Each row counts, so a
+ * nested list of two, whose items share their outer `idx`, is two.
+ */
 export const singleTextSql = (key: string, column: string) =>
-  `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = ${column} AND p.key = '${key}')`;
+  `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND COALESCE(p.value_text, p.value_json, '') <> '')`;
 
 /** A date property's first day, `YYYY-MM-DD`; null when it holds no date. */
 export const firstDaySql = (key: string, column: string) =>

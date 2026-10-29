@@ -11,6 +11,7 @@ export function MoveMenu({
   title,
   statuses,
   busy,
+  holdFocus = false,
   onMove,
 }: {
   /** The task's name, which the button and the menu are labelled with. */
@@ -18,6 +19,8 @@ export function MoveMenu({
   /** The statuses offered, in order. */
   statuses: readonly GtdStatus[];
   busy: boolean;
+  /** Held while busy rather than disabled, so a button with the focus keeps it (#107). */
+  holdFocus?: boolean;
   onMove: (status: GtdStatus) => void;
 }) {
   // Built the first time it is opened: a Base UI menu on each of hundreds of
@@ -30,6 +33,7 @@ export function MoveMenu({
         title={title}
         statuses={statuses}
         busy={busy}
+        holdFocus={holdFocus}
         onMove={onMove}
         opening={opening}
       />
@@ -42,15 +46,17 @@ export function MoveMenu({
       aria-label={`Move ${title} to…`}
       aria-haspopup="menu"
       aria-expanded={false}
-      disabled={busy}
+      {...heldWhile(busy, holdFocus)}
       onKeyDown={(event) => {
         // The built trigger opens on ArrowDown as well as on a press.
-        if (event.key !== 'ArrowDown') return;
+        if (event.key !== 'ArrowDown' || busy) return;
         event.preventDefault();
         setOpening('arrow');
       }}
       // Enter and Space press a button with no pointer, which leaves `detail` 0.
-      onClick={(event) => setOpening(event.detail === 0 ? 'press' : 'pointer')}
+      onClick={(event) => {
+        if (!busy) setOpening(event.detail === 0 ? 'press' : 'pointer');
+      }}
     >
       Move to…
     </button>
@@ -67,12 +73,14 @@ function MoveMenuOpened({
   title,
   statuses,
   busy,
+  holdFocus,
   onMove,
   opening,
 }: {
   title: string;
   statuses: readonly GtdStatus[];
   busy: boolean;
+  holdFocus: boolean;
   onMove: (status: GtdStatus) => void;
   opening: MenuOpening;
 }) {
@@ -92,7 +100,9 @@ function MoveMenuOpened({
   }, [opening]);
   const items = statuses.map((status) => ({
     label: GTD_STATUS_LABELS[status],
-    onSelect: () => onMove(status),
+    onSelect: () => {
+      if (!busy) onMove(status);
+    },
   }));
   return (
     <Menu.Root defaultOpen={opening === 'pointer'}>
@@ -100,7 +110,7 @@ function MoveMenuOpened({
         ref={trigger}
         className="btn btn--ghost btn--sm"
         aria-label={`Move ${title} to…`}
-        disabled={busy}
+        {...heldWhile(busy, holdFocus)}
       >
         Move to…
       </Menu.Trigger>
@@ -124,11 +134,14 @@ export function todayToggle({
   title,
   chosen,
   disabled,
+  holdFocus = false,
   onToggle,
 }: {
   title: string;
   chosen: boolean;
   disabled: boolean;
+  /** Held while disabled rather than disabled, so a button with the focus keeps it (#107). */
+  holdFocus?: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -138,10 +151,22 @@ export function todayToggle({
       aria-pressed={chosen}
       aria-label={chosen ? `Take ${title} off today` : `Choose ${title} for today`}
       title={chosen ? 'Take off today' : 'Choose for today'}
-      disabled={disabled}
-      onClick={onToggle}
+      {...heldWhile(disabled, holdFocus)}
+      onClick={() => {
+        if (!disabled) onToggle();
+      }}
     >
       Today
     </button>
   );
+}
+
+/**
+ * A control that takes no press for now: disabled, or — where it may have the
+ * focus as it is held, as a query row's do after a press — marked so and kept
+ * focusable, since the browser drops the focus of a control it disables.
+ */
+export function heldWhile(busy: boolean, holdFocus: boolean) {
+  if (!holdFocus) return { disabled: busy };
+  return busy ? { 'aria-disabled': true as const } : {};
 }

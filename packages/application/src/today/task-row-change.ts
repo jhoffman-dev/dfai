@@ -5,7 +5,9 @@ import {
   REOPENED_TASK_STATUS,
   TASK_KEYS,
   TASK_TYPE,
+  taskRowFacts,
   taskRuleChanges,
+  type TaskRowState,
   type TaskAsRead,
   type TodayChoice,
 } from '@dfai/domain';
@@ -31,7 +33,7 @@ export type TaskRowAction =
 export function taskRowChange(action: TaskRowAction): PropertyChanges {
   switch (action.kind) {
     case 'done':
-      return archiveTaskChange();
+      return finishing();
     case 'reopen':
       // Only a finished task is taken back: unticking open work changes nothing.
       return (properties) =>
@@ -40,11 +42,62 @@ export function taskRowChange(action: TaskRowAction): PropertyChanges {
           : {};
     case 'move':
       return action.status === FINISHED_TASK_STATUS
-        ? archiveTaskChange()
+        ? finishing()
         : { [TASK_KEYS.status]: action.status };
     case 'choice':
       return choiceChange({ choice: action.choice, today: action.today });
   }
+}
+
+/**
+ * Whether a row's action still means what it meant when it was asked, for
+ * Try again (#107): only while the row reads the task as it did then — one
+ * read differently since was changed by someone else, perhaps by this very
+ * action made elsewhere, as a repeating task ticked on Today has already
+ * rolled on — and only while the row still offers it.
+ */
+export function taskRowStillOffers({
+  asked,
+  now,
+  action,
+  choosing,
+}: {
+  /** The task as its row read it when the action was asked. */
+  asked: TaskRowState;
+  /** The task as the row reads it now. */
+  now: TaskRowState;
+  action: TaskRowAction;
+  /** Whether the vault's Task type keeps a Chosen for date (`choosesForToday`). */
+  choosing: boolean;
+}): boolean {
+  if (JSON.stringify(asked) !== JSON.stringify(now)) return false;
+  const today = action.kind === 'choice' ? action.today : '';
+  const facts = taskRowFacts({ state: now, today, choosing });
+  switch (action.kind) {
+    case 'done':
+      return !facts.done;
+    case 'reopen':
+      return facts.done;
+    case 'move':
+      return facts.moves.some((status) => status === action.status);
+    case 'choice': {
+      const takesOff = action.choice === 'unchoose' || action.choice === 'drop';
+      return facts.chosen !== null && facts.chosen === takesOff;
+    }
+  }
+}
+
+/**
+ * A tick: the task finished, a repeating one rolled on — unless it is finished
+ * already, which a tick leaves as it is, as unticking leaves open work: a
+ * stopped series ticked again is not rolled back into play.
+ */
+function finishing(): PropertyChanges {
+  const tick = archiveTaskChange();
+  return (properties) => {
+    if (holdsStatus(properties[TASK_KEYS.status], FINISHED_TASK_STATUS)) return {};
+    return typeof tick === 'function' ? tick(properties) : tick;
+  };
 }
 
 /** A task as its row read it, as the properties a change is worked out from. */

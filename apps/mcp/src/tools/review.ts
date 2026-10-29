@@ -93,7 +93,7 @@ export const tickTask = defineTool({
     'Tick a task done, or untick it, as its done box does on the Today page and in a GTD view: ' +
     '"done": true finishes it — status archive with "completed" today on the app\'s clock — ' +
     'and a repeating one (with "recurrence") rolls on to its next "due" and back to next-action ' +
-    'instead; either way a "focus" of one day is taken out. "done": false takes a finished task ' +
+    'instead; either way a "focus" of one day is taken out. A task finished already is left as it is. "done": false takes a finished task ' +
     'back to next-action, and leaves open work as it is. Ticking needs "ifModified", the ' +
     'task\'s "modified" as read: a tick sent twice would roll a repeating task on twice, so ' +
     'the second is refused as conflict. To set any other status, use atlas_update_properties. ' +

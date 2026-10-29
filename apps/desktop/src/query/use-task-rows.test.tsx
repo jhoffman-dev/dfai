@@ -163,6 +163,8 @@ describe('useTaskRows', () => {
     expect(view.writes()).toBe(1);
     expect(view.toasts).toHaveLength(1);
     expect(view.changes()).toBe(1);
+    // The second press was not asked at all, so nothing was refused either.
+    expect(view.shown()?.refusal).toBeNull();
   });
 
   it('chooses for the day the Today toggle is pressed, not the day the view was drawn', async () => {
@@ -262,11 +264,25 @@ describe('useTaskRows', () => {
     expect(view.shown()?.waits).toBe(false);
     expect(view.activity.reports).toHaveLength(0);
 
-    view.readAgain({ status: 'waiting' });
-    // The refusal stays on the row until it is acted on again: Try again makes the same tick.
+    // Back as the row read it: Try again makes the same tick.
+    view.writeFile(TASK);
     act(() => view.shown()?.refusal?.onRetry());
     await waitFor(() => expect(view.file()).toContain('status: archive'));
     expect(view.shown()?.refusal).toBeNull();
+  });
+
+  it('lets a refusal go, writing nothing, once the view reads the task as it changed', async () => {
+    const moved = TASK.replace('next-action', 'waiting');
+    const view = rows(moved);
+    act(() => view.hook.result.current.controls?.onDone(view.row(), true));
+    await waitFor(() => expect(view.shown()?.refusal).not.toBeNull());
+    view.readAgain({ status: 'waiting' });
+    // The refusal stays until it is answered: the row now shows the task as it is.
+    expect(view.shown()?.refusal).not.toBeNull();
+    act(() => view.shown()?.refusal?.onRetry());
+    expect(view.shown()?.refusal).toBeNull();
+    expect(view.file()).toBe(moved);
+    expect(view.writes()).toBe(0);
   });
 
   it('says a failed write on the row and records it once', async () => {

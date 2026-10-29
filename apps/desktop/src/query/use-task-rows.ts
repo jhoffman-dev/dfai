@@ -8,6 +8,7 @@ import {
   type BoardRow,
   type GtdStatus,
   type ObjectType,
+  type TodayChoice,
 } from '@dfai/domain';
 import {
   ChangedSinceError,
@@ -17,6 +18,7 @@ import {
   readAnswers,
   taskRowAsChanged,
   taskRowChange,
+  taskRowStillOffers,
   TaskRuleRefusedError,
   whileAsRead,
   type Clock,
@@ -138,8 +140,20 @@ const emptyIn = (scope: readonly unknown[]): RowsState => ({
 const sameScope = (left: readonly unknown[], right: readonly unknown[]) =>
   left.length === right.length && left.every((each, at) => each === right[at]);
 
-/** One action on a row, with the words its toast says it in. */
-type Act = (row: BoardRow, action: TaskRowAction, said: TodayAction) => void;
+/**
+ * What a control asks of a row: an action, a choice for today made on the
+ * day it is carried out, not the day the controls were drawn (#107).
+ */
+type RowPress =
+  | Exclude<TaskRowAction, { kind: 'choice' }>
+  | { readonly kind: 'choice'; readonly choice: TodayChoice };
+
+/** One press on a row, with the words its toast says it in. */
+type Act = (row: BoardRow, press: RowPress, said: TodayAction) => void;
+
+/** The action a press makes on `today`, from the injected clock. */
+const actionOf = (press: RowPress, today: string): TaskRowAction =>
+  press.kind === 'choice' ? { ...press, today } : press;
 
 /** The controls each row draws, worked out once per drawing from what the rows hold. */
 function rowControls({
@@ -179,7 +193,7 @@ function rowControls({
       act(row, { kind: 'move', status }, { kind: 'move', status }),
     onToday: (row, chosen) => {
       const choice = chosen ? 'unchoose' : 'choose';
-      act(row, { kind: 'choice', choice, today }, { kind: choice });
+      act(row, { kind: 'choice', choice }, { kind: choice });
     },
   };
 }
@@ -203,7 +217,7 @@ function useAct({
     [latest, setState],
   );
   const act = useCallback<Act>(
-    (row, action, said) => {
+    (row, press, said) => {
       const options = latest.current;
       const task = taskRowState(row.values);
       // A row whose last change has yet to be read back takes no other until then.
@@ -211,16 +225,25 @@ function useAct({
       if (task === null || (waiting !== undefined && !readAnswers(waiting.landed, options.read)))
         return;
       const today = options.clock.today();
+      const action = actionOf(press, today);
       const values = taskRowChange(action);
       const changes = taskRowAsChanged({ task, values, today }) ?? {};
       const asked = options.indexKey;
-      // Tried again on the row as the view reads it then: the same change, judged afresh.
       const retry = () => {
+        // Judged afresh, on the day it is pressed: a task read differently since is left as it is.
         const now = latest.current.rows.find((each) => each.path === row.path);
-        if (now !== undefined) act(now, action, said);
+        const fresh = now === undefined ? null : taskRowState(now.values);
+        const choosing = choosesForToday(latest.current.types);
+        const again = actionOf(press, latest.current.clock.today());
+        if (now === undefined || fresh === null) return;
+        if (!taskRowStillOffers({ asked: task, now: fresh, action: again, choosing })) {
+          change((was) => ({ ...was, refused: without(was.refused, row.path) }));
+          return;
+        }
+        act(now, press, said);
       };
       const pending: Pending = { changes, landed: null };
-      change((was) => withPending(was, row.path, pending));
+      change((was) => withPending(was, { path: row.path, pending, read: options.read }));
       const guarded = whileAsRead({ values, row: task.asRead });
       writeRow({ options, path: row.path, values: guarded, today }).then(
         (made) => {
@@ -240,11 +263,19 @@ function useAct({
   return act;
 }
 
-/** With a row's change pending, and any refusal said on it before let go. */
-function withPending(was: RowsState, path: string, pending: Pending): RowsState {
+/**
+ * With a row's change pending, any refusal said on it before let go, and the
+ * changes the view has read back since forgotten, so drawing the rows does
+ * not lay them over again.
+ */
+function withPending(
+  was: RowsState,
+  { path, pending, read }: { path: string; pending: Pending; read: ReadMoment },
+): RowsState {
+  const unread = [...was.pending].filter(([, each]) => !readAnswers(each.landed, read));
   return {
     ...was,
-    pending: new Map([...was.pending, [path, pending]]),
+    pending: new Map([...unread, [path, pending]]),
     refused: without(was.refused, path),
   };
 }

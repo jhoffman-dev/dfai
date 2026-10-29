@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { FocusNotChosenError } from './choose-for-today.ts';
-import { taskRowAsChanged, taskRowChange, type TaskRowProperties } from './task-row-change.ts';
+import {
+  taskRowAsChanged,
+  taskRowChange,
+  taskRowStillOffers,
+  type TaskRowProperties,
+} from './task-row-change.ts';
 
 const TODAY = '2026-10-28';
 
@@ -99,5 +104,46 @@ describe('taskRowAsChanged: a row as its change leaves it, before the write land
       today: TODAY,
     });
     expect(refused).toBeNull();
+  });
+});
+
+describe('taskRowStillOffers: whether Try again still means what was asked', () => {
+  const state = (status: string, more: { due?: string; focus?: string } = {}) =>
+    ({
+      asRead: { status, due: more.due ?? null, defer: null, focus: more.focus ?? null },
+      focusIsOwn: false,
+      recurrence: null,
+    }) as unknown as Parameters<typeof taskRowStillOffers>[0]['asked'];
+  const offers = (
+    asked: ReturnType<typeof state>,
+    now: ReturnType<typeof state>,
+    action: Parameters<typeof taskRowChange>[0],
+  ) => taskRowStillOffers({ asked, now, action, choosing: true });
+
+  it('offers the same action again while the row reads the task as it did', () => {
+    const open = state('next-action');
+    expect(offers(open, open, { kind: 'done' })).toBe(true);
+    expect(offers(open, open, { kind: 'move', status: 'waiting' })).toBe(true);
+    expect(offers(open, open, { kind: 'choice', choice: 'choose', today: TODAY })).toBe(true);
+  });
+
+  it('offers nothing once the row reads the task differently, as a roll made elsewhere leaves it', () => {
+    const asked = state('next-action', { due: '2026-10-28' });
+    const rolled = state('next-action', { due: '2026-11-04' });
+    expect(offers(asked, rolled, { kind: 'done' })).toBe(false);
+  });
+
+  it('offers nothing the row no longer offers', () => {
+    const done = state('archive');
+    expect(offers(done, done, { kind: 'done' })).toBe(false);
+    expect(offers(done, done, { kind: 'reopen' })).toBe(true);
+    expect(offers(done, done, { kind: 'move', status: 'archive' })).toBe(false);
+    const chosen = state('next-action', { focus: TODAY });
+    expect(offers(chosen, chosen, { kind: 'choice', choice: 'choose', today: TODAY })).toBe(false);
+    expect(offers(chosen, chosen, { kind: 'choice', choice: 'unchoose', today: TODAY })).toBe(true);
+    // The next day, it is no longer chosen for today: choosing means something again.
+    expect(offers(chosen, chosen, { kind: 'choice', choice: 'choose', today: '2026-10-29' })).toBe(
+      true,
+    );
   });
 });
