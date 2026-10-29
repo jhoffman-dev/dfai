@@ -51,7 +51,7 @@ function exportedValues(source: ts.SourceFile): string[] {
  * One module as a block of the script: its code in a scope of its own, so
  * its private names cannot meet another module's, handing out what it exports.
  */
-function moduleScript(name: string): string {
+export function moduleScript(name: string): string {
   const text = readFileSync(new URL(name, import.meta.url), 'utf8');
   const names = exportedValues(ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true));
   const { outputText } = ts.transpileModule(text, {
