@@ -659,6 +659,8 @@ export interface FakeHost {
     serveUser(id: string, body: unknown): void;
     hasToken(): boolean;
     requests(): readonly { method: string; query: Readonly<Record<string, string>> }[];
+    /** How many times the app asked whether a token is kept. */
+    statusCalls(): number;
   };
   /**
    * Kindle, as `kindle.rs` answers for it (#508): Connect makes the session
@@ -943,6 +945,7 @@ export async function installHost(
     { status: number; body: string; retryAfter: number | null }
   >();
   const slackRequests: { method: string; query: Readonly<Record<string, string>> }[] = [];
+  let slackStatusCalls = 0;
   const slackGet = (method: string, query: Record<string, string>) => {
     slackRequests.push({ method, query });
     const key = method === 'users.info' ? `${method}|${query['user'] ?? ''}` : method;
@@ -1724,6 +1727,7 @@ export async function installHost(
         return granolaGet(root, path, query);
       }
       case 'slack_status':
+        slackStatusCalls += 1;
         return { hasToken: slackTokens.has(writeRoot(args)) };
       case 'slack_connect': {
         const root = writeRoot(args);
@@ -2368,6 +2372,7 @@ export async function installHost(
         }),
       hasToken: () => slackTokens.size > 0,
       requests: () => [...slackRequests],
+      statusCalls: () => slackStatusCalls,
     },
     kindle: {
       serveLibrary: (html) => void kindlePages.set('library', html),

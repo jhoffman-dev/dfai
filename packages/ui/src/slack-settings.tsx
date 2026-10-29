@@ -1,6 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import { SettingsSection } from './settings-section.tsx';
-import { SETTINGS_SECTIONS } from './settings-section-links.ts';
 
 /**
  * What this Mac holds for the vault: being asked; no token; a token Slack
@@ -39,9 +37,11 @@ function statusOf(view: SlackView): string {
 }
 
 /**
- * Settings → Slack: the user token DFAI reads a pasted Slack link with
+ * Settings → Slack's body: the user token DFAI reads a pasted Slack link with
  * (#105). The token is typed into a masked field and handed on; the field is
  * emptied as it goes, and nothing on this card ever holds a token to show.
+ * Drawn inside its section, which the app draws only once it is shown
+ * (`SettingsSectionWhenShown`).
  */
 export function SlackSettings({
   view,
@@ -54,7 +54,7 @@ export function SlackSettings({
 }) {
   const hasToken = view.tokenState !== 'none' && view.tokenState !== 'checking';
   return (
-    <SettingsSection section={SETTINGS_SECTIONS.slack}>
+    <>
       <p className="settings__lede">
         Paste a Slack message link into a note or quick capture, and DFAI offers to save the message
         and its thread to the Inbox as a note or a task. The token stays in this Mac’s Keychain,
@@ -93,7 +93,7 @@ export function SlackSettings({
           </button>
         </div>
       )}
-    </SettingsSection>
+    </>
   );
 }
 

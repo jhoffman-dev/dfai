@@ -2,6 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { SettingsSection } from './settings-section.tsx';
+import { SETTINGS_SECTIONS } from './settings-section-links.ts';
 import { SlackSettings, type SlackView } from './slack-settings.tsx';
 
 /* #105: Settings → Slack, which hands a token on and never shows one. */
@@ -20,7 +22,11 @@ function renderWith(overrides: Partial<SlackView> = {}) {
     ...overrides,
   };
   const handlers = { onConnect: vi.fn(), onDisconnect: vi.fn() };
-  render(<SlackSettings view={view} {...handlers} />);
+  render(
+    <SettingsSection section={SETTINGS_SECTIONS.slack}>
+      <SlackSettings view={view} {...handlers} />
+    </SettingsSection>,
+  );
   return handlers;
 }
 

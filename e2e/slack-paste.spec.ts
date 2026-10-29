@@ -61,6 +61,11 @@ async function openVault(page: Page): Promise<{ host: FakeHost; vault: FakeVault
 async function connectSlack(page: Page) {
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  // Its body is drawn once the section is shown: choose it in the list.
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByRole('button', { name: 'Slack' })
+    .click();
   const card = settings.getByRole('region', { name: 'Slack' });
   await expect(card.getByTestId('slack-token')).toHaveText('Not connected on this Mac');
   await card.getByLabel('Slack user token', { exact: true }).fill(TOKEN);
@@ -162,4 +167,22 @@ test('a link to a message the token cannot read says so, and saves nothing', asy
   await expect(page.locator('.editor')).toContainText(PERMALINK);
   await expect(offer(page).getByRole('button', { name: 'Save as task' })).toHaveCount(0);
   expect(await vault.exists('Inbox/Captures')).toBe(false);
+});
+
+test('opening Settings asks nothing about Slack until its section is shown', async ({ page }) => {
+  const { host } = await openVault(page);
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  // The first section drawn, and the Slack section's heading, are there: Settings is open.
+  await expect(settings.getByRole('heading', { name: 'Profile' })).toBeVisible();
+  await expect(settings.getByRole('heading', { name: 'Slack' })).toHaveCount(1);
+  await expect(settings.getByTestId('slack-token')).toHaveCount(0);
+  expect(host.slack.statusCalls()).toBe(0);
+
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByRole('button', { name: 'Slack' })
+    .click();
+  await expect(settings.getByTestId('slack-token')).toHaveText('Not connected on this Mac');
+  expect(host.slack.statusCalls()).toBe(1);
 });

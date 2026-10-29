@@ -166,6 +166,7 @@ export { SettingsDialog, SettingsUnavailable } from './settings-dialog.tsx';
 export type { ConnectionSettingsState } from './settings-dialog.tsx';
 export { SETTINGS_SECTIONS } from './settings-section-links.ts';
 export type { SettingsSectionLink } from './settings-section-links.ts';
+export { SettingsSectionWhenShown } from './settings-section.tsx';
 export { ArchivedButton, ViewToolbar } from './view-toolbar.tsx';
 export { ViewTabs } from './view-tabs.tsx';
 export type { ViewTabEditing } from './view-tabs.tsx';
