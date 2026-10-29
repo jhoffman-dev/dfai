@@ -9,6 +9,7 @@ import { artifactFileRoute, artifactThumbnailRoute, saveArtifactRoute } from './
 import { calendarRoute } from './calendar.ts';
 import { promoteLineRoute } from './checklists.ts';
 import { dayMeetingsRoute } from './day-meetings.ts';
+import { receiveCaptureRoute } from './captures.ts';
 import { captureRoute, dailyRoute } from './daily.ts';
 import { noteImageRoute } from './images.ts';
 import { meetingsRoute, receiveMeetingRoute } from './meetings.ts';
@@ -144,6 +145,7 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'GET /v1/terms': vaultRoute(termsRoute),
   'GET /v1/meetings': vaultRoute(meetingsRoute),
   'POST /v1/meetings': vaultWrite(receiveMeetingRoute, created),
+  'POST /v1/captures': vaultWrite(receiveCaptureRoute, created),
   'GET /v1/calendar/meetings': vaultRoute(dayMeetingsRoute),
   'GET /v1/proposals': vaultRoute(proposalsRoute),
   'POST /v1/proposals/{path}/accept': vaultWrite(acceptProposalRoute),
