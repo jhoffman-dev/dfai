@@ -13,7 +13,13 @@
  * Mac's last pull saw itself named on GitHub.
  */
 import { describe, expect, it } from 'vitest';
-import { automationsMacOf, syncAfterLook, type PullEnd, type SyncPhase } from '@dfai/domain';
+import {
+  automationsMacOf,
+  githubSettingsUnreadableReport,
+  syncAfterLook,
+  type PullEnd,
+  type SyncPhase,
+} from '@dfai/domain';
 import {
   automationsOnGitHub,
   checkRemote,
@@ -55,12 +61,45 @@ function macApp(
   { pushesUnshared = false } = {},
 ) {
   const id = IDS[mac.name] ?? mac.name;
+  /** How GitHub's settings read fails now (#630 round 2): not at all, as git's error, or as the host's refusal. */
+  let readFault: 'none' | 'git' | 'host' = 'none';
+  /** Whether the last read of GitHub's settings this session failed; undefined before one. */
+  let lastReadFailed: boolean | undefined;
+  /** The unreadable reports said, and the ones the spec asks for: once a failing streak a session. */
+  const unreadable = { said: 0, expected: 0, streakSaid: false };
+  const readingGit: GitPort = {
+    ...mac.git,
+    remoteSettings: async (branch) => {
+      if (readFault === 'host') {
+        lastReadFailed = true;
+        throw new Error(
+          `origin/${branch} is not the branch checked out, so its settings are not read`,
+        );
+      }
+      const read =
+        readFault === 'git'
+          ? { code: 128, stdout: '', stderr: 'fatal: bad object origin/main' }
+          : await mac.git.remoteSettings(branch);
+      const missing = /does not exist in '/.test(read.stderr);
+      lastReadFailed = read.code !== 0 && !missing;
+      return read;
+    },
+  };
+  const noteRead = (failedRead: boolean) => {
+    if (!failedRead) unreadable.streakSaid = false;
+    else if (!unreadable.streakSaid) {
+      unreadable.streakSaid = true;
+      unreadable.expected += 1;
+    }
+  };
   const fs = vaultFsOf(mac);
   let now = 1_000;
   const tick = () => (now += 1_000);
   let paused = false;
   let online = true;
   let pushWanted = false;
+  /** The claim's "not yet shared" as the window draws it, each time it changes. */
+  const standings: { unshared: boolean }[] = [];
   const session = {
     gate: null as FreshPullGate | null,
     lastSyncAt: null as number | null,
@@ -77,12 +116,31 @@ function macApp(
         fs,
         markdown: remarkMarkdown,
         clock: { now: () => now },
-        activity: { inVault: () => ({ record: () => undefined }) },
+        activity: {
+          inVault: () => ({
+            record: (report) => {
+              if (report.message === githubSettingsUnreadableReport().message) unreadable.said += 1;
+            },
+          }),
+        },
         // What the app wires (#630 attack fix): GitHub's settings as the fetch left them.
-        onGitHub: () => automationsOnGitHub({ git: mac.git, markdown: remarkMarkdown }),
+        onGitHub: async () => {
+          try {
+            const read = await automationsOnGitHub({ git: readingGit, markdown: remarkMarkdown });
+            noteRead(false);
+            return read;
+          } catch (error) {
+            noteRead(true);
+            throw error;
+          }
+        },
       },
       here: { thisMacId: () => id, paused: () => paused },
       onClaimUnshared: () => void (pushWanted = pushesUnshared),
+      onStanding: (vault) => {
+        const unsharedNow = session.gate?.claimUnshared(vault) ?? false;
+        if (unsharedNow !== standings.at(-1)?.unshared) standings.push({ unshared: unsharedNow });
+      },
     });
   const gate = () => {
     if (session.gate === null) throw new Error(`${mac.name} is not running`);
@@ -138,6 +196,8 @@ function macApp(
   /** Launch: the gates know nothing; `useInspection` pulls on open unless paused. */
   const launch = async () => {
     session.gate = newGate();
+    lastReadFailed = undefined;
+    unreadable.streakSaid = false;
     session.lastSyncAt = null;
     session.lastEditAt = null;
     session.namedAtLastPull = undefined;
@@ -211,6 +271,11 @@ function macApp(
     open,
     openWithoutWord,
     setPaused: (next: boolean) => void (paused = next),
+    standings: () => standings.map((each) => each.unshared),
+    setReadFault: (next: 'none' | 'git' | 'host') => void (readFault = next),
+    /** Open although the last read of GitHub's settings failed: the gates must be shut then. */
+    openOnFailedRead: async () => lastReadFailed === true && (await open()),
+    unreadable: () => ({ said: unreadable.said, expected: unreadable.expected }),
     setOnline: (next: boolean) => void (online = next),
     claimUnshared: () => session.gate !== null && session.gate.claimUnshared(VAULT),
     localNamed: async () =>
@@ -224,7 +289,7 @@ async function world(options: { pushesUnshared?: boolean } = {}) {
   const laptop = macApp(made.laptop, made, options);
   await studio.launch();
   await laptop.launch();
-  return { ...made, studio, laptop };
+  return { ...made, studio, laptop, studioRoot: made.studio.root, laptopMac: made.laptop };
 }
 
 describe('Process here across a restart before the claim is pushed (PR #630 attack)', () => {
@@ -446,5 +511,144 @@ describe('Process here as a seeded schedule over two real clones (PR #630 attack
       expect(breaches, `seed ${seed}`).toEqual([]);
     },
     TIMEOUT * 4,
+  );
+});
+
+/** Round 2 (#630): restarts, pauses and an unreadable GitHub weigh more. */
+const ACTIONS_UNREADABLE = [
+  ['claim-gated', 2],
+  ['claim-settings', 3],
+  ['sync', 2],
+  ['look', 5],
+  ['push-timer', 1],
+  ['pause', 4],
+  ['resume', 3],
+  ['offline', 2],
+  ['online', 2],
+  ['restart', 5],
+  ['restart-paused', 5],
+  ['read-fails-git', 3],
+  ['read-fails-host', 2],
+  ['read-ok', 4],
+  ['edit-note', 1],
+] as const;
+const UNREADABLE_WEIGHT = ACTIONS_UNREADABLE.reduce((sum, [, weight]) => sum + weight, 0);
+
+function pickUnreadable(random: () => number): (typeof ACTIONS_UNREADABLE)[number][0] {
+  let roll = random() * UNREADABLE_WEIGHT;
+  for (const [action, weight] of ACTIONS_UNREADABLE) {
+    roll -= weight;
+    if (roll < 0) return action;
+  }
+  return 'look';
+}
+
+describe('Process here with GitHub’s settings sometimes unreadable, seeded (PR #630 round 2 attack)', () => {
+  it.each(SEEDS)(
+    'seed %i: the gates are shut after a failed read, open only on GitHub’s word, and "unreadable" is said once a failing streak',
+    async (seed) => {
+      const { studio, laptop, bare, env } = await world({ pushesUnshared: seed % 2 === 0 });
+      const random = seeded(seed * 7919);
+      const steps: string[] = [];
+      const breaches: string[] = [];
+      let mac = laptop;
+      for (let step = 0; step < STEPS; step += 1) {
+        if (random() < 0.2) mac = mac === laptop ? studio : laptop;
+        const action = pickUnreadable(random);
+        if (action.startsWith('claim') && (await mac.localNamed()) === mac.id) {
+          mac = mac === laptop ? studio : laptop;
+        }
+        steps.push(`${mac.name}:${action}`);
+        if (action === 'claim-gated') steps.push(`=${(await mac.claim(true)).kind}`);
+        if (action === 'claim-settings') steps.push(`=${(await mac.claim(false)).kind}`);
+        if (action === 'sync') await mac.sync();
+        if (action === 'look') await mac.look();
+        if (action === 'push-timer') await mac.pushTimer();
+        if (action === 'pause') mac.setPaused(true);
+        if (action === 'resume') mac.setPaused(false);
+        if (action === 'offline') mac.setOnline(false);
+        if (action === 'online') mac.setOnline(true);
+        if (action === 'restart') await mac.restart();
+        if (action === 'restart-paused') {
+          mac.setPaused(true);
+          await mac.restart();
+          mac.setPaused(false);
+          await mac.look();
+        }
+        if (action === 'read-fails-git') mac.setReadFault('git');
+        if (action === 'read-fails-host') mac.setReadFault('host');
+        if (action === 'read-ok') mac.setReadFault('none');
+        if (action === 'edit-note') await mac.editNote(`${mac.name} ${step}\n`);
+        for (const each of [studio, laptop]) {
+          if (await each.openWithoutWord())
+            breaches.push(`open without word: ${each.name} after ${steps.join(' ')}`);
+          if (await each.openOnFailedRead())
+            breaches.push(`open on failed read: ${each.name} after ${steps.join(' ')}`);
+          const told = each.unreadable();
+          if (told.said !== told.expected)
+            breaches.push(
+              `unreadable said ${told.said}, expected ${told.expected}: ${each.name} after ${steps.join(' ')}`,
+            );
+        }
+        expect([IDS['Studio'], IDS['Laptop']], steps.join(' ')).toContain(
+          await namedOnGitHub(bare, env),
+        );
+      }
+      expect(breaches.slice(0, 1), `seed ${seed}`).toEqual([]);
+    },
+    TIMEOUT * 4,
+  );
+});
+
+describe('GitHub holding no settings note (PR #630 round 2 attack)', () => {
+  it(
+    'a note missing from origin/<branch> names no Mac, and the read does not throw',
+    async () => {
+      const { laptopMac, studioRoot, bare, env } = await world();
+      await sh(studioRoot, ['rm', '--quiet', SETTINGS], env);
+      await sh(studioRoot, ['commit', '--quiet', '-m', 'no settings'], env);
+      await sh(studioRoot, ['push', '--quiet', 'origin', 'HEAD'], env);
+      expect(await namedOnGitHub(bare, env)).toBeNull();
+      await sh(laptopMac.root, ['fetch', '--quiet', 'origin'], env);
+      await expect(
+        automationsOnGitHub({ git: laptopMac.git, markdown: remarkMarkdown }),
+      ).resolves.toEqual({ automationsMac: null, automationsMacName: null });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a branch never pushed to origin is a failed read, not "no Mac named"',
+    async () => {
+      const { laptopMac, env } = await world();
+      await sh(laptopMac.root, ['checkout', '--quiet', '-b', 'unpushed'], env);
+      await expect(
+        automationsOnGitHub({ git: laptopMac.git, markdown: remarkMarkdown }),
+      ).rejects.toThrow();
+    },
+    TIMEOUT,
+  );
+});
+
+describe('"now runs" after a restart is said only for a claim GitHub shows (PR #630 round 2 attack)', () => {
+  it(
+    'reachable: after a restart, the claim reads "not shared" and then "shared" because Studio took over, not because GitHub names the laptop',
+    async () => {
+      const { laptop, studio, bare, env } = await world();
+      await laptop.look();
+      expect((await laptop.claim(false)).kind).toBe('claimed');
+      expect(await namedOnGitHub(bare, env)).toBe('mac-laptop');
+      // A later session: the laptop's claim is history; Studio takes the automations back.
+      await laptop.restart();
+      await studio.look();
+      expect((await studio.claim(true)).kind).toBe('claimed');
+      expect(await namedOnGitHub(bare, env)).toBe('mac-studio');
+      await laptop.look();
+      // useSharedAfterRestart says "Laptop now runs the automations" on exactly this flip.
+      expect(laptop.standings()).toEqual([false, true, false]);
+      expect(await laptop.localNamed()).toBe('mac-studio');
+      expect(await namedOnGitHub(bare, env)).toBe('mac-studio');
+    },
+    TIMEOUT,
   );
 });
