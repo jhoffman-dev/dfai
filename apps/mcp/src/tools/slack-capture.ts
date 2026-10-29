@@ -27,6 +27,22 @@ const slackPermalink = z
   .min(1, { error: MISSING_PERMALINK })
   .describe('The permalink of this message, e.g. "https://…slack.com/archives/C…/p…".');
 
+/**
+ * A record drops a `"__proto__"` key without a word, and the model's JSON may
+ * hold one as an own key; the contract would refuse it as no user id, so it
+ * is refused here, from the raw input, rather than lost. Other ids are the
+ * contract's to judge.
+ */
+const mentionNames = z.preprocess(
+  (raw, context) => {
+    if (typeof raw === 'object' && raw !== null && Object.hasOwn(raw, '__proto__')) {
+      context.addIssue({ code: 'custom', message: '"__proto__" is not a Slack user id' });
+    }
+    return raw;
+  },
+  z.record(z.string(), z.string()),
+);
+
 const captureInput = z.strictObject({
   kind: z
     .enum(['note', 'task'])
@@ -67,10 +83,7 @@ const captureInput = z.strictObject({
   attachments: z
     .array(z.strictObject({ name: z.string(), url: z.string().describe('An https:// link.') }))
     .nullish(),
-  users: z
-    .record(z.string(), z.string())
-    .nullish()
-    .describe('Names for the <@U…> mentions in the text, by user id.'),
+  users: mentionNames.nullish().describe('Names for the <@U…> mentions in the text, by user id.'),
   timeZone: z.string().nullish().describe('IANA zone to show times on. Omit for the Mac’s.'),
 });
 
