@@ -73,8 +73,8 @@ test('a skill picked by the box is asked with, noted in the chat, and gone once 
   await page.getByRole('button', { name: 'Claude' }).first().click();
   await chat(page).getByRole('button', { name: 'Use a skill' }).click();
   await chat(page)
-    .getByRole('group', { name: 'Skills' })
-    .getByRole('button', { name: 'weekly-review' })
+    .getByRole('listbox', { name: 'Skills' })
+    .getByRole('option', { name: 'weekly-review' })
     .click();
   const remove = chat(page).getByRole('button', {
     name: 'Remove the skill weekly-review from the chat',
@@ -109,7 +109,7 @@ test('/name attaches a skill, and one too long to hand over is refused before Cl
   await ask(page, '/long-review What slipped?');
 
   const chip = chat(page).locator('.chat__skill');
-  await expect(chip.getByRole('alert')).toContainText(
+  await expect(chip.locator('.chat__skill-problem')).toContainText(
     'The skill long-review cannot be used: Its instructions are 20002 characters as Claude is handed them',
   );
   await expect(chat(page).locator('.chat__error')).toContainText(

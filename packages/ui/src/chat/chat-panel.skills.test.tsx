@@ -51,11 +51,19 @@ function skillsView(more: Partial<ChatSkillsView> = {}): ChatSkillsView {
 }
 
 /** The panel, its draft kept as the app keeps it. */
-function Panel({ skills, onSend }: { skills?: ChatSkillsView; onSend?: (text: string) => void }) {
+function Panel({
+  skills,
+  onSend,
+  error = null,
+}: {
+  skills?: ChatSkillsView;
+  onSend?: (text: string) => void;
+  error?: string | null;
+}) {
   const [text, setText] = useState('');
   return (
     <ChatPanel
-      state={IDLE}
+      state={{ ...IDLE, error: error === null ? null : { message: error } }}
       model="claude-opus-5-5"
       problem={null}
       history={{ chats: [], open: false, onOpenChange: vi.fn(), onPick: vi.fn(), problem: null }}
@@ -78,9 +86,9 @@ describe('the chat panel’s skill', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Use a skill' }));
     expect(skills.onWanted).toHaveBeenCalled();
-    const picker = screen.getByRole('group', { name: 'Skills' });
-    expect(within(picker).getByRole('button', { name: /standup-notes too long/ })).toBeTruthy();
-    await userEvent.click(within(picker).getByRole('button', { name: 'weekly-review' }));
+    const picker = screen.getByRole('listbox', { name: 'Skills' });
+    expect(within(picker).getByRole('option', { name: /standup-notes too long/ })).toBeTruthy();
+    await userEvent.click(within(picker).getByRole('option', { name: 'weekly-review' }));
 
     expect(skills.onAttach).toHaveBeenCalledWith('weekly-review');
     expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
@@ -101,7 +109,10 @@ describe('the chat panel’s skill', () => {
     const problem =
       'The skill weekly-review cannot be used: Its instructions are 20001 characters.';
     render(<Panel skills={skillsView({ attached: { name: 'weekly-review', problem } })} />);
-    expect(screen.getByRole('alert').textContent).toBe(problem);
+    expect(screen.getByText(problem, { selector: '.chat__skill-problem' })).toBeTruthy();
+    // Said once, politely, by the composer: not an alert of its own beside the turn's.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe(problem);
   });
 
   it('opens the picker on /, narrowed by what follows, and a pick clears what was typed', async () => {
@@ -109,13 +120,13 @@ describe('the chat panel’s skill', () => {
     render(<Panel skills={skills} />);
     await userEvent.type(box(), '/week');
     expect(skills.onWanted).toHaveBeenCalled();
-    const picker = screen.getByRole('group', { name: 'Skills' });
+    const picker = screen.getByRole('listbox', { name: 'Skills' });
     expect(
       within(picker)
-        .getAllByRole('button')
+        .getAllByRole('option')
         .map((button) => button.textContent),
     ).toEqual(['weekly-review']);
-    await userEvent.click(within(picker).getByRole('button', { name: 'weekly-review' }));
+    await userEvent.click(within(picker).getByRole('option', { name: 'weekly-review' }));
     expect(skills.onAttach).toHaveBeenCalledWith('weekly-review');
     expect((box() as HTMLTextAreaElement).value).toBe('');
   });
@@ -123,7 +134,11 @@ describe('the chat panel’s skill', () => {
   it('says when no skill starts with what was typed, and closes on Escape', async () => {
     render(<Panel skills={skillsView()} />);
     await userEvent.type(box(), '/zzz');
-    expect(screen.getByText('No skill starts with /zzz.')).toBeTruthy();
+    expect(
+      within(screen.getByRole('listbox', { name: 'Skills' })).getByText(
+        'No skill starts with /zzz.',
+      ),
+    ).toBeTruthy();
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
     expect((box() as HTMLTextAreaElement).value).toBe('/zzz');
@@ -143,6 +158,83 @@ describe('the chat panel’s skill', () => {
     expect(screen.queryByRole('button', { name: 'Use a skill' })).toBeNull();
     await userEvent.type(box(), '/week');
     expect(screen.queryByRole('group', { name: 'Skills' })).toBeNull();
+  });
+});
+
+describe('the skill picker by keyboard, and what it says (PR #635 review)', () => {
+  const MANY: ChatSkillsView['choices'] = [
+    { name: 'weekly-review', unusable: null },
+    { name: 'weekly-plan', unusable: null },
+    { name: 'standup-notes', unusable: null },
+  ];
+
+  it('is a listbox the box controls, and says how many skills match', async () => {
+    render(<Panel skills={skillsView({ choices: MANY })} />);
+    await userEvent.type(box(), '/week');
+    const picker = screen.getByRole('listbox', { name: 'Skills' });
+    expect(box().getAttribute('aria-controls')).toBe(picker.id);
+    expect(screen.getByRole('status').textContent).toBe('2 skills match');
+    await userEvent.type(box(), 'ly-r');
+    expect(screen.getByRole('status').textContent).toBe('1 skill matches');
+    await userEvent.type(box(), 'x');
+    expect(screen.getByRole('status').textContent).toBe('No skill starts with /weekly-rx.');
+  });
+
+  it('moves through the matches with the arrow keys and picks with Enter, sending nothing', async () => {
+    const skills = skillsView({ choices: MANY });
+    const onSend = vi.fn();
+    render(<Panel skills={skills} onSend={onSend} />);
+    await userEvent.type(box(), '/week');
+    const options = within(screen.getByRole('listbox', { name: 'Skills' })).getAllByRole('option');
+    expect(box().getAttribute('aria-activedescendant')).toBe(options[0]?.id);
+    expect(options[0]?.getAttribute('aria-selected')).toBe('true');
+
+    await userEvent.keyboard('{ArrowDown}');
+    expect(box().getAttribute('aria-activedescendant')).toBe(options[1]?.id);
+    await userEvent.keyboard('{ArrowDown}');
+    expect(box().getAttribute('aria-activedescendant')).toBe(options[1]?.id);
+    await userEvent.keyboard('{ArrowUp}{ArrowDown}{Enter}');
+
+    expect(skills.onAttach).toHaveBeenCalledWith('weekly-plan');
+    expect(onSend).not.toHaveBeenCalled();
+    expect((box() as HTMLTextAreaElement).value).toBe('');
+    expect(box().getAttribute('aria-activedescendant')).toBeNull();
+  });
+
+  it('picks the first match with Enter when the arrows were not used', async () => {
+    const skills = skillsView({ choices: MANY });
+    render(<Panel skills={skills} />);
+    await userEvent.type(box(), '/stand{Enter}');
+    expect(skills.onAttach).toHaveBeenCalledWith('standup-notes');
+  });
+
+  it('sends with Enter when nothing matches', async () => {
+    const onSend = vi.fn();
+    render(<Panel skills={skillsView({ choices: MANY })} onSend={onSend} />);
+    await userEvent.type(box(), '/zzz{Enter}');
+    expect(onSend).toHaveBeenCalledWith('/zzz');
+  });
+
+  it('works the picker opened by its button from the box too', async () => {
+    const skills = skillsView({ choices: MANY });
+    render(<Panel skills={skills} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Use a skill' }));
+    expect(document.activeElement).toBe(box());
+    expect(screen.getByRole('status').textContent).toBe('3 skills match');
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect(skills.onAttach).toHaveBeenCalledWith('standup-notes');
+  });
+
+  it('leaves the chip’s problem to the turn’s alert once the turn says it', () => {
+    const problem = 'The skill weekly-review is not in .atlas/skills.';
+    render(
+      <Panel
+        skills={skillsView({ attached: { name: 'weekly-review', problem } })}
+        error={problem}
+      />,
+    );
+    expect(screen.getByRole('alert').textContent).toContain(problem);
+    expect(screen.getByRole('status').textContent).toBe('');
   });
 });
 
@@ -168,6 +260,6 @@ describe('Ask’s skill', () => {
       screen.getByRole('button', { name: 'Remove the skill weekly-review from the chat' }),
     ).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Use a skill' }));
-    expect(screen.getByRole('group', { name: 'Skills' })).toBeTruthy();
+    expect(screen.getByRole('listbox', { name: 'Skills' })).toBeTruthy();
   });
 });

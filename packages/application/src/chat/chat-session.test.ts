@@ -6,6 +6,7 @@ import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeModel, type ScriptedRound } from '../testing/fake-model.ts';
 import { createChatSession, type ChatItem } from './chat-session.ts';
 import type { SkillToUse } from '../skills/skill-to-use.ts';
+import { VaultAccessError } from '../vault/ports.ts';
 import { ModelProviderError } from './ports.ts';
 import { acceptProposal, undoProposal } from './proposals.ts';
 import { createChatToolbox } from './toolbox.ts';
@@ -541,7 +542,7 @@ describe('a chat session, and the skill the person attached (#169)', () => {
 
   it('says a skill the host refused could not be read, in DFAI’s words', async () => {
     const { chat } = session([], {
-      skill: () => Promise.reject(new Error('/Users/mara/vault: permission denied')),
+      skill: () => Promise.reject(new VaultAccessError('/Users/mara/vault: permission denied')),
     });
     await chat.attachSkill('weekly-review');
     expect(chat.state().skill?.problem).toBe('The skill weekly-review could not be read.');
@@ -615,5 +616,142 @@ describe('a chat session, and /name (#169)', () => {
     expect(chat.state().skill).toBeNull();
     expect(chat.state().items[0]).toMatchObject({ kind: 'user', text: '/standup notes?' });
     expect(model.requests[0]?.system).not.toContain('chosen_skill');
+  });
+});
+
+describe('a chat session, and a skill read that is still under way (PR #635 review)', () => {
+  const REVIEW: SkillToUse = { kind: 'usable', name: 'weekly-review', instructions: 'Review.' };
+  /** A skill port whose reads are answered by hand, one at a time. */
+  function heldSkills() {
+    const waiting: ((found: SkillToUse) => void)[] = [];
+    return {
+      port: () => new Promise<SkillToUse>((resolve) => waiting.push(resolve)),
+      answer: (found: SkillToUse) => waiting.shift()?.(found),
+      pending: () => waiting.length,
+    };
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('keeps a chip taken off while a turn re-read it off, and asks that turn without it', async () => {
+    const held = heldSkills();
+    const { chat, model } = session([[{ type: 'text', text: 'Plain.' }]], { skill: held.port });
+    const attaching = chat.attachSkill('weekly-review');
+    held.answer(REVIEW);
+    await attaching;
+
+    const asking = chat.send('Review my week');
+    await settle();
+    expect(held.pending()).toBe(1);
+    chat.removeSkill();
+    held.answer(REVIEW);
+    await asking;
+
+    expect(chat.state().skill).toBeNull();
+    expect(model.requests[0]?.system).not.toContain('chosen_skill');
+  });
+
+  it('drops a /name read once the chip was taken off meanwhile', async () => {
+    const held = heldSkills();
+    const { chat } = session([[{ type: 'text', text: 'Plain.' }]], { skill: held.port });
+    const asking = chat.send('/weekly-review What did I finish?');
+    chat.removeSkill();
+    held.answer(REVIEW);
+    await asking;
+    expect(chat.state().skill).toBeNull();
+  });
+
+  it('drops a /name read once a new chat was begun meanwhile, and the new chat is empty', async () => {
+    const held = heldSkills();
+    const { chat, model } = session([[{ type: 'text', text: 'Never.' }]], { skill: held.port });
+    const asking = chat.send('/weekly-review What did I finish?');
+    chat.newChat();
+    held.answer(REVIEW);
+    await asking;
+    expect(chat.state().skill).toBeNull();
+    expect(chat.state().items).toEqual([]);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it('shows a /name question at once, and is busy until it is asked: a second send waits its turn', async () => {
+    const held = heldSkills();
+    const { chat, model } = session(
+      [[{ type: 'text', text: 'Reviewed.' }], [{ type: 'text', text: 'Second.' }]],
+      { skill: held.port },
+    );
+    const asking = chat.send('/weekly-review What did I finish?');
+    expect(chat.state().busy).toBe(true);
+    expect(chat.state().items).toMatchObject([
+      { kind: 'user', text: '/weekly-review What did I finish?' },
+    ]);
+    // Refused while busy, as a send during any answer is: the composer shows Stop, not Send.
+    await chat.send('Something else');
+    held.answer(REVIEW);
+    held.answer(REVIEW);
+    await asking;
+
+    expect(chat.state().items[0]).toMatchObject({ kind: 'user', text: 'What did I finish?' });
+    expect(chat.state().items.filter((item) => item.kind === 'user')).toHaveLength(1);
+    expect(model.requests).toHaveLength(1);
+    expect(model.requests[0]?.system).toContain('chosen_skill');
+  });
+
+  it('a past chat picked during a /name read does not take the question’s place', async () => {
+    const held = heldSkills();
+    const { chat } = session(
+      [[{ type: 'text', text: 'Old answer.' }], [{ type: 'text', text: 'Reviewed.' }]],
+      { skill: held.port },
+    );
+    await chat.send('An old question');
+    const old = chat.state().chatPath;
+    if (old === null) throw new Error('the chat was not kept');
+    chat.newChat();
+    const asking = chat.send('/weekly-review What did I finish?');
+    const opening = chat.open(old);
+    held.answer(REVIEW);
+    held.answer(REVIEW);
+    await Promise.allSettled([asking, opening]);
+    expect(
+      chat.state().items.some((item) => item.kind === 'user' && item.text === 'What did I finish?'),
+    ).toBe(true);
+  });
+
+  it('takes away a /name that stands alone once read, asking nothing', async () => {
+    const held = heldSkills();
+    const { chat, model } = session([], { skill: held.port });
+    const asking = chat.send('/weekly-review');
+    held.answer(REVIEW);
+    await asking;
+    expect(chat.state().items).toEqual([]);
+    expect(chat.state().busy).toBe(false);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it('sends a /word as typed when the skills cannot be read, so no skill is shown to exist', async () => {
+    const { chat, model } = session([[{ type: 'text', text: 'Hm.' }]], {
+      skill: () => Promise.resolve({ kind: 'unreadable' }),
+    });
+    await chat.send('/usr bin is gone?');
+    expect(chat.state().skill).toBeNull();
+    expect(chat.state().items[0]).toMatchObject({ kind: 'user', text: '/usr bin is gone?' });
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it('lets a bug in reading a skill fail loudly, not pass as “could not be read”', async () => {
+    const bug = new TypeError('skill.problems is undefined');
+    const { chat } = session([], { skill: () => Promise.reject(bug) });
+    await expect(chat.attachSkill('weekly-review')).rejects.toBe(bug);
+    expect(chat.state().skill?.problem ?? null).not.toBe(
+      'The skill weekly-review could not be read.',
+    );
+  });
+
+  it('shows a bug in reading a /name skill as the turn’s error, and is no longer busy', async () => {
+    const { chat, model } = session([], {
+      skill: () => Promise.reject(new TypeError('skill.problems is undefined')),
+    });
+    await chat.send('/weekly-review What did I finish?');
+    expect(chat.state().busy).toBe(false);
+    expect(chat.state().error?.message).toBe('skill.problems is undefined');
+    expect(model.requests).toHaveLength(0);
   });
 });
