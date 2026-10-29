@@ -109,6 +109,7 @@ export {
   isPromptPath,
   describeClaudeAction,
   outputHasItems,
+  MAX_PROMPT_CHARACTERS,
   PROMPTS_DIRECTORY,
   readClaudeAction,
   readsData,

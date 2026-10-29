@@ -397,6 +397,29 @@ export interface ApiTemplateContent extends ApiTemplate {
   readonly body: string;
 }
 
+/** Something wrong with a skill, as the Skills page shows it (ADR-0050). */
+export interface ApiSkillProblem {
+  /** Which part: its `name`, `description` or `instructions`, or `file` for SKILL.md itself. */
+  readonly field: 'name' | 'description' | 'instructions' | 'file';
+  readonly message: string;
+}
+
+/** A skill in `.atlas/skills`: a folder holding a SKILL.md. */
+export interface ApiSkill {
+  /** Its folder's name: the skill's identity, whatever SKILL.md's `name:` says. */
+  readonly name: string;
+  /** Its SKILL.md. Read-only: the API never writes `.atlas`. */
+  readonly path: string;
+  readonly description: string;
+  /** What is wrong with it; empty for a skill that follows every rule. */
+  readonly problems: readonly ApiSkillProblem[];
+}
+
+/** A skill and its instructions: SKILL.md's body, as written. */
+export interface ApiSkillContent extends ApiSkill {
+  readonly instructions: string;
+}
+
 /** Rows, as the index returned them. */
 export interface ApiRows {
   readonly columns: readonly string[];
@@ -1816,6 +1839,8 @@ export type ApiSuccessBody =
       readonly typesWithoutTemplate: readonly string[];
     }
   | { readonly template: ApiTemplateContent }
+  | { readonly skills: readonly ApiSkill[] }
+  | { readonly skill: ApiSkillContent }
   | ApiRows
   | ApiAtlasQueryRows
   | { readonly widgets: readonly unknown[] }
@@ -1894,7 +1919,7 @@ export type ApiSuccessBody =
  *
  * `{path}` is a vault-relative note path, percent-encoded as one segment
  * (slashes as `%2F`), so `notes/Some%2FFolder%2FNote.md`. `{name}` is a file's
- * path inside an artifact's saved copy, a type's name, or a template's name,
+ * path inside an artifact's saved copy, a type's name, a template's name, or a skill's name,
  * encoded the same way. `{tag}` is a
  * tag's name, with or without its `#`, encoded the same way (`para%2Fresource`).
  * `{id}` is an automation's id, as `/v1/automations` lists it, encoded the same way.
@@ -1974,6 +1999,16 @@ export const API_ROUTES = [
     method: 'GET',
     path: '/v1/templates/{name}',
     summary: "One template's properties and body, by name. Read-only.",
+  },
+  {
+    method: 'GET',
+    path: '/v1/skills',
+    summary: 'Every skill, with its description and what is wrong with it. Read-only.',
+  },
+  {
+    method: 'GET',
+    path: '/v1/skills/{name}',
+    summary: "One skill's description and instructions, by name. Read-only.",
   },
   { method: 'GET', path: '/v1/views', summary: 'Saved views and dashboards.' },
   {
