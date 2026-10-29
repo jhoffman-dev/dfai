@@ -665,7 +665,7 @@ pnpm tauri:dev</pre>
       <h3>Ask Claude to write or improve one</h3>
       <ol>
         <li>In the skill's editor — or a new skill's — press <b>Ask Claude…</b> and say what you want under <i>What should Claude do?</i>: <i>“make this shorter”</i>, or <i>“draft a skill that summarises meeting notes”</i>. Press <b>Ask</b>, or <kbd>⌘</kbd><kbd>↩</kbd>. It uses the way of reaching Claude and the model chosen in Settings → Claude, as the <a href="#claude">chat</a> does, and says the same thing the chat would when Claude can't be reached, with the command that fixes it.</li>
-        <li>Claude is shown the skill as it is in the editor, unsaved typing included, and nothing else — it can't read your notes. <b>Stop</b> cancels the ask.</li>
+        <li>Claude is shown the skill as it is in the editor, unsaved typing included, and nothing else — it can't read your notes. A skill over 40,000 characters, twice what one may hold, is too long to show it, and says so: <i>“shorten it first. Claude was not asked.”</i> <b>Stop</b> cancels the ask, and so does opening another skill or <b>New skill</b>.</li>
         <li>Its draft shows as a change: the lines of the description and the instructions it would remove, struck through, and add, with long unchanged stretches folded (<i>“3 unchanged lines”</i>). A new skill's draft shows the name it would take.</li>
         <li><b>Accept</b> puts the draft in the editor's fields; nothing is written until you press <b>Save</b>. <b>Discard</b> leaves the editor as it was. <b>Ask again</b> asks once more, with the request as you've since changed it.</li>
       </ol>

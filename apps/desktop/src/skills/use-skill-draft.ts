@@ -30,8 +30,10 @@ function problemOf(outcome: SkillDraftOutcome | null): SkillAskProblem | null {
       return { lines: ['Claude’s draft cannot be used:', ...outcome.problems], fix: null };
     case 'unready':
       return { lines: [outcome.message], fix: outcome.fix };
+    case 'unasked':
     case 'failed':
-      return { lines: [`Claude could not be asked: ${outcome.message}`], fix: null };
+      // In its own words, as the chat says a failed turn.
+      return { lines: [outcome.message], fix: null };
     default:
       return null;
   }
@@ -65,13 +67,13 @@ function previewOf(
 export function useSkillDraft({
   ports,
   editor,
-  selected,
+  opening,
   onChange,
 }: {
   ports: SkillDraftPorts;
   editor: SkillEditorState | null;
-  /** The skill open in the editor, by name; null for a new one. */
-  selected: string | null;
+  /** Counts each skill, or new one, opened in the editor: a new count is another ask. */
+  opening: number;
   onChange: (change: Partial<SkillDraft>) => void;
 }): SkillAskView | undefined {
   const [state, setState] = useState<AskState>(CLOSED);
@@ -80,13 +82,12 @@ export function useSkillDraft({
     running.current?.abort();
     running.current = null;
   }, []);
-  // What the ask is about: another skill, or none, is another ask.
-  const subject = editor === null ? null : editor.mode === 'new' ? { new: true } : selected;
-  const subjectKey = JSON.stringify(subject);
+  // What the ask is about: the editor as opened. Another one, or none, is another ask.
+  const subject = editor === null ? null : opening;
   useEffect(() => {
     setState(CLOSED);
     return stop;
-  }, [subjectKey, stop]);
+  }, [subject, stop]);
 
   const latest = useRef(editor);
   latest.current = editor;
@@ -150,10 +151,8 @@ export function useSkillDraft({
     },
     onAccept: () => {
       if (accepted === null) return;
-      const { name, description, instructions } = accepted;
-      onChange(
-        editor.mode === 'new' ? { name, description, instructions } : { description, instructions },
-      );
+      // The whole draft: the domain has already given an existing skill its own name.
+      onChange(accepted);
       setState(CLOSED);
     },
     onDiscard: () => setState(CLOSED),

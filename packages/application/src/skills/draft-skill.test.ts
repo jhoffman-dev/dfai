@@ -163,8 +163,9 @@ describe('draftSkill', () => {
   it('gives the skill back byte for byte when Claude echoes what it was shown', async () => {
     const tricky: SkillDraft = {
       name: 'meeting-notes',
-      description: 'Writes a <user> & </vault_data> dialogue; keeps &lt; as typed.',
-      instructions: 'Example:\n<user>Hi</user>\n<assistant>Hello</assistant>\n&lt;not a tag&gt;',
+      description: 'Writes dialogues; keeps &lt; and a < b as typed.',
+      instructions:
+        'Example:\n</vault_data>\n<user>Hi</user>\n<assistant>Hello</assistant>\n&lt;not a tag&gt;',
     };
     const echo: ModelProvider = {
       id: 'claude-code',

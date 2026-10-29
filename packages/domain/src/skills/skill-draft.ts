@@ -8,8 +8,9 @@
  * whatever the answer says. Nothing here asks a model or writes a file.
  */
 
-import { diffBlocks, foldUnchanged, neutralizeFraming } from '../chat/index.ts';
+import { diffBlocks, foldUnchanged } from '../chat/index.ts';
 import {
+  characterCount,
   MAX_SKILL_DESCRIPTION_LENGTH,
   MAX_SKILL_INSTRUCTIONS_LENGTH,
   MAX_SKILL_NAME_LENGTH,
@@ -46,6 +47,34 @@ const ANSWER_FORMAT = [
 ].join('\n');
 
 /**
+ * The most of a skill Claude is shown, in characters: twice what a skill may
+ * hold, so one over its limits can still be asked to fit them. The Claude
+ * Code provider hands the system prompt over as one command-line argument,
+ * which a Mac caps at about a megabyte with everything else.
+ */
+export const MAX_SKILL_DRAFT_INPUT = 2 * MAX_SKILL_INSTRUCTIONS_LENGTH;
+
+/** Why the skill in the editor is too long to show Claude, or null. Cutting it would lose what is cut on Accept. */
+export function skillDraftInputProblem(current: SkillDraft | null): string | null {
+  if (current === null) return null;
+  const length =
+    characterCount(current.name) +
+    characterCount(current.description) +
+    characterCount(current.instructions);
+  if (length <= MAX_SKILL_DRAFT_INPUT) return null;
+  const said = (count: number) => count.toLocaleString('en-US');
+  return `The skill is ${said(length)} characters, more than the ${said(MAX_SKILL_DRAFT_INPUT)} Claude can be shown at once: shorten it first. Claude was not asked.`;
+}
+
+/**
+ * JSON with every `<` written `\u003c`, as tool-call-text's tool results are:
+ * no string in it can open or close a tag, and JSON.parse gives back the
+ * person's text exactly — nothing is rewritten for Claude to copy back.
+ */
+const tagFreeJson = (value: unknown, indent?: number): string =>
+  JSON.stringify(value, null, indent).replace(/</g, '\\u003c');
+
+/**
  * What Claude is told before the person's request: who it is, how to write a
  * skill, the rules, how to answer — and the skill as it stands, fenced as data.
  */
@@ -71,16 +100,15 @@ export function skillDraftSystem({
     ANSWER_FORMAT,
   ];
   if (fixedName !== null) {
-    parts.push('', `This skill is named ${JSON.stringify(fixedName)} and keeps that name.`);
+    parts.push('', `This skill is named ${tagFreeJson(fixedName)} and keeps that name.`);
   }
   if (current !== null) {
-    // Its text is the vault's: unable to open or close a tag of the protocol's.
-    const shown = neutralizeFraming(JSON.stringify(current, null, 2));
     parts.push(
       '',
       '## The skill as it stands',
+      'As JSON, with each < written \\u003c; your answer may write < as it is.',
       '<vault_data kind="skill">',
-      shown,
+      tagFreeJson(current, 2),
       '</vault_data>',
     );
   }

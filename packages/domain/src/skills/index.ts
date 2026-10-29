@@ -23,7 +23,13 @@ export {
   skillNameKey,
   skillNameProblem,
 } from './skill-rules.ts';
-export { readSkillDraft, skillDraftSystem, skillTextChanges } from './skill-draft.ts';
+export {
+  MAX_SKILL_DRAFT_INPUT,
+  readSkillDraft,
+  skillDraftInputProblem,
+  skillDraftSystem,
+  skillTextChanges,
+} from './skill-draft.ts';
 export type { SkillDraftReading, SkillLineChange } from './skill-draft.ts';
 export { skillInUseWarning, skillUsers, usesSkill } from './skill-users.ts';
 export type { SkillUser } from './skill-users.ts';

@@ -204,9 +204,12 @@ function useSelection({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [leaving, setLeaving] = useState<{ readonly to: Selection | null } | null>(null);
   const generation = useRef(0);
+  // The same count, drawn: what an editor's own state, such as an ask of Claude, belongs to.
+  const [opening, setOpening] = useState(0);
   const choose = useCallback(
     (to: Selection | null, editingTo: Editing | null = to === null ? null : EMPTY_EDITING) => {
       generation.current += 1;
+      setOpening((was) => was + 1);
       setNotice(null);
       setSelection(to);
       setEditing(editingTo);
@@ -249,8 +252,13 @@ function useSelection({
       },
     };
   }, [leaving, overlayUp, overlay, editing, go]);
-  return { selection, choose, leaveFor, discardQuestion, generation };
+  return { selection, choose, leaveFor, discardQuestion, generation, opening };
 }
+
+/** What the Skills page is handed, and which editor it shows: each skill or new one opened is counted. */
+export type SkillsPageState = Omit<SkillsPageProps, 'onShowSidebar' | 'history'> & {
+  readonly opening: number;
+};
 
 /**
  * Everything the Skills page does (#169, ADR-0050): lists the skills and
@@ -273,7 +281,7 @@ export function useSkillsPage({
   /** The open vault, whose reads these are; null while none is. */
   vault: string | null;
   onOpenNote: (path: VaultPath) => void;
-}): Omit<SkillsPageProps, 'onShowSidebar' | 'history'> {
+}): SkillsPageState {
   const { fs, markdown, overlay } = ports;
   const client = useQueryClient();
   const lists = useSkillLists({ fs, markdown, vault, rules });
@@ -354,6 +362,7 @@ export function useSkillsPage({
   return {
     ...lists,
     selected: name,
+    opening: picked.opening,
     editor:
       editing === null || (selection?.kind === 'skill' && editing.base === null)
         ? null

@@ -42,7 +42,7 @@ export function SkillsContainer({ wiring, chrome }: PageContainerProps) {
   );
   // Which rules use each skill, from the runner's own read: drawn again only when that changes.
   const rules = useSkillUsers(pages.automations.store);
-  const page = useSkillsPage({
+  const { opening, ...page } = useSkillsPage({
     ports: { fs: pages.ports.fs, markdown: pane.notes.markdown, overlay },
     rules,
     overlayUp: deleteUp ? 'skill-delete' : discardUp ? 'skill-discard' : null,
@@ -53,7 +53,7 @@ export function SkillsContainer({ wiring, chrome }: PageContainerProps) {
   const ask = useSkillDraft({
     ports: pages.skills.claude,
     editor: page.editor,
-    selected: page.selected,
+    opening,
     onChange: page.onChange,
   });
   return (

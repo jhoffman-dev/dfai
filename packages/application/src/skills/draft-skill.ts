@@ -1,4 +1,10 @@
-import { readSkillDraft, skillDraftSystem, type ModelMessage, type SkillDraft } from '@dfai/domain';
+import {
+  readSkillDraft,
+  skillDraftInputProblem,
+  skillDraftSystem,
+  type ModelMessage,
+  type SkillDraft,
+} from '@dfai/domain';
 import { ModelProviderError, type ModelProvider, type ProviderStatus } from '../chat/ports.ts';
 import { runChatTurn } from '../chat/run-chat-turn.ts';
 import type { ChatToolbox } from '../chat/toolbox.ts';
@@ -15,6 +21,8 @@ export type SkillDraftOutcome =
   | { readonly kind: 'refused'; readonly problems: readonly string[] }
   /** Claude cannot be reached: the provider's own words and fix, as the chat shows them. */
   | { readonly kind: 'unready'; readonly message: string; readonly fix: string | null }
+  /** Claude was not asked: the skill is too long to show it. */
+  | { readonly kind: 'unasked'; readonly message: string }
   | { readonly kind: 'failed'; readonly message: string }
   | { readonly kind: 'stopped' };
 
@@ -63,6 +71,8 @@ export async function draftSkill({
   request: string;
   signal: AbortSignal;
 }): Promise<SkillDraftOutcome> {
+  const tooLong = skillDraftInputProblem(current);
+  if (tooLong !== null) return { kind: 'unasked', message: tooLong };
   // A status that cannot be asked is an unreachable Claude, as the chat panel says it.
   const status = await provider.status().catch((error: unknown): ProviderStatus => ({
     ready: false,
