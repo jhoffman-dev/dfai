@@ -677,6 +677,8 @@ pnpm tauri:dev</pre>
       <p><b>Delete…</b> asks first, naming everything that goes: <i>“Delete “weekly-review”? Its whole folder goes to the Trash, where it can be got back, with 1 other file: scripts/run.sh — and everything in its subfolders, however deep.”</i> When automations use it, the question says so too: <i>“The automation “Meeting actions” uses it, and will fail until it names another skill or a prompt.”</i> <b>Move to Trash</b> puts the skill's whole folder in the macOS Trash.</p>
       <h3>Skills are not notes</h3>
       <p>They aren't in Pages (not even under System), search, the graph or <code>[[</code> suggestions — the Skills page is where they are. Claude and your other tools can list and read them through the <a href="#connect">local API and MCP</a>; making, editing and deleting stay in the app.</p>
+      <h3>Use a skill in the chat</h3>
+      <p>Attach a skill to a conversation with <b>Skill</b> by the chat's box, or <code>/name</code>. See <a href="#chat-skill">Ask with a skill</a>.</p>
     </section>
 
     <section id="views">
@@ -2067,6 +2069,16 @@ do: archive</pre>
         <li>Type in <b>Ask Claude…</b> and press <kbd>Return</kbd> (<kbd>⇧</kbd> <kbd>Return</kbd> for a new line). The answer streams in; <b>Stop</b> ends it.</li>
         <li>Under an answer, <b>Copy</b> copies it; under the latest one, <b>Retry</b> asks again.</li>
         <li>Answers are drawn as on <a href="#ask">Ask</a>: each link to a note is a coloured chip that opens the note at that block (<kbd>⌘</kbd>-click for a new tab), a paragraph, list item or quote with no link is marked <i>not cited</i>, and the answer's foot counts them (<i>1 paragraph not cited</i>). Long titles and words wrap to the sidebar's width.</li>
+      </ul>
+      <h3 id="chat-skill">Ask with a skill</h3>
+      <ul>
+        <li>Press <b>Skill</b> by the box (<b>Use a skill</b>) and pick one of your <a href="#skills">skills</a>, or type <code>/</code> and the start of its name and pick it from the list. You can also type <code>/weekly-review</code> and your question after it, like <code>/weekly-review What did I finish?</code>, and press <kbd>Return</kbd>. The skill shows as a chip above the box; its <b>×</b> (<b>Ask without this skill</b>) takes it off. While the list shows, <kbd>↓</kbd> and <kbd>↑</kbd> move through it from the box, <kbd>Return</kbd> picks the one marked, and <kbd>Esc</kbd> closes it; a screen reader hears how many skills match. A <code>/word</code> that isn't one of your skills — or any <code>/word</code> while the skills can't be read — is sent as you typed it. A <code>/name</code> question shows at once and holds the chat until it's asked, so nothing sent meanwhile overtakes it; <b>Stop</b> ends the wait at once, and the question stays as you typed it, for <b>Retry</b>. While the skills are still being read, the list says <i>Reading skills…</i> and <kbd>Return</kbd> waits rather than send what you typed.</li>
+        <li>Each question you ask while the chip is there is asked with the skill's instructions, read again each time, so an edit on the Skills page counts from the next question. Claude follows them within DFAI's own rules: its tools still only read, and a change is still a proposal you accept.</li>
+        <li>Only you attach a skill. Claude isn't shown your skills to pick from, and nothing in a note or a tool's answer can bring one in.</li>
+        <li>A skill that's gone, has a problem the Skills page shows, or is longer than 20,000 characters counting an emoji as two — the same limit as an <a href="#automation-claude">automation</a> — isn't asked with. The chip says why, like <i>“The skill weekly-review cannot be used: Its instructions are 20001 characters as Claude is handed them, an emoji counting as two; a prompt may be at most 20000.”</i>, and the question waits with <b>Retry</b> until you fix the skill or take the chip off. Claude isn't asked.</li>
+        <li>The chat's note says which skill each answer used: <i>“Used the skill weekly-review”</i>.</li>
+        <li>A skill stays with the conversation you attached it to. <b>New chat</b> starts without one, and a past chat you open again doesn't bring its skill back — attach it again if you want it.</li>
+        <li>Ask and the chat beside the page share the chip, as they share the conversation.</li>
       </ul>
       <h3>What Claude can do</h3>
       <ul>

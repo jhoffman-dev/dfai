@@ -1,4 +1,5 @@
 import type { AnswerBlock, EditorDocument } from '@dfai/domain';
+import type { SkillChoice } from '../automations/index.ts';
 import type { OpenHow } from '../open-how.ts';
 
 /**
@@ -63,6 +64,28 @@ export interface ChatPanelState {
   readonly error: { readonly message: string } | null;
   readonly context: { readonly kind: string; readonly title: string } | null;
   readonly notice: string | null;
+}
+
+/** The skill attached to the chat, and why it cannot be asked with, if it cannot (#169). */
+export interface ChatSkillChipView {
+  readonly name: string;
+  readonly problem: string | null;
+}
+
+/**
+ * The chat's skills (#169): the one attached, and the vault's to pick from —
+ * read only once the picker is first wanted, so nothing is read at launch.
+ */
+export interface ChatSkillsView {
+  readonly attached: ChatSkillChipView | null;
+  /** Empty until the picker has been wanted and the skills read. */
+  readonly choices: readonly SkillChoice[];
+  /** The skills are being read: the picker says so, and `/word` is not sent meanwhile. False when not given. */
+  readonly loading?: boolean;
+  /** The picker opened, or `/` was typed: the app reads the skills then. */
+  readonly onWanted: () => void;
+  readonly onAttach: (name: string) => void;
+  readonly onRemove: () => void;
 }
 
 /** Why the model cannot be reached, and what fixes it. */

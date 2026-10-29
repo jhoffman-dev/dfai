@@ -149,3 +149,52 @@ describe('toolProtocolInstructions', () => {
     expect(text).toContain('<atlas_tool>{"name": "<tool name>", "input": {…}}</atlas_tool>');
   });
 });
+
+describe('neutralizeFraming over seeded spacings (PR #635 attack)', () => {
+  const TAGS = ['user', 'assistant', 'tool_result', 'atlas_tool', 'vault_data', 'chosen_skill'];
+  const SPACES = ['', ' ', '\t', '\n', '  ', '\r\n'];
+  /** A framing tag as a reader that skips whitespace takes it. */
+  const READ_AS_TAG =
+    /<\s*\/?\s*(user|assistant|tool_result|atlas_tool|vault_data|chosen_skill)\b/i;
+  function seeded(seed: number) {
+    let state = seed >>> 0;
+    return () => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const pickOf =
+    (random: () => number) =>
+    <T>(from: readonly T[]): T =>
+      from[Math.floor(random() * from.length)] as T;
+
+  it('leaves no tag a model could read, however it is spaced or cased', () => {
+    const random = seeded(635);
+    const pick = pickOf(random);
+    for (let run = 0; run < 2000; run += 1) {
+      const tag = [...pick(TAGS)].map((c) => (random() < 0.5 ? c.toUpperCase() : c)).join('');
+      const slash = random() < 0.5 ? '/' : '';
+      const hostile = `x<${pick(SPACES)}${slash}${pick(SPACES)}${tag}${pick(SPACES)}>y`;
+      const out = neutralizeFraming(hostile);
+      expect(out, JSON.stringify(hostile)).not.toMatch(READ_AS_TAG);
+      // Only the `<` is changed: what the text says is kept.
+      expect(out.replace('&lt;', '<')).toBe(hostile);
+    }
+  });
+
+  it('changes nothing that is not a framing tag', () => {
+    for (const text of [
+      'a < b',
+      '<username>',
+      '< userland',
+      '<vault>',
+      'x</ users>',
+      '<b>bold</b>',
+    ]) {
+      expect(neutralizeFraming(text)).toBe(text);
+    }
+  });
+});
