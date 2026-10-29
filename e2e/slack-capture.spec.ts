@@ -123,7 +123,7 @@ test('Claude saves a Slack message with atlas_capture once, however often it ask
 }) => {
   const { host, vault } = await openVault(page);
   await turnApiOn(page);
-  const mcp = await connectInMemoryMcp(throughHost(host));
+  const mcp = await connectInMemoryMcp({ fetch: throughHost(host) });
   // The payload less what the tool fills in itself: the contract and the provider.
   const { channel, ts, url, author } = CAPTURE.source;
   const toolArguments = { ...CAPTURE, contract: undefined, source: { channel, ts, url, author } };
@@ -150,9 +150,22 @@ test('Claude saves a Slack message with atlas_capture once, however often it ask
   await expect(rows).toHaveCount(1);
 
   expect(await saveIt()).toEqual({ capture: { path: PATH, outcome: 'in-vault' } });
-  // The answer comes once the write would have landed: the folder still holds the one note.
-  expect(await readdir(join(vault.root, 'Inbox/Captures'))).toEqual([PATH.split('/').pop()]);
   expect(host.writesTo(PATH)).toBe(1);
+  // A backstop: a copy at a numbered path would already have failed the receipt above.
+  expect(await readdir(join(vault.root, 'Inbox/Captures'))).toEqual([PATH.split('/').pop()]);
+  // A note written after the second save reaching the Inbox means anything it wrote would
+  // have too: only then is one row a state rather than a moment.
+  const later = await host.api.send({
+    method: 'POST',
+    path: '/v1/notes',
+    body: { folder: 'Inbox', name: 'Written after the second save' },
+  });
+  expect(later.status).toBe(201);
+  await expect(
+    page.getByRole('article', { name: 'Inbox' }).getByRole('button', {
+      name: /^Written after the second save/,
+    }),
+  ).toBeVisible();
   await expect(rows).toHaveCount(1);
   await mcp.close();
 });

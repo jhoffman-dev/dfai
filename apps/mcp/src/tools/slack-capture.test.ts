@@ -5,10 +5,9 @@
  * All names are made up.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
-import { AtlasClient } from '../client.ts';
-import { createAtlasServer } from '../server.ts';
+import type { Client } from '@modelcontextprotocol/client';
 import { errorBody, startFakeAtlas, type FakeAtlas } from '../testing/fake-atlas.ts';
+import { connectInMemoryMcp } from '../testing/in-memory-mcp.ts';
 import { MISSING_PERMALINK } from './slack-capture.ts';
 
 const PERMALINK = 'https://larkspur.slack.com/archives/C0LARK5PUR/p1793136000000100';
@@ -31,11 +30,7 @@ beforeEach(async () => {
     status: 201,
     body: { capture: { path: PATH, outcome: 'written' } },
   }));
-  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  const connect = async () => ({ baseUrl: atlas.baseUrl, token: 'capture-token' });
-  await createAtlasServer(new AtlasClient({ connect })).connect(serverSide);
-  mcp = new Client({ name: 'test', version: '1.0.0' });
-  await mcp.connect(clientSide);
+  mcp = await connectInMemoryMcp({ baseUrl: atlas.baseUrl });
 });
 
 afterEach(async () => {
@@ -109,6 +104,82 @@ describe('atlas_capture → POST /v1/captures', () => {
     expect(atlas.requests).toHaveLength(0);
   });
 
+  it.each([
+    ['replies', { replies: [{ ts: '1793136300.000200', author: { name: 'Tobias Fenn' } }] }],
+    ['files', { files: [{ name: 'renewal.pdf', url: 'https://files.slack.com/r' }] }],
+    ['thread_ts', { source: { ...SOURCE, thread_ts: '1793136000.000100' } }],
+    ['topic', { source: { ...SOURCE, channel: { id: 'C0LARK5PUR', topic: 'Renewals' } } }],
+    ['title', { source: { ...SOURCE, author: { name: 'Mara Quill', title: 'Lead' } } }],
+    [
+      'shared',
+      { thread: [{ ts: '1793136300.000200', author: { name: 'Tobias Fenn' }, shared: 1 }] },
+    ],
+    ['size', { attachments: [{ name: 'r.pdf', url: 'https://files.slack.com/r', size: 1 }] }],
+  ])(
+    'refuses a key the contract does not have, "%s", naming it, before any request',
+    async (key, extra) => {
+      const result = await capture({ ...MESSAGE, ...extra });
+
+      expect(result.isError).toBe(true);
+      expect(result.text).toMatch(/Unrecognized key/);
+      expect(result.text).toContain(`"${key}"`);
+      expect(atlas.requests).toHaveLength(0);
+    },
+  );
+
+  it('sends a file-only message, whose text and replies’ text may be left out', async () => {
+    const attachments = [{ name: 'renewal.pdf', url: 'https://files.slack.com/renewal.pdf' }];
+    const thread = [{ ts: '1793136300.000200', author: { name: 'Tobias Fenn' } }];
+
+    const result = await capture({ kind: 'note', source: SOURCE, attachments, thread });
+
+    expect(result.isError).toBe(false);
+    expect(atlas.requests[0]?.body).toEqual({
+      contract: 'capture/v1',
+      kind: 'note',
+      source: { provider: 'slack', ...SOURCE },
+      attachments,
+      thread,
+    });
+  });
+
+  it('takes null for a field left out, as the contract does, and sends no null', async () => {
+    const result = await capture({
+      ...MESSAGE,
+      title: null,
+      timeZone: null,
+      users: null,
+      source: {
+        ...SOURCE,
+        channel: { id: 'C0LARK5PUR', name: null },
+        author: { name: 'Mara Quill', id: null, email: null },
+      },
+      thread: [
+        {
+          ts: '1793136300.000200',
+          author: { name: 'Tobias Fenn', email: null },
+          text: 'On it.',
+          url: null,
+        },
+      ],
+    });
+
+    expect(result.isError).toBe(false);
+    expect(atlas.requests[0]?.body).toEqual({
+      contract: 'capture/v1',
+      kind: 'task',
+      source: {
+        provider: 'slack',
+        channel: { id: 'C0LARK5PUR' },
+        ts: SOURCE.ts,
+        url: PERMALINK,
+        author: { name: 'Mara Quill' },
+      },
+      text: MESSAGE.text,
+      thread: [{ ts: '1793136300.000200', author: { name: 'Tobias Fenn' }, text: 'On it.' }],
+    });
+  });
+
   it('passes the contract’s refusal on whole, every reason in it', async () => {
     const reasons =
       'The capture was refused: source.url: is not a link to this message: its channel or ts differ';
@@ -142,6 +213,38 @@ describe('atlas_capture as listed', () => {
     expect(description).toMatch(/channel id and ts/);
     expect(description).toMatch(/Choose kind from the person's words/);
     expect(description).toMatch(/never invent, summarise or fill in content you did not read/);
+  });
+
+  it('tells the model a second save adds nothing, so it says the note exists, and what exists means', async () => {
+    const description = (await listed())?.description ?? '';
+
+    expect(description).toMatch(/A second call for the same message adds nothing/);
+    expect(description).toMatch(/tell the person the note already exists/);
+    expect(description).toMatch(/"exists"/);
+  });
+
+  it('lists every object in its schema as closed, so the model knows a misspelt field is refused', async () => {
+    const schema = (await listed())?.inputSchema;
+
+    expect(schema).toMatchObject({
+      additionalProperties: false,
+      properties: {
+        source: {
+          additionalProperties: false,
+          properties: {
+            channel: { additionalProperties: false },
+            author: { additionalProperties: false },
+          },
+        },
+        thread: {
+          items: {
+            additionalProperties: false,
+            properties: { author: { additionalProperties: false } },
+          },
+        },
+        attachments: { items: { additionalProperties: false } },
+      },
+    });
   });
 
   it('requires the permalink in its schema, so the model sees it must send one', async () => {
