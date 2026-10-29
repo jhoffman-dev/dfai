@@ -104,6 +104,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_move_card`             | `POST /v1/views/{path}/move`                                                 | yes     |
 | `atlas_add_to_view`           | `POST /v1/views/{path}/notes`                                                | yes     |
 | `atlas_refresh_source`        | `POST /v1/sources/{path}/refresh`                                            | yes     |
+| `atlas_sync_granola`          | `POST /v1/granola/pull`                                                      | yes     |
 | `atlas_tags`                  | `GET /v1/tags`                                                               | no      |
 | `atlas_tagged_notes`          | `GET /v1/tags/{tag}/notes`                                                   | no      |
 | `atlas_rename_tag`            | `POST /v1/tags/{tag}/rename`                                                 | yes     |

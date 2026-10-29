@@ -77,6 +77,7 @@ const ALL_TOOLS = [
   'atlas_semantic_search',
   'atlas_sql',
   'atlas_status',
+  'atlas_sync_granola',
   'atlas_tagged_notes',
   'atlas_tags',
   'atlas_terms',
@@ -174,6 +175,12 @@ describe('tools/list', () => {
     expect(byName.get('atlas_weekly_review')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_export_note')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_inbox')).toMatchObject({ readOnlyHint: true });
+    // It writes meetings into the vault, so a client must not retry it as if it were free.
+    expect(byName.get('atlas_sync_granola')).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+    });
     for (const name of [
       'atlas_archive',
       'atlas_unarchive',
@@ -539,6 +546,7 @@ describe('tools/call → REST', () => {
       null,
     ],
     ['atlas_terms', {}, 'GET', '/v1/terms', null],
+    ['atlas_sync_granola', {}, 'POST', '/v1/granola/pull', null],
     [
       'atlas_day_meetings',
       { day: '2026-10-24' },
