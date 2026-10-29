@@ -1,6 +1,7 @@
 import {
   meetingImportStoppedReport,
   messageWithoutPaths,
+  type NoteChange,
   type VaultPath,
   type Vocabulary,
 } from '@dfai/domain';
@@ -15,6 +16,7 @@ import {
   type MeetingImportPorts,
   type MeetingImportRun,
 } from './import-arrived-meetings.ts';
+import { createWaitingCounter, type MeetingsWaitingWatch } from './meetings-waiting.ts';
 
 /**
  * Imports meetings (P28-04): as the change feed hears of them, and all at
@@ -25,9 +27,12 @@ import {
  * sync state (ADR-0035 part 4) — `active` says whether it may, as each run's
  * turn comes, and `mayWrite` again for each file, right before each write —
  * so two Macs never write the same file. A run or a file it may not make
- * drops what it heard; nothing is lost by that, since what a file is due is
- * in the file, and catching up when the import starts, when this Mac takes
- * the automations over, or when a pull completes settles every file left.
+ * writes nothing; nothing is lost by that, since what a file is due is in
+ * the file, and catching up when the import starts, when this Mac takes the
+ * automations over, or when a pull completes settles every file left. On a
+ * Mac that is not named, a run it may not make is not silent (ADR-0035
+ * parts 1 and 3): it counts what waits for the named Mac, as `waiting` is
+ * told, and warns in Activity once per pull while meetings wait.
  *
  * A file it leaves unsettled — a conflict copy, one it cannot read or write —
  * is said in Activity once while the window is open, and again only when it
@@ -39,9 +44,13 @@ import {
  * is re-read — without the queue being lost.
  */
 export interface MeetingImporter {
-  /** Settles once these changes are imported; null when dropped, or when the run failed (said in Activity). */
+  /**
+   * Settles once these changes are imported; on a Mac that is not named,
+   * once what waits is counted, with nothing imported and `waiting` set.
+   * Null when dropped, or when the run failed (said in Activity).
+   */
   hear(news: NoteChangeNews): Promise<MeetingImportOutcome | null>;
-  /** Settles once every unsettled file in the vault's meeting folder is; null when dropped. */
+  /** Settles once every unsettled file in the vault's meeting folder is, or what waits is counted; null when dropped. */
   catchUp(vault: string): Promise<MeetingImportOutcome | null>;
 }
 
@@ -54,6 +63,7 @@ export function createMeetingImporter({
   mayWrite,
   onWritten,
   beforeLetIn,
+  waiting,
 }: {
   /** The ports as they are now, asked for at the start of each run. */
   ports: () => MeetingImportPorts;
@@ -86,21 +96,44 @@ export function createMeetingImporter({
     path: VaultPath,
     reading: { readonly vocabulary: Vocabulary },
   ) => Promise<void>;
+  /** Left out, a run this Mac may not make is dropped without a word, as before ADR-0035. */
+  waiting?: MeetingsWaitingWatch;
 }): MeetingImporter {
   let queue: Promise<unknown> = Promise.resolve();
   const unsettledSaid = createUnsettledSaid();
+  const countWaiting = waiting === undefined ? null : createWaitingCounter(waiting);
+
+  /**
+   * What a run this Mac may not make says instead of nothing: what waits, on
+   * a Mac that is not named. News that names no meeting file cannot change
+   * that, and asks nothing — no gate, no read.
+   */
+  const notImporting = async (
+    vault: string,
+    news: readonly NoteChange[] | null,
+  ): Promise<MeetingImportOutcome | null> => {
+    if (countWaiting === null) return null;
+    const said =
+      news !== null && !countWaiting.heard(vault, news)
+        ? countWaiting.last(vault)
+        : await countWaiting.judge(vault, { ports: ports(), activity: activity.inVault(vault) });
+    return said === null ? null : { happenings: [], wrote: false, waiting: said };
+  };
 
   const runFor = (
     vault: string,
     importing: (run: MeetingImportRun) => Promise<MeetingImportOutcome>,
+    news: readonly NoteChange[] | null,
   ): Promise<MeetingImportOutcome | null> => {
     const next = queue.then(async () => {
       if (openVault() !== vault) return null;
       const mayImport = await active(vault);
       // Another vault may have opened while the gate was read.
-      if (!mayImport || openVault() !== vault) return null;
+      if (openVault() !== vault) return null;
       const recorder = activity.inVault(vault);
       try {
+        if (!mayImport) return await notImporting(vault, news);
+        countWaiting?.clear(vault);
         const outcome = await importing({
           ports: ports(),
           today: clock.today(),
@@ -131,8 +164,12 @@ export function createMeetingImporter({
 
   return {
     hear: (news) =>
-      runFor(news.vault, (run) => importArrivedMeetings({ ...run, changes: news.changes })),
-    catchUp: (vault) => runFor(vault, catchUpMeetings),
+      runFor(
+        news.vault,
+        (run) => importArrivedMeetings({ ...run, changes: news.changes }),
+        news.changes,
+      ),
+    catchUp: (vault) => runFor(vault, catchUpMeetings, null),
   };
 }
 

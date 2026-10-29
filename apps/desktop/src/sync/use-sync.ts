@@ -142,6 +142,7 @@ export function useSync(options: SyncOptions): SyncController {
     markdown: options.markdown,
     thisMacId: thisMac?.id ?? null,
     paused: (vault) => host.pause.read(vault),
+    pausedNow: paused,
     clock: options.clock,
     activity: options.activity,
   });

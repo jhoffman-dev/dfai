@@ -564,6 +564,32 @@ describe('InboxPage: while the vault’s settings note cannot be read (#226)', (
   });
 });
 
+describe('InboxPage: meetings waiting for the named Mac (ADR-0035 part 1, #175)', () => {
+  const banner = () => screen.queryByRole('status', { name: 'Meetings waiting' });
+
+  it('shows the line it is given, above the rows', () => {
+    page({ meetingsWaiting: '3 meetings waiting for Studio' });
+
+    expect(banner()?.textContent).toBe('3 meetings waiting for Studio');
+    const list = screen.getByRole('article', { name: 'Inbox' });
+    const firstRow = rowOf('Idea');
+    expect(list.contains(banner())).toBe(true);
+    // Drawn before the rows, so it is read first.
+    expect(
+      banner()!.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('draws nothing on the named Mac, which is given no line', () => {
+    const { rerender } = page({ meetingsWaiting: '1 meeting waiting for Studio' });
+    expect(banner()).not.toBeNull();
+
+    rerender({ meetingsWaiting: null });
+    expect(banner()).toBeNull();
+    expect(screen.queryByText(/waiting for Studio/)).toBeNull();
+  });
+});
+
 const VAULT_TIDY: NonNullable<InboxPageProps['vaultTidy']> = {
   preview: {
     moves: [{ from: 'Loose idea.md', to: 'Notes/2026/Loose idea.md' }],
