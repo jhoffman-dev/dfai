@@ -118,8 +118,11 @@ function problemsOf(seed: number): string[] {
   if (JSON.stringify(read) !== JSON.stringify(intended)) problems.push('values');
   const allLf = updateFrontmatter(blockOf(seed, false).frontmatter, changes);
   if (inner(written).replace(/\r\n/g, '\n') !== inner(allLf)) problems.push('text');
+  // A comment the writer takes away with the key under it is gone in the all-LF run too.
+  const kept = new Set(inner(allLf).split('\n'));
   for (const line of lines) {
     if (line.text === '' || (line.key !== null && line.key in changes)) continue;
+    if (!kept.has(line.text)) continue;
     if (!written.includes(line.text + line.ending)) problems.push(`ending of ${line.text}`);
   }
   if (updateFrontmatter(written, changes) !== written) problems.push('not idempotent');

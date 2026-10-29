@@ -86,6 +86,20 @@ describe('which line a changed line replaced (review of #620)', () => {
     );
   });
 
+  it('pairs changed lines by place when as many went as came', () => {
+    const original = 'k: 1\r\nl:\n  - a\r\n  - b\nm: 2\r\n';
+    expect(restore(original, 'k: 1\nl:\n  - x\n  - y\nm: 2\n')).toBe(
+      'k: 1\r\nl:\n  - x\r\n  - y\nm: 2\r\n',
+    );
+  });
+
+  it('does not pair by place when more lines came than went', () => {
+    const original = 'a: 1\r\nb: 2\r\nk:\n  - x\n  - y\nc: 3\r\nd: 4\r\n';
+    expect(restore(original, 'a: 1\nb: 2\nk:\n  - p\n  - q\n  - r\nc: 3\nd: 4\n')).toBe(
+      'a: 1\r\nb: 2\r\nk:\n  - p\r\n  - q\r\n  - r\r\nc: 3\r\nd: 4\r\n',
+    );
+  });
+
   it('keeps a moved line’s own ending', () => {
     expect(restore('\n# note 1\r\nk: 1\r\n', '# note 1\n\nk: 1\nnew1: n1\n')).toBe(
       '# note 1\r\n\nk: 1\r\nnew1: n1\r\n',
