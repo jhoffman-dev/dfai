@@ -10,12 +10,13 @@ import {
   claudeActionFields,
   isClaudeStepPrompt,
   readClaudeAction,
-  usesSkill,
+  skillRunProblem,
   withClaudeChoices,
   withClaudeData,
   withClaudeSkill,
   type ClaudeAction,
 } from './claude-step.ts';
+import { usesSkill } from '../skills/index.ts';
 
 /**
  * #169 (ADR-0050, ADR-0028's amendment): a rule's Claude step may name a
@@ -60,6 +61,13 @@ describe('a Claude step that names a skill', () => {
 
   it('takes the name without the spaces round it', () => {
     expect(actionOf({ ...RULE, skill: '  weekly-notes ' }).skill).toBe('weekly-notes');
+  });
+
+  it('takes a quoted blank skill as none, as a blank prompt is (#629 review)', () => {
+    expect(actionOf({ ...PROMPT_RULE, skill: '  ' })).toStrictEqual(actionOf(PROMPT_RULE));
+    expect(read({ ...RULE, skill: '  ' })).toBe(
+      'Name its prompt: prompt: .atlas/prompts/<name>.md.',
+    );
   });
 
   it('refuses a rule that names a skill and a prompt, asking for one', () => {
@@ -208,5 +216,54 @@ describe('which rules use a skill', () => {
   it('is never a step with a prompt, or a rule that does not ask Claude', () => {
     expect(usesSkill(actionOf(PROMPT_RULE), 'meeting-actions')).toBe(false);
     expect(usesSkill({ kind: 'archive' }, 'weekly-notes')).toBe(false);
+  });
+});
+
+describe('a broken rule that names a skill (#629 review)', () => {
+  it('still says which skill it names, so it counts as using it', () => {
+    const parsed = parseAutomationRule(PATH, { ...SKILL_RULE, tools: ['atlas_delete_note'] });
+    expect(parsed).toMatchObject({ broken: { name: 'Weekly notes', skill: 'weekly-notes' } });
+  });
+
+  it('names none when its skill: does not read as one', () => {
+    for (const skill of ['Not A Name', '  ', ['weekly-notes'], undefined]) {
+      const parsed = parseAutomationRule(PATH, { ...RULE, tools: 'atlas_read_note', skill });
+      if (!('broken' in parsed)) throw new Error('expected a broken rule');
+      expect(parsed.broken).not.toHaveProperty('skill');
+    }
+  });
+
+  it('names none for a broken rule with no Claude step', () => {
+    const parsed = parseAutomationRule(PATH, { ...SKILL_RULE, do: 'archive', when: 'never' });
+    if (!('broken' in parsed)) throw new Error('expected a broken rule');
+    expect(parsed.broken).not.toHaveProperty('skill');
+  });
+});
+
+describe('why a skill cannot be run (#629 review)', () => {
+  const skill = (instructions: string, problems: { message: string }[] = []) => ({
+    instructions,
+    problems,
+  });
+
+  it('is nothing for a skill with no problems, within the prompt limit', () => {
+    expect(skillRunProblem(skill('Tidy the notes.'))).toBeNull();
+    expect(skillRunProblem(skill(`${'a'.repeat(20_000)}\n`))).toBeNull();
+  });
+
+  it('is its first problem, when the Skills page shows any', () => {
+    expect(
+      skillRunProblem(skill('x', [{ message: 'Say what the skill does.' }, { message: 'b' }])),
+    ).toEqual({ kind: 'problems', message: 'Say what the skill does.' });
+  });
+
+  it('holds its instructions to the prompt note’s measure, an emoji counting as two', () => {
+    // 15,000 emoji pass the Skills page's count of characters, but are 30,000 as handed over.
+    expect(skillRunProblem(skill('😀'.repeat(15_000)))).toEqual({
+      kind: 'too-long',
+      message:
+        'Its instructions are 30000 characters as Claude is handed them, an emoji counting as two; a prompt may be at most 20000.',
+    });
+    expect(skillRunProblem(skill('a'.repeat(20_001)))?.kind).toBe('too-long');
   });
 });

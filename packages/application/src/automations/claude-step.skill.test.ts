@@ -270,6 +270,47 @@ describe('a skill that cannot be asked with fails the run, asking and writing no
     expect(step.written()).toEqual([]);
   });
 
+  it('holds a skill to the prompt note’s measure, so one the Skills page passes can fail the run (#629 review)', async () => {
+    // 15,000 emoji are 15,000 characters to the Skills page, and 30,000 as Claude is handed them.
+    await failsWith(
+      {
+        ...NOTES,
+        [SKILL]: skillFile(
+          { name: 'meeting-actions', description: DESCRIPTION },
+          `\n${'😀'.repeat(15_000)}\n`,
+        ),
+      },
+      'Its skill meeting-actions cannot be used: Its instructions are 30000 characters as Claude is handed them, an emoji counting as two; a prompt may be at most 20000.',
+    );
+  });
+
+  it('lets an error that is not the vault’s refusal through, unexplained (#629 review)', async () => {
+    const step = setUp();
+    const { fs } = step.vault.ports;
+    const broken = new TypeError('the listing came back malformed');
+    const running = runAutomation({
+      ports: {
+        ...step.vault.ports,
+        fs: {
+          ...fs,
+          listDirectory: async (parent) => {
+            if (parent === '.atlas/skills') throw broken;
+            return fs.listDirectory(parent);
+          },
+        },
+      },
+      rule: ruleOf(BY_SKILL),
+      clock: CLOCK,
+      guard: GUARD,
+      activity: step.activity,
+      trigger: 'hand',
+    });
+    // A bug is raised as itself, never put to the person as a skill that could not be read.
+    await expect(running).rejects.toBe(broken);
+    expect(step.claude.fake.requests).toEqual([]);
+    expect(step.written()).toEqual([]);
+  });
+
   it('refuses a step whose prompt is not its own skill’s SKILL.md', async () => {
     await failsWith(NOTES, 'Its skill "meeting-actions" is not a skill in .atlas/skills.', {
       ...BY_SKILL,

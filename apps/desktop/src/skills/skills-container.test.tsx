@@ -6,14 +6,20 @@
  * up to hold the screen with nothing drawn.
  */
 import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { Profiler } from 'react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createVaultPath, type VaultEntry } from '@dfai/domain';
 import { fakeVaultFs, VaultAccessError } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { createOverlayStore, overlayNow } from '../overlay-store.ts';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
-import { createAutomationsStore } from '../automations/automations-store.ts';
+import {
+  createAutomationsStore,
+  publishAutomations,
+  type AutomationsController,
+  type AutomationsStore,
+} from '../automations/automations-store.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { SkillsContainer } from './skills-container.tsx';
 
@@ -46,22 +52,48 @@ function oneSkillVault() {
   return { fs, letWalkGo };
 }
 
-function showTab(fs: ReturnType<typeof fakeVaultFs>) {
+function showTab(
+  fs: ReturnType<typeof fakeVaultFs>,
+  store: AutomationsStore = createAutomationsStore(),
+) {
   const overlays = createOverlayStore();
   const wiring = {
     pages: {
       ports: { fs },
       openNote: () => {},
-      automations: { store: createAutomationsStore() },
+      automations: { store },
     },
     pane: { vault: '/vaults/larkspur', notes: { markdown: remarkMarkdown } },
     overlays,
   } as unknown as PageContainerProps['wiring'];
+  let draws = 0;
   const view = render(
-    <SkillsContainer wiring={wiring} tabId={'tab-1' as PageContainerProps['tabId']} chrome={{}} />,
+    <Profiler id="skills" onRender={() => (draws += 1)}>
+      <SkillsContainer wiring={wiring} tabId={'tab-1' as PageContainerProps['tabId']} chrome={{}} />
+    </Profiler>,
     { wrapper: queryWrapper().wrapper },
   );
-  return { ...view, overlays };
+  return { ...view, overlays, draws: () => draws };
+}
+
+/** The runner saying where the rules stand: a new listing each time, as each minute's read is. */
+function publishRules(
+  store: AutomationsStore,
+  rules: { name: string; skill: string }[],
+  broken: { name: string; skill?: string }[] = [],
+) {
+  const listing = {
+    automations: rules.map(({ name, skill }) => ({
+      rule: { name, action: { kind: 'claude', skill } },
+    })),
+    broken: broken.map(({ name, skill }) => ({
+      name,
+      path: `.atlas/automations/${name}.md`,
+      problem: 'It cannot be read.',
+      ...(skill !== undefined && { skill }),
+    })),
+  };
+  act(() => publishAutomations(store, { listing } as unknown as AutomationsController));
 }
 
 async function askToDelete() {
@@ -91,5 +123,43 @@ describe('SkillsContainer', () => {
     // The walk's answer arrives after the tab has gone.
     await new Promise((settled) => setTimeout(settled, 0));
     expect(overlayNow(overlays)).toBeNull();
+  });
+
+  describe('the automations that use a skill (#629 review)', () => {
+    it('draws nothing more when the runner reads the same rules again', async () => {
+      const { fs, letWalkGo } = oneSkillVault();
+      letWalkGo();
+      const store = createAutomationsStore();
+      publishRules(store, [{ name: 'Weekly notes', skill: 'weekly-review' }]);
+      const tab = showTab(fs, store);
+      expect(await screen.findByText('Used by Weekly notes')).toBeTruthy();
+      const before = tab.draws();
+
+      // The minute's read, and a run's: new objects, the same rules.
+      publishRules(store, [{ name: 'Weekly notes', skill: 'weekly-review' }]);
+      publishRules(store, [{ name: 'Weekly notes', skill: 'weekly-review' }]);
+
+      expect(tab.draws()).toBe(before);
+      // A change in which rules use it is drawn.
+      publishRules(store, [
+        { name: 'Weekly notes', skill: 'weekly-review' },
+        { name: 'After standup', skill: 'weekly-review' },
+      ]);
+      expect(await screen.findByText('Used by After standup, Weekly notes')).toBeTruthy();
+      expect(tab.draws()).toBeGreaterThan(before);
+    });
+
+    it('counts a broken rule that names the skill', async () => {
+      const { fs, letWalkGo } = oneSkillVault();
+      letWalkGo();
+      const store = createAutomationsStore();
+      publishRules(
+        store,
+        [],
+        [{ name: 'Typo in tools', skill: 'weekly-review' }, { name: 'Other' }],
+      );
+      showTab(fs, store);
+      expect(await screen.findByText('Used by Typo in tools')).toBeTruthy();
+    });
   });
 });

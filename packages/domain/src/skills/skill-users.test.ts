@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { skillInUseWarning, skillUsers, type SkillUser } from './skill-users.ts';
+import { skillInUseWarning, skillUsers, usesSkill, type SkillUser } from './skill-users.ts';
 
 /** #169: the rules that ask with a skill, as the Skills page names them. */
 
@@ -45,5 +45,14 @@ describe('the delete question’s warning', () => {
     expect(skillInUseWarning(['A', 'B'])).toBe(
       '2 automations use it — “A”, “B” — and will fail until each names another skill or a prompt.',
     );
+  });
+});
+
+describe('whether a rule uses a skill', () => {
+  it('compares names as skills are told apart, in any case and form', () => {
+    expect(usesSkill({ kind: 'claude', skill: 'ｗeekly-notes' }, 'weekly-notes')).toBe(true);
+    expect(usesSkill({ kind: 'claude', skill: 'Weekly-Notes' }, 'weekly-notes')).toBe(true);
+    expect(usesSkill({ kind: 'claude', skill: 'weekly-note' }, 'weekly-notes')).toBe(false);
+    expect(usesSkill({ kind: 'set', skill: 'weekly-notes' }, 'weekly-notes')).toBe(false);
   });
 });
