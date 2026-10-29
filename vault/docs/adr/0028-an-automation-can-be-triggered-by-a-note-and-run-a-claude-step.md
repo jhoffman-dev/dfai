@@ -823,8 +823,12 @@ should be able to use one instead of a prompt note.
 
 - **`skill: <name>` in place of `prompt:`.** A rule names one or the other.
   One that names both is refused with _"Name one: prompt:
-  .atlas/prompts/<name>.md, or skill: <name>, not both."_ — a blank, null or
-  quoted-blank (`'  '`) key counts as none, `skill:` and `prompt:` alike. The name is held to a skill's name
+  .atlas/prompts/<name>.md, or skill: <name>, not both."_ — a missing, null or
+  blank-text (`'  '`) key counts as none, `skill:` and `prompt:` alike; any
+  other value, an empty list (`[]`, `['']`) among them, is a value written and
+  is refused as one. An all-digit name that YAML reads as a number
+  (`skill: 123`) is never coerced: the rule is refused, asking for
+  `skill: "123"`. The name is held to a skill's name
   rule (`skillNameProblem`) when the rule is read, so a path or a capital never
   reaches the run.
 - **One path, either way.** `ClaudeAction` gains an optional `skill`; its
@@ -863,7 +867,11 @@ should be able to use one instead of a prompt note.
   list, so the rule reads as it is. The Skills page lists, under each skill,
   the rules that use it (in any case), from the runner's own reading of the
   rules — no more is read — and the delete question warns that they will
-  fail. A broken rule counts when its `skill:` still reads as a name
+  fail. A rule is the user of the folder its run would read (the exact name,
+  else the first the same in any case and form, as `readSkill` finds it), so
+  of two folders told apart only by case, one claims it. Letting a picked
+  skill go before saving gives back the prompt note the step had; the
+  editor starts afresh for each rule opened. A broken rule counts when its `skill:` still reads as a name
   (`BrokenAutomation.skill`, `namedSkill`): fixing its other key must not
   find the skill gone. The page draws again only when which rules use which
   skill changes, compared by content, never for the runner's minute or a

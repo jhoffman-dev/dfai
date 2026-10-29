@@ -101,6 +101,7 @@ export function AutomationsScreen({
       editor={
         editor.editing === null ? null : (
           <AutomationEditor
+            key={editor.opened}
             draft={editor.editing.draft}
             onChange={editor.change}
             isNew={editor.editing.kind === 'new'}

@@ -101,10 +101,19 @@ describe('the automation editor’s skill picker', () => {
     expect(draftProblem(last)).toBeNull();
   });
 
-  it('goes back to a prompt note with an empty path to type', async () => {
+  it('goes back to a prompt note with an empty path to type, for a rule opened with a skill', async () => {
     const onChange = vi.fn();
-    render(<Editor onChange={onChange} />);
-    await userEvent.selectOptions(picker(), 'weekly-notes');
+    const bySkill: AutomationDraft = {
+      ...BY_PROMPT,
+      action: {
+        kind: 'claude',
+        prompt: createVaultPath('.atlas/skills/weekly-notes/SKILL.md'),
+        skill: 'weekly-notes',
+        tools: ['atlas_read_note'],
+        output: { kind: 'proposals', schema: 'proposals' },
+      },
+    };
+    render(<Editor start={bySkill} onChange={onChange} />);
 
     await userEvent.selectOptions(picker(), '');
 

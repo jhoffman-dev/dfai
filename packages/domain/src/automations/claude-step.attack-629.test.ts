@@ -46,6 +46,10 @@ function oracle(frontmatter: Record<string, unknown>): { skill?: string; prompt:
     return written !== '' && isPromptPath(written) ? { prompt: written } : NAME_PROMPT;
   }
   if (!blank(prompt)) return NAME_ONE;
+  // An all-digit name YAML read as a number is told to be quoted (#629 attack, as fixed).
+  if (typeof skill === 'number' && Number.isSafeInteger(skill) && skill >= 0) {
+    return `Write skill: in quotes when its name is only digits, like skill: "${skill}".`;
+  }
   if (typeof skill !== 'string') return ONE_NAME;
   const name = skill.trim();
   const problem = skillNameProblem(name);

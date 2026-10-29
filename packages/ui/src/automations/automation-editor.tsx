@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   CLAUDE_DATA,
   claudeStepDefaultModel,
@@ -533,6 +533,8 @@ function SkillPicker({
   onChange: (action: ClaudeAction) => void;
 }) {
   const named = action.skill;
+  // The prompt note the step had before a skill was picked: given back if the skill is let go.
+  const [before, setBefore] = useState('');
   const listed = named === undefined || skills.some((skill) => skill.name === named);
   const offered = listed ? skills : [{ name: named, unusable: null }, ...skills];
   return (
@@ -542,9 +544,11 @@ function SkillPicker({
         className="field automation-editor__small"
         aria-label="Skill"
         value={named ?? ''}
-        onChange={(event) =>
-          onChange(withClaudeSkill(action, event.target.value === '' ? null : event.target.value))
-        }
+        onChange={(event) => {
+          const picked = event.target.value === '' ? null : event.target.value;
+          if (picked !== null && named === undefined) setBefore(action.prompt);
+          onChange(withClaudeSkill(action, picked, before));
+        }}
       >
         <option value="">A prompt note</option>
         {offered.map(({ name, unusable }) => (

@@ -529,6 +529,8 @@ async function readSkillInstructions(
   }
   if (skill === null) return { problem: `Its skill ${name} is not in .atlas/skills.` };
   const unusable = skillRunProblem(skill);
+  // Trimmed as a prompt note's body is, and as skillRunProblem measures it: instructionsOf takes
+  // off only one blank line and one line end, so spaces and further blank lines would remain.
   return unusable === null
     ? skill.instructions.trim()
     : { problem: `Its skill ${name} cannot be used: ${unusable.message}` };

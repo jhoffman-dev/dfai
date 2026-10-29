@@ -221,7 +221,10 @@ function readInstructions(
 
 /** A key left out, null, or only spaces: none, as a file that does not write it is read. */
 function isBlank(value: unknown): boolean {
-  return value === undefined || value === null || String(value).trim() === '';
+  // Only text can be blank: a list, even an empty one, is a value written, and refused as one.
+  return (
+    value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+  );
 }
 
 /**
@@ -240,6 +243,10 @@ export function namedSkill(frontmatter: Readonly<Record<string, unknown>>): stri
 
 /** The skill a rule names, as its SKILL.md and name, or why it cannot be one. */
 function readSkill(value: unknown): { path: VaultPath; skill: string } | string {
+  // YAML reads an all-digit `skill: 123` as a number; it is never taken for the name `123` unasked.
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+    return `Write skill: in quotes when its name is only digits, like skill: "${value}".`;
+  }
   if (typeof value !== 'string')
     return 'Write skill: as one skill’s name, like skill: weekly-notes.';
   const name = value.trim();
@@ -390,15 +397,20 @@ export function describeClaudeAction(action: ClaudeAction): string {
 }
 
 /**
- * The step with the skill `skill` in place of its prompt note, or with none:
- * an empty prompt to type, as a new step has (#169). Whatever else it holds
- * stays.
+ * The step with the skill `skill` in place of its prompt note, or with none
+ * (#169): then its prompt is `prompt` — the prompt note it had before a skill
+ * was picked, which the editor keeps — or, with none to go back to, an empty
+ * one to type, as a new step has. Whatever else it holds stays.
  */
-export function withClaudeSkill(action: ClaudeAction, skill: string | null): ClaudeAction {
+export function withClaudeSkill(
+  action: ClaudeAction,
+  skill: string | null,
+  prompt = '',
+): ClaudeAction {
   const { skill: named, ...rest } = action;
   if (skill !== null) return { ...rest, prompt: skillFilePath(skill), skill };
-  // A skill let go leaves its SKILL.md, which is no prompt note: the prompt is typed afresh.
-  return { ...rest, prompt: named === undefined ? action.prompt : '' };
+  // A skill let go leaves its SKILL.md, which is no prompt note: the prompt it had comes back.
+  return { ...rest, prompt: named === undefined ? action.prompt : prompt };
 }
 
 /** Why a skill cannot be run: it has problems the Skills page shows, or is too long to hand over. */

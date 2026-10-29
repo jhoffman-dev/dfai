@@ -94,16 +94,19 @@ function useSkillLists({
       skills: listedOf(
         { data: skillsRead, error: skillsError },
         'The skills could not be read',
-        (list) =>
-          list.map(({ name, description, problems }) => {
-            const usedBy = skillUsers(rules, name);
+        (list) => {
+          // A rule is the user of the folder its run would read, of those there are.
+          const folders = list.map((skill) => skill.name);
+          return list.map(({ name, description, problems }) => {
+            const usedBy = skillUsers(rules, name, folders);
             return {
               name,
               description,
               problems: problems.map(({ message }) => message),
               ...(usedBy.length > 0 && { usedBy }),
             };
-          }),
+          });
+        },
       ),
       prompts: listedOf(
         { data: promptsRead, error: promptsError },
@@ -494,7 +497,7 @@ function useDeleteSkill({
     skillOtherFiles({ fs, skill: base })
       .then((others) => {
         if (!mounted.current || generation.current !== chosen) return;
-        const inUse = skillInUseWarning(skillUsers(rules, base.name));
+        const inUse = skillInUseWarning(skillUsers(rules, base.name, names));
         const warning = skillDeletionWarning(base.name, others);
         setAsked(inUse === null ? warning : `${warning} ${inUse}`);
         overlay.show('skill-delete');

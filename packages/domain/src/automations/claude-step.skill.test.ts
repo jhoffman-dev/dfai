@@ -92,7 +92,7 @@ describe('a Claude step that names a skill', () => {
   });
 
   it('refuses a skill that is not written as one name', () => {
-    for (const skill of [['weekly-notes'], 42, { name: 'weekly-notes' }]) {
+    for (const skill of [['weekly-notes'], -1, true, { name: 'weekly-notes' }]) {
       expect(read({ ...RULE, skill })).toBe(
         'Write skill: as one skill’s name, like skill: weekly-notes.',
       );
