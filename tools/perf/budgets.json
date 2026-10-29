@@ -331,6 +331,13 @@
         "read_text_file": 4,
         "write_text_file": 3
       }
+    },
+    "Open a note with code in 5 languages": {
+      "commits": 8,
+      "renders": 157,
+      "calls": {
+        "read_text_file": 3
+      }
     }
   }
 }

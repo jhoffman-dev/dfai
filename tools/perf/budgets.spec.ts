@@ -187,6 +187,7 @@ test('the app does no more work than its budget', async ({ browser }) => {
     await pass.page.close();
     await everyResearchAction(await countedPass(browser, counted, RESEARCH));
     await everyLongNoteAction(await countedPass(browser, counted, LONG_NOTE));
+    await everyCodeNoteAction(await countedPass(browser, counted, CODE_NOTE));
   });
   for (let again = 2; again <= COUNTED_RUNS; again += 1) {
     await test.step(`counted again (${again} of ${COUNTED_RUNS}), to show the counts repeat`, async () => {
@@ -196,6 +197,7 @@ test('the app does no more work than its budget', async ({ browser }) => {
       await pass.page.close();
       await everyResearchAction(await countedPass(browser, recount, RESEARCH));
       await everyLongNoteAction(await countedPass(browser, recount, LONG_NOTE));
+      await everyCodeNoteAction(await countedPass(browser, recount, CODE_NOTE));
       for (const action of BUDGETED_ACTIONS) {
         const [first, now] = [counted.get(action), recount.get(action)];
         expect.soft(first, `"${action}" was not counted on run 1`).toBeDefined();
@@ -221,6 +223,7 @@ test('the app does no more work than its budget', async ({ browser }) => {
       await pass.page.close();
       await everyResearchAction(await timedPass(browser, RESEARCH));
       await everyLongNoteAction(await timedPass(browser, LONG_NOTE));
+      await everyCodeNoteAction(await timedPass(browser, CODE_NOTE));
     });
   } finally {
     await report(budgets);
@@ -282,6 +285,35 @@ const LONG_NOTE: PassFixture = {
             at: at + 1,
           })),
         }),
+      },
+    ]),
+  openIsBudgeted: false,
+  indexed: /^\d+ notes? indexed/,
+};
+
+/**
+ * One note of code in five languages (#265): opening it is counted until every
+ * block is highlighted, which loads each language's grammar on first use.
+ * Alone in its vault, so the other fixtures' counts do not move.
+ */
+const CODE_NOTE_TITLE = 'Five Languages';
+const CODE_FENCES: readonly (readonly [string, string])[] = [
+  ['ts', 'const harvest: number = 55; // kale'],
+  ['python', 'def lantern(rows):\n    return [row for row in rows if row]'],
+  ['rust', 'fn granary() -> u32 {\n    let bushels = 12;\n    bushels\n}'],
+  ['sql', "SELECT name FROM meadow WHERE kind = 'heron';"],
+  ['yml', 'orchard:\n  rows: 4\n  kept: true'],
+];
+const CODE_NOTE: PassFixture = {
+  write: () =>
+    writeVault([
+      {
+        path: `Notes/${CODE_NOTE_TITLE}.md`,
+        contents: [
+          `# ${CODE_NOTE_TITLE}`,
+          ...CODE_FENCES.map(([language, code]) => `\`\`\`${language}\n${code}\n\`\`\``),
+          '',
+        ].join('\n\n'),
       },
     ]),
   openIsBudgeted: false,
@@ -631,6 +663,29 @@ async function everyLongNoteAction(pass: Pass): Promise<void> {
   // save itself has written, then settled, so its echo, index and list are in.
   await pass.budgeted('Save a comment in a 500-highlight note', [
     phase(() => page.keyboard.press('Meta+Enter'), caused, { write_text_file: 1 }),
+  ]);
+  await page.close();
+}
+
+/** Opening the note of code in five languages; ready once every block is highlighted (#265). */
+async function everyCodeNoteAction(pass: Pass): Promise<void> {
+  const { page } = pass;
+  await toggleFolder(pass, 'Notes');
+  await pass.budgeted('Open a note with code in 5 languages', [
+    phase(
+      () =>
+        sidebarSection(page, 'userSpace')
+          .getByRole('treeitem', { name: CODE_NOTE_TITLE, exact: true })
+          .click(),
+      ({ blocks, count }) => {
+        const drawn = [...document.querySelectorAll(blocks)];
+        return (
+          drawn.length === count &&
+          drawn.every((block) => block.querySelector('[class*="hljs-"]') !== null)
+        );
+      },
+      { blocks: `${editorOf(CODE_NOTE_TITLE)} pre code`, count: CODE_FENCES.length },
+    ),
   ]);
   await page.close();
 }

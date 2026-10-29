@@ -101,10 +101,12 @@ import {
   NewArtifactDialog,
   AddDocumentDialog,
   NoteNamesProvider,
+  CodeLanguagesProvider,
   Toast,
   type AppInfoState,
   type OpenHow,
 } from '@dfai/ui';
+import { codeLanguages } from './code-languages.ts';
 import { useVault, type VaultPorts } from './vault/use-vault.ts';
 import { boundToVault, type OnHost } from './vault/bound-to-vault.ts';
 import type { NotePorts } from './notes/use-note.ts';
@@ -2665,7 +2667,7 @@ function AppWindow({
   );
   return (
     <LinkHintsHost index={index.index} status={indexStore} vault={vaultKey}>
-      {shell}
+      <CodeLanguagesProvider value={codeLanguages}>{shell}</CodeLanguagesProvider>
     </LinkHintsHost>
   );
 }
