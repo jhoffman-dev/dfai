@@ -739,7 +739,7 @@ other names. The notification's address is `NOTIFY_TO`, a placeholder.
 
 `mapCaptureScript()` in `code-node.ts` compiles the capture mapper
 (`packages/domain/src/capture/mapping/`, ADR-0049) into one Code node script
-the same way, for #104's Slack workflow. No workflow JSON holds it yet. The
+the same way: the Slack workflow's **Map capture to DFAI file** (below). The
 mapper builds the note's body as a markdown tree; the script holds the app's
 own writer of that tree too (`capture-markdown.bundle.js`, bundled from
 `packages/adapters/src/markdown/capture-markdown.ts` by `pnpm n8n:build`,
@@ -752,3 +752,197 @@ under macOS's `jsc` and requires the bytes Node writes. CI's unit shards are
 Linux, where `jsc` does not exist: there the parity test is skipped, and a test
 that runs only there says so in the output. Run `pnpm exec vitest run tools/n8n` on a
 Mac after changing either mapper.
+
+## Slack messages into DFAI (#104)
+
+Save a Slack message — and its whole thread — into DFAI's Inbox from inside
+Slack, with one gesture: the message's **⋮ → Save to DFAI as a note / as a
+task** shortcut, or an emoji reaction (`:inbox_tray:` saves a note,
+`:ballot_box_with_check:` a task; both can be changed). n8n checks Slack's
+signature, answers Slack at once, fetches the message, its thread and its
+people, and sends the capture to DFAI's `POST /v1/captures` (ADR-0049).
+When DFAI does not take it — closed, asleep, or an n8n that is not on the Mac
+— n8n maps it with the app's own mapper and commits the file to pkm-space at
+`Inbox/Captures/<title> (slack <hash>).md`, which DFAI pulls within a minute.
+Either way the app's bot DMs you a one-line answer: saved, already there, or
+not saved and why. A failure is emailed too.
+
+| File                                                           | What it is                                                              |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `slack-capture.workflow.json`                                  | The workflow to import. No secrets: placeholders, credentials by name.  |
+| `slack-app.manifest.json`                                      | The Slack app, to create from a manifest: shortcuts, event, scopes.     |
+| `slack-signature.ts`                                           | Slack's `v0=` HMAC-SHA256 check, in plain JavaScript (`sha256.ts`).     |
+| `slack-request.ts`                                             | What a signed request asks: save (shortcut, reaction), URL check, none. |
+| `slack-capture.ts`                                             | Slack's Web API answers as one capture/v1 payload.                      |
+| `capture-github.ts`                                            | The fallback's "is a file for this message in pkm-space already?"       |
+| `slack-reply.ts`                                               | The DM's words.                                                         |
+| `slack-code-node.ts`, `*.workflow.ts`, `slack-app-manifest.ts` | Build the JSON: `pnpm n8n:build`.                                       |
+
+`sha256.ts`, `standard-webhook.ts` and `n8n-nodes.ts` are byte-for-byte
+copies of PR #617's (the Granola webhook), so those files merge cleanly.
+**`build-workflow.mjs` does conflict with PR #617**: both add their
+workflow to it. Merge PR #617 first, then this one, keeping both sides of
+`build-workflow.mjs` (and of this README), then run `pnpm n8n:build` and
+check that nothing changes.
+
+### What it answers Slack
+
+- **`401`, in silence**, to any request not proven Slack's: not signed with
+  the signing secret, signed more than five minutes from now, with no raw
+  body to check (a multipart request with no file part, say), or with
+  headers that cannot be read. No email: a forger cannot fill your mailbox.
+  While the secret is still the placeholder, every request is a `401`, so
+  check the first run in n8n's **Executions**.
+- **`200` with the challenge** to the Events API's URL check.
+- **`200`, nothing else**, to a request that saves nothing: another emoji,
+  someone else's reaction or shortcut, another event — and every request
+  while `OWNER` is still the placeholder (no email, or every reaction in your
+  channels would be one; the execution in n8n says `OWNER is not set`).
+- **`200` the moment the signature holds**, before any fetch, for a message
+  to save: Slack wants an answer within 3 seconds and retries otherwise.
+- **`200` and an email** only for a request proven Slack's — signature and
+  fresh timestamp checked over its bytes — that cannot be read.
+
+Everything after the `200` is never answered to Slack: a failure is emailed
+and DMed, at most one email a run. Saving one message twice (a retry, both
+emoji, the shortcut after the emoji, a note then a task) writes one Inbox
+item: DFAI answers `in-vault`, and the commit finds a file already named for
+the message.
+
+**One odd detail never loses the message.** What Slack sends is fitted to
+capture/v1 before the contract reads it, by the contract's own rules
+(imported from `capture-payload.ts`, so they cannot drift):
+
+- a `users.info` lookup that fails, or names nobody, leaves that person
+  named by id; it never fails the capture;
+- an address the contract will not hold (an apostrophe, say) is left out,
+  and the person kept by name;
+- a name that cleans to nothing (only direction or zero-width marks) falls
+  back to the real name, the handle, then the id; every name is cut to 200
+  characters between code points;
+- the first 100 files are kept (the contract's most);
+- a thread holding more than 1,000,000 characters keeps the saved message
+  whole and leaves out the replies farthest from it first. The note cannot
+  say so (capture/v1 has no place for it); the DM does: `(N replies were
+left out: …)`.
+
+### What only you can do, in Slack and n8n
+
+1. **Create the Slack app.** At api.slack.com/apps: **Create New App → From
+   a manifest**, pick the workspace, paste `slack-app.manifest.json`, and
+   replace `YOUR-N8N-HOST` (twice) with your n8n's public host. Slack must
+   reach it over HTTPS, so this is the public n8n, not one only the Mac can
+   see. **Your workspace may need an admin to approve the app** (Slack asks
+   on install when it does); the user scopes read as you, so say so in the
+   request. The scopes, and why each:
+   - you (user token): `channels:history`, `groups:history`, `im:history`,
+     `mpim:history` to read a message and its thread wherever you can see
+     it; `reactions:read` for the reaction event; `users:read` and
+     `users:read.email` for names and addresses (an address is what links
+     an author to a Person note).
+   - the bot: `commands` for the shortcuts, `chat:write` for its DM to you.
+2. **Install it** (**Install App → Install to Workspace**). Slack shows a
+   **User OAuth Token** (`xoxp-…`) and a **Bot User OAuth Token** (`xoxb-…`).
+3. **Two credentials in n8n**, both **Header Auth**, header **Name**
+   `Authorization`:
+   - `Slack user token (DFAI capture)`, **Value** `Bearer xoxp-…`;
+   - `Slack bot token (DFAI capture)`, **Value** `Bearer xoxb-…`.
+     The tokens live only there: never in the workflow, a Code node, the vault
+     or this repository. DFAI never sees them.
+4. **Import** `slack-capture.workflow.json` (**Workflows → Import from
+   file**). Point **Email me: Slack message not in DFAI** at your address
+   (`NOTIFY_TO` is a placeholder) and its Gmail credential. **Commit capture
+   file** and **List Inbox/Captures** use `GitHub pkm-space (contents)`
+   (step 2 at the top).
+5. **The DFAI send.** In **Send to DFAI**, replace `DFAI_PORT` in the URL and
+   in the `Host` header with the port from DFAI's Settings → Connections, and
+   give it the `DFAI local API` credential ("API destination" above). This
+   reaches DFAI only when n8n runs in Docker on the Mac DFAI runs on. An n8n
+   anywhere else never reaches it, and every capture goes by commit; that
+   works, and the DM says "DFAI did not answer" each time.
+6. **Verify Slack signature.** Open it and paste in:
+   - `SIGNING_SECRET`: the app's **Basic Information → App Credentials →
+     Signing Secret**, in place of `PASTE_THE_SLACK_SIGNING_SECRET_HERE`. It
+     is in the node's code because a Code node cannot read a credential;
+     keep your copy under `Slack signing secret (DFAI capture)` in your
+     password manager, and never export the workflow with it in;
+   - `OWNER`: your member id (your Slack profile → **⋮ → Copy member ID**),
+     in place of `U_PASTE_YOUR_SLACK_MEMBER_ID`. Only your shortcuts and
+     reactions save; anyone else's are ignored;
+   - `EMOJI`, if you want others (names without colons).
+     Re-paste **all three** whenever you re-import a rebuilt JSON: with the
+     secret back but `OWNER` still the placeholder, nothing is saved.
+     **Every reaction anyone adds in a conversation you are in starts one n8n
+     execution** (the event cannot be narrowed to your own, or to one emoji);
+     all but yours are answered and end at once, but a hosted n8n plan that
+     bills per execution counts each.
+7. **Activate** the workflow. In the Slack app's **Event Subscriptions**,
+   Slack checks the Request URL as soon as it is saved: it should say
+   **Verified** (that is the challenge answer). **Interactivity &
+   Shortcuts** uses the same URL.
+8. **Dry run.** In a channel with only you (or your own DM), post a test
+   message with a reply, then react `:inbox_tray:`. Within a few seconds the
+   app's bot DMs you `Saved to DFAI: Inbox/Captures/…` (or `Saved to
+pkm-space for DFAI (…)`). Open the note: the message, `## Thread` with the
+   reply, and any file as a link. React again, or use the shortcut: the DM
+   says `Already in …`, and there is still one note. Then quit DFAI and save
+   another message: it arrives by commit.
+
+### What to confirm live (the tests cannot reach Slack or n8n)
+
+Every request and answer is tested against fixtures written from Slack's
+documentation, and the signature against Slack's own example. These are
+assumptions only a real run settles; if one is wrong, tell the next agent
+what you saw:
+
+- **Raw Body for a shortcut.** The Webhook node's **Raw Body** option puts
+  the bytes in its `data` binary for a form-encoded shortcut as for a JSON
+  event. If not, every shortcut is refused `401` in silence (`no raw body`
+  in the execution), while reactions still work: the shortcut shows Slack's
+  error, and n8n's **Executions** say why.
+- **Three seconds.** The `200` goes after the verify node only. A cold n8n
+  could be slow; n8n's **Executions** show the timing. A late answer makes
+  Slack retry; the retry is saved once, but the shortcut may show an error.
+- **`chat.getPermalink` needs no scope**, and **`conversations.replies`**
+  given a reply's ts lists its whole thread, parent first (Slack's docs say
+  both). A reply saved by itself is saved with the rest of its thread, the
+  parent among it.
+- **The reaction event as a user event** reaches n8n for every conversation
+  you are in, the bot a member of none.
+- **The bot's DM.** `chat.postMessage` to your member id with the bot token
+  lands in the app's **Messages** tab. If Slack answers `ok: false`, it is
+  emailed (`Slack took the reply?`).
+- **A capture of more than 100 people** names the rest by id. Whoever
+  asked and the saved message's author are always looked up first.
+- **The email's expressions** are PR #617's: if n8n's expression editor
+  refuses one, the email node fails (it stops nothing).
+
+### Known gaps
+
+- **Replies past 1,000 cannot be saved.** One `conversations.replies` call
+  asks for Slack's most, 1,000 messages; a longer thread keeps the first
+  1,000 (the parent among them), and the rest are not in the note.
+- **Slack's retries** (`x-slack-retry-num`) are not told apart: a retry is
+  saved again, and the key (`<channel>/<ts>`) makes it the same one note.
+- **`Retry-After` is not honoured.** A Slack `429` is retried three times,
+  two seconds apart, whatever Slack asks; past that the capture fails, is
+  emailed and DMed.
+- **A listing of 1,000 files** in `Inbox/Captures/` is GitHub's most and
+  may be cut short, so the commit refuses it rather than risk a second file:
+  the capture fails, is emailed and DMed. File your Inbox, or send to DFAI,
+  which finds a message anywhere in the vault.
+
+- The commit cannot see a note filed out of `Inbox/Captures/`: a message
+  saved again by commit after you filed it lands in the Inbox a second time.
+  The send to DFAI finds it wherever it is. (ADR-0049, Consequences: DFAI
+  does not yet mark a dropped file as a duplicate of one already filed.)
+- Two saves racing on the commit (both emoji at once) may both find the path
+  free; the second commit fails, is emailed, and the DM says not saved,
+  though the first is there.
+- **Send to DFAI** is tried three times, 2 seconds apart, so a slow DFAI
+  that wrote the note answers `in-vault` on a retry. Only a DFAI that wrote
+  it and then failed to answer all three, within 10 seconds each, is
+  followed by a commit, which cannot see the Mac's file yet: a sync conflict
+  copy is possible (ADR-0049, "the zone and the author's Person link").
+- The channel's name is not fetched (one fewer scope): the note shows the
+  channel's id.

@@ -1,7 +1,8 @@
-// Writes the n8n workflows: meeting-to-atlas.workflow.json (Gemini's emails)
-// and granola-webhook.workflow.json (Granola's webhooks), with the mapper
+// Writes the n8n workflows: meeting-to-atlas.workflow.json (Gemini's emails),
+// granola-webhook.workflow.json (Granola's webhooks) and
+// slack-capture.workflow.json with its Slack app manifest, with the mappers
 // (tools/n8n/*.ts) compiled into their Code nodes. Run `pnpm n8n:build`
-// after changing the mapper; a test fails while either JSON is stale.
+// after changing a mapper; a test fails while a JSON is stale.
 import './ts-hooks.mjs';
 import { writeFile } from 'node:fs/promises';
 import prettier from 'prettier';
@@ -11,6 +12,9 @@ const { mapMeetingScript, sameMeetingScript, sameMeetingAtOtherPathScript } =
 const { mapGranolaScript, verifyGranolaScript } = await import('./granola-code-node.ts');
 const { meetingWorkflow } = await import('./workflow.ts');
 const { granolaWebhookWorkflow } = await import('./granola-webhook.workflow.ts');
+const { slackScripts } = await import('./slack-code-node.ts');
+const { slackCaptureWorkflow } = await import('./slack-capture.workflow.ts');
+const { slackAppManifest } = await import('./slack-app-manifest.ts');
 
 const { bundleCaptureMarkdown, CAPTURE_MARKDOWN_BUNDLE } = await import('./capture-bundle.ts');
 await writeFile(CAPTURE_MARKDOWN_BUNDLE, await bundleCaptureMarkdown());
@@ -34,3 +38,5 @@ await write(
   'granola-webhook.workflow.json',
   granolaWebhookWorkflow({ verify: verifyGranolaScript(), map: mapGranolaScript(), ...github }),
 );
+await write('slack-capture.workflow.json', slackCaptureWorkflow(slackScripts()));
+await write('slack-app.manifest.json', slackAppManifest());
