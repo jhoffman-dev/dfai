@@ -463,6 +463,7 @@ describe('createFreshPullGate: a claim judged from git, which a restart does not
   ) {
     const sleep = fakeSleepClock();
     const asked: string[] = [];
+    const activity = recordingActivity();
     const gate = createFreshPullGate({
       ports: {
         sleepClock: sleep.port,
@@ -473,7 +474,7 @@ describe('createFreshPullGate: a claim judged from git, which a restart does not
         }),
         markdown: { ...fakeMarkdown(), frontmatterProblem: () => null },
         clock: { now: () => 1_000 },
-        activity: recordingActivity(),
+        activity,
         onGitHub,
       },
       here: { thisMacId: () => THIS_MAC, paused: () => paused },
@@ -486,7 +487,7 @@ describe('createFreshPullGate: a claim judged from git, which a restart does not
       if (end.kind === 'synced') gate.started(VAULT);
       await gate.ended(VAULT, end, startedAsleepMs);
     };
-    return { gate, runs, asked };
+    return { gate, runs, asked, activity };
   }
   const STUDIO_ON_GITHUB = { automationsMac: 'mac-laptop', automationsMacName: 'Laptop' };
 
@@ -508,6 +509,24 @@ describe('createFreshPullGate: a claim judged from git, which a restart does not
     const { runs, asked } = launched(async () => STUDIO_ON_GITHUB);
     await runs({ kind: 'synced' });
     expect(asked).toEqual([]);
+  });
+
+  it('says once in Activity that GitHub’s settings could not be read, and waits (#630 review)', async () => {
+    const { gate, runs, activity } = launched(async () => {
+      throw new Error('fatal: bad object');
+    });
+    await runs({ kind: 'looked', behind: 0 });
+    await runs({ kind: 'looked', behind: 0 });
+    expect(await gate.verdict(VAULT)).toEqual({ open: false, shut: 'claim-unshared' });
+    expect(activity.reports).toEqual([
+      {
+        level: 'warning',
+        kind: 'sync',
+        message:
+          'Automations wait: DFAI could not read this vault’s settings on GitHub to confirm the claim.',
+        subject: null,
+      },
+    ]);
   });
 
   it('opens once GitHub names this Mac', async () => {

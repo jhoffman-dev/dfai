@@ -125,6 +125,8 @@ const ACCEPTED: &[&[&str]] = &[
         "blob",
         "0123456789abcdef0123456789abcdef01234567",
     ],
+    &["cat-file", "blob", "origin/main:.atlas/settings.md"],
+    &["cat-file", "blob", "origin/feature/x:.atlas/settings.md"],
     &[
         "update-index",
         "--add",
@@ -1022,6 +1024,72 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// #630 attack: the settings on GitHub are read only for the branch checked
+/// out; another branch of origin is refused before git runs.
+#[test]
+fn the_settings_on_github_are_read_for_the_branch_checked_out_only() {
+    let Some(git_dir) = real_git_dir() else {
+        println!("skipped: no git in {GIT_DIRS:?}");
+        return;
+    };
+    let work = tempfile::tempdir().unwrap();
+    let home = work.path().join("home");
+    fs::create_dir(&home).unwrap();
+    let host = host_in(&[&git_dir], Some(home), NO_LIMIT);
+    let a = work.path().join("A");
+    let bare = work.path().join("remote.git");
+    fs::create_dir(&a).unwrap();
+    let made = Command::new(git_dir.join("git"))
+        .args(["init", "--quiet", "--bare", "--initial-branch=main"])
+        .arg(&bare)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    ok(host
+        .git_in_vault(&a, &args(&["init", "--quiet", "--initial-branch=main"]))
+        .unwrap());
+    fs::create_dir(a.join(".atlas")).unwrap();
+    let settings = "---\nautomationsMac: mac-studio\nautomationsMacName: Studio\n---\n";
+    fs::write(a.join(".atlas/settings.md"), settings).unwrap();
+    commit(&host, &a, "DFAI sync set up");
+    let remote = bare.display().to_string();
+    ok(host
+        .git_in_vault(&a, &args(&["remote", "add", "origin", &remote]))
+        .unwrap());
+    ok(host
+        .git_in_vault(
+            &a,
+            &args(&["push", "--quiet", "--set-upstream", "origin", "HEAD"]),
+        )
+        .unwrap());
+    // The claim here, not pushed: what GitHub holds is still Studio's.
+    fs::write(
+        a.join(".atlas/settings.md"),
+        "---\nautomationsMac: mac-laptop\n---\n",
+    )
+    .unwrap();
+
+    let read = ok(host
+        .git_in_vault(
+            &a,
+            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+        )
+        .unwrap());
+    assert_eq!(read.stdout, settings);
+
+    // Another branch of origin, there on GitHub, is not the one checked out.
+    ok(host
+        .git_in_vault(&a, &args(&["branch", "-m", "elsewhere"]))
+        .unwrap());
+    let refused = host
+        .git_in_vault(
+            &a,
+            &args(&["cat-file", "blob", "origin/main:.atlas/settings.md"]),
+        )
+        .unwrap_err();
+    assert!(refused.contains("not the branch checked out"), "{refused}");
+}
+
 /// Two Macs change one note differently and another note on one side; the
 /// merge conflicts, and the conflict is resolved with the host's own shapes:
 /// this Mac's version in place, the other's saved beside it, no markers.
@@ -1732,6 +1800,46 @@ fn a_vault_under_var_is_spelled_under_private_var() {
         "{}",
         resolved.display()
     );
+}
+
+/// #630 attack: the settings note on GitHub, as the last fetch left it, is
+/// the one path read by `<rev>:<path>`: only `origin/<branch>`, only
+/// `.atlas/settings.md`, spelled exactly.
+#[test]
+fn reading_the_settings_on_github_takes_only_origin_and_the_settings_note() {
+    for refused in [
+        "origin/main:Inbox/a.md",
+        "origin/main:.atlas/settings.md.bak",
+        "origin/main:./.atlas/settings.md",
+        "origin/main:.atlas//settings.md",
+        "origin/main:.ATLAS/settings.md",
+        "origin/main:.atlas/settings.md\n",
+        "origin/main:",
+        "origin/main",
+        "HEAD:.atlas/settings.md",
+        "main:.atlas/settings.md",
+        "origin/main^:.atlas/settings.md",
+        "origin/main~1:.atlas/settings.md",
+        "origin/a..b:.atlas/settings.md",
+        "origin/-x:.atlas/settings.md",
+        "origin/@{1}:.atlas/settings.md",
+        "origin/:.atlas/settings.md",
+        "upstream/main:.atlas/settings.md",
+        ":.atlas/settings.md",
+        "-origin/main:.atlas/settings.md",
+    ] {
+        assert!(!vault_ok(&["cat-file", "blob", refused]), "{refused:?}");
+    }
+    assert!(!vault_ok(&[
+        "cat-file",
+        "-p",
+        "origin/main:.atlas/settings.md"
+    ]));
+    assert!(!folder_ok(&[
+        "cat-file",
+        "blob",
+        "origin/main:.atlas/settings.md"
+    ]));
 }
 
 /// #233 attack: `cat-file blob` is handed nothing git would read as an

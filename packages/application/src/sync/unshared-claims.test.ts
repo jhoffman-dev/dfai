@@ -22,8 +22,14 @@ const laptopOnGitHub: AutomationsOnGitHub = {
 
 function claimsReading(github: () => Promise<AutomationsOnGitHub>) {
   const onChange = vi.fn();
+  const onUnreadable = vi.fn();
   const onGitHub = vi.fn(async () => github());
-  return { claims: createUnsharedClaims({ onGitHub, onChange }), onChange, onGitHub };
+  return {
+    claims: createUnsharedClaims({ onGitHub, onChange, onUnreadable }),
+    onChange,
+    onGitHub,
+    onUnreadable,
+  };
 }
 
 describe('createUnsharedClaims: a claim judged from git (#630 attack)', () => {
@@ -54,6 +60,36 @@ describe('createUnsharedClaims: a claim judged from git (#630 attack)', () => {
     await expect(
       claims.learn({ vault: VAULT, here: here(LAPTOP), thisMacId: LAPTOP, pushed: true }),
     ).resolves.toBe(true);
+  });
+
+  it('says GitHub’s settings could not be read once a vault, and again only after a read succeeded (#630 review)', async () => {
+    let readable = false;
+    const { claims, onUnreadable } = claimsReading(async () => {
+      if (!readable) throw new Error('fatal: bad object');
+      return laptopOnGitHub;
+    });
+    const pull = () =>
+      claims.learn({ vault: VAULT, here: here(LAPTOP), thisMacId: LAPTOP, pushed: false });
+    await pull();
+    await pull();
+    expect(onUnreadable).toHaveBeenCalledTimes(1);
+    expect(onUnreadable).toHaveBeenCalledWith(VAULT);
+
+    readable = true;
+    await pull();
+    readable = false;
+    await pull();
+    expect(onUnreadable).toHaveBeenCalledTimes(2);
+  });
+
+  it('says it for each vault apart', async () => {
+    const { claims, onUnreadable } = claimsReading(async () => {
+      throw new Error('fatal: bad object');
+    });
+    for (const vault of [VAULT, '/Users/j/Work', VAULT]) {
+      await claims.learn({ vault, here: here(LAPTOP), thisMacId: LAPTOP, pushed: false });
+    }
+    expect(onUnreadable.mock.calls).toEqual([[VAULT], ['/Users/j/Work']]);
   });
 
   it('reads GitHub only where the settings here name this Mac', async () => {
@@ -93,7 +129,12 @@ describe('createUnsharedClaims: a claim judged from git (#630 attack)', () => {
   });
 
   describe('without git to read', () => {
-    const claims = () => createUnsharedClaims({ onGitHub: null, onChange: () => undefined });
+    const claims = () =>
+      createUnsharedClaims({
+        onGitHub: null,
+        onChange: () => undefined,
+        onUnreadable: () => undefined,
+      });
 
     it('takes a completed sync to have pushed it, and a look not', async () => {
       const known = claims();
