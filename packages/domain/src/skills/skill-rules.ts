@@ -245,7 +245,14 @@ function declaredNameProblem(folder: string, declared: string | null): SkillProb
 }
 
 /** What SKILL.md was when its folder was read: its contents, unreadable, or not there. */
-export type SkillFileState = SkillFileContents | { readonly unreadable: true } | null;
+export type SkillFileState =
+  | SkillFileContents
+  | {
+      readonly unreadable: true;
+      /** Why the host would not list the skill's folder, when that is what stopped the read (#169). */
+      readonly folderRefusal?: string;
+    }
+  | null;
 
 /**
  * What is said of a SKILL.md that is there but cannot be read: DFAI's own
@@ -294,7 +301,13 @@ export function skillReadingOf({
 }): SkillReading {
   if (file === null) return emptyReading(folder, `The folder has no ${SKILL_FILE}.`);
   if ('unreadable' in file) {
-    return emptyReading(folder, SKILL_FILE_UNREADABLE);
+    const refusal = file.folderRefusal;
+    return emptyReading(
+      folder,
+      refusal === undefined
+        ? SKILL_FILE_UNREADABLE
+        : `The skill’s folder cannot be read: ${refusal}.`,
+    );
   }
   const declaredName = textOrNull(file.properties['name']);
   const description = textOrNull(file.properties['description']) ?? '';
@@ -321,19 +334,49 @@ function withinFolder(path: string): string {
   return at === -1 ? path : path.slice(at + 1);
 }
 
+/** What deleting a skill takes, as its folder was walked. */
+export interface SkillFolderContents {
+  /** Whether the folder is itself a link: then only the link goes, and nothing in it is named. */
+  readonly link: boolean;
+  /** The files it holds besides SKILL.md. */
+  readonly otherFiles: readonly string[];
+  /** The links it holds, which go as links: what they point at stays. */
+  readonly links: readonly string[];
+}
+
+const TRASH = 'goes to the Trash, where it can be got back';
+
 /**
  * What the person is asked before a skill is deleted: the whole folder goes,
  * with each other file it holds named, and — since a folder is listed only so
- * deep — everything in its subfolders, however deep, goes too.
+ * deep — everything in its subfolders, however deep, goes too. A link goes as
+ * a link, and the warning says so rather than naming what it points at (#169).
  */
-export function skillDeletionWarning(name: string, otherFiles: readonly string[]): string {
-  const trash = 'goes to the Trash, where it can be got back';
-  if (otherFiles.length === 0)
-    return `Delete “${name}”? Its folder, holding only ${SKILL_FILE}, ${trash}.`;
+export function skillDeletionWarning(name: string, contents: SkillFolderContents): string {
+  if (contents.link) {
+    return (
+      `Delete “${name}”? Its folder is a link: only the link ${TRASH}, ` +
+      'and what it points at stays where it is.'
+    );
+  }
+  const links =
+    contents.links.length === 0
+      ? ''
+      : ' These are links, so only the links go and what they point at stays where it is: ' +
+        `${contents.links.map(withinFolder).join(', ')}.`;
+  return `Delete “${name}”? ${whatGoes(contents.otherFiles, contents.links.length > 0)}${links}`;
+}
+
+function whatGoes(otherFiles: readonly string[], holdsLinks: boolean): string {
+  if (otherFiles.length === 0) {
+    return holdsLinks
+      ? `Its whole folder ${TRASH}.`
+      : `Its folder, holding only ${SKILL_FILE}, ${TRASH}.`;
+  }
   const count = otherFiles.length === 1 ? '1 other file' : `${otherFiles.length} other files`;
   const named = otherFiles.map(withinFolder).join(', ');
   return (
-    `Delete “${name}”? Its whole folder ${trash}, with ${count}: ${named} — ` +
+    `Its whole folder ${TRASH}, with ${count}: ${named} — ` +
     'and everything in its subfolders, however deep.'
   );
 }

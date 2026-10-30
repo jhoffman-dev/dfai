@@ -58,23 +58,42 @@ export async function countOtherFiles({
   return files.filter((path) => !known.has(path)).length;
 }
 
+type FolderWalk = { fs: Pick<VaultFsPort, 'listDirectory'>; folder: VaultPath };
+
 /** Every file in `folder` and the folders inside it, as deep as {@link DEEPEST}. */
-export async function filesUnder({
+export async function filesUnder(walk: FolderWalk): Promise<VaultPath[]> {
+  return (await walkFolder({ ...walk, intoLinks: true })).files;
+}
+
+/**
+ * The files in `folder` and the folders inside it, and apart from them the
+ * links, which a Trash takes as links: neither walked into nor counted as
+ * what they point at (#169). Only as the host says, which links it marks.
+ */
+export async function filesAndLinksUnder(
+  walk: FolderWalk,
+): Promise<{ files: VaultPath[]; links: VaultPath[] }> {
+  return walkFolder({ ...walk, intoLinks: false });
+}
+
+async function walkFolder({
   fs,
   folder,
-}: {
-  fs: Pick<VaultFsPort, 'listDirectory'>;
-  folder: VaultPath;
-}): Promise<VaultPath[]> {
+  intoLinks,
+}: FolderWalk & { intoLinks: boolean }): Promise<{ files: VaultPath[]; links: VaultPath[] }> {
   const files: VaultPath[] = [];
+  const links: VaultPath[] = [];
   let level: VaultPath[] = [folder];
   for (let depth = 0; depth < DEEPEST && level.length > 0; depth += 1) {
     const listings = await Promise.all(level.map((each) => fs.listDirectory(each)));
-    const entries = listings.flat();
+    const listed = listings.flat();
+    const linked = intoLinks ? [] : listed.filter((item) => item.link === true);
+    const entries = intoLinks ? listed : listed.filter((item) => item.link !== true);
+    links.push(...linked.map((item) => item.path));
     files.push(...entries.filter((item) => item.kind === 'file').map((item) => item.path));
     level = entries.filter((item) => item.kind === 'directory').map((item) => item.path);
   }
-  return files;
+  return { files, links };
 }
 
 /**

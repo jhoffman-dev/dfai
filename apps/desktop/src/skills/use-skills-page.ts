@@ -15,7 +15,7 @@ import {
   NoteChangedError,
   readSkill,
   saveSkill,
-  skillOtherFiles,
+  skillFolderContents,
   type MarkdownPort,
   type SkillFile,
   type VaultFsPort,
@@ -476,10 +476,10 @@ function useDeleteSkill({
     if (base === null || busy) return;
     const chosen = generation.current;
     setBusy(true);
-    skillOtherFiles({ fs, skill: base })
-      .then((others) => {
+    skillFolderContents({ fs, skill: base })
+      .then((contents) => {
         if (!mounted.current || generation.current !== chosen) return;
-        setAsked(skillDeletionWarning(base.name, others));
+        setAsked(skillDeletionWarning(base.name, contents));
         overlay.show('skill-delete');
       }, failed)
       .finally(() => setBusy(false));

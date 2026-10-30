@@ -7,6 +7,7 @@ import {
   skillFolderNamed,
   SKILLS_DIRECTORY,
   splitFrontmatter,
+  type SkillFileState,
   type SkillReading,
   type VaultEntry,
   type VaultPath,
@@ -45,7 +46,11 @@ export interface SkillFile extends SkillSummary {
 export type SkillFileRead =
   | { readonly kind: 'read'; readonly text: string; readonly modified: number }
   | { readonly kind: 'missing' }
-  | { readonly kind: 'unreadable' };
+  | {
+      readonly kind: 'unreadable';
+      /** Why the host would not list SKILL.md's folder, when that is what stopped the read. */
+      readonly folderRefusal?: string;
+    };
 
 type SkillPorts = {
   fs: Pick<VaultFsPort, 'listDirectory' | 'readTextFile'>;
@@ -111,6 +116,13 @@ export async function readSkillIn(ports: SkillPorts, folder: VaultEntry): Promis
   return skillFileOf({ markdown: ports.markdown, folder, path, read });
 }
 
+function unreadableFile(read: SkillFileRead): SkillFileState {
+  const refusal = read.kind === 'unreadable' ? read.folderRefusal : undefined;
+  return refusal === undefined
+    ? { unreadable: true }
+    : { unreadable: true, folderRefusal: refusal };
+}
+
 /** A skill from what reading its SKILL.md found. */
 export function skillFileOf({
   markdown,
@@ -129,7 +141,7 @@ export function skillFileOf({
     return {
       ...skillReadingOf({
         folder: folder.name,
-        file: unreadable ? { unreadable: true } : null,
+        file: unreadable ? unreadableFile(read) : null,
       }),
       ...place,
       text: '',
@@ -154,7 +166,10 @@ export function skillFileOf({
 /**
  * Reads a SKILL.md. The host refuses a file it cannot read — gone, too
  * large, not text — with one error, so a refusal is told apart by whether
- * the folder still lists the file: only a file not listed is missing.
+ * the folder still lists the file: only a file not listed is missing. A
+ * folder its parent lists but the host will not — a link out of the vault
+ * (#169) — is unreadable too, with the host's reason, not a folder with no
+ * SKILL.md that a save could only fail to write into.
  */
 export async function readSkillFileAt(
   fs: Pick<VaultFsPort, 'listDirectory' | 'readTextFile'>,
@@ -165,8 +180,25 @@ export async function readSkillFileAt(
     return { kind: 'read', text, modified };
   } catch (error) {
     if (!(error instanceof VaultAccessError)) throw error;
-    return (await isListed(fs, path, 'file')) ? { kind: 'unreadable' } : { kind: 'missing' };
+    return whyNotRead(fs, path);
   }
+}
+
+async function whyNotRead(
+  fs: Pick<VaultFsPort, 'listDirectory'>,
+  path: VaultPath,
+): Promise<SkillFileRead> {
+  const folder = parentVaultPath(path);
+  let entries: readonly VaultEntry[];
+  try {
+    entries = await fs.listDirectory(folder);
+  } catch (error) {
+    if (!(error instanceof VaultAccessError)) throw error;
+    // Refused, not gone, when the folder above still lists it.
+    if (!(await isListed(fs, folder, 'directory'))) return { kind: 'missing' };
+    return { kind: 'unreadable', folderRefusal: error.message };
+  }
+  return isAmong(entries, path, 'file') ? { kind: 'unreadable' } : { kind: 'missing' };
 }
 
 /** Whether `path`'s folder lists it, as a `kind`, in any case as the Mac's disk reads a name. */
@@ -183,6 +215,15 @@ async function isListed(
     if (error instanceof VaultAccessError) return false;
     throw error;
   }
+  return isAmong(entries, path, kind);
+}
+
+/** Whether `entries` hold `path` as a `kind`, in any case as the Mac's disk reads a name. */
+function isAmong(
+  entries: readonly VaultEntry[],
+  path: VaultPath,
+  kind: VaultEntry['kind'],
+): boolean {
   const name = vaultPathName(path).toLowerCase();
   return entries.some((entry) => entry.kind === kind && entry.name.toLowerCase() === name);
 }
