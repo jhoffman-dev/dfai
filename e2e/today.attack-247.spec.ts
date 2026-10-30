@@ -110,32 +110,105 @@ interface Focused {
   readonly inView: boolean;
 }
 
-/** Where the focus is: on the page or lost, which row, and whether it is in view. */
+/** What the page saw between reads: a stop left out of view, or lost, by the time of the next key. */
+interface Between {
+  readonly offScreen: string[];
+  readonly lostAfter: string | null;
+}
+
+/**
+ * Where the focus is: on the page or lost, which row, and whether it is in view —
+ * read once the page has settled from the key.
+ *
+ * Settling is two frames, so a scroll the focus asked for has been made and the
+ * rows it places are placed and measured. Two frames for each of some 3,300
+ * stops is what made a sweep take two minutes, and most stops move nothing: so
+ * a key that left the page as the last read found it — not scrolled, the
+ * content the same height, nothing in the page changed, the focus in view — is
+ * read at once, as there is nothing for a frame to settle. Anything else waits
+ * the two frames. And at every next key, before it moves the focus, the stop
+ * is read again, so a page that moved by itself after a read is still caught.
+ */
 function focusedNow(page: Page): Promise<Focused> {
   return page.evaluate(async () => {
-    // Read once the page has settled from the key: two frames, so a scroll
-    // the focus asked for has been made.
-    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-    const at = document.activeElement;
-    const article = document.querySelector('article[aria-label="Today"]');
-    const scroller = document.querySelector('.panel__body');
-    if (at === null || at === document.body || article === null || scroller === null) {
-      return { lost: true, inPage: false, row: null, label: '', inView: false };
-    }
-    const box = at.getBoundingClientRect();
-    const port = scroller.getBoundingClientRect();
-    const inView =
-      box.height > 0 &&
-      box.top >= Math.max(port.top, 0) - 1 &&
-      box.bottom <= Math.min(port.bottom, window.innerHeight) + 1;
-    return {
-      lost: false,
-      inPage: article.contains(at),
-      row: at.closest('[data-today-row]')?.getAttribute('data-today-row') ?? null,
-      label: at.getAttribute('aria-label') ?? at.textContent?.trim().slice(0, 60) ?? '',
-      inView,
+    type Watch = {
+      read: () => Focused;
+      quiet: () => boolean;
+      settled: () => void;
+      between: Between;
     };
+    const host = window as unknown as { todayFocusWatch?: Watch };
+    host.todayFocusWatch ??= (() => {
+      const scroller = () => document.querySelector('.panel__body');
+      const article = () => document.querySelector('article[aria-label="Today"]');
+      const read = (): Focused => {
+        const at = document.activeElement;
+        const port = scroller();
+        const today = article();
+        if (at === null || at === document.body || today === null || port === null) {
+          return { lost: true, inPage: false, row: null, label: '', inView: false };
+        }
+        const box = at.getBoundingClientRect();
+        const portBox = port.getBoundingClientRect();
+        const inView =
+          box.height > 0 &&
+          box.top >= Math.max(portBox.top, 0) - 1 &&
+          box.bottom <= Math.min(portBox.bottom, window.innerHeight) + 1;
+        return {
+          lost: false,
+          inPage: today.contains(at),
+          row: at.closest('[data-today-row]')?.getAttribute('data-today-row') ?? null,
+          label: at.getAttribute('aria-label') ?? at.textContent?.trim().slice(0, 60) ?? '',
+          inView,
+        };
+      };
+      // What a frame could still have to settle: a scroll, a size, a change in the page.
+      const shape = () => {
+        const port = scroller();
+        return port === null ? '' : `${port.scrollTop}/${port.scrollHeight}`;
+      };
+      let changed = true;
+      let lastShape = '';
+      let lastLabel = '';
+      new MutationObserver(() => {
+        changed = true;
+      }).observe(document.body, { subtree: true, childList: true, attributes: true });
+      const between: Between = { offScreen: [], lostAfter: null };
+      document.addEventListener(
+        'keydown',
+        () => {
+          const now = read();
+          if (now.lost) between.lostAfter ??= lastLabel;
+          else if (now.inPage && !now.inView) between.offScreen.push(now.label);
+        },
+        { capture: true },
+      );
+      return {
+        read,
+        between,
+        quiet: () => !changed && shape() === lastShape,
+        settled: () => {
+          changed = false;
+          lastShape = shape();
+          lastLabel = read().label;
+        },
+      };
+    })();
+    const watch = host.todayFocusWatch;
+    const now = watch.read();
+    if (!(watch.quiet() && !now.lost && now.inView)) {
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    }
+    watch.settled();
+    return watch.read();
   });
+}
+
+/** What the page saw between reads: every stop read again at the key after it. */
+function readBetween(page: Page): Promise<Between> {
+  return page.evaluate(
+    () => (window as unknown as { todayFocusWatch: { between: Between } }).todayFocusWatch.between,
+  );
 }
 
 /** Presses `key` until the focus leaves the page, recording every stop. */
@@ -144,6 +217,7 @@ async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number) {
   const offScreen: string[] = [];
   let lostAfter: string | null = null;
   let last = '';
+  await focusedNow(page);
   for (let presses = 0; presses < limit; presses += 1) {
     // Option+Tab: WebKit's Tab alone skips buttons and checkboxes, as Safari does
     // until Keyboard navigation is turned on; with it, every control is a stop.
@@ -158,6 +232,9 @@ async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number) {
     if (!now.inView) offScreen.push(now.label);
     last = now.label;
   }
+  const between = await readBetween(page);
+  offScreen.push(...between.offScreen);
+  lostAfter ??= between.lostAfter;
   return { rows, offScreen, lostAfter, last };
 }
 
