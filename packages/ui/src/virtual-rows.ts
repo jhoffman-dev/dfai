@@ -1,10 +1,6 @@
 import { useCallback, useContext, useState, type FocusEvent, type RefObject } from 'react';
-import {
-  defaultRangeExtractor,
-  useVirtualizer,
-  type Range,
-  type VirtualItem,
-} from '@tanstack/react-virtual';
+import { defaultRangeExtractor, type Range, type VirtualItem } from '@tanstack/react-virtual';
+import { useRangeVirtualizer } from './range-virtualizer.ts';
 import { RowScrollerContext, scrollerOf } from './row-scroller.ts';
 import { useScrollMargin } from './scroll-margin.ts';
 
@@ -84,7 +80,7 @@ export function useVirtualRows({
   const [focused, setFocused] = useState<string | null>(null);
   const held = [focused, pinned].map((key) => (key === null ? -1 : keys.indexOf(key)));
   const getItemKey = useCallback((index: number) => keys[index] ?? index, [keys]);
-  const virtualizer = useVirtualizer({
+  const virtualizer = useRangeVirtualizer({
     count: keys.length,
     getScrollElement: scroller,
     estimateSize: estimate,
