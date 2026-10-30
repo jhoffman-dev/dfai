@@ -92,7 +92,8 @@ async function addFromOutside(page: Page, vault: FakeVault, at: string) {
 
 /**
  * Records, in the page, each walk of the vault the app starts and each report
- * the watcher sends, in order, and how many host calls are still unanswered.
+ * the watcher sends, in order, the paths those reports named, and how many
+ * host calls are still unanswered, index writes among them.
  */
 async function recordWalksAndReports(page: Page) {
   await page.addInitScript(() => {
@@ -102,19 +103,30 @@ async function recordWalksAndReports(page: Page) {
     };
     const internals = (window as unknown as { __TAURI_INTERNALS__: Internals }).__TAURI_INTERNALS__;
     const invoke = internals.invoke;
-    const seen = { order: [] as string[], unanswered: 0 };
+    const seen = {
+      order: [] as string[],
+      reported: [] as string[],
+      unanswered: 0,
+      unansweredIndexPuts: 0,
+    };
     Object.assign(window, { __attack256: seen });
     internals.invoke = (command, args, options) => {
       if (command === 'list_notes') seen.order.push('walk');
+      const indexPut = command === 'index_put' ? 1 : 0;
       seen.unanswered += 1;
+      seen.unansweredIndexPuts += indexPut;
       const answered = invoke(command, args, options);
-      void answered.then(
-        () => void (seen.unanswered -= 1),
-        () => void (seen.unanswered -= 1),
-      );
+      const settled = () => {
+        seen.unanswered -= 1;
+        seen.unansweredIndexPuts -= indexPut;
+      };
+      void answered.then(settled, settled);
       return answered;
     };
-    const heard = internals.transformCallback(() => void seen.order.push('report'));
+    const heard = internals.transformCallback((event) => {
+      seen.order.push('report');
+      seen.reported.push(...(event.payload as string[]));
+    });
     void invoke('plugin:event|listen', { event: 'vault-changed', handler: heard });
   });
 }
@@ -122,15 +134,28 @@ async function recordWalksAndReports(page: Page) {
 const seenSoFar = (page: Page) =>
   page.evaluate(
     () =>
-      (window as unknown as { __attack256: { order: string[]; unanswered: number } }).__attack256,
+      (
+        window as unknown as {
+          __attack256: {
+            order: string[];
+            reported: string[];
+            unanswered: number;
+            unansweredIndexPuts: number;
+          };
+        }
+      ).__attack256,
   );
 
 /**
  * No host call is waiting, and no walk or report began over a frame, on two
  * looks in a row: whatever the app asked for has been asked and answered.
  * It assumes the app's own refresh starts with a host call, not a timer.
+ * With `besidesTheHeldIndex`, index writes held by `holdIndexAfter` are not
+ * waited for: everything else the app asked for is answered.
  */
-async function quiet(page: Page) {
+async function quiet(page: Page, { besidesTheHeldIndex = false } = {}) {
+  const waiting = (seen: Awaited<ReturnType<typeof seenSoFar>>) =>
+    seen.unanswered - (besidesTheHeldIndex ? seen.unansweredIndexPuts : 0);
   let calmLooks = 0;
   await expect
     .poll(
@@ -139,8 +164,8 @@ async function quiet(page: Page) {
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
         const after = await seenSoFar(page);
         const calm =
-          before.unanswered === 0 &&
-          after.unanswered === 0 &&
+          waiting(before) === 0 &&
+          waiting(after) === 0 &&
           after.order.length === before.order.length;
         calmLooks = calm ? calmLooks + 1 : 0;
         return calmLooks;
@@ -252,14 +277,15 @@ test('the watcher’s echo of deciding an Inbox row is not refreshed for again (
   await addFromOutside(page, vault, 'From outside.md');
 });
 
-/**
- * Opens a GTD vault with its opening walk held until the Block type is
- * written — and, with `echoWrites`, until its echo has arrived — then says
- * how many walks of the vault the app made in all, once it has done.
- */
 /** Where the app records the built-in properties it has added (`addShippedProperties`). */
 const SHIPPED_PROPERTIES_RECORD = '.atlas/migrations/type-properties.md';
 
+/**
+ * Opens a GTD vault with its opening walk held until the app has made every
+ * write it makes as it opens, the Block type among them, and asked for their
+ * refresh — and, with `echoWrites`, until the echo of the last has arrived —
+ * then says how many walks of the vault the app made in all, once it has done.
+ */
 async function walksOpeningSlowly(page: Page, echoWrites: boolean): Promise<number> {
   const vault = await gtdVaultWithAnInbox();
   const host = await installHost(page, vault, { echoWrites });
@@ -271,10 +297,19 @@ async function walksOpeningSlowly(page: Page, echoWrites: boolean): Promise<numb
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expectFile(vault, '.atlas/types/block.md').toContain('block');
-  if (echoWrites) await expect.poll(() => host.echoesSent()).toBeGreaterThan(0);
-  letTheWalkGo();
-  await expect(page.getByText(/notes indexed/)).toBeVisible();
   letTheRecordGo();
+  // Not the Block type alone: every write the app makes as it opens, and the
+  // refresh each asks for, must be in before the walk goes, in both runs. A
+  // refresh asked once the queued one has begun walks once more, and the run
+  // with no echo, having no 400 ms to wait, counted it (7, not 6). The echo
+  // waited for is the last write's, not the first: an echo heard after the
+  // walk goes would be walked for, too.
+  if (echoWrites)
+    await expect
+      .poll(async () => (await seenSoFar(page)).reported)
+      .toContain(SHIPPED_PROPERTIES_RECORD);
+  await quiet(page, { besidesTheHeldIndex: true });
+  letTheWalkGo();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
   await quiet(page);
   return (await seenSoFar(page)).order.filter((each) => each === 'walk').length;
