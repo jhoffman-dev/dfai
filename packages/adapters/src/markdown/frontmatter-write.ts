@@ -16,6 +16,7 @@ import {
 } from 'yaml';
 import { FrontmatterRefusedError } from '@dfai/application';
 import { KeyAsWritten } from '@dfai/domain';
+import { withOriginalEndings } from './line-endings.ts';
 
 /**
  * Changes some keys of a frontmatter block and leaves everything else alone.
@@ -41,7 +42,10 @@ import { KeyAsWritten } from '@dfai/domain';
  * one property cannot see the others it would otherwise change.
  *
  * The `---` delimiters and the line endings are reused exactly as they were
- * found, so a file written on Windows stays written on Windows.
+ * found, so a file written on Windows stays written on Windows: each line the
+ * change leaves keeps its own ending, a changed line the ending of the line
+ * it replaced, and a new line the ending most of the block's lines have —
+ * the opening's when there are as many of each.
  *
  * A change given as {@link KeyAsWritten} is written as exactly that text, in
  * the key's place — how archiving gives a note back its own keys — moved from
@@ -93,12 +97,18 @@ export function updateFrontmatter(
     // them; a head that is only blank lines was the note's own, and stays.
     const head = before?.head ?? '';
     const kept = head.trim() === '' ? head : head.replace(/\n+$/, '\n');
-    return `${opening}${`${kept}${before?.tail ?? ''}`.replace(/\n/g, eol)}${closing}`;
+    const left = withOriginalEndings({
+      original: content,
+      edited: `${kept}${before?.tail ?? ''}`,
+      fallback: eol,
+    });
+    return `${opening}${left}${closing}`;
   }
   // Blank lines were all a block held: they stay above the keys it now has.
   const blank = source.trim() === '' ? content.replace(/\r\n/g, '\n') : '';
   const written = checkedBody({ document, before, edit, was, blank, lists });
-  return `${opening}${written.replace(/\n/g, eol)}${eol}${closing}`;
+  const ended = withOriginalEndings({ original: content, edited: `${written}\n`, fallback: eol });
+  return `${opening}${ended}${closing}`;
 }
 
 /** What {@link applyChanges} did, for writing the block. */

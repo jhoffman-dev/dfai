@@ -157,7 +157,13 @@ export type FreshPullShut =
   /** The Mac has slept since the last pull started, or how long it slept cannot be read. */
   | 'slept'
   /** A file to act on changed here after the last pull completed (gate 1). */
-  | 'arrived-after-pull';
+  | 'arrived-after-pull'
+  /**
+   * This Mac claimed the automations and no sync has pushed the claim yet
+   * (#176): the other Mac still believes it is named. A look that brings
+   * nothing completes a pull but pushes nothing, so it does not open this.
+   */
+  | 'claim-unshared';
 
 export type FreshPullVerdict =
   { readonly open: true } | { readonly open: false; readonly shut: FreshPullShut };
@@ -183,6 +189,7 @@ export function freshPullVerdict({
   settingsNow,
   paused,
   arrivedAt,
+  claimUnshared = false,
 }: {
   standing: PullStanding | null;
   /** The host's time asleep since boot, read now; null when it could not be read, or was not needed. */
@@ -196,9 +203,12 @@ export function freshPullVerdict({
   paused: boolean;
   /** When the files to act on were last modified here, the latest of them; null for a step that acts on no file. */
   arrivedAt: number | null;
+  /** Whether this Mac's claim of the automations is written here and not yet pushed. */
+  claimUnshared?: boolean;
 }): FreshPullVerdict {
   if (standing?.kind === 'not-synced') return byTheSettings(settingsNow) ?? OPEN;
   if (paused) return shutFor('paused');
+  if (claimUnshared) return shutFor('claim-unshared');
   if (standing === null) return shutFor('no-pull');
   if (standing.kind === 'pulling') return shutFor('pulling');
   if (standing.kind === 'settings-unreadable') return shutFor('settings-unreadable');

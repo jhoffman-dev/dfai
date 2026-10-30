@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { defaultRangeExtractor, useVirtualizer, type Range } from '@tanstack/react-virtual';
+import { defaultRangeExtractor, type Range } from '@tanstack/react-virtual';
 import {
   DndContext,
   DragOverlay,
@@ -26,6 +26,7 @@ import {
   type RowEditing,
   type TreeRowActions,
 } from './vault-tree-row.tsx';
+import { useRangeVirtualizer } from './range-virtualizer.ts';
 import { stickyOffsetOf, useScrollMargin } from './scroll-margin.ts';
 
 /** A row's pitch: 28px tall with a pixel between rows, as in the mockup (--sidebar-row). */
@@ -168,7 +169,8 @@ export const VaultTree = memo(function VaultTree({
     held === null ? -1 : rows.findIndex((row) => row.entry.path === held.entry.path);
   const tabStopIndex =
     activePath === null ? -1 : rows.findIndex((row) => row.entry.path === activePath);
-  const virtualizer = useVirtualizer({
+  // Redrawn for a change of rows, never for a scroll alone: each redraw is the whole tree (#169).
+  const virtualizer = useRangeVirtualizer({
     count: rows.length,
     getScrollElement: scrollElement,
     estimateSize: () => ROW_HEIGHT,
@@ -226,6 +228,8 @@ export const VaultTree = memo(function VaultTree({
   // laid out there but cannot be seen, and the pointer is over what covers it.
   const collisionDetection = useMemo(
     () =>
+      // The scroller is read only as a drag is under way, never while rendering.
+      // eslint-disable-next-line react-hooks/refs
       dropTargetWithin(() => {
         const area = scrollParent === undefined ? scrollRef.current : scrollParent;
         return area === null ? null : shownPart(area, stickyOffset);

@@ -109,6 +109,7 @@ export {
   isPromptPath,
   describeClaudeAction,
   outputHasItems,
+  MAX_PROMPT_CHARACTERS,
   PROMPTS_DIRECTORY,
   readClaudeAction,
   readsData,
@@ -267,6 +268,7 @@ export type { NoteAnswer, NoteAnswerValue } from './note-answer.ts';
 export {
   asksSpentInHour,
   backoffMinutes,
+  unavailableBackoffMinutes,
   dueTrigger,
   nextRunOf,
   ruleClockOf,

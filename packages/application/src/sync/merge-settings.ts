@@ -1,5 +1,6 @@
 import {
   isSettingsFile,
+  jsonHasDuplicateKeys,
   mergeSettingsText,
   mergeShippedPropertiesRecords,
   parseShippedPropertiesRecord,
@@ -69,7 +70,11 @@ function asAtlasWrote(text: string): ShippedPropertiesRecord | null {
   if (record === null) return null;
   const withoutKeys = (written: string) => written.replace(RECORD_JSON, '\n```json\n```\n');
   if (withoutKeys(text) !== withoutKeys(shippedPropertiesRecordText(record))) return null;
-  const json: unknown = JSON.parse(RECORD_JSON.exec(text)?.[1] ?? 'null');
+  // Past that check the file is DFAI's text around one JSON line, the one `readRecord` parsed.
+  const block = RECORD_JSON.exec(text)?.[1] ?? 'null';
+  // A key named twice is read as its last: what the first held would be merged away.
+  if (jsonHasDuplicateKeys(block)) return null;
+  const json: unknown = JSON.parse(block);
   const written =
     typeof json === 'object' && json !== null && !Object.hasOwn(json, 'added')
       ? { settled: record.settled }

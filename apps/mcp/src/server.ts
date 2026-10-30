@@ -10,6 +10,7 @@ import { artifactTools } from './tools/artifacts.ts';
 import { automationTools } from './tools/automations.ts';
 import { checklistTools } from './tools/checklists.ts';
 import { captureTools } from './tools/capture.ts';
+import { granolaTools } from './tools/granola.ts';
 import { imageTools } from './tools/images.ts';
 import { meetingTools } from './tools/meetings.ts';
 import { inboxTools } from './tools/inbox.ts';
@@ -19,6 +20,8 @@ import { proposalTools } from './tools/proposals.ts';
 import { queryTools } from './tools/queries.ts';
 import { scheduleTools } from './tools/schedule.ts';
 import { reviewTools } from './tools/review.ts';
+import { skillTools } from './tools/skills.ts';
+import { slackCaptureTools } from './tools/slack-capture.ts';
 import { sourceTools } from './tools/sources.ts';
 import { tagTools } from './tools/tags.ts';
 import { templateTools } from './tools/templates.ts';
@@ -36,12 +39,15 @@ export const ATLAS_TOOLS = [
   ...queryTools,
   ...viewTools,
   ...captureTools,
+  ...slackCaptureTools,
   ...artifactTools,
   ...imageTools,
   ...sourceTools,
+  ...granolaTools,
   ...tagTools,
   ...peopleTools,
   ...templateTools,
+  ...skillTools,
   ...termTools,
   ...archiveTools,
   ...inboxTools,

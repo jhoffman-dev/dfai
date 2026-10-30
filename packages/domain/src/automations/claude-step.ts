@@ -33,6 +33,13 @@ import { PROPOSAL_SCHEMAS } from './proposal-schemas.ts';
 /** Where a rule's prompts live. */
 export const PROMPTS_DIRECTORY = '.atlas/prompts';
 
+/**
+ * The longest a prompt note may be: a rule's instructions, not a document. A
+ * skill's instructions are held to the same length (ADR-0050), since either
+ * is handed to the model as one argument (ADR-0021).
+ */
+export const MAX_PROMPT_CHARACTERS = 20_000;
+
 /** The most notes one Claude step reads: each is a model's reading, not a file move. */
 export const CLAUDE_NOTES_PER_RUN = 10;
 

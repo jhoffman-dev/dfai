@@ -942,3 +942,61 @@ unattended step reads.
   routes is still a proposal note in user space, and still accepted only in
   the app. So the rule above stands — the API never writes `.atlas` — and
   an MCP client cannot propose a dashboard and accept it for itself.
+
+## Granola: read, and one guarded pull (P28-13, 2026-10-28)
+
+`GET /v1/granola` answers `{ hasKey, keyRefused, lastPullAt, watermark }` for the vault
+the request arrived for: whether this Mac holds a Granola key for it, and this
+Mac's record of its pulls. The key is never in an answer: it lives only in the
+host (ADR-0034), the app holds only `hasKey` and whether Granola refused it, and each answer is built field
+by field, so nothing the host adds can ride along. `POST /v1/granola/pull` —
+MCP's `atlas_sync_granola`, not marked idempotent since it writes meetings —
+is the app's own Sync now through its one puller, so it never runs beside a
+startup or timed pull, and every meeting it writes goes through
+`receiveMeeting`, as any pull's does. It is guarded as a source refresh is:
+one per vault per 30 seconds, counted from when the last pull ended
+(`conflict` with `retryAfter`), since a caller looping on it would spend the
+key's rate limit in the user's name. Its outcome shows on the Granola card,
+never as a toast, since no one in the window asked for it. It asks nothing of
+Granola when this Mac holds no key or one Granola refused, or when the app would not pull
+the vault yet either — until sync has pulled it this session and the index has
+caught up (ADR-0034) — and says which. It is not gated to the automations
+Mac, because the app's pull is not: ADR-0034 kept that gate as a fallback, and
+should it be taken, the pull controller's `readyFor` is where the route
+follows it. Setting or removing
+the key stays in Settings → Granola: a caller that could set one could point
+the vault's meetings at an account of its own.
+
+## Skills: read, not written (#169, 2026-10-28)
+
+Skills are Agent Skills folders in `.atlas/skills` (ADR-0050): instructions
+for Claude the person writes once and reuses from a rule's Claude step and the
+chat. The API follows on the same terms as templates above:
+
+- **Read.** `GET /v1/skills` lists every skill folder with its description and
+  its problems; `GET /v1/skills/{name}` answers one with its instructions,
+  byte for byte. Both run `listSkills` and `readSkill`, the use-cases the
+  Skills page uses, so a problem here is the page's. Both name their vault and
+  answer `no_vault` if another is opened while they read.
+- **A name is compared, never joined.** `{name}` is matched against the
+  folders `.atlas/skills` lists — exactly, else in any case and Unicode form —
+  and only a listed folder's own path is read. A name holding `/`, `..`,
+  percent-encoded dots or another `.atlas` folder's name finds nothing
+  (`not_found`), so no name reaches outside `.atlas/skills`, and only each
+  folder's SKILL.md is opened.
+- **No note route hands out a skill.** `.atlas/skills` is a sectioned path
+  (ADR-0013, ADR-0050), so a SKILL.md is outside user space: not a note, a
+  search hit, a link target or a row.
+- **Not routes: making, editing and deleting a skill.** Each writes
+  `.atlas/skills`, which the API never writes:
+  - _Making and editing_ decide what Claude is told to do in every later run
+    that uses the skill. A caller that could write one could change what a
+    rule's Claude step does tomorrow morning, with nothing in the run saying
+    where the instructions came from.
+  - _Deleting_ is a delete, and v1 has none (Security model); and it takes the
+    whole folder, other files included.
+
+  So the API stays read-only for skills (James to confirm, ADR-0050). An
+  exception would be a `PUT /v1/skills/{name}` taking `ifModified`, running
+  the app's own `saveSkill` (only the keys and body that changed, refused on a
+  changed file), and it would need this section amended to accept it.

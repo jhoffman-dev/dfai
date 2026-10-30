@@ -37,10 +37,14 @@ describe('the two-Macs harness', () => {
     'has finished all git work by the time a command it ran returns',
     async () => {
       const { base, env, home, bare } = await isolatedWorld();
-      // Enough loose objects that the remote's `gc --auto` has work to do after a push.
+      // The remote's housekeeping after a push must have work to do, whichever
+      // strategy this git's `maintenance run --auto` uses: `gc` up to 2.53
+      // (`gc.auto`), geometric since 2.54 (its own threshold, raised from 100 to
+      // 6700 loose objects in 2.56, so it stopped running here: #606).
       await writeFile(
         join(home, '.gitconfig'),
-        '[gc]\n\tauto = 1\n[receive]\n\tunpackLimit = 100000\n',
+        '[gc]\n\tauto = 1\n[maintenance "geometric-repack"]\n\tauto = -1\n' +
+          '[receive]\n\tunpackLimit = 100000\n',
       );
       await must(base, ['init', '--quiet', '--bare', '--initial-branch=main', bare], env);
       const clone = join(base, 'Studio');
@@ -50,8 +54,10 @@ describe('the two-Macs harness', () => {
       const who = ['-c', 'user.name=Seed', '-c', 'user.email=seed@x'];
       await must(clone, [...who, 'commit', '--quiet', '-m', 'seed'], env);
       await must(clone, ['push', '--quiet', bare, 'HEAD:main'], env);
-      // gc writes `info/refs` in a bare repository, and holds `gc.pid` while it runs.
+      // Both strategies' repack writes `info/refs` in a bare repository; gc holds
+      // `gc.pid` while it runs, and maintenance `objects/maintenance.lock`.
       expect(existsSync(join(bare, 'gc.pid'))).toBe(false);
+      expect(existsSync(join(bare, 'objects', 'maintenance.lock'))).toBe(false);
       expect(existsSync(join(bare, 'info', 'refs'))).toBe(true);
     },
     TIMEOUT,

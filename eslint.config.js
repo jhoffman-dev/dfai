@@ -5,6 +5,7 @@ import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import { builtinModules } from 'node:module';
 
 /**
  * The app's state libraries (#238): stores and queries belong to `apps/desktop`,
@@ -27,20 +28,199 @@ const forbidden = {
   ui: ['@dfai/adapters', ...appStateOnly],
 };
 
-const architecture = Object.entries(forbidden).map(([layer, patterns]) => ({
+const layerPatterns = (layer) =>
+  forbidden[layer].map((group) => ({
+    group: [group],
+    message: `packages/${layer} must not import ${group} — dependencies point inward.`,
+  }));
+
+const architecture = Object.keys(forbidden).map((layer) => ({
   files: [`packages/${layer}/**/*.{ts,tsx}`],
-  rules: {
-    'no-restricted-imports': [
-      'error',
-      {
-        patterns: patterns.map((group) => ({
-          group: [group],
-          message: `packages/${layer} must not import ${group} — dependencies point inward.`,
-        })),
-      },
-    ],
-  },
+  rules: { 'no-restricted-imports': ['error', { patterns: layerPatterns(layer) }] },
 }));
+
+/**
+ * Code that runs in Tauri's webview, where there is no Node (#114). Node's
+ * globals and modules pass typecheck and every unit test there, since Vitest
+ * runs on Node, and fail only in WebKit: `Buffer.byteLength` in the domain did
+ * (PR #99). `pnpm check:node-builtins` is the same rule over the built bundle (#53).
+ */
+const webview = [
+  'packages/{domain,application,adapters,ui}/src/**/*.{ts,tsx}',
+  'apps/desktop/src/**/*.{ts,tsx}',
+];
+
+/** The SQLite test support: SQL run for real through `node:sqlite`, and what is built on it. */
+const sqliteSupport = [
+  'node-sqlite',
+  'sqlite',
+  'sqlite-index',
+  'query-index',
+  'fts-search',
+  'tag-index',
+  'automation-vault',
+  'assistant-vault',
+  'meeting-files',
+];
+
+/**
+ * Test support that runs on Node, by name. Other test support is held to the
+ * webview's rule like the app, since the barrels export it (`@dfai/application`
+ * re-exports its fakes), and nothing else in the webview's code may import these.
+ */
+const nodeSupport = [
+  // Reads the stylesheet's section files from disk, as the build ships them.
+  'apps/desktop/src/styles.test-support.ts',
+  // Two simulated Macs syncing through the real git, over the real disk (U-29).
+  'apps/desktop/src/sync/two-macs.harness.ts',
+  // Judges a rewrite with node:util's deep equality.
+  'packages/adapters/src/markdown/frontmatter-write-cases.attack-454.ts',
+  // Sets the process's time zone, which is how Node takes one.
+  'packages/domain/src/calendar/zones.test-support.ts',
+  ...sqliteSupport.map((name) => `packages/application/src/testing/${name}.ts`),
+];
+
+/**
+ * What runs only in Node inside those folders. Everything else that runs in
+ * Node — tools/, e2e/, apps/mcp, the configs — is outside them to begin with.
+ */
+const nodeOnly = [
+  // Tests run in Vitest, on Node.
+  '**/*.test.{ts,tsx}',
+  ...nodeSupport,
+];
+
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/**
+ * An import of Node's test support, relative or through an alias. The SQLite
+ * files are matched with their folder, since a production module shares a name
+ * (`meetings/meeting-files.ts`); their siblings' `./` imports are matched below.
+ */
+const supportTails = nodeSupport.map((path) =>
+  path.includes('/testing/')
+    ? `testing/${path.split('/').pop().replace(/\.ts$/, '')}`
+    : path.split('/').pop().replace(/\.ts$/, ''),
+);
+const SUPPORT_MESSAGE =
+  'This test support runs on Node, and the webview has none: import it only from a test (#114).';
+const noNodeSupport = {
+  regex: `(^|/)(${supportTails.map(escapeRegex).join('|')})(\\.ts)?$`,
+  message: SUPPORT_MESSAGE,
+};
+const noSqliteSibling = {
+  regex: `^\\./(${sqliteSupport.map(escapeRegex).join('|')})(\\.ts)?$`,
+  message: SUPPORT_MESSAGE,
+};
+
+/** Each Node-only global, and what the webview has instead. */
+const NODE_GLOBALS = {
+  Buffer: 'Use TextEncoder/TextDecoder, Uint8Array, or utf8Length from @dfai/domain.',
+  process: 'Use import.meta.env for build flags; ask the host through a port for the rest.',
+  __dirname: 'Use import.meta.url.',
+  __filename: 'Use import.meta.url.',
+  require: 'Use import.',
+  global: 'Use globalThis.',
+  setImmediate: 'Use queueMicrotask or setTimeout.',
+  clearImmediate: 'Use clearTimeout.',
+  module: 'Use export: CommonJS is Node’s.',
+  exports: 'Use export: CommonJS is Node’s.',
+};
+
+const nodeBuiltinNames = builtinModules
+  .filter((name) => !name.startsWith('node:'))
+  .map(escapeRegex);
+
+/** `node:fs`, `fs`, `fs/promises`, by exact name: `./path` or `pathe` is not Node's. */
+const noNodeModules = {
+  regex: `^(node:.*|(${nodeBuiltinNames.join('|')})(/.*)?)$`,
+  message:
+    'The webview has no Node: keep this in tools/, a test, or test support, or use a Web API (#114).',
+};
+
+/**
+ * The same restrictions for `import()`, which no-restricted-imports does not
+ * look at. A selector's regex ends at its first `/`, so each slash is `\x2F`.
+ */
+const dynamicImports = (restrictions) => [
+  'error',
+  ...restrictions.flatMap(({ regex, message }) => {
+    const pattern = regex.replaceAll('\\/', '\\x2F').replaceAll('/', '\\x2F');
+    return [
+      `ImportExpression > Literal[value=/${pattern}/]`,
+      `ImportExpression > TemplateLiteral > TemplateElement[value.raw=/${pattern}/]`,
+    ].map((selector) => ({ selector, message }));
+  }),
+];
+
+const webviewNode = [
+  ...Object.keys(forbidden).map((layer) => ({
+    files: [`packages/${layer}/src/**/*.{ts,tsx}`],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...layerPatterns(layer), noNodeModules, noNodeSupport] },
+      ],
+    },
+  })),
+  {
+    // The rest of the application's test support, beside the SQLite files.
+    files: ['packages/application/src/testing/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...layerPatterns('application'),
+            noNodeModules,
+            noNodeSupport,
+            noSqliteSibling,
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['apps/desktop/src/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: { 'no-restricted-imports': ['error', { patterns: [noNodeModules, noNodeSupport] }] },
+  },
+  {
+    files: webview,
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...Object.entries(NODE_GLOBALS).map(([name, instead]) => ({
+          name,
+          message: `${name} is Node's, and the webview has none (#114). ${instead}`,
+        })),
+      ],
+      'no-restricted-syntax': dynamicImports([noNodeModules, noNodeSupport]),
+      // The same globals reached through the global object.
+      'no-restricted-properties': [
+        'error',
+        ...['globalThis', 'window', 'self'].flatMap((object) =>
+          Object.entries(NODE_GLOBALS).map(([property, instead]) => ({
+            object,
+            property,
+            message: `${property} is Node's, and the webview has none (#114). ${instead}`,
+          })),
+        ),
+      ],
+    },
+  },
+  {
+    // After the block above, whose `import()` rule it repeats with the siblings added.
+    files: ['packages/application/src/testing/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-syntax': dynamicImports([noNodeModules, noNodeSupport, noSqliteSibling]),
+    },
+  },
+];
 
 export default tseslint.config(
   {
@@ -85,6 +265,8 @@ export default tseslint.config(
     },
   },
   ...architecture,
+  // After the architecture, whose rule it repeats for the webview's files with Node added.
+  ...webviewNode,
   {
     // Test support (`@dfai/<package>/testing…`) wraps built-ins, fakes the
     // clock and opens SQLite: it is for tests and test tooling, never for the
@@ -142,6 +324,25 @@ export default tseslint.config(
   {
     files: ['**/*.test.ts', '**/*.test.tsx', 'tools/**/*.{mjs,ts}'],
     rules: { 'no-console': 'off' },
+  },
+  {
+    // A <StrictMode> inside a test's wrapper does not run effects twice under
+    // React 19, so a test that means the double mount must ask for it (#159).
+    files: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          "ImportDeclaration[source.value='react'] > ImportSpecifier[imported.name='StrictMode']",
+          "MemberExpression[object.name='React'][property.name='StrictMode']",
+          "JSXMemberExpression[object.name='React'][property.name='StrictMode']",
+        ].map((selector) => ({
+          selector,
+          message:
+            'Render with `{ reactStrictMode: true }` (render or renderHook) to mount twice as main.tsx does.',
+        })),
+      ],
+    },
   },
   {
     // e2e/fixtures.ts's `test` removes the temp folders a test's host made (issue #397).

@@ -40,7 +40,8 @@ function scheduleLine(schedule: TaskSchedule | null): string {
 }
 
 /**
- * The next actions beside the week's clock, the ones with no time yet first.
+ * The tasks chosen for today, then the next actions, beside the week's
+ * clock, the ones with no time yet first in each.
  * Drag one onto empty time to make a block for it, sized to what it still
  * needs, or onto a block to add it there; drag it again to split it across
  * another block. From the keyboard, or with a click, a task is chosen here and
@@ -132,6 +133,7 @@ function TrayItem({
         onClick={() => onChoose(chosen ? null : task)}
       >
         <span className="plan-tray__title">{task.title}</span>
+        {task.chosen && <span className="plan-tray__chosen">Chosen for today</span>}
         {line !== '' && <span className="plan-tray__schedule">{line}</span>}
       </button>
     </li>

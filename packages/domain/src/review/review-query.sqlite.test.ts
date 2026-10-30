@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { indexablePropertiesOf } from '../index/property-value.ts';
+import { focusIsOwn } from '../today/row-read.ts';
 import {
   compileReviewDoneQuery,
   compileReviewMeetingsQuery,
@@ -75,6 +76,7 @@ describe('compileReviewTasksQuery', () => {
           status: ' waiting',
           due: '2026-10-01T09:00',
           defer: '2026-10-20',
+          focus: '2026-10-14T08:00',
           waiting_on: ['[[Mara Quill]]', '[[Tobias Fenn]]'],
           contexts: ['@office', ' @calls ', ''],
           project: '[[Atlas]]',
@@ -94,6 +96,8 @@ describe('compileReviewTasksQuery', () => {
         title: 'Quote',
         status: 'waiting',
         due: '2026-10-01',
+        focus: '2026-10-14',
+        focusIsOwn: false,
         defer: '2026-10-20',
         recurrence: null,
         waitingOn: 'Mara Quill, Tobias Fenn',
@@ -203,6 +207,33 @@ describe('compileReviewTasksQuery', () => {
       'Projects/Atlas.md': { frontmatter: { type: 'project', status: 'active' } },
     });
     expect(tasks.map((task) => task.path)).toEqual(['Tasks/Open.md']);
+  });
+});
+
+// Follow-up to #110 (PR #616): a status is read as FROM reads it — written as
+// a list it is no status, so the task is open work and shown, not hidden;
+// a blank item is no item.
+describe('compileReviewTasksQuery, a status written as a list', () => {
+  it('reads [archive, next-action] as no status, so the task is open, not finished', () => {
+    const tasks = tasksOf({
+      'Tasks/Listed.md': { frontmatter: { type: 'task', status: ['archive', 'next-action'] } },
+    });
+    expect(tasks.map((task) => [task.path, task.status])).toEqual([['Tasks/Listed.md', null]]);
+  });
+
+  it('reads [next-action, ""] as next-action: a blank item is no item', () => {
+    const tasks = tasksOf({
+      'Tasks/Blank item.md': { frontmatter: { type: 'task', status: ['next-action', ''] } },
+    });
+    expect(tasks.map((task) => task.status)).toEqual(['next-action']);
+  });
+
+  it('still leaves out a task whose one status is archive, a blank item beside it or not', () => {
+    const tasks = tasksOf({
+      'Tasks/Done.md': { frontmatter: { type: 'task', status: 'archive' } },
+      'Tasks/Done too.md': { frontmatter: { type: 'task', status: ['archive', ''] } },
+    });
+    expect(tasks).toEqual([]);
   });
 });
 
@@ -324,6 +355,23 @@ describe('the Friday review draft’s statements (#40)', () => {
     ]);
   });
 
+  it('does not count a task whose status lists archive among others as finished', () => {
+    const done = sourcesOf(
+      {
+        'Tasks/Listed.md': {
+          frontmatter: { type: 'task', status: ['archive', 'next-action'] },
+          modified: 5_000,
+        },
+        'Tasks/Blank item.md': {
+          frontmatter: { type: 'task', status: ['archive', ''] },
+          modified: 5_000,
+        },
+      },
+      compileReviewDoneQuery(1_000),
+    );
+    expect(done.map((source) => source.path)).toEqual(['Tasks/Blank item.md']);
+  });
+
   it('counts a task finished at the moment itself as finished since it', () => {
     const done = sourcesOf(
       { 'Tasks/Edge.md': { frontmatter: { type: 'task', status: 'archive' }, modified: 1_000 } },
@@ -349,4 +397,29 @@ describe('the Friday review draft’s statements (#40)', () => {
       { path: 'Meetings/Standup.md', title: 'Standup', date: '2026-10-21' },
     ]);
   });
+});
+
+describe('compileReviewTasksQuery, a focus that is the person’s own (#108)', () => {
+  const VALUES: readonly unknown[] = [
+    '2026-10-28',
+    '2026-10-28T09:00',
+    ['2026-10-28'],
+    '',
+    null,
+    'writing',
+    '2026-02-30',
+    5,
+    '[[Daily/2026-10-28]]',
+    ['2026-10-28', '2026-10-01'],
+    ['2026-10-28', 'writing'],
+  ];
+
+  it.each(VALUES.map((value) => [JSON.stringify(value), value]))(
+    'reads focus %s as focusIsOwn reads the file',
+    (_, focus) => {
+      const frontmatter = { type: 'task', status: 'next-action', focus };
+      const [read] = tasksOf({ 'Tasks/Paint.md': { frontmatter } });
+      expect(read?.focusIsOwn ?? false).toBe(focusIsOwn(frontmatter));
+    },
+  );
 });

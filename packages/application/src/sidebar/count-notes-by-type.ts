@@ -1,4 +1,9 @@
-import { compileTypeCountsQuery, TYPE_COUNTS_QUERY_COLUMNS, type ObjectType } from '@dfai/domain';
+import {
+  compileTypeCountsQuery,
+  foldedTypeName,
+  TYPE_COUNTS_QUERY_COLUMNS,
+  type ObjectType,
+} from '@dfai/domain';
 import type { IndexPort } from '../index/ports.ts';
 
 /**
@@ -38,11 +43,13 @@ export async function countNotesByType({
   const [typeAt = -1, countAt = -1] = TYPE_COUNTS_QUERY_COLUMNS.map((column) =>
     result.columns.indexOf(column),
   );
+  // The index counts a type in any case and spacing (foldedTypeSql), so each
+  // row is the folded name; it is the count of every type spelt that way.
+  const byFolded = new Map<string, number>();
   for (const row of result.rows) {
     const [name, count] = [row[typeAt], row[countAt]];
-    if (typeof name === 'string' && counts.has(name) && typeof count === 'number') {
-      counts.set(name, count);
-    }
+    if (typeof name === 'string' && typeof count === 'number') byFolded.set(name, count);
   }
+  for (const name of counts.keys()) counts.set(name, byFolded.get(foldedTypeName(name)) ?? 0);
   return counts;
 }

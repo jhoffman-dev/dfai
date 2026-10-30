@@ -14,7 +14,6 @@ export type { NoteChangeNews, NoteChanges } from './note-changes.ts';
 export type { IndexRefresh, RefreshOptions } from './refresh-index.ts';
 export type {
   QueryResult,
-  ViewColumnSpec,
   ViewTypeSpec,
   IndexedBlockRow,
   IndexedCheckRow,

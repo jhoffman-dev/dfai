@@ -22,6 +22,13 @@ export interface NoteFile {
 }
 
 /** A note's text and the modification time it was read at. */
+/** A file as it was read, for the host to hold a change to. */
+export interface AsRead {
+  readonly path: VaultPath;
+  readonly modified: number;
+  readonly text: string;
+}
+
 export interface NoteContents {
   readonly text: string;
   readonly modified: number;
@@ -77,8 +84,13 @@ export interface VaultFsPort {
   /**
    * Puts a note or a folder in the system Trash, where it can be recovered.
    * Fails rather than deleting it any other way.
+   *
+   * `unchanged` names files as they were read — the entry itself among them,
+   * say. Given, the host checks each still has that modification time and
+   * exactly that text, and trashes only then, in the same step; otherwise it
+   * refuses with {@link EntryChangedError} and nothing moves (#235).
    */
-  trashEntry: (args: { path: VaultPath }) => Promise<void>;
+  trashEntry: (args: { path: VaultPath; unchanged?: readonly AsRead[] }) => Promise<void>;
   /**
    * Replaces a note's contents and reports its new modification time.
    * `expectedModified` is the time the note was read at; the host refuses the
@@ -190,6 +202,26 @@ export class VaultAccessError extends Error {
     super(message);
     this.name = 'VaultAccessError';
   }
+}
+
+/** The host refused to act on an entry: a file it was told was as read had changed since (#235). */
+export class EntryChangedError extends VaultAccessError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EntryChangedError';
+  }
+}
+
+/**
+ * The host's refusal of a write held to `expectedModified` or `expectedText`
+ * when the file changed since it was read: `CHANGED_ON_DISK` in
+ * `src-tauri/src/vault.rs`, sent as this exact message and no code.
+ */
+export const HOST_CHANGED_ON_DISK = 'the note changed on disk since it was opened';
+
+/** Whether `error` is the host refusing a write over a file changed since it was read. */
+export function isChangedOnDiskRefusal(error: unknown): boolean {
+  return error instanceof VaultAccessError && error.message === HOST_CHANGED_ON_DISK;
 }
 
 /**

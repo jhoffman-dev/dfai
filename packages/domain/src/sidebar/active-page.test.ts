@@ -48,6 +48,7 @@ describe('activeSidebarPageOf', () => {
       [{ kind: 'activity' }, 'activity'],
       [{ kind: 'templates' }, 'templates'],
       [{ kind: 'terms' }, 'terms'],
+      [{ kind: 'skills' }, 'skills'],
       [{ kind: 'ask' }, 'ask'],
     ];
     for (const [place, kind] of pages) {

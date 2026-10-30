@@ -45,6 +45,8 @@ export function placeName(
       return 'Templates';
     case 'terms':
       return 'Terms';
+    case 'skills':
+      return 'Skills';
     case 'library':
       return 'Library';
     case 'highlights':

@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseAtlasQuery } from '../query-language/parse.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
-import { backoffMinutes, nextRunOf } from './automation-due.ts';
+import { backoffMinutes, nextRunOf, unavailableBackoffMinutes } from './automation-due.ts';
 import { automationQuery } from './automation-query.ts';
 import {
   automationIdFor,
@@ -248,6 +248,10 @@ describe('marks later than now', () => {
 describe('backoffMinutes: how long a failing rule waits before it is tried again', () => {
   it('doubles with each failure in a row, up to six hours', () => {
     expect([1, 2, 3, 4, 10, 40].map(backoffMinutes)).toEqual([1, 2, 4, 8, 360, 360]);
+  });
+
+  it('waits a quarter of an hour at most while Claude cannot be reached (#637 review)', () => {
+    expect([1, 2, 3, 4, 5, 10].map(unavailableBackoffMinutes)).toEqual([1, 2, 4, 8, 15, 15]);
   });
 });
 

@@ -21,6 +21,21 @@ describe('which file reads a change at a path makes stale', () => {
     );
   });
 
+  it('is the skills for anything in a skill’s folder, SKILL.md or not', () => {
+    expect(touched('.atlas/skills/weekly-review/SKILL.md')).toEqual([...IN_ATLAS, 'skills'].sort());
+    expect(touched('.atlas/skills/weekly-review/scripts/run.sh')).toEqual(
+      [...IN_ATLAS, 'skills'].sort(),
+    );
+    expect(touched('.atlas/Skills/weekly-review')).toEqual([...IN_ATLAS, 'skills'].sort());
+    expect(touched('.atlas/skills-old/SKILL.md')).toEqual(IN_ATLAS);
+  });
+
+  it('is the prompts for a prompt note, and not for a folder named only like it', () => {
+    expect(touched('.atlas/prompts/morning-brief.md')).toEqual([...IN_ATLAS, 'prompts'].sort());
+    expect(touched('.atlas/Prompts')).toEqual([...IN_ATLAS, 'prompts'].sort());
+    expect(touched('.atlas/prompts-old/x.md')).toEqual(IN_ATLAS);
+  });
+
   it('is the settings for the settings note, and only for it', () => {
     expect(touched('.atlas/settings.md')).toEqual([...IN_ATLAS, 'settings'].sort());
     expect(touched('.atlas/settings.md.bak', '.atlas/settings/x.md')).toEqual(IN_ATLAS);
@@ -47,7 +62,14 @@ describe('which file reads a change at a path makes stale', () => {
   it('is the read when its file or folder itself, or one holding it, is moved', () => {
     expect(touched('.atlas/types')).toEqual([...IN_ATLAS, 'types'].sort());
     expect(touched('.atlas/templates/')).toEqual([...IN_ATLAS, 'templates'].sort());
-    const everyAtlasRead = [...IN_ATLAS, 'settings', 'templates', 'types'].sort();
+    const everyAtlasRead = [
+      ...IN_ATLAS,
+      'prompts',
+      'settings',
+      'skills',
+      'templates',
+      'types',
+    ].sort();
     expect(touched('.atlas')).toEqual(everyAtlasRead);
     // The vault's root holds everything, the proposals folder too.
     expect(touched('')).toEqual([...everyAtlasRead, 'inbox-waiting'].sort());

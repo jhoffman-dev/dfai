@@ -26,11 +26,16 @@ import { profileRoute } from './profile.ts';
 import { acceptProposalRoute, proposalsRoute, rejectProposalRoute } from './proposals.ts';
 import { queryRoute, sqlRoute } from './query.ts';
 import { quickAddRoute, quickAddTypesRoute } from './quick-add.ts';
+import { relatedRoute } from './related.ts';
 import { searchRoute } from './search.ts';
 import { scheduleTaskRoute } from './schedule-task.ts';
+import { granolaStatusRoute, pullGranolaRoute } from './granola.ts';
+import { chooseForTodayRoute } from './today-choose.ts';
+import { taskDoneRoute } from './task-done.ts';
 import { refreshSourceRoute } from './sources.ts';
 import { statusRoute } from './status.ts';
 import { renameTagRoute, taggedNotesRoute, tagsRoute } from './tags.ts';
+import { skillRoute, skillsRoute } from './skills.ts';
 import { templateRoute, templatesRoute } from './templates.ts';
 import { termsRoute } from './terms.ts';
 import { typeViewsRoute } from './type-views.ts';
@@ -88,6 +93,7 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'POST /v1/notes/{path}/append': vaultWrite(appendRoute),
   'PUT /v1/notes/{path}/body': vaultWrite(replaceBodyRoute),
   'GET /v1/notes/{path}/backlinks': vaultRoute(backlinksRoute),
+  'GET /v1/notes/{path}/related': vaultRoute(relatedRoute),
   'POST /v1/notes/{path}/promote': vaultWrite(promoteLineRoute),
   'GET /v1/notes/{path}/export': vaultRoute(exportNoteRoute),
   'PUT /v1/notes/{path}/images/{name}': vaultWrite(noteImageRoute, created),
@@ -96,6 +102,8 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'GET /v1/types/{name}/views': vaultRoute(typeViewsRoute),
   'GET /v1/templates': vaultRoute(templatesRoute),
   'GET /v1/templates/{name}': vaultRoute(templateRoute),
+  'GET /v1/skills': vaultRoute(skillsRoute),
+  'GET /v1/skills/{name}': vaultRoute(skillRoute),
   'GET /v1/views': vaultRoute(viewsRoute),
   'POST /v1/views/{path}/run': vaultRoute(runViewRoute),
   'POST /v1/views/{path}/calendar': vaultRoute(calendarRoute),
@@ -134,6 +142,8 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
     'proposedSpec' in answer.body ? answer.body.proposedSpec.proposal !== null : false,
   ),
   'GET /v1/today': vaultRoute(todayRoute),
+  'POST /v1/tasks/done': vaultWrite(taskDoneRoute),
+  'POST /v1/today/choose': vaultWrite(chooseForTodayRoute),
   'GET /v1/automations': vaultRoute(automationsRoute),
   'GET /v1/automations/{id}/log': vaultRoute(automationLogRoute),
   'POST /v1/automations/{id}/dry-run': vaultRoute(automationDryRunRoute),
@@ -145,6 +155,9 @@ const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
   'GET /v1/proposals': vaultRoute(proposalsRoute),
   'POST /v1/proposals/{path}/accept': vaultWrite(acceptProposalRoute),
   'POST /v1/proposals/{path}/reject': vaultWrite(rejectProposalRoute),
+  'GET /v1/granola': vaultRoute(granolaStatusRoute),
+  // The puller says what it wrote in the vault's Activity itself, as a source refresh does.
+  'POST /v1/granola/pull': vaultRoute(pullGranolaRoute),
 };
 
 /** The segments a route pattern leaves open, and what a request filled them with. */

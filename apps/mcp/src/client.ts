@@ -35,7 +35,9 @@ import type {
   ApiCalendar,
   ApiCalendarBody,
   ApiCaptureBody,
+  ApiCaptureReceipt,
   ApiCreateNoteBody,
+  ApiReceiveCaptureBody,
   ApiErrorBody,
   ApiNote,
   ApiProposal,
@@ -50,11 +52,14 @@ import type {
   ApiClarifyInboxBody,
   ApiClarifyOutcome,
   ApiScheduleTaskBody,
+  ApiChooseForTodayBody,
+  ApiTaskDoneBody,
   ApiPromoteLineBody,
   ApiProfile,
   ApiQueryBody,
   ApiQuickAddBody,
   ApiQuickAddType,
+  ApiRelatedNote,
   ApiRenameTagBody,
   ApiReplaceBodyBody,
   ApiRows,
@@ -65,6 +70,7 @@ import type {
   ApiSemanticProgress,
   ApiSetPropertiesBody,
   ApiSourceReport,
+  ApiGranolaPullReport,
   ApiSqlBody,
   ApiStatus,
   ApiTag,
@@ -73,6 +79,8 @@ import type {
   ApiWeeklyReview,
   ApiTagRenamePreview,
   ApiTagRenameReport,
+  ApiSkill,
+  ApiSkillContent,
   ApiTemplate,
   ApiTemplateContent,
   ApiTerms,
@@ -245,6 +253,13 @@ export class AtlasClient {
       query: { ...query },
     });
 
+  related = (path: string, query: { limit?: number } = {}) =>
+    this.json<{
+      related: readonly ApiRelatedNote[];
+      embedded: boolean;
+      progress: ApiSemanticProgress;
+    }>({ method: 'GET', path: notePath(path, '/related'), query: { ...query } });
+
   exportNote = (path: string, { format = 'confluence', frontmatter }: ExportNoteQuery = {}) =>
     this.json<{ export: ApiNoteExport }>({
       method: 'GET',
@@ -297,6 +312,14 @@ export class AtlasClient {
       path: `/v1/templates/${encodeURIComponent(name)}`,
     });
 
+  skills = () => this.json<{ skills: readonly ApiSkill[] }>({ method: 'GET', path: '/v1/skills' });
+
+  skill = (name: string) =>
+    this.json<{ skill: ApiSkillContent }>({
+      method: 'GET',
+      path: `/v1/skills/${encodeURIComponent(name)}`,
+    });
+
   terms = () => this.json<ApiTerms>({ method: 'GET', path: '/v1/terms' });
 
   views = () => this.json<{ views: readonly ApiView[] }>({ method: 'GET', path: '/v1/views' });
@@ -323,6 +346,10 @@ export class AtlasClient {
 
   capture = (body: ApiCaptureBody) =>
     this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/capture', body });
+
+  /** A Slack message under capture/v1: `written` once, `in-vault` every time after. */
+  receiveCapture = (body: ApiReceiveCaptureBody) =>
+    this.json<{ capture: ApiCaptureReceipt }>({ method: 'POST', path: '/v1/captures', body });
 
   saveArtifact = (body: ApiSaveArtifactBody) =>
     this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/artifacts', body });
@@ -384,6 +411,9 @@ export class AtlasClient {
       method: 'POST',
       path: `/v1/sources/${encodeURIComponent(path)}/refresh`,
     });
+
+  syncGranola = () =>
+    this.json<{ report: ApiGranolaPullReport }>({ method: 'POST', path: '/v1/granola/pull' });
 
   tags = (sort?: 'name' | 'frequency') =>
     this.json<{ tags: readonly ApiTag[] }>({ method: 'GET', path: '/v1/tags', query: { sort } });
@@ -469,6 +499,12 @@ export class AtlasClient {
     this.json<{ review: ApiWeeklyReview }>({ method: 'GET', path: '/v1/review/weekly' });
 
   today = () => this.json<{ today: ApiToday }>({ method: 'GET', path: '/v1/today' });
+
+  chooseForToday = (body: ApiChooseForTodayBody) =>
+    this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/today/choose', body });
+
+  tickTask = (body: ApiTaskDoneBody) =>
+    this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/tasks/done', body });
 
   brief = (query: BriefQuery) =>
     this.json<{ brief: ApiBrief }>({

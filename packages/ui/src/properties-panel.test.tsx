@@ -125,6 +125,46 @@ describe('PropertiesPanel', () => {
     expect(onChange).toHaveBeenLastCalledWith('field', ['a', 'b']);
   });
 
+  it('shows a list item holding a comma in quotes, so it reads as one item (#50)', () => {
+    panel([row('multiSelect', ['Payroll, Larkspur', 'say "hi"', 'Quill'])]);
+    expect((screen.getByLabelText('Field') as HTMLInputElement).value).toBe(
+      '"Payroll, Larkspur", "say ""hi""", Quill',
+    );
+  });
+
+  it('keeps a list item holding a comma whole when another is added, removed or moved (#50)', async () => {
+    const onChange = panel([row('multiSelect', ['Payroll, Larkspur', 'Quill'])]);
+    const field = screen.getByLabelText('Field');
+    await userEvent.type(field, ', Mara');
+    expect(onChange).toHaveBeenLastCalledWith('field', ['Payroll, Larkspur', 'Quill', 'Mara']);
+    fireEvent.change(field, { target: { value: '"Payroll, Larkspur"' } });
+    expect(onChange).toHaveBeenLastCalledWith('field', ['Payroll, Larkspur']);
+    fireEvent.change(field, { target: { value: 'Quill, "Payroll, Larkspur"' } });
+    expect(onChange).toHaveBeenLastCalledWith('field', ['Quill', 'Payroll, Larkspur']);
+  });
+
+  it('reads a new item typed in quotes as one item, comma and all (#50)', async () => {
+    const onChange = panel([row('multiSelect', [])]);
+    await userEvent.type(screen.getByLabelText('Field'), '"Mara, Inc.", Quill');
+    expect(onChange).toHaveBeenLastCalledWith('field', ['Mara, Inc.', 'Quill']);
+  });
+
+  it('puts the saved list back on Esc or leaving while a quote is still open', () => {
+    const onChange = panel([row('multiSelect', ['Payroll, Larkspur', 'Quill'])]);
+    const field = screen.getByLabelText('Field') as HTMLInputElement;
+    const shown = '"Payroll, Larkspur", Quill';
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: '"Payroll, Larkspur, Quill' } });
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(field.value).toBe(shown);
+    fireEvent.change(field, { target: { value: 'Quill, "Mara' } });
+    fireEvent.keyDown(field, { key: 'a' });
+    expect(field.value).toBe('Quill, "Mara');
+    fireEvent.blur(field);
+    expect(field.value).toBe(shown);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('drops blank entries from a list rather than storing them', () => {
     const onChange = panel([row('multiSelect', [])]);
     fireEvent.change(screen.getByLabelText('Field'), { target: { value: 'a, , b,' } });

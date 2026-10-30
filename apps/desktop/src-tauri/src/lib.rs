@@ -152,6 +152,7 @@ pub fn run() {
             api::api_rotate_token,
             api::api_token,
             api::api_respond,
+            api::api_router_register,
             api::api_router_ready,
         ])
         .on_page_load(api::forget_router_on_page_load)

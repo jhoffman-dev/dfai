@@ -95,6 +95,7 @@ export const archivePage = laterPage(laterParts, (m) => m.ArchivePage);
 export const weeklyReviewPage = laterPage(laterParts, (m) => m.WeeklyReviewPage);
 export const templatesPage = laterPage(laterParts, (m) => m.TemplatesPage);
 export const termsPage = laterPage(laterParts, (m) => m.TermsPage);
+export const skillsPage = laterPage(laterParts, (m) => m.SkillsPage);
 /**
  * Ask (#37), in the chunk the sidebar chat is in: the two draw the same parts
  * (the composer, a proposal), and a chunk of its own would split those into a

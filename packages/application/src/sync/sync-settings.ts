@@ -44,6 +44,13 @@ export function syncSettingsOf(settings: Readonly<Record<string, unknown>>): Syn
   };
 }
 
+/** The settings as read now: whether they name this Mac, and which Mac they name, by id and name. */
+export interface AutomationsSettingsNow {
+  readonly reading: SettingsReading;
+  readonly automationsMac: string | null;
+  readonly automationsMacName: string | null;
+}
+
 /**
  * What the vault's settings note, read from the file now, says of who runs
  * the automations (ADR-0035 part 4): read once each pull has completed, so a
@@ -52,7 +59,18 @@ export function syncSettingsOf(settings: Readonly<Record<string, unknown>>): Syn
  * must be there; one missing, or that cannot be read — its frontmatter, its
  * permissions, bytes that are not UTF-8 — is `unreadable`, and nothing runs.
  */
-export async function automationsSettingsReading({
+export async function automationsSettingsReading(args: {
+  fs: Pick<VaultFsPort, 'readNotes'>;
+  markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>;
+  thisMacId: string;
+  /** Whether the vault syncs: then a missing settings note is unreadable, not silent. */
+  syncs: boolean;
+}): Promise<SettingsReading> {
+  return (await automationsSettingsNow(args)).reading;
+}
+
+/** As `automationsSettingsReading`, with the Mac the settings name: what a claim not yet shared is judged by. */
+export async function automationsSettingsNow({
   thisMacId,
   syncs,
   ...files
@@ -60,27 +78,33 @@ export async function automationsSettingsReading({
   fs: Pick<VaultFsPort, 'readNotes'>;
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>;
   thisMacId: string;
-  /** Whether the vault syncs: then a missing settings note is unreadable, not silent. */
   syncs: boolean;
-}): Promise<SettingsReading> {
-  let automationsMac: string | null;
+}): Promise<AutomationsSettingsNow> {
+  let settings: SyncSettings;
   try {
-    ({ automationsMac } = await loadSyncSettings({ ...files, required: syncs }));
+    settings = await loadSyncSettings({ ...files, required: syncs });
   } catch {
     // Said by the gates, in Activity, once: what could not be read is the vault's to fix.
-    return 'unreadable';
+    return { reading: 'unreadable', automationsMac: null, automationsMacName: null };
   }
-  return runsAutomationsHere({ automationsMac, thisMacId })
+  const { automationsMac, automationsMacName } = settings;
+  const reading = runsAutomationsHere({ automationsMac, thisMacId })
     ? 'names-this-mac'
     : 'names-another-mac';
+  return { reading, automationsMac, automationsMacName };
 }
+
+/** What Settings → Sync changes of the shared timing. Who runs the automations is the claim's alone (`claimAutomations`). */
+export type SyncTimingChanges = Partial<
+  Pick<SyncSettings, 'pullIntervalMinutes' | 'pushDelaySeconds'>
+>;
 
 export async function saveSyncSettings({
   settings,
   changes,
 }: {
   settings: SettingsWriter;
-  changes: Partial<SyncSettings>;
+  changes: SyncTimingChanges;
 }): Promise<void> {
   await settings.save({
     ...(changes.pullIntervalMinutes !== undefined && {
@@ -88,10 +112,6 @@ export async function saveSyncSettings({
     }),
     ...(changes.pushDelaySeconds !== undefined && {
       [SYNC_PUSH_DELAY_KEY]: pushDelaySeconds(changes.pushDelaySeconds),
-    }),
-    ...(changes.automationsMac !== undefined && { [AUTOMATIONS_MAC_KEY]: changes.automationsMac }),
-    ...(changes.automationsMacName !== undefined && {
-      [AUTOMATIONS_MAC_NAME_KEY]: changes.automationsMacName,
     }),
   });
 }

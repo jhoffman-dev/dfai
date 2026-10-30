@@ -87,7 +87,9 @@ test('opening Pages leaves the sidebar scrolled where it was', async ({ page }) 
 });
 
 test('a section shut while Pages is long stays within reach', async ({ page }) => {
-  await page.setViewportSize({ width: 1180, height: 800 });
+  // Tall enough that Views starts on screen under the sidebar's top rows (Skills made one more);
+  // Pages, 300 notes long, still runs far past the bottom.
+  await page.setViewportSize({ width: 1180, height: 860 });
   await openVault(page, 300);
   await expect(heading(page, 'Views')).toBeInViewport();
 

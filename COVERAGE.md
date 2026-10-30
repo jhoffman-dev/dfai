@@ -49,10 +49,13 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `adapters/epub` (frame)     | Cleans an untrusted book and hands it to its opaque frame; every message across (ADR-0045).   | #505    |
 | `application/meeting-links` | Writes a meeting's people and companies, and proposals, by itself; undone.                    | 29      |
 | `application/embeddings`    | The cache of meanings: a block stale or missing answers a question silently wrong.            | 32      |
+| `application/related`       | Accepting a related note writes a link into the note; saving a trail writes a new note.       | #34     |
 | `application/profile`       | Reads who the vault's owner is, by name and address: whose a meeting's tasks are.             | #173    |
 | `*/google-calendar`         | Connects your Google account, reads its answers and syncs blocks to it; tokens stay in Rust.  | 31, #30 |
 | `domain/granola`            | Granola's watermark, pacing and backoff: a wrong rule drops meetings.                         | 28      |
 | `*/granola`                 | Writes files into your vault from outside it; turns Granola's JSON into domain types.         | 28      |
+| `domain/skills`             | Decides what a skill may be, and what an edit changes in its SKILL.md, byte for byte.         | #169    |
+| `application/skills`        | Writes and trashes skill folders, refusing a SKILL.md changed since it was read.              | #169    |
 | `domain/kindle`             | Reads Amazon's notebook page into highlights; a wrong rule writes junk or drops highlights.   | #508    |
 | `*/kindle`                  | Syncs Kindle highlights into source notes by itself; the Amazon session stays in Rust.        | #508    |
 

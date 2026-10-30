@@ -4,6 +4,7 @@ export * from './vault/index.ts';
 export * from './notes/index.ts';
 export * from './index/index.ts';
 export * from './types/index.ts';
+export * from './skills/index.ts';
 export * from './query/index.ts';
 export * from './dashboard/index.ts';
 export * from './sources/index.ts';
@@ -84,6 +85,7 @@ export * from './transclusion/index.ts';
 export * from './activity/index.ts';
 export * from './sync/index.ts';
 export * from './embeddings/index.ts';
+export * from './related/index.ts';
 export * from './home-folders/index.ts';
 export {
   CONFLICT_BLOBS,

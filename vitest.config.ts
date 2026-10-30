@@ -151,6 +151,8 @@ export default defineConfig({
         'packages/application/src/meeting-links/**': { lines: 90, functions: 90, branches: 85 },
         // P32-02: the cache of meanings — a stale or wrong one answers a question silently wrong.
         'packages/application/src/embeddings/**': { lines: 90, functions: 90, branches: 85 },
+        // P32-03: accepting a related note writes a link into a note; saving a trail writes a note.
+        'packages/application/src/related/**': { lines: 90, functions: 90, branches: 85 },
         // Who the vault's owner is — their name and addresses — decides whose a meeting's tasks are (#173).
         'packages/application/src/profile/**': { lines: 90, functions: 90, branches: 85 },
         // Kept work is the only copy of typing the vault never got.
@@ -160,6 +162,11 @@ export default defineConfig({
         // n8n's workflow builder and its GitHub checks decide what is committed into the vault (P28-02);
         // the mapper they compile in is the domain's, held to the domain's bar (#93).
         'tools/n8n/*.ts': { lines: 90, functions: 90, branches: 85 },
+        // A skill is what Claude is told to do; saving one rewrites its SKILL.md and
+        // deleting one trashes its whole folder, each held to the file as read (#169).
+        // The domain's rules are held on their own too, not only within the domain's whole.
+        'packages/domain/src/skills/**': { lines: 90, functions: 90, branches: 85 },
+        'packages/application/src/skills/**': { lines: 90, functions: 90, branches: 85 },
         // Adding a term writes a note; editing one rewrites its frontmatter (P28-05).
         'packages/application/src/terms/**': { lines: 90, functions: 90, branches: 85 },
         // The Notion meeting import writes a history of meetings into a vault (P28-07).

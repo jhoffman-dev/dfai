@@ -19,6 +19,7 @@ import {
   digestReduceData,
   isPromptPath,
   keepCitedItems,
+  MAX_PROMPT_CHARACTERS,
   MAX_PROPOSALS_PER_ANSWER,
   MEETING_TYPE,
   meetingSummaryOf,
@@ -46,6 +47,7 @@ import {
   type ClaudeAction,
   type ClaudeRunInfo,
   type DoneAction,
+  type LogEntry,
   type DroppedItem,
   type LocalTime,
   type MeetingTally,
@@ -114,9 +116,6 @@ import {
  */
 export const CLAUDE_RUN_TIMEOUT_MS = 10 * 60_000;
 
-/** The longest a prompt note may be: a rule's instructions, not a document. */
-export const MAX_PROMPT_CHARACTERS = 20_000;
-
 /**
  * The most proposals one run makes however many parts it read. Taken in the
  * order of the transcript; those past it are left out and the log says how
@@ -150,6 +149,13 @@ export interface ClaudeStepPorts {
   readonly deadline: (ms: number) => AbortSignal;
 }
 
+/**
+ * How a step found Claude out of reach (#182, the PR #637 attack): its
+ * status said not ready, or the status said ready and a real ask was refused
+ * — a revoked key, an expired token — which the status cannot see end.
+ */
+export type UnavailableFoundBy = 'status' | 'ask';
+
 /** What a step that failed had done by then, and what stopped it when that was not the model's answer. */
 export interface ClaudeStepAftermath {
   /** What it had made before it stopped: it stays, and the log must say so. */
@@ -158,6 +164,12 @@ export interface ClaudeStepAftermath {
   readonly cause?: unknown;
   /** The answers it read in full before it stopped, to be kept so its retry asks nothing again (ADR-0036). */
   readonly stored?: readonly StoredAnswerDraft[];
+  /**
+   * Where Claude was found out of reach (#182): its status said it is not
+   * ready, or a real ask was refused (no key, not logged in). Null when it
+   * was reached and answered badly.
+   */
+  readonly unavailable?: UnavailableFoundBy | null;
 }
 
 /**
@@ -170,17 +182,37 @@ export class ClaudeStepFailed extends Error {
   /** Set when an error other than the model's answer stopped it: raised after the log is written. */
   readonly interruption: unknown;
   readonly stored: readonly StoredAnswerDraft[];
+  /** Where Claude was found out of reach: the step is retried by backoff, and the Mac says so (#182). */
+  readonly unavailable: UnavailableFoundBy | null;
 
   constructor(
     message: string,
     readonly claude: ClaudeRunInfo,
-    { made = [], cause, stored = [] }: ClaudeStepAftermath = {},
+    { made = [], cause, stored = [], unavailable = null }: ClaudeStepAftermath = {},
   ) {
     super(truncated(message));
     this.name = 'ClaudeStepFailed';
     this.made = made;
     this.interruption = cause;
     this.stored = [...stored];
+    this.unavailable = unavailable;
+  }
+}
+
+/**
+ * A run a note set off whose Claude step could not reach Claude (#182,
+ * ADR-0036 "Failure modes"): its failure is on record in the rule's log, and
+ * it is raised so the runner backs off and holds the news for the retry, as
+ * it does for any run that fails — rather than settling as if it had run.
+ */
+export class ClaudeUnavailableError extends Error {
+  constructor(
+    readonly entry: Extract<LogEntry, { kind: 'failed' }>,
+    /** Where it was found: only one the status found can the status say is over. */
+    readonly foundBy: UnavailableFoundBy,
+  ) {
+    super(entry.problem);
+    this.name = 'ClaudeUnavailableError';
   }
 }
 
@@ -326,8 +358,8 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
     ...(alreadyMade > 0 && { alreadyMade }),
     ...(meetings.length > 0 && { meetings }),
   });
-  const fail = (message: string): never => {
-    throw new ClaudeStepFailed(message, claudeRun(), { stored: toStore });
+  const fail = (message: string, unavailable: UnavailableFoundBy | null = null): never => {
+    throw new ClaudeStepFailed(message, claudeRun(), { stored: toStore, unavailable });
   };
   // Defence in depth: the action a run is handed is checked as the file that wrote it was.
   const output = outputOf(action);
@@ -337,7 +369,7 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
   }
   const provider = ports.provider();
   const status = await provider.status();
-  if (!status.ready) return fail(fixIt(status));
+  if (!status.ready) return fail(fixIt(status), 'status');
   const prompt = await readPrompt(args.fs, createVaultPath(action.prompt));
   if (typeof prompt !== 'string') return fail(prompt.problem);
   const read = await readAnswered(args, args.paths);
@@ -539,7 +571,7 @@ type Asking = StepArgs & {
   model: string;
   prompt: string;
   output: StepOutput;
-  fail: (message: string) => never;
+  fail: (message: string, unavailable?: UnavailableFoundBy | null) => never;
   /** Aborts when the run's one deadline passes. */
   signal: AbortSignal;
 };
@@ -593,7 +625,9 @@ async function askModel({
   } catch (error) {
     if (error instanceof ToolOutsideRule) return fail(error.message);
     // Claude Code's own words can quote its stderr, paths and all.
-    if (error instanceof ModelProviderError) return fail(messageWithoutPaths(error));
+    if (error instanceof ModelProviderError) {
+      return fail(messageWithoutPaths(error), error.problem === 'failed' ? null : 'ask');
+    }
     throw error;
   }
 }

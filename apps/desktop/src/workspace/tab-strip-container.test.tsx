@@ -93,6 +93,7 @@ describe('TabStripContainer', () => {
       { kind: 'activity' },
       { kind: 'templates' },
       { kind: 'terms' },
+      { kind: 'skills' },
     ];
     const store = openOn(...kinds);
     const { container } = show(store);

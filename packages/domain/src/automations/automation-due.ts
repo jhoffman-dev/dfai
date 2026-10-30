@@ -88,6 +88,18 @@ export function backoffMinutes(failures: number): number {
 }
 
 /**
+ * The longest a rule waits whose Claude step could not reach Claude at all
+ * (#182): asking whether it can is local and asks Claude nothing, and a
+ * person who has just logged in should not wait hours for the next try.
+ */
+const MAX_UNAVAILABLE_BACKOFF_MINUTES = 15;
+
+/** {@link backoffMinutes}, for a rule held back because Claude could not be reached. */
+export function unavailableBackoffMinutes(failures: number): number {
+  return Math.min(backoffMinutes(failures), MAX_UNAVAILABLE_BACKOFF_MINUTES);
+}
+
+/**
  * The most runs a note trigger may make in an hour (P29-01). Each save of a
  * note it watches is a new version; a rule that keeps setting itself, or
  * another rule, off is held here rather than running for ever.
