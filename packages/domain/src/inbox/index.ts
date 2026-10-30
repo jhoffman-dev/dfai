@@ -25,5 +25,5 @@ export {
   globalShortcutLabel,
 } from './global-capture-shortcut.ts';
 export type { ShortcutKeys, ShortcutReading } from './global-capture-shortcut.ts';
-export { TRIAGE_KEYS, triageActionOf } from './triage-keys.ts';
+export { TRIAGE_KEYS, triageActionOf, triageKeysOf } from './triage-keys.ts';
 export type { TriageAction, TriageKey } from './triage-keys.ts';

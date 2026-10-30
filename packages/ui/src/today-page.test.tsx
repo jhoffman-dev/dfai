@@ -277,7 +277,8 @@ describe('TodayPage', () => {
         within(row).getByRole('button', { name: `Move ${title} to…` }),
         within(row).getByRole('button', { name: `Defer ${title} 1 day` }),
         within(row).getByRole('button', { name: `Defer ${title} 7 days` }),
-      ].map((control) => (control as HTMLButtonElement).disabled);
+        // The Done box, the row's handle, waits held rather than disabled: it keeps the focus (#109).
+      ].map((control) => control.matches(':disabled, [aria-disabled="true"]'));
     };
     expect(disabledIn('Call the bank')).toEqual([true, true, true, true]);
     expect(disabledIn('Ship the page')).toEqual([false, false, false, false]);
@@ -328,7 +329,20 @@ describe('TodayPage', () => {
       within(row).getByRole('button', { name: 'Defer Call the bank 1 day' }),
     ];
     // Each of the row's actions waits; its title and project do not (see today-page.attack-236).
-    expect(controls.map((control) => control.matches(':disabled'))).toEqual([true, true, true]);
+    expect(controls.map((control) => control.matches(':disabled, [aria-disabled="true"]'))).toEqual(
+      [true, true, true],
+    );
+  });
+
+  it('ticks nothing from a Done box that waits, pressed or clicked: it only keeps the focus (#109)', async () => {
+    const { onDone } = page({ busy: true });
+    const box = screen.getByRole('checkbox', { name: 'Mark Call the bank done' });
+    await userEvent.click(box);
+    box.focus();
+    await userEvent.keyboard(' ');
+    expect(onDone).not.toHaveBeenCalled();
+    expect((box as HTMLInputElement).checked).toBe(false);
+    expect(document.activeElement).toBe(box);
   });
 
   it('says why an action could not be done', () => {

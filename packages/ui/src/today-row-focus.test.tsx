@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { createVaultPath } from '@dfai/domain';
+import { createVaultPath, type VaultPath } from '@dfai/domain';
 import { useRowFocus } from './today-row-focus.ts';
 
 const first = createVaultPath('Tasks/First.md');
@@ -155,5 +155,130 @@ describe('useRowFocus — a row put back when its action is refused (#260, PR #2
     rerender({ order: [first, far], problem: 'The disk is full.', busy: false });
 
     expect(document.activeElement).toBe(back);
+  });
+});
+
+describe('useRowFocus — a row acted on that stays on the page (PR #641 review)', () => {
+  const a = createVaultPath('Tasks/A.md');
+  const b = createVaultPath('Tasks/B.md');
+  const c = createVaultPath('Tasks/C.md');
+  const order = [a, b, c];
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  /** The hook over a page whose read places each row in a section, and says which rows settle. */
+  function placedHook(place: Record<string, string>) {
+    const placeOf = (path: string) => place[path] ?? null;
+    const hook = renderHook(
+      (props: { shown: object; settling: ReadonlySet<VaultPath> }) =>
+        useRowFocus({ order, problem: null, placeOf, ...props }),
+      { initialProps: { shown: {}, settling: new Set<VaultPath>() } },
+    );
+    const boxes = new Map(order.map((path) => [path, mounted()]));
+    for (const [path, box] of boxes) act(() => hook.result.current.rowRef(path)(box));
+    return { ...hook, boxes, place };
+  }
+
+  it('forgets it once its change is read back where it was: a later read, with its row scrolled away, moves no focus', () => {
+    const { result, rerender, boxes } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    // A press with the pointer: WebKit leaves the focus on the page.
+    act(() => result.current.actedOn(a));
+    rerender({ shown: {}, settling: new Set([a]) });
+    rerender({ shown: {}, settling: new Set() });
+    // Scrolled out of the page, its row is taken out of the DOM by the virtualiser.
+    act(() => result.current.rowRef(a)(null));
+    boxes.get(a)?.remove();
+    // Sync reads the page again, later.
+    rerender({ shown: {}, settling: new Set() });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('once read back where it was, is not taken for moved when sync later lists it elsewhere', () => {
+    const { result, rerender, place } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    act(() => result.current.actedOn(a));
+    rerender({ shown: {}, settling: new Set([a]) });
+    rerender({ shown: {}, settling: new Set() });
+    // Another Mac changes its status: the next read lists it under Waiting.
+    place[a] = 'waiting';
+    rerender({ shown: {}, settling: new Set() });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('hands the focus on when the read shows the row in another section, its focus lost with the old one', () => {
+    const { result, rerender, boxes, place } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    act(() => boxes.get(a)?.focus());
+    act(() => result.current.actedOn(a));
+    // Chosen for today: drawn anew at the top, the old row and its focus gone.
+    place[a] = 'chosen';
+    act(() => result.current.rowRef(a)(null));
+    boxes.get(a)?.remove();
+    rerender({ shown: {}, settling: new Set([a]) });
+    expect(document.activeElement).toBe(boxes.get(b));
+  });
+
+  it('leaves the focus alone when the row is still where it was and only scrolled away', () => {
+    const { result, rerender, boxes } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    act(() => result.current.actedOn(a));
+    act(() => result.current.rowRef(a)(null));
+    boxes.get(a)?.remove();
+    rerender({ shown: {}, settling: new Set([a]) });
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
+describe('useRowFocus — a row handed on at once, then refused (PR #641 attack)', () => {
+  const a = createVaultPath('Tasks/A.md');
+  const b = createVaultPath('Tasks/B.md');
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('gives the focus back to the row once it is back, from the row it was handed to', () => {
+    const { result, rerender } = renderHook(
+      (props: { order: VaultPath[]; problem: string | null; settling: ReadonlySet<VaultPath> }) =>
+        useRowFocus({ shown: {}, ...props }),
+      {
+        initialProps: {
+          order: [a, b],
+          problem: null as string | null,
+          settling: new Set<VaultPath>(),
+        },
+      },
+    );
+    const boxA = mounted();
+    const boxB = mounted();
+    act(() => result.current.rowRef(a)(boxA));
+    act(() => result.current.rowRef(b)(boxB));
+    act(() => boxA.focus());
+    act(() => result.current.actedOn(a));
+    // Taken off at once while it is written: the focus goes on to B straight away.
+    act(() => result.current.rowRef(a)(null));
+    boxA.remove();
+    rerender({ order: [b], problem: null, settling: new Set([a]) });
+    expect(document.activeElement).toBe(boxB);
+    // Refused: the row comes back.
+    const backA = mounted();
+    act(() => result.current.rowRef(a)(backA));
+    rerender({ order: [a, b], problem: 'The disk is full.', settling: new Set() });
+    expect(document.activeElement).toBe(backA);
   });
 });

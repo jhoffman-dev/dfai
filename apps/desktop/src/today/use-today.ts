@@ -200,18 +200,21 @@ export function useToday(options: TodayOptions) {
     [settling, indexOpen, vaultKey],
   );
 
-  /** Takes one change back — only while it is still the last one, so an older toast undoes nothing. */
+  /**
+   * Takes one change back — only while it is still the last one, so an older
+   * toast undoes nothing. Settles true once it is taken back.
+   */
   const undoChange = useCallback(
-    async (change: LastChange) => {
-      if (held.store.getState().last !== change) return;
-      if (!sameVault(change, vaultNow.current)) return;
+    async (change: LastChange): Promise<boolean> => {
+      if (held.store.getState().last !== change) return false;
+      if (!sameVault(change, vaultNow.current)) return false;
       const { path } = change;
       const askedAt = keyNow.current;
       const undone = await actOn(path, (put) => put(change.undo));
       // An undo that could not be written is offered again, in a toast of its own, to be tried again.
       if (!undone) {
         if (sameVault(change, vaultNow.current)) offerAgain.current(change);
-        return;
+        return false;
       }
       setLast((was) => (was === change ? null : was));
       // The task is back as it was, so its row can be acted on again — as what the
@@ -223,6 +226,7 @@ export function useToday(options: TodayOptions) {
         changes: new Map([...was.changes].filter(([row]) => row !== path)),
         known: new Map([...was.known, [path, { task: change.was, since, askedAt }]]),
       }));
+      return true;
     },
     [held, actOn],
   );
@@ -325,6 +329,12 @@ export function useToday(options: TodayOptions) {
     async () => (undoable === null ? undefined : undoChange(undoable)),
     [undoable, undoChange],
   );
+  /** The last change taken back from the keyboard (#109): settles to its row, or null when none was. */
+  const takeBackLast = useCallback(
+    async (): Promise<VaultPath | null> =>
+      undoable !== null && (await undoChange(undoable)) ? undoable.path : null,
+    [undoable, undoChange],
+  );
   const dismiss = useCallback(() => setLast(null), []);
   // One notice per change, kept across renders, so its time runs from when it was shown (#165).
   const undoNow = useRef(undo);
@@ -359,6 +369,7 @@ export function useToday(options: TodayOptions) {
       onSetStatus: setStatus,
       onDefer: defer,
       onChoose: choose,
+      onUndo: takeBackLast,
     },
   };
 }
