@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
-import { postProcessesMeetings } from '@dfai/domain';
+import { isDeclaredStep, meetingSetupWritesNothing } from '@dfai/domain';
 import {
   acceptMeetingSetup,
   previewMeetingSetup,
@@ -80,7 +80,7 @@ export function useMeetingSetup(
   const state = held.vault === vault ? held : IDLE;
   const needed = useStore(automations, (s) => {
     const listing = s.automations?.listing ?? null;
-    return listing !== null && !listing.automations.some(({ rule }) => postProcessesMeetings(rule));
+    return listing !== null && !listing.automations.some(({ rule }) => isDeclaredStep(rule.action));
   });
   const commands = useSetupCommands(wiring, vault);
   return useMemo(() => {
@@ -92,6 +92,7 @@ export function useMeetingSetup(
       open: state.open,
       lines: offer === null ? null : offer.lines,
       asksEmails: offer?.asksEmails ?? false,
+      writesNothing: offer !== null && meetingSetupWritesNothing(offer),
       emails: state.emails,
       busy: state.busy,
       result: state.result,
@@ -152,25 +153,36 @@ async function accept(
   { offer, emails }: { offer: MeetingSetupOffer; emails: string },
 ): Promise<Partial<MeetingSetupState>> {
   const { fs, markdown } = wiring;
-  const write = () =>
-    acceptMeetingSetup({
-      fs,
-      markdown,
-      clock: localClock,
-      settings: vaultSettingsWriter({ fs, markdown }),
-      offer,
-      emails,
-    });
-  try {
-    const exclusive = wiring.automations.getState().automations?.exclusive;
-    const done = exclusive === undefined ? await write() : await exclusive(write, { wait: true });
-    if (done === null)
-      return { problem: 'Meeting processing could not be set up: the vault closed.' };
-    return settled(wiring, done);
-  } catch (cause) {
-    return { problem: `Meeting processing could not be set up: ${messageOf(cause)}` };
+  // Caught here, not by the runner: it answers an error with null, which would read as a closed vault.
+  const write = async (): Promise<Written> => {
+    try {
+      const settings = vaultSettingsWriter({ fs, markdown });
+      return {
+        done: await acceptMeetingSetup({
+          fs,
+          markdown,
+          clock: localClock,
+          settings,
+          offer,
+          emails,
+        }),
+      };
+    } catch (cause) {
+      return { thrown: cause };
+    }
+  };
+  const exclusive = wiring.automations.getState().automations?.exclusive;
+  const written = exclusive === undefined ? await write() : await exclusive(write, { wait: true });
+  if (written === null)
+    return { problem: 'Meeting processing could not be set up: the vault closed.' };
+  if ('thrown' in written) {
+    return { problem: `Meeting processing could not be set up: ${messageOf(written.thrown)}` };
   }
+  return settled(wiring, written.done);
 }
+
+/** What the yes came to: what it did, or what it threw. */
+type Written = { readonly done: MeetingSetupDone } | { readonly thrown: unknown };
 
 function settled(wiring: MeetingSetupWiring, done: MeetingSetupDone): Partial<MeetingSetupState> {
   if (done.refused !== null) return { problem: done.refused };
@@ -182,16 +194,27 @@ function settled(wiring: MeetingSetupWiring, done: MeetingSetupDone): Partial<Me
     wiring.activity.record({ level: 'warning', kind: 'app', message, subject: null });
   }
   if (done.written.length > 0) wiring.onChanged();
-  const result =
-    done.written.length === 0
-      ? 'Nothing needed writing: meeting processing was set up already.'
-      : 'Meetings are processed when they arrive. Activity lists what was written.';
   return {
     open: false,
     offer: null,
-    result,
+    result: resultOf(done),
     problem: failures.length === 0 ? null : failures.join(' '),
   };
+}
+
+/** What the yes did, by whether a rule now processes meetings and whether any part failed. */
+function resultOf({ ruleOn, failed, written }: MeetingSetupDone): string {
+  if (!ruleOn) {
+    return failed.length > 0
+      ? 'Meetings are not processed yet: some parts could not be set up.'
+      : 'Meetings are not processed yet: no rule that does it is on. The preview said why.';
+  }
+  if (failed.length > 0) {
+    return 'Meetings are processed when they arrive, but some parts could not be set up.';
+  }
+  return written.length === 0
+    ? 'Nothing needed writing: meeting processing was set up already.'
+    : 'Meetings are processed when they arrive. Activity lists what was written.';
 }
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));

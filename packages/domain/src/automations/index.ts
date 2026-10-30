@@ -127,6 +127,7 @@ export {
   DECLARED_STEP_ASKS_PER_HOUR,
   DECLARED_STEP_ASKS_PER_RUN,
   DECLARED_STEP_MODEL,
+  isDeclaredStep,
   SHARED_STEP_BUDGET,
   sharesAskAllowance,
 } from './claude-step-budget.ts';
@@ -331,9 +332,8 @@ export {
 } from './cited-items.ts';
 export type { CitedBody } from './cited-items.ts';
 export {
-  meetingSetupComplete,
   meetingSetupPlan,
   meetingSetupWithin,
-  postProcessesMeetings,
+  meetingSetupWritesNothing,
 } from './meeting-setup.ts';
 export type { MeetingSetupFacts, MeetingSetupLine, MeetingSetupPlan } from './meeting-setup.ts';

@@ -3,6 +3,7 @@ import {
   meetingSetupPlan,
   meetingSetupWithin,
   selfEmailsFromText,
+  type AutomationDraft,
   type MeetingSetupFacts,
   type MeetingSetupPlan,
   type ObjectType,
@@ -45,6 +46,8 @@ export interface MeetingSetupDone {
   readonly failed: readonly MeetingSetupFailure[];
   /** Why nothing at all was written: the addresses typed are not all addresses. */
   readonly refused: string | null;
+  /** Whether a rule that post-processes meetings is on now: there and on before, or just written. */
+  readonly ruleOn: boolean;
 }
 
 /**
@@ -76,8 +79,9 @@ async function setupFacts(ports: ReadPorts): Promise<MeetingSetupFacts<DefinedTy
 
 /**
  * Does what the preview listed, once the person said yes: the types' keys
- * first, then the prompt and the owner's addresses, and the rule last, so the
- * first meeting it hears finds everything it needs. What to write is worked
+ * first, then the prompt and the owner's addresses, and the rule last, so
+ * that whatever of the rest could be written is in place before the rule
+ * hears its first meeting. What to write is worked
  * out again from the vault as it is now and kept within what was shown
  * ({@link meetingSetupWithin}): anything already there is skipped, so a
  * second yes writes nothing twice. Addresses that do not read as addresses
@@ -94,7 +98,7 @@ export async function acceptMeetingSetup({
   emails: string;
 }): Promise<MeetingSetupDone> {
   const typed = offer.asksEmails ? selfEmailsFromText(emails) : { ok: true as const, emails: [] };
-  if (!typed.ok) return { written: [], failed: [], refused: typed.problem };
+  if (!typed.ok) return { written: [], failed: [], refused: typed.problem, ruleOn: offer.ruleOn };
   const now = meetingSetupWithin(offer, meetingSetupPlan(await setupFacts(ports)));
   const done: SetupSteps = { written: [], failed: [] };
   for (const { before, after, added } of now.extensions) {
@@ -120,16 +124,34 @@ export async function acceptMeetingSetup({
       write: () => saveSelfEmails({ settings: ports.settings, emails: typed.emails }),
     });
   }
-  if (rule !== null) {
-    await step(done, {
-      what: `The “${rule.name}” rule`,
-      said: `Turned on “${rule.name}”.`,
-      write: async () => {
-        await createAutomation({ ...ports, draft: rule, takenPaths: await listVaultNotes(ports) });
-      },
-    });
+  const ruleWritten = rule !== null && (await writeRule(ports, done, rule));
+  return { ...done, refused: null, ruleOn: now.ruleOn || ruleWritten };
+}
+
+/**
+ * Writes the rule, and says so; whether it was written. Writing a rule writes
+ * the prompt DFAI ships for it where no note is (`createAutomation`), so a
+ * prompt that went missing after the preview is written with it, and said too.
+ */
+async function writeRule(
+  ports: MeetingSetupPorts,
+  done: SetupSteps,
+  rule: AutomationDraft,
+): Promise<boolean> {
+  const prompt = rule.action.kind === 'claude' ? rule.action.prompt : null;
+  const held = async () => prompt !== null && (await ports.fs.readNotes([prompt])).length > 0;
+  const promptMissing = prompt !== null && !(await held());
+  const ok = await step(done, {
+    what: `The “${rule.name}” rule`,
+    said: `Turned on “${rule.name}”.`,
+    write: async () => {
+      await createAutomation({ ...ports, draft: rule, takenPaths: await listVaultNotes(ports) });
+    },
+  });
+  if (ok && promptMissing && (await held())) {
+    done.written.push(`Wrote the prompt ${prompt}, which the “${rule.name}” rule names.`);
   }
-  return { ...done, refused: null };
+  return ok;
 }
 
 interface SetupSteps {
@@ -141,11 +163,13 @@ interface SetupSteps {
 async function step(
   done: SetupSteps,
   { what, said, write }: { what: string; said: string; write: () => Promise<void> },
-): Promise<void> {
+): Promise<boolean> {
   try {
     await write();
     done.written.push(said);
+    return true;
   } catch (cause) {
     done.failed.push({ what, reason: cause instanceof Error ? cause.message : String(cause) });
+    return false;
   }
 }

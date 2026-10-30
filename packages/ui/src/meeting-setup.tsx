@@ -20,6 +20,8 @@ export interface MeetingSetupProps extends InboxOfferReading {
   readonly lines: readonly MeetingSetupLineView[] | null;
   /** Whether the owner's addresses are asked for: none is saved yet. */
   readonly asksEmails: boolean;
+  /** Whether the yes would write nothing at all, as the plan says: then there is only Close. */
+  readonly writesNothing: boolean;
   /** What is typed in the addresses field. */
   readonly emails: string;
   readonly busy: boolean;
@@ -96,7 +98,7 @@ function Preview(props: MeetingSetupProps) {
   if (lines === null) return <p role="status">Reading what the vault has…</p>;
   const writes = lines.filter((line) => line.written);
   const skips = lines.filter((line) => !line.written);
-  const nothing = writes.length === 0;
+  const nothing = props.writesNothing;
   return (
     <div className="task-migration__preview">
       <p>

@@ -6,12 +6,17 @@ import {
 } from '../meetings/meeting-extraction-properties.ts';
 import { MEETING_IMPORT_PROPERTIES } from '../meetings/meeting-import-properties.ts';
 import { MEETING_SUMMARY_PROPERTIES } from '../meetings/meeting-summary-block.ts';
-import { SELF_EMAILS_KEY, type SelfEmails } from '../profile/self-emails.ts';
+import {
+  GRANOLA_SELF_EMAILS_KEY,
+  SELF_EMAILS_KEY,
+  type SelfEmails,
+} from '../profile/self-emails.ts';
 import { typeGainingKeys } from '../types/inbox-setup.ts';
 import { extensionKeys, extensionWithin, type TypeExtension } from '../types/para.ts';
 import type { ObjectType, PropertyDef } from '../types/property-def.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { automationNameProblem, type AutomationDraft } from './automation-rule.ts';
+import { isDeclaredStep } from './claude-step-budget.ts';
 import { AFTER_A_MEETING_PROMPT } from './built-in-prompts.ts';
 import { MEETING_DIGEST_OUTPUT } from './meeting-digest.ts';
 import { AFTER_A_MEETING_PRESET } from './presets.ts';
@@ -54,17 +59,13 @@ export interface MeetingSetupPlan<Type extends ObjectType = ObjectType> {
   readonly asksEmails: boolean;
   /** Everything the preview says, in the order it is written. */
   readonly lines: readonly MeetingSetupLine[];
+  /** Whether a rule that post-processes meetings is there and on, before the yes. */
+  readonly ruleOn: boolean;
 }
 
-/**
- * Whether a rule is the declared step that post-processes meetings: a Claude
- * step that says `apply: mine` (ADR-0036), under whatever name. A rule saved
- * with `output: meeting-items` and `apply: mine` is read as the digest, so it
- * counts too.
- */
-export function postProcessesMeetings({ action }: Pick<AutomationDraft, 'action'>): boolean {
-  return action.kind === 'claude' && action.apply === 'mine';
-}
+/** Whether a rule is the declared step that post-processes meetings, under whatever name. */
+const postProcessesMeetings = ({ action }: Pick<AutomationDraft, 'action'>) =>
+  isDeclaredStep(action);
 
 /** The keys the Meeting type needs for the import, the step's links and its summary block. */
 const MEETING_KEYS: readonly PropertyDef[] = [
@@ -105,6 +106,7 @@ export function meetingSetupPlan<Type extends ObjectType>(
     prompt: prompt.path,
     extensions: [meeting.extension, task.extension].flatMap((one) => (one === null ? [] : [one])),
     asksEmails: emails.written,
+    ruleOn: facts.rules.some((one) => one.enabled && postProcessesMeetings(one)),
     lines: [
       rule.line,
       ...(prompt.line === null ? [] : [prompt.line]),
@@ -115,9 +117,11 @@ export function meetingSetupPlan<Type extends ObjectType>(
   };
 }
 
-/** Whether a plan would write nothing at all, the addresses aside. */
-export function meetingSetupComplete(plan: MeetingSetupPlan): boolean {
-  return plan.rule === null && plan.prompt === null && plan.extensions.length === 0;
+/** Whether a yes on this plan would write nothing at all: the emails field counts. */
+export function meetingSetupWritesNothing(plan: MeetingSetupPlan): boolean {
+  return (
+    plan.rule === null && plan.prompt === null && plan.extensions.length === 0 && !plan.asksEmails
+  );
 }
 
 function rulePlan(facts: MeetingSetupFacts): {
@@ -215,14 +219,34 @@ function typePlan<Type extends ObjectType>(
 
 const keyList = (keys: readonly PropertyDef[]) => keys.map((property) => property.key).join(', ');
 
-function emailsLine(selfEmails: SelfEmails): MeetingSetupLine {
-  const what = 'Your email addresses';
-  if (selfEmails.source === SELF_EMAILS_KEY && selfEmails.emails.length > 0) {
-    const detail = `Already saved as ${SELF_EMAILS_KEY}: ${selfEmails.emails.join(', ')}.`;
-    return { kind: 'emails', what, detail, written: false };
+function emailsLine({ emails, source, problem }: SelfEmails): MeetingSetupLine {
+  const line = (detail: string, written: boolean): MeetingSetupLine => ({
+    kind: 'emails',
+    what: 'Your email addresses',
+    detail,
+    written,
+  });
+  const listed = emails.join(', ');
+  if (problem !== null) {
+    return line(
+      `${source} in your settings can’t be read (${problem}): what you type here replaces it as ${SELF_EMAILS_KEY}.`,
+      true,
+    );
   }
-  const detail = `Saved as ${SELF_EMAILS_KEY}, so DFAI can tell which action items are yours. Without them, they are matched by your name only.`;
-  return { kind: 'emails', what, detail, written: true };
+  if (source === SELF_EMAILS_KEY && emails.length > 0) {
+    return line(`Already saved as ${SELF_EMAILS_KEY}: ${listed}.`, false);
+  }
+  const why = `Saved as ${SELF_EMAILS_KEY}, so DFAI can tell which action items are yours.`;
+  if (source === GRANOLA_SELF_EMAILS_KEY) {
+    return line(
+      `${why} In use now from ${GRANOLA_SELF_EMAILS_KEY}: ${listed}. What you type is saved as ${SELF_EMAILS_KEY} and ${GRANOLA_SELF_EMAILS_KEY} is removed; left empty, both stay as they are.`,
+      true,
+    );
+  }
+  return line(
+    `${why} Left empty, nothing is saved: your Person note’s addresses are used if it has any, and otherwise your name alone.`,
+    true,
+  );
 }
 
 /**
@@ -249,6 +273,7 @@ export function meetingSetupWithin<Type extends ObjectType>(
     prompt: shown.prompt === null ? null : now.prompt,
     extensions,
     asksEmails: shown.asksEmails && now.asksEmails,
+    ruleOn: now.ruleOn,
     lines: now.lines,
   };
 }
