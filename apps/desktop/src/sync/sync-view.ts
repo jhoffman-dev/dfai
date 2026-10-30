@@ -64,6 +64,7 @@ export function syncSettingsView(sync: SyncController, vaultName: string): SyncS
     thisMac: sync.thisMac ?? 'this Mac',
     automationsMac: sync.settings?.automationsMacName ?? sync.settings?.automationsMac ?? null,
     automationsHere: sync.automationsHere,
+    claiming: sync.claiming,
     conflicts: phase.kind === 'synced' ? phase.report.conflicts : [],
     notSynced: phase.kind === 'synced' ? phase.report.notSynced : [],
     ignored: phase.kind === 'synced' ? phase.report.ignored : [],

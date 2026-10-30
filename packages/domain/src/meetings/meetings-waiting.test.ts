@@ -11,6 +11,7 @@ import {
   waitsForImport,
   type CountableStanding,
   type WaitingMeetingFile,
+  processHereRefusal,
 } from './meetings-waiting.ts';
 
 const PULLED: CountableStanding = {
@@ -261,5 +262,31 @@ describe('waitingMacLabel', () => {
   it('never falls back to an id: an unnamed Mac is described', () => {
     expect(waitingMacLabel(null)).toBe('the Mac that runs the automations');
     expect(waitingMacLabel('   ')).toBe('the Mac that runs the automations');
+  });
+});
+
+describe('processHereRefusal (ADR-0035 part 2, #176)', () => {
+  const counted = { kind: 'counted', mac: 'Studio', count: 2 } as const;
+  const uncounted = (
+    why: 'paused' | 'no-pull' | 'pulling' | 'settings-unreadable' | 'not-synced',
+  ) => ({ kind: 'uncounted', mac: 'Studio', why }) as const;
+
+  it('lets a counted banner be pressed while sync is healthy', () => {
+    expect(processHereRefusal({ waiting: counted, failing: false })).toBeNull();
+  });
+
+  it('refuses a counted banner while sync is failing', () => {
+    expect(processHereRefusal({ waiting: counted, failing: true })).toBe('failing');
+  });
+
+  it('refuses while the count waits, for the reason it waits', () => {
+    expect(processHereRefusal({ waiting: uncounted('paused'), failing: false })).toBe('paused');
+    expect(processHereRefusal({ waiting: uncounted('no-pull'), failing: false })).toBe('no-pull');
+    expect(processHereRefusal({ waiting: uncounted('pulling'), failing: false })).toBe('pulling');
+  });
+
+  it('says paused before failing, and failing before a pull it waits for', () => {
+    expect(processHereRefusal({ waiting: uncounted('paused'), failing: true })).toBe('paused');
+    expect(processHereRefusal({ waiting: uncounted('no-pull'), failing: true })).toBe('failing');
   });
 });

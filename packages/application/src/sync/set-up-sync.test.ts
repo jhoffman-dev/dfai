@@ -509,11 +509,9 @@ describe('sync settings', () => {
     };
     await saveSyncSettings({ settings, changes: { pullIntervalMinutes: 500 } });
     await saveSyncSettings({ settings, changes: { pushDelaySeconds: 1 } });
-    await saveSyncSettings({ settings, changes: { automationsMac: 'mac-laptop' } });
-    expect(saved).toEqual([
-      { syncInterval: 120 },
-      { syncPushDelay: 5 },
-      { automationsMac: 'mac-laptop' },
-    ]);
+    // Who runs the automations is the claim's alone (#176): a stray key is never written.
+    const stray = { automationsMac: 'mac-laptop', automationsMacName: 'Laptop' };
+    await saveSyncSettings({ settings, changes: stray as never });
+    expect(saved).toEqual([{ syncInterval: 120 }, { syncPushDelay: 5 }, {}]);
   });
 });

@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { fakeSleepClock, fakeVaultFs, recordingActivity } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { usePulledFiles } from './use-pulled-files.ts';
+import { githubHolding } from './github-settings.test-support.ts';
 
 const VAULT = '/Users/j/Notes';
 const THIS_MAC = 'mac-studio';
@@ -35,6 +36,8 @@ function wire() {
         pausedNow,
         clock,
         activity,
+        gitOf: () => githubHolding(() => SETTINGS),
+        onClaimUnshared: () => undefined,
       }),
     { initialProps: { pausedNow: false } },
   );

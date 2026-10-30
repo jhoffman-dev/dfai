@@ -218,6 +218,79 @@ describe('useAutomations: opening a vault whose rule missed a meeting’s arriva
   });
 });
 
+describe('useAutomations: the catch-up again once this Mac is named (ADR-0035, #176)', () => {
+  const LATER = 'Inbox/Meetings/2026-10-07 Vendor call.md';
+  const open = (scheduled: boolean) => {
+    const modified: Record<string, number> = { [RULE]: 100, [MEETING]: 200 };
+    const vault = memoryVault({ [RULE]: RULE_TEXT, [MEETING]: LET_IN }, modified);
+    const activity = recordingActivity();
+    const options: AutomationsOptions = {
+      ports: vault.ports,
+      clock,
+      vaultKey: VAULT,
+      indexKey: '1',
+      indexReady: true,
+      activity,
+      onSettled: vi.fn(),
+      scheduled,
+    };
+    const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
+      initialProps: options,
+    });
+    /** A meeting let in with no news of it reaching this Mac's rules: only a catch-up finds it. */
+    const letInQuietly = () => {
+      vault.files[LATER] = LET_IN;
+      modified[LATER] = 300;
+    };
+    const draw = (next: Partial<AutomationsOptions>) =>
+      hook.rerender({ ...options, ports: vault.ports, ...next });
+    return { vault, activity, letInQuietly, draw };
+  };
+  const ran = (activity: ReturnType<typeof recordingActivity>) =>
+    activity.reports.filter((report) => report.message.startsWith('Sweep: Ran')).length;
+
+  it('catches up when the Mac becomes the named one, false to true', async () => {
+    const { vault, activity, draw } = open(false);
+    await settle();
+    expect(vault.files[MEETING]).toBe(LET_IN);
+
+    draw({ scheduled: true });
+    await settle();
+
+    expect(vault.files[MEETING]).toBeUndefined();
+    expect(Object.keys(vault.files)).toContain(`Archive/${MEETING}`);
+    expect(ran(activity)).toBe(1);
+  });
+
+  it('catches up again after a spell as another Mac’s, so a claim behaves as a move in Settings → Sync', async () => {
+    const { vault, activity, letInQuietly, draw } = open(true);
+    await settle();
+    expect(ran(activity)).toBe(1);
+
+    draw({ scheduled: false });
+    await settle();
+    letInQuietly();
+    draw({ scheduled: true });
+    await settle();
+
+    expect(vault.files[LATER]).toBeUndefined();
+    expect(Object.keys(vault.files)).toContain(`Archive/${LATER}`);
+    expect(ran(activity)).toBe(2);
+  });
+
+  it('does not catch up again while it stays named, true to true', async () => {
+    const { vault, activity, letInQuietly, draw } = open(true);
+    await settle();
+    letInQuietly();
+
+    draw({ scheduled: true, indexKey: '2' });
+    await settle();
+
+    expect(vault.files[LATER]).toBe(LET_IN);
+    expect(ran(activity)).toBe(1);
+  });
+});
+
 describe('useAutomations: a Claude step waits for fresh sync state (ADR-0035 part 4)', () => {
   const ASK_RULE = '.atlas/automations/Actions.md';
   const ASK_RULE_TEXT = [
@@ -297,6 +370,42 @@ describe('useAutomations: a Claude step waits for fresh sync state (ADR-0035 par
 
     acts.mockImplementation(async () => true);
     hook.rerender({ ...options, pulledFiles: { standing: { ...PULLED, finishedAt: 2 }, acts } });
+    await settle();
+    expect(claude.fake.requests).toHaveLength(1);
+  });
+
+  it('in a syncing vault, once claimed, holds the catch-up while the last pull named the other Mac, then asks once after the claim’s sync (#630 review)', async () => {
+    const before: PullStanding = { ...PULLED, namedAfter: false };
+    // The real gate's rule in short: open only on a pull whose settings named this Mac.
+    const gateAt = (standing: PullStanding): Gate => ({
+      standing,
+      acts: async () => standing.kind === 'pulled' && standing.namedAfter,
+    });
+    const { claude, hook, options } = open({ path: ASK_RULE, text: ASK_RULE_TEXT }, gateAt(before));
+    // Named once in this session, then another Mac took the automations.
+    await settle();
+    hook.rerender({ ...options, scheduled: false });
+    await settle();
+
+    // "Process here" names this Mac; the last pull still named the other.
+    hook.rerender({ ...options, scheduled: true, pulledFiles: gateAt(before) });
+    await settle();
+    expect(claude.fake.requests).toHaveLength(0);
+
+    // The claim's sync completes, its settings naming this Mac.
+    const after: PullStanding = { ...PULLED, finishedAt: 2, namedAfter: true };
+    hook.rerender({ ...options, scheduled: true, pulledFiles: gateAt(after) });
+    await settle();
+    expect(claude.fake.requests).toHaveLength(1);
+
+    // Drawn again on the same pull, and on the next: asked no more.
+    hook.rerender({ ...options, scheduled: true, pulledFiles: gateAt(after) });
+    await settle();
+    hook.rerender({
+      ...options,
+      scheduled: true,
+      pulledFiles: gateAt({ ...PULLED, finishedAt: 3, namedAfter: true }),
+    });
     await settle();
     expect(claude.fake.requests).toHaveLength(1);
   });

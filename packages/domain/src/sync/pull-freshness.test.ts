@@ -328,6 +328,35 @@ describe('freshPullVerdict: the gates the import and the Claude step pass (ADR-0
   });
 });
 
+describe('freshPullVerdict: a claim not yet shared (#630 review)', () => {
+  const awake = 457_335_000;
+  const open: Parameters<typeof freshPullVerdict>[0] = {
+    standing: pulled(awake),
+    asleepNowMs: awake,
+    settingsNow: 'names-this-mac',
+    paused: false,
+    arrivedAt: FINISHED_AT - 1,
+  };
+
+  it('stays shut while this Mac’s claim has not reached GitHub, though a pull named it', () => {
+    expect(freshPullVerdict({ ...open, claimUnshared: true })).toEqual({
+      open: false,
+      shut: 'claim-unshared',
+    });
+  });
+
+  it('opens once it has', () => {
+    expect(freshPullVerdict({ ...open, claimUnshared: false })).toEqual({ open: true });
+  });
+
+  it('says paused first: resuming is what shares it', () => {
+    expect(freshPullVerdict({ ...open, paused: true, claimUnshared: true })).toEqual({
+      open: false,
+      shut: 'paused',
+    });
+  });
+});
+
 describe('gatedByFreshPull: which rules wait on the gates', () => {
   const claude = {
     action: {

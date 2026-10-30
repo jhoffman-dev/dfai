@@ -119,9 +119,10 @@ export interface InboxPageProps {
   /**
    * On a Mac that is not named, what waits for the one that is (ADR-0035
    * part 1): "N meetings waiting for <Mac>", or, before a count can be given,
-   * what it waits for. Null on the named Mac, and when none waits.
+   * what it waits for, with "Process here" (part 2). Null on the named Mac,
+   * and when none waits.
    */
-  meetingsWaiting?: string | null;
+  meetingsWaiting?: MeetingsWaitingProps | null;
   /** The tasks meetings made that today's rules would not have, offered to archive (#226). */
   meetingCleanup?: MeetingCleanupProps | null;
   /** Filing the meetings that have no project as their series is, previewed first (#227). */
@@ -198,7 +199,7 @@ export function InboxPage(props: InboxPageProps) {
             <HiddenTitle>To process</HiddenTitle>
             {settingsUnreadable !== null && <SettingsUnreadable {...settingsUnreadable} />}
             {ownerUnknown !== null && <OwnerUnknown {...ownerUnknown} />}
-            {meetingsWaiting !== null && <MeetingsWaiting line={meetingsWaiting} />}
+            {meetingsWaiting !== null && <MeetingsWaiting {...meetingsWaiting} />}
             <Offers
               offers={[
                 slot('types', offer, (known) => <TypesOffer {...known} />),
@@ -373,8 +374,27 @@ function OwnerUnknown({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
+/** "Process here" on the banner: the claim, and what the page shows of it. */
+export interface ProcessHereProps {
+  /** Why it cannot be pressed now (sync paused, failing, not pulled); null when it can. */
+  readonly refused: string | null;
+  /** Whether a press is being written. */
+  readonly busy: boolean;
+  /** Why the last press named no Mac; null when it did, or none was made. */
+  readonly problem: string | null;
+  readonly onPress: () => void;
+}
+
+/** What waits for the named Mac, on another Mac, and the way to take it (ADR-0035 parts 1 and 2). */
+export interface MeetingsWaitingProps {
+  readonly line: string;
+  /** Null until sync says where the vault stands. */
+  readonly processHere: ProcessHereProps | null;
+}
+
 /** What waits for the Mac that runs the automations, on another Mac (ADR-0035 part 1). */
-function MeetingsWaiting({ line }: { line: string }) {
+function MeetingsWaiting({ line, processHere }: MeetingsWaitingProps) {
+  const why = processHere?.refused ?? processHere?.problem ?? null;
   return (
     <aside
       className="notice-bar inbox__offer inbox__offer--warning"
@@ -384,7 +404,18 @@ function MeetingsWaiting({ line }: { line: string }) {
       <Icon name="event" size={14} className="notice-bar__icon" />
       <div className="notice-bar__text">
         <p>{line}</p>
+        {why !== null && <p className="notice-bar__why">{why}</p>}
       </div>
+      {processHere !== null && (
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          disabled={processHere.refused !== null || processHere.busy}
+          onClick={processHere.onPress}
+        >
+          {processHere.busy ? 'Processing…' : 'Process here'}
+        </button>
+      )}
     </aside>
   );
 }

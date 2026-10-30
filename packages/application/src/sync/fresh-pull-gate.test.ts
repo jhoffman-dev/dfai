@@ -45,6 +45,7 @@ function gateOn({ settings = NAMED as string | null, paused = false } = {}) {
       },
       clock: { now: () => vault.now },
       activity,
+      onGitHub: null,
     },
     here: { thisMacId: () => THIS_MAC, paused: () => vault.paused },
     onStanding: (_, standing) => void told.push(standing),
@@ -356,5 +357,184 @@ describe('createFreshPullGate: counting what waits on a Mac that is not named (A
       return port();
     };
     expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'pulling' });
+  });
+});
+
+describe('createFreshPullGate: whether "Process here" may claim (ADR-0035 part 2, #176)', () => {
+  const OTHER = '---\nsync: github\nautomationsMac: mac-laptop\nautomationsMacName: Laptop\n---\n';
+  const READY = { kind: 'ready' } as const;
+  const FAILED = { kind: 'failed', reason: 'offline', at: 1 } as const;
+
+  it('lets a Mac that is not named claim once a pull since launch has completed', async () => {
+    const { gate, runs } = gateOn({ settings: OTHER });
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('no-pull');
+    await runs({ kind: 'synced' });
+    expect(await gate.claimRefusal(VAULT, READY)).toBeNull();
+  });
+
+  it('refuses after a sleep, while paused, while failing, and during a pull', async () => {
+    const { gate, runs, sleep, vault } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    expect(await gate.claimRefusal(VAULT, FAILED)).toBe('failing');
+    gate.started(VAULT);
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('pulling');
+    await runs({ kind: 'synced' });
+    sleep.sleep(60 * 60_000);
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('no-pull');
+    await runs({ kind: 'synced' });
+    vault.paused = true;
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('paused');
+  });
+
+  it('is judged against a pull that started while the counter was read', async () => {
+    const { gate, runs, sleep } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    const port = sleep.port.asleepMs;
+    sleep.port.asleepMs = async () => {
+      gate.started(VAULT);
+      return port();
+    };
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('pulling');
+  });
+
+  it('refuses for a vault that does not sync, never reading the counter for it', async () => {
+    const { gate, sleep } = gateOn({ settings: OTHER });
+    gate.inspected(VAULT, false);
+    expect(await gate.claimRefusal(VAULT, READY)).toBe('not-synced');
+    expect(sleep.reads()).toBe(0);
+  });
+});
+
+describe('createFreshPullGate: a claim not yet pushed keeps the gates shut (#630 review)', () => {
+  it('stays shut after a look that brings nothing, though the settings name this Mac', async () => {
+    const { gate, runs } = gateOn();
+    await runs({ kind: 'synced' });
+    gate.claimed(VAULT);
+
+    await runs({ kind: 'looked', behind: 0 });
+
+    expect(gate.claimUnshared(VAULT)).toBe(true);
+    expect(await gate.verdict(VAULT)).toEqual({ open: false, shut: 'claim-unshared' });
+  });
+
+  it('stays shut after a sync that failed, and opens once one succeeds, which pushed the claim', async () => {
+    const { gate, runs } = gateOn();
+    await runs({ kind: 'synced' });
+    gate.claimed(VAULT);
+    await runs({ kind: 'sync-failed' });
+    expect(gate.claimUnshared(VAULT)).toBe(true);
+
+    await runs({ kind: 'synced' });
+
+    expect(gate.claimUnshared(VAULT)).toBe(false);
+    expect(await gate.verdict(VAULT)).toEqual({ open: true });
+  });
+
+  it('keeps a claim by vault: opened again, it still waits; none is marked in a vault that does not sync (#630 attack)', async () => {
+    const { gate } = gateOn();
+    gate.claimed(VAULT, 'Laptop');
+    gate.opened('/Users/j/Other');
+    gate.opened(VAULT);
+    expect(gate.claimUnshared(VAULT)).toBe(true);
+    expect(gate.claimWas(VAULT)).toBe('Laptop');
+
+    gate.opened('/Users/j/Plain');
+    gate.inspected('/Users/j/Plain', false);
+    gate.claimed('/Users/j/Plain');
+    expect(gate.claimUnshared('/Users/j/Plain')).toBe(false);
+  });
+
+  it('tells whatever draws the banner as the claim is marked and as it is shared', async () => {
+    const { gate, runs, told } = gateOn();
+    await runs({ kind: 'synced' });
+    const before = told.length;
+    gate.claimed(VAULT);
+    expect(told.length).toBe(before + 1);
+    await runs({ kind: 'synced' });
+    expect(told.length).toBeGreaterThan(before + 1);
+  });
+});
+
+describe('createFreshPullGate: a claim judged from git, which a restart does not forget (#630 attack)', () => {
+  /** A gate as a fresh launch makes it, over GitHub's settings as the last fetch left them. */
+  function launched(
+    onGitHub: () => Promise<{ automationsMac: string | null; automationsMacName: string | null }>,
+    { paused = false } = {},
+  ) {
+    const sleep = fakeSleepClock();
+    const asked: string[] = [];
+    const activity = recordingActivity();
+    const gate = createFreshPullGate({
+      ports: {
+        sleepClock: sleep.port,
+        fs: fakeVaultFs({
+          readNotes: async () => [
+            { path: '.atlas/settings.md', text: NAMED, modified: 1, size: 1 },
+          ],
+        }),
+        markdown: { ...fakeMarkdown(), frontmatterProblem: () => null },
+        clock: { now: () => 1_000 },
+        activity,
+        onGitHub,
+      },
+      here: { thisMacId: () => THIS_MAC, paused: () => paused },
+      onClaimUnshared: (vault) => void asked.push(vault),
+    });
+    gate.opened(VAULT);
+    gate.inspected(VAULT, true);
+    const runs = async (end: Parameters<typeof gate.ended>[1]) => {
+      const startedAsleepMs = await gate.readAsleep();
+      if (end.kind === 'synced') gate.started(VAULT);
+      await gate.ended(VAULT, end, startedAsleepMs);
+    };
+    return { gate, runs, asked, activity };
+  }
+  const STUDIO_ON_GITHUB = { automationsMac: 'mac-laptop', automationsMacName: 'Laptop' };
+
+  it('shuts after a look when the settings here name this Mac and GitHub’s do not, and asks for a sync to push it', async () => {
+    const { gate, runs, asked } = launched(async () => STUDIO_ON_GITHUB);
+    await runs({ kind: 'looked', behind: 0 });
+    expect(await gate.verdict(VAULT)).toEqual({ open: false, shut: 'claim-unshared' });
+    expect(gate.claimWas(VAULT)).toBe('Laptop');
+    expect(asked).toEqual([VAULT]);
+  });
+
+  it('asks for no sync while sync is paused here: resuming is what pushes it', async () => {
+    const { runs, asked } = launched(async () => STUDIO_ON_GITHUB, { paused: true });
+    await runs({ kind: 'looked', behind: 0 });
+    expect(asked).toEqual([]);
+  });
+
+  it('asks for no sync after a sync, which already pushed what it could', async () => {
+    const { runs, asked } = launched(async () => STUDIO_ON_GITHUB);
+    await runs({ kind: 'synced' });
+    expect(asked).toEqual([]);
+  });
+
+  it('says once in Activity that GitHub’s settings could not be read, and waits (#630 review)', async () => {
+    const { gate, runs, activity } = launched(async () => {
+      throw new Error('fatal: bad object');
+    });
+    await runs({ kind: 'looked', behind: 0 });
+    await runs({ kind: 'looked', behind: 0 });
+    expect(await gate.verdict(VAULT)).toEqual({ open: false, shut: 'claim-unshared' });
+    expect(activity.reports).toEqual([
+      {
+        level: 'warning',
+        kind: 'sync',
+        message:
+          'Automations wait: DFAI could not read this vault’s settings on GitHub to confirm the claim.',
+        subject: null,
+      },
+    ]);
+  });
+
+  it('opens once GitHub names this Mac', async () => {
+    const { gate, runs } = launched(async () => ({
+      automationsMac: THIS_MAC,
+      automationsMacName: 'Studio',
+    }));
+    await runs({ kind: 'looked', behind: 0 });
+    expect(await gate.verdict(VAULT)).toEqual({ open: true });
   });
 });
