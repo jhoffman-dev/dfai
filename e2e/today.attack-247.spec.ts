@@ -141,6 +141,8 @@ function focusedNow(page: Page): Promise<Focused> {
 /** Every stop a sweep made, as the page recorded them. */
 interface SweepLog {
   moves: number;
+  /** Tabs refused while the page settled. */
+  held: number;
   rows: string[];
   offScreen: string[];
   lostAfter: string | null;
@@ -160,10 +162,13 @@ interface SweepLog {
  * Reading in the page instead of a round trip and two frames for each of some
  * 3,300 stops is what takes a sweep from two minutes to seconds (shard 4).
  */
+// One self-contained function, however long: page.evaluate sends its source
+// alone, so nothing outside it can be called from inside.
 function recordSweep(): void {
-  const host = window as unknown as { todaySweep?: SweepLog };
+  const host = window as unknown as { todaySweep?: SweepLog; stopTodaySweep?: () => void };
   const log: SweepLog = {
     moves: 0,
+    held: 0,
     rows: [],
     offScreen: [],
     lostAfter: null,
@@ -175,18 +180,26 @@ function recordSweep(): void {
   const shape = () => `${scroller()?.scrollTop}/${scroller()?.scrollHeight}`;
   const nextFrame = window.requestAnimationFrame.bind(window);
   let frame = 0;
+  let stopped = false;
   const tick = () => {
     frame += 1;
-    if (!log.done) nextFrame(tick);
+    if (!stopped) nextFrame(tick);
   };
   nextFrame(tick);
   let changed = false;
-  new MutationObserver(() => {
+  const mutations = new MutationObserver(() => {
     changed = true;
-  }).observe(document.body, { subtree: true, childList: true, attributes: true });
+  });
+  mutations.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true,
+  });
   // Work a key leaves for later — a frame callback, a timer, a task (React's
   // scheduler posts to a MessagePort) — changes nothing yet, so asking for it
   // counts as a change: a focus that blurs itself a frame later is still caught.
+  const restores: (() => void)[] = [];
   const scheduling = (owner: object, name: string) => {
     const table = owner as Record<string, (...args: unknown[]) => unknown>;
     const original = table[name];
@@ -195,6 +208,9 @@ function recordSweep(): void {
       changed = true;
       return original.apply(this, args);
     };
+    restores.push(() => {
+      table[name] = original;
+    });
   };
   scheduling(window, 'requestAnimationFrame');
   scheduling(window, 'setTimeout');
@@ -214,32 +230,37 @@ function recordSweep(): void {
     changedAt = null;
     return false;
   };
-  document.addEventListener(
-    'keydown',
-    (event) => {
-      if (event.key !== 'Tab') return;
-      if (log.done || settling()) {
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Tab') return;
+    if (log.done || settling()) {
+      if (!log.done) log.held += 1;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    const stop = readStop();
+    if (log.moves > 0) {
+      if (stop === null) log.lostAfter = log.last;
+      if (stop === null || !stop.inPage) {
+        log.done = true;
         event.preventDefault();
         event.stopImmediatePropagation();
         return;
       }
-      const stop = readStop();
-      if (log.moves > 0) {
-        if (stop === null) log.lostAfter = log.last;
-        if (stop === null || !stop.inPage) {
-          log.done = true;
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          return;
-        }
-        if (stop.row !== null && !log.rows.includes(stop.row)) log.rows.push(stop.row);
-        if (!stop.inView) log.offScreen.push(stop.label);
-        log.last = stop.label;
-      }
-      log.moves += 1;
-    },
-    { capture: true },
-  );
+      if (stop.row !== null && !log.rows.includes(stop.row)) log.rows.push(stop.row);
+      if (!stop.inView) log.offScreen.push(stop.label);
+      log.last = stop.label;
+    }
+    log.moves += 1;
+  };
+  document.addEventListener('keydown', onKey, { capture: true });
+  // Ends the sweep: the page is left as it was found, Tab and all.
+  host.stopTodaySweep = () => {
+    stopped = true;
+    document.removeEventListener('keydown', onKey, { capture: true });
+    mutations.disconnect();
+    for (const restore of restores) restore();
+  };
 
   function readStop() {
     const at = document.activeElement;
@@ -276,11 +297,20 @@ async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number) {
   for (const modifier of held) await page.keyboard.down(modifier);
   let log = await readSweep(page);
   // Refused Tabs (the page settling) count against `limit` too, ten to a stop.
-  for (let presses = 0; !log.done && log.moves < limit && presses < limit * 10;) {
+  let presses = 0;
+  while (!log.done && log.moves < limit && presses < limit * 10) {
     for (let at = 0; at < BATCH; at += 1, presses += 1) await page.keyboard.press('Tab');
     log = await readSweep(page);
   }
   for (const modifier of held.reverse()) await page.keyboard.up(modifier);
+  await page.evaluate(() => (window as unknown as { stopTodaySweep: () => void }).stopTodaySweep());
+  // Out of presses before the focus left the page: say so, rather than fail
+  // later as rows missing, or pass without the last stop read.
+  if (!log.done) {
+    throw new Error(
+      `sweep did not finish: ${log.moves} stops, ${presses} presses, ${log.held} held`,
+    );
+  }
   return {
     rows: new Set(log.rows),
     offScreen: log.offScreen,
