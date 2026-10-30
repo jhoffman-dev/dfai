@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ComponentProps,
 } from 'react';
@@ -1668,6 +1669,13 @@ function AppWindow({
     () => ({ ...archivePorts, types, notePaths, claude: claudeStep }),
     [archivePorts, types, notePaths, claudeStep],
   );
+  // The meeting import asks the rules' queries through the ports as they are
+  // at the ask: they move as the tree fills, and its runner is not drawn for it.
+  const automationPortsNow = useRef(automationPorts);
+  useEffect(() => {
+    automationPortsNow.current = automationPorts;
+  }, [automationPorts]);
+  const rulePorts = useCallback(() => automationPortsNow.current, []);
   // The automations, and the meeting import, are run by their runners, drawn below (#326).
   const treeMenuFor = useCallback(
     (entry: VaultEntry) =>
@@ -2258,6 +2266,8 @@ function AppWindow({
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
           sync={syncStore}
+          automations={automationsStore}
+          rulePorts={rulePorts}
           waiting={meetingsWaiting}
           changes={noteChanges}
           ports={archivePorts}

@@ -652,6 +652,23 @@ describe('InboxPage: "Process here" on the banner (ADR-0035 part 2, #176)', () =
   });
 });
 
+describe('InboxPage: the named Mac’s step cannot reach Claude (#182)', () => {
+  it('shows the line and the fix-it words under it, with nothing to press', () => {
+    page({
+      meetingsWaiting: {
+        line: 'Claude is unavailable on Studio: summaries and tasks are pending for 2 meetings.',
+        detail: 'Claude Code is installed but not logged in. Fix: claude auth login',
+        processHere: null,
+      },
+    });
+
+    const banner = screen.getByRole('status', { name: 'Meetings waiting' });
+    expect(within(banner).getByText(/pending for 2 meetings/)).toBeTruthy();
+    expect(within(banner).getByText(/Fix: claude auth login/)).toBeTruthy();
+    expect(within(banner).queryByRole('button')).toBeNull();
+  });
+});
+
 const VAULT_TIDY: NonNullable<InboxPageProps['vaultTidy']> = {
   preview: {
     moves: [{ from: 'Loose idea.md', to: 'Notes/2026/Loose idea.md' }],

@@ -268,6 +268,7 @@ export type { NoteAnswer, NoteAnswerValue } from './note-answer.ts';
 export {
   asksSpentInHour,
   backoffMinutes,
+  unavailableBackoffMinutes,
   dueTrigger,
   nextRunOf,
   ruleClockOf,

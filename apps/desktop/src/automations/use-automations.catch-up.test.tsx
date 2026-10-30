@@ -17,6 +17,7 @@ import {
   fakeClaudeStepPorts,
   fakeIndexPort,
   fakeVaultFs,
+  ModelProviderError,
   recordingActivity,
   type AutomationPorts,
 } from '@dfai/application';
@@ -710,5 +711,373 @@ describe('useAutomations: a Claude step the clock or opening sets off waits for 
       await hook.result.current.runNow(ran);
     });
     expect(claude.fake.requests).toHaveLength(1);
+  });
+});
+
+describe('useAutomations: a Claude step that cannot reach Claude backs off and is tried again (#182)', () => {
+  const ASK_RULE = '.atlas/automations/Actions.md';
+  const ASK_RULE_TEXT = [
+    '---',
+    'atlas: automation',
+    'name: Actions',
+    'enabled: true',
+    'when: a meeting is created',
+    'which: FROM meeting',
+    'do: claude',
+    'prompt: .atlas/prompts/actions.md',
+    'output: proposals',
+    '---',
+    '',
+  ].join('\n');
+  const NOT_LOGGED_IN = {
+    ready: false as const,
+    problem: 'not_logged_in' as const,
+    message: 'Claude Code is installed but not logged in.',
+    fix: 'claude auth login',
+  };
+
+  /** The vault with one meeting the rule missed, Claude logged out, and a clock the test moves. */
+  const openLoggedOut = (scheduled: boolean | null = true) => {
+    const at = { now: '2026-10-08T09:00:00' };
+    const ticking = {
+      today: () => at.now.slice(0, 10),
+      localNow: () => at.now,
+      now: () => Date.parse(`${at.now}Z`),
+    };
+    const vault = memoryVault(
+      {
+        [ASK_RULE]: ASK_RULE_TEXT,
+        '.atlas/prompts/actions.md': 'List the action items.\n',
+        [MEETING]: LET_IN,
+      },
+      { [ASK_RULE]: 100, [MEETING]: 200 },
+    );
+    const claude = fakeClaudeStepPorts({
+      status: NOT_LOGGED_IN,
+      rounds: [[{ type: 'text', text: JSON.stringify({ proposals: [] }) }]],
+    });
+    const statusAsked = { count: 0 };
+    const provider = claude.provider();
+    const notReady = provider.status;
+    provider.status = async () => {
+      statusAsked.count += 1;
+      return notReady();
+    };
+    // Its query, run by hand, finds the meeting as the index would, whatever it is handed.
+    const index = {
+      ...vault.ports.index,
+      query: async (sql: string, parameters: readonly (string | number | null)[]) =>
+        sql.startsWith('/* meetings */')
+          ? vault.ports.index.query(sql, parameters)
+          : {
+              columns: ['path', 'title', 'type'],
+              rows: [[MEETING, MEETING, 'meeting']],
+              truncated: false,
+            },
+    };
+    const options: AutomationsOptions = {
+      ports: { ...vault.ports, index, claude },
+      clock: ticking,
+      vaultKey: VAULT,
+      indexKey: '1',
+      indexReady: true,
+      activity: recordingActivity(),
+      onSettled: vi.fn(),
+      scheduled,
+    };
+    const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
+      initialProps: options,
+    });
+    /** Logged in; the status takes a second to answer, as a process the host starts does. */
+    const logIn = () => {
+      provider.status = () => {
+        statusAsked.count += 1;
+        return new Promise((resolve) => setTimeout(() => resolve({ ready: true }), 1000));
+      };
+    };
+    return { at, claude, hook, options, logIn, statusAsked };
+  };
+
+  it('once Claude is logged in, runs at the next tick, long before the pause would end (#637 review)', async () => {
+    const { claude, hook, logIn } = openLoggedOut();
+    await settle();
+    expect([...hook.result.current.pauses.values()][0]?.unavailable).toBeDefined();
+
+    // Still 09:00, the pause says 09:01: only the status, asked at each tick, can let it go.
+    logIn();
+    // One tick, and the second its answer takes: well before the next tick, the run is made.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS);
+    });
+    // The recheck's answer, then the run's own look at the status.
+    for (let answer = 0; answer < 2; answer += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    }
+    await settle();
+
+    expect(hook.result.current.pauses.size).toBe(0);
+    expect(claude.fake.requests).toHaveLength(1);
+  });
+
+  it('keeps the pause, and why, when Run now fails the same way (#637 review)', async () => {
+    const { hook, statusAsked } = openLoggedOut();
+    await settle();
+    const rule = hook.result.current.listing!.automations[0]!.rule;
+    const before = { ...[...hook.result.current.pauses.values()][0] };
+    const asks = statusAsked.count;
+
+    let entry: unknown = null;
+    await act(async () => {
+      entry = await hook.result.current.runNow(rule);
+    });
+    await settle();
+
+    expect(entry).toMatchObject({ kind: 'failed' });
+    // The pause stands as it was: the held news is not let go to fail again at once.
+    expect([...hook.result.current.pauses.values()][0]).toEqual(before);
+    expect(statusAsked.count - asks).toBe(1);
+  });
+
+  it('lets go of a pause for Claude once this Mac no longer runs the automations (#637 review)', async () => {
+    const { hook, options } = openLoggedOut();
+    await settle();
+    expect(hook.result.current.pauses.size).toBe(1);
+
+    hook.rerender({ ...options, scheduled: false });
+    await settle();
+
+    expect([...hook.result.current.pauses.values()].some((pause) => pause.unavailable)).toBe(false);
+  });
+
+  it('pauses with the fix-it line, keeps its look for the arrival, and runs it once the pause is over', async () => {
+    let now = '2026-10-08T09:00:00';
+    const ticking = {
+      today: () => now.slice(0, 10),
+      localNow: () => now,
+      now: () => Date.parse(`${now}Z`),
+    };
+    const vault = memoryVault(
+      {
+        [ASK_RULE]: ASK_RULE_TEXT,
+        '.atlas/prompts/actions.md': 'List the action items.\n',
+        [MEETING]: LET_IN,
+      },
+      { [ASK_RULE]: 100, [MEETING]: 200 },
+    );
+    const claude = fakeClaudeStepPorts({
+      status: NOT_LOGGED_IN,
+      rounds: [[{ type: 'text', text: JSON.stringify({ proposals: [] }) }]],
+    });
+    const options: AutomationsOptions = {
+      ports: { ...vault.ports, claude },
+      clock: ticking,
+      vaultKey: VAULT,
+      indexKey: '1',
+      indexReady: true,
+      activity: recordingActivity(),
+      onSettled: vi.fn(),
+      scheduled: true,
+    };
+    const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
+      initialProps: options,
+    });
+    await settle();
+
+    const [pause] = [...hook.result.current.pauses.values()];
+    expect(pause).toMatchObject({
+      failures: 1,
+      retryAt: '2026-10-08T09:01:00',
+      unavailable: 'Claude Code is installed but not logged in. Fix: claude auth login',
+    });
+    expect(claude.fake.requests).toHaveLength(0);
+
+    // Logged in, and the minute the pause named comes and goes.
+    claude.provider().status = async () => ({ ready: true });
+    now = '2026-10-08T09:02:00';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS * 2);
+    });
+    await settle();
+
+    expect(claude.fake.requests).toHaveLength(1);
+    expect(hook.result.current.pauses.size).toBe(0);
+  });
+});
+
+describe('useAutomations: a Claude step the status calls ready but whose ask is refused (attack on PR #637)', () => {
+  const ASK_RULE = '.atlas/automations/Actions.md';
+  const ASK_RULE_TEXT = [
+    '---',
+    'atlas: automation',
+    'name: Actions',
+    'enabled: true',
+    'when: a meeting is created',
+    'which: FROM meeting',
+    'do: claude',
+    'prompt: .atlas/prompts/actions.md',
+    'output: proposals',
+    '---',
+    '',
+  ].join('\n');
+
+  /**
+   * A revoked API key, or a Claude Code token that expired: the status reads
+   * only what is stored, so it says ready, and every ask is refused with a
+   * login problem the step takes for "unreachable".
+   */
+  const openRefused = (
+    rounds: NonNullable<Parameters<typeof fakeClaudeStepPorts>[0]>['rounds'] = refusedRounds(),
+  ) => {
+    const at = { now: '2026-10-08T09:00:00' };
+    const ticking = {
+      today: () => at.now.slice(0, 10),
+      localNow: () => at.now,
+      now: () => Date.parse(`${at.now}Z`),
+    };
+    const vault = memoryVault(
+      {
+        [ASK_RULE]: ASK_RULE_TEXT,
+        '.atlas/prompts/actions.md': 'List the action items.\n',
+        [MEETING]: LET_IN,
+      },
+      { [ASK_RULE]: 100, [MEETING]: 200 },
+    );
+    const claude = fakeClaudeStepPorts({ status: { ready: true }, rounds });
+    const statusAsked = { count: 0 };
+    const provider = claude.provider();
+    provider.status = async () => {
+      statusAsked.count += 1;
+      return { ready: true };
+    };
+    const activity = recordingActivity();
+    const options: AutomationsOptions = {
+      ports: { ...vault.ports, claude },
+      clock: ticking,
+      vaultKey: VAULT,
+      indexKey: '1',
+      indexReady: true,
+      activity,
+      onSettled: vi.fn(),
+      scheduled: true,
+    };
+    const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
+      initialProps: options,
+    });
+    /** Moves the clock and the timers on by whole minutes, one tick at a time. */
+    const minutes = async (count: number) => {
+      for (let minute = 0; minute < count; minute += 1) {
+        const ms = (Date.parse(`${at.now}Z`) + SCHEDULE_TICK_MS) as number;
+        at.now = new Date(ms).toISOString().slice(0, 19);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS);
+        });
+        await settle();
+      }
+    };
+    return { at, claude, hook, minutes, provider, statusAsked };
+  };
+  const refusedRounds = (problem: 'no_key' | 'failed' = 'no_key') =>
+    Array.from(
+      { length: 40 },
+      () => new ModelProviderError(problem, 'The Anthropic API refused the key: invalid x-api-key'),
+    );
+
+  it('asks Claude no more often than the backoff allows while every ask is refused', async () => {
+    const { claude, hook, minutes } = openRefused();
+    await settle();
+    expect(claude.fake.requests).toHaveLength(1);
+    expect([...hook.result.current.pauses.values()][0]?.unavailable).toBeDefined();
+
+    await minutes(30);
+
+    // Backoff 1, 2, 4, 8, 15 min from 09:00 tries at 09:01, 09:03, 09:07, 09:15 and 09:30: six asks in all.
+    expect(claude.fake.requests.length).toBeLessThanOrEqual(6);
+  });
+
+  it('counts the failures up while every ask is refused, so the backoff grows', async () => {
+    const { hook, minutes } = openRefused();
+    await settle();
+
+    await minutes(10);
+
+    expect([...hook.result.current.pauses.values()][0]?.failures ?? 0).toBeGreaterThan(1);
+  });
+
+  it('settles an answer Claude failed to give with no pause, and asks again for nothing', async () => {
+    const { claude, hook, minutes } = openRefused(refusedRounds('failed'));
+    await settle();
+    expect(claude.fake.requests).toHaveLength(1);
+    expect(hook.result.current.pauses.size).toBe(0);
+
+    await minutes(5);
+
+    expect(claude.fake.requests).toHaveLength(1);
+  });
+
+  it('asks the status nothing at the ticks while no rule is held back for Claude', async () => {
+    const { claude, hook, minutes, statusAsked } = openRefused([
+      [{ type: 'text', text: JSON.stringify({ proposals: [] }) }],
+    ]);
+    await settle();
+    expect(claude.fake.requests).toHaveLength(1);
+    expect(hook.result.current.pauses.size).toBe(0);
+    const asked = statusAsked.count;
+
+    await minutes(5);
+
+    expect(statusAsked.count - asked).toBe(0);
+  });
+
+  it('never waits more than 15 minutes between tries while the status keeps saying logged out', async () => {
+    const { at, claude, hook, minutes, provider } = openRefused();
+    provider.status = async () => ({
+      ready: false,
+      problem: 'not_logged_in',
+      message: 'Claude Code is installed but not logged in.',
+      fix: 'claude auth login',
+    });
+    // Every try, the open-time one too, is stopped by the status: Claude is never asked.
+    await settle();
+    let longest = 0;
+    let most = 0;
+    for (let minute = 0; minute < 90; minute += 1) {
+      await minutes(1);
+      const pause = [...hook.result.current.pauses.values()][0];
+      expect(pause?.unavailable).toBeDefined();
+      const wait = (Date.parse(`${pause!.retryAt!}Z`) - Date.parse(`${at.now}Z`)) / 60_000;
+      longest = Math.max(longest, wait);
+      most = Math.max(most, pause!.failures);
+    }
+
+    expect(most).toBeGreaterThan(5);
+    expect(longest).toBeLessThanOrEqual(15);
+    expect(claude.fake.requests).toHaveLength(0);
+  });
+
+  it('asks Claude once for the held news once logged in, however many ticks and rechecks follow', async () => {
+    const { claude, hook, minutes, provider } = openRefused([
+      [{ type: 'text', text: JSON.stringify({ proposals: [] }) }],
+    ]);
+    let ready = false;
+    provider.status = async () =>
+      ready
+        ? { ready: true }
+        : {
+            ready: false,
+            problem: 'not_logged_in',
+            message: 'Claude Code is installed but not logged in.',
+            fix: 'claude auth login',
+          };
+    await settle();
+    await minutes(3);
+    expect(claude.fake.requests).toHaveLength(0);
+
+    ready = true;
+    await minutes(20);
+
+    expect(claude.fake.requests).toHaveLength(1);
+    expect(hook.result.current.pauses.size).toBe(0);
   });
 });
