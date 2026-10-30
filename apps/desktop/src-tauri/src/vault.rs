@@ -1115,6 +1115,9 @@ pub async fn write_text_file(
 }
 
 #[cfg(test)]
+mod skill_link_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{resolve, resolve_new, root_for_write, VaultState};
     use std::fs;

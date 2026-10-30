@@ -598,3 +598,45 @@ describe('after the attack on #620', () => {
     expect(vault.notes.get(SKILL_PATH)?.text.endsWith('\nA.\r\nB.\r\n')).toBe(true);
   });
 });
+
+describe('a skill folder that is a link out of the vault (#169)', () => {
+  const LINKED = '.atlas/skills/weekly-review';
+  const ESCAPES = 'path escapes the vault';
+
+  /** The vault as the host shows it: the link is listed, and anything through it is refused. */
+  function linkedOut() {
+    const vault = memoryVault({}, [LINKED]);
+    const refuseThrough = (path: string) => {
+      if (path === LINKED || path.startsWith(`${LINKED}/`)) throw new VaultAccessError(ESCAPES);
+    };
+    const fs: VaultFsPort = {
+      ...vault.fs,
+      listDirectory: async (path) => (refuseThrough(path), vault.fs.listDirectory(path)),
+      readTextFile: async (path) => (refuseThrough(path), vault.fs.readTextFile(path)),
+      createNote: async (write) => (refuseThrough(write.path), vault.fs.createNote(write)),
+      writeTextFile: async (write) => (refuseThrough(write.path), vault.fs.writeTextFile(write)),
+    };
+    return { vault, fs };
+  }
+
+  it('is listed with no SKILL.md read through it', async () => {
+    const { fs } = linkedOut();
+
+    const [skill] = await listSkills({ fs, markdown });
+
+    expect(skill).toMatchObject({ name: 'weekly-review', text: '', unreadable: false });
+    expect(skill?.problems).toContainEqual({
+      field: 'file',
+      message: 'The folder has no SKILL.md.',
+    });
+  });
+
+  it('is saved as nothing: the host’s refusal is the answer and nothing is written', async () => {
+    const { vault, fs } = linkedOut();
+    const skill = await readSkill({ fs, markdown, name: 'weekly-review' });
+    if (skill === null) throw new Error('no skill');
+
+    await expect(saveSkill({ fs, markdown, skill, draft: DRAFT })).rejects.toThrow(ESCAPES);
+    expect(vault.writes).toEqual([]);
+  });
+});
