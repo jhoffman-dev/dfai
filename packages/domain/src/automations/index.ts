@@ -322,7 +322,7 @@ export {
   madeTaskMeeting,
   unarchiveProblem,
 } from './undo-check.ts';
-export { AUTOMATION_PRESETS, BLANK_AUTOMATION } from './presets.ts';
+export { AFTER_A_MEETING_PRESET, AUTOMATION_PRESETS, BLANK_AUTOMATION } from './presets.ts';
 export {
   CITED_ITEMS_INSTRUCTIONS,
   keepCitedItems,
@@ -330,3 +330,10 @@ export {
   UNCITED_REASON,
 } from './cited-items.ts';
 export type { CitedBody } from './cited-items.ts';
+export {
+  meetingSetupComplete,
+  meetingSetupPlan,
+  meetingSetupWithin,
+  postProcessesMeetings,
+} from './meeting-setup.ts';
+export type { MeetingSetupFacts, MeetingSetupLine, MeetingSetupPlan } from './meeting-setup.ts';

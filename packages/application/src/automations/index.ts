@@ -50,3 +50,10 @@ export {
 export type { CleanupOwner, ListedCleanupTask, MeetingCleanupPorts } from './meeting-cleanup.ts';
 export { clockForRule, clockOnZone, planNowOf, waitsForPlanZone } from './rule-clock.ts';
 export type { RunClock } from './rule-clock.ts';
+export { acceptMeetingSetup, previewMeetingSetup } from './meeting-setup.ts';
+export type {
+  MeetingSetupDone,
+  MeetingSetupFailure,
+  MeetingSetupOffer,
+  MeetingSetupPorts,
+} from './meeting-setup.ts';

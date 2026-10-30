@@ -1,0 +1,197 @@
+import { useCallback, useMemo } from 'react';
+import { createStore, useStore, type StoreApi } from 'zustand';
+import { postProcessesMeetings } from '@dfai/domain';
+import {
+  acceptMeetingSetup,
+  previewMeetingSetup,
+  type ActivityRecorder,
+  type MarkdownPort,
+  type MeetingSetupDone,
+  type MeetingSetupOffer,
+  type VaultFsPort,
+} from '@dfai/application';
+import type { MeetingSetupProps } from '@dfai/ui';
+import type { AutomationsStore } from '../automations/automations-store.ts';
+import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
+import { localClock } from '../today.ts';
+
+/** Where the offer stands in one vault: the window's, so the Inbox and Automations share it. */
+interface MeetingSetupState {
+  readonly vault: string | null;
+  /** Put away on the Inbox until the vault is opened again. */
+  readonly dismissed: boolean;
+  readonly open: boolean;
+  /** What the preview lists; null until it is read. */
+  readonly offer: MeetingSetupOffer | null;
+  readonly emails: string;
+  readonly busy: boolean;
+  readonly result: string | null;
+  readonly problem: string | null;
+}
+
+export type MeetingSetupStore = StoreApi<MeetingSetupState>;
+
+const FRESH = {
+  dismissed: false,
+  open: false,
+  offer: null,
+  emails: '',
+  busy: false,
+  result: null,
+  problem: null,
+} as const;
+
+/** Where the offer stands in a vault nothing has been done in yet. */
+const IDLE: MeetingSetupState = { vault: null, ...FRESH };
+
+export function createMeetingSetupStore(): MeetingSetupStore {
+  return createStore<MeetingSetupState>()(() => IDLE);
+}
+
+/** What the offer needs from the window. */
+export interface MeetingSetupWiring {
+  readonly store: MeetingSetupStore;
+  /** The rules as their runner holds them: the Inbox offers the setup only while none does it. */
+  readonly automations: AutomationsStore;
+  readonly fs: VaultFsPort;
+  readonly markdown: MarkdownPort;
+  /** The owner's addresses in use, to start the field from: only a suggestion until saved. */
+  readonly suggestedEmails: readonly string[];
+  readonly activity: ActivityRecorder;
+  /** After the yes wrote anything, so the types and the tree are read again. */
+  readonly onChanged: () => void;
+}
+
+/**
+ * The offer to set up meeting post-processing in one previewed yes (#191).
+ * Nothing is read for it until the person asks for the preview, so opening a
+ * vault or the Inbox costs nothing more. On the Inbox it shows only while no
+ * rule post-processes meetings, as the rules already read say; on the
+ * Automations page (`where: 'automations'`) it is always a click away. Null
+ * when there is nothing to show.
+ */
+export function useMeetingSetup(
+  wiring: MeetingSetupWiring,
+  { vault, where }: { vault: string | null; where: 'inbox' | 'automations' },
+): MeetingSetupProps | null {
+  const { store, automations } = wiring;
+  const held = useStore(store);
+  // One object while another vault's state is held, so the props stay the same across renders.
+  const state = held.vault === vault ? held : IDLE;
+  const needed = useStore(automations, (s) => {
+    const listing = s.automations?.listing ?? null;
+    return listing !== null && !listing.automations.some(({ rule }) => postProcessesMeetings(rule));
+  });
+  const commands = useSetupCommands(wiring, vault);
+  return useMemo(() => {
+    const busyOrSaid = state.open || state.result !== null || state.problem !== null;
+    const shown = where === 'automations' || busyOrSaid || (needed && !state.dismissed);
+    if (vault === null || !shown) return null;
+    const offer = state.offer;
+    return {
+      open: state.open,
+      lines: offer === null ? null : offer.lines,
+      asksEmails: offer?.asksEmails ?? false,
+      emails: state.emails,
+      busy: state.busy,
+      result: state.result,
+      problem: state.problem,
+      dismissable: where === 'inbox',
+      ...commands,
+    };
+  }, [state, needed, where, vault, commands]);
+}
+
+type SetupCommands = Pick<
+  MeetingSetupProps,
+  'onOpen' | 'onEmailsChange' | 'onAccept' | 'onClose' | 'onDismiss'
+>;
+
+function useSetupCommands(wiring: MeetingSetupWiring, vault: string | null): SetupCommands {
+  const { store } = wiring;
+  const change = useCallback(
+    (next: Partial<MeetingSetupState>) =>
+      store.setState((was) => ({ ...(was.vault === vault ? was : { vault, ...FRESH }), ...next })),
+    [store, vault],
+  );
+  const onOpen = useCallback(() => {
+    change({ open: true, offer: null, result: null, problem: null });
+    previewMeetingSetup(wiring).then(
+      (offer) =>
+        change({ offer, emails: offer.asksEmails ? wiring.suggestedEmails.join(', ') : '' }),
+      (cause: unknown) =>
+        change({ open: false, problem: `Could not read the vault: ${messageOf(cause)}` }),
+    );
+  }, [change, wiring]);
+  const onAccept = useCallback(() => {
+    const { offer, emails } = store.getState();
+    if (offer === null) return;
+    change({ busy: true, problem: null });
+    void accept(wiring, { offer, emails }).then((said) => change({ busy: false, ...said }));
+  }, [change, store, wiring]);
+  return useMemo(
+    () => ({
+      onOpen,
+      onAccept,
+      onEmailsChange: (emails: string) => change({ emails }),
+      onClose: () =>
+        change(store.getState().open ? { open: false } : { dismissed: true, open: false }),
+      onDismiss: () => change({ result: null, problem: null }),
+    }),
+    [onOpen, onAccept, change, store],
+  );
+}
+
+/**
+ * Says yes, through the automations' runner when it is there so no rule runs
+ * while the rule and its keys are written, and says how it went: in the offer
+ * and, each part, in Activity.
+ */
+async function accept(
+  wiring: MeetingSetupWiring,
+  { offer, emails }: { offer: MeetingSetupOffer; emails: string },
+): Promise<Partial<MeetingSetupState>> {
+  const { fs, markdown } = wiring;
+  const write = () =>
+    acceptMeetingSetup({
+      fs,
+      markdown,
+      clock: localClock,
+      settings: vaultSettingsWriter({ fs, markdown }),
+      offer,
+      emails,
+    });
+  try {
+    const exclusive = wiring.automations.getState().automations?.exclusive;
+    const done = exclusive === undefined ? await write() : await exclusive(write, { wait: true });
+    if (done === null)
+      return { problem: 'Meeting processing could not be set up: the vault closed.' };
+    return settled(wiring, done);
+  } catch (cause) {
+    return { problem: `Meeting processing could not be set up: ${messageOf(cause)}` };
+  }
+}
+
+function settled(wiring: MeetingSetupWiring, done: MeetingSetupDone): Partial<MeetingSetupState> {
+  if (done.refused !== null) return { problem: done.refused };
+  for (const message of done.written) {
+    wiring.activity.record({ level: 'info', kind: 'app', message, subject: null });
+  }
+  const failures = done.failed.map(({ what, reason }) => `${what} could not be set up: ${reason}`);
+  for (const message of failures) {
+    wiring.activity.record({ level: 'warning', kind: 'app', message, subject: null });
+  }
+  if (done.written.length > 0) wiring.onChanged();
+  const result =
+    done.written.length === 0
+      ? 'Nothing needed writing: meeting processing was set up already.'
+      : 'Meetings are processed when they arrive. Activity lists what was written.';
+  return {
+    open: false,
+    offer: null,
+    result,
+    problem: failures.length === 0 ? null : failures.join(' '),
+  };
+}
+
+const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
