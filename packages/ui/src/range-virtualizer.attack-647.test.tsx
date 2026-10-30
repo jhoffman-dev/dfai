@@ -53,18 +53,15 @@ const startOf = (container: HTMLElement, index: number) =>
   Number(container.querySelector(`[data-index="${index}"]`)?.getAttribute('data-start'));
 
 describe('useRangeVirtualizer — attack #647', () => {
-  it.fails(
-    'moves the rows below a row whose key changed at the same index, once it is measured',
-    () => {
-      const keys = Array.from({ length: 10 }, (_, at) => `k${at}`);
-      const { container, rerender } = render(<List keys={keys} />);
-      // Settled: every row measured, row 1 under row 0.
-      expect(startOf(container, 1)).toBe(MEASURED);
-      // Row 0 is another item now (an Inbox row decided as another is captured,
-      // a Today task swapped): same count, a new key at index 0, same height.
-      act(() => rerender(<List keys={['fresh', ...keys.slice(1)]} />));
-      // Its ref measured it at 50 px in that commit; row 1 must start under it.
-      expect(startOf(container, 1)).toBe(MEASURED);
-    },
-  );
+  it('moves the rows below a row whose key changed at the same index, once it is measured', () => {
+    const keys = Array.from({ length: 10 }, (_, at) => `k${at}`);
+    const { container, rerender } = render(<List keys={keys} />);
+    // Settled: every row measured, row 1 under row 0.
+    expect(startOf(container, 1)).toBe(MEASURED);
+    // Row 0 is another item now (an Inbox row decided as another is captured,
+    // a Today task swapped): same count, a new key at index 0, same height.
+    act(() => rerender(<List keys={['fresh', ...keys.slice(1)]} />));
+    // Its ref measured it at 50 px in that commit; row 1 must start under it.
+    expect(startOf(container, 1)).toBe(MEASURED);
+  });
 });

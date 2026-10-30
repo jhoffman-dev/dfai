@@ -87,10 +87,21 @@ export function useRangeVirtualizer(
     onChange: (instance, sync) => {
       options.onChange?.(instance, sync);
       const now = drawnBy(instance);
+      // A row measured from its ref is in the commit of a render whose own
+      // mark is not kept yet (that is the layout effect, after the refs), so
+      // comparing with the mark compares with the commit before: a size that
+      // lands back on what that one drew would go undrawn. A measure only
+      // reports a change of size, so it is always drawn — in the next
+      // render, since it cannot be flushed inside the commit.
+      if (measuring.current) {
+        drawn.current = now;
+        redraw();
+        return;
+      }
       if (now === drawn.current) return;
       drawn.current = now;
       // During a scroll, drawn at once, so new rows are never a frame late.
-      if (sync && !measuring.current) flushSync(redraw);
+      if (sync) flushSync(redraw);
       else redraw();
     },
   };
