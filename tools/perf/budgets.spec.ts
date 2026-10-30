@@ -103,15 +103,11 @@ const ROW_RULES: Partial<Record<BudgetedAction, ActionBudget['rows']>> = {
  * The actions allowed to differ between two counted runs, and by how much.
  * Opening the vault indexes 2,000 notes: on CI it counted 121 commits on one
  * run and 122 on the next, each component one render apart, host calls the
- * same (#130). The drag's minute tick is held now (#243), but under load
- * two of dnd-kit's measuring commits still move from the drag's start to its
- * middle: 42 commits against 41, the renders the same. Probably its resize
- * observers, which report on a real frame. Every other action must match
- * exactly.
+ * same (#130). Every other action must match exactly, the drag included
+ * (#243).
  */
 const RUN_TOLERANCE: Partial<Record<BudgetedAction, RunTolerance>> = {
   'Open a vault': { commits: 2, rendersEach: 2 },
-  'Drag a board card': { commits: 2, rendersEach: 3 },
 };
 
 /** A board of the fixture's 48 projects, all active, by status: what "drag a board card" drags on. */
