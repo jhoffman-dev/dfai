@@ -111,6 +111,7 @@ function wire({
         markdown: remarkMarkdown,
         thisMacId: THIS_MAC,
         paused: () => false,
+        pausedNow: false,
         clock: pullClock,
         activity,
       });
@@ -126,6 +127,8 @@ function wire({
         active: true,
         indexReady,
         pulledFiles: gate,
+        namedElsewhere: null,
+        onWaiting: () => undefined,
         onWritten,
       });
       return pulls;

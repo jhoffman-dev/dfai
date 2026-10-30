@@ -62,6 +62,8 @@ describe('GET /v1/today', () => {
     const paths = (section: Section) =>
       section.groups.flatMap((group) => group.tasks.map((task) => task['path']));
     expect(sections.map((section) => [section.id, section.count, paths(section)])).toEqual([
+      ['chosen', 0, []],
+      ['carriedOver', 0, []],
       ['overdue', 1, ['Tasks/Late.md']],
       ['dueToday', 1, ['Tasks/Due.md']],
       ['backToday', 1, ['Tasks/Back.md']],
@@ -69,11 +71,11 @@ describe('GET /v1/today', () => {
       ['nextActions', 2, ['Tasks/Ship.md', 'Tasks/Loose.md']],
       ['waiting', 1, ['Tasks/Quote.md']],
     ]);
-    expect(sections[4]?.groups.map((group) => [group.label, group.project])).toEqual([
+    expect(sections[6]?.groups.map((group) => [group.label, group.project])).toEqual([
       ['DFAI', 'Projects/DFAI.md'],
       [null, null],
     ]);
-    expect(sections[5]?.groups[0]).toMatchObject({
+    expect(sections[7]?.groups[0]).toMatchObject({
       label: 'Mara Quill',
       tasks: [
         {

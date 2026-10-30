@@ -15,6 +15,7 @@ import {
 
 // One of each, as a runner's state holds them across its draws.
 const SYNCED: ReadonlySet<string> = new Set();
+const NO_COUNT: PulledFilesGate['countGate'] = async () => ({ open: false, why: 'no-pull' });
 const PULLS: ReadonlyMap<string, number> = new Map();
 
 /** A runner's controller as far as the window reads it; the rest is never touched here. */
@@ -26,7 +27,13 @@ function controller(overrides: Partial<SyncController> = {}): SyncController {
     automationsHere: false,
     syncedThisSession: SYNCED,
     syncPulls: PULLS,
-    pulledFiles: { standing: null, acts: async () => true },
+    pulledFiles: {
+      standing: null,
+      acts: async () => true,
+      countGate: NO_COUNT,
+      slept: false,
+      paused: false,
+    },
     settle: async () => {},
     ...overrides,
   } as SyncController;
@@ -49,6 +56,31 @@ describe('sync as the window reads it (#326)', () => {
     expect(await hook.result.current.pulledFiles.acts('/v')).toBe(false);
   });
 
+  it('hands the runners a sleep since the pull and the pause, which shut the gates without a new standing (#627 review)', () => {
+    const { store, hook } = runnerOver();
+    const gate = (slept: boolean, paused: boolean) => ({
+      standing: null,
+      acts: async () => false,
+      countGate: NO_COUNT,
+      slept,
+      paused,
+    });
+    act(() =>
+      store.setState({ vault: '/v', controller: controller({ pulledFiles: gate(false, false) }) }),
+    );
+    expect(hook.result.current.pulledFiles).toMatchObject({ slept: false, paused: false });
+
+    act(() =>
+      store.setState({ vault: '/v', controller: controller({ pulledFiles: gate(true, false) }) }),
+    );
+    expect(hook.result.current.pulledFiles.slept).toBe(true);
+
+    act(() =>
+      store.setState({ vault: '/v', controller: controller({ pulledFiles: gate(false, true) }) }),
+    );
+    expect(hook.result.current.pulledFiles).toMatchObject({ slept: false, paused: true });
+  });
+
   it('asks the runner’s gate as it stands now, and keeps the window’s while only its object changes', async () => {
     const { store, hook, draws } = runnerOver();
     const first = vi.fn(async () => false);
@@ -56,7 +88,15 @@ describe('sync as the window reads it (#326)', () => {
     act(() =>
       store.setState({
         vault: '/v',
-        controller: controller({ pulledFiles: { standing: null, acts: first } }),
+        controller: controller({
+          pulledFiles: {
+            standing: null,
+            acts: first,
+            countGate: NO_COUNT,
+            slept: false,
+            paused: false,
+          },
+        }),
       }),
     );
     const gate = hook.result.current.pulledFiles;
@@ -66,7 +106,15 @@ describe('sync as the window reads it (#326)', () => {
     act(() =>
       store.setState({
         vault: '/v',
-        controller: controller({ pulledFiles: { standing: null, acts: second } }),
+        controller: controller({
+          pulledFiles: {
+            standing: null,
+            acts: second,
+            countGate: NO_COUNT,
+            slept: false,
+            paused: false,
+          },
+        }),
       }),
     );
     expect(draws()).toBe(drawn);
@@ -82,7 +130,15 @@ describe('sync as the window reads it (#326)', () => {
     const standing = { pulledAt: 1 } as unknown as PulledFilesGate['standing'];
     act(() =>
       store.setState({
-        controller: controller({ pulledFiles: { standing, acts: async () => true } }),
+        controller: controller({
+          pulledFiles: {
+            standing,
+            acts: async () => true,
+            countGate: NO_COUNT,
+            slept: false,
+            paused: false,
+          },
+        }),
       }),
     );
     expect(hook.result.current.pulledFiles.standing).toBe(standing);
@@ -123,7 +179,7 @@ describe('sync as the window reads it (#326)', () => {
         thisMac: 'Studio',
         settings: {} as SyncController['settings'],
         automationsHere: true,
-        pulledFiles: { standing: null, acts },
+        pulledFiles: { standing: null, acts, countGate: NO_COUNT, slept: false, paused: false },
       }),
     );
     const hook = renderHook(({ vault }: { vault: string }) => useSyncForRunners(store, vault), {

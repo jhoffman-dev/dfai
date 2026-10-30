@@ -18,6 +18,7 @@ const markdown: MarkdownPort = {
   serializeBody: () => '',
   rawParts: () => [],
   noteBlocks: () => ({ quotes: [], hidden: [] }),
+  writeTree: () => '',
   addToFrontmatterMap: () => null,
   frontmatterProblem: () => null,
   frontmatterKeyTexts: () => ({}),

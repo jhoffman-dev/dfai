@@ -19,6 +19,7 @@ export * from './google-calendar/index.ts';
 export * from './profile/index.ts';
 export * from './tags/index.ts';
 export * from './meetings/index.ts';
+export * from './capture/index.ts';
 export { fakeHostVaultFs, fakeIndexPort, fakeMarkdown, fakeVaultFs } from './testing/fake-ports.ts';
 export { memoryIndexPort } from './testing/memory-index.ts';
 export { memoryActivityStore, recordingActivity } from './testing/fake-activity.ts';
@@ -81,6 +82,7 @@ export * from './transclusion/index.ts';
 export * from './activity/index.ts';
 export * from './sync/index.ts';
 export * from './embeddings/index.ts';
+export * from './related/index.ts';
 export * from './home-folders/index.ts';
 export {
   CONFLICT_BLOBS,

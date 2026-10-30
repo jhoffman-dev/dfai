@@ -101,10 +101,15 @@ describe('shippedPropertiesPlan', () => {
     expect(addedKeys([type(' Daily ', ['date'])])).toEqual([[' Daily ', ['tags']]]);
   });
 
-  it('lists a complete type with nothing added, so it can be settled; a type of the vault’s own, PARA’s and Task are not listed', () => {
+  it('lists a complete type with nothing added, so it can be settled; a type of the vault’s own and PARA’s are not listed', () => {
     const complete = type('meeting', MEETING_KEYS);
-    const others = [type('recipe'), type('task', ['status']), type('project'), type('Area')];
+    const others = [type('recipe'), type('project'), type('Area')];
     expect(addedKeys([complete, ...others])).toEqual([['meeting', []]]);
+  });
+
+  it('gives Task `focus` alone (#108), never one of GTD’s keys, nor over a `focus` of its own', () => {
+    expect(addedKeys([type('task', ['status'])])).toEqual([['task', ['focus']]]);
+    expect(addedKeys([type('task', ['status', 'focus'])])).toEqual([['task', []]]);
   });
 
   it('does not list a type whose shipped keys are all settled', () => {

@@ -5,6 +5,7 @@ import {
   isConflictCopyPath,
   macLabel,
   planConflictSteps,
+  settingsFileOfCopy,
 } from './conflict-copy.ts';
 
 const none = new Set<string>();
@@ -128,5 +129,57 @@ describe('isConflictCopyPath', () => {
     );
     expect(isConflictCopyPath('Notes/Conflict from Mara.md')).toBe(false);
     expect(isConflictCopyPath('Notes (conflict from Mara)/Plan.md')).toBe(false);
+  });
+});
+
+describe('settingsFileOfCopy (#235)', () => {
+  it('is the `.atlas/` file a copy under `Sync conflicts/atlas/` was made of, numbered or not', () => {
+    for (const mac of ['Laptop', 'Tobias’s Mac', 'Studio (work)']) {
+      const taken = new Set<string>();
+      const first = conflictCopyPath({ path: '.atlas/types/meeting.md', mac, taken });
+      taken.add(first);
+      const second = conflictCopyPath({ path: '.atlas/types/meeting.md', mac, taken });
+      expect([settingsFileOfCopy(first), settingsFileOfCopy(second)]).toEqual([
+        '.atlas/types/meeting.md',
+        '.atlas/types/meeting.md',
+      ]);
+    }
+    expect(
+      settingsFileOfCopy(
+        'Sync conflicts/atlas/migrations/type-properties (conflict from Laptop).md',
+      ),
+    ).toBe('.atlas/migrations/type-properties.md');
+    expect(settingsFileOfCopy('Sync conflicts/atlas/settings (conflict from Studio).MD')).toBe(
+      '.atlas/settings.MD',
+    );
+  });
+
+  it('is null for a copy of a copy: its live file is the first copy, a person’s to settle', () => {
+    expect(
+      settingsFileOfCopy(
+        'Sync conflicts/atlas/types/meeting (conflict from Laptop) (conflict from Studio).md',
+      ),
+    ).toBeNull();
+    expect(
+      settingsFileOfCopy(
+        'Sync conflicts/atlas/types/meeting (conflict from Laptop) 2 (conflict from Studio).md',
+      ),
+    ).toBeNull();
+  });
+
+  it('is null for anything that is not a markdown copy under `Sync conflicts/atlas/`', () => {
+    for (const path of [
+      'Notes/Plan (conflict from Laptop).md',
+      '.atlas/types/meeting (conflict from Laptop).md',
+      'Sync conflicts/atlas/types/meeting.md',
+      'Sync conflicts/atlas/attachments/logo (conflict from Laptop).png',
+      'Sync conflicts/atlas/ (conflict from Laptop).md',
+      'Sync conflicts/notes/Plan (conflict from Laptop).md',
+      'sync conflicts/atlas/types/meeting (conflict from Laptop).md',
+      'Sync conflicts/atlas/types/meeting (conflict from Laptop) 0.md',
+      'Sync conflicts/atlas/types (conflict from Laptop)/meeting.md',
+    ]) {
+      expect(settingsFileOfCopy(path), path).toBeNull();
+    }
   });
 });

@@ -1,4 +1,5 @@
 import type { ObjectType, PropertyDef } from '../types/property-def.ts';
+import { listFromInput } from '../types/list-input.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { QUICK_ADD_DEFAULT } from './quick-add-types.ts';
 
@@ -55,10 +56,8 @@ function storedValue(field: PropertyDef, typed: string): unknown {
   }
   if (field.kind === 'checkbox') return typed === 'true';
   if (field.kind === 'multiSelect') {
-    const choices = typed
-      .split(',')
-      .map((part) => part.trim())
-      .filter((part) => part !== '');
+    // Typed as the properties panel takes a list: a choice holding a comma is quoted.
+    const choices = listFromInput(typed);
     return choices.length === 0 ? null : choices;
   }
   if (field.kind === 'relation' && field.many) return [typed];

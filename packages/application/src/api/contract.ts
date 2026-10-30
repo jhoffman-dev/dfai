@@ -16,6 +16,8 @@ import type {
   DoneAction,
   ExportDropKind,
   FilterOperator,
+  GranolaPullEnd,
+  GranolaPullMode,
   MAX_ARTIFACT_FILE_BYTES,
   MAX_IMAGE_BYTES,
   NoteEvent,
@@ -289,6 +291,16 @@ export interface ApiSemanticHit {
   /** Cosine similarity to the question, from -1 to 1; higher is closer. */
   readonly score: number;
   readonly archived?: true;
+}
+
+/** A note close in meaning to another and not linked to it yet (`/v1/notes/{path}/related`, P32-03). */
+export interface ApiRelatedNote {
+  readonly path: string;
+  readonly title: string;
+  /** `[[Note]]`, or `[[Folder/Note]]` where the name is shared: what to write to link it. */
+  readonly link: string;
+  /** Cosine similarity of its closest block to the note, above 0 and at most 1; higher is closer. */
+  readonly score: number;
 }
 
 /** How far the embeddings cache is built: while `done < total`, notes not yet embedded cannot be found. */
@@ -674,6 +686,31 @@ export interface ApiScheduleTaskBody {
   readonly minutes?: number;
 }
 
+/**
+ * `POST /v1/today/choose` (#108): choose a task for today, or take it off, as
+ * the Today page's Today, Keep and Drop do — its `focus` set to the app's
+ * today, or taken out.
+ */
+export interface ApiChooseForTodayBody {
+  /** The task's vault-relative path: a note of type task. */
+  readonly path: string;
+  /** True to choose it for today (or keep one carried over); false to take it off (or drop it). */
+  readonly chosen: boolean;
+}
+
+/**
+ * `POST /v1/tasks/done` (#107): tick a task done, or untick it, as a row's
+ * done box does on the Today page and in a query view.
+ */
+export interface ApiTaskDoneBody {
+  /** The task's vault-relative path: a note of type task. */
+  readonly path: string;
+  /** True to finish it (a repeating task rolls on instead); false to take a finished one back to Next Action. */
+  readonly done: boolean;
+  /** The task's `modified` as read: required to tick, so a tick sent twice never rolls a task on twice. */
+  readonly ifModified?: number | undefined;
+}
+
 /** What a batch of archiving, unarchiving or processing the Inbox did. */
 export interface ApiArchiveOutcome {
   /** Every note that moved, in the order asked, from where it was to where it went. */
@@ -792,6 +829,16 @@ export interface ApiReceiveMeetingBody {
  * or already `in-vault` at `path` (the same provider and id), nothing written.
  */
 export interface ApiMeetingReceipt {
+  readonly path: string;
+  readonly outcome: 'written' | 'in-vault';
+}
+
+/**
+ * What became of a capture (#103, ADR-0049): `written` into `Inbox/Captures/`
+ * at `path` as a note or a task, or already `in-vault` at `path` — the same
+ * message, wherever it was filed since — with nothing written.
+ */
+export interface ApiCaptureReceipt {
   readonly path: string;
   readonly outcome: 'written' | 'in-vault';
 }
@@ -1039,6 +1086,50 @@ export interface ApiSourceReport {
   readonly truncated: boolean;
   /** Why the refresh failed, or null. Counts of what landed first still stand. */
   readonly error: string | null;
+}
+
+/**
+ * Granola on this Mac for the vault (P28-13): whether a key is held, never
+ * the key, and this Mac's record of its pulls.
+ */
+export interface ApiGranolaStatus {
+  readonly hasKey: boolean;
+  /** Granola refused the key this Mac holds (401): a new one is set in Settings → Granola. */
+  readonly keyRefused: boolean;
+  /** When this Mac last finished a pull of the vault, in milliseconds since the epoch; null before one. */
+  readonly lastPullAt: number | null;
+  /** Granola's `updated_at` this Mac lists the vault's notes from; null before a pull kept one. */
+  readonly watermark: string | null;
+}
+
+/** A Granola note a pull did not write, and why. Never the note's content. */
+export interface ApiGranolaNoteProblem {
+  readonly id: string;
+  readonly title: string | null;
+  readonly url: string | null;
+  readonly problem: string;
+}
+
+/** What one pull of Granola did, as Settings → Granola reports it. Never the key, never a note's content. */
+export interface ApiGranolaPullReport {
+  readonly mode: GranolaPullMode;
+  readonly ended: GranolaPullEnd;
+  /** The meetings written into the vault. */
+  readonly written: readonly string[];
+  /** Notes the vault already held. */
+  readonly held: number;
+  /** Notes the mapper refused, or whose transcript is past the limit. */
+  readonly refused: readonly ApiGranolaNoteProblem[];
+  /** Notes Granola refuses the same way on every pull, or listed in a shape DFAI cannot read. */
+  readonly skipped: readonly ApiGranolaNoteProblem[];
+  /** Notes that failed in a way that may pass: the next pull tries them again. */
+  readonly failed: readonly ApiGranolaNoteProblem[];
+  /** Why the pull stopped or failed, in the person's words; null when it did neither. */
+  readonly problem: string | null;
+  /** Granola refused the key (401): a new one is set in Settings → Granola. */
+  readonly keyRefused: boolean;
+  /** The watermark after the pull; null when none is kept yet. */
+  readonly watermark: string | null;
 }
 
 /** One tag in the vault's tree of tags, as the tags page shows it. */
@@ -1459,6 +1550,10 @@ export interface ApiReviewTask {
   readonly defer: string | null;
   /** How it repeats, as its `recurrence` says, or null when it does not (#260). Always read by the API. */
   readonly recurrence?: string | null;
+  /** The day it was chosen for (`focus`, #108), `YYYY-MM-DD`, or null. Always read by the API. */
+  readonly focus?: string | null;
+  /** Whether its `focus` holds something other than one day: the person's own, which no choice writes over. */
+  readonly focusIsOwn?: boolean;
   /** Who it waits on — a link by what it shows, a plain name as written — joined with ", "; '' for nobody. */
   readonly waitingOn: string;
   /** Its `contexts`, as written, in order. */
@@ -1522,9 +1617,12 @@ export interface ApiToday {
   /** The day it was taken, `YYYY-MM-DD`, where the app is. */
   readonly today: string;
   /**
-   * Every section, in order — `overdue`, `dueToday`, `backToday`,
-   * `inProgress`, `nextActions`, `waiting` — empty ones included. A task is
-   * in one section only: the first that claims it.
+   * Every section, in order — `chosen`, `carriedOver`, `overdue`,
+   * `dueToday`, `backToday`, `inProgress`, `nextActions`, `waiting` — empty
+   * ones included. A task is in one section only: the first that claims it.
+   * `chosen` holds the open tasks whose `focus` is today, whatever their
+   * status; `carriedOver` those chosen on an earlier day and not yet kept or
+   * dropped (#108).
    */
   readonly sections: readonly {
     readonly id: string;
@@ -1544,6 +1642,12 @@ export interface ApiToday {
   }[];
   /** Active projects with no Next Action or In Progress task: `projectsWithoutNextAction`, counted. */
   readonly stalledProjects: number;
+  /**
+   * Whether tasks can be chosen for today: the vault's Task type has `focus`
+   * as a date (or there is no Task type yet). When false, `chosen` and
+   * `carriedOver` are empty and `POST /v1/today/choose` is refused.
+   */
+  readonly choosing: boolean;
   /** As the weekly review's `inbox`. */
   readonly inbox: ApiWeeklyReview['inbox'];
   /** The index held tasks back, so a section may be missing tasks. */
@@ -1736,6 +1840,12 @@ export type ApiSuccessBody =
     }
   | { readonly hits: readonly ApiSearchHit[] }
   | { readonly hits: readonly ApiSemanticHit[]; readonly progress: ApiSemanticProgress }
+  | {
+      readonly related: readonly ApiRelatedNote[];
+      /** False while the note has no meanings cached yet: nothing can be related to it. */
+      readonly embedded: boolean;
+      readonly progress: ApiSemanticProgress;
+    }
   | { readonly types: readonly ApiType[] }
   | { readonly views: readonly ApiView[] }
   | {
@@ -1764,6 +1874,8 @@ export type ApiSuccessBody =
   | { readonly profile: ApiProfile }
   | ApiCalendar
   | { readonly report: ApiSourceReport }
+  | ApiGranolaStatus
+  | { readonly report: ApiGranolaPullReport }
   | { readonly tags: readonly ApiTag[] }
   | {
       readonly tag: ApiTag;
@@ -1802,6 +1914,7 @@ export type ApiSuccessBody =
       readonly next: number | null;
     }
   | { readonly meeting: ApiMeetingReceipt }
+  | { readonly capture: ApiCaptureReceipt }
   | {
       readonly proposals: readonly ApiProposal[];
       /** Answered, yet still in Inbox/Proposals: the Archive refused them. */
@@ -1869,6 +1982,11 @@ export const API_ROUTES = [
     summary: 'Replace the body. Requires ifModified.',
   },
   { method: 'GET', path: '/v1/notes/{path}/backlinks', summary: 'Notes that link to this one.' },
+  {
+    method: 'GET',
+    path: '/v1/notes/{path}/related',
+    summary: 'Notes close in meaning and not linked to it yet, either way. Query: limit.',
+  },
   {
     method: 'POST',
     path: '/v1/notes/{path}/promote',
@@ -2059,7 +2177,18 @@ export const API_ROUTES = [
     method: 'GET',
     path: '/v1/today',
     summary:
-      'The Today page: overdue, due today, back from deferral, in progress, next actions, waiting.',
+      'The Today page: chosen, carried over, overdue, due today, back, in progress, next, waiting.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/tasks/done',
+    summary:
+      'Tick a task done, or untick it, as its done box does: a repeating task rolls on. Answers the task.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/today/choose',
+    summary: 'Choose a task for today, or take it off, as the Today page does. Answers the task.',
   },
   {
     method: 'GET',
@@ -2124,6 +2253,12 @@ export const API_ROUTES = [
       'Send a meeting, as n8n assembles it: mapped and written into Inbox/Meetings, once per provider and id.',
   },
   {
+    method: 'POST',
+    path: '/v1/captures',
+    summary:
+      'Save a Slack message, and its thread, as an Inbox note or task (capture/v1): once per message.',
+  },
+  {
     method: 'GET',
     path: '/v1/calendar/meetings',
     summary:
@@ -2143,6 +2278,18 @@ export const API_ROUTES = [
     method: 'POST',
     path: '/v1/proposals/{path}/reject',
     summary: 'Reject a proposal: write nothing it proposed, and archive it as rejected.',
+  },
+  {
+    method: 'GET',
+    path: '/v1/granola',
+    summary:
+      'Whether this Mac holds a Granola key for the vault (never the key), and its last pull and watermark.',
+  },
+  {
+    method: 'POST',
+    path: '/v1/granola/pull',
+    summary:
+      "Pull Granola's new meetings into the vault now, as Settings → Granola's Sync now does: once per vault per 30 s.",
   },
 ] as const;
 

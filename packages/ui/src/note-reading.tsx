@@ -2,6 +2,7 @@ import { useEffect, useMemo, type KeyboardEvent, type MouseEvent } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { EditorDocument } from '@dfai/domain';
 import { createReadingExtensions } from './editor/extensions.ts';
+import { useCodeLanguages } from './editor/code-languages-context.ts';
 import { showAsRead } from './editor/block-anchor.ts';
 
 /**
@@ -25,7 +26,11 @@ export function NoteReading({
   onOpenTag?: (name: string) => void;
   loadImage: (src: string) => Promise<string | null>;
 }) {
-  const extensions = useMemo(() => createReadingExtensions({ loadImage }), [loadImage]);
+  const codeLanguages = useCodeLanguages();
+  const extensions = useMemo(
+    () => createReadingExtensions({ loadImage, codeLanguages }),
+    [loadImage, codeLanguages],
+  );
   const editor = useEditor(
     {
       extensions,

@@ -12,6 +12,7 @@ import {
   type SyncReport,
 } from '@dfai/domain';
 import type { ActivityRecorder } from '../activity/ports.ts';
+import type { UnsettledSaid } from '../meetings/index.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
@@ -30,6 +31,7 @@ import {
   SyncError,
   withPrograms,
 } from './git-steps.ts';
+import { clearSettledCopies } from './clear-settled-copies.ts';
 import { leaveOut } from './leave-out.ts';
 import type { GitPort, SyncFilesPort, UnsavedWorkPort } from './ports.ts';
 import { clearJournal, readJournal } from './journal.ts';
@@ -39,11 +41,12 @@ export interface SyncPorts {
   readonly git: GitPort;
   /**
    * To measure files, for what is too large to sync, to make a folder a copy
-   * goes in, and to write a settings file both Macs changed merged by its keys.
+   * goes in, to write a settings file both Macs changed merged by its keys,
+   * and to move a copy that holds nothing more to the Trash.
    */
   readonly fs: Pick<
     VaultFsPort,
-    'listDirectory' | 'createFolder' | 'readTextFile' | 'writeTextFile'
+    'listDirectory' | 'createFolder' | 'readTextFile' | 'writeTextFile' | 'trashEntry'
   >;
   /** To read and write the frontmatter of a settings file both Macs changed. */
   readonly markdown: MarkdownPort;
@@ -51,6 +54,12 @@ export interface SyncPorts {
   readonly files: SyncFilesPort;
   readonly unsaved: UnsavedWorkPort;
   readonly activity: ActivityRecorder;
+  /**
+   * What this Mac has said, this session, of old conflict copies it kept
+   * though they hold nothing more (#235): each is said once, and again when
+   * it changes. Left out, each is said on every sync.
+   */
+  readonly copiesSaid?: UnsettledSaid;
 }
 
 /**
@@ -91,6 +100,7 @@ interface SyncStep {
   readonly markdown: MarkdownPort;
   readonly files: SyncFilesPort;
   readonly activity: ActivityRecorder;
+  readonly copiesSaid: UnsettledSaid | undefined;
   readonly mac: string;
   readonly branch: string;
   readonly message: string;
@@ -98,7 +108,7 @@ interface SyncStep {
 }
 
 async function runSync({
-  ports: { git, fs, files, unsaved, activity, markdown },
+  ports: { git, fs, files, unsaved, activity, markdown, copiesSaid },
   mac,
   clock,
 }: {
@@ -111,12 +121,16 @@ async function runSync({
   const { leftOut, newly, ignored } = await leaveOut({ git, fs, files });
   warn(activity, leftOutWarnings(newly));
   const message = syncCommitMessage({ mac, localNow: clock.localNow() });
-  const step: SyncStep = { git, fs, markdown, files, activity, mac, branch, leftOut, message };
+  const step: SyncStep = {
+    ...{ git, fs, markdown, files, activity, copiesSaid },
+    ...{ mac, branch, leftOut, message },
+  };
   const leftover = await concludeLeftoverMerge(step);
   await followCaseRenames(git, await readStatus(git));
   const committed = (await commitAll({ git, mac, message, leftOut })) || leftover;
   expectOk('fetch from GitHub', await git.fetch());
   const pulled = await mergeFromOrigin(step);
+  const cleared = await clearCopiesThatAddNothing(step);
   const tooLarge = await leaveOutOfUnpushedHistory(step);
   const after = await readStatus(git);
   // Without a comparison the upstream is not on GitHub yet, so nothing here is either.
@@ -126,7 +140,7 @@ async function runSync({
   await clearJournal(files);
   return {
     at: clock.now(),
-    committed,
+    committed: committed || cleared,
     pulled,
     pushed,
     conflicts,
@@ -206,6 +220,23 @@ async function mergeFromOrigin(step: SyncStep): Promise<boolean> {
   await settleConflicts({ git, files, conflicts, mac: from, leftOut, settings: settingsOf(step) });
   await commitAs({ git, message, identity });
   return true;
+}
+
+/**
+ * Clears the `.atlas` conflict copies whose live file, as this sync's merge
+ * left it, already holds everything in them (#235), then commits their
+ * removal so it goes out with this push. Copies this sync made are kept: it
+ * is about to report them. Says whether it committed.
+ */
+async function clearCopiesThatAddNothing(step: SyncStep): Promise<boolean> {
+  const { git, fs, markdown, files, activity, copiesSaid, mac, message, leftOut } = step;
+  const { unreported } = await readJournal(files);
+  const cleared = await clearSettledCopies({
+    ports: { git, fs, markdown, activity },
+    keep: new Set(unreported.map(({ copy }) => copy)),
+    ...(copiesSaid !== undefined && { said: copiesSaid }),
+  });
+  return cleared.length > 0 && (await commitAll({ git, mac, message, leftOut }));
 }
 
 /**

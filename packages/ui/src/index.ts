@@ -84,6 +84,10 @@ export { LinkPicker } from './link-picker.tsx';
 export { VaultEmptyState } from './vault-empty.tsx';
 export { NoteLinksPanel } from './note-links.tsx';
 export type { MentionRow, MentionsState } from './note-links.tsx';
+export { RelatedNotesList } from './related-notes.tsx';
+export type { RelatedPanel, RelatedPanelState, RelatedRow } from './related-notes.tsx';
+export { TrailBar } from './trail-bar.tsx';
+export type { SavedTrailNote, TrailNote, TrailWalk } from './trail-bar.tsx';
 export { EditableTitle, HiddenTitle, PageHead } from './page-head.tsx';
 export type { PageHeadProps } from './page-head.tsx';
 export { PageAction, PageBar } from './page-bar.tsx';
@@ -183,6 +187,16 @@ export type { GroupOption } from './view-settings-popovers.tsx';
 export { QueryPage } from './query-page.tsx';
 export type { AddToDashboard, QueryChoice, QueryPageProps, SaveAsView } from './query-page.tsx';
 export { LinkedNote, NoteNamesProvider, useNoteNames } from './note-names.tsx';
+export { CodeLanguagesProvider } from './editor/code-languages-context.ts';
+export {
+  CODE_GRAMMARS,
+  createCodeLanguages,
+  grammarFor,
+  type CodeGrammar,
+  type CodeLanguages,
+  type LoadGrammar,
+} from './editor/code-languages.ts';
+export { CODE_GRAMMAR_IMPORTS } from './editor/code-grammars.ts';
 export { LinkHintsProvider, useLinkHints } from './link-suggest/link-hints.tsx';
 export type { LinkHintsSource } from './link-suggest/link-hints.tsx';
 export { ArtifactViewer, ARTIFACT_SANDBOX } from './artifact-viewer.tsx';

@@ -151,6 +151,17 @@ describe('tauriIndex', () => {
     expect(result.rows).toEqual([['A']]);
   });
 
+  it('hands a string parameter to the host as it is, never pre-escaped (#237)', async () => {
+    // The host binds the string itself; escaping it here would match nothing.
+    invoke.mockResolvedValue({ columns: ['path'], rows: [], truncated: false });
+    const awkward = 'Mara "Q" Quill C:\\notes\nZoë 東京';
+    await tauriIndex.query('SELECT path FROM v_person WHERE title = ?', [awkward]);
+    expect(invoke).toHaveBeenCalledWith('index_query', {
+      sql: 'SELECT path FROM v_person WHERE title = ?',
+      parameters: ['Mara "Q" Quill C:\\notes\nZoë 東京'],
+    });
+  });
+
   it('reports the index statistics', async () => {
     invoke.mockResolvedValue({ notes: 3, properties: 4, links: 5 });
     await expect(tauriIndex.stats()).resolves.toEqual({ notes: 3, properties: 4, links: 5 });

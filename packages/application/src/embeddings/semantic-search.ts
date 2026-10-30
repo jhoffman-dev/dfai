@@ -13,6 +13,7 @@ import {
   type EmbeddingCachePort,
   type EmbeddingPort,
 } from './ports.ts';
+import type { RelatedAnswer, RelatedQuery } from './related-by-meaning.ts';
 import type { SemanticBlocks } from './semantic-blocks.ts';
 
 /** How many hits a search gives when it is not told, and the most it ever gives. */
@@ -67,6 +68,12 @@ export interface SemanticSearch {
 export interface SemanticAccess extends SemanticSearch {
   /** Whether search by meaning has been turned on here; the API and the assistant never turn it on. */
   isOn(): boolean;
+  /**
+   * The notes closest in meaning to a note (P32-03), from the vectors already
+   * cached: never turns search by meaning on, and asks the model nothing.
+   * Where it is off, nothing is related (`embedded: false`).
+   */
+  related(asked: RelatedQuery): Promise<RelatedAnswer>;
 }
 
 /** The most of a question the model is given; a longer one is cut there, at a character. */

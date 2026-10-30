@@ -283,8 +283,19 @@ test('an unbroken title stays inside its feed row, and a narrow list row cuts it
 test('the Layout menu says why a calendar cannot be chosen for a type with no date', async ({
   page,
 }) => {
-  await openVault(page);
-  await openView(page, 'All tasks');
+  // Not the Task type: it is given `focus` (Chosen for), a date, as the vault opens (#108).
+  await openVault(page, [
+    {
+      name: '.atlas/types/recipe.md',
+      content: '---\nname: recipe\nproperties:\n  serves: number\n---\n',
+    },
+    {
+      name: '.atlas/views/All recipes.md',
+      content: view('All recipes', 'table').replace('type: task', 'type: recipe'),
+    },
+    { name: 'soup.md', content: '---\ntype: recipe\nserves: 4\n---\n\n# Soup\n' },
+  ]);
+  await openView(page, 'All recipes');
 
   await page.getByRole('button', { name: 'Layout', exact: true }).click();
   const calendar = page.getByRole('menuitemradio', { name: /Calendar/ });
