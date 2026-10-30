@@ -116,6 +116,12 @@ export interface InboxPageProps {
    * until it reads. `problem` is why it cannot be read.
    */
   settingsUnreadable?: { readonly problem: string; readonly onOpenSettings: () => void } | null;
+  /**
+   * On a Mac that is not named, what waits for the one that is (ADR-0035
+   * part 1): "N meetings waiting for <Mac>", or, before a count can be given,
+   * what it waits for. Null on the named Mac, and when none waits.
+   */
+  meetingsWaiting?: string | null;
   /** The tasks meetings made that today's rules would not have, offered to archive (#226). */
   meetingCleanup?: MeetingCleanupProps | null;
   /** Filing the meetings that have no project as their series is, previewed first (#227). */
@@ -145,6 +151,7 @@ export function InboxPage(props: InboxPageProps) {
   const tidy = props.vaultTidy ?? null;
   const ownerUnknown = props.ownerUnknown ?? null;
   const settingsUnreadable = props.settingsUnreadable ?? null;
+  const meetingsWaiting = props.meetingsWaiting ?? null;
   const cleanup = props.meetingCleanup ?? null;
   const meetingProjects = props.meetingProjects ?? null;
   const proposals = props.proposals ?? null;
@@ -191,6 +198,7 @@ export function InboxPage(props: InboxPageProps) {
             <HiddenTitle>To process</HiddenTitle>
             {settingsUnreadable !== null && <SettingsUnreadable {...settingsUnreadable} />}
             {ownerUnknown !== null && <OwnerUnknown {...ownerUnknown} />}
+            {meetingsWaiting !== null && <MeetingsWaiting line={meetingsWaiting} />}
             <Offers
               offers={[
                 slot('types', offer, (known) => <TypesOffer {...known} />),
@@ -361,6 +369,22 @@ function OwnerUnknown({ onOpenSettings }: { onOpenSettings: () => void }) {
       <button type="button" className="btn btn--ghost btn--sm" onClick={onOpenSettings}>
         Open Settings
       </button>
+    </aside>
+  );
+}
+
+/** What waits for the Mac that runs the automations, on another Mac (ADR-0035 part 1). */
+function MeetingsWaiting({ line }: { line: string }) {
+  return (
+    <aside
+      className="notice-bar inbox__offer inbox__offer--warning"
+      role="status"
+      aria-label="Meetings waiting"
+    >
+      <Icon name="event" size={14} className="notice-bar__icon" />
+      <div className="notice-bar__text">
+        <p>{line}</p>
+      </div>
     </aside>
   );
 }

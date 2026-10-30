@@ -66,7 +66,16 @@ export function pickerSuggestion<Item>({
       if (Array.isArray(found)) return settle(found);
       const ticket = (asked += 1);
       // Typing on while a note is read asks again; only the latest answer is shown.
-      return found.then((answer) => (ticket === asked ? settle(answer) : items));
+      // A read that fails clears the popup rather than leaving the last answer on
+      // it: the suggestion re-renders with these items. The failure is still the
+      // suggestion's to see, which ends its loading on it.
+      return found.then(
+        (answer) => (ticket === asked ? settle(answer) : items),
+        (cause: unknown) => {
+          if (ticket === asked) settle([]);
+          throw cause;
+        },
+      );
     },
     render: () => {
       // onKeyDown is given neither the caret rectangle nor the insert command,

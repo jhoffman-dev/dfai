@@ -1273,13 +1273,21 @@ pub(crate) fn run_query(
         .iter()
         .map(|value| -> Box<dyn rusqlite::ToSql> {
             match value {
-                serde_json::Value::Number(number) => match number.as_f64() {
-                    Some(float) => Box::new(float),
-                    None => Box::new(number.to_string()),
+                // An integer binds as an SQL integer, so it keeps every digit and
+                // matches text holding its digits. SQLite integers are i64, so a
+                // larger u64 can only bind as a real.
+                serde_json::Value::Number(number) => match (number.as_i64(), number.as_f64()) {
+                    (Some(integer), _) => Box::new(integer),
+                    (None, Some(float)) => Box::new(float),
+                    (None, None) => Box::new(number.to_string()),
                 },
                 serde_json::Value::Bool(flag) => Box::new(flag.to_string()),
                 serde_json::Value::Null => Box::new(rusqlite::types::Null),
-                other => Box::new(other.to_string().trim_matches('"').to_string()),
+                // The string itself, never its JSON text: that escapes `"`, `\`
+                // and control characters, which then match nothing (#237).
+                serde_json::Value::String(text) => Box::new(text.clone()),
+                // An array or object is bound as its JSON text, for json_each.
+                other => Box::new(other.to_string()),
             }
         })
         .collect();
@@ -2819,6 +2827,51 @@ mod tests {
         .unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0][0], serde_json::json!("Big"));
+    }
+
+    /// #237: a string parameter is bound as the string itself, never as its
+    /// JSON-escaped text, so `"`, `\`, control characters and non-ASCII match.
+    #[test]
+    fn a_string_parameter_is_bound_as_the_string_itself() {
+        let awkward = [
+            "Mara \"Q\" Quill",
+            "C:\\notes\\drafts",
+            "line one\nline two\ttabbed",
+            "Zoë Café 東京 🌿",
+            "\"",
+        ];
+        let notes: Vec<IndexedNote> = awkward
+            .iter()
+            .enumerate()
+            .map(|(at, value)| {
+                typed_note(&format!("{at}.md"), &format!("N{at}"), &[("stage", value)])
+            })
+            .collect();
+        let mut index = empty_index();
+        put_notes(&mut index, &notes).unwrap();
+        rebuild_views(&index, &[company_type()]).unwrap();
+
+        for (at, value) in awkward.iter().enumerate() {
+            let echoed =
+                run_query(&index, "SELECT ? AS echoed", &[serde_json::json!(value)]).unwrap();
+            assert_eq!(
+                echoed.rows[0][0],
+                serde_json::json!(value),
+                "echo of {value:?}"
+            );
+
+            let result = run_query(
+                &index,
+                "SELECT title FROM v_company WHERE stage = ?",
+                &[serde_json::json!(value)],
+            )
+            .unwrap();
+            assert_eq!(
+                result.rows,
+                vec![vec![serde_json::json!(format!("N{at}"))]],
+                "match for {value:?}"
+            );
+        }
     }
 
     #[test]
@@ -4555,5 +4608,262 @@ ORDER BY 1, 3"#;
                 Some("Library/Ledger.md" | "Library/Verses.md")
             )
         }));
+    }
+
+    // --- #594 attack: every JSON value kind as a `run_query` parameter. ---
+
+    fn echo(parameter: serde_json::Value) -> Result<QueryResult, String> {
+        run_query(
+            &empty_index(),
+            "SELECT ? AS echoed, typeof(?1) AS kind",
+            &[parameter],
+        )
+    }
+
+    fn echoed_with_kind(parameter: serde_json::Value) -> (serde_json::Value, String) {
+        let result = echo(parameter).unwrap();
+        let kind = result.rows[0][1].as_str().unwrap().to_string();
+        (result.rows[0][0].clone(), kind)
+    }
+
+    #[test]
+    fn every_awkward_string_parameter_echoes_unchanged_as_text() {
+        let long = "x".repeat(100_000);
+        let awkward = [
+            "",
+            "\"",
+            "\\",
+            "\n",
+            "\t",
+            "a\u{0000}b",
+            "\u{200F}\u{202E}right to left",
+            "🌿👩‍👧",
+            "\u{FFFD}",
+            long.as_str(),
+        ];
+        for value in awkward {
+            let (echoed, kind) = echoed_with_kind(serde_json::json!(value));
+            assert_eq!(echoed, serde_json::json!(value), "echo of {:.40?}", value);
+            assert_eq!(kind, "text", "kind of {:.40?}", value);
+        }
+    }
+
+    #[test]
+    fn a_string_that_looks_like_a_number_stays_text() {
+        for value in ["42", "1.5", "-0", "1e300", "true", "null"] {
+            let (echoed, kind) = echoed_with_kind(serde_json::json!(value));
+            assert_eq!(echoed, serde_json::json!(value));
+            assert_eq!(kind, "text", "kind of {value:?}");
+        }
+    }
+
+    #[test]
+    fn a_string_with_a_nul_matches_the_property_holding_it() {
+        let mut index = empty_index();
+        put_notes(
+            &mut index,
+            &[typed_note("a.md", "A", &[("stage", "a\u{0000}b")])],
+        )
+        .unwrap();
+        rebuild_views(&index, &[company_type()]).unwrap();
+        let result = run_query(
+            &index,
+            "SELECT title FROM v_company WHERE stage = ?",
+            &[serde_json::json!("a\u{0000}b")],
+        )
+        .unwrap();
+        assert_eq!(result.rows, vec![vec![serde_json::json!("A")]]);
+    }
+
+    #[test]
+    fn a_lone_surrogate_is_refused_before_it_reaches_the_index() {
+        // IPC arguments are parsed by serde_json; a lone surrogate never
+        // becomes a Value, so it cannot reach `run_query` at all.
+        assert!(serde_json::from_str::<serde_json::Value>(r#""\ud800""#).is_err());
+        assert!(serde_json::from_str::<serde_json::Value>(r#""\udfff x""#).is_err());
+        // A paired surrogate escape decodes to the character itself.
+        let paired: serde_json::Value = serde_json::from_str(r#""🌿""#).unwrap();
+        assert_eq!(echoed_with_kind(paired).0, serde_json::json!("🌿"));
+    }
+
+    #[test]
+    fn floats_bind_as_real_values() {
+        for value in [1.5_f64, 1e300, -1e-300] {
+            let (echoed, kind) = echoed_with_kind(serde_json::json!(value));
+            assert_eq!(echoed.as_f64(), Some(value));
+            assert_eq!(kind, "real");
+        }
+        let (zero, _) = echoed_with_kind(serde_json::json!(-0.0_f64));
+        assert_eq!(zero.as_f64(), Some(0.0));
+    }
+
+    #[test]
+    fn an_integer_parameter_binds_as_an_sql_integer() {
+        let (echoed, kind) = echoed_with_kind(serde_json::json!(42));
+        assert_eq!(kind, "integer");
+        assert_eq!(echoed, serde_json::json!(42));
+    }
+
+    #[test]
+    fn an_integer_beyond_two_to_the_53_keeps_every_digit() {
+        let exact: i64 = 9_007_199_254_740_993;
+        let (echoed, _) = echoed_with_kind(serde_json::json!(exact));
+        assert_eq!(echoed.as_i64(), Some(exact));
+    }
+
+    #[test]
+    fn an_integer_matches_a_text_property_holding_its_digits() {
+        // `value_text` has TEXT affinity: an integer 2024 compares as '2024',
+        // a real 2024.0 as '2024.0', which matches nothing.
+        let mut index = empty_index();
+        put_notes(&mut index, &[typed_note("a.md", "A", &[("year", "2024")])]).unwrap();
+        let result = run_query(
+            &index,
+            "SELECT path FROM props WHERE key = 'year' AND value_text = ?",
+            &[serde_json::json!(2024)],
+        )
+        .unwrap();
+        assert_eq!(result.rows, vec![vec![serde_json::json!("a.md")]]);
+    }
+
+    #[test]
+    fn an_integer_beyond_i64_binds_without_panicking() {
+        let (echoed, kind) = echoed_with_kind(serde_json::json!(u64::MAX));
+        assert_eq!(kind, "real");
+        assert!(echoed.as_f64().unwrap() > 1.8e19);
+    }
+
+    #[test]
+    fn an_integer_parameter_works_as_a_limit() {
+        let mut index = empty_index();
+        put_notes(
+            &mut index,
+            &[
+                note("a.md", "A", "x"),
+                note("b.md", "B", "y"),
+                note("c.md", "C", "z"),
+            ],
+        )
+        .unwrap();
+        let result = run_query(
+            &index,
+            "SELECT path FROM files ORDER BY path LIMIT ?",
+            &[serde_json::json!(2)],
+        )
+        .unwrap();
+        assert_eq!(result.rows.len(), 2);
+        assert!(run_query(
+            &index,
+            "SELECT path FROM files LIMIT ?",
+            &[serde_json::json!(1.5)]
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn null_binds_as_sql_null() {
+        let (echoed, kind) = echoed_with_kind(serde_json::Value::Null);
+        assert_eq!(echoed, serde_json::Value::Null);
+        assert_eq!(kind, "null");
+    }
+
+    #[test]
+    fn a_boolean_binds_as_the_text_the_indexer_stores_for_it() {
+        // The domain indexes a boolean property as the text "true"/"false".
+        assert_eq!(
+            echoed_with_kind(serde_json::json!(true)),
+            (serde_json::json!("true"), "text".into())
+        );
+        assert_eq!(
+            echoed_with_kind(serde_json::json!(false)),
+            (serde_json::json!("false"), "text".into())
+        );
+    }
+
+    #[test]
+    fn an_array_or_object_binds_as_json_text_for_json_each() {
+        let index = empty_index();
+        let listed = run_query(
+            &index,
+            "SELECT value FROM json_each(?) ORDER BY key",
+            &[serde_json::json!(["a\"b", "c\\d", 3, null])],
+        )
+        .unwrap();
+        assert_eq!(
+            listed.rows,
+            vec![
+                vec![serde_json::json!("a\"b")],
+                vec![serde_json::json!("c\\d")],
+                vec![serde_json::json!(3)],
+                vec![serde_json::Value::Null],
+            ]
+        );
+        let keyed = run_query(
+            &index,
+            "SELECT key, value FROM json_each(?)",
+            &[serde_json::json!({ "stage": "Seed \"A\"" })],
+        )
+        .unwrap();
+        assert_eq!(
+            keyed.rows,
+            vec![vec![
+                serde_json::json!("stage"),
+                serde_json::json!("Seed \"A\"")
+            ]]
+        );
+    }
+
+    #[test]
+    fn an_injection_looking_string_is_inert_and_leaves_the_index_unchanged() {
+        let mut index = empty_index();
+        put_notes(&mut index, &[typed_note("a.md", "A", &[("stage", "Seed")])]).unwrap();
+        rebuild_views(&index, &[company_type()]).unwrap();
+        let before = stats(&index).unwrap();
+        for hostile in [
+            "' OR 1=1 --",
+            "\"; DROP TABLE files; --",
+            "'); DELETE FROM props; --",
+            "Seed' OR '1'='1",
+        ] {
+            let result = run_query(
+                &index,
+                "SELECT title FROM v_company WHERE stage = ?",
+                &[serde_json::json!(hostile)],
+            )
+            .unwrap();
+            assert!(result.rows.is_empty(), "{hostile:?} matched rows");
+            let (echoed, _) = echoed_with_kind(serde_json::json!(hostile));
+            assert_eq!(echoed, serde_json::json!(hostile));
+        }
+        let after = stats(&index).unwrap();
+        assert_eq!(
+            (after.notes, after.properties, after.links),
+            (before.notes, before.properties, before.links)
+        );
+        let still = run_query(&index, "SELECT title FROM v_company", &[]).unwrap();
+        assert_eq!(still.rows, vec![vec![serde_json::json!("A")]]);
+    }
+
+    #[test]
+    fn a_parameter_count_mismatch_is_a_clean_error() {
+        let index = empty_index();
+        let cases: [(&str, Vec<serde_json::Value>); 5] = [
+            ("SELECT ?, ?", vec![serde_json::json!("a")]),
+            ("SELECT ?", vec![]),
+            (
+                "SELECT ?",
+                vec![serde_json::json!("a"), serde_json::json!("b")],
+            ),
+            ("SELECT 1", vec![serde_json::json!("a")]),
+            ("SELECT ?3", vec![serde_json::json!("a")]),
+        ];
+        for (sql, parameters) in cases {
+            let outcome = run_query(&index, sql, &parameters);
+            assert!(
+                outcome.is_err(),
+                "{sql} with {} parameters",
+                parameters.len()
+            );
+        }
     }
 }

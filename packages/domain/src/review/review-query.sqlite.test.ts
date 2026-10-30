@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { indexablePropertiesOf } from '../index/property-value.ts';
+import { focusIsOwn } from '../today/row-read.ts';
 import {
   compileReviewDoneQuery,
   compileReviewMeetingsQuery,
@@ -75,6 +76,7 @@ describe('compileReviewTasksQuery', () => {
           status: ' waiting',
           due: '2026-10-01T09:00',
           defer: '2026-10-20',
+          focus: '2026-10-14T08:00',
           waiting_on: ['[[Mara Quill]]', '[[Tobias Fenn]]'],
           contexts: ['@office', ' @calls ', ''],
           project: '[[Atlas]]',
@@ -94,6 +96,8 @@ describe('compileReviewTasksQuery', () => {
         title: 'Quote',
         status: 'waiting',
         due: '2026-10-01',
+        focus: '2026-10-14',
+        focusIsOwn: false,
         defer: '2026-10-20',
         recurrence: null,
         waitingOn: 'Mara Quill, Tobias Fenn',
@@ -393,4 +397,29 @@ describe('the Friday review draft’s statements (#40)', () => {
       { path: 'Meetings/Standup.md', title: 'Standup', date: '2026-10-21' },
     ]);
   });
+});
+
+describe('compileReviewTasksQuery, a focus that is the person’s own (#108)', () => {
+  const VALUES: readonly unknown[] = [
+    '2026-10-28',
+    '2026-10-28T09:00',
+    ['2026-10-28'],
+    '',
+    null,
+    'writing',
+    '2026-02-30',
+    5,
+    '[[Daily/2026-10-28]]',
+    ['2026-10-28', '2026-10-01'],
+    ['2026-10-28', 'writing'],
+  ];
+
+  it.each(VALUES.map((value) => [JSON.stringify(value), value]))(
+    'reads focus %s as focusIsOwn reads the file',
+    (_, focus) => {
+      const frontmatter = { type: 'task', status: 'next-action', focus };
+      const [read] = tasksOf({ 'Tasks/Paint.md': { frontmatter } });
+      expect(read?.focusIsOwn ?? false).toBe(focusIsOwn(frontmatter));
+    },
+  );
 });

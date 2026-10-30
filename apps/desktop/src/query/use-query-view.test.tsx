@@ -117,6 +117,7 @@ function render(note: OpenNote | null, fs: ReturnType<typeof fakeVaultFs>) {
       viewPaths: NO_VIEWS,
       onChanged,
       onOpenNote: () => {},
+      clock: { today: () => '2026-10-28' },
     }),
   );
   return { view, asked, onChanged, activity, held: folds.held };
@@ -230,6 +231,7 @@ describe('useQueryView', () => {
         viewPaths: NO_VIEWS,
         onChanged: () => {},
         onOpenNote: () => {},
+        clock: { today: () => '2026-10-28' },
       }),
     );
     act(() => view.result.current?.panel.composer.onMode('text'));

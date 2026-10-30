@@ -4,6 +4,7 @@ import { frontmatterProblem, parseFrontmatterProperties } from './frontmatter.ts
 import { addToFrontmatterMap } from './frontmatter-add.ts';
 import { frontmatterKeyTexts, updateFrontmatter } from './frontmatter-write.ts';
 import { plainTextOf } from './plain-text.ts';
+import { writeCaptureMarkdown } from './capture-markdown.ts';
 import { noteBlocks } from './note-blocks.ts';
 import { readRawParts } from './raw-parts.ts';
 import { textRangesOf } from './text-ranges.ts';
@@ -21,4 +22,5 @@ export const remarkMarkdown: MarkdownPort = {
   addToFrontmatterMap,
   rawParts: readRawParts,
   noteBlocks,
+  writeTree: writeCaptureMarkdown,
 };

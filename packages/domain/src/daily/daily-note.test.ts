@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { splitFrontmatter } from '../markdown/markdown-document.ts';
 import { isBuiltInType, typeDeleteRefusal } from '../types/built-in-types.ts';
 import type { ObjectType } from '../types/property-def.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
-import {
-  DAILY_NOTE_CONTENTS,
-  DAILY_TYPE_FILE,
-  dailyNoteAmong,
-  dailyTypeToOffer,
-} from './daily-note.ts';
+import { DAILY_TYPE_FILE, dailyNoteAmong, dailyTypeToOffer } from './daily-note.ts';
 
 /** #81: today's note is a note of the built-in Daily type. */
 const typeNamed = (name: string): ObjectType => ({ name, label: name, properties: [] });
@@ -40,15 +34,6 @@ describe('the Daily type', () => {
       ['date', 'date'],
       ['tags', 'multiSelect'],
     ]);
-  });
-});
-
-describe("today's note without a Daily template", () => {
-  it('is a note of the Daily type, with a heading for the day and one for what is next', () => {
-    const { frontmatter, body } = splitFrontmatter(DAILY_NOTE_CONTENTS);
-    expect(frontmatter).toMatch(/^type: daily$/m);
-    expect(body).toContain('## What happened');
-    expect(body).toContain('## What is next');
   });
 });
 

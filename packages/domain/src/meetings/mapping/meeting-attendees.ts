@@ -1,3 +1,4 @@
+import { emailKey } from './meeting-email-key.ts';
 import { MeetingMappingError, oneLine } from './meeting-mapping-error.ts';
 
 /** One attendee as the contract writes it: `{ name, email?, group? }`. */
@@ -31,7 +32,7 @@ const localPart = (email: string) => email.slice(0, email.indexOf('@'));
 
 function isGroup(email: string | undefined, groupAddresses: Set<string>): boolean {
   if (email === undefined) return false;
-  return groupAddresses.has(email.toLowerCase()) || GROUP_LOCAL_PART.test(localPart(email));
+  return groupAddresses.has(emailKey(email)) || GROUP_LOCAL_PART.test(localPart(email));
 }
 
 /** An attendee as read, and whether a display name was given (not made from the address). */
@@ -105,7 +106,7 @@ function entries(value: unknown): unknown[] {
  * the first of all when none has one.
  */
 export function readAttendees(value: unknown, groupAddresses: readonly string[]): Attendee[] {
-  const groups = new Set(groupAddresses.map((each) => each.toLowerCase()));
+  const groups = new Set(groupAddresses.map(emailKey));
   const byKey = new Map<string, Read>();
   for (const entry of entries(value)) {
     const read =
@@ -113,7 +114,8 @@ export function readAttendees(value: unknown, groupAddresses: readonly string[])
         ? fromRecord(entry as Record<string, unknown>, groups)
         : fromLine(oneLine(entry), groups);
     if (read === null) continue;
-    const key = (read.attendee.email ?? read.attendee.name).toLowerCase();
+    const { email, name } = read.attendee;
+    const key = email === undefined ? name.toLowerCase() : emailKey(email);
     const kept = byKey.get(key);
     if (kept === undefined || (!kept.named && read.named)) byKey.set(key, read);
   }

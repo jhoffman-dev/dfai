@@ -63,12 +63,46 @@ export function conflictCopyPath({
   }
 }
 
-/** A name {@link conflictCopyPath} gives: ` (conflict from <Mac>)`, maybe numbered, before the extension. */
-const CONFLICT_COPY_NAME = / \(conflict from [^/)]+\)(?: \d+)?(?:\.[^./]+)?$/;
+/**
+ * A name {@link conflictCopyPath} gives: ` (conflict from <Mac>)`, maybe
+ * numbered, before the extension, in the file's own name. The Mac's part is
+ * {@link macLabel}'s: up to {@link MAX_MAC_LABEL} characters of anything but
+ * a slash — brackets included, as in "Mara's MacBook Pro (2)" — so it is
+ * matched lazily and the end of the name decides where it stops (#627). A
+ * name that ends in a dot keeps an empty extension.
+ */
+const CONFLICT_COPY_NAME = new RegExp(
+  ` \\(conflict from [^/]{1,${MAX_MAC_LABEL}}?\\)(?: \\d+)?(?:\\.[^./]*)?$`,
+  'u',
+);
 
 /** Whether a path is the other Mac's version of a file a merge could not settle, kept beside it. */
 export function isConflictCopyPath(path: string): boolean {
   return CONFLICT_COPY_NAME.test(path);
+}
+
+/**
+ * A copy under `Sync conflicts/atlas/`: its folder and stem there, the Mac it
+ * came from, and its number, before a markdown extension. The stem is
+ * matched greedily, so a Mac named with brackets (`Studio (work)`) still
+ * reads as one Mac, and a second ` (conflict from …)` lands in the stem.
+ */
+const ATLAS_COPY = new RegExp(
+  `^${CONFLICTS_FOLDER}/atlas/(.*[^/]) \\(conflict from [^/]+\\)(?: [1-9]\\d*)?(\\.[mM][dD])$`,
+);
+
+/**
+ * The `.atlas/` file a conflict copy under {@link CONFLICTS_FOLDER} was made
+ * of (#235); null for any other path — a copy of a note, a file that is not
+ * markdown, or a copy of a copy, whose live file is the first copy and so a
+ * person's to settle.
+ */
+export function settingsFileOfCopy(copy: string): string | null {
+  const match = ATLAS_COPY.exec(copy);
+  if (match === null) return null;
+  const [, stem = '', extension = ''] = match;
+  if (stem.includes(' (conflict from ')) return null;
+  return `${ATLAS_PREFIX}${stem}${extension}`;
 }
 
 /**

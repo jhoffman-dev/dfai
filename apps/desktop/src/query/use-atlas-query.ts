@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   builderFromQuery,
   boardGroups,
@@ -10,6 +10,7 @@ import {
   QueryTextError,
   resultFields,
   toBoardRows,
+  type BoardRow,
   type BuilderQuery,
   type NoteNames,
   type ObjectType,
@@ -21,6 +22,7 @@ import {
   runAtlasQuery,
   type AtlasQueryAnswer,
   type IndexPort,
+  type ReadMoment,
 } from '@dfai/application';
 import type { ComposerMode, GroupedResultProps } from '@dfai/ui';
 import { errorMessage } from './error-message.ts';
@@ -49,6 +51,7 @@ export function useAtlasQuery({
   notePaths,
   indexKey,
   enabled = true,
+  taskRows = false,
 }: {
   initialText: string;
   index: IndexPort;
@@ -57,12 +60,14 @@ export function useAtlasQuery({
   indexKey: string;
   /** False while there is no query to ask — a pane holding an ordinary note. */
   enabled?: boolean;
+  /** Whether a query of tasks alone carries each task's state, for its row's controls (#107). */
+  taskRows?: boolean;
 }) {
   const [text, setTextState] = useState(initialText);
   const [editing, setEditing] = useState<Editing>(() => editingFor(initialText));
   // Typed text is asked about once typing pauses; a pick in the builder at once.
   const asked = useSettled(text, editing.mode === 'text' ? TYPING_PAUSE_MS : 0);
-  const run = useRunning({ text: asked, index, types, notePaths, indexKey, enabled });
+  const run = useRunning({ text: asked, index, types, notePaths, indexKey, enabled, taskRows });
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
   const setBuilder = useCallback((builder: BuilderQuery) => {
@@ -118,6 +123,9 @@ export function useAtlasQuery({
   };
 }
 
+/** Before anything has been read: before every write. */
+const NOT_READ: ReadMoment = { at: 0, indexKey: '' };
+
 /** How long typing must pause before the text is run: a query per keystroke is felt on a big vault. */
 const TYPING_PAUSE_MS = 200;
 
@@ -171,6 +179,7 @@ function useRunning({
   notePaths,
   indexKey,
   enabled,
+  taskRows,
 }: {
   text: string;
   index: IndexPort;
@@ -178,8 +187,14 @@ function useRunning({
   notePaths: readonly string[];
   indexKey: string;
   enabled: boolean;
+  taskRows: boolean;
 }) {
   const [answer, setAnswer] = useState<AtlasQueryAnswer | null>(null);
+  // When the answer on screen was asked, among the runs begun: a row acted on
+  // is drawn as changed until a run asked after its write stands for it (#107).
+  const [read, setRead] = useState<ReadMoment>(NOT_READ);
+  const begun = useRef(0);
+  const runsBegun = useCallback(() => begun.current, []);
   const [problem, setProblem] = useState<QueryProblem | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState(0);
@@ -192,10 +207,13 @@ function useRunning({
       return;
     }
     let cancelled = false;
-    runAtlasQuery({ index, text, types, notePaths })
+    begun.current += 1;
+    const asked = { at: begun.current, indexKey };
+    runAtlasQuery({ index, text, types, notePaths, taskRows })
       .then((found) => {
         if (cancelled) return;
         setAnswer(found);
+        setRead(asked);
         setProblem(null);
         setError(null);
       })
@@ -213,10 +231,12 @@ function useRunning({
     return () => {
       cancelled = true;
     };
-  }, [index, text, types, notePaths, indexKey, runs, enabled]);
+  }, [index, text, types, notePaths, indexKey, runs, enabled, taskRows]);
 
   return {
     answer,
+    read,
+    runsBegun,
     problem,
     error,
     rerun: useCallback(() => setRuns((count) => count + 1), []),
@@ -228,13 +248,18 @@ export function resultFor({
   answer,
   layout,
   names,
+  rows,
 }: {
   answer: AtlasQueryAnswer | null;
   layout: ViewLayout;
   /** The vault's notes, which a relation's groups are named by. */
   names: NoteNames;
+  /** The answer's rows as drawn, when not as read: each row's own change laid over (#107). */
+  rows?: readonly BoardRow[];
 }): Pick<GroupedResultProps, 'fields' | 'rows' | 'groups' | 'lanes'> | null {
-  return answer === null ? null : answerRows({ answer, layout, names });
+  return answer === null
+    ? null
+    : answerRows({ answer, layout, names, ...(rows !== undefined && { rows }) });
 }
 
 /** An answer's rows as the result panel draws them, grouped for the layout. */
@@ -242,13 +267,15 @@ export function answerRows({
   answer,
   layout,
   names,
+  rows = toBoardRows(answer.result),
 }: {
   answer: AtlasQueryAnswer;
   layout: ViewLayout;
   /** The vault's notes, which a relation's groups are named by. */
   names: NoteNames;
+  /** The answer's rows as drawn; as read unless said. */
+  rows?: readonly BoardRow[];
 }): Pick<GroupedResultProps, 'fields' | 'rows' | 'groups' | 'lanes'> {
-  const rows = toBoardRows(answer.result);
   const fields = resultFields(answer.compiled);
   // A board's columns are its groups, so a group nothing is in still stands;
   // a second level is its swimlanes, every column running through each.
