@@ -19,6 +19,7 @@ import {
   digestReduceData,
   isPromptPath,
   keepCitedItems,
+  MAX_PROMPT_CHARACTERS,
   MAX_PROPOSALS_PER_ANSWER,
   MEETING_TYPE,
   meetingSummaryOf,
@@ -113,9 +114,6 @@ import {
  * cannot take ten times as long.
  */
 export const CLAUDE_RUN_TIMEOUT_MS = 10 * 60_000;
-
-/** The longest a prompt note may be: a rule's instructions, not a document. */
-export const MAX_PROMPT_CHARACTERS = 20_000;
 
 /**
  * The most proposals one run makes however many parts it read. Taken in the

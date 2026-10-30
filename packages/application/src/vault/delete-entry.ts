@@ -54,15 +54,27 @@ export async function countOtherFiles({
 }): Promise<number> {
   if (entry.kind !== 'directory') return 0;
   const known = new Set<string>(notes);
-  let others = 0;
-  let level: VaultPath[] = [entry.path];
+  const files = await filesUnder({ fs, folder: entry.path });
+  return files.filter((path) => !known.has(path)).length;
+}
+
+/** Every file in `folder` and the folders inside it, as deep as {@link DEEPEST}. */
+export async function filesUnder({
+  fs,
+  folder,
+}: {
+  fs: Pick<VaultFsPort, 'listDirectory'>;
+  folder: VaultPath;
+}): Promise<VaultPath[]> {
+  const files: VaultPath[] = [];
+  let level: VaultPath[] = [folder];
   for (let depth = 0; depth < DEEPEST && level.length > 0; depth += 1) {
-    const listings = await Promise.all(level.map((folder) => fs.listDirectory(folder)));
+    const listings = await Promise.all(level.map((each) => fs.listDirectory(each)));
     const entries = listings.flat();
-    others += entries.filter((item) => item.kind === 'file' && !known.has(item.path)).length;
+    files.push(...entries.filter((item) => item.kind === 'file').map((item) => item.path));
     level = entries.filter((item) => item.kind === 'directory').map((item) => item.path);
   }
-  return others;
+  return files;
 }
 
 /**

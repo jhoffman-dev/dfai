@@ -3,6 +3,7 @@ import {
   compileSidebarQuery,
   createVaultPath,
   findQuickViews,
+  isSkillPath,
   isTemplateNote,
   noteTitle,
   orderSidebarEntries,
@@ -111,7 +112,8 @@ export function sidebarCatalogOf({
   for (const [path, { properties, title }] of new Map([...indexed, ...atlas.notes])) {
     const { mark: marked, favorite, icon } = classifySidebarNote(properties);
     // A template wears the mark of what it makes; it is still only a template.
-    const mark = isTemplateNote(path) ? null : marked;
+    // A skill's references may wear one too, and are only a skill's (ADR-0050).
+    const mark = isTemplateNote(path) || isSkillPath(path) ? null : marked;
     const entry = sidebarEntry(path, icon, title);
     if (mark === 'view') views.push(entry);
     if (mark === 'dashboard') dashboards.push(entry);
@@ -246,6 +248,8 @@ async function walkAtlas({
   // Read from the listing, not the notes: a file that is no view still holds its name.
   if (folder === VIEWS_FOLDER) walked.inViewsFolder.push(...entries.map((entry) => entry.path));
   for (const entry of entries) {
+    // Skills are read only when their page or the API asks (ADR-0050): not at launch.
+    if (isSkillPath(entry.path)) continue;
     if (entry.kind === 'directory') {
       await walkAtlas({ fs, folder: entry.path, depth: depth + 1, walked });
     } else if (entry.name.toLowerCase().endsWith('.md')) {

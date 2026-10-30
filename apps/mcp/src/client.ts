@@ -79,6 +79,8 @@ import type {
   ApiWeeklyReview,
   ApiTagRenamePreview,
   ApiTagRenameReport,
+  ApiSkill,
+  ApiSkillContent,
   ApiTemplate,
   ApiTemplateContent,
   ApiTerms,
@@ -308,6 +310,14 @@ export class AtlasClient {
     this.json<{ template: ApiTemplateContent }>({
       method: 'GET',
       path: `/v1/templates/${encodeURIComponent(name)}`,
+    });
+
+  skills = () => this.json<{ skills: readonly ApiSkill[] }>({ method: 'GET', path: '/v1/skills' });
+
+  skill = (name: string) =>
+    this.json<{ skill: ApiSkillContent }>({
+      method: 'GET',
+      path: `/v1/skills/${encodeURIComponent(name)}`,
     });
 
   terms = () => this.json<ApiTerms>({ method: 'GET', path: '/v1/terms' });

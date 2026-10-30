@@ -20,6 +20,7 @@ import { proposalTools } from './tools/proposals.ts';
 import { queryTools } from './tools/queries.ts';
 import { scheduleTools } from './tools/schedule.ts';
 import { reviewTools } from './tools/review.ts';
+import { skillTools } from './tools/skills.ts';
 import { slackCaptureTools } from './tools/slack-capture.ts';
 import { sourceTools } from './tools/sources.ts';
 import { tagTools } from './tools/tags.ts';
@@ -46,6 +47,7 @@ export const ATLAS_TOOLS = [
   ...tagTools,
   ...peopleTools,
   ...templateTools,
+  ...skillTools,
   ...termTools,
   ...archiveTools,
   ...inboxTools,

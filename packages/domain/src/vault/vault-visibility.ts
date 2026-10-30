@@ -61,6 +61,9 @@ export function isAtlasNote(path: string): boolean {
 /** Where a vault keeps the templates new notes are made from. */
 export const TEMPLATES_DIRECTORY = `${ATLAS_DIRECTORY}/templates`;
 
+/** Where a vault keeps its skills, one folder each holding a `SKILL.md` (ADR-0050). */
+export const SKILLS_DIRECTORY = `${ATLAS_DIRECTORY}/skills`;
+
 /** Where a vault keeps its type definitions, one note per type. */
 export const TYPES_DIRECTORY = `${ATLAS_DIRECTORY}/types`;
 
@@ -87,6 +90,18 @@ export function isTemplateNote(path: string): boolean {
 }
 
 /**
+ * Whether a path is a skill's folder or anything in one (ADR-0050). A skill's
+ * folder may hold references — an example dashboard, a sample view — that wear
+ * the marks of what they describe, and none is a view or a dashboard; nor is
+ * any of it read or listed outside the Skills page and the API.
+ */
+export function isSkillPath(path: string): boolean {
+  // In any case: the Mac's disk takes `.atlas/Skills` for the skills folder.
+  const folded = path.toLowerCase();
+  return folded === SKILLS_DIRECTORY || folded.startsWith(`${SKILLS_DIRECTORY}/`);
+}
+
+/**
  * Why a note flow — a rename, a new note — may not change `path`: a template
  * is what every new note of its type is made from, so it is renamed, made and
  * deleted only on the Templates page, whose use-cases do not come this way
@@ -108,7 +123,8 @@ export function isSystemFolder(entry: VaultEntry): boolean {
 
 /**
  * The parts of `.atlas` another place in the app already lists: the Views and
- * Dashboards sections, and the Templates page (ADR-0026).
+ * Dashboards sections, the Templates page (ADR-0026), and the skills
+ * (ADR-0050), which their own page and the API list.
  *
  * These, and only these, are left out of user space — showing them in both
  * places would list every view and dashboard twice, and a template among the
@@ -122,7 +138,12 @@ export function isSystemFolder(entry: VaultEntry): boolean {
  * direction to fail in: a note you can reach and did not expect beats a note
  * you cannot reach at all.
  */
-const SECTIONED_ATLAS_PATHS = new Set([VIEWS_DIRECTORY, DASHBOARDS_DIRECTORY, TEMPLATES_DIRECTORY]);
+const SECTIONED_ATLAS_PATHS = new Set([
+  VIEWS_DIRECTORY,
+  DASHBOARDS_DIRECTORY,
+  TEMPLATES_DIRECTORY,
+  SKILLS_DIRECTORY,
+]);
 
 /**
  * Whether an entry belongs in user space — the vault as it is on disk, minus
