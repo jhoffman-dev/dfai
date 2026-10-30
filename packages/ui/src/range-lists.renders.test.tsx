@@ -55,10 +55,10 @@ function scrollTo(scroller: HTMLElement, top: number) {
   act(() => vi.advanceTimersByTime(500));
 }
 
-/** How many times `component` rendered while `act` ran. */
-function rendersOf(component: string, act: () => void): number {
+/** How many times `component` rendered while `run` ran. */
+function rendersOf(component: string, run: () => void): number {
   startCountingRenders();
-  act();
+  run();
   return stopCountingRenders().renders[component] ?? 0;
 }
 
@@ -143,7 +143,75 @@ describe('a table’s rows — what a scroll draws', () => {
       expect(screen.getByRole('button', { name: 'Row 200' })).toBeTruthy();
     });
   }
+
+  it('moves the rows below a drawn row that grows after it was measured, drawing fewer past the screen', () => {
+    const resize = resizeByHand();
+    try {
+      render(<Table grouped={false} />);
+      const drawnNumbers = () =>
+        screen
+          .getAllByRole('button', { name: /^Row \d+$/ })
+          .map((row) => Number(row.textContent?.replace('Row ', '')));
+      const spacerBelow = () =>
+        Number.parseFloat(
+          document.querySelector<HTMLElement>('tr.table__spacer:last-child td')?.style.height ?? '',
+        );
+      const last = Math.max(...drawnNumbers());
+      const below = spacerBelow();
+      expect(below).toBeGreaterThan(0);
+
+      // Row 0, measured as it was drawn, wraps to four lines' height.
+      const first = document.querySelector('tr[data-index="0"]');
+      expect(first).not.toBeNull();
+      resize.grow(first as Element, 4 * ROW_ESTIMATE);
+
+      // The rows under it moved down by three rows, so three fewer reach the screen's edge…
+      expect(Math.max(...drawnNumbers())).toBe(last - 3);
+      // …and the room below holds them: the list is taller by the growth, the scrollbar still true.
+      expect(spacerBelow()).toBe(below + 3 * ROW_ESTIMATE);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
+
+/**
+ * A ResizeObserver that reports only when told: `grow` tells each observer
+ * of `target` that it is now `height` tall, as the browser does after a
+ * layout. Installed for one test, before the list mounts.
+ */
+function resizeByHand() {
+  const watching: { callback: ResizeObserverCallback; targets: Set<Element> }[] = [];
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      private readonly seen: { callback: ResizeObserverCallback; targets: Set<Element> };
+      constructor(callback: ResizeObserverCallback) {
+        this.seen = { callback, targets: new Set() };
+        watching.push(this.seen);
+      }
+      observe(target: Element) {
+        this.seen.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.seen.targets.delete(target);
+      }
+      disconnect() {
+        this.seen.targets.clear();
+      }
+    },
+  );
+  return {
+    grow: (target: Element, height: number) =>
+      act(() => {
+        const size = { blockSize: height, inlineSize: 0 };
+        const entry = { target, borderBoxSize: [size] } as unknown as ResizeObserverEntry;
+        for (const { callback, targets } of watching) {
+          if (targets.has(target)) callback([entry], {} as ResizeObserver);
+        }
+      }),
+  };
+}
 
 describe('the Inbox’s rows — what a scroll draws', () => {
   const note = (at: number): InboxItem => ({

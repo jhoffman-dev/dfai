@@ -9,10 +9,19 @@ import {
   type VirtualizerOptions,
 } from '@tanstack/react-virtual';
 
-/** A virtualiser's options for an element scroller, its observers and scroll filled in. */
-export type RangeVirtualizerOptions = PartialKeys<
-  VirtualizerOptions<HTMLElement, Element>,
-  'observeElementRect' | 'observeElementOffset' | 'scrollToFn'
+/**
+ * A virtualiser's options for an element scroller, its observers and scroll
+ * filled in. One lane only, so no `lanes`: what is drawn is told by the rows
+ * held and the list's height, and in lanes a row growing in the shorter lane
+ * moves the rows under it without changing that height, so it would not be
+ * drawn.
+ */
+export type RangeVirtualizerOptions = Omit<
+  PartialKeys<
+    VirtualizerOptions<HTMLElement, Element>,
+    'observeElementRect' | 'observeElementOffset' | 'scrollToFn'
+  >,
+  'lanes'
 >;
 
 /**

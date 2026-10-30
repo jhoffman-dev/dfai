@@ -179,6 +179,11 @@
         "TaskRow": 3
       }
     },
+    "Scroll Today a little": {
+      "commits": 3,
+      "renders": 27,
+      "calls": {}
+    },
     "Open the Inbox": {
       "commits": 6,
       "renders": 455,
@@ -226,6 +231,11 @@
       "calls": {
         "index_query": 4
       }
+    },
+    "Scroll the 420-row table a little": {
+      "commits": 0,
+      "renders": 0,
+      "calls": {}
     },
     "⌘K + 5 keys over the table": {
       "commits": 18,

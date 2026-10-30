@@ -6,7 +6,7 @@
  * `onChange` is still told. A row measured from its ref is drawn in the
  * next render rather than flushed from inside React's commit.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import type { Rect, Virtualizer } from '@tanstack/react-virtual';
 import { useRangeVirtualizer, type RangeVirtualizerOptions } from './range-virtualizer.ts';
@@ -161,5 +161,11 @@ describe('useRangeVirtualizer', () => {
     } finally {
       errors.mockRestore();
     }
+  });
+
+  it('takes no lanes: in lanes a row can grow without the list growing, and go undrawn', () => {
+    // Checked by the typecheck: passing `lanes` does not compile.
+    expectTypeOf<RangeVirtualizerOptions>().not.toHaveProperty('lanes');
+    expectTypeOf<RangeVirtualizerOptions>().toHaveProperty('count');
   });
 });
