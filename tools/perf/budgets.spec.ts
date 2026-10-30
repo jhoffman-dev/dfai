@@ -180,6 +180,21 @@ const timed = new Map<string, { inputToReady: number; longestFrame: number }>();
 test('the app does no more work than its budget', async ({ browser }) => {
   test.setTimeout(TIMEOUT_MS);
   const budgets = JSON.parse(await readFile(BUDGETS_FILE, 'utf8')) as BudgetsFile;
+  if (process.env.PERF_SCRATCH_DRAG) {
+    await mkdir('test-results/perf', { recursive: true });
+    for (let i = 0; i < Number(process.env.PERF_SCRATCH_DRAG); i += 1) {
+      const m = new Map<string, Work>();
+      const pass = await countedPass(browser, m, { ...MAIN, openIsBudgeted: false });
+      await pass.page.evaluate(() => { (window as unknown as { __scratchLog: string[] }).__scratchLog.length = 0; });
+      await dragACard(pass);
+      const w = m.get('Drag a board card');
+      const log = await pass.page.evaluate(() => (window as unknown as { __scratchLog: string[] }).__scratchLog);
+      console.log(`SCRATCH run ${i} commits=${w?.commits} renders=${JSON.stringify(w?.renders)}`);
+      await writeFile(`test-results/perf/scratch-drag-${i}.log`, log.join('\n'));
+      await pass.page.close();
+    }
+    return;
+  }
 
   await test.step('counted, on the work clock', async () => {
     const pass = await countedPass(browser, counted);
@@ -344,12 +359,17 @@ async function countedPass(
       await restThePointer(page);
       if (settleFirst) await runUntil(page, {});
       await expectPointerAtRest(page, action);
+      await page.evaluate(() => { (window as unknown as { __scratchLog: string[] }).__scratchLog.length = 0; });
       await startCounting(page);
       for (const { act, ready, arg, untrackedMs } of phases) {
         await act();
         await runUntil(page, { ready, arg: arg as never, untrackedMs: untrackedMs ?? 0 });
       }
       into.set(action, await stopCounting(page));
+      if (action === 'Drag a board card' || action === 'Tick a task on Today') {
+        const log = await page.evaluate(() => (window as unknown as { __scratchLog: string[] }).__scratchLog);
+        await writeFile(`test-results/perf/scratch-${action.replace(/ /g, '-')}-${Date.now()}.log`, log.join('\n'));
+      }
     },
     async idle(action) {
       await restThePointer(page);
@@ -1001,7 +1021,8 @@ async function dragACard(pass: Pass): Promise<void> {
   await pass.budgeted('Drag a board card', [
     phase(
       async () => {
-        await page.mouse.move(start.x, start.y);
+        if (process.env.PERF_SCRATCH_LAG) void page.mouse.move(start.x, start.y);
+        else await page.mouse.move(start.x, start.y);
         await pass.input(() => page.mouse.down());
         // The short hop that turns a press into a drag, then the way across.
         for (const [from, to, steps] of [

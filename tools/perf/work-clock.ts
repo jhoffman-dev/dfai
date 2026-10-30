@@ -149,6 +149,30 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     cancelAnimationFrame: clear,
   });
 
+  // SCRATCH-243 log
+  const scratchLog: string[] = [];
+  const ctx: string[] = [];
+  const RealMO = window.MutationObserver;
+  window.MutationObserver = class LoggedMO extends RealMO { constructor(cb: MutationCallback) { super((r, o) => { ctx.push('mo'); try { cb(r, o); } finally { ctx.pop(); } }); } };
+  (window as unknown as { __scratchLog: string[] }).__scratchLog = scratchLog;
+  const RealRO = window.ResizeObserver;
+  window.ResizeObserver = class LoggedRO extends RealRO {
+    constructor(cb: ResizeObserverCallback) {
+      super((entries, observer) => {
+        scratchLog.push(`ro t=${state.now} c=${state.counting} n=${entries.length} ${entries.map((e) => `${(e.target as HTMLElement).className}:${e.contentRect.width}x${e.contentRect.height}`).join(',').slice(0, 300)}`);
+        ctx.push('ro'); try { cb(entries, observer); } finally { ctx.pop(); }
+      });
+    }
+  };
+  const hook = (window as unknown as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: { onCommitFiberRoot: (...a: unknown[]) => void } }).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  if (hook) {
+    const orig = hook.onCommitFiberRoot;
+    hook.onCommitFiberRoot = (...a: unknown[]) => {
+      orig(...a);
+      const rc = (window as unknown as { __renderCounter?: { renders: Record<string, number> } }).__renderCounter;
+      if (state.counting) scratchLog.push(`commit t=${state.now} ctx=${ctx.join('>')} tasks=${state.tasks} renders=${Object.values(rc?.renders ?? {}).reduce((x, y) => x + y, 0)}`);
+    };
+  }
   // A script's own animation (`element.animate`, as dnd-kit's drop) runs on the
   // work clock too: held where it starts, and finished when its time is up,
   // rather than ending on the wall clock before or after a host answer.
@@ -181,7 +205,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
         handler = next;
         onmessage?.set?.call(handled, (event: MessageEvent) => {
           try {
-            handler?.call(handled, event);
+            ctx.push('msg'); try { handler?.call(handled, event); } finally { ctx.pop(); }
           } finally {
             state.tasks -= 1;
           }
@@ -265,7 +289,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   // for its input to have arrived before it moves time on.
   let inputs = 0;
   for (const kind of ['keydown', 'pointerdown', 'pointermove', 'pointerup']) {
-    window.addEventListener(kind, () => void (inputs += 1), { capture: true });
+    window.addEventListener(kind, () => { inputs += 1; ctx.push('in:' + kind); queueMicrotask(() => ctx.pop()); if (state.counting) (window as unknown as { __scratchLog: string[] }).__scratchLog.push(`input ${kind} t=${state.now} running=${state.running}`); }, { capture: true });
   }
 
   const counter = () =>
@@ -331,6 +355,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   };
   const fire = (timer: Timer) => {
     state.now = Math.max(state.now, timer.due);
+    if (state.counting) scratchLog.push(`fire t=${state.now} every=${timer.every}`);
     if (timer.every === null) state.timers.delete(timer.id);
     else {
       // Its next period after now, on its own phase: a browser skips the
@@ -339,7 +364,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       Object.assign(timer, { due: timer.due + (missed + 1) * timer.every, order: state.order++ });
     }
     try {
-      timer.run();
+      ctx.push('timer'); try { timer.run(); } finally { ctx.pop(); }
     } catch (error) {
       // Thrown again outside, as a timer's error reaches `window.onerror` in a real page.
       realSetTimeout(() => {
