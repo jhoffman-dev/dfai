@@ -59,6 +59,31 @@ class StandInWorker {
 }
 (window as unknown as { Worker: unknown }).Worker = StandInWorker;
 
+/**
+ * A layout observer whose reports come when the test says, as a browser's
+ * come on a rendering step of its own: jsdom has neither kind.
+ */
+class StandInObserver {
+  readonly #report: (entries: readonly { target: Element }[], observer: unknown) => void;
+  constructor(report: (entries: readonly { target: Element }[], observer: unknown) => void) {
+    this.#report = report;
+  }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  /** What the browser does on a rendering step: hands the observer what changed. */
+  reportOn(...targets: Element[]) {
+    this.#report(
+      targets.map((target) => ({ target, size: target.getAttribute('data-size') })),
+      this,
+    );
+  }
+}
+Object.assign(window, {
+  ResizeObserver: class extends StandInObserver {},
+  IntersectionObserver: class extends StandInObserver {},
+});
+
 const clock = () => (window as unknown as { __workClock: Clock }).__workClock;
 const invoke = (command: string) =>
   (
@@ -197,6 +222,69 @@ describe('the work clock', () => {
     await clock().run(null, null, 59_500, 0);
     expect(firedAt).toEqual([60_500, 120_000]);
     clearInterval(tick);
+  });
+
+  describe.each(['ResizeObserver', 'IntersectionObserver'] as const)('a %s', (kind) => {
+    type Entry = { readonly target: Element; readonly size: string | null };
+    const observerOf = (heard: string[]) =>
+      new (
+        window as unknown as Record<
+          typeof kind,
+          new (report: (entries: Entry[]) => void) => StandInObserver
+        >
+      )[kind]((entries) =>
+        heard.push(entries.map(({ target, size }) => `${target.id} ${size}`).join(', ')),
+      );
+    const element = (id: string, size: string) => {
+      const made = document.createElement('div');
+      Object.assign(made, { id });
+      made.setAttribute('data-size', size);
+      return made;
+    };
+
+    it('holds a report that comes while counting, and hands it over once the clock has drawn a frame (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      clock().startCounting();
+      // A rendering step between two inputs: in a page it can land before
+      // React's work or after it, so the app must not see it then.
+      observer.reportOn(element('card', '38'));
+      expect(heard).toEqual([]);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['card 38']);
+    });
+
+    it('hands over the reports it held for one observer as one, the latest for each element (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      const [card, column] = [element('card', '38'), element('column', '723')];
+      clock().startCounting();
+      observer.reportOn(card);
+      observer.reportOn(column);
+      card.setAttribute('data-size', '40');
+      observer.reportOn(card);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['card 40, column 723']);
+    });
+
+    it('drops a held report once its observer is disconnected, as a browser does (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      clock().startCounting();
+      observer.reportOn(element('card', '38'));
+      observer.disconnect();
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual([]);
+    });
+
+    it("hands a report over at once outside counting and the clock's runs", () => {
+      const heard: string[] = [];
+      observerOf(heard).reportOn(element('card', '38'));
+      expect(heard).toEqual(['card 38']);
+    });
   });
 
   it('counts the host commands sent while counting, by name', async () => {
