@@ -81,6 +81,7 @@ export * from './transclusion/index.ts';
 export * from './activity/index.ts';
 export * from './sync/index.ts';
 export * from './embeddings/index.ts';
+export * from './related/index.ts';
 export * from './home-folders/index.ts';
 export {
   CONFLICT_BLOBS,

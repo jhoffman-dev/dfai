@@ -4,3 +4,6 @@ export { ChangedSinceError, changeUndoably, whileAsRead } from './today-actions.
 export type { UndoableChange } from './today-actions.ts';
 export { todayAsPending } from './today-as-pending.ts';
 export { todayScope } from './today-scope.ts';
+export { choiceChange, FocusNotChosenError } from './choose-for-today.ts';
+export { taskRowAsChanged, taskRowChange, taskRowStillOffers } from './task-row-change.ts';
+export type { TaskRowAction, TaskRowProperties } from './task-row-change.ts';

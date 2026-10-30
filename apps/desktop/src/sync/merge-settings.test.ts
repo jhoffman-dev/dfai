@@ -192,3 +192,16 @@ describe('mergeSettings (#233)', () => {
     ).toBeNull();
   });
 });
+
+describe('mergeSettings on a record broken past the block that parses (#235)', () => {
+  it('gives up with null rather than throwing, so the sync goes on', () => {
+    const good = shippedPropertiesRecordText({ settled: {}, added: {} });
+    const json = JSON.stringify({ settled: {}, added: {} });
+    expect(good).toContain(json);
+    // Block 1 parses, over two lines; block 2, on one line, is cut short.
+    const broken = good.replace(json, '{"settled":\n{}}\n```\n\n```json\n{"a');
+    const path = '.atlas/migrations/type-properties.md';
+    expect(() => merge({ base: null, ours: broken, theirs: broken }, path)).not.toThrow();
+    expect(merge({ base: null, ours: broken, theirs: broken }, path)).toBeNull();
+  });
+});

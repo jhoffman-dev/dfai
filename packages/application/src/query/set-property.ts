@@ -163,12 +163,15 @@ async function writeChanges({
   if (Object.keys(changes).length === 0) return;
 
   const frontmatter = markdown.updateFrontmatter(document.frontmatter, changes);
+  const contents =
+    document.frontmatter === null
+      ? underNewFrontmatter(frontmatter, document.body)
+      : frontmatter + document.body;
+  // Nor do changes that leave every byte as it was: a value set to what it is, a key taken away that is not there.
+  if (contents === text) return;
   await fs.writeTextFile({
     path: target,
-    contents:
-      document.frontmatter === null
-        ? underNewFrontmatter(frontmatter, document.body)
-        : frontmatter + document.body,
+    contents,
     expectedModified: modified,
     // The whole text too, so a write landing within the disk's timestamp tick is refused
     // (#245) — and the text a write is recorded as replacing is the text it replaced (#320).

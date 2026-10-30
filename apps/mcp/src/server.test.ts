@@ -37,6 +37,7 @@ const ALL_TOOLS = [
   'atlas_calendar',
   'atlas_capture',
   'atlas_capture_task',
+  'atlas_choose_for_today',
   'atlas_clarify_inbox_item',
   'atlas_create_note',
   'atlas_daily_note',
@@ -67,6 +68,7 @@ const ALL_TOOLS = [
   'atlas_read_template',
   'atlas_refresh_source',
   'atlas_reject_proposal',
+  'atlas_related',
   'atlas_rename_tag',
   'atlas_replace_note_body',
   'atlas_run_query',
@@ -77,9 +79,11 @@ const ALL_TOOLS = [
   'atlas_semantic_search',
   'atlas_sql',
   'atlas_status',
+  'atlas_sync_granola',
   'atlas_tagged_notes',
   'atlas_tags',
   'atlas_terms',
+  'atlas_tick_task',
   'atlas_today',
   'atlas_unarchive',
   'atlas_update_properties',
@@ -166,6 +170,7 @@ describe('tools/list', () => {
       destructiveHint: false,
     });
     expect(byName.get('atlas_archived')).toMatchObject({ readOnlyHint: true });
+    expect(byName.get('atlas_related')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_find_duplicate_people')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_merge_people')).toMatchObject({
       readOnlyHint: false,
@@ -174,6 +179,12 @@ describe('tools/list', () => {
     expect(byName.get('atlas_weekly_review')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_export_note')).toMatchObject({ readOnlyHint: true });
     expect(byName.get('atlas_inbox')).toMatchObject({ readOnlyHint: true });
+    // It writes meetings into the vault, so a client must not retry it as if it were free.
+    expect(byName.get('atlas_sync_granola')).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+    });
     for (const name of [
       'atlas_archive',
       'atlas_unarchive',
@@ -429,6 +440,14 @@ describe('tools/call → REST', () => {
       null,
     ],
     ['atlas_backlinks', { path: 'P/Q.md' }, 'GET', '/v1/notes/P%2FQ.md/backlinks', null],
+    ['atlas_related', { path: 'P/Q.md' }, 'GET', '/v1/notes/P%2FQ.md/related', null],
+    [
+      'atlas_related',
+      { path: 'P/Q.md', limit: 5 },
+      'GET',
+      '/v1/notes/P%2FQ.md/related?limit=5',
+      null,
+    ],
     [
       'atlas_export_note',
       { path: 'P/Q.md' },
@@ -539,6 +558,7 @@ describe('tools/call → REST', () => {
       null,
     ],
     ['atlas_terms', {}, 'GET', '/v1/terms', null],
+    ['atlas_sync_granola', {}, 'POST', '/v1/granola/pull', null],
     [
       'atlas_day_meetings',
       { day: '2026-10-24' },
@@ -759,6 +779,34 @@ describe('tools/call → REST', () => {
     ],
     ['atlas_automations', {}, 'GET', '/v1/automations', null],
     ['atlas_weekly_review', {}, 'GET', '/v1/review/weekly', null],
+    [
+      'atlas_choose_for_today',
+      { path: 'Tasks/Call the printer.md', chosen: true },
+      'POST',
+      '/v1/today/choose',
+      { path: 'Tasks/Call the printer.md', chosen: true },
+    ],
+    [
+      'atlas_choose_for_today',
+      { path: 'Tasks/Call the printer.md', chosen: false },
+      'POST',
+      '/v1/today/choose',
+      { path: 'Tasks/Call the printer.md', chosen: false },
+    ],
+    [
+      'atlas_tick_task',
+      { path: 'Tasks/Water the beds.md', done: true, ifModified: 1700 },
+      'POST',
+      '/v1/tasks/done',
+      { path: 'Tasks/Water the beds.md', done: true, ifModified: 1700 },
+    ],
+    [
+      'atlas_tick_task',
+      { path: 'Tasks/Water the beds.md', done: false },
+      'POST',
+      '/v1/tasks/done',
+      { path: 'Tasks/Water the beds.md', done: false },
+    ],
     ['atlas_today', {}, 'GET', '/v1/today', null],
     ['atlas_automation_log', { id: 'tidy' }, 'GET', '/v1/automations/tidy/log', null],
     [
@@ -897,6 +945,10 @@ describe('tools/call → REST', () => {
     ['atlas_rename_tag', { tag: 'idea', to: 'x', dryRun: 'yes' }],
     ['atlas_read_note', { path: '..' }],
     ['atlas_backlinks', { path: '.' }],
+    ['atlas_related', { path: '..' }],
+    ['atlas_related', {}],
+    ['atlas_related', { path: 'P.md', limit: 0 }],
+    ['atlas_related', { path: 'P.md', limit: 51 }],
     ['atlas_export_note', { path: '..' }],
     ['atlas_update_properties', { path: '..', set: { x: 1 } }],
     ['atlas_append_to_note', { path: '..', markdown: 'x' }],
