@@ -129,7 +129,13 @@ describe('rulesTakeFrom (#637 attack)', () => {
     const take = vi.fn(async () => ({ paths: new Set<string>(), from: '' }));
     const ports = {} as RuleQueryPorts;
     const ready = { now: false };
-    const ask = rulesTakeFrom({ store, clock, ports, indexReady: () => ready.now, take });
+    const ask = rulesTakeFrom({
+      store,
+      clock,
+      ports: () => ports,
+      indexReady: () => ready.now,
+      take,
+    });
 
     publishAutomations(store, controller(listing([])));
     expect(await ask(asked)).toBeNull();
@@ -147,7 +153,7 @@ describe('rulesTakeFrom (#637 attack)', () => {
     >(async () => answer);
     const ports = {} as RuleQueryPorts;
     publishAutomations(store, controller(listing([])));
-    const ask = rulesTakeFrom({ store, clock, ports, indexReady: () => true, take });
+    const ask = rulesTakeFrom({ store, clock, ports: () => ports, indexReady: () => true, take });
 
     expect(await ask(asked)).toBe(answer);
     const [args] = take.mock.calls[0] as unknown as [

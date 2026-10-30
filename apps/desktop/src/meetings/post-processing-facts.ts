@@ -24,13 +24,19 @@ const worked = new WeakMap<
 >();
 
 /**
+ * Before any rule is read: marked as the empty ledger is, so a listing whose
+ * rules write no summaries says nothing new and draws nothing (#637 perf).
+ */
+const NOTHING_READ = { ledger: NO_POST_PROCESSING, mark: postProcessingMark(NO_POST_PROCESSING) };
+
+/**
  * The ledger the runner's rules give, each rule's reach counted on the clock
  * the runner runs it on (`clockForRule`, the plan zone's for a rule that
  * keeps it), so the count and the rule never disagree by a day.
  */
 function ledgerFor(state: AutomationsState, clock: RunClock) {
   const listing = state.automations?.listing ?? null;
-  if (listing === null) return { ledger: NO_POST_PROCESSING, mark: '' };
+  if (listing === null) return NOTHING_READ;
   const todayOf = todayOfRules(state, clock);
   const today = listing.automations.map(({ rule }) => todayOf(rule)).join(',');
   const known = worked.get(listing);
@@ -62,7 +68,8 @@ export function rulesTakeFrom({
 }: {
   store: AutomationsStore;
   clock: RunClock;
-  ports: RuleQueryPorts;
+  /** The ports as they are now: read at each ask, so a change to them draws nothing. */
+  ports: () => RuleQueryPorts;
   indexReady: () => boolean;
   take: ReturnType<typeof createRulesTakeCache>;
 }) {
@@ -74,7 +81,7 @@ export function rulesTakeFrom({
     const listing = state.automations?.listing ?? null;
     if (!indexReady() || listing === null) return null;
     return take({
-      ports,
+      ports: ports(),
       automations: listing.automations,
       todayOf: todayOfRules(state, clock),
       ...asked,

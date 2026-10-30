@@ -192,7 +192,12 @@ describe('createRulesTakeCache (#637 attack)', () => {
   it('asks again when the ports it is asked through move: the types or the notes may have', async () => {
     const { ports, paths, queries } = setUp();
     const take = createRulesTakeCache();
-    const asked = { automations: [rule('FROM meeting')], todayOf: () => TODAY, paths, generation: 1 };
+    const asked = {
+      automations: [rule('FROM meeting')],
+      todayOf: () => TODAY,
+      paths,
+      generation: 1,
+    };
 
     await take({ ...asked, ports });
     await take({ ...asked, ports });

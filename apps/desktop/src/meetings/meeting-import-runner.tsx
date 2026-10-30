@@ -19,8 +19,12 @@ export type MeetingImportRunnerProps = Omit<
   readonly clock: RunClock;
   /** Where the automations runner says what the rules have finished with, and how its runs went (#182). */
   readonly automations: AutomationsStore;
-  /** What the rules' own queries are asked through: which meetings they take (#637 attack). */
-  readonly rulePorts: RuleQueryPorts;
+  /**
+   * What the rules' own queries are asked through, as they are now: which
+   * meetings they take (#637 attack). A getter, since the ports move as the
+   * tree fills and the runner need not be drawn for that.
+   */
+  readonly rulePorts: () => RuleQueryPorts;
   /** Where sync says whether this Mac runs the vault's automations, and what a pull brought in. */
   readonly sync: SyncStore;
   /** Where the import says what waits for the named Mac, for the Inbox to show (ADR-0035 part 1). */

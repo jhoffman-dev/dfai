@@ -144,13 +144,17 @@ export async function meetingsTheRulesTake({
 
 /**
  * {@link meetingsTheRulesTake}, asked again only when what it depends on
- * moved: the rules' texts and days, the meetings asked about, and the
+ * moved: the rules' texts and days, the meetings asked about, the ports it
+ * is asked through (the types or the notes may have changed), and the
  * caller's `generation` — moved whenever a meeting file changed, since a
  * property the query reads may have.
  */
 export function createRulesTakeCache() {
-  let last: { key: string; answer: NonNullable<PostProcessingLedger['taken']> | null } | null =
-    null;
+  let last: {
+    key: string;
+    ports: RuleQueryPorts;
+    answer: NonNullable<PostProcessingLedger['taken']> | null;
+  } | null = null;
   return async (
     args: RulesTakeArgs & { readonly generation: number },
   ): Promise<NonNullable<PostProcessingLedger['taken']> | null> => {
@@ -158,10 +162,10 @@ export function createRulesTakeCache() {
       .filter(({ rule }) => writesSummaries(rule))
       .map(({ rule }) => `${rule.id}\u0000${rule.which}\u0000${args.todayOf(rule)}`);
     const key = [args.generation, ...rules, '', ...args.paths].join('\u0001');
-    if (last?.key === key) return last.answer;
+    if (last?.key === key && last.ports === args.ports) return last.answer;
     const answer = await meetingsTheRulesTake(args);
     // An answer the index could not give is asked again next time.
-    if (answer !== null) last = { key, answer };
+    if (answer !== null) last = { key, ports: args.ports, answer };
     return answer;
   };
 }
