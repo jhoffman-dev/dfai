@@ -1,7 +1,7 @@
 import { withKindToggled, type ActivitySubject } from '@dfai/domain';
 import type { Clock } from '@dfai/application';
 import { ActivityPage, type PageHistory } from '@dfai/ui';
-import { activityRows, subjectOf } from './activity-rows.ts';
+import { activityEntries, subjectOf } from './activity-rows.ts';
 import type { useActivity } from './use-activity.ts';
 
 /**
@@ -25,7 +25,7 @@ export function ActivityScreen({
   const { shown, total, error, query, setQuery } = activity;
   return (
     <ActivityPage
-      rows={shown === null ? null : activityRows(shown, clock.today())}
+      rows={shown === null ? null : activityEntries(shown, clock.today())}
       total={total}
       error={error}
       level={query.level}

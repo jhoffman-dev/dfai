@@ -732,3 +732,31 @@ sweep in ADR-0036 handles them.
   Processing it writes the link and moves nothing.
 - **The index** asks for the stamps, and for which notes declare the
   contract, only where meeting files land: both folders.
+
+## As built: a failed link is marked, and Run now links it again (#192, 2026-10-30)
+
+"A meeting whose linking failed is stamped all the same and not retried until
+#19's pipeline runs the step" is now closed as follows, without the pipeline:
+
+- **The stamp says so.** When linking a meeting fails as it is let in, the one
+  stamp write also carries `atlas_links: failed` (`linkBeforeLetIn`). Nothing
+  is written after the stamp, as before. A meeting linked once never carries
+  it, so it is never linked again by this, and a person taken out of its
+  `people` stays out.
+- **The "After a meeting" rule links it again.** Its dry run (and the API's,
+  as `plan.notLinked`) lists the meetings its query matches that carry the
+  mark, at most 50 a run; its **Run now** links them with the import's own
+  linker before it plans, so Claude reads each one linked. The decision is
+  the domain's (`meeting-relink.ts`): only `apply: mine` relinks; a meeting
+  is settled when the run left nothing of its own (unsaved typing, a
+  relation changed since it was read, a directory note it could not read),
+  and only then is the mark taken out. Linking adds only what is missing,
+  so a second try links nothing twice. Scheduled and note-set-off runs do
+  not relink: a write after the stamp is the person's to ask for.
+- **Not in the rule's log.** The relink is said in Activity, a line per
+  meeting as the import says it; "Undo last run" does not take it back.
+- **Activity groups a meeting's lines.** A rule's run line names the notes it
+  heard (`ActivityReport.notes`, kept in the file only when present); a run
+  that heard exactly one meeting goes under it with the meeting's import and
+  linking lines (`groupActivity`). Glossary term suggestions (#19) are out of
+  scope.

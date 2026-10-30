@@ -154,5 +154,8 @@ export function dryRunView(plan: AutomationPlan): DryRunView {
     summary: describePlan(plan),
     notes: plan.paths.map((path: VaultPath) => ({ path, title: noteTitle(path) })),
     passedOver: plan.passedOver.map(({ path, reason }) => ({ title: noteTitle(path), reason })),
+    ...(plan.notLinked !== undefined && {
+      notLinked: plan.notLinked.paths.map((path) => ({ path, title: noteTitle(path) })),
+    }),
   };
 }

@@ -124,3 +124,34 @@
     max-width: 120px;
   }
 }
+
+/* A meeting's lines together (#192): the meeting's name on a heading row in
+   the second ink, its lines indented under it on a hairline, so the import,
+   the linking and the rule that heard it read as one meeting's story. */
+.activity-group {
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+  padding: var(--space-1) 0;
+}
+
+.activity-group__head {
+  align-items: center;
+  color: var(--ink-2);
+  display: flex;
+  gap: var(--space-2);
+  min-height: 28px;
+}
+
+.activity-group__title {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-group__lines {
+  border-left: 1px solid var(--line);
+  margin-left: 6px;
+  padding-left: var(--space-3);
+}

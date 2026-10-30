@@ -15,7 +15,7 @@ export {
 } from './post-processing-ledger.ts';
 export type { RulesTakeArgs } from './post-processing-ledger.ts';
 export type { AutomationListing, LoadedAutomation } from './load-automations.ts';
-export { dryRunAutomation, withPeriodNote } from './dry-run-automation.ts';
+export { dryRunAutomation, withMeetingsNotLinked, withPeriodNote } from './dry-run-automation.ts';
 export { NoteRunsCappedError, planRuleNow } from './note-runs.ts';
 export type { RuleTarget } from './note-runs.ts';
 export { planRun } from './plan-run.ts';

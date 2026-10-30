@@ -17,6 +17,7 @@ import {
 } from '../automations/run-log.ts';
 import { planVerb, type AutomationPlan } from '../automations/automation-plan.ts';
 import { readsData } from '../automations/claude-step.ts';
+import { describeNotLinked } from '../meeting-links/meeting-relink.ts';
 import type { ActivityLevel, ActivityReport, ActivitySubject } from './activity-event.ts';
 
 /** An automation's rule, as a line names it and links to it; a draft not yet saved has no path. */
@@ -45,12 +46,20 @@ export function automationEntryReport(rule: RuleNamed, entry: LogEntry): Activit
   const summary = logEntrySummary(entry);
   // A failure can end on a command to copy, which ends no sentence: the model's words follow.
   const said = asked === '' || /[.!?]$/.test(summary) ? summary : `${summary}.`;
+  const heard = entry.kind === 'run' ? heardNotes(entry) : [];
   return {
     level,
     kind: 'automation',
     message: `${rule.name}: ${heading}${notes}. ${said}${asked}`,
     subject: ruleSubject(rule),
+    ...(heard.length > 0 && { notes: heard }),
   };
+}
+
+/** The notes a run heard, and not its own writes: what the line is about besides its rule (#192). */
+function heardNotes(entry: Extract<LogEntry, { kind: 'run' }>): VaultPath[] {
+  const heard = (entry.versions ?? []).filter((version) => !version.wrote);
+  return [...new Set(heard.map((version) => version.path))];
 }
 
 /** Which model a Claude step asked, and for how long: ` Asked claude-opus-5-5, 4.2 s.`; empty for none. */
@@ -64,9 +73,7 @@ const TRIGGERING_NAMED = 3;
 
 /** The notes that set a run off, as a line names them: ` (Standup, Kickoff and 2 more)`; empty for none. */
 function triggeringNotes(entry: Extract<LogEntry, { kind: 'run' }>): string {
-  const titles = (entry.versions ?? [])
-    .filter((version) => !version.wrote)
-    .map((version) => noteTitle(version.path));
+  const titles = heardNotes(entry).map(noteTitle);
   if (titles.length === 0) return '';
   const named = titles.slice(0, TRIGGERING_NAMED).join(', ');
   const more = titles.length - TRIGGERING_NAMED;
@@ -130,10 +137,11 @@ export function dryRunReport(
           ? 'Nothing to do'
           : `Would ${planVerb(plan.action)} ${notes(count)}`;
   const left = plan.passedOver.length === 0 ? '' : `, and leave ${plan.passedOver.length} alone`;
+  const relink = plan.notLinked === undefined ? '' : ` ${describeNotLinked(plan.notLinked)}`;
   return {
     level: 'info',
     kind: 'automation',
-    message: `${rule.name}: Dry run. ${would}${left}.`,
+    message: `${rule.name}: Dry run. ${would}${left}.${relink}`,
     subject: ruleSubject(rule),
   };
 }

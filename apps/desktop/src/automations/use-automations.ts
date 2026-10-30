@@ -46,6 +46,7 @@ import {
   type VaultGuard,
 } from '@dfai/application';
 import { errorMessage } from '../query/error-message.ts';
+import { useMeetingRelink } from './use-meeting-relink.ts';
 import type { PulledFilesGate } from '../sync/use-pulled-files.ts';
 
 /** How often the clock is checked for a rule that has come due, and the rules and logs read again. */
@@ -120,6 +121,10 @@ export interface AutomationsOptions {
    * Left out, it may.
    */
   readonly pulledFiles?: Pick<PulledFilesGate, 'standing' | 'acts'>;
+  /** The vault owner's name, from their profile: whom Run now's linking never proposes (#192). */
+  readonly selfName?: string | null;
+  /** The vault owner's own addresses, its `selfEmails`, likewise. */
+  readonly selfEmails?: readonly string[];
 }
 
 /**
@@ -169,6 +174,9 @@ type Exclusive = <Result>(
  * at a time, so a scheduled run never plans against notes a hand-started one
  * is still moving.
  */
+/** No addresses: one array, so Run now's linker is not made again each render. */
+const NO_EMAILS: readonly string[] = [];
+
 export function useAutomations(options: AutomationsOptions) {
   const { ports, clock, vaultKey, onSettled, activity } = options;
   const [read, setRead] = useState<Read | null>(null);
@@ -292,6 +300,15 @@ export function useAutomations(options: AutomationsOptions) {
       }, options),
     [exclusive, clearPause, recordFailure, isUnavailable],
   );
+  const relinkIn = useMeetingRelink({
+    ports,
+    clock,
+    activity,
+    vaultKey,
+    selfName: options.selfName ?? null,
+    selfEmails: options.selfEmails ?? NO_EMAILS,
+    onSettled,
+  });
   const runRule = useCallback(
     (rule: AutomationRule, trigger: RunTrigger) =>
       forRule(rule, (vault) =>
@@ -303,9 +320,10 @@ export function useAutomations(options: AutomationsOptions) {
           trigger,
           guard: guardOf(vault),
           freshPull: freshPullOf(vault),
+          relink: relinkIn(vault),
         }),
       ),
-    [forRule, guardOf, ports, clock, activity, freshPullOf],
+    [forRule, guardOf, ports, clock, activity, freshPullOf, relinkIn],
   );
   /**
    * Runs a rule on one sync's news; settles false when the run failed, so the
