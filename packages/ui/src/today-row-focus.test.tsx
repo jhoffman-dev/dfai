@@ -157,3 +157,74 @@ describe('useRowFocus — a row put back when its action is refused (#260, PR #2
     expect(document.activeElement).toBe(back);
   });
 });
+
+describe('useRowFocus — a row acted on that stays on the page (PR #641 review)', () => {
+  const a = createVaultPath('Tasks/A.md');
+  const b = createVaultPath('Tasks/B.md');
+  const c = createVaultPath('Tasks/C.md');
+  const order = [a, b, c];
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  /** The hook over a page whose read places each row in a section, and says which rows settle. */
+  function placedHook(place: Record<string, string>) {
+    const placeOf = (path: string) => place[path] ?? null;
+    const hook = renderHook(
+      (props: { shown: object; settling: ReadonlySet<string> }) =>
+        useRowFocus({ order, problem: null, placeOf, ...props }),
+      { initialProps: { shown: {}, settling: new Set<string>() } },
+    );
+    const boxes = new Map(order.map((path) => [path, mounted()]));
+    for (const [path, box] of boxes) act(() => hook.result.current.rowRef(path)(box));
+    return { ...hook, boxes, place };
+  }
+
+  it('forgets it once its change is read back where it was: a later read, with its row scrolled away, moves no focus', () => {
+    const { result, rerender, boxes } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    // A press with the pointer: WebKit leaves the focus on the page.
+    act(() => result.current.actedOn(a));
+    rerender({ shown: {}, settling: new Set([a]) });
+    rerender({ shown: {}, settling: new Set() });
+    // Scrolled out of the page, its row is taken out of the DOM by the virtualiser.
+    act(() => result.current.rowRef(a)(null));
+    boxes.get(a)?.remove();
+    // Sync reads the page again, later.
+    rerender({ shown: {}, settling: new Set() });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('hands the focus on when the read shows the row in another section, its focus lost with the old one', () => {
+    const { result, rerender, boxes, place } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    act(() => boxes.get(a)?.focus());
+    act(() => result.current.actedOn(a));
+    // Chosen for today: drawn anew at the top, the old row and its focus gone.
+    place[a] = 'chosen';
+    act(() => result.current.rowRef(a)(null));
+    boxes.get(a)?.remove();
+    rerender({ shown: {}, settling: new Set([a]) });
+    expect(document.activeElement).toBe(boxes.get(b));
+  });
+
+  it('leaves the focus alone when the row is still where it was and only scrolled away', () => {
+    const { result, rerender, boxes } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    act(() => result.current.actedOn(a));
+    act(() => result.current.rowRef(a)(null));
+    boxes.get(a)?.remove();
+    rerender({ shown: {}, settling: new Set([a]) });
+    expect(document.activeElement).toBe(document.body);
+  });
+});

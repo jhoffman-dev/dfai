@@ -190,6 +190,30 @@ describe('TodayPage — keyboard triage (#109)', () => {
     expect(view.onUndo).toHaveBeenCalledTimes(2);
   });
 
+  it('holds U back while a change is still on its way: the undo on offer is still the one before (PR #641 review)', async () => {
+    const view = page({ settling: new Set([createVaultPath('Tasks/Ship the page.md')]) });
+    focusRow('Write the guide');
+    await userEvent.keyboard('u');
+    await userEvent.keyboard('{Meta>}z{/Meta}');
+    expect(view.onUndo).not.toHaveBeenCalled();
+    view.rerender({ settling: new Set() });
+    await userEvent.keyboard('u');
+    expect(view.onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the focus to the row the undo says it took back, not the one last acted on here (PR #641 review)', async () => {
+    const onUndo = vi.fn(async () => createVaultPath('Tasks/Call the bank.md'));
+    const view = page({ onUndo });
+    focusRow('Send the figures');
+    await userEvent.keyboard('x');
+    act(() => view.rerender({ today: without('Send the figures') }));
+    expect(document.activeElement).toBe(handle('Draft the plan'));
+    await act(async () => {
+      await userEvent.keyboard('u');
+    });
+    expect(document.activeElement).toBe(handle('Call the bank'));
+  });
+
   it('takes no key on a row whose controls wait, nor while the page is busy', async () => {
     const view = page({ settling: new Set([createVaultPath('Tasks/Ship the page.md')]) });
     act(() => handle('Ship the page').removeAttribute('disabled'));

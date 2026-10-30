@@ -157,6 +157,20 @@ describe('InboxPage — keyboard triage (#109)', () => {
     expect(view.onClarify).toHaveBeenCalledTimes(1);
   });
 
+  it('holds U back while a clarification is still being written, then takes it back (PR #641 review)', async () => {
+    let settle: (done: boolean) => void = () => {};
+    const onClarify = vi.fn(() => new Promise<boolean>((done) => (settle = done)));
+    const view = page({ onClarify });
+    focusRow('Call the bank');
+    await userEvent.keyboard('n');
+    view.rerender({ contents: contentsOf(TITLES.slice(1)) });
+    await userEvent.keyboard('u');
+    expect(view.onUndo).not.toHaveBeenCalled();
+    await act(async () => settle(true));
+    await userEvent.keyboard('u');
+    expect(view.onUndo).toHaveBeenCalledTimes(1);
+  });
+
   it('fires nothing while a field, a picker or a list has the focus: the letters are typed', async () => {
     const { onClarify, onUndo, onOpen } = page();
     const row = rowOf('Learn the cello');

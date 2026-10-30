@@ -27,7 +27,9 @@ describe('rowKeyOf', () => {
     expect(rowKeyOf(press('Z', { mod: true }))).toBe('undo');
   });
 
-  it('leaves every other chord to the app or the browser: ⇧⌘Z, ⌥↓, ⇧↓, ⌘J, ⌘↵', () => {
+  it('leaves every other chord to the app or the browser: ⇧⌘Z, ⌥↓, ⇧↓, ⇧↵, ⌘J, ⌘↵', () => {
+    expect(rowKeyOf(press('Enter', { shift: true }))).toBeNull();
+    expect(rowKeyOf(press('ArrowUp', { shift: true }))).toBeNull();
     expect(rowKeyOf(press('z', { mod: true, shift: true }))).toBeNull();
     expect(rowKeyOf(press('ArrowDown', { alt: true }))).toBeNull();
     expect(rowKeyOf(press('ArrowDown', { shift: true }))).toBeNull();
@@ -35,8 +37,14 @@ describe('rowKeyOf', () => {
     expect(rowKeyOf(press('Enter', { mod: true }))).toBeNull();
   });
 
+  it('reads a letter whatever its case, as the pages’ own keys do: Caps Lock and Shift are still J, K and U (PR #641 review)', () => {
+    expect(rowKeyOf(press('J'))).toBe('next');
+    expect(rowKeyOf(press('K', { shift: true }))).toBe('previous');
+    expect(rowKeyOf(press('U', { shift: true }))).toBe('undo');
+  });
+
   it('is not a row key otherwise: a plain Z, another letter, Space or Tab', () => {
-    for (const key of ['z', 'x', 'n', ' ', 'Tab', 'Escape', 'J', 'U', '']) {
+    for (const key of ['z', 'x', 'n', ' ', 'Tab', 'Escape', '']) {
       expect(rowKeyOf(press(key)), key).toBeNull();
     }
   });
