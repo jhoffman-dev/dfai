@@ -1,5 +1,11 @@
-import { addDays, noteTitle, type ActivityEvent, type ActivitySubject } from '@dfai/domain';
-import type { ActivityRowView } from '@dfai/ui';
+import {
+  addDays,
+  groupActivity,
+  noteTitle,
+  type ActivityEvent,
+  type ActivitySubject,
+} from '@dfai/domain';
+import type { ActivityEntryView, ActivityRowView } from '@dfai/ui';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -8,15 +14,50 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * id counts from the oldest, so a line keeps its id as newer ones arrive.
  */
 export function activityRows(events: readonly ActivityEvent[], today: string): ActivityRowView[] {
-  return events.map((event, index) => ({
-    id: String(events.length - 1 - index),
+  return events.map((event, index) => rowOf(event, idOf(events, index), today));
+}
+
+/**
+ * The log's lines as the page shows them, a meeting's lines under it (#192):
+ * where the domain gathers them, in the order given. A meeting opens as its
+ * newest line about it does.
+ */
+export function activityEntries(
+  events: readonly ActivityEvent[],
+  today: string,
+): ActivityEntryView[] {
+  return groupActivity(events).flatMap((item): ActivityEntryView | ActivityEntryView[] => {
+    const lines = (item.kind === 'line' ? [item.line] : item.lines).flatMap((line) => {
+      const event = events[line];
+      return event === undefined ? [] : [{ event, line }];
+    });
+    const rows = lines.map(({ event, line }) => rowOf(event, idOf(events, line), today));
+    if (item.kind === 'line') return rows[0] ?? [];
+    const opens = lines.find(({ event }) => event.subject?.path === item.meeting) ?? lines[0];
+    return {
+      group: 'meeting' as const,
+      id: idOf(events, opens?.line ?? 0),
+      title: noteTitle(item.meeting),
+      rows,
+    };
+  });
+}
+
+/** A line's id counts from the oldest, so it keeps it as newer ones arrive. */
+function idOf(events: readonly ActivityEvent[], index: number): string {
+  return String(events.length - 1 - index);
+}
+
+function rowOf(event: ActivityEvent, id: string, today: string): ActivityRowView {
+  return {
+    id,
     time: shownTime(event.at, today),
     dateTime: localIso(event.at),
     level: event.level,
     kind: event.kind,
     message: event.message,
     subject: event.subject === null ? null : noteTitle(event.subject.path),
-  }));
+  };
 }
 
 /** What a row's link opens, by the row's id. */

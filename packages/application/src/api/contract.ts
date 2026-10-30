@@ -1553,6 +1553,17 @@ export interface ApiAutomationPlan {
   readonly capped: boolean;
   /** The most one run acts on. */
   readonly cap: number;
+  /**
+   * The meetings it matched whose linking failed, which Run now links again
+   * before anything else (#192): only for the "After a meeting" step
+   * (`apply: mine`), and left out when every meeting is linked.
+   */
+  readonly notLinked?: {
+    /** Newest first by `date`, at most 50. */
+    readonly meetings: readonly { readonly path: string; readonly title: string }[];
+    /** True when more are not linked than one run links; the rest wait for the next. */
+    readonly capped: boolean;
+  };
 }
 
 export interface ApiAutomationList {

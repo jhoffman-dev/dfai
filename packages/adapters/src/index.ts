@@ -45,4 +45,5 @@ export { tauriSleepClock } from './sync/tauri-sleep-clock.ts';
 export { gitCommands } from './sync/git-commands.ts';
 export type { RunGit } from './sync/git-commands.ts';
 export { tauriGranola } from './granola/tauri-granola.ts';
+export { tauriSlack } from './slack/tauri-slack.ts';
 export { tauriKindleNotebook, tauriKindleSession } from './kindle/tauri-kindle.ts';

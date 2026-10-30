@@ -7,15 +7,16 @@ import {
   MAX_TOTAL_LENGTH,
   MAX_URL_LENGTH,
   WEB_ADDRESS,
-} from '../../packages/domain/src/capture/mapping/capture-payload.ts';
-import { cleanText, oneLineText } from '../../packages/domain/src/capture/mapping/capture-text.ts';
+} from '../mapping/capture-payload.ts';
+import { cleanText, oneLineText } from '../mapping/capture-text.ts';
 
 /*
  * What Slack sends, fitted to capture/v1 before the contract reads it (PR
- * #623 attack): one odd detail — an address the contract will not hold, a
- * name of nothing but direction marks, a 101st file, a thread of a million
- * characters — must never lose the message. The rules and limits are the
- * contract's own, imported, so the two cannot drift.
+ * #623 attack, moved here for #105 so n8n and a pasted link fit it alike):
+ * one odd detail — an address the contract will not hold, a name of nothing
+ * but direction marks, a 101st file, a thread of a million characters —
+ * must never lose the message. The rules and limits are the contract's own,
+ * imported, so the two cannot drift.
  */
 
 /** A name as the contract holds it: one clean line, at most its length, cut between code points. */

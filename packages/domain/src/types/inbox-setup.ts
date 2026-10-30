@@ -66,18 +66,20 @@ export function inboxTypePlan<Type extends ObjectType>(
     const claimed = existing.filter((type) => folded(type.name) === name);
     const [only] = claimed;
     const offered =
-      only === undefined || claimed.length > 1 ? null : withKeys(only, [NAME_VARIANTS_PROPERTY]);
+      only === undefined || claimed.length > 1
+        ? null
+        : typeGainingKeys(only, [NAME_VARIANTS_PROPERTY]);
     return offered === null ? [] : [offered];
   });
   return { missing, extensions: [...(extension === null ? [] : [extension]), ...named] };
 }
 
 function withImportKeys<Type extends ObjectType>(type: Type): TypeExtension<Type> | null {
-  return withKeys(type, [...MEETING_IMPORT_PROPERTIES, ...MEETING_EXTRACTION_PROPERTIES]);
+  return typeGainingKeys(type, [...MEETING_IMPORT_PROPERTIES, ...MEETING_EXTRACTION_PROPERTIES]);
 }
 
 /** `type` gaining whichever of `wanted` it does not declare; null when it declares them all. */
-function withKeys<Type extends ObjectType>(
+export function typeGainingKeys<Type extends ObjectType>(
   type: Type,
   wanted: readonly PropertyDef[],
 ): TypeExtension<Type> | null {

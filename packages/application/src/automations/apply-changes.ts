@@ -24,6 +24,11 @@ export interface PropertyChange {
   /** Only change it while it still holds this; null to change it whatever it holds. */
   readonly expect: PriorValue | null;
   readonly to: PriorValue;
+  /**
+   * Written only alongside another change to the same note in this write, never
+   * on its own: a mark that says the others were made (#192). Left out, it stands alone.
+   */
+  readonly alongside?: boolean;
 }
 
 export const UNSAVED_TYPING = 'It is open in DFAI with unsaved typing, so it was left as it is.';
@@ -111,24 +116,48 @@ async function changeNote({
     today,
     values: (properties) => {
       const written: Record<string, unknown> = {};
-      for (const change of changes) {
-        const before = priorOf(properties, change.key);
-        if (change.expect !== null && !stillAsLeft(before, change.expect)) {
+      const own = changes.filter((change) => change.alongside !== true);
+      const riders = changes.filter((change) => change.alongside === true);
+      const note = { properties, path, kind, written, done };
+      for (const change of own) {
+        if (!writeChange(note, change)) {
           left.push({
             path,
             reason: `Its ${change.key} has changed since, so it was left as it is.`,
           });
-          continue;
         }
-        if (stillAsLeft(before, change.to)) continue;
-        written[change.key] = restoredValue(change.key, change.to);
-        done.push({ kind, path, key: change.key, before, after: change.to });
       }
+      // Nothing else written, a change that only rides along is not made either.
+      if (Object.keys(written).length === 0) return written;
+      for (const change of riders) writeChange(note, change);
       return written;
     },
   });
   if (done.length > 0 && ports.editors.state(path) === 'clean') ports.editors.reload(path);
   return { done, left };
+}
+
+/**
+ * Puts one change into the write, recording what it held before; false when
+ * the note has moved on from what the change expects, so it is left. One
+ * that already holds what it would get is neither written nor left.
+ */
+function writeChange(
+  note: {
+    properties: Readonly<Record<string, unknown>>;
+    path: VaultPath;
+    kind: 'set' | 'restored';
+    written: Record<string, unknown>;
+    done: DoneAction[];
+  },
+  change: PropertyChange,
+): boolean {
+  const before = priorOf(note.properties, change.key);
+  if (change.expect !== null && !stillAsLeft(before, change.expect)) return false;
+  if (stillAsLeft(before, change.to)) return true;
+  note.written[change.key] = restoredValue(change.key, change.to);
+  note.done.push({ kind: note.kind, path: note.path, key: change.key, before, after: change.to });
+  return true;
 }
 
 export function priorOf(properties: Readonly<Record<string, unknown>>, key: string): PriorValue {

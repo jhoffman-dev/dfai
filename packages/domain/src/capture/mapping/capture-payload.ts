@@ -70,15 +70,15 @@ export const MAX_NAME_LENGTH = 200;
 const MAX_TITLE_LENGTH = 500;
 export const MAX_URL_LENGTH = 2_000;
 
-const CHANNEL_ID = /^[CDG][A-Z0-9]{8,20}$/;
+export const CHANNEL_ID = /^[CDG][A-Z0-9]{8,20}$/;
 const USER_ID = /^[UWB][A-Z0-9]{8,20}$/;
-const TS = /^\d{10}\.\d{6}$/;
+export const TS = /^\d{10}\.\d{6}$/;
 /**
  * A Slack permalink: `https://<team>.slack.com/archives/<channel>/p<ts without its dot>`,
  * with a query of the characters Slack writes in one (`?thread_ts=…&cid=…`) and no others:
  * the link is written into the note, where a bracket would make a wiki link of it.
  */
-const PERMALINK =
+export const PERMALINK =
   /^https:\/\/(?:[a-z0-9-]+\.)*slack\.com\/archives\/([A-Z0-9]+)\/p(\d{16})(?:\?[A-Za-z0-9._~%&=+-]*)?$/;
 /** An https address with none of the characters markdown or a wiki link reads in one. */
 export const WEB_ADDRESS = /^https:\/\/[^\s/<>[\]!"'`\\]+(?:\/[^\s<>[\]!"'`\\]*)?$/;

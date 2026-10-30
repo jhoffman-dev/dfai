@@ -778,7 +778,7 @@ not saved and why. A failure is emailed too.
 | `slack-app.manifest.json`                                      | The Slack app, to create from a manifest: shortcuts, event, scopes.     |
 | `slack-signature.ts`                                           | Slack's `v0=` HMAC-SHA256 check, in plain JavaScript (`sha256.ts`).     |
 | `slack-request.ts`                                             | What a signed request asks: save (shortcut, reaction), URL check, none. |
-| `slack-capture.ts`                                             | Slack's Web API answers as one capture/v1 payload.                      |
+| `slack-action-answers.ts`                                      | The action's view of the domain's shaping into one capture/v1 payload.  |
 | `capture-github.ts`                                            | The fallback's "is a file for this message in pkm-space already?"       |
 | `slack-reply.ts`                                               | The DM's words.                                                         |
 | `slack-code-node.ts`, `*.workflow.ts`, `slack-app-manifest.ts` | Build the JSON: `pnpm n8n:build`.                                       |

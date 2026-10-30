@@ -19,7 +19,9 @@ import { useSteadyCallback } from '../steady-callback.ts';
 import { Spacer } from '../grouped-rows.tsx';
 import { useVirtualRows } from '../virtual-rows.ts';
 import { asksWhoItWaitsOn, clarificationOf, type InboxDraft } from './inbox-triage.ts';
-import { triageKeysShown, type TriageKeyShown } from './triage-keys.ts';
+import { keyHintStrip } from '../key-hints.tsx';
+import type { UndoLast } from '../row-keys.ts';
+import { inboxKeyHints, triageKeysShown, type TriageKeyShown } from './triage-keys.ts';
 import {
   useInboxTriage,
   type ClarifyInboxItem,
@@ -59,6 +61,8 @@ export interface InboxRowsProps {
    * list while it held the focus, to take the focus back should it return.
    */
   stranded?: StrandedRow;
+  /** Takes the last clarification back: U or ⌘Z on a row (#109). */
+  onUndo?: UndoLast | undefined;
 }
 
 /** A row's height until it is measured, as WebKit draws a note's. */
@@ -111,12 +115,16 @@ export function InboxRows({
   refusals,
   summaryPending,
   stranded,
+  onUndo,
 }: InboxRowsProps) {
+  const open = useSteadyCallback(onOpen);
   const triage = useInboxTriage({
     items,
     statuses,
     onClarify,
     busy,
+    onOpen: open,
+    onUndo,
     ...(stranded !== undefined && { stranded }),
   });
   const keys = useMemo(() => items.map((item) => item.path), [items]);
@@ -130,7 +138,6 @@ export function InboxRows({
     pinned: triage.wanted,
   });
   const placeRef = usePlacedRowRefs(list.measure, triage.rowRef);
-  const open = useSteadyCallback(onOpen);
   const {
     onRowFocus,
     onListKeyDown,
@@ -196,7 +203,7 @@ export function InboxRows({
                           key={shown.key}
                           type="button"
                           className={`btn btn--sm inbox__key${shown.status === null ? '' : ` inbox__key--${shown.status}`}`}
-                          aria-keyshortcuts={shown.key}
+                          aria-keyshortcuts={shown.keys}
                           aria-label={`${shown.label}, key ${shown.key.toUpperCase()}`}
                           disabled={busy}
                           onClick={() => keyAction(item.path, shown.action)}
@@ -215,6 +222,11 @@ export function InboxRows({
       {list.after > 0 && <Spacer height={list.after} width={ROW_CELLS} />}
     </tbody>
   );
+}
+
+/** The Inbox's keys, listed above its rows (#109): read by a screen reader too. */
+export function inboxKeyStrip(statuses: readonly GtdStatus[] = GTD_STATUSES) {
+  return keyHintStrip({ hints: inboxKeyHints(statuses), label: 'Keys for the Inbox' });
 }
 
 /**

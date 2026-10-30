@@ -67,3 +67,5 @@ export {
   taskTypeLines,
 } from './task-type.ts';
 export type { ClarifyVocabulary, TaskTypeChange } from './task-type.ts';
+export { rowAfterStep, rowKeyOf } from './row-keys.ts';
+export type { KeyPress, RowKey } from './row-keys.ts';

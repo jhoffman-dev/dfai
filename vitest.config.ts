@@ -145,6 +145,8 @@ export default defineConfig({
         'packages/application/src/meetings/**': { lines: 90, functions: 90, branches: 85 },
         // A capture writes a message from Slack into the Inbox, once (#103).
         'packages/application/src/capture/**': { lines: 90, functions: 90, branches: 85 },
+        // A pasted Slack link is read through the host and saved into the Inbox, once (#105).
+        'packages/{application,adapters}/src/slack/**': { lines: 90, functions: 90, branches: 85 },
         // Linking a meeting writes its people and companies, and proposals, by itself (P29-04).
         'packages/application/src/meeting-links/**': { lines: 90, functions: 90, branches: 85 },
         // P32-02: the cache of meanings — a stale or wrong one answers a question silently wrong.

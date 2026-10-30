@@ -229,3 +229,29 @@ characters of what was sent, and nothing is written.
 - **James is told in Slack by the app's bot**, a DM (`chat.postMessage` to
   his member id): it works in every conversation, the bot a member of none,
   where an ephemeral reply needs the bot in the channel.
+
+## Amendment, 2026-10-28: a pasted link, and one shaping of Slack's answers (#105)
+
+A Slack message link pasted into a note or quick capture is read by the
+app through a host module pinned to `https://slack.com` (`slack.rs`), as
+Granola is (ADR-0034): a user token kept in the Keychain at
+`<vault>:apikey/slack`, never a named secret, sent only to a short list of
+read-only Web API methods (`auth.test`, `conversations.replies`,
+`chat.getPermalink`, `users.info`) by GET, no redirect followed, and struck
+from every answer and failure. The webview learns only whether a token is
+kept. What Slack's answers mean — `ok: false` and its code, a 429 and its
+`Retry-After` — is the domain's (`slackAnswerFailure`), and so is what the
+person is told.
+
+The answers become a capture/v1 payload in the domain, in one copy:
+`slackCapturePayload`, `usersToLookUp` and the fitting to the contract's
+limits, written for n8n in PR #623, live in
+`packages/domain/src/capture/slack/`, beside the mapping folder and
+importing only from it. A pasted link shapes its message with them,
+`chat.getPermalink`'s link included, and n8n's Code node imports the same
+modules, bundled in as the mapper is (PR #631 deleted #104's copies in
+`tools/n8n/`), so a fix reaches both senders at once. The payload goes
+through `receiveCapture` like `POST /v1/captures`'s: one code path, one
+dedupe. A pasted link looks up its reader first, as n8n looks up whoever
+asked, so in a thread of more than 100 people both spend the same 100
+lookups and name the same people.

@@ -101,6 +101,25 @@ describe('automationEntryReport', () => {
     );
   });
 
+  it('says the notes a run heard beside its rule, each once, and not those it wrote (#192)', () => {
+    const heard = (path: string, wrote = false) => ({ path: p(path), digest: 'd', wrote });
+    const entry: LogEntry = {
+      kind: 'run',
+      at: AT,
+      trigger: 'note',
+      done: [],
+      left: [],
+      capped: false,
+      versions: [
+        heard('Inbox/Meetings/M0.md'),
+        heard('Inbox/Meetings/M0.md'),
+        heard('M1.md', true),
+      ],
+    };
+    expect(automationEntryReport(RULE, entry)?.notes).toEqual(['Inbox/Meetings/M0.md']);
+    expect(automationEntryReport(RULE, { ...entry, versions: [] })).not.toHaveProperty('notes');
+  });
+
   it('says nothing of a rule turned on or first seen', () => {
     expect(automationEntryReport(RULE, { kind: 'turnedOn', at: AT })).toBeNull();
     expect(automationEntryReport(RULE, { kind: 'seen', at: AT })).toBeNull();

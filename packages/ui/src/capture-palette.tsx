@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Icon } from './icon.tsx';
 import { isImeKey } from './ime.ts';
@@ -25,6 +25,7 @@ export function CapturePalette({
   onCapture,
   onClose,
   fallbackFocus,
+  children = null,
 }: {
   /** What it will make, so it is clear before pressing Enter. */
   destination: string;
@@ -32,6 +33,8 @@ export function CapturePalette({
   onClose: () => void;
   /** Where focus goes on close if what opened the palette has gone. */
   fallbackFocus?: FocusFallback;
+  /** What a paste into the field offered — a Slack message to save (#105) — drawn under it. */
+  children?: ReactNode;
 }) {
   const finalFocus = useReturnFocus(fallbackFocus);
   const [name, setName] = useState('');
@@ -53,6 +56,8 @@ export function CapturePalette({
                 type="text"
                 aria-label="What needs doing"
                 placeholder="What needs doing?"
+                // The app offers to save a pasted Slack message link from here (#105).
+                data-paste-offers=""
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
@@ -69,6 +74,7 @@ export function CapturePalette({
             <p className="palette__hint">
               Each one becomes <span className="palette__destination">{destination}</span>.
             </p>
+            {children}
             <KeyHints hints={HINTS} />
           </Dialog.Popup>
         </Dialog.Viewport>

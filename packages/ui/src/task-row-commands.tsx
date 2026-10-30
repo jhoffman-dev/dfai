@@ -12,6 +12,7 @@ export function MoveMenu({
   statuses,
   busy,
   holdFocus = false,
+  keyShortcut,
   onMove,
 }: {
   /** The task's name, which the button and the menu are labelled with. */
@@ -21,6 +22,8 @@ export function MoveMenu({
   busy: boolean;
   /** Held while busy rather than disabled, so a button with the focus keeps it (#107). */
   holdFocus?: boolean;
+  /** The key that opens it, where a page has one (#109), for `aria-keyshortcuts`. */
+  keyShortcut?: string;
   onMove: (status: GtdStatus) => void;
 }) {
   // Built the first time it is opened: a Base UI menu on each of hundreds of
@@ -36,6 +39,7 @@ export function MoveMenu({
         holdFocus={holdFocus}
         onMove={onMove}
         opening={opening}
+        {...(keyShortcut !== undefined && { keyShortcut })}
       />
     );
   }
@@ -46,6 +50,7 @@ export function MoveMenu({
       aria-label={`Move ${title} to…`}
       aria-haspopup="menu"
       aria-expanded={false}
+      aria-keyshortcuts={keyShortcut}
       {...heldWhile(busy, holdFocus)}
       onKeyDown={(event) => {
         // The built trigger opens on ArrowDown as well as on a press.
@@ -76,6 +81,7 @@ function MoveMenuOpened({
   holdFocus,
   onMove,
   opening,
+  keyShortcut,
 }: {
   title: string;
   statuses: readonly GtdStatus[];
@@ -83,6 +89,7 @@ function MoveMenuOpened({
   holdFocus: boolean;
   onMove: (status: GtdStatus) => void;
   opening: MenuOpening;
+  keyShortcut?: string;
 }) {
   const chosen = useRef<MenuCommand | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -110,6 +117,7 @@ function MoveMenuOpened({
         ref={trigger}
         className="btn btn--ghost btn--sm"
         aria-label={`Move ${title} to…`}
+        aria-keyshortcuts={keyShortcut}
         {...heldWhile(busy, holdFocus)}
       >
         Move to…
@@ -135,11 +143,14 @@ export function todayToggle({
   chosen,
   disabled,
   holdFocus = false,
+  keyShortcut,
   onToggle,
 }: {
   title: string;
   chosen: boolean;
   disabled: boolean;
+  /** The key that presses it, where a page has one (#109), for `aria-keyshortcuts`. */
+  keyShortcut?: string;
   /** Held while disabled rather than disabled, so a button with the focus keeps it (#107). */
   holdFocus?: boolean;
   onToggle: () => void;
@@ -151,6 +162,7 @@ export function todayToggle({
       aria-pressed={chosen}
       aria-label={chosen ? `Take ${title} off today` : `Choose ${title} for today`}
       title={chosen ? 'Take off today' : 'Choose for today'}
+      aria-keyshortcuts={keyShortcut}
       {...heldWhile(disabled, holdFocus)}
       onClick={() => {
         if (!disabled) onToggle();

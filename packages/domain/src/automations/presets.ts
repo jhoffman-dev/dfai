@@ -10,6 +10,25 @@ import { MEETING_ITEMS_OUTPUT } from './meeting-items.ts';
 import { MORNING_BRIEF_FOLDER } from './morning-brief.ts';
 
 /**
+ * "After a meeting" (#179, ADR-0036), on its own: the rule the setup of
+ * meeting post-processing writes (#191), as well as one of the presets.
+ */
+export const AFTER_A_MEETING_PRESET: AutomationDraft = {
+  name: 'After a meeting',
+  enabled: true,
+  when: { kind: 'note', type: 'meeting', on: ['created'] },
+  which: 'FROM meeting WHERE date >= @-14d',
+  olderThanDays: null,
+  action: {
+    kind: 'claude',
+    prompt: AFTER_A_MEETING_PROMPT,
+    tools: [],
+    output: { kind: 'proposals', schema: MEETING_DIGEST_OUTPUT },
+    apply: 'mine',
+  },
+};
+
+/**
  * The automations offered ready-made (P25-03). The first is James's own
  * (U-24): done tasks go to the Archive once they have sat untouched for 30
  * days. The query language cannot say "30 days ago", so the age is the rule's
@@ -58,20 +77,7 @@ export const AUTOMATION_PRESETS: readonly AutomationDraft[] = [
       output: { kind: 'proposals', schema: MEETING_ITEMS_OUTPUT },
     },
   },
-  {
-    name: 'After a meeting',
-    enabled: true,
-    when: { kind: 'note', type: 'meeting', on: ['created'] },
-    which: 'FROM meeting WHERE date >= @-14d',
-    olderThanDays: null,
-    action: {
-      kind: 'claude',
-      prompt: AFTER_A_MEETING_PROMPT,
-      tools: [],
-      output: { kind: 'proposals', schema: MEETING_DIGEST_OUTPUT },
-      apply: 'mine',
-    },
-  },
+  AFTER_A_MEETING_PRESET,
   {
     name: 'Friday review',
     enabled: true,

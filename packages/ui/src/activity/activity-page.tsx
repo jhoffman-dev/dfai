@@ -23,9 +23,22 @@ export interface ActivityRowView {
   readonly subject: string | null;
 }
 
+/** A meeting with its lines under it (#192): its import's, its linking's, and the rules that heard it. */
+export interface ActivityMeetingView {
+  readonly group: 'meeting';
+  /** The id of the line whose link opens the meeting. */
+  readonly id: string;
+  readonly title: string;
+  /** Newest first. */
+  readonly rows: readonly ActivityRowView[];
+}
+
+/** A place on the page: a line, or a meeting's lines together. */
+export type ActivityEntryView = ActivityRowView | ActivityMeetingView;
+
 export interface ActivityPageProps {
   /** The lines the filters let through, newest first; null while the log is being read. */
-  readonly rows: readonly ActivityRowView[] | null;
+  readonly rows: readonly ActivityEntryView[] | null;
   /** How many lines the log holds, whatever the filters. */
   readonly total: number;
   readonly error: string | null;
@@ -153,35 +166,77 @@ function Lines({ rows, total, error, onOpenSubject }: ActivityPageProps) {
   if (rows.length === 0) return <p className="activity__empty">No lines match.</p>;
   return (
     <ol className="page-list activity__list" aria-label="Activity lines">
-      {rows.map((row) => (
-        <li key={row.id} className={`page-list__row activity-line activity-line--${row.level}`}>
-          <time className="page-list__meta activity-line__time" dateTime={row.dateTime}>
-            {row.time}
-          </time>
-          <span
-            className={`page-list__meta activity-line__level activity-line__level--${row.level}`}
-          >
-            {LEVEL_LABELS[row.level]}
-          </span>
-          <span className="page-list__meta activity-line__kind">
-            {ACTIVITY_KIND_LABELS[row.kind]}
-          </span>
-          {/* One line per row, so a long message is cut short; its title holds the whole of it. */}
-          <span className="activity-line__message" title={row.message}>
-            {row.message}
-          </span>
-          {row.subject !== null && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm activity-line__open"
-              title={`Open ${row.subject}`}
-              onClick={() => onOpenSubject(row.id)}
-            >
-              <span className="activity-line__open-text">Open {row.subject}</span>
-            </button>
-          )}
-        </li>
-      ))}
+      {rows.map((entry) =>
+        'group' in entry ? (
+          <Meeting key={`meeting:${entry.id}`} meeting={entry} onOpenSubject={onOpenSubject} />
+        ) : (
+          <Line key={entry.id} row={entry} onOpenSubject={onOpenSubject} />
+        ),
+      )}
     </ol>
+  );
+}
+
+function Meeting({
+  meeting,
+  onOpenSubject,
+}: {
+  meeting: ActivityMeetingView;
+  onOpenSubject: (id: string) => void;
+}) {
+  return (
+    <li className="activity-group" aria-label={`Meeting ${meeting.title}`}>
+      <div className="activity-group__head">
+        <Icon name="calendar" size={14} />
+        <span className="activity-group__title">{meeting.title}</span>
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm activity-line__open"
+          title={`Open ${meeting.title}`}
+          onClick={() => onOpenSubject(meeting.id)}
+        >
+          <span className="activity-line__open-text">Open {meeting.title}</span>
+        </button>
+      </div>
+      <ol className="page-list activity-group__lines" aria-label={`Lines about ${meeting.title}`}>
+        {meeting.rows.map((row) => (
+          <Line key={row.id} row={row} onOpenSubject={onOpenSubject} />
+        ))}
+      </ol>
+    </li>
+  );
+}
+
+function Line({
+  row,
+  onOpenSubject,
+}: {
+  row: ActivityRowView;
+  onOpenSubject: (id: string) => void;
+}) {
+  return (
+    <li key={row.id} className={`page-list__row activity-line activity-line--${row.level}`}>
+      <time className="page-list__meta activity-line__time" dateTime={row.dateTime}>
+        {row.time}
+      </time>
+      <span className={`page-list__meta activity-line__level activity-line__level--${row.level}`}>
+        {LEVEL_LABELS[row.level]}
+      </span>
+      <span className="page-list__meta activity-line__kind">{ACTIVITY_KIND_LABELS[row.kind]}</span>
+      {/* One line per row, so a long message is cut short; its title holds the whole of it. */}
+      <span className="activity-line__message" title={row.message}>
+        {row.message}
+      </span>
+      {row.subject !== null && (
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm activity-line__open"
+          title={`Open ${row.subject}`}
+          onClick={() => onOpenSubject(row.id)}
+        >
+          <span className="activity-line__open-text">Open {row.subject}</span>
+        </button>
+      )}
+    </li>
   );
 }

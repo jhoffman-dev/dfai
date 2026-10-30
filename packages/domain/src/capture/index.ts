@@ -46,3 +46,16 @@ export {
   numberedCapturePath,
 } from './mapping/capture-to-atlas.ts';
 export type { CaptureFile, CaptureOptions } from './mapping/capture-to-atlas.ts';
+export { readSlackPermalink } from './slack/slack-permalink.ts';
+export type { SlackPermalink } from './slack/slack-permalink.ts';
+export {
+  MAX_LOOKUPS,
+  SlackApiError,
+  SlackMessageMissingError,
+  slackCapturePayload,
+  THREAD_LIMIT,
+  threadMessages,
+  usersToLookUp,
+} from './slack/slack-answers.ts';
+export type { SlackAnswers } from './slack/slack-answers.ts';
+export { fittedThread } from './slack/slack-fit.ts';

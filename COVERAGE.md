@@ -34,6 +34,7 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `application/sync`          | Merges other Macs' changes into notes; settles conflicts; never loses a side.                 | U-29    |
 | `application/meetings`      | Marks, archives and corrects meeting files that arrived, by itself; undoes corrections.       | 28      |
 | `application/capture`       | Saves a Slack message into the Inbox once, its author linked by email, never over a note.     | #103    |
+| `*/slack`, `capture/slack`  | Reads a pasted Slack link through the host and saves it once; what Slack's refusals mean.     | #105    |
 | `tools/n8n/*.ts`            | The n8n meeting mapper: commits files into your vault from outside DFAI.                      | 28      |
 | `domain/terms`              | The vocabulary: decides how every name in a transcript is spelt.                              | 28      |
 | `application/terms`         | Adds terms as notes and rewrites their variants in the frontmatter.                           | 28      |
@@ -68,6 +69,12 @@ is handed back, not followed.
 exists here, so its bar is named tests, not a percentage: no answer or error carries
 the key (each is serialised against a fake Granola that echoes `Authorization`), and a
 path off `/v1/`, a non-GET method and a redirect are each refused.
+
+`src-tauri/src/slack*` (#105) holds the Slack user token, held to the same named
+tests: no answer or error carries the token (each serialised against a fake Slack
+that echoes `Authorization`), the origin is pinned to `https://slack.com`, a method
+off its read-only list is refused before anything is sent, and a redirect is handed
+back, not followed.
 
 Rules that apply everywhere:
 

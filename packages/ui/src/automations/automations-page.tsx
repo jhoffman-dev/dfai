@@ -22,6 +22,8 @@ export interface AutomationsPageProps {
   /** What the last command did, or why it could not. */
   readonly notice: string | null;
   readonly busy: boolean;
+  /** The offer to set meeting post-processing up in one yes (#191), above the rules. */
+  readonly setup?: ReactNode;
   readonly onShowSidebar?: () => void;
   readonly history?: PageHistory;
 }
@@ -48,6 +50,7 @@ export function AutomationsPage(props: AutomationsPageProps) {
       <div className="panel__body">
         <article className="page page--wide automations" aria-label="Automations">
           <HiddenTitle>{name}</HiddenTitle>
+          {props.setup}
           {props.notice !== null && (
             <p className="automations__notice" role="status">
               {props.notice}

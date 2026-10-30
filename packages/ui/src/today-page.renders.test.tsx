@@ -166,7 +166,9 @@ describe('TodayPage — ticking one row', () => {
       screen.getByRole('button', { name: 'Move Ship the page to…' }),
       screen.getByRole('button', { name: 'Defer Ship the page 1 day' }),
     ];
-    expect(controls.map((control) => control.matches(':disabled'))).toEqual([true, true, true]);
+    expect(controls.map((control) => control.matches(':disabled, [aria-disabled="true"]'))).toEqual(
+      [true, true, true],
+    );
   });
 });
 

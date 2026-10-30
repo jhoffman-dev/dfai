@@ -209,7 +209,7 @@ describe('TodayPage row memo — #236', () => {
       const { renders } = stopCountingRenders();
       // Settling, its own Done waits, though its row was not drawn again for it (#247).
       const waits = screen.getByRole('checkbox', { name: `Mark ${picked.title} done` });
-      expect(waits.matches(':disabled')).toBe(true);
+      expect(waits.matches(':disabled, [aria-disabled="true"]')).toBe(true);
       view.unmount();
 
       expect({ picked: picked.title, rows: renders['TaskRow'] ?? 0 }).toEqual({
