@@ -29,6 +29,8 @@ import { expect, type Page } from '@playwright/test';
  *   question first, whenever the answers arrived.
  * - **Animations a script starts** (`element.animate`) are held, and finish
  *   when their time on the work clock is up.
+ * - **Layout observers' reports** (`ResizeObserver`, `IntersectionObserver`)
+ *   are held, and handed over after a frame the clock waited for (#243).
  * - **Quiet** means no React or `MessageChannel` task pending, the answer
  *   just handed over drawn, one frame after it so that layout observers have
  *   run, and no finite animation still playing.
@@ -162,6 +164,61 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       if (Number.isFinite(ends)) addTimer(() => animation.finish(), ends, null);
       return animation;
     } as typeof Element.prototype.animate;
+  }
+
+  // A layout observer reports on a real rendering step, which can land between
+  // two of React's tasks or after them: dnd-kit then saw the drag's first
+  // `over` in one run and not the next, and the drag counted 41 commits or 42
+  // (#243). While the clock runs or counts, each report is held and handed over
+  // after a frame `quiet` drew, so it reaches the app at the same point in the
+  // work on every run: one call per observer, in the order they were made,
+  // with the latest entry for each element, as one rendering step reports.
+  interface Held {
+    readonly made: number;
+    readonly report: (entries: unknown[], observer: object) => void;
+    readonly entries: Map<Element, unknown>;
+  }
+  const heldReports = new Map<object, Held>();
+  let observersMade = 0;
+  const handOverReports = () => {
+    const held = [...heldReports.entries()].sort(([, one], [, other]) => one.made - other.made);
+    heldReports.clear();
+    for (const [observer, { report, entries }] of held) report([...entries.values()], observer);
+    return held.length > 0;
+  };
+  type Observer = new (
+    report: Held['report'],
+    options?: unknown,
+  ) => {
+    unobserve(target: Element): void;
+    disconnect(): void;
+  };
+  for (const kind of ['ResizeObserver', 'IntersectionObserver'] as const) {
+    const Real = (window as unknown as Record<string, Observer | undefined>)[kind];
+    if (typeof Real !== 'function') continue;
+    const HeldObserver = class extends Real {
+      constructor(report: Held['report'], options?: unknown) {
+        const made = observersMade++;
+        super((entries, observer) => {
+          if (!state.running && !state.counting)
+            return void report.call(observer, entries, observer);
+          const held = heldReports.get(observer) ?? { made, report, entries: new Map() };
+          for (const entry of entries as { target: Element }[])
+            held.entries.set(entry.target, entry);
+          heldReports.set(observer, held);
+        }, options);
+      }
+      // A browser drops what it had not reported yet; so does the clock.
+      override unobserve(target: Element) {
+        heldReports.get(this)?.entries.delete(target);
+        super.unobserve(target);
+      }
+      override disconnect() {
+        heldReports.delete(this);
+        super.disconnect();
+      }
+    };
+    Object.assign(window, { [kind]: HeldObserver });
   }
 
   // React's scheduler and the index's breaths post themselves messages: counted, to be waited for.
@@ -311,6 +368,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       busy = false;
       // Drawn, so that resize and intersection observers have seen it.
       await aFrame();
+      if (handOverReports()) busy = true;
     }
   }
 
@@ -373,7 +431,10 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   void (async () => {
     for (;;) {
       await aTurn();
-      if (!state.running && !state.counting) answerOldest();
+      if (!state.running && !state.counting) {
+        answerOldest();
+        handOverReports();
+      }
     }
   })();
 
