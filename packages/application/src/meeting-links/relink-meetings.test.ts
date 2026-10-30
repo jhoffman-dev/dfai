@@ -122,7 +122,7 @@ function setUp(notes: Record<string, string> = { [MEETING]: meetingFile() }) {
       guard: { vault: VAULT, currentVault: () => VAULT },
       activity,
       trigger,
-      relink: (paths) => relinkMeetings({ link, paths, ports: vault.ports, today: TODAY }),
+      relink: (paths) => relinkMeetings({ link, paths }),
     });
   const runNow = () => run('hand');
   return {
@@ -164,6 +164,26 @@ describe('a meeting whose linking failed as it was let in', () => {
     expect(activity.reports.map(({ message }) => message)).toContain(
       'Could not link the meeting: the index is rebuilding',
     );
+  });
+
+  it('carries no mark when linking wrote into it, even with a key it had to leave', async () => {
+    const { vault, importer } = setUp({
+      [MEETING]: meetingFile({
+        ...MEETING_HEADER,
+        attendees: [
+          { name: 'Mara Quill', email: 'mara.quill@example.com' },
+          { name: 'Ada Venn', email: 'ada@larkspur.example' },
+        ],
+        people: [{ name: 'Mara and Ada' }],
+      }),
+      'Companies/Larkspur Payroll.md': jsonNote({ type: 'company', domains: ['larkspur.example'] }),
+    });
+
+    await importer.catchUp(VAULT);
+
+    expect(vault.properties(MEETING)['companies']).toEqual(['[[Larkspur Payroll]]']);
+    expect(vault.properties(MEETING)['atlas_import_outcome']).toBe('imported');
+    expect(vault.properties(MEETING)).not.toHaveProperty('atlas_links');
   });
 
   it('carries no mark when linking worked', async () => {
@@ -279,8 +299,6 @@ describe('relinkMeetings', () => {
         },
       ],
       paths: [meeting],
-      ports: vault.ports,
-      today: TODAY,
     });
 
     expect(outcome).toEqual({ linked: [], notLinked: [MEETING] });
@@ -294,45 +312,45 @@ describe('relinkMeetings', () => {
     const outcome = await relinkMeetings({
       link: async () => [],
       paths: [meeting],
-      ports: vault.ports,
-      today: TODAY,
     });
 
     expect(outcome).toEqual({ linked: [], notLinked: [MEETING] });
     expect(vault.properties(MEETING)['atlas_links']).toBe('failed');
   });
 
-  it('keeps the mark while the meeting has unsaved typing', async () => {
-    const vault = automationVault({ notes: { [MEETING]: marked }, today: TODAY, dirty: [MEETING] });
-    const meeting = createVaultPath(MEETING);
+  it('keeps the mark while the meeting has unsaved typing: the linker writes nothing into it', async () => {
+    const vault = automationVault({
+      notes: {
+        [MEETING]: marked,
+        [MARA]: jsonNote({ type: 'person', email: 'mara.quill@example.com' }),
+      },
+      today: TODAY,
+      dirty: [MEETING],
+    });
+    const linker = createMeetingLinker({
+      ports: () => vault.ports,
+      clock: CLOCK,
+      activity: recordingActivity(),
+      openVault: () => VAULT,
+      selfName: () => null,
+      selfEmails: () => [],
+      onWritten: () => undefined,
+    });
 
     const outcome = await relinkMeetings({
-      link: async () => [
-        {
-          meeting,
-          linked: [],
-          filed: null,
-          done: [],
-          proposed: [],
-          left: [],
-          passedOver: [],
-          unproposed: null,
-        },
-      ],
-      paths: [meeting],
-      ports: vault.ports,
-      today: TODAY,
+      link: (paths) => linker(VAULT, paths),
+      paths: [createVaultPath(MEETING)],
     });
 
     expect(outcome.notLinked).toEqual([MEETING]);
     expect(vault.properties(MEETING)['atlas_links']).toBe('failed');
+    expect(vault.properties(MEETING)['people']).toBeUndefined();
   });
 
   it('asks nothing of the linker with no meetings', async () => {
-    const vault = automationVault({ notes: {}, today: TODAY });
     const link = vi.fn(async () => []);
 
-    expect(await relinkMeetings({ link, paths: [], ports: vault.ports, today: TODAY })).toEqual({
+    expect(await relinkMeetings({ link, paths: [] })).toEqual({
       linked: [],
       notLinked: [],
     });
@@ -378,7 +396,10 @@ describe('review of #192: a re-link that wrote something settles the meeting', (
       [LARKSPUR]: jsonNote({ type: 'company', domains: ['larkspur.example'] }),
     });
     await runNow();
-    const { companies: _taken, ...rest } = vault.properties(MEETING);
+    // The owner takes the company out again.
+    const rest = Object.fromEntries(
+      Object.entries(vault.properties(MEETING)).filter(([key]) => key !== 'companies'),
+    );
     vault.files.set(MEETING, jsonNote(rest, '\n## Summary\n'));
 
     await runNow();
@@ -458,8 +479,6 @@ describe('review of #192: re-linking writes only through the linker', () => {
         },
       ],
       paths: [meeting],
-      ports: vault.ports,
-      today: TODAY,
     });
 
     expect(written).toEqual([]);
@@ -480,8 +499,6 @@ describe('review of #192: re-linking writes only through the linker', () => {
     const outcome = await relinkMeetings({
       link: (paths) => linker(VAULT, paths),
       paths: [createVaultPath(MEETING)],
-      ports: vault.ports,
-      today: TODAY,
     });
 
     expect(outcome).toEqual({ linked: [], notLinked: [MEETING] });
@@ -523,9 +540,32 @@ describe('review of #192: finding the meetings not linked', () => {
       types: TYPES,
     });
     const readNotes = vi.spyOn(vault.ports.fs, 'readNotes');
+    const query = vi.spyOn(vault.ports.index, 'query');
 
     expect(await meetingsNotLinked({ ports: ports(vault), rule: RULE, today: TODAY })).toBeNull();
     expect(readNotes).not.toHaveBeenCalled();
+    // One small question of the index; the rule's own query is not asked.
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads only the marked meetings, not every one the rule matches', async () => {
+    const linked = meetingFile({ ...MEETING_HEADER, atlas_import_outcome: 'imported' });
+    const vault = automationVault({
+      notes: {
+        ...many(1),
+        [MEETING]: linked,
+        'Inbox/Meetings/2026-10-05 Retro.md': linked.replace('gemini-7f3a9c21', 'gemini-r'),
+      },
+      today: TODAY,
+      types: TYPES,
+    });
+    const readNotes = vi.spyOn(vault.ports.fs, 'readNotes');
+
+    const found = await meetingsNotLinked({ ports: ports(vault), rule: RULE, today: TODAY });
+
+    const marked = 'Inbox/Meetings/2026-10-06 Sync 000.md';
+    expect(found).toEqual({ paths: [marked], capped: false });
+    expect(readNotes.mock.calls.flatMap(([paths]) => paths)).toEqual([marked]);
   });
 
   it('takes at most fifty a run, and says more wait', async () => {

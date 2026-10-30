@@ -1,11 +1,13 @@
 import {
   attendeesOf,
   isMeetingType,
+  linkingFailed,
   linkedEntities,
   linkedNotes,
   matchAttendees,
   matchSpeakers,
   messageWithoutPaths,
+  MEETING_LINKS_KEY,
   MEETING_PROJECT_KEY,
   namedSpeakers,
   ownerAddressesInUse,
@@ -77,7 +79,8 @@ export class MeetingLinkRefusedError extends Error {
  * says how) — the speakers as the vocabulary corrects them (P28-06), whether
  * or not the meeting's words have been corrected yet, so the order of the two
  * steps does not change who is linked. What is sure is added to the meeting's `people` and `companies`,
- * and its `project` set — the only keys it writes — recording what each held before, so
+ * and its `project` set — the only keys it writes, with the mark of linking
+ * still owed (#192) taken out in the same write — recording what each held before, so
  * {@link undoMeetingLink} can put it back. A meeting with unsaved typing, or
  * changed since it was read, is left as it is, and said. What is unsure is
  * written as proposals in the Inbox, each once, however often this runs.
@@ -112,6 +115,7 @@ export async function linkMeeting({
     changes: [
       ...relationChanges(path, plan.properties, plan.changes),
       ...filingChanges(path, plan),
+      ...markChanges(path, plan.properties),
     ],
     kind: 'set',
     today,
@@ -300,6 +304,25 @@ function filingChanges(
       key: MEETING_PROJECT_KEY,
       expect: priorOf(plan.properties, MEETING_PROJECT_KEY),
       to: { value: plan.filing.link },
+    },
+  ];
+}
+
+/**
+ * The mark of linking still owed (#192) taken out, in the same write as the
+ * links: a meeting linked is never left marked, whatever happens after.
+ */
+function markChanges(
+  path: VaultPath,
+  properties: Readonly<Record<string, unknown>>,
+): PropertyChange[] {
+  if (!linkingFailed(properties)) return [];
+  return [
+    {
+      path,
+      key: MEETING_LINKS_KEY,
+      expect: priorOf(properties, MEETING_LINKS_KEY),
+      to: { absent: true },
     },
   ];
 }

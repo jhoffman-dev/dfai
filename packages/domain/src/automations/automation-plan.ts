@@ -1,7 +1,8 @@
 import { archiveRefusal } from '../archive/archive.ts';
 import { isProposalPath } from '../proposals/proposal.ts';
 import { isAtlasNote } from '../vault/vault-visibility.ts';
-import { describeNotLinked, type MeetingsNotLinked } from '../meeting-links/meeting-relink.ts';
+import type { MeetingsNotLinked } from '../meeting-links/meeting-relink.ts';
+import { describeNotLinked } from './relink-plan.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { MAX_ACTIONS_PER_RUN } from './automation-query.ts';
 import type { AutomationAction } from './automation-rule.ts';

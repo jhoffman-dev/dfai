@@ -11,7 +11,8 @@ import {
 /**
  * How Run now links again the meetings whose linking failed (#192): the
  * import's own linker, with the owner as the settings say now, bound to the
- * vault the run is for. Each meeting is said in Activity as the import says it.
+ * vault the run is for. Each meeting is said in Activity as the import says
+ * it, and the tree and index are read again once it wrote.
  */
 export function useMeetingRelink({
   ports,
@@ -47,14 +48,9 @@ export function useMeetingRelink({
   );
   return useCallback(
     (vault: string) => async (meetings: readonly VaultPath[]) => {
-      const { linked } = await relinkMeetings({
-        link: (paths) => linker(vault, paths),
-        paths: meetings,
-        ports: latest.current.ports,
-        today: clock.today(),
-      });
-      if (linked.length > 0) latest.current.onSettled();
+      // The linker checks this vault is still the open one before each meeting, and writes the mark's removal with the links.
+      await relinkMeetings({ link: (paths) => linker(vault, paths), paths: meetings });
     },
-    [linker, clock],
+    [linker],
   );
 }

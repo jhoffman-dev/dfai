@@ -165,6 +165,9 @@ type Exclusive = <Result>(
   options?: { wait?: boolean },
 ) => Promise<Result | null>;
 
+/** No addresses: one array, so Run now's linker is not made again each render. */
+const NO_EMAILS: readonly string[] = [];
+
 /**
  * The vault's automations, and the one runner that carries them out — on
  * their schedule, when the vault opens, or when asked (P25-02).
@@ -174,9 +177,6 @@ type Exclusive = <Result>(
  * at a time, so a scheduled run never plans against notes a hand-started one
  * is still moving.
  */
-/** No addresses: one array, so Run now's linker is not made again each render. */
-const NO_EMAILS: readonly string[] = [];
-
 export function useAutomations(options: AutomationsOptions) {
   const { ports, clock, vaultKey, onSettled, activity } = options;
   const [read, setRead] = useState<Read | null>(null);

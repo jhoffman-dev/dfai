@@ -17,7 +17,7 @@ import {
 } from '../automations/run-log.ts';
 import { planVerb, type AutomationPlan } from '../automations/automation-plan.ts';
 import { readsData } from '../automations/claude-step.ts';
-import { describeNotLinked } from '../meeting-links/meeting-relink.ts';
+import { describeNotLinked } from '../automations/relink-plan.ts';
 import type { ActivityLevel, ActivityReport, ActivitySubject } from './activity-event.ts';
 
 /** An automation's rule, as a line names it and links to it; a draft not yet saved has no path. */

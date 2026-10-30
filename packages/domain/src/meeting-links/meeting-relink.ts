@@ -1,10 +1,10 @@
-import type { AutomationAction } from '../automations/automation-rule.ts';
-import type { VaultPath } from '../vault/vault-path.ts';
+import type { CompiledQuery } from '../query/view-query.ts';
+import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
 
 /**
- * The mark a meeting is let in with when its linking failed (#192): the
- * import stamps it all the same (ADR-0027), and the "After a meeting" rule's
- * Run now links it again. Only linking that failed is marked, so a meeting
+ * The mark a meeting is let in with when linking it is still owed (#192):
+ * the import stamps it all the same (ADR-0027), and the "After a meeting"
+ * rule's Run now links it again. Only such a meeting is marked, so a meeting
  * linked once is never linked again by it, and a person taken out of its
  * `people` stays out.
  */
@@ -24,7 +24,7 @@ export interface MeetingsNotLinked {
   readonly capped: boolean;
 }
 
-/** What the stamp write adds for a meeting whose linking failed. */
+/** What the stamp write adds for a meeting whose linking is still owed. */
 export function linkingFailedStamp(): Readonly<Record<string, string>> {
   return { [MEETING_LINKS_KEY]: LINKING_FAILED };
 }
@@ -41,12 +41,26 @@ export function linkingFailed(properties: Readonly<Record<string, unknown>>): bo
 }
 
 /**
- * Whether a rule's run by hand links its meetings again: the declared
- * "After a meeting" step (`apply: mine`, #179), the one rule the pipeline
- * of ADR-0027 runs linking for.
+ * Whether linking a meeting is still owed after a try — the one rule the
+ * import (which marks the meeting) and Run now (which keeps the mark) both
+ * go by. Owed when the try did not run (`null`: it threw), or wrote nothing
+ * into the meeting and left the meeting itself (unsaved typing, a key
+ * changed since it was read, a key holding something other than links).
+ * Once it wrote anything into the meeting it is settled: trying again would
+ * add back what the owner takes out after, which ADR-0027 forbids. A try that
+ * had nothing to add is settled too.
  */
-export function relinksMeetings(rule: { readonly action: AutomationAction }): boolean {
-  return rule.action.kind === 'claude' && rule.action.apply === 'mine';
+export function linkingOwed(
+  run: {
+    readonly meeting: VaultPath;
+    /** What it wrote, as an automation's log records it: a line with a `path` is a write there. */
+    readonly done: readonly object[];
+    readonly left: readonly { readonly path: VaultPath }[];
+  } | null,
+): boolean {
+  if (run === null) return true;
+  const wrote = run.done.some((line) => 'path' in line && line.path === run.meeting);
+  return !wrote && run.left.some((left) => left.path === run.meeting);
 }
 
 /**
@@ -69,27 +83,35 @@ function pathOf(note: { readonly path: VaultPath }): VaultPath {
   return note.path;
 }
 
+/** The most notes {@link compileMarkedMeetingsQuery} asks the index for: well past a run's cap. */
+export const MARKED_MEETINGS_PAGE = 1000;
+
 /**
- * Whether linking a meeting again settled it, so its mark goes: the run left
- * nothing of the meeting's own — not unsaved typing, a relation changed
- * since it was read, or a directory note it could not read. A proposal it
- * could not write does not count: the links stand without it. Anything else
- * keeps the mark, and the next Run now tries again; linking adds only what is
- * missing, so nothing is linked twice.
+ * The notes the index says carry the mark, by path: the only ones worth
+ * reading to know whether linking is owed. The index may be behind the
+ * files, so whoever asks reads each one found; a vault with no mark costs
+ * one small query and no read.
  */
-export function relinkSettled(run: {
-  readonly meeting: VaultPath;
-  readonly left: readonly { readonly path: VaultPath }[];
-}): boolean {
-  return run.left.every((left) => left.path !== run.meeting);
+export function compileMarkedMeetingsQuery(): CompiledQuery {
+  return {
+    sql: [
+      `/* meeting links */ SELECT DISTINCT path FROM props`,
+      `WHERE key = ? ORDER BY path LIMIT ?`,
+    ].join('\n'),
+    parameters: [MEETING_LINKS_KEY, MARKED_MEETINGS_PAGE],
+  };
 }
 
-/** What a dry run says of them: "2 meetings are not linked: Run now links them first." */
-export function describeNotLinked(notLinked: MeetingsNotLinked): string {
-  const count = notLinked.paths.length;
-  const head =
-    count === 1
-      ? '1 meeting is not linked: Run now links it first.'
-      : `${count} meetings are not linked: Run now links them first.`;
-  return notLinked.capped ? `${head} More wait for the next run.` : head;
+/** The paths of {@link compileMarkedMeetingsQuery}'s rows; a row that is not a vault path is left out. */
+export function markedMeetingsOf(rows: readonly (readonly unknown[])[]): VaultPath[] {
+  return rows.flatMap((row) => {
+    const path = row[0];
+    if (typeof path !== 'string') return [];
+    try {
+      return [createVaultPath(path)];
+    } catch {
+      // Not a path in the vault — the index holds no such row, but a hand-made one is dropped.
+      return [];
+    }
+  });
 }

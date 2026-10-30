@@ -738,21 +738,32 @@ sweep in ADR-0036 handles them.
 "A meeting whose linking failed is stamped all the same and not retried until
 #19's pipeline runs the step" is now closed as follows, without the pipeline:
 
-- **The stamp says so.** When linking a meeting fails as it is let in, the one
-  stamp write also carries `atlas_links: failed` (`linkBeforeLetIn`). Nothing
-  is written after the stamp, as before. A meeting linked once never carries
-  it, so it is never linked again by this, and a person taken out of its
-  `people` stays out.
+- **The stamp says so.** When linking a meeting as it is let in leaves it
+  owed — the linker threw, or wrote nothing into the meeting and left the
+  meeting itself — the one stamp write also carries `atlas_links: failed`
+  (`linkBeforeLetIn`). Nothing is written after the stamp, as before. A
+  meeting linking wrote into never carries it, so it is never linked again by
+  this, and a person taken out of its `people` stays out.
 - **The "After a meeting" rule links it again.** Its dry run (and the API's,
   as `plan.notLinked`) lists the meetings its query matches that carry the
   mark, at most 50 a run; its **Run now** links them with the import's own
-  linker before it plans, so Claude reads each one linked. The decision is
-  the domain's (`meeting-relink.ts`): only `apply: mine` relinks; a meeting
-  is settled when the run left nothing of its own (unsaved typing, a
-  relation changed since it was read, a directory note it could not read),
-  and only then is the mark taken out. Linking adds only what is missing,
-  so a second try links nothing twice. Scheduled and note-set-off runs do
-  not relink: a write after the stamp is the person's to ask for.
+  linker before it plans, so Claude reads each one linked. The index is asked
+  for the marked notes first (`compileMarkedMeetingsQuery`), so a vault with
+  none reads no meeting file and runs the rule's query once. Only `apply:
+mine` relinks (`relinksMeetings`, in `automations/`).
+- **One rule for owed, and the mark goes with the links.** `linkingOwed`
+  (domain) decides for both the import and Run now: owed only when the try
+  threw, or wrote nothing into the meeting and left the meeting itself — its
+  unsaved typing, a key changed since it was read, or a key of its own that
+  holds something other than links. Once a try wrote anything into the
+  meeting it is settled, so a company the owner takes out after a partial
+  re-link is not added back. `linkMeeting` takes the mark out in the **same
+  write** as the links, so a pane dirtied after that write cannot leave the
+  meeting marked, and nothing outside the linker writes: the linker checks
+  the vault is still the one open before each meeting. Linking adds only
+  what is missing, so a second try links nothing twice. Scheduled and
+  note-set-off runs do not relink: a write after the stamp is the person's
+  to ask for.
 - **Not in the rule's log.** The relink is said in Activity, a line per
   meeting as the import says it; "Undo last run" does not take it back.
 - **Activity groups a meeting's lines.** A rule's run line names the notes it

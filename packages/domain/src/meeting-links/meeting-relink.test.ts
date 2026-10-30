@@ -1,29 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { describePlan, type AutomationPlan } from '../automations/automation-plan.ts';
-import type { AutomationAction } from '../automations/automation-rule.ts';
-import { dryRunReport } from '../activity/activity-reports.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
 import {
-  describeNotLinked,
+  compileMarkedMeetingsQuery,
   LINKING_FAILED,
   linkingFailed,
   linkingFailedStamp,
+  linkingOwed,
+  MARKED_MEETINGS_PAGE,
+  markedMeetingsOf,
   MEETING_LINKS_KEY,
   meetingsToRelink,
   RELINKS_PER_RUN,
-  relinkSettled,
-  relinksMeetings,
 } from './meeting-relink.ts';
 
 const p = createVaultPath;
 const MEETING = p('Inbox/Meetings/2026-10-06 Standup.md');
-const DECLARED: AutomationAction = {
-  kind: 'claude',
-  prompt: '.atlas/prompts/after-a-meeting.md',
-  tools: [],
-  output: { kind: 'proposals', schema: 'meeting-digest' },
-  apply: 'mine',
-};
 
 describe('the mark of linking that failed', () => {
   it('is what the stamp write adds, and what is read back as failed', () => {
@@ -48,24 +39,6 @@ describe('the mark of linking that failed', () => {
   it('is DFAI’s own key', () => {
     expect(MEETING_LINKS_KEY).toBe('atlas_links');
     expect(LINKING_FAILED).toBe('failed');
-  });
-});
-
-describe('relinksMeetings', () => {
-  it('is the declared step, which says apply: mine', () => {
-    expect(relinksMeetings({ action: DECLARED })).toBe(true);
-  });
-
-  it('is no other rule', () => {
-    const proposalsOnly: AutomationAction = {
-      kind: 'claude',
-      prompt: '.atlas/prompts/after-a-meeting.md',
-      tools: [],
-      output: { kind: 'proposals', schema: 'meeting-digest' },
-    };
-    expect(relinksMeetings({ action: proposalsOnly })).toBe(false);
-    expect(relinksMeetings({ action: { kind: 'archive' } })).toBe(false);
-    expect(relinksMeetings({ action: { kind: 'set', values: { status: 'done' } } })).toBe(false);
   });
 });
 
@@ -98,60 +71,53 @@ describe('meetingsToRelink', () => {
   });
 });
 
-describe('relinkSettled', () => {
-  it('is settled when linking left nothing of the meeting’s own', () => {
-    expect(relinkSettled({ meeting: MEETING, left: [] })).toBe(true);
+describe('linkingOwed: the one rule the import marks by and Run now keeps the mark by', () => {
+  const set = (key: string) => ({
+    kind: 'set',
+    path: MEETING,
+    key,
+    before: { absent: true },
+    after: { value: [] },
+  });
+  const leftHere = {
+    path: MEETING,
+    reason: 'Its people has changed since, so it was left as it is.',
+  };
+
+  it('is owed when linking threw, and gave no run', () => {
+    expect(linkingOwed(null)).toBe(true);
   });
 
-  it('is settled when only a proposal was left: the links stand', () => {
-    const proposal = p('Inbox/Proposals/Mara Quill.md');
-    expect(relinkSettled({ meeting: MEETING, left: [{ path: proposal }] })).toBe(true);
+  it('is owed when it wrote nothing into the meeting and left the meeting', () => {
+    expect(linkingOwed({ meeting: MEETING, done: [], left: [leftHere] })).toBe(true);
   });
 
-  it('is not settled when the meeting itself was left', () => {
-    expect(relinkSettled({ meeting: MEETING, left: [{ path: MEETING }] })).toBe(false);
+  it('is settled once it wrote anything into the meeting, even with a key left', () => {
+    expect(linkingOwed({ meeting: MEETING, done: [set('companies')], left: [leftHere] })).toBe(
+      false,
+    );
+  });
+
+  it('is settled when it had nothing to add, or left only a proposal', () => {
+    expect(linkingOwed({ meeting: MEETING, done: [], left: [] })).toBe(false);
+    const proposal = { path: p('Inbox/Proposals/Ada Venn.md'), reason: 'disk full' };
+    expect(linkingOwed({ meeting: MEETING, done: [], left: [proposal] })).toBe(false);
+  });
+
+  it('does not count a write somewhere else as one into the meeting', () => {
+    const elsewhere = { kind: 'proposed', path: p('Inbox/Proposals/Ada Venn.md') };
+    expect(linkingOwed({ meeting: MEETING, done: [elsewhere], left: [leftHere] })).toBe(true);
   });
 });
 
-describe('what a dry run says of meetings not linked', () => {
-  const plan = (paths: string[]): AutomationPlan => ({
-    action: DECLARED,
-    paths: paths.map(p),
-    passedOver: [],
-    capped: false,
-  });
-  const one = { paths: [MEETING], capped: false };
-
-  it('counts them, one or many, and says when more wait', () => {
-    expect(describeNotLinked(one)).toBe('1 meeting is not linked: Run now links it first.');
-    expect(describeNotLinked({ paths: [MEETING, p('B.md')], capped: false })).toBe(
-      '2 meetings are not linked: Run now links them first.',
-    );
-    expect(describeNotLinked({ paths: [MEETING], capped: true })).toBe(
-      '1 meeting is not linked: Run now links it first. More wait for the next run.',
-    );
+describe('the index query for marked meetings', () => {
+  it('asks for the paths that hold the mark, one page of them', () => {
+    const { sql, parameters } = compileMarkedMeetingsQuery();
+    expect(sql).toContain('SELECT DISTINCT path FROM props');
+    expect(parameters).toEqual([MEETING_LINKS_KEY, MARKED_MEETINGS_PAGE]);
   });
 
-  it('says them instead of "nothing to do" when nothing else would be done', () => {
-    expect(describePlan(plan([]))).toBe('Nothing to do right now.');
-    expect(describePlan({ ...plan([]), notLinked: one })).toBe(
-      '1 meeting is not linked: Run now links it first.',
-    );
-  });
-
-  it('says them after what else the run would do', () => {
-    expect(describePlan({ ...plan(['A.md']), notLinked: one })).toBe(
-      'Would ask Claude about 1 note. 1 meeting is not linked: Run now links it first.',
-    );
-  });
-
-  it('says them in the dry run’s Activity line', () => {
-    const named = { name: 'After a meeting', path: null };
-    expect(dryRunReport(named, { plan: { ...plan([]), notLinked: one } }).message).toBe(
-      'After a meeting: Dry run. Nothing to do. 1 meeting is not linked: Run now links it first.',
-    );
-    expect(dryRunReport(named, { plan: plan([]) }).message).toBe(
-      'After a meeting: Dry run. Nothing to do.',
-    );
+  it('reads its rows as vault paths, dropping what is not one', () => {
+    expect(markedMeetingsOf([[MEETING], [3], ['/Users/someone/A.md'], []])).toEqual([MEETING]);
   });
 });
