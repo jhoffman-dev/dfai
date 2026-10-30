@@ -180,21 +180,6 @@ const timed = new Map<string, { inputToReady: number; longestFrame: number }>();
 test('the app does no more work than its budget', async ({ browser }) => {
   test.setTimeout(TIMEOUT_MS);
   const budgets = JSON.parse(await readFile(BUDGETS_FILE, 'utf8')) as BudgetsFile;
-  if (process.env.PERF_SCRATCH_DRAG) {
-    await mkdir('test-results/perf', { recursive: true });
-    const seen: string[] = [];
-    for (let i = 0; i < Number(process.env.PERF_SCRATCH_DRAG); i += 1) {
-      const m = new Map<string, Work>();
-      const pass = await countedPass(browser, m, { ...MAIN, openIsBudgeted: false });
-      await dragACard(pass);
-      const w = m.get('Drag a board card');
-      seen.push(`run ${i} commits=${w?.commits} renders=${JSON.stringify(w?.renders)}`);
-      console.log(`SCRATCH ${seen.at(-1)}`);
-      await pass.page.close();
-    }
-    await writeFile('test-results/perf/scratch-drag-counts.txt', seen.join('\n'));
-    return;
-  }
 
   await test.step('counted, on the work clock', async () => {
     const pass = await countedPass(browser, counted);
