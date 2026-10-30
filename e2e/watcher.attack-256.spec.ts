@@ -257,16 +257,24 @@ test('the watcher’s echo of deciding an Inbox row is not refreshed for again (
  * written — and, with `echoWrites`, until its echo has arrived — then says
  * how many walks of the vault the app made in all, once it has done.
  */
+/** Where the app records the built-in properties it has added (`addShippedProperties`). */
+const SHIPPED_PROPERTIES_RECORD = '.atlas/migrations/type-properties.md';
+
 async function walksOpeningSlowly(page: Page, echoWrites: boolean): Promise<number> {
   const vault = await gtdVaultWithAnInbox();
   const host = await installHost(page, vault, { echoWrites });
   await recordWalksAndReports(page);
   const letTheWalkGo = host.holdIndexAfter(0);
+  // A busy runner: the record of the built-in properties, the app's last
+  // write as it opens, is still being written when the Block type is on disk.
+  const letTheRecordGo = echoWrites ? () => {} : host.holdWrites(SHIPPED_PROPERTIES_RECORD);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expectFile(vault, '.atlas/types/block.md').toContain('block');
   if (echoWrites) await expect.poll(() => host.echoesSent()).toBeGreaterThan(0);
   letTheWalkGo();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+  letTheRecordGo();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
   await quiet(page);
   return (await seenSoFar(page)).order.filter((each) => each === 'walk').length;
