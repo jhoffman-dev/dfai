@@ -10,10 +10,11 @@ const scheduledFor = (minutes: number): TaskSchedule => ({
   overBy: 0,
 });
 
-const tray = (title: string, schedule: TaskSchedule | null): TrayTask => ({
+const tray = (title: string, schedule: TaskSchedule | null, chosen = false): TrayTask => ({
   path: `${title}.md`,
   title,
   schedule,
+  chosen,
 });
 
 describe('the tray’s order', () => {
@@ -37,5 +38,21 @@ describe('the tray’s order', () => {
     const tasks = [tray('Planned', scheduledFor(15)), tray('Unread', null)];
 
     expect(trayOrder(tasks).map((task) => task.title)).toEqual(['Unread', 'Planned']);
+  });
+
+  it('puts what was chosen for today first (#108), the unscheduled of it first', () => {
+    const tasks = [
+      tray('Book the hall', scheduledFor(0)),
+      tray('Call the bank', scheduledFor(30), true),
+      tray('Draft the memo', scheduledFor(45)),
+      tray('File the claim', scheduledFor(0), true),
+    ];
+
+    expect(trayOrder(tasks).map((task) => task.title)).toEqual([
+      'File the claim',
+      'Call the bank',
+      'Book the hall',
+      'Draft the memo',
+    ]);
   });
 });

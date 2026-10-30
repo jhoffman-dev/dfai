@@ -1,5 +1,6 @@
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { FINISHED_TASK_STATUS, gtdStatusOf, TASK_KEYS, TASK_TYPE } from '../gtd/gtd-status.ts';
+import { firstDaySql, notOneDaySql, singleTextSql } from '../gtd/task-row.ts';
 import { splitWikiLinks, wikiLinkLabel } from '../markdown/wikilink.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import { FILED_UNDER_KEY, PROJECT_TYPE } from '../types/para.ts';
@@ -31,13 +32,9 @@ function inUseOfTypeSql(column: string, typeParameter: string): string {
   ].join('\n');
 }
 
-/** A property's one value as text: null when it has none, or holds a list of several. */
-const singleText = (key: string, column = 'f.path') =>
-  `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = ${column} AND p.key = '${key}')`;
-
-/** A date property's first day, `YYYY-MM-DD`; null when it holds no date. */
-const firstDay = (key: string) =>
-  `(SELECT substr(p.value_date, 1, 10) FROM props AS p WHERE p.path = f.path AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx LIMIT 1)`;
+const singleText = (key: string, column = 'f.path') => singleTextSql(key, column);
+const firstDay = (key: string) => firstDaySql(key, 'f.path');
+const notOneDay = (key: string) => notOneDaySql(key, 'f.path');
 
 /**
  * Every item a property holds, in order, joined by {@link ITEM_SEPARATOR}:
@@ -59,6 +56,8 @@ export function compileReviewTasksQuery(): CompiledQuery {
       `  ${singleText(TASK_KEYS.status)} AS "status",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
+      `  ${firstDay(TASK_KEYS.focus)} AS "focus",`,
+      `  ${notOneDay(TASK_KEYS.focus)} AS "focusIsOwn",`,
       `  ${singleText(RECURRENCE_KEY)} AS "recurrence",`,
       `  ${allItems(TASK_KEYS.waitingOn)} AS "waitingOn",`,
       `  ${allItems(TASK_KEYS.contexts)} AS "contexts",`,
@@ -146,6 +145,8 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     status: gtdStatusOf(row['status']),
     due: textOrNull(row['due']),
     defer: textOrNull(row['defer']),
+    focus: textOrNull(row['focus']),
+    focusIsOwn: Number(row['focusIsOwn']) === 1,
     // Absent when the row did not carry it, which is not knowing it: see ReviewTask.
     ...(Object.hasOwn(row, 'recurrence') && { recurrence: textOrNull(row['recurrence']) }),
     waitingOn: waitingOnNames(row['waitingOn']),

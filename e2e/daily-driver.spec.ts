@@ -52,6 +52,7 @@ const todaysNote = (page: Page) => page.keyboard.press('Meta+Shift+D');
 const goTo = (page: Page) => page.getByRole('list', { name: 'Go to' });
 
 test.describe("today's note", () => {
+  // Its Task type is not on GTD, so the note starts without the day's blocks (#110).
   test('is made from the built-in Daily template in a vault that has none', async ({ page }) => {
     const { vault } = await openVault(page);
 

@@ -48,6 +48,7 @@ export async function runAtlasQuery({
   notePaths,
   thisNote = null,
   fetchLimit,
+  taskRows = false,
 }: {
   index: IndexPort;
   text: string;
@@ -62,8 +63,17 @@ export async function runAtlasQuery({
    * answer's `query` keeps the text's own LIMIT either way.
    */
   fetchLimit?: (textLimit: number | null) => number;
+  /** Whether a query of tasks alone carries each task's state for its row's controls (#107). */
+  taskRows?: boolean;
 }): Promise<AtlasQueryAnswer> {
-  const { query, compiled } = compileText({ text, types, notePaths, thisNote, fetchLimit });
+  const { query, compiled } = compileText({
+    text,
+    types,
+    notePaths,
+    thisNote,
+    fetchLimit,
+    taskRows,
+  });
   try {
     const result = await index.query(compiled.sql, compiled.parameters);
     return { query, compiled, result: { ...result, sql: compiled.sql } };
@@ -78,18 +88,23 @@ function compileText({
   notePaths,
   thisNote,
   fetchLimit,
+  taskRows,
 }: {
   text: string;
   types: readonly ObjectType[];
   notePaths: readonly string[];
   thisNote: string | null;
   fetchLimit: ((textLimit: number | null) => number) | undefined;
+  taskRows: boolean;
 }): { query: AtlasQuery; compiled: CompiledAtlasQuery } {
   try {
     const query = parseAtlasQuery(text);
     const resolveLink = createWikiLinkResolver(notePaths.map(createVaultPath));
     const asked = fetchLimit === undefined ? query : { ...query, limit: fetchLimit(query.limit) };
-    return { query, compiled: compileAtlasQuery(asked, { types, resolveLink, thisNote }) };
+    return {
+      query,
+      compiled: compileAtlasQuery(asked, { types, resolveLink, thisNote, taskRows }),
+    };
   } catch (cause) {
     if (cause instanceof QueryTextError) throw new AtlasQueryError(cause.message, problemOf(cause));
     throw cause;

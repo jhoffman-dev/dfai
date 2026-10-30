@@ -82,6 +82,30 @@ export function isConflictCopyPath(path: string): boolean {
 }
 
 /**
+ * A copy under `Sync conflicts/atlas/`: its folder and stem there, the Mac it
+ * came from, and its number, before a markdown extension. The stem is
+ * matched greedily, so a Mac named with brackets (`Studio (work)`) still
+ * reads as one Mac, and a second ` (conflict from …)` lands in the stem.
+ */
+const ATLAS_COPY = new RegExp(
+  `^${CONFLICTS_FOLDER}/atlas/(.*[^/]) \\(conflict from [^/]+\\)(?: [1-9]\\d*)?(\\.[mM][dD])$`,
+);
+
+/**
+ * The `.atlas/` file a conflict copy under {@link CONFLICTS_FOLDER} was made
+ * of (#235); null for any other path — a copy of a note, a file that is not
+ * markdown, or a copy of a copy, whose live file is the first copy and so a
+ * person's to settle.
+ */
+export function settingsFileOfCopy(copy: string): string | null {
+  const match = ATLAS_COPY.exec(copy);
+  if (match === null) return null;
+  const [, stem = '', extension = ''] = match;
+  if (stem.includes(' (conflict from ')) return null;
+  return `${ATLAS_PREFIX}${stem}${extension}`;
+}
+
+/**
  * What is done with one file a merge could not settle. Nothing is ever left
  * holding conflict markers, and no side's changes are thrown away:
  *

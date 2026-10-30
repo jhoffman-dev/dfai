@@ -59,6 +59,8 @@ export const TASK_KEYS = {
   completed: 'completed',
   estimate: 'estimate',
   source: 'source',
+  /** The day it was chosen to be done on (#108): `YYYY-MM-DD`, or absent when it is not chosen. */
+  focus: 'focus',
 } as const;
 
 const STATUSES: ReadonlySet<string> = new Set(GTD_STATUSES);
@@ -88,10 +90,26 @@ export function isBlankValue(value: unknown): boolean {
   return indexedTexts(value).length === 0;
 }
 
+/**
+ * The one value a property holds as the index reads it, or null: a blank item
+ * is no item, and a list of several — nested or not — holds no one value
+ * (PR #616). The rule `singleTextSql` holds in the index, so a status, a
+ * recurrence, a tick and a row read a property alike.
+ */
+export function singleTextOf(value: unknown): string | null {
+  const [only, ...more] = indexedTexts(value);
+  return only !== undefined && more.length === 0 ? only : null;
+}
+
 /** The GTD status a value holds as the index reads it — one status, in any of its spellings — or null. */
 export function gtdStatusOf(value: unknown): GtdStatus | null {
-  const [only, ...more] = indexedTexts(value);
-  return more.length === 0 && isGtdStatus(only) ? only : null;
+  const only = singleTextOf(value);
+  return only !== null && isGtdStatus(only) ? only : null;
+}
+
+/** Whether a value holds `status` as its one value, by the rule of {@link singleTextOf}. */
+export function isStatus(value: unknown, status: GtdStatus): boolean {
+  return singleTextOf(value) === status;
 }
 
 /** Whether a value, as the index reads it, holds `status` among its items. */
