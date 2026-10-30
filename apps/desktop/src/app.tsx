@@ -63,6 +63,7 @@ import {
   type VaultRead,
   type ActivityStore,
   type WindowClosingPort,
+  type ApiGranola,
   type ApiRouterDeps,
   type AppInfoPort,
   type ExternalLinkPort,
@@ -101,10 +102,12 @@ import {
   NewArtifactDialog,
   AddDocumentDialog,
   NoteNamesProvider,
+  CodeLanguagesProvider,
   Toast,
   type AppInfoState,
   type OpenHow,
 } from '@dfai/ui';
+import { codeLanguages } from './code-languages.ts';
 import { useVault, type VaultPorts } from './vault/use-vault.ts';
 import { boundToVault, type OnHost } from './vault/bound-to-vault.ts';
 import type { NotePorts } from './notes/use-note.ts';
@@ -200,6 +203,7 @@ import { PEEK_EDITOR, PeekLayer } from './panes/peek-container.tsx';
 import { leavePeek } from './panes/peek-moves.ts';
 import { SearchPaletteSlot } from './search-palette-slot.tsx';
 import { useSemanticSearch, type SemanticPorts } from './semantic/use-semantic-search.ts';
+import { useRelatedPorts } from './related/use-related-ports.ts';
 import { linkPlacesOf } from './reader/link-places.ts';
 import { movingEditorsIn, openNotesIn } from './panes/open-notes.ts';
 import { useVaultEntries, type VaultEntryPorts } from './vault/use-vault-entries.ts';
@@ -308,6 +312,7 @@ import { useMeetingProjects } from './meetings/use-meeting-projects.ts';
 import { AutomationsRunner } from './automations/automations-runner.tsx';
 import { createAutomationsStore, useOwnerNeeded } from './automations/automations-store.ts';
 import { MeetingImportRunner } from './meetings/meeting-import-runner.tsx';
+import { createMeetingsWaitingStore } from './meetings/meetings-waiting-store.ts';
 import { archiveCommand, withCommandBeforeDelete } from './archive/archive-menu.ts';
 import { paletteArchiveCommands, runPaletteArchiveCommand } from './archive/palette-archive.ts';
 import { ChatPane, ClaudeSettingsCard } from './chat/chat-pane.tsx';
@@ -520,6 +525,8 @@ function AppWindow({
   // be refused half-done (U-29).
   const [syncStore] = useState(createSyncStore);
   const [automationsStore] = useState(createAutomationsStore);
+  // What the meeting import says waits for the named Mac, read by the Inbox alone (ADR-0035 part 1).
+  const [meetingsWaiting] = useState(createMeetingsWaitingStore);
   // The Inbox and Proposals tabs hold their background writes here: a switch
   // waits for the clarifications and answers still being written behind those
   // pages, which the host would refuse once another vault is open (#217, #166).
@@ -666,6 +673,7 @@ function AppWindow({
     changes: noteChanges,
     indexReady,
   });
+  const relatedPorts = useRelatedPorts({ semantic, idle: semanticPorts?.idle ?? null, vaultKey });
 
   // Anything that edits the vault from outside — Obsidian, a sync client — should
   // show up here without a restart. The echo of the app's own writes is left
@@ -842,6 +850,17 @@ function AppWindow({
   const apiOwner = useMemo(() => createOwnerNameRelay(), []);
   const apiClaude = useMemo(() => createClaudeStepRelay(), []);
   const meetingDrafts = useMemo(() => createMeetingDrafts(), []);
+  // Granola for the API (P28-13): the host's word on the key, this Mac's record, and the app's own Sync now.
+  const apiGranolaSyncNow = useSteadyCallback((vault: string) => granolaPull.syncNowFor(vault));
+  const apiGranola = useMemo<ApiGranola>(
+    () => ({
+      keyStatus: (vault) => granolaPorts.port.status({ vault }),
+      record: (vault) => granolaPorts.records.read(vault),
+      ready: granolaPull.readyFor,
+      syncNow: apiGranolaSyncNow,
+    }),
+    [granolaPorts.port, granolaPorts.records, granolaPull.readyFor, apiGranolaSyncNow],
+  );
   const apiDeps = useMemo<ApiRouterDeps>(
     () => ({
       host: apiHost,
@@ -875,6 +894,7 @@ function AppWindow({
       meetingDrafts,
       // A draft that failed after the API answered is said in the window, where no caller is left.
       notices: { warn: (message) => toasts.show({ message, tone: 'error' }) },
+      granola: apiGranola,
     }),
     [
       apiHost,
@@ -899,6 +919,7 @@ function AppWindow({
       apiClaude.ports,
       meetingDrafts,
       toasts,
+      apiGranola,
     ],
   );
   // A write from another tool shows up the way one made here does.
@@ -1830,6 +1851,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       graph: vaultGraph.kind === 'ready' ? vaultGraph.graph : null,
+      related: relatedPorts,
       openNotes: paneOpenNotes,
       viewPaths,
       viewDrafts,
@@ -1873,6 +1895,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       vaultGraph,
+      relatedPorts,
       paneOpenNotes,
       viewPaths,
       viewDrafts,
@@ -2149,6 +2172,8 @@ function AppWindow({
     () => ({
       closing: closing.writes,
       pendingWrites,
+      meetingsWaiting,
+      sync: syncStore,
       onOpenSource: followSource,
       typesOffer:
         typesOffer === null
@@ -2180,6 +2205,8 @@ function AppWindow({
     [
       closing.writes,
       pendingWrites,
+      meetingsWaiting,
+      syncStore,
       followSource,
       typesOffer,
       taskMigration,
@@ -2231,6 +2258,7 @@ function AppWindow({
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
           sync={syncStore}
+          waiting={meetingsWaiting}
           changes={noteChanges}
           ports={archivePorts}
           clock={localClock}
@@ -2665,7 +2693,7 @@ function AppWindow({
   );
   return (
     <LinkHintsHost index={index.index} status={indexStore} vault={vaultKey}>
-      {shell}
+      <CodeLanguagesProvider value={codeLanguages}>{shell}</CodeLanguagesProvider>
     </LinkHintsHost>
   );
 }

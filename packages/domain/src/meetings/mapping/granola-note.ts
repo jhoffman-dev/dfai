@@ -1,3 +1,4 @@
+import { emailKey } from './meeting-email-key.ts';
 import { rfc3339Instant } from './meeting-instant.ts';
 import { MeetingMappingError, oneLine } from './meeting-mapping-error.ts';
 import { mapMeeting, type MeetingFields, type MeetingFile } from './meeting-to-atlas.ts';
@@ -94,8 +95,8 @@ function optionsRecord(value: unknown): JsonRecord {
  */
 function noteTakerOf(note: JsonRecord, selfEmails: readonly string[]): string {
   const owner = optionalRecord(note['owner'], 'owner');
-  const email = oneLine(owner?.['email'], 'owner.email').toLowerCase();
-  const self = selfEmails.some((each) => each.trim().toLowerCase() === email);
+  const email = emailKey(oneLine(owner?.['email'], 'owner.email'));
+  const self = selfEmails.some((each) => emailKey(each) === email);
   if (email !== '' && self) return 'You';
   return oneLine(owner?.['name'], 'owner.name') || 'Unknown';
 }

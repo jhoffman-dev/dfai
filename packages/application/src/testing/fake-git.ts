@@ -316,6 +316,14 @@ export function scriptedGit({
       const text = blobsByOid.get(oid);
       return answer('readBlob', oid, text === undefined ? failed('not a blob', 128) : said(text));
     },
+    // GitHub holds no settings note unless a test says what it holds.
+    remoteSettingsExist: async (branch) => answer('remoteSettingsExist', branch, failed('', 128)),
+    remoteSettings: async (branch) =>
+      answer(
+        'remoteSettings',
+        branch,
+        failed(`fatal: path '.atlas/settings.md' does not exist in 'origin/${branch}'`, 128),
+      ),
     stageBlob: async (args) => {
       staged.set(args.path, args.oid);
       return answer('stageBlob', args, OK);

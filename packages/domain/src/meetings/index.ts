@@ -120,3 +120,21 @@ export {
   writesSummaries,
 } from './meeting-summary-state.ts';
 export type { MeetingSummaryState, SummaryStepFacts } from './meeting-summary-state.ts';
+export {
+  meetingsWaitingLine,
+  meetingsWaitingReport,
+  processHereRefusal,
+  waitingCountGate,
+  touchesWaitingMeetings,
+  waitingMacLabel,
+  waitingMeetingTally,
+  waitingWarningDue,
+  waitsForImport,
+} from './meetings-waiting.ts';
+export type {
+  CountableStanding,
+  MeetingsWaiting,
+  UncountedWhy,
+  WaitingCountGate,
+  WaitingMeetingFile,
+} from './meetings-waiting.ts';

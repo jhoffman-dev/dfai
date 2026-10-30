@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   withNoteNames,
   type BoardLane,
@@ -15,6 +15,14 @@ import { ROW_STOP } from '../row-focus.ts';
 import { Icon } from '../icon.tsx';
 import { useNoteNames } from '../note-names.tsx';
 import { StatusPill } from '../status-pill.tsx';
+import {
+  taskCommands,
+  taskDoneBox,
+  taskRefusal,
+  useTaskRowFocus,
+  type TaskRowControls,
+  type TaskRowFocus,
+} from './task-row-controls.tsx';
 
 export interface ResultField {
   readonly key: string;
@@ -36,6 +44,8 @@ export interface GroupedResultProps {
   readonly collapsed: ReadonlySet<string>;
   readonly onToggleGroup: (id: string) => void;
   readonly onOpenNote: (path: string) => void;
+  /** The task rows' done box, status menu and Today toggle (#107); without them, rows are look-only. */
+  readonly tasks?: TaskRowControls | undefined;
 }
 
 /**
@@ -44,13 +54,25 @@ export interface GroupedResultProps {
  * groups are header rows with their counts and column summaries, a board's
  * groups are its columns and its sub-groups the swimlanes across them.
  */
-export function GroupedResult(props: GroupedResultProps) {
-  if (props.rows.length === 0)
+export function GroupedResult(given: GroupedResultProps) {
+  const focus = useTaskRowFocus(given.rows);
+  const tasks = useMemo(
+    () => (given.tasks === undefined ? undefined : { ...given.tasks, focus }),
+    [given.tasks, focus],
+  );
+  const shared: ResultProps = { ...given, tasks };
+  if (given.rows.length === 0)
     return <p className="table__empty">Nothing matches this query yet.</p>;
-  if (props.layout === 'board') return <ResultBoard {...props} />;
-  if (props.layout === 'list') return <ResultList {...props} />;
-  return <ResultTable {...props} />;
+  if (given.layout === 'board') return <ResultBoard {...shared} />;
+  if (given.layout === 'list') return <ResultList {...shared} />;
+  return <ResultTable {...shared} />;
 }
+
+/** The result's task controls, with where the focus is among its rows. */
+type TasksGiven = TaskRowControls & { readonly focus: TaskRowFocus };
+
+/** The result's props inside it: its task controls with where the focus is. */
+type ResultProps = Omit<GroupedResultProps, 'tasks'> & { readonly tasks?: TasksGiven | undefined };
 
 function GroupHeading({
   group,
@@ -97,7 +119,7 @@ function Levels({
 }: {
   groups: readonly RowGroup[];
   level: 1 | 2;
-  shared: GroupedResultProps;
+  shared: ResultProps;
   rows: (rows: readonly BoardRow[]) => React.ReactNode;
 }) {
   return groups.map((group) => {
@@ -126,7 +148,7 @@ function Levels({
   });
 }
 
-function ResultTable(props: GroupedResultProps) {
+function ResultTable(props: ResultProps) {
   // State, not a ref: the rows' virtualiser looks for its scroller in a
   // layout effect, which runs before the sheet's ref is set.
   const [sheet, setSheet] = useState<HTMLDivElement | null>(null);
@@ -138,30 +160,43 @@ function ResultTable(props: GroupedResultProps) {
   };
   const grouped = props.groups.length > 0;
   const lines = useGroupLines(grouped ? grouping : undefined);
-  const row = (found: BoardRow, place: LinePlace) => (
-    <tr
-      key={found.path}
-      ref={place.measure}
-      data-index={place.index}
-      aria-rowindex={ariaRowIndex(place.index)}
-    >
-      <td>
-        <button
-          {...ROW_STOP}
-          type="button"
-          className="qresult__title"
-          onClick={() => props.onOpenNote(found.path)}
-        >
-          {found.title}
-        </button>
-      </td>
-      {props.fields.map((field) => (
-        <td key={field.key} className="qresult__cell">
-          {withNoteNames(found.values[field.key], names)}
+  const { tasks } = props;
+  const lead = tasks === undefined ? 0 : 1;
+  const row = (found: BoardRow, place: LinePlace) => {
+    const given = taskControlsOf(tasks, found);
+    return (
+      <tr
+        key={found.path}
+        ref={place.measure}
+        data-index={place.index}
+        aria-rowindex={ariaRowIndex(place.index)}
+      >
+        {tasks !== undefined && (
+          <td className="table__done">{given === null ? null : taskDoneBox(given)}</td>
+        )}
+        <td>
+          <button
+            {...ROW_STOP}
+            type="button"
+            className="qresult__title"
+            onClick={() => props.onOpenNote(found.path)}
+          >
+            {found.title}
+          </button>
+          {given !== null && taskRefusal(given)}
         </td>
-      ))}
-    </tr>
-  );
+        {props.fields.map((field) => (
+          <td key={field.key} className="qresult__cell">
+            {withNoteNames(found.values[field.key], names)}
+          </td>
+        ))}
+        {tasks !== undefined && (
+          <td className="qresult__cell">{given === null ? null : taskCommands(given)}</td>
+        )}
+      </tr>
+    );
+  };
+  const trailing = tasks === undefined ? 0 : 1;
   return (
     <div className="table__sheet qresult__sheet" ref={setSheet}>
       <table
@@ -170,6 +205,11 @@ function ResultTable(props: GroupedResultProps) {
       >
         <thead>
           <tr>
+            {tasks !== undefined && (
+              <th scope="col" className="table__done">
+                <span className="table__heading">Done</span>
+              </th>
+            )}
             <th scope="col">
               <span className="table__heading">Name</span>
             </th>
@@ -178,12 +218,17 @@ function ResultTable(props: GroupedResultProps) {
                 <span className="table__heading">{field.label}</span>
               </th>
             ))}
+            {tasks !== undefined && (
+              <th scope="col">
+                <span className="table__heading">Actions</span>
+              </th>
+            )}
           </tr>
         </thead>
         {!grouped ? (
           <FlatRows
             rows={props.rows}
-            width={1 + props.fields.length}
+            width={lead + 1 + props.fields.length + trailing}
             renderRow={row}
             scroller={sheet}
           />
@@ -197,8 +242,9 @@ function ResultTable(props: GroupedResultProps) {
                 key: field.key,
                 kind: propertyKindOf(field.kind),
               })),
+              ...(trailing === 0 ? [] : [{ key: TASK_COMMANDS_COLUMN }]),
             ]}
-            lead={0}
+            lead={lead}
             noun="note"
             newLabel=""
             renderRow={row}
@@ -210,12 +256,15 @@ function ResultTable(props: GroupedResultProps) {
   );
 }
 
+/** The column a task row's Today toggle and Move to… stand in: no field, so nothing is added up under it. */
+const TASK_COMMANDS_COLUMN = 'task:commands';
+
 /** A field's kind as a property's, for the summaries a header shows; a built-in adds nothing up. */
 function propertyKindOf(kind: FieldKind | undefined): PropertyKind | undefined {
   return kind === 'number' || kind === 'checkbox' ? kind : undefined;
 }
 
-function ResultList(props: GroupedResultProps) {
+function ResultList(props: ResultProps) {
   const list = (rows: readonly BoardRow[]) => <RowsList rows={rows} shared={props} />;
   if (props.groups.length === 0) return list(props.rows);
   return (
@@ -235,27 +284,33 @@ function useMeta(fields: readonly ResultField[]) {
       .join(' · ');
 }
 
-function RowsList({ rows, shared }: { rows: readonly BoardRow[]; shared: GroupedResultProps }) {
+function RowsList({ rows, shared }: { rows: readonly BoardRow[]; shared: ResultProps }) {
   const meta = useMeta(shared.fields);
   return (
     <ul className="list-view qresult__list" aria-label="Notes">
-      {rows.map((row) => (
-        <li key={row.path} className="list-view__row">
-          <button
-            type="button"
-            className="list-view__title"
-            onClick={() => shared.onOpenNote(row.path)}
-          >
-            {row.title}
-          </button>
-          <span className="list-view__summary">{meta(row)}</span>
-        </li>
-      ))}
+      {rows.map((row) => {
+        const given = taskControlsOf(shared.tasks, row);
+        return (
+          <li key={row.path} className="list-view__row">
+            {given !== null && taskDoneBox(given)}
+            <button
+              type="button"
+              className="list-view__title"
+              onClick={() => shared.onOpenNote(row.path)}
+            >
+              {row.title}
+            </button>
+            <span className="list-view__summary">{meta(row)}</span>
+            {given !== null && taskCommands(given)}
+            {given !== null && taskRefusal(given)}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-function ResultBoard(props: GroupedResultProps) {
+function ResultBoard(props: ResultProps) {
   if (props.lanes !== undefined && props.lanes.length > 0) {
     return (
       <BoardLanes
@@ -305,7 +360,7 @@ function Cards({
   quiet = false,
 }: {
   rows: readonly BoardRow[];
-  shared: GroupedResultProps;
+  shared: ResultProps;
   /** An empty lane cell says nothing: a row of "Nothing here yet" is noise. */
   quiet?: boolean;
 }) {
@@ -313,18 +368,49 @@ function Cards({
   if (rows.length === 0) return quiet ? null : <p className="board__empty">Nothing here yet</p>;
   return (
     <ul className="board__cards qresult__cards">
-      {rows.map((row) => (
-        <li key={row.path}>
-          <button
-            type="button"
-            className="qresult__card"
-            onClick={() => shared.onOpenNote(row.path)}
-          >
-            <span className="qresult__card-title">{row.title}</span>
+      {rows.map((row) => {
+        const given = taskControlsOf(shared.tasks, row);
+        if (given === null) {
+          return (
+            <li key={row.path}>
+              <button
+                type="button"
+                className="qresult__card"
+                onClick={() => shared.onOpenNote(row.path)}
+              >
+                <span className="qresult__card-title">{row.title}</span>
+                <span className="qresult__card-meta">{meta(row)}</span>
+              </button>
+            </li>
+          );
+        }
+        // A task's card holds controls of its own, which a button cannot: its name opens it.
+        return (
+          <li key={row.path} className="qresult__card qresult__card--task">
+            <span className="qresult__card-head">
+              {taskDoneBox(given)}
+              <button
+                type="button"
+                className="qresult__title qresult__card-title"
+                onClick={() => shared.onOpenNote(row.path)}
+              >
+                {row.title}
+              </button>
+            </span>
             <span className="qresult__card-meta">{meta(row)}</span>
-          </button>
-        </li>
-      ))}
+            {taskCommands(given)}
+            {taskRefusal(given)}
+          </li>
+        );
+      })}
     </ul>
   );
+}
+
+/** A row's task controls, when the result has them and the row is a task it can act on. */
+function taskControlsOf(tasks: TasksGiven | undefined, row: BoardRow) {
+  const shown = tasks?.of(row);
+  return tasks === undefined || shown === undefined
+    ? null
+    : { row, shown, controls: tasks, focus: tasks.focus };
 }

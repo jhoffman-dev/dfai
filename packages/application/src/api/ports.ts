@@ -9,6 +9,8 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import type { ThumbnailQueue } from '../artifacts/thumbnail-queue.ts';
 import type { AppInfoPort, Clock, Rng } from '../ports.ts';
 import type { GoogleCalendarPort } from '../google-calendar/ports.ts';
+import type { GranolaPullReport } from '../granola/pull-granola-meetings.ts';
+import type { GranolaKeyStatus, GranolaPullRecord } from '../granola/ports.ts';
 import type { PropertyChanges } from '../query/set-property.ts';
 import type { SourceRefresher } from '../sources/source-refresher.ts';
 import type { TagRenames } from '../tags/index.ts';
@@ -154,6 +156,29 @@ export interface ApiRouterDeps {
   readonly meetingDrafts: MeetingDrafts;
   /** Where the app tells the person something went wrong that no caller is left to hear. */
   readonly notices: AppNotices;
+  /** The app's own Granola (P28-13). Left out, the Granola routes answer `conflict`. */
+  readonly granola?: ApiGranola;
+}
+
+/**
+ * Granola as the app has it (P28-13): the host's word on the key, this Mac's
+ * record of each vault's pulls, and the app's own Sync now — the one puller,
+ * so a pull through the API never runs beside one of the app's. The key
+ * stays in the host (ADR-0034); nothing here can read it.
+ */
+export interface ApiGranola {
+  /** Whether this Mac holds a key for `vault`, and Granola's last word on it. */
+  keyStatus(vault: string): Promise<GranolaKeyStatus>;
+  /** This Mac's record of `vault`'s pulls. */
+  record(vault: string): GranolaPullRecord;
+  /**
+   * Whether `vault` may be pulled into now, as the app's own pulls wait to be:
+   * it is open, sync has pulled it this session (or it does not sync), and
+   * the index has caught up with what sync brought in (ADR-0034).
+   */
+  ready(vault: string): boolean;
+  /** Settings → Granola's Sync now for `vault`, through the app's one puller. Never rejects. */
+  syncNow(vault: string): Promise<GranolaPullReport>;
 }
 
 /**

@@ -59,8 +59,9 @@ interface TypePorts {
 
 /**
  * Gives each of DFAI's own built-in type files the vault has (Meeting,
- * Proposal, Decision, Daily, Block — never PARA's or Task's) the properties
- * DFAI ships on it and the file predates (#162), and records its shipped keys
+ * Proposal, Decision, Daily, Block, and Task for `focus` alone — never
+ * PARA's, nor Task's GTD keys) the properties DFAI ships on it and the file
+ * predates (#162), and records its shipped keys
  * as settled in `.atlas/migrations/type-properties.md` so it is done once —
  * including those a complete file already had, so a key the person removes
  * later stays removed.

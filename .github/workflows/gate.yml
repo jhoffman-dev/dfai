@@ -99,6 +99,11 @@ jobs:
       - name: No chunk shared under a part
         run: pnpm check:chunks
 
+      # The webview has no Node: a built-in the build swapped for an empty
+      # object fails only when it runs, in WebKit (#53).
+      - name: No Node built-in in the app's bundle
+        run: pnpm check:node-builtins
+
   unit:
     needs: changes
     if: needs.changes.outputs.code == 'true'

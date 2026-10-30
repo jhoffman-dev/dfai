@@ -31,6 +31,24 @@ export function listFromInput(typed: string): string[] {
 }
 
 /**
+ * Whether the line has a quote opened around text and not closed yet — the
+ * moment while `"Quill, Mara` is being typed, or a closing quote has just been
+ * deleted. Read then, the open cell runs to the end of the line and takes in
+ * every item after it, so a box written as it is typed holds its save until
+ * the quote closes. A lone quote with nothing after it yet opens nothing: the
+ * line still says the items before it.
+ */
+export function hasOpenQuote(typed: string): boolean {
+  let at = 0;
+  while (at <= typed.length) {
+    const { cell, next, open } = readCell(typed, at);
+    if (open && cell.trim() !== '') return true;
+    at = next + 1;
+  }
+  return false;
+}
+
+/**
  * The cells of the line as typed, quotes taken off and nothing else done to
  * them — for a reader with its own idea of a blank or a repeat. A cell is
  * quoted when its first non-space character is a quote.
@@ -46,13 +64,16 @@ export function listInputCells(typed: string): string[] {
   return cells;
 }
 
-/** One cell from `from`, and where the comma ending it is (the line's length when none is). */
-function readCell(typed: string, from: number): { cell: string; next: number } {
+/**
+ * One cell from `from`, where the comma ending it is (the line's length when
+ * none is), and whether it is a quoted cell the line ends inside.
+ */
+function readCell(typed: string, from: number): { cell: string; next: number; open: boolean } {
   const start = from + (/^\s*/u.exec(typed.slice(from))?.[0].length ?? 0);
   if (typed[start] !== QUOTE) {
     const comma = typed.indexOf(',', from);
     const next = comma === -1 ? typed.length : comma;
-    return { cell: typed.slice(from, next), next };
+    return { cell: typed.slice(from, next), next, open: false };
   }
   let cell = '';
   let at = start + 1;
@@ -64,11 +85,11 @@ function readCell(typed: string, from: number): { cell: string; next: number } {
       // What follows the closing quote, up to the comma, is kept as typed.
       const comma = typed.indexOf(',', at + 1);
       const next = comma === -1 ? typed.length : comma;
-      return { cell: cell + typed.slice(at + 1, next), next };
+      return { cell: cell + typed.slice(at + 1, next), next, open: false };
     } else {
       cell += typed[at];
       at += 1;
     }
   }
-  return { cell, next: typed.length };
+  return { cell, next: typed.length, open: true };
 }

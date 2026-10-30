@@ -47,6 +47,7 @@ function report(tasks: readonly ReviewTask[] = TASKS, fields: Partial<TodayRepor
   return {
     ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 3, toFile: 2, toAnswer: 1, more: false },
     truncated: false,
     stalledProjects: 2,
@@ -68,6 +69,7 @@ function props(overrides: Partial<TodayPageProps> = {}): TodayPageProps {
     onDone: vi.fn(),
     onSetStatus: vi.fn(),
     onDefer: vi.fn(),
+    onChoose: vi.fn(),
     ...overrides,
   };
 }
@@ -437,7 +439,7 @@ describe('TodayPage, focus', () => {
     page({ today: report([task('Call the bank')]) });
     box('Call the bank').focus();
     const reached: (string | null)[] = [];
-    for (let presses = 0; presses < 4; presses += 1) {
+    for (let presses = 0; presses < 5; presses += 1) {
       await userEvent.tab();
       reached.push(
         document.activeElement?.getAttribute('aria-label') ??
@@ -447,9 +449,146 @@ describe('TodayPage, focus', () => {
     }
     expect(reached).toEqual([
       'Call the bank',
+      'Choose Call the bank for today',
       'Move Call the bank to…',
       'Defer Call the bank 1 day',
       'Defer Call the bank 7 days',
     ]);
+  });
+});
+
+describe('TodayPage, chosen for today (#108)', () => {
+  const CHOSEN = [
+    task('Call the bank', { focus: TODAY }),
+    task('Draft the plan', { status: 'in-progress', focus: TODAY }),
+    task('Ship the page', { focus: '2026-10-12', ...inAtlas }),
+    task('Write the guide', inAtlas),
+  ];
+  const regionNames = () =>
+    screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'));
+  const titlesIn = (name: string) =>
+    [...section(name).querySelectorAll('.table__title')].map((el) => el.textContent);
+
+  it('leads with Chosen for today, then Carried over, each with its tasks', () => {
+    page({ today: report(CHOSEN) });
+    expect(regionNames().slice(0, 2)).toEqual(['Chosen for today', 'Carried over']);
+    expect(titlesIn('Chosen for today')).toEqual(['Call the bank', 'Draft the plan']);
+    expect(titlesIn('Carried over')).toEqual(['Ship the page']);
+    expect(titlesIn('Next actions')).toEqual(['Write the guide']);
+    expect(within(section('Carried over')).getByText('Chosen for 2026-10-12')).toBeDefined();
+    // The chosen rows say their status, as the sections of mixed statuses do.
+    expect(within(section('Chosen for today')).getByText('In Progress')).toBeDefined();
+  });
+
+  it('draws Carried over only while it holds something, and says when nothing is chosen', () => {
+    page();
+    expect(regionNames()).toContain('Chosen for today');
+    expect(regionNames()).not.toContain('Carried over');
+    expect(within(section('Chosen for today')).getByText(/Nothing chosen yet/)).toBeDefined();
+  });
+
+  it('chooses a task with its Today button, and takes a chosen one off with the pressed one', async () => {
+    const { onChoose } = page({ today: report(CHOSEN) });
+    const choose = screen.getByRole('button', { name: 'Choose Write the guide for today' });
+    expect(choose.getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(choose);
+    const takeOff = screen.getByRole('button', { name: 'Take Call the bank off today' });
+    expect(takeOff.getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(takeOff);
+    expect(onChoose).toHaveBeenNthCalledWith(1, {
+      path: path('Write the guide'),
+      title: 'Write the guide',
+      choice: 'choose',
+    });
+    expect(onChoose).toHaveBeenNthCalledWith(2, {
+      path: path('Call the bank'),
+      title: 'Call the bank',
+      choice: 'unchoose',
+    });
+  });
+
+  it('keeps or drops one carried over, which has no Today button of its own', async () => {
+    const { onChoose } = page({ today: report(CHOSEN) });
+    const carried = within(section('Carried over'));
+    expect(carried.queryByRole('button', { name: /^(Choose|Take) / })).toBeNull();
+    expect(carried.getByRole('button', { name: 'Keep Ship the page for today' })).toBeDefined();
+    await userEvent.click(carried.getByRole('button', { name: 'Keep Ship the page for today' }));
+    await userEvent.click(carried.getByRole('button', { name: 'Drop Ship the page from today' }));
+    const row = { path: path('Ship the page'), title: 'Ship the page' };
+    expect(onChoose).toHaveBeenNthCalledWith(1, { ...row, choice: 'keep' });
+    expect(onChoose).toHaveBeenNthCalledWith(2, { ...row, choice: 'drop' });
+  });
+
+  it('lets no choice be pressed while the row’s last action is not read back', () => {
+    page({
+      today: report(CHOSEN),
+      settling: new Set([path('Ship the page'), path('Call the bank')]),
+    });
+    const keep = screen.getByRole('button', { name: 'Keep Ship the page for today' });
+    const takeOff = screen.getByRole('button', { name: 'Take Call the bank off today' });
+    expect((keep as HTMLButtonElement).disabled).toBe(true);
+    expect((takeOff as HTMLButtonElement).disabled).toBe(true);
+    const choose = screen.getByRole('button', { name: 'Choose Write the guide for today' });
+    expect((choose as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it.each([
+    ['choose', 'Chose “Call the bank” for today.'],
+    ['unchoose', 'Took “Call the bank” off today.'],
+    ['keep', 'Kept “Call the bank” for today.'],
+    ['drop', 'Dropped “Call the bank” from today.'],
+  ] as const)('says what a %s did, in the words its toast offers to take back', (kind, words) => {
+    expect(todayActionWords({ title: 'Call the bank', action: { kind } })).toBe(words);
+  });
+});
+
+describe('TodayPage, where a task cannot be chosen (#108 fix round)', () => {
+  it('draws no choosing at all in a vault that does not choose', () => {
+    page({
+      today: report([task('Call the bank', { focus: '2026-10-12' }), task('Ship the page')], {
+        choosing: false,
+      }),
+    });
+    const names = screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'));
+    expect(names).toContain('Next actions');
+    expect(names).not.toContain('Chosen for today');
+    expect(names).not.toContain('Carried over');
+    expect(screen.queryAllByRole('button', { name: /for today$|off today$|from today$/ })).toEqual(
+      [],
+    );
+  });
+
+  it('offers no Today on a task whose focus is the person’s own', () => {
+    page({
+      today: report([task('Write the chapter', { focusIsOwn: true }), task('Ship the page')]),
+    });
+    expect(screen.getByRole('button', { name: 'Choose Ship the page for today' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Write the chapter (for|off) today/ })).toBeNull();
+  });
+
+  it('says the later day a task was chosen for, and moves the choice to today with that day', async () => {
+    const { onChoose } = page({
+      today: report([task('Plan the offsite', { focus: '2026-11-02' })]),
+    });
+    const next = section('Next actions');
+    expect(within(next).getByText('Chosen for 2026-11-02')).toBeDefined();
+    await userEvent.click(
+      within(next).getByRole('button', { name: 'Choose Plan the offsite for today' }),
+    );
+    expect(onChoose).toHaveBeenCalledWith({
+      path: path('Plan the offsite'),
+      title: 'Plan the offsite',
+      choice: 'choose',
+      was: '2026-11-02',
+    });
+  });
+
+  it('says a choice moved from a later day in its toast', () => {
+    expect(
+      todayActionWords({
+        title: 'Plan the offsite',
+        action: { kind: 'choose', was: '2026-11-02' },
+      }),
+    ).toBe('“Plan the offsite” chosen for today (was 2026-11-02).');
   });
 });
