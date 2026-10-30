@@ -77,6 +77,7 @@ import {
   type GranolaPort,
   type GranolaPullRecords,
   type PageSnapshotPort,
+  type SlackPort,
 } from '@dfai/application';
 import {
   AppShell,
@@ -87,6 +88,7 @@ import {
   collapseFor,
   useSteadyCallback,
   CapturePalette,
+  SlackMessageOffer,
   DeleteDialog,
   lostUsesText,
   TemplateToNoteDialog,
@@ -222,6 +224,8 @@ import { createOwnerNameRelay } from './api/owner-name-relay.ts';
 import { createClaudeStepRelay } from './api/claude-step-relay.ts';
 import { createMoveRelay } from './api/move-relay.ts';
 import { SettingsPanel } from './settings/settings-panel.tsx';
+import { useSlackPaste } from './slack/use-slack-paste.ts';
+import { useSlackPasteListener } from './slack/slack-paste-listener.ts';
 import {
   GlobalCaptureSettings,
   GoogleCalendarSettingsCard,
@@ -231,6 +235,7 @@ import {
   ProfileSettingsCard,
   QuickAddSettingsCard,
   SecretsSettingsCard,
+  SlackSettingsCard,
   SyncSettingsCard,
   settingsSectionLinks,
 } from './settings/settings-sections.ts';
@@ -472,6 +477,7 @@ function AppWindow({
   meetings: meetingPorts,
   blocks: blockPorts,
   kindle: kindlePorts,
+  slack: slackPort,
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
 }: {
@@ -504,6 +510,8 @@ function AppWindow({
   blocks?: BlockSyncHost;
   /** Kindle through the host's own Amazon session (ADR-0044), and the app's one sync; left out, Kindle is not offered. */
   kindle?: KindleHost;
+  /** Slack, through the host, which keeps the token (#105): a pasted Slack link is offered for saving. */
+  slack: SlackPort;
   /** The shortcut that opens quick capture from any app, registered by the host (#81). */
   globalCapture: { port: GlobalCapturePort; store: GlobalCaptureStore };
   /** Where exports go, how a PDF is made and how a Doc reaches Drive (#501); left out, nothing is exported. */
@@ -1756,6 +1764,38 @@ function AppWindow({
     [captureNote, captureTemplate, openNote, overlays],
   );
 
+  const slackPastePorts = useMemo(
+    () => ({
+      slack: slackPort,
+      capture: { fs: vault.fs, markdown: notes.markdown, index: index.index },
+      vault: vaultKey,
+      timeZone: localTimeZone,
+      openNote,
+    }),
+    [slackPort, vault.fs, notes.markdown, index.index, vaultKey, openNote],
+  );
+  const slackPaste = useSlackPaste(slackPastePorts);
+  useSlackPasteListener(slackPaste.offer);
+  const slackOffer =
+    slackPaste.view === null ? null : (
+      <SlackMessageOffer
+        view={slackPaste.view}
+        onSave={slackPaste.save}
+        onOpen={() => {
+          slackPaste.open();
+          slackPaste.dismiss();
+          hideOverlay('capture');
+        }}
+        onOpenSettings={() => {
+          slackPaste.dismiss();
+          // Quick capture holds the screen while it is open: it gives way to Settings.
+          hideOverlay('capture');
+          showOverlay('settings');
+        }}
+        onDismiss={slackPaste.dismiss}
+      />
+    );
+
   /** Today's note, made on demand — where and from what is `ensureDailyNote`'s to say. */
   const openDailyNote = useCallback(async () => {
     const path = await openOrMakeDailyNote(localToday());
@@ -2509,7 +2549,10 @@ function AppWindow({
           status={location === null ? null : indexStatusText(indexStatus)}
           floating={
             location === null ? null : (
-              <IndexProgressPill status={indexStatus} progress={indexProgress} />
+              <>
+                <IndexProgressPill status={indexStatus} progress={indexProgress} />
+                {overlay === 'capture' ? null : slackOffer}
+              </>
             )
           }
           overlay={
@@ -2547,6 +2590,7 @@ function AppWindow({
                   <GoogleCalendarSettingsCard setting={googleCalendarSetting} />
                 )}
                 {location !== null && <GranolaSettingsCard setting={granolaSetting} />}
+                {location !== null && <SlackSettingsCard port={slackPort} vault={vaultKey} />}
                 {location !== null && kindlePorts !== undefined && (
                   <KindleSettingsCard kindle={kindleSync} />
                 )}
@@ -2685,7 +2729,9 @@ function AppWindow({
                 onCapture={(name) => void captureTask(name)}
                 onClose={() => hideOverlay('capture')}
                 fallbackFocus={focusFallback}
-              />
+              >
+                {slackOffer}
+              </CapturePalette>
             ) : (
               <SearchPaletteSlot
                 store={overlays}

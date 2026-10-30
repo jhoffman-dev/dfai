@@ -1,5 +1,5 @@
 import { codeNode, endNode, ERROR_OUTPUT, ifNode, to, type Position } from './n8n-nodes.ts';
-import { THREAD_LIMIT } from './slack-capture.ts';
+import { THREAD_LIMIT } from '../../packages/domain/src/capture/slack/slack-answers.ts';
 import { SCRIPT_NODES, type ReplyOutcome } from './slack-code-node.ts';
 import { GITHUB_CREDENTIAL, GMAIL_CREDENTIAL, NOTIFY_TO, VAULT_REPO } from './workflow.ts';
 

@@ -12,3 +12,10 @@ export {
   treeAsJson,
 } from './slack-capture.ts';
 export { HOSTILE_PIECES, hostileText, seededRandom } from './hostile-text.ts';
+export {
+  MARA_ID,
+  slackPermalinkAnswer,
+  slackRepliesAnswer,
+  slackUserAnswer,
+  TOBIAS_ID,
+} from './slack-answers.ts';

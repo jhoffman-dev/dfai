@@ -1249,8 +1249,8 @@ ORDER BY phase</pre>
       <p>Save a Slack message — and its thread — as a note or a task in your Inbox. There are three ways in, and they all land the same way: a message saved by two of them is still one note.</p>
       <p id="three-ways-from-slack"><b>Three ways to save from Slack:</b></p>
       <ol>
-        <li><b>In Slack, through n8n.</b> A Slack shortcut or emoji sends the message to DFAI. <i>Setting it up comes with #104.</i></li>
-        <li><b>Paste a link into DFAI.</b> Copy the message's link in Slack and paste it into DFAI. <i>Comes with #105.</i></li>
+        <li><b>In Slack, through n8n.</b> A Slack shortcut or emoji sends the message to DFAI. The steps are in <a href="https://github.com/jhoffman-dev/dfai/tree/main/tools/n8n">tools/n8n on GitHub</a> (the README, “Slack messages into DFAI”).</li>
+        <li><b>Paste a link into DFAI.</b> Copy the message's link in Slack and paste it into DFAI. See <a href="#slack-paste">Paste a Slack link</a> below.</li>
         <li><b>Ask Claude.</b> In Claude Code or Claude Desktop, with both its Slack connector and the <a href="#connect">DFAI MCP server</a> connected, say <i>“save this thread to my notes”</i> or <i>“make a task from what Mara asked in #larkspur-payroll”</i>. Claude reads the message in Slack and hands it to DFAI with <code>atlas_capture</code>, with its link. It picks a task when you want to act on it and a note when you want to keep it, and saves only what it read. Asking twice makes nothing new; Claude is told which note already holds it. A message without its Slack link is refused. (Claude in DFAI's own chat can't read Slack, so it can't save from there yet.)</li>
       </ol>
       <p>What follows is what DFAI does with a message when it arrives, whichever way it came.</p>
@@ -1260,6 +1260,13 @@ ORDER BY phase</pre>
         <li><b>Who wrote it.</b> When the author's email is on a Person note — <b>Email</b> or <b>Other emails</b> — the author is a link to that person. DFAI never links by Slack display name alone; someone it doesn't know is written by name.</li>
         <li>Slack's <b>bold</b>, <i>italics</i>, strikethrough, code, links and @mentions come across as they look in Slack; emoji stay as <code>:tada:</code>. Anything else in a message is kept as plain words: a <code>#word</code> in Slack doesn't become a tag, <code>[[a link]]</code> doesn't become a link, and nothing in a message can add HTML, an image or a query to your vault.</li>
         <li><b>Saving the same message twice</b> makes nothing new: DFAI recognises it by its channel and time in Slack — even after you've filed or archived the first one — and points at the note you already have. Saving it again later never changes that note, even if the thread has grown.</li>
+      </ul>
+      <h3 id="slack-paste">Paste a Slack link</h3>
+      <ul>
+        <li><b>Connect Slack once</b> in Settings (<kbd>⌘,</kbd>) → <b>Slack</b>. Make a Slack app at <code>api.slack.com/apps</code> with these <b>user token scopes</b>: <code>channels:history</code>, <code>groups:history</code>, <code>im:history</code>, <code>mpim:history</code>, <code>users:read</code> and <code>users:read.email</code>. Install it to your workspace, copy its <b>User OAuth Token</b> (it starts <code>xoxp-</code>), paste it and press <b>Connect</b>. DFAI asks Slack whose it is and shows <i>Connected as mara in Larkspur Payroll</i>. The token stays in this Mac's Keychain, goes only to <code>slack.com</code>, and is only used to read — DFAI can't post, edit or delete with it. <b>Disconnect</b> forgets it on this Mac.</li>
+        <li><b>Paste a message link</b> (Slack's <b>Copy link</b> on a message) into a note or into quick capture (<kbd>⇧⌘N</kbd>). The link is pasted as usual, and a card offers the message: who wrote it, its words, and how many replies and files its thread has. <b>Save as task</b> or <b>Save as note</b> puts it in <code>Inbox/Captures/</code> exactly as above — the same note a message sent from Slack would make — and <b>Open</b> takes you to it.</li>
+        <li><b>Pasting it again</b> says <i>Already in your vault</i> and makes nothing new.</li>
+        <li><b>When it can't be read</b>, the card says why and what to do, and the link stays as you pasted it: not connected (<b>Open Settings</b>), a token Slack refused or one missing a scope (make a new one), a message that was deleted or is in a conversation you're not in (only the link is kept), or Slack asking DFAI to slow down (try again in the seconds it says).</li>
       </ul>
     </section>
 

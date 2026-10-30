@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { readCapture } from '@dfai/domain';
 import { heldCapturePath, ListingError } from './capture-github.ts';
-import { MAX_LOOKUPS, SlackApiError, slackCapturePayload, usersToLookUp } from './slack-capture.ts';
+import {
+  MAX_LOOKUPS,
+  SlackApiError,
+} from '../../packages/domain/src/capture/slack/slack-answers.ts';
+import { captureFor, lookUpFor } from './slack-action-answers.ts';
 import {
   committedReply,
   failedReply,
@@ -45,23 +49,23 @@ const answers = {
 
 describe('the people to look up', () => {
   it('are whoever asked, every author and everyone mentioned, once each', () => {
-    expect(usersToLookUp(action, repliesAnswer())).toEqual([OWNER, 'U0MARAQ111', 'U0TOBIAS22']);
+    expect(lookUpFor(action, repliesAnswer())).toEqual([OWNER, 'U0MARAQ111', 'U0TOBIAS22']);
   });
 
   it('are at least whoever asked, so the lookup runs, and at most the cap', () => {
-    expect(usersToLookUp(action, repliesAnswer([]))).toEqual([OWNER]);
+    expect(lookUpFor(action, repliesAnswer([]))).toEqual([OWNER]);
     const many = Array.from({ length: 150 }, (_, at) => ({
       ts: TS,
       user: `U0PEOPLE${String(at).padStart(3, '0')}`,
       text: '',
     }));
-    expect(usersToLookUp(action, repliesAnswer(many))).toHaveLength(MAX_LOOKUPS);
+    expect(lookUpFor(action, repliesAnswer(many))).toHaveLength(MAX_LOOKUPS);
   });
 });
 
 describe('the capture/v1 payload', () => {
   it('is one the contract reads: the message, the whole thread, its people', () => {
-    const payload = slackCapturePayload(answers);
+    const payload = captureFor(answers);
     const capture = readCapture(payload);
     expect(capture.externalId).toBe(`${CHANNEL}/${TS}`);
     expect(capture.kind).toBe('note');
@@ -79,7 +83,7 @@ describe('the capture/v1 payload', () => {
   });
 
   it('keeps a file as its permalink, never the file’s own address', () => {
-    expect(slackCapturePayload(answers).attachments).toEqual([
+    expect(captureFor(answers).attachments).toEqual([
       { name: 'renewal.pdf', url: 'https://larkspur.slack.com/files/U0MARAQ111/F1/renewal.pdf' },
     ]);
   });
@@ -89,7 +93,7 @@ describe('the capture/v1 payload', () => {
       ok: true,
       permalink: `${PERMALINK.slice(0, -16)}1793136300000200?thread_ts=${TS}`,
     };
-    const payload = slackCapturePayload({
+    const payload = captureFor({
       ...answers,
       permalink,
       action: { ...action, ts: REPLY_TS },
@@ -104,7 +108,7 @@ describe('the capture/v1 payload', () => {
       ok: true,
       user: { id: 'U0MARAQ111', profile: { display_name: 'mara', real_name: 'Mara Quill' } },
     };
-    const payload = slackCapturePayload({ ...answers, users: [display] });
+    const payload = captureFor({ ...answers, users: [display] });
     expect(payload.source.author).toEqual({ id: 'U0MARAQ111', name: 'mara', email: null });
     expect(payload.thread[0]?.author.name).toBe('U0TOBIAS22');
   });
@@ -122,13 +126,13 @@ describe('the capture/v1 payload', () => {
     ],
     ['the thread, with no answer', { replies: 'nope' }, /conversations.replies said no answer/],
   ])('is refused, naming Slack’s reason, when %s is not ok', (_, override, reason) => {
-    expect(() => slackCapturePayload({ ...answers, ...override })).toThrow(SlackApiError);
-    expect(() => slackCapturePayload({ ...answers, ...override })).toThrow(reason);
+    expect(() => captureFor({ ...answers, ...override })).toThrow(SlackApiError);
+    expect(() => captureFor({ ...answers, ...override })).toThrow(reason);
   });
 
   it('names by id a person whose lookup Slack refused, and still saves the message', () => {
     const users = [usersAnswers[0], { ok: false, error: 'user_not_found' }, usersAnswers[2]];
-    const payload = slackCapturePayload({ ...answers, users });
+    const payload = captureFor({ ...answers, users });
     expect(payload.source.author).toEqual({ id: 'U0MARAQ111', name: 'U0MARAQ111', email: null });
     expect(payload.thread[0]?.author.name).toBe('Tobias Fenn');
     expect(() => readCapture(payload)).not.toThrow();
@@ -136,12 +140,12 @@ describe('the capture/v1 payload', () => {
 
   it('is refused when the message is not among what Slack sent (deleted, or not visible)', () => {
     expect(() =>
-      slackCapturePayload({ ...answers, action: { ...action, ts: '1793139999.000000' } }),
+      captureFor({ ...answers, action: { ...action, ts: '1793139999.000000' } }),
     ).toThrow(/not in the thread Slack sent/);
   });
 
   it('skips a person answered with no id, naming the author by id instead', () => {
-    const payload = slackCapturePayload({
+    const payload = captureFor({
       ...answers,
       users: [{ ok: true, user: { profile: {} } }],
     });
@@ -149,7 +153,7 @@ describe('the capture/v1 payload', () => {
   });
 
   it('writes a person with no address as having none', () => {
-    const payload = slackCapturePayload({
+    const payload = captureFor({
       ...answers,
       users: [userAnswer('U0MARAQ111', 'Mara Quill', null)],
     });
