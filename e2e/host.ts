@@ -10,7 +10,7 @@ import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
 import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
-import { isIntendedRefusal, recordStubBug, UnstubbedCommandError } from './stub-bugs.ts';
+import { isIntendedRefusal, recordStubBug, stubBugOf, UnstubbedCommandError } from './stub-bugs.ts';
 
 /** What a stubbed command answers to reject with a value, as Tauri does for a command's `Err`. */
 const REJECT = '__atlasReject';
@@ -25,7 +25,7 @@ const REJECT = '__atlasReject';
  */
 function rejectionAsTauriSends(thrown: unknown): { [REJECT]: unknown } {
   if (!isIntendedRefusal(thrown)) {
-    const bug = thrown instanceof Error ? thrown : new Error(String(thrown));
+    const bug = stubBugOf(thrown);
     recordStubBug(bug);
     throw bug;
   }

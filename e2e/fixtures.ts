@@ -1,5 +1,5 @@
 import { test as base } from '@playwright/test';
-import { stubBugsRecorded, stubBugsSince } from './stub-bugs.ts';
+import { takeUnreportedStubBugs } from './stub-bugs.ts';
 import { removeTempFolders, tempFoldersMade } from './temp-folders.ts';
 
 export { expect, type Browser, type Locator, type Page } from '@playwright/test';
@@ -12,7 +12,7 @@ export { expect, type Browser, type Locator, type Page } from '@playwright/test'
  */
 export const test = base.extend<
   { removesTestTempFolders: void; failsOnStubBugs: void },
-  { removesWorkerTempFolders: void }
+  { removesWorkerTempFolders: void; failsWorkerOnStubBugs: void }
 >({
   removesTestTempFolders: [
     // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; it has none.
@@ -26,9 +26,8 @@ export const test = base.extend<
   failsOnStubBugs: [
     // eslint-disable-next-line no-empty-pattern -- as above.
     async ({}, use) => {
-      const before = stubBugsRecorded();
       await use();
-      const bugs = stubBugsSince(before);
+      const bugs = takeUnreportedStubBugs();
       if (bugs !== null) throw new Error(bugs);
     },
     { auto: true },
@@ -38,6 +37,16 @@ export const test = base.extend<
     async ({}, use) => {
       await use();
       await removeTempFolders();
+    },
+    { scope: 'worker', auto: true },
+  ],
+  // What an `afterAll` made goes wrong after the last test has reported.
+  failsWorkerOnStubBugs: [
+    // eslint-disable-next-line no-empty-pattern -- as above.
+    async ({}, use) => {
+      await use();
+      const bugs = takeUnreportedStubBugs();
+      if (bugs !== null) throw new Error(bugs);
     },
     { scope: 'worker', auto: true },
   ],

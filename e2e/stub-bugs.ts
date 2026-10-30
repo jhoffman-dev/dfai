@@ -20,28 +20,45 @@ export class UnstubbedCommandError extends Error {
 
 /**
  * Whether a stub's throw is a refusal it meant, as a command's `Err` is: a
- * string, a plain `Error`, or a Node file error passed on as the host would.
- * Anything else — a `TypeError` in a stub, an unstubbed command — is a bug.
+ * string, or a plain `Error` — the stubs' own, and the ones Node's file system,
+ * `node:sqlite` and `execFile` throw, which the host would pass on as its `Err`.
+ * Anything else is a bug: a `TypeError` in a stub, including the coded one
+ * Node's argument checks throw for an argument read under the wrong name
+ * (`ERR_INVALID_ARG_TYPE`), or an unstubbed command.
  */
 export function isIntendedRefusal(thrown: unknown): boolean {
   if (typeof thrown === 'string') return true;
-  if (!(thrown instanceof Error)) return false;
-  if (thrown.constructor === Error) return true;
-  return typeof (thrown as { code?: unknown }).code === 'string';
+  return thrown instanceof Error && thrown.constructor === Error;
+}
+
+/** A stub's throw as the bug it records: an `Error` as it is, anything else described. */
+export function stubBugOf(thrown: unknown): Error {
+  if (thrown instanceof Error) return thrown;
+  let described: string;
+  try {
+    described = JSON.stringify(thrown) ?? String(thrown);
+  } catch {
+    // A value JSON cannot hold, such as one that refers to itself: its type still says something.
+    described = `${typeof thrown} JSON cannot describe`;
+  }
+  return new Error(`a stub threw a value that is not an Error: ${described}`);
 }
 
 export function recordStubBug(bug: Error): void {
   recorded.push(bug);
 }
 
-/** How many bugs this worker has recorded, to tell a test's own from those before it. */
-export function stubBugsRecorded(): number {
-  return recorded.length;
-}
+/** How many of the recorded bugs have been reported, by a test or the worker's end. */
+let reported = 0;
 
-/** The bugs recorded since `mark`, as one message with each stack. */
-export function stubBugsSince(mark: number): string | null {
-  const bugs = recorded.slice(mark);
+/**
+ * The bugs recorded since the last were reported, as one message with each
+ * stack, now counted as reported. A test reports those made during it and any
+ * a `beforeAll` made before it; the worker's end reports what an `afterAll` made.
+ */
+export function takeUnreportedStubBugs(): string | null {
+  const bugs = recorded.slice(reported);
+  reported = recorded.length;
   if (bugs.length === 0) return null;
   return [
     `the stub host went wrong ${bugs.length} time(s):`,
