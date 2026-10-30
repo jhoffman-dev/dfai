@@ -113,6 +113,8 @@ describe('linkingOwed: the one rule the import marks by and Run now keeps the ma
 describe('the index query for marked meetings', () => {
   it('asks for the paths that hold the mark, one page of them', () => {
     const { sql, parameters } = compileMarkedMeetingsQuery();
+    // Marked as the linking's own, which the e2e host answers with real SQL.
+    expect(sql.startsWith('/* meeting links: ')).toBe(true);
     expect(sql).toContain('SELECT DISTINCT path FROM props');
     expect(parameters).toEqual([MEETING_LINKS_KEY, MARKED_MEETINGS_PAGE]);
   });

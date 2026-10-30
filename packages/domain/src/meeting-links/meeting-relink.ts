@@ -95,7 +95,7 @@ export const MARKED_MEETINGS_PAGE = 1000;
 export function compileMarkedMeetingsQuery(): CompiledQuery {
   return {
     sql: [
-      `/* meeting links */ SELECT DISTINCT path FROM props`,
+      `/* meeting links: marked */ SELECT DISTINCT path FROM props`,
       `WHERE key = ? ORDER BY path LIMIT ?`,
     ].join('\n'),
     parameters: [MEETING_LINKS_KEY, MARKED_MEETINGS_PAGE],
