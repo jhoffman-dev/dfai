@@ -20,7 +20,13 @@ test('the stub host rejects with the string a command returned, as Tauri does', 
   const rejections = await page.evaluate(async (root) => {
     const { invoke } = (
       window as unknown as {
-        __TAURI_INTERNALS__: { invoke: (c: string, a?: unknown) => Promise<unknown> };
+        __TAURI_INTERNALS__: {
+          invoke: (
+            c: string,
+            a?: unknown,
+            o?: { headers: Record<string, string> },
+          ) => Promise<unknown>;
+        };
       }
     ).__TAURI_INTERNALS__;
     const rejectionOf = (call: Promise<unknown>) =>
@@ -35,6 +41,16 @@ test('the stub host rejects with the string a command returned, as Tauri does', 
     const beforeOpen = await rejectionOf(
       invoke('list_vault_files', { extension: 'md', skipDirectories: [], maxDepth: 4 }),
     );
+    // A raw body goes the other way through the stub, as `write_binary_file` sends it.
+    const rawBeforeOpen = await rejectionOf(
+      invoke('write_binary_file', new Uint8Array([1, 2, 3]), {
+        headers: { 'atlas-path': 'Drop.bin', 'atlas-offset': '0' },
+      }),
+    );
+    // A command whose `Err` is a struct rejects with the object it serialized to.
+    const structured = await rejectionOf(
+      invoke('kindle_fetch_notebook', { url: 'https://read.example.com/notebook' }),
+    );
     await invoke('open_vault', { location: { absolutePath: root } });
     const staleTrash = await rejectionOf(
       invoke('trash_entry', {
@@ -43,22 +59,43 @@ test('the stub host rejects with the string a command returned, as Tauri does', 
       }),
     );
     const escaping = await rejectionOf(invoke('read_text_file', { path: '../outside.md' }));
-    return { beforeOpen, staleTrash, escaping };
+    return { beforeOpen, rawBeforeOpen, structured, staleTrash, escaping };
   }, vault.root);
 
-  expect(rejections.beforeOpen).toEqual({
-    type: 'string',
-    isError: false,
-    value: 'no vault is open',
-  });
-  expect(rejections.staleTrash).toEqual({
-    type: 'string',
-    isError: false,
-    value: 'a file changed on disk since it was read, so nothing was moved to the Trash',
-  });
-  expect(rejections.escaping).toEqual({
-    type: 'string',
-    isError: false,
-    value: 'path escapes the vault',
-  });
+  const refusedWith = (value: unknown) => ({ type: typeof value, isError: false, value });
+  expect(rejections.beforeOpen).toEqual(refusedWith('no vault is open'));
+  expect(rejections.rawBeforeOpen).toEqual(refusedWith('no vault is open'));
+  expect(rejections.structured).toEqual(
+    refusedWith({ kind: 'not_connected', message: 'Kindle is not connected' }),
+  );
+  expect(rejections.staleTrash).toEqual(
+    refusedWith('a file changed on disk since it was read, so nothing was moved to the Trash'),
+  );
+  expect(rejections.escaping).toEqual(refusedWith('path escapes the vault'));
+});
+
+/*
+ * A command the stub has no answer for is a gap in the stub, not a refusal the
+ * app should be seen to handle: the test fails, with the stub's stack, even
+ * when the page carries on as if a refusal came back.
+ */
+test('a command the stub host has no answer for fails the test', async ({ page }) => {
+  test.fail(true, 'an unstubbed command must fail the test it happens in');
+  const vault = await createVault();
+  await installHost(page, vault);
+  await page.goto('/');
+  const rejected = await page.evaluate(() =>
+    (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (c: string, a?: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__
+      .invoke('no_such_command', {})
+      .then(
+        () => false,
+        () => true,
+      ),
+  );
+  // The page saw a refusal and nothing here fails; only the stub's own record can.
+  expect(rejected).toBe(true);
 });

@@ -10,22 +10,29 @@ import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
 import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
+import { isIntendedRefusal, recordStubBug, UnstubbedCommandError } from './stub-bugs.ts';
+
+/** What a stubbed command answers to reject with a value, as Tauri does for a command's `Err`. */
+const REJECT = '__atlasReject';
 
 /**
- * A stub's throw as the real host would reject: Tauri hands the page what a
+ * A stub's refusal as the real host would reject: Tauri hands the page what a
  * command's `Err` serialized to — for the `Result<_, String>` commands, a bare
  * string — never an `Error`. Thrown as an `Error`, it would reach the page as
  * one, and `throughHost` would pass it through instead of making the
- * `VaultAccessError` the app really sees.
+ * `VaultAccessError` the app really sees. A bug in the stub is not a refusal:
+ * it is recorded, so the test fails with its stack, and thrown on.
  */
 function rejectionAsTauriSends(thrown: unknown): { [REJECT]: unknown } {
+  if (!isIntendedRefusal(thrown)) {
+    const bug = thrown instanceof Error ? thrown : new Error(String(thrown));
+    recordStubBug(bug);
+    throw bug;
+  }
   return { [REJECT]: thrown instanceof Error ? thrown.message : thrown };
 }
 
 /** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
-/** What a stubbed command answers to reject with a value, as Tauri does for a command's `Err`. */
-const REJECT = '__atlasReject';
-
 const SYNC_COMMANDS = new Set([
   'git_run',
   'git_run_in',
@@ -2004,7 +2011,7 @@ export async function installHost(
       }
       default:
         if (embeddings.handles(command)) return embeddings.answer(command, args, openRoot());
-        throw new Error(`unexpected command ${command}`);
+        throw new UnstubbedCommandError(command);
     }
   };
 
