@@ -8,6 +8,10 @@
 //! refuse a path whose links land outside the vault, or in a hidden folder
 //! the path did not name. A link that stays inside the vault is followed, as
 //! it is for any note.
+//!
+//! The refusal is decided when the path is resolved, and the file is opened
+//! by the path resolved: a local program that swaps a folder for a link in
+//! between is out of scope, as it is for every note.
 
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -105,6 +109,12 @@ fn a_skill_md_linked_outside_is_listed_but_never_read_or_written() {
         create_note_at(fixture.root(), path, "overwritten").unwrap_err(),
         "a note with that name already exists"
     );
+    // The refused create leaves no temporary behind.
+    assert_eq!(
+        names_in(fixture.root(), ".atlas/skills/linked"),
+        ["SKILL.md"]
+    );
+    assert!(fs::symlink_metadata(fixture.skills().join("linked/.SKILL.md.atlas-tmp")).is_err());
     fixture.assert_outside_untouched();
 }
 
@@ -141,7 +151,7 @@ fn a_skill_folder_linked_outside_is_never_read_into_or_written_into() {
 }
 
 #[test]
-fn deleting_a_skill_folder_linked_outside_trashes_the_link_not_its_target() {
+fn deleting_a_skill_folder_linked_outside_hands_the_link_to_the_trash_not_its_target() {
     let fixture = Fixture::new();
     let link = fixture.skills().join("linked");
     symlink(fixture.outside.path(), &link).unwrap();
@@ -153,6 +163,7 @@ fn deleting_a_skill_folder_linked_outside_trashes_the_link_not_its_target() {
     })
     .unwrap();
 
+    // The path handling's answer: what would go to the Trash is the link itself.
     let trashed = trashed.expect("the Trash was asked");
     assert_eq!(trashed.file_name(), link.file_name());
     assert!(fs::symlink_metadata(&trashed).unwrap().is_symlink());
@@ -273,4 +284,92 @@ fn a_skill_linked_into_another_hidden_folder_is_refused() {
             "hidden"
         );
     }
+}
+
+/// Each entry as the Skills page receives it, by name: whether it is a link.
+fn links_in(root: &Path, folder: &str) -> Vec<(String, bool)> {
+    let mut entries: Vec<_> = list_entries(root, folder)
+        .unwrap()
+        .into_iter()
+        .map(|entry| {
+            let sent = serde_json::to_value(&entry).unwrap();
+            (entry.name, sent["link"] == serde_json::Value::Bool(true))
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
+#[test]
+fn a_listing_says_which_entries_are_links() {
+    let fixture = Fixture::new();
+    symlink(fixture.outside.path(), fixture.skills().join("out")).unwrap();
+    symlink(
+        fixture.skills().join("real"),
+        fixture.skills().join("alias"),
+    )
+    .unwrap();
+    symlink(
+        fixture.outside("SKILL.md"),
+        fixture.skills().join("real/linked.md"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        links_in(fixture.root(), ".atlas/skills"),
+        [
+            ("alias".to_string(), true),
+            ("out".to_string(), true),
+            ("real".to_string(), false)
+        ]
+    );
+    assert_eq!(
+        links_in(fixture.root(), ".atlas/skills/real"),
+        [
+            ("SKILL.md".to_string(), false),
+            ("linked.md".to_string(), true)
+        ]
+    );
+}
+
+#[test]
+fn a_save_over_a_hard_linked_skill_md_leaves_the_other_name_as_it_was() {
+    let fixture = Fixture::new();
+    let other = fixture.root().join("Notes/copy.md");
+    fs::create_dir(fixture.root().join("Notes")).unwrap();
+    fs::hard_link(fixture.skills().join("real/SKILL.md"), &other).unwrap();
+
+    write_text(
+        fixture.root(),
+        ".atlas/skills/real/SKILL.md",
+        "saved",
+        BasedOn::ANY,
+    )
+    .unwrap();
+
+    // The save renames a new file into place, so only SKILL.md's name has the new text.
+    assert_eq!(
+        fs::read_to_string(fixture.skills().join("real/SKILL.md")).unwrap(),
+        "saved"
+    );
+    assert_eq!(fs::read_to_string(&other).unwrap(), "real");
+}
+
+/// `.atlas/skills/x -> ../automations` lands in `.atlas/automations`. That is
+/// followed: the path already names `.atlas`, and anything under it can be
+/// read by naming it, so the link reaches nothing a path could not.
+#[test]
+fn a_skill_linked_to_another_atlas_folder_is_followed() {
+    let fixture = Fixture::new();
+    let automations = fixture.root().join(".atlas/automations");
+    fs::create_dir(&automations).unwrap();
+    fs::write(automations.join("SKILL.md"), "automation").unwrap();
+    symlink("../automations", fixture.skills().join("x")).unwrap();
+
+    assert_eq!(
+        read_text(fixture.root(), ".atlas/skills/x/SKILL.md")
+            .unwrap()
+            .text,
+        "automation"
+    );
 }

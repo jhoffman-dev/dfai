@@ -332,10 +332,14 @@ describe('a parse→edit round trip', () => {
 describe('skillDeletionWarning', () => {
   it('says the whole folder goes, naming its other files and that deeper ones go too', () => {
     expect(
-      skillDeletionWarning('weekly-review', [
-        '.atlas/skills/weekly-review/reference.md',
-        '.atlas/skills/weekly-review/scripts/run.sh',
-      ]),
+      skillDeletionWarning('weekly-review', {
+        link: false,
+        otherFiles: [
+          '.atlas/skills/weekly-review/reference.md',
+          '.atlas/skills/weekly-review/scripts/run.sh',
+        ],
+        links: [],
+      }),
     ).toBe(
       'Delete “weekly-review”? Its whole folder goes to the Trash, where it can be got back, ' +
         'with 2 other files: reference.md, scripts/run.sh — and everything in its subfolders, ' +
@@ -344,9 +348,43 @@ describe('skillDeletionWarning', () => {
   });
 
   it('says only SKILL.md goes when the folder holds nothing else', () => {
-    expect(skillDeletionWarning('daily', [])).toBe(
+    expect(skillDeletionWarning('daily', { link: false, otherFiles: [], links: [] })).toBe(
       'Delete “daily”? Its folder, holding only SKILL.md, goes to the Trash, where it can be got back.',
     );
+  });
+
+  it('says only the link goes when the folder is a link (#169)', () => {
+    expect(skillDeletionWarning('alias', { link: true, otherFiles: [], links: [] })).toBe(
+      'Delete “alias”? Its folder is a link: only the link goes to the Trash, where it can be ' +
+        'got back, and what it points at stays where it is.',
+    );
+  });
+
+  it('names the links inside the folder, which go as links (#169)', () => {
+    expect(
+      skillDeletionWarning('weekly-review', {
+        link: false,
+        otherFiles: [],
+        links: ['.atlas/skills/weekly-review/scripts', '.atlas/skills/weekly-review/ref.md'],
+      }),
+    ).toBe(
+      'Delete “weekly-review”? Its whole folder goes to the Trash, where it can be got back. ' +
+        'These are links, so only the links go and what they point at stays where it is: ' +
+        'scripts, ref.md.',
+    );
+  });
+});
+
+describe('a skill whose folder cannot be read (#169)', () => {
+  it('says why, as a problem with the file', () => {
+    const reading = skillReadingOf({
+      folder: 'weekly-review',
+      file: { unreadable: true, folderRefusal: 'path escapes the vault' },
+    });
+
+    expect(reading.problems).toEqual([
+      { field: 'file', message: 'The skill’s folder cannot be read: path escapes the vault.' },
+    ]);
   });
 });
 
