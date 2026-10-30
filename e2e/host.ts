@@ -497,6 +497,8 @@ export interface FakeHost {
   holdEchoes(): Promise<() => Promise<void>>;
   /** Makes the next call of this command fail with this message, as the Rust host would answer `Err`. */
   failNext(command: string, message: string): void;
+  /** What the page reported through `report_error` — a failure it caught before the app could handle it. */
+  reportedErrors(): string[];
   /**
    * The Activity log's file for the vault open now, as `activity.rs` keeps it
    * in the app's data folder — here, in memory, one per vault.
@@ -878,6 +880,7 @@ export async function installHost(
   const activityFiles = new Map<string, string>();
   /** Commands told to fail once, and why. */
   const failures = new Map<string, string>();
+  const reportedErrors: string[] = [];
   const secrets = new Map<string, string>();
   /** The sites each secret may be sent to, as `secrets.rs` keeps them beside it. */
   const bindings = new Map<string, readonly string[]>();
@@ -1122,6 +1125,10 @@ export async function installHost(
       }
       // What @tauri-apps/api/app asks for; without these the status bar reports
       // a failure on every page, which shows up as an alert in every test.
+      // As `lib.rs` does: logged, and nothing answered.
+      case 'report_error':
+        reportedErrors.push((args as { message: string }).message);
+        return null;
       case 'plugin:app|name':
         return 'DFAI';
       case 'plugin:app|version':
@@ -2285,6 +2292,7 @@ export async function installHost(
       return () => hold(false);
     },
     failNext: (command, message) => void failures.set(command, message),
+    reportedErrors: () => [...reportedErrors],
     activityLog: () => activityFiles.get(openRoot()) ?? '',
     seedActivity: (root, text) => void activityFiles.set(root, text),
     trashed: () => [...trashed],

@@ -99,3 +99,25 @@ test('a command the stub host has no answer for fails the test', async ({ page }
   // The page saw a refusal and nothing here fails; only the stub's own record can.
   expect(rejected).toBe(true);
 });
+
+/*
+ * `report_error` (`lib.rs`) logs what the page caught and answers nothing, so
+ * a stub that had no answer for it failed every test where WebKit reported a
+ * ResizeObserver loop. The stub keeps what was reported for a spec to read.
+ */
+test('the stub host takes a reported error as the real one does: answered, and kept', async ({
+  page,
+}) => {
+  const vault = await createVault();
+  const host = await installHost(page, vault);
+  await page.goto('/');
+  const answered = await page.evaluate(() =>
+    (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (c: string, a?: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__.invoke('report_error', { message: 'Larkspur failed to load @ app.js:1' }),
+  );
+  expect(answered).toBeNull();
+  expect(host.reportedErrors()).toContain('Larkspur failed to load @ app.js:1');
+});
