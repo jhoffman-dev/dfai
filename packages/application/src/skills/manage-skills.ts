@@ -10,17 +10,15 @@ import {
   skillDraftProblems,
   skillFrontmatterChanges,
   SKILLS_DIRECTORY,
-  parentVaultPath,
   splitFrontmatter,
   type SkillDraft,
   type SkillFolderContents,
   type VaultPath,
-  vaultPathName,
 } from '@dfai/domain';
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
-import { filesAndLinksUnder } from '../vault/delete-entry.ts';
+import { filesAndLinksUnder, isListedAsLink } from '../vault/delete-entry.ts';
 import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
 import { listSkillFolders, readSkillFileAt, skillFileOf, type SkillFile } from './skills.ts';
 
@@ -270,7 +268,7 @@ export async function skillFolderContents({
   fs: Pick<VaultFsPort, 'listDirectory'>;
   skill: Pick<SkillFile, 'folder' | 'path'>;
 }): Promise<SkillFolderContents> {
-  if (await isLink(fs, skill.folder)) return { link: true, otherFiles: [], links: [] };
+  if (await isListedAsLink(fs, skill.folder)) return { link: true, otherFiles: [], links: [] };
   const { files, links } = await filesAndLinksUnder({ fs, folder: skill.folder });
   const named = (path: VaultPath) => !isDotted(skill.folder, path);
   return {
@@ -282,21 +280,14 @@ export async function skillFolderContents({
   };
 }
 
-/** Whether the folder above lists `path` as a link. */
-async function isLink(fs: Pick<VaultFsPort, 'listDirectory'>, path: VaultPath): Promise<boolean> {
-  const name = vaultPathName(path);
-  const entries = await fs.listDirectory(parentVaultPath(path));
-  return entries.some((entry) => entry.name === name && entry.link === true);
-}
-
 /**
  * Puts a skill's whole folder in the system Trash, where it can be got back,
  * only while its SKILL.md is unchanged since `skill` read it — checked after
  * the folder is walked, right before the Trash. Refused for a SKILL.md that
- * is there but cannot be read. A folder that is a link is trashed as the link
- * whatever it points at, readable or not: nothing it points at goes, so there
- * is nothing to hold still (#169). Answers what went with it, so the person
- * can be told.
+ * is there but cannot be read. A folder that is a link, or one whose SKILL.md
+ * is, is trashed whatever the link points at, readable or not: the link goes
+ * as a link and nothing it points at goes, so there is nothing to hold still
+ * (#169). Answers what went with it, so the person can be told.
  */
 export async function deleteSkill({
   fs,
@@ -306,7 +297,10 @@ export async function deleteSkill({
   skill: SkillFile;
 }): Promise<{ readonly folder: VaultPath } & SkillFolderContents> {
   const contents = await skillFolderContents({ fs, skill });
-  if (!contents.link) {
+  const skillFileLinked = contents.links.some(
+    (path) => path.toLowerCase() === skill.path.toLowerCase(),
+  );
+  if (!contents.link && !skillFileLinked) {
     refuseUnreadable(skill, 'deleted');
     await refuseUnlessUnchanged(fs, skill);
   }

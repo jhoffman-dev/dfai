@@ -27,6 +27,7 @@ export type {
   SkillDraft,
   SkillField,
   SkillFileContents,
+  SkillFileRefusal,
   SkillFileState,
   SkillFolderContents,
   SkillProblem,

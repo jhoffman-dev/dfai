@@ -10,6 +10,10 @@ export interface DeletionSubject {
   readonly notes: number;
   /** For a folder: how many other files go with it, or null while they are counted. */
   readonly otherFiles: number | null;
+  /** For a folder: the links in it, by their names within it, which go as links. */
+  readonly links?: readonly string[];
+  /** For a folder: whether it is itself a link, so only the link goes. */
+  readonly link?: boolean;
   /** Names of the notes open with typing not yet saved, which would be lost. */
   readonly unsaved: readonly string[];
   /** What stops working once it is gone — a template's uses — said before it goes. */
@@ -19,7 +23,21 @@ export interface DeletionSubject {
 const counted = (count: number, one: string, many: string) =>
   `${count} ${count === 1 ? one : many}`;
 
-function contentsOf({ notes, otherFiles }: DeletionSubject): string {
+const ONLY_THE_LINK =
+  'It is a link: only the link goes to the Trash, and what it points at stays where it is.';
+
+function contentsOf(subject: DeletionSubject): string {
+  if (subject.link === true) return ONLY_THE_LINK;
+  const links = subject.links ?? [];
+  const linked =
+    links.length === 0
+      ? ''
+      : ' These are links, so only the links go and what they point at stays where it is: ' +
+        `${links.join(', ')}.`;
+  return `${filesOf(subject)}${linked}`;
+}
+
+function filesOf({ notes, otherFiles }: DeletionSubject): string {
   const parts = [
     notes > 0 ? counted(notes, 'note', 'notes') : null,
     otherFiles !== null && otherFiles > 0 ? counted(otherFiles, 'other file', 'other files') : null,

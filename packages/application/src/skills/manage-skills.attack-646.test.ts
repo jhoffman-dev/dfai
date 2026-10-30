@@ -52,7 +52,7 @@ describe('attack-646: a real skill folder whose SKILL.md links out of the vault'
   // link as a link. A linked-out SKILL.md is the same — trashing the folder
   // takes only the link — yet deleteSkill refuses it as unreadable, and the
   // person has no way to delete the skill in the app.
-  it.fails('is deleted: the Trash takes the folder, and SKILL.md goes as the link', async () => {
+  it('is deleted: the Trash takes the folder, and SKILL.md goes as the link', async () => {
     const { fs, trashed } = skillMdLinkedOut();
     const skill = await readSkill({ fs, markdown, name: 'weekly-review' });
     if (skill === null) throw new Error('no skill');
@@ -65,7 +65,7 @@ describe('attack-646: a real skill folder whose SKILL.md links out of the vault'
   // "...and says why" (#169): a linked-out folder is told with the host's
   // reason; a linked-out SKILL.md gets only the generic "may be too large,
   // not text, or not allowed", though the listing marks it a link.
-  it.fails('says why it cannot be read: SKILL.md is a link the host refuses', async () => {
+  it('says why it cannot be read: SKILL.md is a link the host refuses', async () => {
     const { fs } = skillMdLinkedOut();
 
     const skill = await readSkill({ fs, markdown, name: 'weekly-review' });

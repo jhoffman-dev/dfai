@@ -45,21 +45,18 @@ describe('attack-646: leaveOut with a skill linked to another skill', () => {
   // warns that the person's .gitignore leaves `.atlas/skills/` out — though
   // both the link and the real skill are in git. The new `link` flag is there
   // to stop the walk; leave-out.ts does not read it.
-  it.fails(
-    'names nothing as ignored when git tracks the link and the skill it points at',
-    async () => {
-      const { git } = scriptedGit({
-        script: { status: said(statusText()) },
-        vault: new Map([
-          ['.atlas/skills/real/SKILL.md', 'real'],
-          ['.atlas/skills/alias', '../real'],
-        ]),
-      });
-      const { port: files } = memorySyncFiles();
+  it('names nothing as ignored when git tracks the link and the skill it points at', async () => {
+    const { git } = scriptedGit({
+      script: { status: said(statusText()) },
+      vault: new Map([
+        ['.atlas/skills/real/SKILL.md', 'real'],
+        ['.atlas/skills/alias', '../real'],
+      ]),
+    });
+    const { port: files } = memorySyncFiles();
 
-      const { ignored } = await leaveOut({ git, fs, files });
+    const { ignored } = await leaveOut({ git, fs, files });
 
-      expect(ignored).toEqual([]);
-    },
-  );
+    expect(ignored).toEqual([]);
+  });
 });

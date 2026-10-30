@@ -7,6 +7,7 @@ import {
   skillFolderNamed,
   SKILLS_DIRECTORY,
   splitFrontmatter,
+  type SkillFileRefusal,
   type SkillFileState,
   type SkillReading,
   type VaultEntry,
@@ -48,8 +49,8 @@ export type SkillFileRead =
   | { readonly kind: 'missing' }
   | {
       readonly kind: 'unreadable';
-      /** Why the host would not list SKILL.md's folder, when that is what stopped the read. */
-      readonly folderRefusal?: string;
+      /** Why the host would not read it, when its folder or SKILL.md itself is a link it will not follow. */
+      readonly refusal?: SkillFileRefusal;
     };
 
 type SkillPorts = {
@@ -117,10 +118,8 @@ export async function readSkillIn(ports: SkillPorts, folder: VaultEntry): Promis
 }
 
 function unreadableFile(read: SkillFileRead): SkillFileState {
-  const refusal = read.kind === 'unreadable' ? read.folderRefusal : undefined;
-  return refusal === undefined
-    ? { unreadable: true }
-    : { unreadable: true, folderRefusal: refusal };
+  const refusal = read.kind === 'unreadable' ? read.refusal : undefined;
+  return refusal === undefined ? { unreadable: true } : { unreadable: true, refusal };
 }
 
 /** A skill from what reading its SKILL.md found. */
@@ -169,7 +168,8 @@ export function skillFileOf({
  * the folder still lists the file: only a file not listed is missing. A
  * folder its parent lists but the host will not — a link out of the vault
  * (#169) — is unreadable too, with the host's reason, not a folder with no
- * SKILL.md that a save could only fail to write into.
+ * SKILL.md that a save could only fail to write into. So is a SKILL.md
+ * listed as a link the host will not read through.
  */
 export async function readSkillFileAt(
   fs: Pick<VaultFsPort, 'listDirectory' | 'readTextFile'>,
@@ -180,13 +180,14 @@ export async function readSkillFileAt(
     return { kind: 'read', text, modified };
   } catch (error) {
     if (!(error instanceof VaultAccessError)) throw error;
-    return whyNotRead(fs, path);
+    return whyNotRead(fs, path, error.message);
   }
 }
 
 async function whyNotRead(
   fs: Pick<VaultFsPort, 'listDirectory'>,
   path: VaultPath,
+  reason: string,
 ): Promise<SkillFileRead> {
   const folder = parentVaultPath(path);
   let entries: readonly VaultEntry[];
@@ -196,9 +197,13 @@ async function whyNotRead(
     if (!(error instanceof VaultAccessError)) throw error;
     // Refused, not gone, when the folder above still lists it.
     if (!(await isListed(fs, folder, 'directory'))) return { kind: 'missing' };
-    return { kind: 'unreadable', folderRefusal: error.message };
+    return { kind: 'unreadable', refusal: { by: 'folder', reason: error.message } };
   }
-  return isAmong(entries, path, 'file') ? { kind: 'unreadable' } : { kind: 'missing' };
+  const listed = entryAmong(entries, path, 'file');
+  if (listed === undefined) return { kind: 'missing' };
+  return listed.link === true
+    ? { kind: 'unreadable', refusal: { by: 'link', reason } }
+    : { kind: 'unreadable' };
 }
 
 /** Whether `path`'s folder lists it, as a `kind`, in any case as the Mac's disk reads a name. */
@@ -215,15 +220,15 @@ async function isListed(
     if (error instanceof VaultAccessError) return false;
     throw error;
   }
-  return isAmong(entries, path, kind);
+  return entryAmong(entries, path, kind) !== undefined;
 }
 
-/** Whether `entries` hold `path` as a `kind`, in any case as the Mac's disk reads a name. */
-function isAmong(
+/** The entry `entries` hold for `path` as a `kind`, in any case as the Mac's disk reads a name. */
+function entryAmong(
   entries: readonly VaultEntry[],
   path: VaultPath,
   kind: VaultEntry['kind'],
-): boolean {
+): VaultEntry | undefined {
   const name = vaultPathName(path).toLowerCase();
-  return entries.some((entry) => entry.kind === kind && entry.name.toLowerCase() === name);
+  return entries.find((entry) => entry.kind === kind && entry.name.toLowerCase() === name);
 }

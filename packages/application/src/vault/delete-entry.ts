@@ -1,4 +1,11 @@
-import { deleteRefusal, notesUnder, type MovableEntry, type VaultPath } from '@dfai/domain';
+import {
+  deleteRefusal,
+  notesUnder,
+  parentVaultPath,
+  vaultPathName,
+  type MovableEntry,
+  type VaultPath,
+} from '@dfai/domain';
 import type { IndexPort } from '../index/ports.ts';
 import { forgetNotes } from '../index/refresh-index.ts';
 import { withDeclaredType } from './declared-type.ts';
@@ -34,14 +41,26 @@ export function previewDeletion({
 }
 
 /**
- * How deep a folder is walked for the count. A link to a folder lists as a
- * folder, and a link back up would otherwise be walked for ever.
+ * How deep a folder is walked for the count. Links are not walked into, but a
+ * host that does not mark them lists a link to a folder as a folder, and a
+ * link back up would otherwise be walked for ever.
  */
 const DEEPEST = 32;
+
+/** What else deleting a folder takes, as its listing shows it. */
+export interface OtherFilesCount {
+  /** Whether the folder is itself a link: then only the link goes, and nothing in it is counted. */
+  readonly link: boolean;
+  /** How many files it holds besides its notes. */
+  readonly count: number;
+  /** The links it holds, which go as links: what they point at stays (#169). */
+  readonly links: readonly VaultPath[];
+}
 
 /**
  * How many files deleting `entry` takes besides its notes — images, PDFs,
  * anything the index does not hold — so the question can say what really goes.
+ * The Trash takes a link as a link, so a link is named, never walked into.
  */
 export async function countOtherFiles({
   fs,
@@ -51,47 +70,47 @@ export async function countOtherFiles({
   fs: Pick<VaultFsPort, 'listDirectory'>;
   entry: MovableEntry;
   notes: readonly VaultPath[];
-}): Promise<number> {
-  if (entry.kind !== 'directory') return 0;
+}): Promise<OtherFilesCount> {
+  if (entry.kind !== 'directory') return { link: false, count: 0, links: [] };
+  if (await isListedAsLink(fs, entry.path)) return { link: true, count: 0, links: [] };
   const known = new Set<string>(notes);
-  const files = await filesUnder({ fs, folder: entry.path });
-  return files.filter((path) => !known.has(path)).length;
+  const { files, links } = await filesAndLinksUnder({ fs, folder: entry.path });
+  return { link: false, count: files.filter((path) => !known.has(path)).length, links };
 }
 
-type FolderWalk = { fs: Pick<VaultFsPort, 'listDirectory'>; folder: VaultPath };
-
-/** Every file in `folder` and the folders inside it, as deep as {@link DEEPEST}. */
-export async function filesUnder(walk: FolderWalk): Promise<VaultPath[]> {
-  return (await walkFolder({ ...walk, intoLinks: true })).files;
+/** Whether the folder above lists `path` as a link. */
+export async function isListedAsLink(
+  fs: Pick<VaultFsPort, 'listDirectory'>,
+  path: VaultPath,
+): Promise<boolean> {
+  const name = vaultPathName(path);
+  const entries = await fs.listDirectory(parentVaultPath(path));
+  return entries.some((entry) => entry.name === name && entry.link === true);
 }
 
 /**
- * The files in `folder` and the folders inside it, and apart from them the
- * links, which a Trash takes as links: neither walked into nor counted as
- * what they point at (#169). Only as the host says, which links it marks.
+ * The files in `folder` and the folders inside it, as deep as {@link DEEPEST},
+ * and apart from them the links, which a Trash takes as links: neither walked
+ * into nor counted as what they point at (#169). Only as the host says, which
+ * links it marks.
  */
-export async function filesAndLinksUnder(
-  walk: FolderWalk,
-): Promise<{ files: VaultPath[]; links: VaultPath[] }> {
-  return walkFolder({ ...walk, intoLinks: false });
-}
-
-async function walkFolder({
+export async function filesAndLinksUnder({
   fs,
   folder,
-  intoLinks,
-}: FolderWalk & { intoLinks: boolean }): Promise<{ files: VaultPath[]; links: VaultPath[] }> {
+}: {
+  fs: Pick<VaultFsPort, 'listDirectory'>;
+  folder: VaultPath;
+}): Promise<{ files: VaultPath[]; links: VaultPath[] }> {
   const files: VaultPath[] = [];
   const links: VaultPath[] = [];
   let level: VaultPath[] = [folder];
   for (let depth = 0; depth < DEEPEST && level.length > 0; depth += 1) {
     const listings = await Promise.all(level.map((each) => fs.listDirectory(each)));
     const listed = listings.flat();
-    const linked = intoLinks ? [] : listed.filter((item) => item.link === true);
-    const entries = intoLinks ? listed : listed.filter((item) => item.link !== true);
-    links.push(...linked.map((item) => item.path));
-    files.push(...entries.filter((item) => item.kind === 'file').map((item) => item.path));
-    level = entries.filter((item) => item.kind === 'directory').map((item) => item.path);
+    links.push(...listed.filter((item) => item.link === true).map((item) => item.path));
+    const own = listed.filter((item) => item.link !== true);
+    files.push(...own.filter((item) => item.kind === 'file').map((item) => item.path));
+    level = own.filter((item) => item.kind === 'directory').map((item) => item.path);
   }
   return { files, links };
 }

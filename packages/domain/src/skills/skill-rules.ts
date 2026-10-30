@@ -245,20 +245,27 @@ function declaredNameProblem(folder: string, declared: string | null): SkillProb
 }
 
 /** What SKILL.md was when its folder was read: its contents, unreadable, or not there. */
+/** Why the host would not read SKILL.md, when it said: its folder or SKILL.md itself is a link it will not follow (#169). */
+export interface SkillFileRefusal {
+  readonly by: 'folder' | 'link';
+  readonly reason: string;
+}
+
 export type SkillFileState =
-  | SkillFileContents
-  | {
-      readonly unreadable: true;
-      /** Why the host would not list the skill's folder, when that is what stopped the read (#169). */
-      readonly folderRefusal?: string;
-    }
-  | null;
+  SkillFileContents | { readonly unreadable: true; readonly refusal?: SkillFileRefusal } | null;
 
 /**
  * What is said of a SKILL.md that is there but cannot be read: DFAI's own
  * words, never the host's, which can name the Mac's folders (ADR-0017).
  */
 export const SKILL_FILE_UNREADABLE = `${SKILL_FILE} is there but cannot be read: it may be too large, not text, or not allowed.`;
+
+function unreadableMessage(refusal: SkillFileRefusal | undefined): string {
+  if (refusal === undefined) return SKILL_FILE_UNREADABLE;
+  return refusal.by === 'folder'
+    ? `The skill’s folder cannot be read: ${refusal.reason}.`
+    : `${SKILL_FILE} is a link that cannot be followed: ${refusal.reason}.`;
+}
 
 /** What is wrong with a folder's own name, which is the skill's. */
 function folderNameProblems(folder: string): SkillProblem[] {
@@ -301,13 +308,7 @@ export function skillReadingOf({
 }): SkillReading {
   if (file === null) return emptyReading(folder, `The folder has no ${SKILL_FILE}.`);
   if ('unreadable' in file) {
-    const refusal = file.folderRefusal;
-    return emptyReading(
-      folder,
-      refusal === undefined
-        ? SKILL_FILE_UNREADABLE
-        : `The skill’s folder cannot be read: ${refusal}.`,
-    );
+    return emptyReading(folder, unreadableMessage(file.refusal));
   }
   const declaredName = textOrNull(file.properties['name']);
   const description = textOrNull(file.properties['description']) ?? '';

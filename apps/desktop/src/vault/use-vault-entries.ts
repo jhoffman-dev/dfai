@@ -19,6 +19,7 @@ import {
 } from '@dfai/domain';
 import {
   countOtherFiles,
+  type OtherFilesCount,
   createFolder,
   deleteEntry,
   linksToUpdate,
@@ -121,6 +122,16 @@ const clashLine = ({ name, opens }: NameClash): string =>
     ? `More than one note now shares a name with ${CHAT_NOTE_LABEL}; links to that name open the chat note.`
     : `More than one note is called “${name}”: [[${name}]] now opens ${opens}.`;
 
+/** What the question says of a folder's other files: nothing yet until they are counted for it. */
+function otherFilesOf(
+  folder: VaultPath,
+  counted: ({ for: VaultPath } & OtherFilesCount) | null,
+): Pick<DeletionSubject, 'otherFiles' | 'links' | 'link'> {
+  if (counted?.for !== folder) return { otherFiles: null };
+  const within = (path: VaultPath) => path.slice(folder.length + 1);
+  return { otherFiles: counted.count, links: counted.links.map(within), link: counted.link };
+}
+
 /**
  * Making, renaming, moving and deleting in Pages, and everything that has to
  * follow: the panes, the tree, the index and the one-overlay rule.
@@ -136,7 +147,7 @@ export function useVaultEntries(ports: VaultEntryPorts, notePaths: readonly Vaul
   const [doomed, setDoomed] = useState<MovableEntry | null>(null);
   /** What the asker wants done once the entry is gone — a type's tabs land on the next view. */
   const afterDelete = useRef<(() => void) | null>(null);
-  const [otherFiles, setOtherFiles] = useState<{ for: VaultPath; count: number } | null>(null);
+  const [otherFiles, setOtherFiles] = useState<({ for: VaultPath } & OtherFilesCount) | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [linksLeft, setLinksLeft] = useState<{ update: LinkUpdate; entry: MovableEntry } | null>(
     null,
@@ -321,8 +332,8 @@ export function useVaultEntries(ports: VaultEntryPorts, notePaths: readonly Vaul
     if (doomed === null || doomed.kind !== 'directory') return;
     let cancelled = false;
     countOtherFiles({ fs: ports.fs, entry: doomed, notes: notePaths })
-      .then((count) => {
-        if (!cancelled) setOtherFiles({ for: doomed.path, count });
+      .then((counted) => {
+        if (!cancelled) setOtherFiles({ for: doomed.path, ...counted });
       })
       // Safe to leave uncounted: the question still names the folder and its
       // notes, and the Trash keeps everything whatever the count said.
@@ -340,7 +351,7 @@ export function useVaultEntries(ports: VaultEntryPorts, notePaths: readonly Vaul
         name: shownName(doomed),
         kind: doomed.kind === 'directory' ? 'folder' : 'note',
         notes: preview.notes.length,
-        otherFiles: otherFiles?.for === doomed.path ? otherFiles.count : null,
+        ...otherFilesOf(doomed.path, otherFiles),
         unsaved: preview.unsaved.map(noteTitle),
       },
       confirm: () => confirmDelete(doomed),
