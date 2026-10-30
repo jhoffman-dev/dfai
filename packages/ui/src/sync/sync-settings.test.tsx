@@ -22,6 +22,7 @@ const view = (overrides: Partial<SyncSettingsView> = {}): SyncSettingsView => ({
   thisMac: 'Studio',
   automationsMac: 'Studio',
   automationsHere: true,
+  claiming: false,
   conflicts: [],
   notSynced: [],
   ignored: [],
@@ -101,6 +102,18 @@ describe('SyncSettings', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     await userEvent.click(toggle);
     expect(onClaimAutomations).toHaveBeenCalledOnce();
+  });
+
+  it('holds the automations switch while a claim waits its turn, and says why one named no Mac (#630 review)', () => {
+    show({
+      automationsHere: false,
+      automationsMac: 'Laptop',
+      claiming: true,
+      problem: 'This Mac could not be named in the vault’s settings: the disk is full',
+    });
+    const toggle = screen.getByRole('switch', { name: 'Run automations on this Mac' });
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/could not be named.*the disk is full/)).toBeTruthy();
   });
 
   it('keeps the automations switch on and still on the Mac that has them', () => {

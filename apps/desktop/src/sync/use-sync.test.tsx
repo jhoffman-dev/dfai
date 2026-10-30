@@ -155,7 +155,13 @@ function setUpHook({
   edits?: { feed: SyncOptions['edits']; tell: () => void };
   query?: ReturnType<typeof queryWrapper>;
 } = {}) {
-  const { git, called } = scriptedGit({ script });
+  // GitHub holds the settings this Mac has: a claim made here is shared (#630 attack).
+  const onGitHub: GitScript = {
+    remoteBranchExists: said(`${'f'.repeat(40)}\n`),
+    remoteSettingsExist: OK,
+    remoteSettings: said(`---\n${settings}\n---\n`),
+  };
+  const { git, called } = scriptedGit({ script: { ...onGitHub, ...script } });
   const order: string[] = [];
   const closeTasks: (() => Promise<void>)[] = [];
   const activity = recordingActivity();
@@ -430,6 +436,31 @@ describe('useSync: sending and bringing in by itself (A29-01)', () => {
     expect(hook.result.current.behind).toBe(0);
   });
 
+  it('syncs at once when a look finds this Mac’s claim not on GitHub, and not while paused (#630 attack)', async () => {
+    vi.useFakeTimers({ now: START });
+    const model = modelGit();
+    // The claim is here; GitHub, as the last fetch left it, still names the desk Mac.
+    const desk = said(
+      '---\nsync: github\nautomationsMac: mac-desk\nautomationsMacName: Desk\n---\n',
+    );
+    const { hook, called, clock, pauses } = setUpHook({
+      script: { ...model.script, remoteSettings: desk },
+    });
+    await settles(() => expect(hook.result.current.phase.kind).toBe('synced'));
+    const syncs = called('addAll').length;
+
+    await wait(clock, 60_000);
+
+    // The look, then the sync it asked for, which pushes the claim.
+    await settles(() => expect(called('addAll').length).toBe(syncs + 1));
+    expect(hook.result.current.claimPending).toEqual({ was: 'Desk' });
+
+    pauses.set('/Users/j/Notes', true);
+    const whilePaused = called('addAll').length;
+    await wait(clock, 60_000);
+    expect(called('addAll').length).toBe(whilePaused);
+  });
+
   it('waits for typing to stop before bringing other Macs’ changes in, showing the vault behind', async () => {
     vi.useFakeTimers({ now: START });
     const model = modelGit();
@@ -557,6 +588,63 @@ describe('useSync: sending and bringing in by itself (A29-01)', () => {
     await waitFor(() => expect(written.at(-1)).toContain('syncPushDelay: 120'));
     act(() => hook.result.current.setPullInterval(5));
     await waitFor(() => expect(written.at(-1)).toContain('syncInterval: 5'));
+  });
+
+  it('leaves who runs the automations as the file has it when the timing is saved (#630 review)', async () => {
+    // The note as read when the vault opened names Studio; a pull since brought the desk Mac's claim.
+    let onDisk = `---\n${SET_UP}\n---\n`;
+    const { hook, options } = setUpHook({ script: modelGit().script });
+    hook.rerender({
+      ...options,
+      fs: {
+        ...options.fs,
+        writeTextFile: async ({ contents }) => {
+          onDisk = contents;
+          return 2;
+        },
+        readTextFile: async () => ({ text: onDisk, modified: 1 }),
+        listDirectory: async () => [],
+      },
+    });
+    await waitFor(() => expect(hook.result.current.settings?.automationsMac).toBe('mac-studio'));
+    onDisk = '---\nsync: github\nautomationsMac: mac-desk\nautomationsMacName: Desk\n---\n';
+
+    act(() => hook.result.current.setPullInterval(15));
+
+    await waitFor(() => expect(onDisk).toContain('syncInterval: 15'));
+    expect(onDisk).toContain('automationsMac: mac-desk');
+    expect(onDisk).toContain('automationsMacName: Desk');
+  });
+
+  it('shows on the card why a Settings → Sync claim named no Mac, busy while it waited (#630 review)', async () => {
+    const { hook, options } = setUpHook({ script: modelGit().script, macId: 'mac-laptop' });
+    let refuse: () => void = () => undefined;
+    const refused = new Promise<void>((resolve) => (refuse = resolve));
+    hook.rerender({
+      ...options,
+      fs: {
+        ...options.fs,
+        readTextFile: async () => ({ text: `---\n${SET_UP}\n---\n`, modified: 1 }),
+        writeTextFile: async () => {
+          await refused;
+          throw new Error('the disk is full');
+        },
+        listDirectory: async () => [],
+      },
+    });
+    await waitFor(() => expect(hook.result.current.phase.kind).toBe('synced'));
+    await waitFor(() => expect(hook.result.current.settings).not.toBeNull());
+
+    act(() => hook.result.current.claimAutomations());
+    await waitFor(() => expect(syncSettingsView(hook.result.current, 'Notes').claiming).toBe(true));
+    refuse();
+
+    await waitFor(() =>
+      expect(syncSettingsView(hook.result.current, 'Notes').problem).toMatch(
+        /could not be named.*the disk is full$/,
+      ),
+    );
+    expect(syncSettingsView(hook.result.current, 'Notes').claiming).toBe(false);
   });
 
   it('lists the person’s GitHub repositories for the picker, and says why it cannot', async () => {

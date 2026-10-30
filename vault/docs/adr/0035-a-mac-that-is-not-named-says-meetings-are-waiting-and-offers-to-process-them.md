@@ -194,6 +194,59 @@ clears when `scheduled` goes **false to true** for this vault, and the
 catch-up reruns. That covers the button and a move made in Settings → Sync
 alike; it is not tied to the button.
 
+_(Amended 2026-10-28, #176.)_ How the claim is made:
+
+- **One writer.** `claimAutomations` (application, `sync/`) is the only code
+  that changes `automationsMac` once sync is set up; set-up's hand-over
+  names a Mac only when none is named. "Process here" and Settings → Sync
+  both call it, and Settings → Sync's own save writes only the timing keys.
+  A test holds this.
+- **Settings → Sync is not gated.** The disabled rule of part 2 is the
+  button's. The manual move stays the person's own (ADR-0025).
+- **In the vault's git turn, then a sync.** The claim waits for any sync or
+  look under way, asks the gates (with how sync stands at that moment, not
+  as last drawn), reads the settings, asks the gates again and writes, with
+  no pull in between. It then syncs at once, unless sync is paused here: a
+  paused Mac writes the claim and leaves it for the sync after it resumes.
+- **Not yet shared until GitHub has it.** A claim is unshared while the
+  settings here name this Mac, by id, and the settings on GitHub, as the
+  last fetch left `origin/<branch>`, do not. It is judged from git at every
+  pull that completes (a sync, or a look that finds nothing) and as the
+  gates are asked, so a claim written while paused or offline, committed or
+  not, is found again after a restart or after opening another vault and
+  coming back (#630 attack). While it holds, the banner and Activity say
+  "Process here is set on this Mac but not yet shared with <Mac>", the
+  gates stay shut on this Mac (`claim-unshared`), and a look that finds it
+  starts a sync at once unless sync is paused. GitHub's settings are read
+  as one blob, `cat-file blob refs/remotes/origin/<branch>:.atlas/settings.md`,
+  a host shape that takes that path alone and only for the branch checked
+  out; nothing lists the tree. Whether the note is there at all is asked
+  first by exit code (`cat-file -e`), never by git's words, which may be in
+  another language; a branch not on GitHub yet is a read that failed. The
+  other Macs' branch is named in full (`refs/remotes/origin/<branch>`) in
+  every git step, as a local branch or tag spelled `origin/<branch>` would
+  outrank the short name (#630). Settings that cannot be read count as not naming
+  this Mac, so nothing runs on a guess, and Activity says so once a vault
+  ("Automations wait: DFAI could not read this vault's settings on GitHub
+  to confirm the claim."), again only after a read has succeeded since.
+  Once GitHub names this Mac the gates open, Activity says "<Mac> now runs
+  the automations" (only for the vault open now; after a restart, once git
+  shows GitHub naming this Mac, never when another Mac's claim ended it), and the catch-ups run once.
+- **Settings → Sync shows its claim.** It is busy while the claim waits its
+  turn, and the card says why one named no Mac (a refused write, settings
+  that cannot be read, or this Mac's id not read yet).
+- **Nothing written** when the settings cannot be read, when they already
+  name this Mac by id (a renamed Mac is still named), or when another vault
+  opened before the write's turn.
+- **Two claims within one sync interval.** Both change the same key, which
+  the settings merge (#233) never merges, so it is settled as every settings
+  conflict is: the Mac whose sync merges keeps its own copy and pushes it,
+  and the other's is copied aside. The first to push then fast-forwards and
+  stands down. **The Mac that syncs second wins**; there is always one. A
+  setting the other Mac only added meanwhile merges in beside the claim. The
+  other Mac still running when the claim lands stands down at its next pull,
+  and any step already under way stops at its next ask of the gates.
+
 **This amends no accepted statement in a way that changes who writes.**
 ADR-0025's "A Mac connecting to a vault never takes the automations from
 another Mac" stays true: a person's click is not the Mac taking anything. The

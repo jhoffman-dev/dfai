@@ -123,6 +123,7 @@ export type { MeetingSummaryState, SummaryStepFacts } from './meeting-summary-st
 export {
   meetingsWaitingLine,
   meetingsWaitingReport,
+  processHereRefusal,
   waitingCountGate,
   touchesWaitingMeetings,
   waitingMacLabel,
