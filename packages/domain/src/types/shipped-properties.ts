@@ -1,4 +1,6 @@
 import { DAILY_TYPE_FILE } from '../daily/daily-note.ts';
+import { TASK_TYPE } from '../gtd/gtd-status.ts';
+import { FOCUS_PROPERTY } from '../today/chosen.ts';
 import { MEETING_TYPE } from '../meetings/meeting-header.ts';
 import { MEETING_EXTRACTION_PROPERTIES } from '../meetings/meeting-extraction-properties.ts';
 import { MEETING_SUMMARY_PROPERTIES } from '../meetings/meeting-summary-block.ts';
@@ -24,13 +26,19 @@ export type ShippedCatalogue = ReadonlyMap<string, readonly PropertyDef[]>;
  * shipped one of them lacks it, and a feature built on it fails — Accept on a
  * meeting's action item, for one, links through the Meeting type's `tasks`.
  *
- * Only DFAI's own types are here: Meeting, Proposal, Decision, Daily and
- * Block. Project, Area and Resource are PARA's, and Task's keys come with the
- * move to GTD (ADR-0029): a vault may have shaped them its own way, so what
- * they would gain stays an offer, never done without a yes.
+ * Only DFAI's own types and keys are here: Meeting, Proposal, Decision,
+ * Daily and Block, and Task's `focus`. Project, Area and Resource are
+ * PARA's, and Task's GTD keys come with the move to GTD (ADR-0029): a vault
+ * may have shaped them its own way, so what they would gain stays an offer,
+ * never done without a yes.
  *
  * Meeting is here though DFAI writes no Meeting file: the import writes its
  * keys (ADR-0027) and meeting extraction links through its relations (P29-05).
+ *
+ * Task is here for `focus` alone (#108, ADR-0029's addendum): a key of
+ * DFAI's own, which no vault shaped, the Today page's choices are written
+ * to. Added like any shipped key — never over one the type has, never again
+ * once taken off — while GTD's keys stay the move's, offered with a yes.
  */
 export const SHIPPED_PROPERTIES: ShippedCatalogue = new Map([
   ...[...PROPOSAL_TYPE_FILES, DAILY_TYPE_FILE, BLOCK_TYPE_FILE].map(
@@ -40,6 +48,7 @@ export const SHIPPED_PROPERTIES: ShippedCatalogue = new Map([
     MEETING_TYPE,
     [...MEETING_IMPORT_PROPERTIES, ...MEETING_EXTRACTION_PROPERTIES, ...MEETING_SUMMARY_PROPERTIES],
   ],
+  [TASK_TYPE, [FOCUS_PROPERTY]],
 ]);
 
 /**
@@ -81,6 +90,14 @@ export function keysRecorded(
   name: string,
 ): readonly string[] {
   return Object.hasOwn(byType, name) ? (byType[name] ?? []) : [];
+}
+
+/** The keys a record holds for the type named `name` as a type file writes it: by its folded name, as the record keys it. */
+export function keysRecordedForType(
+  byType: Readonly<Record<string, readonly string[]>>,
+  name: string,
+): readonly string[] {
+  return keysRecorded(byType, folded(name));
 }
 
 /** The keys a type file's `properties` declares, as the file writes them — whether or not DFAI can read each. */

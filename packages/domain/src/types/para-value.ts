@@ -1,3 +1,4 @@
+import { foldedTypeName, foldedTypeSql } from './note-type-sql.ts';
 import { humanizeKey } from '../page/property-label.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import {
@@ -305,8 +306,8 @@ export const PARA_VALUES_QUERY_MARK = '/* PARA values */';
 export const PARA_VALUES_QUERY_COLUMNS = ['path', 'para'] as const;
 
 /**
- * Every note of the type `typeName` — as its notes write it — that holds a
- * `para`, and what that says: what a picker groups the type's notes by.
+ * Every note of the type `typeName` — in any case, as FROM finds it — that
+ * holds a `para`, and what that says: what a picker groups the type's notes by.
  */
 export function compileParaValuesQuery(typeName: string): CompiledQuery {
   return {
@@ -315,9 +316,9 @@ export function compileParaValuesQuery(typeName: string): CompiledQuery {
       `FROM props AS para_value`,
       `WHERE para_value.key = '${PARA_KEY}'`,
       `  AND EXISTS (SELECT 1 FROM props AS para_type WHERE para_type.path = para_value.path`,
-      `    AND para_type.key = 'type' AND para_type.value_text = ?)`,
+      `    AND para_type.key = 'type' AND ${foldedTypeSql('para_type.value_text')} = ?)`,
       `ORDER BY para_value.path, para_value.idx`,
     ].join('\n'),
-    parameters: [typeName],
+    parameters: [foldedTypeName(typeName)],
   };
 }

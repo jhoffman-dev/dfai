@@ -1,17 +1,13 @@
 import type { HighlightRow, NoteVersion, VaultPath } from '@dfai/domain';
 
-/** One column of a type's SQL view. */
-export interface ViewColumnSpec {
-  readonly key: string;
-  readonly kind: string;
-  readonly many: boolean;
-}
-
+/**
+ * A type's SQL view as the index is told to make it: its name and the
+ * `SELECT` it holds (`typeViewSelectSql`). The index only runs the text, so
+ * how a cell is read stays TypeScript's (ADR-0005).
+ */
 export interface ViewTypeSpec {
   readonly name: string;
-  readonly columns: readonly ViewColumnSpec[];
-  /** Whether the view carries each note's checklist progress (`carriesChecklistProgress`). */
-  readonly progress: boolean;
+  readonly select: string;
 }
 
 export interface QueryResult {

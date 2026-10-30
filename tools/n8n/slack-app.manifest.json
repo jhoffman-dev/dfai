@@ -1,0 +1,55 @@
+{
+  "display_information": {
+    "name": "Save to DFAI",
+    "description": "Saves a Slack message, and its thread, into the DFAI Inbox."
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": true
+    },
+    "bot_user": { "display_name": "DFAI", "always_online": false },
+    "shortcuts": [
+      {
+        "name": "Save to DFAI as a note",
+        "type": "message",
+        "callback_id": "dfai_save_note",
+        "description": "Saves this message, and its thread, to the DFAI Inbox as a note"
+      },
+      {
+        "name": "Save to DFAI as a task",
+        "type": "message",
+        "callback_id": "dfai_save_task",
+        "description": "Saves this message, and its thread, to the DFAI Inbox as a task"
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "user": [
+        "channels:history",
+        "groups:history",
+        "im:history",
+        "mpim:history",
+        "reactions:read",
+        "users:read",
+        "users:read.email"
+      ],
+      "bot": ["commands", "chat:write"]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://YOUR-N8N-HOST/webhook/slack-to-dfai",
+      "user_events": ["reaction_added"]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://YOUR-N8N-HOST/webhook/slack-to-dfai"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

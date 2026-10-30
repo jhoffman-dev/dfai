@@ -67,3 +67,5 @@ export {
   viewGroupLevels,
 } from './view-groups.ts';
 export type { BoardLane, GroupChoice, GroupLine } from './view-groups.ts';
+export { typeViewSelectSql } from './type-view.ts';
+export type { TypeViewColumn, TypeViewSpec } from './type-view.ts';

@@ -84,6 +84,9 @@ export function fakeMarkdown(): MarkdownPort {
     },
     // A note's blocks are the parser's to find; a test of highlights passes its own.
     noteBlocks: () => ({ quotes: [], hidden: [] }),
+    // A tree's markdown is the adapters' to write; written here as its JSON, which is enough
+    // to show what a use-case wrote.
+    writeTree: (root) => JSON.stringify(root),
     frontmatterProperties: (frontmatter) => Object.fromEntries(frontmatterLines(frontmatter)),
     frontmatterProblem: () => null,
     frontmatterKeyTexts: (frontmatter) =>

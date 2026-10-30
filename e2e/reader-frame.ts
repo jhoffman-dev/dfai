@@ -68,3 +68,17 @@ export async function painted(page: Page, name: string): Promise<string[]> {
     [],
   );
 }
+
+/**
+ * Resolves once the frame has styled, laid out and painted what it shows now: a rendering update runs
+ * between two animation frames, and every load the chapter's CSS starts (a picture, a mask, a hovered
+ * cursor) is asked for during it. A test that a route recorded no such request waits on this, not on
+ * the network going idle: Playwright can lose "networkidle" for good once the app makes a request of
+ * its own after first going idle and the reader then opens a chapter's frame.
+ */
+export async function rendered(frame: Frame): Promise<void> {
+  await frame.evaluate(
+    () =>
+      new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))),
+  );
+}

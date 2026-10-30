@@ -112,6 +112,18 @@ describe('the vocabulary’s notes, read from the index’s tables', () => {
     ]);
   });
 
+  // Follow-up to #110: a type in any case, as FROM finds it; named folded.
+  it('take a note whose type is written in capitals or with spaces as that type', () => {
+    const { note, run } = index();
+    note('People/Mara Quill.md', 'Mara Quill', { type: 'Person' });
+    note('Terms/Larkspur.md', 'Larkspur', { type: ' TERM ' });
+    note('Notes/Persons.md', 'Persons', { type: 'persons' });
+    expect(run().map((row) => [row.path, row.type])).toEqual([
+      ['People/Mara Quill.md', 'person'],
+      ['Terms/Larkspur.md', 'term'],
+    ]);
+  });
+
   it('give a multi-typed company its variants, read as the company’s (#400)', () => {
     const { note, run } = index();
     note('Companies/Larkspur Payroll.md', 'Larkspur Payroll', {

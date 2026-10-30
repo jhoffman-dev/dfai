@@ -8,6 +8,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
+import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
 
 /** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
@@ -119,32 +120,19 @@ interface StoredNote {
   }[];
 }
 
-/** A declared property as the index is told it, to become a column of its type's view. */
-interface ViewColumn {
-  key: string;
-  kind: string;
-  many: boolean;
-}
-
-/** A type's view as the index is told to build it. */
+/** A type's view as the index is told to make it: the SELECT TypeScript wrote for it. */
 interface ViewSpec {
-  columns: readonly ViewColumn[];
-  /** Whether it carries each note's checklist progress. */
-  progress: boolean;
+  select: string;
 }
-
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * A statement written by hand, run for real by SQLite over what was indexed.
  *
- * The tables are the real index's (`files`, `props`, `relations`), and each `v_<type>` view
- * is built the way `rebuild_views` in `src-tauri/src/index.rs` builds it: its
- * own `path`, `title`, `summary` and `modified` (and `progress`, when told
- * to carry it), then a column per declared
- * property — a number's from `value_num`, a date's from `value_date`, the rest
- * from `value_text`, several values joined with ", ". A key the type does not
- * declare is not a column, as in the app. The read-only guard is reduced to
+ * The tables are the real index's (`files`, `props`, `relations`), with its
+ * indexes, and each `v_<type>` view is made as `rebuild_views` in
+ * `src-tauri/src/index.rs` makes it: from the SELECT TypeScript sent for the
+ * type (`typeViewSelectSql`), run as it is — so a type's table holds each
+ * note as a query's cells do, here as in the app. The read-only guard is reduced to
  * "reads only" — the real guard (the authorizer and `readonly`) is the Rust
  * tests' to prove. A compiled view that reads `relations` runs here too, with
  * what it binds.
@@ -169,31 +157,8 @@ function runHandWrittenSql(
     }
   }
   for (const [type, spec] of types) {
-    if (!IDENTIFIER.test(type)) continue;
-    const progress = spec.progress ? ', files.progress AS "progress"' : '';
-    const columns = spec.columns
-      .filter((column) => IDENTIFIER.test(column.key))
-      .map((column) => {
-        const source =
-          column.kind === 'number'
-            ? 'props.value_num'
-            : column.kind === 'date'
-              ? 'props.value_date'
-              : 'props.value_text';
-        const picked = `CASE WHEN props.key = '${column.key}' THEN ${source} END`;
-        const aggregate = column.many ? `group_concat(${picked}, ', ')` : `MAX(${picked})`;
-        return `, ${aggregate} AS "${column.key}"`;
-      })
-      .join('');
-    database.exec(`
-      CREATE VIEW "v_${type}" AS
-      SELECT files.path AS "path",
-             COALESCE(MAX(CASE WHEN props.key = 'title' THEN props.value_text END), files.title) AS "title",
-             files.summary AS "summary",
-             files.modified AS "modified"${progress}${columns}
-      FROM files JOIN props ON props.path = files.path
-      WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = '${type}')
-      GROUP BY files.path;`);
+    // As the index makes it: the SELECT TypeScript sent (typeViewSelectSql), run as it is.
+    database.exec(`CREATE VIEW "v_${type}" AS ${spec.select};`);
   }
   const prepared = database.prepare(statement);
   const columns = prepared.columns().map((column) => column.name);
@@ -211,7 +176,11 @@ function filesAndProps(notes: Iterable<StoredNote>): DatabaseSync {
     CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
                         modified INTEGER NOT NULL, size INTEGER NOT NULL, progress INTEGER);
     CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
-                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);`);
+                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
+    -- As index.rs indexes them: a note's own rows are sought, not scanned.
+    CREATE INDEX props_path ON props(path, key, value_text);
+    CREATE INDEX props_key ON props(key, value_text);
+    ${PROPS_TYPE_FOLD_INDEX};`);
   const file = database.prepare('INSERT INTO files VALUES (?, ?, ?, ?, ?, ?)');
   const prop = database.prepare('INSERT INTO props VALUES (?, ?, ?, ?, ?, ?, NULL)');
   for (const note of notes) {
@@ -324,7 +293,6 @@ function researchTables(): (writes: number, notes: Iterable<StoredNote>) => Data
     fillHighlights(database, stored);
     // The indexes `src-tauri/src/index.rs` makes on what these views read by note.
     database.exec(`
-      CREATE INDEX props_path ON props(path, key, value_text);
       CREATE INDEX tags_path ON tags(path);
       CREATE INDEX relations_src ON relations(src, key);
       CREATE INDEX highlights_path_idx ON highlights(path, idx);`);
@@ -531,6 +499,15 @@ export interface FakeHost {
    * the Rust host answers `Err`, and write nothing.
    */
   holdWrites(relativePath: string): (outcome?: { readonly fail: string }) => void;
+  /**
+   * Holds a move of this file — a filing out of the Inbox, say — in flight
+   * until the returned function is called. Called with `{ fail }`, the move
+   * is refused with that message, as the Rust host answers `Err`, and
+   * nothing moves.
+   */
+  holdMoves(relativePath: string): (outcome?: { readonly fail: string }) => void;
+  /** How many moves of this file have reached the host, held or not. */
+  movesFrom(relativePath: string): number;
   /**
    * Holds every read of this file in flight — on its own or in a batch —
    * until the returned function is called, so a test can make one of the
@@ -795,10 +772,20 @@ export async function installHost(
   // Rust's and is tested there; this answers the commands the app calls.
   const api = { enabled: false, token: 'token-1', rotations: 0, file: '/stub/api.json' };
   /**
-   * The routers that said they listen (`api_router_ready`), by the id each
-   * named. The real host refuses every request while this is empty (#158).
+   * The routers that said they listen (`api_router_ready`), by the id
+   * `api_router_register` gave each. The real host refuses every request while
+   * this is empty (#158). As there, a page load forgets them and refuses the
+   * ids it gave before, so a gone page's late "I listen" counts for nothing
+   * (#161).
    */
-  const routerListeners = new Set<unknown>();
+  const routerListeners = new Set<number>();
+  const routerIds = { next: 0, thisPageFrom: 0 };
+  page.on('request', (request) => {
+    // A document load, not an in-page route change: the host's `PageLoadEvent::Started`.
+    if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return;
+    routerListeners.clear();
+    routerIds.thisPageFrom = routerIds.next;
+  });
   const apiStatus = () => ({
     enabled: api.enabled,
     port: api.enabled ? STUB_API_PORT : null,
@@ -811,6 +798,8 @@ export async function installHost(
   const writes = new Map<string, number>();
   /** Files whose writes wait, and what lets them go. */
   const held = new Map<string, Promise<void>>();
+  const heldMoves = new Map<string, Promise<void>>();
+  const moves = new Map<string, number>();
   /** Files whose reads wait, and what lets them go. */
   const heldReads = new Map<
     string,
@@ -1148,6 +1137,8 @@ export async function installHost(
         // As vault_entries.rs does: refuses to write over anything, and a
         // folder into itself, and lets a case-only rename through.
         const { from, to } = args as { from: string; to: string };
+        moves.set(from, (moves.get(from) ?? 0) + 1);
+        await heldMoves.get(from);
         const { rename, lstat } = await import('node:fs/promises');
         const root = writeRoot(args);
         const source = containedPath(root, from);
@@ -1167,6 +1158,29 @@ export async function installHost(
         // that it went nowhere else. Never a permanent delete.
         const { rename, mkdir: makeDirectory } = await import('node:fs/promises');
         const entry = containedPath(writeRoot(args), path);
+        // As `vault_entries.rs` does (#235): nothing moves unless each file named is as read.
+        const { unchanged = [] } = args as {
+          unchanged?: { path: string; modified: number; digest: string }[];
+        };
+        for (const file of unchanged) {
+          const { readFile, stat: statFile } = await import('node:fs/promises');
+          const { createHash } = await import('node:crypto');
+          const named = containedPath(writeRoot(args), file.path);
+          const info = await statFile(named).catch(() => null);
+          const digest =
+            info === null
+              ? null
+              : createHash('sha256')
+                  .update(await readFile(named))
+                  .digest('hex');
+          if (
+            info === null ||
+            Math.floor(info.mtimeMs) !== file.modified ||
+            digest !== file.digest
+          ) {
+            throw 'a file changed on disk since it was read, so nothing was moved to the Trash';
+          }
+        }
         // Removed with the test's folders, whichever test bins first (#486).
         removeWithTempFolders(trashRoot);
         await makeDirectory(trashRoot, { recursive: true });
@@ -1419,7 +1433,7 @@ export async function installHost(
           // Milliseconds since the epoch are all 13 digits wide, so ordering them
           // as text below orders them in time.
           if (column === 'modified') return note.modified ?? 0;
-          if (column === 'progress' && views.get(type)?.progress === true) {
+          if (column === 'progress' && views.get(type)?.select.includes('n.progress') === true) {
             return note.progress ?? null;
           }
           if (column === 'title') {
@@ -1431,7 +1445,7 @@ export async function installHost(
           // view's group_concat joins it.
           const items = (note.properties ?? []).filter((item) => item.key === column);
           const many =
-            views.get(type)?.columns.find((declared) => declared.key === column)?.many ?? false;
+            views.get(type)?.select.includes(`group_concat(CASE WHEN p.key = '${column}'`) ?? false;
           if (many && items.length > 0) return items.map((item) => item.text).join(', ');
           return items[0]?.text ?? null;
         };
@@ -1524,8 +1538,11 @@ export async function installHost(
         const wanted = (args as { type: string }).type;
         return [...indexed.values()]
           .filter((note) =>
+            // As notes_of_type folds a type: in any case and spacing.
             (note.properties ?? []).some(
-              (property) => property.key === 'type' && property.text === wanted,
+              (property) =>
+                property.key === 'type' &&
+                property.text?.trim().toLowerCase() === wanted.trim().toLowerCase(),
             ),
           )
           .map((note) => ({ path: note.path, title: note.title }))
@@ -1922,10 +1939,13 @@ export async function installHost(
         api.rotations += 1;
         api.token = `token-${api.rotations + 1}`;
         return api.token;
+      case 'api_router_register':
+        return routerIds.next++;
       case 'api_router_ready': {
-        const { listener, ready } = args as { listener: unknown; ready: boolean };
-        if (ready) routerListeners.add(listener);
-        else routerListeners.delete(listener);
+        const { listener, ready } = args as { listener: number; ready: boolean };
+        const thisPage = listener >= routerIds.thisPageFrom && listener < routerIds.next;
+        if (ready && thisPage) routerListeners.add(listener);
+        else if (!ready) routerListeners.delete(listener);
         return null;
       }
       case 'global_capture_status':
@@ -2343,22 +2363,9 @@ export async function installHost(
         release();
       };
     },
-    holdWrites(relativePath) {
-      let release: () => void = () => {};
-      let refuse: (cause: Error) => void = () => {};
-      const holding = new Promise<void>((resolve, reject) => {
-        release = resolve;
-        refuse = reject;
-      });
-      // Handled here as well, so a refusal with no write waiting on it is not an unhandled rejection.
-      holding.catch(() => {});
-      held.set(relativePath, holding);
-      return (outcome) => {
-        held.delete(relativePath);
-        if (outcome === undefined) release();
-        else refuse(new Error(outcome.fail));
-      };
-    },
+    holdWrites: (relativePath) => holdIn(held, relativePath),
+    holdMoves: (relativePath) => holdIn(heldMoves, relativePath),
+    movesFrom: (relativePath) => moves.get(relativePath) ?? 0,
     holdReads(relativePath, options) {
       let release: () => void = () => {};
       const until = new Promise<void>((resolve) => (release = resolve));
@@ -2658,5 +2665,29 @@ function fakeCalendarEvents() {
       const others = (listed.get(calendarId) ?? []).filter((each) => each['id'] !== event['id']);
       listed.set(calendarId, event['status'] === 'cancelled' ? others : [...others, event]);
     },
+  };
+}
+
+/**
+ * Holds what waits on `relativePath` in `holds` until the returned function
+ * is called; called with `{ fail }`, it is refused with that message.
+ */
+function holdIn(
+  holds: Map<string, Promise<void>>,
+  relativePath: string,
+): (outcome?: { readonly fail: string }) => void {
+  let release: () => void = () => {};
+  let refuse: (cause: Error) => void = () => {};
+  const holding = new Promise<void>((resolve, reject) => {
+    release = resolve;
+    refuse = reject;
+  });
+  // Handled here as well, so a refusal with nothing waiting on it is not an unhandled rejection.
+  holding.catch(() => {});
+  holds.set(relativePath, holding);
+  return (outcome) => {
+    holds.delete(relativePath);
+    if (outcome === undefined) release();
+    else refuse(new Error(outcome.fail));
   };
 }

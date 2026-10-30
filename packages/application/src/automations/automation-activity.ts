@@ -11,6 +11,7 @@ import type { Clock } from '../ports.ts';
 import type { ActivityLog } from '../activity/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { appendToRuleLog } from './automation-log.ts';
+import { ClaudeUnavailableError } from './claude-step.ts';
 import { HeldForPullError } from './fresh-pull-hold.ts';
 import { VaultChangedError } from './vault-guard.ts';
 
@@ -38,6 +39,12 @@ export async function reported<Entry extends LogEntry | null>({
   try {
     entry = await carryOut();
   } catch (cause) {
+    // Its failure is an entry like any other, said as the log says it; only the runner hears it as one.
+    if (cause instanceof ClaudeUnavailableError) {
+      const report = automationEntryReport(rule, cause.entry);
+      if (report !== null) recorder.record(report);
+      throw cause;
+    }
     if (!(cause instanceof VaultChangedError) && !(cause instanceof HeldForPullError)) {
       recorder.record(automationFailedReport({ rule, doing, problem: messageWithoutPaths(cause) }));
     }

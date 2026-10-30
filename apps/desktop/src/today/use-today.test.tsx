@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import {
   createVaultPath,
+  FOCUS_PROPERTY,
   REVIEW_PROJECTS_QUERY_MARK,
   REVIEW_TASKS_QUERY_MARK,
   type ObjectType,
@@ -26,15 +27,19 @@ const PATH = createVaultPath('Tasks/Ship the page.md');
 const ROW = { path: PATH, title: 'Ship the page' };
 const TASK_TEXT = '---\ntype: task\nstatus: next-action\ndue: 2026-10-13\n---\n\n# Ship\n';
 
-const TYPES: readonly ObjectType[] = [{ name: 'task', label: 'Task', properties: [] }];
+// The Task type as the vault opening gives it `focus` (#108), so the page chooses.
+const TYPES: readonly ObjectType[] = [
+  { name: 'task', label: 'Task', properties: [FOCUS_PROPERTY] },
+];
 
 const noPane = { setPropertiesIfOpen: async () => false } as unknown as OpenEditors;
 
-function answer(sql: string): QueryResult {
+function answer(sql: string, focus: string | null = null): QueryResult {
   if (sql.startsWith(REVIEW_TASKS_QUERY_MARK)) {
     return {
-      columns: ['path', 'title', 'modified', 'status', 'due', 'defer'],
-      rows: [[PATH, 'Ship the page', NOW, 'next-action', '2026-10-13', null]],
+      // As the review statement reads every task: its recurrence too, so a change given as a rule is drawn.
+      columns: ['path', 'title', 'modified', 'status', 'due', 'defer', 'recurrence', 'focus'],
+      rows: [[PATH, 'Ship the page', NOW, 'next-action', '2026-10-13', null, null, focus]],
       truncated: false,
     };
   }
@@ -53,14 +58,17 @@ function setUp({
   types = TYPES,
   indexReady = true,
   taskText = TASK_TEXT,
+  indexedFocus = null,
 }: {
   open?: boolean;
   types?: readonly ObjectType[];
   indexReady?: boolean;
   taskText?: string;
+  /** The `focus` the index holds for the task. */
+  indexedFocus?: string | null;
 } = {}) {
   const memory = memoryVault({ [PATH]: taskText });
-  const query = vi.fn(async (sql: string) => answer(sql));
+  const query = vi.fn(async (sql: string) => answer(sql, indexedFocus));
   const ports = {
     index: fakeIndexPort({ query }),
     fs: fakeVaultFs(memory.fs),
@@ -143,6 +151,76 @@ describe('useToday', () => {
     await waitFor(() => expect(result.current.notice).not.toBeNull());
     expect(text()).toContain(`defer: ${day}`);
     expect(result.current.notice?.action).toEqual({ kind: 'defer', days });
+  });
+
+  it('chooses a task for the clock’s today, draws it under Chosen at once, and undoes it byte for byte (#108)', async () => {
+    const { result, text, onSettled } = setUp();
+    await waitFor(() => expect(result.current.page.today).not.toBeNull());
+    await act(async () => result.current.page.onChoose({ ...ROW, choice: 'choose' }));
+    await waitFor(() => expect(result.current.notice).not.toBeNull());
+    expect(text()).toBe(
+      TASK_TEXT.replace('due: 2026-10-13\n', 'due: 2026-10-13\nfocus: 2026-10-13\n'),
+    );
+    expect(result.current.notice?.action).toEqual({ kind: 'choose' });
+    const chosen = result.current.page.today?.sections.find((section) => section.id === 'chosen');
+    expect(chosen?.groups[0]?.tasks.map((task) => task.title)).toEqual(['Ship the page']);
+
+    await act(async () => result.current.notice?.onUndo());
+    await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(2));
+    expect(text()).toBe(TASK_TEXT);
+  });
+
+  it.each([
+    ['unchoose', 'focus: 2026-10-13'],
+    ['drop', 'focus: 2026-10-12'],
+  ] as const)(
+    'takes focus out to %s a task, leaving the rest as written',
+    async (choice, focus) => {
+      const taskText = TASK_TEXT.replace('due: 2026-10-13\n', `due: 2026-10-13\n${focus}\n`);
+      const { result, text } = setUp({ taskText });
+      await act(async () => result.current.page.onChoose({ ...ROW, choice }));
+      await waitFor(() => expect(result.current.notice).not.toBeNull());
+      expect(text()).toBe(TASK_TEXT);
+      expect(result.current.notice?.action).toEqual({ kind: choice });
+    },
+  );
+
+  it('moves a choice made for a later day to today, saying the day it was (#108)', async () => {
+    const taskText = TASK_TEXT.replace('due: 2026-10-13\n', 'due: 2026-10-13\nfocus: 2026-10-20\n');
+    const { result, text } = setUp({ taskText, indexedFocus: '2026-10-20' });
+    await waitFor(() => expect(result.current.page.today).not.toBeNull());
+    await act(async () =>
+      result.current.page.onChoose({ ...ROW, choice: 'choose', was: '2026-10-20' }),
+    );
+    await waitFor(() => expect(result.current.notice).not.toBeNull());
+    expect(text()).toContain('focus: 2026-10-13');
+    expect(result.current.notice?.action).toEqual({ kind: 'choose', was: '2026-10-20' });
+  });
+
+  it('offers no choosing, and writes none, in a vault whose Task type has no focus as a date (#108)', async () => {
+    const { result, text } = setUp({ types: [{ name: 'task', label: 'Task', properties: [] }] });
+    await waitFor(() => expect(result.current.page.today).not.toBeNull());
+    expect(result.current.page.today?.choosing).toBe(false);
+    await act(async () => result.current.page.onChoose({ ...ROW, choice: 'choose' }));
+    expect(text()).toBe(TASK_TEXT);
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('takes a chosen task’s focus out with its tick, and gives it back byte for byte on Undo (#108)', async () => {
+    const taskText = TASK_TEXT.replace(
+      'due: 2026-10-13\n',
+      'due: 2026-10-13\nfocus: "2026-10-13" # chosen at breakfast\n',
+    );
+    const { result, text, onSettled } = setUp({ taskText, indexedFocus: '2026-10-13' });
+    await waitFor(() => expect(result.current.page.today).not.toBeNull());
+    await act(async () => result.current.page.onDone(ROW));
+    await waitFor(() => expect(result.current.notice).not.toBeNull());
+    expect(text()).toContain('status: archive');
+    expect(text()).not.toContain('focus');
+
+    await act(async () => result.current.notice?.onUndo());
+    await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(2));
+    expect(text()).toBe(taskText);
   });
 
   it('moves a task to another status', async () => {
