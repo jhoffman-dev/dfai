@@ -13,6 +13,7 @@ import {
   vaultPathName,
   vaultPathSegments,
   VAULT_ROOT,
+  deleteThroughLinkRefusal,
   type MovableEntry,
   type NameClash,
   type VaultPath,
@@ -126,8 +127,11 @@ const clashLine = ({ name, opens }: NameClash): string =>
 function otherFilesOf(
   folder: VaultPath,
   counted: ({ for: VaultPath } & OtherFilesCount) | null,
-): Pick<DeletionSubject, 'otherFiles' | 'links' | 'link'> {
+): Pick<DeletionSubject, 'otherFiles' | 'links' | 'link' | 'refusal'> {
   if (counted?.for !== folder) return { otherFiles: null };
+  if (counted.reachedThrough !== null) {
+    return { otherFiles: null, refusal: deleteThroughLinkRefusal(counted.reachedThrough) };
+  }
   const within = (path: VaultPath) => path.slice(folder.length + 1);
   return { otherFiles: counted.count, links: counted.links.map(within), link: counted.link };
 }

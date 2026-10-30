@@ -1,3 +1,4 @@
+import { linksGoAsLinks } from '@dfai/domain';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
@@ -18,6 +19,8 @@ export interface DeletionSubject {
   readonly unsaved: readonly string[];
   /** What stops working once it is gone — a template's uses — said before it goes. */
   readonly consequence?: string | null;
+  /** Why it cannot go from here at all — reached through a link — when it cannot. */
+  readonly refusal?: string | null;
 }
 
 const counted = (count: number, one: string, many: string) =>
@@ -28,13 +31,8 @@ const ONLY_THE_LINK =
 
 function contentsOf(subject: DeletionSubject): string {
   if (subject.link === true) return ONLY_THE_LINK;
-  const links = subject.links ?? [];
-  const linked =
-    links.length === 0
-      ? ''
-      : ' These are links, so only the links go and what they point at stays where it is: ' +
-        `${links.join(', ')}.`;
-  return `${filesOf(subject)}${linked}`;
+  const links = linksGoAsLinks(subject.links ?? []);
+  return links === '' ? filesOf(subject) : `${filesOf(subject)} ${links}`;
 }
 
 function filesOf({ notes, otherFiles }: DeletionSubject): string {
@@ -81,11 +79,18 @@ export function DeleteDialog({
               Move “{subject.name}” to the Trash?
             </AlertDialog.Title>
             <AlertDialog.Description className="confirm__body">
-              {subject.kind === 'folder' && <>{contentsOf(subject)} </>}
+              {subject.kind === 'folder' && (subject.refusal ?? null) === null && (
+                <>{contentsOf(subject)} </>
+              )}
               You can get it back from the Trash in Finder.
             </AlertDialog.Description>
             {(subject.consequence ?? null) !== null && (
               <p className="confirm__warning">{subject.consequence}</p>
+            )}
+            {(subject.refusal ?? null) !== null && (
+              <p className="confirm__warning" role="alert">
+                {subject.refusal}
+              </p>
             )}
             {subject.unsaved.length > 0 && (
               <p className="confirm__warning" role="alert">
@@ -95,9 +100,11 @@ export function DeleteDialog({
             <div className="confirm__actions">
               {/* First, so it is where the focus starts. */}
               <AlertDialog.Close className="btn btn--secondary">Cancel</AlertDialog.Close>
-              <button type="button" className="btn btn--danger" onClick={onConfirm}>
-                Move to Trash
-              </button>
+              {(subject.refusal ?? null) === null && (
+                <button type="button" className="btn btn--danger" onClick={onConfirm}>
+                  Move to Trash
+                </button>
+              )}
             </div>
           </AlertDialog.Popup>
         </AlertDialog.Viewport>

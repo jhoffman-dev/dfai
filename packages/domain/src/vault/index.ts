@@ -51,6 +51,8 @@ export {
 } from './new-note.ts';
 export {
   deleteRefusal,
+  deleteThroughLinkRefusal,
+  linksGoAsLinks,
   landingRefusal,
   isMovable,
   isWithin,

@@ -1,7 +1,9 @@
 import {
   deleteRefusal,
+  deleteThroughLinkRefusal,
   notesUnder,
   parentVaultPath,
+  VAULT_ROOT,
   vaultPathName,
   type MovableEntry,
   type VaultPath,
@@ -55,6 +57,8 @@ export interface OtherFilesCount {
   readonly count: number;
   /** The links it holds, which go as links: what they point at stays (#169). */
   readonly links: readonly VaultPath[];
+  /** The link above it that it is reached through, or null: then it is not deleted from here. */
+  readonly reachedThrough: VaultPath | null;
 }
 
 /**
@@ -71,11 +75,25 @@ export async function countOtherFiles({
   entry: MovableEntry;
   notes: readonly VaultPath[];
 }): Promise<OtherFilesCount> {
-  if (entry.kind !== 'directory') return { link: false, count: 0, links: [] };
-  if (await isListedAsLink(fs, entry.path)) return { link: true, count: 0, links: [] };
+  const nothing = { link: false, count: 0, links: [], reachedThrough: null };
+  if (entry.kind !== 'directory') return nothing;
+  const reachedThrough = await linkAbove(fs, entry.path);
+  if (reachedThrough !== null) return { ...nothing, reachedThrough };
+  if (await isListedAsLink(fs, entry.path)) return { ...nothing, link: true };
   const known = new Set<string>(notes);
   const { files, links } = await filesAndLinksUnder({ fs, folder: entry.path });
-  return { link: false, count: files.filter((path) => !known.has(path)).length, links };
+  return { ...nothing, count: files.filter((path) => !known.has(path)).length, links };
+}
+
+/** The nearest folder above `path` that is a link, or null when none is. */
+export async function linkAbove(
+  fs: Pick<VaultFsPort, 'listDirectory'>,
+  path: VaultPath,
+): Promise<VaultPath | null> {
+  const above: VaultPath[] = [];
+  for (let at = parentVaultPath(path); at !== VAULT_ROOT; at = parentVaultPath(at)) above.push(at);
+  const linked = await Promise.all(above.map((folder) => isListedAsLink(fs, folder)));
+  return above.find((_, at) => linked[at]) ?? null;
 }
 
 /** Whether the folder above lists `path` as a link. */
@@ -139,6 +157,8 @@ export async function deleteEntry({
 }): Promise<readonly VaultPath[]> {
   const refusal = deleteRefusal(await withDeclaredType({ fs, entry }));
   if (refusal !== null) throw new MoveRefusedError(refusal);
+  const link = await linkAbove(fs, entry.path);
+  if (link !== null) throw new MoveRefusedError(deleteThroughLinkRefusal(link));
 
   const gone = notesUnder(entry, notePaths);
   await fs.trashEntry({ path: entry.path });

@@ -10,6 +10,7 @@
 
 import { MAX_PROMPT_CHARACTERS } from '../automations/claude-step.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
+import { linksGoAsLinks } from '../vault/vault-moves.ts';
 import { SKILLS_DIRECTORY } from '../vault/vault-visibility.ts';
 
 /** The one file of a skill's folder DFAI reads; anything else in it is left alone. */
@@ -360,12 +361,9 @@ export function skillDeletionWarning(name: string, contents: SkillFolderContents
       'and what it points at stays where it is.'
     );
   }
-  const links =
-    contents.links.length === 0
-      ? ''
-      : ' These are links, so only the links go and what they point at stays where it is: ' +
-        `${contents.links.map(withinFolder).join(', ')}.`;
-  return `Delete “${name}”? ${whatGoes(contents.otherFiles, contents.links.length > 0)}${links}`;
+  const links = contents.links.map(withinFolder);
+  const linked = links.length === 0 ? '' : ` ${linksGoAsLinks(links)}`;
+  return `Delete “${name}”? ${whatGoes(contents.otherFiles, links.length > 0)}${linked}`;
 }
 
 function whatGoes(otherFiles: readonly string[], holdsLinks: boolean): string {
