@@ -175,7 +175,8 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   // observer, in the order the observers were made; a resize report keeps the
   // latest entry for each element, where it first came, and an intersection
   // report keeps every entry in the order it came, since going in and out
-  // again is two crossings, not one.
+  // again is two crossings, not one. Counting stops with nothing held, so no
+  // report crosses from one count into the next or lands after a newer one.
   interface Held {
     readonly made: number;
     readonly report: (entries: unknown[], observer: object) => void;
@@ -193,7 +194,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       heldReports.delete(observer);
       handed = true;
       try {
-        held.report(held.entries, observer);
+        held.report.call(observer, held.entries, observer);
       } catch (error) {
         // Thrown again outside, as an observer's error reaches `window.onerror`
         // in a real page, and the other observers still get their reports.
@@ -232,10 +233,11 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
           heldReports.set(observer, held);
         }, options);
       }
-      // A browser drops what it had not reported yet, and calls no observer
-      // with nothing; so does the clock.
+      // A resize observer drops what it had not reported yet, and calls no one
+      // with nothing; an intersection observer's spec leaves [[QueuedEntries]]
+      // to be delivered. So does the clock.
       override unobserve(target: Element) {
-        const held = heldReports.get(this);
+        const held = latestOnly ? heldReports.get(this) : undefined;
         if (held !== undefined) {
           held.entries = held.entries.filter((entry) => entry.target !== target);
           if (held.entries.length === 0) heldReports.delete(this);
@@ -243,7 +245,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
         super.unobserve(target);
       }
       override disconnect() {
-        heldReports.delete(this);
+        if (latestOnly) heldReports.delete(this);
         super.disconnect();
       }
     };
@@ -393,10 +395,12 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
         state.lastCommitSeen = committed;
         busy = true;
       }
-      if (!busy && !animating()) return;
+      if (!busy && !animating() && heldReports.size === 0) return;
       busy = false;
-      // Drawn, so that resize and intersection observers have seen it.
+      // Drawn, so that resize and intersection observers have seen it, and a
+      // turn more for a notification the drawing queued as a task of its own.
       await aFrame();
+      await aTurn();
       if (handOverReports()) busy = true;
     }
   }
@@ -513,6 +517,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     },
     stopCounting() {
       state.counting = false;
+      handOverReports();
       return { ...state.calls };
     },
   };
