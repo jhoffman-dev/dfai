@@ -2,11 +2,14 @@ import {
   freshPullVerdict,
   freshPullWaitReport,
   pullEndEffect,
+  pulledSinceLastSleep,
   standingAfterPull,
+  waitingCountGate,
   type FreshPullShut,
   type FreshPullVerdict,
   type PullEnd,
   type PullStanding,
+  type WaitingCountGate,
 } from '@dfai/domain';
 import type { ActivityLog } from '../activity/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
@@ -60,6 +63,18 @@ export interface FreshPullGate {
   verdict(vault: string, arrival?: Arrival): Promise<FreshPullVerdict>;
   /** Whether this Mac may act on the vault's files now. */
   acts(vault: string, arrival?: Arrival): Promise<boolean>;
+  /**
+   * Whether a Mac that is not named may count the meetings waiting for the
+   * one that is, and against which pull (ADR-0035 part 3): the same pull and
+   * sleep gates, without asking whether this Mac is named.
+   */
+  countGate(vault: string): Promise<WaitingCountGate>;
+  /**
+   * Whether a reading of the sleep counter since the vault's last pull shows
+   * the Mac slept after that pull started: the gates are shut though the
+   * standing is the same, until a pull started since completes.
+   */
+  sleptSincePull(vault: string): boolean;
 }
 
 export interface FreshPullGatePorts {
@@ -79,12 +94,13 @@ export interface FreshPullHere {
   readonly paused: (vault: string) => boolean;
 }
 
-/** One vault's record: whether it is known to sync, its standing, and the wait last said in Activity. */
+/** One vault's record: whether it is known to sync, its standing, the wait last said in Activity, and a sleep seen since. */
 interface VaultRecord {
   readonly vault: string | null;
   readonly syncs: boolean;
   readonly standing: PullStanding | null;
   readonly said: FreshPullShut | null;
+  readonly slept: boolean;
 }
 
 const NOT_SYNCED: PullStanding = { kind: 'not-synced' };
@@ -94,26 +110,49 @@ const PULLING: PullStanding = { kind: 'pulling' };
  * The gates for the vault open now (ADR-0035 part 4). Kept for that vault
  * and forgotten when another opens: a vault opened again waits for a pull of
  * its own. `onStanding` is told each time the standing changes, for whatever
- * waits on a pull.
+ * waits on a pull. `onSlept` is told, once a pull, when a reading of the
+ * sleep counter shows the Mac slept since that pull started, for whatever
+ * shows a number only while the gates hold.
  */
 export function createFreshPullGate({
   ports,
   here,
   onStanding = () => undefined,
+  onSlept = () => undefined,
 }: {
   ports: FreshPullGatePorts;
   here: FreshPullHere;
   onStanding?: (vault: string, standing: PullStanding | null) => void;
+  onSlept?: (vault: string) => void;
 }): FreshPullGate {
-  let record: VaultRecord = { vault: null, syncs: false, standing: null, said: null };
+  const fresh = (vault: string | null): VaultRecord => ({
+    vault,
+    syncs: false,
+    standing: null,
+    said: null,
+    slept: false,
+  });
+  let record: VaultRecord = fresh(null);
 
   const standingOf = (vault: string) => (record.vault === vault ? record.standing : null);
   const stand = (vault: string, standing: PullStanding | null) => {
     if (record.vault !== vault) return;
-    record = { ...record, standing };
+    record = { ...record, standing, slept: false };
     onStanding(vault, standing);
   };
-  const readAsleep = () => ports.sleepClock.asleepMs().catch(() => null);
+  /** Notes a sleep since the last pull's start that this reading shows, telling it once. */
+  const noteSleep = (asleepNowMs: number | null) => {
+    const { vault, standing, slept } = record;
+    if (vault === null || slept || standing?.kind !== 'pulled' || asleepNowMs === null) return;
+    if (pulledSinceLastSleep({ standing, asleepNowMs })) return;
+    record = { ...record, slept: true };
+    onSlept(vault);
+  };
+  const readAsleep = async () => {
+    const reading = await ports.sleepClock.asleepMs().catch(() => null);
+    noteSleep(reading);
+    return reading;
+  };
 
   const settingsNow = async (standing: PullStanding | null) => {
     const thisMacId = here.thisMacId();
@@ -146,6 +185,9 @@ export function createFreshPullGate({
     ports.activity.inVault(vault).record(report);
   };
 
+  const pausedHere = (vault: string) =>
+    record.vault === vault && record.syncs && here.paused(vault);
+
   const verdict = async (vault: string, arrival?: Arrival): Promise<FreshPullVerdict> => {
     const standing = standingOf(vault);
     const pulled = standing?.kind === 'pulled';
@@ -154,13 +196,21 @@ export function createFreshPullGate({
       settingsNow: await settingsNow(standing),
       asleepNowMs: pulled ? await readAsleep() : null,
       arrivedAt: pulled ? await arrivedAt(arrival) : null,
-      paused: record.vault === vault && record.syncs && here.paused(vault),
+      paused: pausedHere(vault),
     };
     // A pull started or ended while the facts were read: they are judged against it instead.
     if (standingOf(vault) !== standing) return verdict(vault, arrival);
     const judged = freshPullVerdict(facts);
     say(vault, judged);
     return judged;
+  };
+
+  const countGate = async (vault: string): Promise<WaitingCountGate> => {
+    const standing = standingOf(vault);
+    const asleepNowMs = standing?.kind === 'pulled' ? await readAsleep() : null;
+    // A pull started or ended while the counter was read: judged against it instead.
+    if (standingOf(vault) !== standing) return countGate(vault);
+    return waitingCountGate({ standing, asleepNowMs, paused: pausedHere(vault) });
   };
 
   const inspected = (vault: string, syncs: boolean) => {
@@ -173,7 +223,7 @@ export function createFreshPullGate({
   return {
     standing: standingOf,
     opened: (vault) => {
-      if (record.vault !== vault) record = { vault, syncs: false, standing: null, said: null };
+      if (record.vault !== vault) record = fresh(vault);
     },
     readAsleep,
     started: (vault) => stand(vault, PULLING),
@@ -193,5 +243,7 @@ export function createFreshPullGate({
     },
     verdict,
     acts: async (vault, arrival) => (await verdict(vault, arrival)).open,
+    countGate,
+    sleptSincePull: (vault) => record.vault === vault && record.slept,
   };
 }

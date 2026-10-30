@@ -152,6 +152,38 @@ Four parts:
      if its content changes. Without this, the catch-up after every pull
      would repeat the line each time.
 
+**What the banner says (parts 1 and 3).** _(Amended 2026-10-28, #175.)_
+Before the gates hold (the "Unknown" below) it says "Meetings may be
+waiting for <Mac>: they are counted after the next sync.", or, while sync is
+paused here, "… they are counted once sync resumes." It gives a number only
+while a pull that started since the last launch or wake has completed and
+sync is not paused. A wake or a pause seen since that pull takes the number
+away again, though no new pull has completed. A file modified here after
+the pull is left out until the next one. During a pull the line stays as it
+was. It shows nothing when none waits, when no meeting file lands in the
+vault at all, while the settings cannot be read (the Inbox already says so),
+and in a vault that does not sync. The Mac is named by
+`automationsMacName`; one the settings keep no name for is "the Mac that
+runs the automations", never its id.
+
+Unimported meetings are counted wherever the import would settle them:
+`Inbox/Meetings/` and the month folders under `Meetings/` (#214) whose files
+declare the contract. A sync-conflict copy is never counted, whatever the
+other Mac is called; its name is recognised for any Mac label, brackets
+included (#627). A file whose frontmatter does not read counts as one that
+cannot be read. The count uses the import's own listing and reads, only on a
+Mac that is not named. The folders are listed once per vault opened, and each
+file is read once, eight at a time. After that, news that names a meeting
+file has that file alone read again, and a removed one is forgotten. Each
+judgement tallies what is known against the pull, so a pull that brings
+nothing (a look at GitHub, about once a minute) lists and reads nothing. In a
+vault that does not sync, or while the settings cannot be read, nothing is
+listed or read.
+
+Activity warns at most once per distinct count in a session for the vault.
+A drop that deferral alone explains is not news: files edited here are left
+for the next pull and come back then.
+
 **Catch-up on a claim.** The import's catch-up needs no change:
 `use-meeting-import.ts` already clears its `caughtUp` while this Mac is not
 the importer and reruns the catch-up when it becomes the importer, so a claim

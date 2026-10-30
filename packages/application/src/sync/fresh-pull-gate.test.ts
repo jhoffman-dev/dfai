@@ -21,6 +21,7 @@ function gateOn({ settings = NAMED as string | null, paused = false } = {}) {
   const sleep = fakeSleepClock();
   const activity = recordingActivity();
   const told: (PullStanding | null)[] = [];
+  const woke: string[] = [];
   const fs = fakeVaultFs({
     readNotes: async (paths) =>
       paths.flatMap((path) => {
@@ -47,6 +48,7 @@ function gateOn({ settings = NAMED as string | null, paused = false } = {}) {
     },
     here: { thisMacId: () => THIS_MAC, paused: () => vault.paused },
     onStanding: (_, standing) => void told.push(standing),
+    onSlept: (sleeper) => void woke.push(sleeper),
   });
   gate.opened(VAULT);
   gate.inspected(VAULT, true);
@@ -57,7 +59,7 @@ function gateOn({ settings = NAMED as string | null, paused = false } = {}) {
     await gate.ended(VAULT, end, startedAsleepMs);
   };
   const said = () => activity.reports.map((report) => report.message);
-  return { gate, vault, sleep, runs, said, told };
+  return { gate, vault, sleep, runs, said, told, woke };
 }
 
 describe('createFreshPullGate: what sync tells it (ADR-0035 part 4)', () => {
@@ -289,5 +291,70 @@ describe('createFreshPullGate: one vault at a time', () => {
     expect(await gate.acts(VAULT)).toBe(false);
     gate.started(VAULT);
     expect(gate.standing('/Users/j/Work')).toBeNull();
+  });
+});
+
+describe('createFreshPullGate: counting what waits on a Mac that is not named (ADR-0035 part 3)', () => {
+  const OTHER = '---\nsync: github\nautomationsMac: mac-laptop\nautomationsMacName: Laptop\n---\n';
+
+  it('opens against the pull on a Mac that is not named, which the import’s gate never does', async () => {
+    const { gate, runs } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    expect(await gate.verdict(VAULT)).toEqual({ open: false, shut: 'not-named' });
+    expect(await gate.countGate(VAULT)).toEqual({ open: true, standing: gate.standing(VAULT) });
+  });
+
+  it('during a pull says so, so a count is kept rather than flipped', async () => {
+    const { gate, runs } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    gate.started(VAULT);
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'pulling' });
+  });
+
+  it('tells, once, that the Mac slept since the last pull, as soon as any reading of the counter shows it (#627 review)', async () => {
+    const { gate, runs, sleep, woke } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    expect(gate.sleptSincePull(VAULT)).toBe(false);
+
+    sleep.sleep(8 * 60 * 60_000);
+    // A look starts after the wake and fails: the standing stays the last pull's.
+    const startedAsleepMs = await gate.readAsleep();
+    await gate.ended(VAULT, { kind: 'look-failed' }, startedAsleepMs);
+    await gate.readAsleep();
+
+    expect(gate.sleptSincePull(VAULT)).toBe(true);
+    expect(woke).toEqual([VAULT]);
+    // A pull started since the wake completes: it holds again.
+    await runs({ kind: 'looked', behind: 0 });
+    expect(gate.sleptSincePull(VAULT)).toBe(false);
+  });
+
+  it('gives no count before a pull completes, after a sleep, or while sync is paused', async () => {
+    const { gate, runs, sleep, vault } = gateOn({ settings: OTHER });
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'no-pull' });
+    await runs({ kind: 'synced' });
+    sleep.sleep(60 * 60_000);
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'no-pull' });
+    await runs({ kind: 'synced' });
+    vault.paused = true;
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'paused' });
+  });
+
+  it('gives none for a vault that does not sync, never reading the counter for it', async () => {
+    const { gate, sleep } = gateOn({ settings: OTHER });
+    gate.inspected(VAULT, false);
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'not-synced' });
+    expect(sleep.reads()).toBe(0);
+  });
+
+  it('is judged against a pull that started while the counter was read', async () => {
+    const { gate, runs, sleep } = gateOn({ settings: OTHER });
+    await runs({ kind: 'synced' });
+    const port = sleep.port.asleepMs;
+    sleep.port.asleepMs = async () => {
+      gate.started(VAULT);
+      return port();
+    };
+    expect(await gate.countGate(VAULT)).toEqual({ open: false, why: 'pulling' });
   });
 });
