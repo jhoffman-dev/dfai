@@ -17,24 +17,30 @@ export interface KeyPress {
   readonly shift: boolean;
 }
 
-const PLAIN: Readonly<Record<string, RowKey>> = {
-  j: 'next',
+/** The named keys, which Shift turns into another act: ⇧↓ extends a selection. */
+const NAMED: Readonly<Record<string, RowKey>> = {
   ArrowDown: 'next',
-  k: 'previous',
   ArrowUp: 'previous',
   Enter: 'open',
-  u: 'undo',
 };
 
+/** The letters, read whatever their case — as the pages' own letters are. */
+const LETTERS: Readonly<Record<string, RowKey>> = { j: 'next', k: 'previous', u: 'undo' };
+
 /**
- * The row key a press stands for, or null when it is not one. ⌘Z undoes as U
- * does; any other chord belongs to the app or the browser — ⇧⌘Z is redo, and
- * Shift with an arrow extends a selection.
+ * The row key a press stands for, or null when it is not one. Letters are
+ * read whatever their case, so Caps Lock or Shift held is still the letter,
+ * as every triage page's own letters are (`triageActionOf`,
+ * `todayKeyActionOf`). Shift turns a named key into another act, so ⇧↓ and
+ * ⇧↵ are not row keys. ⌘Z undoes as U does; any other chord belongs to the
+ * app or the browser — ⇧⌘Z is redo.
  */
 export function rowKeyOf({ key, mod, alt, shift }: KeyPress): RowKey | null {
-  if (alt || shift) return null;
-  if (mod) return key.toLowerCase() === 'z' ? 'undo' : null;
-  return PLAIN[key] ?? null;
+  if (alt) return null;
+  const letter = key.length === 1 ? key.toLowerCase() : null;
+  if (mod) return letter === 'z' && !shift ? 'undo' : null;
+  if (letter !== null) return LETTERS[letter] ?? null;
+  return shift ? null : (NAMED[key] ?? null);
 }
 
 /**

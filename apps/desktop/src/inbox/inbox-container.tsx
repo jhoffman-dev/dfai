@@ -140,7 +140,7 @@ export function InboxContainer({ wiring, chrome }: PageContainerProps) {
       onClarify={inbox.clarify}
       busy={inbox.busy}
       problem={inbox.problem}
-      onUndo={inbox.undo}
+      onUndo={inbox.takeBackLast}
       refusals={inbox.refusals}
       summaryPending={inbox.summaryPending}
       meetingsWaiting={waitingBanner}

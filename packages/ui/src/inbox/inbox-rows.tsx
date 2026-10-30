@@ -20,6 +20,7 @@ import { Spacer } from '../grouped-rows.tsx';
 import { useVirtualRows } from '../virtual-rows.ts';
 import { asksWhoItWaitsOn, clarificationOf, type InboxDraft } from './inbox-triage.ts';
 import { keyHintStrip } from '../key-hints.tsx';
+import type { UndoLast } from '../row-keys.ts';
 import { inboxKeyHints, triageKeysShown, type TriageKeyShown } from './triage-keys.ts';
 import {
   useInboxTriage,
@@ -61,7 +62,7 @@ export interface InboxRowsProps {
    */
   stranded?: StrandedRow;
   /** Takes the last clarification back: U or ⌘Z on a row (#109). */
-  onUndo?: (() => unknown) | undefined;
+  onUndo?: UndoLast | undefined;
 }
 
 /** A row's height until it is measured, as WebKit draws a note's. */

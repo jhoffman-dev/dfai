@@ -1,15 +1,17 @@
 import { useCallback, useRef, type KeyboardEvent } from 'react';
 import type { TodayReport } from '@dfai/application';
 import {
+  TODAY_KEYS,
   todayKeyActionOf,
   type TodayChoice,
   type TodayKeyAction,
+  type TodayKeyLetter,
   type TodayLists,
   type TodaySectionId,
   type TodayTask,
   type VaultPath,
 } from '@dfai/domain';
-import { ROW_MOVE_HINTS, ROW_UNDO_HINT, typesInto, useRowKeys } from './row-keys.ts';
+import { ROW_MOVE_HINTS, ROW_UNDO_HINT, typesInto, useRowKeys, type UndoLast } from './row-keys.ts';
 import type { RowFocus } from './today-row-focus.ts';
 
 /** What a row's keys call: the same acts its own controls do. */
@@ -21,32 +23,45 @@ export interface TodayKeyActs {
   readonly onChoose: (task: TodayTask, choice: TodayChoice) => void;
 }
 
-/** The Today page's hint strip (#109), in the order of `TODAY_KEYS`. */
+/** What each of Today's keys is called in its hint strip. */
+const TODAY_KEY_LABELS: Readonly<Record<TodayKeyLetter, string>> = {
+  x: 'Done',
+  t: 'Today',
+  d: 'Defer a day',
+  n: 'Next',
+  w: 'Waiting',
+  s: 'Someday',
+  m: 'Move to…',
+};
+
+/** The Today page's hint strip (#109): moving and opening, each of `TODAY_KEYS`, and Undo. */
 export const TODAY_KEY_HINTS: readonly (readonly [keys: string, does: string])[] = [
   ...ROW_MOVE_HINTS,
-  ['X', 'Done'],
-  ['T', 'Today'],
-  ['D', 'Defer a day'],
-  ['N W S', 'Next, Waiting, Someday'],
-  ['M', 'Move to…'],
+  ...TODAY_KEYS.map((key) => [key.toUpperCase(), TODAY_KEY_LABELS[key]] as const),
   ROW_UNDO_HINT,
 ];
 
 /** A row's handle carries its path, so a key knows its row from where it was pressed. */
 const ROW_MARK = '[data-today-row]';
 
-/** A task on the page and the section it is listed in, or null when it is not. */
+/** A task on the page, with the section and the group it is listed in, or null when it is not. */
 function placedTask(
   today: TodayLists,
   path: VaultPath,
-): { task: TodayTask; section: TodaySectionId } | null {
+): { task: TodayTask; section: TodaySectionId; group: string } | null {
   for (const section of today.sections) {
     for (const group of section.groups) {
       const task = group.tasks.find((each) => each.path === path);
-      if (task !== undefined) return { task, section: section.id };
+      if (task !== undefined) return { task, section: section.id, group: group.key };
     }
   }
   return null;
+}
+
+/** Where the page lists a task — its section and group — or null: one moved elsewhere is drawn anew. */
+export function todayPlaceOf(today: TodayLists | null, path: VaultPath): string | null {
+  const placed = today === null ? null : placedTask(today, path);
+  return placed === null ? null : `${placed.section}\n${placed.group}`;
 }
 
 /**
@@ -61,6 +76,7 @@ export function useTodayKeys({
   focus,
   acts,
   waits,
+  undoWaits,
   onUndo,
 }: {
   today: TodayReport | null;
@@ -69,7 +85,9 @@ export function useTodayKeys({
   acts: TodayKeyActs;
   /** Whether a row's controls wait: an action under way, or its last not read back. */
   waits: (path: VaultPath) => boolean;
-  onUndo?: (() => unknown) | undefined;
+  /** Whether any change is on its way: until it lands, the undo on offer is the one before. */
+  undoWaits: () => boolean;
+  onUndo?: UndoLast | undefined;
 }): (event: KeyboardEvent<HTMLElement>) => void {
   const rowKey = useRowKeys({
     order,
@@ -77,7 +95,7 @@ export function useTodayKeys({
     elementOf: focus.elementOf,
     onOpen: acts.onOpen,
     onUndo,
-    lastActed: focus.lastActed,
+    undoWaits,
   });
   const read = useRef({ today, acts, waits });
   read.current = { today, acts, waits };

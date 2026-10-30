@@ -12,7 +12,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { useRowHandles } from '../row-handles.ts';
-import { typesInto, useRowKeys } from '../row-keys.ts';
+import { typesInto, useRowKeys, type UndoLast } from '../row-keys.ts';
 import { useSteadyCallback } from '../steady-callback.ts';
 import {
   GTD_STATUSES,
@@ -82,7 +82,7 @@ export function useInboxTriage({
   /** Opens a row's note: Return on the row (#109). */
   onOpen: (path: VaultPath) => void;
   /** Takes the last clarification back: U or ⌘Z on a row (#109). */
-  onUndo?: (() => unknown) | undefined;
+  onUndo?: UndoLast | undefined;
 }) {
   const [drafts, setDrafts] = useState<Readonly<Record<string, InboxDraft>>>({});
   const [focused, setFocused] = useState<VaultPath | null>(null);
@@ -121,8 +121,6 @@ export function useInboxTriage({
   // picks go with it. Read after the render that follows, when the list is the app's answer.
   const refused = useRef(new Set<VaultPath>());
   const [refusals, setRefusals] = useState(0);
-  // The row the last clarification was asked of, which an undo brings back.
-  const lastActed = useRef<VaultPath | null>(null);
 
   const focusRow = useCallback(
     (path: VaultPath) => {
@@ -187,7 +185,6 @@ export function useInboxTriage({
   const act = useCallback(
     async (path: VaultPath, clarification: Clarification) => {
       const next = rowAfter(listed.current, path);
-      lastActed.current = path;
       writing.current.set(path, (writing.current.get(path) ?? 0) + 1);
       const done = await clarify({ path, clarification }).finally(() => {
         const left = (writing.current.get(path) ?? 1) - 1;
@@ -290,7 +287,8 @@ export function useInboxTriage({
     elementOf,
     onOpen,
     onUndo,
-    lastActed: useCallback(() => lastActed.current, []),
+    // The undo on offer is the one before a clarification still being written, and the undo itself writes.
+    undoWaits: useCallback(() => writing.current.size > 0 || !idle.current, []),
   });
 
   /** The key handler, on the list rather than each row: a letter on a focused row, never in a field. */

@@ -57,7 +57,7 @@ function page(overrides: Partial<InboxPageProps> = {}) {
     onOpen: vi.fn(),
     onShowMore: vi.fn(),
     onClarify: vi.fn(async () => true),
-    onUndo: vi.fn(),
+    onUndo: vi.fn(async () => null),
     busy: false,
     problem: null,
     ...overrides,
@@ -138,13 +138,15 @@ describe('InboxPage — keyboard triage (#109)', () => {
   });
 
   it('takes the last clarification back on U or ⌘Z, and the row has the focus again once it is back', async () => {
-    const view = page();
+    const view = page({ onUndo: vi.fn(async () => createVaultPath('Inbox/Call the bank.md')) });
     focusRow('Call the bank');
     await userEvent.keyboard('n');
     view.rerender({ contents: contentsOf(TITLES.slice(1)) });
     expect(document.activeElement).toBe(rowOf('Chase the quote'));
 
-    await userEvent.keyboard('u');
+    await act(async () => {
+      await userEvent.keyboard('u');
+    });
     expect(view.onUndo).toHaveBeenCalledTimes(1);
     view.rerender({ contents: contentsOf(TITLES) });
     expect(document.activeElement).toBe(rowOf('Call the bank'));
@@ -207,7 +209,9 @@ describe('InboxPage — keyboard triage (#109)', () => {
   });
 
   it('works five rows by keys alone — moving past one, acting on the rest, and taking one back', async () => {
-    const view = page();
+    const view = page({
+      onUndo: vi.fn(async () => createVaultPath('Inbox/Renew the passport.md')),
+    });
     const left: string[] = [];
     const leave = (title: string) => {
       left.push(title);
@@ -225,7 +229,9 @@ describe('InboxPage — keyboard triage (#109)', () => {
     expect(document.activeElement).toBe(rowOf('Fix the gate'));
     await userEvent.keyboard('k{Enter}');
     expect(view.onOpen).toHaveBeenCalledWith('Inbox/Call the bank.md');
-    await userEvent.keyboard('u');
+    await act(async () => {
+      await userEvent.keyboard('u');
+    });
     left.pop();
     view.rerender({ contents: contentsOf(TITLES.filter((each) => !left.includes(each))) });
     expect(document.activeElement).toBe(rowOf('Renew the passport'));

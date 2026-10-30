@@ -23,7 +23,8 @@ import { StatusPill } from './status-pill.tsx';
 import { useSteadyCallback } from './steady-callback.ts';
 import { Spacer } from './grouped-rows.tsx';
 import { useRowFocus, type RowFocus } from './today-row-focus.ts';
-import { TODAY_KEY_HINTS, useTodayKeys } from './today-keys.ts';
+import { TODAY_KEY_HINTS, todayPlaceOf, useTodayKeys } from './today-keys.ts';
+import type { UndoLast } from './row-keys.ts';
 import { keyHintStrip } from './key-hints.tsx';
 import { useVirtualRows } from './virtual-rows.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
@@ -71,8 +72,11 @@ export interface TodayPageProps {
   onDefer: (args: RowTask & { days: number }) => void;
   /** Chooses a task for today or takes it off; keeps or drops one carried over (#108). */
   onChoose: (args: RowTask & { choice: TodayChoice; was?: string }) => void;
-  /** Takes the last change back, as its toast's Undo does: U or ⌘Z on a row (#109). */
-  onUndo?: () => unknown;
+  /**
+   * Takes the last change back, as its toast's Undo does — U or ⌘Z on a row
+   * (#109) — resolving to the row it took back, or null.
+   */
+  onUndo?: UndoLast;
   onShowSidebar?: () => void;
   history?: PageHistory;
   /** Today's meetings, drawn above the tasks (ADR-0046); nothing when left out. */
@@ -92,20 +96,23 @@ export function TodayPage(props: TodayPageProps) {
     () => (props.today === null ? [] : todayRowOrder(props.today)),
     [props.today],
   );
+  const settling = props.settling ?? NONE_SETTLING;
   const focus = useRowFocus({
     order,
     shown: props.today,
     problem: props.problem,
     busy: props.busy,
+    placeOf: (path) => todayPlaceOf(props.today, path),
+    settling,
   });
   const actions = useRowActions(props, focus);
-  const settling = props.settling ?? NONE_SETTLING;
   const onKeyDown = useTodayKeys({
     today: props.today,
     order,
     focus,
     acts: actions,
     waits: (path) => props.busy || settling.has(path),
+    undoWaits: () => props.busy || settling.size > 0,
     onUndo: props.onUndo,
   });
   const scroller = useRef<HTMLDivElement>(null);
@@ -691,6 +698,7 @@ function RowCommands({
               title: task.title,
               chosen: sectionId === 'chosen',
               disabled: waits,
+              keyShortcut: 't',
               onToggle: () =>
                 actions.onChoose(task, sectionId === 'chosen' ? 'unchoose' : 'choose'),
             }))}
@@ -698,6 +706,7 @@ function RowCommands({
         title={task.title}
         statuses={todayMovesFor(task.status)}
         busy={waits}
+        keyShortcut="m"
         onMove={(status) => actions.onMove(task, status)}
       />
       {TODAY_DEFER_DAYS.map((days) => (
@@ -730,6 +739,7 @@ function carriedChoices({ task, waits, actions }: ChoiceControls) {
         type="button"
         className="btn btn--ghost btn--sm"
         aria-label={`Keep ${task.title} for today`}
+        aria-keyshortcuts="t"
         disabled={waits}
         onClick={() => actions.onChoose(task, 'keep')}
       >

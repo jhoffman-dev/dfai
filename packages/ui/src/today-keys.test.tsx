@@ -63,7 +63,7 @@ function page(overrides: Partial<TodayPageProps> = {}) {
     onSetStatus: vi.fn(),
     onDefer: vi.fn(),
     onChoose: vi.fn(),
-    onUndo: vi.fn(),
+    onUndo: vi.fn(async () => null),
     ...overrides,
   };
   const view = render(<TodayPage {...given} />);
@@ -175,13 +175,15 @@ describe('TodayPage — keyboard triage (#109)', () => {
   });
 
   it('takes the last change back on U or ⌘Z, and gives the row it brought back the focus', async () => {
-    const view = page();
+    const view = page({ onUndo: vi.fn(async () => createVaultPath('Tasks/Ship the page.md')) });
     focusRow('Ship the page');
     await userEvent.keyboard('x');
     act(() => view.rerender({ today: without('Ship the page') }));
     expect(document.activeElement).toBe(handle('Write the guide'));
 
-    await userEvent.keyboard('u');
+    await act(async () => {
+      await userEvent.keyboard('u');
+    });
     expect(view.onUndo).toHaveBeenCalledTimes(1);
     act(() => view.rerender({ today: report() }));
     expect(document.activeElement).toBe(handle('Ship the page'));
@@ -202,7 +204,7 @@ describe('TodayPage — keyboard triage (#109)', () => {
   });
 
   it('gives the focus to the row the undo says it took back, not the one last acted on here (PR #641 review)', async () => {
-    const onUndo = vi.fn(async () => createVaultPath('Tasks/Call the bank.md'));
+    const onUndo = vi.fn(async () => createVaultPath('Tasks/Quote from Tobias.md'));
     const view = page({ onUndo });
     focusRow('Send the figures');
     await userEvent.keyboard('x');
@@ -211,7 +213,7 @@ describe('TodayPage — keyboard triage (#109)', () => {
     await act(async () => {
       await userEvent.keyboard('u');
     });
-    expect(document.activeElement).toBe(handle('Call the bank'));
+    expect(document.activeElement).toBe(handle('Quote from Tobias'));
   });
 
   it('takes no key on a row whose controls wait, nor while the page is busy', async () => {
@@ -248,7 +250,9 @@ describe('TodayPage — keyboard triage (#109)', () => {
       'XDone',
       'TToday',
       'DDefer a day',
-      'NWSNext, Waiting, Someday',
+      'NNext',
+      'WWaiting',
+      'SSomeday',
       'MMove to…',
       'UUndo',
     ]);
@@ -258,6 +262,34 @@ describe('TodayPage — keyboard triage (#109)', () => {
         .getByRole('button', { name: 'Defer Ship the page 1 day' })
         .getAttribute('aria-keyshortcuts'),
     ).toBe('d');
+    const shortcut = (name: string) =>
+      screen.getByRole('button', { name }).getAttribute('aria-keyshortcuts');
+    expect(shortcut('Choose Ship the page for today')).toBe('t');
+    expect(shortcut('Move Ship the page to…')).toBe('m');
+  });
+
+  it('names T on Keep, under Carried over', () => {
+    page({ today: report([task('Chase the quote', { focus: '2026-10-12' })]) });
+    expect(
+      screen
+        .getByRole('button', { name: 'Keep Chase the quote for today' })
+        .getAttribute('aria-keyshortcuts'),
+    ).toBe('t');
+  });
+
+  it('moves with J onto rows the list has yet to draw, the focus following each one down (PR #641 review)', async () => {
+    // jsdom measures every element 800px tall in an 800px window: only a few rows are drawn.
+    const many = Array.from({ length: 60 }, (_, at) =>
+      task(`Task ${String(at).padStart(2, '0')}`, { project: null }),
+    );
+    page({ today: report(many) });
+    const drawn = screen.getAllByRole('checkbox').length;
+    expect(drawn).toBeLessThan(40);
+    focusRow('Task 00');
+    for (let at = 1; at <= drawn + 2; at += 1) {
+      await userEvent.keyboard('j');
+      expect(document.activeElement).toBe(handle(`Task ${String(at).padStart(2, '0')}`));
+    }
   });
 
   it('works five rows by keys alone: done, defer, past one, a status, a choice — focus moving on each time', async () => {

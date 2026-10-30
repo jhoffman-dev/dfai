@@ -8,6 +8,7 @@ import {
   type InboxRefusal,
 } from './inbox/inbox-rows.tsx';
 import type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';
+import type { UndoLast } from './row-keys.ts';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
 import { ROW_SCROLLER_MARK, RowScrollerContext } from './row-scroller.ts';
@@ -99,8 +100,11 @@ export interface InboxPageProps {
   busy: boolean;
   /** Why the last undo could not be done, or null. */
   problem: string | null;
-  /** Takes the last clarification back, as its toast's Undo does: U or ⌘Z on a row (#109). */
-  onUndo?: () => unknown;
+  /**
+   * Takes the last clarification back, as its toast's Undo does — U or ⌘Z on
+   * a row (#109) — resolving to the row it took back, or null.
+   */
+  onUndo?: UndoLast;
   /** Why each row's clarification was refused, shown on that row, until it is clarified again. */
   refusals?: readonly InboxRefusal[];
   /** Why each imported meeting's summary still waits, by path; a meeting not in it waits for none (#186). */

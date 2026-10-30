@@ -347,6 +347,11 @@ export function useInbox(options: InboxOptions) {
     () => (last === null ? Promise.resolve(false) : undoClarification(last)),
     [last, undoClarification],
   );
+  /** The same, resolving to where the note it took back is listed again, or null when it took none (#109). */
+  const takeBackLast = useCallback(async (): Promise<VaultPath | null> => {
+    if (last === null) return null;
+    return (await undoClarification(last)) ? last.undo.from : null;
+  }, [last, undoClarification]);
 
   // The undo lasts as long as the toast offering it (#165): once that has gone, so has the undo.
   const dismissLastAction = useCallback(
@@ -399,6 +404,7 @@ export function useInbox(options: InboxOptions) {
     lastAction,
     clarify,
     undo,
+    takeBackLast,
     dismissLastAction,
     /** Lists the next page of what waits (#167). */
     showMore,

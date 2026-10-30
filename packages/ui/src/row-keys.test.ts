@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
-import { typesInto } from './row-keys.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { KeyboardEvent } from 'react';
+import { renderHook } from '@testing-library/react';
+import { createVaultPath } from '@dfai/domain';
+import { typesInto, useRowKeys } from './row-keys.ts';
 
 /** #109: where a triage key never fires — wherever the key is typed, or another control has the keyboard. */
 
@@ -47,5 +50,63 @@ describe('typesInto', () => {
     ]) {
       expect(typesInto(placed(html)), html).toBe(false);
     }
+  });
+});
+
+describe('useRowKeys — J onto a row the list has yet to draw (PR #641 review)', () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  const [drawn, undrawn] = ['Tasks/Drawn.md', 'Tasks/Far.md'].map(createVaultPath) as [
+    ReturnType<typeof createVaultPath>,
+    ReturnType<typeof createVaultPath>,
+  ];
+  const press = (key: string) =>
+    ({
+      key,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      repeat: false,
+      target: document.activeElement,
+      preventDefault: vi.fn(),
+    }) as unknown as KeyboardEvent;
+
+  function keysOver(handle: HTMLElement) {
+    const focusRow = vi.fn();
+    const { result } = renderHook(() =>
+      useRowKeys({
+        order: [drawn, undrawn],
+        focusRow,
+        elementOf: (path) => (path === drawn ? handle : undefined),
+        onOpen: vi.fn(),
+        undoWaits: () => false,
+      }),
+    );
+    return { rowKey: result.current, focusRow };
+  }
+
+  it('takes the focus off the control it is on, so the row takes it as it is drawn, and asks for that row', () => {
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    document.body.append(box);
+    box.focus();
+    const { rowKey, focusRow } = keysOver(box);
+    expect(rowKey(press('j'), drawn)).toBe(true);
+    expect(document.activeElement).toBe(document.body);
+    expect(focusRow).toHaveBeenCalledWith(undrawn);
+  });
+
+  it('leaves the focus where it is for a row already drawn', () => {
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    document.body.append(box);
+    box.focus();
+    const { rowKey, focusRow } = keysOver(box);
+    expect(rowKey(press('k'), undrawn)).toBe(true);
+    expect(document.activeElement).toBe(box);
+    expect(focusRow).toHaveBeenCalledWith(drawn);
   });
 });

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
+import { toastSaying } from './toasts.ts';
 
 /**
  * #109: keyboard triage on the Inbox and on Today — a keyboard-only pass over
@@ -116,6 +117,8 @@ test.describe('the Inbox', () => {
     }
 
     const last = rest[3] ?? '';
+    // U waits for a change still being written: its toast says it has been.
+    await expect(toastSaying(page, `Clarified “${last}”.`)).toBeVisible();
     await page.keyboard.press('u');
     await expectFile(vault, `Inbox/${last}.md`).toContain('status: inbox');
     await expect(row(page, last)).toBeFocused();
@@ -188,6 +191,8 @@ test.describe('Today', () => {
     ).toBeVisible();
     await expect(handle(page, 'Call the bank')).toBeFocused();
 
+    // U waits for a change still on its way: every row has settled once it is read back.
+    await expect(today(page).locator('tr[aria-busy]')).toHaveCount(0);
     await page.keyboard.press('u');
     await expectFile(vault, 'Tasks/Ship the page.md').not.toContain('focus:');
     await expect(handle(page, 'Ship the page')).toBeFocused();

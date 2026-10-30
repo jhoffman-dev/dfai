@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { createVaultPath } from '@dfai/domain';
+import { createVaultPath, type VaultPath } from '@dfai/domain';
 import { useRowFocus } from './today-row-focus.ts';
 
 const first = createVaultPath('Tasks/First.md');
@@ -172,9 +172,9 @@ describe('useRowFocus — a row acted on that stays on the page (PR #641 review)
   function placedHook(place: Record<string, string>) {
     const placeOf = (path: string) => place[path] ?? null;
     const hook = renderHook(
-      (props: { shown: object; settling: ReadonlySet<string> }) =>
+      (props: { shown: object; settling: ReadonlySet<VaultPath> }) =>
         useRowFocus({ order, problem: null, placeOf, ...props }),
-      { initialProps: { shown: {}, settling: new Set<string>() } },
+      { initialProps: { shown: {}, settling: new Set<VaultPath>() } },
     );
     const boxes = new Map(order.map((path) => [path, mounted()]));
     for (const [path, box] of boxes) act(() => hook.result.current.rowRef(path)(box));
@@ -195,6 +195,21 @@ describe('useRowFocus — a row acted on that stays on the page (PR #641 review)
     act(() => result.current.rowRef(a)(null));
     boxes.get(a)?.remove();
     // Sync reads the page again, later.
+    rerender({ shown: {}, settling: new Set() });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('once read back where it was, is not taken for moved when sync later lists it elsewhere', () => {
+    const { result, rerender, place } = placedHook({
+      [a]: 'nextActions',
+      [b]: 'nextActions',
+      [c]: 'waiting',
+    });
+    act(() => result.current.actedOn(a));
+    rerender({ shown: {}, settling: new Set([a]) });
+    rerender({ shown: {}, settling: new Set() });
+    // Another Mac changes its status: the next read lists it under Waiting.
+    place[a] = 'waiting';
     rerender({ shown: {}, settling: new Set() });
     expect(document.activeElement).toBe(document.body);
   });
