@@ -415,6 +415,7 @@ jobs:
           # Counted twice: a count that differs between the two runs fails, so the
           # work clock stays proven deterministic on the runner, not only here.
           PERF_BUDGETS_RUNS: 2
+          PERF_SCRATCH_DRAG: 50
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
