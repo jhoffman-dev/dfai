@@ -21,6 +21,7 @@ import {
   type TagSuggestion,
 } from '@dfai/domain';
 import { createEditorExtensions } from './editor/extensions.ts';
+import { useCodeLanguages } from './editor/code-languages-context.ts';
 import type { HighlightBlocks, ReaderLinks } from './editor/raw-block.ts';
 import {
   HighlightDrafts,
@@ -230,6 +231,7 @@ export function NoteEditor({
   const transclusionSource = useTransclusionSource(transclusions);
   const queryBlockSource = useQueryBlockSource(queries);
   const blockPicking = useBlockPicking(picking);
+  const codeLanguages = useCodeLanguages();
 
   const extensions = useMemo(
     () =>
@@ -252,8 +254,10 @@ export function NoteEditor({
         createNote: creates ? stableCreate : null,
         readerLinks,
         highlights: highlightBlocks,
+        codeLanguages,
       }),
     [
+      codeLanguages,
       readerLinks,
       highlightBlocks,
       promotes,

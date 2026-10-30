@@ -56,6 +56,16 @@ export function wikiLinkSpans(markdown: string): WikiLinkSpan[] {
 }
 
 /**
+ * The line that would close the fenced code block a note's markdown ends in,
+ * left open — the fence it opened with, after the same quote markers — or
+ * null when it ends in none. Markdown reads such a block on to the end of the
+ * note, so anything written after it is code until that line is.
+ */
+export function openFenceClosing(markdown: string): string | null {
+  return new Scan(markdown).openFenceClosing();
+}
+
+/**
  * One link written alone — a `wikiLink` node's value, say: what it reads as,
  * or null when `source` is not exactly one link.
  */
@@ -102,7 +112,8 @@ class Scan {
   private readonly lines: Line[] = [];
   /** For each line, where the paragraph it is in ends. */
   private readonly paragraphEnd: number[] = [];
-  private readonly fences: { start: number; end: number }[] = [];
+  /** `closing` is what would close a block nothing closes: its quote markers and its fence. */
+  private readonly fences: { start: number; end: number; closing: string | null }[] = [];
   /** Where each run of backticks starts, by its length. */
   private readonly runs = new Map<number, number[]>();
   private readonly links: WikiLinkSpan[] = [];
@@ -117,6 +128,11 @@ class Scan {
     this.readRuns();
   }
 
+  /** The line that would close the fenced block the markdown ends in, left open; null when none is. */
+  openFenceClosing(): string | null {
+    return this.fences.at(-1)?.closing ?? null;
+  }
+
   run(): { links: WikiLinkSpan[]; comments: CommentSpan[]; code: CodeSpan[] } {
     const { text } = this;
     let fence = 0;
@@ -124,7 +140,7 @@ class Scan {
     while (at < text.length) {
       const inFence = this.fences[fence];
       if (inFence !== undefined && at >= inFence.start) {
-        this.code.push(inFence);
+        this.code.push({ start: inFence.start, end: inFence.end });
         at = Math.max(at, inFence.end);
         fence += 1;
         continue;
@@ -298,7 +314,12 @@ class Scan {
         close += 1;
       }
       const last = lines[Math.min(close, lines.length - 1)] as Line;
-      this.fences.push({ start: line.start, end: close < lines.length ? last.next : text.length });
+      const closed = close < lines.length;
+      this.fences.push({
+        start: line.start,
+        end: closed ? last.next : text.length,
+        closing: closed ? null : `${text.slice(line.start, line.content)}${fence}`,
+      });
       index = close;
     }
   }

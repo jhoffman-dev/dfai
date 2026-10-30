@@ -38,9 +38,10 @@ pub struct ApiControl {
     token: SharedToken,
     broker: Arc<Broker>,
     router_ready: RouterReady,
-    /// The routers listening now, by the id each named. `router_ready` is
-    /// whether this is non-empty, kept beside it so the gate reads one flag.
-    listening_routers: Mutex<HashSet<String>>,
+    /// The routers the host has given ids to, and which of them listen.
+    /// `router_ready` is whether any listens, kept beside it so the gate reads
+    /// one flag.
+    routers: Mutex<Routers>,
     /// Held for a whole toggle, so toggles run one at a time. It guards the
     /// port the last one released.
     toggling: Mutex<Option<Released>>,
@@ -53,6 +54,23 @@ pub struct ApiControl {
 struct Inner {
     file: ConnectionFile,
     running: Option<Running>,
+}
+
+/// Every router asks the host for an id before it listens, and names itself
+/// by it. Ids count up and are never reused, so a page load can tell its own
+/// routers from those of the page before it: anything below `this_page_from`
+/// was handed to a page that has gone (#161).
+#[derive(Default)]
+struct Routers {
+    next: u64,
+    this_page_from: u64,
+    listening: HashSet<u64>,
+}
+
+impl Routers {
+    fn is_this_page_s(&self, id: u64) -> bool {
+        (self.this_page_from..self.next).contains(&id)
+    }
 }
 
 /// The port this server stopped listening on, and when.
@@ -71,7 +89,7 @@ impl ApiControl {
             broker: Arc::default(),
             // Not until the webview says so: it loads after the app starts.
             router_ready: Arc::new(AtomicBool::new(false)),
-            listening_routers: Mutex::default(),
+            routers: Mutex::default(),
             toggling: Mutex::default(),
             release_wait: ReleaseWait::default(),
             inner: Mutex::new(Inner {
@@ -256,35 +274,50 @@ impl ApiControl {
         Ok(inner.file.token.clone())
     }
 
+    /// The id a router in the webview names itself by from now on.
+    pub fn register_router(&self) -> u64 {
+        let mut routers = self.routers();
+        let id = routers.next;
+        routers.next += 1;
+        id
+    }
+
     /// A router in the webview started or stopped listening for requests. The
     /// API is ready while any of them listens, so one stopping never takes
     /// readiness from another — whatever order the two calls arrive in. (Under
     /// React StrictMode the abandoned first router says it stopped after the
     /// second has said it listens: #158.)
-    pub fn set_router_ready(&self, listener: &str, ready: bool) {
-        let mut listening = self.listening_routers();
+    pub fn set_router_ready(&self, listener: u64, ready: bool) {
+        let mut routers = self.routers();
         if ready {
-            listening.insert(listener.to_string());
+            if !routers.is_this_page_s(listener) {
+                // A page that has gone, saying late that it listens: it
+                // never will again, so a request sent to it would go unheard.
+                log::debug!("API router {listener} is not this page's; ignored");
+                return;
+            }
+            routers.listening.insert(listener);
         } else {
-            listening.remove(listener);
+            routers.listening.remove(&listener);
         }
         // Under the lock, so the flag follows the set in the order it changed.
         self.router_ready
-            .store(!listening.is_empty(), Ordering::SeqCst);
+            .store(!routers.listening.is_empty(), Ordering::SeqCst);
     }
 
     /// The page went away, and every router in it: nothing listens until the
     /// next page says so.
     pub fn forget_routers(&self) {
-        let mut listening = self.listening_routers();
-        listening.clear();
+        let mut routers = self.routers();
+        routers.listening.clear();
+        routers.this_page_from = routers.next;
         self.router_ready.store(false, Ordering::SeqCst);
     }
 
-    fn listening_routers(&self) -> MutexGuard<'_, HashSet<String>> {
-        // Each change is one insert, remove or clear, so a panic elsewhere
-        // cannot leave the set half-updated.
-        self.listening_routers
+    fn routers(&self) -> MutexGuard<'_, Routers> {
+        // Each change is one insert, remove, clear or counter step, so a panic
+        // elsewhere cannot leave the routers half-updated.
+        self.routers
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -328,7 +361,8 @@ mod tests {
 
     /// A router that is listening and answers with the path it was asked for.
     fn echo(control: &Arc<ApiControl>) -> Forward {
-        control.set_router_ready("echo", true);
+        let echo = control.register_router();
+        control.set_router_ready(echo, true);
         let control = Arc::downgrade(control);
         Arc::new(move |request| {
             if let Some(control) = control.upgrade() {
@@ -761,16 +795,18 @@ mod tests {
     #[test]
     fn a_listener_stopping_leaves_the_api_ready_while_another_listens() {
         let (_dir, control) = loaded();
+        let first = control.register_router();
+        let second = control.register_router();
 
-        control.set_router_ready("first", true);
-        control.set_router_ready("second", true);
-        control.set_router_ready("first", false);
+        control.set_router_ready(first, true);
+        control.set_router_ready(second, true);
+        control.set_router_ready(first, false);
 
         assert!(
             router_is_ready(&control),
             "the live listener lost its readiness"
         );
-        control.set_router_ready("second", false);
+        control.set_router_ready(second, false);
         assert!(!router_is_ready(&control), "ready with nothing listening");
     }
 
@@ -778,7 +814,8 @@ mod tests {
     fn is_not_ready_until_a_router_listens() {
         let (_dir, control) = loaded();
         assert!(!router_is_ready(&control));
-        control.set_router_ready("never-listened", false);
+        let never_listened = control.register_router();
+        control.set_router_ready(never_listened, false);
         assert!(!router_is_ready(&control));
     }
 
@@ -787,27 +824,79 @@ mod tests {
     #[test]
     fn a_router_that_says_it_listens_twice_stops_once() {
         let (_dir, control) = loaded();
-        control.set_router_ready("only", true);
-        control.set_router_ready("only", true);
-        control.set_router_ready("only", false);
+        let only = control.register_router();
+        control.set_router_ready(only, true);
+        control.set_router_ready(only, true);
+        control.set_router_ready(only, false);
         assert!(!router_is_ready(&control));
     }
 
     #[test]
     fn a_page_load_forgets_every_router() {
         let (_dir, control) = loaded();
-        control.set_router_ready("first", true);
-        control.set_router_ready("second", true);
+        let first = control.register_router();
+        let second = control.register_router();
+        control.set_router_ready(first, true);
+        control.set_router_ready(second, true);
 
         control.forget_routers();
         assert!(!router_is_ready(&control));
 
         // A router from the gone page saying late that it stopped changes
         // nothing, and the new page's router makes the API ready again.
-        control.set_router_ready("first", false);
+        control.set_router_ready(first, false);
         assert!(!router_is_ready(&control), "a gone page's router came back");
-        control.set_router_ready("next-page", true);
+        let next_page = control.register_router();
+        control.set_router_ready(next_page, true);
         assert!(router_is_ready(&control));
+    }
+
+    /// #161: page A's "I listen" can reach the host after the reload has
+    /// begun. Nothing of A listens by then, so the API must stay not ready
+    /// (requests refused at once) until page B's own router says it listens.
+    #[test]
+    fn a_reloaded_page_s_late_ready_never_marks_the_api_ready() {
+        let (_dir, control) = loaded();
+        let page_a = control.register_router();
+
+        control.forget_routers(); // the reload starts: page B is loading
+        control.set_router_ready(page_a, true);
+        assert!(!router_is_ready(&control), "ready with only page A's ghost");
+
+        let page_b = control.register_router();
+        control.set_router_ready(page_a, true);
+        assert!(!router_is_ready(&control), "page A's ghost beat page B");
+
+        control.set_router_ready(page_b, true);
+        assert!(router_is_ready(&control), "page B listens");
+        control.set_router_ready(page_b, false);
+        assert!(!router_is_ready(&control), "page A's ghost kept it ready");
+    }
+
+    /// The same when page B has gone too — reloaded again, say — before
+    /// either page's late "I listen" lands.
+    #[test]
+    fn late_readies_from_two_gone_pages_never_mark_the_api_ready() {
+        let (_dir, control) = loaded();
+        let page_a = control.register_router();
+        control.set_router_ready(page_a, true);
+
+        control.forget_routers(); // page B starts
+        let page_b = control.register_router();
+        control.forget_routers(); // page B goes before it said it listens
+
+        control.set_router_ready(page_a, true);
+        control.set_router_ready(page_b, true);
+        assert!(!router_is_ready(&control), "a gone page's router came back");
+    }
+
+    /// Only the host hands out ids: one it never gave is nobody's.
+    #[test]
+    fn an_id_the_host_never_gave_never_marks_the_api_ready() {
+        let (_dir, control) = loaded();
+        let given = control.register_router();
+        control.set_router_ready(given + 1, true);
+        assert!(!router_is_ready(&control));
     }
 
     #[test]
@@ -1068,5 +1157,338 @@ mod tests {
 
         assert_ne!(relaunched.status().port, Some(port));
         assert_ne!(relaunched.token(), token);
+    }
+
+    /// Hostile listener ids: none the host did not give this page can make it
+    /// ready, and none panics (#161).
+    #[test]
+    fn hostile_listener_ids_never_mark_the_api_ready() {
+        let (_dir, control) = loaded();
+        for hostile in [0, 1, u64::MAX, u64::MAX - 1] {
+            control.set_router_ready(hostile, true);
+            control.set_router_ready(hostile, false);
+            assert!(
+                !router_is_ready(&control),
+                "id {hostile} before any was given"
+            );
+        }
+        let past_page = control.register_router();
+        control.set_router_ready(past_page, true);
+        control.forget_routers();
+        control.set_router_ready(past_page, true);
+        control.set_router_ready(past_page, true);
+        control.set_router_ready(u64::MAX, true);
+        assert!(!router_is_ready(&control), "a past page's id, sent twice");
+
+        let current = control.register_router();
+        control.set_router_ready(current, true);
+        control.set_router_ready(current, true);
+        control.set_router_ready(u64::MAX, false);
+        control.set_router_ready(past_page, false);
+        assert!(
+            router_is_ready(&control),
+            "a hostile stop took a live router"
+        );
+        control.set_router_ready(current, false);
+        assert!(
+            !router_is_ready(&control),
+            "a duplicate ready outlived its stop"
+        );
+    }
+
+    /// The PR's known limit: a gone page whose register lands after the page
+    /// load gets an id of this page. That window is said to close once the new
+    /// page is up, but the ghost's id stays in the listening set until the
+    /// next page load, so it keeps the API ready after this page's router
+    /// stops, with nothing listening (requests wait out the 30 s timeout).
+    #[test]
+    #[ignore = "known limit, see PR #597 Known limits and issue #598: needs a per-document identity Tauri doesn't give"]
+    fn a_gone_page_s_late_register_never_keeps_the_api_ready_after_this_page_stops() {
+        let (_dir, control) = loaded();
+        control.forget_routers(); // the reload commits
+        let ghost = control.register_router(); // the old page's late register
+        control.set_router_ready(ghost, true);
+
+        let this_page = control.register_router();
+        control.set_router_ready(this_page, true);
+        control.set_router_ready(this_page, false);
+
+        assert!(
+            !router_is_ready(&control),
+            "the gone page's router kept the API ready after this page stopped"
+        );
+    }
+
+    /// Seeded random interleavings of page loads and StrictMode routers over
+    /// the host's ids (#161). Each page mounts its router twice: the first
+    /// mount stops as soon as its ready is acknowledged (after the second has
+    /// started), the second listens and maybe stops later. Messages in flight
+    /// arrive in any order; a router's own messages are sequential.
+    mod routers_property {
+        use super::*;
+
+        /// xorshift64*: deterministic, so a failing seed replays exactly.
+        struct Rng(u64);
+
+        impl Rng {
+            fn new(seed: u64) -> Self {
+                Self(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
+            }
+            fn below(&mut self, n: usize) -> usize {
+                self.0 ^= self.0 >> 12;
+                self.0 ^= self.0 << 25;
+                self.0 ^= self.0 >> 27;
+                (self.0.wrapping_mul(0x2545_F491_4F6C_DD1D) % n as u64) as usize
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq, Debug)]
+        enum State {
+            AwaitingId,
+            HasId(u64),
+            Listening(u64),
+            AwaitingReady(u64),
+            Live(u64),
+            Stopped,
+        }
+
+        struct Router {
+            page: usize,
+            abandoned: bool,
+            stops_later: bool,
+            state: State,
+        }
+
+        #[derive(Clone, Copy, Debug)]
+        enum Msg {
+            Register(usize),
+            Ready(usize, u64, bool),
+        }
+
+        enum Action {
+            Deliver(usize),
+            Local(usize),
+            Reload,
+        }
+
+        /// How a gone page behaves. `late_pages`: WebView2-style, a page keeps
+        /// running (receiving answers, registering, saying it listens) after
+        /// the host's page-load hook ran; it only never stops a live router.
+        struct World {
+            control: Arc<ApiControl>,
+            late_pages: bool,
+            routers: Vec<Router>,
+            pool: Vec<Msg>,
+            page: usize,
+            reloads_left: usize,
+            first_listen_seen: bool,
+            trace: Vec<String>,
+        }
+
+        impl World {
+            fn start_page(&mut self, rng: &mut Rng) {
+                for abandoned in [true, false] {
+                    let r = self.routers.len();
+                    self.routers.push(Router {
+                        page: self.page,
+                        abandoned,
+                        stops_later: rng.below(2) == 0,
+                        state: State::AwaitingId,
+                    });
+                    self.pool.push(Msg::Register(r));
+                }
+            }
+
+            fn acts(&self, r: usize) -> bool {
+                self.routers[r].page == self.page || self.late_pages
+            }
+
+            fn actions(&self) -> Vec<Action> {
+                let mut all: Vec<Action> = (0..self.pool.len()).map(Action::Deliver).collect();
+                for (r, router) in self.routers.iter().enumerate() {
+                    let local = match router.state {
+                        State::HasId(_) | State::Listening(_) => self.acts(r),
+                        State::Live(_) => router.stops_later && router.page == self.page,
+                        _ => false,
+                    };
+                    if local {
+                        all.push(Action::Local(r));
+                    }
+                }
+                if self.reloads_left > 0 {
+                    all.push(Action::Reload);
+                }
+                all
+            }
+
+            fn send_ready(&mut self, r: usize, id: u64, ready: bool) {
+                self.pool.push(Msg::Ready(r, id, ready));
+            }
+
+            fn apply(&mut self, action: Action, rng: &mut Rng) {
+                match action {
+                    Action::Reload => {
+                        self.trace
+                            .push(format!("forget (page {} loads)", self.page + 1));
+                        self.control.forget_routers();
+                        self.page += 1;
+                        self.reloads_left -= 1;
+                        self.first_listen_seen = false;
+                        self.start_page(rng);
+                    }
+                    Action::Local(r) => {
+                        let next = match self.routers[r].state {
+                            State::HasId(id) => State::Listening(id),
+                            State::Listening(id) => {
+                                self.send_ready(r, id, true);
+                                State::AwaitingReady(id)
+                            }
+                            State::Live(id) => {
+                                self.send_ready(r, id, false);
+                                State::Stopped
+                            }
+                            other => other,
+                        };
+                        self.trace.push(format!(
+                            "router {r}: {:?} -> {next:?}",
+                            self.routers[r].state
+                        ));
+                        self.routers[r].state = next;
+                    }
+                    Action::Deliver(i) => {
+                        let msg = self.pool.swap_remove(i);
+                        self.deliver(msg);
+                    }
+                }
+            }
+
+            fn deliver(&mut self, msg: Msg) {
+                match msg {
+                    Msg::Register(r) => {
+                        let id = self.control.register_router();
+                        self.trace.push(format!(
+                            "host: register router {r} (page {}) -> {id}",
+                            self.routers[r].page
+                        ));
+                        if self.acts(r) {
+                            self.routers[r].state = State::HasId(id);
+                        }
+                    }
+                    Msg::Ready(r, id, ready) => {
+                        self.control.set_router_ready(id, ready);
+                        self.trace.push(format!(
+                            "host: ready({id}, {ready}) from router {r} (page {}) -> api ready {}",
+                            self.routers[r].page,
+                            router_is_ready(&self.control)
+                        ));
+                        if ready && self.routers[r].page == self.page {
+                            self.first_listen_seen = true;
+                        }
+                        if ready && self.acts(r) {
+                            if self.routers[r].abandoned {
+                                // StrictMode's first mount: cancelled, so it
+                                // stops as soon as serving resolves.
+                                self.send_ready(r, id, false);
+                                self.routers[r].state = State::Stopped;
+                            } else {
+                                self.routers[r].state = State::Live(id);
+                            }
+                        }
+                    }
+                }
+            }
+
+            /// A router of this page that hears requests: listening, or its
+            /// stop still on its way to the host (an unavoidable crossing).
+            fn this_page_hears(&self) -> bool {
+                let stop_in_flight = self.pool.iter().any(|msg| {
+                    matches!(msg, Msg::Ready(r, _, false) if self.routers[*r].page == self.page)
+                });
+                stop_in_flight || self.this_page_listens()
+            }
+
+            fn this_page_listens(&self) -> bool {
+                self.routers.iter().any(|router| {
+                    router.page == self.page
+                        && matches!(
+                            router.state,
+                            State::Listening(_) | State::AwaitingReady(_) | State::Live(_)
+                        )
+                })
+            }
+
+            fn this_page_is_live(&self) -> bool {
+                self.routers.iter().any(|router| {
+                    router.page == self.page && matches!(router.state, State::Live(_))
+                })
+            }
+        }
+
+        /// Runs one seeded world to quiescence; `Err` names the broken invariant.
+        fn run(seed: u64, late_pages: bool) -> Result<(), String> {
+            let mut rng = Rng::new(seed);
+            let (_dir, control) = loaded();
+            let mut world = World {
+                control,
+                late_pages,
+                routers: Vec::new(),
+                pool: Vec::new(),
+                page: 0,
+                reloads_left: rng.below(4),
+                first_listen_seen: false,
+                trace: Vec::new(),
+            };
+            world.start_page(&mut rng);
+            loop {
+                let mut actions = world.actions();
+                if actions.is_empty() {
+                    break;
+                }
+                let pick = rng.below(actions.len());
+                world.apply(actions.swap_remove(pick), &mut rng);
+                let ready = router_is_ready(&world.control);
+                let bounded = !late_pages || world.first_listen_seen;
+                if ready && bounded && !world.this_page_hears() {
+                    return Err(format!(
+                        "seed {seed}: ready with no router of page {} hearing\n{}",
+                        world.page,
+                        world.trace.join("\n")
+                    ));
+                }
+            }
+            let ready = router_is_ready(&world.control);
+            if ready != world.this_page_is_live() {
+                return Err(format!(
+                    "seed {seed}: settled with api ready {ready} but page {} live {}\n{}",
+                    world.page,
+                    world.this_page_is_live(),
+                    world.trace.join("\n")
+                ));
+            }
+            Ok(())
+        }
+
+        fn first_failure(late_pages: bool) -> Option<String> {
+            (0..500).find_map(|seed| run(seed, late_pages).err())
+        }
+
+        #[test]
+        fn ready_only_ever_means_this_page_listens_when_gone_pages_fall_silent() {
+            if let Some(failure) = first_failure(false) {
+                panic!("{failure}");
+            }
+        }
+
+        /// WebView2-style: a gone page may still register and say it listens
+        /// after the page-load hook. The PR accepts a window for that, said to
+        /// close once the new page is up: ready with nothing of this page
+        /// hearing must never outlast this page's first listen.
+        #[test]
+        #[ignore = "known limit, see PR #597 Known limits and issue #598: needs a per-document identity Tauri doesn't give"]
+        fn a_late_registering_gone_page_never_keeps_the_api_ready_past_this_page_s_first_listen() {
+            if let Some(failure) = first_failure(true) {
+                panic!("{failure}");
+            }
+        }
     }
 }

@@ -54,6 +54,7 @@ function fakeMarkdown(): MarkdownPort {
     serializeBody: ({ originalBody }) => originalBody,
     rawParts: () => [],
     noteBlocks: () => ({ quotes: [], hidden: [] }),
+    writeTree: () => '',
     addToFrontmatterMap: () => null,
   } as MarkdownPort;
 }

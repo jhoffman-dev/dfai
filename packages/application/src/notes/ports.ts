@@ -1,4 +1,11 @@
-import type { BodyRange, EditorDocument, NoteBlocks, ParsedBody, RawPart } from '@dfai/domain';
+import type {
+  BodyRange,
+  EditorDocument,
+  MdRoot,
+  NoteBlocks,
+  ParsedBody,
+  RawPart,
+} from '@dfai/domain';
 
 /**
  * Turning markdown into an editable document and back. The implementation is a
@@ -79,4 +86,10 @@ export interface MarkdownPort {
    * highlights are read from (ADR-0043 §2), as the note renders.
    */
   noteBlocks(text: string): NoteBlocks;
+  /**
+   * A markdown tree written as markdown, one block, as the editor writes a
+   * block: what a capture's body is written with (#103, ADR-0049), so its
+   * bytes are the editor's own and its escaping the library's.
+   */
+  writeTree(root: MdRoot): string;
 }

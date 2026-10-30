@@ -143,10 +143,14 @@ export default defineConfig({
         'packages/application/src/sync/**': { lines: 90, functions: 90, branches: 85 },
         // Meeting import marks, and archives, files that arrived from outside DFAI (P28-04).
         'packages/application/src/meetings/**': { lines: 90, functions: 90, branches: 85 },
+        // A capture writes a message from Slack into the Inbox, once (#103).
+        'packages/application/src/capture/**': { lines: 90, functions: 90, branches: 85 },
         // Linking a meeting writes its people and companies, and proposals, by itself (P29-04).
         'packages/application/src/meeting-links/**': { lines: 90, functions: 90, branches: 85 },
         // P32-02: the cache of meanings — a stale or wrong one answers a question silently wrong.
         'packages/application/src/embeddings/**': { lines: 90, functions: 90, branches: 85 },
+        // P32-03: accepting a related note writes a link into a note; saving a trail writes a note.
+        'packages/application/src/related/**': { lines: 90, functions: 90, branches: 85 },
         // Who the vault's owner is — their name and addresses — decides whose a meeting's tasks are (#173).
         'packages/application/src/profile/**': { lines: 90, functions: 90, branches: 85 },
         // Kept work is the only copy of typing the vault never got.

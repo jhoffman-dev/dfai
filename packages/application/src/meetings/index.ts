@@ -1,11 +1,17 @@
-export { catchUpMeetings, importArrivedMeetings } from './import-arrived-meetings.ts';
+export {
+  catchUpMeetings,
+  createUnsettledSaid,
+  importArrivedMeetings,
+} from './import-arrived-meetings.ts';
 export type {
+  UnsettledSaid,
   MeetingImportOutcome,
   MeetingImportPorts,
   MeetingImportRun,
 } from './import-arrived-meetings.ts';
 export { createMeetingImporter, importMeetingsOnArrival } from './meeting-importer.ts';
 export type { MeetingImporter } from './meeting-importer.ts';
+export type { MeetingsWaitingWatch } from './meetings-waiting.ts';
 export { MeetingPathsTakenError, receiveMeeting } from './receive-meeting.ts';
 export type { MeetingReceipt } from './receive-meeting.ts';
 export {

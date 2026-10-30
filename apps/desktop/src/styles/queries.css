@@ -859,6 +859,39 @@
   background: var(--hover);
 }
 
+/* A task's card (#107): its name opens it, so the card itself is no button. */
+.qresult__card--task {
+  cursor: default;
+}
+
+.qresult__card--task:hover {
+  background: var(--surface);
+}
+
+.qresult__card-head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+/* A task row's Today toggle and Move to…, kept to one line. */
+.qresult__commands {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* Why a row's change was refused, said on the row (#107). */
+.qresult__refusal {
+  align-items: center;
+  color: var(--danger);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--text-meta);
+  gap: 4px;
+}
+
 .qresult__card-title {
   font-size: var(--text-emphasis);
   font-weight: 500;
