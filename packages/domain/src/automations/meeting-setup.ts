@@ -26,7 +26,7 @@ export interface MeetingSetupFacts<Type extends ObjectType = ObjectType> {
   /** The vault's types, as their files define them. */
   readonly types: readonly Type[];
   /** The vault's rules, as their files say. */
-  readonly rules: readonly Pick<AutomationDraft, 'name' | 'enabled' | 'action'>[];
+  readonly rules: readonly Pick<AutomationDraft, 'name' | 'enabled' | 'action' | 'when'>[];
   /** Every note's path: a rule file already called "After a meeting" is not written over. */
   readonly takenPaths: readonly string[];
   /** Whether a note is at the prompt's path, the person's own or DFAI's. */
@@ -45,6 +45,14 @@ export interface MeetingSetupLine {
   readonly detail: string;
   /** False when it is already there, or cannot be done: nothing is written for it. */
   readonly written: boolean;
+  /** True when it cannot be done (a file in the way, a type missing or claimed twice), not merely there. */
+  readonly blocked: boolean;
+}
+
+/** Something the preview said would be written that can no longer be, and why. */
+export interface MeetingSetupLoss {
+  readonly what: string;
+  readonly reason: string;
 }
 
 /** What one yes would write to set up meeting post-processing (ADR-0036). */
@@ -63,9 +71,26 @@ export interface MeetingSetupPlan<Type extends ObjectType = ObjectType> {
   readonly ruleOn: boolean;
 }
 
-/** Whether a rule is the declared step that post-processes meetings, under whatever name. */
-const postProcessesMeetings = ({ action }: Pick<AutomationDraft, 'action'>) =>
-  isDeclaredStep(action);
+type RuleFacts = Pick<AutomationDraft, 'enabled' | 'action' | 'when'>;
+
+/**
+ * Whether a rule post-processes a meeting as it arrives: the declared step
+ * (`apply: mine`, under whatever name) set off by a meeting being created. One
+ * that runs by hand or on a schedule does not, so it is not counted as set up.
+ */
+function processesArrivals({ action, when }: RuleFacts): boolean {
+  return (
+    isDeclaredStep(action) &&
+    when.kind === 'note' &&
+    folded(when.type) === MEETING_TYPE &&
+    when.on.includes('created')
+  );
+}
+
+/** Whether a rule that is on post-processes meetings as they arrive: then nothing is to be offered. */
+export function meetingsProcessedOnArrival(rules: readonly RuleFacts[]): boolean {
+  return rules.some((rule) => rule.enabled && processesArrivals(rule));
+}
 
 /** The keys the Meeting type needs for the import, the step's links and its summary block. */
 const MEETING_KEYS: readonly PropertyDef[] = [
@@ -106,7 +131,7 @@ export function meetingSetupPlan<Type extends ObjectType>(
     prompt: prompt.path,
     extensions: [meeting.extension, task.extension].flatMap((one) => (one === null ? [] : [one])),
     asksEmails: emails.written,
-    ruleOn: facts.rules.some((one) => one.enabled && postProcessesMeetings(one)),
+    ruleOn: meetingsProcessedOnArrival(facts.rules),
     lines: [
       rule.line,
       ...(prompt.line === null ? [] : [prompt.line]),
@@ -128,11 +153,14 @@ function rulePlan(facts: MeetingSetupFacts): {
   draft: AutomationDraft | null;
   line: MeetingSetupLine;
 } {
-  const existing = facts.rules.find(postProcessesMeetings);
+  const existing = facts.rules.find(processesArrivals);
   if (existing !== undefined) {
     const off = existing.enabled ? '' : ' It is turned off: turn it on in Automations.';
     const detail = `Already there, as “${existing.name}”.${off}`;
-    return { draft: null, line: { kind: 'rule', what: RULE_WHAT, detail, written: false } };
+    return {
+      draft: null,
+      line: { kind: 'rule', what: RULE_WHAT, detail, written: false, blocked: false },
+    };
   }
   const taken = automationNameProblem(AFTER_A_MEETING_PRESET.name, facts.takenPaths);
   if (taken !== null) {
@@ -143,12 +171,13 @@ function rulePlan(facts: MeetingSetupFacts): {
         what: RULE_WHAT,
         detail: `${taken} It is left as it is.`,
         written: false,
+        blocked: true,
       },
     };
   }
   return {
     draft: AFTER_A_MEETING_PRESET,
-    line: { kind: 'rule', what: RULE_WHAT, detail: RULE_DETAIL, written: true },
+    line: { kind: 'rule', what: RULE_WHAT, detail: RULE_DETAIL, written: true, blocked: false },
   };
 }
 
@@ -168,7 +197,7 @@ function promptPlan(
   facts: MeetingSetupFacts,
   draft: AutomationDraft | null,
 ): { path: VaultPath | null; line: MeetingSetupLine | null } {
-  const named = [draft, ...facts.rules.filter(postProcessesMeetings)].some(
+  const named = [draft, ...facts.rules.filter(processesArrivals)].some(
     (rule) =>
       rule !== null &&
       rule.action.kind === 'claude' &&
@@ -179,11 +208,20 @@ function promptPlan(
   if (facts.promptHeld) {
     return {
       path: null,
-      line: { kind: 'prompt', what, detail: 'Already there: kept as it is.', written: false },
+      line: {
+        kind: 'prompt',
+        what,
+        detail: 'Already there: kept as it is.',
+        written: false,
+        blocked: false,
+      },
     };
   }
   const detail = 'What Claude is asked of each meeting, as DFAI ships it.';
-  return { path: AFTER_A_MEETING_PROMPT, line: { kind: 'prompt', what, detail, written: true } };
+  return {
+    path: AFTER_A_MEETING_PROMPT,
+    line: { kind: 'prompt', what, detail, written: true, blocked: false },
+  };
 }
 
 /** A vault's type name as the disk compares its file's: in any case. */
@@ -198,22 +236,34 @@ function typePlan<Type extends ObjectType>(
   const [only] = claimed;
   if (only === undefined) {
     const detail = `The vault has no ${wanted.label} type, so it gains nothing: ${keyList(wanted.keys)} are added by setting up again once it has one.`;
-    return { extension: null, line: { kind: 'type', what, detail, written: false } };
+    return { extension: null, line: { kind: 'type', what, detail, written: false, blocked: true } };
   }
   if (claimed.length > 1) {
     const detail = `Two files define the ${wanted.label} type: merge them, then set up again.`;
-    return { extension: null, line: { kind: 'type', what, detail, written: false } };
+    return { extension: null, line: { kind: 'type', what, detail, written: false, blocked: true } };
   }
   const extension = typeGainingKeys(only, wanted.keys);
   if (extension === null) {
     return {
       extension: null,
-      line: { kind: 'type', what, detail: 'Already has every key it needs.', written: false },
+      line: {
+        kind: 'type',
+        what,
+        detail: 'Already has every key it needs.',
+        written: false,
+        blocked: false,
+      },
     };
   }
   return {
     extension,
-    line: { kind: 'type', what, detail: `Gains ${keyList(extension.added)}.`, written: true },
+    line: {
+      kind: 'type',
+      what,
+      detail: `Gains ${keyList(extension.added)}.`,
+      written: true,
+      blocked: false,
+    },
   };
 }
 
@@ -225,6 +275,7 @@ function emailsLine({ emails, source, problem }: SelfEmails): MeetingSetupLine {
     what: 'Your email addresses',
     detail,
     written,
+    blocked: false,
   });
   const listed = emails.join(', ');
   if (problem !== null) {
@@ -259,7 +310,7 @@ function emailsLine({ emails, source, problem }: SelfEmails): MeetingSetupLine {
 export function meetingSetupWithin<Type extends ObjectType>(
   shown: MeetingSetupPlan<ObjectType>,
   now: MeetingSetupPlan<Type>,
-): MeetingSetupPlan<Type> {
+): MeetingSetupPlan<Type> & { readonly lost: readonly MeetingSetupLoss[] } {
   const keysShown = new Map(
     shown.extensions.map((extension) => [folded(extension.before.name), extensionKeys(extension)]),
   );
@@ -275,5 +326,28 @@ export function meetingSetupWithin<Type extends ObjectType>(
     asksEmails: shown.asksEmails && now.asksEmails,
     ruleOn: now.ruleOn,
     lines: now.lines,
+    lost: lostSince(shown, now),
   };
+}
+
+/**
+ * What the preview said would be written that the vault now stands in the way
+ * of — a file at the rule's path, a type now claimed twice — with the reason
+ * as the vault says it now. What is merely there already is not lost. The
+ * addresses are the caller's to judge, since only it knows what was typed.
+ */
+function lostSince(shown: MeetingSetupPlan, now: MeetingSetupPlan): MeetingSetupLoss[] {
+  const nowByWhat = new Map(now.lines.map((line) => [line.what, line]));
+  return shown.lines.flatMap((line) => {
+    const later = nowByWhat.get(line.what);
+    if (!line.written || line.kind === 'emails' || later === undefined) return [];
+    return !later.written && later.blocked ? [{ what: line.what, reason: later.detail }] : [];
+  });
+}
+
+/** Why typed addresses the preview asked for cannot be saved now, or null when they can. */
+export function emailsLostSince(now: MeetingSetupPlan): string | null {
+  if (now.asksEmails) return null;
+  const line = now.lines.find((one) => one.kind === 'emails');
+  return `Not saved. ${line?.detail ?? ''} Change them in Settings → Profile.`.replace(/ +/g, ' ');
 }

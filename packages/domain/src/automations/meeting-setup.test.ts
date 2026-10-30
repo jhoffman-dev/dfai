@@ -5,6 +5,8 @@ import type { SelfEmails } from '../profile/self-emails.ts';
 import { parseObjectType, type ObjectType } from '../types/property-def.ts';
 import type { AutomationDraft } from './automation-rule.ts';
 import {
+  emailsLostSince,
+  meetingsProcessedOnArrival,
   meetingSetupPlan,
   meetingSetupWithin,
   meetingSetupWritesNothing,
@@ -173,6 +175,7 @@ describe('meetingSetupPlan', () => {
       what: `The prompt ${PROMPT}`,
       detail: 'Already there: kept as it is.',
       written: false,
+      blocked: false,
     });
   });
 
@@ -211,6 +214,7 @@ describe('meetingSetupPlan', () => {
       what: 'The Task type',
       detail: 'Already has every key it needs.',
       written: false,
+      blocked: false,
     });
   });
 
@@ -310,5 +314,74 @@ describe('meetingSetupWithin', () => {
     expect(within.prompt).toBe(PROMPT);
     expect(within.extensions).toHaveLength(2);
     expect(within.asksEmails).toBe(true);
+  });
+});
+
+describe('rules that process meetings on arrival', () => {
+  const declared = AFTER_A_MEETING_PRESET;
+
+  it('counts only a declared step a meeting being created sets off, and only while it is on', () => {
+    expect(meetingsProcessedOnArrival([declared])).toBe(true);
+    expect(meetingsProcessedOnArrival([{ ...declared, enabled: false }])).toBe(false);
+    const hourly: AutomationDraft = { ...declared, when: { kind: 'hourly', every: 1 } };
+    expect(meetingsProcessedOnArrival([hourly])).toBe(false);
+    const tasks = { ...declared, when: { kind: 'note', type: 'task', on: ['created'] } } as never;
+    expect(meetingsProcessedOnArrival([tasks])).toBe(false);
+    const edits = {
+      ...declared,
+      when: { kind: 'note', type: 'Meeting', on: ['modified'] },
+    } as never;
+    expect(meetingsProcessedOnArrival([edits])).toBe(false);
+    const cased = {
+      ...declared,
+      when: { kind: 'note', type: 'Meeting', on: ['created'] },
+    } as never;
+    expect(meetingsProcessedOnArrival([cased])).toBe(true);
+  });
+
+  it('offers the rule beside a declared step that never runs on arrival', () => {
+    const manual = { ...declared, name: 'By hand', when: { kind: 'manual' } } as never;
+    const plan = meetingSetupPlan(facts({ rules: [manual] }));
+    expect(plan.rule).toBe(AFTER_A_MEETING_PRESET);
+    expect(plan.ruleOn).toBe(false);
+  });
+});
+
+describe('what the vault came to stand in the way of since the preview', () => {
+  it('says the rule is lost to a file at its path, and why, with nothing merely there counted', () => {
+    const shown = meetingSetupPlan(facts());
+    const taken = facts({ takenPaths: ['.atlas/automations/After a meeting.md'] });
+    const within = meetingSetupWithin(shown, meetingSetupPlan(taken));
+    expect(within.lost.map((loss) => loss.what)).toEqual(['The “After a meeting” rule']);
+    expect(within.lost[0]?.reason).toContain('There is already an automation called');
+    const arrived = meetingSetupWithin(
+      shown,
+      meetingSetupPlan(facts({ rules: [AFTER_A_MEETING_PRESET], promptHeld: true })),
+    );
+    expect(arrived.lost).toEqual([]);
+  });
+
+  it('says the Meeting keys are lost when a second file claims the type', () => {
+    const shown = meetingSetupPlan(facts());
+    const twice = facts({ types: [MEETING, { ...MEETING, name: 'Meeting' }, TASK] });
+    const within = meetingSetupWithin(shown, meetingSetupPlan(twice));
+    expect(within.lost).toEqual([
+      {
+        what: 'The Meeting type',
+        reason: 'Two files define the Meeting type: merge them, then set up again.',
+      },
+    ]);
+  });
+
+  it('says why typed addresses cannot be saved once selfEmails holds some, and nothing while they can', () => {
+    expect(emailsLostSince(meetingSetupPlan(facts()))).toBeNull();
+    const saved = meetingSetupPlan(
+      facts({
+        selfEmails: { emails: ['tobias@example.com'], source: 'selfEmails', problem: null },
+      }),
+    );
+    const lost = emailsLostSince(saved);
+    expect(lost).toContain('Not saved.');
+    expect(lost).toContain('tobias@example.com');
   });
 });

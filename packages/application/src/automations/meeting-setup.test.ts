@@ -170,6 +170,43 @@ describe('acceptMeetingSetup', () => {
     );
   });
 
+  it('claims no prompt written when another note landed at its path the same moment', async () => {
+    const v = vault({ [MEETING_TYPE]: MEETING, [TASK_TYPE]: TASK });
+    const offer = await previewMeetingSetup(v);
+    const raced: VaultFsPort = {
+      ...v.fs,
+      createNote: async (create) => {
+        if (create.path === PROMPT) {
+          v.files.set(PROMPT, 'Mara’s own way of asking.\n');
+          throw new Error('A note is already there.');
+        }
+        return v.fs.createNote(create);
+      },
+    };
+    const done = await acceptMeetingSetup({ ...v, fs: raced, offer, emails: '' });
+    expect(v.files.get(PROMPT)).toBe('Mara’s own way of asking.\n');
+    expect(done.written.some((line) => line.includes(PROMPT))).toBe(false);
+    expect(done.failed).toEqual([]);
+    expect(done.ruleOn).toBe(true);
+  });
+
+  it('says the rule is on but its log failed when only the turned-on entry could not be written', async () => {
+    const v = vault({ [MEETING_TYPE]: MEETING, [TASK_TYPE]: TASK });
+    const offer = await previewMeetingSetup(v);
+    const logRefused: VaultFsPort = {
+      ...v.fs,
+      createNote: async (create) => {
+        if (create.path.includes('/log/')) throw new Error('The disk said no.');
+        return v.fs.createNote(create);
+      },
+    };
+    const done = await acceptMeetingSetup({ ...v, fs: logRefused, offer, emails: '' });
+    expect(done.written).toContain('Turned on “After a meeting”.');
+    expect(done.failed.map(({ what }) => what)).toEqual(['The “After a meeting” rule’s log']);
+    expect(done.failed[0]?.reason).toContain('The disk said no.');
+    expect(done.failed[0]?.reason).toContain('The rule is written and on');
+  });
+
   it('a second yes duplicates nothing and writes nothing', async () => {
     const v = vault({ [MEETING_TYPE]: MEETING, [TASK_TYPE]: TASK });
     await yes(v, 'mara.quill@example.com');

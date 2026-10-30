@@ -332,8 +332,15 @@ export {
 } from './cited-items.ts';
 export type { CitedBody } from './cited-items.ts';
 export {
+  emailsLostSince,
   meetingSetupPlan,
   meetingSetupWithin,
   meetingSetupWritesNothing,
+  meetingsProcessedOnArrival,
 } from './meeting-setup.ts';
-export type { MeetingSetupFacts, MeetingSetupLine, MeetingSetupPlan } from './meeting-setup.ts';
+export type {
+  MeetingSetupFacts,
+  MeetingSetupLine,
+  MeetingSetupLoss,
+  MeetingSetupPlan,
+} from './meeting-setup.ts';

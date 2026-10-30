@@ -42,7 +42,15 @@ const OFFER: MeetingSetupOffer = {
   prompt: null,
   extensions: [],
   asksEmails: true,
-  lines: [{ kind: 'rule', what: 'The “After a meeting” rule', detail: 'Written.', written: true }],
+  lines: [
+    {
+      kind: 'rule',
+      what: 'The “After a meeting” rule',
+      detail: 'Written.',
+      written: true,
+      blocked: false,
+    },
+  ],
   ruleOn: false,
 };
 
@@ -73,35 +81,32 @@ function setup(where: 'inbox' | 'automations' = 'inbox') {
 }
 
 describe('useMeetingSetup (attack #643)', () => {
-  it.fails(
-    'a yes still running in one vault leaves the next vault’s open preview alone',
-    async () => {
-      preview.mockReset().mockResolvedValue(OFFER);
-      let finish: (done: MeetingSetupDone) => void = () => {};
-      accept.mockReset().mockReturnValue(new Promise((resolve) => (finish = resolve)));
-      const { hook } = setup('automations');
-      act(() => hook.result.current?.onOpen());
-      await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
-      act(() => hook.result.current?.onAccept());
-      hook.rerender({ vault: '/vaults/fenn' });
-      act(() => hook.result.current?.onOpen());
-      await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
-      await act(async () => {
-        finish({
-          written: ['Turned on “After a meeting”.'],
-          failed: [],
-          refused: null,
-          ruleOn: true,
-        });
-        await Promise.resolve();
+  it('a yes still running in one vault leaves the next vault’s open preview alone', async () => {
+    preview.mockReset().mockResolvedValue(OFFER);
+    let finish: (done: MeetingSetupDone) => void = () => {};
+    accept.mockReset().mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const { hook } = setup('automations');
+    act(() => hook.result.current?.onOpen());
+    await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
+    act(() => hook.result.current?.onAccept());
+    hook.rerender({ vault: '/vaults/fenn' });
+    act(() => hook.result.current?.onOpen());
+    await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
+    await act(async () => {
+      finish({
+        written: ['Turned on “After a meeting”.'],
+        failed: [],
+        refused: null,
+        ruleOn: true,
       });
-      // The yes was said in /vaults/larkspur; the preview open in /vaults/fenn must survive it.
-      await waitFor(() => expect(hook.result.current?.open).toBe(true));
-      expect(hook.result.current?.lines).toEqual(OFFER.lines);
-    },
-  );
+      await Promise.resolve();
+    });
+    // The yes was said in /vaults/larkspur; the preview open in /vaults/fenn must survive it.
+    await waitFor(() => expect(hook.result.current?.open).toBe(true));
+    expect(hook.result.current?.lines).toEqual(OFFER.lines);
+  });
 
-  it.fails('on the Inbox, still offers the setup while the only meeting rule is turned off', () => {
+  it('on the Inbox, still offers the setup while the only meeting rule is turned off', () => {
     const { hook, automations } = setup();
     const off = {
       ...AFTER_A_MEETING_PRESET,

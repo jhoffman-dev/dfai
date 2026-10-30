@@ -1,5 +1,9 @@
 import {
   AFTER_A_MEETING_PROMPT,
+  automationPathFor,
+  builtInPromptAt,
+  createVaultPath,
+  emailsLostSince,
   meetingSetupPlan,
   meetingSetupWithin,
   selfEmailsFromText,
@@ -7,6 +11,7 @@ import {
   type MeetingSetupFacts,
   type MeetingSetupPlan,
   type ObjectType,
+  type VaultPath,
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
@@ -100,7 +105,7 @@ export async function acceptMeetingSetup({
   const typed = offer.asksEmails ? selfEmailsFromText(emails) : { ok: true as const, emails: [] };
   if (!typed.ok) return { written: [], failed: [], refused: typed.problem, ruleOn: offer.ruleOn };
   const now = meetingSetupWithin(offer, meetingSetupPlan(await setupFacts(ports)));
-  const done: SetupSteps = { written: [], failed: [] };
+  const done: SetupSteps = { written: [], failed: [...now.lost] };
   for (const { before, after, added } of now.extensions) {
     const keys = added.map((property) => property.key).join(', ');
     await step(done, {
@@ -109,50 +114,94 @@ export async function acceptMeetingSetup({
       write: () => saveObjectType({ ...ports, path: before.path, before, type: after }),
     });
   }
-  const { prompt, rule } = now;
-  if (prompt !== null) {
-    await step(done, {
-      what: `The prompt ${prompt}`,
-      said: `Wrote the prompt ${prompt}.`,
-      write: () => ensureShippedPrompt(ports.fs, prompt),
-    });
-  }
-  if (now.asksEmails && typed.emails.length > 0) {
-    await step(done, {
-      what: 'Your email addresses',
-      said: `Saved your emails: ${typed.emails.join(', ')}.`,
-      write: () => saveSelfEmails({ settings: ports.settings, emails: typed.emails }),
-    });
-  }
-  const ruleWritten = rule !== null && (await writeRule(ports, done, rule));
+  if (now.prompt !== null) await writePrompt(ports.fs, done, now.prompt);
+  await saveEmails(ports, done, { now, emails: typed.emails });
+  const ruleWritten = now.rule !== null && (await writeRule(ports, done, now.rule));
   return { ...done, refused: null, ruleOn: now.ruleOn || ruleWritten };
 }
 
+/** Writes DFAI's prompt where no note is, and says so only when DFAI's words are what is there. */
+async function writePrompt(fs: VaultFsPort, done: SetupSteps, prompt: VaultPath): Promise<void> {
+  try {
+    await ensureShippedPrompt(fs, prompt);
+  } catch (cause) {
+    done.failed.push({ what: `The prompt ${prompt}`, reason: reasonOf(cause) });
+    return;
+  }
+  // A note someone else put there at the same moment is theirs, kept, and not claimed.
+  if (await holdsShippedPrompt(fs, prompt)) done.written.push(`Wrote the prompt ${prompt}.`);
+}
+
+/** Saves the typed addresses, or says why they cannot be when one was saved since the preview. */
+async function saveEmails(
+  ports: MeetingSetupPorts,
+  done: SetupSteps,
+  { now, emails }: { now: MeetingSetupPlan; emails: readonly string[] },
+): Promise<void> {
+  if (emails.length === 0) return;
+  const lost = emailsLostSince(now);
+  if (lost !== null) {
+    done.failed.push({ what: EMAILS_WHAT, reason: lost });
+    return;
+  }
+  await step(done, {
+    what: EMAILS_WHAT,
+    said: `Saved your emails: ${emails.join(', ')}.`,
+    write: () => saveSelfEmails({ settings: ports.settings, emails }),
+  });
+}
+
+const EMAILS_WHAT = 'Your email addresses';
+
 /**
- * Writes the rule, and says so; whether it was written. Writing a rule writes
- * the prompt DFAI ships for it where no note is (`createAutomation`), so a
- * prompt that went missing after the preview is written with it, and said too.
+ * Writes the rule, and says so; whether it is in place. That is judged from
+ * its file, not from whether the write threw: the rule's file is written
+ * before its "turned on" log entry, so a log that fails leaves the rule on.
+ * Writing a rule writes the prompt DFAI ships for it where no note is
+ * (`createAutomation`), so a prompt missing until then — gone since the
+ * preview, or refused a moment before — is said to be written, once.
  */
 async function writeRule(
   ports: MeetingSetupPorts,
   done: SetupSteps,
   rule: AutomationDraft,
 ): Promise<boolean> {
-  const prompt = rule.action.kind === 'claude' ? rule.action.prompt : null;
-  const held = async () => prompt !== null && (await ports.fs.readNotes([prompt])).length > 0;
-  const promptMissing = prompt !== null && !(await held());
-  const ok = await step(done, {
-    what: `The “${rule.name}” rule`,
-    said: `Turned on “${rule.name}”.`,
-    write: async () => {
-      await createAutomation({ ...ports, draft: rule, takenPaths: await listVaultNotes(ports) });
-    },
-  });
-  if (ok && promptMissing && (await held())) {
+  const path = automationPathFor(rule.name);
+  const prompt = rule.action.kind === 'claude' ? createVaultPath(rule.action.prompt) : null;
+  const promptMissing = prompt !== null && !(await isHeld(ports.fs, prompt));
+  const fileBefore = await isHeld(ports.fs, path);
+  let failure: unknown = null;
+  try {
+    await createAutomation({ ...ports, draft: rule, takenPaths: await listVaultNotes(ports) });
+  } catch (cause) {
+    failure = cause ?? 'failed';
+  }
+  const inPlace = failure === null || (!fileBefore && (await isHeld(ports.fs, path)));
+  const what = `The “${rule.name}” rule`;
+  if (inPlace) done.written.push(`Turned on “${rule.name}”.`);
+  if (failure !== null) {
+    const reason = inPlace
+      ? `${reasonOf(failure)} The rule is written and on; its log does not say when it was turned on.`
+      : reasonOf(failure);
+    done.failed.push({ what: inPlace ? `${what}’s log` : what, reason });
+  }
+  if (prompt !== null && promptMissing && (await holdsShippedPrompt(ports.fs, prompt))) {
+    const refused = done.failed.findIndex((one) => one.what === `The prompt ${prompt}`);
+    if (refused !== -1) done.failed.splice(refused, 1);
     done.written.push(`Wrote the prompt ${prompt}, which the “${rule.name}” rule names.`);
   }
-  return ok;
+  return inPlace;
 }
+
+const isHeld = async (fs: VaultFsPort, path: VaultPath) => (await fs.readNotes([path])).length > 0;
+
+/** Whether the note at `path` holds the words DFAI ships there, as written by DFAI. */
+async function holdsShippedPrompt(fs: VaultFsPort, path: VaultPath): Promise<boolean> {
+  const [note] = await fs.readNotes([path]);
+  return note !== undefined && note.text === builtInPromptAt(path)?.contents;
+}
+
+const reasonOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 interface SetupSteps {
   readonly written: string[];
@@ -169,7 +218,7 @@ async function step(
     done.written.push(said);
     return true;
   } catch (cause) {
-    done.failed.push({ what, reason: cause instanceof Error ? cause.message : String(cause) });
+    done.failed.push({ what, reason: reasonOf(cause) });
     return false;
   }
 }

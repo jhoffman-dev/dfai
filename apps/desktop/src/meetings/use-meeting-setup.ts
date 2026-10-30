@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
-import { isDeclaredStep, meetingSetupWritesNothing } from '@dfai/domain';
+import { meetingSetupWritesNothing, meetingsProcessedOnArrival } from '@dfai/domain';
 import {
   acceptMeetingSetup,
   previewMeetingSetup,
@@ -80,7 +80,9 @@ export function useMeetingSetup(
   const state = held.vault === vault ? held : IDLE;
   const needed = useStore(automations, (s) => {
     const listing = s.automations?.listing ?? null;
-    return listing !== null && !listing.automations.some(({ rule }) => isDeclaredStep(rule.action));
+    return (
+      listing !== null && !meetingsProcessedOnArrival(listing.automations.map(({ rule }) => rule))
+    );
   });
   const commands = useSetupCommands(wiring, vault);
   return useMemo(() => {
@@ -110,26 +112,34 @@ type SetupCommands = Pick<
 
 function useSetupCommands(wiring: MeetingSetupWiring, vault: string | null): SetupCommands {
   const { store } = wiring;
+  // What the person does here starts this vault's state afresh if another vault's is held.
   const change = useCallback(
     (next: Partial<MeetingSetupState>) =>
       store.setState((was) => ({ ...(was.vault === vault ? was : { vault, ...FRESH }), ...next })),
+    [store, vault],
+  );
+  // What a read or a write says once it is done lands only in the vault it started in.
+  const settle = useCallback(
+    (next: Partial<MeetingSetupState>) =>
+      store.setState((was) => (was.vault === vault ? { ...was, ...next } : was)),
     [store, vault],
   );
   const onOpen = useCallback(() => {
     change({ open: true, offer: null, result: null, problem: null });
     previewMeetingSetup(wiring).then(
       (offer) =>
-        change({ offer, emails: offer.asksEmails ? wiring.suggestedEmails.join(', ') : '' }),
+        settle({ offer, emails: offer.asksEmails ? wiring.suggestedEmails.join(', ') : '' }),
       (cause: unknown) =>
-        change({ open: false, problem: `Could not read the vault: ${messageOf(cause)}` }),
+        settle({ open: false, problem: `Could not read the vault: ${messageOf(cause)}` }),
     );
-  }, [change, wiring]);
+  }, [change, settle, wiring]);
   const onAccept = useCallback(() => {
-    const { offer, emails } = store.getState();
-    if (offer === null) return;
+    const { offer, emails, busy, vault: held } = store.getState();
+    // A second click while the first yes is written would replace what that one says.
+    if (held !== vault || offer === null || busy) return;
     change({ busy: true, problem: null });
-    void accept(wiring, { offer, emails }).then((said) => change({ busy: false, ...said }));
-  }, [change, store, wiring]);
+    void accept(wiring, { offer, emails }).then((said) => settle({ busy: false, ...said }));
+  }, [change, settle, store, wiring, vault]);
   return useMemo(
     () => ({
       onOpen,

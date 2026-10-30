@@ -14,6 +14,7 @@ import {
   fakeVaultFs,
   previewMeetingSetup,
   recordingActivity,
+  type MeetingSetupDone,
   type MeetingSetupOffer,
 } from '@dfai/application';
 import {
@@ -42,7 +43,15 @@ const OFFER: MeetingSetupOffer = {
   prompt: null,
   extensions: [],
   asksEmails: true,
-  lines: [{ kind: 'rule', what: 'The “After a meeting” rule', detail: 'Written.', written: true }],
+  lines: [
+    {
+      kind: 'rule',
+      what: 'The “After a meeting” rule',
+      detail: 'Written.',
+      written: true,
+      blocked: false,
+    },
+  ],
   ruleOn: false,
 };
 
@@ -283,6 +292,44 @@ describe('useMeetingSetup', () => {
     preview.mockReset().mockResolvedValue(OFFER);
     act(() => hook.result.current?.onOpen());
     await waitFor(() => expect(hook.result.current?.writesNothing).toBe(false));
+  });
+
+  it('says yes once however often it is pressed while the first is written', async () => {
+    preview.mockReset().mockResolvedValue(OFFER);
+    let finish: (done: MeetingSetupDone) => void = () => {};
+    accept.mockReset().mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const { hook } = setup('automations');
+    act(() => hook.result.current?.onOpen());
+    await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
+    act(() => hook.result.current?.onAccept());
+    act(() => hook.result.current?.onAccept());
+    expect(accept).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({
+        written: ['Turned on “After a meeting”.'],
+        failed: [],
+        refused: null,
+        ruleOn: true,
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(hook.result.current?.result).toContain('processed when they arrive'),
+    );
+  });
+
+  it('a preview read for one vault does not land in the next', async () => {
+    let answer: (offer: MeetingSetupOffer) => void = () => {};
+    preview.mockReset().mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    const { hook } = setup('automations');
+    act(() => hook.result.current?.onOpen());
+    hook.rerender({ vault: '/vaults/fenn' });
+    await act(async () => {
+      answer(OFFER);
+      await Promise.resolve();
+    });
+    expect(hook.result.current?.open).toBe(false);
+    expect(hook.result.current?.lines).toBeNull();
   });
 
   it('writes through the automations’ runner, one at a time with its runs', async () => {
