@@ -1,7 +1,9 @@
 import {
   carriesChecklistProgress,
   compileViewQuery,
+  foldedTypeName,
   isViewColumn,
+  typeViewSelectSql,
   type ObjectType,
   type ViewQuery,
 } from '@dfai/domain';
@@ -38,7 +40,11 @@ export async function runView({
 }
 
 /**
- * The shape the index needs to build a SQL view for each type.
+ * The view the index makes for each type: its `SELECT`, as
+ * `typeViewSelectSql` writes it. A type whose name is no identifier has none,
+ * nor do two types spelt alike in any case (`Task`, `task`): SQLite names
+ * views in any case, so they would ask for one view, and a query naming
+ * either is refused by name (check.ts). Every other type keeps its view.
  *
  * A property named like one of the view's own columns — possible in a type
  * file written by hand — is left out rather than given a second column
@@ -46,11 +52,20 @@ export async function runView({
  * column too, unless the type declares a `progress` of its own (P30-03).
  */
 export function viewSpecsFor(types: readonly ObjectType[]): ViewTypeSpec[] {
-  return types.map((type) => ({
-    name: type.name,
-    columns: type.properties
-      .filter((property) => !isViewColumn(property.key))
-      .map((property) => ({ key: property.key, kind: property.kind, many: property.many })),
-    progress: carriesChecklistProgress(type),
-  }));
+  const spellings = new Map<string, number>();
+  for (const type of types) {
+    const folded = foldedTypeName(type.name);
+    spellings.set(folded, (spellings.get(folded) ?? 0) + 1);
+  }
+  return types.flatMap((type) => {
+    if ((spellings.get(foldedTypeName(type.name)) ?? 0) > 1) return [];
+    const select = typeViewSelectSql({
+      name: type.name,
+      columns: type.properties
+        .filter((property) => !isViewColumn(property.key))
+        .map((property) => ({ key: property.key, kind: property.kind, many: property.many })),
+      progress: carriesChecklistProgress(type),
+    });
+    return select === null ? [] : [{ name: type.name, select }];
+  });
 }

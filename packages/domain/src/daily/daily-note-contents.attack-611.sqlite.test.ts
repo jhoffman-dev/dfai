@@ -174,8 +174,7 @@ describe('#611 attack: a value the Today page reads, the daily blocks drop', () 
 
   // Today reads a due it cannot read as a day as no due (review-query firstDay),
   // so the task is a next action; `due IS EMPTY OR due > day` is false for it.
-  // query-language value rules: see PR #616 (follow-up to #110)
-  it.fails.each([['TBD'], ['soon'], ['2026-02-30']])(
+  it.each([['TBD'], ['soon'], ['2026-02-30']])(
     'lists a next action whose due is not a day (%s) under Next actions, as Today does',
     (written) => {
       const database = index({
@@ -188,25 +187,20 @@ describe('#611 attack: a value the Today page reads, the daily blocks drop', () 
 
   // Today reads a defer it cannot read as a day as not put off; the block's
   // `defer IS EMPTY OR defer <= day` is false for it.
-  // query-language value rules: see PR #616 (follow-up to #110)
-  it.fails(
-    'lists an overdue task whose defer is not a day under Due and overdue, as Today does',
-    () => {
-      const database = index({
-        'Pay the plumber': {
-          type: 'task',
-          status: 'next-action',
-          due: '2026-10-20',
-          defer: 'next week',
-        },
-      });
-      expect(dueOnToday(database, DAY)).toEqual(['Pay the plumber']);
-      expect(blockTitles(database, due)).toEqual(['Pay the plumber']);
-    },
-  );
+  it('lists an overdue task whose defer is not a day under Due and overdue, as Today does', () => {
+    const database = index({
+      'Pay the plumber': {
+        type: 'task',
+        status: 'next-action',
+        due: '2026-10-20',
+        defer: 'next week',
+      },
+    });
+    expect(dueOnToday(database, DAY)).toEqual(['Pay the plumber']);
+    expect(blockTitles(database, due)).toEqual(['Pay the plumber']);
+  });
 
-  // query-language value rules: see PR #616 (follow-up to #110)
-  it.fails('lists a next action whose defer is not a day under Next actions, as Today does', () => {
+  it('lists a next action whose defer is not a day under Next actions, as Today does', () => {
     const database = index({
       'Call the bank': { type: 'task', status: 'next-action', defer: 'after the move' },
     });
@@ -215,8 +209,7 @@ describe('#611 attack: a value the Today page reads, the daily blocks drop', () 
   });
 
   // Today matches a task's type in any case (inUseOfTypeSql: lower(trim(..))); FROM task does not.
-  // query-language value rules: see PR #616 (follow-up to #110)
-  it.fails('lists a task whose note says type: Task, as Today does', () => {
+  it('lists a task whose note says type: Task, as Today does', () => {
     const database = index({
       'Send the invoice': { type: 'Task', status: 'in-progress', due: DAY },
     });
@@ -234,8 +227,7 @@ describe('#611 attack: each task once, as the Today page lists it', () => {
   };
 
   // The module doc: "Each task is listed once, as on the Today page".
-  // query-language value rules: see PR #616 (follow-up to #110)
-  it.fails('lists a next action whose due holds two days under one section only', () => {
+  it('lists a next action whose due holds two days under one section only', () => {
     const database = index({
       'Book the hall': { type: 'task', status: 'next-action', due: ['2026-11-30', '2026-10-01'] },
     });

@@ -19,7 +19,7 @@ export const singleTextSql = (key: string, column: string) =>
 
 /** A date property's first day, `YYYY-MM-DD`; null when it holds no date. */
 export const firstDaySql = (key: string, column: string) =>
-  `(SELECT substr(p.value_date, 1, 10) FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx LIMIT 1)`;
+  `(SELECT substr(p.value_date, 1, 10) FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx, p.rowid LIMIT 1)`;
 
 /**
  * 1 when a property holds something other than one day — words, a number, a
