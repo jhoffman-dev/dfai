@@ -11,6 +11,7 @@ import {
   describePlan,
   parseObjectType,
   type AutomationRule,
+  type RunTrigger,
   type VaultPath,
 } from '@dfai/domain';
 import type { ModelEvent } from '../chat/ports.ts';
@@ -22,6 +23,7 @@ import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
 import { MEETING_HEADER, meetingFile } from '../testing/meeting-files.ts';
 import { createMeetingLinker, linkBeforeLetIn } from './link-imported-meetings.ts';
+import { meetingsNotLinked } from '../automations/meetings-not-linked.ts';
 import { relinkMeetings } from './relink-meetings.ts';
 
 const TODAY = '2026-10-06';
@@ -112,16 +114,17 @@ function setUp(notes: Record<string, string> = { [MEETING]: meetingFile() }) {
       today: TODAY,
       activity,
     });
-  const runNow = () =>
+  const run = (trigger: RunTrigger) =>
     runAutomation({
       ports: vault.ports,
       rule: RULE,
       clock: CLOCK,
       guard: { vault: VAULT, currentVault: () => VAULT },
       activity,
-      trigger: 'hand',
+      trigger,
       relink: (paths) => relinkMeetings({ link, paths, ports: vault.ports, today: TODAY }),
     });
+  const runNow = () => run('hand');
   return {
     vault,
     state,
@@ -130,6 +133,7 @@ function setUp(notes: Record<string, string> = { [MEETING]: meetingFile() }) {
     link,
     dryRun,
     runNow,
+    run,
     asked: () => claude.fake.requests,
   };
 }
@@ -333,5 +337,215 @@ describe('relinkMeetings', () => {
       notLinked: [],
     });
     expect(link).not.toHaveBeenCalled();
+  });
+});
+
+/** A meeting let in with the mark, as the import leaves one whose linking failed. */
+const markedMeeting = (fields: Record<string, unknown> = {}) =>
+  meetingFile({
+    ...MEETING_HEADER,
+    atlas_import_outcome: 'imported',
+    atlas_links: 'failed',
+    ...fields,
+  });
+
+describe('review of #192: a re-link that wrote something settles the meeting', () => {
+  const LARKSPUR = 'Companies/Larkspur Payroll.md';
+  const atLarkspur = {
+    attendees: [
+      { name: 'Mara Quill', email: 'mara.quill@example.com' },
+      { name: 'Ada Venn', email: 'ada@larkspur.example' },
+    ],
+    // Something other than links the owner wrote: linking cannot add to it, and says so.
+    people: [{ name: 'Mara and Ada' }],
+  };
+
+  it('takes the mark out when it linked a company but had to leave the people', async () => {
+    const { vault, runNow } = setUp({
+      [MEETING]: markedMeeting(atLarkspur),
+      [LARKSPUR]: jsonNote({ type: 'company', domains: ['larkspur.example'] }),
+    });
+
+    await runNow();
+
+    expect(vault.properties(MEETING)['companies']).toEqual(['[[Larkspur Payroll]]']);
+    expect(vault.properties(MEETING)).not.toHaveProperty('atlas_links');
+  });
+
+  it('does not add back a company the owner took out after a partial re-link', async () => {
+    const { vault, runNow } = setUp({
+      [MEETING]: markedMeeting(atLarkspur),
+      [LARKSPUR]: jsonNote({ type: 'company', domains: ['larkspur.example'] }),
+    });
+    await runNow();
+    const { companies: _taken, ...rest } = vault.properties(MEETING);
+    vault.files.set(MEETING, jsonNote(rest, '\n## Summary\n'));
+
+    await runNow();
+
+    expect(vault.properties(MEETING)['companies']).toBeUndefined();
+  });
+
+  it('takes the mark out in the write that links, so a pane dirtied after it cannot keep it', async () => {
+    const { vault, runNow } = setUp({ [MEETING]: markedMeeting() });
+    const state = vault.ports.editors.state.bind(vault.ports.editors);
+    let wrote = false;
+    const write = vault.ports.fs.writeTextFile;
+    vault.ports.fs.writeTextFile = async (args) => {
+      if (args.path === MEETING) wrote = true;
+      return write(args);
+    };
+    // The owner starts typing in the meeting the moment its links land.
+    vault.ports.editors.state = (path) => (wrote && path === MEETING ? 'dirty' : state(path));
+
+    await runNow();
+
+    expect(vault.properties(MEETING)['people']).toEqual(['[[Mara Quill]]']);
+    expect(vault.properties(MEETING)).not.toHaveProperty('atlas_links');
+  });
+});
+
+describe('review of #192: the import marks what the re-link would call unsettled', () => {
+  it('marks a meeting whose linking ran but left the meeting with nothing written', async () => {
+    const meeting = createVaultPath(MEETING);
+    const said = await linkBeforeLetIn({
+      linker: async () => [
+        {
+          meeting,
+          linked: [],
+          filed: null,
+          done: [],
+          proposed: [],
+          left: [
+            { path: meeting, reason: 'Its people has changed since, so it was left as it is.' },
+          ],
+          passedOver: [],
+          unproposed: null,
+        },
+      ],
+      vault: VAULT,
+      path: meeting,
+      reading: { vocabulary: { terms: [] } as never },
+    });
+
+    expect(said).toEqual({ stamp: { atlas_links: 'failed' } });
+  });
+});
+
+describe('review of #192: re-linking writes only through the linker', () => {
+  it('writes nothing itself once the linker is done, so a vault opened since keeps its notes', async () => {
+    const vault = automationVault({ notes: { [MEETING]: markedMeeting() }, today: TODAY });
+    const meeting = createVaultPath(MEETING);
+    const written: string[] = [];
+    const write = vault.ports.fs.writeTextFile;
+    vault.ports.fs.writeTextFile = async (args) => {
+      written.push(args.path);
+      return write(args);
+    };
+
+    await relinkMeetings({
+      // The linker linked it in the vault it was for; the vault open now is another.
+      link: async () => [
+        {
+          meeting,
+          linked: [],
+          filed: null,
+          done: [],
+          proposed: [],
+          left: [],
+          passedOver: [],
+          unproposed: null,
+        },
+      ],
+      paths: [meeting],
+      ports: vault.ports,
+      today: TODAY,
+    });
+
+    expect(written).toEqual([]);
+  });
+
+  it('links nothing once another vault is open before the linker reaches the meeting', async () => {
+    const vault = automationVault({ notes: { [MEETING]: markedMeeting() }, today: TODAY });
+    const linker = createMeetingLinker({
+      ports: () => vault.ports,
+      clock: CLOCK,
+      activity: recordingActivity(),
+      openVault: () => '/vaults/other',
+      selfName: () => null,
+      selfEmails: () => [],
+      onWritten: () => undefined,
+    });
+
+    const outcome = await relinkMeetings({
+      link: (paths) => linker(VAULT, paths),
+      paths: [createVaultPath(MEETING)],
+      ports: vault.ports,
+      today: TODAY,
+    });
+
+    expect(outcome).toEqual({ linked: [], notLinked: [MEETING] });
+    expect(vault.properties(MEETING)['atlas_links']).toBe('failed');
+  });
+});
+
+describe('review of #192: only a run by hand re-links', () => {
+  it.each(['schedule', 'note'] as const)(
+    'a run on %s does not link a marked meeting',
+    async (trigger) => {
+      const { vault, run, link } = setUp({ [MEETING]: markedMeeting() });
+
+      await run(trigger).catch(() => undefined);
+
+      expect(link).not.toHaveBeenCalled();
+      expect(vault.properties(MEETING)['atlas_links']).toBe('failed');
+    },
+  );
+});
+
+describe('review of #192: finding the meetings not linked', () => {
+  const ports = (vault: ReturnType<typeof automationVault>) => ({
+    ...vault.ports,
+    notePaths: [...vault.files.keys()],
+  });
+  const many = (count: number) =>
+    Object.fromEntries(
+      Array.from({ length: count }, (_, at) => [
+        `Inbox/Meetings/2026-10-06 Sync ${String(at).padStart(3, '0')}.md`,
+        markedMeeting({ external_id: `gemini-${at}` }),
+      ]),
+    );
+
+  it('reads no meeting file when the index holds no mark', async () => {
+    const vault = automationVault({
+      notes: { [MEETING]: meetingFile({ ...MEETING_HEADER, atlas_import_outcome: 'imported' }) },
+      today: TODAY,
+      types: TYPES,
+    });
+    const readNotes = vi.spyOn(vault.ports.fs, 'readNotes');
+
+    expect(await meetingsNotLinked({ ports: ports(vault), rule: RULE, today: TODAY })).toBeNull();
+    expect(readNotes).not.toHaveBeenCalled();
+  });
+
+  it('takes at most fifty a run, and says more wait', async () => {
+    const vault = automationVault({ notes: many(51), today: TODAY, types: TYPES });
+
+    const found = await meetingsNotLinked({ ports: ports(vault), rule: RULE, today: TODAY });
+
+    expect(found?.paths).toHaveLength(50);
+    expect(found?.capped).toBe(true);
+  });
+
+  it('leaves out a meeting gone since the index answered', async () => {
+    const vault = automationVault({ notes: many(2), today: TODAY, types: TYPES });
+    const [gone, kept] = [...vault.files.keys()].filter((path) => path.startsWith('Inbox/'));
+    const readNotes = vault.ports.fs.readNotes.bind(vault.ports.fs);
+    vault.ports.fs.readNotes = async (paths) =>
+      (await readNotes(paths)).filter((file) => file.path !== gone);
+
+    const found = await meetingsNotLinked({ ports: ports(vault), rule: RULE, today: TODAY });
+
+    expect(found).toEqual({ paths: [kept], capped: false });
   });
 });
