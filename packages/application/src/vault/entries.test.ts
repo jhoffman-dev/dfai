@@ -364,7 +364,7 @@ describe('deleting', () => {
       entry: folder('Old'),
       notes: [path('Old/a.md')],
     });
-    expect(others).toEqual({ link: false, count: 3, links: [] });
+    expect(others).toEqual({ link: false, count: 3, links: [], reachedThrough: null });
   });
 
   it('counts nothing else for a note', async () => {
@@ -374,6 +374,7 @@ describe('deleting', () => {
       link: false,
       count: 0,
       links: [],
+      reachedThrough: null,
     });
   });
 

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createVaultPath, type VaultEntry } from '@dfai/domain';
-import { fakeVaultFs } from '../testing/fake-ports.ts';
-import { countOtherFiles, previewDeletion } from './delete-entry.ts';
-import { VaultAccessError } from './ports.ts';
+import { fakeIndexPort, fakeVaultFs } from '../testing/fake-ports.ts';
+import { countOtherFiles, deleteEntry } from './delete-entry.ts';
+import { VaultAccessError, type OpenEditorsPort } from './ports.ts';
+import { MoveRefusedError } from './relocate-entry.ts';
 
 /*
  * Attack on PR #646 (a3f555c5): a folder reached THROUGH a link to a folder
@@ -45,21 +46,60 @@ const fs = fakeVaultFs({
 const indexed = [createVaultPath('Shelf/Plans/garden.md')];
 const throughLink = { path: createVaultPath('Work/Alias/Plans'), kind: 'directory' as const };
 
+/*
+ * What the Trash would take through the link cannot be told from here — the
+ * host does not say where a link points — so such a delete is refused, with
+ * the link named, before anything is touched (#169, PR #646).
+ */
 describe('deleting a folder reached through a link (attack 646b)', () => {
-  it.fails('does not count a note reached through a link as an "other file"', async () => {
+  it('is not counted: the question names the link it is reached through', async () => {
     const counted = await countOtherFiles({ fs, entry: throughLink, notes: indexed });
-    // Observed: { link: false, count: 1, links: [] } -> "The 1 other file in it goes too."
-    expect(counted.count).toBe(0);
+
+    expect(counted).toEqual({ link: false, count: 0, links: [], reachedThrough: 'Work/Alias' });
   });
 
-  it.fails('warns of unsaved typing in a note the Trash takes through a link', () => {
-    const preview = previewDeletion({
+  it('is refused before the Trash, leaving every pane and its typing as it is', async () => {
+    const trashEntry = vi.fn(async () => undefined);
+    const abandon = vi.fn();
+    const editors: OpenEditorsPort = {
+      state: (path) => (path === indexed[0] ? 'dirty' : 'closed'),
+      flush: async () => undefined,
+      follow: () => undefined,
+      abandon,
+    };
+
+    const deleting = deleteEntry({
+      fs: { ...fs, trashEntry },
+      index: fakeIndexPort(),
+      editors,
       entry: throughLink,
       notePaths: indexed,
-      editors: { state: (path) => (path === indexed[0] ? 'dirty' : 'clean') },
     });
-    // Observed: notes [] and unsaved [] -> "It has no notes in it.", no warning,
-    // and deleteEntry never abandons the dirty pane on Shelf/Plans/garden.md.
-    expect(preview.unsaved).toEqual(['Shelf/Plans/garden.md']);
+
+    await expect(deleting).rejects.toThrow(MoveRefusedError);
+    await expect(deleting).rejects.toThrow('“Work/Alias”');
+    expect(trashEntry).not.toHaveBeenCalled();
+    expect(abandon).not.toHaveBeenCalled();
+  });
+
+  it('is refused for a note reached through a link too', async () => {
+    const trashEntry = vi.fn(async () => undefined);
+    const note = { path: createVaultPath('Work/Alias/Plans/garden.md'), kind: 'file' as const };
+
+    await expect(
+      deleteEntry({
+        fs: { ...fs, trashEntry },
+        index: fakeIndexPort(),
+        editors: {
+          state: () => 'closed',
+          flush: async () => undefined,
+          follow: () => undefined,
+          abandon: vi.fn(),
+        },
+        entry: note,
+        notePaths: indexed,
+      }),
+    ).rejects.toThrow(MoveRefusedError);
+    expect(trashEntry).not.toHaveBeenCalled();
   });
 });

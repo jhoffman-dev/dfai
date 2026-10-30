@@ -299,8 +299,8 @@ describe('DeleteDialog', () => {
       />,
     );
     expect(screen.getByRole('alertdialog').textContent).toContain(
-      'The 1 note in it goes too. These are links, so only the links go and what they point ' +
-        'at stays where it is: scripts, ref.md.',
+      'The 1 note in it goes too. The 2 links in it, scripts, ref.md, go as links: what they ' +
+        'point at stays where it is.',
     );
   });
 

@@ -369,8 +369,7 @@ describe('skillDeletionWarning', () => {
       }),
     ).toBe(
       'Delete “weekly-review”? Its whole folder goes to the Trash, where it can be got back. ' +
-        'These are links, so only the links go and what they point at stays where it is: ' +
-        'scripts, ref.md.',
+        'The 2 links in it, scripts, ref.md, go as links: what they point at stays where it is.',
     );
   });
 });

@@ -57,7 +57,7 @@ describe('countOtherFiles with links (#169)', () => {
       notes: [createVaultPath('Old/a.md')],
     });
 
-    expect(others).toEqual({ link: false, count: 1, links: ['Old/out'] });
+    expect(others).toEqual({ link: false, count: 1, links: ['Old/out'], reachedThrough: null });
   });
 
   it('does not walk links back up: two of them are two names, not 2^32 listings', async () => {
@@ -74,7 +74,12 @@ describe('countOtherFiles with links (#169)', () => {
 
     const others = await countOtherFiles({ fs, entry: folder('Loop'), notes: [] });
 
-    expect(others).toEqual({ link: false, count: 1, links: ['Loop/a', 'Loop/b'] });
+    expect(others).toEqual({
+      link: false,
+      count: 1,
+      links: ['Loop/a', 'Loop/b'],
+      reachedThrough: null,
+    });
     expect(listed.length).toBeLessThanOrEqual(2);
   });
 
@@ -83,7 +88,7 @@ describe('countOtherFiles with links (#169)', () => {
 
     const others = await countOtherFiles({ fs, entry: folder('Alias'), notes: [] });
 
-    expect(others).toEqual({ link: true, count: 0, links: [] });
+    expect(others).toEqual({ link: true, count: 0, links: [], reachedThrough: null });
     expect(listed).toEqual(['']);
   });
 });
