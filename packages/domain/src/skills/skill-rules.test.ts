@@ -379,11 +379,25 @@ describe('a skill whose folder cannot be read (#169)', () => {
   it('says why, as a problem with the file', () => {
     const reading = skillReadingOf({
       folder: 'weekly-review',
-      file: { unreadable: true, folderRefusal: 'path escapes the vault' },
+      file: { unreadable: true, refusal: { by: 'folder', reason: 'path escapes the vault' } },
     });
 
     expect(reading.problems).toEqual([
       { field: 'file', message: 'The skill’s folder cannot be read: path escapes the vault.' },
+    ]);
+  });
+
+  it('says why when SKILL.md is a link that cannot be followed', () => {
+    const reading = skillReadingOf({
+      folder: 'weekly-review',
+      file: { unreadable: true, refusal: { by: 'link', reason: 'path escapes the vault' } },
+    });
+
+    expect(reading.problems).toEqual([
+      {
+        field: 'file',
+        message: 'SKILL.md is a link that cannot be followed: path escapes the vault.',
+      },
     ]);
   });
 });
