@@ -213,6 +213,18 @@ export class EntryChangedError extends VaultAccessError {
 }
 
 /**
+ * The host's refusal of a write held to `expectedModified` or `expectedText`
+ * when the file changed since it was read: `CHANGED_ON_DISK` in
+ * `src-tauri/src/vault.rs`, sent as this exact message and no code.
+ */
+export const HOST_CHANGED_ON_DISK = 'the note changed on disk since it was opened';
+
+/** Whether `error` is the host refusing a write over a file changed since it was read. */
+export function isChangedOnDiskRefusal(error: unknown): boolean {
+  return error instanceof VaultAccessError && error.message === HOST_CHANGED_ON_DISK;
+}
+
+/**
  * Notices changes made to the vault by anything other than this app.
  * Reports paths only; what to do about them is decided by the caller.
  */

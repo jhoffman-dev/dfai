@@ -11,7 +11,12 @@ export { awaitsOwnRefresh, outsideChanges } from './outside-changes.ts';
 export { recordingOwnWrites } from './recording-own-writes.ts';
 export { openVault, restoreVault } from './open-vault.ts';
 export { listVaultDirectory, listVaultNotes, readVaultFile } from './read-vault.ts';
-export { EntryChangedError, VaultAccessError } from './ports.ts';
+export {
+  EntryChangedError,
+  HOST_CHANGED_ON_DISK,
+  isChangedOnDiskRefusal,
+  VaultAccessError,
+} from './ports.ts';
 export { createFolder, ensureFolder, listVaultFolders } from './create-folder.ts';
 export { guardTemplateEdit, TemplateEditRefusedError } from './template-guard.ts';
 export { moveEntryInto, moveEntryTo, renameEntry, MoveRefusedError } from './relocate-entry.ts';

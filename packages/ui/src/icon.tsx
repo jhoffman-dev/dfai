@@ -319,6 +319,14 @@ const GLYPHS = {
       <path d="M19.9 12.2v6.3" {...round} />
     </>
   ),
+  // A skill (#169): a wand, with the glint of what it does.
+  skill: (
+    <>
+      <path d="M4.5 19.5 14 10" {...round} />
+      <path d="M12.6 8.6l2.8 2.8" {...round} />
+      <path d="M17.5 3.5v3M16 5h3M19.5 11v2M18.5 12h2M9.5 4v2M8.5 5h2" {...round} />
+    </>
+  ),
   // A highlight (#507): a quotation mark's two commas.
   quote: (
     <>
@@ -415,6 +423,7 @@ const SIDEBAR_GLYPHS: Readonly<Record<SidebarIcon, IconName>> = {
   activity: 'pulse',
   template: 'template',
   term: 'term',
+  skill: 'skill',
   inbox: 'inbox',
   today: 'sun',
   library: 'book',

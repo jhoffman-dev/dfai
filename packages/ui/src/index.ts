@@ -243,6 +243,17 @@ export { InboxPage } from './inbox-page.tsx';
 export { TaskScheduleSummary } from './task-schedule.tsx';
 export { TemplatesPage } from './templates-page.tsx';
 export { TermsPage } from './terms-page.tsx';
+export { SkillsPage } from './skills-page.tsx';
+export type {
+  ListedOr,
+  PromptListing,
+  SkillDeleteQuestion,
+  SkillDiscardQuestion,
+  SkillFocus,
+  SkillEditorState,
+  SkillListing,
+  SkillsPageProps,
+} from './skills-page.tsx';
 export type { NewTerm, TermsContents, TermsPageProps } from './terms-page.tsx';
 export type { TemplateLessType, TemplateListing, TemplatesPageProps } from './templates-page.tsx';
 export { TemplateBanner } from './template-banner.tsx';

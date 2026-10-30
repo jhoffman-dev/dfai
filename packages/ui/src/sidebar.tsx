@@ -104,6 +104,7 @@ export function Sidebar({
   onOpenAutomations,
   activity,
   onOpenTemplates,
+  onOpenSkills,
   onOpenTerms,
   inbox,
   onOpenReview,
@@ -144,6 +145,8 @@ export function Sidebar({
   activity?: ActivityRowLink;
   /** Opens the Templates page; its row sits under the Activity's when given. */
   onOpenTemplates?: () => void;
+  /** Opens the Skills page (#169); its row sits under the Templates' when given. */
+  onOpenSkills?: () => void;
   /** Opens the Terms page; its row sits last when given. */
   onOpenTerms?: () => void;
   /**
@@ -268,6 +271,7 @@ export function Sidebar({
         automationsOn={active?.kind === 'automations'}
         activityOn={active?.kind === 'activity'}
         templatesOn={active?.kind === 'templates'}
+        skillsOn={active?.kind === 'skills'}
         termsOn={active?.kind === 'terms'}
         inboxOn={active?.kind === 'inbox'}
         reviewOn={active?.kind === 'review'}
@@ -282,6 +286,7 @@ export function Sidebar({
         {...(onOpenAutomations !== undefined && { onOpenAutomations })}
         {...(activity !== undefined && { activity })}
         {...(onOpenTemplates !== undefined && { onOpenTemplates })}
+        {...(onOpenSkills !== undefined && { onOpenSkills })}
         {...(onOpenTerms !== undefined && { onOpenTerms })}
         {...(inbox !== undefined && { inbox })}
         {...(onOpenReview !== undefined && { onOpenReview })}
@@ -332,6 +337,7 @@ function QuickRows({
   automationsOn,
   activityOn,
   templatesOn,
+  skillsOn,
   termsOn,
   inboxOn,
   reviewOn,
@@ -345,6 +351,7 @@ function QuickRows({
   onOpenAutomations,
   activity,
   onOpenTemplates,
+  onOpenSkills,
   onOpenTerms,
   inbox,
   onOpenReview,
@@ -361,6 +368,7 @@ function QuickRows({
   automationsOn: boolean;
   activityOn: boolean;
   templatesOn: boolean;
+  skillsOn: boolean;
   termsOn: boolean;
   inboxOn: boolean;
   reviewOn: boolean;
@@ -375,6 +383,7 @@ function QuickRows({
   onOpenAutomations?: () => void;
   activity?: ActivityRowLink;
   onOpenTemplates?: () => void;
+  onOpenSkills?: () => void;
   onOpenTerms?: () => void;
   inbox?: InboxRowLink;
   onOpenReview?: () => void;
@@ -522,6 +531,19 @@ function QuickRows({
           >
             <Icon name="template" className="sidebar__icon" />
             <span className="sidebar__name">Templates</span>
+          </button>
+        </li>
+      )}
+      {onOpenSkills !== undefined && (
+        <li className={skillsOn ? 'sidebar__item sidebar__item--on' : 'sidebar__item'}>
+          <button
+            type="button"
+            className="sidebar__row"
+            aria-current={skillsOn ? 'page' : undefined}
+            onClick={onOpenSkills}
+          >
+            <Icon name="skill" className="sidebar__icon" />
+            <span className="sidebar__name">Skills</span>
           </button>
         </li>
       )}

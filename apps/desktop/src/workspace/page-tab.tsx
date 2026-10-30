@@ -11,6 +11,7 @@ import { QueryContainer } from '../query/query-container.tsx';
 import { ReviewContainer } from '../review/review-container.tsx';
 import { TagsContainer } from '../tags/tags-container.tsx';
 import { TemplatesContainer } from '../templates/templates-container.tsx';
+import { SkillsContainer } from '../skills/skills-container.tsx';
 import { TermsContainer } from '../terms/terms-container.tsx';
 import { HighlightsContainer } from '../research/highlights-container.tsx';
 import { LibraryContainer } from '../research/library-container.tsx';
@@ -116,6 +117,8 @@ function containerFor({
       return <TemplatesContainer {...props} />;
     case 'terms':
       return <TermsContainer {...props} />;
+    case 'skills':
+      return <SkillsContainer {...props} />;
     case 'library':
       return <LibraryContainer {...props} />;
     case 'highlights':

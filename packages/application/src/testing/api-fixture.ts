@@ -22,6 +22,7 @@ import { inVault } from '../vault/in-vault.ts';
 import type { IndexPort } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import {
+  HOST_CHANGED_ON_DISK,
   VaultAccessError,
   type HostVaultFsPort,
   type VaultFsPort,
@@ -300,7 +301,7 @@ export function apiFixture({
     writeTextFile: async ({ path, contents, expectedModified, vault }) => {
       refuseOtherVault(vault);
       if (expectedModified !== null && read(path).modified !== expectedModified) {
-        throw new VaultAccessError('the note changed on disk since it was opened');
+        throw new VaultAccessError(HOST_CHANGED_ON_DISK);
       }
       const modified = (clock += 1);
       stored.set(located(path), { text: contents, modified });

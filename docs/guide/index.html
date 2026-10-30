@@ -133,6 +133,7 @@ td:first-child { white-space: nowrap; }
     <a href="#home-folders">Where notes live</a>
     <a href="#types">Types and properties</a>
     <a href="#templates">Templates</a>
+    <a href="#skills">Skills</a>
     <a href="#views">Views</a>
     <a href="#calendar">Calendar</a>
     <a href="#google-calendar">Google Calendar</a>
@@ -188,10 +189,10 @@ pnpm tauri:dev</pre>
       <h2>Finding your way</h2>
       <p class="sub">The sidebar lists everything; each page opens in a panel with a bar across the top.</p>
       <div class="grid2">
-        <div class="card"><h4>Sidebar, top</h4><p>Search <kbd>⌘K</kbd>, <a href="#today">Today</a>, <a href="#para">Inbox</a>, <a href="#tasks">Weekly review</a>, Graph, Tags, Automations, <a href="#activity">Activity</a>, <a href="#templates">Templates</a> and <a href="#terms">Terms</a>. Counts show how many notes each holds — the Inbox's counts proposals waiting for an answer too; Activity's red badge counts new errors.</p></div>
+        <div class="card"><h4>Sidebar, top</h4><p>Search <kbd>⌘K</kbd>, <a href="#today">Today</a>, <a href="#para">Inbox</a>, <a href="#tasks">Weekly review</a>, Graph, Tags, Automations, <a href="#activity">Activity</a>, <a href="#templates">Templates</a>, <a href="#skills">Skills</a> and <a href="#terms">Terms</a>. Counts show how many notes each holds — the Inbox's counts proposals waiting for an answer too; Activity's red badge counts new errors.</p></div>
         <div class="card"><h4>Favorites</h4><p>Star any page (the ☆ in its top bar) to pin it here.</p></div>
         <div class="card"><h4>Types · Views · Dashboards</h4><p>Built from your vault. The <b>+</b> beside a heading makes a new one.</p></div>
-        <div class="card"><h4>Pages</h4><p>Your folders and notes. Near the end, <b>Archive</b> opens the <a href="#archive">Archive</a>; <b>System</b>, last, is the <code>.atlas</code> folder (types, automations, sources, settings). Templates aren't in it — they have their <a href="#templates">own page</a>.</p></div>
+        <div class="card"><h4>Pages</h4><p>Your folders and notes. Near the end, <b>Archive</b> opens the <a href="#archive">Archive</a>; <b>System</b>, last, is the <code>.atlas</code> folder (types, automations, sources, settings). Templates and skills aren't in it — they have their own pages, <a href="#templates">Templates</a> and <a href="#skills">Skills</a>.</p></div>
       </div>
       <h3>Arrange the sidebar</h3>
       <ul>
@@ -598,7 +599,7 @@ pnpm tauri:dev</pre>
       </ul>
       <h3>The Templates page</h3>
       <div class="grid2">
-        <div class="card"><h4>Sidebar</h4><p><b>Templates</b>, in the top list between Automations and Activity.</p></div>
+        <div class="card"><h4>Sidebar</h4><p><b>Templates</b>, in the top list after Activity.</p></div>
         <div class="card"><h4>Search</h4><p><kbd>⌘K</kbd> → <b>Templates</b>.</p></div>
         <div class="card"><h4>From a template</h4><p><b>All templates</b> on the band over any template you're editing.</p></div>
       </div>
@@ -637,6 +638,36 @@ pnpm tauri:dev</pre>
       </ul>
       <h3 id="template-to-note">A template that was really a note</h3>
       <p>If a note ended up in the templates folder — say a company saved over the Company template — <b>Move to notes…</b>, on its row or its band, asks <i>“Make “Larkspur Payroll” a note?”</i>: <i>“It moves out of the templates to the top of the vault, exactly as it is. Links to “Larkspur Payroll” reach it again.”</i> It's numbered if a note there has its name, and it says what stops using it, if anything. Then press <b>Move to notes</b>.</p>
+    </section>
+
+    <section id="skills">
+      <h2>Skills</h2>
+      <p class="sub">A skill is a set of instructions for Claude with a name and a description that says when to use it — the same Agent Skills format Claude Code reads, so a skill written here can be copied there as it is.</p>
+      <h3>Where it is</h3>
+      <div class="grid2">
+        <div class="card"><h4>Sidebar</h4><p><b>Skills</b>, in the top list after Templates.</p></div>
+        <div class="card"><h4>Search</h4><p><kbd>⌘K</kbd> → <b>Skills</b>.</p></div>
+      </div>
+      <p>The page lists every skill with its description. A skill that breaks a rule says so under its name — <i>“2 problems”</i>, then each one, such as <i>“Its folder: A skill’s name is lowercase letters, digits and single hyphens, starting and ending with a letter or digit.”</i> — so a skill another tool wrote wrong is shown, never quietly fixed. Under the skills, <b>Automation prompts</b> lists the prompt notes in <code>.atlas/prompts</code> that <a href="#automations">automations</a> run; <b>Open</b> opens one as a note. They keep working as they always have.</p>
+      <h3>Make a skill</h3>
+      <ol class="steps">
+        <li>Press <b>New skill</b> at the top of the page.</li>
+        <li><b>Name</b> it: lowercase letters, digits and single hyphens, up to 64 characters — <code>weekly-review</code>, not <i>Weekly Review</i>. It can't hold <i>claude</i> or <i>anthropic</i>, or be a name another skill has in any capitals. The name can't be changed later: to rename a skill, make a new one and delete the old.</li>
+        <li>Write the <b>Description</b>: what the skill does and when to use it, in plain text — no XML tags such as <code>&lt;example&gt;</code>. The counter beside it, <i>25/1024</i>, counts characters, an emoji as one.</li>
+        <li>Write the <b>Instructions</b> in Markdown — up to 20,000 characters.</li>
+        <li>Press <b>Save</b>. It stays off while anything is wrong, and each problem shows under its field as you type.</li>
+      </ol>
+      <p>DFAI writes the skill as <code>.atlas/skills/weekly-review/SKILL.md</code>: <code>name</code> and <code>description</code> at the top, then the instructions.</p>
+      <h3>Edit a skill</h3>
+      <ul>
+        <li>Click a skill to open it beside the list, change its description or instructions, and press <b>Save</b>. Only what you changed is written: comments, other keys and the rest of the file stay byte for byte as they were.</li>
+        <li>A skill whose <code>name:</code> says something other than its folder's name says so; saving it puts the folder's name in.</li>
+        <li>If the file changes on disk while it's open — another Mac, Claude Code, an editor — and you haven't typed anything, the editor takes the change in. If you have, it says <i>“This skill changed on disk since it was opened.”</i> with <b>Reload</b>, which drops your typing for what's on disk. A save over a file changed since it was opened is refused, never written over.</li>
+      </ul>
+      <h3>Delete a skill</h3>
+      <p><b>Delete…</b> asks first, naming everything that goes: <i>“Delete “weekly-review”? Its whole folder goes to the Trash, where it can be got back, with 1 other file: scripts/run.sh — and everything in its subfolders, however deep.”</i> <b>Move to Trash</b> puts the skill's whole folder in the macOS Trash.</p>
+      <h3>Skills are not notes</h3>
+      <p>They aren't in Pages (not even under System), search, the graph or <code>[[</code> suggestions — the Skills page is where they are. Claude and your other tools can list and read them through the <a href="#connect">local API and MCP</a>; making, editing and deleting stay in the app.</p>
     </section>
 
     <section id="views">
@@ -2222,6 +2253,7 @@ do: archive</pre>
         <li><b>See archived notes</b>: search, running a view and SQL queries leave them out, as the app does, unless asked with <code>includeArchived</code>.</li>
         <li><b>Read your name</b> (<code>atlas_profile</code>): the full name and preferred name from <a href="#profile">Settings → Profile</a>, and <code>[Your name]</code> to write when there's no full name. Claude is told to use exactly that name for an owner, author, assignee or attendee, and never to guess one from a username, an email address or a path. Read-only: the name is changed only in Settings. If the settings can't be read, it says so rather than answer “no name”.</li>
         <li><b>List and read templates</b> (<code>atlas_list_templates</code>, <code>atlas_read_template</code>): every <a href="#templates">template</a> with what it's used for — new notes of a type, today's note, captured tasks or saved artifacts — and which types have none, so their new notes start empty; and one template's properties and text, exactly what a new note made from it would start as. A template's name can be passed when making a note. Making, editing, renaming, deleting and moving templates to notes stay in the app.</li>
+        <li><b>List and read skills</b> (<code>atlas_list_skills</code>, <code>atlas_read_skill</code>, <code>GET /v1/skills</code>, <code>GET /v1/skills/{name}</code>): every <a href="#skills">skill</a> with its description and what is wrong with it, and one skill's instructions. Read-only: making, editing and deleting skills stay in the app.</li>
         <li><b>Rename or merge a tag</b> (<code>atlas_rename_tag</code>), by the <a href="#tags">same rules</a> as the Tags page. It only previews unless told <code>dryRun: false</code>, and merges into a tag in use only when told to. Renaming to the same name in other capitals makes every spelling match. A rename that timed out may still finish, so preview again before retrying.</li>
         <li><b>Export a note as Markdown</b> (<code>atlas_export_note</code>, <code>GET /v1/notes/{path}/export?format=markdown|standalone|confluence</code>), read-only: <code>markdown</code> is the file as it is, <code>standalone</code> the Markdown that reads in any tool, as <a href="#export">Export…</a> writes it, and <code>confluence</code> a page for Confluence — see <a href="#confluence">Share a note on Confluence</a> below. The answer is the Markdown itself; nothing is written. A PDF or a Google Doc is made only in the app, since the API never writes outside the vault.</li>
       </ul>
@@ -2429,7 +2461,7 @@ pnpm tauri:dev</pre>
         <li>Tags are stored as you typed them, <code>#tag</code> in the text or a <code>tags:</code> list in the frontmatter. Obsidian reads single-word and nested tags the same way; it reads <code>#tag me#</code> as <code>#tag</code> followed by text.</li>
         <li>Archived notes are ordinary files in <code>Archive/</code>, at the path they had, with <code>archived</code> and <code>archivedFrom</code> in their frontmatter, so Obsidian still opens them.</li>
         <li>Frontmatter written flow-style, <code>{status: done, tags: [a]}</code>, and files that start with a byte-order mark are kept intact when DFAI changes a property.</li>
-        <li><code>.atlas/</code> holds types, templates, views, dashboards, sources, automations and settings. It shows as <b>System</b> in Pages — all but the templates, which are on the <a href="#templates">Templates page</a>, and the views and dashboards, which have their sections.</li>
+        <li><code>.atlas/</code> holds types, templates, views, dashboards, sources, automations and settings. It shows as <b>System</b> in Pages — all but the templates and the skills, which are on the <a href="#templates">Templates</a> and <a href="#skills">Skills</a> pages, and the views and dashboards, which have their sections.</li>
         <li>A template is a plain markdown file in <code>.atlas/templates/</code>, named for what it makes: <code>Person.md</code>, <code>Daily.md</code>, <code>Task.md</code>, <code>Artifact.md</code>.</li>
         <li>Each <a href="#automations">automation</a> is a note in <code>.atlas/automations/</code>, and its run log a note in <code>.atlas/automations/log/</code>, named after the rule's <code>id</code>. Both are plain markdown you can read, diff and edit.</li>
         <li>The <a href="#activity">Activity</a> log is not in the vault: one file per vault in DFAI's data folder on this Mac, about 30 days or 5 MB.</li>

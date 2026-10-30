@@ -31,6 +31,7 @@ export type SidebarIcon =
   | 'activity'
   | 'template'
   | 'term'
+  | 'skill'
   | 'inbox'
   | 'today'
   | 'library'

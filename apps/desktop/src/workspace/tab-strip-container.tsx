@@ -65,6 +65,8 @@ function placeIcon(place: NavigationPlace): IconName {
       return 'template';
     case 'terms':
       return 'term';
+    case 'skills':
+      return 'skill';
     case 'library':
       return 'book';
     case 'highlights':
