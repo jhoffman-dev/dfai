@@ -20,3 +20,6 @@ packages/domain/src/kindle/fixtures/*.html
 
 # The EPUB frame's script, written by tools/epub/frame-bootstrap.ts and run as it is, named by its hash.
 packages/adapters/src/epub/frame-bootstrap.generated.ts
+
+# The capture writer bundled for n8n (`pnpm n8n:build`, #103): generated, its bytes checked by a test.
+tools/n8n/capture-markdown.bundle.js

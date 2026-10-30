@@ -442,6 +442,74 @@ describe('useGranolaPull', () => {
     expect(hook.result.current.report?.mode).toBe('sync-now');
   });
 
+  it('a Sync now for the API settles to its report, and is the card’s too (P28-13)', async () => {
+    const { hook, lists } = setUp({
+      notes: [granolaNote('not_hook000000002', { updatedAt: '2026-10-13T15:00:00Z' })],
+    });
+    await settles(() => expect(hook.result.current.report?.mode).toBe('startup'));
+    let report: Awaited<ReturnType<typeof hook.result.current.syncNowFor>> | null = null;
+    await act(async () => {
+      report = await hook.result.current.syncNowFor(VAULT);
+    });
+    expect(report).toMatchObject({ vault: VAULT, mode: 'sync-now', ended: 'pulled' });
+    expect(lists()).toBe(2);
+    expect(hook.result.current.report).toBe(report);
+    expect(hook.result.current.pulling).toBe(false);
+  });
+
+  it('a Sync now for the API of a vault no longer open pulls nothing into it (P28-13)', async () => {
+    const { hook, lists } = setUp();
+    await settles(() => expect(hook.result.current.report?.ended).toBe('pulled'));
+    let ended: string | null = null;
+    await act(async () => {
+      ended = (await hook.result.current.syncNowFor(OTHER)).ended;
+    });
+    expect(ended).toBe('not-synced');
+    expect(lists()).toBe(1);
+  });
+
+  it('a Sync now for the API that fails shows on the card, never as a toast (P28-13)', async () => {
+    const { hook, granola, lists } = setUp();
+    await settles(() => expect(lists()).toBe(1));
+    granola.fail('list', UNREACHABLE);
+    await act(async () => {
+      await hook.result.current.syncNowFor(VAULT);
+    });
+    expect(hook.result.current.report).toMatchObject({ mode: 'sync-now', ended: 'failed' });
+    expect(hook.result.current.toast).toBeNull();
+    expect(hook.result.current.toastShown).toBe(0);
+  });
+
+  it('a Sync now for the API that Granola refuses the key on raises no toast either (P28-13)', async () => {
+    const { hook, granola, lists } = setUp();
+    await settles(() => expect(lists()).toBe(1));
+    granola.fail('list', KEY_REFUSED);
+    await act(async () => {
+      await hook.result.current.syncNowFor(VAULT);
+    });
+    expect(hook.result.current.report?.keyRefused).toBe(true);
+    expect(hook.result.current.toast).toBeNull();
+  });
+
+  it('says a vault is ready for the API only once it is open, synced and caught up (P28-13)', async () => {
+    const index = held<boolean>();
+    const { hook, options } = setUp({ synced: [], catchUpIndex: () => index.promise });
+    await act(async () => undefined);
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+
+    hook.rerender({ ...options, syncedThisSession: new Set([VAULT]) });
+    await act(async () => undefined);
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+
+    index.settle(true);
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+    expect(hook.result.current.readyFor(OTHER)).toBe(false);
+
+    // Another vault opened: the one before is no longer ready, whatever it was.
+    hook.rerender({ ...options, syncedThisSession: new Set([VAULT]), vaultKey: OTHER });
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+  });
+
   it('has the tree and the index read again once a pull has written meetings, and not before', async () => {
     const none = setUp();
     await settles(() => expect(none.hook.result.current.report?.ended).toBe('pulled'));
@@ -581,3 +649,66 @@ function setUpFailing(failure: GranolaFailure) {
   fixture.hook.rerender({ ...fixture.options, syncedThisSession: new Set([VAULT]) });
   return fixture;
 }
+
+describe('useGranolaPull for the API, under attack (#613)', () => {
+  it('is not ready for the API after the vault is closed and opened again, until its index catches up again', async () => {
+    let catchUps = 0;
+    const second = held<boolean>();
+    const { hook, options } = setUp({
+      catchUpIndex: () => {
+        catchUps += 1;
+        return catchUps === 1 ? Promise.resolve(true) : second.promise;
+      },
+    });
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+
+    hook.rerender({ ...options, vaultKey: OTHER });
+    await act(async () => undefined);
+    hook.rerender({ ...options, vaultKey: VAULT });
+    await act(async () => undefined);
+
+    expect(catchUps).toBe(2);
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+    second.settle(true);
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+  });
+
+  it('is not ready for the API once a later sync brings files in, until the index catches up with it', async () => {
+    let catchUps = 0;
+    const second = held<boolean>();
+    const { hook, options } = setUp({
+      catchUpIndex: () => {
+        catchUps += 1;
+        return catchUps === 1 ? Promise.resolve(true) : second.promise;
+      },
+    });
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+
+    hook.rerender({ ...options, syncPulls: new Map([[VAULT, 1]]) });
+    await act(async () => undefined);
+
+    expect(hook.result.current.readyFor(VAULT)).toBe(false);
+    second.settle(true);
+    await settles(() => expect(hook.result.current.readyFor(VAULT)).toBe(true));
+  });
+
+  it('lists Granola once for a burst of API pulls and the window’s own Sync now together', async () => {
+    const { hook, gate, lists } = setUp();
+    await settles(() => expect(lists()).toBe(1));
+    const listing = held<void>();
+    gate.current = listing.promise;
+
+    let reports: Awaited<ReturnType<typeof hook.result.current.syncNowFor>>[] = [];
+    await act(async () => {
+      const api = [1, 2, 3].map(() => hook.result.current.syncNowFor(VAULT));
+      hook.result.current.syncNow();
+      listing.settle();
+      reports = await Promise.all(api);
+    });
+    await drained();
+
+    expect(lists()).toBe(2);
+    expect(new Set(reports).size).toBe(1);
+    expect(hook.result.current.pulling).toBe(false);
+  });
+});

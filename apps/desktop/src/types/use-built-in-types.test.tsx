@@ -18,6 +18,8 @@ const TASK = [
   '  status:',
   '    kind: select',
   '    options: [backlog, done]',
+  // Given on an earlier opening (#108), so opening this vault adds nothing to it.
+  '  focus: date',
   '  # James keeps his estimates in words.',
   '  estimate: text',
   '---',
@@ -25,6 +27,10 @@ const TASK = [
   '# Task',
   '',
 ].join('\n');
+
+/** The vault's files but the record of shipped properties settled, which opening writes. */
+const typeFiles = (files: ReadonlyMap<string, string>) =>
+  [...files.keys()].filter((path) => path !== '.atlas/migrations/type-properties.md');
 
 function setup(
   files: Record<string, string>,
@@ -197,12 +203,12 @@ describe('useBuiltInTypes', () => {
         'Task gains Project, linking project or area notes.',
       ]),
     );
-    expect([...files.keys()]).toEqual(['.atlas/types/task.md']);
+    expect(typeFiles(files)).toEqual(['.atlas/types/task.md']);
     expect(onChanged).not.toHaveBeenCalled();
 
     await act(() => hook.result.current?.accept() ?? Promise.resolve());
 
-    expect([...files.keys()].sort()).toEqual([
+    expect(typeFiles(files).sort()).toEqual([
       '.atlas/types/daily.md',
       '.atlas/types/decision.md',
       '.atlas/types/project.md',
@@ -233,8 +239,8 @@ describe('useBuiltInTypes', () => {
     expect(task).not.toContain('estimate');
     expect(task).toBe(
       edited.replace(
-        '    options: [backlog, done]\n',
-        '    options: [backlog, done]\n  project:\n    kind: relation\n    target:\n      - project\n      - area\n',
+        '  focus: date\n',
+        '  focus: date\n  project:\n    kind: relation\n    target:\n      - project\n      - area\n',
       ),
     );
   });
@@ -244,7 +250,7 @@ describe('useBuiltInTypes', () => {
     await waitFor(() => expect(hook.result.current?.lines.length).toBeGreaterThan(0));
     act(() => hook.result.current?.dismiss());
     expect(hook.result.current).toBeNull();
-    expect([...files.keys()]).toEqual(['.atlas/types/task.md']);
+    expect(typeFiles(files)).toEqual(['.atlas/types/task.md']);
     expect(files.get('.atlas/types/task.md')).toBe(TASK);
   });
 

@@ -79,6 +79,7 @@ async function opened(text: string) {
       viewPaths: NONE,
       onChanged,
       onOpenNote: () => {},
+      clock: { today: () => '2026-10-28' },
     }),
   );
   await waitFor(() => expect(hook.result.current).not.toBeNull());

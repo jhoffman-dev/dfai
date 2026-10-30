@@ -59,6 +59,7 @@ const REPORT: TrayTask = {
   path: 'Quarterly report.md',
   title: 'Quarterly report',
   schedule: schedule(120, 45),
+  chosen: false,
 };
 
 /** A vault of text files, written as the host writes them: never over a file that moved on. */
@@ -113,8 +114,10 @@ type PlannerEditors = OpenEditors & Pick<PaneEditors, 'stateOf'>;
 
 const trayIndex = () =>
   fakeIndexPort({
-    query: async (sql: string) =>
-      sql.includes('AS "block"')
+    query: async (sql: string, parameters: readonly unknown[] = []) =>
+      // Nothing is chosen for today (#108): only the next actions are listed.
+      sql.includes('AS "block"') ||
+      [sql, ...parameters].some((part) => part === 'focus' || String(part).includes("'focus'"))
         ? { columns: [], rows: [], truncated: false }
         : sql.includes('AS "estimate"')
           ? {
@@ -183,6 +186,7 @@ describe('the tray', () => {
           path: 'Quarterly report.md',
           title: 'Quarterly report',
           schedule: { estimate: 120, scheduled: 0, done: 0, overBy: 0 },
+          chosen: false,
         },
       ]),
     );
@@ -424,7 +428,12 @@ describe('review (P31-02)', () => {
         },
       },
     };
-    const call: TrayTask = { path: 'Call Mara.md', title: 'Call Mara', schedule: schedule(20, 0) };
+    const call: TrayTask = {
+      path: 'Call Mara.md',
+      title: 'Call Mara',
+      schedule: schedule(20, 0),
+      chosen: false,
+    };
     const hook = planWith({ vault: slow });
 
     await act(async () => {

@@ -123,3 +123,69 @@ describe('a status the note already holds in another spelling (round 2)', () => 
     });
   });
 });
+
+describe('finishing a task ends its choice for the day (#108)', () => {
+  const chosen = { type: 'task', status: 'next-action', focus: '2026-10-08' };
+
+  it('takes a dated focus out of a task that is finished', () => {
+    expect(rule(chosen, { status: 'archive' })).toEqual({
+      changes: { status: 'archive', completed: TODAY, focus: null },
+    });
+  });
+
+  it('takes it out of a repeating task rolled on, which stays open', () => {
+    const roll = { status: 'next-action', due: '2026-10-15', lastCompleted: '2026-10-08' };
+    expect(rule({ ...chosen, recurrence: 'every week' }, roll)).toEqual({
+      changes: { ...roll, focus: null },
+    });
+  });
+
+  it('leaves a focus that is the person’s own, and a change that names focus itself', () => {
+    const own = { type: 'task', status: 'next-action', focus: 'writing' };
+    expect(rule(own, { status: 'archive' })).toEqual({
+      changes: { status: 'archive', completed: TODAY },
+    });
+    expect(rule(chosen, { status: 'archive', focus: '2026-10-09' })).toEqual({
+      changes: { status: 'archive', focus: '2026-10-09', completed: TODAY },
+    });
+  });
+
+  it('leaves a task already finished, or one with no focus, as it was', () => {
+    const done = { type: 'task', status: 'archive', completed: '2026-10-01', focus: '2026-10-01' };
+    expect(rule(done, { due: '2026-10-09' })).toEqual({ changes: { due: '2026-10-09' } });
+    expect(rule({ type: 'task', status: 'next-action' }, { status: 'archive' })).toEqual({
+      changes: { status: 'archive', completed: TODAY },
+    });
+  });
+});
+
+describe('ending the day’s choice, exactly (#108, verification review)', () => {
+  const chosen = { type: 'task', status: 'next-action', focus: '2026-10-08' };
+  const repeating = { ...chosen, recurrence: 'every week', due: '2026-10-08' };
+
+  it('leaves a blank focus key, as a property template writes it, when a task is finished', () => {
+    for (const focus of ['', null]) {
+      expect(rule({ ...chosen, focus }, { status: 'archive' })).toEqual({
+        changes: { status: 'archive', completed: TODAY },
+      });
+    }
+  });
+
+  it('takes focus out of a real roll, which writes due and status with lastCompleted', () => {
+    const roll = { due: '2026-10-15', status: 'next-action', lastCompleted: '2026-10-08' };
+    expect(rule(repeating, roll)).toEqual({ changes: { ...roll, focus: null } });
+  });
+
+  it('keeps focus when lastCompleted alone is edited by hand', () => {
+    expect(rule(repeating, { lastCompleted: '2026-10-01' })).toEqual({
+      changes: { lastCompleted: '2026-10-01' },
+    });
+  });
+
+  it('keeps focus when a finished task is reopened', () => {
+    const done = { type: 'task', status: 'archive', completed: '2026-10-07', focus: '2026-10-08' };
+    expect(rule(done, { status: 'next-action' })).toEqual({
+      changes: { status: 'next-action', completed: null },
+    });
+  });
+});
