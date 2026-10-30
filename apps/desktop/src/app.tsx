@@ -63,6 +63,7 @@ import {
   type VaultRead,
   type ActivityStore,
   type WindowClosingPort,
+  type ApiGranola,
   type ApiRouterDeps,
   type AppInfoPort,
   type ExternalLinkPort,
@@ -101,10 +102,12 @@ import {
   NewArtifactDialog,
   AddDocumentDialog,
   NoteNamesProvider,
+  CodeLanguagesProvider,
   Toast,
   type AppInfoState,
   type OpenHow,
 } from '@dfai/ui';
+import { codeLanguages } from './code-languages.ts';
 import { useVault, type VaultPorts } from './vault/use-vault.ts';
 import { boundToVault, type OnHost } from './vault/bound-to-vault.ts';
 import type { NotePorts } from './notes/use-note.ts';
@@ -200,6 +203,7 @@ import { PEEK_EDITOR, PeekLayer } from './panes/peek-container.tsx';
 import { leavePeek } from './panes/peek-moves.ts';
 import { SearchPaletteSlot } from './search-palette-slot.tsx';
 import { useSemanticSearch, type SemanticPorts } from './semantic/use-semantic-search.ts';
+import { useRelatedPorts } from './related/use-related-ports.ts';
 import { linkPlacesOf } from './reader/link-places.ts';
 import { movingEditorsIn, openNotesIn } from './panes/open-notes.ts';
 import { useVaultEntries, type VaultEntryPorts } from './vault/use-vault-entries.ts';
@@ -669,6 +673,7 @@ function AppWindow({
     changes: noteChanges,
     indexReady,
   });
+  const relatedPorts = useRelatedPorts({ semantic, idle: semanticPorts?.idle ?? null, vaultKey });
 
   // Anything that edits the vault from outside — Obsidian, a sync client — should
   // show up here without a restart. The echo of the app's own writes is left
@@ -845,6 +850,17 @@ function AppWindow({
   const apiOwner = useMemo(() => createOwnerNameRelay(), []);
   const apiClaude = useMemo(() => createClaudeStepRelay(), []);
   const meetingDrafts = useMemo(() => createMeetingDrafts(), []);
+  // Granola for the API (P28-13): the host's word on the key, this Mac's record, and the app's own Sync now.
+  const apiGranolaSyncNow = useSteadyCallback((vault: string) => granolaPull.syncNowFor(vault));
+  const apiGranola = useMemo<ApiGranola>(
+    () => ({
+      keyStatus: (vault) => granolaPorts.port.status({ vault }),
+      record: (vault) => granolaPorts.records.read(vault),
+      ready: granolaPull.readyFor,
+      syncNow: apiGranolaSyncNow,
+    }),
+    [granolaPorts.port, granolaPorts.records, granolaPull.readyFor, apiGranolaSyncNow],
+  );
   const apiDeps = useMemo<ApiRouterDeps>(
     () => ({
       host: apiHost,
@@ -878,6 +894,7 @@ function AppWindow({
       meetingDrafts,
       // A draft that failed after the API answered is said in the window, where no caller is left.
       notices: { warn: (message) => toasts.show({ message, tone: 'error' }) },
+      granola: apiGranola,
     }),
     [
       apiHost,
@@ -902,6 +919,7 @@ function AppWindow({
       apiClaude.ports,
       meetingDrafts,
       toasts,
+      apiGranola,
     ],
   );
   // A write from another tool shows up the way one made here does.
@@ -1833,6 +1851,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       graph: vaultGraph.kind === 'ready' ? vaultGraph.graph : null,
+      related: relatedPorts,
       openNotes: paneOpenNotes,
       viewPaths,
       viewDrafts,
@@ -1876,6 +1895,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       vaultGraph,
+      relatedPorts,
       paneOpenNotes,
       viewPaths,
       viewDrafts,
@@ -2675,7 +2695,7 @@ function AppWindow({
   );
   return (
     <LinkHintsHost index={index.index} status={indexStore} vault={vaultKey}>
-      {shell}
+      <CodeLanguagesProvider value={codeLanguages}>{shell}</CodeLanguagesProvider>
     </LinkHintsHost>
   );
 }

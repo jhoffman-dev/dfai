@@ -20,12 +20,19 @@ const REPORT: TrayTask = {
   path: 'Quarterly report.md',
   title: 'Quarterly report',
   schedule: schedule(0, 120),
+  chosen: false,
 };
-const CALL: TrayTask = { path: 'Call Mara.md', title: 'Call Mara', schedule: schedule(0, null) };
+const CALL: TrayTask = {
+  path: 'Call Mara.md',
+  title: 'Call Mara',
+  schedule: schedule(0, null),
+  chosen: false,
+};
 const INVOICE: TrayTask = {
   path: 'Invoice Larkspur.md',
   title: 'Invoice Larkspur',
   schedule: schedule(60, 90),
+  chosen: false,
 };
 
 const blocks: BoardRow[] = [
@@ -72,6 +79,18 @@ describe('the tray beside the week', () => {
       'Quarterly report0m of 2h scheduled',
       'Call MaraNo estimate',
       'Invoice Larkspur1h of 1h 30m scheduled',
+    ]);
+  });
+
+  it('marks a task chosen for today, and only that one (#108)', () => {
+    render(
+      <CalendarView {...props} planner={planner({ tasks: [{ ...CALL, chosen: true }, REPORT] })} />,
+    );
+
+    const items = within(tray()).getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Call MaraChosen for todayNo estimate',
+      'Quarterly report0m of 2h scheduled',
     ]);
   });
 

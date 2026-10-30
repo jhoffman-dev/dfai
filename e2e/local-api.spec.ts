@@ -133,6 +133,23 @@ test('Settings turns the API on, off by default, and says where it is running', 
   expect(status.body).toMatchObject({ app: 'atlas', index: { ready: true } });
 });
 
+// A reload takes the router away with the page, and the new page's router must
+// take over: the API is not left stuck refusing everything as still starting.
+// This is a smoke test of the reload path, not of #161 itself (a gone page's
+// late "I listen"), which the fake host cannot time; the Rust tests in
+// src-tauri/src/api/control.rs are that regression test.
+test('a reload does not leave the API stuck at 503', async ({ page }) => {
+  const { host } = await openVault(page);
+  await turnApiOn(page, host);
+  expect((await host.api.send({ method: 'GET', path: '/v1/status' })).status).toBe(200);
+
+  await page.reload();
+
+  const status = await host.api.send({ method: 'GET', path: '/v1/status' });
+  expect(status.status).toBe(200);
+  expect(host.callsTo('api_router_register')).toBeGreaterThanOrEqual(2);
+});
+
 test('the MCP command names the server built beside this app, and copies exactly that', async ({
   page,
 }) => {

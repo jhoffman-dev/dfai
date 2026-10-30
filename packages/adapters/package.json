@@ -15,6 +15,7 @@
     "@dfai/domain": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "foliate-js": "1.0.1",
+    "mdast-util-gfm": "^3.1.0",
     "mdast-util-to-markdown": "^2.1.2",
     "micromark-util-classify-character": "^2.0.1",
     "micromark-util-decode-string": "^2.0.1",

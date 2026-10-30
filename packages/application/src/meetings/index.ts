@@ -1,5 +1,10 @@
-export { catchUpMeetings, importArrivedMeetings } from './import-arrived-meetings.ts';
+export {
+  catchUpMeetings,
+  createUnsettledSaid,
+  importArrivedMeetings,
+} from './import-arrived-meetings.ts';
 export type {
+  UnsettledSaid,
   MeetingImportOutcome,
   MeetingImportPorts,
   MeetingImportRun,

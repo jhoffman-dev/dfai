@@ -161,6 +161,24 @@
       },
       "commitsFromCi": true
     },
+    "Choose a task on Today": {
+      "commits": 10,
+      "renders": 603,
+      "calls": {
+        "index_manifest": 3,
+        "index_put": 3,
+        "index_query": 13,
+        "index_stats": 3,
+        "list_directory": 8,
+        "list_notes": 4,
+        "read_notes": 5,
+        "read_text_file": 5,
+        "write_text_file": 3
+      },
+      "rows": {
+        "TaskRow": 3
+      }
+    },
     "Open the Inbox": {
       "commits": 6,
       "renders": 455,
@@ -204,7 +222,7 @@
     },
     "Open the 420-row table": {
       "commits": 8,
-      "renders": 834,
+      "renders": 773,
       "calls": {
         "index_query": 4
       }
@@ -217,8 +235,8 @@
       }
     },
     "Drag a board card": {
-      "commits": 44,
-      "renders": 1146,
+      "commits": 42,
+      "renders": 1126,
       "calls": {
         "index_manifest": 3,
         "index_notes_of_type": 3,
@@ -330,6 +348,13 @@
         "read_notes": 5,
         "read_text_file": 4,
         "write_text_file": 3
+      }
+    },
+    "Open a note with code in 5 languages": {
+      "commits": 8,
+      "renders": 157,
+      "calls": {
+        "read_text_file": 3
       }
     }
   }

@@ -83,6 +83,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_append_to_note`        | `POST /v1/notes/{path}/append`                                               | yes     |
 | `atlas_replace_note_body`     | `PUT /v1/notes/{path}/body`                                                  | yes     |
 | `atlas_backlinks`             | `GET /v1/notes/{path}/backlinks`                                             | no      |
+| `atlas_related`               | `GET /v1/notes/{path}/related`                                               | no      |
 | `atlas_export_note`           | `GET /v1/notes/{path}/export?format=confluence`                              | no      |
 | `atlas_list_types`            | `GET /v1/types`                                                              | no      |
 | `atlas_list_views`            | `GET /v1/views`                                                              | no      |
@@ -104,6 +105,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_move_card`             | `POST /v1/views/{path}/move`                                                 | yes     |
 | `atlas_add_to_view`           | `POST /v1/views/{path}/notes`                                                | yes     |
 | `atlas_refresh_source`        | `POST /v1/sources/{path}/refresh`                                            | yes     |
+| `atlas_sync_granola`          | `POST /v1/granola/pull`                                                      | yes     |
 | `atlas_tags`                  | `GET /v1/tags`                                                               | no      |
 | `atlas_tagged_notes`          | `GET /v1/tags/{tag}/notes`                                                   | no      |
 | `atlas_rename_tag`            | `POST /v1/tags/{tag}/rename`                                                 | yes     |

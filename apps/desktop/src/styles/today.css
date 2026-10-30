@@ -180,3 +180,9 @@
   color: var(--ink-3);
   font-size: var(--text-column);
 }
+
+/* Today, pressed while a task is chosen for today (#108): a muted yellow, to scan for. */
+.today__choose[aria-pressed='true'] {
+  background: var(--hue-yellow-bg);
+  color: var(--hue-yellow-ink);
+}

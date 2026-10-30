@@ -14,6 +14,7 @@ export const jsonFrontmatterMarkdown: MarkdownPort = {
   serializeBody: () => '',
   rawParts: () => [],
   noteBlocks: () => ({ quotes: [], hidden: [] }),
+  writeTree: () => '',
   addToFrontmatterMap: () => null,
   frontmatterProblem: (frontmatter) =>
     frontmatter !== null && frontmatter.includes('BROKEN') ? 'a bad line' : null,

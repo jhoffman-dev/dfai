@@ -15,6 +15,10 @@ const workflow = meetingWorkflow({
   same: sameMeetingScript(),
   sameOther: sameMeetingAtOtherPathScript(),
 });
+const { bundleCaptureMarkdown, CAPTURE_MARKDOWN_BUNDLE } = await import('./capture-bundle.ts');
+await writeFile(CAPTURE_MARKDOWN_BUNDLE, await bundleCaptureMarkdown());
+console.log(`Wrote ${CAPTURE_MARKDOWN_BUNDLE.pathname}`);
+
 const config = await prettier.resolveConfig(target);
 const text = await prettier.format(JSON.stringify(workflow), { ...config, parser: 'json' });
 await writeFile(target, text);

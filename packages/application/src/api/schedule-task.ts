@@ -3,8 +3,6 @@ import {
   messageWithoutPaths,
   newBlockLength,
   noteTitle,
-  splitFrontmatter,
-  TASK_TYPE,
   taskTypeOf,
   type ObjectType,
   type VaultPath,
@@ -16,10 +14,9 @@ import { loadObjectTypes } from '../types/load-types.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import { ApiError } from './api-error.ts';
 import { bodyObject, countOf, requiredString, type Fields } from './fields.ts';
-import { answerWithNote, readNote } from './note-io.ts';
-import { isApiNotePath, notePathFrom } from './paths.ts';
+import { answerWithNote } from './note-io.ts';
+import { taskNoteFrom } from './task-note.ts';
 import type { RouteResult, VaultRequest } from './vault-request.ts';
-import { spelledAsVault } from './vault-spelling.ts';
 
 /**
  * Schedules a task (P31-02): a new block for it, `minutes` long from
@@ -32,7 +29,7 @@ import { spelledAsVault } from './vault-spelling.ts';
  */
 export async function scheduleTaskRoute(request: VaultRequest): Promise<RouteResult> {
   const fields = bodyObject(request.body);
-  const task = await taskOf(request, fields);
+  const { path: task } = await taskNoteFrom(request, { fields, field: 'task' });
   const start = wallClockStart(fields);
   const types = await loadObjectTypes({ fs: request.fs, markdown: request.markdown });
   const minutes =
@@ -82,21 +79,6 @@ function wallClockStart(fields: Fields): string {
     );
   }
   return start;
-}
-
-/** The task the body names, as the vault spells it: refused unless it is a note of type task. */
-async function taskOf(request: VaultRequest, fields: Fields): Promise<VaultPath> {
-  const path = await spelledAsVault({
-    fs: request.fs,
-    asked: notePathFrom(requiredString(fields, 'task'), 'task'),
-    accepts: isApiNotePath,
-  });
-  const { text } = await readNote(request, path);
-  const type = request.markdown.frontmatterProperties(splitFrontmatter(text).frontmatter)['type'];
-  if (typeof type !== 'string' || type.trim().toLowerCase() !== TASK_TYPE) {
-    throw new ApiError('invalid', `task must be a note of type task, and ${path} is not one`);
-  }
-  return path;
 }
 
 /** What the task still needs set aside, as a drop in the app sizes its block. */

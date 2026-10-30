@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { createVaultPath, DAILY_NOTE_CONTENTS, type VaultPath } from '@dfai/domain';
+import { describe, expect, it, vi } from 'vitest';
+import { createVaultPath, type VaultEntry, type VaultPath } from '@dfai/domain';
 import { fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { dailyNotePath, ensureDailyNote } from './daily-note.ts';
 
@@ -71,7 +71,8 @@ describe("today's note", () => {
     ]);
   });
 
-  it('starts as a note of the built-in Daily type when the vault has no Daily template', async () => {
+  // #110: with no Task type on disk, `FROM task` could not run, so there are no blocks.
+  it('starts as a note of the built-in Daily type, headings alone, with no Daily template or Task type', async () => {
     const { fs, created } = vault();
     await ensureDailyNote({
       fs,
@@ -81,8 +82,12 @@ describe("today's note", () => {
       templates: [],
     });
 
-    expect(created).toEqual([{ path: 'Daily/2026/2026-09-22.md', contents: DAILY_NOTE_CONTENTS }]);
-    expect(DAILY_NOTE_CONTENTS).toMatch(/^---\ntype: daily\n---\n/);
+    expect(created).toEqual([
+      {
+        path: 'Daily/2026/2026-09-22.md',
+        contents: '---\ntype: daily\n---\n\n## What happened\n\n## What is next\n',
+      },
+    ]);
   });
 
   it('is held to the task rules: a Daily template that is a task waiting on nobody is made as it is (#202)', async () => {
@@ -149,5 +154,133 @@ describe("today's note", () => {
     await expect(
       ensureDailyNote({ fs, markdown, today: TODAY, notePaths: [], templates: [] }),
     ).rejects.toThrow('permission denied');
+  });
+});
+
+/**
+ * #110: the day's blocks go only into a vault whose Task type can run them,
+ * judged from `.atlas/types` as it is when the note is made.
+ */
+describe("today's note in a vault with a Task type of its own", () => {
+  const GTD_STATUSES = [
+    'inbox',
+    'backlog',
+    'next-action',
+    'in-progress',
+    'waiting',
+    'someday',
+    'longterm',
+    'archive',
+  ];
+  const PLAIN = '---\ntype: daily\n---\n\n## What happened\n\n## What is next\n';
+
+  /** Frontmatter written as one JSON object is a type's; any other is read as lines. */
+  const lines = fakeMarkdown();
+  const typesMarkdown = {
+    ...lines,
+    frontmatterProperties: (frontmatter: string | null) => {
+      const inner = (frontmatter ?? '').replace(/^---\n|\n---\n?$/g, '');
+      return inner.startsWith('{')
+        ? (JSON.parse(inner) as Record<string, unknown>)
+        : lines.frontmatterProperties(frontmatter);
+    },
+  };
+
+  function vaultWithTask(task: Record<string, unknown>) {
+    const created: { path: string; contents: string }[] = [];
+    const text = `---\n${JSON.stringify(task)}\n---\n`;
+    const path = createVaultPath('.atlas/types/task.md');
+    const fs = fakeVaultFs({
+      listDirectory: async (folder) =>
+        folder === '.atlas/types' ? [{ kind: 'file', name: 'task.md', path } as VaultEntry] : [],
+      readNotes: async (paths) =>
+        paths.includes(path) ? [{ path, text, modified: 1, size: text.length }] : [],
+      createNote: async ({ path: made, contents }) => {
+        created.push({ path: made, contents });
+        return 0;
+      },
+    });
+    return { fs, created };
+  }
+
+  const make = (fs: ReturnType<typeof vaultWithTask>['fs'], today = TODAY) =>
+    ensureDailyNote({ fs, markdown: typesMarkdown, today, notePaths: [], templates: [] });
+
+  const GTD_TASK = {
+    name: 'task',
+    properties: {
+      status: { kind: 'select', options: GTD_STATUSES, done: 'archive' },
+      due: 'date',
+      defer: 'date',
+    },
+  };
+
+  // The day's blocks are about the day the clock says, not one fixed in code.
+  it("starts with the clock's day in its query blocks", async () => {
+    const { fs, created } = vaultWithTask(GTD_TASK);
+    await make(fs, '2026-11-03');
+
+    const contents = created[0]?.contents ?? '';
+    expect(contents).toContain('```atlas-query\n');
+    expect(contents).toContain('due <= 2026-11-03');
+    expect(contents).not.toContain(TODAY);
+  });
+
+  it('reads the types once for the note: its folder and its contents both come from that read', async () => {
+    const { fs } = vaultWithTask(GTD_TASK);
+    const listed = vi.spyOn(fs, 'listDirectory');
+    await make(fs);
+
+    expect(listed.mock.calls.filter(([folder]) => folder === '.atlas/types')).toHaveLength(1);
+  });
+
+  it('starts with the two headings alone when the Task type is spelt Task, which FROM task cannot name', async () => {
+    const { fs, created } = vaultWithTask({ ...GTD_TASK, name: 'Task' });
+    await make(fs);
+
+    expect(created[0]?.contents).toBe(PLAIN);
+  });
+
+  it('starts with the day when the Task type is on GTD, with due and defer as dates', async () => {
+    const { fs, created } = vaultWithTask({
+      name: 'task',
+      properties: {
+        status: { kind: 'select', options: GTD_STATUSES, done: 'archive' },
+        due: 'date',
+        defer: 'date',
+      },
+    });
+    await make(fs);
+
+    expect(created).toHaveLength(1);
+    expect(created[0]?.contents).toContain('## Due and overdue\n\n```atlas-query\n');
+    expect(created[0]?.contents).toContain(`due <= ${TODAY}`);
+  });
+
+  it('starts with the two headings alone when the Task type keeps statuses of its own', async () => {
+    const { fs, created } = vaultWithTask({
+      name: 'task',
+      properties: {
+        status: { kind: 'select', options: ['todo', 'doing', 'done'], done: 'done' },
+        due: 'date',
+        defer: 'date',
+      },
+    });
+    await make(fs);
+
+    expect(created).toEqual([{ path: 'Daily/2026/2026-09-22.md', contents: PLAIN }]);
+  });
+
+  it('starts with the two headings alone when the Task type has no defer', async () => {
+    const { fs, created } = vaultWithTask({
+      name: 'task',
+      properties: {
+        status: { kind: 'select', options: GTD_STATUSES, done: 'archive' },
+        due: 'date',
+      },
+    });
+    await make(fs);
+
+    expect(created[0]?.contents).toBe(PLAIN);
   });
 });

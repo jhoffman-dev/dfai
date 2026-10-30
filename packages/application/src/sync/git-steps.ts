@@ -55,7 +55,9 @@ export async function readStatus(git: GitPort): Promise<GitStatus> {
   return parseGitStatus(expectOk('read the vault’s status', await git.status()));
 }
 
-export async function readIndex(git: GitPort): Promise<readonly IndexEntry[]> {
+export async function readIndex(
+  git: Pick<GitPort, 'indexEntries'>,
+): Promise<readonly IndexEntry[]> {
   return parseIndexEntries(expectOk('read the vault’s index', await git.indexEntries()));
 }
 

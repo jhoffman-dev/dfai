@@ -23,6 +23,8 @@ export type {
 } from './fresh-pull-gate.ts';
 export { syncNow } from './sync-now.ts';
 export type { SyncPorts } from './sync-now.ts';
+export { clearSettledCopies } from './clear-settled-copies.ts';
+export type { ClearCopiesPorts } from './clear-settled-copies.ts';
 export { mergeSettings } from './merge-settings.ts';
 export type { SettingsVersions } from './merge-settings.ts';
 export { setUpSync } from './set-up-sync.ts';

@@ -127,6 +127,19 @@ describe('POST /v1/sources/{path}/refresh', () => {
     expect(api.fetches).toHaveLength(2);
   });
 
+  it('does not hold a refresh off once the clock is set back, as the window cannot have begun', async () => {
+    const api = vault();
+    await refresh(api);
+    // The Mac's clock is corrected back an hour.
+    api.now -= 60 * 60_000;
+
+    expect((await refresh(api)).status).toBe(200);
+    expect(api.fetches).toHaveLength(2);
+    // The window starts again from the clock as it now is.
+    api.now += 20_000;
+    expect(bodyOf(await refresh(api))['error']).toMatchObject({ code: 'conflict', retryAfter: 10 });
+  });
+
   it('refuses a refresh sooner than that as a conflict saying how long to wait, fetching nothing', async () => {
     const api = vault();
     await refresh(api);

@@ -6,13 +6,15 @@ import {
   queryViewTabs,
   QUERY_VIEW_KEY,
   queryViewSaveProblem,
+  toBoardRows,
+  type BoardRow,
   type ObjectType,
   type QueryViewSummary,
   type SidebarEntry,
   type ViewLayout,
   type ViewTab,
 } from '@dfai/domain';
-import type { OpenNote } from '@dfai/application';
+import type { Clock, OpenNote } from '@dfai/application';
 import {
   useNoteNames,
   type AtlasQueryPanelProps,
@@ -26,7 +28,9 @@ import { useQueryChoices } from './use-query-choices.ts';
 import { QUERY_LAYOUT_CHOICES, useQueryKeeping } from './use-query-keeping.ts';
 import { useQueryPanelFold } from './use-query-panel-fold.ts';
 import type { QueryPagePorts } from './use-query-page.ts';
+import { useTaskRows } from './use-task-rows.ts';
 import { writeNoteProperties } from './use-view-writes.ts';
+import type { Toasts } from '../toasts/toasts.ts';
 
 export interface QueryViewState {
   readonly tabs: readonly ViewTab[];
@@ -62,9 +66,15 @@ export function useQueryView({
   onOpenNote,
   folds,
   queryFold,
+  clock,
+  toasts,
 }: {
   note: OpenNote | null;
   ports: QueryPagePorts;
+  /** Today's date, which a task row's tick and Today toggle are made on. */
+  clock: Pick<Clock, 'today'>;
+  /** Where a task row's change is said, with its Undo (#107). */
+  toasts?: Pick<Toasts, 'show' | 'vaultNow'>;
   /** Which groups are folded shut, remembered for this view on this Mac. */
   folds: GroupFolds;
   /** Where this view's query fold is remembered on this Mac, and the view's key there. */
@@ -88,6 +98,26 @@ export function useQueryView({
     notePaths,
     indexKey,
     enabled: saved !== null,
+    taskRows: true,
+  });
+  const path = note?.path ?? null;
+  const answered = useMemo(
+    () => (editor.answer === null ? NO_ROWS : toBoardRows(editor.answer.result)),
+    [editor.answer],
+  );
+  const { index, ...writing } = ports;
+  const tasks = useTaskRows({
+    rows: answered,
+    read: editor.read,
+    runsBegun: editor.runsBegun,
+    indexKey,
+    enabled: editor.answer?.compiled.taskRows === true,
+    scope: [index, path],
+    ports: writing,
+    clock,
+    types,
+    toasts,
+    onChanged,
   });
   const [layout, setLayout] = useState<ViewLayout>(saved?.layout ?? 'table');
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -113,7 +143,6 @@ export function useQueryView({
   });
   const names = useNoteNames();
   const fold = useQueryPanelFold({ ...queryFold, savedText: saved?.text ?? null });
-  const path = note?.path ?? null;
   const text = editor.text;
 
   const save = useCallback(() => {
@@ -137,7 +166,7 @@ export function useQueryView({
   }, [ports, path, text, layout, onChanged]);
 
   if (saved === null || note === null) return null;
-  const result = resultFor({ answer: editor.answer, layout, names });
+  const result = resultFor({ answer: editor.answer, layout, names, rows: tasks.rows });
   return {
     tabs: queryViewTabs({ views: queryViews, current: saved.summary }),
     panel: {
@@ -168,6 +197,7 @@ export function useQueryView({
               collapsed: folds.collapsed,
               onToggleGroup: folds.onToggle,
               onOpenNote,
+              tasks: tasks.controls,
             },
       truncated: editor.answer?.result.truncated ?? false,
       error: editor.error,
@@ -187,6 +217,7 @@ export function useQueryView({
 }
 
 const NO_FIELDS: readonly never[] = [];
+const NO_ROWS: readonly BoardRow[] = [];
 
 interface SavedQuery {
   readonly text: string;
