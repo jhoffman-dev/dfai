@@ -90,12 +90,15 @@ Normally none. These environment variables override the connection file:
 | `atlas_list_type_views`       | `GET /v1/types/{name}/views`                                                 | no      |
 | `atlas_list_templates`        | `GET /v1/templates`                                                          | no      |
 | `atlas_read_template`         | `GET /v1/templates/{name}`                                                   | no      |
+| `atlas_list_skills`           | `GET /v1/skills`                                                             | no      |
+| `atlas_read_skill`            | `GET /v1/skills/{name}`                                                      | no      |
 | `atlas_terms`                 | `GET /v1/terms`                                                              | no      |
 | `atlas_run_view`              | `POST /v1/views/{path}/run`                                                  | no      |
 | `atlas_query`                 | `POST /v1/query`                                                             | no      |
 | `atlas_run_query`             | `POST /v1/atlas-query`                                                       | no      |
 | `atlas_sql`                   | `POST /v1/sql`                                                               | no      |
 | `atlas_daily_note`            | `POST /v1/daily`                                                             | yes     |
+| `atlas_capture`               | `POST /v1/captures`                                                          | yes     |
 | `atlas_capture_task`          | `POST /v1/capture`                                                           | yes     |
 | `atlas_save_artifact`         | `POST /v1/artifacts`, then `PUT /v1/artifacts/{path}/files/{name}` per chunk | yes     |
 | `atlas_add_image`             | `PUT /v1/notes/{path}/images/{name}` per chunk, then `.../append`            | yes     |
@@ -185,6 +188,16 @@ every note in `Inbox/`, and every task still at `status: inbox` wherever it
 lives — each meeting with what the import made of it and each task with what
 it already says; proposals are listed by `atlas_proposals`, not by it.
 
+`atlas_capture` saves one Slack message — and its thread, when asked — that
+the model read through a Slack connector, as `POST /v1/captures` does for n8n:
+a task or a note in `Inbox/Captures/`, once per message (its channel and ts),
+so asking again answers `in-vault` with the note that holds it. Its description
+tells the model to pass the permalink, channel id and ts, to choose task or
+note from the person's words, and to pass only what it read. A call without
+`source.url`, or with a field the contract does not have (a misspelt
+`replies` for `thread`), is refused before any request; a `null` is taken as
+left out.
+
 `atlas_clarify_inbox_item` is GTD's clarify step for one item, as a row of the
 Inbox page does it: status, `waitingOn`, `defer`, `due` and `contexts` are
 written in one save, held to the task rules — `waiting` never needs
@@ -246,6 +259,14 @@ none serves. `atlas_read_template` reads one by name: the properties and body a
 note made from it with `atlas_create_note` starts with. Both only read: making,
 renaming, editing, moving and deleting templates stay on the app's Templates
 page, since templates live in `.atlas`, which the API never writes (ADR-0016).
+
+`atlas_list_skills` lists the vault's skills — each an Agent Skills folder in
+`.atlas/skills` holding a `SKILL.md` — by folder name, with its description and
+what breaks the rules (a `name:` that differs from the folder, a missing
+description, no `SKILL.md`). `atlas_read_skill` reads one by name, in any case,
+with its instructions as written. Both only read: making, editing and deleting
+skills stay in the app, since skills live in `.atlas`, which the API never
+writes (ADR-0016, ADR-0050).
 
 `atlas_automations` lists the vault's automations — each rule, its last and
 next run, and why one is paused — with rules that cannot be read listed apart
