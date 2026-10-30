@@ -43,7 +43,19 @@ const OFFER: MeetingSetupOffer = {
   extensions: [],
   asksEmails: true,
   lines: [{ kind: 'rule', what: 'The “After a meeting” rule', detail: 'Written.', written: true }],
+  ruleOn: false,
 };
+
+/** Opens the preview and says yes, as the person does, and waits for what the yes said. */
+async function sayYes(hook: ReturnType<typeof setup>['hook']) {
+  act(() => hook.result.current?.onOpen());
+  await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
+  act(() => hook.result.current?.onAccept());
+  await waitFor(() => expect(hook.result.current?.busy).toBe(false));
+  await waitFor(() =>
+    expect(hook.result.current?.result ?? hook.result.current?.problem).not.toBeNull(),
+  );
+}
 
 function rulesRead(store: AutomationsStore, rules: readonly AutomationRule[]) {
   const listing = {
@@ -135,6 +147,7 @@ describe('useMeetingSetup', () => {
       written: ['Turned on “After a meeting”.'],
       failed: [{ what: 'The Task type', reason: 'No.' }],
       refused: null,
+      ruleOn: true,
     });
     const { hook, wiring, activity } = setup('automations');
     act(() => hook.result.current?.onOpen());
@@ -157,7 +170,9 @@ describe('useMeetingSetup', () => {
 
   it('keeps the preview open when the addresses typed are refused, writing nothing', async () => {
     preview.mockReset().mockResolvedValue(OFFER);
-    accept.mockReset().mockResolvedValue({ written: [], failed: [], refused: 'Not an address.' });
+    accept
+      .mockReset()
+      .mockResolvedValue({ written: [], failed: [], refused: 'Not an address.', ruleOn: false });
     const { hook, wiring } = setup('automations');
     act(() => hook.result.current?.onOpen());
     await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
@@ -169,7 +184,7 @@ describe('useMeetingSetup', () => {
 
   it('says so when nothing needed writing', async () => {
     preview.mockReset().mockResolvedValue(OFFER);
-    accept.mockReset().mockResolvedValue({ written: [], failed: [], refused: null });
+    accept.mockReset().mockResolvedValue({ written: [], failed: [], refused: null, ruleOn: true });
     const { hook, wiring } = setup('automations');
     act(() => hook.result.current?.onOpen());
     await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
@@ -178,9 +193,103 @@ describe('useMeetingSetup', () => {
     expect(wiring.onChanged).not.toHaveBeenCalled();
   });
 
+  it('says the rule is on, with what failed, when the rule was written but a part was not', async () => {
+    preview.mockReset().mockResolvedValue(OFFER);
+    accept.mockReset().mockResolvedValue({
+      written: ['Turned on “After a meeting”.'],
+      failed: [{ what: 'The Task type', reason: 'No.' }],
+      refused: null,
+      ruleOn: true,
+    });
+    const { hook } = setup('automations');
+    await sayYes(hook);
+    expect(hook.result.current?.result).toBe(
+      'Meetings are processed when they arrive, but some parts could not be set up.',
+    );
+  });
+
+  it('never says it was set up already when every part failed', async () => {
+    preview.mockReset().mockResolvedValue(OFFER);
+    accept.mockReset().mockResolvedValue({
+      written: [],
+      failed: [
+        { what: 'The Task type', reason: 'read-only' },
+        { what: 'The “After a meeting” rule', reason: 'read-only' },
+      ],
+      refused: null,
+      ruleOn: false,
+    });
+    const { hook } = setup('automations');
+    await sayYes(hook);
+    expect(hook.result.current?.result).toBe(
+      'Meetings are not processed yet: some parts could not be set up.',
+    );
+    expect(hook.result.current?.problem).toContain('read-only');
+  });
+
+  it('never says meetings are processed when the rule could not be written', async () => {
+    preview.mockReset().mockResolvedValue(OFFER);
+    accept.mockReset().mockResolvedValue({
+      written: ['The Task type gained meeting, atlas_item.', 'Saved your emails: m@example.com.'],
+      failed: [{ what: 'The “After a meeting” rule', reason: 'No.' }],
+      refused: null,
+      ruleOn: false,
+    });
+    const { hook } = setup('automations');
+    await sayYes(hook);
+    expect(hook.result.current?.result).toBe(
+      'Meetings are not processed yet: some parts could not be set up.',
+    );
+  });
+
+  it('says meetings are not processed yet when nothing failed but no rule is on', async () => {
+    preview.mockReset().mockResolvedValue(OFFER);
+    accept.mockReset().mockResolvedValue({ written: [], failed: [], refused: null, ruleOn: false });
+    const { hook } = setup('automations');
+    await sayYes(hook);
+    expect(hook.result.current?.result).toBe(
+      'Meetings are not processed yet: no rule that does it is on. The preview said why.',
+    );
+  });
+
+  it('says why a write the runner caught failed, not that the vault closed', async () => {
+    preview.mockReset().mockResolvedValue(OFFER);
+    accept.mockReset().mockRejectedValue(new Error('the settings are locked'));
+    const { hook, automations } = setup('automations');
+    // As the runner does: an error inside is caught there and answered as null.
+    const exclusive = async (task: (vault: string) => Promise<unknown>) => {
+      try {
+        return await task('/v');
+      } catch {
+        return null;
+      }
+    };
+    publishAutomations(automations, {
+      listing: null,
+      exclusive,
+    } as unknown as AutomationsController);
+    await sayYes(hook);
+    expect(hook.result.current?.problem).toContain('the settings are locked');
+    expect(hook.result.current?.problem).not.toContain('the vault closed');
+  });
+
+  it('tells the offer whether the yes would write anything, as the plan says', async () => {
+    const nothing: MeetingSetupOffer = { ...OFFER, rule: null, asksEmails: false, ruleOn: true };
+    preview.mockReset().mockResolvedValue(nothing);
+    const { hook } = setup('automations');
+    act(() => hook.result.current?.onOpen());
+    await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
+    expect(hook.result.current?.writesNothing).toBe(true);
+    preview.mockReset().mockResolvedValue(OFFER);
+    act(() => hook.result.current?.onOpen());
+    await waitFor(() => expect(hook.result.current?.writesNothing).toBe(false));
+  });
+
   it('writes through the automations’ runner, one at a time with its runs', async () => {
     preview.mockReset().mockResolvedValue(OFFER);
-    accept.mockReset().mockResolvedValue({ written: ['x'], failed: [], refused: null });
+    accept
+      .mockReset()
+      .mockResolvedValue({ written: ['x'], failed: [], refused: null, ruleOn: true });
     const { hook, automations } = setup('automations');
     const exclusive = vi.fn(async (task: (vault: string) => Promise<unknown>) => task('/v'));
     publishAutomations(automations, {

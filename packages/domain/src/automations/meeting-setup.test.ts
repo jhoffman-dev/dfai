@@ -5,12 +5,12 @@ import type { SelfEmails } from '../profile/self-emails.ts';
 import { parseObjectType, type ObjectType } from '../types/property-def.ts';
 import type { AutomationDraft } from './automation-rule.ts';
 import {
-  meetingSetupComplete,
   meetingSetupPlan,
   meetingSetupWithin,
-  postProcessesMeetings,
+  meetingSetupWritesNothing,
   type MeetingSetupFacts,
 } from './meeting-setup.ts';
+import { isDeclaredStep } from './claude-step-budget.ts';
 import { AFTER_A_MEETING_PRESET, AUTOMATION_PRESETS } from './presets.ts';
 
 const type = (frontmatter: Record<string, unknown>): ObjectType => parseObjectType(frontmatter);
@@ -51,7 +51,8 @@ describe('meetingSetupPlan', () => {
     expect(keys(task?.added)).toEqual(['meeting', 'atlas_item']);
     expect(plan.asksEmails).toBe(true);
     expect(plan.lines.map((line) => line.written)).toEqual([true, true, true, true, true]);
-    expect(meetingSetupComplete(plan)).toBe(false);
+    expect(meetingSetupWritesNothing(plan)).toBe(false);
+    expect(plan.ruleOn).toBe(false);
   });
 
   it('lists the rule as its file will say it: prompt, output, apply and the 14-day which', () => {
@@ -85,7 +86,39 @@ describe('meetingSetupPlan', () => {
       'emails',
     ]);
     expect(emails?.detail).toContain('selfEmails');
-    expect(emails?.detail).toContain('by your name only');
+    // With none saved, the owner's Person note's addresses are used (ADR-0036): not the name alone.
+    expect(emails?.detail).not.toContain('by your name only');
+    expect(emails?.detail).toContain('your Person note’s addresses');
+  });
+
+  it('says the Granola key is moved, naming what it holds, when only it has addresses', () => {
+    const plan = meetingSetupPlan(
+      facts({
+        selfEmails: { emails: ['mara@example.com'], source: 'granola_self_emails', problem: null },
+      }),
+    );
+    expect(plan.asksEmails).toBe(true);
+    const emails = plan.lines.at(-1);
+    expect(emails?.detail).toContain('mara@example.com');
+    expect(emails?.detail).toContain('granola_self_emails is removed');
+  });
+
+  it('says what you type replaces an unreadable setting, and names why it cannot be read', () => {
+    const plan = meetingSetupPlan(
+      facts({ selfEmails: { emails: [], source: 'selfEmails', problem: 'not an address: x' } }),
+    );
+    expect(plan.asksEmails).toBe(true);
+    const emails = plan.lines.at(-1);
+    expect(emails?.detail).toContain('can’t be read (not an address: x)');
+    expect(emails?.detail).toContain('replaces it');
+  });
+
+  it('says whether a rule that processes meetings is on now', () => {
+    expect(meetingSetupPlan(facts({ rules: [AFTER_A_MEETING_PRESET] })).ruleOn).toBe(true);
+    const off = { ...AFTER_A_MEETING_PRESET, enabled: false };
+    expect(meetingSetupPlan(facts({ rules: [off] })).ruleOn).toBe(false);
+    const taken = facts({ takenPaths: ['.atlas/automations/After a meeting.md'] });
+    expect(meetingSetupPlan(taken).ruleOn).toBe(false);
   });
 
   it('skips a rule already there under any name, and says when it is off', () => {
@@ -110,17 +143,17 @@ describe('meetingSetupPlan', () => {
         apply: 'mine',
       },
     };
-    expect(postProcessesMeetings(older)).toBe(true);
+    expect(isDeclaredStep(older.action)).toBe(true);
     expect(meetingSetupPlan(facts({ rules: [older] })).rule).toBeNull();
   });
 
   it('does not count the older extraction preset, which proposes but makes no tasks', () => {
     const extraction = AUTOMATION_PRESETS.find((preset) => preset.name.startsWith('Pull'));
     expect(extraction).toBeDefined();
-    expect(postProcessesMeetings(extraction as AutomationDraft)).toBe(false);
+    expect(isDeclaredStep((extraction as AutomationDraft).action)).toBe(false);
     expect(meetingSetupPlan(facts({ rules: [extraction as AutomationDraft] })).rule).not.toBeNull();
     const archive = AUTOMATION_PRESETS[0] as AutomationDraft;
-    expect(postProcessesMeetings(archive)).toBe(false);
+    expect(isDeclaredStep(archive.action)).toBe(false);
   });
 
   it('never writes over a file already called After a meeting, whatever it holds', () => {
@@ -214,17 +247,20 @@ describe('meetingSetupPlan', () => {
     expect(inherited.asksEmails).toBe(true);
   });
 
-  it('is complete once the rule, prompt and keys are all there', () => {
+  it('writes nothing only once the rule, prompt, keys and emails are all there', () => {
     const done = meetingSetupPlan(
       facts({
         types: [],
         rules: [AFTER_A_MEETING_PRESET],
         promptHeld: true,
+        selfEmails: { emails: ['mara@example.com'], source: 'selfEmails', problem: null },
       }),
     );
-    expect(meetingSetupComplete(done)).toBe(true);
-    expect(meetingSetupComplete({ ...done, prompt: PROMPT as never })).toBe(false);
-    expect(meetingSetupComplete({ ...done, rule: AFTER_A_MEETING_PRESET })).toBe(false);
+    expect(meetingSetupWritesNothing(done)).toBe(true);
+    expect(meetingSetupWritesNothing({ ...done, prompt: PROMPT as never })).toBe(false);
+    expect(meetingSetupWritesNothing({ ...done, rule: AFTER_A_MEETING_PRESET })).toBe(false);
+    // The emails field alone is something to write.
+    expect(meetingSetupWritesNothing({ ...done, asksEmails: true })).toBe(false);
   });
 });
 

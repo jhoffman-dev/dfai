@@ -134,6 +134,42 @@ describe('acceptMeetingSetup', () => {
     ]);
   });
 
+  it('says the rule is on after a yes that wrote it, and when it was already', async () => {
+    const v = vault({ [MEETING_TYPE]: MEETING, [TASK_TYPE]: TASK });
+    expect((await yes(v)).ruleOn).toBe(true);
+    expect((await yes(v)).ruleOn).toBe(true);
+  });
+
+  it('says the rule is not on when writing it failed, though the rest was written', async () => {
+    const v = vault({ [MEETING_TYPE]: MEETING, [TASK_TYPE]: TASK });
+    const offer = await previewMeetingSetup(v);
+    const refusing: VaultFsPort = {
+      ...v.fs,
+      createNote: async (create) => {
+        if (create.path === RULE) throw new Error('The disk said no.');
+        return v.fs.createNote(create);
+      },
+    };
+    const done = await acceptMeetingSetup({ ...v, fs: refusing, offer, emails: '' });
+    expect(done.ruleOn).toBe(false);
+    expect(done.written).toContain('The Task type gained meeting, atlas_item.');
+    expect(done.failed).toEqual([
+      { what: 'The “After a meeting” rule', reason: 'The disk said no.' },
+    ]);
+  });
+
+  it('says it wrote the prompt the rule needs when it went missing after the preview', async () => {
+    const v = vault({ [MEETING_TYPE]: MEETING, [TASK_TYPE]: TASK, [PROMPT]: 'Mine.\n' });
+    const offer = await previewMeetingSetup(v);
+    expect(offer.prompt).toBeNull();
+    v.files.delete(PROMPT);
+    const done = await acceptMeetingSetup({ ...v, offer, emails: '' });
+    expect(v.files.get(PROMPT)).toBe(builtInPromptAt(PROMPT)?.contents);
+    expect(done.written).toContain(
+      `Wrote the prompt ${PROMPT}, which the “After a meeting” rule names.`,
+    );
+  });
+
   it('a second yes duplicates nothing and writes nothing', async () => {
     const v = vault({ [MEETING_TYPE]: MEETING, [TASK_TYPE]: TASK });
     await yes(v, 'mara.quill@example.com');
@@ -155,7 +191,7 @@ describe('acceptMeetingSetup', () => {
     await acceptMeetingSetup({ ...v, offer, emails: '' });
     const after = new Map(v.files);
     const twice = await acceptMeetingSetup({ ...v, offer, emails: '' });
-    expect(twice).toEqual({ written: [], failed: [], refused: null });
+    expect(twice).toEqual({ written: [], failed: [], refused: null, ruleOn: true });
     expect(v.files).toEqual(after);
   });
 

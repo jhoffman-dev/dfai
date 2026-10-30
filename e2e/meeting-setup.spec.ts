@@ -93,7 +93,7 @@ test('one previewed yes on the Inbox sets meetings up, and the next meeting gets
   await expect(written).toContainText('output: meeting-digest, apply: mine');
   await expect(written).toContainText(`The prompt ${PROMPT}`);
   await expect(written).toContainText('The Task type: Gains atlas_item.');
-  await expect(offer).toContainText('matched by your name only');
+  await expect(offer).toContainText('your Person note’s addresses');
 
   // Previewing wrote nothing.
   expect(await vault.exists(RULE)).toBe(false);

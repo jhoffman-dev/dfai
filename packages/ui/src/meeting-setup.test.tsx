@@ -25,7 +25,7 @@ const LINES: readonly MeetingSetupLineView[] = [
   {
     kind: 'emails',
     what: 'Your email addresses',
-    detail: 'Without them, they are matched by your name only.',
+    detail: 'Left empty, your Person note’s addresses are used.',
     written: true,
   },
 ];
@@ -35,6 +35,7 @@ function props(overrides: Partial<MeetingSetupProps> = {}): MeetingSetupProps {
     open: false,
     lines: null,
     asksEmails: false,
+    writesNothing: false,
     emails: '',
     busy: false,
     result: null,
@@ -86,7 +87,7 @@ describe('MeetingSetup', () => {
     expect(skipped.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
       `${LINES[1]?.what}: ${LINES[1]?.detail}`,
     ]);
-    expect(region().textContent).toContain('matched by your name only');
+    expect(region().textContent).toContain('your Person note’s addresses');
     await userEvent.type(screen.getByRole('textbox', { name: 'Your emails' }), 'm');
     expect(given.onEmailsChange).toHaveBeenCalledWith('m');
     await userEvent.click(screen.getByRole('button', { name: 'Set up' }));
@@ -102,8 +103,8 @@ describe('MeetingSetup', () => {
   });
 
   it('with nothing to write, says so and offers only Close', () => {
-    const skipped = LINES.map((line) => ({ ...line, written: false }));
-    render(<MeetingSetup {...props({ open: true, lines: skipped })} />);
+    // As the plan says it: the lines are not counted again here.
+    render(<MeetingSetup {...props({ open: true, lines: LINES, writesNothing: true })} />);
     expect(region().textContent).toContain('set up already');
     expect(screen.queryByRole('button', { name: 'Set up' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
