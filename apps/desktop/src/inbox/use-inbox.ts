@@ -347,11 +347,18 @@ export function useInbox(options: InboxOptions) {
     () => (last === null ? Promise.resolve(false) : undoClarification(last)),
     [last, undoClarification],
   );
-  /** The same, resolving to where the note it took back is listed again, or null when it took none (#109). */
+  /**
+   * The same from the keyboard (#109), resolving to where the note it took
+   * back is listed again, or null when it took none. It waits for any
+   * clarification still being written first: until that lands, the undo on
+   * offer is the one before it, which is not the one asked for.
+   */
   const takeBackLast = useCallback(async (): Promise<VaultPath | null> => {
-    if (last === null) return null;
-    return (await undoClarification(last)) ? last.undo.from : null;
-  }, [last, undoClarification]);
+    await writes.drained();
+    const taken = held.store.getState().said?.last ?? null;
+    if (taken === null) return null;
+    return (await undoClarification(taken)) ? taken.undo.from : null;
+  }, [writes, held, undoClarification]);
 
   // The undo lasts as long as the toast offering it (#165): once that has gone, so has the undo.
   const dismissLastAction = useCallback(

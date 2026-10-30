@@ -77,21 +77,18 @@ const clarified = (onClarify: InboxPageProps['onClarify']) =>
 
 describe('InboxPage keys — attack PR #641', () => {
   // The list unmounts once empty and its key handler with it: the focus is on the document, and U reaches nothing.
-  it.fails(
-    'takes the last clarification back on U once the row it took was the Inbox’s last',
-    async () => {
-      const view = page({
-        contents: contentsOf(['Call the bank']),
-        onUndo: vi.fn(async () => createVaultPath('Inbox/Call the bank.md')),
-      });
-      focusRow('Call the bank');
-      await userEvent.keyboard('n');
-      expect(clarified(view.onClarify)).toHaveLength(1);
-      view.rerender({ contents: contentsOf([]) });
-      await act(async () => {
-        await userEvent.keyboard('u');
-      });
-      expect(view.onUndo).toHaveBeenCalledTimes(1);
-    },
-  );
+  it('takes the last clarification back on U once the row it took was the Inbox’s last', async () => {
+    const view = page({
+      contents: contentsOf(['Call the bank']),
+      onUndo: vi.fn(async () => createVaultPath('Inbox/Call the bank.md')),
+    });
+    focusRow('Call the bank');
+    await userEvent.keyboard('n');
+    expect(clarified(view.onClarify)).toHaveLength(1);
+    view.rerender({ contents: contentsOf([]) });
+    await act(async () => {
+      await userEvent.keyboard('u');
+    });
+    expect(view.onUndo).toHaveBeenCalledTimes(1);
+  });
 });

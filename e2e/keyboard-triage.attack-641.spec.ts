@@ -80,72 +80,67 @@ test.describe('Today, while a write is in flight (attack PR #641)', () => {
     'Tasks/Fix the gate.md': ['status: next-action'],
   };
 
-  test.fail(
-    'the focus stays on a row after X while the done is still being written',
-    async ({ page }) => {
-      const vault = await vaultWith(THREE);
-      const host = await open(page, vault, /^Today/);
-      await expect(today(page).locator('.table__title')).toHaveText([
-        'Call the bank',
-        'Chase the quote',
-        'Fix the gate',
-      ]);
-      const release = host.holdWrites('Tasks/Call the bank.md');
-      await handle(page, 'Call the bank').focus();
-      await page.keyboard.press('x');
-      await expect.poll(() => host.writesTo('Tasks/Call the bank.md')).toBeGreaterThan(0);
-      // The next key needs a row to land on: the page, not the document, has the focus.
-      const onARow = await page.evaluate(
-        () => document.activeElement?.closest('[data-today-row]') !== null,
-      );
-      const at = await page.evaluate(() => document.activeElement?.tagName ?? null);
-      release();
-      expect({ onARow, at }).toEqual({ onARow: true, at: 'INPUT' });
-    },
-  );
+  test('the focus stays on a row after X while the done is still being written', async ({
+    page,
+  }) => {
+    const vault = await vaultWith(THREE);
+    const host = await open(page, vault, /^Today/);
+    await expect(today(page).locator('.table__title')).toHaveText([
+      'Call the bank',
+      'Chase the quote',
+      'Fix the gate',
+    ]);
+    const release = host.holdWrites('Tasks/Call the bank.md');
+    await handle(page, 'Call the bank').focus();
+    await page.keyboard.press('x');
+    await expect.poll(() => host.writesTo('Tasks/Call the bank.md')).toBeGreaterThan(0);
+    // The next key needs a row to land on: the page, not the document, has the focus.
+    const onARow = await page.evaluate(
+      () => document.activeElement?.closest('[data-today-row]') !== null,
+    );
+    const at = await page.evaluate(() => document.activeElement?.tagName ?? null);
+    release();
+    expect({ onARow, at }).toEqual({ onARow: true, at: 'INPUT' });
+  });
 
-  test.fail(
-    'J moves the focus down a row while a done is still being written',
-    async ({ page }) => {
-      const vault = await vaultWith(THREE);
-      const host = await open(page, vault, /^Today/);
-      await expect(today(page).locator('.table__title')).toHaveCount(3);
-      const release = host.holdWrites('Tasks/Call the bank.md');
-      await handle(page, 'Call the bank').focus();
-      await page.keyboard.press('x');
-      await expect.poll(() => host.writesTo('Tasks/Call the bank.md')).toBeGreaterThan(0);
-      await page.keyboard.press('j');
-      await page.keyboard.press('j');
-      const focused = await page.evaluate(
-        () => document.activeElement?.getAttribute('aria-label') ?? null,
-      );
-      release();
-      await expectFile(vault, 'Tasks/Call the bank.md').toContain('status: archive');
-      expect(focused).toBe('Mark Fix the gate done');
-    },
-  );
+  test('J moves the focus down a row while a done is still being written', async ({ page }) => {
+    const vault = await vaultWith(THREE);
+    const host = await open(page, vault, /^Today/);
+    await expect(today(page).locator('.table__title')).toHaveCount(3);
+    const release = host.holdWrites('Tasks/Call the bank.md');
+    await handle(page, 'Call the bank').focus();
+    await page.keyboard.press('x');
+    await expect.poll(() => host.writesTo('Tasks/Call the bank.md')).toBeGreaterThan(0);
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    const focused = await page.evaluate(
+      () => document.activeElement?.getAttribute('aria-label') ?? null,
+    );
+    release();
+    await expectFile(vault, 'Tasks/Call the bank.md').toContain('status: archive');
+    expect(focused).toBe('Mark Fix the gate done');
+  });
 
-  test.fail(
-    'a row that stays where it is listed keeps the focus once its N is written',
-    async ({ page }) => {
-      const vault = await vaultWith({
-        'Tasks/Send the figures.md': ['status: in-progress', 'due: 2026-10-13'],
-        'Tasks/Call the bank.md': ['status: next-action'],
-      });
-      await open(page, vault, /^Today/);
-      const dueToday = today(page).getByRole('region', { name: 'Due today', exact: true });
-      await expect(
-        dueToday.getByRole('checkbox', { name: 'Mark Send the figures done' }),
-      ).toBeVisible();
-      await handle(page, 'Send the figures').focus();
-      await page.keyboard.press('n');
-      await expectFile(vault, 'Tasks/Send the figures.md').toContain('status: next-action');
-      await expect(today(page).locator('tr[aria-busy]')).toHaveCount(0);
-      // Still due today, the row is listed where it was: the next key is for it.
-      await expect(
-        dueToday.getByRole('checkbox', { name: 'Mark Send the figures done' }),
-      ).toBeVisible();
-      await expect(handle(page, 'Send the figures')).toBeFocused();
-    },
-  );
+  test('a row that stays where it is listed keeps the focus once its N is written', async ({
+    page,
+  }) => {
+    const vault = await vaultWith({
+      'Tasks/Send the figures.md': ['status: in-progress', 'due: 2026-10-13'],
+      'Tasks/Call the bank.md': ['status: next-action'],
+    });
+    await open(page, vault, /^Today/);
+    const dueToday = today(page).getByRole('region', { name: 'Due today', exact: true });
+    await expect(
+      dueToday.getByRole('checkbox', { name: 'Mark Send the figures done' }),
+    ).toBeVisible();
+    await handle(page, 'Send the figures').focus();
+    await page.keyboard.press('n');
+    await expectFile(vault, 'Tasks/Send the figures.md').toContain('status: next-action');
+    await expect(today(page).locator('tr[aria-busy]')).toHaveCount(0);
+    // Still due today, the row is listed where it was: the next key is for it.
+    await expect(
+      dueToday.getByRole('checkbox', { name: 'Mark Send the figures done' }),
+    ).toBeVisible();
+    await expect(handle(page, 'Send the figures')).toBeFocused();
+  });
 });

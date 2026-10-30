@@ -9,6 +9,7 @@ import {
 } from './inbox/inbox-rows.tsx';
 import type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';
 import type { UndoLast } from './row-keys.ts';
+import { useInboxHome } from './inbox/use-inbox-home.ts';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
 import { ROW_SCROLLER_MARK, RowScrollerContext } from './row-scroller.ts';
@@ -184,6 +185,12 @@ export function InboxPage(props: InboxPageProps) {
     offersRead.some((read) => read?.waitingForIndex === true),
   );
   const anchor = useListAnchor(parts, live);
+  const home = useInboxHome({
+    page: article,
+    empty: props.contents?.items.length === 0,
+    busy: props.busy,
+    onUndo: props.onUndo,
+  });
   return (
     <>
       <PageBar
@@ -206,7 +213,7 @@ export function InboxPage(props: InboxPageProps) {
         {...ROW_SCROLLER_MARK}
       >
         <RowScrollerContext.Provider value={scroller}>
-          <article className="page page--wide inbox" aria-label="Inbox" ref={article}>
+          <article className="page page--wide inbox" aria-label="Inbox" ref={article} {...home}>
             <HiddenTitle>To process</HiddenTitle>
             {settingsUnreadable !== null && <SettingsUnreadable {...settingsUnreadable} />}
             {ownerUnknown !== null && <OwnerUnknown {...ownerUnknown} />}

@@ -78,29 +78,26 @@ const focusRow = (title: string) => act(() => handle(title).focus());
 describe('TodayPage keys — attack PR #641', () => {
   // useFocusOnReturn (row-keys.ts) asks only whether the focus is on the element it was on at U:
   // moved away and back, the person is taken to the row the undo brought back, a read later.
-  it.fails(
-    'does not pull the focus to a row an undo took back once the person has moved on and come back',
-    async () => {
-      let listed: (path: ReturnType<typeof createVaultPath>) => void = () => {};
-      const onUndo = vi.fn(
-        () => new Promise<ReturnType<typeof createVaultPath>>((done) => (listed = done)),
-      );
-      const view = page({ today: without('Quote from Tobias'), onUndo });
-      focusRow('Write the guide');
-      await userEvent.keyboard('u');
-      await act(async () => listed(createVaultPath('Tasks/Quote from Tobias.md')));
-      // The row is not listed yet; the person goes on working, up a row and back down.
-      await userEvent.keyboard('k');
-      await userEvent.keyboard('j');
-      expect(document.activeElement).toBe(handle('Write the guide'));
-      // Much later, a read lists it again: the person's place is theirs.
-      act(() => view.rerender({ today: report() }));
-      expect(document.activeElement?.getAttribute('aria-label')).toBe('Mark Write the guide done');
-    },
-  );
+  it('does not pull the focus to a row an undo took back once the person has moved on and come back', async () => {
+    let listed: (path: ReturnType<typeof createVaultPath>) => void = () => {};
+    const onUndo = vi.fn(
+      () => new Promise<ReturnType<typeof createVaultPath>>((done) => (listed = done)),
+    );
+    const view = page({ today: without('Quote from Tobias'), onUndo });
+    focusRow('Write the guide');
+    await userEvent.keyboard('u');
+    await act(async () => listed(createVaultPath('Tasks/Quote from Tobias.md')));
+    // The row is not listed yet; the person goes on working, up a row and back down.
+    await userEvent.keyboard('k');
+    await userEvent.keyboard('j');
+    expect(document.activeElement).toBe(handle('Write the guide'));
+    // Much later, a read lists it again: the person's place is theirs.
+    act(() => view.rerender({ today: report() }));
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Mark Write the guide done');
+  });
 
   // The focus goes to the document with the last row; the keys are asked on rows only.
-  it.fails('takes the last change back on U once the row it took was the page’s last', async () => {
+  it('takes the last change back on U once the row it took was the page’s last', async () => {
     const only = [task('Ship the page')];
     const view = page({
       today: report(only),

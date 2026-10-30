@@ -243,3 +243,42 @@ describe('useRowFocus — a row acted on that stays on the page (PR #641 review)
     expect(document.activeElement).toBe(document.body);
   });
 });
+
+describe('useRowFocus — a row handed on at once, then refused (PR #641 attack)', () => {
+  const a = createVaultPath('Tasks/A.md');
+  const b = createVaultPath('Tasks/B.md');
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('gives the focus back to the row once it is back, from the row it was handed to', () => {
+    const { result, rerender } = renderHook(
+      (props: { order: VaultPath[]; problem: string | null; settling: ReadonlySet<VaultPath> }) =>
+        useRowFocus({ shown: {}, ...props }),
+      {
+        initialProps: {
+          order: [a, b],
+          problem: null as string | null,
+          settling: new Set<VaultPath>(),
+        },
+      },
+    );
+    const boxA = mounted();
+    const boxB = mounted();
+    act(() => result.current.rowRef(a)(boxA));
+    act(() => result.current.rowRef(b)(boxB));
+    act(() => boxA.focus());
+    act(() => result.current.actedOn(a));
+    // Taken off at once while it is written: the focus goes on to B straight away.
+    act(() => result.current.rowRef(a)(null));
+    boxA.remove();
+    rerender({ order: [b], problem: null, settling: new Set([a]) });
+    expect(document.activeElement).toBe(boxB);
+    // Refused: the row comes back.
+    const backA = mounted();
+    act(() => result.current.rowRef(a)(backA));
+    rerender({ order: [a, b], problem: 'The disk is full.', settling: new Set() });
+    expect(document.activeElement).toBe(backA);
+  });
+});

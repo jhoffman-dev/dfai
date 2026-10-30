@@ -103,6 +103,11 @@ export function useTodayKeys({
     (event: KeyboardEvent<HTMLElement>) => {
       const target = event.target;
       if (!(target instanceof Element) || typesInto(target)) return;
+      // The page itself has the focus once its last row has gone: only U is answered there.
+      if (target === event.currentTarget) {
+        rowKey(event, null);
+        return;
+      }
       const path = target.closest<HTMLElement>(ROW_MARK)?.dataset['todayRow'] as
         VaultPath | undefined;
       if (path === undefined || rowKey(event, path)) return;

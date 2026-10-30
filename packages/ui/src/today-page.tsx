@@ -15,7 +15,7 @@ import {
 } from '@dfai/domain';
 import type { TodayReport } from '@dfai/application';
 import { Icon } from './icon.tsx';
-import { MoveMenu, todayToggle } from './task-row-commands.tsx';
+import { heldWhile, MoveMenu, todayToggle } from './task-row-commands.tsx';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
 import { ROW_SCROLLER_MARK, RowScrollerContext } from './row-scroller.ts';
@@ -24,7 +24,7 @@ import { useSteadyCallback } from './steady-callback.ts';
 import { Spacer } from './grouped-rows.tsx';
 import { useRowFocus, type RowFocus } from './today-row-focus.ts';
 import { TODAY_KEY_HINTS, todayPlaceOf, useTodayKeys } from './today-keys.ts';
-import type { UndoLast } from './row-keys.ts';
+import { KEYS_HOME, type UndoLast } from './row-keys.ts';
 import { keyHintStrip } from './key-hints.tsx';
 import { useVirtualRows } from './virtual-rows.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
@@ -97,11 +97,14 @@ export function TodayPage(props: TodayPageProps) {
     [props.today],
   );
   const settling = props.settling ?? NONE_SETTLING;
+  const home = useRef<HTMLElement>(null);
+  // Not told the page is busy: a row's Done box, which holds the focus, takes
+  // it while its row waits (`DoneBox`), so the next row has it at once.
   const focus = useRowFocus({
     order,
     shown: props.today,
     problem: props.problem,
-    busy: props.busy,
+    home,
     placeOf: (path) => todayPlaceOf(props.today, path),
     settling,
   });
@@ -138,6 +141,9 @@ export function TodayPage(props: TodayPageProps) {
             aria-label="Today"
             aria-busy={props.busy || undefined}
             onKeyDown={onKeyDown}
+            ref={home}
+            tabIndex={-1}
+            {...KEYS_HOME}
           >
             <HiddenTitle>{name ?? 'Today'}</HiddenTitle>
             {props.problem !== null && (
@@ -670,8 +676,12 @@ function DoneBox({ task, actions }: RowControlProps) {
       aria-label={`Mark ${task.title} done`}
       aria-keyshortcuts="x"
       checked={false}
-      disabled={waits}
-      onChange={() => actions.onDone(task)}
+      // Held, not disabled: it is the row's handle, and WebKit drops the focus
+      // of a control it disables — the keys after an action would land nowhere.
+      {...heldWhile(waits, true)}
+      onChange={() => {
+        if (!waits) actions.onDone(task);
+      }}
     />
   );
 }

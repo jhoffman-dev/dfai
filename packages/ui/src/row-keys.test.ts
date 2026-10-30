@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KeyboardEvent } from 'react';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { createVaultPath } from '@dfai/domain';
-import { typesInto, useRowKeys } from './row-keys.ts';
+import { typesInto, useRowKeys, useUndoKey } from './row-keys.ts';
 
 /** #109: where a triage key never fires — wherever the key is typed, or another control has the keyboard. */
 
@@ -108,5 +108,35 @@ describe('useRowKeys — J onto a row the list has yet to draw (PR #641 review)'
     expect(rowKey(press('k'), undrawn)).toBe(true);
     expect(document.activeElement).toBe(box);
     expect(focusRow).toHaveBeenCalledWith(drawn);
+  });
+});
+
+describe('useUndoKey — the row taken back (PR #641 attack)', () => {
+  const back = createVaultPath('Tasks/Back.md');
+  const other = createVaultPath('Tasks/Other.md');
+
+  function undoOver() {
+    const focusRow = vi.fn();
+    const hook = renderHook(
+      ({ order }) =>
+        useUndoKey({ order, focusRow, onUndo: async () => back, undoWaits: () => false }),
+      { initialProps: { order: [other] } },
+    );
+    return { ...hook, focusRow };
+  }
+
+  it('focuses the row once a list holds it', async () => {
+    const { result, rerender, focusRow } = undoOver();
+    await act(async () => result.current());
+    rerender({ order: [other, back] });
+    expect(focusRow).toHaveBeenCalledWith(back);
+  });
+
+  it('gives the row up after a few lists without it: a read much later moves no focus', async () => {
+    const { result, rerender, focusRow } = undoOver();
+    await act(async () => result.current());
+    for (let read = 0; read < 3; read += 1) rerender({ order: [other] });
+    rerender({ order: [other, back] });
+    expect(focusRow).not.toHaveBeenCalled();
   });
 });

@@ -739,3 +739,9 @@
     animation: spinner-shown 0s linear 150ms forwards;
   }
 }
+
+/* A page that holds the focus once its last row has gone (#109): only so its
+   keys still reach it. It is not a control, so it draws no ring. */
+[data-keys-home]:focus {
+  outline: none;
+}

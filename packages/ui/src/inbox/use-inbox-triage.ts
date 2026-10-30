@@ -12,7 +12,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { useRowHandles } from '../row-handles.ts';
-import { typesInto, useRowKeys, type UndoLast } from '../row-keys.ts';
+import { focusIsHome, typesInto, useRowKeys, type UndoLast } from '../row-keys.ts';
 import { useSteadyCallback } from '../steady-callback.ts';
 import {
   GTD_STATUSES,
@@ -463,8 +463,8 @@ function forgetPicksOfRowsGone({
 
 /** Whether the focus went with a row that left the DOM: it falls back to the page then. */
 function focusLeftWithRow(): boolean {
-  const at = document.activeElement;
-  return at === null || at === document.body;
+  // The page's home holds it once the last row has gone (`useInboxHome`).
+  return focusIsHome();
 }
 
 /**

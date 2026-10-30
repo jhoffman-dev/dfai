@@ -28,62 +28,140 @@ export const ROW_UNDO_HINT = ['U', 'Undo'] as const;
 /** What a press on these is the control's own: Return presses a button or follows a link. */
 const PRESSED_BY_RETURN = 'button, a[href]';
 
-/** The row an undo took back, and where the focus was as it was asked for. */
-interface Returning {
-  readonly path: VaultPath;
-  readonly from: Element | null;
-}
-
 /** Takes the page's last change back; resolves to the row it took back, or null when it took none. */
 export type UndoLast = () => Promise<VaultPath | null>;
 
 /**
- * Gives the row an undo took back the focus, once the page lists it again —
- * unless the person has put the focus somewhere else since. Returns what
- * says which row that is.
- *
- * A row listed already as the undo settles is focused at once, and once more
- * on the page's next list: taken back, it is often listed somewhere else —
- * back from Chosen for today, say — and drawn anew there, its focus lost.
+ * Marks the element a page keeps the focus on when it has no row to hold it
+ * — its last row gone (#109) — so U still reaches the page. Spread onto it
+ * with `tabIndex={-1}`.
+ */
+export const KEYS_HOME = { 'data-keys-home': '' } as const;
+
+/** Whether the focus is nowhere a person put it: on the document, or on the page's home. */
+export function focusIsHome(at: Element | null = document.activeElement): boolean {
+  return at === null || at === document.body || at.matches('[data-keys-home]');
+}
+
+/** An undo asked for from the keyboard, until its row has the focus or the person has moved on. */
+interface Returning {
+  /** The row the undo took back, once it says; null while it is being taken back. */
+  path: VaultPath | null;
+  /** Whether the row has been given the focus once. */
+  focused: boolean;
+  /** Lists read since the undo said, without its row. */
+  misses: number;
+  readonly release: () => void;
+}
+
+/** Lists read without the row taken back before it is given up on. */
+const RETURN_LISTS = 3;
+
+/**
+ * Gives the row an undo took back the focus, once the page lists it — and
+ * once more on the list after, since a row taken back is often listed
+ * somewhere else, back from Chosen for today, say, and drawn anew there.
+ * The person moving the focus at all since U gives it up, and so do a few
+ * lists without the row, or the page going away. Returns the start of the
+ * watch, at U, and its answer, once the undo says which row it took back.
  */
 function useFocusOnReturn(
   order: readonly VaultPath[],
   focusRow: (path: VaultPath) => void,
-): (back: Returning) => void {
+): { begin: () => void; tookBack: (path: VaultPath | null) => void } {
   const orderNow = useRef(order);
   orderNow.current = order;
-  const returning = useRef<Returning | null>(null);
-  const focusIfStill = useCallback(
-    (back: Returning) => {
-      const at = document.activeElement;
-      if (at === back.from || at === null || at === document.body) focusRow(back.path);
+  const watch = useRef<Returning | null>(null);
+  const ours = useRef(false);
+  const stop = useCallback(() => {
+    watch.current?.release();
+    watch.current = null;
+  }, []);
+  /** Gives the row the focus, unless the person has it on something of their own. */
+  const give = useCallback(
+    (back: Returning, path: VaultPath) => {
+      if (back.focused && !focusIsHome()) return;
+      ours.current = true;
+      try {
+        focusRow(path);
+      } finally {
+        ours.current = false;
+      }
+      if (back.focused) stop();
+      else back.focused = true;
     },
-    [focusRow],
+    [focusRow, stop],
   );
   useEffect(() => {
-    const back = returning.current;
-    if (back === null || !order.includes(back.path)) return;
-    returning.current = null;
-    focusIfStill(back);
-  }, [order, focusIfStill]);
-  return useCallback(
-    (back: Returning) => {
-      if (!orderNow.current.includes(back.path)) {
-        returning.current = back;
+    const back = watch.current;
+    if (back === null || back.path === null) return;
+    if (order.includes(back.path)) give(back, back.path);
+    else if ((back.misses += 1) >= RETURN_LISTS) stop();
+  }, [order, give, stop]);
+  useEffect(() => stop, [stop]);
+  const begin = useCallback(() => {
+    stop();
+    const moved = () => {
+      if (!ours.current) stop();
+    };
+    document.addEventListener('focusin', moved);
+    watch.current = {
+      path: null,
+      focused: false,
+      misses: 0,
+      release: () => document.removeEventListener('focusin', moved),
+    };
+  }, [stop]);
+  const tookBack = useCallback(
+    (path: VaultPath | null) => {
+      const back = watch.current;
+      if (back === null) return;
+      if (path === null) {
+        stop();
         return;
       }
-      focusIfStill(back);
-      returning.current = { path: back.path, from: document.activeElement };
+      back.path = path;
+      if (orderNow.current.includes(path)) give(back, path);
     },
-    [focusIfStill],
+    [give, stop],
   );
+  return { begin, tookBack };
+}
+
+/**
+ * U or ⌘Z on a page (#109): takes the last change back, unless one is still
+ * on its way — the undo on offer is the one before it until it lands — and
+ * gives the row it took back the focus.
+ */
+export function useUndoKey({
+  order,
+  focusRow,
+  onUndo,
+  undoWaits,
+}: {
+  order: readonly VaultPath[];
+  focusRow: (path: VaultPath) => void;
+  onUndo?: UndoLast | undefined;
+  undoWaits: () => boolean;
+}): () => void {
+  const undoNow = useRef(onUndo);
+  undoNow.current = onUndo;
+  const { begin, tookBack } = useFocusOnReturn(order, focusRow);
+  return useCallback(() => {
+    const takeBack = undoNow.current;
+    if (takeBack === undefined || undoWaits()) return;
+    begin();
+    // The page says an undo that failed itself, in its toast, and resolves null.
+    void takeBack().then(tookBack);
+  }, [undoWaits, begin, tookBack]);
 }
 
 /**
  * The keys every triage page's focused row answers to (#109): J, K and the
  * arrows move the focus a row, Return opens the row's note, U or ⌘Z takes
- * the page's last change back — and the row it took back, once listed
- * again, has the focus. The page keeps what a key does to the row itself.
+ * the page's last change back (`useUndoKey`). With `path` null — the page's
+ * home has the focus, its rows gone — only U is answered. The page keeps
+ * what a key does to the row itself.
  */
 export function useRowKeys({
   order,
@@ -107,12 +185,10 @@ export function useRowKeys({
    * before it until it lands, so U waits rather than take that back.
    */
   undoWaits: () => boolean;
-}): (event: KeyboardEvent, path: VaultPath) => boolean {
+}): (event: KeyboardEvent, path: VaultPath | null) => boolean {
   const orderNow = useRef(order);
   orderNow.current = order;
-  const undoNow = useRef(onUndo);
-  undoNow.current = onUndo;
-  const focusOnReturn = useFocusOnReturn(order, focusRow);
+  const undo = useUndoKey({ order, focusRow, onUndo, undoWaits });
 
   const move = useCallback(
     (from: VaultPath, step: 'next' | 'previous') => {
@@ -128,33 +204,27 @@ export function useRowKeys({
     [elementOf, focusRow],
   );
 
-  const undo = useCallback(() => {
-    const takeBack = undoNow.current;
-    if (takeBack === undefined || undoWaits()) return;
-    const from = document.activeElement;
-    // The page says an undo that failed itself, in its toast, and resolves null.
-    void takeBack().then((path) => {
-      if (path !== null) focusOnReturn({ path, from });
-    });
-  }, [undoWaits, focusOnReturn]);
-
   return useCallback(
-    (event: KeyboardEvent, path: VaultPath) => {
+    (event: KeyboardEvent, path: VaultPath | null) => {
       const key = rowKeyOf({
         key: event.key,
         mod: event.metaKey || event.ctrlKey,
         alt: event.altKey,
         shift: event.shiftKey,
       });
-      if (key === null) return false;
+      // With no row — the page's home has the focus — only U is the page's.
+      if (key === null || (path === null && key !== 'undo')) return false;
       if (key === 'open' && event.target instanceof Element) {
         if (event.target.closest(PRESSED_BY_RETURN) !== null) return false;
       }
       event.preventDefault();
-      if (key === 'next' || key === 'previous') move(path, key);
-      else if (event.repeat) return true;
-      else if (key === 'open') onOpen(path);
-      else undo();
+      if (event.repeat && key !== 'next' && key !== 'previous') return true;
+      if (key === 'undo') undo();
+      // A row's key always has its row: one with none was turned away above.
+      else if (path !== null) {
+        if (key === 'open') onOpen(path);
+        else move(path, key);
+      }
       return true;
     },
     [move, onOpen, undo],
