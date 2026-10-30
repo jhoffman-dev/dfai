@@ -23,6 +23,22 @@ interface Clock {
 const STARTS_AT = Date.UTC(2026, 5, 15, 9);
 const realSetTimeout = globalThis.setTimeout;
 
+/**
+ * What the clock threw again on the page's own timer, as a callback's error
+ * reaches `window.onerror` in a browser: kept here for a test to read, rather
+ * than failing the run as an error no test caught.
+ */
+const thrownOnThePage: unknown[] = [];
+const pageSetTimeout = window.setTimeout.bind(window);
+window.setTimeout = ((handler: () => void, delay?: number) =>
+  pageSetTimeout(() => {
+    try {
+      handler();
+    } catch (error) {
+      thrownOnThePage.push(error);
+    }
+  }, delay)) as typeof window.setTimeout;
+
 /** A host whose answers come back when the test says, not in the order asked. */
 function installSlowHost() {
   const pending = new Map<string, (value: unknown) => void>();
@@ -68,9 +84,16 @@ class StandInObserver {
   constructor(report: (entries: readonly { target: Element }[], observer: unknown) => void) {
     this.#report = report;
   }
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  readonly observing = new Set<Element>();
+  observe(target: Element) {
+    this.observing.add(target);
+  }
+  unobserve(target: Element) {
+    this.observing.delete(target);
+  }
+  disconnect() {
+    this.observing.clear();
+  }
   /** What the browser does on a rendering step: hands the observer what changed. */
   reportOn(...targets: Element[]) {
     this.#report(
@@ -255,7 +278,7 @@ describe('the work clock', () => {
       expect(heard).toEqual(['card 38']);
     });
 
-    it('hands over the reports it held for one observer as one, the latest for each element (#243)', async () => {
+    it('hands over the reports it held for one observer as one call (#243)', async () => {
       const heard: string[] = [];
       const observer = observerOf(heard);
       const [card, column] = [element('card', '38'), element('column', '723')];
@@ -266,7 +289,10 @@ describe('the work clock', () => {
       observer.reportOn(card);
       await clock().run(null, null, 0, 0);
       clock().stopCounting();
-      expect(heard).toEqual(['card 40, column 723']);
+      // A size has only its latest; a crossing in and out again is two crossings, in order.
+      expect(heard).toEqual([
+        kind === 'ResizeObserver' ? 'card 40, column 723' : 'card 38, column 723, card 40',
+      ]);
     });
 
     it('drops a held report once its observer is disconnected, as a browser does (#243)', async () => {
@@ -278,6 +304,100 @@ describe('the work clock', () => {
       await clock().run(null, null, 0, 0);
       clock().stopCounting();
       expect(heard).toEqual([]);
+    });
+
+    it('drops what it held for an element once that element is unobserved, and calls no one for nothing (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      const [card, column] = [element('card', '38'), element('column', '723')];
+      clock().startCounting();
+      observer.reportOn(card);
+      observer.unobserve(card);
+      await clock().run(null, null, 0, 0);
+      expect(heard).toEqual([]);
+      observer.reportOn(card, column);
+      observer.unobserve(card);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['column 723']);
+    });
+
+    it('hands the other observers their reports when one throws, and lets the error reach the page (#243)', async () => {
+      const heard: string[] = [];
+      thrownOnThePage.length = 0;
+      const throwing = new (window as unknown as Record<typeof kind, typeof StandInObserver>)[kind](
+        () => {
+          throw new Error('a broken measure');
+        },
+      );
+      const after = observerOf(heard);
+      clock().startCounting();
+      throwing.reportOn(element('card', '38'));
+      after.reportOn(element('column', '723'));
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      await aMoment();
+      expect(heard).toEqual(['column 723']);
+      expect(thrownOnThePage).toEqual([new Error('a broken measure')]);
+    });
+
+    it('skips an observer that an earlier one disconnected in the same hand-over (#243)', async () => {
+      const heard: string[] = [];
+      const Kind = (window as unknown as Record<typeof kind, typeof StandInObserver>)[kind];
+      let later: StandInObserver | null = null;
+      const first = new Kind(() => {
+        heard.push('first');
+        later?.disconnect();
+      });
+      later = observerOf(heard);
+      clock().startCounting();
+      first.reportOn(element('card', '38'));
+      later.reportOn(element('column', '723'));
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['first']);
+    });
+
+    it('hands the reports over in the order the observers were made, whatever order they came in (#243)', async () => {
+      const heard: string[] = [];
+      const [made, madeNext] = [observerOf(heard), observerOf(heard)];
+      clock().startCounting();
+      madeNext.reportOn(element('next', '2'));
+      made.reportOn(element('first', '1'));
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['first 1', 'next 2']);
+    });
+
+    it('holds a report while the clock runs, though not counting (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      let heardInTheTimer: number | null = null;
+      setTimeout(() => {
+        observer.reportOn(element('card', '38'));
+        heardInTheTimer = heard.length;
+      }, 100);
+      await clock().run(null, null, 200, 0);
+      expect(heardInTheTimer).toBe(0);
+      expect(heard).toEqual(['card 38']);
+    });
+
+    it('takes in, before the run ends, the reports that a handed-over report leads to (#243)', async () => {
+      const heard: string[] = [];
+      const card = element('card', '38');
+      const observer: StandInObserver = observerOf(heard);
+      // As dnd-kit's measuring does: a report makes the app observe again, which
+      // the browser answers with a report of its own, on its next rendering step.
+      const Kind = (window as unknown as Record<typeof kind, typeof StandInObserver>)[kind];
+      const reobserving = new Kind(() => {
+        heard.push('measured');
+        if (heard.length === 1) observer.reportOn(card);
+      });
+      clock().startCounting();
+      reobserving.reportOn(card);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['measured', 'card 38']);
     });
 
     it("hands a report over at once outside counting and the clock's runs", () => {
