@@ -189,6 +189,7 @@ test('the app does no more work than its budget', async ({ browser }) => {
       await dragACard(pass);
       const w = m.get('Drag a board card');
       seen.push(`run ${i} commits=${w?.commits} renders=${JSON.stringify(w?.renders)}`);
+      console.log(`SCRATCH ${seen.at(-1)}`);
       await pass.page.close();
     }
     await writeFile('test-results/perf/scratch-drag-counts.txt', seen.join('\n'));
