@@ -101,6 +101,24 @@ describe('post-processing facts from the automations store (#182)', () => {
     expect(hook.result.current.mark).not.toBe(before);
     expect(hook.result.current.unavailable).toBe('Fix: claude auth login');
   });
+
+  it('is not drawn again when the rules are first read and none writes summaries (#637 perf)', () => {
+    const store = createAutomationsStore();
+    let draws = 0;
+    const hook = renderHook(() => {
+      draws += 1;
+      return usePostProcessingNews(store, clock);
+    });
+    const before = hook.result.current.mark;
+
+    act(() =>
+      publishAutomations(store, controller({ automations: [], broken: [] } as AutomationListing)),
+    );
+
+    // The ledger read is the one there was before any rule was read: nothing to count again for.
+    expect(hook.result.current.mark).toBe(before);
+    expect(draws).toBe(1);
+  });
 });
 
 describe('rulesTakeFrom (#637 attack)', () => {
