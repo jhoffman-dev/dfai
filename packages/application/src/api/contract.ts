@@ -1559,7 +1559,7 @@ export interface ApiAutomationPlan {
    * (`apply: mine`), and left out when every meeting is linked.
    */
   readonly notLinked?: {
-    /** In the order its query matched them, at most 50. */
+    /** Newest first by `date`, at most 50. */
     readonly meetings: readonly { readonly path: string; readonly title: string }[];
     /** True when more are not linked than one run links; the rest wait for the next. */
     readonly capped: boolean;

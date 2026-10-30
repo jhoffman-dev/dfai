@@ -1,7 +1,7 @@
 import {
   attendeesOf,
   isMeetingType,
-  linkingFailed,
+  markRemoval,
   linkedEntities,
   linkedNotes,
   matchAttendees,
@@ -110,13 +110,13 @@ export async function linkMeeting({
   vocabulary?: Vocabulary | undefined;
 }): Promise<MeetingLinkRun> {
   const plan = await planFor({ ports, path, owner: { selfName, selfEmails }, vocabulary });
+  const links = [
+    ...relationChanges(path, plan.properties, plan.changes),
+    ...filingChanges(path, plan),
+  ];
   const linked = await changeProperties({
     ports,
-    changes: [
-      ...relationChanges(path, plan.properties, plan.changes),
-      ...filingChanges(path, plan),
-      ...markChanges(path, plan.properties),
-    ],
+    changes: [...links, ...markChanges({ path, plan, links: links.length })],
     kind: 'set',
     today,
   });
@@ -309,22 +309,34 @@ function filingChanges(
 }
 
 /**
- * The mark of linking still owed (#192) taken out, in the same write as the
- * links: a meeting linked is never left marked, whatever happens after.
+ * The mark of linking still owed (#192) taken out as `markRemoval` says: in
+ * the same write as the links, and made only if one of them is — so a try
+ * that wrote no link leaves the meeting marked — or alone for a meeting with
+ * nothing left to link.
  */
-function markChanges(
-  path: VaultPath,
-  properties: Readonly<Record<string, unknown>>,
-): PropertyChange[] {
-  if (!linkingFailed(properties)) return [];
-  return [
-    {
-      path,
-      key: MEETING_LINKS_KEY,
-      expect: priorOf(properties, MEETING_LINKS_KEY),
-      to: { absent: true },
-    },
-  ];
+function markChanges({
+  path,
+  plan,
+  links,
+}: {
+  path: VaultPath;
+  plan: Pick<MeetingRead, 'properties'> & Pick<MeetingLinkPlan, 'unreadable'>;
+  links: number;
+}): PropertyChange[] {
+  const { properties } = plan;
+  const removal = markRemoval({
+    properties,
+    linkChanges: links,
+    unreadable: plan.unreadable.length,
+  });
+  if (removal === 'keep') return [];
+  const change: PropertyChange = {
+    path,
+    key: MEETING_LINKS_KEY,
+    expect: priorOf(properties, MEETING_LINKS_KEY),
+    to: { absent: true },
+  };
+  return [removal === 'with-links' ? { ...change, alongside: true } : change];
 }
 
 function priorOf(properties: Readonly<Record<string, unknown>>, key: string): PriorValue {

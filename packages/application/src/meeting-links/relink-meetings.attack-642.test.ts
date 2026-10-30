@@ -60,7 +60,7 @@ function setUp(meeting: string) {
 }
 
 describe('attack #642: removing the mark alone is not linking the meeting', () => {
-  it.fails('keeps the mark when every link key changed since it was read', async () => {
+  it('keeps the mark when every link key changed since it was read', async () => {
     const { vault, relink } = setUp(marked());
     // The owner saves a person of their own into `people` while the linker reads the directory.
     const read = vault.ports.fs.readTextFile.bind(vault.ports.fs);
@@ -80,7 +80,7 @@ describe('attack #642: removing the mark alone is not linking the meeting', () =
     expect(vault.properties(MEETING)['atlas_links']).toBe('failed');
   });
 
-  it.fails('keeps the mark when its people holds something other than links', async () => {
+  it('keeps the mark when its people holds something other than links', async () => {
     // The import marks exactly this meeting (linkingOwed: wrote nothing, left the meeting).
     const { vault, relink } = setUp(marked({ people: [{ name: 'Mara and Ada' }] }));
 
@@ -101,29 +101,88 @@ describe('attack #642: old marked meetings do not hide a new one', () => {
     path: createVaultPath('.atlas/automations/After a meeting.md'),
   } as AutomationRule;
 
-  it.fails(
-    'finds a marked meeting from today behind a thousand marked meetings from January',
-    async () => {
-      // A backfill of old meetings let in while the index was rebuilding: each is marked, none is in the rule's 14 days.
-      const old = Object.fromEntries(
-        Array.from({ length: 1000 }, (_, at) => [
-          `Inbox/Meetings/2026-01-05 Sync ${String(at).padStart(4, '0')}.md`,
-          marked({ date: '2026-01-05', external_id: `gemini-old-${at}` }),
-        ]),
-      );
-      const vault = automationVault({
-        notes: { ...old, [MEETING]: marked() },
-        today: TODAY,
-        types: TYPES,
-      });
+  it('finds a marked meeting from today behind a thousand marked meetings from January', async () => {
+    // A backfill of old meetings let in while the index was rebuilding: each is marked, none is in the rule's 14 days.
+    const old = Object.fromEntries(
+      Array.from({ length: 1000 }, (_, at) => [
+        `Inbox/Meetings/2026-01-05 Sync ${String(at).padStart(4, '0')}.md`,
+        marked({ date: '2026-01-05', external_id: `gemini-old-${at}` }),
+      ]),
+    );
+    const vault = automationVault({
+      notes: { ...old, [MEETING]: marked() },
+      today: TODAY,
+      types: TYPES,
+    });
 
-      const found = await meetingsNotLinked({
-        ports: { ...vault.ports, notePaths: [...vault.files.keys()] },
-        rule,
-        today: TODAY,
-      });
+    const found = await meetingsNotLinked({
+      ports: { ...vault.ports, notePaths: [...vault.files.keys()] },
+      rule,
+      today: TODAY,
+    });
 
-      expect(found?.paths).toEqual([MEETING]);
-    },
-  );
+    expect(found?.paths).toEqual([MEETING]);
+  });
+});
+
+describe('attack #642: meetings that stay owed do not hold back a newer one', () => {
+  const preset = AUTOMATION_PRESETS.find((draft) => draft.name === 'After a meeting')!;
+  const rule = {
+    ...preset,
+    id: 'After a meeting',
+    path: createVaultPath('.atlas/automations/After a meeting.md'),
+  } as AutomationRule;
+
+  it('picks the newest first, so fifty that stay owed for good do not starve today’s', async () => {
+    // Fifty from earlier in the window whose people the owner wrote as something other than links.
+    const stuck = Object.fromEntries(
+      Array.from({ length: 50 }, (_, at) => [
+        `Inbox/Meetings/2026-10-01 Sync ${String(at).padStart(2, '0')}.md`,
+        marked({ date: '2026-10-01', external_id: `gemini-stuck-${at}`, people: [{ name: 'X' }] }),
+      ]),
+    );
+    const vault = automationVault({
+      notes: {
+        ...stuck,
+        [MEETING]: marked(),
+        [MARA]: jsonNote({ type: 'person', email: 'mara.quill@example.com' }),
+      },
+      today: TODAY,
+      types: TYPES,
+    });
+    const ports = { ...vault.ports, notePaths: [...vault.files.keys()] };
+
+    const found = await meetingsNotLinked({ ports, rule, today: TODAY });
+
+    expect(found?.paths[0]).toBe(MEETING);
+    expect(found?.paths).toHaveLength(50);
+    expect(found?.capped).toBe(true);
+  });
+});
+
+describe('attack #642: the mark through the real linker', () => {
+  it('goes alone when a marked meeting has nothing left to link', async () => {
+    const { vault, relink } = setUp(marked({ people: ['[[Mara Quill]]'] }));
+
+    const outcome = await relink();
+
+    expect(outcome).toEqual({ linked: [MEETING], notLinked: [] });
+    expect(vault.properties(MEETING)).not.toHaveProperty('atlas_links');
+  });
+
+  it('goes with the links, in the one write', async () => {
+    const { vault, relink } = setUp(marked());
+    const writes: string[] = [];
+    const write = vault.ports.fs.writeTextFile;
+    vault.ports.fs.writeTextFile = async (args) => {
+      if (args.path === MEETING) writes.push(args.contents);
+      return write(args);
+    };
+
+    await relink();
+
+    expect(writes).toHaveLength(1);
+    expect(vault.properties(MEETING)['people']).toEqual(['[[Mara Quill]]']);
+    expect(vault.properties(MEETING)).not.toHaveProperty('atlas_links');
+  });
 });

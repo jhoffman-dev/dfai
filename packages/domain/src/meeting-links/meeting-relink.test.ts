@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
 import {
-  compileMarkedMeetingsQuery,
+  compileAnyMarkQuery,
+  compileMarkedAmongQuery,
   LINKING_FAILED,
   linkingFailed,
   linkingFailedStamp,
   linkingOwed,
-  MARKED_MEETINGS_PAGE,
   markedMeetingsOf,
+  markRemoval,
   MEETING_LINKS_KEY,
   meetingsToRelink,
   RELINKS_PER_RUN,
@@ -104,22 +105,70 @@ describe('linkingOwed: the one rule the import marks by and Run now keeps the ma
     expect(linkingOwed({ meeting: MEETING, done: [], left: [proposal] })).toBe(false);
   });
 
+  it('does not count taking the mark out as a write into the meeting', () => {
+    expect(
+      linkingOwed({ meeting: MEETING, done: [set(MEETING_LINKS_KEY)], left: [leftHere] }),
+    ).toBe(true);
+    expect(linkingOwed({ meeting: MEETING, done: [set(MEETING_LINKS_KEY)], left: [] })).toBe(false);
+  });
+
   it('does not count a write somewhere else as one into the meeting', () => {
     const elsewhere = { kind: 'proposed', path: p('Inbox/Proposals/Ada Venn.md') };
     expect(linkingOwed({ meeting: MEETING, done: [elsewhere], left: [leftHere] })).toBe(true);
   });
 });
 
-describe('the index query for marked meetings', () => {
-  it('asks for the paths that hold the mark, one page of them', () => {
-    const { sql, parameters } = compileMarkedMeetingsQuery();
-    // Marked as the linking's own, which the e2e host answers with real SQL.
+describe('the index queries for marked meetings', () => {
+  it('asks first whether any note carries the mark, for one row', () => {
+    const { sql, parameters } = compileAnyMarkQuery();
     expect(sql.startsWith('/* meeting links: ')).toBe(true);
-    expect(sql).toContain('SELECT DISTINCT path FROM props');
-    expect(parameters).toEqual([MEETING_LINKS_KEY, MARKED_MEETINGS_PAGE]);
+    expect(sql).toContain('LIMIT 1');
+    expect(parameters).toEqual([MEETING_LINKS_KEY]);
   });
 
-  it('reads its rows as vault paths, dropping what is not one', () => {
-    expect(markedMeetingsOf([[MEETING], [3], ['/Users/someone/A.md'], []])).toEqual([MEETING]);
+  it('asks only among the notes named, with each one’s date', () => {
+    const paths = [MEETING, p('Inbox/Meetings/2026-10-05 Retro.md')];
+    const { sql, parameters } = compileMarkedAmongQuery(paths);
+    // Marked as the linking's own, which the e2e host answers with real SQL.
+    expect(sql.startsWith('/* meeting links: ')).toBe(true);
+    expect(sql).toContain('p.path IN (?, ?)');
+    expect(parameters).toEqual([MEETING_LINKS_KEY, ...paths]);
+  });
+
+  it('reads its rows newest meeting first, undated last, dropping what is not a path', () => {
+    const rows = [
+      ['Inbox/Meetings/b.md', '2026-10-01'],
+      ['Undated.md', null],
+      [MEETING, '2026-10-06'],
+      ['Inbox/Meetings/a.md', '2026-10-01'],
+      [3, '2026-10-09'],
+      ['/Users/someone/A.md', '2026-10-09'],
+    ];
+    expect(markedMeetingsOf(rows)).toEqual([
+      MEETING,
+      'Inbox/Meetings/b.md',
+      'Inbox/Meetings/a.md',
+      'Undated.md',
+    ]);
+  });
+});
+
+describe('markRemoval: the mark goes only when linking is no longer owed', () => {
+  const marked = linkingFailedStamp();
+
+  it('keeps a meeting that is not marked as it is', () => {
+    expect(markRemoval({ properties: {}, linkChanges: 2, unreadable: 0 })).toBe('keep');
+  });
+
+  it('rides with the links when there are links to write', () => {
+    expect(markRemoval({ properties: marked, linkChanges: 1, unreadable: 1 })).toBe('with-links');
+  });
+
+  it('keeps the mark when a key could not be added to and nothing else would be written', () => {
+    expect(markRemoval({ properties: marked, linkChanges: 0, unreadable: 1 })).toBe('keep');
+  });
+
+  it('goes alone when there is nothing left to link and nothing left out', () => {
+    expect(markRemoval({ properties: marked, linkChanges: 0, unreadable: 0 })).toBe('alone');
   });
 });
