@@ -16,6 +16,7 @@ import {
   type MeetingImportPorts,
   type MeetingImportRun,
 } from './import-arrived-meetings.ts';
+import type { LetInStamp } from './meeting-files.ts';
 import { createWaitingCounter, type MeetingsWaitingWatch } from './meetings-waiting.ts';
 
 /**
@@ -100,7 +101,7 @@ export function createMeetingImporter({
     vault: string,
     path: VaultPath,
     reading: { readonly vocabulary: Vocabulary },
-  ) => Promise<void>;
+  ) => Promise<void | LetInStamp>;
   /** Left out, a run this Mac may not make is dropped without a word, as before ADR-0035. */
   waiting?: MeetingsWaitingWatch;
 }): MeetingImporter {
@@ -173,9 +174,9 @@ export function createMeetingImporter({
           }),
           ...(beforeLetIn !== undefined && {
             beforeLetIn: async (path, reading) => {
-              await beforeLetIn(vault, path, reading);
+              const stamp = await beforeLetIn(vault, path, reading);
               // The hook does nothing once another vault is open; nor may the stamp that follows it.
-              return openVault() === vault ? undefined : 'vault-changed';
+              return openVault() === vault ? stamp : 'vault-changed';
             },
           }),
         });

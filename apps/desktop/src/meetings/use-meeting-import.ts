@@ -9,6 +9,7 @@ import {
 import {
   createMeetingImporter,
   createMeetingLinker,
+  linkBeforeLetIn,
   importMeetingsOnArrival,
   type ActivityLog,
   type Clock,
@@ -153,9 +154,7 @@ export function useMeetingImport({
         latest.current.active && (await latest.current.acts(vault, { modifiedAt: arrivedAt })),
       onWritten: () => latest.current.onWritten(),
       // Linked before the stamp: see `createMeetingLinker`.
-      beforeLetIn: async (vault, path, reading) => {
-        await linker(vault, [path], reading);
-      },
+      beforeLetIn: (vault, path, reading) => linkBeforeLetIn({ linker, vault, path, reading }),
       waiting: {
         namedElsewhere: () => latest.current.namedElsewhere,
         countGate: (vault) => latest.current.countGate(vault),

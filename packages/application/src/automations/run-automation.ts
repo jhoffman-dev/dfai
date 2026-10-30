@@ -40,6 +40,7 @@ import {
 } from './claude-step.ts';
 import { holdUnlessFresh, type FreshPullCheck } from './fresh-pull-hold.ts';
 import { briefEachMeeting } from './meeting-briefs.ts';
+import { meetingsNotLinked } from './meetings-not-linked.ts';
 import { PeriodNoteArrived, periodStateOf } from './period-state.ts';
 import { heldEntries } from '../index/refresh-index.ts';
 import { allowanceEntries, askedThisHour } from './ask-allowance.ts';
@@ -82,6 +83,13 @@ export interface AutomationRun {
    * are shut. Left out, nothing waits.
    */
   readonly freshPull?: FreshPullCheck;
+  /**
+   * Links again the meetings whose linking failed (#192), as the import's
+   * linker does, before a run by hand plans: so Run now of the "After a
+   * meeting" rule asks Claude about each meeting linked. Settles when done,
+   * and never rejects. Left out, none is linked again.
+   */
+  readonly relink?: (meetings: readonly VaultPath[]) => Promise<unknown>;
 }
 
 /**
@@ -111,6 +119,7 @@ export async function runAutomation(
     // a Claude step, on any trigger, is never asked again about a version it has answered.
     const remembers = rule.when.kind === 'note' || rule.action.kind === 'claude';
     const log = remembers ? await readRuleLog(run.ports.fs, rule) : null;
+    if (trigger === 'hand') await relinkFirst({ run, ports, today });
     return planRuleNow({
       ports,
       rule,
@@ -122,6 +131,24 @@ export async function runAutomation(
   // Not quiet, it always settles with its entry.
   const carryOut = async () => (await runOnce({ run, trigger, aim, quiet: false }))!;
   return reported({ activity, rule, doing: 'run', carryOut });
+}
+
+/** Run by hand, the meetings its query matches whose linking failed are linked again (#192). */
+async function relinkFirst({
+  run,
+  ports,
+  today,
+}: {
+  run: AutomationRun;
+  ports: RuleQueryPorts;
+  today: string;
+}): Promise<void> {
+  if (run.relink === undefined) return;
+  const notLinked = await meetingsNotLinked({ ports, rule: run.rule, today });
+  if (notLinked === null) return;
+  await run.relink(notLinked.paths);
+  // Linking waits on the index and the disk: the vault must still be the rule's to plan in.
+  stillInVault(run.guard);
 }
 
 /**

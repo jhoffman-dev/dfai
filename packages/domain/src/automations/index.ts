@@ -27,6 +27,7 @@ export type {
 export { automationQuery, MAX_ACTIONS_PER_RUN, movingDate } from './automation-query.ts';
 export { capFor, cappedLine, describePlan, planAutomation, planVerb } from './automation-plan.ts';
 export type { AutomationPlan, PassedOver } from './automation-plan.ts';
+export { describeNotLinked, relinksMeetings } from './relink-plan.ts';
 export {
   describeSchedule,
   isDue,

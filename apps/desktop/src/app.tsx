@@ -2304,6 +2304,8 @@ function AppWindow({
           live={automationsShown}
           sync={syncStore}
           ownerKnown={ownerKnown}
+          selfName={ownerName}
+          selfEmails={ownerEmails}
           // A rule a note sets off hears of it here (P29-01).
           changes={noteChanges}
         />

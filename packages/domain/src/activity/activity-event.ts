@@ -49,7 +49,16 @@ export interface ActivityReport {
   readonly kind: ActivityKind;
   readonly message: string;
   readonly subject: ActivitySubject | null;
+  /**
+   * The notes the line is about besides its subject: the meetings a rule's
+   * run heard (#192), so Activity can show the line under each meeting. Left
+   * out for none.
+   */
+  readonly notes?: readonly VaultPath[];
 }
+
+/** The most notes a line keeps beside its subject: a run's are its few triggering notes. */
+export const MAX_ACTIVITY_NOTES = 20;
 
 export interface ActivityEvent extends ActivityReport {
   /** When it happened, in milliseconds since the epoch, as the injected clock said. */
@@ -75,7 +84,18 @@ export function activityEvent(report: ActivityReport & { at: number }): Activity
       chat === null ? report.message : withoutChatTitle(report.message, chat.path),
     ),
     subject: chat === null ? cleanSubject(report.subject) : null,
+    ...notesOf(report.notes),
   };
+}
+
+/** The notes kept beside the subject: inside the vault, no chat note, each once, at most {@link MAX_ACTIVITY_NOTES}. */
+function notesOf(notes: readonly string[] | undefined): { notes?: readonly VaultPath[] } {
+  const kept = new Set<VaultPath>();
+  for (const note of notes ?? []) {
+    const path = insideVault(note);
+    if (path !== null && !isInChats(path)) kept.add(path);
+  }
+  return kept.size === 0 ? {} : { notes: [...kept].slice(0, MAX_ACTIVITY_NOTES) };
 }
 
 function cleanMessage(raw: string): string {
