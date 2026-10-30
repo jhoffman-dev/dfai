@@ -171,20 +171,38 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   // `over` in one run and not the next, and the drag counted 41 commits or 42
   // (#243). While the clock runs or counts, each report is held and handed over
   // after a frame `quiet` drew, so it reaches the app at the same point in the
-  // work on every run: one call per observer, in the order they were made,
-  // with the latest entry for each element, as one rendering step reports.
+  // work on every run. As one rendering step would report them: one call per
+  // observer, in the order the observers were made; a resize report keeps the
+  // latest entry for each element, where it first came, and an intersection
+  // report keeps every entry in the order it came, since going in and out
+  // again is two crossings, not one.
   interface Held {
     readonly made: number;
     readonly report: (entries: unknown[], observer: object) => void;
-    readonly entries: Map<Element, unknown>;
+    entries: { readonly target: Element }[];
   }
   const heldReports = new Map<object, Held>();
   let observersMade = 0;
   const handOverReports = () => {
-    const held = [...heldReports.entries()].sort(([, one], [, other]) => one.made - other.made);
-    heldReports.clear();
-    for (const [observer, { report, entries }] of held) report([...entries.values()], observer);
-    return held.length > 0;
+    const due = [...heldReports.entries()].sort(([, one], [, other]) => one.made - other.made);
+    let handed = false;
+    for (const [observer] of due) {
+      // Gone if an earlier callback in this hand-over disconnected or unobserved it.
+      const held = heldReports.get(observer);
+      if (held === undefined) continue;
+      heldReports.delete(observer);
+      handed = true;
+      try {
+        held.report(held.entries, observer);
+      } catch (error) {
+        // Thrown again outside, as an observer's error reaches `window.onerror`
+        // in a real page, and the other observers still get their reports.
+        realSetTimeout(() => {
+          throw error;
+        }, 0);
+      }
+    }
+    return handed;
   };
   type Observer = new (
     report: Held['report'],
@@ -196,21 +214,32 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   for (const kind of ['ResizeObserver', 'IntersectionObserver'] as const) {
     const Real = (window as unknown as Record<string, Observer | undefined>)[kind];
     if (typeof Real !== 'function') continue;
+    const latestOnly = kind === 'ResizeObserver';
     const HeldObserver = class extends Real {
       constructor(report: Held['report'], options?: unknown) {
         const made = observersMade++;
         super((entries, observer) => {
           if (!state.running && !state.counting)
             return void report.call(observer, entries, observer);
-          const held = heldReports.get(observer) ?? { made, report, entries: new Map() };
-          for (const entry of entries as { target: Element }[])
-            held.entries.set(entry.target, entry);
+          const held = heldReports.get(observer) ?? { made, report, entries: [] };
+          for (const entry of entries as { target: Element }[]) {
+            const at = latestOnly
+              ? held.entries.findIndex(({ target }) => target === entry.target)
+              : -1;
+            if (at === -1) held.entries.push(entry);
+            else held.entries[at] = entry;
+          }
           heldReports.set(observer, held);
         }, options);
       }
-      // A browser drops what it had not reported yet; so does the clock.
+      // A browser drops what it had not reported yet, and calls no observer
+      // with nothing; so does the clock.
       override unobserve(target: Element) {
-        heldReports.get(this)?.entries.delete(target);
+        const held = heldReports.get(this);
+        if (held !== undefined) {
+          held.entries = held.entries.filter((entry) => entry.target !== target);
+          if (held.entries.length === 0) heldReports.delete(this);
+        }
         super.unobserve(target);
       }
       override disconnect() {
