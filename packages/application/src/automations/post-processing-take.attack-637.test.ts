@@ -189,6 +189,19 @@ describe('createRulesTakeCache (#637 attack)', () => {
     expect(queries.count).toBe(4);
   });
 
+  it('asks again when the ports it is asked through move: the types or the notes may have', async () => {
+    const { ports, paths, queries } = setUp();
+    const take = createRulesTakeCache();
+    const asked = { automations: [rule('FROM meeting')], todayOf: () => TODAY, paths, generation: 1 };
+
+    await take({ ...asked, ports });
+    await take({ ...asked, ports });
+    expect(queries.count).toBe(1);
+
+    await take({ ...asked, ports: { ...ports, notePaths: [...ports.notePaths] } });
+    expect(queries.count).toBe(2);
+  });
+
   it('asks again after an answer the index could not give', async () => {
     const { ports, paths } = setUp();
     let refuse = true;
