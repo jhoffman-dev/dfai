@@ -64,6 +64,7 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
   return (
     <TodayPage
       {...today.page}
+      {...(today.notice !== null && { onUndo: today.notice.onUndo })}
       view={pages.today.view}
       onOpen={pages.openNote}
       onOpenInbox={() => pages.openPage({ kind: 'inbox' })}

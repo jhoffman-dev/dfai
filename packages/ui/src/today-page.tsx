@@ -23,6 +23,8 @@ import { StatusPill } from './status-pill.tsx';
 import { useSteadyCallback } from './steady-callback.ts';
 import { Spacer } from './grouped-rows.tsx';
 import { useRowFocus, type RowFocus } from './today-row-focus.ts';
+import { TODAY_KEY_HINTS, useTodayKeys } from './today-keys.ts';
+import { keyHintStrip } from './key-hints.tsx';
 import { useVirtualRows } from './virtual-rows.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
 
@@ -69,6 +71,8 @@ export interface TodayPageProps {
   onDefer: (args: RowTask & { days: number }) => void;
   /** Chooses a task for today or takes it off; keeps or drops one carried over (#108). */
   onChoose: (args: RowTask & { choice: TodayChoice; was?: string }) => void;
+  /** Takes the last change back, as its toast's Undo does: U or ⌘Z on a row (#109). */
+  onUndo?: () => unknown;
   onShowSidebar?: () => void;
   history?: PageHistory;
   /** Today's meetings, drawn above the tasks (ADR-0046); nothing when left out. */
@@ -94,6 +98,16 @@ export function TodayPage(props: TodayPageProps) {
     problem: props.problem,
     busy: props.busy,
   });
+  const actions = useRowActions(props, focus);
+  const settling = props.settling ?? NONE_SETTLING;
+  const onKeyDown = useTodayKeys({
+    today: props.today,
+    order,
+    focus,
+    acts: actions,
+    waits: (path) => props.busy || settling.has(path),
+    onUndo: props.onUndo,
+  });
   const scroller = useRef<HTMLDivElement>(null);
   const counted = describe(props.today);
   // The page is named by its day, which the report brings: until then the bar
@@ -116,6 +130,7 @@ export function TodayPage(props: TodayPageProps) {
             className="page page--wide review today"
             aria-label="Today"
             aria-busy={props.busy || undefined}
+            onKeyDown={onKeyDown}
           >
             <HiddenTitle>{name ?? 'Today'}</HiddenTitle>
             {props.problem !== null && (
@@ -124,7 +139,12 @@ export function TodayPage(props: TodayPageProps) {
               </p>
             )}
             {props.meetings}
-            <TodayBody {...props} focus={focus} place={{ wanted: focus.wanted }} />
+            <TodayBody
+              {...props}
+              focus={focus}
+              actions={actions}
+              place={{ wanted: focus.wanted }}
+            />
           </article>
         </RowScrollerContext.Provider>
       </div>
@@ -207,6 +227,7 @@ interface ListPlace {
 
 interface PlacedProps {
   readonly focus: RowFocus;
+  readonly actions: RowActions;
   readonly place: ListPlace;
 }
 
@@ -228,6 +249,7 @@ function TodayBody(props: TodayPageProps & PlacedProps) {
         </p>
       )}
       <Elsewhere {...props} today={today} />
+      {keyHintStrip({ hints: TODAY_KEY_HINTS, label: 'Keys for Today' })}
       <Sections {...props} today={today} />
     </>
   );
@@ -276,7 +298,7 @@ const EMPTY: Readonly<Record<TodaySectionId, string>> = {
 function Sections(props: TodayPageProps & PlacedProps & { today: TodayReport }) {
   const { today, busy } = props;
   const settling = props.settling ?? NONE_SETTLING;
-  const actions = useRowActions(props);
+  const { actions } = props;
   return (
     // While an action is under way, each row's action controls read it from
     // here, so that the rows themselves are not drawn again to say so (#217).
@@ -334,8 +356,8 @@ function useActionsWait(path: VaultPath): boolean {
  * app hands the page new callbacks on many of its renders, and a row handed a
  * new action is drawn again — all of them, for one tick (#217).
  */
-function useRowActions(props: TodayPageProps & PlacedProps): RowActions {
-  const { actedOn, rowRef } = props.focus;
+function useRowActions(props: TodayPageProps, focus: RowFocus): RowActions {
+  const { actedOn, rowRef } = focus;
   const onOpen = useSteadyCallback(props.onOpen);
   const onDone = useSteadyCallback(props.onDone);
   const onDefer = useSteadyCallback(props.onDefer);
@@ -639,6 +661,7 @@ function DoneBox({ task, actions }: RowControlProps) {
       type="checkbox"
       className="done-check"
       aria-label={`Mark ${task.title} done`}
+      aria-keyshortcuts="x"
       checked={false}
       disabled={waits}
       onChange={() => actions.onDone(task)}
@@ -683,6 +706,7 @@ function RowCommands({
           type="button"
           className="btn btn--ghost btn--sm"
           aria-label={`Defer ${task.title} ${days === 1 ? '1 day' : `${days} days`}`}
+          {...(days === TODAY_DEFER_DAYS[0] && { 'aria-keyshortcuts': 'd' })}
           title={days === 1 ? 'Defer until tomorrow' : `Defer for ${days} days`}
           disabled={waits}
           onClick={() => actions.onDefer(task, days)}

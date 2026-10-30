@@ -12,6 +12,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { useRowHandles } from '../row-handles.ts';
+import { typesInto, useRowKeys } from '../row-keys.ts';
 import { useSteadyCallback } from '../steady-callback.ts';
 import {
   GTD_STATUSES,
@@ -34,20 +35,6 @@ const NOTHING_PICKED: InboxDraft = {};
 
 /** Where a row that left holding the focus, with no row to hand it to, is kept. */
 export type StrandedRow = MutableRefObject<VaultPath | null>;
-
-/**
- * Where a key never fires (#307): a field, where the letter is typed; a
- * dialog or a menu, which has the keyboard; anything editable.
- */
-const KEYS_SLEEP = 'input, select, textarea, [role="dialog"], [role="menu"]';
-
-/** Whether a key pressed on `target` is a letter being typed rather than a triage key. */
-function typesInto(target: Element): boolean {
-  return (
-    target.closest(KEYS_SLEEP) !== null ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
-}
 
 /**
  * A picker P or T opened. What writes its pick is an explicit act on the
@@ -81,6 +68,8 @@ export function useInboxTriage({
   onClarify,
   busy = false,
   stranded: keptStranded,
+  onOpen,
+  onUndo,
 }: {
   items: readonly InboxItem[];
   /** The statuses the vault's Task type declares: a key for one it lacks does nothing. */
@@ -90,6 +79,10 @@ export function useInboxTriage({
   busy?: boolean;
   /** Kept by whatever outlives the rows: the list unmounts once it is empty. */
   stranded?: StrandedRow;
+  /** Opens a row's note: Return on the row (#109). */
+  onOpen: (path: VaultPath) => void;
+  /** Takes the last clarification back: U or ⌘Z on a row (#109). */
+  onUndo?: (() => unknown) | undefined;
 }) {
   const [drafts, setDrafts] = useState<Readonly<Record<string, InboxDraft>>>({});
   const [focused, setFocused] = useState<VaultPath | null>(null);
@@ -128,6 +121,8 @@ export function useInboxTriage({
   // picks go with it. Read after the render that follows, when the list is the app's answer.
   const refused = useRef(new Set<VaultPath>());
   const [refusals, setRefusals] = useState(0);
+  // The row the last clarification was asked of, which an undo brings back.
+  const lastActed = useRef<VaultPath | null>(null);
 
   const focusRow = useCallback(
     (path: VaultPath) => {
@@ -192,6 +187,7 @@ export function useInboxTriage({
   const act = useCallback(
     async (path: VaultPath, clarification: Clarification) => {
       const next = rowAfter(listed.current, path);
+      lastActed.current = path;
       writing.current.set(path, (writing.current.get(path) ?? 0) + 1);
       const done = await clarify({ path, clarification }).finally(() => {
         const left = (writing.current.get(path) ?? 1) - 1;
@@ -288,17 +284,26 @@ export function useInboxTriage({
     [act],
   );
 
+  const rowKey = useRowKeys({
+    order,
+    focusRow,
+    elementOf,
+    onOpen,
+    onUndo,
+    lastActed: useCallback(() => lastActed.current, []),
+  });
+
   /** The key handler, on the list rather than each row: a letter on a focused row, never in a field. */
   const onListKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
       pointed.current = false;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (!(event.target instanceof Element)) return;
       const arm = armed.current;
       if (
         arm !== null &&
         elementOf(arm.path)?.querySelector(`[data-field="${arm.field}"]`) === event.target
       ) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
         if (event.key === 'Escape') {
           event.preventDefault();
           disarm(true);
@@ -311,7 +316,8 @@ export function useInboxTriage({
       }
       if (typesInto(event.target)) return;
       const path = focusedRow.current;
-      if (path === null) return;
+      if (path === null || rowKey(event, path)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       const action = triageActionOf(event.key, declared.current);
       if (action === null) return;
       event.preventDefault();
@@ -319,7 +325,7 @@ export function useInboxTriage({
       if (event.repeat || !idle.current) return;
       keyAction(path, action);
     },
-    [keyAction, elementOf, disarm, focusRow, commitArmed],
+    [keyAction, elementOf, disarm, focusRow, commitArmed, rowKey],
   );
 
   /** The pointer opening the armed picker's list: the pick it makes next is its own. */

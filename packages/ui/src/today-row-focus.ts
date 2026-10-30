@@ -35,23 +35,32 @@ export function useRowFocus({
    */
   busy?: boolean;
 }) {
-  const { rowRef, focusRow: focusPlaced, wanted } = useRowHandles(order);
+  const { rowRef, focusRow: focusPlaced, wanted, elementOf } = useRowHandles(order);
   const pending = useRef<{
     acted: VaultPath;
     next: VaultPath | null;
+    /** The row's handle as it was acted on: drawn anew elsewhere, the row has lost the focus. */
+    handle: HTMLElement | undefined;
     /** Its action was refused or failed, so the row comes back, and focus with it. */
     refused?: boolean;
   } | null>(null);
   const orderNow = useRef(order);
   orderNow.current = order;
+  // The row last acted on, which an undo brings back (#109).
+  const lastActed = useRef<VaultPath | null>(null);
 
   /** Says a row is being acted on, before the action that may take it away. */
-  const actedOn = useCallback((path: VaultPath) => {
-    pending.current = {
-      acted: path,
-      next: rowToFocusAfter({ order: orderNow.current, acted: path }),
-    };
-  }, []);
+  const actedOn = useCallback(
+    (path: VaultPath) => {
+      lastActed.current = path;
+      pending.current = {
+        acted: path,
+        next: rowToFocusAfter({ order: orderNow.current, acted: path }),
+        handle: elementOf(path),
+      };
+    },
+    [elementOf],
+  );
 
   const focusRow = useCallback(
     (path: VaultPath | null) => {
@@ -78,7 +87,15 @@ export function useRowFocus({
     // The index follows the file, so the page may be read again before the
     // row has left: it is waited for, and a row that stays keeps its focus.
     // Asked of the read, not the DOM: a row scrolled out of it has not left.
-    if (orderNow.current.includes(moved.acted)) return;
+    if (orderNow.current.includes(moved.acted)) {
+      // Chosen for today, or moved to a status the page still lists, the row
+      // is drawn anew in another section and its focus is lost with the old
+      // one: it goes on to the next row, as it would had the row left (#108).
+      if (moved.handle?.isConnected !== false || onAControl()) return;
+      pending.current = null;
+      focusRow(moved.next);
+      return;
+    }
     pending.current = null;
     // Focus went with the row — to the document, or to the panel around it,
     // which is where WebKit leaves it after a press on a button. On another
@@ -86,7 +103,14 @@ export function useRowFocus({
     if (!onAControl()) focusRow(moved.next);
   }, [shown, busy, focusRow]);
 
-  return { rowRef, actedOn, focusRow, wanted };
+  return {
+    rowRef,
+    actedOn,
+    focusRow,
+    wanted,
+    elementOf,
+    lastActed: useCallback(() => lastActed.current, []),
+  };
 }
 
 /** Whether the person has the focus on a control of their own. */
