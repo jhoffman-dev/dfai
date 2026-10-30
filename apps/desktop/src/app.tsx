@@ -309,6 +309,7 @@ import { useInboxWaiting } from './inbox/use-inbox-waiting.ts';
 import { createPendingWrites } from './workspace/pending-writes.ts';
 import { createPageHoldsByVault } from './workspace/page-holds.ts';
 import { useBuiltInTypes } from './types/use-built-in-types.ts';
+import { createMeetingSetupStore } from './meetings/use-meeting-setup.ts';
 import { useBlockType } from './timeblocks/use-block-type.ts';
 import { useTaskMigration } from './gtd/use-task-migration.ts';
 import { useParaMigration } from './para/use-para-migration.ts';
@@ -537,6 +538,7 @@ function AppWindow({
   // be refused half-done (U-29).
   const [syncStore] = useState(createSyncStore);
   const [automationsStore] = useState(createAutomationsStore);
+  const [meetingSetupStore] = useState(createMeetingSetupStore);
   // What the meeting import says waits for the named Mac, read by the Inbox alone (ADR-0035 part 1).
   const [meetingsWaiting] = useState(createMeetingsWaitingStore);
   // The Inbox and Proposals tabs hold their background writes here: a switch
@@ -1680,6 +1682,27 @@ function AppWindow({
     () => ({ ...archivePorts, types, notePaths, claude: claudeStep }),
     [archivePorts, types, notePaths, claudeStep],
   );
+  // Meeting post-processing set up in one previewed yes, from the Inbox or Automations (#191).
+  const meetingSetup = useMemo(
+    () => ({
+      store: meetingSetupStore,
+      automations: automationsStore,
+      fs: vault.fs,
+      markdown: notes.markdown,
+      suggestedEmails: ownerEmails,
+      activity: activityLog,
+      onChanged: typesChanged,
+    }),
+    [
+      meetingSetupStore,
+      automationsStore,
+      vault.fs,
+      notes.markdown,
+      ownerEmails,
+      activityLog,
+      typesChanged,
+    ],
+  );
   // The meeting import asks the rules' queries through the ports as they are
   // at the ask: they move as the tree fills, and its runner is not drawn for it.
   const automationPortsNow = useRef(automationPorts);
@@ -2249,6 +2272,7 @@ function AppWindow({
             },
       ownerUnknown: ownerNeeded ? { onOpenSettings: () => showOverlay('settings') } : null,
       meetingProjects,
+      meetingSetup,
       view:
         inboxView === null
           ? null
@@ -2268,6 +2292,7 @@ function AppWindow({
       settingsProblem,
       ownerNeeded,
       meetingProjects,
+      meetingSetup,
       inboxView,
       openNote,
       showOverlay,
@@ -2480,7 +2505,11 @@ function AppWindow({
                       templates: templatesPage.page,
                       terms: { templates },
                       activity: { activity },
-                      automations: { store: automationsStore, ports: automationPorts },
+                      automations: {
+                        store: automationsStore,
+                        ports: automationPorts,
+                        setup: meetingSetup,
+                      },
                       graph: { state: vaultGraph },
                       query: { text: queryText },
                       tags: {

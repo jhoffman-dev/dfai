@@ -20,6 +20,7 @@ import {
 } from './proposals/proposals-section.tsx';
 import type { RelationChoice } from './properties-panel.tsx';
 import { MeetingProjects, type MeetingProjectsProps } from './meeting-projects.tsx';
+import { MeetingSetup, type MeetingSetupProps } from './meeting-setup.tsx';
 import { ParaMigration, type ParaMigrationProps } from './para-migration.tsx';
 import { TaskMigration, type TaskMigrationProps } from './task-migration.tsx';
 import { VaultTidy, type VaultTidyProps } from './vault-tidy.tsx';
@@ -139,6 +140,8 @@ export interface InboxPageProps {
   meetingCleanup?: MeetingCleanupProps | null;
   /** Filing the meetings that have no project as their series is, previewed first (#227). */
   meetingProjects?: MeetingProjectsProps | null;
+  /** Setting up meeting post-processing in one previewed yes (#191); null once a rule does it. */
+  meetingSetup?: MeetingSetupProps | null;
   /** The vault's own Inbox view, which the sidebar's Inbox row opened before this page. */
   view?: { readonly title: string; readonly onOpen: () => void } | null;
   /** What Claude or an automation proposed, answered here rather than filed (P29-02). */
@@ -167,6 +170,7 @@ export function InboxPage(props: InboxPageProps) {
   const meetingsWaiting = props.meetingsWaiting ?? null;
   const cleanup = props.meetingCleanup ?? null;
   const meetingProjects = props.meetingProjects ?? null;
+  const meetingSetup = props.meetingSetup ?? null;
   const proposals = props.proposals ?? null;
   const problem = props.problem ?? leftRefusal(props);
   const counted = describe(props.contents, proposals?.contents?.open.length ?? 0);
@@ -226,6 +230,7 @@ export function InboxPage(props: InboxPageProps) {
                 slot('tidy', tidy, (known) => <VaultTidy {...known} />),
                 slot('cleanup', cleanup, (known) => <MeetingCleanup {...known} />),
                 slot('meetings', meetingProjects, (known) => <MeetingProjects {...known} />),
+                slot('setup', meetingSetup, (known) => <MeetingSetup {...known} />),
               ]}
             />
             <div style={IN_PLACE} ref={answers}>

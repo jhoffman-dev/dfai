@@ -288,6 +288,8 @@ export type { TodayAction, TodayPageProps } from './today-page.tsx';
 export { ParaMigration } from './para-migration.tsx';
 export { MeetingProjects } from './meeting-projects.tsx';
 export type { MeetingProjectRow, MeetingProjectsProps } from './meeting-projects.tsx';
+export { MeetingSetup } from './meeting-setup.tsx';
+export type { MeetingSetupLineView, MeetingSetupProps } from './meeting-setup.tsx';
 export type { ParaMigrationPreviewData, ParaMigrationProps } from './para-migration.tsx';
 export { TaskMigration } from './task-migration.tsx';
 export type {

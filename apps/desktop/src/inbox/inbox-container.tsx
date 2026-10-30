@@ -10,6 +10,7 @@ import type { PendingWrites } from '../workspace/pending-writes.ts';
 import { useMakeRelated } from '../types/use-create-related.ts';
 import type { MeetingsWaitingStore } from '../meetings/meetings-waiting-store.ts';
 import { useMeetingsWaitingBanner } from '../meetings/use-meetings-waiting-banner.ts';
+import { useMeetingSetup, type MeetingSetupWiring } from '../meetings/use-meeting-setup.ts';
 import type { SyncStore } from '../sync/sync-store.ts';
 import { useInbox } from './use-inbox.ts';
 
@@ -44,6 +45,8 @@ export interface InboxWiring extends Pick<
   readonly sync: SyncStore;
   /** Opens the line a proposal cites, in the focused pane. */
   readonly onOpenSource: (link: string) => void;
+  /** Setting up meeting post-processing in one yes (#191), shared with the Automations page. */
+  readonly meetingSetup: MeetingSetupWiring;
 }
 
 /**
@@ -60,7 +63,9 @@ export interface InboxWiring extends Pick<
 export function InboxContainer({ wiring, chrome }: PageContainerProps) {
   const { pages, pane } = wiring;
   // The offers are spread below, since each is given only while the window makes it.
-  const { closing, pendingWrites, onOpenSource, meetingsWaiting, sync, ...offers } = pages.inbox;
+  const { closing, pendingWrites, onOpenSource, meetingsWaiting, sync, meetingSetup, ...offers } =
+    pages.inbox;
+  const setup = useMeetingSetup(meetingSetup, { vault: pane.vault, where: 'inbox' });
   const waitingBanner = useMeetingsWaitingBanner({
     waiting: meetingsWaiting,
     sync,
@@ -145,6 +150,7 @@ export function InboxContainer({ wiring, chrome }: PageContainerProps) {
       summaryPending={inbox.summaryPending}
       meetingsWaiting={waitingBanner}
       {...offers}
+      meetingSetup={setup}
       proposals={{ ...proposals.section, onOpen: pages.openNote, onOpenSource }}
       {...chrome}
     />
