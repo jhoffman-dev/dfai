@@ -77,49 +77,43 @@ const element = (id: string, size: string) => {
 const aTurn = () => new Promise((resolve) => pageTimer(resolve, 0));
 
 describe('the work clock, attacked on held observer reports (#243, PR #640)', () => {
-  it.fails(
-    'hands over an intersection report queued as a task after the frame it drew, before run returns',
-    async () => {
-      const heard: string[] = [];
-      const observer = observerOf('IntersectionObserver', (entries) =>
-        heard.push(...entries.map(({ target }) => target.id)),
-      );
-      clock().startCounting();
-      // The commit's layout crosses a threshold: the browser queues the
-      // notification as a task once the rendering step is done.
-      queuedByTheNextStep.push(() => observer.reportOn(element('card', '38')));
-      await clock().run(null, null, 0, 0);
-      // Observed: quiet returned with the report still held, and it reaches the
-      // app only after counting stops, so its work is never counted.
-      expect(heard).toEqual(['card']);
-      clock().stopCounting();
-      await aTurn();
-    },
-  );
+  it('hands over an intersection report queued as a task after the frame it drew, before run returns', async () => {
+    const heard: string[] = [];
+    const observer = observerOf('IntersectionObserver', (entries) =>
+      heard.push(...entries.map(({ target }) => target.id)),
+    );
+    clock().startCounting();
+    // The commit's layout crosses a threshold: the browser queues the
+    // notification as a task once the rendering step is done.
+    queuedByTheNextStep.push(() => observer.reportOn(element('card', '38')));
+    await clock().run(null, null, 0, 0);
+    // Observed: quiet returned with the report still held, and it reaches the
+    // app only after counting stops, so its work is never counted.
+    expect(heard).toEqual(['card']);
+    clock().stopCounting();
+    await aTurn();
+  });
 
-  it.fails(
-    'never hands an app an older size after a newer one, when a report comes just after counting stops',
-    async () => {
-      const heard: string[] = [];
-      const observer = observerOf('ResizeObserver', (entries) =>
-        heard.push(...entries.map(({ target, size }) => `${target.id} ${size}`)),
-      );
-      const card = element('card', '38');
-      clock().startCounting();
-      observer.reportOn(card);
-      clock().stopCounting();
-      // A rendering step between the evaluate that stopped counting and the
-      // clock's next turn: the card has grown since.
-      card.setAttribute('data-size', '40');
-      observer.reportOn(card);
-      await aTurn();
-      await aTurn();
-      // Observed: ['card 40', 'card 38'] — the stale held size lands last.
-      expect(heard.at(-1)).toBe('card 40');
-    },
-  );
+  it('never hands an app an older size after a newer one, when a report comes just after counting stops', async () => {
+    const heard: string[] = [];
+    const observer = observerOf('ResizeObserver', (entries) =>
+      heard.push(...entries.map(({ target, size }) => `${target.id} ${size}`)),
+    );
+    const card = element('card', '38');
+    clock().startCounting();
+    observer.reportOn(card);
+    clock().stopCounting();
+    // A rendering step between the evaluate that stopped counting and the
+    // clock's next turn: the card has grown since.
+    card.setAttribute('data-size', '40');
+    observer.reportOn(card);
+    await aTurn();
+    await aTurn();
+    // Observed: ['card 40', 'card 38'] — the stale held size lands last.
+    expect(heard.at(-1)).toBe('card 40');
+  });
 
-  it.fails('does not hand a report held in one count over inside the next', async () => {
+  it('does not hand a report held in one count over inside the next', async () => {
     let countNumber = 1;
     const heardIn: number[] = [];
     const observer = observerOf('ResizeObserver', () => heardIn.push(countNumber));
@@ -136,7 +130,7 @@ describe('the work clock, attacked on held observer reports (#243, PR #640)', ()
     expect(heardIn).not.toContain(2);
   });
 
-  it.fails.each(['ResizeObserver', 'IntersectionObserver'] as const)(
+  it.each(['ResizeObserver', 'IntersectionObserver'] as const)(
     'calls a held %s report with the observer as `this`, as a browser does',
     async (kind) => {
       const thisSeen: unknown[] = [];
@@ -153,21 +147,18 @@ describe('the work clock, attacked on held observer reports (#243, PR #640)', ()
     },
   );
 
-  it.fails(
-    'still delivers an intersection crossing queued before a disconnect, as the spec does',
-    async () => {
-      const heard: string[] = [];
-      const observer = observerOf('IntersectionObserver', (entries) =>
-        heard.push(...entries.map(({ target }) => target.id)),
-      );
-      clock().startCounting();
-      observer.reportOn(element('card', '38'));
-      // The intersection observer spec's disconnect() clears the targets, not
-      // [[QueuedEntries]]: a crossing already queued still reaches the callback.
-      observer.disconnect();
-      await clock().run(null, null, 0, 0);
-      clock().stopCounting();
-      expect(heard).toEqual(['card']);
-    },
-  );
+  it('still delivers an intersection crossing queued before a disconnect, as the spec does', async () => {
+    const heard: string[] = [];
+    const observer = observerOf('IntersectionObserver', (entries) =>
+      heard.push(...entries.map(({ target }) => target.id)),
+    );
+    clock().startCounting();
+    observer.reportOn(element('card', '38'));
+    // The intersection observer spec's disconnect() clears the targets, not
+    // [[QueuedEntries]]: a crossing already queued still reaches the callback.
+    observer.disconnect();
+    await clock().run(null, null, 0, 0);
+    clock().stopCounting();
+    expect(heard).toEqual(['card']);
+  });
 });

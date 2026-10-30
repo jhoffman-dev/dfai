@@ -295,7 +295,12 @@ describe('the work clock', () => {
       ]);
     });
 
-    it('drops a held report once its observer is disconnected, as a browser does (#243)', async () => {
+    // A resize observer's disconnect and unobserve drop what it had not
+    // reported; an intersection observer's leave [[QueuedEntries]] to be
+    // delivered, as its spec says (PR #640's attack).
+    const drops = kind === 'ResizeObserver';
+
+    it('on disconnect, drops a held resize report and keeps a held crossing, as a browser does (#243)', async () => {
       const heard: string[] = [];
       const observer = observerOf(heard);
       clock().startCounting();
@@ -303,10 +308,10 @@ describe('the work clock', () => {
       observer.disconnect();
       await clock().run(null, null, 0, 0);
       clock().stopCounting();
-      expect(heard).toEqual([]);
+      expect(heard).toEqual(drops ? [] : ['card 38']);
     });
 
-    it('drops what it held for an element once that element is unobserved, and calls no one for nothing (#243)', async () => {
+    it('on unobserve, drops what it held for the element, and calls no one for nothing, if a resize observer (#243)', async () => {
       const heard: string[] = [];
       const observer = observerOf(heard);
       const [card, column] = [element('card', '38'), element('column', '723')];
@@ -314,12 +319,12 @@ describe('the work clock', () => {
       observer.reportOn(card);
       observer.unobserve(card);
       await clock().run(null, null, 0, 0);
-      expect(heard).toEqual([]);
+      expect(heard).toEqual(drops ? [] : ['card 38']);
       observer.reportOn(card, column);
       observer.unobserve(card);
       await clock().run(null, null, 0, 0);
       clock().stopCounting();
-      expect(heard).toEqual(['column 723']);
+      expect(heard).toEqual(drops ? ['column 723'] : ['card 38', 'card 38, column 723']);
     });
 
     it('hands the other observers their reports when one throws, and lets the error reach the page (#243)', async () => {
@@ -341,7 +346,7 @@ describe('the work clock', () => {
       expect(thrownOnThePage).toEqual([new Error('a broken measure')]);
     });
 
-    it('skips an observer that an earlier one disconnected in the same hand-over (#243)', async () => {
+    it('skips a resize observer that an earlier one disconnected in the same hand-over (#243)', async () => {
       const heard: string[] = [];
       const Kind = (window as unknown as Record<typeof kind, typeof StandInObserver>)[kind];
       let later: StandInObserver | null = null;
@@ -355,7 +360,7 @@ describe('the work clock', () => {
       later.reportOn(element('column', '723'));
       await clock().run(null, null, 0, 0);
       clock().stopCounting();
-      expect(heard).toEqual(['first']);
+      expect(heard).toEqual(drops ? ['first'] : ['first', 'column 723']);
     });
 
     it('hands the reports over in the order the observers were made, whatever order they came in (#243)', async () => {
