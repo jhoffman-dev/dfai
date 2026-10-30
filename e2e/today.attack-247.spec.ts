@@ -110,132 +110,183 @@ interface Focused {
   readonly inView: boolean;
 }
 
-/** What the page saw between reads: a stop left out of view, or lost, by the time of the next key. */
-interface Between {
-  readonly offScreen: string[];
-  readonly lostAfter: string | null;
-}
-
-/**
- * Where the focus is: on the page or lost, which row, and whether it is in view —
- * read once the page has settled from the key.
- *
- * Settling is two frames, so a scroll the focus asked for has been made and the
- * rows it places are placed and measured. Two frames for each of some 3,300
- * stops is what made a sweep take two minutes, and most stops move nothing: so
- * a key that left the page as the last read found it — not scrolled, the
- * content the same height, nothing in the page changed, the focus in view — is
- * read at once, as there is nothing for a frame to settle. Anything else waits
- * the two frames. And at every next key, before it moves the focus, the stop
- * is read again, so a page that moved by itself after a read is still caught.
- */
+/** Where the focus is: on the page or lost, which row, and whether it is in view. */
 function focusedNow(page: Page): Promise<Focused> {
   return page.evaluate(async () => {
-    type Watch = {
-      read: () => Focused;
-      quiet: () => boolean;
-      settled: () => void;
-      between: Between;
-    };
-    const host = window as unknown as { todayFocusWatch?: Watch };
-    host.todayFocusWatch ??= (() => {
-      const scroller = () => document.querySelector('.panel__body');
-      const article = () => document.querySelector('article[aria-label="Today"]');
-      const read = (): Focused => {
-        const at = document.activeElement;
-        const port = scroller();
-        const today = article();
-        if (at === null || at === document.body || today === null || port === null) {
-          return { lost: true, inPage: false, row: null, label: '', inView: false };
-        }
-        const box = at.getBoundingClientRect();
-        const portBox = port.getBoundingClientRect();
-        const inView =
-          box.height > 0 &&
-          box.top >= Math.max(portBox.top, 0) - 1 &&
-          box.bottom <= Math.min(portBox.bottom, window.innerHeight) + 1;
-        return {
-          lost: false,
-          inPage: today.contains(at),
-          row: at.closest('[data-today-row]')?.getAttribute('data-today-row') ?? null,
-          label: at.getAttribute('aria-label') ?? at.textContent?.trim().slice(0, 60) ?? '',
-          inView,
-        };
-      };
-      // What a frame could still have to settle: a scroll, a size, a change in the page.
-      const shape = () => {
-        const port = scroller();
-        return port === null ? '' : `${port.scrollTop}/${port.scrollHeight}`;
-      };
-      let changed = true;
-      let lastShape = '';
-      let lastLabel = '';
-      new MutationObserver(() => {
-        changed = true;
-      }).observe(document.body, { subtree: true, childList: true, attributes: true });
-      const between: Between = { offScreen: [], lostAfter: null };
-      document.addEventListener(
-        'keydown',
-        () => {
-          const now = read();
-          if (now.lost) between.lostAfter ??= lastLabel;
-          else if (now.inPage && !now.inView) between.offScreen.push(now.label);
-        },
-        { capture: true },
-      );
-      return {
-        read,
-        between,
-        quiet: () => !changed && shape() === lastShape,
-        settled: () => {
-          changed = false;
-          lastShape = shape();
-          lastLabel = read().label;
-        },
-      };
-    })();
-    const watch = host.todayFocusWatch;
-    const now = watch.read();
-    if (!(watch.quiet() && !now.lost && now.inView)) {
-      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    // Read once the page has settled from the key: two frames, so a scroll
+    // the focus asked for has been made.
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const at = document.activeElement;
+    const article = document.querySelector('article[aria-label="Today"]');
+    const scroller = document.querySelector('.panel__body');
+    if (at === null || at === document.body || article === null || scroller === null) {
+      return { lost: true, inPage: false, row: null, label: '', inView: false };
     }
-    watch.settled();
-    return watch.read();
+    const box = at.getBoundingClientRect();
+    const port = scroller.getBoundingClientRect();
+    const inView =
+      box.height > 0 &&
+      box.top >= Math.max(port.top, 0) - 1 &&
+      box.bottom <= Math.min(port.bottom, window.innerHeight) + 1;
+    return {
+      lost: false,
+      inPage: article.contains(at),
+      row: at.closest('[data-today-row]')?.getAttribute('data-today-row') ?? null,
+      label: at.getAttribute('aria-label') ?? at.textContent?.trim().slice(0, 60) ?? '',
+      inView,
+    };
   });
 }
 
-/** What the page saw between reads: every stop read again at the key after it. */
-function readBetween(page: Page): Promise<Between> {
-  return page.evaluate(
-    () => (window as unknown as { todayFocusWatch: { between: Between } }).todayFocusWatch.between,
-  );
+/** Every stop a sweep made, as the page recorded them. */
+interface SweepLog {
+  moves: number;
+  rows: string[];
+  offScreen: string[];
+  lostAfter: string | null;
+  last: string;
+  done: boolean;
 }
+
+/**
+ * Records a sweep inside the page: at every Tab, before it moves the focus,
+ * the stop the last Tab reached is read — on the page or lost, which row, in
+ * view. Read once the page has settled from the key: a key that moved anything
+ * (a scroll, a size, a change in the page, work left for later) holds the next
+ * Tab back, refused, until two frames have passed with nothing changing, so the
+ * scroll the focus asked for has been made and the rows it places are placed
+ * and measured. A key that moved nothing is read at once: nothing can settle.
+ *
+ * Reading in the page instead of a round trip and two frames for each of some
+ * 3,300 stops is what takes a sweep from two minutes to seconds (shard 4).
+ */
+function recordSweep(): void {
+  const host = window as unknown as { todaySweep?: SweepLog };
+  const log: SweepLog = {
+    moves: 0,
+    rows: [],
+    offScreen: [],
+    lostAfter: null,
+    last: '',
+    done: false,
+  };
+  host.todaySweep = log;
+  const scroller = () => document.querySelector('.panel__body');
+  const shape = () => `${scroller()?.scrollTop}/${scroller()?.scrollHeight}`;
+  const nextFrame = window.requestAnimationFrame.bind(window);
+  let frame = 0;
+  const tick = () => {
+    frame += 1;
+    if (!log.done) nextFrame(tick);
+  };
+  nextFrame(tick);
+  let changed = false;
+  new MutationObserver(() => {
+    changed = true;
+  }).observe(document.body, { subtree: true, childList: true, attributes: true });
+  // Work a key leaves for later — a frame callback, a timer, a task (React's
+  // scheduler posts to a MessagePort) — changes nothing yet, so asking for it
+  // counts as a change: a focus that blurs itself a frame later is still caught.
+  const scheduling = (owner: object, name: string) => {
+    const table = owner as Record<string, (...args: unknown[]) => unknown>;
+    const original = table[name];
+    if (original === undefined) return;
+    table[name] = function (this: unknown, ...args: unknown[]) {
+      changed = true;
+      return original.apply(this, args);
+    };
+  };
+  scheduling(window, 'requestAnimationFrame');
+  scheduling(window, 'setTimeout');
+  scheduling(window, 'setInterval');
+  scheduling(window, 'requestIdleCallback');
+  scheduling(MessagePort.prototype, 'postMessage');
+  let seen = shape();
+  // The focus the sweep starts from settles too.
+  let changedAt: number | null = frame;
+  const settling = () => {
+    if (changed || shape() !== seen) {
+      changed = false;
+      seen = shape();
+      changedAt = frame;
+    }
+    if (changedAt !== null && frame < changedAt + 2) return true;
+    changedAt = null;
+    return false;
+  };
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Tab') return;
+      if (log.done || settling()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      const stop = readStop();
+      if (log.moves > 0) {
+        if (stop === null) log.lostAfter = log.last;
+        if (stop === null || !stop.inPage) {
+          log.done = true;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+        if (stop.row !== null && !log.rows.includes(stop.row)) log.rows.push(stop.row);
+        if (!stop.inView) log.offScreen.push(stop.label);
+        log.last = stop.label;
+      }
+      log.moves += 1;
+    },
+    { capture: true },
+  );
+
+  function readStop() {
+    const at = document.activeElement;
+    const article = document.querySelector('article[aria-label="Today"]');
+    const port = scroller();
+    if (at === null || at === document.body || article === null || port === null) return null;
+    const box = at.getBoundingClientRect();
+    const portBox = port.getBoundingClientRect();
+    return {
+      inPage: article.contains(at),
+      row: at.closest('[data-today-row]')?.getAttribute('data-today-row') ?? null,
+      label: at.getAttribute('aria-label') ?? at.textContent?.trim().slice(0, 60) ?? '',
+      inView:
+        box.height > 0 &&
+        box.top >= Math.max(portBox.top, 0) - 1 &&
+        box.bottom <= Math.min(portBox.bottom, window.innerHeight) + 1,
+    };
+  }
+}
+
+const readSweep = (page: Page) =>
+  page.evaluate(() => (window as unknown as { todaySweep: SweepLog }).todaySweep);
+
+/** Tabs pressed between two reads of the sweep's record. */
+const BATCH = 40;
 
 /** Presses `key` until the focus leaves the page, recording every stop. */
 async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number) {
-  const rows = new Set<string>();
-  const offScreen: string[] = [];
-  let lostAfter: string | null = null;
-  let last = '';
-  await focusedNow(page);
-  for (let presses = 0; presses < limit; presses += 1) {
-    // Option+Tab: WebKit's Tab alone skips buttons and checkboxes, as Safari does
-    // until Keyboard navigation is turned on; with it, every control is a stop.
-    await page.keyboard.press(key === 'Tab' ? 'Alt+Tab' : 'Alt+Shift+Tab');
-    const now = await focusedNow(page);
-    if (now.lost) {
-      lostAfter = last;
-      break;
-    }
-    if (!now.inPage) break;
-    if (now.row !== null) rows.add(now.row);
-    if (!now.inView) offScreen.push(now.label);
-    last = now.label;
+  await page.evaluate(recordSweep);
+  // Option+Tab: WebKit's Tab alone skips buttons and checkboxes, as Safari does
+  // until Keyboard navigation is turned on; with it, every control is a stop.
+  // Held for the whole sweep, so each stop is one key and not four.
+  const held = key === 'Tab' ? ['Alt'] : ['Alt', 'Shift'];
+  for (const modifier of held) await page.keyboard.down(modifier);
+  let log = await readSweep(page);
+  // Refused Tabs (the page settling) count against `limit` too, ten to a stop.
+  for (let presses = 0; !log.done && log.moves < limit && presses < limit * 10;) {
+    for (let at = 0; at < BATCH; at += 1, presses += 1) await page.keyboard.press('Tab');
+    log = await readSweep(page);
   }
-  const between = await readBetween(page);
-  offScreen.push(...between.offScreen);
-  lostAfter ??= between.lostAfter;
-  return { rows, offScreen, lostAfter, last };
+  for (const modifier of held.reverse()) await page.keyboard.up(modifier);
+  return {
+    rows: new Set(log.rows),
+    offScreen: log.offScreen,
+    lostAfter: log.lostAfter,
+    last: log.last,
+  };
 }
 
 test.describe.configure({ timeout: 600_000 });
