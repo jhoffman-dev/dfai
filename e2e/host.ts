@@ -11,6 +11,17 @@ import { createGitStub, type GitStub } from './git-host.ts';
 import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
 
+/**
+ * A stub's throw as the real host would reject: Tauri hands the page what a
+ * command's `Err` serialized to — for the `Result<_, String>` commands, a bare
+ * string — never an `Error`. Thrown as an `Error`, it would reach the page as
+ * one, and `throughHost` would pass it through instead of making the
+ * `VaultAccessError` the app really sees.
+ */
+function rejectionAsTauriSends(thrown: unknown): { [REJECT]: unknown } {
+  return { [REJECT]: thrown instanceof Error ? thrown.message : thrown };
+}
+
 /** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
 /** What a stubbed command answers to reject with a value, as Tauri does for a command's `Err`. */
 const REJECT = '__atlasReject';
@@ -2006,7 +2017,7 @@ export async function installHost(
   });
   await page.exposeFunction('__atlasInvoke', async (command: string, args: unknown) => {
     calls.set(command, (calls.get(command) ?? 0) + 1);
-    const answered = await answer(command, args);
+    const answered = await answer(command, args).catch(rejectionAsTauriSends);
     // Logged only once a secret exists: before that there is nothing to leak,
     // and the replies that carry whole files would only slow every test.
     if (secrets.size > 0) answers.push(JSON.stringify(answered) ?? '');
@@ -2112,6 +2123,14 @@ export async function installHost(
       );
     }
 
+    // Every refusal rejects with a value, as Tauri hands the webview whatever
+    // a command's `Err` serializes to: a string, or the object it built.
+    function rejectedWithValue(value: unknown): unknown {
+      return typeof value === 'object' && value !== null && '__atlasReject' in value
+        ? Promise.reject((value as { __atlasReject: unknown }).__atlasReject)
+        : value;
+    }
+
     function invokeHost(
       command: string,
       args: unknown,
@@ -2128,7 +2147,9 @@ export async function installHost(
       if (args instanceof Uint8Array) {
         const answer = (
           window as unknown as { __atlasInvoke: (c: string, a: unknown) => Promise<unknown> }
-        ).__atlasInvoke(command, { bytes: Array.from(args), headers: options?.headers ?? {} });
+        )
+          .__atlasInvoke(command, { bytes: Array.from(args), headers: options?.headers ?? {} })
+          .then(rejectedWithValue);
         return command === 'snapshot_page' || command === 'export_render_pdf'
           ? answer.then((numbers) => new Uint8Array(numbers as number[]).buffer)
           : answer;
@@ -2137,13 +2158,7 @@ export async function installHost(
         window as unknown as { __atlasInvoke: (c: string, a: unknown) => Promise<unknown> }
       )
         .__atlasInvoke(command, args)
-        // A command that rejects with a value rather than a message, as
-        // Tauri hands the webview whatever a command's `Err` serializes to.
-        .then((value) =>
-          typeof value === 'object' && value !== null && '__atlasReject' in value
-            ? Promise.reject((value as { __atlasReject: unknown }).__atlasReject)
-            : value,
-        );
+        .then(rejectedWithValue);
       // Counted by the host above; the bytes come over HTTP, as the real ones come as a binary response.
       if (command === 'embedding_cache_load')
         return answer.then(async (length) => {
