@@ -35,7 +35,9 @@ import type {
   ApiCalendar,
   ApiCalendarBody,
   ApiCaptureBody,
+  ApiCaptureReceipt,
   ApiCreateNoteBody,
+  ApiReceiveCaptureBody,
   ApiErrorBody,
   ApiNote,
   ApiProposal,
@@ -334,6 +336,10 @@ export class AtlasClient {
 
   capture = (body: ApiCaptureBody) =>
     this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/capture', body });
+
+  /** A Slack message under capture/v1: `written` once, `in-vault` every time after. */
+  receiveCapture = (body: ApiReceiveCaptureBody) =>
+    this.json<{ capture: ApiCaptureReceipt }>({ method: 'POST', path: '/v1/captures', body });
 
   saveArtifact = (body: ApiSaveArtifactBody) =>
     this.json<{ note: ApiNote }>({ method: 'POST', path: '/v1/artifacts', body });

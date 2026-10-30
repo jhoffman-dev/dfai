@@ -2173,6 +2173,7 @@ function AppWindow({
       closing: closing.writes,
       pendingWrites,
       meetingsWaiting,
+      sync: syncStore,
       onOpenSource: followSource,
       typesOffer:
         typesOffer === null
@@ -2205,6 +2206,7 @@ function AppWindow({
       closing.writes,
       pendingWrites,
       meetingsWaiting,
+      syncStore,
       followSource,
       typesOffer,
       taskMigration,
