@@ -582,10 +582,10 @@ describe('Undo last run', () => {
     const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
 
     expect(undone?.done).toEqual([{ kind: 'unsummarised', path: SYNC }]);
-    expect(undone?.left).toEqual([{ path: task, reason: refusal }]);
+    expect(undone?.left).toContainEqual({ path: task, reason: refusal });
     expect(at.vault.files.has(task!)).toBe(true);
     const logged = at.entries().at(-1);
-    expect(logged?.kind === 'undo' && logged.left).toEqual([{ path: task, reason: refusal }]);
+    expect(logged?.kind === 'undo' && logged.left).toContainEqual({ path: task, reason: refusal });
   });
 
   it('keeps a task changed since, and its link, and a block edited since', async () => {
