@@ -233,7 +233,7 @@ async function shootLight(page: Page, state: string) {
 
 test(
   'picks a repository from the GitHub list, then sends and brings in changes by itself',
-  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (follow-up issue)'),
+  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (PR #649)'),
   async ({ page }) => {
     const vault = await createVault();
     await vault.write('Welcome.md', '# Welcome\n\nHello.\n');

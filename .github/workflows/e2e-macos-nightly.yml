@@ -66,8 +66,10 @@ jobs:
         if: steps.webkit.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps webkit
 
+      # One worker: with two, a 3-vCPU Mac missed a five-second wait or two a
+      # run (#649). Here time is cheap and a false alarm is not.
       - name: End-to-end, a quarter of the suite
-        run: pnpm e2e --shard=${{ matrix.shard }}/4 --workers=2 --reporter=list,html
+        run: pnpm e2e --shard=${{ matrix.shard }}/4 --workers=1 --reporter=list,html
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()

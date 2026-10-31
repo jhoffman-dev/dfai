@@ -1,6 +1,5 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
-import { sweepWithin } from './tab-sweep.ts';
 
 /**
  * Adversarial pass on #247 (Performance B, #238), in WebKit: the Inbox
@@ -39,13 +38,62 @@ async function openInbox(page: Page) {
   return { inbox, table };
 }
 
-// Recorded in the page, as Today's sweep is (#644): a round trip and two frames
-// for each of some 3,000 stops took the two sweeps over two minutes.
-const sweep = sweepWithin({
-  within: 'table.inbox__grid',
-  row: 'tr',
-  rowName: { text: '.table__link' },
-});
+interface Focused {
+  readonly lost: boolean;
+  readonly inTable: boolean;
+  readonly row: string | null;
+  readonly label: string;
+  readonly inView: boolean;
+}
+
+function focusedNow(page: Page): Promise<Focused> {
+  return page.evaluate(async () => {
+    // Read once the page has settled from the key: two frames, so a scroll
+    // the focus asked for has been made.
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const at = document.activeElement;
+    const table = document.querySelector('table.inbox__grid');
+    const scroller = document.querySelector('.panel__body');
+    if (at === null || at === document.body || table === null || scroller === null) {
+      return { lost: true, inTable: false, row: null, label: '', inView: false };
+    }
+    const box = at.getBoundingClientRect();
+    const port = scroller.getBoundingClientRect();
+    return {
+      lost: false,
+      inTable: table.contains(at),
+      row: at.closest('tr')?.querySelector('.table__link')?.textContent?.trim() ?? null,
+      label: at.getAttribute('aria-label') ?? at.textContent?.trim().slice(0, 60) ?? '',
+      inView:
+        box.height > 0 &&
+        box.top >= Math.max(port.top, 0) - 1 &&
+        box.bottom <= Math.min(port.bottom, window.innerHeight) + 1,
+    };
+  });
+}
+
+/** Presses `key` until the focus leaves the table, recording every stop. */
+async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number) {
+  const rows = new Set<string>();
+  const offScreen: string[] = [];
+  let lostAfter: string | null = null;
+  let last = '';
+  for (let presses = 0; presses < limit; presses += 1) {
+    // Option+Tab: WebKit's Tab alone skips buttons and checkboxes, as Safari does
+    // until Keyboard navigation is turned on; with it, every control is a stop.
+    await page.keyboard.press(key === 'Tab' ? 'Alt+Tab' : 'Alt+Shift+Tab');
+    const now = await focusedNow(page);
+    if (now.lost) {
+      lostAfter = last;
+      break;
+    }
+    if (!now.inTable) break;
+    if (now.row !== null) rows.add(now.row);
+    if (!now.inView) offScreen.push(`${now.row}: ${now.label}`);
+    last = now.label;
+  }
+  return { rows, offScreen, lostAfter };
+}
 
 test.describe.configure({ timeout: 600_000 });
 

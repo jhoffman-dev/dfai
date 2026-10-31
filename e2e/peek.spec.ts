@@ -167,7 +167,7 @@ test('a wikilink clicked peeks the note it names, leaving the page where it is',
 
 test(
   '⌘K opens over the peek; Esc closes it alone, and a result picked shows in the peek',
-  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (follow-up issue)'),
+  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (PR #649)'),
   async ({ page }) => {
     await openVault(page);
     await openTaskTable(page);

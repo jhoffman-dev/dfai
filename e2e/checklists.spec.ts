@@ -87,7 +87,7 @@ test('a task with 2 of 5 boxes ticked shows 40% on the board', async ({ page }) 
 
 test(
   'promoting a line makes the task, links it back, and one Undo takes back both',
-  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (follow-up issue)'),
+  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (PR #649)'),
   async ({ page }) => {
     const vault = await openVault(page);
     await openBoard(page);
