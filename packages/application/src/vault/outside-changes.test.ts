@@ -475,6 +475,27 @@ describe('outsideChanges: the app’s own new note (#258)', () => {
     expect(await vault.reported(['Inbox/Buy flour.md'])).toEqual(['Inbox/Buy flour.md']);
   });
 
+  it('drops the echo of a new note that a second create of the app’s was refused over', async () => {
+    // Two of the app's writes of one file race — the Block type, as a vault
+    // opens on a busy machine — and the host refuses the second: it changed
+    // nothing, so what the first left is still what is there.
+    const vault = aVault();
+    await create(vault.fs, '.atlas/types/block.md', '# Block\n');
+    const refusing = recordingOwnWrites({
+      fs: fakeVaultFs({
+        createNote: async () => {
+          throw new Error('a note with that name already exists');
+        },
+      }),
+      ownWrites: vault.ownWrites,
+      vault: VAULT,
+    });
+    await expect(create(refusing, '.atlas/types/block.md', '# Block\n')).rejects.toThrow(
+      'already exists',
+    );
+    expect(await vault.reported(saveReport('.atlas/types/block.md'))).toEqual([]);
+  });
+
   it('keeps a new note in a vault other than the one the app made its note in', async () => {
     const vault = aVault();
     await create(vault.fs, 'Inbox/Buy flour.md', '# Buy flour\n');
