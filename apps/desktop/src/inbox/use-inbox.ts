@@ -38,7 +38,12 @@ import { withGiveUpRecorded } from '../activity/with-give-up-recorded.ts';
 import { useAnswersWrittenBeforeClose } from '../proposals/answer-queue.ts';
 import { errorMessage } from '../query/error-message.ts';
 import type { Toasts } from '../toasts/toasts.ts';
-import { withoutLeaving, type LeavingRow } from './leaving-rows.ts';
+import {
+  returnSettled,
+  withoutLeaving,
+  type LeavingRow,
+  type ReturningRow,
+} from './leaving-rows.ts';
 import { keptWhereSame } from './kept-where-same.ts';
 import { notesAfterOwnMoves } from './own-moves.ts';
 import { useSummaryPending } from './use-summary-pending.ts';
@@ -202,6 +207,8 @@ export function useInbox(options: InboxOptions) {
     [shown, leaving, vaultKey],
   );
 
+  const listedAgain = useListedAgain(contents, shown?.read ?? null);
+
   /** Says what a write left, of the vault it was asked in; `kept` leaves the last action to take back. */
   const say = useCallback(
     (asked: string | null, result: Result) =>
@@ -293,7 +300,7 @@ export function useInbox(options: InboxOptions) {
    * vault open now, so an older toast, or one made in another vault, undoes nothing.
    */
   const undoClarification = useCallback(
-    (taken: LastClarification) => {
+    (taken: LastClarification, returning?: ReturningRow) => {
       const shown = held.store.getState().said;
       if (!settled || shown?.vaultKey !== vaultKey || shown.last !== taken) {
         return Promise.resolve(false);
@@ -315,6 +322,8 @@ export function useInbox(options: InboxOptions) {
               }),
             );
             writes.markUndone(taken.undo);
+            // Waits, with the rows written, for the refresh this write asks for.
+            if (returning !== undefined) held.held.returning.push(returning);
             // Its toast has gone by now — pressing Undo sends it — so the last may already be let go.
             setSaid((before) =>
               before?.vaultKey === asked && (before.last === taken || before.last === null)
@@ -357,8 +366,13 @@ export function useInbox(options: InboxOptions) {
     await writes.drained();
     const taken = held.store.getState().said?.last ?? null;
     if (taken === null) return null;
-    return (await undoClarification(taken)) ? taken.undo.from : null;
-  }, [writes, held, undoClarification]);
+    const back: ReturningRow = { path: taken.undo.from, settled: null };
+    if (!(await undoClarification(taken, back))) return null;
+    // Not at once: reads begun before the index caught up still lack the row,
+    // and the page gives up on a row after a few lists without it (#109).
+    await listedAgain(back);
+    return back.path;
+  }, [writes, held, undoClarification, listedAgain]);
 
   // The undo lasts as long as the toast offering it (#165): once that has gone, so has the undo.
   const dismissLastAction = useCallback(
@@ -499,9 +513,10 @@ function useClarifyWrites({
 
   /** A refresh asked for once `rows` were written has landed: a read begun since, past `askedAt`, answers for them. */
   const refreshed = useCallback(
-    (rows: readonly LeavingRow[], askedAt: string) => {
+    (rows: readonly LeavingRow[], askedAt: string, back: readonly ReturningRow[]) => {
       kept.moment.current += 1;
       const settled = { at: kept.moment.current, indexKey: askedAt };
+      for (const row of back) row.settled = settled;
       const answered = new Set(rows);
       store.setState(({ leaving: before, caughtUp: count }) => ({
         leaving: {
@@ -520,14 +535,17 @@ function useClarifyWrites({
       if (!kept.wroteSinceDrained) return;
       kept.wroteSinceDrained = false;
       const rows = kept.unrefreshed;
+      const back = kept.returning;
       kept.unrefreshed = [];
+      kept.returning = [];
       const askedAt = kept.latest.indexKey;
       // Not held: the rows wait for the next refresh asked for after a write.
       const waitAgain = () => {
         kept.unrefreshed = [...rows, ...kept.unrefreshed];
+        kept.returning = [...back, ...kept.returning];
       };
       void Promise.resolve(onSettled()).then(
-        (held) => (held === false ? waitAgain() : refreshed(rows, askedAt)),
+        (held) => (held === false ? waitAgain() : refreshed(rows, askedAt, back)),
         (cause: unknown) => {
           console.error('The index could not be refreshed after the Inbox was written:', cause);
           waitAgain();
@@ -600,6 +618,36 @@ function keepingMoves(ports: ArchivePorts): {
     moved.push({ from: move.from, to: move.to });
   };
   return { ports: { ...ports, fs: { ...ports.fs, moveEntry } }, moved: () => moved };
+}
+
+/**
+ * Resolves once a row an undo put back is listed again, or a read since the
+ * refresh its write asked for has landed without it (`returnSettled`).
+ */
+function useListedAgain(
+  contents: InboxListing | null,
+  read: ReadMoment | null,
+): (row: ReturningRow) => Promise<void> {
+  const waiting = useRef<{ readonly row: ReturningRow; readonly resolve: () => void }[]>([]);
+  const now = useRef({ contents, read });
+  now.current = { contents, read };
+  const settle = useCallback(() => {
+    const { contents: listing, read: at } = now.current;
+    waiting.current = waiting.current.filter((each) => {
+      if (!returnSettled(each.row, listing, at)) return true;
+      each.resolve();
+      return false;
+    });
+  }, []);
+  useEffect(settle, [contents, read, settle]);
+  return useCallback(
+    (row: ReturningRow) =>
+      new Promise<void>((resolve) => {
+        waiting.current.push({ row, resolve });
+        settle();
+      }),
+    [settle],
+  );
 }
 
 const NO_ROWS: readonly LeavingRow[] = [];
