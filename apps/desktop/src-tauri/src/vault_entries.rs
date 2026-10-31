@@ -3,11 +3,12 @@
 //! Like the rest of the host this decides nothing (ADR-0005). Which folder a note
 //! may go to, what is protected and what to do with an open pane are the
 //! frontend's rules; here a path is checked to be inside the vault, the move is
-//! refused rather than writing over something, and that is all.
+//! refused rather than writing over something, going through a link, or changing
+//! what a link points at (#680), and that is all.
 
 use std::fs;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
@@ -66,6 +67,8 @@ pub(crate) fn move_entry_at(root: &Path, from: &str, to: &str) -> Result<(), Str
     let _turn = change_turn();
     let source = resolve_entry(root, from)?;
     let target = resolve_new(root, to)?;
+    refuse_through_link(root, from)?;
+    refuse_through_link(root, to)?;
 
     if source == target {
         return Ok(());
@@ -85,11 +88,115 @@ pub(crate) fn move_entry_at(root: &Path, from: &str, to: &str) -> Result<(), Str
     if same_entry(&source, &target) && !is_listed_as_itself(&target) {
         return fs::rename(&source, &target).map_err(|error| format!("cannot move: {error}"));
     }
+    refuse_retargeted_links(&source, &target)?;
 
     rename_exclusive(&source, &target).map_err(|error| match error.kind() {
         std::io::ErrorKind::AlreadyExists => "something with that name is already there".into(),
         _ => format!("cannot move: {error}"),
     })
+}
+
+/// Refuses a path whose way to its last name passes a link (#680).
+///
+/// `resolve_new` follows a link inside the vault, so `Work/Alias/Plans`, with
+/// `Work/Alias` a link to `Shelf`, would move the real `Shelf/Plans` while the
+/// app believes it moved another path, and would rewrite links and re-point
+/// panes on that belief. Moving into such a folder puts the entry where the
+/// link points, the same mistake the other way. The name itself may be a link:
+/// that is moved as the link.
+fn refuse_through_link(root: &Path, relative: &str) -> Result<(), String> {
+    let segments: Vec<&str> = relative
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    let Some((_, folders)) = segments.split_last() else {
+        return Ok(());
+    };
+    let mut at = root.to_path_buf();
+    for (depth, segment) in folders.iter().enumerate() {
+        at.push(segment);
+        let is_link =
+            fs::symlink_metadata(&at).is_ok_and(|metadata| metadata.file_type().is_symlink());
+        if is_link {
+            return Err(format!(
+                "path goes through a link: {}",
+                folders[..=depth].join("/")
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Refuses a move that would change what a link it carries points at (#680).
+///
+/// A rename takes a link as the link and a folder whole, links and all, but a
+/// relative link is read from where it is: `../Shelf` moved a folder deeper
+/// points at another `Shelf`, or at nothing. A link into the moved folder by an
+/// absolute path is left pointing at where the folder was. A link that still
+/// points at the same thing afterwards — at the same place, or into the folder
+/// as it moved — is fine. Nothing is followed, so a link loop costs nothing.
+fn refuse_retargeted_links(source: &Path, target: &Path) -> Result<(), String> {
+    let mut waiting = vec![source.to_path_buf()];
+    while let Some(at) = waiting.pop() {
+        let metadata =
+            fs::symlink_metadata(&at).map_err(|error| format!("cannot move: {error}"))?;
+        if metadata.file_type().is_symlink() {
+            let points_at = fs::read_link(&at).map_err(|error| format!("cannot move: {error}"))?;
+            if !keeps_pointing(source, target, &at, &points_at) {
+                let shown = at
+                    .strip_prefix(source.parent().unwrap_or(source))
+                    .unwrap_or(&at);
+                return Err(format!(
+                    "moving it would point a link elsewhere: {}",
+                    shown.display()
+                ));
+            }
+        } else if metadata.is_dir() {
+            for entry in fs::read_dir(&at).map_err(|error| format!("cannot move: {error}"))? {
+                waiting.push(
+                    entry
+                        .map_err(|error| format!("cannot move: {error}"))?
+                        .path(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether `link`, pointing at `points_at`, points at the same thing once
+/// `source` is moved to `target`: where it pointed, carried by the move if
+/// that was inside `source`.
+fn keeps_pointing(source: &Path, target: &Path, link: &Path, points_at: &Path) -> bool {
+    let moved_link = match link.strip_prefix(source) {
+        Ok(rest) if rest.as_os_str().is_empty() => target.to_path_buf(),
+        Ok(rest) => target.join(rest),
+        Err(_) => return true,
+    };
+    let read_from = |at: &Path| at.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+    let before = plain(&read_from(link).join(points_at));
+    let after = plain(&read_from(&moved_link).join(points_at));
+    let expected = match before.strip_prefix(source) {
+        Ok(rest) if rest.as_os_str().is_empty() => target.to_path_buf(),
+        Ok(rest) => target.join(rest),
+        Err(_) => before,
+    };
+    after == expected
+}
+
+/// `path` with `.` and `..` worked out by name alone, without asking the disk.
+fn plain(path: &Path) -> PathBuf {
+    let mut plain = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                plain.pop();
+            }
+            other => plain.push(other),
+        }
+    }
+    plain
 }
 
 /// Whether `path`'s own name is an entry of its folder, spelled exactly so.

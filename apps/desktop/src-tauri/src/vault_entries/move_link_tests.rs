@@ -144,7 +144,10 @@ fn refuses_to_move_a_folder_whose_relative_link_would_point_elsewhere() {
         "moving it would point a link elsewhere: Projects/shelf"
     );
     assert!(vault.path().join("Work/Projects/plan.md").is_file());
-    assert!(vault.path().join("Work/Projects/shelf/Plans/garden.md").is_file());
+    assert!(vault
+        .path()
+        .join("Work/Projects/shelf/Plans/garden.md")
+        .is_file());
     assert!(!vault.path().join("Projects").exists());
 }
 
@@ -171,7 +174,10 @@ fn moves_a_folder_whose_relative_link_still_points_at_the_same_place() {
 
     move_entry_at(vault.path(), "Work/Projects", "Play/Projects").unwrap();
 
-    assert!(vault.path().join("Play/Projects/shelf/Plans/garden.md").is_file());
+    assert!(vault
+        .path()
+        .join("Play/Projects/shelf/Plans/garden.md")
+        .is_file());
 }
 
 /// An absolute link into the folder would be left pointing at where it was.
@@ -189,15 +195,22 @@ fn refuses_to_move_a_folder_holding_an_absolute_link_into_itself() {
     assert!(v2.is_dir());
 }
 
+/// On a disk that ignores case, `../Projects/v2` still finds `projects/v2`,
+/// so a case-only rename is made even though the link names the old spelling.
+#[cfg(target_os = "macos")]
 #[test]
-fn a_case_only_rename_of_a_folder_holding_a_relative_link_is_made() {
+fn a_case_only_rename_of_a_folder_holding_a_link_by_its_name_is_made() {
     let vault = vault_with_shelf();
-    fs::create_dir_all(vault.path().join("Projects")).unwrap();
-    symlink("../Shelf", vault.path().join("Projects/shelf")).unwrap();
+    fs::create_dir_all(vault.path().join("Projects/v2")).unwrap();
+    fs::write(vault.path().join("Projects/v2/plan.md"), "mine").unwrap();
+    symlink("../Projects/v2", vault.path().join("Projects/latest")).unwrap();
 
     move_entry_at(vault.path(), "Projects", "projects").unwrap();
 
-    assert!(vault.path().join("projects/shelf/Plans/garden.md").is_file());
+    assert_eq!(
+        fs::read_to_string(vault.path().join("projects/latest/plan.md")).unwrap(),
+        "mine"
+    );
 }
 
 /// `Work/Alias/Plans` is `Shelf/Plans`: a move by the alias would move the
