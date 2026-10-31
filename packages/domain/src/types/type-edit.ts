@@ -124,12 +124,14 @@ function withProperty(
  */
 const otherKeys = (type: ObjectType, key: string | null): string[] => [
   ...type.properties.map((property) => property.key).filter((candidate) => candidate !== key),
-  ...(type.unreadKeys ?? []),
+  // As the parser reads them, trimmed: `" author "` is in the way of `author`.
+  ...(type.unreadKeys ?? []).map((unread) => unread.trim()),
 ];
 
 /** Refuses a key the file holds for a property the type cannot read: mending that is the file's. */
 function refuseUnreadKey(type: ObjectType, key: string): void {
-  const unread = (type.unreadKeys ?? []).find((taken) => taken.toLowerCase() === key.toLowerCase());
+  const wanted = key.trim().toLowerCase();
+  const unread = (type.unreadKeys ?? []).find((taken) => taken.trim().toLowerCase() === wanted);
   if (unread === undefined) return;
   throw new TypeEditError(
     `"${unread}" is already in the type file, as a property DFAI cannot read: mend or remove it there first`,

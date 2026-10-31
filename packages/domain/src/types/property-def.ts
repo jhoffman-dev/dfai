@@ -81,8 +81,9 @@ export interface ObjectType {
   readonly folder?: string;
   /**
    * The keys of the properties the file holds and the type leaves out, as
-   * `objectTypeProblems` names them: still the file's, so an edit must not
-   * give one to a property of its own (#683). Absent when there are none.
+   * the file spells them — `" author"` beside a read `author` is its own key
+   * to YAML: still the file's, so an edit must not give one to a property of
+   * its own (#683). Absent when there are none.
    */
   readonly unreadKeys?: readonly string[];
 }
@@ -122,7 +123,7 @@ export function parseObjectType(frontmatter: Record<string, unknown>): ObjectTyp
     for (const [key, raw] of Object.entries(declared)) {
       const property = parseProperty(key, raw);
       if (property !== null) properties.push(property);
-      else if (key.trim() !== '') unreadKeys.push(key.trim());
+      else if (key.trim() !== '') unreadKeys.push(key);
     }
   }
 
@@ -222,9 +223,15 @@ function propertyRefusal(key: string, raw: unknown): string | null {
   return null;
 }
 
-function parseProperty(key: string, raw: unknown): PropertyDef | null {
+/** Whether a `properties` entry reads as a property; a blank key, or one refused, does not. */
+export function readsAsProperty(key: string, raw: unknown): boolean {
   const trimmed = key.trim();
-  if (trimmed === '' || propertyRefusal(trimmed, raw) !== null) return null;
+  return trimmed !== '' && propertyRefusal(trimmed, raw) === null;
+}
+
+function parseProperty(key: string, raw: unknown): PropertyDef | null {
+  if (!readsAsProperty(key, raw)) return null;
+  const trimmed = key.trim();
 
   const { spec, kind, targets } = specOf(raw);
   const target = targets[0] ?? null;

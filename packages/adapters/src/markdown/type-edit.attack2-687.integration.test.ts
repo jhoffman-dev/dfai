@@ -196,31 +196,29 @@ describe('keys the file already holds twice, as the parser trims them (attack 2 
   // `" author"` and `author` are two keys to YAML, both in the file before any
   // edit. refuseWritingOver compares trimmed keys, so it takes the file's own
   // pair for a write over one of them: every edit of the properties is now
-  // refused, though the edit touches neither. Before d0f0da78 it saved.
-  it.fails(
-    'saves a move of another property when the file holds " author" and author',
-    async () => {
-      const text = lines(
-        '---',
-        'name: book',
-        'properties:',
-        '  " author": {kind: wizard}',
-        '  author: text',
-        '  rating: number',
-        '---',
-        '',
-      );
-      const { before, save } = await opened(text);
-      const written = await save(moveProperty(before, { key: 'rating', to: 0 }));
-      expect(written).toContain('  " author": {kind: wizard}\n');
-      expect(written).toMatch(/^ {2}author: text$/m);
-    },
-  );
+  // refused, though the edit touches neither. Before d0f0da78 it saved. Fixed in
+  // #683: the rebuilt map is held to raw keys, and the unread key is kept raw.
+  it('saves a move of another property when the file holds " author" and author', async () => {
+    const text = lines(
+      '---',
+      'name: book',
+      'properties:',
+      '  " author": {kind: wizard}',
+      '  author: text',
+      '  rating: number',
+      '---',
+      '',
+    );
+    const { before, save } = await opened(text);
+    const written = await save(moveProperty(before, { key: 'rating', to: 0 }));
+    expect(written).toContain('  " author": {kind: wizard}\n');
+    expect(written).toMatch(/^ {2}author: text$/m);
+  });
 
   // The same pair makes the type both read `author` and list it as unread: a
   // key the type holds and says it cannot read, which is a state the editor
   // should never be handed.
-  it.fails('never lists a key as unread that the type also reads', async () => {
+  it('never lists a key as unread that the type also reads', async () => {
     const text = lines(
       '---',
       'name: book',
@@ -238,7 +236,7 @@ describe('keys the file already holds twice, as the parser trims them (attack 2 
   // Two blank keys are skipped without a word (the file is not listed as
   // broken), and then refuseWritingOver refuses adding any property, saying
   // the file "already holds """.
-  it.fails('adds a property to a type file holding two blank keys it skips', async () => {
+  it('adds a property to a type file holding two blank keys it skips', async () => {
     const text = lines(
       '---',
       'name: book',
