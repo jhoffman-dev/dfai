@@ -79,9 +79,10 @@ jobs:
           retention-days: 14
 
   report:
-    # One open issue for a red streak: a second failure comments on it.
+    # One open issue for a red streak: a second failure comments on it. Only
+    # for `main`: a run started on a branch is someone's trial, not news.
     needs: e2e
-    if: failure()
+    if: failure() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
