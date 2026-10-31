@@ -269,8 +269,12 @@ test('moves and resizes with the keyboard alone', async ({ page }) => {
   await expect(moved).toHaveAttribute('aria-disabled', 'false');
   await expect(moved).toBeFocused();
 
+  // Each key waits for the one before it to be said: pressed back to back, a
+  // move and the Escape reached the grid before the pick-up had (Linux CI).
   await page.keyboard.press('Space');
+  await expect(dragAnnouncement(page)).toHaveText('Picked up Open work, 1 of 3, 7 columns wide.');
   await page.keyboard.press('ArrowRight');
+  await expect(dragAnnouncement(page)).not.toHaveText(/^Picked up/);
   await page.keyboard.press('Escape');
   await expect(dragAnnouncement(page)).toHaveText(
     'Cancelled. Open work stays 1 of 3, 7 columns wide.',

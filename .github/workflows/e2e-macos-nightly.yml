@@ -11,9 +11,6 @@ on:
   schedule:
     - cron: '17 9 * * *'
   workflow_dispatch:
-  # MEASURING PR #649 ONLY: removed before review.
-  push:
-    branches: [ci-speed-e2e]
 
 concurrency:
   group: e2e-macos-nightly
