@@ -146,3 +146,6 @@ fn a_note_beside_a_link_is_trashed() {
     result.unwrap();
     assert_eq!(asked.unwrap().file_name().unwrap(), "own.md");
 }
+
+#[path = "trash_link_attack_691_tests.rs"]
+mod attack_691;
