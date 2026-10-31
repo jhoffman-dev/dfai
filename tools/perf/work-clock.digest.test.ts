@@ -50,7 +50,9 @@ Object.defineProperty(window, 'crypto', {
   value: {
     subtle: {
       digest: () =>
-        new Promise<ArrayBuffer>((resolve) => pageTimer(() => resolve(new ArrayBuffer(32)), DIGEST_MS)),
+        new Promise<ArrayBuffer>((resolve) =>
+          pageTimer(() => resolve(new ArrayBuffer(32)), DIGEST_MS),
+        ),
     },
   },
 });
@@ -67,8 +69,9 @@ const host = () =>
 describe('the work clock, and a digest the page waits on (#243)', () => {
   it('hands a held layout report over only after the write that waited on a digest', async () => {
     const heard: string[] = [];
-    const observer = new (window as unknown as { ResizeObserver: typeof StandInObserver })
-      .ResizeObserver(() => heard.push('reported'));
+    const observer = new (
+      window as unknown as { ResizeObserver: typeof StandInObserver }
+    ).ResizeObserver(() => heard.push('reported'));
     clock().startCounting();
     // The tick's commit resized a row: its report is held.
     observer.reportOn(document.createElement('tr'));
