@@ -20,7 +20,7 @@ import { typeViewSelectSql } from './type-view.ts';
 const root = new URL('../../../../', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
 
-/** The index's tables and indexes, as index.rs makes them. */
+/** The index's tables and indexes, as the host makes them (`index_schema.sql`). */
 const SCHEMA = `
   CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
                       modified INTEGER NOT NULL, size INTEGER NOT NULL, progress INTEGER);
@@ -41,8 +41,8 @@ function planOf(sql: string, parameters: readonly unknown[] = []): string[] {
 }
 
 describe('one source for the fold index', () => {
-  it('index.rs makes the index the domain names, as the e2e host does', () => {
-    expect(read('apps/desktop/src-tauri/src/index.rs')).toContain(PROPS_TYPE_FOLD_INDEX);
+  it('the host makes the index the domain names, as the e2e host does', () => {
+    expect(read('apps/desktop/src-tauri/src/index_schema.sql')).toContain(PROPS_TYPE_FOLD_INDEX);
     // Made where the host makes the props table, not merely imported.
     expect(read('e2e/host.ts')).toMatch(
       /CREATE TABLE props \([^`]*?\);[^`]*?\$\{PROPS_TYPE_FOLD_INDEX\};`\);/,

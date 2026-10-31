@@ -1,164 +1,74 @@
 import { ApiError } from './api-error.ts';
-import { archiveListRoute, archiveRoute, unarchiveRoute } from './archive.ts';
-import { assistantMeetingsRoute, briefRoute, openLoopsRoute } from './assistant.ts';
-import { makeDashboardRoute, proposeTasksRoute } from './assistant-proposals.ts';
-import { atlasQueryRoute } from './atlas-query.ts';
-import { automationDryRunRoute, automationLogRoute, automationsRoute } from './automations.ts';
 import { API_ROUTES, type ApiRequest, type ApiRoute } from './contract.ts';
-import { artifactFileRoute, artifactThumbnailRoute, saveArtifactRoute } from './artifacts.ts';
-import { calendarRoute } from './calendar.ts';
-import { promoteLineRoute } from './checklists.ts';
-import { dayMeetingsRoute } from './day-meetings.ts';
-import { receiveCaptureRoute } from './captures.ts';
-import { captureRoute, dailyRoute } from './daily.ts';
-import { noteImageRoute } from './images.ts';
-import { meetingsRoute, receiveMeetingRoute } from './meetings.ts';
-import { inboxRoute, processInboxRoute } from './inbox.ts';
-import { clarifyInboxRoute } from './inbox-clarify.ts';
-import { todayRoute, weeklyReviewRoute } from './review.ts';
-import { createNoteRoute } from './notes-create.ts';
-import { duplicatesRoute, mergePeopleRoute } from './people.ts';
-import { exportNoteRoute } from './notes-export.ts';
-import { backlinksRoute, listNotes, readNoteRoute } from './notes-read.ts';
-import { appendRoute, replaceBodyRoute, setPropertiesRoute } from './notes-write.ts';
-import type { ApiRouterDeps } from './ports.ts';
-import { profileRoute } from './profile.ts';
-import { acceptProposalRoute, proposalsRoute, rejectProposalRoute } from './proposals.ts';
-import { queryRoute, sqlRoute } from './query.ts';
-import { quickAddRoute, quickAddTypesRoute } from './quick-add.ts';
-import { relatedRoute } from './related.ts';
-import { searchRoute } from './search.ts';
-import { scheduleTaskRoute } from './schedule-task.ts';
-import { granolaStatusRoute, pullGranolaRoute } from './granola.ts';
-import { chooseForTodayRoute } from './today-choose.ts';
-import { taskDoneRoute } from './task-done.ts';
-import { refreshSourceRoute } from './sources.ts';
-import { statusRoute } from './status.ts';
-import { renameTagRoute, taggedNotesRoute, tagsRoute } from './tags.ts';
-import { skillRoute, skillsRoute } from './skills.ts';
-import { templateRoute, templatesRoute } from './templates.ts';
-import { termsRoute } from './terms.ts';
-import { typeViewsRoute } from './type-views.ts';
-import { typesRoute } from './types.ts';
-import { addViewNoteRoute, moveCardRoute } from './view-cards.ts';
-import { runViewRoute, viewsRoute } from './views.ts';
-import type { RouteResult, VaultHandler } from './vault-request.ts';
+import { STATUS_HANDLERS } from './handlers/status.ts';
+import { NOTE_HANDLERS } from './handlers/notes.ts';
+import { SEARCH_HANDLERS } from './handlers/search.ts';
+import { TYPE_HANDLERS } from './handlers/types.ts';
+import { TEMPLATE_HANDLERS } from './handlers/templates.ts';
+import { SKILL_HANDLERS } from './handlers/skills.ts';
+import { VIEW_HANDLERS } from './handlers/views.ts';
+import { QUERY_HANDLERS } from './handlers/query.ts';
+import { CAPTURE_HANDLERS } from './handlers/capture.ts';
+import { PROFILE_HANDLERS } from './handlers/profile.ts';
+import { SOURCE_HANDLERS } from './handlers/sources.ts';
+import { ARTIFACT_HANDLERS } from './handlers/artifacts.ts';
+import { TAG_HANDLERS } from './handlers/tags.ts';
+import { PEOPLE_HANDLERS } from './handlers/people.ts';
+import { ARCHIVE_HANDLERS } from './handlers/archive.ts';
+import { INBOX_HANDLERS } from './handlers/inbox.ts';
+import { TASK_HANDLERS } from './handlers/tasks.ts';
+import { REVIEW_HANDLERS } from './handlers/review.ts';
+import { TODAY_HANDLERS } from './handlers/today.ts';
+import { ASSISTANT_HANDLERS } from './handlers/assistant.ts';
+import { AUTOMATION_HANDLERS } from './handlers/automations.ts';
+import { TERM_HANDLERS } from './handlers/terms.ts';
+import { MEETING_HANDLERS } from './handlers/meetings.ts';
+import { RECEIVED_CAPTURE_HANDLERS } from './handlers/captures.ts';
+import { CALENDAR_HANDLERS } from './handlers/calendar.ts';
+import { PROPOSAL_HANDLERS } from './handlers/proposals.ts';
+import { GRANOLA_HANDLERS } from './handlers/granola.ts';
+import type { RouteHandler, RouteKeyOf } from './handlers/route-handler.ts';
 
-/** `GET /v1/status` and so on: one key per route, distributed over the union. */
-type RouteKey = ApiRoute extends infer Route
-  ? Route extends ApiRoute
-    ? `${Route['method']} ${Route['path']}`
-    : never
-  : never;
-
-type RouteHandler =
-  | { readonly needsVault: false; readonly handle: (deps: ApiRouterDeps) => Promise<RouteResult> }
-  | {
-      readonly needsVault: true;
-      readonly handle: VaultHandler;
-      /**
-       * Whether an answer is a write worth a line in the Activity log (U-28):
-       * absent for a route that only reads, even one asked with POST.
-       */
-      readonly wrote?: (answer: RouteResult) => boolean;
-    };
-
-const vaultRoute = (handle: VaultHandler): RouteHandler => ({ needsVault: true, handle });
-
-/** A route that writes to the vault: every answer it gives is a write, unless `wrote` says which. */
-const vaultWrite = (
-  handle: VaultHandler,
-  wrote: (answer: RouteResult) => boolean = () => true,
-): RouteHandler => ({ needsVault: true, handle, wrote });
-
-/** An upload's last chunk, or a whole image, is answered 201; the chunks before it are not the write. */
-const created = (answer: RouteResult) => answer.status === 201;
-
-/** A card that left a group, not one asked into the group it was already in. */
-const moved = (answer: RouteResult) => 'moved' in answer.body && answer.body.moved;
-
-/** A rename or a merge, not the preview a `dryRun` (or no `confirm`) asks for. */
-const renamed = (answer: RouteResult) => 'report' in answer.body;
+/** `GET /v1/status` and so on: one key per route. */
+type RouteKey = RouteKeyOf<ApiRoute>;
 
 /**
- * Every route in the contract, and what answers it. Keyed by the contract's own
- * routes, so a route added there without a handler here is a type error.
+ * Every route in the contract, and what answers it. Each area keeps its own
+ * table (`./handlers/<area>.ts`), keyed by its own routes; this only composes
+ * them, keyed by the contract's, so an area left out here is a type error.
  */
 const HANDLERS: Readonly<Record<RouteKey, RouteHandler>> = {
-  'GET /v1/status': { needsVault: false, handle: statusRoute },
-  'GET /v1/notes': vaultRoute(listNotes),
-  'POST /v1/notes': vaultWrite(createNoteRoute),
-  'GET /v1/notes/{path}': vaultRoute(readNoteRoute),
-  'PATCH /v1/notes/{path}/properties': vaultWrite(setPropertiesRoute),
-  'POST /v1/notes/{path}/append': vaultWrite(appendRoute),
-  'PUT /v1/notes/{path}/body': vaultWrite(replaceBodyRoute),
-  'GET /v1/notes/{path}/backlinks': vaultRoute(backlinksRoute),
-  'GET /v1/notes/{path}/related': vaultRoute(relatedRoute),
-  'POST /v1/notes/{path}/promote': vaultWrite(promoteLineRoute),
-  'GET /v1/notes/{path}/export': vaultRoute(exportNoteRoute),
-  'PUT /v1/notes/{path}/images/{name}': vaultWrite(noteImageRoute, created),
-  'GET /v1/search': vaultRoute(searchRoute),
-  'GET /v1/types': vaultRoute(typesRoute),
-  'GET /v1/types/{name}/views': vaultRoute(typeViewsRoute),
-  'GET /v1/templates': vaultRoute(templatesRoute),
-  'GET /v1/templates/{name}': vaultRoute(templateRoute),
-  'GET /v1/skills': vaultRoute(skillsRoute),
-  'GET /v1/skills/{name}': vaultRoute(skillRoute),
-  'GET /v1/views': vaultRoute(viewsRoute),
-  'POST /v1/views/{path}/run': vaultRoute(runViewRoute),
-  'POST /v1/views/{path}/calendar': vaultRoute(calendarRoute),
-  'POST /v1/views/{path}/move': vaultWrite(moveCardRoute, moved),
-  'POST /v1/views/{path}/notes': vaultWrite(addViewNoteRoute),
-  'POST /v1/query': vaultRoute(queryRoute),
-  'POST /v1/sql': vaultRoute(sqlRoute),
-  'POST /v1/atlas-query': vaultRoute(atlasQueryRoute),
-  'POST /v1/daily': vaultWrite(dailyRoute, created),
-  'POST /v1/capture': vaultWrite(captureRoute),
-  'GET /v1/quick-add': vaultRoute(quickAddTypesRoute),
-  'POST /v1/quick-add': vaultWrite(quickAddRoute),
-  'GET /v1/profile': vaultRoute(profileRoute),
-  'POST /v1/sources/{path}/refresh': vaultRoute(refreshSourceRoute),
-  'POST /v1/artifacts': vaultWrite(saveArtifactRoute),
-  'PUT /v1/artifacts/{path}/files/{name}': vaultRoute(artifactFileRoute),
-  'POST /v1/artifacts/{path}/thumbnail': vaultRoute(artifactThumbnailRoute),
-  'GET /v1/tags': vaultRoute(tagsRoute),
-  'GET /v1/tags/{tag}/notes': vaultRoute(taggedNotesRoute),
-  'POST /v1/tags/{tag}/rename': vaultWrite(renameTagRoute, renamed),
-  'GET /v1/people/duplicates': vaultRoute(duplicatesRoute),
-  'POST /v1/people/merge': vaultWrite(mergePeopleRoute, renamed),
-  'GET /v1/archive': vaultRoute(archiveListRoute),
-  'POST /v1/archive': vaultWrite(archiveRoute),
-  'POST /v1/unarchive': vaultWrite(unarchiveRoute),
-  'GET /v1/inbox': vaultRoute(inboxRoute),
-  'POST /v1/inbox/process': vaultWrite(processInboxRoute),
-  'POST /v1/inbox/clarify': vaultWrite(clarifyInboxRoute),
-  'POST /v1/tasks/schedule': vaultWrite(scheduleTaskRoute),
-  'GET /v1/review/weekly': vaultRoute(weeklyReviewRoute),
-  'GET /v1/assistant/brief': vaultRoute(briefRoute),
-  'GET /v1/assistant/open-loops': vaultRoute(openLoopsRoute),
-  'GET /v1/assistant/meetings': vaultRoute(assistantMeetingsRoute),
-  'POST /v1/assistant/propose-tasks': vaultWrite(proposeTasksRoute),
-  'POST /v1/assistant/make-dashboard': vaultWrite(makeDashboardRoute, (answer) =>
-    'proposedSpec' in answer.body ? answer.body.proposedSpec.proposal !== null : false,
-  ),
-  'GET /v1/today': vaultRoute(todayRoute),
-  'POST /v1/tasks/done': vaultWrite(taskDoneRoute),
-  'POST /v1/today/choose': vaultWrite(chooseForTodayRoute),
-  'GET /v1/automations': vaultRoute(automationsRoute),
-  'GET /v1/automations/{id}/log': vaultRoute(automationLogRoute),
-  'POST /v1/automations/{id}/dry-run': vaultRoute(automationDryRunRoute),
-  'GET /v1/terms': vaultRoute(termsRoute),
-  'GET /v1/meetings': vaultRoute(meetingsRoute),
-  'POST /v1/meetings': vaultWrite(receiveMeetingRoute, created),
-  'POST /v1/captures': vaultWrite(receiveCaptureRoute, created),
-  'GET /v1/calendar/meetings': vaultRoute(dayMeetingsRoute),
-  'GET /v1/proposals': vaultRoute(proposalsRoute),
-  'POST /v1/proposals/{path}/accept': vaultWrite(acceptProposalRoute),
-  'POST /v1/proposals/{path}/reject': vaultWrite(rejectProposalRoute),
-  'GET /v1/granola': vaultRoute(granolaStatusRoute),
-  // The puller says what it wrote in the vault's Activity itself, as a source refresh does.
-  'POST /v1/granola/pull': vaultRoute(pullGranolaRoute),
+  ...STATUS_HANDLERS,
+  ...NOTE_HANDLERS,
+  ...SEARCH_HANDLERS,
+  ...TYPE_HANDLERS,
+  ...TEMPLATE_HANDLERS,
+  ...SKILL_HANDLERS,
+  ...VIEW_HANDLERS,
+  ...QUERY_HANDLERS,
+  ...CAPTURE_HANDLERS,
+  ...PROFILE_HANDLERS,
+  ...SOURCE_HANDLERS,
+  ...ARTIFACT_HANDLERS,
+  ...TAG_HANDLERS,
+  ...PEOPLE_HANDLERS,
+  ...ARCHIVE_HANDLERS,
+  ...INBOX_HANDLERS,
+  ...TASK_HANDLERS,
+  ...REVIEW_HANDLERS,
+  ...TODAY_HANDLERS,
+  ...ASSISTANT_HANDLERS,
+  ...AUTOMATION_HANDLERS,
+  ...TERM_HANDLERS,
+  ...MEETING_HANDLERS,
+  ...RECEIVED_CAPTURE_HANDLERS,
+  ...CALENDAR_HANDLERS,
+  ...PROPOSAL_HANDLERS,
+  ...GRANOLA_HANDLERS,
 };
+
+/** Every route a handler answers, as `METHOD /path`: for the test that holds them to the contract. */
+export const HANDLED_ROUTES: readonly string[] = Object.keys(HANDLERS);
 
 /** The segments a route pattern leaves open, and what a request filled them with. */
 export interface RouteParams {

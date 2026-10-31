@@ -55,6 +55,8 @@ const sqliteSupport = [
   'node-sqlite',
   'sqlite',
   'sqlite-index',
+  'index-schema',
+  'index-schema-guard',
   'query-index',
   'fts-search',
   'tag-index',
