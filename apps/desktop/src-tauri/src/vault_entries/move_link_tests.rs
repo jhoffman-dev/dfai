@@ -322,3 +322,6 @@ fn the_link_check_passes_over_what_is_gone_and_names_what_it_cannot_read() {
 
 #[path = "move_link_attack_684_tests.rs"]
 mod attack_684;
+
+#[path = "move_link_attack2_684_tests.rs"]
+mod attack2_684;
