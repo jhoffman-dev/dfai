@@ -248,6 +248,16 @@ test('a note dragged to the edge scrolls the sidebar and drops into a folder', a
 
   const held = treeRow(page, `Note ${NOTES}`);
   await wheelTo(page, held, 400);
+  await page.evaluate(() => {
+    const said: string[] = [];
+    Object.assign(window, { dragSaid: said });
+    new MutationObserver(() => {
+      const now = [...document.querySelectorAll('[id^="DndLiveRegion"]')]
+        .map((region) => region.textContent ?? '')
+        .join('');
+      if (now !== '' && said.at(-1) !== now) said.push(now);
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
   const box = await held.boundingBox();
   const area = await scroller(page).boundingBox();
   if (box === null || area === null) throw new Error('nothing to drag');
@@ -289,7 +299,23 @@ test('a note dragged to the edge scrolls the sidebar and drops into a folder', a
   }).toPass({ intervals: [50], timeout: 15_000 });
   await page.mouse.up();
 
-  await expect.poll(() => vault.exists(`Projects/Note ${NOTES}.md`)).toBe(true);
+  // PROBE (PR #649): what the drag said, and where things were, when this misses on Linux.
+  try {
+    await expect.poll(() => vault.exists(`Projects/Note ${NOTES}.md`)).toBe(true);
+  } catch (cause) {
+    const seen = await page.evaluate(() => ({
+      said: (window as unknown as { dragSaid?: string[] }).dragSaid ?? [],
+      scrollTop: document.querySelector('.sidebar__scroll')?.scrollTop,
+    }));
+    throw new Error(
+      [
+        String(cause),
+        `said: ${seen.said.join(' | ')}`,
+        `scrollTop: ${seen.scrollTop}; Projects: ${JSON.stringify(await folder.boundingBox())}`,
+      ].join('\n'),
+      { cause },
+    );
+  }
 });
 
 test('a carried row is drawn over the work panel, not under it', async ({ page }) => {
@@ -297,6 +323,10 @@ test('a carried row is drawn over the work panel, not under it', async ({ page }
   await openVault(page);
   const held = treeRow(page, 'Note 30');
   await wheelTo(page, held, 400);
+  // Picked up from the middle of the sidebar, clear of the scroll zones at its
+  // edges: where the wheel leaves the row is the engine's (on Linux, in the
+  // bottom zone), and a drag begun there scrolls the sidebar under it.
+  await held.evaluate((row) => row.scrollIntoView({ block: 'center' }));
   const box = await held.boundingBox();
   const sidebar = await nav(page).boundingBox();
   if (box === null || sidebar === null) throw new Error('nothing to drag');
