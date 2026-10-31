@@ -153,6 +153,28 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('button', { name: 'New type' })).toBeNull();
   });
 
+  it('lists a type file that cannot be read under Types, with why, and opens the file (#683)', async () => {
+    const onOpen = vi.fn();
+    const recipe = createVaultPath('.atlas/types/Recipe.md');
+    const problem = 'Its frontmatter is not valid YAML: Unexpected end of flow sequence';
+    show({ onOpen, brokenTypes: [{ path: recipe, name: 'Recipe', problem }] });
+    const types = region('Types');
+    // The readable type is still listed beside it.
+    expect(within(types).getByRole('button', { name: 'Task, 62 notes' })).toBeDefined();
+    const row = within(types).getByRole('button', {
+      name: 'Recipe cannot be read: .atlas/types/Recipe.md',
+    });
+    expect(within(types).getByText(problem)).toBeDefined();
+    await userEvent.click(row);
+    expect(onOpen).toHaveBeenCalledWith(recipe, 'here');
+  });
+
+  it('lists a broken type file even when no type can be read', () => {
+    const recipe = createVaultPath('.atlas/types/Recipe.md');
+    show({ types: [], brokenTypes: [{ path: recipe, name: 'Recipe', problem: 'Bad YAML' }] });
+    expect(within(region('Types')).getByText('Bad YAML')).toBeDefined();
+  });
+
   it('opens the type when its row is clicked', async () => {
     const onOpenType = vi.fn();
     show({ onOpenType });
