@@ -71,9 +71,12 @@ const movedByResizeObserver = (page: Page) =>
     document.addEventListener('focusin', (event) => {
       const control = event.target as HTMLElement;
       if (!control.matches(selector)) return;
+      // Moved on the answer its focus asked for, whatever has the focus as it
+      // comes: on Linux CI the engine once called back while the focus was off
+      // the control for a moment, and a stand-in that checked for it moved nothing.
       const watch = new ResizeObserver(() => {
         watch.disconnect();
-        if (document.activeElement === control) control.style.transform = 'translateY(3000px)';
+        control.style.transform = 'translateY(3000px)';
       });
       watch.observe(control);
     });
