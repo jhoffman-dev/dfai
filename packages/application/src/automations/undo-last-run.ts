@@ -28,6 +28,7 @@ import {
 import { appendForRun, reported } from './automation-activity.ts';
 import { readRuleLog } from './automation-log.ts';
 import { archiveRecord, type AutomationPorts, type AutomationRun } from './run-automation.ts';
+import { VaultAccessError } from '../vault/ports.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import { guardedFs, stillInVault } from './vault-guard.ts';
 
@@ -255,7 +256,15 @@ async function takeBackSummaries({
       continue;
     }
     for (const path of trashing) {
-      await ports.fs.trashEntry({ path });
+      // One the host will not trash — reached through a link (#685), say — is
+      // left and named, so the meeting's write already done is still logged.
+      try {
+        await ports.fs.trashEntry({ path });
+      } catch (cause) {
+        if (!(cause instanceof VaultAccessError)) throw cause;
+        left.push({ path, reason: cause.message });
+        continue;
+      }
       did.push({ kind: 'trashed', path });
     }
     if (summary !== null) did.push({ kind: 'unsummarised', path: meeting });
