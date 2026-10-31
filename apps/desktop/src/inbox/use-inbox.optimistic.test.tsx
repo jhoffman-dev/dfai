@@ -330,6 +330,8 @@ describe('useInbox — U takes the last back and says where it is listed (#109)'
       });
     });
     await waitFor(() => expect(files.get(CALL)).toBe(CAPTURED));
+    // The index catches up with the undo, and still lists only the other row.
+    refresh([PAY], 'ready:3');
     await waitFor(() => expect(back).toBe(CALL));
     expect(shown()).toEqual([PAY]);
   });
