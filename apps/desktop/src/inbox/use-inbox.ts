@@ -373,11 +373,14 @@ export function useInbox(options: InboxOptions) {
    * offer is the one before it, which is not the one asked for.
    */
   const takeBackLast = useCallback(async (): Promise<VaultPath | null> => {
+    const asked = vaultNow.current;
     await writes.drained();
     const taken = held.store.getState().said?.last ?? null;
     if (taken === null) return null;
     const back: ReturningRow = { path: taken.undo.from, settled: null };
     if (!(await undoClarification(taken, back))) return null;
+    // Another vault opened while it was written: no row here is the one taken back.
+    if (vaultNow.current !== asked) return null;
     // Not at once: reads begun before the index caught up still lack the row,
     // and the page gives up on a row after a few lists without it (#109).
     await listedAgain(back);
