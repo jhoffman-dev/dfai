@@ -14,7 +14,7 @@ import {
   type ApiRouterDeps,
 } from '@dfai/application';
 import { remarkMarkdown, tauriApiBridge } from '@dfai/adapters';
-import { useLocalApi } from './use-local-api.ts';
+import { useLocalApi } from '@dfai/shell';
 
 /**
  * Issue #158: `main.tsx` renders the app in React StrictMode, which mounts

@@ -26,7 +26,8 @@ function readerChunks(): string[] {
     readFileSync(join('apps', 'desktop', 'dist', '.vite', 'manifest.json'), 'utf8'),
   ) as Record<string, ManifestChunk & { imports?: string[] }>;
   const parts = Object.values(manifest).filter(
-    (chunk) => chunk.isDynamicEntry === true && chunk.src?.startsWith('src/reader/') === true,
+    (chunk) =>
+      chunk.isDynamicEntry === true && chunk.src?.includes('packages/shell/src/reader/') === true,
   );
   const imported = parts.flatMap((part) => part.imports ?? []).map((key) => manifest[key]);
   const files = [...parts, ...imported]

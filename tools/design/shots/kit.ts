@@ -14,7 +14,7 @@ import { createVault, sidebarSection, type FakeVault } from '../../../e2e/host.t
 
 export const OUT = join(import.meta.dirname, '..', '..', '..', 'design', 'out', 'shots');
 export const VAULT = join(import.meta.dirname, '..', '..', '..', 'vault');
-/** Where the theme choice lives — `apps/desktop/src/theme/browser-theme-store.ts`. */
+/** Where the theme choice lives — `packages/shell/src/theme/browser-theme-store.ts`. */
 export const THEME_KEY = 'atlas.theme';
 /** vault/tasks/A15-03.md, found by a word only its body has. */
 export const NOTE_WORDS = 'compileViewQuery';

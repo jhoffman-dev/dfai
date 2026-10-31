@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "pnpm --filter @dfai/desktop dev",
     "tauri:dev": "pnpm --filter @dfai/desktop tauri:dev",
-    "build": "pnpm --filter @dfai/desktop --filter @dfai/mcp build",
+    "build": "pnpm --filter @dfai/desktop --filter @dfai/web --filter @dfai/mcp build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
