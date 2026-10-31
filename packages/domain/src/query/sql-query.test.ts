@@ -61,7 +61,7 @@ describe('the index’s schema', () => {
   function index() {
     const database = new DatabaseSync(':memory:');
     database.exec(`
-      CREATE TABLE files (path TEXT, title TEXT);
+      CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL);
       CREATE VIEW v_task AS SELECT path, title, 'x' AS status FROM files;
       CREATE VIRTUAL TABLE fts USING fts5(path, title, body, tokenize = 'unicode61 remove_diacritics 2');
     `);

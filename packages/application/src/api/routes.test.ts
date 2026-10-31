@@ -5,6 +5,7 @@
  * These hold the composition to the contract, whatever order it is in.
  */
 
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { API_ROUTES } from './contract.ts';
 import { HANDLED_ROUTES, matchRoute } from './routes.ts';
@@ -25,6 +26,50 @@ function overlap(
     left.every((segment, at) => segment === right[at] || isParam(segment) || isParam(right[at]!))
   );
 }
+
+/** Every `<area>.ts` in one of the api's folders, by area, with the exports named `*<suffix>`. */
+async function areas(folder: string, suffix: string, skip: string) {
+  const names = readdirSync(new URL(folder, import.meta.url)).filter(
+    (name) => name.endsWith('.ts') && name !== skip,
+  );
+  return Promise.all(
+    names.map(async (name) => {
+      const module = (await import(new URL(`${folder}/${name}`, import.meta.url).href)) as Record<
+        string,
+        unknown
+      >;
+      const exported = Object.entries(module).filter(([key]) => key.endsWith(suffix));
+      return { area: name, exported: exported.map(([, value]) => value) };
+    }),
+  );
+}
+
+describe('every area is composed', () => {
+  it('serves every route each contract area lists, and answers every area with a handler table', async () => {
+    const served = new Set(API_ROUTES.map(keyOf));
+    const contract = await areas('./contract', '_ROUTES', 'wire.ts');
+    const unserved = contract.flatMap(({ area, exported }) =>
+      (exported as { method: string; path: string }[][])
+        .flat()
+        .filter((route) => !served.has(keyOf(route)))
+        .map((route) => `${area}: ${keyOf(route)}`),
+    );
+    expect(unserved).toEqual([]);
+    expect(contract.filter(({ exported }) => exported.length === 0)).toEqual([]);
+
+    const handlers = await areas('./handlers', '_HANDLERS', 'route-handler.ts');
+    expect(handlers.map(({ area }) => area).sort()).toEqual(
+      contract.map(({ area }) => area).sort(),
+    );
+    const unhandled = handlers.flatMap(({ area, exported }) =>
+      exported
+        .flatMap((table) => Object.keys(table as object))
+        .filter((key) => !HANDLED_ROUTES.includes(key))
+        .map((key) => `${area}: ${key}`),
+    );
+    expect(unhandled).toEqual([]);
+  });
+});
 
 describe('the composed route table', () => {
   it('answers exactly the routes the contract lists, each once', () => {
