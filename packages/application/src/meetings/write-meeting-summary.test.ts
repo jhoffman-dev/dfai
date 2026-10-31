@@ -248,6 +248,22 @@ describe('undoMeetingSummary', () => {
     expect(at.vault.log.filter((line) => line === `write ${MEETING}`)).toHaveLength(writes + 1);
   });
 
+  it('takes out the links of only the tasks the Trash took (#685)', async () => {
+    const at = setUp();
+    const other = createVaultPath('Tasks/Book the room.md');
+    const notePaths = [MEETING, TASK, other];
+    const { digest } = await at.write({ tasks: [TASK, other], notePaths });
+    expect(at.properties()['tasks']).toEqual(['[[Send the file]]', '[[Book the room]]']);
+    await undoMeetingSummary(at.vault.ports, {
+      meeting: MEETING,
+      summary: { digest: digest! },
+      trashing: [TASK, other],
+      trash: async () => [other],
+      notePaths,
+    });
+    expect(at.properties()['tasks']).toEqual(['[[Send the file]]']);
+  });
+
   it('asks the Trash for nothing when the meeting refuses', async () => {
     const at = setUp();
     const { digest } = await at.write();

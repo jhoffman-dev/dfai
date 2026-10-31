@@ -624,6 +624,7 @@ describe('Undo last run', () => {
     expect(at.vault.files.has(task!)).toBe(false);
     expect(undone?.done).toEqual([{ kind: 'trashed', path: task }]);
     expect(undone?.left.map(({ path }) => path)).toContain(SYNC);
+    expect(undone?.left.map(({ path }) => path)).not.toContain(task);
     expect(at.body()).toContain('Typed meanwhile.');
   });
 
