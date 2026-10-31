@@ -31,9 +31,16 @@ function Text() {
   return <EditorContent editor={editor} />;
 }
 
-function peek(onClose: () => void) {
+function peek(onClose: () => void, covered?: () => boolean) {
   render(
-    <PeekDialog title="Plan" position={null} status="Saved" onStep={vi.fn()} onClose={onClose}>
+    <PeekDialog
+      title="Plan"
+      position={null}
+      status="Saved"
+      onStep={vi.fn()}
+      onClose={onClose}
+      {...(covered !== undefined && { covered })}
+    >
       <Text />
     </PeekDialog>,
   );
@@ -66,6 +73,17 @@ describe('PeekDialog — Esc from the text', () => {
       },
       { capture: true },
     );
+    text.focus();
+    fireEvent.keyDown(text, escape);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('stays up for an Escape pressed while something is open above it, wherever the focus is', async () => {
+    // The search palette over the peek, its field not yet focused: the Escape is the palette's.
+    const onClose = vi.fn();
+    peek(onClose, () => true);
+    await waitFor(() => expect(editorElement()).not.toBeNull());
+    const text = editorElement() as HTMLElement;
     text.focus();
     fireEvent.keyDown(text, escape);
     expect(onClose).not.toHaveBeenCalled();
