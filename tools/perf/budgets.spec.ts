@@ -175,6 +175,12 @@ interface Pass {
 }
 
 const counted = new Map<string, Work>();
+let lapAt = Date.now();
+const lap = (label: string) => {
+  const now = Date.now();
+  process.stdout.write(`[perf-lap] ${((now - lapAt) / 1000).toFixed(1)}s ${label}\n`);
+  lapAt = now;
+};
 const timed = new Map<string, { inputToReady: number; longestFrame: number }>();
 
 test('the app does no more work than its budget', async ({ browser }) => {
@@ -326,8 +332,10 @@ async function countedPass(
   into: Map<string, Work>,
   fixture: PassFixture = MAIN,
 ): Promise<Pass> {
+  lap('before counted pass');
   const page = await newPage(browser);
   const vault = await fixture.write();
+  lap('counted fixture written');
   // And with the watcher's echo of every write, as the real host sends it.
   await installHost(page, vault, { echoWrites: true });
   await page.addInitScript(installRenderCounter);
@@ -350,6 +358,7 @@ async function countedPass(
         await runUntil(page, { ready, arg: arg as never, untrackedMs: untrackedMs ?? 0 });
       }
       into.set(action, await stopCounting(page));
+      lap(`counted ${action}`);
     },
     async idle(action) {
       await restThePointer(page);
@@ -420,8 +429,10 @@ const OPEN_THE_VAULT = (page: Page, indexed: RegExp = EVERY_NOTE_INDEXED): Phase
 /** A fresh page on a fixture in real time, with only its date fixed, for the times. */
 async function timedPass(browser: Browser, fixture: PassFixture = MAIN): Promise<Pass> {
   const page = await newPage(browser);
+  lap('before timed pass');
   await page.addInitScript(installWorkClock, clockAt({ virtual: false }));
   const vault = await fixture.write();
+  lap('timed fixture written');
   await installHost(page, vault, { echoWrites: true });
   await installProbe(page);
   await page.goto('/');
@@ -440,6 +451,7 @@ async function timedPass(browser: Browser, fixture: PassFixture = MAIN): Promise
       longestFrame = Math.max(longestFrame, run.longestFrame);
     }
     timed.set(action, { inputToReady, longestFrame });
+    lap(`timed ${action}`);
   };
   if (fixture.openIsBudgeted) await time('Open a vault', [OPEN_THE_VAULT(page)]);
   else {
