@@ -1,6 +1,8 @@
 import {
   createVaultPath,
   noteTitle,
+  objectTypeProblems,
+  opensUnclosedFrontmatter,
   parseObjectType,
   splitFrontmatter,
   TYPES_DIRECTORY,
@@ -18,15 +20,18 @@ export interface DefinedType extends ObjectType {
   readonly path: VaultPath;
 }
 
-/** A type file whose frontmatter cannot be read, and why: listed where types are managed (#683). */
+/**
+ * A type file that does not read whole, and why: listed where types are
+ * managed (#683). It may still have loaded, without what it says is wrong.
+ */
 export interface BrokenType {
   readonly path: VaultPath;
-  /** The file's name without `.md`: the block that would name the type cannot be read. */
+  /** The file's name without `.md`: the block that would name the type may not read. */
   readonly name: string;
   readonly problem: string;
 }
 
-/** The vault's types, and the type files that cannot be read. */
+/** The vault's types, and the type files that do not read whole. */
 export interface TypeListing {
   readonly types: readonly DefinedType[];
   readonly broken: readonly BrokenType[];
@@ -48,7 +53,8 @@ export async function loadObjectTypes({
 }): Promise<DefinedType[]> {
   const types: DefinedType[] = [];
   for (const file of await readTypeFiles(fs)) {
-    const type = definedType(file, blockOf(file), markdown);
+    const frontmatter = propertiesOf(blockOf(file), markdown);
+    const type = frontmatter === null ? null : definedType(file, frontmatter);
     if (type !== null) types.push(type);
   }
   return types.sort(byName);
@@ -56,8 +62,9 @@ export async function loadObjectTypes({
 
 /**
  * The types, as `loadObjectTypes` reads them, and beside them every type file
- * whose frontmatter is not readable at all, with the parser's reason. A file
- * with no frontmatter, or readable frontmatter that is no type, is neither.
+ * that does not read whole, with why: frontmatter that is not YAML or never
+ * closes, a type with no name, a property it leaves out. A file with no
+ * frontmatter, or frontmatter with none of a type's keys, is neither.
  */
 export async function loadTypeListing({
   fs,
@@ -69,18 +76,38 @@ export async function loadTypeListing({
   const types: DefinedType[] = [];
   const broken: BrokenType[] = [];
   for (const file of await readTypeFiles(fs)) {
-    const block = blockOf(file);
-    // An unreadable block reads as no properties, so it would be skipped as no
-    // type: in the types folder it most likely is one, gone without a word (#683).
-    const problem = markdown.frontmatterProblem(block);
-    if (problem !== null) {
-      broken.push(unreadableType(file.path, problem));
-      continue;
-    }
-    const type = definedType(file, block, markdown);
+    const { type, problem } = readTypeFile(file, markdown);
     if (type !== null) types.push(type);
+    if (problem !== null) broken.push(brokenType(file.path, problem));
   }
   return { types: types.sort(byName), broken: broken.sort(byName) };
+}
+
+/** One type file: the type it defines, if any, and what keeps it from reading whole. */
+function readTypeFile(
+  file: NoteFile,
+  markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>,
+): { type: DefinedType | null; problem: string | null } {
+  // An unclosed or unreadable block reads as no properties, so it would be skipped
+  // as no type: in the types folder it most likely is one, gone without a word (#683).
+  if (opensUnclosedFrontmatter(file.text)) {
+    return {
+      type: null,
+      problem: 'Its frontmatter has no closing --- line, so none of it is read.',
+    };
+  }
+  const block = blockOf(file);
+  const unreadable = markdown.frontmatterProblem(block);
+  if (unreadable !== null) {
+    return { type: null, problem: `Its frontmatter is not valid YAML: ${unreadable}` };
+  }
+  const frontmatter = propertiesOf(block, markdown);
+  if (frontmatter === null) return { type: null, problem: null };
+  const problems = objectTypeProblems(frontmatter);
+  return {
+    type: definedType(file, frontmatter),
+    problem: problems.length === 0 ? null : problems.join(' '),
+  };
 }
 
 async function readTypeFiles(fs: VaultFsPort): Promise<readonly NoteFile[]> {
@@ -101,27 +128,30 @@ function blockOf(file: NoteFile): string | null {
   return splitFrontmatter(file.text).frontmatter;
 }
 
-function definedType(
-  file: NoteFile,
+function propertiesOf(
   block: string | null,
   markdown: Pick<MarkdownPort, 'frontmatterProperties'>,
-): DefinedType | null {
+): Record<string, unknown> | null {
   try {
-    const type = parseObjectType(markdown.frontmatterProperties(block));
-    return { ...type, path: createVaultPath(file.path) };
+    return markdown.frontmatterProperties(block);
+  } catch {
+    // Skipped: a block the port cannot read costs that one type, nothing else.
+    return null;
+  }
+}
+
+function definedType(file: NoteFile, frontmatter: Record<string, unknown>): DefinedType | null {
+  try {
+    return { ...parseObjectType(frontmatter), path: createVaultPath(file.path) };
   } catch {
     // Skipped: a broken definition costs that one type, nothing else.
     return null;
   }
 }
 
-function unreadableType(path: string, problem: string): BrokenType {
+function brokenType(path: string, problem: string): BrokenType {
   const vaultPath = createVaultPath(path);
-  return {
-    path: vaultPath,
-    name: noteTitle(vaultPath),
-    problem: `Its frontmatter is not valid YAML: ${problem}`,
-  };
+  return { path: vaultPath, name: noteTitle(vaultPath), problem };
 }
 
 function byName(left: { readonly name: string }, right: { readonly name: string }): number {

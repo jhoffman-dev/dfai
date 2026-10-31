@@ -139,19 +139,61 @@ function parseFolder(frontmatter: Record<string, unknown>): string | null {
   return typeof folder === 'string' ? folder.trim() : null;
 }
 
-function parseProperty(key: string, raw: unknown): PropertyDef | null {
-  const trimmed = key.trim();
-  if (trimmed === '') return null;
+/** The keys only a type file writes: frontmatter with none of them is no type. */
+const TYPE_KEYS = ['name', 'label', 'properties', 'icon', 'folder'] as const;
 
+/**
+ * What keeps a type file's frontmatter from reading whole, in words, each
+ * for the person to mend (#683): no name, so no type at all, or a property
+ * `parseObjectType` leaves out. Empty when it reads as written, and for
+ * frontmatter that holds none of a type's keys — that is no type.
+ */
+export function objectTypeProblems(frontmatter: Record<string, unknown>): readonly string[] {
+  if (!TYPE_KEYS.some((key) => Object.hasOwn(frontmatter, key))) return [];
+  const problems: string[] = [];
+  if (String(frontmatter['name'] ?? '').trim() === '') {
+    problems.push('It has no name, and a type needs one.');
+  }
+  const declared = frontmatter['properties'];
+  if (isRecord(declared)) {
+    for (const [key, raw] of Object.entries(declared)) {
+      const refused = propertyRefusal(key.trim(), raw);
+      if (refused !== null) problems.push(refused);
+    }
+  } else if (declared !== undefined && declared !== null) {
+    problems.push('Its properties are not written as key: kind.');
+  }
+  return problems;
+}
+
+/** A property's spec, its kind and what it points at, as written. */
+function specOf(raw: unknown) {
   // `status: select` is shorthand for `status: { kind: select }`.
   const spec = isRecord(raw) ? raw : { kind: raw };
   const kind = String(spec['kind'] ?? 'text') as PropertyKind;
-  if (!PROPERTY_KINDS.includes(kind)) return null;
+  return { spec, kind, targets: parseTargets(spec['target']) };
+}
 
-  const targets = parseTargets(spec['target']);
-  const target = targets[0] ?? null;
+/** Why a property is left out of its type, or null when it is kept. A blank key is left out without one. */
+function propertyRefusal(key: string, raw: unknown): string | null {
+  if (key === '') return null;
+  const { kind, targets } = specOf(raw);
+  if (!PROPERTY_KINDS.includes(kind)) {
+    return `Its property “${key}” has a kind DFAI does not know: “${kind}”.`;
+  }
   // A relation with nothing to point at cannot offer anything, so it is not one.
-  if (kind === 'relation' && target === null) return null;
+  if (kind === 'relation' && targets.length === 0) {
+    return `Its property “${key}” is a relation that names no type to point at.`;
+  }
+  return null;
+}
+
+function parseProperty(key: string, raw: unknown): PropertyDef | null {
+  const trimmed = key.trim();
+  if (trimmed === '' || propertyRefusal(trimmed, raw) !== null) return null;
+
+  const { spec, kind, targets } = specOf(raw);
+  const target = targets[0] ?? null;
 
   const options = asStrings(spec['options']);
   const colors = parseColors(spec['colors'], options);

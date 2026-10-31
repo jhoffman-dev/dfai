@@ -30,7 +30,7 @@ export interface SidebarType {
   readonly icon: SidebarIcon;
 }
 
-/** A type file that cannot be read, listed under Types with why (#683). */
+/** A type file that does not read whole, listed under Types with why (#683). */
 export interface SidebarBrokenType {
   readonly path: VaultPath;
   readonly name: string;
@@ -129,7 +129,7 @@ export function Sidebar({
 }: {
   favorites: readonly SidebarEntry[];
   types: readonly SidebarType[];
-  /** Type files whose frontmatter cannot be read, listed under the types. */
+  /** Type files that do not read whole, listed under the types. */
   brokenTypes?: readonly SidebarBrokenType[];
   views: readonly SidebarEntry[];
   dashboards: readonly SidebarEntry[];
@@ -765,8 +765,8 @@ const TypeList = memo(function TypeList({
 });
 
 /**
- * The type files that cannot be read, below the types: each opens its file to
- * be mended, and says why under its name. Nothing is drawn when all read.
+ * The type files that do not read whole, below the types: each opens its file
+ * to be mended, and says why under its name. Nothing is drawn when all read.
  */
 const BrokenTypeList = memo(function BrokenTypeList({
   broken,
@@ -783,7 +783,7 @@ const BrokenTypeList = memo(function BrokenTypeList({
           <button
             type="button"
             className="sidebar__row"
-            aria-label={`${type.name} cannot be read: ${type.path}`}
+            aria-label={`${type.name} has a problem: ${type.path}`}
             title={type.path}
             onClick={(event) => onOpen(type.path, openHowFrom(event))}
           >
