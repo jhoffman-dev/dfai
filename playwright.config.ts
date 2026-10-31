@@ -41,6 +41,10 @@ export default defineConfig({
   // A temp folder of the run's own, removed when it ends (issue #397).
   globalSetup: './tools/temp-folder-per-run.ts',
   fullyParallel: true,
+  // A test tagged `@mac` checks what only macOS WebKit does (its text system,
+  // its editing keys), so it runs only there: on a Mac here, and in CI in the
+  // nightly macOS run (e2e-macos-nightly.yml), not in the gate's Linux shards.
+  ...(process.platform === 'darwin' ? {} : { grepInvert: /@mac\b/ }),
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: process.env.CI ? 'list' : [['list']],

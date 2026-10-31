@@ -19,8 +19,11 @@
  *
  * ⌘→ goes to the end of the line as drawn, so on a paragraph that wraps it
  * stops short of the block's end: the check then fails loudly, never passes.
+ *
+ * The keys are the platform's own (platform.ts): End and Home on Linux.
  */
 import { expect, type Locator } from '@playwright/test';
+import { LINE_END, LINE_START } from './platform.ts';
 
 /** Click the line `line` is in, and put the caret at that line's end. */
 export async function caretAtLineEnd(line: Locator): Promise<void> {
@@ -38,7 +41,7 @@ async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
   // before, and the typing goes where the click put the page's caret. ⌘← is
   // pressed from the line's end: at a line's start under a bookmark card, it
   // takes the caret up to the line above.
-  const keys = where === 'end' ? ['Meta+ArrowRight'] : ['Meta+ArrowRight', 'Meta+ArrowLeft'];
+  const keys = where === 'end' ? [LINE_END] : [LINE_END, LINE_START];
   await expect(async () => {
     await line.click({ position: { x: 1, y: 5 } });
     for (const key of keys) await line.page().keyboard.press(key);

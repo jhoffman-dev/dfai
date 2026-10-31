@@ -98,7 +98,10 @@ test('promoting a line makes the task, links it back, and one Undo takes back bo
   await page.getByLabel('Note', { exact: true }).getByText('Order chairs', { exact: true }).click();
   await page.getByRole('button', { name: 'Make this line a task' }).click();
 
-  const made = `Tasks/${YEAR}/${MONTH}/Order chairs.md`;
+  // In the vault's own `tasks` folder: the type's home is Tasks/<y>/<m>, and the
+  // app writes into the folder already there under another case rather than
+  // make a second beside it. A case-sensitive disk (Linux) tells them apart.
+  const made = `tasks/${YEAR}/${MONTH}/Order chairs.md`;
   await expectFile(vault, made).toMatch(/source: "\[\[Plan the launch#\^[a-z0-9]{6}\]\]"/);
   const task = await vault.read(made);
   expect(task).toContain('type: task\n');

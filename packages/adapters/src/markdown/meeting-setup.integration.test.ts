@@ -60,6 +60,12 @@ const UNRUNNABLE = [
   '',
 ].join('\n');
 const UNRUNNABLE_PATH = '.atlas/automations/Weekly digest.md';
+/** Files beside the rules that are not rules: no block, a blank one, or one without the marker. */
+const NOT_RULES = {
+  '.atlas/automations/README.md': '# What these rules do\n',
+  '.atlas/automations/Blank.md': '---\n---\n\nNothing yet.\n',
+  '.atlas/automations/Notes.md': '---\ntitle: Notes on the rules\n---\n\nKept beside them.\n',
+};
 
 function vault() {
   const fixture = apiFixture({
@@ -68,6 +74,7 @@ function vault() {
       '.atlas/types/task.md': TASK_TYPE,
       [MALFORMED_PATH]: MALFORMED,
       [UNRUNNABLE_PATH]: UNRUNNABLE,
+      ...NOT_RULES,
     },
     markdown: remarkMarkdown,
   });
@@ -93,8 +100,12 @@ describe('meeting setup through the real markdown port', () => {
     expect(fixture.files.get(MALFORMED_PATH)?.text).toBe(MALFORMED);
     const listing = await loadAutomations({ ...ports, notePaths: await listVaultNotes(ports) });
     expect(listing.automations.map(({ rule }) => rule.name)).toEqual(['After a meeting']);
-    // The rule that cannot run is listed as broken, as the Automations page shows it.
-    expect(listing.broken.map(({ path }) => path)).toEqual([UNRUNNABLE_PATH]);
+    // Both are listed as broken, as the Automations page shows them: the file that is
+    // not YAML with the parser's reason, never silently left out (#679). The files
+    // beside them that are not rules are neither listed nor broken.
+    expect(listing.broken.map(({ path }) => path)).toEqual([MALFORMED_PATH, UNRUNNABLE_PATH]);
+    // The reason is the parser's first line, without the colon that led into its excerpt.
+    expect(listing.broken[0]?.problem).toMatch(/^Its frontmatter is not valid YAML: \S.*[^:]$/);
     expect(fixture.files.get(UNRUNNABLE_PATH)?.text).toBe(UNRUNNABLE);
     const [rule] = listing.automations;
     expect(rule?.rule.action).toMatchObject({ kind: 'claude', apply: 'mine' });

@@ -68,6 +68,28 @@ async function wheelTo(page: Page, target: Locator, deltaY: number) {
     await page.mouse.wheel(0, deltaY);
     await expect(target).toBeInViewport({ timeout: 100 });
   }).toPass({ timeout: 10_000 });
+  await scrolledStill(page);
+}
+
+/**
+ * The sidebar has stopped scrolling: the same scrollTop over three frames.
+ * WebKit on Linux animates a wheel's scroll, so the rows go on moving after
+ * the last wheel event, and a row measured then is not the one under the
+ * pointer a moment later (a drag picked up the row below it, run 41205345639).
+ */
+async function scrolledStill(page: Page) {
+  await expect
+    .poll(() =>
+      scroller(page).evaluate(async (element) => {
+        const seen: number[] = [];
+        for (let frame = 0; frame < 3; frame += 1) {
+          seen.push(element.scrollTop);
+          await new Promise((done) => requestAnimationFrame(done));
+        }
+        return seen.every((top) => top === seen[0]);
+      }),
+    )
+    .toBe(true);
 }
 
 const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? Number.NaN;
@@ -248,6 +270,16 @@ test('a note dragged to the edge scrolls the sidebar and drops into a folder', a
 
   const held = treeRow(page, `Note ${NOTES}`);
   await wheelTo(page, held, 400);
+  await page.evaluate(() => {
+    const said: string[] = [];
+    Object.assign(window, { dragSaid: said });
+    new MutationObserver(() => {
+      const now = [...document.querySelectorAll('[id^="DndLiveRegion"]')]
+        .map((region) => region.textContent ?? '')
+        .join('');
+      if (now !== '' && said.at(-1) !== now) said.push(now);
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
   const box = await held.boundingBox();
   const area = await scroller(page).boundingBox();
   if (box === null || area === null) throw new Error('nothing to drag');
@@ -258,6 +290,8 @@ test('a note dragged to the edge scrolls the sidebar and drops into a folder', a
   await page.mouse.move(box.x + 40, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 48, box.y + box.height / 2 + 8, { steps: 4 });
+  // The row pressed is the one measured.
+  await expect(dragAnnouncement(page)).toContainText(`Picked up Note ${NOTES}.`);
   await page.mouse.move(area.x + 60, area.y + 6, { steps: 20 });
   await expect
     .poll(() => scroller(page).evaluate((element) => element.scrollTop), { timeout: 10_000 })
@@ -289,7 +323,23 @@ test('a note dragged to the edge scrolls the sidebar and drops into a folder', a
   }).toPass({ intervals: [50], timeout: 15_000 });
   await page.mouse.up();
 
-  await expect.poll(() => vault.exists(`Projects/Note ${NOTES}.md`)).toBe(true);
+  // Says what the drag said, and where things were, should this miss.
+  try {
+    await expect.poll(() => vault.exists(`Projects/Note ${NOTES}.md`)).toBe(true);
+  } catch (cause) {
+    const seen = await page.evaluate(() => ({
+      said: (window as unknown as { dragSaid?: string[] }).dragSaid ?? [],
+      scrollTop: document.querySelector('.sidebar__scroll')?.scrollTop,
+    }));
+    throw new Error(
+      [
+        String(cause),
+        `said: ${seen.said.join(' | ')}`,
+        `scrollTop: ${seen.scrollTop}; Projects: ${JSON.stringify(await folder.boundingBox())}`,
+      ].join('\n'),
+      { cause },
+    );
+  }
 });
 
 test('a carried row is drawn over the work panel, not under it', async ({ page }) => {
@@ -297,6 +347,11 @@ test('a carried row is drawn over the work panel, not under it', async ({ page }
   await openVault(page);
   const held = treeRow(page, 'Note 30');
   await wheelTo(page, held, 400);
+  // Picked up from the middle of the sidebar, clear of the scroll zones at its
+  // edges: where the wheel leaves the row is the engine's (on Linux, in the
+  // bottom zone), and a drag begun there scrolls the sidebar under it.
+  await held.evaluate((row) => row.scrollIntoView({ block: 'center' }));
+  await scrolledStill(page);
   const box = await held.boundingBox();
   const sidebar = await nav(page).boundingBox();
   if (box === null || sidebar === null) throw new Error('nothing to drag');
@@ -304,6 +359,7 @@ test('a carried row is drawn over the work panel, not under it', async ({ page }
   await page.mouse.move(box.x + 40, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 48, box.y + box.height / 2 + 8, { steps: 4 });
+  await expect(dragAnnouncement(page)).toContainText('Picked up Note 30.');
   // Past the sidebar's edge, over the work panel.
   const past = { x: sidebar.x + sidebar.width + 40, y: box.y + box.height / 2 };
   await page.mouse.move(past.x, past.y, { steps: 10 });
@@ -311,14 +367,17 @@ test('a carried row is drawn over the work panel, not under it', async ({ page }
   await expect(lifted).toBeVisible();
 
   // What the pointer is on is the picture of the row it carries.
+  // Says what is there instead, should this miss.
   await expect
     .poll(() =>
-      page.evaluate(
-        ({ x, y }) => document.elementFromPoint(x, y)?.closest('.tree__row--lifted') !== null,
-        past,
-      ),
+      page.evaluate(({ x, y }) => {
+        const at = document.elementFromPoint(x, y);
+        if (at?.closest('.tree__row--lifted') !== null && at !== null) return 'the lifted row';
+        const lifted = document.querySelector('.tree__row--lifted')?.getBoundingClientRect();
+        return `${at?.tagName}.${at?.className} at ${x},${y}; lifted ${JSON.stringify(lifted)}`;
+      }, past),
     )
-    .toBe(true);
+    .toBe('the lifted row');
   await page.keyboard.press('Escape');
   await page.mouse.up();
 });

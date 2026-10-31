@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { EntryChangedError, VaultAccessError } from '@dfai/application';
-import { InvalidVaultPathError, VAULT_ROOT, createVaultPath } from '@dfai/domain';
+import { EntryChangedError, MoveRefusedError, VaultAccessError } from '@dfai/application';
+import {
+  InvalidVaultPathError,
+  VAULT_ROOT,
+  createVaultPath,
+  moveRepointsLinkRefusal,
+  moveThroughLinkRefusal,
+} from '@dfai/domain';
 
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
@@ -311,6 +317,35 @@ describe('tauriVaultFs writes', () => {
         unchanged: [{ path: notes, modified: 7, text: 'abc' }],
       }),
     ).rejects.toThrow(EntryChangedError);
+  });
+
+  it('words the host refusing a move through a link as the app does (#680)', async () => {
+    invoke.mockImplementation(() => Promise.reject('path goes through a link: Work/Alias'));
+    const moving = tauriVaultFs.moveEntry({ from: notes, to: notes, vault: '/a' });
+
+    await expect(moving).rejects.toThrow(
+      new MoveRefusedError(moveThroughLinkRefusal(createVaultPath('Work/Alias'))),
+    );
+  });
+
+  it('words the host refusing a move that re-points a link as the app does (#680)', async () => {
+    invoke.mockImplementation(() =>
+      Promise.reject('moving it would point a link elsewhere: Work/Projects/shelf'),
+    );
+    const moving = tauriVaultFs.moveEntry({ from: notes, to: notes, vault: '/a' });
+
+    await expect(moving).rejects.toThrow(
+      new MoveRefusedError(moveRepointsLinkRefusal(createVaultPath('Work/Projects/shelf'))),
+    );
+  });
+
+  it('passes any other refused move through as the host said it', async () => {
+    invoke.mockImplementation(() => Promise.reject('something with that name is already there'));
+    const moving = tauriVaultFs.moveEntry({ from: notes, to: notes, vault: '/a' });
+
+    await expect(moving).rejects.toThrow(
+      new VaultAccessError('something with that name is already there'),
+    );
   });
 
   it('surfaces a refused delete as an error, never as success', async () => {

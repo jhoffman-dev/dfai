@@ -1,7 +1,15 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import type { TabId, VaultPath } from '@dfai/domain';
 import { PeekDialog, SaveStatus, useLinkHover, type OpenHow } from '@dfai/ui';
-import { closePeek, openPeek, replacePeek, stepPeek, usePeek } from '../overlay-store.ts';
+import {
+  closePeek,
+  hideOverlay,
+  openPeek,
+  overlayNow,
+  replacePeek,
+  stepPeek,
+  usePeek,
+} from '../overlay-store.ts';
 import { leavePeek, leavingPeek, useHoldersFlushed } from './peek-moves.ts';
 import { peekPosition, type Peek } from '../overlay.ts';
 import { clickLink, openNote } from '../workspace/open-place.ts';
@@ -83,6 +91,12 @@ function PeekContainer({ peek }: { peek: Peek }) {
     onShowInGraph: note.onShowInGraph,
     arrangement: {},
   });
+  // With the peek up, any overlay is the one above it (`OverlayState`): its Escape is its own.
+  const covered = useCallback(() => overlayNow(overlays) !== null, [overlays]);
+  const closeAbove = useCallback(() => {
+    const above = overlayNow(overlays);
+    if (above !== null) hideOverlay(overlays, above);
+  }, [overlays]);
   return (
     <PeekDialog
       title={drawn.title ?? 'Note'}
@@ -93,6 +107,8 @@ function PeekContainer({ peek }: { peek: Peek }) {
           stepPeek(overlays, index, (path) => listedOrUnknown(context.notePaths, path));
       }}
       onClose={() => closePeek(overlays)}
+      covered={covered}
+      onEscapeAbove={closeAbove}
       onExpand={() => leaveFor(peek.path, 'here')}
       onOpenInNewTab={() => leaveFor(peek.path, 'new-tab')}
       onOpenInSplit={() => leaveFor(peek.path, 'split')}

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection, splitWindow } from './host.ts';
+import { macOnly } from './platform.ts';
 
 // Attack on #335 (UI v2 slice 3b, #295): every page headed by its nav bar,
 // one h1 each, the count and the page's buttons in the bar under squeeze,
@@ -371,7 +372,12 @@ for (const { which, width, split, counted } of SQUEEZED) {
     return both;
   }
 
-  test(`${where}: the bar's actions stay inside it and overlap nothing`, async ({ page }) => {
+  // At 720px the Graph bar's actions fit by a few pixels, in macOS's font.
+  const fits =
+    which === 'Graph' && width === 720
+      ? macOnly('laid out in macOS’s system font; Linux WebKit falls back to a wider one')
+      : {};
+  test(`${where}: the bar's actions stay inside it and overlap nothing`, fits, async ({ page }) => {
     for (const bar of await bars(page)) expect(await barProblems(bar)).toEqual([]);
   });
 
