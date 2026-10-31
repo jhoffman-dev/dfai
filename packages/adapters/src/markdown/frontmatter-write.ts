@@ -324,7 +324,8 @@ function refuseUnreadable(document: Document, key: string): void {
 
 /** YAML's message for an error, without the lines that draw a caret under its column. */
 export function problemLine(error: YAMLError): string {
-  return error.message.split('\n')[0] ?? error.message;
+  // The first line ends in a colon that leads into the excerpt left behind.
+  return (error.message.split('\n')[0] ?? error.message).replace(/:\s*$/, '');
 }
 
 /**

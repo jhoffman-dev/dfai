@@ -153,6 +153,52 @@ export function deleteThroughLinkRefusal(link: VaultPath): string {
   );
 }
 
+/**
+ * Why an entry reached through `link`, a folder above it that is a symlink,
+ * is not moved or renamed: the host would move what the link points at, while
+ * its panes and the links naming it were moved for the path by the link (#680).
+ */
+export function moveThroughLinkRefusal(link: VaultPath): string {
+  return (
+    `It is inside “${link}”, which is a link: moving or renaming it here would move what ` +
+    'the link points at. Do it where it really is, or move the link.'
+  );
+}
+
+/**
+ * Why nothing is moved into `link`, or into a folder reached through it: it
+ * would land where the link points, a path the app cannot tell (#680).
+ */
+export function moveIntoLinkRefusal(link: VaultPath): string {
+  return (
+    `“${link}” is a link: moving into it would put it where the link points. ` +
+    'Move it into that folder itself.'
+  );
+}
+
+/**
+ * Why a move is refused that would point `link`, which it carries, at
+ * something else: a relative link is read from where it is (PR #684).
+ */
+export function moveRepointsLinkRefusal(link: VaultPath): string {
+  return (
+    `Moving it would point the link “${link}” at something else: a link is read from ` +
+    'where it is. Move it where the link still reaches the same place.'
+  );
+}
+
+/**
+ * Why nothing moves while `note`, open by way of `link`, holds unsaved typing:
+ * where the link points cannot be told, so it may be what is moving, and its
+ * pane could not be followed there (PR #684).
+ */
+export function unsavedThroughLinkRefusal(note: VaultPath, link: VaultPath): string {
+  return (
+    `“${note}” has typing not yet saved, and it is open by way of the link “${link}”, ` +
+    'which may point into what is moving. Wait for it to save, then try again.'
+  );
+}
+
 /** How many links a deletion question names before saying how many more. */
 const LINKS_NAMED = 5;
 

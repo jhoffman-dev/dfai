@@ -13,6 +13,12 @@ const LONG_DESCRIPTION =
 const LONG_FOLDER = 'Quarterly reviews prepared for Mara Quill and Tobias Fenn';
 const LONG_NOTE = 'Notes from the long planning session about the spring garden beds';
 const MANY = 1234;
+/**
+ * Indexing MANY notes is real work, not a moment: about 1.5 s on a Mac and over
+ * 5 s on a loaded Linux runner. So the vault that holds them is given longer to
+ * finish indexing, and only that vault.
+ */
+const INDEXING_MANY = 20_000;
 
 /** A vault whose folder — and so whose shown name — is long. */
 async function longNamedVault(): Promise<FakeVault> {
@@ -65,7 +71,9 @@ async function openVault(page: Page, { many = false } = {}): Promise<FakeVault> 
   await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
-  await expect(page.getByText(/notes indexed/)).toBeVisible();
+  await expect(page.getByText(/notes indexed/)).toBeVisible({
+    timeout: many ? INDEXING_MANY : undefined,
+  });
   return vault;
 }
 
@@ -125,7 +133,7 @@ test('a type count in the thousands stays whole and leaves the label room', asyn
   await openVault(page, { many: true });
   const row = sidebarSection(page, 'types').locator('.sidebar__item').first();
   const count = row.locator('.sidebar__count');
-  await expect(count).toHaveText(String(MANY), { timeout: 20_000 });
+  await expect(count).toHaveText(String(MANY), { timeout: INDEXING_MANY });
   const fits = await count.evaluate((element) => {
     const box = element.getBoundingClientRect();
     const host = element.closest('.sidebar__item')!.getBoundingClientRect();

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { holdsShortcuts, type Overlay, type OverlayState } from './overlay.ts';
 
 /**
@@ -107,13 +107,17 @@ export function useAppShortcuts(
   shortcuts: AppShortcuts,
   { onMac = runsOnMac() }: { onMac?: boolean } = {},
 ): void {
-  // Listened for once; each key reaches what the latest render handed in.
+  // Listened for once; each key reaches what the latest render handed in, from
+  // the commit that hands it in (a layout effect, as the listener is).
   const latest = useRef(shortcuts);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = shortcuts;
   });
   // Cmd+S saves and Cmd+K searches, as they do everywhere else on this machine.
-  useEffect(() => {
+  // A layout effect, so the keys are heard from the moment the window is drawn:
+  // a passive effect runs from a task after the paint, and a key pressed in
+  // between was lost.
+  useLayoutEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const { save, newNote, toggleSidebar, toggleSplit, dailyNote, show } = latest.current;
       const held = holdsShortcuts(latest.current.layers());

@@ -3,7 +3,7 @@ import type { EntryMove, VaultPath } from '@dfai/domain';
 import type { ClarifyUndo } from '@dfai/application';
 import type { InboxRefusal } from '@dfai/ui';
 import { createAnswerQueue, type AnswerQueue } from '../proposals/answer-queue.ts';
-import type { LeavingRow } from './leaving-rows.ts';
+import type { LeavingRow, ReturningRow } from './leaving-rows.ts';
 
 /** What the last action left to say, and the vault it was said of. */
 export interface InboxSaid {
@@ -46,6 +46,8 @@ export interface InboxWrites {
     wroteSinceDrained: boolean;
     /** Rows written since the last refresh was asked for, as each is on the page. */
     unrefreshed: LeavingRow[];
+    /** Rows an undo put back since the last refresh was asked for, waiting to be listed again. */
+    returning: ReturningRow[];
     /** The latest the page knows, read when a write begins or ends rather than when it was asked for. */
     latest: InboxSeen;
     ownMoves: { vaultKey: string | null; moves: readonly EntryMove[] };
@@ -61,6 +63,7 @@ export function createInboxWrites(): InboxWrites {
   const held: InboxWrites['held'] = {
     wroteSinceDrained: false,
     unrefreshed: [],
+    returning: [],
     latest: { vaultKey: null, notePaths: [], indexKey: '' },
     ownMoves: { vaultKey: null, moves: [] },
     undone: new WeakSet<ClarifyUndo>(),

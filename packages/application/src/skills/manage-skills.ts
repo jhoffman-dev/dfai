@@ -18,7 +18,8 @@ import {
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
-import { filesAndLinksUnder, isListedAsLink } from '../vault/delete-entry.ts';
+import { filesAndLinksUnder } from '../vault/delete-entry.ts';
+import { isListedAsLink } from '../vault/listed-links.ts';
 import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
 import { listSkillFolders, readSkillFileAt, skillFileOf, type SkillFile } from './skills.ts';
 
