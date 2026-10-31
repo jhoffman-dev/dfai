@@ -225,3 +225,82 @@
   color: var(--danger);
   margin-right: auto;
 }
+
+/* Ask Claude (#169): the request, and Claude's draft as a change to the editor. */
+.skills__ask-open {
+  align-self: flex-start;
+}
+
+.skills__ask {
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.skills__ask-actions {
+  align-items: center;
+  display: flex;
+  font-size: var(--text-meta);
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.skills__ask-problem {
+  color: var(--warning);
+  font-size: var(--text-meta);
+  font-weight: 500;
+}
+
+.skills__ask-problem p,
+.skills__draft p {
+  margin: 0;
+}
+
+.skills__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skills__diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skills__diff-lines {
+  list-style: none;
+  margin: 0;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0;
+}
+
+.skills__diff-line {
+  border-left: 3px solid transparent;
+  font-size: var(--text-meta);
+  padding: 0 var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.skills__diff-line--folded {
+  color: var(--ink-3);
+}
+
+.skills__diff-line--added {
+  background: var(--status-done-tint);
+  border-left-color: var(--status-done-dot);
+  color: var(--ink-2);
+}
+
+.skills__diff-line--removed {
+  background: var(--btn-destructive-bg);
+  border-left-color: var(--btn-destructive-ink);
+  color: var(--ink-2);
+  text-decoration: line-through;
+}

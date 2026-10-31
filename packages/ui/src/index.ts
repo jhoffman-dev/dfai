@@ -259,6 +259,7 @@ export type {
   SkillListing,
   SkillsPageProps,
 } from './skills-page.tsx';
+export type { SkillAskProblem, SkillAskView, SkillDraftPreview } from './skill-ask.tsx';
 export type { NewTerm, TermsContents, TermsPageProps } from './terms-page.tsx';
 export type { TemplateLessType, TemplateListing, TemplatesPageProps } from './templates-page.tsx';
 export { TemplateBanner } from './template-banner.tsx';

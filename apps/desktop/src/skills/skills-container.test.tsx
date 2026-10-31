@@ -62,6 +62,7 @@ function showTab(
       ports: { fs },
       openNote: () => {},
       automations: { store },
+      skills: { claude: {} },
     },
     pane: { vault: '/vaults/larkspur', notes: { markdown: remarkMarkdown } },
     overlays,

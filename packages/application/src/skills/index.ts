@@ -1,3 +1,5 @@
+export { draftSkill } from './draft-skill.ts';
+export type { SkillDraftOutcome } from './draft-skill.ts';
 export {
   createSkill,
   deleteSkill,

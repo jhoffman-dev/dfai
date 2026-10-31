@@ -74,6 +74,12 @@ describe('claudeCodeArgs', () => {
     expect(system).toMatch(/^You are Claude in DFAI\.\n\n## Tools/);
     expect(system).toContain('### atlas_search');
   });
+
+  it('says nothing of a tool protocol to a request with no tools (#169)', () => {
+    const bare = { ...REQUEST, tools: [] };
+    const args = claudeCodeArgs(bare);
+    expect(args[args.indexOf('--system-prompt') + 1]).toBe('You are Claude in DFAI.');
+  });
 });
 
 describe('claudeCodeProvider.stream', () => {
@@ -112,6 +118,22 @@ describe('claudeCodeProvider.stream', () => {
       { type: 'text', text: 'Looking.' },
       { type: 'tool_call', call: { id: 'call-1', name: 'atlas_search', input: { q: 'Sam' } } },
     ]);
+  });
+
+  it('reads a reply to a request with no tools whole, a literal tool tag and all (#169)', async () => {
+    const said = [
+      'Write ',
+      '<atlas_tool>{"name":"atlas_search","input":{}}</atlas_tool>',
+      ' to call one.',
+    ];
+    const { host } = fakeClaude({ lines: said.map(delta) });
+    const events = await collect(
+      claudeCodeProvider(host).stream({ ...REQUEST, tools: [] }, new AbortController().signal),
+    );
+    expect(events.every((event) => event.type === 'text')).toBe(true);
+    expect(events.map((event) => (event.type === 'text' ? event.text : '')).join('')).toBe(
+      said.join(''),
+    );
   });
 
   it('says Claude Code is not logged in when that is why it failed', async () => {
