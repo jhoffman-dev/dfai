@@ -14,10 +14,11 @@
  * Built without minifying, so components keep their names. Each pass does
  * every action in `BUDGETED_ACTIONS`' order, each from where the last left it.
  *
- * `PERF_BUDGETS_RUNS=N` counts N times, the runs side by side, and fails on
- * any count that differs between them. `PERF_BUDGETS_FIXTURES` and
- * `PERF_BUDGETS_PASSES` do only part of it, as CI does on each of its machines;
- * `combine-budgets.ts` puts the parts' results back together.
+ * `PERF_BUDGETS_RUNS=N` counts N times and fails on any count that differs
+ * between the runs. `PERF_BUDGETS_FIXTURES` and `PERF_BUDGETS_PASSES` do only
+ * part of it, and `PERF_BUDGETS_FIRST_RUN=2` numbers this run's counts from
+ * the second, as CI does on its machines; `combine-budgets.ts` puts the parts'
+ * results back together, comparing the runs that were counted apart.
  *
  * `PERF_BUDGETS=write` writes the counts into `budgets.json` instead of
  * failing, and only ever lowers a budget (`lowered`). Raising one is James's
@@ -32,6 +33,7 @@ import { installRenderCounter } from '../../packages/ui/src/testing/render-count
 import {
   actionsOn,
   BUDGETED_ACTIONS,
+  RUN_TOLERANCE,
   budgetsPart,
   partLabel,
   type BudgetedAction,
@@ -64,7 +66,6 @@ import {
   type ActionBudget,
   type BudgetsFile,
   type PartResult,
-  type RunTolerance,
   type Times,
   type Work,
 } from './work-budgets.ts';
@@ -76,7 +77,13 @@ const ALLOW_DROP = process.env.PERF_BUDGETS_ALLOW_DROP === '1';
 /** `PERF_BUDGETS_ALLOW_RENAME=1`: `write` may drop a budget whose action is no longer measured. */
 const ALLOW_RENAME = process.env.PERF_BUDGETS_ALLOW_RENAME === '1';
 /** How many times the counted pass runs; more than one fails on any count that differs between runs. */
-const COUNTED_RUNS = countedRuns(process.env.PERF_BUDGETS_RUNS);
+const COUNTED_RUNS = wholeRuns('PERF_BUDGETS_RUNS', process.env.PERF_BUDGETS_RUNS);
+/**
+ * Which run the first counted here is. Only run 1 is held to the budgets; a
+ * later one, counted on a machine of its own, is compared with run 1 by
+ * `combine-budgets.ts`.
+ */
+const FIRST_RUN = wholeRuns('PERF_BUDGETS_FIRST_RUN', process.env.PERF_BUDGETS_FIRST_RUN);
 /**
  * `PERF_BUDGETS_FIXTURES` and `PERF_BUDGETS_PASSES`: which fixtures, and which
  * of the counted and timed passes, this run does. All, unless CI splits them
@@ -87,13 +94,11 @@ const PART = budgetsPart({
   passes: process.env.PERF_BUDGETS_PASSES,
 });
 
-function countedRuns(given: string | undefined): number {
+function wholeRuns(variable: string, given: string | undefined): number {
   if (given === undefined || given === '') return 1;
   const runs = Number(given);
   if (!Number.isInteger(runs) || runs < 1) {
-    throw new Error(
-      `PERF_BUDGETS_RUNS must be a whole number of runs, 1 or more; it is "${given}"`,
-    );
+    throw new Error(`${variable} must be a whole number of runs, 1 or more; it is "${given}"`);
   }
   return runs;
 }
@@ -121,17 +126,6 @@ const ROW_RULES: Partial<Record<BudgetedAction, ActionBudget['rows']>> = {
   // each. No other row is drawn: today-page.renders.test.tsx holds the page to that.
   'Choose a task on Today': { TaskRow: 3 },
   'Decide an Inbox row': { InboxRow: 2 },
-};
-
-/**
- * The actions allowed to differ between two counted runs, and by how much.
- * Opening the vault indexes 2,000 notes: on CI it counted 121 commits on one
- * run and 122 on the next, each component one render apart, host calls the
- * same (#130). Every other action must match exactly, the drag included
- * (#243).
- */
-const RUN_TOLERANCE: Partial<Record<BudgetedAction, RunTolerance>> = {
-  'Open a vault': { commits: 2, rendersEach: 2 },
 };
 
 /** A board of the fixture's 48 projects, all active, by status: what "drag a board card" drags on. */
@@ -200,6 +194,8 @@ interface Pass {
 
 /** The first counted run's counts, held to the budgets, and the timed pass's times. */
 const counted = new Map<string, Work>();
+/** Which runs were counted here, the first being `counted`'s. */
+const countedRuns: number[] = [];
 const timed = new Map<string, Times>();
 
 test('the app does no more work than its budget', async ({ browser }) => {
@@ -208,17 +204,19 @@ test('the app does no more work than its budget', async ({ browser }) => {
   const actions = actionsOn(PART.fixtures);
 
   if (PART.passes.includes('counted')) {
-    await test.step(`counted ${COUNTED_RUNS === 1 ? 'once' : `${COUNTED_RUNS} times, side by side`}, on the work clock`, async () => {
-      // Side by side: on the work clock a busy machine changes how long a run
-      // takes, never what it counts, so the runs need not wait for each other.
-      const [first, ...again] = await Promise.all(
-        Array.from({ length: COUNTED_RUNS }, () => countEvery(browser, PART.fixtures)),
-      );
-      for (const [action, work] of first!) counted.set(action, work);
-      again.forEach((recount, at) => expectTheSameCounts(actions, recount, at + 2));
-    });
+    const runs = Array.from({ length: COUNTED_RUNS }, (_, at) => FIRST_RUN + at);
+    for (const run of runs) {
+      await test.step(`counted (run ${run}), on the work clock`, async () => {
+        const counts = await countEvery(browser, PART.fixtures);
+        if (run === FIRST_RUN) for (const [action, work] of counts) counted.set(action, work);
+        else expectTheSameCounts(actions, counts, run);
+      });
+    }
+    countedRuns.push(...runs);
     // Held to the budgets as they were even when writing: a regression is red either way.
-    for (const action of actions) holdToBudget(action, budgets.actions[action]);
+    // Run 1 only: a later run is held to run 1's counts instead.
+    if (FIRST_RUN === 1)
+      for (const action of actions) holdToBudget(action, budgets.actions[action]);
     const names = [...new Set([...counted.values()].flatMap((work) => Object.keys(work.renders)))];
     expect(
       looksMinified(names),
@@ -256,7 +254,7 @@ async function countEvery(
   return into;
 }
 
-/** Fails each action run `run` counted differently from the first, beyond its tolerance. */
+/** Fails each action run `run` counted differently from the first counted here, beyond its tolerance. */
 function expectTheSameCounts(
   actions: readonly BudgetedAction[],
   recount: ReadonlyMap<string, Work>,
@@ -264,7 +262,7 @@ function expectTheSameCounts(
 ): void {
   for (const action of actions) {
     const [first, now] = [counted.get(action), recount.get(action)];
-    expect.soft(first, `"${action}" was not counted on run 1`).toBeDefined();
+    expect.soft(first, `"${action}" was not counted on run ${FIRST_RUN}`).toBeDefined();
     expect.soft(now, `"${action}" was not counted on run ${run}`).toBeDefined();
     if (first === undefined || now === undefined) continue;
     const changed = differencesBetween(first, now, RUN_TOLERANCE[action]);
@@ -1467,11 +1465,14 @@ async function centreOf(target: Locator): Promise<{ x: number; y: number }> {
 /** Prints the run beside the budgets, keeps it as JSON, and adds it to the CI job's summary. */
 async function report(budgets: BudgetsFile, actions: readonly BudgetedAction[]): Promise<void> {
   const result: PartResult = {
+    runs: countedRuns,
     counted: Object.fromEntries(counted),
     timed: Object.fromEntries(timed),
   };
   const rows = measurementsOf(actions, result, budgets);
-  const label = partLabel(PART);
+  const label = [partLabel(PART), FIRST_RUN > 1 ? `from-run-${FIRST_RUN}` : '']
+    .filter(Boolean)
+    .join('.');
   const folder = join('test-results', 'perf');
   await mkdir(folder, { recursive: true });
   // What the run measured, for `tools/perf/combine-budgets.ts` to put back together with the other parts.

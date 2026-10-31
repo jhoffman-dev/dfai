@@ -22,7 +22,7 @@ defaults:
     shell: bash
 
 # The slow work is split across machines: the unit tests over six, the
-# end-to-end suite over four, the response-time and work budgets over three.
+# end-to-end suite over four, the response-time and work budgets over four.
 # `gate`, at the bottom, is the one check to require.
 #
 # macOS: the account runs only five macOS jobs at once, and a full run uses
@@ -331,29 +331,40 @@ jobs:
     # do. Linux, because macOS jobs are the scarce ones and WebKit runs here
     # too; the time budgets have headroom for it, and counts do not vary.
     #
-    # In three parts, each on a machine of its own: on one, the work budgets
+    # In four parts, each on a machine of its own: on one, the work budgets
     # took 13 minutes, three of them building the cache of meanings for the
     # main fixture's last action, once per pass (#648). The main fixture's two
-    # counted runs share one machine, side by side: on the work clock a busy
-    # machine changes how long a run takes, never what it counts. Its timed
-    # pass has a machine to itself, so its times are not a busy machine's.
-    # The response times, which are gated, run alone too, before the rest.
-    # `perf` below puts the parts' reports back together.
+    # counted runs are two of the parts, and `perf` below holds run 2 to run 1
+    # as one machine did, so the counts are shown to repeat across runners.
+    # Its timed pass has a machine to itself, so its times are not a busy
+    # machine's. The response times, which are gated, run alone too, before
+    # the rest. `perf` puts the parts' reports back together.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
-          - part: main counted
+          - part: main counted, run 1
             fixtures: main
             passes: counted
+            runs: 1
+            first-run: 1
+          - part: main counted, run 2
+            fixtures: main
+            passes: counted
+            runs: 1
+            first-run: 2
           - part: main timed
             fixtures: main
             passes: timed
+            runs: 1
+            first-run: 1
           - part: latency, and the other fixtures
             fixtures: research,long-note,code-note
             passes: counted,timed
+            runs: 2
+            first-run: 1
             latency: true
     name: perf (${{ matrix.part }})
     steps:
@@ -455,9 +466,8 @@ jobs:
         env:
           PERF_BUDGETS_FIXTURES: ${{ matrix.fixtures }}
           PERF_BUDGETS_PASSES: ${{ matrix.passes }}
-          # Counted twice: a count that differs between the two runs fails, so the
-          # work clock stays proven deterministic on the runner, not only here.
-          PERF_BUDGETS_RUNS: 2
+          PERF_BUDGETS_RUNS: ${{ matrix.runs }}
+          PERF_BUDGETS_FIRST_RUN: ${{ matrix.first-run }}
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -470,8 +480,9 @@ jobs:
 
   perf:
     # The parts' work budgets as one report, and proof that between them they
-    # counted and timed every budgeted action once. Each part has already held
-    # its counts to the budgets. Run even when a part failed, so a red run
+    # counted every budgeted action on each of the two runs and timed it, once
+    # each, and that run 2 counted what run 1 did. The parts that counted run 1
+    # have already held it to the budgets. Run even when a part failed, so a red run
     # still reports what was counted, and failed then.
     needs: [changes, perf-part]
     if: always() && needs.changes.outputs.code == 'true'
@@ -491,6 +502,10 @@ jobs:
 
       - name: The work budgets, every part together
         run: node tools/perf/combine-budgets.ts perf-parts
+        env:
+          # Counted twice: a count that differs between the two runs fails, so the
+          # work clock stays proven deterministic on the runners, not only here.
+          PERF_BUDGETS_RUNS: 2
 
       - name: Every part passed
         env:

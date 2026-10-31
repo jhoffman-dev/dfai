@@ -1,3 +1,5 @@
+import type { RunTolerance } from './work-budgets.ts';
+
 /**
  * Every action the work budgets measure, in the order `budgets.spec.ts` does
  * them: each starts from where the one before left the app.
@@ -54,6 +56,17 @@ export const BUDGETED_ACTIONS = [
 ] as const;
 
 export type BudgetedAction = (typeof BUDGETED_ACTIONS)[number];
+
+/**
+ * The actions allowed to differ between two counted runs, and by how much.
+ * Opening the vault indexes 2,000 notes: on CI it counted 121 commits on one
+ * run and 122 on the next, each component one render apart, host calls the
+ * same (#130). Every other action must match exactly, the drag included
+ * (#243). The same whether the runs were counted on one machine or two.
+ */
+export const RUN_TOLERANCE: Partial<Record<BudgetedAction, RunTolerance>> = {
+  'Open a vault': { commits: 2, rendersEach: 2 },
+};
 
 /**
  * The vaults the actions are done on, in the order a run does them: each a

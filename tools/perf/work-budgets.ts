@@ -272,6 +272,8 @@ export interface Times {
  * machines of their own, each writing one of these, and puts them together.
  */
 export interface PartResult {
+  /** The counted runs this part did, in order; `counted` is the first's. Empty if it only timed. */
+  readonly runs: readonly number[];
   readonly counted: Readonly<Record<string, Work>>;
   readonly timed: Readonly<Record<string, Times>>;
 }
@@ -313,28 +315,59 @@ export function timesTable(actions: readonly string[], timed: PartResult['timed'
   ].join('\n');
 }
 
+/** How the whole run was counted: how many runs, and how far each action's may differ. */
+export interface RunsWanted {
+  readonly runs: number;
+  readonly tolerance: Readonly<Partial<Record<string, RunTolerance>>>;
+}
+
 /**
  * The parts put back together, and what is wrong with them as a whole: an
- * action of `actions` no part counted or timed, or that two parts did.
+ * action of `actions` that no part, or two, counted on some run of
+ * `wanted.runs`, or timed; and a later run, counted apart from run 1, that
+ * counted differently from it beyond the action's tolerance. Run 1's counts
+ * are the result's; a part that counted runs together compared them itself.
  */
 export function combineParts(
   parts: readonly PartResult[],
   actions: readonly string[],
+  wanted: RunsWanted,
 ): { readonly result: PartResult; readonly problems: string[] } {
   const problems: string[] = [];
+  const firstRuns = parts.filter((part) => part.runs[0] === 1);
   const counted = onePerAction(
-    'counted',
+    'counted on run 1',
     actions,
-    parts.map((part) => part.counted),
+    firstRuns.map((part) => part.counted),
     problems,
   );
+  for (let run = 2; run <= wanted.runs; run += 1) {
+    const covering = parts.filter((part) => part.runs.includes(run));
+    const counts = onePerAction(
+      `counted on run ${run}`,
+      actions,
+      covering.map((part) => part.counted),
+      problems,
+    );
+    const apart = new Set(
+      covering.filter((part) => part.runs[0] === run).flatMap((part) => Object.keys(part.counted)),
+    );
+    for (const action of actions) {
+      const [first, now] = [counted[action], counts[action]];
+      if (!apart.has(action) || first === undefined || now === undefined) continue;
+      const changed = differencesBetween(first, now, wanted.tolerance[action]);
+      if (changed.length > 0) {
+        problems.push(`"${action}" counted differently on run ${run}: ${changed.join(', ')}`);
+      }
+    }
+  }
   const timed = onePerAction(
     'timed',
     actions,
     parts.map((part) => part.timed),
     problems,
   );
-  return { result: { counted, timed }, problems };
+  return { result: { runs: [1], counted, timed }, problems };
 }
 
 /** Each action's one entry among `lists`; an action in none, or in more than one, is a problem. */

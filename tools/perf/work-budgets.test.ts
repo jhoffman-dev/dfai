@@ -273,17 +273,22 @@ describe('putting the parts of a run together', () => {
   const counts = (commits: number): Work => ({ commits, renders: { Row: 2 }, calls: {} });
   const times = { inputToReady: 12, longestFrame: 8 };
 
+  const ONE_RUN = { runs: 1, tolerance: {} };
+  const TWO_RUNS = { runs: 2, tolerance: { Open: { commits: 2, rendersEach: 0 } } };
+
   it('takes each action from the one part that counted it and the one that timed it', () => {
     const { result, problems } = combineParts(
       [
-        { counted: { Open: counts(3) }, timed: {} },
-        { counted: {}, timed: { Open: times, Close: times } },
-        { counted: { Close: counts(1) }, timed: {} },
+        { runs: [1], counted: { Open: counts(3) }, timed: {} },
+        { runs: [], counted: {}, timed: { Open: times, Close: times } },
+        { runs: [1], counted: { Close: counts(1) }, timed: {} },
       ],
       ['Open', 'Close'],
+      ONE_RUN,
     );
     expect(problems).toEqual([]);
     expect(result).toEqual({
+      runs: [1],
       counted: { Open: counts(3), Close: counts(1) },
       timed: { Open: times, Close: times },
     });
@@ -292,16 +297,58 @@ describe('putting the parts of a run together', () => {
   it('names an action no part counted or timed, and one two parts did', () => {
     const { problems } = combineParts(
       [
-        { counted: { Open: counts(3) }, timed: { Open: times } },
-        { counted: { Open: counts(3) }, timed: {} },
+        { runs: [1], counted: { Open: counts(3) }, timed: { Open: times } },
+        { runs: [1], counted: { Open: counts(3) }, timed: {} },
       ],
       ['Open', 'Close'],
+      ONE_RUN,
     );
     expect(problems).toEqual([
-      '"Open" was counted by 2 parts',
-      '"Close" was counted by no part',
+      '"Open" was counted on run 1 by 2 parts',
+      '"Close" was counted on run 1 by no part',
       '"Close" was timed by no part',
     ]);
+  });
+
+  it("holds a run counted apart to run 1, within the action's tolerance and no further", () => {
+    const run1 = {
+      runs: [1],
+      counted: { Open: counts(10), Close: counts(4) },
+      timed: { Open: times, Close: times },
+    };
+    const within = { runs: [2], counted: { Open: counts(12), Close: counts(4) }, timed: {} };
+    expect(combineParts([run1, within], ['Open', 'Close'], TWO_RUNS).problems).toEqual([]);
+    const beyond = { runs: [2], counted: { Open: counts(13), Close: counts(5) }, timed: {} };
+    expect(combineParts([run1, beyond], ['Open', 'Close'], TWO_RUNS).problems).toEqual([
+      '"Open" counted differently on run 2: React commits: 10 → 13',
+      '"Close" counted differently on run 2: React commits: 4 → 5',
+    ]);
+  });
+
+  it('keeps run 1 as the result, whatever a later run counted', () => {
+    const { result } = combineParts(
+      [
+        { runs: [1], counted: { Open: counts(10) }, timed: {} },
+        { runs: [2], counted: { Open: counts(11) }, timed: {} },
+      ],
+      ['Open'],
+      TWO_RUNS,
+    );
+    expect(result.counted).toEqual({ Open: counts(10) });
+  });
+
+  it('wants every run of every action counted, and trusts a part that counted both runs itself', () => {
+    const together = {
+      runs: [1, 2],
+      counted: { Close: counts(4) },
+      timed: { Open: times, Close: times },
+    };
+    const run1 = { runs: [1], counted: { Open: counts(10) }, timed: {} };
+    expect(combineParts([together, run1], ['Open', 'Close'], TWO_RUNS).problems).toEqual([
+      '"Open" was counted on run 2 by no part',
+    ]);
+    const run2 = { runs: [2], counted: { Open: counts(10) }, timed: {} };
+    expect(combineParts([together, run1, run2], ['Open', 'Close'], TWO_RUNS).problems).toEqual([]);
   });
 
   it('reports each counted action with its times, and a dash where it was not timed', () => {
@@ -311,7 +358,7 @@ describe('putting the parts of a run together', () => {
     };
     const rows = measurementsOf(
       ['Open', 'Close', 'Never'],
-      { counted: { Open: counts(3), Close: counts(1) }, timed: { Open: times } },
+      { runs: [1], counted: { Open: counts(3), Close: counts(1) }, timed: { Open: times } },
       budgets,
     );
     expect(rows.map((row) => row.action)).toEqual(['Open', 'Close']);
