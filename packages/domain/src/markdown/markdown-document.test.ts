@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   appendToBody,
   isBlankFrontmatter,
+  opensUnclosedFrontmatter,
   joinDocument,
   joinFrontmatter,
   splitFrontmatter,
@@ -192,5 +193,17 @@ describe('isBlankFrontmatter (A20-05)', () => {
   it.each(['---\n# a comment\n---\n', '---\n{}\n---\n', '---\na: 1\n---\n'])(
     'is not blank: %j',
     (block) => expect(isBlankFrontmatter(block)).toBe(false),
+  );
+});
+
+describe('opensUnclosedFrontmatter (#679)', () => {
+  it.each(['---\natlas: automation\n\nBody.\n', '\uFEFF---\r\nname: Digest\r\n', '---\n'])(
+    'opens a block it never closes: %j',
+    (text) => expect(opensUnclosedFrontmatter(text)).toBe(true),
+  );
+
+  it.each(['---\na: 1\n---\nBody.\n', '# Title\n', '', 'Text\n---\nmore\n', '---a\n'])(
+    'does not: %j',
+    (text) => expect(opensUnclosedFrontmatter(text)).toBe(false),
   );
 });
