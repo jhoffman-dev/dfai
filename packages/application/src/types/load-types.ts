@@ -1,9 +1,7 @@
 import {
   createVaultPath,
-  isBlankFrontmatter,
   noteTitle,
   objectTypeProblems,
-  opensUnclosedFrontmatter,
   parseObjectType,
   splitFrontmatter,
   TYPES_DIRECTORY,
@@ -12,6 +10,7 @@ import {
 } from '@dfai/domain';
 import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
+import { readSettingsBlock } from '../notes/settings-block.ts';
 
 /** Where a vault keeps its type definitions. */
 export const TYPES_FOLDER = TYPES_DIRECTORY;
@@ -89,26 +88,18 @@ function readTypeFile(
   file: NoteFile,
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>,
 ): { type: DefinedType | null; problem: string | null } {
-  // An unclosed or unreadable block, or one that is a list or one value, reads as
-  // no properties, so it would be skipped as no type: in the types folder it most
-  // likely is one, gone without a word (#683). In the words PR #682 gives a rule
-  // file in the same state (its readRuleBlock), so the two read alike.
-  if (opensUnclosedFrontmatter(file.text)) {
-    return { type: null, problem: 'Its frontmatter has no closing ---.' };
+  // Read as a rule file is, so the two say the same of the same block (#679).
+  let block: ReturnType<typeof readSettingsBlock>;
+  try {
+    block = readSettingsBlock(markdown, file.text);
+  } catch {
+    // Skipped: a block the port cannot read costs that one type, nothing else.
+    return { type: null, problem: null };
   }
-  const block = blockOf(file);
-  const unreadable = markdown.frontmatterProblem(block);
-  if (unreadable !== null) {
-    return { type: null, problem: `Its frontmatter is not valid YAML: ${unreadable}` };
-  }
-  const frontmatter = propertiesOf(block, markdown);
-  if (frontmatter === null) return { type: null, problem: null };
-  if (block !== null && !isBlankFrontmatter(block) && Object.keys(frontmatter).length === 0) {
-    return { type: null, problem: 'Its frontmatter is not a set of properties.' };
-  }
-  const problems = objectTypeProblems(frontmatter);
+  if ('problem' in block) return { type: null, problem: block.problem };
+  const problems = objectTypeProblems(block.properties);
   return {
-    type: definedType(file, frontmatter),
+    type: definedType(file, block.properties),
     problem: problems.length === 0 ? null : problems.join(' '),
   };
 }
@@ -143,7 +134,10 @@ function propertiesOf(
   }
 }
 
-function definedType(file: NoteFile, frontmatter: Record<string, unknown>): DefinedType | null {
+function definedType(
+  file: NoteFile,
+  frontmatter: Readonly<Record<string, unknown>>,
+): DefinedType | null {
   try {
     return { ...parseObjectType(frontmatter), path: createVaultPath(file.path) };
   } catch {
