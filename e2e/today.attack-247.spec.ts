@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
-import { sweep } from './today-sweep.ts';
+import { sweep } from './tab-sweep.ts';
 
 /**
  * Adversarial pass on #247 (Performance B, #238), in WebKit: Today places only

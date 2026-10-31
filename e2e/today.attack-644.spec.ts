@@ -1,6 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
-import { sweep } from './today-sweep.ts';
+import { sweep } from './tab-sweep.ts';
 
 /**
  * Adversarial pass on #644, in WebKit: the 500-row Tab sweeps record each stop

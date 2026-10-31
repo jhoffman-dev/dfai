@@ -1,7 +1,24 @@
 import type { Page } from './fixtures.ts';
 
-// The 500-row Tab sweeps of today.attack-247 and the attack on them (#644)
-// share one recorder, so the attack tests the sweep that ships.
+// The long Tab sweeps of today.attack-247 and inbox.attack-247, and the attack
+// on them (#644), share one recorder, so the attack tests the sweep that ships.
+
+/**
+ * Where a sweep walks: the stops inside `within` are on the page, and a stop's
+ * row is named by the `row` it sits in. Plain data, as it crosses into the page.
+ */
+export interface SweepScope {
+  readonly within: string;
+  readonly row: string;
+  /** The row's name: one of its attributes, or the text of an element in it. */
+  readonly rowName: { readonly attribute: string } | { readonly text: string };
+}
+
+const TODAY: SweepScope = {
+  within: 'article[aria-label="Today"]',
+  row: '[data-today-row]',
+  rowName: { attribute: 'data-today-row' },
+};
 
 /** Every stop a sweep made, as the page recorded them. */
 interface SweepLog {
@@ -31,8 +48,8 @@ interface SweepLog {
  */
 // One self-contained function, however long: page.evaluate sends its source
 // alone, so nothing outside it can be called from inside.
-function recordSweep(): void {
-  const host = window as unknown as { todaySweep?: SweepLog; stopTodaySweep?: () => void };
+function recordSweep(scope: SweepScope): void {
+  const host = window as unknown as { tabSweep?: SweepLog; stopTabSweep?: () => void };
   const log: SweepLog = {
     moves: 0,
     held: 0,
@@ -42,7 +59,7 @@ function recordSweep(): void {
     last: '',
     done: false,
   };
-  host.todaySweep = log;
+  host.tabSweep = log;
   const scroller = () => document.querySelector('.panel__body');
   const shape = () => `${scroller()?.scrollTop}/${scroller()?.scrollHeight}`;
   const nextFrame = window.requestAnimationFrame.bind(window);
@@ -169,7 +186,7 @@ function recordSweep(): void {
   };
   document.addEventListener('keydown', onKey, { capture: true });
   // Ends the sweep: the page is left as it was found, Tab and all.
-  host.stopTodaySweep = () => {
+  host.stopTabSweep = () => {
     stopped = true;
     document.removeEventListener('keydown', onKey, { capture: true });
     mutations.disconnect();
@@ -178,16 +195,23 @@ function recordSweep(): void {
     for (const restore of restores) restore();
   };
 
+  function rowNameOf(row: Element | null): string | null {
+    if (row === null) return null;
+    const name = scope.rowName;
+    if ('attribute' in name) return row.getAttribute(name.attribute);
+    return row.querySelector(name.text)?.textContent?.trim() ?? null;
+  }
+
   function readStop() {
     const at = document.activeElement;
-    const article = document.querySelector('article[aria-label="Today"]');
+    const within = document.querySelector(scope.within);
     const port = scroller();
-    if (at === null || at === document.body || article === null || port === null) return null;
+    if (at === null || at === document.body || within === null || port === null) return null;
     const box = at.getBoundingClientRect();
     const portBox = port.getBoundingClientRect();
     return {
-      inPage: article.contains(at),
-      row: at.closest('[data-today-row]')?.getAttribute('data-today-row') ?? null,
+      inPage: within.contains(at),
+      row: rowNameOf(at.closest(scope.row)),
       label: at.getAttribute('aria-label') ?? at.textContent?.trim().slice(0, 60) ?? '',
       inView:
         box.height > 0 &&
@@ -198,40 +222,44 @@ function recordSweep(): void {
 }
 
 const readSweep = (page: Page) =>
-  page.evaluate(() => (window as unknown as { todaySweep: SweepLog }).todaySweep);
+  page.evaluate(() => (window as unknown as { tabSweep: SweepLog }).tabSweep);
 
 /** Tabs pressed between two reads of the sweep's record. */
 const BATCH = 40;
 
-/** Presses `key` until the focus leaves the page, recording every stop. */
-export async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number) {
-  await page.evaluate(recordSweep);
-  // Option+Tab: WebKit's Tab alone skips buttons and checkboxes, as Safari does
-  // until Keyboard navigation is turned on; with it, every control is a stop.
-  // Held for the whole sweep, so each stop is one key and not four.
-  const held = key === 'Tab' ? ['Alt'] : ['Alt', 'Shift'];
-  for (const modifier of held) await page.keyboard.down(modifier);
-  let log = await readSweep(page);
-  // Refused Tabs (the page settling) count against `limit` too: every stop waits
-  // out a frame, a dozen or two Tabs, so forty to a stop leaves room.
-  let presses = 0;
-  while (!log.done && log.moves < limit && presses < limit * 40) {
-    for (let at = 0; at < BATCH; at += 1, presses += 1) await page.keyboard.press('Tab');
-    log = await readSweep(page);
-  }
-  for (const modifier of held.reverse()) await page.keyboard.up(modifier);
-  await page.evaluate(() => (window as unknown as { stopTodaySweep: () => void }).stopTodaySweep());
-  // Out of presses before the focus left the page: say so, rather than fail
-  // later as rows missing, or pass without the last stop read.
-  if (!log.done) {
-    throw new Error(
-      `sweep did not finish: ${log.moves} stops, ${presses} presses, ${log.held} held`,
-    );
-  }
-  return {
-    rows: new Set(log.rows),
-    offScreen: log.offScreen,
-    lostAfter: log.lostAfter,
-    last: log.last,
+/** A sweep within `scope`: presses `key` until the focus leaves it, recording every stop. */
+export const sweepWithin =
+  (scope: SweepScope) => async (page: Page, key: 'Tab' | 'Shift+Tab', limit: number) => {
+    await page.evaluate(recordSweep, scope);
+    // Option+Tab: WebKit's Tab alone skips buttons and checkboxes, as Safari does
+    // until Keyboard navigation is turned on; with it, every control is a stop.
+    // Held for the whole sweep, so each stop is one key and not four.
+    const held = key === 'Tab' ? ['Alt'] : ['Alt', 'Shift'];
+    for (const modifier of held) await page.keyboard.down(modifier);
+    let log = await readSweep(page);
+    // Refused Tabs (the page settling) count against `limit` too: every stop waits
+    // out a frame, a dozen or two Tabs, so forty to a stop leaves room.
+    let presses = 0;
+    while (!log.done && log.moves < limit && presses < limit * 40) {
+      for (let at = 0; at < BATCH; at += 1, presses += 1) await page.keyboard.press('Tab');
+      log = await readSweep(page);
+    }
+    for (const modifier of held.reverse()) await page.keyboard.up(modifier);
+    await page.evaluate(() => (window as unknown as { stopTabSweep: () => void }).stopTabSweep());
+    // Out of presses before the focus left the page: say so, rather than fail
+    // later as rows missing, or pass without the last stop read.
+    if (!log.done) {
+      throw new Error(
+        `sweep did not finish: ${log.moves} stops, ${presses} presses, ${log.held} held`,
+      );
+    }
+    return {
+      rows: new Set(log.rows),
+      offScreen: log.offScreen,
+      lostAfter: log.lostAfter,
+      last: log.last,
+    };
   };
-}
+
+/** A sweep of the Today page. */
+export const sweep = sweepWithin(TODAY);
