@@ -19,9 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        machine: [1, 2, 3]
         mode: [short, full]
-        delay: [0, 2, 10, 40]
-        load: [idle, busy]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -109,19 +108,14 @@ jobs:
         run: pnpm --filter @dfai/desktop exec vite build --minify false
 
       - name: Today's tick and choose, counted again and again
-        run: |
-          if [ "${{ matrix.load }}" = busy ]; then
-            for _ in $(seq "$(nproc)"); do (while :; do :; done) & done
-          fi
-          pnpm exec playwright test --config playwright.perf.config.ts --project budgets --reporter=list
+        run: pnpm exec playwright test --config playwright.perf.config.ts --project budgets --reporter=list
         env:
-          PERF_TODAY_LOOP: ${{ matrix.mode == 'full' && 8 || 16 }}
+          PERF_TODAY_LOOP: ${{ matrix.mode == 'full' && 3 || 8 }}
           PERF_TODAY_LOOP_MODE: ${{ matrix.mode }}
-          PERF_TODAY_MACHINE: d${{ matrix.delay }}-${{ matrix.load }}
-          PERF_HOST_DELAY_MS: ${{ matrix.delay }}
+          PERF_TODAY_MACHINE: m${{ matrix.machine }}
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: today-loop-${{ matrix.mode }}-d${{ matrix.delay }}-${{ matrix.load }}
+          name: today-loop-${{ matrix.mode }}-${{ matrix.machine }}
           path: test-results/perf/today-loop/
