@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { holdsShortcuts, type Overlay, type OverlayState } from './overlay.ts';
 
 /**
@@ -107,9 +107,10 @@ export function useAppShortcuts(
   shortcuts: AppShortcuts,
   { onMac = runsOnMac() }: { onMac?: boolean } = {},
 ): void {
-  // Listened for once; each key reaches what the latest render handed in.
+  // Listened for once; each key reaches what the latest render handed in, from
+  // the commit that hands it in (a layout effect, as the listener is).
   const latest = useRef(shortcuts);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = shortcuts;
   });
   // Cmd+S saves and Cmd+K searches, as they do everywhere else on this machine.
