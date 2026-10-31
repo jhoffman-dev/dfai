@@ -121,3 +121,27 @@ for (const [kind, standIn] of [
     ).not.toEqual([]);
   });
 }
+
+test('a sweep is not held by an observer that stops watching before it answers', async ({
+  page,
+}) => {
+  const today = await openToday(page);
+  // A hook that observes on focus and lets go at once, as one re-observing on every render does.
+  await page.evaluate((selector) => {
+    document.addEventListener('focusin', (event) => {
+      const control = event.target as HTMLElement;
+      if (!control.matches(selector)) return;
+      const first = new ResizeObserver(() => {});
+      first.observe(control);
+      first.unobserve(control);
+      const second = new ResizeObserver(() => {});
+      second.observe(control);
+      second.disconnect();
+    });
+  }, CONTROL);
+  await today.locator('input.done-check').first().focus();
+
+  const forward = await sweep(page, 'Tab', 200);
+
+  expect(forward.rows.size).toBe(TASKS);
+});
