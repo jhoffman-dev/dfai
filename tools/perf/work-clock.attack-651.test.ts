@@ -47,7 +47,8 @@ const clock = () => (window as unknown as { __workClock: Clock }).__workClock;
 const host = () =>
   (window as unknown as { __TAURI_INTERNALS__: { invoke(command: string): Promise<unknown> } })
     .__TAURI_INTERNALS__;
-const first = (buffer: ArrayBuffer) => new Uint8Array(buffer)[0];
+// NaN when the buffer is empty, so a missing byte still fails the comparison.
+const first = (buffer: ArrayBuffer): number => new Uint8Array(buffer)[0] ?? Number.NaN;
 
 describe('the work clock, attacked through its digests (#651)', () => {
   it('hands concurrent digests that finish out of order to the page in the order asked', async () => {
