@@ -117,8 +117,24 @@ function withProperty(
   };
 }
 
-const otherKeys = (type: ObjectType, key: string | null): string[] =>
-  type.properties.map((property) => property.key).filter((candidate) => candidate !== key);
+/**
+ * The keys a property other than `key` holds, and the keys the file holds for
+ * properties the type left out: a key given to a property of the editor's
+ * over one of those would write over what the file says of it (#683).
+ */
+const otherKeys = (type: ObjectType, key: string | null): string[] => [
+  ...type.properties.map((property) => property.key).filter((candidate) => candidate !== key),
+  ...(type.unreadKeys ?? []),
+];
+
+/** Refuses a key the file holds for a property the type cannot read: mending that is the file's. */
+function refuseUnreadKey(type: ObjectType, key: string): void {
+  const unread = (type.unreadKeys ?? []).find((taken) => taken.toLowerCase() === key.toLowerCase());
+  if (unread === undefined) return;
+  throw new TypeEditError(
+    `"${unread}" is already in the type file, as a property DFAI cannot read: mend or remove it there first`,
+  );
+}
 
 export function setTypeLabel(type: ObjectType, label: string): ObjectType {
   const trimmed = label.trim();
@@ -183,6 +199,7 @@ export function renameProperty(
     : newKey.trim();
   const nextLabel = label.trim() === '' ? humanizeKey(nextKey) : label.trim();
   if (nextKey !== key) {
+    refuseUnreadKey(type, nextKey);
     const problem = propertyKeyProblem({ key: nextKey, existing: otherKeys(type, key) });
     if (problem !== null) throw new TypeEditError(problem);
   }

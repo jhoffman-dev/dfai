@@ -141,8 +141,11 @@ function writtenProperties({
       ? (asWritten.get(property.key) ?? property.key)
       : property.key;
   // Properties that were read before and still are fill the places those held,
-  // in their new order; the ones the parser skipped are never moved.
-  const kept = after.properties.filter((property) => asWritten.has(oldKey(property)));
+  // in their new order; the ones the parser skipped are never moved. A key the
+  // file holds for a skipped one is not a property read before (#683).
+  const kept = after.properties.filter(
+    (property) => beforeByKey.has(oldKey(property)) && asWritten.has(oldKey(property)),
+  );
   const keptOldKeys = new Set(kept.map(oldKey));
   const entries: [string, unknown][] = [];
   let next = 0;
@@ -157,7 +160,24 @@ function writtenProperties({
   for (const property of after.properties) {
     if (!keptOldKeys.has(oldKey(property))) entries.push([property.key, spec(property)]);
   }
+  refuseWritingOver(entries);
   return Object.fromEntries(entries);
+}
+
+/**
+ * Refuses a map that holds one key twice: the later would write over the
+ * earlier, and so over what the file says of a property. The editor keeps
+ * clear of the file's keys (#683); this is what holds if it ever does not.
+ */
+function refuseWritingOver(entries: readonly (readonly [string, unknown])[]): void {
+  const seen = new Set<string>();
+  for (const [key] of entries) {
+    const read = key.trim();
+    if (seen.has(read)) {
+      throw new Error(`The type file already holds "${read}", so it is not written over`);
+    }
+    seen.add(read);
+  }
 }
 
 /**
