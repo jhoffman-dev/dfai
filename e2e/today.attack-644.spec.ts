@@ -90,7 +90,7 @@ const focusedControlInView = (page: Page) =>
 const fromTheTarget = (labels: string[]) => labels.filter((label) => label.includes(TARGET));
 
 const FRAME_TIMING = macOnly(
-  'WebKit’s rendering steps: on Linux the stand-ins do not move the control on the frames macOS does',
+  'WebKit’s rendering steps: the stand-ins move the control a frame late on Linux every run, and on macOS now and then (PR #649)',
 );
 
 for (const [kind, standIn] of [
