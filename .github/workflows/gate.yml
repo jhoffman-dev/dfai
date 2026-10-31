@@ -299,6 +299,11 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/99-ci-519 > /dev/null
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # A restore that stalls is given up on after two minutes, not the action's
+        # ten: a miss only means installing (seconds), and a ten-minute stall once
+        # took an e2e shard past its time limit (run 41196967743).
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
         id: webkit
         with:
           path: ~/.cache/ms-playwright
@@ -317,6 +322,8 @@ jobs:
           key: ${{ steps.webkit.outputs.cache-primary-key }}
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
         id: webkit-debs
         with:
           path: ~/.cache/webkit-debs
@@ -398,6 +405,11 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/99-ci-519 > /dev/null
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # A restore that stalls is given up on after two minutes, not the action's
+        # ten: a miss only means installing (seconds), and a ten-minute stall once
+        # took an e2e shard past its time limit (run 41196967743).
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
         id: webkit
         with:
           path: ~/.cache/ms-playwright
@@ -419,6 +431,8 @@ jobs:
       # The .deb files apt downloaded for WebKit, keyed on the runner image so
       # they match what is already installed on it. A new image misses once.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
         id: webkit-debs
         with:
           path: ~/.cache/webkit-debs
