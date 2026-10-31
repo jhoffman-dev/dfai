@@ -7,6 +7,7 @@ import {
   renameOption,
   renameProperty,
   setOptionColor,
+  setPropertyRequired,
   setTypeIcon,
   setTypeLabel,
 } from './type-edit.ts';
@@ -250,6 +251,17 @@ describe('typeFrontmatterChanges, on keys the file holds twice as the parser tri
     const after = moveProperty(before, { key: 'rating', to: 0 });
     const properties = typeFrontmatterChanges({ before, after, written })['properties'];
     expect(properties).toEqual({ ' author': { kind: 'wizard' }, rating: 'number', author: 'text' });
+  });
+
+  it('writes an edit of the read author into its own entry, never the skipped " author"', () => {
+    const written = { name: 'book', properties: { ' author': { kind: 'wizard' }, author: 'text' } };
+    const before = parseObjectType(written);
+    const after = setPropertyRequired(before, { key: 'author', required: true });
+    const properties = typeFrontmatterChanges({ before, after, written })['properties'];
+    expect(properties).toEqual({
+      ' author': { kind: 'wizard' },
+      author: { kind: 'text', required: true },
+    });
   });
 
   it('adds a property beside two blank keys, carrying both through as they were', () => {
