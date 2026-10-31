@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
+import { macOnly } from './platform.ts';
 import { sweep } from './tab-sweep.ts';
 
 /**
@@ -88,25 +89,37 @@ const focusedControlInView = (page: Page) =>
 
 const fromTheTarget = (labels: string[]) => labels.filter((label) => label.includes(TARGET));
 
+const FRAME_TIMING = macOnly(
+  'WebKit’s rendering steps: on Linux the stand-ins do not move the control on the frames macOS does',
+);
+
 for (const [kind, standIn] of [
   ['a focus transition', slidAwayByTransition],
   ['a ResizeObserver', movedByResizeObserver],
 ] as const) {
-  test(`the stand-in for ${kind} carries the focused control off screen`, async ({ page }) => {
-    await openToday(page);
-    await standIn(page);
+  test(
+    `the stand-in for ${kind} carries the focused control off screen`,
+    FRAME_TIMING,
+    async ({ page }) => {
+      await openToday(page);
+      await standIn(page);
 
-    expect(await focusedControlInView(page)).toBe(false);
-  });
+      expect(await focusedControlInView(page)).toBe(false);
+    },
+  );
 
-  test(`a Tab sweep reports the control ${kind} moves off screen`, async ({ page }) => {
-    const today = await openToday(page);
-    await standIn(page);
-    await today.locator('input.done-check').first().focus();
+  test(
+    `a Tab sweep reports the control ${kind} moves off screen`,
+    FRAME_TIMING,
+    async ({ page }) => {
+      const today = await openToday(page);
+      await standIn(page);
+      await today.locator('input.done-check').first().focus();
 
-    const forward = await sweep(page, 'Tab', 200);
+      const forward = await sweep(page, 'Tab', 200);
 
-    expect(forward.rows.size).toBe(TASKS);
-    expect(fromTheTarget(forward.offScreen)).not.toEqual([]);
-  });
+      expect(forward.rows.size).toBe(TASKS);
+      expect(fromTheTarget(forward.offScreen)).not.toEqual([]);
+    },
+  );
 }

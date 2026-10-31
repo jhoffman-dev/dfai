@@ -244,6 +244,12 @@ jobs:
         env:
           ATLAS_TEST_MODEL_DIR: ${{ runner.temp }}/atlas-test-models
 
+      # A deleted note goes to the real macOS Trash. Left out of `cargo test`
+      # because it leaves a file in the Trash of whoever runs it, which on a
+      # runner thrown away after the job is no one's.
+      - name: Test the real Trash
+        run: pnpm rust:test the_system_trash_takes_a_note -- --ignored
+
   e2e:
     needs: changes
     if: needs.changes.outputs.code == 'true'
