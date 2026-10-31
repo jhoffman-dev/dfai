@@ -4,6 +4,7 @@ import {
   InvalidVaultPathError,
   VAULT_ROOT,
   createVaultPath,
+  deleteThroughLinkRefusal,
   moveRepointsLinkRefusal,
   moveThroughLinkRefusal,
 } from '@dfai/domain';
@@ -345,6 +346,28 @@ describe('tauriVaultFs writes', () => {
 
     await expect(moving).rejects.toThrow(
       new VaultAccessError('something with that name is already there'),
+    );
+  });
+
+  it('words the host refusing a trash through a link as the app does (#685)', async () => {
+    invoke.mockImplementation(() => Promise.reject('path goes through a link: Work/Alias'));
+    const trashing = tauriVaultFs.trashEntry({ path: notes, vault: '/a' });
+
+    await expect(trashing).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof VaultAccessError &&
+        !(error instanceof EntryChangedError) &&
+        error.message === deleteThroughLinkRefusal(createVaultPath('Work/Alias')),
+    );
+  });
+
+  it('leaves a trash refused through a link no vault path can name as the host said it', async () => {
+    const message = 'path goes through a link: Work/a\\b';
+    invoke.mockImplementation(() => Promise.reject(message));
+    const trashing = tauriVaultFs.trashEntry({ path: notes, vault: '/a' });
+
+    await expect(trashing).rejects.toSatisfy(
+      (error: unknown) => error instanceof VaultAccessError && error.message === message,
     );
   });
 

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   createVaultPath,
+  deleteThroughLinkRefusal,
   InvalidVaultPathError,
   moveRepointsLinkRefusal,
   moveThroughLinkRefusal,
@@ -21,23 +22,39 @@ import { throughHost } from './host-error.ts';
 const TRASH_REFUSED_AS_CHANGED =
   'a file changed on disk since it was read, so nothing was moved to the Trash';
 
+/** How `vault_entries.rs` begins refusing a move or a trash made through a link, naming it (#680, #685). */
+const THROUGH_LINK = 'path goes through a link: ';
+
 /** How `vault_entries.rs` begins the move refusals the domain has words for, each naming a link (#680). */
 const MOVE_REFUSALS: readonly (readonly [string, (link: VaultPath) => string])[] = [
-  ['path goes through a link: ', moveThroughLinkRefusal],
+  [THROUGH_LINK, moveThroughLinkRefusal],
   ['moving it would point a link elsewhere: ', moveRepointsLinkRefusal],
 ];
+
+/** The domain's words for a host refusal that begins `start` and names a link. */
+function linkRefusal(message: string, start: string, words: (link: VaultPath) => string): string {
+  try {
+    return words(createVaultPath(message.slice(start.length)));
+  } catch (cause) {
+    // A link may be named what no vault path may be (`a\b`): then the host's own words.
+    if (cause instanceof InvalidVaultPathError) return message;
+    throw cause;
+  }
+}
 
 /** A refused move in the domain's words when the host's are one of those, else as the host said it. */
 function moveRefused(message: string): Error {
   for (const [start, words] of MOVE_REFUSALS) {
-    if (!message.startsWith(start)) continue;
-    try {
-      return new MoveRefusedError(words(createVaultPath(message.slice(start.length))));
-    } catch (cause) {
-      // A link may be named what no vault path may be (`a\b`): then the host's own words.
-      if (cause instanceof InvalidVaultPathError) return new MoveRefusedError(message);
-      throw cause;
-    }
+    if (message.startsWith(start)) return new MoveRefusedError(linkRefusal(message, start, words));
+  }
+  return new VaultAccessError(message);
+}
+
+/** A refused trash: a file changed since it was read, a path through a link in the domain's words, or as the host said it. */
+function trashRefused(message: string): Error {
+  if (message === TRASH_REFUSED_AS_CHANGED) return new EntryChangedError(message);
+  if (message.startsWith(THROUGH_LINK)) {
+    return new VaultAccessError(linkRefusal(message, THROUGH_LINK, deleteThroughLinkRefusal));
   }
   return new VaultAccessError(message);
 }
@@ -170,10 +187,7 @@ export const tauriVaultFs: HostVaultFsPort = {
           );
     await throughHost(
       invoke('trash_entry', { path, vault, ...(held !== undefined && { unchanged: held }) }),
-      (message) =>
-        message === TRASH_REFUSED_AS_CHANGED
-          ? new EntryChangedError(message)
-          : new VaultAccessError(message),
+      trashRefused,
     );
   },
 

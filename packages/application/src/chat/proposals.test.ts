@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createVaultPath } from '@dfai/domain';
+import { createVaultPath, deleteThroughLinkRefusal } from '@dfai/domain';
 import { apiFixture } from '../testing/api-fixture.ts';
+import { VaultAccessError } from '../vault/ports.ts';
 import { blockMarkdown } from '../testing/block-markdown.ts';
 import {
   acceptProposal,
@@ -198,6 +199,30 @@ describe('proposeNote and accepting it', () => {
     });
     await undoProposal({ fs: tracked, openNotes: closed, applied });
     expect(trashed).toEqual(['Idea.md']);
+  });
+
+  it('says why when the host will not trash a created note reached through a link (#685)', async () => {
+    const { fs, markdown, fixture } = vault({});
+    const refusal = deleteThroughLinkRefusal(createVaultPath('Shared'));
+    const refusing = {
+      ...fs,
+      trashEntry: async () => {
+        throw new VaultAccessError(refusal);
+      },
+    };
+    const made = proposeNote({
+      today: '2026-10-08',
+      markdown,
+      input: { title: 'Idea' },
+      id: 'n1',
+      notePaths: [],
+    });
+    const applied = await acceptProposal({ fs: refusing, openNotes: closed, proposal: made });
+
+    await expect(undoProposal({ fs: refusing, openNotes: closed, applied })).rejects.toThrow(
+      refusal,
+    );
+    expect(fixture.files.has('Idea.md')).toBe(true);
   });
 
   it.each([
