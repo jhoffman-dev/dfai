@@ -33,7 +33,8 @@ export interface AutomationListing {
 /**
  * Every automation in the vault, with its log, sorted by name. A file in the
  * automations folder that does not say `atlas: automation` is not a rule and
- * is left out; one that says so and cannot be read is listed as broken.
+ * is left out; one that says so and cannot be read is listed as broken, and so
+ * is one whose frontmatter is not readable at all.
  */
 export async function loadAutomations({
   fs,
@@ -52,7 +53,15 @@ export async function loadAutomations({
   const broken: BrokenAutomation[] = [];
   const ids = new Set<string>();
   for (const file of files) {
-    const frontmatter = markdown.frontmatterProperties(splitFrontmatter(file.text).frontmatter);
+    const block = splitFrontmatter(file.text).frontmatter;
+    // An unreadable block reads as no properties, so it cannot say it is a rule:
+    // in the rules folder it most likely is one, and leaving it out stops it silently (#679).
+    const unreadable = markdown.frontmatterProblem(block);
+    if (unreadable !== null) {
+      broken.push(unreadableRule(file.path, unreadable));
+      continue;
+    }
+    const frontmatter = markdown.frontmatterProperties(block);
     if (!isAutomationNote(frontmatter)) continue;
     const read = parseAutomationRule(createVaultPath(file.path), frontmatter);
     if ('broken' in read) {
@@ -75,5 +84,15 @@ export async function loadAutomations({
   return {
     automations: automations.sort((a, b) => byName(a.rule, b.rule)),
     broken: broken.sort(byName),
+  };
+}
+
+/** A rule file whose frontmatter cannot be read, named by its file as an unnamed rule is. */
+function unreadableRule(path: string, problem: string): BrokenAutomation {
+  const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
+  return {
+    path: createVaultPath(path),
+    name,
+    problem: `Its frontmatter cannot be read: ${problem}`,
   };
 }
