@@ -78,7 +78,11 @@ async function openVault(
  */
 async function timersStopped(page: Page): Promise<() => Promise<void>> {
   await page.clock.install();
-  await page.clock.pauseAt(Date.now() + 10);
+  // The page's own time, not this process's, with room for the call to land:
+  // a time the page has passed is refused (run 41223511320). The jump comes
+  // before the Inbox opens, so the hold's own timer is not among those it fires.
+  const pageNow = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(pageNow + 1_000);
   return () => page.clock.resume();
 }
 
