@@ -358,7 +358,7 @@ describe('updateFrontmatter, on a block whose keys are indented (#377)', () => {
   it('mixed indents: keys at different columns are refused, not rewritten', () => {
     const before = block('  a: 1', '    t: T');
     expect(() => updateFrontmatter(before, { t: 'U' })).toThrowError(
-      unreadable('t', 'Nested mappings are not allowed in compact mappings at line 1, column 6:'),
+      unreadable('t', 'Nested mappings are not allowed in compact mappings at line 1, column 6'),
     );
   });
 
@@ -373,7 +373,7 @@ describe('updateFrontmatter, on a block whose keys are indented (#377)', () => {
   it('an unreadable block: a change is refused on the key it would write', () => {
     const before = block('  a: 1', '    t: T');
     expect(() => updateFrontmatter(before, { missing: null, n: 'N' })).toThrowError(
-      unreadable('n', 'Nested mappings are not allowed in compact mappings at line 1, column 6:'),
+      unreadable('n', 'Nested mappings are not allowed in compact mappings at line 1, column 6'),
     );
   });
 
@@ -397,7 +397,7 @@ describe('updateFrontmatter, on a block whose keys are indented (#377)', () => {
 
   it('tab indents are refused (YAML allows no tab as indentation); a tab after the indent is kept', () => {
     expect(() => updateFrontmatter(block('\ta: 1', '\tt: T'), { t: 'U' })).toThrowError(
-      unreadable('t', 'Tabs are not allowed as indentation at line 1, column 1:'),
+      unreadable('t', 'Tabs are not allowed as indentation at line 1, column 1'),
     );
     expect(updateFrontmatter(block('  a:\t1', '  t: T'), { t: 'U' })).toBe(
       block('  a:\t1', '  t: U'),

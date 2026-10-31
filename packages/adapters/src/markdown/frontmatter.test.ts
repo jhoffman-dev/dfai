@@ -8,6 +8,11 @@ describe('frontmatterProblem', () => {
     expect(frontmatterProblem(null)).toBeNull();
   });
 
+  it('says nothing of a block holding only a comment or an empty map', () => {
+    expect(frontmatterProblem('---\n# a comment\n---\n')).toBeNull();
+    expect(frontmatterProblem('---\n{}\n---\n')).toBeNull();
+  });
+
   it('says why a block with a key given twice cannot be read', () => {
     const problem = frontmatterProblem('---\nsidebarOrder: [views]\nsidebarOrder: [types]\n---\n');
     expect(problem).toMatch(/unique/i);
