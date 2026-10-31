@@ -134,6 +134,18 @@ export async function tabTo(page: Page, handle: Locator, { limit = 80 } = {}) {
 }
 
 /**
+ * Once a keyboard pick-up has been seen (the handle pressed, or "Picked up"
+ * said), waits until the drag hears keys. It is not listening yet: dnd-kit's
+ * keyboard sensor adds its key listener from a timer it sets at the pick-up,
+ * and on a loaded runner that timer can run after the next key, which is then
+ * lost. Timers set with the same delay run in the order they were set, so once
+ * one set now has run, the sensor's has.
+ */
+export async function keyboardSensorListening(page: Page) {
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve)));
+}
+
+/**
  * Tab to `handle`, Space to pick it up, each key in `moves`, then `finish` —
  * Space to drop, or Escape to cancel.
  */
@@ -147,11 +159,7 @@ export async function dragWithKeyboard(
   await page.keyboard.press('Space');
   // Picked up: dnd-kit marks the handle pressed for as long as it is held.
   await expect(handle).toHaveAttribute('aria-pressed', 'true');
-  // But not yet listening: dnd-kit's keyboard sensor adds its key listener from
-  // a timer it sets at the pick-up, and on a loaded runner the timer can run
-  // after the next key, which is then lost. Timers set with the same delay run
-  // in the order they were set, so once one set now has run, the sensor's has.
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve)));
+  await keyboardSensorListening(page);
   for (const move of moves) {
     const before = await announced(page);
     await page.keyboard.press(move);
