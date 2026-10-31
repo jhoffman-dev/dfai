@@ -10,6 +10,7 @@
 import { appendFile, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BUDGETED_ACTIONS, RUN_TOLERANCE } from './budgeted-actions.ts';
+import { budgetPartFiles, latencyFiles } from './part-files.ts';
 import {
   combineParts,
   measurementsOf,
@@ -27,9 +28,7 @@ const BUDGETS_FILE = new URL('./budgets.json', import.meta.url);
 const COUNTED_RUNS = 2;
 
 async function partsUnder(folder: string): Promise<PartResult[]> {
-  const files = (await readdir(folder, { recursive: true })).filter((file) =>
-    /(^|\/)budgets\.[^/]+\.json$/.test(file),
-  );
+  const files = budgetPartFiles(await readdir(folder, { recursive: true }));
   return Promise.all(
     files.map(async (file) => JSON.parse(await readFile(join(folder, file), 'utf8')) as PartResult),
   );
@@ -37,9 +36,7 @@ async function partsUnder(folder: string): Promise<PartResult[]> {
 
 /** What is wrong with the response-time budgets' results under `folder`: none, two, or an empty one. */
 async function latencyProblems(folder: string): Promise<string[]> {
-  const files = (await readdir(folder, { recursive: true })).filter((file) =>
-    /(^|\/)latency\.json$/.test(file),
-  );
+  const files = latencyFiles(await readdir(folder, { recursive: true }));
   if (files.length !== 1) {
     return [`the response-time budgets ran in ${files.length} parts, not one (latency.json)`];
   }

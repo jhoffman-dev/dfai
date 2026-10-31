@@ -462,7 +462,11 @@ jobs:
       # install, say) the run would only time out waiting for the server.
       - name: Work budgets on the fixture vault
         if: (success() || failure()) && steps.build.outcome == 'success'
-        run: pnpm exec playwright test --config playwright.perf.config.ts --project budgets --reporter=list
+        # Its own output folder: Playwright empties the one it writes into as
+        # it starts, which would take the response times' latency.json with it.
+        run: >
+          pnpm exec playwright test --config playwright.perf.config.ts --project budgets
+          --reporter=list --output test-results/budgets
         env:
           PERF_BUDGETS_FIXTURES: ${{ matrix.fixtures }}
           PERF_BUDGETS_PASSES: ${{ matrix.passes }}
