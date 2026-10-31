@@ -18,14 +18,16 @@ interface SweepLog {
 /**
  * Records a sweep inside the page: at every Tab, before it moves the focus,
  * the stop the last Tab reached is read — on the page or lost, which row, in
- * view. Read once the page has settled from the key: a key that moved anything
- * (a scroll, a size, a change in the page, work left for later) holds the next
- * Tab back, refused, until two frames have passed with nothing changing, so the
- * scroll the focus asked for has been made and the rows it places are placed
- * and measured. A key that moved nothing is read at once: nothing can settle.
+ * view. Read once the page has settled from the key: every stop waits out a
+ * rendering step, so what a focus sets off at the next frame (a transition, an
+ * observer's callback) has happened. A key that moved anything (a scroll, a
+ * size, a change in the page, work left for later, a transition or animation
+ * begun, an observer made or called) holds the next Tab back, refused, until
+ * two frames have passed with nothing changing, so the scroll the focus asked
+ * for has been made and the rows it places are placed and measured.
  *
  * Reading in the page instead of a round trip and two frames for each of some
- * 3,300 stops is what takes a sweep from two minutes to seconds (shard 4).
+ * 3,300 stops is what takes a sweep from two minutes to one (shard 4).
  */
 // One self-contained function, however long: page.evaluate sends its source
 // alone, so nothing outside it can be called from inside.
@@ -82,11 +84,57 @@ function recordSweep(): void {
   scheduling(window, 'setInterval');
   scheduling(window, 'requestIdleCallback');
   scheduling(MessagePort.prototype, 'postMessage');
+  // What only the rendering step does — a CSS transition or animation set off,
+  // an observer called back — counts as a change too. Observers made before
+  // the sweep are not wrapped; what their callbacks do still shows as a
+  // change, as every stop waits out a frame (below).
+  const observing = (name: 'ResizeObserver' | 'IntersectionObserver') => {
+    const table = window as unknown as Record<string, unknown>;
+    const Original = table[name] as new (
+      callback: (...args: unknown[]) => void,
+      options?: unknown,
+    ) => object;
+    table[name] = class extends Original {
+      constructor(callback: (...args: unknown[]) => void, options?: unknown) {
+        changed = true;
+        super((...args: unknown[]) => {
+          changed = true;
+          callback(...args);
+        }, options);
+      }
+    };
+    restores.push(() => {
+      table[name] = Original;
+    });
+  };
+  observing('ResizeObserver');
+  observing('IntersectionObserver');
+  const onRender = () => {
+    changed = true;
+  };
+  const renderEvents = ['transitionrun', 'transitionstart', 'animationstart'];
+  for (const name of renderEvents) document.addEventListener(name, onRender, { capture: true });
+  const animations = new WeakSet<Animation>();
+  const animationBegun = () => {
+    let begun = false;
+    for (const animation of document.getAnimations()) {
+      if (animations.has(animation)) continue;
+      animations.add(animation);
+      begun = true;
+    }
+    return begun;
+  };
   let seen = shape();
   // The focus the sweep starts from settles too.
   let changedAt: number | null = frame;
+  // Every stop waits out at least this many rendering steps before it is read,
+  // as the per-press sweep did, so what a focus sets off at the next frame has
+  // happened (or has shown up as a change, which waits two more).
+  const FRAMES_PER_STOP = 1;
+  let movedAt = frame;
   const settling = () => {
-    if (changed || shape() !== seen) {
+    if (frame < movedAt + FRAMES_PER_STOP) return true;
+    if (changed || shape() !== seen || animationBegun()) {
       changed = false;
       seen = shape();
       changedAt = frame;
@@ -117,6 +165,7 @@ function recordSweep(): void {
       log.last = stop.label;
     }
     log.moves += 1;
+    movedAt = frame;
   };
   document.addEventListener('keydown', onKey, { capture: true });
   // Ends the sweep: the page is left as it was found, Tab and all.
@@ -124,6 +173,8 @@ function recordSweep(): void {
     stopped = true;
     document.removeEventListener('keydown', onKey, { capture: true });
     mutations.disconnect();
+    for (const name of renderEvents)
+      document.removeEventListener(name, onRender, { capture: true });
     for (const restore of restores) restore();
   };
 
@@ -161,9 +212,10 @@ export async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number)
   const held = key === 'Tab' ? ['Alt'] : ['Alt', 'Shift'];
   for (const modifier of held) await page.keyboard.down(modifier);
   let log = await readSweep(page);
-  // Refused Tabs (the page settling) count against `limit` too, ten to a stop.
+  // Refused Tabs (the page settling) count against `limit` too: every stop waits
+  // out a frame, a dozen or two Tabs, so forty to a stop leaves room.
   let presses = 0;
-  while (!log.done && log.moves < limit && presses < limit * 10) {
+  while (!log.done && log.moves < limit && presses < limit * 40) {
     for (let at = 0; at < BATCH; at += 1, presses += 1) await page.keyboard.press('Tab');
     log = await readSweep(page);
   }

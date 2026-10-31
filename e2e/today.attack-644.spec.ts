@@ -4,13 +4,12 @@ import { sweep } from './today-sweep.ts';
 
 /**
  * Adversarial pass on #644, in WebKit: the 500-row Tab sweeps record each stop
- * in the page, and read a stop at once when the Tab that reached it changed
- * nothing the recorder watches (the DOM, the scroller, a timer or frame asked
- * for). Some of what a focus sets off happens only at the next frame — a CSS
- * transition, a ResizeObserver callback — and the next Tab comes before it.
- * The per-press sweep it replaced waited two frames after every key, and
- * caught both. These stand in for such an app on a page short enough that no
- * Tab scrolls, so nothing holds a Tab back.
+ * in the page. Some of what a focus sets off happens only at the next frame — a
+ * CSS transition, a ResizeObserver callback — and a recorder that read a stop
+ * at the next Tab, when that Tab changed nothing it watched, missed both, where
+ * the per-press sweep it replaced (two frames after every key) caught them. So
+ * every stop now waits out a frame. These stand in for such an app on a page
+ * short enough that no Tab scrolls, so nothing else holds a Tab back.
  */
 
 const NOW = new Date(2026, 9, 13, 12, 0, 0);
@@ -101,11 +100,6 @@ for (const [kind, standIn] of [
   });
 
   test(`a Tab sweep reports the control ${kind} moves off screen`, async ({ page }) => {
-    // Known gap (#644): the stop is read at the next Tab, before the frame that
-    // moves it, so this fails nearly every run and passes now and then on a frame
-    // that lands between two Tabs. Skipped so the suite stays green; once a
-    // sweep waits out the frames a focus sets off, drop the fixme.
-    test.fixme();
     const today = await openToday(page);
     await standIn(page);
     await today.locator('input.done-check').first().focus();
