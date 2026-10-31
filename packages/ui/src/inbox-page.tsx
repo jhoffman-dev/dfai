@@ -183,7 +183,15 @@ export function InboxPage(props: InboxPageProps) {
     () => ({ scroller, page: article, list, answers, room }),
     [],
   );
-  const offersRead = [offer, migration, paraMigration, tidy, cleanup, meetingProjects];
+  const offersRead = [
+    offer,
+    migration,
+    paraMigration,
+    tidy,
+    cleanup,
+    meetingProjects,
+    meetingSetup,
+  ];
   const live = useOffersKnown(
     offersRead.some((read) => read?.reading === true),
     offersRead.some((read) => read?.waitingForIndex === true),

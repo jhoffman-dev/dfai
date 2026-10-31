@@ -70,6 +70,23 @@ async function openVault(
 }
 
 /**
+ * Stops the page's timers until `heldUntil` lets them go. The Inbox holds its
+ * rows for its offers only until a timer runs out (`INBOX_OFFERS_WAIT_MS`),
+ * and its rows are read as it opens: on a loaded runner they came after the
+ * limit, already shown, and a test of the hold found nothing held (Linux CI,
+ * run 41209303574). With the timer stopped the rows always come while held.
+ */
+async function timersStopped(page: Page): Promise<() => Promise<void>> {
+  await page.clock.install();
+  // The page's own time, not this process's, with room for the call to land:
+  // a time the page has passed is refused (run 41223511320). The jump comes
+  // before the Inbox opens, so the hold's own timer is not among those it fires.
+  const pageNow = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(pageNow + 1_000);
+  return () => page.clock.resume();
+}
+
+/**
  * Clicks the Inbox button in the page and reads the row titled `title` the
  * moment it is first put in the page — before the hold can run out (its
  * timer is set only after that commit is painted): whether it is hidden,
@@ -233,9 +250,11 @@ test('an offer that never resolves: the rows show at the limit, work, and the of
   const vault = await vaultWithRows();
   await vault.write('Loose idea.md', 'A thought.\n');
   const { release } = await openVault(page, vault, 'Loose idea.md');
+  const heldUntil = await timersStopped(page);
   // Held, not missing: drawn but not visible until the limit.
   const held = await heldAtMount(page, 'Item 2');
   expect(held.hidden).toBe(true);
+  await heldUntil();
   await expect(drawnRow(page, 2)).toBeAttached();
   await expect(row(page, 2)).toBeVisible({ timeout: 3_000 });
   await row(page, 2).click();
@@ -252,6 +271,7 @@ test('Tab pressed while the rows are held never focuses a hidden row, and a row 
   const vault = await vaultWithRows();
   await vault.write('Loose idea.md', 'A thought.\n');
   const { release } = await openVault(page, vault, 'Loose idea.md');
+  const heldUntil = await timersStopped(page);
   // Drawn but held: in the page, not seen, and not even a script's focus() lands on it.
   const held = await heldAtMount(page, 'Item 1');
   expect(held).toEqual({ hidden: true, inert: true, tookFocus: false });
@@ -264,6 +284,7 @@ test('Tab pressed while the rows are held never focuses a hidden row, and a row 
     });
     expect(inHidden).toBe(false);
   }
+  await heldUntil();
   await expect(row(page, 1)).toBeVisible({ timeout: 3_000 });
   // Once shown, the inert is lifted: a row takes focus.
   await row(page, 1).focus();

@@ -125,6 +125,21 @@ async function open(page: Page, vault: FakeVault) {
 }
 
 const inboxPage = (page: Page) => page.getByRole('article', { name: 'Inbox' });
+
+/**
+ * Every offer the triage vault makes is on the Inbox. One read after the page
+ * stops holding its rows for them lands above the list, and the list is held
+ * still by scrolling (#130): the offers already shown move up under a click.
+ */
+async function everyTriageOfferShown(page: Page) {
+  const inbox = inboxPage(page);
+  await expect(
+    inbox.getByRole('complementary', { name: 'Set your types up for the Inbox' }),
+  ).toBeVisible();
+  for (const offer of ['Move tasks to GTD statuses', 'Process meetings when they arrive']) {
+    await expect(inbox.getByRole('region', { name: offer })).toBeVisible();
+  }
+}
 const row = (page: Page, title: string) =>
   inboxPage(page)
     .getByRole('row')
@@ -371,6 +386,7 @@ test('“Not now” puts the types offer away for the session: back on the Inbox
     name: 'Set your types up for the Inbox',
   });
   await expect(offer).toBeVisible();
+  await everyTriageOfferShown(page);
   await offer.getByRole('button', { name: 'Not now' }).click();
   await expect(offer).toHaveCount(0);
 

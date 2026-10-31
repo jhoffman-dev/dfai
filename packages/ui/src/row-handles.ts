@@ -18,9 +18,12 @@ export function useRowHandles(order: readonly VaultPath[]) {
   const rows = useRef(new Map<VaultPath, HTMLElement>());
   const [wanted, setWanted] = useState<VaultPath | null>(null);
   const wantedNow = useRef<VaultPath | null>(null);
+  // Current from the render, not from an effect: another hook's effect in the
+  // commit that lists a row (an undo giving it back the focus) can run before
+  // this one's, and would find the row not yet in the order and drop it.
   const orderNow = useRef(order);
+  orderNow.current = order;
   useEffect(() => {
-    orderNow.current = order;
     if (wantedNow.current !== null && !order.includes(wantedNow.current)) {
       wantedNow.current = null;
       setWanted(null);

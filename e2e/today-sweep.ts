@@ -13,6 +13,12 @@ interface SweepLog {
   lostAfter: string | null;
   last: string;
   done: boolean;
+  /**
+   * Why each stop was read when it was, and what the observers made during the
+   * sweep did, by frame: what a failing sweep test prints, so a run that
+   * misses something shows which wait let it through. The latest few hundred.
+   */
+  trace: string[];
 }
 
 /**
@@ -41,6 +47,7 @@ function recordSweep(): void {
     lostAfter: null,
     last: '',
     done: false,
+    trace: [],
   };
   host.todaySweep = log;
   const scroller = () => document.querySelector('.panel__body');
@@ -48,6 +55,22 @@ function recordSweep(): void {
   const nextFrame = window.requestAnimationFrame.bind(window);
   let frame = 0;
   let stopped = false;
+  const TRACE_KEPT = 400;
+  const note = (line: string) => {
+    log.trace.push(`f${frame} ${line}`);
+    if (log.trace.length > TRACE_KEPT) log.trace.shift();
+  };
+  // Each element the trace names gets a number, so a stop read on an element
+  // drawn anew under the same name shows as another one.
+  const numbers = new WeakMap<Element, number>();
+  let numbered = 0;
+  const numberOf = (element: Element) => {
+    if (!numbers.has(element)) numbers.set(element, (numbered += 1));
+    return numbers.get(element);
+  };
+  const named = (element: Element) =>
+    `${element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 40) ?? ''} #${numberOf(element)}`;
+  Object.assign(host, { noteTodaySweep: note });
   const tick = () => {
     frame += 1;
     if (!stopped) nextFrame(tick);
@@ -88,19 +111,70 @@ function recordSweep(): void {
   // an observer called back — counts as a change too. Observers made before
   // the sweep are not wrapped; what their callbacks do still shows as a
   // change, as every stop waits out a frame (below).
+  //
+  // An observer made during the sweep also holds the stop until it has
+  // answered for what it was given to watch: when an engine calls one back is
+  // its own, and on Linux it was not within the frames a stop waits. Only an
+  // element it will answer for holds it: a ResizeObserver says nothing of one
+  // that is not drawn (no box), and neither says anything of a removed one.
+  const unanswered = new Map<object, Set<Element>>();
+  const answersFor = (name: string, target: Element) => {
+    if (!target.isConnected) return false;
+    if (name !== 'ResizeObserver') return true;
+    const box = target.getBoundingClientRect();
+    return box.width > 0 || box.height > 0;
+  };
+  const observersOwe = () => {
+    for (const [observer, targets] of unanswered) {
+      const name = (observer as { kind: string }).kind;
+      for (const target of targets) if (!answersFor(name, target)) targets.delete(target);
+      if (targets.size > 0) return true;
+      unanswered.delete(observer);
+    }
+    return false;
+  };
   const observing = (name: 'ResizeObserver' | 'IntersectionObserver') => {
     const table = window as unknown as Record<string, unknown>;
     const Original = table[name] as new (
       callback: (...args: unknown[]) => void,
       options?: unknown,
-    ) => object;
+    ) => {
+      observe(target: Element, options?: unknown): void;
+      unobserve(target: Element): void;
+      disconnect(): void;
+    };
     table[name] = class extends Original {
+      readonly kind = name;
       constructor(callback: (...args: unknown[]) => void, options?: unknown) {
         changed = true;
+        note(`${name} made`);
         super((...args: unknown[]) => {
           changed = true;
+          const entries = args[0] as { target: Element }[];
+          for (const { target } of entries) {
+            note(`${name} answered for ${named(target)}`);
+            unanswered.get(this)?.delete(target);
+          }
           callback(...args);
         }, options);
+      }
+      override observe(target: Element, options?: unknown) {
+        changed = true;
+        const box = target.getBoundingClientRect();
+        note(
+          `${name} watches ${named(target)} (${Math.round(box.width)}x${Math.round(box.height)})`,
+        );
+        unanswered.set(this, (unanswered.get(this) ?? new Set()).add(target));
+        super.observe(target, options);
+      }
+      // One let go of owes nothing: it will not answer for it.
+      override unobserve(target: Element) {
+        unanswered.get(this)?.delete(target);
+        super.unobserve(target);
+      }
+      override disconnect() {
+        unanswered.delete(this);
+        super.disconnect();
       }
     };
     restores.push(() => {
@@ -114,7 +188,45 @@ function recordSweep(): void {
   };
   const renderEvents = ['transitionrun', 'transitionstart', 'animationstart'];
   for (const name of renderEvents) document.addEventListener(name, onRender, { capture: true });
+  // The transitions begun and not yet over, by their events: in its delay one
+  // is not always among getAnimations()'s running ones (Linux WebKit, run
+  // 41213247038, read at its start value). One whose element has gone ends there.
+  const transitions = new Map<Element, Set<string>>();
+  const onTransitionRun = (event: Event) => {
+    const { target, propertyName } = event as TransitionEvent;
+    if (!(target instanceof Element)) return;
+    transitions.set(target, (transitions.get(target) ?? new Set()).add(propertyName));
+    note(`transition of ${propertyName} begun on ${named(target)}`);
+  };
+  const onTransitionOver = (event: Event) => {
+    const { target, propertyName } = event as TransitionEvent;
+    if (!(target instanceof Element)) return;
+    transitions.get(target)?.delete(propertyName);
+    if (transitions.get(target)?.size === 0) transitions.delete(target);
+  };
+  const transitionsUnder = [
+    ['transitionrun', onTransitionRun],
+    ['transitionend', onTransitionOver],
+    ['transitioncancel', onTransitionOver],
+  ] as const;
+  for (const [name, listener] of transitionsUnder) {
+    document.addEventListener(name, listener, { capture: true });
+  }
+  const transitionPending = () => {
+    for (const target of transitions.keys()) if (!target.isConnected) transitions.delete(target);
+    return transitions.size > 0;
+  };
   const animations = new WeakSet<Animation>();
+  // A transition or animation that will end holds the stop until it has: its
+  // delay is the page's to set, and it lands when it ends, not frames later.
+  const animationRunning = () =>
+    document
+      .getAnimations()
+      .some(
+        (animation) =>
+          animation.playState === 'running' &&
+          Number.isFinite(animation.effect?.getComputedTiming().endTime),
+      );
   const animationBegun = () => {
     let begun = false;
     for (const animation of document.getAnimations()) {
@@ -140,6 +252,10 @@ function recordSweep(): void {
       changedAt = frame;
     }
     if (changedAt !== null && frame < changedAt + 2) return true;
+    if (animationRunning() || transitionPending() || observersOwe()) {
+      changedAt = frame;
+      return true;
+    }
     changedAt = null;
     return false;
   };
@@ -152,6 +268,14 @@ function recordSweep(): void {
       return;
     }
     const stop = readStop();
+    const at = document.activeElement;
+    const drawn =
+      at === null
+        ? '-'
+        : `${named(at)} top=${Math.round(at.getBoundingClientRect().top)} scroll=${scroller()?.scrollTop}`;
+    note(
+      `read ${stop?.label ?? 'nothing'} inView=${stop?.inView ?? '-'} on ${drawn} moved@f${movedAt} owed=${observersOwe()} running=${animationRunning()} transitions=${transitionPending()} held=${log.held}`,
+    );
     if (log.moves > 0) {
       if (stop === null) log.lostAfter = log.last;
       if (stop === null || !stop.inPage) {
@@ -175,6 +299,9 @@ function recordSweep(): void {
     mutations.disconnect();
     for (const name of renderEvents)
       document.removeEventListener(name, onRender, { capture: true });
+    for (const [name, listener] of transitionsUnder) {
+      document.removeEventListener(name, listener, { capture: true });
+    }
     for (const restore of restores) restore();
   };
 
@@ -232,6 +359,7 @@ export async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number)
     rows: new Set(log.rows),
     offScreen: log.offScreen,
     lostAfter: log.lostAfter,
+    trace: log.trace,
     last: log.last,
   };
 }

@@ -29,6 +29,8 @@ async function open(page: Page, name: string, text: string) {
   await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
+  // Indexed first, so the note is not drawn again from the index mid-test.
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
   await page.getByRole('treeitem', { name, exact: true }).click();
 }
 
@@ -56,6 +58,16 @@ test('a cell selection draws its overlay over each selected cell', async ({ page
   await expect(page.locator('.editor .tableWrapper')).toBeVisible();
 
   await page.locator('.editor td', { hasText: '1' }).click();
+  // The shift-click extends the selection the click made: once the caret is in
+  // that cell. Pressed before then, it had nothing to extend (Linux CI, run
+  // 41225702304, no cell selected).
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.getSelection()?.anchorNode?.parentElement?.closest('td')?.textContent,
+      ),
+    )
+    .toBe('1');
   await page.locator('.editor td', { hasText: '4' }).click({ modifiers: ['Shift'] });
 
   const selected = page.locator('.editor .selectedCell');

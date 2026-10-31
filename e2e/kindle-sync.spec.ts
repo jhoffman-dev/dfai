@@ -51,9 +51,22 @@ const card = (page: Page) => settings(page).getByRole('region', { name: 'Kindle'
 const intoVault = (page: Page) =>
   card(page).getByRole('switch', { name: 'Sync Kindle into this vault' });
 
+/**
+ * Opens Settings at the Kindle card, once nothing above it will grow. The
+ * Slack section just above draws its body only once it is shown (#105), so
+ * scrolling to Kindle brings it in and it grows by some 230px, pushing the
+ * card down under a click aimed at it (Linux CI, run 41195856007). Its token
+ * status says the body is drawn.
+ */
+async function openKindleSettings(page: Page) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await card(page).scrollIntoViewIfNeeded();
+  await expect(settings(page).getByTestId('slack-token')).toBeVisible();
+}
+
 /** Turns Kindle sync on for the open vault, in Settings, and closes Settings. */
 async function turnOnForThisVault(page: Page) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await openKindleSettings(page);
   await intoVault(page).click();
   await expect(intoVault(page)).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
@@ -84,7 +97,7 @@ test('Connect syncs the books into literature notes, and a second sync adds only
   const { vault, host } = await openVault(page);
   serveNotebook(host);
 
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await openKindleSettings(page);
   await expect(card(page).getByTestId('kindle-sync')).toHaveText('Not connected on this Mac');
   // Off in every vault until it is turned on for this one.
   await expect(intoVault(page)).toHaveAttribute('aria-checked', 'false');
@@ -138,7 +151,7 @@ test('a lapsed Amazon session says plainly that Kindle sync needs a sign-in', as
   await expect(page.getByText('Kindle sync needs you to sign in again.').first()).toBeVisible({
     timeout: 30_000,
   });
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await openKindleSettings(page);
   await expect(card(page).getByTestId('kindle-sync')).toContainText(
     'Kindle sync needs you to sign in again.',
   );

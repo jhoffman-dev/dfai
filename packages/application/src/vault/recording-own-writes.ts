@@ -7,7 +7,8 @@ import type { VaultFsPort } from './ports.ts';
  * (#254). A new note is kept as a save is, by the time the host reports for
  * it (#258). A write whose result the host does not report in full — an
  * artifact's bytes — and a write that fails are forgotten instead: what is
- * there is not known, so a report of it is refreshed for.
+ * there is not known, so a report of it is refreshed for. A refused new note
+ * is the exception: it changed nothing.
  */
 export function recordingOwnWrites({
   fs,
@@ -53,8 +54,11 @@ export function recordingOwnWrites({
     readBinaryFile: (path) => fs.readBinaryFile(path),
     writeTextFile: (args) =>
       forgetOnFailure([args.path], () => leavingText(args, fs.writeTextFile(args))),
-    createNote: (args) =>
-      forgetOnFailure([args.path], () => leavingText(args, fs.createNote(args))),
+    // Not forgotten when it fails: the host makes a note by renaming it into
+    // place only if nothing is there, so a refused create left the path as it
+    // was. Forgetting dropped the record of the app's own create that the
+    // refusal ran into, and that create's echo was then walked for.
+    createNote: (args) => leavingText(args, fs.createNote(args)),
     createFolder: (args) =>
       forgetOnFailure([args.path], async () => {
         await fs.createFolder(args);

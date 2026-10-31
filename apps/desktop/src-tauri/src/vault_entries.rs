@@ -821,8 +821,9 @@ mod trash_tests {
         assert!(vault.path().join("copy.md").exists());
     }
 
-    /// The real Trash, once, by hand: it leaves a file in the Trash of whoever
-    /// runs it, so it is not part of the gate. `cargo test -- --ignored`.
+    /// The real Trash. It leaves a file in the Trash of whoever runs it, so it
+    /// is ignored here; the gate's `rust` job runs it on a throwaway macOS
+    /// runner (gate.yml). By hand: `cargo test -- --ignored`.
     #[test]
     #[ignore]
     fn the_system_trash_takes_a_note() {
