@@ -198,12 +198,14 @@ works, and pass code that does not.
 
 **CI splits the slow work across machines** (`.github/workflows/gate.yml`): the
 unit tests over three Linux shards whose coverage the `coverage` job merges and
-holds to the thresholds, the e2e suite over four macOS shards, Rust on a fifth
-Mac. `gate` is still the one required check. A pull request that touches only
+holds to the thresholds, the e2e suite over eight Linux shards in Playwright
+WebKit (the page is told it runs on a Mac; `@mac` tests are skipped), Rust on
+one Mac. The whole e2e suite, `@mac` tests included, runs nightly on macOS
+(`e2e-macos-nightly.yml`). `gate` is still the one required check. A pull request that touches only
 documentation, as `tools/ci/docs-only.ts` defines it, runs `static` alone. A
 failed e2e shard uploads its HTML report as `playwright-report-<n>` (no traces:
 tracing every test cost a third more time). To run one shard here:
-`pnpm e2e --shard=2/4`.
+`pnpm e2e --shard=2/8`.
 
 **Check CI by commit, never by "the latest run".** A run is not registered the
 instant a push returns, so `gh run list --limit 1` will happily hand back the
