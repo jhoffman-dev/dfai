@@ -1,0 +1,53 @@
+<!-- contents: Templates -->
+    <section id="templates">
+      <h2>Templates</h2>
+      <p class="sub">A template is what a new note starts as — its properties and its text. Editing one changes the notes made from it next, never the ones already made.</p>
+      <h3>What uses a template</h3>
+      <p>A template's name is what ties it to what it makes:</p>
+      <ul>
+        <li><b>A type's template</b> is called what the type is called — <b>Person</b> for Person, in any capitals. Every new note of the type starts from it: <b>New person</b> on the type's page and at the foot of its table, <a href="#people">Create person “…”</a>, and <a href="#connect">quick add</a> through the API and MCP.</li>
+        <li><b>Daily</b> is what <b>Today's note</b> starts as — without one, it starts as a note of the Daily type with the day's <a href="#daily">due, overdue and next actions</a> above <i>What happened</i> and <i>What is next</i> — <b>Task</b> what a <a href="#tasks">captured task</a> starts as, and <b>Artifact</b> what a <a href="#artifacts">saved artifact</a> starts as.</li>
+        <li><b>Any other template</b> is only offered in the New menu — the <b>+</b> beside the vault's name, under <b>Blank note</b>, <b>Today's note</b> and <b>Claude artifact…</b>.</li>
+      </ul>
+      <h3>The Templates page</h3>
+      <div class="grid2">
+        <div class="card"><h4>Sidebar</h4><p><b>Templates</b>, in the top list after Activity.</p></div>
+        <div class="card"><h4>Search</h4><p><kbd>⌘K</kbd> → <b>Templates</b>.</p></div>
+        <div class="card"><h4>From a template</h4><p><b>All templates</b> on the band over any template you're editing.</p></div>
+      </div>
+      <p>It lists every template with what it is <b>Used for</b>: <i>New Person notes</i>, <i>Today’s note</i>, <i>Captured tasks</i>, <i>Saved artifacts</i>, or <i>Only the New menu</i>. Each row has:</p>
+      <ul>
+        <li><b>Edit</b> (or click its name) opens it.</li>
+        <li><b>Rename</b> turns the name into a field: <kbd>Return</kbd> or clicking away renames it, <kbd>Esc</kbd> leaves it. Since the name is the tie, a new name can cut it loose, and the field says so while you type — <i>“New Person notes will start empty.”</i> or <i>“Today’s note will start blank.”</i></li>
+        <li><b>Move to notes…</b> — see <a href="#template-to-note">A template that was really a note</a> below.</li>
+        <li><b>Delete…</b> asks <i>“Move “Meeting template” to the Trash?”</i>, with the same warning of what stops using it, and puts the file in the macOS Trash.</li>
+      </ul>
+      <p><b>New template</b>, at the top of the page, asks what it's <b>For</b>:</p>
+      <ul>
+        <li><b>&lt;Type&gt; notes</b>, for a type that has no template yet. Its name is filled in and can't be changed — <i>“Named after the type, so new Book notes start from it.”</i> It starts with <code>type:</code> and each of the type's properties, empty.</li>
+        <li><b>No type — a blank template</b>, named as you like, for the New menu.</li>
+      </ul>
+      <p>A template's name can't hold <code>/ \ : * ? " &lt; &gt; |</code>, start or end with a dot, or be one another template already has.</p>
+      <h3 id="edit-template">Edit a type's template</h3>
+      <p><b>Edit template</b> sits beside <a href="#edit-type">Edit type</a>, everywhere it is:</p>
+      <ul>
+        <li>The template button just after the gear on a type's view tabs (<b>Edit Person template</b>, for Person).</li>
+        <li>Right-click the type in the sidebar → <b>Edit template</b>.</li>
+        <li><b>Edit template</b> at the top of the type's own page, beside <b>Edit type</b>, and the <b>Template</b> row at the foot of the type's editor.</li>
+        <li>Search <kbd>⌘K</kbd>: type <i>edit</i> and pick <b>Edit &lt;type&gt; template</b>, e.g. <b>Edit Person template</b>.</li>
+      </ul>
+      <p>If the type has no template, DFAI makes one first — named after the type, holding <code>type:</code> and each of its properties with nothing filled in — and opens it.</p>
+      <h3>Editing a template</h3>
+      <ul>
+        <li>It opens like a note — properties, then text — under a band: <i>“<b>Template</b> · Used for: New Person notes. Editing it changes what new notes start as — never the notes already made.”</i> The band has <b>Move to notes…</b> and <b>All templates</b>.</li>
+        <li>There's no favourite star (it would be copied into every new note), and no Move, Archive or graph. Renaming its title renames the template, with the same tie as above.</li>
+        <li>The Dashboard template shows as a note, not a dashboard; what you make from it is the dashboard.</li>
+      </ul>
+      <h3>Templates are never notes</h3>
+      <ul>
+        <li>They aren't in Pages (not even under System), search, the graph, <code>[[</code> and <code>@</code> suggestions, relation pickers, links in or out, or unlinked mentions. A template's tags don't count on the Tags page.</li>
+        <li>A link that used to reach a template — <code>[[Person]]</code> once opened the Person template — now shows as missing, or reaches a note of that name if there is one.</li>
+      </ul>
+      <h3 id="template-to-note">A template that was really a note</h3>
+      <p>If a note ended up in the templates folder — say a company saved over the Company template — <b>Move to notes…</b>, on its row or its band, asks <i>“Make “Larkspur Payroll” a note?”</i>: <i>“It moves out of the templates to the top of the vault, exactly as it is. Links to “Larkspur Payroll” reach it again.”</i> It's numbered if a note there has its name, and it says what stops using it, if anything. Then press <b>Move to notes</b>.</p>
+    </section>

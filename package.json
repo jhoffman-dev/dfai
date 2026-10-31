@@ -38,6 +38,7 @@
     "shots": "pnpm build && playwright test --config playwright.shots.config.ts",
     "shots:gallery": "playwright test --config playwright.gallery.config.ts",
     "design:compare": "node tools/design/compare.ts",
+    "guide:build": "node tools/guide/build.ts",
     "n8n:build": "node tools/n8n/build-workflow.mjs",
     "validate:meeting": "node tools/n8n/validate-meeting.mjs",
     "import:notion-meetings": "node tools/import-notion-meetings.mjs",

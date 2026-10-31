@@ -1,0 +1,129 @@
+<!-- contents: Queries -->
+    <section id="queries">
+      <h2>Queries</h2>
+      <p class="sub">Ask across several types at once — tasks and projects together — follow a link to the note it points at, and sort, group and sub-group the answer. Build it from dropdowns or write it as text; both edit the same query.</p>
+      <ul>
+        <li>Open <b>New query</b> from the <b>+</b> next to Views, or from search (<kbd>⌘K</kbd>).</li>
+        <li>The page opens on <b>DFAI query</b>, already listing every note of your first type. <b>SQL</b>, the other option beside it, is the <a href="#sql">SQL page</a> as before.</li>
+        <li><b>Edit the query as</b> <b>Builder</b> or <b>Text</b>. In the builder, the query it makes is shown as text above the dropdowns.</li>
+      </ul>
+      <h3>The builder</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Row</th><th scope="col">Does</th></tr></thead>
+          <tbody>
+            <tr><td>From</td><td>The types to list. <b>Add type</b> adds another; the <b>×</b> on one removes it.</td></tr>
+            <tr><td>Where</td><td><b>Add condition</b>, then pick a field, what it should be, and a value. With two or more, <b>Match</b> <i>all</i> or <i>any</i> of these. The <b>not</b> button at the front of a condition turns it round: it lists the notes the condition doesn't match.</td></tr>
+            <tr><td>Sort</td><td><b>Add sort</b>, then a field and <b>ascending</b> or <b>descending</b>. Add more to break ties.</td></tr>
+            <tr><td>Group</td><td><b>Group by</b> a field, <b>then</b> by another for sub-groups. <b>Nothing</b> turns it off.</td></tr>
+            <tr><td>Also</td><td><b>Include archived notes</b>, and <b>At most</b> <i>n</i> rows (500 if left blank).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>Fields</b> are the properties of the types in From, plus <b>Title</b>, <b>Type</b>, <b>Tag</b>, <b>Modified</b>, <b>Path</b> and <b>Progress</b> through its checklist, which every note has. A relation's own fields are offered too, as <i>Project · Status</i>: the status of the task's project.</li>
+        <li><b>What it should be</b> fits the field: <i>is</i>, <i>is not</i>, <i>contains</i>, <i>starts with</i>, <i>is empty</i>, <i>is not empty</i>; numbers add <i>is less than</i>, <i>is at most</i> and so on; dates read <i>is before</i>, <i>is on or after</i>…</li>
+        <li><b>The value</b> fits the field too: a select's options, the notes a relation can point at (people for an owner), your tags, <b>ticked</b> or <b>not ticked</b> for a checkbox, and for a date either a date that moves — <b>Today</b>, <b>Yesterday</b>, <b>Tomorrow</b>, <b>A week ago</b>, <b>A week from now</b>, <b>A month from now</b>, <b>Start of this week</b> — or <b>On a day…</b> and a date picker. A count from today written in the text, such as <code>@-30d</code>, is in the list as what it is — <b>30 days ago</b>. Numbers and words are typed.</li>
+        <li>A pick in the builder runs the query at once.</li>
+      </ul>
+      <h3>Switching between builder and text</h3>
+      <ul>
+        <li>Switch to <b>Text</b> at any time and carry on typing. Switch back and the builder reads the text again.</li>
+        <li>Text you type is kept as you typed it; the builder's own spelling replaces it only when you change something in the builder.</li>
+        <li>The builder shows conditions that are all joined by AND, or all by OR, each plain or NOT. A query that brackets AND with OR, or puts NOT over a group, stays text, and says why: <i>“This query brackets conditions together — AND with OR, or NOT over a group — which the builder cannot show as one list. Edit it as text.”</i> A query with a mistake in it stays text too, with <i>“Fix the query to open it in the builder: …”</i></li>
+        <li><code>SHOW</code> has no dropdown; a SHOW you wrote in text is kept when you go back to the builder.</li>
+        <li><code>LINKS TO this</code> has no dropdown either, so a query with it stays text: <i>“This query says LINKS TO, which the builder has no control for. Edit it as text.”</i> <code>CONNECTED TO this</code> is the same. A condition like <code>people = this</code> goes through the builder unchanged.</li>
+      </ul>
+      <h3>Writing it as text</h3>
+      <pre>FROM task, project
+WHERE status != done AND project.owner = [[Julie]] AND tag = #q3
+SORT BY due
+GROUP BY project THEN status</pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Part</th><th scope="col">Means</th></tr></thead>
+          <tbody>
+            <tr><td><code>FROM task, project</code></td><td>The types to list. Always first; the rest in any order, each once.</td></tr>
+            <tr><td><code>WHERE …</code></td><td>Conditions, joined with <code>AND</code> and <code>OR</code>, turned round with <code>NOT</code>, grouped with brackets <code>( )</code>.</td></tr>
+            <tr><td><code>SORT BY due DESC, title</code></td><td>Sort by one field or more, each <code>ASC</code> (the default) or <code>DESC</code>.</td></tr>
+            <tr><td><code>GROUP BY project THEN status</code></td><td>Group, then sub-group. <code>THEN</code> can't name the field it groups by: <i>“Each status group holds one status, so it cannot be split by it again.”</i></td></tr>
+            <tr><td><code>SHOW status, due</code></td><td>The columns. Without it, the fields the query mentions.</td></tr>
+            <tr><td><code>INCLUDE ARCHIVED</code></td><td>List archived notes too.</td></tr>
+            <tr><td><code>LIMIT 50</code></td><td>At most this many notes, from 1 to 5000. Without it, 500.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">In a condition</th><th scope="col">Written</th></tr></thead>
+          <tbody>
+            <tr><td>Compare</td><td><code>=</code> <code>!=</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td></tr>
+            <tr><td>Search words</td><td><code>title CONTAINS plan</code> · <code>title STARTS WITH 'Q3 '</code> — any capitals</td></tr>
+            <tr><td>Empty or not</td><td><code>due IS EMPTY</code> · <code>due IS NOT EMPTY</code></td></tr>
+            <tr><td>Values</td><td>A word (<code>done</code>), <code>'quoted text'</code>, a number, <code>true</code> / <code>false</code>, a link <code>[[DFAI]]</code>, a tag <code>#q3</code>, a day <code>2026-09-30</code>, or a date that moves: <code>@today</code>, <code>@yesterday</code>, <code>@tomorrow</code>, <code>@weekAgo</code>, <code>@weekAhead</code>, <code>@monthAhead</code>, <code>@startOfWeek</code></td></tr>
+            <tr><td>Count from today</td><td><code>@-30d</code> · <code>@+2w</code> · <code>@+1m</code> · <code>@-1y</code> — a sign, a number, then <code>d</code>ays, <code>w</code>eeks, <code>m</code>onths or <code>y</code>ears</td></tr>
+            <tr><td>The note it's on</td><td><code>people = this</code> · <code>company.owner = this</code> · <code>LINKS TO this</code> · <code>CONNECTED TO this</code></td></tr>
+            <tr><td>Fields</td><td>A property of a listed type, or <code>title</code>, <code>type</code>, <code>tag</code>, <code>modified</code>, <code>path</code>, <code>progress</code> (see <a href="#tasks">Checklists and progress</a>). One step through a relation: <code>project.status</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>Keywords can be in any capitals. Typed text runs a moment after you stop typing; <kbd>⌘</kbd> <kbd>Return</kbd> runs it at once.</li>
+        <li><b>Mistakes are pointed at.</b> Under the text, <b>Line</b> <i>n</i><b>, column</b> <i>n</i> and what's wrong, with the characters underlined — a type that doesn't exist, a field none of the listed types has, <code>&lt;</code> on a select, a word where a date belongs.</li>
+        <li><code>!=</code> means no value is: a note without the property is listed by <code>status != done</code>. A field with several values (tags, a multi-select, several links, a note's <code>type</code>) matches when any of them does.</li>
+        <li><b>What a field holds is read as the <a href="#today">Today page</a> reads it</b>, the same in a condition, a cell, a sort and a group, and in a type's table:
+          <ul>
+            <li>A blank item is no item: <code>status: [next-action, ""]</code> is next-action.</li>
+            <li>A date holds its first real day. Words (<code>due: TBD</code>) or a day no calendar has (<code>2026-02-30</code>) are no date, and a <code>due</code> written as two days is the first of them.</li>
+            <li>A number holds one number: <code>estimate: lots</code> is no number, and nor is <code>estimate: [3, 5]</code>.</li>
+            <li>Any other field that holds one value — text, a select, a checkbox — holds it only when it is written as one: <code>status: [next-action, done]</code> (or <code>[[next-action, done]]</code>) is no status. The Today page and the weekly review read it the same way, so a task whose status lists <code>archive</code> among others is shown as open work, not hidden as finished — fix the status to finish it.</li>
+            <li>Through a link too: <code>project.due</code> is the linked project's first day.</li>
+            <li>No value means <code>IS EMPTY</code>, a blank cell, and last in a sort. A multi-select of only blank items is empty and shows nothing.</li>
+          </ul>
+        </li>
+        <li><code>tag = #q3</code> finds tags written in the text or in <code>tags:</code>, and tags nested under it (<code>#q3/plan</code>).</li>
+        <li>Dates compare by the day as written: <code>2026-09-30T22:00-05:00</code> is the 30th.</li>
+        <li><code>FROM task</code> lists every note whose <code>type</code> names it in any capitals or spacing — <code>type: Task</code> too — and <code>type = task</code> asks the same, and <code>GROUP BY type</code> puts every spelling in one group, named as the vault names the type. So does everywhere DFAI finds notes by type: the sidebar's counts, a type's table, a relation's picker, meetings, the term list, the meeting links and Claude's follow-ups. Two types whose names differ only in capitals (<code>Book</code> and <code>book</code>) can't be told apart that way, so a query naming one is pointed at: <i>“Two types are called book: Book and book. Rename one, so book names one type.”</i></li>
+        <li><b>Counting from today.</b> <code>date &gt; @-30d AND date &lt;= @today</code> is the last 30 days, not counting the 30th day back; <code>due &gt;= @today AND due &lt;= @+2w</code> is the next two weeks. Each end needs saying: <code>date &gt; @-30d</code> alone takes everything after that day, next month's too, and <code>due &lt;= @+2w</code> alone takes everything overdue. A count reaches 1000 years at most. <code>@startOfWeek</code> is this week's Monday, as the calendar's weeks start. Months count the way the index counts them: a month on from 31 January is 3 March. The sign is needed — <code>@30d</code> is pointed at.</li>
+        <li><b><code>this</code> is the note the query is on.</b> <code>FROM meeting WHERE people = this AND date &gt; @-30d AND date &lt;= @today</code>, asked about Mara Quill's note, lists her meetings in the last 30 days. <code>this</code> compares with a relation, with <code>=</code> or <code>!=</code>, also one step through one. <code>LINKS TO this</code> lists the notes whose text links to it; a note linking to itself doesn't count, as it isn't its own backlink. <code>this</code> is a word of the query now, so a query that used it to mean the word — <code>status = this</code> — is pointed at, with <i>“… To mean the word, quote it: 'this'.”</i> Write <code>'this'</code> in quotes and it works as before.</li>
+        <li><b><code>CONNECTED TO this</code></b> lists the notes joined to it by any link, either way round: a link in either note's text, or in any property of either — a task whose <code>source</code> cites a line of the meeting, or a meeting that lists the task. After a relation it asks about the notes that relation points at: <code>waiting_on CONNECTED TO this</code>, on a company's page, is what you're waiting on from anyone linked with the company. It is what <a href="#linked-pages">linked pages</a> use for "the tasks that came from this meeting". <code>LINKS TO this</code> is narrower: links in the other note's text only.</li>
+        <li>A query is on a note when it is a <a href="#query-blocks">query block</a> in that note, or when Claude or another tool asks it about one (<code>atlas_run_query</code> with a <code>context</code>, below). On the Query page, in a saved view, on a dashboard or in an automation, <code>this</code> is pointed at: <i>“this is the note a query is shown on, and this query is not shown on one.”</i></li>
+        <li>A relation to several types reaches every field any of them has: with a task's <code>project</code> linking a project or an area, <code>project.steward</code> works even if only areas have a steward, and is empty for a task filed under a project.</li>
+        <li>Only one step through a relation: <code>project.owner.team</code> is refused. A step through a relation never reaches a note in <code>.atlas</code> or a hidden folder: a field read through a link to a template is empty. Notes can't be sorted or grouped by a field that holds several values, such as <code>tag</code>.</li>
+        <li>A query holds 2000 conditions at most, and brackets and NOTs nest 64 deep at most.</li>
+      </ul>
+      <h3>The answer</h3>
+      <ul>
+        <li><b>Layout</b>: <b>Table</b>, <b>Board</b> or <b>List</b>. The count beside it says how many notes, and <i>(more were left out)</i> when the row limit cut it short.</li>
+        <li>Grouped, a table draws the same grouped rows as a <a href="#views">grouped table view</a>: heading rows with counts and totals, sub-groups one step in; click a heading to fold it. On a board the groups are the columns and the sub-groups are lanes across them. A query's answer is for reading: it has no <b>+ New</b>, and its cards don't drag — though in a saved view of tasks, each task can be <a href="#query-view-tasks">ticked, moved or chosen for today</a>.</li>
+        <li>Groups come in order: a select's options as the type orders them, numbers by size, dates by day, the rest by name — reversed when the query sorts that field descending — and notes with no value last. A relation's groups are named for the note.</li>
+        <li>A checkbox groups into <i>true</i> (ticked) and <i>false</i>, which holds every note not ticked, including those without the box.</li>
+        <li>Click a note to open it.</li>
+      </ul>
+      <h3>Keep it</h3>
+      <ul>
+        <li><b>Save as view</b>: a name and a layout, then <b>Save view</b>. It is listed under Views in the sidebar, and a saved query view shows the other saved queries as tabs across the top. A blank query can't be saved: <i>“Write a query before saving: FROM task.”</i></li>
+        <li>A saved query view opens with its query folded to one line — the text as written, beside <b>Edit query</b> — so the answer has the page. <b>Edit query</b> opens the builder or the text under it; <b>Hide query</b> folds it again. Whether you left it open is remembered per view, on this Mac. A view whose query is still empty opens with the builder open.</li>
+        <li>On a saved query view, change the query or the layout and <b>Reset</b> · <b>Save as new view…</b> · <b>Save view</b> appear in a strip above the query, as on any view.</li>
+        <li><b>Add to dashboard</b>: pick the <b>Dashboard</b>, give it a <b>Title</b> if you like, then <b>Add widget</b>. The widget is an <b>DFAI query</b> that lists the rows in their groups and sub-groups, each folding on its own, with relation groups headed by the note's title.</li>
+        <li>The view's file keeps the query as text, exactly as typed, in its <code>query:</code> property.</li>
+        <li>An <a href="#automations">automation</a> takes its notes with the same builder or text, under <b>Which notes</b>. There, <code>@today</code> and the other moving dates — counts from today and <code>@startOfWeek</code> too — mean the day the rule runs.</li>
+      </ul>
+      <h3 id="query-blocks">In a note: query blocks</h3>
+      <p>A query can live inside a page — a person's meetings on their page, a project's open tasks on the project.</p>
+      <ul>
+        <li>In a note, type <kbd>/</kbd> → <b>Query</b>. The block opens at its text; write the query and its answer shows under it a moment after you stop typing. <b>Done</b> puts the text away, <b>Edit query</b> brings it back. A mistake is said in place of the rows — <i>“A meeting has no field called stauts.”</i></li>
+        <li><b><code>this</code> is the note the block is in.</b> On Mara Quill's page, <code>FROM meeting WHERE people = this SORT BY date DESC</code> lists her meetings, and the same block on Tobias Fenn's lists his.</li>
+        <li>A table, unless the first line says <code>layout: list</code> (<code>layout: table</code> works too). Other layouts are pointed at: <i>“A query block shows a table or a list; “board” is neither.”</i></li>
+        <li>The answer is read-only and live: a note saved here, in another pane or by another app shows up as soon as the index has it. The count says how many notes, with <i>(more were left out)</i> past the row limit. Click a note to open it.</li>
+        <li>In the file it's a fenced code block, so Obsidian shows it as code:
+          <pre><code>```atlas-query
+layout: list
+FROM meeting WHERE people = this SORT BY date DESC
+```</code></pre>
+          Saving the note leaves it byte for byte unless you change its text. A fence written in another editor (backticks or <code>~~~</code>) is shown the same way.</li>
+        <li>Only a block of the note's own is a query block. Inside a list, quote or callout, or with anything after <code>atlas-query</code> on the fence's line, it stays a code block. Typing <code>```atlas-query</code> in DFAI makes a code block until the note is opened again; <kbd>/</kbd> → <b>Query</b> makes the live one at once.</li>
+        <li>Copy a query block and paste it among another note's blocks and it is the same live block there, its <code>this</code> now that note; pasted into a list, quote or callout it is the code. Pasted as plain text elsewhere, it is the fence.</li>
+        <li>Where a note is only drawn — a feed, a page's picture, a <a href="#blocks">shown block</a> in another note — a query block shows as its code.</li>
+      </ul>
+    </section>

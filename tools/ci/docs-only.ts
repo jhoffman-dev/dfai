@@ -8,8 +8,11 @@
  * pinned by tests of their own. Format still runs on a docs-only change.
  */
 
-/** Read by tests: the API's route table and the meeting-import contract. */
-const TESTED_DOCS = ['vault/docs/api/', 'vault/docs/contracts/'];
+/**
+ * Read by tests: the API's route table, the meeting-import contract, and the
+ * field guide, whose page a test holds equal to its section files (#134).
+ */
+const TESTED_DOCS = ['vault/docs/api/', 'vault/docs/contracts/', 'docs/guide/'];
 
 const DOCS_FOLDERS = ['docs/', 'vault/docs/', '.claude/agents/'];
 

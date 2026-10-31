@@ -26,7 +26,8 @@ describe('the gallery shots config (#328)', () => {
 
   it('is not matched by the e2e suite or the app shots run', () => {
     expect(e2e.testDir).toBe('./e2e');
-    expect(shots.testMatch).toBe('shots.spec.ts');
+    expect(shots.testDir).toBe('./tools/design/shots');
+    expect(shots.testMatch).toBe('*.shots.spec.ts');
     expect(gallery.testDir).toBe('./tools/design');
     // The gallery's own shots and the attack specs that judge it, by name — never an e2e spec.
     const match = gallery.testMatch;
@@ -34,7 +35,7 @@ describe('the gallery shots config (#328)', () => {
     expect(match.test('/repo/tools/design/gallery.spec.ts')).toBe(true);
     expect(match.test('/repo/tools/design/gallery-cells.attack-354.spec.ts')).toBe(true);
     expect(match.test('/repo/e2e/table-keyboard.spec.ts')).toBe(false);
-    expect(match.test('/repo/tools/design/shots.spec.ts')).toBe(false);
+    expect(match.test('/repo/tools/design/shots/app.shots.spec.ts')).toBe(false);
     expect(match.test('/repo/tools/design/gallery.right-sidebar.attack-353.spec.ts')).toBe(true);
     expect(match.test('/repo/tools/design/right-sidebar.attack-353.spec.ts')).toBe(false);
   });

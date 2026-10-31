@@ -1,0 +1,88 @@
+<!-- contents: Finding your way -->
+    <section id="screen">
+      <h2>Finding your way</h2>
+      <p class="sub">The sidebar lists everything; each page opens in a panel with a bar across the top.</p>
+      <div class="grid2">
+        <div class="card"><h4>Sidebar, top</h4><p>Search <kbd>⌘K</kbd>, <a href="#today">Today</a>, <a href="#para">Inbox</a>, <a href="#tasks">Weekly review</a>, Graph, Tags, Automations, <a href="#activity">Activity</a>, <a href="#templates">Templates</a>, <a href="#skills">Skills</a> and <a href="#terms">Terms</a>. Counts show how many notes each holds — the Inbox's counts proposals waiting for an answer too; Activity's red badge counts new errors.</p></div>
+        <div class="card"><h4>Favorites</h4><p>Star any page (the ☆ in its top bar) to pin it here.</p></div>
+        <div class="card"><h4>Types · Views · Dashboards</h4><p>Built from your vault. The <b>+</b> beside a heading makes a new one.</p></div>
+        <div class="card"><h4>Pages</h4><p>Your folders and notes. Near the end, <b>Archive</b> opens the <a href="#archive">Archive</a>; <b>System</b>, last, is the <code>.atlas</code> folder (types, automations, sources, settings). Templates and skills aren't in it — they have their own pages, <a href="#templates">Templates</a> and <a href="#skills">Skills</a>.</p></div>
+      </div>
+      <h3>Arrange the sidebar</h3>
+      <ul>
+        <li><b>One scroll for the sections.</b> The vault's name, the links at the top (Search, Today, Inbox and the rest) and the footer (Settings, the sun-or-moon theme button, sync) stay put. Everything from the first section to the last — Favorites, Types, Views, Dashboards and Pages, in your order — scrolls together in the one area between them, and each open section shows all its rows; no section has a scrollbar of its own.</li>
+        <li><b>Headings stay in sight.</b> As you scroll through a section, its heading (with its grip and <b>+</b>) stays pinned at the top until the next section's heading takes its place.</li>
+        <li><b>Open or close a section</b> by clicking its heading (Favorites, Types, Views, Dashboards or Pages). A shut section stays exactly where it is in your order; only its rows fold away, so nothing below it jumps past it.</li>
+        <li><b>Put the sections in any order.</b> Hover over a heading, or tab to it, and a grip appears just to its left (<b>Move Favorites</b>, <b>Move Pages</b> and so on). Drag the grip, or focus it and press <kbd>⌥↑</kbd> / <kbd>⌥↓</kbd> to move the section one place. Open or shut, every section moves in the same one order.</li>
+        <li><b>The order belongs to the vault.</b> It's saved in <code>.atlas/settings.md</code>, so it follows the vault to another Mac, and each vault keeps its own.</li>
+      </ul>
+      <div class="note"><b>If <code>.atlas/settings.md</code> can't be read</b> (say its frontmatter was broken by a hand edit), DFAI shows a notice naming the file and leaves it alone until it is fixed; the sections can't be moved until then. If a move can't be saved, a notice says <b>The sidebar's order could not be saved</b> and why.</div>
+      <h3>The top bar of a page</h3>
+      <ul>
+        <li><b>← →</b> Back and Forward, or <kbd>⌘[</kbd> <kbd>⌘]</kbd>, or your mouse's side buttons. Each tab keeps its own history.</li>
+        <li><b>Breadcrumb</b> shows where the page lives, and beside the name a quiet count says what it holds — <b>5 to process</b>, <b>3 templates</b>. A page's own buttons (<b>New template</b>, <b>Open the Inbox view</b>) sit in the bar too. Only a note, a template or a type keeps a title on the page itself; press it to rename.</li>
+        <li><b>Saved / Saving… / Unsaved</b> is the save status. Notes save as you type; <kbd>⌘S</kbd> saves at once.</li>
+        <li><b>Spark</b> button: <b>Claude beside the page (⇧⌘J)</b> — see <a href="#claude">Claude in DFAI</a>.</li>
+        <li><b>Right sidebar</b> button, beside the spark: <b>Show right sidebar (⌥⌘\)</b>, pressed while it is showing. See <a href="#right-sidebar">The right sidebar</a> below.</li>
+        <li><b>Split</b> button, just before the <b>…</b>: <b>Split right (⇧⌘\)</b>. See <a href="#two-panes">Two pages side by side</a> below.</li>
+        <li><b>…</b> menu: Link to…, Show in graph, Move to…, <a href="#export">Export…</a>, Archive (or Unarchive), Delete…, Split right, Close pane, and more for views and dashboards.</li>
+        <li><b>×</b> <b>Close pane</b>, at the very end of the bar, once the window is split.</li>
+      </ul>
+      <p><b>In a narrow window</b> the bar gives way a step at a time: first the folder goes and the note's name shortens, then <b>Saved</b> hides, then the Back and Forward arrows (<kbd>⌘[</kbd> <kbd>⌘]</kbd> still work). The <b>×</b> and the <b>…</b> always stay.</p>
+      <h3 id="tabs">Tabs</h3>
+      <p>Every pane has a row of tabs above its page. Each tab is one place — a note, Today, the Inbox, a type's table, the graph — with its own Back and Forward and, for a note, its own undo.</p>
+      <ul>
+        <li><b>A plain click</b> on a note in the sidebar opens it in the tab you're in. If a tab in that pane already shows it, that tab comes to the front instead.</li>
+        <li><b><kbd>⌘</kbd>-click</b> opens it in a new tab just after the one you're in, and switches to it. <b><kbd>⌘⇧</kbd>-click</b> opens it beside you — see <a href="#two-panes">Two pages side by side</a>.</li>
+        <li><b><kbd>⌘T</kbd></b> adds an empty tab (so does the <b>+</b> at the end of the row). <b><kbd>⌘W</kbd></b> closes the tab you're in — never the window; closing the last tab leaves an empty one. <b><kbd>⌘⇧T</kbd></b> brings back the tab you closed last, with its history. A middle-click closes a tab too, and so does the <b>×</b> on the one at the front.</li>
+        <li><b><kbd>⌃Tab</kbd></b> and <b><kbd>⌃⇧Tab</kbd></b> walk along the tabs; <b><kbd>⌘1</kbd>…<kbd>⌘8</kbd></b> jump to a tab by its place and <b><kbd>⌘9</kbd></b> to the last. The arrow keys walk the row without turning the pages; Enter or Space shows the one under the focus, Delete closes it.</li>
+        <li><b>Switching tabs keeps your place.</b> A note you leave is written as you go, and its editor waits behind the tab you moved to — with its undo — so <kbd>⌘Z</kbd> on the way back undoes what you typed there and nothing else. Up to four notes per pane wait like this; the one you looked at longest ago is let go first, saved.</li>
+        <li><b>Everything comes back after a restart:</b> the tabs, the one at the front, which pane you were in, and each tab's Back and Forward. Tabs you closed are not kept across a restart.</li>
+        <li>There is no limit on tabs. They narrow to make room, then the row scrolls.</li>
+      </ul>
+      <h3 id="two-panes">Two pages side by side</h3>
+      <ul>
+        <li><b>Split</b> with the split button in the page's bar, next to the <b>…</b>; its tooltip says <b>Split right (⇧⌘\)</b>. The new pane opens on a copy of the tab you're in, with its history. Or press <kbd>⇧⌘\</kbd>, choose <b>Split right</b> from the <b>…</b> menu, or <kbd>⌘⇧</kbd>-click a note in the sidebar to open it on the other side.</li>
+        <li><b>Two panes at most.</b> Once the window is split, the split button goes.</li>
+        <li><b>Each pane has a × at the end of its bar</b> that closes that pane with all its tabs (<kbd>⌘⇧T</kbd> brings them back one by one, the front one first). The other pane keeps its tabs; close the left one and the right one moves over. The tab at the front of the pane you're in has an ink line along its top; the other pane's has a grey one, so a glance says where the next note will open.</li>
+        <li><b><kbd>⇧⌘\</kbd> closes the pane you're in</b>, so its hint shows on that pane's × only. <b>Close pane</b> in the <b>…</b> menu does the same.</li>
+        <li><b>Nothing you type is lost.</b> What you typed in a pane as it closes is saved, and if the other pane shows the same note, it picks the change up.</li>
+        <li>Each tab keeps its own Back and Forward, and the split and its tabs are still there after a restart.</li>
+      </ul>
+      <h3 id="peek">The peek and link cards</h3>
+      <p>A quick look at a note without leaving where you are: the note opens over the table, board or page you are in, and closes back to it.</p>
+      <ul>
+        <li><b>Open it</b> by clicking a row's name in a table, a card on a board, or a link in a note's text. The table, the board and the page stay as they were under it.</li>
+        <li><b>The header</b> says where the row sits — <i>3 of 186 in Task table</i> — with the arrows to the row before and after, <b>Saved</b>, and three buttons: <b>Open as full page</b> (in place of the tab under it), <b>Open in new tab</b> (<kbd>⌘</kbd> <kbd>Return</kbd>) and <b>Open in split</b> (<kbd>⇧⌘</kbd> <kbd>Return</kbd>). A note peeked from a link has no rows to step through.</li>
+        <li><b>Step through the rows</b> with <kbd>↑</kbd> <kbd>↓</kbd> while the focus is on the header or the properties strip, or <kbd>⌥↑</kbd> <kbd>⌥↓</kbd> from anywhere, the text too. The rows are the ones the table or board showed as you opened the peek, in its order — far down a long table too, past what is on screen. A board goes column by column.</li>
+        <li><b>Edit it as a page.</b> The title, the properties strip (<b>+ N empty</b> shows the rest) and the text edit and save as they do on the note's own page. If the note is open in a pane as well, that pane picks the change up. What you type is saved as the peek closes, steps on, or opens the note elsewhere.</li>
+        <li><b>A link inside the peek</b> shows its note in the peek, in place of the one there; a link to a heading — <code>[[#Goals]]</code> — opens the peeked note at it. <kbd>⌘K</kbd> opens search above the peek, and the result you pick shows in the peek too. Its commands act on the note on screen: <b>Archive this note</b> archives the peeked one. A command that goes somewhere — <b>Open Inbox</b>, <b>Open Today</b>, a new view — writes what you typed, closes the peek and goes there. <kbd>⇧⌘N</kbd> captures over the peek without moving the page under it.</li>
+        <li><b>A note open in a pane with typing not yet saved</b> is saved first as you peek it, so the two never disagree.</li>
+        <li><b>Close it</b> with <kbd>Esc</kbd> — from the text too — <b>×</b>, or a click outside it. The focus goes back to the row or the link that opened it. <kbd>Esc</kbd> closes only what is on top: a suggestion list or search above the peek first, then the peek.</li>
+        <li>While the peek is up, the shortcuts that make or arrange notes — <kbd>⌘N</kbd>, <kbd>⇧⌘D</kbd>, <kbd>⌥⌘N</kbd>, <kbd>⇧⌘\</kbd>, the tab keys, Back and Forward — do nothing, and <kbd>⌘W</kbd> closes no tab under it. <kbd>⌘S</kbd> saves the peeked note.</li>
+        <li><b>Link cards.</b> Rest the pointer on a link in a note's text, in a pane or in the peek, or on a relation's value — a task's project in a table, say — and after a moment a card shows the note's title, its type and folder (<i>Project · Projects</i>) and its first lines. Moving off, a key, a click or a scroll hides it. A link to a note that does not exist yet shows no card. Sidebar rows and board cards show none.</li>
+        <li><b>The peek's …</b> menu has <b>Export…</b> for the peeked note — see <a href="#export">Exporting notes</a>.</li>
+      </ul>
+      <p class="muted">Not yet: peeking a row of a dashboard's table, a query page or a linked page — those still open the note.</p>
+      <h3 id="right-sidebar">The right sidebar</h3>
+      <p>A panel on the right that follows whatever has the focus. Show or hide it with the <b>Right sidebar</b> button in any page's bar or <kbd>⌥⌘\</kbd>; the <b>×</b> at the end of its tab row hides it too. Whether it is open, and which tab, is remembered per vault.</p>
+      <ul>
+        <li><b>Type</b> — on a type's page or one of its views, the type's editor, first in the row. See <a href="#edit-type">Edit a type</a>. The sidebar is a little wider (340px) while it shows it.</li>
+        <li><b>Properties</b> — the open note's properties, with the same editors as the page: change one here and the file is written. Empty ones fold behind <b>N empty properties</b>. While the sidebar shows them, the note's own properties block leaves the body so there is one place to edit them; hide the sidebar, switch its tab, or work in the other pane and it is back.</li>
+        <li><b>Backlinks</b> — what links to the note, what it links to, and its unlinked mentions, as the foot of the page has them.</li>
+        <li><b>Outline</b> — the note's headings; click one to scroll to it.</li>
+        <li><b>Claude</b> — the chat. See <a href="#claude">Claude in DFAI</a>.</li>
+        <li><b>A table's row.</b> Click into a row of a type's table or a view's table — any cell — and the sidebar shows that note's properties under <b>Task · selected row</b>, without opening it. Editing them writes the row's file and the table follows; <b>Open</b> and <b>New tab</b> at the foot open the row's note. Click back into the page around the table and the sidebar follows the page again.</li>
+        <li><b>A narrow window</b> folds the right sidebar first — under about 1020px with the left sidebar open — and the left sidebar never folds on its own. Asking for the right sidebar there (the button, <kbd>⌥⌘\</kbd> or <kbd>⇧⌘J</kbd>) hides the left one to make room; <kbd>⌘\</kbd> brings it back. <kbd>Esc</kbd> inside the sidebar puts the focus back on the page.</li>
+      </ul>
+      <p>Hide the sidebar with <kbd>⌘\</kbd>. Settings (<kbd>⌘,</kbd>) and the theme button sit at the bottom of the sidebar, beside the <a href="#sync">sync</a> light once sync is set up. The theme button shows a moon in light and a sun in dark: press it to switch (<i>Switch to dark theme</i>). Until you press it, DFAI is light or dark as macOS is; Settings → <b>Appearance</b> → <b>Match system</b> turns that back on, and turning it off keeps the theme showing. The choice is this Mac's own. <kbd>⌘J</kbd> opens <a href="#ask">Ask</a>; <kbd>⇧⌘J</kbd> opens <a href="#claude">Claude</a> in the right sidebar's <b>Claude</b> tab.</p>
+      <h3 id="undo">Undo, and what DFAI tells you</h3>
+      <p>A change you make from a list is said in a small dark box at the bottom right — <i>Finished “Send the Larkspur invoice”.</i>, <i>Clarified “Call the bank”.</i>, <i>Moved “Call Mara Quill” to waiting.</i> on a board, <i>Changed “Call Mara Quill”.</i> for a cell — with <b>Undo</b> and a <b>×</b>.</p>
+      <ul>
+        <li><b>Where it happens.</b> Ticking, moving, deferring or choosing a task on <a href="#today">Today</a>, clarifying a row in the <a href="#para">Inbox</a>, accepting or rejecting a <a href="#proposals">proposal</a>, <a href="#tasks">Make task</a> on a checklist line, and, in a view's table, board, calendar or timeline, editing a cell, ticking a box or dragging a card or a bar. An accepted proposal and a new task also offer <b>Open</b>; a rejected proposal has no Undo.</li>
+        <li><b>Undo puts the note back byte for byte</b> — your comments, quoting and spacing as you wrote them — not the old values written afresh. It is refused if the note has changed since, by you, another pane, another app or sync, and the box says so in amber: <i>“Send the Larkspur invoice” has changed since — its properties changed — so the change was not undone.</i> It is refused too while the note has unsaved typing in a pane. A change to a note open in a pane is that pane's to undo (<kbd>⌘Z</kbd>), so a view offers no Undo for it.</li>
+        <li><b>It goes by itself after 5 seconds</b>, and its Undo with it. It waits while the pointer is on it or <kbd>Tab</kbd> has reached its Undo; it never takes the focus. Up to three show at once, oldest on top. Today, the Inbox and the proposals each keep one: their next change takes the last one's place, and only the last can be undone. An error stays until you press <b>×</b>. A failure with nothing to undo — a Make task that failed, or the Undo of a proposal or a Make task that was refused — is said on its page instead, and stays there until you dismiss it.</li>
+        <li><b>Missed one?</b> Warnings (amber) and errors (red) are also lines in <a href="#activity">Activity</a>, so one that went while you were looking elsewhere can be found later. A change that worked isn't: the file is its record.</li>
+        <li><b>Loading.</b> A page or note that takes more than about 150 ms to read shows a small turning ring where it will be; anything quicker shows nothing at all, so nothing flashes.</li>
+      </ul>
+    </section>
