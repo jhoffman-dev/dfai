@@ -250,3 +250,6 @@ fn a_move_into_a_folder_reached_through_a_link_lands_where_the_link_points() {
     assert!(vault.path().join("Shelf/Plans/note.md").is_file());
     assert!(!vault.path().join("note.md").exists());
 }
+
+#[path = "move_link_attack_684_tests.rs"]
+mod attack_684;
