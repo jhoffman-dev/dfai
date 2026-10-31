@@ -48,7 +48,7 @@ async function openVault(
   return { vault, host };
 }
 
-const todaysNote = (page: Page) => page.keyboard.press('Meta+Shift+D');
+const todaysNote = (page: Page) => page.keyboard.press('ControlOrMeta+Shift+D');
 const goTo = (page: Page) => page.getByRole('list', { name: 'Go to' });
 
 test.describe("today's note", () => {
@@ -141,12 +141,12 @@ test.describe('quick capture from any app', () => {
     page,
   }) => {
     const { host } = await openVault(page);
-    await page.keyboard.press('Meta+Comma');
+    await page.keyboard.press('ControlOrMeta+Comma');
     const card = page.getByRole('region', { name: 'Quick capture from anywhere' });
     await expect(card).toContainText('⌃⌥N');
 
     await card.getByRole('button', { name: 'Change…' }).click();
-    await page.keyboard.press('Alt+Meta+KeyJ');
+    await page.keyboard.press('Alt+ControlOrMeta+KeyJ');
 
     await expect.poll(() => host.globalCapture.registered()).toBe('Alt+Super+KeyJ');
     await expect(card).toContainText('⌥⌘J');

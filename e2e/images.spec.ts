@@ -366,7 +366,7 @@ test('a pasted image opens larger on a click, zooms with ⌘+, and closes on Esc
   const before = (await shown.boundingBox())!.width;
   expect(before).toBeCloseTo(360, 0);
 
-  await page.keyboard.press('Meta+Equal');
+  await page.keyboard.press('ControlOrMeta+Equal');
   await expect(zoom).toHaveText('125%');
   await expect.poll(async () => (await shown.boundingBox())!.width).toBeCloseTo(450, 0);
 

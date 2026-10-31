@@ -39,7 +39,7 @@ const article = (page: Page, which: 1 | 2, name: string) =>
 async function alphaThenBetaInTabs(page: Page) {
   await row(page, 'alpha').click();
   await expect(article(page, 1, 'alpha')).toBeVisible();
-  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await row(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
   await expect(article(page, 1, 'beta')).toBeVisible();
   await expect(tabsOf(page, 1)).toHaveText(['alpha', 'beta']);
 }
@@ -94,7 +94,7 @@ test("each tab's Back is its own", async ({ page }) => {
   await expect(article(page, 1, 'alpha')).toBeVisible();
   await row(page, 'beta').click();
   await expect(article(page, 1, 'beta')).toBeVisible();
-  await row(page, 'gamma').click({ modifiers: ['Meta'] });
+  await row(page, 'gamma').click({ modifiers: ['ControlOrMeta'] });
   await expect(article(page, 1, 'gamma')).toBeVisible();
 
   // The new tab started on gamma: nothing to go back to.
@@ -103,7 +103,7 @@ test("each tab's Back is its own", async ({ page }) => {
   await tab(page, 1, 'beta').click();
   await expect(article(page, 1, 'beta')).toBeVisible();
   await expect(back).toHaveAttribute('title', 'Back to alpha (⌘[)');
-  await page.keyboard.press('Meta+[');
+  await page.keyboard.press('ControlOrMeta+[');
   await expect(article(page, 1, 'alpha')).toBeVisible();
   await expect(tabsOf(page, 1)).toHaveText(['alpha', 'gamma']);
 });
@@ -129,7 +129,7 @@ test('typing in one tab, switching away and back, then ⌘Z undoes in that tab a
   await tab(page, 1, 'alpha').click();
   await expect(page.getByText('The first note. Edited.')).toBeVisible();
   await page.getByText('The first note. Edited.').click();
-  await page.keyboard.press('Meta+z');
+  await page.keyboard.press('ControlOrMeta+z');
   await expect(page.getByText('The first note.', { exact: true })).toBeVisible();
   await expect(page.getByText('The first note. Edited.')).toHaveCount(0);
   await expectSaved(pane(page, 1));
@@ -144,15 +144,15 @@ test('⌘W closes the tab and never the window; the last one leaves an empty tab
 }) => {
   await openVault(page);
   await alphaThenBetaInTabs(page);
-  await page.keyboard.press('Meta+w');
+  await page.keyboard.press('ControlOrMeta+w');
   await expect(tabsOf(page, 1)).toHaveText(['alpha']);
   await expect(article(page, 1, 'alpha')).toBeVisible();
-  await page.keyboard.press('Meta+w');
+  await page.keyboard.press('ControlOrMeta+w');
   await expect(tabsOf(page, 1)).toHaveText(['New tab']);
   await expect(pane(page, 1)).toBeVisible();
   await expect(sidebarSection(page, 'userSpace')).toBeVisible();
   // ⌘⇧T brings the last closed one back.
-  await page.keyboard.press('Meta+Shift+t');
+  await page.keyboard.press('ControlOrMeta+Shift+t');
   await expect(tabsOf(page, 1)).toHaveText(['alpha']);
   await expect(article(page, 1, 'alpha')).toBeVisible();
 });
@@ -160,14 +160,14 @@ test('⌘W closes the tab and never the window; the last one leaves an empty tab
 test('⌘T opens a new tab, ⌃Tab walks the tabs, and ⌘1–9 jump to one', async ({ page }) => {
   await openVault(page);
   await alphaThenBetaInTabs(page);
-  await page.keyboard.press('Meta+t');
+  await page.keyboard.press('ControlOrMeta+t');
   await expect(tabsOf(page, 1)).toHaveText(['alpha', 'beta', 'New tab']);
   await expect(tab(page, 1, 'New tab')).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Control+Tab');
   await expect(tab(page, 1, 'alpha')).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Control+Shift+Tab');
   await expect(tab(page, 1, 'New tab')).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press('Meta+2');
+  await page.keyboard.press('ControlOrMeta+2');
   await expect(tab(page, 1, 'beta')).toHaveAttribute('aria-selected', 'true');
   await expect(article(page, 1, 'beta')).toBeVisible();
 });
@@ -184,7 +184,7 @@ test('Today opens in the active tab as a place, with its own Back', async ({ pag
     'Back to alpha (⌘[)',
   );
   // And beside it in a new tab, alpha is still there to come back to.
-  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await row(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
   await expect(tabsOf(page, 1)).toHaveText(['Today', 'beta']);
   await tab(page, 1, 'Today').click();
   await expect(page.getByRole('article', { name: 'Today' })).toBeVisible();
@@ -196,13 +196,13 @@ test('⌘⇧-click opens beside, splitting the window, and the strip says which 
   await openVault(page);
   await row(page, 'alpha').click();
   await expect(article(page, 1, 'alpha')).toBeVisible();
-  await row(page, 'beta').click({ modifiers: ['Meta', 'Shift'] });
+  await row(page, 'beta').click({ modifiers: ['ControlOrMeta', 'Shift'] });
   await expect(article(page, 2, 'beta')).toBeVisible();
   await expect(article(page, 1, 'alpha')).toBeVisible();
   await expect(strip(page, 2).locator('..')).toHaveClass(/tab-strip--focused/);
   await expect(strip(page, 1).locator('..')).not.toHaveClass(/tab-strip--focused/);
   // Once split, ⌘⇧-click lands in the other pane's active tab.
-  await row(page, 'gamma').click({ modifiers: ['Meta', 'Shift'] });
+  await row(page, 'gamma').click({ modifiers: ['ControlOrMeta', 'Shift'] });
   await expect(article(page, 1, 'gamma')).toBeVisible();
   await expect(article(page, 2, 'beta')).toBeVisible();
 });

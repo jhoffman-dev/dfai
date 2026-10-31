@@ -158,13 +158,13 @@ test('Add block below puts an empty block under it, with the caret there to type
 test('the keys move a block up and down, and one undo puts it back', async ({ page }) => {
   const { vault, editor } = await openNote(page, null, 'Garden plan');
   await caretAtLineEnd(line(editor, 'Third line.'));
-  await page.keyboard.press('Meta+Shift+ArrowUp');
+  await page.keyboard.press('ControlOrMeta+Shift+ArrowUp');
   await expect(editor.locator('p')).toHaveText(['First line.', 'Third line.', 'Second line.']);
-  await page.keyboard.press('Meta+Shift+ArrowUp');
+  await page.keyboard.press('ControlOrMeta+Shift+ArrowUp');
   await expect(editor.locator('p')).toHaveText(['Third line.', 'First line.', 'Second line.']);
-  await page.keyboard.press('Meta+Shift+ArrowDown');
+  await page.keyboard.press('ControlOrMeta+Shift+ArrowDown');
   await expect(editor.locator('p')).toHaveText(['First line.', 'Third line.', 'Second line.']);
-  await page.keyboard.press('Meta+z');
+  await page.keyboard.press('ControlOrMeta+z');
   await expect(editor.locator('p')).toHaveText(['Third line.', 'First line.', 'Second line.']);
   await saveNow(page);
   await expectFile(vault, 'Garden plan.md').toBe(
@@ -212,7 +212,7 @@ test('⇧⌘↑ on the first block, where nothing can move, selects to the start
   const { editor } = await openNote(page, null, 'Garden plan');
   // The note's first block is its heading; "First line." is the second.
   await caretAtLineEnd(editor.locator('h1', { hasText: 'Garden plan' }));
-  await page.keyboard.press('Meta+Shift+ArrowUp');
+  await page.keyboard.press('ControlOrMeta+Shift+ArrowUp');
   await expect
     .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
     .toContain('Garden plan');

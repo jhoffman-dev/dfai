@@ -11,6 +11,7 @@ import {
   type FakeVault,
 } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
+import { LINE_END } from './platform-keys.ts';
 
 /**
  * Attack on #281 (#245): the app's own saves on a disk whose clock is coarse.
@@ -49,8 +50,8 @@ async function replaceLastCharacter(page: Page, text: string, typed: string) {
   // is redone too: the caret put back is not on this line (#489).
   await expect(async () => {
     await page.getByText(text).click();
-    // ⌘→, not End: End does not move the caret in WebKit on macOS (#448).
-    await page.keyboard.press('Meta+ArrowRight');
+    // The line's end as the platform moves to it: ⌘→ on macOS, where End does not move the caret (#448).
+    await page.keyboard.press(LINE_END);
     await page.keyboard.press('Shift+ArrowLeft');
     const selected = await page.evaluate(
       () =>
@@ -64,7 +65,7 @@ async function replaceLastCharacter(page: Page, text: string, typed: string) {
 }
 
 async function findsInSearch(page: Page, word: string) {
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   const search = palette.getByRole('searchbox', { name: 'Search the vault' });
   await expect(async () => {

@@ -31,7 +31,7 @@ async function openVault(
 }
 
 async function addFixturePdf(page: Page): Promise<void> {
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Add PDF');
   await page.getByRole('option', { name: 'Add PDF…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add PDF to Library' });
@@ -222,7 +222,7 @@ test('find in the document counts every copy and steps through them', async ({ p
   await openVault(page);
   await addFixturePdf(page);
   await page.locator('.pdf-reader__pages').click({ position: { x: 4, y: 4 } });
-  await page.keyboard.press('Meta+f');
+  await page.keyboard.press('ControlOrMeta+f');
   const find = page.getByRole('searchbox', { name: 'Find in document' });
   await find.fill('a light kept');
   await expect(page.getByText('1 of 2')).toBeVisible();

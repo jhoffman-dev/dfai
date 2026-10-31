@@ -154,7 +154,7 @@ const PAGES: Record<string, (page: Page) => Promise<void>> = {
   // opens its own page, with the editor in the right sidebar (slice 12),
   // which is put away so the page's own head is what is measured.
   'a type page': async (page) => {
-    await page.keyboard.press('Meta+k');
+    await page.keyboard.press('ControlOrMeta+k');
     await page.getByRole('searchbox', { name: 'Search the vault' }).fill('edit task type');
     await page.keyboard.press('Enter');
     await expect(page.getByRole('article', { name: 'Task', exact: true })).toBeVisible();

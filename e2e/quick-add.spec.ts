@@ -41,7 +41,7 @@ test('Alt+Cmd+N opens capture, and what it captures is a task in the Inbox', asy
   const vault = await openVault(page);
   await expect(page.locator('.fab, .fab__button')).toHaveCount(0);
 
-  await page.keyboard.press('Alt+Meta+n');
+  await page.keyboard.press('Alt+ControlOrMeta+n');
   const capture = page.getByRole('dialog', { name: 'Capture a task' });
   await expect(capture).toBeVisible();
   await page.getByRole('textbox', { name: 'What needs doing' }).fill('Call the bank');
@@ -54,7 +54,7 @@ test('Alt+Cmd+N opens capture, and what it captures is a task in the Inbox', asy
 
 // Capture lands in a vault's Inbox: with none open, both its keys say so, as
 // the global shortcut does, and open nothing (attack-468).
-for (const keys of ['Shift+Meta+n', 'Alt+Meta+n']) {
+for (const keys of ['Shift+ControlOrMeta+n', 'Alt+ControlOrMeta+n']) {
   test(`${keys} with no vault open opens no capture and says a vault is needed`, async ({
     page,
   }) => {

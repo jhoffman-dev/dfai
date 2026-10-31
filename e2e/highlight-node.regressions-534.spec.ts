@@ -69,7 +69,7 @@ test('a comment typed and then the tab closed with ⌘W is written, not lost', a
   const vault = await openBrightwater(page);
   await comment(page).click();
   await comment(page).fill('Typed, then the tab closed.');
-  await page.keyboard.press('Meta+w');
+  await page.keyboard.press('ControlOrMeta+w');
   // The premise: the tab, and the field with it, is gone.
   await expect(page.getByRole('article', { name: 'Brightwater' })).toHaveCount(0);
   await expectFile(vault, 'Library/Brightwater.md').toContain('> Typed, then the tab closed.');

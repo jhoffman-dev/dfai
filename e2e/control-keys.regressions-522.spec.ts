@@ -119,7 +119,7 @@ test("⌘Z then Backspace on an embed's focused name leave the note's heading as
   await page.keyboard.type(' More.');
   await expectFile(vault, 'Journal.md').toContain('Today. More.');
   await focusOn(embedName(page));
-  await page.keyboard.press('Meta+z');
+  await page.keyboard.press('ControlOrMeta+z');
   await page.keyboard.press('Backspace');
   // The heading's text changes the moment a key edits it; on disk it follows with the autosave.
   const heading = page.getByLabel('Note', { exact: true }).getByRole('heading', { level: 1 });

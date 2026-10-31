@@ -67,7 +67,7 @@ test('the watcher’s echo of an autosave still puts the save in the index (#254
   await expectSaved(page);
   await expect.poll(() => host.echoesSent()).toBeGreaterThan(0);
 
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   const search = palette.getByRole('searchbox', { name: 'Search the vault' });
   await expect(async () => {

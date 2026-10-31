@@ -69,7 +69,7 @@ test('Alt+Cmd+N with no vault open opens no capture, as the global shortcut does
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Open a vault' })).toBeVisible();
 
-  await page.keyboard.press('Alt+Meta+n');
+  await page.keyboard.press('Alt+ControlOrMeta+n');
 
   await expect(page.getByRole('dialog', { name: 'Capture a task' })).toHaveCount(0);
 });
@@ -79,7 +79,7 @@ test('a toast left up hides no control of the Settings dialog opened over it', a
   const vault = await openVault(page);
   const said = await changeWithToast(page, vault);
 
-  await page.keyboard.press('Meta+Comma');
+  await page.keyboard.press('ControlOrMeta+Comma');
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await expect(settings).toBeVisible();
   await expect(said).toBeVisible();

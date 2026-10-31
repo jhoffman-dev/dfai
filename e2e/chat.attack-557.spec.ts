@@ -192,7 +192,7 @@ test('a question asked in Ask is drawn, cited, in the sidebar showing the same c
 }) => {
   const host = await openPlan(page);
   await expect(chat(page).getByRole('textbox', { name: 'Ask Claude' })).toBeVisible();
-  await page.keyboard.press('Meta+j');
+  await page.keyboard.press('ControlOrMeta+j');
   await expect(askPage(page)).toBeVisible();
   host.claude.reply('Mara Quill owns it [[Plan]].');
   const box = askPage(page).getByRole('textbox', { name: 'Ask Claude' });
@@ -209,7 +209,7 @@ test('a past chat picked in the sidebar while Ask is open is the chat Ask shows'
   page,
 }) => {
   await openPlan(page);
-  await page.keyboard.press('Meta+j');
+  await page.keyboard.press('ControlOrMeta+j');
   await expect(askPage(page)).toBeVisible();
   await chat(page).getByRole('button', { name: 'Past chats' }).click();
   await pastChats(page).getByRole('button', { name: 'Quill rollout' }).click();
@@ -230,7 +230,7 @@ test('⌘-click on a chip in the sidebar, with the box focused, opens the note i
     name: 'Rollback',
   });
   await expect(chat(page).getByRole('textbox', { name: 'Ask Claude' })).toBeFocused();
-  await chip.click({ modifiers: ['Meta'] });
+  await chip.click({ modifiers: ['ControlOrMeta'] });
 
   await expect(page.getByRole('article', { name: 'Rollback' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Plan' })).toHaveCount(1);

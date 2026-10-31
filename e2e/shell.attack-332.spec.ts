@@ -386,7 +386,7 @@ const OPENERS: Record<string, (page: Page) => Promise<void>> = {
   // "Edit … type" from elsewhere opens the type's own page; at 720px the
   // right sidebar that holds its editor is folded, so the page is all there is.
   'a type page': async (page) => {
-    await page.keyboard.press('Meta+k');
+    await page.keyboard.press('ControlOrMeta+k');
     await page.getByRole('searchbox', { name: 'Search the vault' }).fill(`edit ${LONG_TYPE} type`);
     await page.keyboard.press('Enter');
     await expect(page.getByRole('article', { name: LONG_TYPE, exact: true })).toBeVisible();
@@ -433,9 +433,9 @@ test('⌘\\ hides the sidebar and brings it back at 224px', async ({ page }) => 
   await tree(page).getByRole('treeitem', { name: 'Plain', exact: true }).click();
   await expect(nav(page)).toBeVisible();
   await page.locator('.page-head__title').first().click();
-  await page.keyboard.press('Meta+Backslash');
+  await page.keyboard.press('ControlOrMeta+Backslash');
   await expect(nav(page)).toBeHidden();
-  await page.keyboard.press('Meta+Backslash');
+  await page.keyboard.press('ControlOrMeta+Backslash');
   await expect(nav(page)).toBeVisible();
   const width = await nav(page).evaluate((element) => element.getBoundingClientRect().width);
   expect(width).toBe(224);

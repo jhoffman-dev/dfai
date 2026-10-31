@@ -28,14 +28,14 @@ test('cmd+backslash toggles it too', async ({ page }) => {
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByRole('navigation', { name: 'Vault' })).toBeVisible();
 
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('\\');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   await expect(page.getByRole('navigation', { name: 'Vault' })).toHaveCount(0);
 
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('\\');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   await expect(page.getByRole('navigation', { name: 'Vault' })).toBeVisible();
 });
 

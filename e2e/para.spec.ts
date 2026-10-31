@@ -142,9 +142,9 @@ test('a new project is a project, links an area, and archives and restores by it
 });
 
 async function paletteCommand(page: Page, label: string) {
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill(label);
   await page
     .getByRole('dialog', { name: 'Search notes' })

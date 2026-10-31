@@ -285,9 +285,9 @@ test('a saved view titled Today does not make a second sidebar row', async ({ pa
 
 test('⌘K opens Today', async ({ page }) => {
   await openTodayVault(page);
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Today');
   await palette.getByRole('option', { name: 'Today', exact: true }).click();

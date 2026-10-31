@@ -43,11 +43,11 @@ const rowName = (page: Page, at: number) =>
 const peek = (page: Page) => page.getByRole('dialog');
 
 async function chord(page: Page, key: string, { shift = false } = {}) {
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   if (shift) await page.keyboard.down('Shift');
   await page.keyboard.press(key);
   if (shift) await page.keyboard.up('Shift');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
 }
 
 test('a row opens the peek over the table, and Esc hands the focus back to it', async ({

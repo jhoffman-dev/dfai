@@ -67,7 +67,7 @@ test('a note another program rewrote in the same tick is found by its new words'
   await writeInTheSameTick(vault, 'note.md', '# Note\n\nShip a kumquat.\n');
   await emitVaultChanged(page, ['note.md']);
 
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   const search = palette.getByRole('searchbox', { name: 'Search the vault' });
   await expect(async () => {

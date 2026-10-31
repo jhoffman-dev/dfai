@@ -205,7 +205,7 @@ test('the sidebar, Settings and an open note all answer while the vault is being
   await expect(page.getByRole('main').getByText('alpha', { exact: true })).toBeVisible();
   // The edit made during the build is not lost to it: the refresh the save
   // asked for runs once the build is done, and a search then finds the words.
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   const search = page.getByRole('searchbox', { name: 'Search the vault' });
   await expect(async () => {

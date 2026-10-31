@@ -28,7 +28,7 @@ async function openBook(page: Page, bytes: Buffer): Promise<{ hits: string[] }> 
   // the network idle too soon and lose it for good: what these tests check must not hang on that.
   await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Add EPUB');
   await page.getByRole('option', { name: 'Add EPUB…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add EPUB to Library' });

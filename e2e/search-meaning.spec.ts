@@ -23,9 +23,9 @@ async function openVault(page: Page): Promise<FakeHost> {
 }
 
 async function openPalette(page: Page) {
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await expect(palette).toBeVisible();
   return palette;

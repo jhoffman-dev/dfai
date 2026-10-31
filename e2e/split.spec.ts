@@ -236,13 +236,13 @@ test('the window can be split and closed again from the keyboard', async ({ page
   await openFromSidebar(page, 'today');
   await expect(pane(page, 1).getByRole('article', { name: 'today' })).toBeVisible();
 
-  await page.keyboard.press('Shift+Meta+Backslash');
+  await page.keyboard.press('Shift+ControlOrMeta+Backslash');
   await expect(pane(page, 2)).toBeVisible();
 
-  await page.keyboard.press('Shift+Meta+Backslash');
+  await page.keyboard.press('Shift+ControlOrMeta+Backslash');
   await expect(pane(page, 2)).toHaveCount(0);
   // Plain Cmd+backslash still belongs to the sidebar.
-  await page.keyboard.press('Meta+Backslash');
+  await page.keyboard.press('ControlOrMeta+Backslash');
   await expect(sidebarSection(page, 'userSpace')).toHaveCount(0);
 });
 

@@ -16,9 +16,9 @@ async function openPaletteOverManyHits(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
 
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('tomatoes');
   await expect(palette.getByRole('option')).toHaveCount(20);

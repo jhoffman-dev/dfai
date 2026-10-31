@@ -27,9 +27,9 @@ async function openVault(page: Page): Promise<{ host: FakeHost; vault: FakeVault
 
 /** Turns search by meaning on from ⌘K, as only the person can, and opens Standup from it. */
 async function openStandupByMeaning(page: Page, host: FakeHost) {
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await palette.getByRole('switch', { name: 'By meaning' }).click();
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('payday');

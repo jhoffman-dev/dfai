@@ -46,7 +46,7 @@ async function askForADashboard(
     .getByRole('treeitem', { name: 'Plan', exact: true })
     .click();
 
-  await page.keyboard.press('Meta+Shift+KeyJ');
+  await page.keyboard.press('ControlOrMeta+Shift+KeyJ');
   const box = chat(page).getByRole('textbox', { name: 'Ask Claude' });
   await box.fill('Build me a dashboard of my tasks by status');
   await box.press('Enter');

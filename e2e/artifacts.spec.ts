@@ -60,7 +60,7 @@ test('a pasted claude.ai link becomes an artifact note in artifacts/, with only 
 }) => {
   const { vault, host } = await openVault(page);
 
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill(LINK);
   await page.getByRole('option', { name: 'Save this link as an artifact' }).click();
 

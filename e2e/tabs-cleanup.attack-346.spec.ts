@@ -112,24 +112,24 @@ test('opening and closing fifty tabs leaves no editor, listener or timer behind'
   await row(page, 'alpha').click();
   await expect(pane(page).getByRole('article', { name: 'alpha', exact: true })).toBeVisible();
   // One round first, so whatever a first tab switch sets up once is in the baseline.
-  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await row(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
   await expect(tabsOf(page)).toHaveCount(2);
-  await page.keyboard.press('Meta+w');
+  await page.keyboard.press('ControlOrMeta+w');
   await expect(tabsOf(page)).toHaveCount(1);
   await expect(pane(page).locator('.pane__tab')).toHaveCount(1);
   const before = await counts(page);
 
   for (let round = 0; round < 50; round += 1) {
     const name = NAMES[1 + (round % (NAMES.length - 1))] as string;
-    await row(page, name).click({ modifiers: ['Meta'] });
+    await row(page, name).click({ modifiers: ['ControlOrMeta'] });
     await expect(pane(page).getByRole('article', { name, exact: true })).toBeVisible();
     // Every other round closes it at once; the rest pile up and close in a batch.
-    if (round % 2 === 0) await page.keyboard.press('Meta+w');
+    if (round % 2 === 0) await page.keyboard.press('ControlOrMeta+w');
     await expect(pane(page).locator('.pane__tab')).not.toHaveCount(6);
   }
   while ((await tabsOf(page).count()) > 1) {
     const at = await tabsOf(page).count();
-    await page.keyboard.press('Meta+w');
+    await page.keyboard.press('ControlOrMeta+w');
     await expect(tabsOf(page)).toHaveCount(at - 1);
   }
   await expect(tabsOf(page)).toHaveText(['alpha']);

@@ -151,7 +151,7 @@ test('Reload recovers the readers whose chunks arrived cut short, once a whole c
 
 /** Adds the fixture PDF from ⌘K, under a name of its own so it does not collide with the vault's copy. */
 async function addPdf(page: Page) {
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Add PDF');
   await page.getByRole('option', { name: 'Add PDF…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add PDF to Library' });

@@ -146,7 +146,7 @@ test.describe('writes in flight when their tab goes', () => {
     await expect.poll(() => host.writesTo(CELLO)).toBeGreaterThan(0);
 
     // Another tab, then back to the Inbox's: the write is still in flight.
-    await page.keyboard.press('Meta+t');
+    await page.keyboard.press('ControlOrMeta+t');
     await expect(tabsOf(page, 1)).toHaveCount(2);
     await tabsOf(page, 1).first().click();
     await expect(inboxIn(page, 1).getByRole('table')).toBeVisible();
@@ -170,7 +170,7 @@ test.describe('writes in flight when their tab goes', () => {
     await expect.poll(() => host.writesTo(CELLO)).toBeGreaterThan(0);
     const asked = host.writesTo(CELLO);
 
-    await page.keyboard.press('Meta+w');
+    await page.keyboard.press('ControlOrMeta+w');
     await expect(tabsOf(page, 1)).toHaveText(['New tab']);
     release();
 
@@ -190,7 +190,7 @@ test.describe('writes in flight when their tab goes', () => {
     const release = host.holdWrites(CELLO);
     await decideCello(page);
     await expect.poll(() => host.writesTo(CELLO)).toBeGreaterThan(0);
-    await page.keyboard.press('Meta+w');
+    await page.keyboard.press('ControlOrMeta+w');
 
     await switchTo(page, host, a, b);
     release();
@@ -213,7 +213,7 @@ test.describe('writes in flight when their tab goes', () => {
     await expect.poll(() => host.writesTo('Tasks/Draft the plan.md')).toBeGreaterThan(0);
     const asked = host.writesTo('Tasks/Draft the plan.md');
 
-    await page.keyboard.press('Meta+t');
+    await page.keyboard.press('ControlOrMeta+t');
     await tabsOf(page, 1).first().click();
     await expect(today).toBeVisible();
     // Ticked: drawn back as still to do invites a second tick while the first is in flight.
@@ -231,7 +231,7 @@ test.describe('the same page in two places', () => {
     const vault = await gtdVault();
     const host = await open(page, vault);
     await openInbox(page, 1);
-    await page.keyboard.press('Meta+Shift+Backslash');
+    await page.keyboard.press('ControlOrMeta+Shift+Backslash');
     await expect(pane(page, 2)).toBeVisible();
     await openInbox(page, 2);
     await expect(rowIn(page, 2, 'Learn the cello')).toBeVisible();
@@ -253,7 +253,7 @@ test.describe('the same page in two places', () => {
     const vault = await gtdVault();
     const host = await open(page, vault);
     await openInbox(page, 1);
-    await page.keyboard.press('Meta+Shift+Backslash');
+    await page.keyboard.press('ControlOrMeta+Shift+Backslash');
     await expect(pane(page, 2)).toBeVisible();
     await openInbox(page, 2);
     await expect(rowIn(page, 2, 'Learn the cello')).toBeVisible();
@@ -279,7 +279,7 @@ test.describe('the same page in two places', () => {
     await open(page, vault);
     await goTo(page).getByRole('button', { name: 'Today' }).click();
     await expect(pane(page, 1).getByRole('article', { name: 'Today' })).toBeVisible();
-    await page.keyboard.press('Meta+Shift+Backslash');
+    await page.keyboard.press('ControlOrMeta+Shift+Backslash');
     await expect(pane(page, 2)).toBeVisible();
     await goTo(page).getByRole('button', { name: 'Today' }).click();
     const second = pane(page, 2).getByRole('article', { name: 'Today' });
@@ -300,7 +300,7 @@ test.describe('the same page in two places', () => {
       .getByRole('button', { name: /^Person, / })
       .click();
     await expect(pane(page, 1).getByRole('article', { name: 'Person' })).toBeVisible();
-    await page.keyboard.press('Meta+Shift+Backslash');
+    await page.keyboard.press('ControlOrMeta+Shift+Backslash');
     await expect(pane(page, 2)).toBeVisible();
     await sidebarSection(page, 'types')
       .getByRole('button', { name: /^Book, / })
@@ -399,7 +399,7 @@ test.describe('offers', () => {
     await offer.getByRole('button', { name: 'Not now' }).click();
     await expect(offer).toHaveCount(0);
 
-    await page.keyboard.press('Meta+w');
+    await page.keyboard.press('ControlOrMeta+w');
     await expect(tabsOf(page, 1)).toHaveText(['New tab']);
     await sidebarInbox(page).click();
     await expect(inboxIn(page, 1)).toBeVisible();
@@ -419,7 +419,7 @@ test.describe("the chat's context", () => {
       .getByRole('treeitem', { name: 'Plan', exact: true })
       .click();
     await expect(pane(page, 1).getByRole('article', { name: 'Plan' })).toBeVisible();
-    await page.keyboard.press('Meta+Shift+Backslash');
+    await page.keyboard.press('ControlOrMeta+Shift+Backslash');
     await expect(pane(page, 2)).toBeVisible();
     // The split focused pane 2: the new query lands there.
     await page.getByRole('button', { name: 'New in Views' }).click();

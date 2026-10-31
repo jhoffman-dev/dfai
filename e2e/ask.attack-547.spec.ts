@@ -35,7 +35,7 @@ const recentRow = (page: Page) =>
 
 test('an Ask tab brought back at launch does not take the keys', async ({ page }) => {
   await openVault(page);
-  await page.keyboard.press('Meta+j');
+  await page.keyboard.press('ControlOrMeta+j');
   await expect(ask(page).getByRole('textbox', { name: 'Ask Claude' })).toBeFocused();
 
   await page.reload();
@@ -51,7 +51,7 @@ test('picking a recent question whose chat note was deleted underneath says so, 
   page,
 }) => {
   const vault = await openVault(page);
-  await page.keyboard.press('Meta+j');
+  await page.keyboard.press('ControlOrMeta+j');
   await expect(recentRow(page)).toBeVisible();
 
   // Deleted by another program before the watcher has told the app.

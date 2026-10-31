@@ -66,7 +66,7 @@ test('the shown tab is scrolled into view when opened, switched to, left after a
 }) => {
   await openVault(page);
   await row(page, NOTES[0]).click();
-  for (const name of NOTES.slice(1)) await row(page, name).click({ modifiers: ['Meta'] });
+  for (const name of NOTES.slice(1)) await row(page, name).click({ modifiers: ['ControlOrMeta'] });
   await expect(strip(page).getByRole('tab')).toHaveCount(NOTES.length);
   const scrolls = await strip(page).evaluate((list) => list.scrollWidth > list.clientWidth);
   expect(scrolls, 'fourteen tabs at 1280px overflow the strip').toBe(true);
@@ -74,29 +74,29 @@ test('the shown tab is scrolled into view when opened, switched to, left after a
   await expectShownTabInView(page, NOTES[13]);
 
   // Switched to from the keyboard: the first, then round to the last again.
-  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('ControlOrMeta+1');
   await expectShownTabInView(page, NOTES[0]);
   await page.keyboard.press('Control+Shift+Tab');
   await expectShownTabInView(page, NOTES[13]);
 
   // Left after a close: ⌘W on the last shows its neighbour.
-  await page.keyboard.press('Meta+w');
+  await page.keyboard.press('ControlOrMeta+w');
   await expectShownTabInView(page, NOTES[12]);
 
   // Reopened: back to the start of the strip, then ⌘⇧T brings the last back.
-  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('ControlOrMeta+1');
   await expectShownTabInView(page, NOTES[0]);
-  await page.keyboard.press('Meta+Shift+t');
+  await page.keyboard.press('ControlOrMeta+Shift+t');
   await expectShownTabInView(page, NOTES[13]);
 });
 
 test('a shown tab already in view does not scroll the strip', async ({ page }) => {
   await openVault(page);
   await row(page, NOTES[0]).click();
-  for (const name of NOTES.slice(1)) await row(page, name).click({ modifiers: ['Meta'] });
-  await page.keyboard.press('Meta+1');
+  for (const name of NOTES.slice(1)) await row(page, name).click({ modifiers: ['ControlOrMeta'] });
+  await page.keyboard.press('ControlOrMeta+1');
   await expectShownTabInView(page, NOTES[0]);
-  await page.keyboard.press('Meta+2');
+  await page.keyboard.press('ControlOrMeta+2');
   await expectShownTabInView(page, NOTES[1]);
   expect(await strip(page).evaluate((list) => list.scrollLeft)).toBe(0);
 });
@@ -106,7 +106,7 @@ test('the strip stays where it was scrolled when the other pane takes the focus'
 }) => {
   await openVault(page);
   await row(page, NOTES[0]).click();
-  for (const name of NOTES.slice(1)) await row(page, name).click({ modifiers: ['Meta'] });
+  for (const name of NOTES.slice(1)) await row(page, name).click({ modifiers: ['ControlOrMeta'] });
   await expectShownTabInView(page, NOTES[13]);
   await splitWindow(page);
   await expect(strip(page, 2)).toBeVisible();

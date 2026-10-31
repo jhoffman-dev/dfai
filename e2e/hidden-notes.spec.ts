@@ -63,9 +63,9 @@ test('a note in a hidden directory is not listed, linked or indexed', async ({ p
   await expect(page.getByText('3 notes indexed')).toBeVisible();
 
   // Not a search result.
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('graveyard');
   await expect(page.getByText('Nothing matches.')).toBeVisible();
 });
@@ -81,9 +81,9 @@ test('an .atlas note is an ordinary note: listed, linkable and searchable', asyn
   await expect(page.getByText('A type definition, written as a note.')).toBeVisible();
 
   // And it is in the index, so search reaches it.
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('definition');
   await expect(palette.getByRole('option', { name: /task/i })).toBeVisible();

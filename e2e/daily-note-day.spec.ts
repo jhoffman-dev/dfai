@@ -108,7 +108,7 @@ test.describe("today's note starts with the day", () => {
     const file = `${DAILY}/${today}.md`;
     const { vault, host } = await openVault(page, { [file]: WRITTEN });
 
-    await page.keyboard.press('Meta+Shift+D');
+    await page.keyboard.press('ControlOrMeta+Shift+D');
 
     const note = page.getByRole('article', { name: today });
     await expect(note).toContainText('the seed swap moved to Saturday');

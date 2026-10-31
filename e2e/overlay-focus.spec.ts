@@ -21,9 +21,9 @@ async function openVault(page: Page) {
 }
 
 async function openSearch(page: Page) {
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   await expect(page.getByRole('dialog', { name: 'Search notes' })).toBeVisible();
 }
 

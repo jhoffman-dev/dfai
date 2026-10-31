@@ -4,9 +4,9 @@ import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
 
 async function openSearch(page: Page) {
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.keyboard.press('k');
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
 }
 
 const TASK_TYPE =
@@ -41,7 +41,7 @@ test('a new tab opened over a cell’s picker leaves no picker over it', async (
   const { vault, cell } = await openTable(page);
   await cell.click();
   await expect(page.locator('.cell-picker')).toBeVisible();
-  await page.keyboard.press('Meta+t');
+  await page.keyboard.press('ControlOrMeta+t');
   await expect(page.locator('.cell-picker')).toHaveCount(0);
   expect(await vault.read('t000.md')).toContain('status: doing');
 });
@@ -50,8 +50,8 @@ test('back on the table’s tab after a picker was left open, ⌘K still opens',
   const { cell } = await openTable(page);
   await cell.click();
   await expect(page.locator('.cell-picker')).toBeVisible();
-  await page.keyboard.press('Meta+t');
-  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('ControlOrMeta+t');
+  await page.keyboard.press('ControlOrMeta+1');
   await expect(page.locator('.table [data-cell-stop="status"]').first()).toBeVisible();
   await openSearch(page);
   await expect(page.getByRole('dialog', { name: 'Search notes' })).toBeVisible();

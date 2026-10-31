@@ -74,7 +74,7 @@ async function openQueryPage(page: Page) {
 async function runQuery(page: Page, sql: string) {
   const editor = page.getByRole('textbox', { name: 'SQL' });
   await editor.fill(sql);
-  await editor.press('Meta+Enter');
+  await editor.press('ControlOrMeta+Enter');
 }
 
 test('a view added from a type’s tabs opens, and is listed in the sidebar and the tabs', async ({
@@ -249,7 +249,7 @@ test('a query added to a dashboard draws there as a widget', async ({ page }) =>
 
 test('the search palette opens a new query', async ({ page }) => {
   await openVault(page);
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('new query');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('region', { name: 'Query builder' })).toBeVisible();

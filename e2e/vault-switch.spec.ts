@@ -239,7 +239,7 @@ test('tabs open in A show nothing and write nothing in B, and come back when A i
   await expectSaved(pane(page));
   await sidebarSection(page, 'userSpace')
     .getByRole('treeitem', { name: 'notes', exact: true })
-    .click({ modifiers: ['Meta'] });
+    .click({ modifiers: ['ControlOrMeta'] });
   const tabs = page.getByRole('tablist', { name: 'Pane 1 tabs' }).getByRole('tab');
   await expect(tabs).toHaveText(['notes', 'notes']);
   const writesBefore = host.callsTo('write_text_file');
