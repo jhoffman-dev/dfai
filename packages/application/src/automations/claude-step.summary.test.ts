@@ -17,6 +17,7 @@ import {
   claudeAsks,
   createVaultPath,
   DECLARED_STEP_MODEL,
+  deleteThroughLinkRefusal,
   digestOf,
   logPathFor,
   parseObjectType,
@@ -34,6 +35,7 @@ import type { ModelEvent } from '../chat/ports.ts';
 import { automationVault, jsonNote } from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
+import { VaultAccessError } from '../vault/ports.ts';
 import type { ScriptedRound } from '../testing/fake-model.ts';
 import { runAutomation } from './run-automation.ts';
 import { undoLastRun } from './undo-last-run.ts';
@@ -566,6 +568,24 @@ describe('Undo last run', () => {
     expect(at.properties()).not.toHaveProperty('atlas_summary_model');
     expect(at.properties()).not.toHaveProperty('tasks');
     expect(at.vault.files.has(task!)).toBe(false);
+  });
+
+  it('leaves a task the host will not trash through a link, saying why, and logs the rest (#685)', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const [task] = at.tasks();
+    const refusal = deleteThroughLinkRefusal(createVaultPath('Tasks'));
+    at.vault.ports.fs.trashEntry = async () => {
+      throw new VaultAccessError(refusal);
+    };
+
+    const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
+
+    expect(undone?.done).toEqual([{ kind: 'unsummarised', path: SYNC }]);
+    expect(undone?.left).toEqual([{ path: task, reason: refusal }]);
+    expect(at.vault.files.has(task!)).toBe(true);
+    const logged = at.entries().at(-1);
+    expect(logged?.kind === 'undo' && logged.left).toEqual([{ path: task, reason: refusal }]);
   });
 
   it('keeps a task changed since, and its link, and a block edited since', async () => {
