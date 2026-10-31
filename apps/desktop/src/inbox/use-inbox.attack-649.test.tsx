@@ -86,30 +86,29 @@ function inbox() {
 }
 
 describe('useInbox — U and a vault opened while it is written (PR #649 attack)', () => {
-  it.fails(
-    'ends the wait for the row when another vault opened while the undo was being written',
-    async () => {
-      const { hook, shown, files, refresh, switchVault, hold } = inbox();
-      await waitFor(() => expect(shown()).toEqual([CALL, PAY]));
-      await act(() =>
-        hook.result.current.clarify({ path: CALL, clarification: { status: 'next-action' } }),
-      );
-      refresh([PAY], 'ready:2');
-      await waitFor(() => expect(shown()).toEqual([PAY]));
+  it('ends the wait for the row when another vault opened while the undo was being written', async () => {
+    const { hook, shown, files, refresh, switchVault, hold } = inbox();
+    await waitFor(() => expect(shown()).toEqual([CALL, PAY]));
+    await act(() =>
+      hook.result.current.clarify({ path: CALL, clarification: { status: 'next-action' } }),
+    );
+    refresh([PAY], 'ready:2');
+    await waitFor(() => expect(shown()).toEqual([PAY]));
 
-      const release = hold();
-      const said: { back?: VaultPath | null } = {};
-      act(() => {
-        void hook.result.current.takeBackLast().then((path) => {
-          said.back = path;
-        });
+    const release = hold();
+    const said: { back?: VaultPath | null } = {};
+    act(() => {
+      void hook.result.current.takeBackLast().then((path) => {
+        said.back = path;
       });
-      // Another vault opens while the undo's write is still on its way.
-      act(() => switchVault('/vaults/quill'));
-      await act(async () => release());
-      await waitFor(() => expect(files.get(CALL)).toBe(CAPTURED));
-      // Nothing will list the row in this vault: U should settle now, not after LISTED_AGAIN_LIMIT_MS (5 s).
-      await waitFor(() => expect(said.back).not.toBeUndefined(), { timeout: 1_000 });
-    },
-  );
+    });
+    // Another vault opens while the undo's write is still on its way.
+    act(() => switchVault('/vaults/quill'));
+    await act(async () => release());
+    await waitFor(() => expect(files.get(CALL)).toBe(CAPTURED));
+    // Nothing will list the row in this vault: U should settle now, not after LISTED_AGAIN_LIMIT_MS (5 s).
+    await waitFor(() => expect(said.back).not.toBeUndefined(), { timeout: 1_000 });
+    // And says no row: the one it took back is the other vault's.
+    expect(said.back).toBeNull();
+  });
 });
