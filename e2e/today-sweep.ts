@@ -269,7 +269,10 @@ function recordSweep(): void {
     }
     const stop = readStop();
     const at = document.activeElement;
-    const drawn = at === null ? '-' : `${named(at)} transform=${getComputedStyle(at).transform}`;
+    const drawn =
+      at === null
+        ? '-'
+        : `${named(at)} top=${Math.round(at.getBoundingClientRect().top)} scroll=${scroller()?.scrollTop}`;
     note(
       `read ${stop?.label ?? 'nothing'} inView=${stop?.inView ?? '-'} on ${drawn} moved@f${movedAt} owed=${observersOwe()} running=${animationRunning()} transitions=${transitionPending()} held=${log.held}`,
     );

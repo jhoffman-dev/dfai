@@ -76,12 +76,15 @@ const movedByResizeObserver = (page: Page) =>
       // the control for a moment, and a stand-in that checked for it moved nothing.
       const watch = new ResizeObserver(() => {
         watch.disconnect();
-        control.style.transform = 'translateY(3000px)';
+        // Fixed above the window: where no scroll can bring it back. Moved down
+        // in the page, Linux WebKit scrolled the panel to show the focused
+        // control again (run 41226697598), and the stop was rightly in view.
+        Object.assign(control.style, { position: 'fixed', top: '-3000px' });
         // Into the sweep's trace, when one is recording: what the stand-in did, and to which.
         const trace = (window as unknown as { noteTodaySweep?: (line: string) => void })
           .noteTodaySweep;
         trace?.(
-          `stand-in moved ${control.getAttribute('aria-label')}: ${getComputedStyle(control).transform}`,
+          `stand-in moved ${control.getAttribute('aria-label')}: top ${Math.round(control.getBoundingClientRect().top)}`,
         );
       });
       watch.observe(control);
