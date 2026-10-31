@@ -26,7 +26,8 @@ import { expect, type Page } from '@playwright/test';
  * - **The host answers one at a time, in the order it was asked.** A host
  *   command (and a request to the index worker) is sent at once, but its
  *   answer is handed to the app only when the page is quiet — and the oldest
- *   question first, whenever the answers arrived.
+ *   question first, whenever the answers arrived. So does a digest
+ *   (`crypto.subtle.digest`), which a vault write awaits before it asks (#243).
  * - **Animations a script starts** (`element.animate`) are held, and finish
  *   when their time on the work clock is up.
  * - **Layout observers' reports** (`ResizeObserver`, `IntersectionObserver`)
@@ -338,16 +339,44 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     const question: Question = { command, answer: null };
     state.waiting.push(question);
     return new Promise((resolve, reject) => {
-      invoke(command, ...rest).then(
-        (value) => {
-          arrived(() => Object.assign(question, { answer: () => resolve(value) }));
-        },
-        (error: unknown) => {
-          arrived(() => Object.assign(question, { answer: () => reject(error) }));
-        },
-      );
+      const refused = (error: unknown) =>
+        arrived(() => Object.assign(question, { answer: () => reject(error) }));
+      // A call that throws as it is made is answered too, as a refusal in its
+      // turn: left unanswered, it would hold every later question behind it.
+      try {
+        invoke(command, ...rest).then(
+          (value) => arrived(() => Object.assign(question, { answer: () => resolve(value) })),
+          refused,
+        );
+      } catch (error) {
+        refused(error);
+      }
     });
   };
+
+  // A digest (`crypto.subtle.digest`) is made on the browser's own thread, on
+  // the wall clock: a vault write hashes the text it expects before it asks
+  // the host. Not waited for, the page looked quiet in that gap, and a frame
+  // and the held layout reports landed there on a busy machine but after the
+  // write on an idle one, so Today's tick and choose counted a commit more or
+  // less (#243). So it is a question like the host's: answered in turn.
+  const subtle = window.crypto?.subtle as SubtleCrypto | undefined;
+  if (subtle !== undefined && typeof subtle.digest === 'function') {
+    const digest = subtle.digest.bind(subtle);
+    subtle.digest = ((...given: Parameters<SubtleCrypto['digest']>) => {
+      const question: Question = { command: 'crypto digest', answer: null };
+      state.waiting.push(question);
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        const refused = (error: unknown) => void (question.answer = () => reject(error));
+        // One that throws as it is called (an unknown algorithm) is refused in its turn, as the host's are.
+        try {
+          digest(...given).then((value) => void (question.answer = () => resolve(value)), refused);
+        } catch (error) {
+          refused(error);
+        }
+      });
+    }) as SubtleCrypto['digest'];
+  }
 
   // Every key and pointer event the page has been given, so a harness can wait
   // for its input to have arrived before it moves time on.

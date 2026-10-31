@@ -1,0 +1,24 @@
+<!-- contents: Your files -->
+    <section id="files">
+      <h2>Your files</h2>
+      <ul>
+        <li>Every note, type, view and dashboard is a <b>markdown file</b> in your vault. DFAI writes back only what you changed; everything else keeps its exact bytes, so Obsidian and git see clean edits.</li>
+        <li>Links are stored as <code>[[Name]]</code>, the same way Obsidian writes them. A bookmark is the same link alone on its line followed by <code>&lt;!-- atlas:bookmark --&gt;</code>, a comment Obsidian's reading view and GitHub hide; nothing else about the card is stored.</li>
+        <li>A block link or embed is <code>[[Note#^id]]</code> or <code>![[Note#^id]]</code>, with the <code>^id</code> written after its block, as Obsidian writes it — see <a href="#blocks">Blocks and embeds</a>. A <code>- [ ]</code> line with nothing after it is an empty task.</li>
+        <li>Tags are stored as you typed them, <code>#tag</code> in the text or a <code>tags:</code> list in the frontmatter. Obsidian reads single-word and nested tags the same way; it reads <code>#tag me#</code> as <code>#tag</code> followed by text.</li>
+        <li>Archived notes are ordinary files in <code>Archive/</code>, at the path they had, with <code>archived</code> and <code>archivedFrom</code> in their frontmatter, so Obsidian still opens them.</li>
+        <li>Frontmatter written flow-style, <code>{status: done, tags: [a]}</code>, and files that start with a byte-order mark are kept intact when DFAI changes a property.</li>
+        <li><code>.atlas/</code> holds types, templates, views, dashboards, sources, automations and settings. It shows as <b>System</b> in Pages — all but the templates and the skills, which are on the <a href="#templates">Templates</a> and <a href="#skills">Skills</a> pages, and the views and dashboards, which have their sections.</li>
+        <li>A template is a plain markdown file in <code>.atlas/templates/</code>, named for what it makes: <code>Person.md</code>, <code>Daily.md</code>, <code>Task.md</code>, <code>Artifact.md</code>.</li>
+        <li>Each <a href="#automations">automation</a> is a note in <code>.atlas/automations/</code>, and its run log a note in <code>.atlas/automations/log/</code>, named after the rule's <code>id</code>. Both are plain markdown you can read, diff and edit.</li>
+        <li>The <a href="#activity">Activity</a> log is not in the vault: one file per vault in DFAI's data folder on this Mac, about 30 days or 5 MB.</li>
+        <li>A link (symlink) in your vault that points into <code>.atlas</code> or <code>.git</code> doesn't open — DFAI refuses it, so nothing can reach DFAI's own files by a side door.</li>
+        <li>The search index lives in <code>.atlas-cache/</code>. It's only a copy; if it's ever wrong, Settings → <b>Index</b> → <b>Rebuild</b>.</li>
+        <li>Pictures you add go in <code>attachments/</code> (or beside the note, if you chose that in Settings → Images). Thumbnails DFAI makes of pages live in <code>.atlas-cache/thumbnails</code>; an artifact's is kept with its saved copy.</li>
+        <li>Each <a href="#claude">chat with Claude</a> is a note in <code>Chats/</code>, written once and then only added to. Claude's proposed changes are written only when you press <b>Accept</b>, never into <code>.atlas</code>, a hidden folder or <code>Chats/</code>.</li>
+        <li><a href="#proposals">Proposals</a> wait as notes in <code>Inbox/Proposals/</code>; answered ones move to <code>Archive/Inbox/Proposals/</code> with their <code>state</code>.</li>
+        <li>A synced vault is a git repository; DFAI keeps its own lines in <code>.gitignore</code> (the index, Finder and Obsidian per-Mac files). See <a href="#sync">Sync between Macs</a>.</li>
+        <li>Secrets live in the macOS Keychain, never in the vault. The chat's settings (which way to reach Claude, the model) are kept on this Mac; your <a href="#profile">name</a> is in the vault's settings, so it syncs.</li>
+        <li>Nothing leaves your Mac unless you turn on the Local API, connect a <a href="#sources">source</a>, turn on <a href="#sync">sync</a> (the vault goes to your GitHub repository), or ask <a href="#claude">Claude</a> in the chat — then what you ask, the page on the chip and what Claude reads go to Anthropic, through Claude Code or your API key.</li>
+      </ul>
+    </section>

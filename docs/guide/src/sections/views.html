@@ -1,0 +1,118 @@
+<!-- contents: Views -->
+    <section id="views">
+      <h2>Views</h2>
+      <p class="sub">A view is a saved way of looking at notes of one type, and a type owns its views. Click a type in the sidebar and its views open as tabs across the top. To look across several types at once, save a <a href="#queries">query</a> as a view.</p>
+      <h3>A type's views, as tabs</h3>
+      <ul>
+        <li><b>Click a type in the sidebar</b> and you see only that type's views, as tabs. It opens on the tab you last had for that type on this Mac, else the first.</li>
+        <li><b>Opening a view any other way</b> — a link, search, the Views section — lands on the same page, with that tab selected.</li>
+        <li><b>A type with no views yet</b> shows one default table tab, named for the type (<b>Idea table</b>), with every property as a column. It is only written as a view once you add a view beside it, rename it or duplicate it. It can't be deleted — there's nothing to delete.</li>
+      </ul>
+      <h3>Add, rename, copy and delete from the tabs</h3>
+      <ul>
+        <li><b>+</b> at the end of the tabs (<b>Add a view</b>) lists the layouts; pick one. The view is named for you, like <b>Task board</b> or <b>Task list</b> (then <b>Task list 2</b>), and opens selected.</li>
+        <li>The <b>…</b> on the selected tab (<b>View options</b>) has:
+          <ul>
+            <li><b>Rename</b> — type the new name in the tab and press <kbd>Return</kbd>. It changes the tab's name only; you never need to know the view's file name, and links to it keep working.</li>
+            <li><b>Duplicate</b> — a full copy, with its filter, sort and grouping, named <b>… copy</b> (<b>Board copy</b>, then <b>Board copy 2</b>).</li>
+            <li><b>Delete view</b> — asks first, then <b>Move to Trash</b>. You land on the next tab, or the previous one if it was last.</li>
+          </ul>
+        </li>
+        <li><b>Settings are edited in place</b>: Layout, Filter, Sort, Group and Properties in the toolbar, as below.</li>
+      </ul>
+      <h3>Reorder the tabs</h3>
+      <ul>
+        <li><b>Drag a tab</b> to a new place, or focus it and press <kbd>Alt+←</kbd> / <kbd>Alt+→</kbd> to move it one place.</li>
+        <li>The order is saved in the views themselves, so it syncs to your other Macs.</li>
+        <li>Views nobody has reordered keep the old order (by layout, then name), and nothing is rewritten until you change the tabs.</li>
+      </ul>
+      <p class="muted">Query views, SQL views and dashboards are unchanged: they belong to no one type, so they keep their own pages and their places under Views and Dashboards.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Layout</th><th scope="col">Good for</th></tr></thead>
+          <tbody>
+            <tr><td>Table</td><td>Every property as a column, one compact row per note; click a heading to sort. Group it and the rows sit under headings with counts and totals. See <a href="#tables">Tables</a>.</td></tr>
+            <tr><td>Board</td><td>Cards in equal columns by a status or a relation, and optionally in lanes across them by another; drag to change it. See <a href="#boards">Boards</a>.</td></tr>
+            <tr><td>List</td><td>A compact list with chips.</td></tr>
+            <tr><td>Gallery</td><td>Cards fronted by a picture: the note's <a href="#thumbnails">thumbnail</a> when its type has one, otherwise its cover or first image.</td></tr>
+            <tr><td>Feed</td><td>Notes newest first, their text readable in place.</td></tr>
+            <tr><td>Calendar</td><td>Notes by a date property, as a month, week, 3 days, a day or an agenda list; drag to reschedule. See <a href="#calendar">Calendar</a>.</td></tr>
+            <tr><td>Timeline</td><td>Bars between start and end dates, with dependencies.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Make and change views</h3>
+      <ul>
+        <li><b>New view</b>: the <b>+</b> on a type's tabs (above), or the <b>+</b> next to Views in the sidebar — pick a name, the type and a layout. That sidebar <b>+</b> also has <b>New query</b>, for a view across types — see <a href="#queries">Queries</a>.</li>
+        <li><b>Layout</b>, <b>Filter</b>, <b>Sort</b>, <b>Group</b> and <b>Properties</b> (which fields show) change the view at once. Grouping is below.</li>
+        <li>While it differs from what's saved, a bar above the toolbar says <i>This view has unsaved changes.</i> with <b>Reset</b> (back to what's saved), <b>Save as new view…</b> (name the copy, then <b>Save</b>) and <b>Save view</b>. Editing cells, dragging cards and ticking tasks save straight away.</li>
+        <li><b>Include archived</b> lists archived notes too, for now. It isn't saved with the view and turns off when you go to another view.</li>
+      </ul>
+      <h3>Filter</h3>
+      <ul>
+        <li><b>Filter</b> → pick a property and a condition (<i>is</i>, <i>is not</i>, <i>contains</i>, …), then a value. The view redraws at once; <b>Save view</b> keeps it.</li>
+        <li>The value box offers what the property can hold: a status's or select's options (a task's eight GTD statuses), the vault's tags for <code>tags</code>, <i>true</i> and <i>false</i> for a checkbox, <i>Today</i>, <i>Tomorrow</i> and the like for a date, plus a date picker. For a relation, start typing and it lists the notes it can point at.</li>
+        <li>From the keyboard: <kbd>↓</kbd> <kbd>↑</kbd> to move through the list, <kbd>Enter</kbd> to pick, <kbd>Enter</kbd> again to add the filter. <kbd>Esc</kbd> closes the list.</li>
+        <li>Type the value as the table shows it: <i>Next Action</i>, <i>next action</i> and <i>next-action</i> are the same status. Anything else is kept as typed, except on a checkbox, which takes only <i>true</i> or <i>false</i>.</li>
+        <li>To leave out several values, add one <i>is not</i> for each: <i>Status is not Archive</i> and <i>Status is not Someday</i>.</li>
+        <li>On a property that holds several values — tags, a multi-select, a relation to several notes — <i>is</i> compares the whole list, so it matches only a note with just that one value. Use <i>contains</i> there.</li>
+      </ul>
+      <h3>Group and sub-group</h3>
+      <ul>
+        <li><b>Group</b> in the toolbar has <b>Group by</b>, then <b>Then by</b> to split each group again. It works on tables and boards: on a table they're groups and sub-groups, on a board they're columns and lanes.</li>
+        <li><b>None</b> turns a grouping off. A board always has columns, so its <b>Group by</b> has no None; its <b>Then by</b> does.</li>
+        <li>A property that can hold several values — a multi-select, a relation that allows many — is listed but can't be picked, with the reason: <i>“A note can have several of labels, so it cannot be grouped by it.”</i></li>
+        <li>Groups come in order: a select's options as the type orders them, numbers by size, dates by day, the rest by name — reversed when the view sorts that property descending. Notes with no value gather under <b>No value</b>, last.</li>
+        <li>A checkbox groups into <i>true</i> (ticked) and <i>false</i>, which holds every note not ticked, including those without the box.</li>
+      </ul>
+      <h3 id="tables">Tables</h3>
+      <ul>
+        <li><b>Compact rows.</b> Each note is one short row, named by its title; click the name to <a href="#peek">peek</a> it — <kbd>⌘</kbd>-click opens it in a new tab, <kbd>⌘⇧</kbd>-click beside. Empty cells are left blank, and statuses show as pills.</li>
+        <li><b>The header stays put.</b> The column names stay at the top as you scroll, as plain words with no icons; an arrow marks the column the table is sorted by.</li>
+        <li><b>Long values are cut short</b> with <i>…</i>; hover the cell for the whole value. A relation's names stay on one line the same way, and hovering lists them all.</li>
+        <li><b>The footer</b> has <b>New &lt;type&gt;</b>, then how many notes — <i>186 tasks</i>, with <i>(more were left out)</i> past the row limit — then, grouped, how many in each group (<i>174 done</i>, <i>10 backlog</i>, <i>2 Larkspur Payroll</i>), and how the table is arranged: <i>Grouped by status · sorted by phase, then due (descending)</i>.</li>
+        <li><b>From the keyboard:</b> <kbd>Tab</kbd> to a row's name, then <kbd>↓</kbd> <kbd>↑</kbd> move a row (group headings are stops too), <kbd>Home</kbd> <kbd>End</kbd> go to the first and last, and <kbd>Page Down</kbd> <kbd>Page Up</kbd> move a window's worth at a time.</li>
+      </ul>
+      <h3 id="editing-in-place">Editing in place</h3>
+      <ul>
+        <li><b>Click a cell</b>, or press <kbd>Return</kbd> on it, to edit it without opening the note. The cell wears a ring while you edit it. <kbd>Return</kbd> saves, <kbd>Esc</kbd> puts it back as it was, and <kbd>Tab</kbd> / <kbd>⇧Tab</kbd> save and move to the next or previous cell, then on to the next row.</li>
+        <li><b>Each kind gets its own editor.</b> A status or select opens a picker under the cell: type to filter, <kbd>↓</kbd> <kbd>↑</kbd> and <kbd>Return</kbd>, or press an option's number — <kbd>3</kbd> picks the third. A multi-select opens the same picker with every value it holds ticked: a click, <kbd>Return</kbd> or a number toggles one, saved at once, and the picker stays open for the next. A relation opens the notes it can link with the search field focused — type to narrow them, with <b>Create &lt;type&gt; ‘…’</b> to make one; <b>×</b> on a chip unlinks just that one. If the notes to link can't be read, the picker says so instead of showing an empty list; open it again to retry. A date takes a day, a number refuses letters, and a box ticks on a click or <kbd>Space</kbd>.</li>
+        <li><b>It saves straight away</b>, one write per edit, to that note's file — only the property you changed; the rest of the file stays exactly as it was. The table shows the new value at once, before the index catches up.</li>
+        <li><b>A cell that changed while you edited it</b> — in another pane or another app — isn't written over: the edit is refused, the line above the table says <i>This cell changed while it was being edited, so the edit was not written. Try again.</i>, and the cell shows what the file now holds. A write that fails is said in the same place.</li>
+        <li><b>A picker is one overlay among the rest.</b> Opening search (<kbd>⌘K</kbd>) or another menu over it closes it without saving anything; <kbd>Esc</kbd> closes it and leaves you on the cell. Scroll its row out of view and it closes too, without saving.</li>
+        <li>Setting a task's status to its done option finishes it as ticking it does: a repeating task rolls on to its next date.</li>
+        <li class="muted">Not yet: a type with no views of its own shows a plain table on its page, whose cells still edit as text. Add a view to the type to get these editors.</li>
+      </ul>
+      <h3>Grouped tables</h3>
+      <ul>
+        <li>Each group gets a heading row across the table: an arrow, a status dot for a status or select option, the group's value, and how many notes. Sub-groups sit one step in, with headings of their own.</li>
+        <li>Every row of a group is listed, however many: a long group scrolls rather than stopping at <i>Show more</i>.</li>
+        <li>The heading row shows totals under the columns: a number column's sum, and for a checkbox how many are ticked (<i>2 checked</i>).</li>
+        <li>Click a heading to fold the group shut or open it again. Folds are remembered per view, on this Mac.</li>
+        <li><b>+ New</b> at the foot of a group adds a note already in it: it gets the group's value, and the sub-group's (a number as a number; the ticked group ticks the box). <b>No value</b> and the unticked group give it nothing.</li>
+        <li>A table switched from a board keeps the board's grouping, so its columns become groups.</li>
+      </ul>
+      <h3 id="boards">Boards</h3>
+      <ul>
+        <li><b>Equal columns.</b> The columns share the width equally, empty or not. When that would make them too narrow, the board scrolls sideways instead.</li>
+        <li><b>Each column's head</b> shows a status dot, the label and how many cards, with a <b>+</b> at the right to add a card to that column. The <b>No value</b> column, and a column that is no status, has no dot.</li>
+        <li><b>A card</b> shows its title (up to two lines), a line of its summary, how far through its checklist it is, and one line of its other properties — <i>Phase 14 · Bug fixer · 1h</i>. The column's property is left out, since the column says it, and so is anything empty. A card in the finished column shows a tick, or its done box ticked.</li>
+        <li><b>A long column</b> shows its first cards and <b>N more</b>; open it and <b>Show fewer</b> folds it back. An empty column says <i>No tasks</i>.</li>
+        <li><b>Drag a card</b> and the column (or lane cell) under it lights with a ring, so you see where it will land.</li>
+      </ul>
+      <h3>Board lanes</h3>
+      <ul>
+        <li>With <b>Then by</b> set, the board splits into lanes running across all the columns, one per value, each with a heading, a count and an arrow to fold it.</li>
+        <li>Drag a card to any cell — another column, another lane, or both. Both properties change together, as one <kbd>⌘Z</kbd>. Dropping in a <b>No value</b> column or lane takes that property off the note. A number column writes a number and a checkbox column ticks or unticks the box, never text. From the keyboard: <kbd>Space</kbd> to pick a card up, arrows to move it across columns and up and down lanes, <kbd>Space</kbd> to drop.</li>
+        <li>Each cell shows its first cards and <b>N more</b>, like a column, and has its own <b>+ New</b> that fills in both values.</li>
+        <li>A card's line of properties leaves out the lane's property too; the lane already says it.</li>
+        <li>Dragging a task into its finished status — <b>Archive</b> for a <a href="#tasks">GTD</a> task — finishes it, whether that is a column or a lane. When the type has a status, only that status counts — the last column of some other property is just a column. A repeating task rolls on to its next date once, and the other property you dropped it into is kept.</li>
+      </ul>
+      <h3>Act on several rows</h3>
+      <ol class="steps">
+        <li>In a table view, press <b>Select</b>. Each row gets a checkbox; the one in the heading ticks them all.</li>
+        <li>Tick the notes. <kbd>Shift</kbd>-click a second box — or <kbd>⇧</kbd> <kbd>Space</kbd> on it — to take every row between, in the order the table shows them, across its groups and down past the rows you have scrolled by. Rows in a folded group are left out. A bar says how many are selected.</li>
+        <li>Press <b>Archive N notes</b> — or, for archived rows shown with <b>Include archived</b>, <b>Unarchive N notes</b>. One batch runs at a time; any note that couldn't go stays ticked. <b>Export N notes…</b> on the same bar exports them together — see <a href="#export">Exporting notes</a>.</li>
+      </ol>
+      <p class="muted">Leaving select mode, or the view, clears the ticks.</p>
+    </section>

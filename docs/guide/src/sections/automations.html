@@ -1,0 +1,157 @@
+<!-- contents: Automations -->
+    <section id="automations">
+      <h2>Automations</h2>
+      <p class="sub">A rule that tidies the vault while you work: when it runs — on a clock, or when a note of a type appears or changes — which notes it takes — an <a href="#queries">DFAI query</a> — and what it does to them: archive them, set a property, or <a href="#automation-claude">ask Claude</a> to propose things. Every run is logged and can be tried first as a dry run. The last run that archived or set something can be undone.</p>
+      <h3>Where they are</h3>
+      <ul>
+        <li><b>Automations</b> is in the sidebar, under <b>Tags</b>. It opens a page listing every rule.</li>
+        <li>Each rule is a note in <code>.atlas/automations</code>, under <b>System</b> in Pages. Its frontmatter is the rule; anything you write in its body is your own notes about it.</li>
+      </ul>
+      <h3>Start one</h3>
+      <ul>
+        <li><b>Archive done tasks after 30 days</b>, the ready-made one, sits at the top of the page. It opens in the editor for you to look over; nothing is made until you press <b>Create automation</b>. It runs every day at 03:00, takes <code>FROM task WHERE status = done</code>, only notes not changed in the last 30 days, and archives them.</li>
+        <li><b>After a meeting</b>, another ready-made one, asks Claude about each meeting of the last 14 days that arrives (<code>FROM meeting WHERE date &gt;= @-14d</code>) with its own prompt, <code>.atlas/prompts/after-a-meeting.md</code>, which DFAI writes once when you create the rule and never over yours. It is the step that says <a href="#automation-claude">Make into tasks: My own action items</a>, so it asks claude-sonnet-5-5 on its own budget, and your own action items become tasks without a click — see <a href="#after-a-meeting">What happens after a meeting</a>.</li>
+        <li><b>Friday review</b> drafts your weekly review every Friday at 15:00, as one new note in <code>Reviews/</code>: what got done, what is stuck, what to decide. Claude is handed the <a href="#tasks">weekly review</a> itself — the tasks you finished and the meetings you had this week, who has not come back to you, what is overdue, projects with no next action, and what waits in the Inbox — and every line of the draft links the task, project or meeting it is about; a line that links none is left out, and the log says which. It writes one draft a week: <b>Run now</b> again that week makes nothing. Its prompt is <code>.atlas/prompts/friday-review.md</code>, yours to edit.</li>
+        <li><b>Morning brief</b> writes a pre-read for each of today's meetings with a linked person or company, every day at 07:00, into <code>Inbox/Briefs/</code>. See <a href="#morning-brief">Morning brief</a>.</li>
+        <li><b>New automation</b> starts a blank rule, taking every note of your first type.</li>
+      </ul>
+      <h3>The editor</h3>
+      <p>Click a rule's name to open it above the list.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Is</th></tr></thead>
+          <tbody>
+            <tr><td>Name</td><td>What the list calls it, and its file's name. Not empty, no <code>/ \ : * ? " &lt; &gt; |</code>, no leading dot, not one already taken.</td></tr>
+            <tr><td>On</td><td>Whether it runs on its schedule.</td></tr>
+            <tr><td>When</td><td><b>Daily</b> at a time, <b>Every few hours</b> (every 1 to 168 hours), <b>When DFAI opens</b>, <b>By hand</b>, or <b>When a note appears</b>: a type, then <b>is created</b>, <b>is changed</b> or both — one stays ticked. See <a href="#automation-note">When a note appears</a>.</td></tr>
+            <tr><td>Which notes</td><td>A DFAI query, in the builder or as text, as on the Query page. Dates like <code>@today</code> mean the day the rule runs. For a rule a note sets off, it must take that type's notes — <code>FROM meeting …</code> — or it says so in red.</td></tr>
+            <tr><td>Only notes not changed in the last … days</td><td>Tick it to leave out notes changed recently, by their <code>modified</code> date: 1 to 3650 days. Not offered for a rule a note sets off: that note has just changed.</td></tr>
+            <tr><td>Do</td><td><b>Archive</b>, <b>Set a property</b> to a value (<b>Property</b> <i>to</i> <b>Value</b>), or <b>Ask Claude</b>: what it <b>Asks with</b> (a prompt note, or a skill), a <b>Prompt</b>, what it <b>Writes</b> (<b>Proposals in the Inbox</b>, or <b>One new note</b> <i>in</i> a <b>Folder</b>), what to <b>Make into tasks</b> for a meeting's items, the <b>Model</b>, and the <b>Tools Claude may use</b>. See <a href="#automation-claude">Ask Claude</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Below the fields: <b>Create automation</b> or <b>Save</b>, <b>Dry run</b>, and, on a saved rule, <b>Run now</b> and <b>Undo last run</b>; <b>Cancel</b> or <b>Close</b> leaves it. A rule that can't be saved yet says why in red, like <i>“Name the automation.”</i> Under the buttons is the rule's <b>Log</b>, newest first.</p>
+      <h3>The list</h3>
+      <ul>
+        <li>Each rule has a switch (<b>Run &lt;name&gt; on its schedule</b>), what it does and when (<i>Archive · Every day at 03:00</i>), <b>Last run</b> with what it did, <b>Next run</b>, and <b>Run now</b>.</li>
+        <li><b>Next run</b> shows <b>—</b> for a rule that only runs when DFAI opens, by hand or when a note sets it off, one that is off, and one paused until it is run by hand.</li>
+        <li>Turning a rule on is logged as <b>Turned on</b>, and its schedule counts from then.</li>
+        <li>A rule held up says why beside it: <i>“Paused: Its log could not be written (…). Run it by hand to try again.”</i>, <i>“Could not run (…); it is tried again at 14:05.”</i>, or <i>“Its log has an entry dated …, later than now; its schedule counts from before it.”</i></li>
+        <li>A rule whose file is wrong is listed too, never run, with why: <i>“This rule’s file cannot be read: Write enabled: true or false.”</i> Fix the file and it is read again.</li>
+      </ul>
+      <h3 id="automation-note">When a note appears</h3>
+      <p>A rule can wait for a note instead of a clock: <i>File standups</i> — when a meeting is created, take <code>FROM meeting WHERE kind = standup</code>, and archive it.</p>
+      <ul>
+        <li><b>is created</b> sets it off for a new note of that type, however it came: typed in DFAI, written through the <a href="#connect">Local API</a>, saved by another app, or brought in by a <a href="#sync">sync</a> pull — including one that arrived while DFAI was closed, once the vault is open again.</li>
+        <li><b>is changed</b> sets it off each time a note of that type is saved with different text.</li>
+        <li>Neither is set off by a note moved, renamed, archived, or put back from the Archive — even if a note of the same name now stands where it was put back, and it comes back as <i>Standup 2</i>. A note in the Archive never sets a rule off.</li>
+        <li><b>An arriving meeting</b> is created when the <a href="#meeting-import">meeting import</a> lets it in: the rule runs once, on the version stamped <code>imported</code>, the import's own line is never a change, and a meeting it refused or archived as a second copy never sets a rule off.</li>
+        <li>It acts only on the notes that set it off, and only if <b>Which notes</b> matches them too. The rest of the vault is left alone.</li>
+        <li><b>Once per version.</b> The log records each version of a note the rule handled, and the version its own change left, so none of them sets it off again: not after a restart, a rebuilt index, or the same file pulled twice. Change the note again and it runs again.</li>
+        <li>When a note the rule has handled leaves its path — deleted, moved, renamed or archived, by you or by the rule — the log says it went: a new note made later at that path, even from the same template, is new to the rule. That holds when one pull brings both, the old one archived and a new one in its place.</li>
+        <li>A note whose links an archive rewrote is heard again, as anyone's edit would be — it may have been edited too. If the rule finds it as it leaves it, nothing is written.</li>
+        <li>A run that changed nothing isn't logged: one with nothing to do says nothing, and one that left a note alone — open with unsaved typing, say — says so in Activity only, and runs again when the note is next saved.</li>
+        <li><b>20 runs an hour</b> at most, per rule, counting runs that changed a note or whose query didn't read — two rules setting each other off can't run forever, and typing in a meeting doesn't use it up. Past that it is held, once: <i>“Held back: It has run 20 times in the last hour, the most a rule may. It runs on what changed meanwhile at 10:15.”</i></li>
+        <li>Held or failing, a rule keeps what it heard — the last 20 syncs — and runs on it once its pause ends. Anything older is let go, and DFAI says so within the minute, in Activity and in the rule's log: <i>“File standups: Let news go. Let go of the news of 3 syncs: more arrived than it holds while it cannot run. Run it by hand to take the notes they named.”</i> <b>Run now</b> takes them.</li>
+        <li><b>Quit before it ran?</b> What a rule has heard and not yet run on is kept only while DFAI is open. So each time a vault opens, a rule set off by a meeting being <i>created</i> looks for meetings let in since the rule was last saved that its log holds nothing of, and runs on them once, within the same caps. A meeting that was there before you saved or turned on the rule is left for <b>Run now</b>.</li>
+        <li>With <a href="#sync">sync</a> on, it runs on the same one Mac as scheduled rules. On any other Mac nothing happens; the note waits until that Mac has pulled it. Until DFAI knows which Mac this is, what it hears is held. A rule that <a href="#automation-claude">asks Claude</a> also waits for a pull, as below.</li>
+        <li><b>Dry run</b> lists the notes that would set it off now: those <b>Which notes</b> matches whose current version it hasn't handled. <b>Run now</b> takes the same notes — a way to catch up on ones it skipped while paused, or that were there before the rule.</li>
+        <li>In Activity its line names the notes: <i>“File standups: Ran when a note appeared or changed (Standup). Archived 1 note.”</i></li>
+      </ul>
+      <h3 id="automation-claude">Ask Claude</h3>
+      <p>A rule can ask Claude to read its notes and propose things. Claude never edits a note this way: it only writes <a href="#proposals">proposals</a> for you to accept, or one new note. Example: <i>Meeting actions</i> — when a meeting is created, ask Claude to find the action items, and propose each one as a task.</p>
+      <ul>
+        <li><b>The prompt</b> is a note in <code>.atlas/prompts/</code>, like <code>.atlas/prompts/meeting-actions.md</code>. Its body is what you ask; write it like a note to a colleague. In the editor you can type just its name, <code>meeting-actions</code>.</li>
+        <li><b>Or a skill.</b> In the editor, <b>Asks with</b> picks <b>A prompt note</b> or one of your <a href="#skills">skills</a>, like <b>Skill: meeting-actions</b>; with a skill picked, the prompt path goes away. A skill that would fail the run says so beside its name, <i>(has problems)</i> or <i>(too long to run)</i>. The rule's file then says <code>skill: meeting-actions</code> and no <code>prompt:</code> — a rule that says both isn't run, and says <i>“Name one: prompt: .atlas/prompts/&lt;name&gt;.md, or skill: &lt;name&gt;, not both.”</i> Claude is handed the skill's instructions, the body of its <code>SKILL.md</code>, never its name or description. A skill that's gone, or that the Skills page shows a problem for, fails the run with nothing asked or written: <i>“Its skill meeting-actions is not in .atlas/skills.”</i>, or <i>“Its skill meeting-actions cannot be used: Say what the skill does and when to use it.”</i> A run hands Claude at most 20,000 characters counting an emoji as two, as for a prompt note, so a skill the Skills page accepts — which counts an emoji as one — can still be too long to run.</li>
+        <li><b>What it writes:</b> <b>Proposals in the Inbox</b> — each one a task, decision, follow-up, person, term or project for you to accept, edit or reject, citing the line of the note it came from, like <code>[[2026-10-01 Standup#^t0003]]</code>, with a confidence. Or <b>A meeting's actions and decisions, as proposals</b> (<code>output: meeting-items</code>) — see <a href="#meeting-extraction">What Claude pulls out</a>. Or the same with a summary of the meeting beside them (<code>output: meeting-digest</code>), which <a href="#after-a-meeting">After a meeting</a> writes at the top of the meeting. Or <b>One new note</b> in a folder you name, like a morning brief: never written over. On a daily or weekly schedule it writes one note each time the schedule comes round, however often it runs: run it again that day (or that week) and it makes nothing, and its log says the note is made already. A rule that runs by hand or every few hours makes a new note every run, numbered past one already there (<i>Morning brief 2</i>).</li>
+        <li><b>Tools Claude may use</b> are some of the chat's read tools, like <code>atlas_read_note</code> and <code>atlas_search</code>. It's handed the notes the run is about either way. With none ticked, it reads only those.</li>
+        <li>It reaches Claude the way the <a href="#claude">chat</a> does: your own Claude Code, or the API key, and the model chosen in Settings → Claude — unless the rule names its own in <b>Model</b> (<code>model: claude-haiku-5-5</code>). Leave it blank for the default, which the box shows.</li>
+        <li><b>Make into tasks</b> (<code>apply: mine</code>), offered for <code>output: meeting-items</code> and <code>output: meeting-digest</code>: <b>My own action items</b> marks the step that writes a summary at the top of each meeting and turns your own action items into tasks, linked to the meeting, without a click; everything else stays a proposal (see <a href="#after-a-meeting">What happens after a meeting</a>). A rule saved with <code>meeting-items</code> is read as <code>meeting-digest</code>, so it summarises too. Such a step asks <b>claude-sonnet-5-5</b> unless <b>Model</b> names another, at most 10 times a run (a long meeting's parts and the one ask that merges their summaries count together), and up to 30 times an hour on an allowance apart from the 20 runs an hour — so a backlog of meetings never uses up a rule's runs, and they never hold it back. The 30 are one allowance for the whole vault, shared by every rule that says <b>My own action items</b>, not 30 each, and a run never asks past what is left of them: one that starts with a single ask left asks once and says the rest of the meeting was cut. Past 30 it waits, and says until when.</li>
+        <li><b>It waits for a pull.</b> With <a href="#sync">sync</a> on, a Claude rule set off by a note, its schedule or opening the vault doesn't run after DFAI starts or the Mac wakes until a pull has finished and the settings still name this Mac, nor while sync is paused here. It checks again after Claude answers, before it writes anything; if the Mac slept meanwhile, nothing is written and it runs again after the next pull. A schedule that comes due while it waits runs at the next pull. <b>Run now</b> doesn't wait.</li>
+        <li><b>All or nothing.</b> If Claude's answer isn't what the rule asks for, nothing is written and the run fails. That covers an answer that isn't JSON, one with a key it wasn't asked for, a proposal that cites a line the note doesn't have (or one inside a code block, or past where a long note was cut), a tool the rule didn't tick, or no answer within 10 minutes (the whole run, however many asks it makes). Activity says why: <i>“Meeting actions: Ran by hand, and could not. Claude called atlas_search, which this rule does not let it use.”</i></li>
+        <li><b>Text and links only.</b> What Claude writes can't load anything from the web when you open it: no <code>![](https://…)</code> picture, no <code>&lt;img&gt;</code> or <code>&lt;iframe&gt;</code>, no web address as a property's value. An answer with one is refused whole, like any other that isn't what the rule asks for. A link you click is fine. Titles, notes and “why” are kept to a size a person would write, and properties to a few plain ones (text, numbers, true or false, short lists) — never DFAI's own, like <code>type</code> or <code>archived</code>.</li>
+        <li><b>It can't write just anywhere.</b> Not in <code>Chats/</code>, <code>.atlas</code>, the Archive or the proposals folder, nor deeper than DFAI reads. A rule that names one is refused when it's saved.</li>
+        <li><b>Stopped part-way?</b> If the disk refuses a write after some proposals were made, those stay, and the log says <i>“Made 1 of 3 notes, then the write failed”</i> with a line for each. <b>Run now</b> asks again and finishes the rest: a proposal already made, answered or archived is never made twice — it is known by the rule, its kind and title, and the line it cites (for a meeting, the meeting itself, wherever it has been filed or renamed), however Claude wrote the link. A run that finds them all made already says <i>“Nothing new to propose (2 already made).”</i></li>
+        <li><b>Two notes with the same title?</b> If a run reads both and Claude cites one by its title alone, the answer is refused and says to cite by path, like <code>[[Meetings/Alder/2026-10-06 Weekly#^t0001]]</code>; DFAI never picks one.</li>
+        <li><b>Claude Code not installed or not signed in?</b> The run fails with the same fix the chat shows: <i>“Claude Code is installed but not logged in. Fix: claude auth login.”</i></li>
+        <li>Activity names the model and how long it took: <i>“Meeting actions: Ran when a note appeared or changed (Standup). Made 2 proposals. Asked claude-opus-5-5, 4.2 s.”</i></li>
+        <li><b>A long note is read in part.</b> (A meeting read with <code>output: meeting-items</code> is instead <a href="#meeting-extraction">read in parts</a>, to its end.) Claude is shown about the first 20,000 characters of a note (less when a run reads several), and the log says so: <i>“1 note was too long to read whole: Claude saw only the start”</i>, with a line saying how much, like <code>- cut "Meetings/2026-10-01 Standup.md": read 19874 of 48211 characters</code>. A meeting is cut between turns, never in the middle of one, and a proposal can't cite a turn Claude wasn't shown.</li>
+        <li><b>On a meeting that arrives</b> (<i>when a meeting is created</i>), Claude is asked once, about the meeting as DFAI let it in: <a href="#meeting-import">checked</a>, its misheard names put right and its people linked — never the file as it landed. A second copy of the same meeting asks nothing. A rule on meetings that <i>change</i> isn't set off by any of that, only by an edit afterwards. The proposals Claude makes never set its rule off.</li>
+        <li><b>10 notes a run</b> at most, because Claude reads each one. If more match, the log says <i>“Read the first 10 notes, the most one Claude run takes; run it by hand for the rest”</i>, and <b>Run now</b> takes the next ones. A note it was asked about counts as handled, even if it proposed nothing, on a clock or when a note sets it off alike, so the same version isn't sent again until the note changes. That holds wherever the note goes: a meeting filed or renamed out of the Inbox, its text unchanged, isn't sent again — not by <b>Run now</b> either. A failed run handles nothing: <b>Run now</b> asks again.</li>
+        <li><b>It counts toward the hourly cap</b> of a rule a note sets off — each time Claude was asked, including an answer of nothing and a failure, so a long meeting read in four parts counts four. A run that never asked (a prompt over 20,000 characters, Claude not signed in) counts nothing.</li>
+        <li>It never reads a proposal, since it would only be answering itself. DFAI's own files are skipped too.</li>
+        <li>A rule can't say a Claude step edits a note. Anything but <code>output: note</code>, <code>output: proposals</code>, <code>output: meeting-items</code> or <code>output: meeting-digest</code> — <code>edit</code>, say — or a note named by <code>path:</code>, is refused: <i>“… A Claude step never edits a note: it writes proposals for you to accept, or one new note.”</i></li>
+        <li><b>Dry run</b> lists the notes it would ask about, without asking Claude. Its run can't be undone; answer its proposals in the Inbox instead, and keep or delete a note it made.</li>
+      </ul>
+      <h3>Dry run, run, undo</h3>
+      <ul>
+        <li><b>Dry run</b> says exactly what the rule would do now — <i>“Would archive 12 notes.”</i> or <i>“Nothing to do right now.”</i> — then lists each note it would take (click to open) and each it would leave, with why. It changes nothing, and works before a new rule is saved.</li>
+        <li><b>Run now</b> runs it at once, on or off, whatever its schedule. Afterwards <b>Last run</b> says what it did: <i>“Archived 12 notes. Left 1 alone.”</i></li>
+        <li><b>Undo last run</b> undoes the newest run that archived or set something, once. It can't reach further back: that would put back notes later runs have acted on since.</li>
+        <li>It reverses only what that rule did: notes it archived go back where they were, and properties it set go back to what they held.</li>
+        <li>What has changed since is left as it is and listed: a property changed again, a note moved out of where the run put it, or an archived note whose archive stamp isn't the run's.</li>
+        <li>The log is a note anyone could edit, so a line the rule couldn't have made — an archive in a rule that sets, a key it doesn't set, a value no property holds — is skipped and listed, never carried out.</li>
+      </ul>
+      <h3>When they run</h3>
+      <ul>
+        <li>DFAI checks the rules when a vault opens, once it is indexed, then every minute while it is open. Nothing runs while DFAI is closed.</li>
+        <li>A daily or hourly rule whose time passed while DFAI was closed catches up once when it opens, however many times it missed.</li>
+        <li>With <a href="#sync">sync</a> on, rules run on their schedule, or when a note sets them off, on one Mac only — the one that set up sync first (a Mac connecting later never takes them), until you turn on <b>Run automations on this Mac</b> on another.</li>
+        <li>A daily or hourly rule that is on but has never run or been turned on here — written by hand, or <a href="#sync">synced</a> in — is marked <b>First seen</b> in its log, and its schedule counts from then, so a daily rule runs by the next day.</li>
+        <li>A mark in the log dated later than now — a clock that ran ahead, or a log synced from one — is ignored, and the rule says so.</li>
+        <li>A rule that keeps failing waits longer each time before it is tried again: 1, 2, 4, 8… minutes, up to 6 hours. A run by hand tries it at once.</li>
+        <li>If its log can't be written, the rule is paused until you run it by hand, rather than change notes nothing records.</li>
+        <li>One run at a time; a save from the editor waits for a run under way, never dropped.</li>
+      </ul>
+      <h3>Safe by design</h3>
+      <ul>
+        <li>At most 500 notes are changed in one run (10 for <a href="#automation-claude">Ask Claude</a>). Past that it says <i>“Stopped at 500, the most one run may do; the rest wait for the next run.”</i> Notes already as the rule would leave them don't count.</li>
+        <li>A note open with unsaved typing is left as it is and logged: <i>“It is open in DFAI with unsaved typing, so it was left as it is.”</i></li>
+        <li>A rule only acts on its own vault. Open another and the run stops: <i>“Another vault was opened, so the automation stopped.”</i> What it did up to then is logged.</li>
+        <li>An archive rule never touches notes already archived, even with <code>INCLUDE ARCHIVED</code>. It archives by the <a href="#archive">same rules</a> as the app, updating links as it goes.</li>
+        <li>DFAI's own files in <code>.atlas</code> are never changed by a rule.</li>
+        <li>A <a href="#connect">connected Claude</a> can read the rules and their logs and dry-run one, but never run, undo, turn on or off, make or change one — that stays on this page.</li>
+      </ul>
+      <h3>The rule's file</h3>
+      <p>A rule can be written or edited by hand, anywhere. Its frontmatter:</p>
+      <pre>atlas: automation
+id: Archive done tasks after 30 days
+name: Archive done tasks after 30 days
+enabled: true
+when: daily at 03:00
+which: FROM task WHERE status = done
+olderThanDays: 30
+do: archive</pre>
+      <button type="button" class="copy" data-copy="atlas: automation&#10;id: Archive done tasks after 30 days&#10;name: Archive done tasks after 30 days&#10;enabled: true&#10;when: daily at 03:00&#10;which: FROM task WHERE status = done&#10;olderThanDays: 30&#10;do: archive">Copy</button>
+      <div class="table-wrap" style="margin-top:12px">
+        <table>
+          <thead><tr><th scope="col">Key</th><th scope="col">Holds</th></tr></thead>
+          <tbody>
+            <tr><td><code>atlas</code></td><td><code>automation</code>, which makes the note a rule.</td></tr>
+            <tr><td><code>id</code></td><td>What its log is named after. DFAI writes it in when it first reads a rule without one, so renaming the rule keeps its history, and a new rule with a deleted one's name starts its own log. Two rules can't share one.</td></tr>
+            <tr><td><code>name</code></td><td>What the list calls it; the file's name if left out.</td></tr>
+            <tr><td><code>enabled</code></td><td><code>true</code> or <code>false</code>, nothing else — <code>yes</code> or <code>1</code> makes the rule broken rather than quietly off.</td></tr>
+            <tr><td><code>when</code></td><td><code>daily at HH:MM</code>, a day of the week like <code>fridays at 15:00</code>, <code>every N hours</code> (1 to 168), <code>on app open</code>, <code>manually</code>, or a note: <code>a meeting is created</code>, <code>a meeting is changed</code>, <code>a meeting is created or changed</code> (<code>an</code> before a vowel).</td></tr>
+            <tr><td><code>which</code></td><td>A DFAI query: <code>FROM task WHERE …</code></td></tr>
+            <tr><td><code>olderThanDays</code></td><td>Optional: only notes not changed in this many days, 1 to 3650.</td></tr>
+            <tr><td><code>do</code></td><td><code>archive</code>, <code>set</code> with the values under <code>set:</code>, like <code>set: {status: done}</code>, or <code>claude</code>.</td></tr>
+            <tr><td><code>prompt</code></td><td>For <code>do: claude</code>: the prompt note, <code>.atlas/prompts/&lt;name&gt;.md</code>.</td></tr>
+            <tr><td><code>skill</code></td><td>For <code>do: claude</code>, in place of <code>prompt</code>: a <a href="#skills">skill's</a> name, like <code>skill: meeting-actions</code>. Never both.</td></tr>
+            <tr><td><code>tools</code></td><td>For <code>do: claude</code>: a list of read tools, like <code>[atlas_read_note, atlas_search]</code>. Optional.</td></tr>
+            <tr><td><code>output</code></td><td>For <code>do: claude</code>: <code>proposals</code>, or <code>note</code> with the folder under <code>folder:</code>, like <code>folder: Briefs</code>. Not <code>.atlas</code>, the Archive, <code>Inbox/Proposals</code> or <code>Inbox/Meetings</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>What <code>set</code> may write:</b> plain values — text, a number, or <code>true</code> / <code>false</code>. <code>007</code> stays text, so a code keeps its zeros.</li>
+        <li><b>What it may not touch:</b> <code>type</code>, <code>id</code>, any key starting with <code>atlas</code>, and the Archive's stamps <code>archived</code>, <code>archivedFrom</code> and <code>archivedPrior</code>: <i>“A rule cannot set “type”: DFAI keeps that one itself.”</i></li>
+      </ul>
+      <h3>The log</h3>
+      <ul>
+        <li>One file per rule, <code>.atlas/automations/log/&lt;id&gt;.md</code>, headed <i>&lt;name&gt; — run log</i>. Each run, undo, <b>Turned on</b> and <b>First seen</b> is a <code>##</code> section, newest last: when, what happened, then one line per note changed or left and why.</li>
+        <li>A run a note set off also lists <code>- triggered by "…" at "…"</code> for each note version it handled, <code>- wrote "…" at "…"</code> for the version its own change left, and <code>- went "…"</code> for a path a note it had handled left. That is the rule's memory of what it has done: delete those lines and it may act on those versions again.</li>
+        <li>A Claude step's run lists <code>- proposed "…"</code> for each proposal, <code>- created "…"</code> for its note, and <code>- claude "&lt;model&gt;" in "…" ms</code>, with a <code>- cut "…"</code> line for each note it read only the start of, <code>- asked 3 times</code> when a long meeting was read in parts, and a <code>- dropped "…"</code> line for each item it left out. What Claude wrote itself, like a reason it failed, is cut to a few hundred characters.</li>
+        <li>It's meant to be read. You can add your own sections, like <code>## Notes</code>; DFAI keeps them.</li>
+        <li>It keeps the latest 100 entries, and no more than 256 KB; the oldest entries go first, never your own sections.</li>
+      </ul>
+    </section>

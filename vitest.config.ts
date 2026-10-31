@@ -87,6 +87,7 @@ export default defineConfig({
       include: [
         'packages/*/src/**/*.{ts,tsx}',
         'apps/*/src/**/*.{ts,tsx}',
+        'tools/guide/{assemble,sources}.ts',
         'tools/n8n/*.ts',
         'tools/notion-import/*.ts',
         'tools/release/*.ts',

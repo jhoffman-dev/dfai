@@ -1,0 +1,34 @@
+<!-- contents: Bookmarks -->
+    <section id="bookmarks">
+      <h2>Bookmarks</h2>
+      <p class="sub">A bookmark is a link to a note shown as a card: the note's picture, its title, a line or two of what it says, and where it lives. It is still an ordinary <code>[[link]]</code> in the file, so Obsidian reads it as one.</p>
+      <h3>Turn a link into a card</h3>
+      <div class="grid2">
+        <div class="card"><h4>From the link</h4><p>Hover a <code>[[link]]</code> and click the <b>…</b> above it (<i>Link options</i>), or right-click the link, or put the caret on it and press <kbd>⇧F10</kbd> or the menu key. Choose <b>Show as bookmark</b>.</p></div>
+        <div class="card"><h4>While linking</h4><p>In the <code>[[</code> list, <kbd>⇧</kbd> <kbd>Return</kbd> or a Shift-click puts the note in as a card. The list's foot shows <kbd>↵</kbd> Link, <kbd>⇧ ↵</kbd> Bookmark.</p></div>
+      </div>
+      <ul>
+        <li>A link in the middle of a sentence takes its paragraph apart: the words before stay a paragraph, the card follows, the words after go below it.</li>
+        <li>To go back, click the card's <b>…</b> (<i>Options for &lt;title&gt;</i>) → <b>Show as link</b>. You get the link alone in a paragraph.</li>
+        <li>The same menu has <b>Open note</b>.</li>
+      </ul>
+      <h3>What the card shows</h3>
+      <ul>
+        <li><b>Picture:</b> the note's thumbnail — the one you chose, or the picture of its page once DFAI has made it — else its cover or first image, else an icon. See <a href="#thumbnails">Thumbnails</a>.</li>
+        <li><b>Title</b>, as the note's page shows it.</li>
+        <li><b>Summary:</b> the note's <code>description</code> property, then its <code>summary</code>, then its first paragraph, as plain words. A long one is cut with an ellipsis.</li>
+        <li><b>Where it lives:</b> the note's folder, and an <b>Archived</b> chip if it's in the Archive.</li>
+        <li>A link to a note that isn't there shows <i>No note is called “X” — it may have been renamed or deleted.</i> A note that can't be read shows <i>This note could not be read just now.</i></li>
+        <li><code>[[#Heading]]</code>, a link to a heading in the same note, makes a card of that same note.</li>
+        <li>Cards refresh when the note they point to changes.</li>
+      </ul>
+      <h3>Use one</h3>
+      <ul>
+        <li>Click the card to <a href="#peek">peek</a> its note; <kbd>⌘</kbd>-click opens it in a new tab.</li>
+        <li>With a card selected, <kbd>Return</kbd> starts a new line after it and <kbd>⌘</kbd> <kbd>Return</kbd> opens the note.</li>
+      </ul>
+      <h3>Where cards can go</h3>
+      <p>Cards live only at the top level of a note. Links inside lists, quotes and tables aren't offered <b>Show as bookmark</b>, and a card pasted into a quote, callout, list or table goes in as its plain link.</p>
+      <div class="note"><b>In the file.</b> A bookmark is the link alone on its line with a marker after it: <code>[[Note]] &lt;!-- atlas:bookmark --&gt;</code>. Obsidian's reading view and GitHub hide the comment; Obsidian's live preview may show it dimmed while the caret is on that line. A plain <code>[[Note]]</code> on its own line stays a link.</div>
+      <p class="muted">Not yet: web links don't become cards. A web link with the marker is kept as written.</p>
+    </section>

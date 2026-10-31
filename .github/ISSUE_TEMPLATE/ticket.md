@@ -42,8 +42,7 @@ Append points:
 - [ ] `apps/desktop/src-tauri/src/index.rs` (its view SQL and the hand-copied query SQL)
 - [ ] `apps/mcp/src/server.ts`, `client.ts`, `main.test.ts`
 - [ ] `vault/docs/api/v1.md`
-- [ ] `docs/guide/index.html`
-- [ ] `tools/design/shots.spec.ts`
+- [ ] `docs/guide/src/page.html` (a new guide section is listed here; its text is a file in `docs/guide/src/sections/`)
 - [ ] `tools/perf/budgets.json`, `budgets.spec.ts`, `budgeted-actions.ts`
 - [ ] `e2e/host.ts`
 - [ ] `COVERAGE.md`, `vitest.config.ts`

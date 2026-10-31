@@ -1,0 +1,41 @@
+<!-- contents: Skills -->
+    <section id="skills">
+      <h2>Skills</h2>
+      <p class="sub">A skill is a set of instructions for Claude with a name and a description that says when to use it — the same Agent Skills format Claude Code reads, so a skill written here can be copied there as it is.</p>
+      <h3>Where it is</h3>
+      <div class="grid2">
+        <div class="card"><h4>Sidebar</h4><p><b>Skills</b>, in the top list after Templates.</p></div>
+        <div class="card"><h4>Search</h4><p><kbd>⌘K</kbd> → <b>Skills</b>.</p></div>
+      </div>
+      <p>The page lists every skill with its description. A skill that breaks a rule says so under its name — <i>“2 problems”</i>, then each one, such as <i>“Its folder: A skill’s name is lowercase letters, digits and single hyphens, starting and ending with a letter or digit.”</i> — so a skill another tool wrote wrong is shown, never quietly fixed. Under the skills, <b>Automation prompts</b> lists the prompt notes in <code>.atlas/prompts</code> that <a href="#automations">automations</a> run; <b>Open</b> opens one as a note. They keep working as they always have.</p>
+      <p>A skill an <a href="#automation-claude">automation asks with</a> says so under its description: <i>“Used by Meeting actions”</i> — counting an automation that can't be read for another reason, so long as its <code>skill:</code> is a skill's name.</p>
+      <h3>Make a skill</h3>
+      <ol class="steps">
+        <li>Press <b>New skill</b> at the top of the page.</li>
+        <li><b>Name</b> it: lowercase letters, digits and single hyphens, up to 64 characters — <code>weekly-review</code>, not <i>Weekly Review</i>. It can't hold <i>claude</i> or <i>anthropic</i>, or be a name another skill has in any capitals. The name can't be changed later: to rename a skill, make a new one and delete the old.</li>
+        <li>Write the <b>Description</b>: what the skill does and when to use it, in plain text — no XML tags such as <code>&lt;example&gt;</code>. The counter beside it, <i>25/1024</i>, counts characters, an emoji as one.</li>
+        <li>Write the <b>Instructions</b> in Markdown — up to 20,000 characters.</li>
+        <li>Press <b>Save</b>. It stays off while anything is wrong, and each problem shows under its field as you type.</li>
+      </ol>
+      <p>DFAI writes the skill as <code>.atlas/skills/weekly-review/SKILL.md</code>: <code>name</code> and <code>description</code> at the top, then the instructions.</p>
+      <h3>Edit a skill</h3>
+      <ul>
+        <li>Click a skill to open it beside the list, change its description or instructions, and press <b>Save</b>. Only what you changed is written: comments, other keys and the rest of the file stay byte for byte as they were.</li>
+        <li>A skill whose <code>name:</code> says something other than its folder's name says so; saving it puts the folder's name in.</li>
+        <li>If the file changes on disk while it's open — another Mac, Claude Code, an editor — and you haven't typed anything, the editor takes the change in. If you have, it says <i>“This skill changed on disk since it was opened.”</i> with <b>Reload</b>, which drops your typing for what's on disk. A save over a file changed since it was opened is refused, never written over.</li>
+      </ul>
+      <h3>Ask Claude to write or improve one</h3>
+      <ol>
+        <li>In the skill's editor — or a new skill's — press <b>Ask Claude…</b> and say what you want under <i>What should Claude do?</i>: <i>“make this shorter”</i>, or <i>“draft a skill that summarises meeting notes”</i>. Press <b>Ask</b>, or <kbd>⌘</kbd><kbd>↩</kbd>. It uses the way of reaching Claude and the model chosen in Settings → Claude, as the <a href="#claude">chat</a> does, and says the same thing the chat would when Claude can't be reached, with the command that fixes it.</li>
+        <li>Claude is shown the skill as it is in the editor, unsaved typing included, and nothing else — it can't read your notes. A skill over 40,000 characters, twice what one may hold, is too long to show it, and says so: <i>“shorten it first. Claude was not asked.”</i> <b>Stop</b> cancels the ask, and so does opening another skill or <b>New skill</b>.</li>
+        <li>Its draft shows as a change: the lines of the description and the instructions it would remove, struck through, and add, with long unchanged stretches folded (<i>“3 unchanged lines”</i>). A new skill's draft shows the name it would take.</li>
+        <li><b>Accept</b> puts the draft in the editor's fields; nothing is written until you press <b>Save</b>. <b>Discard</b> leaves the editor as it was. <b>Ask again</b> asks once more, with the request as you've since changed it.</li>
+      </ol>
+      <p>A draft is held to the same rules as your own typing: one that breaks them is shown as a problem — <i>“Claude’s draft cannot be used: A skill’s description may be at most 1024 characters.”</i> — and changes nothing. A skill you're editing keeps its name: if Claude's draft renames it, the name is ignored and the draft says so, <i>“Claude named it “meeting-summary”; a skill keeps its folder’s name, so it stays “meeting-notes”.”</i> Asking runs Claude in the app, so it isn't something the <a href="#connect">local API or MCP</a> can do.</p>
+      <h3>Delete a skill</h3>
+      <p><b>Delete…</b> asks first, naming everything that goes: <i>“Delete “weekly-review”? Its whole folder goes to the Trash, where it can be got back, with 1 other file: scripts/run.sh — and everything in its subfolders, however deep.”</i> When automations use it, the question says so too: <i>“The automation “Meeting actions” uses it, and will fail until it names another skill or a prompt.”</i> <b>Move to Trash</b> puts the skill's whole folder in the macOS Trash.</p>
+      <h3>Skills are not notes</h3>
+      <p>They aren't in Pages (not even under System), search, the graph or <code>[[</code> suggestions — the Skills page is where they are. Claude and your other tools can list and read them through the <a href="#connect">local API and MCP</a>; making, editing and deleting stay in the app.</p>
+      <h3>Use a skill in the chat</h3>
+      <p>Attach a skill to a conversation with <b>Skill</b> by the chat's box, or <code>/name</code>. See <a href="#chat-skill">Ask with a skill</a>.</p>
+    </section>

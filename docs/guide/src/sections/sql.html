@@ -1,0 +1,15 @@
+<!-- contents: SQL queries -->
+    <section id="sql">
+      <h2>SQL queries</h2>
+      <p class="sub">The other option on the Query page: read-only SQL over the index. Each type is a table named <code>v_&lt;type&gt;</code>, holding each note as a query's cells do: a note whose type is written in capitals is a row, a status written as a list is blank, and a date written as two days is the first of them.</p>
+      <pre>SELECT title, status, phase
+FROM v_task
+WHERE status IS NOT 'done'
+ORDER BY phase</pre>
+      <ul>
+        <li>Open <b>New query</b> and choose <b>SQL</b> beside <b>DFAI query</b>.</li>
+        <li><kbd>⌘</kbd> <kbd>Return</kbd> runs it. The list on the right shows every table and column; click one to insert it.</li>
+        <li><b>Save as view</b> keeps it in the sidebar. <b>Add to dashboard</b> turns it into a widget (table, number or bar chart).</li>
+      </ul>
+      <p class="muted">Queries can only read. Anything that would change the index is refused.</p>
+    </section>
