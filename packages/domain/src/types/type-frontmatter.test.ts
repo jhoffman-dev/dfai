@@ -206,3 +206,36 @@ describe('a shorthand property edited and put back', () => {
     expect(changes).toEqual({ properties: { date: { kind: 'date', note: 'mine' } } });
   });
 });
+
+describe('typeFrontmatterChanges, beside a property the file holds unread (#683)', () => {
+  const written = {
+    name: 'book',
+    properties: {
+      rating: 'number',
+      author: { kind: 'relation', targets: 'person' },
+      pages: 'number',
+    },
+  };
+  const before = parseObjectType(written);
+  const author = {
+    ...before.properties[0]!,
+    key: 'author',
+    label: 'Author',
+    kind: 'text' as const,
+  };
+
+  it('refuses a property given the unread key, rather than write over what the file says of it', () => {
+    // Made by hand: the editor keeps clear of the key, so only a caller around it could.
+    const after = { ...before, properties: [...before.properties, author] };
+    expect(() => typeFrontmatterChanges({ before, after, written })).toThrowError(
+      'The type file already holds "author", so it is not written over',
+    );
+  });
+
+  it('refuses one put first, too, rather than moving the valid properties into its place', () => {
+    const after = { ...before, properties: [author, ...before.properties] };
+    expect(() => typeFrontmatterChanges({ before, after, written })).toThrowError(
+      'The type file already holds "author", so it is not written over',
+    );
+  });
+});

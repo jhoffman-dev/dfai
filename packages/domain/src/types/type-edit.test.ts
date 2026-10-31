@@ -207,9 +207,10 @@ describe('keys the type file has but cannot read (#683)', () => {
         '"author" is already in the type file, as a property DFAI cannot read: mend or remove it there first',
       ),
     );
+    // Told the same, whatever its case: the file's key is what is in the way.
     expect(() =>
       renameProperty(book, { key: 'rating', newKey: 'Author', label: 'Author' }),
-    ).toThrowError(TypeEditError);
+    ).toThrowError(/"author" is already in the type file, as a property DFAI cannot read/);
   });
 });
 
