@@ -25,7 +25,7 @@ const GTD_TASK_TYPE = [
   '    target: person',
   '  project:',
   '    kind: relation',
-  '    targets: [project, area]',
+  '    target: [project, area]',
   '  defer: date',
   '  due: date',
   '  completed: date',
