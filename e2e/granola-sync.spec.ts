@@ -194,7 +194,12 @@ test('a second Sync now that fails the same way, while its toast still shows, ge
   await page.clock.install();
   const toast = page.locator('.toast');
   const syncNowCount = () => requestKinds(host).filter((kind) => kind === 'Sync now').length;
+  // A toast waits while the pointer is on it, and where the toast shows depends
+  // on the layout (on Linux, over this button): the pointer is moved off after
+  // each click, so its five seconds run.
+  const pointerAway = () => page.mouse.move(1, 1);
   await card(page).getByRole('button', { name: 'Sync now' }).click();
+  await pointerAway();
   await expect.poll(syncNowCount).toBe(1);
   await expect(toast).toContainText('Granola refused the API key');
 
@@ -204,6 +209,7 @@ test('a second Sync now that fails the same way, while its toast still shows, ge
   // been drawn: the first is marked, and the second is waited for as a new toast.
   await toast.evaluate((first) => first.setAttribute('data-e2e-first', ''));
   await card(page).getByRole('button', { name: 'Sync now' }).click();
+  await pointerAway();
   await expect.poll(syncNowCount).toBe(2);
   await expect(page.locator('.toast:not([data-e2e-first])')).toContainText(
     'Granola refused the API key',
