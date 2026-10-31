@@ -3,7 +3,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { API_RESPOND_COMMAND } from '@dfai/application';
-import { createVaultPath } from '@dfai/domain';
+import { createVaultPath, PLATFORM_CAPABILITIES, WEB_CAPABILITIES } from '@dfai/domain';
+import type { PlatformCapability } from '@dfai/domain';
+import { commandFatesIn, hostCommandsIn, type CommandFate } from './host-commands.test-support.ts';
 
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
@@ -17,15 +19,9 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 function commandsExposedByRust(): Set<string> {
-  const source = readFileSync(here('../src-tauri/src/lib.rs'), 'utf8');
-  const handler = /generate_handler!\[([\s\S]*?)\]/.exec(source);
-  expect(handler, 'generate_handler! block not found in lib.rs').not.toBeNull();
-  return new Set(
-    (handler?.[1] ?? '')
-      .split(',')
-      .map((entry) => entry.trim().split('::').at(-1) ?? '')
-      .filter((name) => name !== ''),
-  );
+  const exposed = hostCommandsIn(readFileSync(here('../src-tauri/src/lib.rs'), 'utf8'));
+  expect(exposed, 'generate_handler! block not found in lib.rs').not.toBeNull();
+  return exposed ?? new Set();
 }
 
 /** Every adapter source file, in every folder: a command called from any of them crosses the boundary. */
@@ -277,3 +273,80 @@ function threadOf(command: string): CommandThread {
   }
   throw new Error(`no #[tauri::command] named ${command} in src-tauri/src`);
 }
+
+/** ADR-0051: what each host command becomes on the web and on Windows. */
+const PLATFORM_MAP =
+  '../../../vault/docs/adr/0051-every-host-command-has-a-fate-on-the-web-and-on-windows.md';
+
+const WEB_FATES = ['browser', 'server', 'absent'];
+const WINDOWS_FATES = ['same', 'port'];
+/** The capability cell of a command every platform needs. */
+const EVERY_PLATFORM = '—';
+
+/** Each command row of the ADR's tables, as a reader sees it. */
+function commandFates(): CommandFate[] {
+  return commandFatesIn(readFileSync(here(PLATFORM_MAP), 'utf8'));
+}
+
+const isCapability = (name: string): name is PlatformCapability =>
+  (PLATFORM_CAPABILITIES as readonly string[]).includes(name);
+
+describe('the platform map (ADR-0051)', () => {
+  it('maps every command Rust exposes', () => {
+    const mapped = new Set(commandFates().map((fate) => fate.command));
+    const unmapped = [...commandsExposedByRust()].filter((name) => !mapped.has(name));
+    expect(unmapped, `add a row to ADR-0051 for: ${unmapped.join(', ')}`).toEqual([]);
+  });
+
+  it('maps no command Rust no longer exposes, and none twice', () => {
+    const exposed = commandsExposedByRust();
+    const commands = commandFates().map((fate) => fate.command);
+    expect(commands.filter((name) => !exposed.has(name))).toEqual([]);
+    expect(commands.filter((name, at) => commands.indexOf(name) !== at)).toEqual([]);
+  });
+
+  it('gives every command a fate the ADR names, on the web and on Windows', () => {
+    const unnamed = commandFates().filter(
+      (fate) => !WEB_FATES.includes(fate.web) || !WINDOWS_FATES.includes(fate.windows),
+    );
+    expect(unnamed).toEqual([]);
+  });
+
+  it('ties every command to a capability, or to every platform', () => {
+    const unknown = commandFates().filter(
+      (fate) => fate.capability !== EVERY_PLATFORM && !isCapability(fate.capability),
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  it('gives a command absent on the web a capability the web lacks, so its screen hides it', () => {
+    const shown = commandFates().filter(
+      (fate) =>
+        fate.web === 'absent' &&
+        (!isCapability(fate.capability) || WEB_CAPABILITIES[fate.capability]),
+    );
+    expect(shown).toEqual([]);
+  });
+
+  it('gives a command serving a capability the web lacks no fate on the web but absent', () => {
+    const hiddenYetServed = commandFates().filter(
+      (fate) =>
+        isCapability(fate.capability) &&
+        !WEB_CAPABILITIES[fate.capability] &&
+        fate.web !== 'absent',
+    );
+    expect(hiddenYetServed).toEqual([]);
+  });
+
+  it('serves every capability the web lacks with at least one command absent there', () => {
+    const absentOnTheWeb = new Set(
+      commandFates()
+        .filter((fate) => fate.web === 'absent')
+        .map((fate) => fate.capability),
+    );
+    const unserved = PLATFORM_CAPABILITIES.filter(
+      (name) => !WEB_CAPABILITIES[name] && !absentOnTheWeb.has(name),
+    );
+    expect(unserved).toEqual([]);
+  });
+});
