@@ -77,6 +77,12 @@ const movedByResizeObserver = (page: Page) =>
       const watch = new ResizeObserver(() => {
         watch.disconnect();
         control.style.transform = 'translateY(3000px)';
+        // Into the sweep's trace, when one is recording: what the stand-in did, and to which.
+        const trace = (window as unknown as { noteTodaySweep?: (line: string) => void })
+          .noteTodaySweep;
+        trace?.(
+          `stand-in moved ${control.getAttribute('aria-label')}: ${getComputedStyle(control).transform}`,
+        );
       });
       watch.observe(control);
     });

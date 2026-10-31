@@ -60,8 +60,17 @@ function recordSweep(): void {
     log.trace.push(`f${frame} ${line}`);
     if (log.trace.length > TRACE_KEPT) log.trace.shift();
   };
+  // Each element the trace names gets a number, so a stop read on an element
+  // drawn anew under the same name shows as another one.
+  const numbers = new WeakMap<Element, number>();
+  let numbered = 0;
+  const numberOf = (element: Element) => {
+    if (!numbers.has(element)) numbers.set(element, (numbered += 1));
+    return numbers.get(element);
+  };
   const named = (element: Element) =>
-    element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 40) ?? '';
+    `${element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 40) ?? ''} #${numberOf(element)}`;
+  Object.assign(host, { noteTodaySweep: note });
   const tick = () => {
     frame += 1;
     if (!stopped) nextFrame(tick);
@@ -231,8 +240,10 @@ function recordSweep(): void {
       return;
     }
     const stop = readStop();
+    const at = document.activeElement;
+    const drawn = at === null ? '-' : `${named(at)} transform=${getComputedStyle(at).transform}`;
     note(
-      `read ${stop?.label ?? 'nothing'} inView=${stop?.inView ?? '-'} moved@f${movedAt} owed=${observersOwe()} running=${animationRunning()} held=${log.held}`,
+      `read ${stop?.label ?? 'nothing'} inView=${stop?.inView ?? '-'} on ${drawn} moved@f${movedAt} owed=${observersOwe()} running=${animationRunning()} held=${log.held}`,
     );
     if (log.moves > 0) {
       if (stop === null) log.lostAfter = log.last;
