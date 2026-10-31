@@ -555,6 +555,11 @@ async function everyAction(pass: Pass): Promise<void> {
   await pass.idle('Idle 3 s on Today');
   await tickATask(pass);
   await chooseATask(pass);
+  const TODAY_SCROLLER = { inside: 'article[aria-label="Today"]', scroller: '.panel__body' };
+  await pass.budgeted('Scroll Today a little', [scrollALittle(page, TODAY_SCROLLER)]);
+  await expectScrolledALittle(page, 'Scroll Today a little');
+  // Back to the top, uncounted, so the Inbox opens from where it always has.
+  await pass.setUp(scrollALittle(page, TODAY_SCROLLER, -A_LITTLE_PX));
 
   await pass.budgeted('Open the Inbox', [
     phase(
@@ -579,6 +584,10 @@ async function everyAction(pass: Pass): Promise<void> {
       null,
     ),
   ]);
+  await pass.budgeted('Scroll the 420-row table a little', [
+    scrollALittle(page, { inside: '.table__count', scroller: '.table__sheet', around: '.table' }),
+  ]);
+  await expectScrolledALittle(page, 'Scroll the 420-row table a little');
   await searchOverTheTable(pass);
   await dragACard(pass);
   await runALongSqlQuery(pass);
@@ -605,6 +614,71 @@ async function everyAction(pass: Pass): Promise<void> {
   await readALongEpub(pass);
   // Last: once meaning search is on, the cache of meanings follows every later write.
   await searchByMeaning(pass);
+}
+
+/**
+ * How far "a little" is: less than a row, so the rows a list draws past the
+ * screen's edges still cover it and no row comes or goes (#238).
+ */
+const A_LITTLE_PX = 4;
+const SCROLLED_A_LITTLE = '[data-scrolled-a-little]';
+
+/**
+ * Scrolls a shown list by `by` px, `A_LITTLE_PX` unless told: the `scroller` around the shown
+ * `inside`, or, with `around`, the `scroller` within the `around` holding
+ * it. Ready once the page has its scroll event, which marks the scroller
+ * with how far it moved; the settle after it is the scroll ending.
+ */
+function scrollALittle(
+  page: Page,
+  where: { readonly inside: string; readonly scroller: string; readonly around?: string },
+  by = A_LITTLE_PX,
+): Phase {
+  return phase(
+    () =>
+      page.evaluate(
+        ({ inside, scroller, around, by, mark }) => {
+          const shown = [...document.querySelectorAll<HTMLElement>(inside)].find(
+            (element) => element.offsetParent !== null,
+          );
+          const target =
+            around === null
+              ? shown?.closest<HTMLElement>(scroller)
+              : shown?.closest(around)?.querySelector<HTMLElement>(scroller);
+          if (target === null || target === undefined) throw new Error(`no ${scroller}`);
+          for (const marked of document.querySelectorAll<HTMLElement>(mark)) {
+            delete marked.dataset.scrolledALittle;
+          }
+          const was = target.scrollTop;
+          // Where the scroll event found it, beside where it started, for `scrolledALittleBy`.
+          target.addEventListener(
+            'scroll',
+            () => {
+              target.dataset.scrolledALittle = String(target.scrollTop - was);
+            },
+            { once: true },
+          );
+          target.scrollTop = was + by;
+          if (target.scrollTop === was) throw new Error(`${scroller} does not scroll`);
+        },
+        { ...where, around: where.around ?? null, by, mark: SCROLLED_A_LITTLE },
+      ),
+    exists,
+    SCROLLED_A_LITTLE,
+  );
+}
+
+/**
+ * How far the last `scrollALittle` moved its scroller by its scroll event.
+ * An action whose budget is 0 cannot fall under its floor, so it shows here
+ * that the scroll it counted really happened.
+ */
+async function expectScrolledALittle(page: Page, action: BudgetedAction): Promise<void> {
+  const moved = await page.evaluate(
+    (mark) => Number(document.querySelector<HTMLElement>(mark)?.dataset.scrolledALittle ?? NaN),
+    SCROLLED_A_LITTLE,
+  );
+  expect(moved, `"${action}" scrolled its list by ${moved}px`).toBeCloseTo(A_LITTLE_PX, 0);
 }
 
 const sidebarButton = (page: Page, name: RegExp) => page.getByRole('button', { name }).first();
