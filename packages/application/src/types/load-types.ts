@@ -1,12 +1,13 @@
 import {
   createVaultPath,
+  noteTitle,
   parseObjectType,
   splitFrontmatter,
   TYPES_DIRECTORY,
   type ObjectType,
   type VaultPath,
 } from '@dfai/domain';
-import type { VaultFsPort } from '../vault/ports.ts';
+import type { NoteFile, VaultFsPort } from '../vault/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 
 /** Where a vault keeps its type definitions. */
@@ -15,6 +16,20 @@ export const TYPES_FOLDER = TYPES_DIRECTORY;
 /** A type as the vault defines it: the definition, and the file it is written in. */
 export interface DefinedType extends ObjectType {
   readonly path: VaultPath;
+}
+
+/** A type file whose frontmatter cannot be read, and why: listed where types are managed (#683). */
+export interface BrokenType {
+  readonly path: VaultPath;
+  /** The file's name without `.md`: the block that would name the type cannot be read. */
+  readonly name: string;
+  readonly problem: string;
+}
+
+/** The vault's types, and the type files that cannot be read. */
+export interface TypeListing {
+  readonly types: readonly DefinedType[];
+  readonly broken: readonly BrokenType[];
 }
 
 /**
@@ -31,11 +46,47 @@ export async function loadObjectTypes({
   fs: VaultFsPort;
   markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
 }): Promise<DefinedType[]> {
-  const folder = createVaultPath(TYPES_FOLDER);
+  const types: DefinedType[] = [];
+  for (const file of await readTypeFiles(fs)) {
+    const type = definedType(file, markdown.frontmatterProperties(blockOf(file)));
+    if (type !== null) types.push(type);
+  }
+  return types.sort(byName);
+}
 
+/**
+ * The types, as `loadObjectTypes` reads them, and beside them every type file
+ * whose frontmatter is not readable at all, with the parser's reason. A file
+ * with no frontmatter, or readable frontmatter that is no type, is neither.
+ */
+export async function loadTypeListing({
+  fs,
+  markdown,
+}: {
+  fs: VaultFsPort;
+  markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>;
+}): Promise<TypeListing> {
+  const types: DefinedType[] = [];
+  const broken: BrokenType[] = [];
+  for (const file of await readTypeFiles(fs)) {
+    const block = blockOf(file);
+    // An unreadable block reads as no properties, so it would be skipped as no
+    // type: in the types folder it most likely is one, gone without a word (#683).
+    const problem = markdown.frontmatterProblem(block);
+    if (problem !== null) {
+      broken.push(unreadableType(file.path, problem));
+      continue;
+    }
+    const type = definedType(file, markdown.frontmatterProperties(block));
+    if (type !== null) types.push(type);
+  }
+  return { types: types.sort(byName), broken: broken.sort(byName) };
+}
+
+async function readTypeFiles(fs: VaultFsPort): Promise<readonly NoteFile[]> {
   let paths: VaultPath[];
   try {
-    const entries = await fs.listDirectory(folder);
+    const entries = await fs.listDirectory(createVaultPath(TYPES_FOLDER));
     paths = entries
       .filter((entry) => entry.kind === 'file' && entry.name.toLowerCase().endsWith('.md'))
       .map((entry) => entry.path);
@@ -43,23 +94,33 @@ export async function loadObjectTypes({
     // A vault with no .atlas/types folder simply has no types yet.
     return [];
   }
+  return paths.length === 0 ? [] : fs.readNotes(paths);
+}
 
-  if (paths.length === 0) return [];
+function blockOf(file: NoteFile): string | null {
+  return splitFrontmatter(file.text).frontmatter;
+}
 
-  const files = await fs.readNotes(paths);
-  const types: DefinedType[] = [];
-
-  for (const file of files) {
-    try {
-      const { frontmatter } = splitFrontmatter(file.text);
-      const type = parseObjectType(markdown.frontmatterProperties(frontmatter));
-      types.push({ ...type, path: createVaultPath(file.path) });
-    } catch {
-      // Skipped: a broken definition costs that one type, nothing else.
-    }
+function definedType(file: NoteFile, frontmatter: Record<string, unknown>): DefinedType | null {
+  try {
+    return { ...parseObjectType(frontmatter), path: createVaultPath(file.path) };
+  } catch {
+    // Skipped: a broken definition costs that one type, nothing else.
+    return null;
   }
+}
 
-  return types.sort((left, right) => left.name.localeCompare(right.name));
+function unreadableType(path: string, problem: string): BrokenType {
+  const vaultPath = createVaultPath(path);
+  return {
+    path: vaultPath,
+    name: noteTitle(vaultPath),
+    problem: `Its frontmatter is not valid YAML: ${problem}`,
+  };
+}
+
+function byName(left: { readonly name: string }, right: { readonly name: string }): number {
+  return left.name.localeCompare(right.name);
 }
 
 /** The type a note declares, or null when it declares none. */
