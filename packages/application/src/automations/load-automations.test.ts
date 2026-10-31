@@ -76,7 +76,7 @@ describe('loadAutomations', () => {
       {
         path: '.atlas/automations/Digest.md',
         name: 'Digest',
-        problem: `Its frontmatter cannot be read as properties: ${PARSER_REASON}`,
+        problem: `Its frontmatter is not valid YAML: ${PARSER_REASON}`,
       },
     ]);
   });

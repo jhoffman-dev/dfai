@@ -51,7 +51,7 @@ describe('loadAutomations through the real YAML port (attack #682)', () => {
     const path = '.atlas/automations/Digest.md';
     const text = ['---', '- atlas: automation', '  name: Digest', '---', ''].join('\n');
     expect(await brokenWithWhy(path, text)).toEqual([
-      { path, problem: 'Its frontmatter cannot be read as properties: it is a list' },
+      { path, problem: 'Its frontmatter is not a set of properties.' },
     ]);
   });
 
@@ -59,7 +59,7 @@ describe('loadAutomations through the real YAML port (attack #682)', () => {
     const path = '.atlas/automations/Digest.md';
     const text = ['---', 'atlas automation', '---', ''].join('\n');
     expect(await brokenWithWhy(path, text)).toEqual([
-      { path, problem: 'Its frontmatter cannot be read as properties: it is one value' },
+      { path, problem: 'Its frontmatter is not a set of properties.' },
     ]);
   });
 
@@ -106,7 +106,7 @@ describe('loadAutomations through the real YAML port (attack #682)', () => {
         path,
         name: 'Two',
         problem: expect.stringMatching(
-          /^Its frontmatter cannot be read as properties: Source contains multiple documents.*column 1$/,
+          /^Its frontmatter is not valid YAML: Source contains multiple documents.*column 1$/,
         ),
       },
     ]);

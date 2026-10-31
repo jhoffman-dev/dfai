@@ -60,9 +60,10 @@ const UNRUNNABLE = [
   '',
 ].join('\n');
 const UNRUNNABLE_PATH = '.atlas/automations/Weekly digest.md';
-/** Files beside the rules that are not rules: no block, or a readable one without the marker. */
+/** Files beside the rules that are not rules: no block, a blank one, or one without the marker. */
 const NOT_RULES = {
   '.atlas/automations/README.md': '# What these rules do\n',
+  '.atlas/automations/Blank.md': '---\n---\n\nNothing yet.\n',
   '.atlas/automations/Notes.md': '---\ntitle: Notes on the rules\n---\n\nKept beside them.\n',
 };
 
@@ -104,9 +105,7 @@ describe('meeting setup through the real markdown port', () => {
     // beside them that are not rules are neither listed nor broken.
     expect(listing.broken.map(({ path }) => path)).toEqual([MALFORMED_PATH, UNRUNNABLE_PATH]);
     // The reason is the parser's first line, without the colon that led into its excerpt.
-    expect(listing.broken[0]?.problem).toMatch(
-      /^Its frontmatter cannot be read as properties: \S.*[^:]$/,
-    );
+    expect(listing.broken[0]?.problem).toMatch(/^Its frontmatter is not valid YAML: \S.*[^:]$/);
     expect(fixture.files.get(UNRUNNABLE_PATH)?.text).toBe(UNRUNNABLE);
     const [rule] = listing.automations;
     expect(rule?.rule.action).toMatchObject({ kind: 'claude', apply: 'mine' });
