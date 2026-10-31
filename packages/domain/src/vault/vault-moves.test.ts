@@ -8,8 +8,10 @@ import {
   isWithin,
   moveDestination,
   movedPath,
+  moveIntoLinkRefusal,
   moveRefusal,
   moveTargets,
+  moveThroughLinkRefusal,
   nameClashes,
   newFolderRefusal,
   pathAfterMoves,
@@ -320,5 +322,21 @@ describe('pathAfterMoves (A20-05)', () => {
   it('is null for a path no move touched', () => {
     expect(pathAfterMoves(path('B.md'), moves)).toBeNull();
     expect(pathAfterMoves(path('B.md'), [])).toBeNull();
+  });
+});
+
+describe('a move by way of a link (#680)', () => {
+  it('says the entry is reached through the link, and what to do instead', () => {
+    expect(moveThroughLinkRefusal(path('Work/Alias'))).toBe(
+      'It is inside “Work/Alias”, which is a link: moving or renaming it here would move what ' +
+        'the link points at. Do it where it really is, or move the link.',
+    );
+  });
+
+  it('says the folder is, or is inside, the link, and where the entry would really land', () => {
+    expect(moveIntoLinkRefusal(path('Work/Alias'))).toBe(
+      '“Work/Alias” is a link: moving into it would put it where the link points. ' +
+        'Move it into that folder itself.',
+    );
   });
 });
