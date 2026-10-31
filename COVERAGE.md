@@ -54,8 +54,8 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `*/google-calendar`         | Connects your Google account, reads its answers and syncs blocks to it; tokens stay in Rust.  | 31, #30 |
 | `domain/granola`            | Granola's watermark, pacing and backoff: a wrong rule drops meetings.                         | 28      |
 | `*/granola`                 | Writes files into your vault from outside it; turns Granola's JSON into domain types.         | 28      |
-| `domain/skills`             | Decides what a skill may be, and what an edit changes in its SKILL.md, byte for byte.         | #169    |
-| `application/skills`        | Writes and trashes skill folders, refusing a SKILL.md changed since it was read.              | #169    |
+| `domain/skills`             | Decides what a skill may be, what an edit changes in its SKILL.md, and reads Claude's draft.  | #169    |
+| `application/skills`        | Writes and trashes skill folders, refusing a stale SKILL.md; asks Claude for a draft.         | #169    |
 | `domain/kindle`             | Reads Amazon's notebook page into highlights; a wrong rule writes junk or drops highlights.   | #508    |
 | `*/kindle`                  | Syncs Kindle highlights into source notes by itself; the Amazon session stays in Rust.        | #508    |
 

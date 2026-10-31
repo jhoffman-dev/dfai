@@ -1678,6 +1678,8 @@ function AppWindow({
   // As with Today, no row that opens nothing: the Inbox shows once the vault
   // has an Inbox view or something waits in it.
   const inboxRowShown = inboxView !== null || (waiting ?? 0) > 0;
+  // Ask Claude on the Skills page reaches Claude as a rule's step does: Settings' provider and model.
+  const skillsWiring = useMemo(() => ({ claude: claudeStep }), [claudeStep]);
   const automationPorts = useMemo(
     () => ({ ...archivePorts, types, notePaths, claude: claudeStep }),
     [archivePorts, types, notePaths, claudeStep],
@@ -2510,6 +2512,7 @@ function AppWindow({
                         ports: automationPorts,
                         setup: meetingSetup,
                       },
+                      skills: skillsWiring,
                       graph: { state: vaultGraph },
                       query: { text: queryText },
                       tags: {

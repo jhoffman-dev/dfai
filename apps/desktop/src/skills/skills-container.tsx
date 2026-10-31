@@ -4,9 +4,15 @@ import { LoadedLater } from '../page-frame-fallback.tsx';
 import { skillsPage } from '../pages-on-first-use.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { useSkillUsers } from './skill-users-key.ts';
+import { useSkillDraft, type SkillDraftPorts } from './use-skill-draft.ts';
 import { useSkillsPage, type SkillOverlay } from './use-skills-page.ts';
 
 const SkillsPage = skillsPage.Component;
+
+/** The Skills page's own wiring: how Ask Claude reaches Claude. */
+export interface SkillsWiring {
+  readonly claude: SkillDraftPorts;
+}
 
 /**
  * The Skills page as a tab (#169, ADR-0050): it reads the skills and the
@@ -36,16 +42,23 @@ export function SkillsContainer({ wiring, chrome }: PageContainerProps) {
   );
   // Which rules use each skill, from the runner's own read: drawn again only when that changes.
   const rules = useSkillUsers(pages.automations.store);
-  const page = useSkillsPage({
+  const { opening, ...page } = useSkillsPage({
     ports: { fs: pages.ports.fs, markdown: pane.notes.markdown, overlay },
     rules,
     overlayUp: deleteUp ? 'skill-delete' : discardUp ? 'skill-discard' : null,
     vault: pane.vault,
     onOpenNote: pages.openNote,
   });
+  // Ask Claude reaches it as the chat and the automations do: the provider and model Settings chose.
+  const ask = useSkillDraft({
+    ports: pages.skills.claude,
+    editor: page.editor,
+    opening,
+    onChange: page.onChange,
+  });
   return (
     <LoadedLater chrome={chrome}>
-      <SkillsPage {...page} {...chrome} />
+      <SkillsPage {...page} {...(ask !== undefined && { ask })} {...chrome} />
     </LoadedLater>
   );
 }
