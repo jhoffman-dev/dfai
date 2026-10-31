@@ -3,6 +3,7 @@ export {
   joinDocument,
   joinFrontmatter,
   isBlankFrontmatter,
+  opensUnclosedFrontmatter,
   splitFrontmatter,
   withBody,
 } from './markdown-document.ts';
