@@ -1,16 +1,20 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
-import { macOnly } from './platform.ts';
 import { sweep } from './today-sweep.ts';
 
 /**
  * Adversarial pass on #644, in WebKit: the 500-row Tab sweeps record each stop
- * in the page. Some of what a focus sets off happens only at the next frame — a
- * CSS transition, a ResizeObserver callback — and a recorder that read a stop
- * at the next Tab, when that Tab changed nothing it watched, missed both, where
- * the per-press sweep it replaced (two frames after every key) caught them. So
- * every stop now waits out a frame. These stand in for such an app on a page
- * short enough that no Tab scrolls, so nothing else holds a Tab back.
+ * in the page. Some of what a focus sets off happens only later — a CSS
+ * transition, a ResizeObserver callback — and a recorder that read a stop at
+ * the next Tab, when that Tab changed nothing it watched, missed both. These
+ * stand in for such an app on a page short enough that no Tab scrolls, so
+ * nothing else holds a Tab back.
+ *
+ * Neither is a matter of frames. A transition's delay is the page's to set, and
+ * when an engine calls a ResizeObserver back is its own: on Linux, and on a
+ * loaded Mac, not within a few frames (PR #649). So the transition here waits
+ * far longer than any count of frames would cover, and the recorder is held
+ * until what it watches has finished, not for a number of frames.
  */
 
 const NOW = new Date(2026, 9, 13, 12, 0, 0);
@@ -55,10 +59,10 @@ async function openToday(page: Page) {
 // the page draws nothing again and the recorder holds nothing back.
 const CONTROL = `tr[data-today-row*="${TARGET}"] [aria-label^="Choose"]`;
 
-/** A focus style that, a frame later, puts the control far below the screen. */
+/** A focus style that, a quarter of a second later, puts the control far below the screen. */
 const slidAwayByTransition = (page: Page) =>
   page.addStyleTag({
-    content: `${CONTROL}:focus { transform: translateY(3000px); transition: transform 0s 12ms; }`,
+    content: `${CONTROL}:focus { transform: translateY(3000px); transition: transform 0s 250ms; }`,
   });
 
 /** A control that, once focused, a ResizeObserver moves off the screen. */
@@ -75,51 +79,39 @@ const movedByResizeObserver = (page: Page) =>
     });
   }, CONTROL);
 
-/** Focuses the control and reads, once its frames have run, whether it is wholly on screen. */
-const focusedControlInView = (page: Page) =>
-  page.evaluate(async (selector) => {
-    const control = document.querySelector<HTMLElement>(selector)!;
-    control.focus();
-    for (let frames = 0; frames < 6; frames += 1) {
-      await new Promise((done) => requestAnimationFrame(done));
-    }
-    const box = control.getBoundingClientRect();
+/** Whether the control is wholly on screen. */
+const controlInView = (page: Page) =>
+  page.evaluate((selector) => {
+    const box = document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
     return box.top >= 0 && box.bottom <= window.innerHeight;
   }, CONTROL);
 
 const fromTheTarget = (labels: string[]) => labels.filter((label) => label.includes(TARGET));
 
-const FRAME_TIMING = macOnly(
-  'WebKit’s rendering steps: the stand-ins move the control a frame late on Linux every run, and on macOS now and then (PR #649)',
-);
-
 for (const [kind, standIn] of [
   ['a focus transition', slidAwayByTransition],
   ['a ResizeObserver', movedByResizeObserver],
 ] as const) {
-  test(
-    `the stand-in for ${kind} carries the focused control off screen`,
-    FRAME_TIMING,
-    async ({ page }) => {
-      await openToday(page);
-      await standIn(page);
+  test(`the stand-in for ${kind} carries the focused control off screen`, async ({ page }) => {
+    await openToday(page);
+    await standIn(page);
+    // In view before the focus, so that it is the stand-in that takes it away.
+    await page.locator(CONTROL).scrollIntoViewIfNeeded();
+    expect(await controlInView(page)).toBe(true);
 
-      expect(await focusedControlInView(page)).toBe(false);
-    },
-  );
+    await page.locator(CONTROL).focus();
 
-  test(
-    `a Tab sweep reports the control ${kind} moves off screen`,
-    FRAME_TIMING,
-    async ({ page }) => {
-      const today = await openToday(page);
-      await standIn(page);
-      await today.locator('input.done-check').first().focus();
+    await expect.poll(() => controlInView(page)).toBe(false);
+  });
 
-      const forward = await sweep(page, 'Tab', 200);
+  test(`a Tab sweep reports the control ${kind} moves off screen`, async ({ page }) => {
+    const today = await openToday(page);
+    await standIn(page);
+    await today.locator('input.done-check').first().focus();
 
-      expect(forward.rows.size).toBe(TASKS);
-      expect(fromTheTarget(forward.offScreen)).not.toEqual([]);
-    },
-  );
+    const forward = await sweep(page, 'Tab', 200);
+
+    expect(forward.rows.size).toBe(TASKS);
+    expect(fromTheTarget(forward.offScreen)).not.toEqual([]);
+  });
 }
