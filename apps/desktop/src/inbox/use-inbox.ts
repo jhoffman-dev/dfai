@@ -48,6 +48,9 @@ import { keptWhereSame } from './kept-where-same.ts';
 import { notesAfterOwnMoves } from './own-moves.ts';
 import { useSummaryPending } from './use-summary-pending.ts';
 import { createInboxWrites, type InboxSaid, type InboxWrites } from './inbox-writes.ts';
+import { useUntilListedAgain } from '../rows/until-listed-again.ts';
+
+export { LISTED_AGAIN_LIMIT_MS } from '../rows/until-listed-again.ts';
 
 export interface InboxOptions {
   readonly ports: ArchivePorts;
@@ -207,7 +210,14 @@ export function useInbox(options: InboxOptions) {
     [shown, leaving, vaultKey],
   );
 
-  const listedAgain = useListedAgain(contents, shown?.read ?? null, vaultKey);
+  const shownRead = shown?.read ?? null;
+  const listedAgain = useUntilListedAgain(
+    useCallback(
+      (row: ReturningRow) => returnSettled(row, contents, shownRead),
+      [contents, shownRead],
+    ),
+    vaultKey,
+  );
 
   /** Says what a write left, of the vault it was asked in; `kept` leaves the last action to take back. */
   const say = useCallback(
@@ -619,58 +629,6 @@ function keepingMoves(ports: ArchivePorts): {
   };
   return { ports: { ...ports, fs: { ...ports.fs, moveEntry } }, moved: () => moved };
 }
-
-/**
- * Resolves once a row an undo put back is listed again, or a read since the
- * refresh its write asked for has landed without it (`returnSettled`).
- */
-function useListedAgain(
-  contents: InboxListing | null,
-  read: ReadMoment | null,
-  vaultKey: string | null,
-): (row: ReturningRow) => Promise<void> {
-  const waiting = useRef<{ readonly row: ReturningRow; readonly resolve: () => void }[]>([]);
-  const now = useRef({ contents, read });
-  now.current = { contents, read };
-  const settle = useCallback(() => {
-    const { contents: listing, read: at } = now.current;
-    waiting.current = waiting.current.filter((each) => {
-      if (!returnSettled(each.row, listing, at)) return true;
-      each.resolve();
-      return false;
-    });
-  }, []);
-  useEffect(settle, [contents, read, settle]);
-  // Another vault, or the page gone: nothing will list the row here, so none waits on.
-  useEffect(
-    () => () => {
-      for (const each of waiting.current) each.resolve();
-      waiting.current = [];
-    },
-    [vaultKey],
-  );
-  return useCallback(
-    (row: ReturningRow) =>
-      new Promise<void>((resolve) => {
-        // A refresh that never lands — it failed — is waited for this long, and no longer.
-        const limit = setTimeout(done, LISTED_AGAIN_LIMIT_MS);
-        function done() {
-          clearTimeout(limit);
-          waiting.current = waiting.current.filter((each) => each.resolve !== done);
-          resolve();
-        }
-        waiting.current.push({ row, resolve: done });
-        settle();
-      }),
-    [settle],
-  );
-}
-
-/**
- * The longest U waits for the row it took back to be listed again before it
- * says where the row is anyway: a refresh that failed is never answered for.
- */
-export const LISTED_AGAIN_LIMIT_MS = 5_000;
 
 const NO_ROWS: readonly LeavingRow[] = [];
 
