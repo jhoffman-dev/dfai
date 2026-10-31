@@ -188,6 +188,34 @@ function recordSweep(): void {
   };
   const renderEvents = ['transitionrun', 'transitionstart', 'animationstart'];
   for (const name of renderEvents) document.addEventListener(name, onRender, { capture: true });
+  // The transitions begun and not yet over, by their events: in its delay one
+  // is not always among getAnimations()'s running ones (Linux WebKit, run
+  // 41213247038, read at its start value). One whose element has gone ends there.
+  const transitions = new Map<Element, Set<string>>();
+  const onTransitionRun = (event: Event) => {
+    const { target, propertyName } = event as TransitionEvent;
+    if (!(target instanceof Element)) return;
+    transitions.set(target, (transitions.get(target) ?? new Set()).add(propertyName));
+    note(`transition of ${propertyName} begun on ${named(target)}`);
+  };
+  const onTransitionOver = (event: Event) => {
+    const { target, propertyName } = event as TransitionEvent;
+    if (!(target instanceof Element)) return;
+    transitions.get(target)?.delete(propertyName);
+    if (transitions.get(target)?.size === 0) transitions.delete(target);
+  };
+  const transitionsUnder = [
+    ['transitionrun', onTransitionRun],
+    ['transitionend', onTransitionOver],
+    ['transitioncancel', onTransitionOver],
+  ] as const;
+  for (const [name, listener] of transitionsUnder) {
+    document.addEventListener(name, listener, { capture: true });
+  }
+  const transitionPending = () => {
+    for (const target of transitions.keys()) if (!target.isConnected) transitions.delete(target);
+    return transitions.size > 0;
+  };
   const animations = new WeakSet<Animation>();
   // A transition or animation that will end holds the stop until it has: its
   // delay is the page's to set, and it lands when it ends, not frames later.
@@ -224,7 +252,7 @@ function recordSweep(): void {
       changedAt = frame;
     }
     if (changedAt !== null && frame < changedAt + 2) return true;
-    if (animationRunning() || observersOwe()) {
+    if (animationRunning() || transitionPending() || observersOwe()) {
       changedAt = frame;
       return true;
     }
@@ -243,7 +271,7 @@ function recordSweep(): void {
     const at = document.activeElement;
     const drawn = at === null ? '-' : `${named(at)} transform=${getComputedStyle(at).transform}`;
     note(
-      `read ${stop?.label ?? 'nothing'} inView=${stop?.inView ?? '-'} on ${drawn} moved@f${movedAt} owed=${observersOwe()} running=${animationRunning()} held=${log.held}`,
+      `read ${stop?.label ?? 'nothing'} inView=${stop?.inView ?? '-'} on ${drawn} moved@f${movedAt} owed=${observersOwe()} running=${animationRunning()} transitions=${transitionPending()} held=${log.held}`,
     );
     if (log.moves > 0) {
       if (stop === null) log.lostAfter = log.last;
@@ -268,6 +296,9 @@ function recordSweep(): void {
     mutations.disconnect();
     for (const name of renderEvents)
       document.removeEventListener(name, onRender, { capture: true });
+    for (const [name, listener] of transitionsUnder) {
+      document.removeEventListener(name, listener, { capture: true });
+    }
     for (const restore of restores) restore();
   };
 
