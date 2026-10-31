@@ -90,7 +90,7 @@ fn a_case_only_rename_ending_in_sigma_is_a_rename() {
 /// and by name after it (`current/notes.md`, under a folder that does not
 /// exist yet), so the two never match and the move is refused.
 #[test]
-#[ignore = "bug: a link through a link in the same folder needlessly refuses the folder's move"]
+#[ignore = "a safe refusal, left on review of PR #684: a link through another link in the folder is spelled through it before the move and by name after, so the two are not matched; matching them means simulating the link inside the moved tree"]
 fn a_link_through_a_link_inside_the_folder_lets_the_folder_move() {
     let vault = tempdir().unwrap();
     fs::create_dir_all(vault.path().join("Projects/v3")).unwrap();
@@ -113,7 +113,6 @@ fn a_link_through_a_link_inside_the_folder_lets_the_folder_move() {
 /// moved `x.md`: the expected target is worked out from a dangling path that
 /// is not inside the source, so it is taken as unchanged.
 #[test]
-#[ignore = "bug: a dangling link is brought to life by the move and the move is let through"]
 fn a_dangling_link_is_not_brought_to_point_at_a_moved_note() {
     let vault = tempdir().unwrap();
     fs::create_dir_all(vault.path().join("Plans")).unwrap();
@@ -134,7 +133,7 @@ fn a_dangling_link_is_not_brought_to_point_at_a_moved_note() {
 /// same note after the move on a case-insensitive disk, but the target's new
 /// spelling under a folder not made yet is compared by name and differs.
 #[test]
-#[ignore = "bug: a link naming its own folder in another case needlessly refuses the move"]
+#[ignore = "a safe refusal, left on review of PR #684: where the link lands under the folder not made yet can only be compared by name, and a case-blind match would let through a re-pointed link on a disk that keeps case apart"]
 fn a_link_naming_its_folder_in_another_case_lets_it_move() {
     let vault = tempdir().unwrap();
     if !ignores_case(vault.path()) {

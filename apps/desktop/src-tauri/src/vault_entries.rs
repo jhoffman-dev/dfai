@@ -232,9 +232,22 @@ impl CarriedLink<'_> {
         let read_from = |at: &Path| at.parent().map_or_else(PathBuf::new, Path::to_path_buf);
         let before = as_disk_spells(&read_from(self.link).join(self.points_at));
         let after = as_disk_spells(&read_from(&moved_link).join(self.points_at));
-        let expected = moved(&before, self.source, self.target).unwrap_or(before);
+        let Some(expected) = moved(&before, self.source, self.target) else {
+            // Pointing outside what moves, it must not end up pointing into
+            // where it lands: that was nothing before the move, a dangling
+            // link would come to life. Case is ignored here, so on a disk that
+            // ignores it a link is never let through by its spelling.
+            return after == before && !is_within_by_any_case(&before, self.target);
+        };
         after == expected
     }
+}
+
+/// Whether `path` is `folder` or inside it, comparing names without case.
+fn is_within_by_any_case(path: &Path, folder: &Path) -> bool {
+    let folded = |at: &Path| at.to_string_lossy().to_lowercase();
+    let (path, folder) = (folded(path), folded(folder));
+    path == folder || path.starts_with(&format!("{folder}/"))
 }
 
 /// Where `path` is once `source` is at `target`, or None when it is not inside it.
