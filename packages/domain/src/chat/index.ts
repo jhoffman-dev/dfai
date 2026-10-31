@@ -45,3 +45,4 @@ export type { AnswerBlock, AnswerCitation } from './answer-citations.ts';
 export type { AnswerBlockKind } from './answer-blocks.ts';
 export { isWebAddress } from './answer-inline.ts';
 export type { AnswerInline } from './answer-inline.ts';
+export { MAX_PROMPT_CHARACTERS } from './prompt-limit.ts';

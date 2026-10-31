@@ -108,6 +108,11 @@
   overflow: hidden;
 }
 
+.skills__used-by {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+
 .skills__row-problem,
 .skills__problem {
   color: var(--danger);

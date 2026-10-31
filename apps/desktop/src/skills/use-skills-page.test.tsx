@@ -2,7 +2,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { createVaultPath, parentVaultPath, vaultPathName, type VaultEntry } from '@dfai/domain';
+import {
+  createVaultPath,
+  parentVaultPath,
+  vaultPathName,
+  type SkillUser,
+  type VaultEntry,
+} from '@dfai/domain';
 import { fakeVaultFs, VaultAccessError } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { readAgain, vaultReadKey } from '../reads/query-client.ts';
@@ -113,7 +119,7 @@ function memoryVault(files: Record<string, string>) {
   return { fs, notes, trashed, writeOnDisk, deleteOnDisk, holdWrites, controls };
 }
 
-function renderPage(files: Record<string, string> = {}) {
+function renderPage(files: Record<string, string> = {}, rules: readonly SkillUser[] = []) {
   const vault = memoryVault(files);
   const { client, wrapper } = queryWrapper();
   const shown = { show: vi.fn(), hide: vi.fn() };
@@ -125,6 +131,7 @@ function renderPage(files: Record<string, string> = {}) {
       const [up, setUp] = useState<SkillOverlay | null>(null);
       dropOverlay = () => setUp(null);
       return useSkillsPage({
+        rules,
         ports: {
           fs: vault.fs,
           markdown: remarkMarkdown,
@@ -340,6 +347,45 @@ describe('useSkillsPage', () => {
     expect(page.overlay.hide).toHaveBeenCalledExactlyOnceWith('skill-delete');
     await waitFor(() => expect(page.result.current.editor).toBeNull());
     await waitFor(() => expect(page.result.current.skills.items).toEqual([]));
+  });
+
+  describe('the automations that use a skill (#169)', () => {
+    const RULES: SkillUser[] = [
+      { name: 'Weekly notes', action: { kind: 'claude', skill: 'weekly-review' } },
+      { name: 'By prompt', action: { kind: 'claude' } },
+    ];
+
+    it('lists each skill with the rules that use it', async () => {
+      const page = renderPage(
+        {
+          [SKILL_PATH]: WEEKLY,
+          '.atlas/skills/other/SKILL.md': WEEKLY.replace('weekly-review', 'other'),
+        },
+        RULES,
+      );
+      await waitFor(() => expect(page.result.current.skills.items).toHaveLength(2));
+      const [other, weekly] = page.result.current.skills.items ?? [];
+      expect(weekly?.usedBy).toEqual(['Weekly notes']);
+      expect(other).not.toHaveProperty('usedBy');
+    });
+
+    it('warns in the delete question that the rules using it will fail', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY }, RULES);
+      await openWeekly(page);
+      act(() => page.result.current.onDelete());
+      await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
+      expect(page.result.current.deleteQuestion?.warning).toMatch(
+        /^Delete “weekly-review”\?.* The automation “Weekly notes” uses it, and will fail until it names another skill or a prompt\.$/,
+      );
+    });
+
+    it('asks as before when no rule uses it', async () => {
+      const page = renderPage({ [SKILL_PATH]: WEEKLY });
+      await openWeekly(page);
+      act(() => page.result.current.onDelete());
+      await waitFor(() => expect(page.result.current.deleteQuestion).not.toBeNull());
+      expect(page.result.current.deleteQuestion?.warning).not.toContain('automation');
+    });
   });
 
   it('trashes nothing when the delete is cancelled', async () => {

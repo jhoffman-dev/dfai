@@ -3,6 +3,7 @@ import { hideOverlay, showOverlay, useOverlayUp } from '../overlay-store.ts';
 import { LoadedLater } from '../page-frame-fallback.tsx';
 import { skillsPage } from '../pages-on-first-use.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
+import { useSkillUsers } from './skill-users-key.ts';
 import { useSkillsPage, type SkillOverlay } from './use-skills-page.ts';
 
 const SkillsPage = skillsPage.Component;
@@ -33,8 +34,11 @@ export function SkillsContainer({ wiring, chrome }: PageContainerProps) {
     },
     [overlays],
   );
+  // Which rules use each skill, from the runner's own read: drawn again only when that changes.
+  const rules = useSkillUsers(pages.automations.store);
   const page = useSkillsPage({
     ports: { fs: pages.ports.fs, markdown: pane.notes.markdown, overlay },
+    rules,
     overlayUp: deleteUp ? 'skill-delete' : discardUp ? 'skill-discard' : null,
     vault: pane.vault,
     onOpenNote: pages.openNote,
