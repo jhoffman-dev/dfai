@@ -36,6 +36,7 @@ function session(rounds: ScriptedRound[]) {
         proposal,
       }),
     undo: (applied) => undoProposal({ fs: fixture.fs, openNotes, applied }),
+    skill: () => Promise.resolve({ kind: 'missing' as const }),
     stamp: () => '2026-09-22 09:00',
     activity: recordingActivity(),
     newId,
@@ -151,6 +152,7 @@ describe('a chat session (adversarial)', () => {
       vault: () => ({ fs: open.fs, notePaths: [...open.files.keys()].map(createVaultPath) }),
       accept: () => Promise.reject(new Error('unused')),
       undo: () => Promise.reject(new Error('unused')),
+      skill: () => Promise.resolve({ kind: 'missing' as const }),
       stamp: () => '2026-09-22 09:00',
       activity: recordingActivity(),
       newId: (() => {

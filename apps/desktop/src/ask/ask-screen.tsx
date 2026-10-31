@@ -64,6 +64,7 @@ export function AskScreen({ seat, fs, vault, pane, onShowSidebar, history }: Ask
       onFocusTaken={onFocusTaken}
       actions={actions}
       loadImage={noImages}
+      skills={chat.skills}
       {...(onShowSidebar !== undefined && { onShowSidebar })}
       {...(history !== undefined && { history })}
     />

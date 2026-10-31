@@ -661,6 +661,7 @@ describe('a rule with a Claude step, through the API (P29-03)', () => {
   const files = { ...FILES, '.atlas/automations/Ask about tasks.md': ASK };
   const step = {
     prompt: '.atlas/prompts/tasks.md',
+    skill: null,
     tools: ['atlas_read_note', 'atlas_search'],
     output: 'note',
     folder: 'Briefs',
@@ -774,6 +775,81 @@ describe('a rule with a Claude step, through the API (P29-03)', () => {
       },
     });
     expect(new Map([...api.files].map(([path, note]) => [path, note.text]))).toEqual(before);
+  });
+
+  describe('a step that names a skill (#169)', () => {
+    const BY_SKILL = rule({
+      id: 'skilled',
+      name: 'Ask with a skill',
+      when: 'manually',
+      which: 'FROM task WHERE status = done',
+      do: 'claude',
+      skill: 'task-notes',
+      tools: ['atlas_read_note'],
+      output: 'proposals',
+    });
+    const skilled = { ...files, '.atlas/automations/Ask with a skill.md': BY_SKILL };
+    const skillStep = {
+      prompt: '.atlas/skills/task-notes/SKILL.md',
+      skill: 'task-notes',
+      tools: ['atlas_read_note'],
+      output: 'proposals',
+      folder: null,
+      data: null,
+    };
+
+    it('lists it with its skill, and its SKILL.md as the prompt', async () => {
+      const { automations } = bodyOf(await list(vault(skilled))) as {
+        automations: Record<string, unknown>[];
+      };
+      expect(automations.find((automation) => automation['id'] === 'skilled')).toMatchObject({
+        claude: skillStep,
+        action: 'Ask Claude (task-notes) for proposals',
+      });
+    });
+
+    it('dry-runs it with its skill, asking no one', async () => {
+      const markdown = jsonMarkdown();
+      const api = apiFixture({
+        files: skilled,
+        markdown,
+        index: {
+          query: atlasQueryIndex({ files: skilled, markdown }),
+          manifest: async () =>
+            Object.entries(skilled).map(([path, text]) => ({
+              path,
+              modified: 0,
+              size: text.length,
+              type: null,
+              digest: digestOf(text),
+            })),
+        },
+      });
+
+      const response = await dryRun(api, 'skilled');
+
+      expect(response.status).toBe(200);
+      expect(bodyOf(response)).toMatchObject({ plan: { do: 'claude', claude: skillStep } });
+    });
+
+    it('lists a rule that names a skill and a prompt as broken, asking for one', async () => {
+      const both = rule({
+        id: 'both',
+        name: 'Both',
+        when: 'manually',
+        which: 'FROM task',
+        do: 'claude',
+        skill: 'task-notes',
+        prompt: '.atlas/prompts/tasks.md',
+        output: 'proposals',
+      });
+      const { broken } = bodyOf(
+        await list(vault({ ...files, '.atlas/automations/Both.md': both })),
+      ) as { broken: { name: string; problem: string }[] };
+      expect(broken).toContainEqual(
+        expect.objectContaining({ problem: expect.stringMatching(/^Name one: /) }),
+      );
+    });
   });
 
   describe('a step handed the weekly review, dry-run on a Tuesday (review of #539)', () => {

@@ -1,0 +1,61 @@
+<!-- contents: Sync between Macs -->
+    <section id="sync">
+      <h2>Sync between Macs</h2>
+      <p class="sub">Keep one vault the same on each of your Macs through a private GitHub repository. DFAI uses the GitHub login already on the Mac and never stores it.</p>
+      <h3>Before you start (on each Mac)</h3>
+      <ul>
+        <li>In Terminal, run <code>gh auth login</code>, then <code>gh auth setup-git</code>. If they're missing, DFAI says so: <i>“The GitHub command line isn’t logged in. In Terminal, run `gh auth login`, then try again.”</i> (No <code>gh</code> at all: <code>brew install gh</code> first.)</li>
+        <li>The vault must not sit inside another git repository — such as the DFAI code folder. DFAI refuses: <i>“This vault is inside another git repository (…), so DFAI won’t sync it: its notes would be mixed into that project. Move the vault out of that folder first.”</i></li>
+      </ul>
+      <h3>Set it up</h3>
+      <ul>
+        <li>Open the vault you want to sync, then Settings (<kbd>⌘,</kbd>) → <b>Sync</b>. Then one of: <b>Your GitHub repositories</b> — <b>Search by name or owner</b>, then <b>Connect</b>; <b>Or create a new private repository</b> — type a name, <b>Set up sync with GitHub</b>; <b>Or paste an address</b> — <b>Connect existing repo</b>.</li>
+        <li>Whichever you pick, the vault you have open <i>becomes</i> the repository, right where it is. DFAI never makes a subfolder for it, never copies it anywhere and never switches to another vault.</li>
+        <li>Made the repository yourself, say on github.com? Don't create another — use <b>Connect existing repo</b> (or <b>Connect</b> in the list) with its address.</li>
+        <li>The Mac asks first, in an <b>DFAI sync</b> dialog: <i>“Connect this vault to …?”</i> → <b>Connect</b>. Sync follows the repository's default branch, whatever it's called.</li>
+        <li>A repository that already has files is merged with the vault, not swapped for it — nothing is replaced. If both have DFAI settings and they differ, this vault's settings stay in force on the first connect. When all GitHub's version does is add settings this vault lacks, they are added to it and no copy is made; otherwise GitHub's copy is kept under <code>Sync conflicts/atlas/</code> (for example <code>Sync conflicts/atlas/settings (conflict from Studio).md</code>) for you to take what you want from — see <i>When both Macs changed a file</i> below.</li>
+        <li>Sync counts as set up only once the repository exists and the vault has been pushed to it; then Settings → Sync says <i>“Sync set up: this vault now syncs with its GitHub repository.”</i> If creating it fails, the vault stays not set up — fix what the message says and try again; what DFAI already wrote (a <code>.gitignore</code>, a first commit) is reused.</li>
+      </ul>
+      <h3>When set-up is refused</h3>
+      <ul>
+        <li><b>The vault already sends somewhere else</b> (an Obsidian Git vault, say) and you chose a new repository: <i>“This vault already sends to …, so DFAI won’t make a new repository for it. To sync with that one, use Connect existing repo with its address. To use a new one instead, remove the old origin first: in Terminal, in the vault’s folder, run `git remote remove origin`.”</i></li>
+        <li><b>The name really is taken</b> on your GitHub account: <i>“You already have a repository with that name on GitHub. Pick another name, or connect that one by its address.”</i> You only see this when it's true — any other failure says what actually went wrong.</li>
+        <li><b>A merge is half done</b> in the vault's folder: <i>“The vault’s repository is in the middle of a merge. Finish it, then set up sync.”</i></li>
+      </ul>
+      <h3>On your other Mac</h3>
+      <ul>
+        <li>Click the vault's name at the top of the sidebar → <b>Open a vault from GitHub…</b>. Paste the address, then <b>Choose folder…</b>; DFAI copies the vault into that folder and opens the copy.</li>
+        <li>This is for getting a vault you <i>don't</i> have open — never for syncing the one you do (that's Settings → Sync). Pick the open vault, or a folder inside it, and it's refused: <i>“That folder is inside …, the vault you have open, so the copy would land inside it and DFAI would open the copy instead of your notes. To sync this vault with a GitHub repository, use Settings → Sync and connect it there. To open a vault from GitHub, choose a folder outside this one.”</i> (Picking the vault itself starts <i>“… is the vault you have open”</i>; a shortcut or symlink to it is caught too.)</li>
+        <li>An empty repository is refused before anything is copied: <i>“This repository is empty — there’s no vault in it to open. To put the vault you have open in it, use Settings → Sync and connect it there.”</i></li>
+      </ul>
+      <h3>While you work</h3>
+      <ul>
+        <li>Your changes are sent about 30 seconds after you stop — typing, an accepted Claude edit, an automation run, a move — and at least every 5 minutes while you keep working.</li>
+        <li>Every minute DFAI checks for other Macs' changes and brings them in; while you're typing, it waits until you stop. Unsaved typing is never overwritten; an open note reloads as after an outside edit.</li>
+        <li>Adjust both in Settings → Sync: <b>When to send changes</b> and <b>How often to look for other Macs’ changes</b>. <b>Pause sync on this Mac</b> stops it here only; <b>Sync now</b> syncs at once, paused or not.</li>
+        <li>A light at the bottom of the sidebar shows how it stands: <b>Synced</b>, <b>Syncing…</b>, <b>N changes to bring in</b>, <b>N conflicts</b>, <b>Sync failed</b> or <b>Sync paused</b>. Click it for Settings → Sync.</li>
+        <li>Closing the window syncs once more (waiting up to 20 seconds); anything left goes next time the vault opens.</li>
+      </ul>
+      <h3>What syncs</h3>
+      <ul>
+        <li>Everything in the vault: notes, pictures, <code>.atlas</code> (types, views, dashboards, templates, sources, automations and their logs, settings) and <code>Chats/</code>.</li>
+        <li>Not: <a href="#sources">secrets</a> (each Mac's Keychain — set them on each Mac), the index (<code>.atlas-cache/</code>, rebuilt on each Mac), the <a href="#activity">Activity</a> log, and window state.</li>
+        <li>Left out with a warning, and listed in Settings → Sync under <b>Staying on this Mac, not synced</b>:
+          <ul>
+            <li>a file of about 95 MB or more — <i>“… is over GitHub’s 100 MB limit, so it isn’t synced. It stays on this Mac; to share it, make it smaller or keep it outside the vault.”</i></li>
+            <li>a folder that is a git repository of its own — <i>“… is a git repository of its own, so only that folder isn’t synced: it stays on this Mac, and the rest of the vault still syncs. If it doesn’t belong in the vault, move it out.”</i></li>
+            <li>anything of <code>.atlas</code> that a line in your own <code>.gitignore</code> keeps out — <i>“… is left out by a line in this vault’s .gitignore, so it isn’t synced and other Macs won’t get it. DFAI leaves your .gitignore as you wrote it; to sync it, remove that line.”</i> DFAI never edits your lines; removing it is up to you.</li>
+          </ul>
+        </li>
+      </ul>
+      <h3>When both Macs changed a file</h3>
+      <ul>
+        <li>Your version stays in place. The other Mac's is saved beside it as <code>&lt;name&gt; (conflict from &lt;Mac&gt;).md</code>; one of DFAI's own files (under <code>.atlas</code>) goes to <code>Sync conflicts/atlas/</code> instead, so it isn't read as a second live rule or view.</li>
+        <li>Settings → Sync says <i>“Both Macs changed a file. This Mac’s version was kept; the other Mac’s is saved beside it.”</i>, and Activity gets a warning line. Nothing is lost, and git's conflict markers never land in a note.</li>
+        <li><b>DFAI's own files are merged first when they can be.</b> For a markdown file under <code>.atlas</code> — a type, a view, the settings, or the record of the properties DFAI added to its built-in types — DFAI keeps one Mac's file exactly as it is and adds what the other Mac added: a new setting, or a new entry in a map such as a type's properties, copied line for line with its comments. So two Macs that each opened the vault, or ran different versions of DFAI, never leave a copy of a file DFAI wrote by itself. No copy, no warning.</li>
+        <li>This works when at least one of the two Macs did nothing but add: its additions go into the other Mac's file, and whatever else that Mac changed — a property removed, a label reworded — stands. A copy is still made, as above, when both Macs gave a setting different values or added the same one written differently; when neither Mac only added (each also removed, reworded, reordered, restyled or commented something, or added a blank line); when both changed the text under the settings; when the settings are a list or a single value rather than named keys, use YAML anchors (<code>&amp;name</code>, <code>*name</code>), or have Windows (CRLF) line endings; when comments or blank lines follow the last setting, or a <code>---</code> line was changed; and for the record of added properties, when you wrote anything in it — beside its list of keys or inside it, a field of your own — or took a key off it.</li>
+        <li><b>An old copy that adds nothing is cleared.</b> Each sync, after bringing in the other Mac's changes, looks at every copy in <code>Sync conflicts/atlas/</code> and merges it into its live file the same way. When that leaves the live file exactly as it is — every setting and property the copy has is already there, written the same, and nothing else in it differs — and all the live file has beyond the copy is properties DFAI added to a type itself (as <code>.atlas/migrations/type-properties.md</code> records), the copy goes to the Trash, the sync sends its removal to your other Macs, and Activity says <i>“Cleared the conflict copy Sync conflicts/atlas/types/meeting (conflict from Laptop).md: .atlas/types/meeting.md already holds everything in it. It is in the Trash.”</i> A copy that differs in anything — a value, a setting the live file lacks, even a space or the order of its lines — stays for you. So does one that lacks something DFAI didn't add — a property you took off on the other Mac, say, which the copy is the only sign of — and one either file of which can't be read, a copy of a copy, one that changes while DFAI checks it (Activity says so once), and one the sync has only just made. If the Trash won't take a copy, Activity warns you once, and again only if the copy changes.</li>
+      </ul>
+      <div class="note"><b>Automations run on one Mac.</b> <a href="#automations">Automations</a> — scheduled, or set off by a note — run on one Mac only, so two Macs never run the same rule. The first Mac to set up sync gets them; a second Mac connecting later — even through Connect existing repo — leaves them where they are. To move them, turn on <b>Run automations on this Mac</b> in Settings → Sync on the Mac you want.</div>
+      <div class="note"><b>No tokens.</b> DFAI never stores a GitHub token. An address with one in it is refused: <i>“That address has a password or token in it. Use the plain address from GitHub’s Code button: this Mac’s own GitHub login is what signs in.”</i></div>
+    </section>

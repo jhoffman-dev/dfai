@@ -1,0 +1,39 @@
+<!-- contents: Google Calendar -->
+    <section id="google-calendar">
+      <h2>Google Calendar</h2>
+      <p class="sub">DFAI can connect to your Google account so that, once block syncing arrives, your timeblocks show as busy on a calendar of their own. For now you can connect, make that calendar and disconnect.</p>
+      <p>DFAI only ever asks to see and change calendars it made itself — never your main calendar or anyone else's. You sign in in your own browser, and the sign-in is kept in your Mac's Keychain, never in the vault. Nothing in DFAI, and nothing that talks to it, can read the sign-in back.</p>
+      <h3>Before you start: a client ID</h3>
+      <p>Google needs to know which app is asking. Make one in your own <a href="https://console.cloud.google.com/">Google Cloud project</a>, once:</p>
+      <ol class="steps">
+        <li>Turn on the <b>Google Calendar API</b> for the project.</li>
+        <li>On the <b>OAuth consent screen</b>, add yourself and the scope <code>…/auth/calendar.app.created</code>.</li>
+        <li>Under <b>Credentials</b>, create an <b>OAuth client ID</b> of type <b>Desktop app</b>. Copy the client ID (it ends in <code>.apps.googleusercontent.com</code>), and the client secret if Google shows one.</li>
+      </ol>
+      <h3>Connect</h3>
+      <ol class="steps">
+        <li><b>Settings</b> (<kbd>⌘,</kbd>) → <b>Google Calendar</b>. Paste the client ID into <i>OAuth client ID</i>, and the secret, if Google gave you one, into <i>Client secret</i>. Press <b>Connect</b>.</li>
+        <li>Your browser opens Google's sign-in. Pick your account and press <b>Allow</b>. Once DFAI has kept the sign-in, the tab says <i>DFAI is connected to Google Calendar</i>; close it. If it couldn't, the tab says <i>DFAI was not connected</i> and Settings says why. While DFAI waits it says <i>Finish signing in in your browser…</i> — <b>Cancel</b> stops waiting.</li>
+        <li>Back in Settings it says <i>Connected</i>. Press <b>Create “DFAI blocks”</b> to make the calendar blocks will go to. If you'd made it before, choose it in <i>Calendar for blocks</i> instead. It then says <i>Blocks go to DFAI blocks</i>. A calendar made when the app was called Atlas, <i>Atlas blocks</i>, counts as its calendar too: choose it in <i>Calendar for blocks</i>, and DFAI makes no second one.</li>
+      </ol>
+      <p>The client ID and the calendar are saved in the vault's settings, so your other Mac uses the same calendar. Each Mac signs in for itself.</p>
+      <h3>Disconnect</h3>
+      <p>Press <b>Disconnect…</b>, then <b>Disconnect</b>. DFAI forgets the sign-in on this Mac and asks Google to cancel it. The calendar and its events stay on your Google account. If Google can't be reached, DFAI still forgets it and tells you to remove DFAI yourself from your Google Account's third-party access.</p>
+      <p>If another vault on this Mac is connected with the same client ID, DFAI forgets this vault's sign-in but doesn't ask Google to cancel it, because that could disconnect the other vault too. Settings says so; disconnect the other vault as well to end DFAI's access.</p>
+      <h3>If it doesn't connect</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Settings says</th><th scope="col">Do this</th></tr></thead>
+          <tbody>
+            <tr><td><i>access was not allowed</i></td><td>Connect again and press <b>Allow</b>. On a work account where Allow isn't offered, its administrator has to trust the client ID first.</td></tr>
+            <tr><td><i>the calendar permission was left unticked</i></td><td>Connect again and tick the permission to make and change DFAI's own calendars.</td></tr>
+            <tr><td><i>Google no longer accepts DFAI's sign-in</i></td><td>Connect again. If it happens every week, your Cloud project's consent screen is in <b>Testing</b>, where Google ends sign-ins after seven days — publish it to keep them.</td></tr>
+            <tr><td><i>Google does not recognise this client</i></td><td>Check the client ID, and the client secret if Google issued one.</td></tr>
+            <tr><td><i>No answer came back from the browser in time</i></td><td>Connect again and finish signing in within five minutes.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The same sign-in makes Google Docs when you <a href="#export">export a note</a> — the first time, Google asks once more, for files DFAI makes in your Drive.</p>
+      <p>To show your blocks as busy on that calendar, see <a href="#blocks-on-google">Blocks on Google Calendar</a>.</p>
+      <p class="muted">The <a href="#connect">Local API and MCP</a> can only see whether Google Calendar is connected, and read the <a href="#todays-meetings">meeting notes</a> and blocks already in the vault. They can't read your calendar or the sign-in.</p>
+    </section>

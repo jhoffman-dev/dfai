@@ -115,3 +115,58 @@ describe('what A25-01 writes, through the real markdown port', () => {
     expect(properties['status']).toBeNull();
   });
 });
+
+describe('a Claude step’s prompt or skill, through the real markdown port (#169)', () => {
+  const PROMPT_RULE = [
+    '---',
+    'atlas: automation',
+    'name: Meeting actions',
+    'enabled: true',
+    'when: manually',
+    'which: FROM meeting',
+    'do: claude',
+    'prompt: .atlas/prompts/meeting-actions.md # Mara’s wording',
+    'tools: [atlas_read_note]',
+    'output: proposals',
+    '---',
+    '',
+    '# Meeting actions',
+    '',
+  ].join('\n');
+
+  const ruleOf = (text: string): AutomationDraft => {
+    const read = readBack(text);
+    if ('broken' in read) throw new Error(read.broken.problem);
+    return read.rule;
+  };
+  const saved = (text: string, draft: AutomationDraft) => {
+    const { frontmatter, body } = splitFrontmatter(text);
+    return remarkMarkdown.updateFrontmatter(frontmatter, automationFrontmatter(draft)) + body;
+  };
+
+  it('saves a prompt rule, unchanged, byte for byte as it was', () => {
+    expect(saved(PROMPT_RULE, ruleOf(PROMPT_RULE))).toBe(PROMPT_RULE);
+  });
+
+  it('saves a rule moved to a skill with skill: and no prompt:, and reads it back', () => {
+    const rule = ruleOf(PROMPT_RULE);
+    if (rule.action.kind !== 'claude') throw new Error('not a Claude step');
+    const action = {
+      ...rule.action,
+      prompt: '.atlas/skills/meeting-actions/SKILL.md',
+      skill: 'meeting-actions',
+    };
+    const text = saved(PROMPT_RULE, { ...rule, action });
+    expect(text).toContain('skill: meeting-actions');
+    expect(text).not.toContain('prompt:');
+    expect(text.endsWith('\n# Meeting actions\n')).toBe(true);
+    expect(ruleOf(text).action).toEqual(action);
+  });
+
+  it('refuses a hand-written rule that names both, asking for one', () => {
+    const both = PROMPT_RULE.replace('do: claude', 'do: claude\nskill: meeting-actions');
+    expect(readBack(both)).toMatchObject({
+      broken: { problem: expect.stringMatching(/^Name one/) },
+    });
+  });
+});

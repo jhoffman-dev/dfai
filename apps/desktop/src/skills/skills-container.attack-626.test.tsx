@@ -11,6 +11,7 @@ import { fakeVaultFs, VaultAccessError } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { createOverlayStore } from '../overlay-store.ts';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
+import { createAutomationsStore } from '../automations/automations-store.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { SkillsContainer } from './skills-container.tsx';
 
@@ -48,7 +49,12 @@ function countedVault() {
 
 function showTab(fs: ReturnType<typeof fakeVaultFs>) {
   const wiring = {
-    pages: { ports: { fs }, openNote: () => {} },
+    pages: {
+      ports: { fs },
+      openNote: () => {},
+      automations: { store: createAutomationsStore() },
+      skills: { claude: {} },
+    },
     pane: { vault: '/vaults/larkspur', notes: { markdown: remarkMarkdown } },
     overlays: createOverlayStore(),
   } as unknown as PageContainerProps['wiring'];
@@ -102,7 +108,12 @@ describe('SkillsContainer, attacked (#626)', () => {
   it('asks the host nothing until a vault is open', async () => {
     const { fs, calls } = countedVault();
     const wiring = {
-      pages: { ports: { fs }, openNote: () => {} },
+      pages: {
+        ports: { fs },
+        openNote: () => {},
+        automations: { store: createAutomationsStore() },
+        skills: { claude: {} },
+      },
       pane: { vault: null, notes: { markdown: remarkMarkdown } },
       overlays: createOverlayStore(),
     } as unknown as PageContainerProps['wiring'];

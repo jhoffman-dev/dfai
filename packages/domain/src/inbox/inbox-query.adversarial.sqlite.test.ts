@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { correlatedReads } from '../testing/query-plan.ts';
@@ -6,29 +7,27 @@ import { compileInboxQuery } from './inbox.ts';
 /**
  * Adversarial pass on #112 (One Inbox): the Inbox's statement run against the
  * index as the host makes it — the same tables and the same indexes
- * (`apps/desktop/src-tauri/src/index.rs`), which never runs ANALYZE. The
+ * (`apps/desktop/src-tauri/src/index_schema.sql`), which never runs ANALYZE. The
  * statement is asked on every index change, whatever page is open, so what it
  * costs is paid all day.
  */
+/** The index's tables and indexes, from the file the host makes them from (#134). */
+const HOST_SCHEMA = readFileSync(
+  new URL('../../../../apps/desktop/src-tauri/src/index_schema.sql', import.meta.url),
+  'utf8',
+);
+
 function hostIndex() {
   const database = new DatabaseSync(':memory:');
-  database.exec(`
-    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, modified INTEGER NOT NULL);
-    CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
-      value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
-    CREATE INDEX props_path ON props(path);
-    CREATE INDEX props_key ON props(key, value_text);
-    CREATE TABLE relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL,
-      target TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', dst TEXT);
-    CREATE INDEX relations_src ON relations(src, key);
-    CREATE INDEX relations_dst ON relations(dst);
-  `);
+  database.exec(HOST_SCHEMA);
   return database;
 }
 
 /** A vault of `total` notes: a sixth are tasks, an eighth of those still wait, half of them in `Inbox/`. */
 function fill(database: DatabaseSync, total: number): number {
-  const file = database.prepare('INSERT INTO files VALUES (?, ?, ?)');
+  const file = database.prepare(
+    'INSERT INTO files (path, title, modified, size) VALUES (?, ?, ?, 0)',
+  );
   const prop = database.prepare(
     'INSERT INTO props (path, key, idx, value_text) VALUES (?, ?, 0, ?)',
   );
@@ -78,7 +77,9 @@ describe('the Inbox’s statement at the edges of the list', () => {
   const few = (notes: readonly [string, string | null, string | null][]) => {
     const database = hostIndex();
     notes.forEach(([path, type, status], at) => {
-      database.prepare('INSERT INTO files VALUES (?, ?, ?)').run(path, path, at);
+      database
+        .prepare('INSERT INTO files (path, title, modified, size) VALUES (?, ?, ?, 0)')
+        .run(path, path, at);
       const prop = database.prepare(
         'INSERT INTO props (path, key, idx, value_text) VALUES (?, ?, 0, ?)',
       );
@@ -110,7 +111,9 @@ describe('the Inbox’s statement at the edges of the list', () => {
 
   it('orders ties the same way every time: by title, then by path', () => {
     const database = hostIndex();
-    const file = database.prepare('INSERT INTO files VALUES (?, ?, ?)');
+    const file = database.prepare(
+      'INSERT INTO files (path, title, modified, size) VALUES (?, ?, ?, 0)',
+    );
     for (const path of ['Inbox/b.md', 'Inbox/Meetings/a.md', 'Inbox/a.md', 'Inbox/B 2.md']) {
       file.run(path, path.includes('a.md') ? 'Same' : 'same', 5);
     }

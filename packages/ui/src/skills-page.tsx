@@ -4,12 +4,15 @@ import type { SkillDraft, SkillField, SkillProblem } from '@dfai/domain';
 import { Icon } from './icon.tsx';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
+import { SkillAsk, type SkillAskView } from './skill-ask.tsx';
 
 /** A skill as the list shows it: what it says it does, and what is wrong with it, in the domain's words. */
 export interface SkillListing {
   readonly name: string;
   readonly description: string;
   readonly problems: readonly string[];
+  /** The automations that ask with it (#169), by name; none, or left out, when none does. */
+  readonly usedBy?: readonly string[];
 }
 
 /** A prompt note in `.atlas/prompts`, listed beside the skills. */
@@ -89,6 +92,8 @@ export interface SkillsPageProps {
   onReload: () => void;
   onClose: () => void;
   onOpenPrompt: (path: string) => void;
+  /** Asking Claude to draft or improve the skill in the editor; left out where Claude is not wired. */
+  ask?: SkillAskView;
   onShowSidebar?: () => void;
   history?: PageHistory;
 }
@@ -244,6 +249,9 @@ function SkillList({
               {skill.description !== '' && (
                 <span className="skills__description">{skill.description}</span>
               )}
+              {skill.usedBy !== undefined && skill.usedBy.length > 0 && (
+                <span className="skills__used-by">Used by {skill.usedBy.join(', ')}</span>
+              )}
               {skill.problems.map((problem) => (
                 <span key={problem} className="skills__row-problem">
                   {problem}
@@ -316,7 +324,8 @@ function SkillEditor({
   onDelete,
   onReload,
   onClose,
-}: Pick<SkillsPageProps, 'onChange' | 'onSave' | 'onDelete' | 'onReload' | 'onClose'> & {
+  ask,
+}: Pick<SkillsPageProps, 'onChange' | 'onSave' | 'onDelete' | 'onReload' | 'onClose' | 'ask'> & {
   editor: SkillEditorState;
 }) {
   const { draft, problems, mode, saving } = editor;
@@ -392,6 +401,7 @@ function SkillEditor({
           onChange={(event) => change('instructions', event.target.value)}
         />
       </EditorField>
+      {ask !== undefined && <SkillAsk ask={ask} saving={saving} />}
       <div className="skills__actions">
         {mode === 'edit' && (
           <button

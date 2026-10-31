@@ -1,0 +1,33 @@
+<!-- contents: Activity -->
+    <section id="activity">
+      <h2>Activity</h2>
+      <p class="sub">One place to see what DFAI did while you weren't looking, and anything that went wrong — one line per thing.</p>
+      <h3>Where it is</h3>
+      <ul>
+        <li><b>Activity</b> is in the sidebar, under <b>Automations</b>, with a pulse icon. A red badge counts the errors since you last opened it; opening the page clears it.</li>
+      </ul>
+      <h3>The page</h3>
+      <ul>
+        <li>Newest first. Each line: time, level (<b>Info</b>, <b>Warning</b>, <b>Error</b>), kind, and one line of what happened.</li>
+        <li><b>Show</b>: <b>Everything</b>, <b>Warnings and errors</b> or <b>Errors only</b>. Kinds: <b>Automations</b>, <b>Sources</b>, <b>Meetings</b>, <b>API &amp; MCP</b>, <b>Claude</b>, <b>Index</b>, <b>Saves</b>, <b>Sync</b>, <b>Exports</b>, <b>App</b>. Search box: <b>Search the activity…</b></li>
+        <li>Click a line to open its note or source — or the Automations page, for a rule.</li>
+        <li><b>A meeting's lines together.</b> When a meeting has more than one line — it was imported, then linked, then the <a href="#after-a-meeting">After a meeting</a> rule ran on it — they show under the meeting's name, newest first, with <b>Open</b> beside the name. A rule's run joins the meeting only when that meeting is the one note it heard; a run by hand over several meetings stays a line of its own. A meeting with a single line shows as that line.</li>
+      </ul>
+      <h3>What's recorded</h3>
+      <ul>
+        <li><a href="#automations">Automation</a> runs, dry runs and undos — a run a note set off names the note; the rule's own log keeps the detail.</li>
+        <li><a href="#sources">Source</a> refreshes.</li>
+        <li><a href="#meeting-import">Meetings</a> as they arrive: imported, archived as a second copy, or could not be imported and why.</li>
+        <li>Notes written through the Local API or MCP: the route and the note, never the contents.</li>
+        <li>Claude's edits accepted and undone, failed turns, and a chat that couldn't be saved to <code>Chats/</code>, in fixed wording — never your question. A line never names a chat note, since its name is the start of your question: it says “a chat note” instead. So do the notices about links left, archiving and kept edits.</li>
+        <li>Index rebuilds and failures.</li>
+        <li><a href="#export">Exports</a>: what was exported, in which format, and where it went — or why it couldn't be.</li>
+        <li>Each <a href="#sync">sync</a> — what it saved, brought in and sent — plus conflicts, files left out and failures.</li>
+        <li>Saves a note gives up on; edits kept on screen after a failed save show as a warning.</li>
+        <li>Writes a screen gives up on, under <b>Saves</b>: an edit in a view or dashboard, a view saved, a query added to a dashboard, a card added, an image, an artifact or its copy, a setting, the Local API's switch and token, a weekly review action, a task planned on the calendar or its Undo, a proposal answered, a note filed from the Inbox, <b>Make task</b> or its Undo, and a term added or its spellings changed. One line each. Something refused before anything is written — a name already taken, a file that isn't an image, a block changed since — isn't recorded; the screen says why.</li>
+        <li>Every red notice, and every warning or error said in the <a href="#undo">box at the bottom right</a> — an Undo refused, say. One failure is one line.</li>
+      </ul>
+      <p>Not recorded: typing, autosaves, reads, note contents, secrets, folder paths, or the “update links?” offer.</p>
+      <h3>Where it's kept</h3>
+      <p>On this Mac, in DFAI's data folder — one file per vault, never in the vault. About 30 days, and no more than 5 MB; the oldest lines go first. It doesn't <a href="#sync">sync</a>.</p>
+    </section>

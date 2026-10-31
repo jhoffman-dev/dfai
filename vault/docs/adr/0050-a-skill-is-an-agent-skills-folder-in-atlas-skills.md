@@ -106,7 +106,8 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
 
 4. **`.atlas/prompts` is not migrated.** Prompt notes keep working exactly as
    before; a rule's `prompt:` is unchanged. Letting a rule name a `skill:`
-   instead is the third pull request.
+   instead is the third pull request, recorded in ADR-0028's amendment of
+   2026-10-28.
 
 5. **Skills are a sectioned path.** `.atlas/skills` joins
    `SECTIONED_ATLAS_PATHS`, so a skill is not in the sidebar, Pages, search,
@@ -132,6 +133,38 @@ can be copied into Claude Code or uploaded to Claude without being rewritten.
    `atlas_read_skill`. A name is compared with the folders listed and never
    joined into a path. ADR-0016's addendum for #169 says why making, editing
    and deleting stay in the app.
+
+8. **The chat asks with a skill only the person attached** (fourth pull
+   request). A picker by the box, or `/name` at the start of a message,
+   attaches one; it shows as a chip whose × takes it out of the next turn.
+   The model is never shown the vault's skills to choose from, so a note or a
+   tool result cannot bring one in. The skill is read again for every turn
+   (`readSkillToUse`, shared with automations) and goes into the system
+   prompt after DFAI's own rules, which still hold, inside a
+   `<chosen_skill>` tag that its text, a note's or a tool result's can neither
+   open nor close (`neutralizeFraming`). A skill with a problem, or over the
+   run cap measured as `skillRunProblem` measures it, is refused before
+   Claude is asked; the chip and the turn say why. A `/name` question is
+   shown as typed and holds the chat busy while its skill is read, so a
+   second send is refused and a past chat is not opened meanwhile; New chat
+   meanwhile leaves it with the chat it was asked in, as it leaves any
+   question still being answered. It counts as a turn begun from the
+   start, so a past chat picked before it is not shown over it, and it owns
+   the turn's Stop: Stop during the read frees the chat at once, keeps the
+   question as typed, and the read, landing late, attaches nothing and asks
+   nothing. A turn stopped before the model is asked asks nothing and keeps
+   nothing, so no "Used the skill" line is written for it. While the
+   picker's skills are being read it says "Reading skills…", and Enter holds
+   a `/word` rather than send it. A `/word` is the question as typed when
+   no skill is called that or the skills cannot be read. A host refusal is
+   "could not be read"; any other error is a bug and is not dressed as one. The chat note records
+   "Used the skill <name>" with each answer. A skill is **not kept with a
+   chat**: a reopened chat starts without one (restoring it would mean a new
+   chat-note key read back on open, more than v1 needs). The picker reads the
+   skills only once it is first opened, through the Skills page's own read.
+   The API and MCP need nothing new: a chat is the app's, and a client
+   already reads a skill's instructions (`atlas_read_skill`) to use as it
+   likes.
 
 ## James to confirm
 

@@ -1,0 +1,51 @@
+<!-- contents: Tags -->
+    <section id="tags">
+      <h2>Tags</h2>
+      <p class="sub">A tag is plain text in the note — <code>#idea</code> — read the same way when it is drawn, counted, clicked and renamed.</p>
+      <h3>Write one</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">Is</th></tr></thead>
+          <tbody>
+            <tr><td><code>#idea</code></td><td>The tag <i>idea</i>.</td></tr>
+            <tr><td><code>#tag me#</code></td><td>A tag of several words, closed by a <code>#</code> later on the same line, as Bear writes it.</td></tr>
+            <tr><td><code>#area/topic</code></td><td>A nested tag: <i>topic</i> under <i>area</i>. Nest as deep as you like.</td></tr>
+            <tr><td><code># Title</code></td><td>A heading, not a tag — the space makes the difference.</td></tr>
+            <tr><td><code>tags: [idea, area/topic]</code></td><td>Tags in the note's frontmatter count too, with or without the <code>#</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>A tag needs a letter in it: <code>#1</code> stays a number. It is words of letters, numbers, <code>_</code> or <code>-</code>.</li>
+        <li>A tag, and each part and word of it, can't start or end with <code>_</code>: <code>#my_tag</code> is fine, <code>#_draft_</code> is no tag.</li>
+        <li>A one-letter word doesn't close a tag of several words, because its <code>#</code> is <code>C#</code> or <code>F#</code>: <code>#todo fix the F# build</code> is the tag <i>todo</i>.</li>
+        <li>The <code>#</code> must start the word: <code>C#</code>, <code>issue#12</code> and a link's <code>#heading</code> are not tags, and neither is anything in code. Write <code>\#</code> to keep a <code>#</code> as plain text.</li>
+        <li><code>#Idea</code> and <code>#idea</code> are one tag, shown as it was first spelled.</li>
+      </ul>
+      <h3>Suggestions as you type</h3>
+      <ul>
+        <li>After <code>#</code> and a letter, a list offers your tags with how often each is used. The tag you typed comes first — the one of that name, or <b>Create #…</b> if it is new — then longer and nested tags that match.</li>
+        <li><kbd>↓</kbd> <kbd>↑</kbd> to choose another, <kbd>Return</kbd> or <kbd>Tab</kbd> to write it, <kbd>Esc</kbd> to close the list. For a new single word you can just keep typing.</li>
+      </ul>
+      <h3>The Tags page</h3>
+      <ul>
+        <li>Tags are highlighted in notes and on feed cards; click one to open it on the <b>Tags</b> page. <b>Tags</b> is also in the sidebar, under <b>Graph</b>.</li>
+        <li>The page lists every tag as a tree, nested tags under their parent, each with its count of uses. A parent's count includes its children's. Archived notes aren't counted. Sort by <b>Name</b> or <b>Frequency</b>.</li>
+        <li>Choose a tag to see the notes that use it, or any tag under it, with how many times; click one to open it.</li>
+        <li>There is nothing to clean up: a tag no note uses any more disappears from the list on its own.</li>
+      </ul>
+      <h3>Rename or merge</h3>
+      <ul>
+        <li>Choose a tag, then <b>Rename</b>. Type the <b>New name</b> and <b>Preview</b> lists the files that will change and how many uses in each. The button, now <b>Rename <i>n</i> uses</b>, changes it in every note, in the text and in <code>tags:</code> alike, touching nothing else in the file.</li>
+        <li>Tags nested under it follow: renaming <code>#para</code> to <code>#area</code> makes <code>#para/resource</code> into <code>#area/resource</code>.</li>
+        <li>If the new name is already a tag, the button reads <b>Merge into #…</b> and the two become one tag. A tag used only as the parent of others counts: renaming to <code>#beta</code> when <code>#beta/y</code> is written merges too.</li>
+        <li>Renaming to the same name with other capitals makes every use spelled the same way.</li>
+        <li>A rename reaches archived notes too, though the page doesn't count them.</li>
+        <li>A tag can't be moved inside itself (<code>#para</code> to <code>#para/old</code>), and a name that breaks the rules above is refused with the reason.</li>
+        <li>A new name of several words can't end in a one-letter word, since its closing <code>#</code> would read as <code>C#</code> does. <code>plan a</code> is refused: <i>“A tag of several words can’t end in a one-letter word: #plan a# would read back as a shorter tag.”</i></li>
+        <li>Where the new name, closed with its <code>#</code>, would run into what follows it — <code>#idea_</code> or <code>#idea#x</code> renamed to <code>my tag</code> — that note keeps the old name. The preview lists them after <i>“1 note keeps #idea:”</i>, each with why, such as <i>“#my tag# can’t be written right before “_” and still read back as that tag.”</i></li>
+        <li>If another rename, in the app or over the API, has just made the new name a tag, the rename is refused at the last moment rather than merging unasked: <i>“#… is in use already, so the rename would merge into it.”</i> <b>Preview</b> again: the button will then read <b>Merge into #…</b>.</li>
+        <li>A note with typing not yet saved is left alone; the message after the rename names it, so you can rename again once it is saved.</li>
+      </ul>
+      <div class="note"><b>Filtering by tag.</b> An <a href="#queries">DFAI query</a> finds notes by tag, written in the text or in <code>tags:</code> alike: <b>Tag</b> in the builder, or <code>tag = #idea</code> as text, which also finds the tags nested under it. A type's own view filters only by a frontmatter <code>tags:</code> property, like any other property.</div>
+    </section>

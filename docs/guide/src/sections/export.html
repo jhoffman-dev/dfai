@@ -1,0 +1,41 @@
+<!-- contents: Exporting notes -->
+    <section id="export">
+      <h2>Exporting notes</h2>
+      <p class="sub">Take a note — or a meeting and its transcript — out of DFAI as Markdown, a PDF or a Google Doc. Exporting only reads; it never changes the note.</p>
+      <h3>Start one</h3>
+      <ul>
+        <li>A note's <b>…</b> menu → <b>Export…</b>, or the same in the <a href="#peek">peek's</a> <b>…</b> menu.</li>
+        <li><kbd>⌘K</kbd> → <b>Export…</b>, for the note on screen — or the peeked one.</li>
+        <li>Several at once: in a view or table, press <b>Select</b>, tick the notes, then <b>Export N notes…</b> on the bar — see <a href="#views">Act on several rows</a>.</li>
+      </ul>
+      <h3>Pick a format</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Format</th><th scope="col">What you get</th></tr></thead>
+          <tbody>
+            <tr><td><b>Markdown, as is</b></td><td>The file exactly as it is, byte for byte. Its pictures are copied to a <i>&lt;name&gt; attachments</i> folder beside it.</td></tr>
+            <tr><td><b>Markdown, standalone</b></td><td>Reads in any tool. A <code>[[link]]</code> becomes its plain words — or, when the notes it names are exported with it, a relative link to their files. Embedded notes and blocks are written in as quotes, under <i>From &lt;note&gt;</i>. Pictures are copied; callouts stay; Obsidian block ids like <code>^t0001</code> are dropped. Tick <b>Keep the properties as frontmatter</b> to keep them at the top.</td></tr>
+            <tr><td><b>PDF</b></td><td>The note as it reads in DFAI: title, a summary of its properties, the text, tables, checklists and pictures, in the light theme on US Letter pages. A table row or a line is never cut across two pages. A meeting's transcript keeps each speaker's turn with its time.</td></tr>
+            <tr><td><b>Google Doc</b></td><td>A real Google Doc in your Drive, named as the note, in a folder called <i>DFAI exports</i>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Choose where</h3>
+      <ol class="steps">
+        <li>Press <b>Export…</b>. For a file, the Mac's own save dialog asks where it goes.</li>
+        <li>For several notes, pick a folder: DFAI makes a new dated folder in it, <i>Exported notes 2026-10-21</i>, with the notes side by side and their pictures shared in <code>attachments/</code>.</li>
+        <li>Cancel the save dialog and nothing is written; the export dialog stays open to try again.</li>
+      </ol>
+      <p>Afterwards a notice says where it went — for one Google Doc, with <b>Open in Google Docs</b>. <a href="#activity">Activity</a> records it under <b>Exports</b>.</p>
+      <h3>Google Docs</h3>
+      <p>DFAI uses the <a href="#google-calendar">Google Calendar</a> sign-in from Settings → <b>Google Calendar</b>. The first time, your browser asks once to allow one more permission: making and changing only the files DFAI creates (<code>drive.file</code>) — never anything else in your Drive. The sign-in stays in your Mac's Keychain. If Google isn't connected yet, DFAI says to connect in Settings → <b>Google Calendar</b> first.</p>
+      <h3>When it can't</h3>
+      <ul>
+        <li>The reason is said: the folder can't be written to, Google isn't connected or wasn't allowed, you're offline, or it's too large — a PDF page over 64 MB, or a Doc over 45 MB with its pictures.</li>
+        <li>Pictures that can't be found, or are too big, are left out, and the notice counts them.</li>
+        <li>A PDF or a Google Doc fetches nothing from the web: a picture on the web becomes its words, linked to its address, and is counted as left out too.</li>
+        <li>An export never goes inside the vault, and never into a folder that's already there: if <i>Kickoff attachments</i> exists beside the file, the pictures go to <i>Kickoff attachments 2</i>. If an export fails part-way, what it made is taken away again; nothing that was there before is touched.</li>
+        <li>If one of several Google Docs fails, the ones already made are listed in Activity, and the notice opens the first. Google being busy for a moment is tried again a few times first.</li>
+      </ul>
+      <p class="muted">Claude and scripts can read a note's Markdown through the <a href="#connect">Local API and MCP</a>; PDFs and Google Docs are made only in the app.</p>
+    </section>

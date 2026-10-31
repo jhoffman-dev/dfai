@@ -1,0 +1,57 @@
+<!-- contents: Linked pages -->
+    <section id="linked-pages">
+      <h2>Linked pages</h2>
+      <p class="sub">Open a person, a company, a project, an area or a meeting and the page shows what hangs off it — between its properties and its text. Nothing is written into the note: the sections come from its type, so every page you already have has them.</p>
+      <h3>What each page shows</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Page</th><th>Sections</th></tr></thead>
+          <tbody>
+            <tr><td><b>Person</b></td><td><b>Meetings</b> they were in · <b>Waiting for</b> — tasks at Waiting whose <i>Waiting on</i> is them · <b>Open tasks</b> linked with them · <b>Decisions</b> · <b>Linked notes</b> — everything else linked with them</td></tr>
+            <tr><td><b>Company</b></td><td><b>People</b> linked with it — by their <i>Company</i>, or by the company's own <i>Employees</i> or <i>CEO</i> · <b>Meetings</b> held with it · <b>Waiting for</b> — what you wait on from those people · <b>Open tasks</b> linked with it or about those people · <b>Projects</b> · <b>Decisions</b> · <b>Linked notes</b></td></tr>
+            <tr><td><b>Project</b>, <b>Area</b></td><td><b>Waiting for</b> · <b>Open tasks</b> filed under it · an area's <b>Projects</b> · <b>Meetings</b> · <b>Decisions</b> · <b>Linked notes</b> (an area's own sections are an Area-type note's; a project note with PARA = Area shows a project's for now)</td></tr>
+            <tr><td><b>Meeting</b></td><td><b>People</b> with their company · <b>Companies</b> · <b>Tasks</b> and <b>Decisions</b> linked with it — the ones that came from it among them</td></tr>
+            <tr><td><b>Task</b>, <b>Decision</b></td><td><b>Meetings</b> linked with it — the one it came from among them</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>Every row opens its note. A heading shows how many it holds; a section with nothing is one quiet line, <i>none</i>.</li>
+        <li>A section opens with its first 8 rows; <b>Show <i>n</i> more</b> brings the rest, <b>Show fewer</b> puts them away. A section holds 200 at most — past that the count reads <b>200+</b>, and under the rows: <i>These are the first 200; there are more.</i></li>
+        <li>The sections are live: a meeting that arrives or a task ticked off anywhere shows up as soon as the index has it.</li>
+        <li>Archived notes are left out, as everywhere. A page never lists itself.</li>
+        <li><b>Nothing linked is dropped.</b> Meetings, and a project's Open tasks, Meetings and Decisions, hold only what names the page in the property made for it — a meeting's <b>People</b>, a task's <b>Project</b>. A meeting that only mentions the person in its text, or a task that links the project somewhere other than <b>Project</b>, is under <b>Linked notes</b> instead.</li>
+        <li>If the sections can't be read at all, the page says so in one line — <i>“What is linked with this page could not be read just now.”</i> — rather than looking as if nothing were linked.</li>
+      </ul>
+      <h3>30 days, or all</h3>
+      <ul>
+        <li><b>Meetings</b>, <b>Decisions</b> and <b>Linked notes</b> start on the last <b>30 days</b>; <b>All</b> beside the heading shows everything. An empty one says <i>none in the last 30 days</i>, with All still there.</li>
+        <li>Your choice is remembered for that kind of page on this Mac: turn Meetings to All on one person and every person's Meetings open on All.</li>
+        <li>Meetings and decisions are dated by their <code>date</code>; linked notes by when they last changed. A meeting or decision with no date shows under 30 days too, after the dated ones. Tasks and waiting-fors have no such switch — open work doesn't expire.</li>
+      </ul>
+      <h3>Waiting for, and how long</h3>
+      <ul>
+        <li>Each waiting-for says how long it has waited — <i>waiting 12 days</i> — longest first.</li>
+        <li>The count runs from when the task last changed, the same measure the <a href="#tasks">weekly review</a> uses: DFAI keeps no "waiting since" date, so editing the task starts the count again.</li>
+        <li>A waiting-for is listed once. On a person's page it is under Waiting for, not again under Open tasks.</li>
+      </ul>
+      <h3>Open tasks</h3>
+      <ul>
+        <li>Grouped by status with what to do first on top: <b>Next Action</b>, <b>In Progress</b>, <b>Inbox</b>, <b>Backlog</b>, then Someday and Longterm. Finished tasks are left out. Click a status to fold it.</li>
+        <li>An <b>active</b> project with open tasks and none at Next Action or In Progress says so over the list: <i>“No next action: none of its 3 open tasks is Next Action or In Progress.”</i> It is the <a href="#tasks">weekly review's</a> rule, so a paused or finished project, one with no status, and an area never say it. Nor does a project with more than 200 open tasks, where the list was cut.</li>
+      </ul>
+      <h3>Meetings and tasks, both ways</h3>
+      <ul>
+        <li>A meeting lists the tasks and decisions linked with it, and each of those shows the meeting under <b>Meetings</b>. Any link between the two counts, whichever note holds it: the task's <code>source</code> citing a line of the meeting, a <code>meeting</code> property, the meeting listing the task, or a link in either one's text.</li>
+        <li>So the tasks that came from a meeting are there, and so is a task that merely mentions it — and a task you make by hand joins a meeting the moment either links the other.</li>
+      </ul>
+      <h3>What decides the sections</h3>
+      <ul>
+        <li>The page's <code>type</code>, and what your types declare. A person's meetings are the ones whose <b>People</b> relation holds them; if your Meeting type has no relation to Person, any link from the meeting counts instead.</li>
+        <li><b>Waiting for</b> needs a Task type with a <b>Waiting</b> status and a <b>Waiting on</b> relation — see <a href="#tasks">Move your tasks to GTD</a>. Without them the page shows open tasks only.</li>
+        <li><b>Linked notes</b> lists notes of your other types, and what a section's own type links outside its property. A note with no type isn't there — it is under <b>Links</b> at the foot of the page, as before.</li>
+        <li>A company's Meetings are the ones whose <b>Companies</b> holds it. A meeting only its people were in isn't there.</li>
+        <li>A <a href="#templates">template</a> shows no sections: it isn't a page of its type.</li>
+        <li>To list something else on one page, add a <a href="#query-blocks">query block</a>; it sits in the note's text beside these.</li>
+      </ul>
+    </section>

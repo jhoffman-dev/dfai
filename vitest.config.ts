@@ -87,11 +87,12 @@ export default defineConfig({
       include: [
         'packages/*/src/**/*.{ts,tsx}',
         'apps/*/src/**/*.{ts,tsx}',
+        'tools/guide/{assemble,sources}.ts',
         'tools/n8n/*.ts',
         'tools/notion-import/*.ts',
         'tools/release/*.ts',
       ],
-      exclude: ['**/*.test.{ts,tsx}', '**/index.ts', '**/*.d.ts'],
+      exclude: ['**/*.test.{ts,tsx}', '**/*.test-support.ts', '**/index.ts', '**/*.d.ts'],
       // Repo-wide floor. The high-impact slice named in COVERAGE.md is held higher,
       // with its own threshold added as each module lands.
       thresholds: {

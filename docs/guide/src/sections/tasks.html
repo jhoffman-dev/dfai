@@ -1,0 +1,165 @@
+<!-- contents: Tasks (GTD) and daily notes -->
+    <section id="tasks">
+      <h2>Tasks (GTD) and daily notes</h2>
+      <p class="sub">Tasks follow GTD: a task is in exactly one of eight statuses, from <b>Inbox</b> to <b>Archive</b>. Capture lands in the Inbox; deciding what a task is moves it on.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Status</th><th>What it means</th></tr></thead>
+          <tbody>
+            <tr><td><b>Inbox</b></td><td>Captured, not yet decided on. Every new task starts here.</td></tr>
+            <tr><td><b>Backlog</b></td><td>Worth doing, not now — so <b>Next Action</b> stays short.</td></tr>
+            <tr><td><b>Next Action</b></td><td>The next thing to do, ready to be picked up.</td></tr>
+            <tr><td><b>In Progress</b></td><td>Started; it may take days.</td></tr>
+            <tr><td><b>Waiting</b></td><td>Waiting on someone or something. Saying who, in <b>Waiting on</b>, is optional.</td></tr>
+            <tr><td><b>Someday</b></td><td>An idea kept for later.</td></tr>
+            <tr><td><b>Longterm</b></td><td>Real, but a long way off.</td></tr>
+            <tr><td><b>Archive</b></td><td>Finished. Ticking a task puts it here, with the day.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>A task's properties</h3>
+      <ul>
+        <li><b>Waiting on</b> says who a task waits on, and is always optional. <b>Waiting</b> is a status like any other: drag a task there on a board, pick it in the properties panel, or have an automation or Claude set it, and nothing asks who. A status written <code>waiting </code> or <code>[waiting]</code> is Waiting too, and is saved as <code>waiting</code>.</li>
+        <li><b>Contexts</b> — where it can be done (<i>@phone</i>, <i>@errands</i>); add your own options in <a href="#edit-type">Edit type</a>.</li>
+        <li><b>Defer until</b> — a day before which it stays out of <b>Next actions</b>. <b>Due</b> — when it must be done.</li>
+        <li><b>Estimate (minutes)</b> — what <a href="#timeblocking">timeblocks</a> are measured against — <b>Source</b> — where it came from — and <b>Project</b>, filing it under a <a href="#para">project or an area</a>.</li>
+        <li><b>Completed</b> is written for you: the day a task was finished.</li>
+      </ul>
+      <h3>Tick it off</h3>
+      <ul>
+        <li>Every task shows a <b>checkbox</b> in tables, lists, boards, galleries and feeds. Ticking moves it to <b>Archive</b> and writes today as <b>Completed</b>; unticking puts back the status it had and takes the day away. (Unticking after a restart, when DFAI no longer remembers, puts it at <b>Next Action</b>.)</li>
+        <li>A task made already in <b>Archive</b> — from a board's Archive column, say — is given today as <b>Completed</b> too.</li>
+        <li>Recurring tasks roll on to their next date when ticked, or when dragged into Archive on a board, and go back to <b>Next Action</b>.</li>
+      </ul>
+      <h3>Checklists and progress</h3>
+      <p>A task that takes days stays <b>In Progress</b>, and its steps are a checklist in its text — <code>- [ ]</code> lines, typed or made with <kbd>/</kbd> → <b>Task list</b>.</p>
+      <ul>
+        <li><b>Progress</b> is the share of boxes ticked: a bar and a percentage on its card on a board, its row in a list, and under its name in a table. 2 of 5 ticked is <b>40%</b>; it reads <b>100%</b> only when every box is ticked. Nested boxes and boxes in a quote count; a note with no box shows no bar.</li>
+        <li>Ask for it in a query: <code>FROM task WHERE progress &gt;= 50 SORT BY progress DESC</code>, or a project's with <code>project.progress</code>. It is worked out from the file whenever the note is saved, so rebuilding the index gives the same numbers. A type with a <b>Progress</b> property of its own keeps that instead, and draws no bar.</li>
+      </ul>
+      <h3>Make a line its own task</h3>
+      <p>When a step grows into a task of its own, click into its line and press <b>Make task</b> after its words, or <kbd>⇧⌘↩</kbd>.</p>
+      <ul>
+        <li>A task named by the line is made in <code>Tasks/&lt;year&gt;/&lt;month&gt;</code>, its <a href="#home-folders">home folder</a>, in the <b>Inbox</b> — or <b>Archive</b>, with today as Completed, if the line was ticked. Its <b>Source</b> links back to the line, and its <b>Project</b> is the note's project (or the note itself, when it is a project or an area).</li>
+        <li>Nothing the line said is lost. A line of plain words becomes a link to the task that reads the same — <i>Order chairs</i> stays <i>Order chairs</i>, even when the file had to be named differently. A line with a link, a tag, code or bold in it keeps all of that after the new link, and the new task starts with the line in its text too, so the person it mentions and its tags are linked from the task as well.</li>
+        <li>The line keeps its box, and the lines under it stay. The list it is in is written again, so a list written with <code>*</code> or numbers comes back with <code>-</code> — the same as typing in it would. The rest of the note is untouched.</li>
+        <li>A line that is a task already — it starts with a link to one — isn't made a task again: <i>That line is the task “Order chairs” already.</i> A very long line's task gets a name cut short to fit a file name.</li>
+        <li>The <a href="#undo">box at the bottom right</a> says <i>“Order chairs” is a task now.</i> with <b>Open</b> and <b>Undo</b>; it goes by itself after 5 seconds, and waits while the pointer or the focus is on it. <b>Undo</b> puts the line back exactly as it was and sends the task to the Trash, in one step — unless either changed since, which a line under the page's bar says until you dismiss it. So does a line that could not be made a task. <kbd>⌘Z</kbd> in the note doesn't take a promotion back: a note read again from its file is never a step to undo.</li>
+        <li>Typing in the note is saved first. A line that is empty can't be made a task, and a template's lines aren't offered.</li>
+      </ul>
+      <h3>The GTD views</h3>
+      <ul>
+        <li><b>Inbox</b> — tasks still to decide on. <b>Next actions</b> — what can be done now, leaving out anything deferred to a later day until that day comes. <b>Waiting</b> — grouped by who it waits on. <b>Someday and Longterm</b> — a board of the two; move a card between them with its <b>Move to…</b>.</li>
+        <li>They are ordinary <a href="#queries">query views</a> in <code>.atlas/views</code>, added when your tasks move to GTD. A view of yours with the same name is never replaced.</li>
+      </ul>
+      <h3 id="query-view-tasks">Act on tasks from a query view</h3>
+      <p>In a saved query view that lists tasks alone — <code>FROM task</code>, as every GTD view does — each row, in a list, a table or on a board, does what a <a href="#today">Today</a> row does, and writes the same change to the file:</p>
+      <ul>
+        <li><b>The box</b> finishes the task: Archive, with today as Completed. A repeating task rolls on to its next day instead — its <code>recurrence</code> may be written as a list of one, <code>[every week]</code>; a list of two rules is no rule, so that task just finishes, and a task chosen for today stops being chosen. Untick a finished one and it goes back to Next Action.</li>
+        <li><b>Move to…</b> sets any of the eight statuses. Archive there is the same as ticking the box.</li>
+        <li><b>Today</b> chooses the task for today, and is highlighted while it is chosen; press it again to take it off. It shows where the Task type keeps a Chosen for date, and not on a task whose Chosen for holds words of your own.</li>
+        <li>The row changes the moment you act, and takes nothing else until the file is read back. The <a href="#undo">box at the bottom right</a> says what changed, with <b>Undo</b>.</li>
+        <li>A change is made only while the task still says what its row showed. If the file changed since — edited elsewhere — nothing is written: the row says <i>This task has changed since the page read it</i>, with <b>Try again</b>. Try again makes the same change, on the day you press it, while the row still shows the task as it did; once the view shows the task as it changed, Try again lets the message go and does nothing, so a repeating task ticked elsewhere meanwhile is never rolled on twice. A write that fails is said on the row the same way.</li>
+        <li>Everything is reachable with <kbd>Tab</kbd>: <kbd>Space</kbd> ticks the box, and <kbd>Enter</kbd> presses Today or opens Move to…, whose statuses the arrow keys walk. The focus stays on the box while the tick is written, and when the task leaves the view — ticked out of Next actions — it moves to the row under it, or the one above when it was the last.</li>
+        <li>A view of several types (<code>FROM task, project</code>), the Query page and a <a href="#query-blocks">query block</a> in a note stay look-only. A board's cards are moved with Move to…, not dragged.</li>
+      </ul>
+      <h3 id="today">Today</h3>
+      <p><b>Today</b> at the top of the sidebar — or <kbd>⌘K</kbd> → <b>Today</b> — is the morning page: what needs you today, on one screen. It shows once your vault has tasks, and needs no saved view. Each heading carries its count, and a task is listed once, in the first section that claims it — so an In Progress task due yesterday is under Overdue only, and the counts add up.</p>
+      <ul>
+        <li><b>Chosen for today</b> — what you picked to do today, at the top, whatever its status: an In Progress task you chose is here, not under In progress. Press <b>Today</b> on any row to choose it, and press it again — it's highlighted while chosen — to take it off. The earliest due first, then by name.</li>
+        <li><b>Carried over</b> — what you chose on an earlier day and didn't finish. It shows only when there's something in it. <b>Keep</b> chooses the task for today; <b>Drop</b> lets the choice go, and the task goes back to its usual section. Each says the day it was chosen for.</li>
+        <li><b>Overdue</b> — still open and due before today, the earliest first. <b>Due today</b> — due today. Both are only said of open work: Someday and Longterm promise no day.</li>
+        <li><b>Back from deferral</b> — tasks whose <b>Defer until</b> is today, in any status but Archive (Someday and Longterm included): what you put off until now. An Inbox, Backlog, Someday or Longterm task whose day has already passed is listed here too — nothing else on the page would show it — and stays until you deal with it or put it off again. Each says the day it was deferred until.</li>
+        <li><b>In progress</b> — what is under way.</li>
+        <li><b>Next actions</b> — grouped by project, each project's name opening it, with <b>No project</b> last.</li>
+        <li><b>Waiting</b> — grouped by who it waits on, the longest wait first, each with its days: <i>Quote from Larkspur — 4 days since last change</i>. The days are counted from the task's file last changing, in whole days — DFAI keeps no “waiting since”, so any edit to the task starts its count again.</li>
+      </ul>
+      <p>A task <b>deferred</b> to a later day is in no section until that day. Above the sections: the <b>Inbox</b> with its count, <b>Stalled projects</b> — active projects with nothing next, which opens the <a href="#tasks">weekly review</a> — and <b>Open today's note</b> (<kbd>⇧⌘D</kbd>). The day is your Mac's own date, and turns over at midnight where you are: a page left open overnight shows the new day within a minute, or as soon as you look at the window again.</p>
+      <p>A choice is for one day. Choosing a task writes the day into its note — <code>focus: 2026-10-28</code>, shown as <b>Chosen for</b> — and taking it off removes the line again, so the note goes back to exactly what it was. Nothing is written at midnight: the next morning, yesterday's choices are under <b>Carried over</b> until you keep or drop them. Ticking a task done ends its choice. That includes a repeating task that rolls on to its next date, so it doesn't sit under Chosen looking as if the tick did nothing; Undo puts the day back. A task chosen for a later day says <i>Chosen for 2026-11-02</i> in its usual section; <b>Today</b> moves the choice to today. <code>focus = @today</code> in a <a href="#queries">query</a> lists what's chosen today. The Task type gets <b>Chosen for</b> by itself the first time the vault opens. If your Task type already has a property called <code>focus</code> of another kind, or you delete it, DFAI leaves it alone and doesn't add it back, and Today offers no choosing at all: no Today button, no Chosen for today or Carried over. A task whose <code>focus</code> holds something other than one day (words, a link, several dates) is never treated as chosen, and choosing never writes over it.</p>
+      <p>Each row shows the task's project, contexts and due date, opens from its name, and has:</p>
+      <ul>
+        <li><b>Today</b> — choose the task for today, or take it off. On a row under Carried over, <b>Keep</b> and <b>Drop</b> instead.</li>
+        <li><b>A done box</b> — ticks the task as a type's view does: finished and dated today, or a repeating task rolled on to its next date.</li>
+        <li><b>Move to…</b> any other status, <b>Waiting</b> included — it never asks who.</li>
+        <li><b>+1d</b> and <b>+7d</b> — defer until tomorrow, or for a week. The task leaves the page and comes back that day.</li>
+      </ul>
+      <p><b>From the keyboard</b>, with a row's done box focused (<kbd>Tab</kbd> to it, or click it): <kbd>J</kbd> <kbd>K</kbd> or <kbd>↓</kbd> <kbd>↑</kbd> move to the row below or above, across sections, and the focused row is tinted; <kbd>Return</kbd> opens the note; <kbd>X</kbd> ticks it done; <kbd>T</kbd> presses its <b>Today</b> (<b>Keep</b>, under Carried over); <kbd>D</kbd> defers it a day, as <b>+1d</b>; <kbd>N</kbd> <kbd>W</kbd> <kbd>S</kbd> move it to Next Action, Waiting or Someday; <kbd>M</kbd> opens <b>Move to…</b>; and <kbd>U</kbd> (or <kbd>⌘Z</kbd>) takes back the last change, the row it brings back taking the focus again — once the change before it has been read back, so it never takes back an older one. When a row leaves the page, or moves to another section — chosen for today, say — the focus goes on to the row that was next. A strip above the sections lists the keys. They are letters inside a field, a menu or a dialog, never act with <kbd>⌘</kbd>, <kbd>⌃</kbd> or <kbd>⌥</kbd> held (but <kbd>⌘Z</kbd>), and wait while a row's controls do.</p>
+      <p>The page updates in place. A row acts on what it showed you: if the task has changed since the page read it — ticked in another view, say — the action is refused and says so, and nothing is written. A row you have just acted on takes no other action until the page has caught up. The <a href="#undo">box at the bottom right</a> offers <b>Undo</b> for the last thing you did — it puts back exactly what the action changed, as it was written, and refuses if the task has been edited since. Everything is reachable with <kbd>Tab</kbd>; after a row leaves, focus lands on the row that was under it, so <kbd>Space</kbd> ticks down a list.</p>
+      <p>If your vault has a saved view titled <b>Today</b>, the sidebar still shows one Today row — the page — and the page links to your view from its top right: <b>Open the “Today” view</b>.</p>
+      <h3>The weekly review</h3>
+      <p><b>Weekly review</b> in the sidebar, under the Inbox — or <kbd>⌘K</kbd> → <b>Weekly review</b> — puts GTD's questions of the week on one page:</p>
+      <ul>
+        <li><b>Inbox</b> — how many wait in the Inbox, counted as the sidebar counts them: notes and tasks to process and <a href="#proposals">proposals</a> to answer — and <b>Open the Inbox</b>.</li>
+        <li><b>Waiting for more than 7 days</b> — Waiting tasks nobody has touched in over a week, the longest first, with who they wait on — a linked person or a name you typed: <i>Quote from Larkspur — On Mara Quill</i>.</li>
+        <li><b>Active projects with no next action</b> — a project whose status is <b>active</b> with no task filed under it at <b>Next Action</b> or <b>In Progress</b>.</li>
+        <li><b>Overdue</b> — tasks due before today that are still open: Inbox, Backlog, Next Action, In Progress or Waiting. Someday and Longterm promise no day, so they are never overdue.</li>
+        <li><b>Someday and Longterm, untouched for 30 days</b> — ideas left alone for over a month, the oldest first.</li>
+      </ul>
+      <p>“Untouched” means the file hasn't changed: DFAI keeps no “waiting since”, so any edit — yours, or the review's own — counts as a look. A task <b>deferred</b> to a later day is in no section until that day, as it is out of Next actions. Finished and archived notes are never listed. Whether a project has a next action is asked of the whole vault, so it is right even in a vault too big for the review to read every task.</p>
+      <p>Each item opens from its name, and has quick actions. Acting on one takes it out of its section:</p>
+      <ul>
+        <li><b>Move to…</b> another status — only ones that take it out of its section. A waiting task or an old idea can go to any status but Archive; a late task only to <b>Someday</b> or <b>Longterm</b>, since in any other open status it would still be late (or <b>Defer</b> it, or <b>Archive</b> it). A project can go to any of its type's statuses — <b>paused</b>, say.</li>
+        <li><b>Defer</b> a task a week: <b>Defer until</b> becomes seven days from today, and the task comes back then.</li>
+        <li><b>Archive</b> a task to finish it, as ticking it does: today becomes <b>Completed</b>, or a repeating task rolls on to its next date, back at <b>Next Action</b>. A project goes into the <a href="#archive">Archive</a>, as its Archive command does.</li>
+      </ul>
+      <h3>Move your tasks to GTD</h3>
+      <p>A vault whose tasks use other statuses — this project's own <code>backlog, next, doing, review, done</code>, say — is offered the move on the <a href="#para">Inbox page</a>: <i>“Tasks follow GTD's eight statuses, from Inbox to Archive. 85 tasks would move to them.”</i></p>
+      <ol class="steps">
+        <li>Press <b>Preview the move</b>. Nothing is written yet.</li>
+        <li>Check the mapping. Each status your tasks hold is listed with how many tasks hold it and what it becomes: <i>backlog → Backlog</i>, <i>next → Next Action</i>, <i>doing</i> and <i>review → In Progress</i>, <i>done → Archive</i>, anything else <i>→ Inbox</i>. Change any of them from its menu. A task the mapping sends to <b>Waiting</b> goes there whether or not Waiting on names anyone.</li>
+        <li>Read the rest: what changes in the Task type (its status becomes the eight; the GTD properties it lacks are added, and properties you added stay), views and automations rewritten (<i>Roadmap: done → archive</i>), any listed for you to change by hand — a filter like <i>status contains “do”</i> that no one status can stand for, <i>status != review</i> (review and doing both become In Progress, so leaving it out would leave out doing too), a status nobody knew, a query or automation over tasks and another type (a project's <i>done</i> is not a task's), or a SQL view — the GTD views to be added, and every task, old status → new. A finished task is given the day its file last changed as <b>Completed</b>.</li>
+        <li>Press <b>Move N tasks</b>. Only the files in the preview are written, each in its status and Completed alone — the rest of every file stays byte for byte. A task with unsaved typing in DFAI is left as it is, and said so.</li>
+      </ol>
+      <ul>
+        <li><b>Undo the move to GTD</b> is offered on the Inbox page for a week after the move, or until you press <b>Dismiss</b> beside it; then it is gone for good, after a restart and on your other Mac too. Moving more tasks later offers it again, for that later move alone: its Undo never takes back a move whose undo you dismissed or that finished before it.</li>
+        <li><b>Undo the move to GTD</b> puts back each file's properties exactly as they were, and takes away the views it added; a file nobody touched since is back byte for byte. A file whose properties changed since the move is left as it is, and said so in <a href="#activity">Activity</a>; one whose text alone changed gets its properties back and keeps the new text.</li>
+        <li>The move and its undo are each a line in <a href="#activity">Activity</a>, with every file left alone and why. Nothing about it is silent.</li>
+        <li>If the move stops partway — the Mac sleeps, a disk refuses a file — open the Inbox again: the preview lists only what is left, and one undo covers both runs — keeping anything you changed in between. Running it again when nothing is left changes nothing, and once the move is done the Inbox no longer reads your tasks to check — unless a file was left or a GTD view is missing.</li>
+        <li>The record undo works from is kept in <code>.atlas/migrations</code>, so it syncs and works from either Mac.</li>
+      </ul>
+      <h3 id="daily">Today's note</h3>
+      <ul>
+        <li><b>Today's note</b> <kbd>⇧⌘D</kbd> — or <b>+</b> beside the vault's name → <b>Today's note</b> — opens the day's note, making it if needed. It is named by the date, in its year's folder — <code>Daily/2026/2026-10-12.md</code> — whichever note you're on. One made at the top of the vault before is still found and opened.</li>
+        <li>A new one starts from your <a href="#templates">Daily template</a>. With none, it starts as a note of the <b>Daily</b> type that starts with the day: <b>Due and overdue</b> and <b>Next actions</b>, each a live <a href="#query-blocks">query block</a>, then the headings <i>What happened</i> and <i>What is next</i>. The two blocks need your Task type on <a href="#tasks">GTD</a>'s eight statuses, with <b>Due</b> and <b>Defer until</b> as dates (as the built-in Task type has them); a vault whose Task type keeps statuses of its own, or that has no Task type yet, or a second type spelt <code>Task</code> besides it, gets the two headings alone, never a block that can't run. A Daily template that makes a task is held to the task rules as any new task is — one made already in Archive is dated.</li>
+        <li><b>Due and overdue</b> lists open tasks due on the note's day or before it, most overdue first; <b>Next actions</b> lists the next actions in play that day and not already due. A task is in one or the other, as on the <a href="#today">Today page</a>, and a task deferred past the day is in neither. Someday, Longterm and finished work never are. The blocks are <a href="#query-blocks">queries</a> and follow the query language's rules, so a task with an unusual value can differ from the Today page for now: words in a date field (<code>due: TBD</code>), a type written with capitals (<code>type: Task</code>), or two values in a field that holds one (<code>due: [2026-11-30, 2026-10-01]</code>).</li>
+        <li>The blocks are live: tick a task, change its status or its due date, and the note shows it — the file isn't rewritten, so it holds no copy to go stale. Each block names the note's own date — <code>due &lt;= 2026-10-12</code> — rather than <code>@today</code>, so last Tuesday's note still shows last Tuesday's day. The day is your Mac's own date, the one the Today page uses. <b>Edit query</b> on a block changes it for that note alone.</li>
+        <li>Your own Daily template always wins: DFAI never adds the blocks to it, or to a note that's already there. To have them in your template, copy them from a new note into it.</li>
+        <li><b>Daily notes you already have</b> — the Notion import writes them as <code>2026-10-12.md</code> at the top, <code>type: daily</code> — are opened as they are: never made again, numbered or rewritten.</li>
+        <li><b>Daily</b> is a <a href="#types">built-in type</a>. A vault without it is offered it on the <a href="#para">Inbox page</a>; until you add it, daily notes still open and say <code>type: daily</code>. Once added, the Daily type's own page lists every day.</li>
+      </ul>
+      <h3 id="capture-anywhere">Quick capture from any app</h3>
+      <ul>
+        <li><b>Quick capture</b> <kbd>⇧⌘N</kbd> inside DFAI: type a line and it becomes a task in the <a href="#para">Inbox</a>, without leaving what you're doing.</li>
+        <li><b>From any app</b>, press <kbd>⌃⌥N</kbd>. DFAI comes forward — out of the Dock if it was minimised, onto the Space you're on if it was on another — with quick capture open and ready to type in. <kbd>Return</kbd> saves it to the Inbox; <kbd>Esc</kbd> puts capture away, and <kbd>⌘Tab</kbd> takes you back.</li>
+        <li><b>No vault open?</b> Nothing is captured, and DFAI says so: <i>“Quick capture needs a vault: open one, and what you capture lands in its Inbox.”</i></li>
+        <li>With Settings or search up, the press brings DFAI forward and opens nothing over them — close them first, as with <kbd>⇧⌘N</kbd>.</li>
+        <li><b>Change it</b> in Settings (<kbd>⌘,</kbd>) → <b>Quick capture from anywhere</b>: <b>Change…</b>, then press the new keys — hold two of <kbd>⌘</kbd>, <kbd>⌥</kbd> and <kbd>⌃</kbd> with a letter, digit, function key (F1–F20) or Space. One alone is refused: a shortcut from any app reaches DFAI first, so <kbd>⌘C</kbd> would stop copying everywhere and <kbd>⌥E</kbd> typing é. So are macOS's own, such as <kbd>⌃⌘Q</kbd> (Lock Screen) and <kbd>⌥⌘Esc</kbd> (Force Quit). <b>Turn off</b> stops it; <b>Use ⌃⌥N</b> puts the default back. It's set for each Mac on its own.</li>
+        <li>If macOS won't give DFAI the keys, Settings says <i>“— not working”</i> beside them, with why, and the shortcut you had before keeps working: choose others. macOS may also let two apps share a shortcut, and DFAI can't always tell — if a press opens another app, or nothing, choose other keys.</li>
+        <li>It works while DFAI is running. Closing DFAI's window quits it, and then nothing is listening.</li>
+        <li>Inside DFAI, <kbd>⌥⌘N</kbd>, and your capture-from-anywhere keys (<kbd>⌃⌥N</kbd> to start with), open capture too. One difference from <kbd>⇧⌘N</kbd>: <kbd>⌥⌘N</kbd> does nothing while a palette, a dialog or the peek is up, where <kbd>⇧⌘N</kbd> still opens capture. With no vault open, none of them opens it: DFAI says it needs a vault first.</li>
+        <li><b>Today</b> in the sidebar is a view, and <b>Inbox</b> the <a href="#para">Inbox page</a>, which lists everything in the <code>Inbox</code> folder, every <a href="#meetings">meeting</a> not yet filed, and every task still at Inbox; their counts update as you work.</li>
+      </ul>
+      <h3 id="capture-from-slack">Capture from Slack</h3>
+      <p>Save a Slack message — and its thread — as a note or a task in your Inbox. There are three ways in, and they all land the same way: a message saved by two of them is still one note.</p>
+      <p id="three-ways-from-slack"><b>Three ways to save from Slack:</b></p>
+      <ol>
+        <li><b>In Slack, through n8n.</b> A Slack shortcut or emoji sends the message to DFAI. The steps are in <a href="https://github.com/jhoffman-dev/dfai/tree/main/tools/n8n">tools/n8n on GitHub</a> (the README, “Slack messages into DFAI”).</li>
+        <li><b>Paste a link into DFAI.</b> Copy the message's link in Slack and paste it into DFAI. See <a href="#slack-paste">Paste a Slack link</a> below.</li>
+        <li><b>Ask Claude.</b> In Claude Code or Claude Desktop, with both its Slack connector and the <a href="#connect">DFAI MCP server</a> connected, say <i>“save this thread to my notes”</i> or <i>“make a task from what Mara asked in #larkspur-payroll”</i>. Claude reads the message in Slack and hands it to DFAI with <code>atlas_capture</code>, with its link. It picks a task when you want to act on it and a note when you want to keep it, and saves only what it read. Asking twice makes nothing new; Claude is told which note already holds it. A message without its Slack link is refused. (Claude in DFAI's own chat can't read Slack, so it can't save from there yet.)</li>
+      </ol>
+      <p>What follows is what DFAI does with a message when it arrives, whichever way it came.</p>
+      <ul>
+        <li>It lands in <code>Inbox/Captures/</code>, named after the message's first line (or the title it was sent with) and a short tag for the message — <code>Send the renewal (slack 2db9a3ee76a9e132).md</code> — and waits in the <a href="#para">Inbox</a> like anything captured. A <b>task</b> starts at the status <b>Inbox</b>; a <b>note</b> is a plain note.</li>
+        <li>The note says where it came from: <b>Source</b> is the message's Slack link, with <b>Author</b>, <b>Channel</b> and when it was sent. The message is a quote at the top — who wrote it, when, an <b>Open in Slack</b> link, then the words — and each reply in the thread is a quote of its own under <b>Thread</b>, with its author and time. Every message has a <a href="#blocks">block id</a>, so you can link to one reply: <code>[[Send the Larkspur renewal#^r1793136300-000200]]</code>. Shared files are listed under <b>Attachments</b> as links; DFAI never downloads them.</li>
+        <li><b>Who wrote it.</b> When the author's email is on a Person note — <b>Email</b> or <b>Other emails</b> — the author is a link to that person. DFAI never links by Slack display name alone; someone it doesn't know is written by name.</li>
+        <li>Slack's <b>bold</b>, <i>italics</i>, strikethrough, code, links and @mentions come across as they look in Slack; emoji stay as <code>:tada:</code>. Anything else in a message is kept as plain words: a <code>#word</code> in Slack doesn't become a tag, <code>[[a link]]</code> doesn't become a link, and nothing in a message can add HTML, an image or a query to your vault.</li>
+        <li><b>Saving the same message twice</b> makes nothing new: DFAI recognises it by its channel and time in Slack — even after you've filed or archived the first one — and points at the note you already have. Saving it again later never changes that note, even if the thread has grown.</li>
+      </ul>
+      <h3 id="slack-paste">Paste a Slack link</h3>
+      <ul>
+        <li><b>Connect Slack once</b> in Settings (<kbd>⌘,</kbd>) → <b>Slack</b>. Make a Slack app at <code>api.slack.com/apps</code> with these <b>user token scopes</b>: <code>channels:history</code>, <code>groups:history</code>, <code>im:history</code>, <code>mpim:history</code>, <code>users:read</code> and <code>users:read.email</code>. Install it to your workspace, copy its <b>User OAuth Token</b> (it starts <code>xoxp-</code>), paste it and press <b>Connect</b>. DFAI asks Slack whose it is and shows <i>Connected as mara in Larkspur Payroll</i>. The token stays in this Mac's Keychain, goes only to <code>slack.com</code>, and is only used to read — DFAI can't post, edit or delete with it. <b>Disconnect</b> forgets it on this Mac.</li>
+        <li><b>Paste a message link</b> (Slack's <b>Copy link</b> on a message) into a note or into quick capture (<kbd>⇧⌘N</kbd>). The link is pasted as usual, and a card offers the message: who wrote it, its words, and how many replies and files its thread has. <b>Save as task</b> or <b>Save as note</b> puts it in <code>Inbox/Captures/</code> exactly as above — the same note a message sent from Slack would make — and <b>Open</b> takes you to it.</li>
+        <li><b>Pasting it again</b> says <i>Already in your vault</i> and makes nothing new.</li>
+        <li><b>When it can't be read</b>, the card says why and what to do, and the link stays as you pasted it: not connected (<b>Open Settings</b>), a token Slack refused or one missing a scope (make a new one), a message that was deleted or is in a conversation you're not in (only the link is kept), or Slack asking DFAI to slow down (try again in the seconds it says).</li>
+      </ul>
+    </section>

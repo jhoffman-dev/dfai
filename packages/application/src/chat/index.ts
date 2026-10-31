@@ -33,7 +33,13 @@ export { captureWindowContext } from './window-context.ts';
 export { describeToolCall } from './tool-labels.ts';
 export type { ChatWindow } from './window-context.ts';
 export { createChatSession } from './chat-session.ts';
-export type { ChatItem, ChatSession, ChatSessionPorts, ChatState } from './chat-session.ts';
+export type {
+  ChatItem,
+  ChatSession,
+  ChatSessionPorts,
+  ChatSkillChip,
+  ChatState,
+} from './chat-session.ts';
 export {
   askTranscript,
   RECENT_QUESTIONS,

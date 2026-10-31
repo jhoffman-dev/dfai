@@ -1,0 +1,28 @@
+<!-- contents: Blocks and embeds -->
+    <section id="blocks">
+      <h2>Blocks and embeds</h2>
+      <p class="sub">Link to one paragraph, list item, task or heading of a note, or show it inside another note, live. DFAI writes these the way Obsidian does, so they work in both.</p>
+      <h3>Link a block</h3>
+      <ul>
+        <li>Type <code>![[</code> and pick a note. Its headings and blocks are offered next, each with a line of preview and its kind (<i>Heading 2</i>, <i>Text</i>, <i>List item</i>, <i>Task</i>, <i>Quote</i>, <i>Callout</i>, <i>Code</i>, <i>Table</i>); typing narrows them. <code>[[Note#</code> does the same for a plain link.</li>
+        <li>Picking writes <code>![[Note#^id]]</code> for a block or <code>![[Note#Heading]]</code> for a heading.</li>
+        <li>If the block has no id yet, DFAI adds one (six letters and digits) to its note and changes nothing else there. While that note has unsaved typing it refuses with <i>The note has unsaved changes.</i> Save it, then pick again.</li>
+      </ul>
+      <h3>The embed</h3>
+      <ul>
+        <li><code>![[Note#^id]]</code> or <code>![[Note#Heading]]</code> alone on its line shows that block, live and read-only, under its note's name. Change the source and the embed follows.</li>
+        <li>Click the name (<i>Open the block where it is written</i>) to open the note at the block, briefly highlighted. A <code>[[Note#^id]]</code> link does the same.</li>
+        <li>A missing note shows <i>No note is called “X” — it may have been renamed or deleted.</i> A missing block, <i>“Note” has no block ^id — it may have been deleted.</i>, or <i>“Note” has no heading “H” any more.</i> One that can't be read, <i>This block could not be read just now.</i></li>
+        <li>A block from an archived note still shows, with an <b>Archived</b> chip.</li>
+        <li>One level deep: an embed inside a shown block is shown as a link. A note can embed its own blocks too.</li>
+        <li><code>![[file.pdf#…]]</code> and other embeds of things that aren't notes stay links.</li>
+      </ul>
+      <h3>Block ids</h3>
+      <ul>
+        <li>Obsidian's <code>^id</code>, at the end of a paragraph, list item, task or heading, or on its own line after a table, quote, callout or code block. DFAI shows it as a faint <code>^id</code> after the words.</li>
+        <li>An id follows its block through edits, and when the block becomes a list item, task, quote or heading.</li>
+        <li>A note that already has the same id twice keeps both; when you pick one of them, it gets a new id of its own so the link opens the block you chose.</li>
+        <li>Renaming the source note keeps <code>#^id</code> and <code>#Heading</code> on every link to it.</li>
+      </ul>
+      <p class="muted">Not yet: editing an embedded block in place. Open it in its note and edit it there.</p>
+    </section>

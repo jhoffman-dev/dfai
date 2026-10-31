@@ -30,6 +30,7 @@ const read = (answer: ReturnType<typeof answerOf>, offset: number) => {
 };
 
 describe('a note whose properties leave no room for its body', () => {
+  // 0.8 s on a Mac, up to 3.2 s on a loaded 4-core CI runner (#648): the default 5 s is too close.
   it('never answers an empty page that points back at itself', () => {
     const body = 'x'.repeat(2_000);
     // Every size of properties across the last few hundred characters of room.
@@ -42,7 +43,7 @@ describe('a note whose properties leave no room for its body', () => {
       expect(answer.page.shown).toBeGreaterThan(0);
       expect(answer.page.next).not.toBe(answer.page.offset);
     }
-  });
+  }, 15_000);
 });
 
 describe('where a page ends', () => {

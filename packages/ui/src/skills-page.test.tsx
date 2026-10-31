@@ -132,6 +132,22 @@ describe('SkillsPage', () => {
     expect(within(bad).getByText('Say what the skill does.')).toBeTruthy();
   });
 
+  it('says which automations use a skill, and nothing for one none uses (#169)', () => {
+    const [weekly, draft] = SKILLS.items ?? [];
+    show({
+      skills: {
+        items: [{ ...weekly!, usedBy: ['Weekly notes', 'Friday review'] }, draft!],
+        error: null,
+      },
+    });
+    const list = screen.getByRole('region', { name: 'Skills' });
+    const used = within(list).getByRole('button', { name: /^weekly-review/ });
+    expect(within(used).getByText('Used by Weekly notes, Friday review')).toBeTruthy();
+    const unused = within(list).getByRole('button', { name: /^Draft-Notes/ });
+    expect(unused.textContent).toContain('2 problems');
+    expect(within(unused).queryByText(/Used by/)).toBeNull();
+  });
+
   it('opens a skill when its row is pressed', async () => {
     const props = show();
     await userEvent.click(screen.getByRole('button', { name: /^weekly-review/ }));

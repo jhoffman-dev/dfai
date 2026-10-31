@@ -252,9 +252,145 @@ export function reportTable(measured: readonly Measurement[]): string {
   const rows = measured.map(({ action, work, budget, inputToReady, longestFrame }) => {
     const calls = sum(work.calls);
     const allowed = budget === undefined ? undefined : sum(budget.calls);
-    return `| ${action} | ${against(work.commits, budget?.commits)} | ${against(sum(work.renders), budget?.renders)} | ${against(calls, allowed)} | ${topOf(work.calls, 3)} | ${Math.round(inputToReady)} | ${Math.round(longestFrame)} |`;
+    return `| ${action} | ${against(work.commits, budget?.commits)} | ${against(sum(work.renders), budget?.renders)} | ${against(calls, allowed)} | ${topOf(work.calls, 3)} | ${ms(inputToReady)} | ${ms(longestFrame)} |`;
   });
   return [...head, ...rows].join('\n');
+}
+
+/** Milliseconds, whole; a dash for an action the run did not time. */
+const ms = (value: number) => (Number.isFinite(value) ? String(Math.round(value)) : '–');
+
+/** What the timed pass took over one action: reported, never gated. */
+export interface Times {
+  readonly inputToReady: number;
+  readonly longestFrame: number;
+}
+
+/**
+ * What one run of the harness measured, by action: the first counted run's
+ * counts and the timed pass's times. CI does the fixtures and passes on
+ * machines of their own, each writing one of these, and puts them together.
+ */
+export interface PartResult {
+  /** The counted runs this part did, in order; `counted` is the first's. Empty if it only timed. */
+  readonly runs: readonly number[];
+  readonly counted: Readonly<Record<string, Work>>;
+  readonly timed: Readonly<Record<string, Times>>;
+}
+
+/** The report's rows: each of `actions` that was counted, its times beside it where it was timed. */
+export function measurementsOf(
+  actions: readonly string[],
+  { counted, timed }: PartResult,
+  budgets: BudgetsFile,
+): Measurement[] {
+  return actions.flatMap((action) => {
+    const work = counted[action];
+    if (work === undefined) return [];
+    const times = timed[action];
+    return [
+      {
+        action,
+        work,
+        budget: budgets.actions[action],
+        inputToReady: times?.inputToReady ?? Number.NaN,
+        longestFrame: times?.longestFrame ?? Number.NaN,
+      },
+    ];
+  });
+}
+
+/** A part that only timed: its times as a table, the counts being another part's. */
+export function timesTable(actions: readonly string[], timed: PartResult['timed']): string {
+  const rows = actions.flatMap((action) => {
+    const times = timed[action];
+    return times === undefined
+      ? []
+      : [`| ${action} | ${ms(times.inputToReady)} | ${ms(times.longestFrame)} |`];
+  });
+  return [
+    '| Action | Input→ready (ms) | Longest frame (ms) |',
+    '| --- | --- | --- |',
+    ...rows,
+  ].join('\n');
+}
+
+/** How the whole run was counted: how many runs, and how far each action's may differ. */
+export interface RunsWanted {
+  readonly runs: number;
+  readonly tolerance: Readonly<Partial<Record<string, RunTolerance>>>;
+}
+
+/**
+ * The parts put back together, and what is wrong with them as a whole: an
+ * action of `actions` that no part, or two, counted on some run of
+ * `wanted.runs`, or timed; and a later run, counted apart from run 1, that
+ * counted differently from it beyond the action's tolerance. Run 1's counts
+ * are the result's; a part that counted runs together compared them itself.
+ */
+export function combineParts(
+  parts: readonly PartResult[],
+  actions: readonly string[],
+  wanted: RunsWanted,
+): { readonly result: PartResult; readonly problems: string[] } {
+  const problems: string[] = [];
+  const beyond = [...new Set(parts.flatMap((part) => part.runs))].filter(
+    (run) => run > wanted.runs,
+  );
+  for (const run of beyond.sort((a, b) => a - b)) {
+    problems.push(`a part counted run ${run}, beyond the ${wanted.runs} wanted`);
+  }
+  const firstRuns = parts.filter((part) => part.runs[0] === 1);
+  const counted = onePerAction(
+    'counted on run 1',
+    actions,
+    firstRuns.map((part) => part.counted),
+    problems,
+  );
+  for (let run = 2; run <= wanted.runs; run += 1) {
+    const covering = parts.filter((part) => part.runs.includes(run));
+    const counts = onePerAction(
+      `counted on run ${run}`,
+      actions,
+      covering.map((part) => part.counted),
+      problems,
+    );
+    const apart = new Set(
+      covering.filter((part) => part.runs[0] === run).flatMap((part) => Object.keys(part.counted)),
+    );
+    for (const action of actions) {
+      const [first, now] = [counted[action], counts[action]];
+      if (!apart.has(action) || first === undefined || now === undefined) continue;
+      const changed = differencesBetween(first, now, wanted.tolerance[action]);
+      if (changed.length > 0) {
+        problems.push(`"${action}" counted differently on run ${run}: ${changed.join(', ')}`);
+      }
+    }
+  }
+  const timed = onePerAction(
+    'timed',
+    actions,
+    parts.map((part) => part.timed),
+    problems,
+  );
+  return { result: { runs: [1], counted, timed }, problems };
+}
+
+/** Each action's one entry among `lists`; an action in none, or in more than one, is a problem. */
+function onePerAction<Entry>(
+  kind: string,
+  actions: readonly string[],
+  lists: readonly Readonly<Record<string, Entry>>[],
+  problems: string[],
+): Record<string, Entry> {
+  const one: Record<string, Entry> = {};
+  for (const action of actions) {
+    const found = lists.flatMap((list) => (action in list ? [list[action]!] : []));
+    if (found.length === 0) problems.push(`"${action}" was ${kind} by no part`);
+    else if (found.length > 1) problems.push(`"${action}" was ${kind} by ${found.length} parts`);
+    else one[action] = found[0]!;
+  }
+  return one;
 }
 
 /** How far two runs of one action may differ and still count as the same: none, unless said. */

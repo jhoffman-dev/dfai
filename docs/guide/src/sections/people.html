@@ -1,0 +1,39 @@
+<!-- contents: People and mentions -->
+    <section id="people">
+      <h2>People and mentions</h2>
+      <p class="sub">Type <code>@</code> and a name to link a person. A person is a note of the <b>Person</b> type; the mention is an ordinary link, so Obsidian reads it too.</p>
+      <h3>Mention someone</h3>
+      <ul>
+        <li><code>@</code> and a letter lists people: every note with <code>type: person</code>, archived ones left out. A name that matches exactly comes first, then the people you edited most recently. <kbd>↓</kbd> <kbd>↑</kbd> choose; <kbd>Return</kbd> or a click picks.</li>
+        <li>Picking writes <code>[[Name]]</code> — or the note's path, like <code>[[People/Name]]</code>, when another note shares the name — and draws it as a chip with the person's initial. The file keeps plain <code>[[Name]]</code>.</li>
+        <li><code>@</code> starts a mention at the start of a line or after a space, <code>(</code>, a non-breaking space or an opening quote. Not straight after a letter or digit, so an email like <code>ann@example.com</code> stays as typed, and not in code or inside a link.</li>
+        <li>Names with dots work: <code>@J.R. Hartley</code> finds <i>J.R. Hartley</i>.</li>
+      </ul>
+      <h3>Add a new person</h3>
+      <ul>
+        <li>For a name of up to three words, the list ends with <b>Create person “…”</b>. <kbd>Return</kbd> alone never makes one — when it is the only choice, <kbd>Return</kbd> is just a new line. Press <kbd>↓</kbd> to it, then <kbd>Return</kbd>, or click it.</li>
+        <li>The new note goes in <code>People/</code>, made from the Person template, numbered if the name is taken there. While it's being made a faded <code>@Name</code> holds its place, then becomes the link.</li>
+        <li>If you change the note before they're made, the link isn't written, and a message says so: <i>“Ann Lee was added to People, but not linked: the note changed while they were being made.”</i></li>
+        <li>DFAI won't make a person whose note would change what an existing <code>[[link]]</code> opens, or whose name holds <code>#</code> <code>[</code> <code>]</code> <code>|</code> or <code>^</code>, since a link stops there. People who already have such a name are listed greyed out with the reason, like <i>“A|B” cannot be linked: a link stops at |</i>.</li>
+      </ul>
+      <h3>Mentioned in</h3>
+      <p>A person's page shows their meetings, what you're waiting on them for, and their open tasks and decisions — see <a href="#linked-pages">Linked pages</a>. On a person's page the <a href="#graph">Links</a> panel heads the notes linking to them <b>Mentioned in</b>. Only a note whose <code>type</code> is exactly <code>person</code> counts as a person — for <code>@</code> and for this heading.</p>
+      <h3>Other spellings of a name</h3>
+      <p>A Person — and a Company — has an <b>Also spelt</b> property (<code>aliases</code> in the file): a nickname or a short form, commas between them in the properties panel. They are for matching a meeting's attendees to the person; DFAI never uses them to correct text. To correct a mishearing of the name, list it under <b>Misheard as</b> (<code>variants</code>) on the same note — or add the name on the <a href="#terms">Terms</a> page, which puts it there.</p>
+      <p class="muted">A vault whose Person or Company type was made before this has no such property yet: add one called <code>aliases</code> on <a href="#edit-type">Edit type</a> as a <b>Multi-select</b>, or give the note an <code>aliases</code> list by hand. DFAI reads <code>aliases</code> either way.</p>
+      <h3 id="merge-people">Merge two people into one</h3>
+      <p>The same person can end up as two notes — <code>mara@larkspur.example.com</code> and <code>mara.quill@larkspur.example.com</code> made two, or <code>Tobias Fenn.md</code> sits at the top of the vault and in <code>People/</code>. On the one to get rid of, open the page's <b>…</b> menu (or the right sidebar's <b>Properties</b>) and choose <b>Merge into…</b>, then pick the person to keep.</p>
+      <p>To merge several at once, tick them in the <b>Person</b> table (or in a People view with <b>Select</b> on) and choose <b>Merge 2 people into…</b> on the bar above it — or <kbd>⌘K</kbd> <i>Merge selected people…</i> — then pick the person they all go into.</p>
+      <p>Before anything is written, DFAI says what the merge does: how many links in how many notes will open the kept person, the aliases and emails they gain, and any value the two disagree on — the kept person keeps their own, and the other is listed so you can copy it by hand. <b>Merge</b> then:</p>
+      <ul>
+        <li>points every link to the other person at the kept one — in text, embeds, properties like a meeting's people, your templates and the filters of saved views — keeping its display text, <code>#heading</code> and <code>^block</code>;</li>
+        <li>adds their emails to <b>Other emails</b> and their name and aliases to <b>Also spelt</b>, so the next meeting with them finds the kept person;</li>
+        <li>joins lists (projects, tags…) and types, and fills properties the kept person had empty;</li>
+        <li>adds their text at the end, under <b>Merged from …</b>;</li>
+        <li>puts their note in the Trash, where you can get it back in Finder.</li>
+      </ul>
+      <p>A toast says how it went, with a link to <a href="#activity">Activity</a>. There is no Undo: the Trash keeps the other note. Before the preview DFAI saves what you've typed anywhere and catches the index up, so a link you've just written is found. A link in one of DFAI's own files other than a template, view or dashboard (a type, say), or a view that names the person by file in its SQL, stops the merge until you change it by hand; so does typing DFAI couldn't save. If a note changed after the preview, nothing is merged and DFAI asks you to look again. If a write fails part-way, the toast names exactly which notes were changed and which weren't, nobody goes to the Trash, and merging again picks up where it stopped.</p>
+      <h3 id="possible-duplicates">Find people who may be one</h3>
+      <p>On the <b>Person</b> type's page, <b>Possible duplicates</b> (also in <kbd>⌘K</kbd> as <i>Possible duplicate people</i>) lists pairs that look like one person: the same name in two folders, the same email, an alias that is the other's name, or emails that match — <code>mara</code> and <code>mara.quill</code> at one company, <code>mara.quill</code> and <code>maraquill</code>, a typo like <code>marra.quill</code>, or a domain a letter off. At public mail providers (Gmail, Outlook, iCloud…) only the same address written with or without dots counts. Each pair shows why, with <b>Merge…</b> (and a button to keep the other one instead) or <b>Not the same</b>, which DFAI remembers in the vault's settings so the pair isn't offered again.</p>
+      <p class="muted">A meeting's attendee also matches a person whose <b>Also spelt</b> holds their email address.</p>
+    </section>

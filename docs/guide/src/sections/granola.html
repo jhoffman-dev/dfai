@@ -1,0 +1,37 @@
+<!-- contents: Meetings from Granola -->
+    <section id="granola">
+      <h2>Meetings from Granola</h2>
+      <p class="sub">Meetings you record in Granola come into the vault by themselves, as files in their month, <code>Meetings/2026/10/</code>, the same as Gemini's. DFAI asks Granola for them with an API key; nothing else is needed.</p>
+      <h3>Set it up</h3>
+      <ol class="steps">
+        <li><b>Make a key in Granola.</b> In the Granola app: <b>Settings → Connectors → API keys → Create new key</b>, with <i>Personal notes</i> (and <i>Public notes</i> if you want meetings others share with you). It needs a Business or Enterprise plan. Granola shows the key once; copy it.</li>
+        <li><b>Paste it into DFAI.</b> <b>Settings</b> (<kbd>⌘,</kbd>) → <b>Granola</b>. Paste the key into <i>Granola API key</i> and press <b>Save</b>. DFAI keeps it in this Mac's Keychain, never in the vault, and asks Granola about it once: Settings says <i>Key accepted</i>, or <i>Granola refused this key</i>.</li>
+        <li><b>Check <a href="#profile-emails"><i>Your emails</i></a></b> in Settings → Profile. In a meeting you own, Granola calls you “me”. DFAI writes that as <b>You</b> when the meeting's owner is one of those addresses, and as the owner's name otherwise (so a meeting someone shared with you isn't put in your mouth).</li>
+        <li><b>That's it.</b> Once the key is accepted, DFAI pulls your meetings straight away. The first pull looks at every meeting Granola has and brings in the ones the vault doesn't already have.</li>
+      </ol>
+      <p>Each Mac that should pull needs the key pasted on it. Meetings come in on whichever Mac is in front of you; the import, linking and corrections then run on the Mac that runs your <a href="#automations">automations</a>, as for any meeting.</p>
+      <h3>When it pulls</h3>
+      <ul>
+        <li><b>As the vault opens</b> — but only after DFAI has <a href="#sync">synced</a> the vault and caught up with what that sync brought in. That way a meeting another Mac already imported is found where it is now, and isn't written a second time. Each later sync that brings files in does the same: a pull, timed or Sync now, waits until DFAI has caught up with them — and with any sync that lands while it waits — but gives up after two minutes on any one of them. A vault that doesn't sync doesn't wait. Until then Settings says <i>DFAI pulls from Granola once this vault has synced</i>.</li>
+        <li><b>Every 15 minutes</b> while the vault is open. To turn this off, add <code>granola_periodic: false</code> to the vault's settings note (<code>.atlas/settings.md</code>).</li>
+        <li><b>When you press Sync now</b> in Settings → Granola. Sync now always looks at every meeting Granola has, so it finds one the timed pulls missed.</li>
+      </ul>
+      <p>Settings shows <i>Pulling from Granola…</i> while it works, then what the last pull did and when — for example <i>3 new, 12 already in DFAI, 1 refused at 9:40 AM</i>. <b>Details</b> lists each meeting that wasn't written and why, with <b>Open in Granola</b> to see it there. A pull is also a line in <a href="#activity">Activity</a>, under <b>Meetings</b> — except a timed pull that found nothing new and nothing wrong, which would only be noise.</p>
+      <p>A meeting DFAI already has is never fetched or changed again — even if you edit it in Granola later. A meeting deleted in Granola stays in DFAI.</p>
+      <h3>When something goes wrong</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">You see</th><th scope="col">What it means</th></tr></thead>
+          <tbody>
+            <tr><td><i>No key on this Mac</i>, and Sync now greyed out</td><td>Paste a key, as above.</td></tr>
+            <tr><td><i>Granola refused this key</i>, and a notice once</td><td>The key has expired or was deleted. Make a new one in Granola and paste it. DFAI stops pulling on its own until it has a key Granola accepts; Sync now still tries.</td></tr>
+            <tr><td>A notice after Sync now, such as <i>Granola could not be reached</i></td><td>Check the connection and press Sync now again. A pull that fails by itself (on open or on the timer) says so in Settings and Activity only, and the next pull tries again.</td></tr>
+            <tr><td><i>1 refused</i> or <i>1 skipped</i></td><td>Open <b>Details</b>. DFAI couldn't read that meeting, or Granola wouldn't give it. Sync now tries it again.</td></tr>
+            <tr><td><i>Your emails in settings could not be read</i> or <i>The group addresses in settings could not be read</i></td><td>The settings note holds something under <code>selfEmails</code> (or <code>granola_self_emails</code>) or <code>granola_group_addresses</code> that isn't all addresses — usually a hand edit. Until it's fixed DFAI reads it as no addresses at all, pulls still run, and the card names what it couldn't read. Fix your addresses in <a href="#profile-emails"><i>Your emails</i></a>, or fix the note.</td></tr>
+            <tr><td><i>Waiting for the index timed out</i> in Activity</td><td>A pull waited two minutes for DFAI to catch up with what a sync brought in, and gave up without writing anything. The next sync, or opening the vault again, tries again.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>To stop pulling on this Mac, press <b>Forget key…</b>, then <b>Forget key</b>. The meetings already in the vault stay.</p>
+      <p class="muted">Meeting times are written in the vault's time zone for Granola, <code>granola_time_zone</code> in the settings note (Los Angeles when it says nothing), and list addresses that don't look like one can be named in <code>granola_group_addresses</code> — so every Mac writes a meeting the same way.</p>
+    </section>

@@ -119,6 +119,7 @@ function renderPage(files: Record<string, string>) {
     () => {
       const [up, setUp] = useState<SkillOverlay | null>(null);
       const page = useSkillsPage({
+        rules: [],
         ports: {
           fs: vault.fs,
           markdown: remarkMarkdown,

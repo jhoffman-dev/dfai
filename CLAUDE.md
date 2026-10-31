@@ -76,11 +76,14 @@ change is merged. Don't wait to be asked:
   needs neither keeper. Say so in the hand-off rather than skipping it silently.
 - A hand-off names both keepers' results: guide updated or not needed, and API/MCP
   updated or not needed.
-- The guide's source is `docs/guide/index.html`, in the repo, so it is public:
-  examples use fictional names only. It is a self-contained page (no build).
-  Publish it as a claude.ai artifact from the account the session runs under;
-  the first publish from a new account creates a new URL — tell James the URL
-  and record it here. The current published copy is
+- The guide's source is `docs/guide/src/`, in the repo, so it is public:
+  examples use fictional names only. Each section is a file in
+  `docs/guide/src/sections/`, listed in order in `docs/guide/src/page.html`;
+  `pnpm guide:build` assembles them (and the contents list) into
+  `docs/guide/index.html`, the self-contained page that is published, and a test
+  fails while it is stale. Never edit `index.html` by hand. Publish it as a
+  claude.ai artifact from the account the session runs under; the first publish
+  from a new account creates a new URL — tell James the URL and record it here. The current published copy is
   `claude.ai/artifact/XS3G54GvnJqpG5RFw6DjF8`, published 2026-10-11 from the
   work-account session. (The earlier personal-account copy is
   `claude.ai/artifact/QXvTge2zPuY5YS5g7QYveH`, last updated 2026-10-07.)
@@ -197,7 +200,7 @@ build first or you are testing the previous bundle — which can fail code that
 works, and pass code that does not.
 
 **CI splits the slow work across machines** (`.github/workflows/gate.yml`): the
-unit tests over three Linux shards whose coverage the `coverage` job merges and
+unit tests over six Linux shards, dealt by recorded duration, whose coverage the `coverage` job merges and
 holds to the thresholds, the e2e suite over eight Linux shards in Playwright
 WebKit (the page is told it runs on a Mac; `@mac` tests are skipped), Rust on
 one Mac. The whole e2e suite, `@mac` tests included, runs nightly on macOS
@@ -238,7 +241,8 @@ counts into the file and only ever lowers a budget. A count under half its budge
 too (the action probably did not happen), and `write` will not lower past that floor
 without `PERF_BUDGETS_ALLOW_DROP=1`, nor drop an action it no longer measures without
 `PERF_BUDGETS_ALLOW_RENAME=1`. `PERF_BUDGETS_RUNS=N` counts N times and fails on any
-difference (CI counts twice). `pnpm perf` here builds minified; CI's `perf` job times
+difference (CI counts twice, each run on its own Linux machine, in four parts in all; the `perf`
+job holds run 2 to run 1 and checks every action was counted on both runs and timed, once each). `pnpm perf` here builds minified; CI's `perf` job times
 the unminified build it counts with, so local times differ a little from CI's.
 
 Each checkout serves its e2e build on its own port, derived from its path (see
@@ -267,6 +271,22 @@ reaches the built bundle anyway (#53, #114).
 | `packages/adapters`    | Tauri IPC, markdown, the index. Thin translators. |
 | `packages/ui`          | React components. No business rules.              |
 | `apps/desktop`         | The composition root, plus `src-tauri` (Rust).    |
+
+**A feature adds a file rather than editing a shared one** (#134). Styles: a new
+`apps/desktop/src/styles/<feature>.css`, imported from `styles/index.css` at the
+place its rules belong in the cascade (the build still emits one stylesheet).
+Guide: a new `docs/guide/src/sections/<id>.html` and its line in `page.html`,
+then `pnpm guide:build`. Shots: a new `tools/design/shots/<surface>.shots.spec.ts`
+on the helpers in `kit.ts`.
+
+**Where new things go, so parallel work adds files rather than editing shared
+ones (#134).** A route goes in its area's `packages/application/src/api/contract/<area>.ts`
+(route, request and answer shapes) and `api/handlers/<area>.ts` (what answers it);
+a new area adds one line each to `contract.ts` and `routes.ts`, which only compose.
+A module's exports go in its own `index.ts`. The index's tables and indexes live
+only in `apps/desktop/src-tauri/src/index_schema.sql`: the host `include_str!`s it,
+test indexes read it (`testing/index-schema.ts`), and `index-schema.test.ts` fails
+if an inline copy in a test drifts from it.
 
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and

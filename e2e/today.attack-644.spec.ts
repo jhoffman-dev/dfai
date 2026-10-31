@@ -102,6 +102,11 @@ for (const [kind, standIn] of [
   ['a ResizeObserver', movedByResizeObserver],
 ] as const) {
   test(`the stand-in for ${kind} carries the focused control off screen`, async ({ page }) => {
+    // The ResizeObserver stand-in answers when the engine chooses, and on
+    // macOS it is read before it has moved the control almost every run, so
+    // it fails PRs that never touched it. PR #649 rewrites both its tests
+    // to wait for the move; until then they are parked, not deleted.
+    test.fixme(kind === 'a ResizeObserver', 'flaky stand-in, fixed in PR #649');
     await openToday(page);
     await standIn(page);
     // In view before the focus, so that it is the stand-in that takes it away.
@@ -114,6 +119,11 @@ for (const [kind, standIn] of [
   });
 
   test(`a Tab sweep reports the control ${kind} moves off screen`, async ({ page }) => {
+    // The ResizeObserver stand-in answers when the engine chooses, and on
+    // macOS it is read before it has moved the control almost every run, so
+    // it fails PRs that never touched it. PR #649 rewrites both its tests
+    // to wait for the move; until then they are parked, not deleted.
+    test.fixme(kind === 'a ResizeObserver', 'flaky stand-in, fixed in PR #649');
     const today = await openToday(page);
     await standIn(page);
     await today.locator('input.done-check').first().focus();

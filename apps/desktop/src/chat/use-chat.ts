@@ -3,6 +3,7 @@ import {
   acceptProposal,
   captureWindowContext,
   createChatSession,
+  readSkillToUse,
   undoProposal,
   type ActivityLog,
   type ApiRouterDeps,
@@ -16,7 +17,8 @@ import {
   type VaultFsPort,
 } from '@dfai/application';
 import { chatModelOrDefault, type ProfileState, type VaultPath } from '@dfai/domain';
-import type { ChatDraft, ChatProblemView } from '@dfai/ui';
+import type { ChatDraft, ChatProblemView, ChatSkillsView } from '@dfai/ui';
+import { useSkillChoicesRead } from '../skills/use-skill-choices.ts';
 import { localClock } from '../today.ts';
 import type { ClipboardWriter } from '../settings/clipboard.ts';
 import type { ChatSettings, ChatSettingsStore } from './chat-settings-store.ts';
@@ -72,6 +74,8 @@ export interface ChatController {
   readonly model: string;
   readonly problem: ChatProblemView | null;
   readonly history: ChatHistory;
+  /** The skill attached and the vault's to pick from, read only once the picker is wanted (#169). */
+  readonly skills: ChatSkillsView;
   readonly settings: ChatSettings;
   readonly setSettings: (settings: ChatSettings) => void;
   readonly copy: (text: string) => void;
@@ -162,6 +166,12 @@ export function useChat({
           await undoProposal({ fs, openNotes, applied });
           onChanged();
         },
+        skill: (name) => {
+          const { fs, markdown } = latest.current.vault;
+          // With no vault open there is no skill: the turn itself says to open one.
+          if (fs === null) return Promise.resolve({ kind: 'missing' });
+          return readSkillToUse({ fs, markdown, name });
+        },
         stamp: () => chatStamp(localClock.now()),
         newId: () => crypto.randomUUID(),
         activity,
@@ -180,6 +190,7 @@ export function useChat({
     settings,
   });
   const history = useChatHistory({ session, fs: vault.fs, chatPath: state.chatPath });
+  const skills = useChatSkills({ session, vault, attached: state.skill });
 
   const setSettings = useCallback(
     (next: ChatSettings) => {
@@ -201,6 +212,7 @@ export function useChat({
     model: chatModelOrDefault(settings.model),
     problem,
     history,
+    skills,
     settings,
     setSettings,
     copy: (text) => {
@@ -209,6 +221,41 @@ export function useChat({
       });
     },
   };
+}
+
+/**
+ * The chat's skills (#169): the one attached, and the vault's, read — through
+ * the Skills page's own read — only once the picker is first wanted, never at
+ * launch.
+ */
+function useChatSkills({
+  session,
+  vault,
+  attached,
+}: {
+  session: ReturnType<typeof createChatSession>;
+  vault: Pick<ChatVault, 'fs' | 'markdown' | 'vaultKey'>;
+  attached: ChatState['skill'];
+}): ChatSkillsView {
+  const [wanted, setWanted] = useState(false);
+  const { choices, loading } = useSkillChoicesRead({
+    fs: vault.fs,
+    markdown: vault.markdown,
+    vault: vault.vaultKey,
+    enabled: wanted,
+  });
+  const onWanted = useCallback(() => setWanted(true), []);
+  return useMemo(
+    () => ({
+      attached,
+      choices,
+      loading,
+      onWanted,
+      onAttach: (name: string) => void session.attachSkill(name),
+      onRemove: () => session.removeSkill(),
+    }),
+    [attached, choices, loading, onWanted, session],
+  );
 }
 
 /** Offers the chat the window it is opened on, until something is asked. */

@@ -205,6 +205,7 @@ function claudeStepOf(action: Extract<AutomationAction, { kind: 'claude' }>): Ap
   const { output } = action;
   return {
     prompt: action.prompt,
+    skill: action.skill ?? null,
     tools: [...action.tools],
     output: output.kind === 'note' ? 'note' : output.schema,
     folder: output.kind === 'note' ? output.folder : null,

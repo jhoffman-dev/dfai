@@ -1,0 +1,21 @@
+<!-- contents: Related notes and trails -->
+    <section id="related">
+      <h2>Related notes and trails</h2>
+      <p class="sub">For walking a line of thought across notes, Zettelkasten-style: notes close in meaning that you haven't linked yet, and a trail you step along and keep.</p>
+      <h3>Related notes</h3>
+      <ul>
+        <li><b>Related notes</b> sits under the <b>Links</b> panel at the foot of a note. Open it and it lists the notes closest in meaning to this one that aren't linked to it either way — not by a link in either note, and not by a relation like a task's project. The note itself, archived notes and templates are never listed.</li>
+        <li>It is found by meaning, so it needs <b>By meaning</b> turned on in <kbd>⌘K</kbd> on this Mac once. Until then it says so. While DFAI is still reading the vault for meaning it says how far it has got (<i>12 of 40 notes</i>), and fills in once it has read this note.</li>
+        <li>It looks only while it is open, and only once the note is drawn, so opening a note never waits on it. Leave it open and the next note opens with it open too.</li>
+        <li><b>Link</b> writes a real <code>[[link]]</code> into this note, under a <b>Related</b> heading at the end — <code>## Related</code>, then <code>- [[Garden]]</code>, added to the list if the heading is already there. Nothing else in the file changes — except that a note ending inside an unfinished code block has the block closed first, so the link reads as a link. A suggestion is never a link until you choose <b>Link</b>.</li>
+        <li><b>Dismiss</b> hides a suggestion for this note. Dismissals are kept on this Mac, not in the vault, so the other Mac may offer it again.</li>
+      </ul>
+      <h3>Trails</h3>
+      <ul>
+        <li><b>Walk a trail from here</b>, in Related notes, starts a trail on this note. A band over the note shows the path so far — <i>Payroll ideas → Budget → Mara Quill</i> — with the notes you can step to next: <b>Linked</b> (links either way) and <b>Related</b> (close in meaning).</li>
+        <li>Pick one to step to it; it opens in the same tab. <b>Step back</b> and <b>Step forward</b> walk the path, and a step's name goes straight to it. Stepping somewhere new from an earlier step branches: the steps after it are dropped, as a browser's Forward is.</li>
+        <li>Open a note some other way and the band goes; step back onto the trail and it comes back. <b>End trail</b> drops it.</li>
+        <li><b>Save trail</b> writes an ordinary note beside the first step, <i>Trail from Payroll ideas</i>, numbered if the name is taken: one link a line, in the order walked — <code>1. [[Payroll ideas]]</code>, <code>2. [[Budget]]</code>, <code>3. [[Mara Quill]]</code>. Edit it like any note; the graph and backlinks see every step. A step deleted or renamed since you walked it is left out, and the band says how many were.</li>
+        <li>Claude can read related notes too, through the <code>atlas_related</code> tool — never turning <b>By meaning</b> on, and never writing a link itself.</li>
+      </ul>
+    </section>

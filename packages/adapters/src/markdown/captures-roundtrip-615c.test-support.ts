@@ -9,6 +9,9 @@
  * mapper wrote with `[`, to an absolute address; nothing but words, quotes,
  * code and those links; and parsed, edited and parsed again, every character
  * reads with the same marks and links. Seeded; all names are made up.
+ *
+ * Test support: the seeds are run by the four
+ * captures-roundtrip.attack-615c.seeds-*.property.test.ts files.
  */
 import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
@@ -259,28 +262,50 @@ function bodyOf(sent: unknown): string | null {
   }
 }
 
-describe('a capture reads the same once edited, over 400 seeded messages (third attack, PR #615)', () => {
-  it.each(Array.from({ length: 400 }, (_, at) => at + 1))(
-    'seed %i: only its own absolute links, and a reading fixpoint across an edit',
-    (seed) => {
-      const body = bodyOf(payload(seededRandom(seed * 7919)));
-      if (body === null) return;
-      const written = new Set(
-        [...nodesOf(parse(body))].flatMap((node) => (node.type === 'link' ? [node.url] : [])),
-      );
-      expectOnlyWords(body, written);
-      const edited = editedBack(body);
-      expectOnlyWords(edited, written);
-      expect(readingOf(parse(edited))).toEqual(readingOf(parse(body)));
-      // The editor takes escapes off over two saves (A21-01); from the second on, nothing changes.
-      const again = editedBack(edited);
-      expect(readingOf(parse(again))).toEqual(readingOf(parse(body)));
-      expect(editedBack(again)).toBe(again);
-    },
-    // A seed with a 5,000-letter word takes most of a second alone, and more on a loaded runner.
-    30_000,
-  );
-});
+/** The seeds the attack runs, 400 in all. */
+export const SEEDS = 400;
+
+/**
+ * The seeds of each file the attack is split over, in order: seeds-1 runs the
+ * first, seeds-2 the second (captures-roundtrip.attack-615c.seeds.test.ts
+ * holds the files to it).
+ */
+export const SEED_PARTS = [
+  { from: 1, to: 100 },
+  { from: 101, to: 200 },
+  { from: 201, to: 300 },
+  { from: 301, to: 400 },
+] as const;
+
+/**
+ * Seeds `from` to `to` of the attack, each its own test. The 400 are split over
+ * four files (captures-roundtrip.attack-615c.seeds-*.property.test.ts) only so
+ * that they run side by side: together they took five minutes on CI (#648).
+ */
+export function describeSeeds({ from, to }: { readonly from: number; readonly to: number }): void {
+  describe(`a capture reads the same once edited, over seeds ${from} to ${to} of ${SEEDS} (third attack, PR #615)`, () => {
+    it.each(Array.from({ length: to - from + 1 }, (_, at) => from + at))(
+      'seed %i: only its own absolute links, and a reading fixpoint across an edit',
+      (seed) => {
+        const body = bodyOf(payload(seededRandom(seed * 7919)));
+        if (body === null) return;
+        const written = new Set(
+          [...nodesOf(parse(body))].flatMap((node) => (node.type === 'link' ? [node.url] : [])),
+        );
+        expectOnlyWords(body, written);
+        const edited = editedBack(body);
+        expectOnlyWords(edited, written);
+        expect(readingOf(parse(edited))).toEqual(readingOf(parse(body)));
+        // The editor takes escapes off over two saves (A21-01); from the second on, nothing changes.
+        const again = editedBack(edited);
+        expect(readingOf(parse(again))).toEqual(readingOf(parse(body)));
+        expect(editedBack(again)).toBe(again);
+      },
+      // A seed with a 5,000-letter word takes most of a second alone, and more on a loaded runner.
+      30_000,
+    );
+  });
+}
 
 /** A block's reading without the white space at its ends, which the editor drops on save. */
 function trimmedBlocks(reading: readonly string[]): string[] {
