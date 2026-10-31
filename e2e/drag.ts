@@ -147,6 +147,11 @@ export async function dragWithKeyboard(
   await page.keyboard.press('Space');
   // Picked up: dnd-kit marks the handle pressed for as long as it is held.
   await expect(handle).toHaveAttribute('aria-pressed', 'true');
+  // But not yet listening: dnd-kit's keyboard sensor adds its key listener from
+  // a timer it sets at the pick-up, and on a loaded runner the timer can run
+  // after the next key, which is then lost. Timers set with the same delay run
+  // in the order they were set, so once one set now has run, the sensor's has.
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve)));
   for (const move of moves) {
     const before = await announced(page);
     await page.keyboard.press(move);
