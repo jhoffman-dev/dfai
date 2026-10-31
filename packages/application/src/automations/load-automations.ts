@@ -3,6 +3,7 @@ import {
   createVaultPath,
   isAutomationNote,
   isAutomationPath,
+  noteTitle,
   parseAutomationRule,
   splitFrontmatter,
   type AutomationRule,
@@ -89,10 +90,10 @@ export async function loadAutomations({
 
 /** A rule file whose frontmatter cannot be read, named by its file as an unnamed rule is. */
 function unreadableRule(path: string, problem: string): BrokenAutomation {
-  const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
+  const vaultPath = createVaultPath(path);
   return {
-    path: createVaultPath(path),
-    name,
-    problem: `Its frontmatter cannot be read: ${problem}`,
+    path: vaultPath,
+    name: noteTitle(vaultPath),
+    problem: `Its frontmatter is not valid YAML: ${problem}`,
   };
 }
