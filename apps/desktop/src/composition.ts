@@ -2,8 +2,14 @@ import { isTauri } from '@tauri-apps/api/core';
 import desktopPackage from '../package.json' with { type: 'json' };
 import {
   anthropicApiProvider,
+  browserIdle,
   claudeCodeProvider,
   remarkMarkdown,
+  staticAppInfo,
+  webWorkerNoteChunker,
+  webWorkerNoteDeriver,
+} from '@dfai/adapters';
+import {
   tauriModelHttp,
   tauriModelProcess,
   tauriApiBridge,
@@ -27,10 +33,6 @@ import {
   tauriIndex,
   tauriEmbeddings,
   tauriEmbeddingCache,
-  browserIdle,
-  webWorkerNoteChunker,
-  webWorkerNoteDeriver,
-  staticAppInfo,
   tauriAppInfo,
   tauriVaultFs,
   tauriVaultPicker,
@@ -44,7 +46,7 @@ import {
   tauriMacName,
   tauriSleepClock,
   tauriSyncFiles,
-} from '@dfai/adapters';
+} from '@dfai/adapters/tauri';
 import type {
   ActivityStore,
   WindowClosingPort,
@@ -63,36 +65,63 @@ import type {
 } from '@dfai/application';
 import { createKindleSync } from '@dfai/application';
 import { createExportPageRenderer } from '@dfai/ui';
-import type { VaultPorts } from './vault/use-vault.ts';
-import type { NotePorts } from './notes/use-note.ts';
-import type { IndexPorts } from './index/use-index.ts';
-import type { LocalApiPorts } from './api/use-local-api.ts';
-import type { SourcePorts } from './sources/source-ports.ts';
-import { browserClipboard } from './settings/clipboard.ts';
-import type { OnHost } from './vault/bound-to-vault.ts';
-import type { ChatPorts } from './chat/use-chat.ts';
-import { browserMacId } from './sync/browser-mac-id.ts';
-import { browserSyncPause } from './sync/browser-sync-pause.ts';
-import { browserGranolaPullRecords } from './granola/browser-granola-store.ts';
-import { browserMeetingSyncRecords } from './google-calendar/browser-meeting-sync-records.ts';
-import { browserBlockSyncRecords } from './google-calendar/browser-block-sync-records.ts';
-import type { BlockSyncHost } from './google-calendar/use-block-sync.ts';
-import type { MeetingSyncHost } from './google-calendar/use-meeting-sync.ts';
-import { browserKindleRecords } from './kindle/browser-kindle-records.ts';
-import { browserKindleVaults } from './kindle/browser-kindle-vaults.ts';
-import type { KindleHost } from './kindle/use-kindle-sync.ts';
-import type { SyncHostPorts } from './sync/use-sync.ts';
-import type { SemanticPorts } from './semantic/use-semantic-search.ts';
-import { browserSemanticOptIn } from './semantic/browser-semantic-opt-in.ts';
 import {
+  browserBlockSyncRecords,
+  browserClipboard,
   browserGlobalCaptureStore,
+  browserGranolaPullRecords,
+  browserKindleRecords,
+  browserKindleVaults,
+  browserMacId,
+  browserMeetingSyncRecords,
+  browserSemanticOptIn,
+  browserSyncPause,
+  type AppPorts,
+  type BlockSyncHost,
+  type ChatPorts,
   type GlobalCaptureStore,
-} from './global-capture/browser-global-capture-store.ts';
+  type IndexPorts,
+  type KindleHost,
+  type LocalApiPorts,
+  type MeetingSyncHost,
+  type NotePorts,
+  type OnHost,
+  type SemanticPorts,
+  type SourcePorts,
+  type SyncHostPorts,
+  type VaultPorts,
+} from '@dfai/shell';
 
 /**
- * The composition root: the one place allowed to know about every layer.
+ * The desktop's composition root: the shared shell (`@dfai/shell`) on the
+ * Tauri host's adapters, the one place allowed to know about every layer.
  * `pnpm dev` opens the UI in a plain browser, where no Tauri runtime answers.
  */
+export function composeDesktop(): AppPorts {
+  return {
+    appInfo: resolveAppInfoPort(),
+    vault: resolveVaultPorts(),
+    notes: resolveNotePorts(),
+    index: resolveIndexPorts(),
+    semantic: resolveSemanticPorts(),
+    sources: resolveSourcePorts(),
+    links: resolveExternalLinks(),
+    snapshot: resolvePageSnapshot(),
+    api: resolveLocalApiPorts(),
+    chat: resolveChatPorts(),
+    activity: resolveActivityPorts(),
+    sync: resolveSyncPorts(),
+    googleCalendar: resolveGoogleCalendar(),
+    granola: resolveGranola(),
+    meetings: resolveMeetingSync(),
+    blocks: resolveBlockSync(),
+    kindle: resolveKindle(),
+    slack: resolveSlack(),
+    globalCapture: resolveGlobalCapture(),
+    exporting: resolveExportPorts(),
+  };
+}
+
 export function resolveAppInfoPort(): AppInfoPort {
   const build = builtCommit();
   return isTauri()
@@ -276,7 +305,7 @@ const kindleTimer = {
 /**
  * Kindle (ADR-0044): the host's own Amazon session and notebook fetches, and
  * the app's **one** sync of it (`createKindleSync`), so launch, the schedule,
- * Settings and ⌘K never run two at once. `main.tsx` asks for this once.
+ * Settings and ⌘K never run two at once. `composeDesktop` asks for this once.
  */
 export function resolveKindle(): KindleHost {
   return {

@@ -13,7 +13,7 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.m
 /** The app's sheet: every section file under `styles/`, joined in the order `index.css` imports them. */
 const css = readStylesheet();
 /** The gallery's own sheet, loaded beside the app's and held to the same palette rule. */
-const galleryCss = read('./gallery/gallery.css');
+const galleryCss = read('../../../apps/desktop/src/gallery/gallery.css');
 
 /**
  * A stylesheet with its comments taken out.

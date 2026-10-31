@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      The page runs only its own scripts and talks only to its own origin:
+      no inline script, nothing fetched from anywhere else. As the desktop's
+      index.html, frame-src 'none' keeps a saved artifact's srcdoc frame from
+      loading a live remote page in its place; srcdoc and about:blank are
+      never subject to it. `pnpm dev` loosens this for Vite's own client
+      (vite.config.ts); the build ships it as written here.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="script-src 'self'; connect-src 'self'; frame-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DFAI</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
