@@ -1,5 +1,6 @@
 import {
   createVaultPath,
+  isAtlasNote,
   opensUnclosedFrontmatter,
   repeatingTaskUpdate,
   splitFrontmatter,
@@ -173,13 +174,17 @@ async function writeChanges({
   settingsFile = false,
 }: FrontmatterWrite & {
   read: (frontmatter: string | null) => Readonly<Record<string, unknown>>;
-  /** A file whose settings are its frontmatter, which a block it never closes would lose. */
+  /**
+   * A file whose settings are its frontmatter, which a block it never closes
+   * would lose. Every file under `.atlas` is one, however it is written (#683).
+   */
   settingsFile?: boolean;
 }): Promise<void> {
   const target = createVaultPath(path);
   const { text, modified } = await fs.readTextFile(target);
   if (ifModified !== undefined && ifModified !== modified) throw new NoteChangedError(target);
-  if (settingsFile && opensUnclosedFrontmatter(text)) throw new UnclosedFrontmatterError(target);
+  const ownFile = settingsFile || isAtlasNote(target);
+  if (ownFile && opensUnclosedFrontmatter(text)) throw new UnclosedFrontmatterError(target);
   const document = splitFrontmatter(text);
 
   const changes = typeof values === 'function' ? values(read(document.frontmatter)) : values;

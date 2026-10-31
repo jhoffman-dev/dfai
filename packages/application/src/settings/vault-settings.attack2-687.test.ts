@@ -22,16 +22,14 @@ describe('a settings note whose block never closes (attack 2 on #687)', () => {
   });
 
   // readVaultSettings documents that reading an unreadable file as empty "would quietly
-  // put every setting in it back to its default" — an unclosed block does exactly that.
-  it.fails(
-    'names the settings note when it is read, rather than reading every setting as its default',
-    async () => {
-      const { fs } = vaultWith({ [PATH]: UNCLOSED });
-      await expect(readVaultSettings({ fs, markdown: jsonMarkdown() })).rejects.toThrow(PATH);
-    },
-  );
+  // put every setting in it back to its default" — an unclosed block did exactly that,
+  // until #683 refused it as unreadable.
+  it('names the settings note when it is read, rather than reading every setting as its default', async () => {
+    const { fs } = vaultWith({ [PATH]: UNCLOSED });
+    await expect(readVaultSettings({ fs, markdown: jsonMarkdown() })).rejects.toThrow(PATH);
+  });
 
-  it.fails('refuses a required read too, as a vault that syncs needs its settings', async () => {
+  it('refuses a required read too, as a vault that syncs needs its settings', async () => {
     const { fs } = vaultWith({ [PATH]: UNCLOSED });
     await expect(
       readVaultSettings({ fs, markdown: jsonMarkdown(), required: true }),
