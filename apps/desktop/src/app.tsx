@@ -728,6 +728,7 @@ function AppWindow({
   });
   const {
     types,
+    broken: brokenTypes,
     failure: typesFailure,
     reload: reloadTypes,
   } = useTypes({
@@ -2384,6 +2385,7 @@ function AppWindow({
                     viewOwner={typeViews.ownerOf}
                     favorites={catalog.favorites}
                     types={sidebarTypes}
+                    brokenTypes={brokenTypes}
                     views={catalog.views}
                     dashboards={catalog.dashboards}
                     quick={quick}

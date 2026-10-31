@@ -49,6 +49,15 @@ export function splitFrontmatter(text: string): MarkdownDocument {
   return { frontmatter: null, body: text, bodyOffset: 0 };
 }
 
+/**
+ * Whether the text opens a frontmatter block on its first line and never
+ * closes it: read as no frontmatter, which a file that must have some —
+ * a type, a rule — should say rather than be taken for none (#683).
+ */
+export function opensUnclosedFrontmatter(text: string): boolean {
+  return OPENING.test(text) && splitFrontmatter(text).frontmatter === null;
+}
+
 const BLANK_BLOCK = /^\uFEFF?---[ \t]*\r?\n(?:[ \t]*\r?\n)*---[ \t]*(?:\r?\n)?$/;
 
 /** Whether a frontmatter block holds nothing at all — no keys, no comments — between its delimiters. */

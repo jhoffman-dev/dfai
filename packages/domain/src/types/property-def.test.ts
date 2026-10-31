@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidTypeError, parseObjectType } from './property-def.ts';
+import { InvalidTypeError, objectTypeProblems, parseObjectType } from './property-def.ts';
 
 describe('parseObjectType', () => {
   it('reads a name and label', () => {
@@ -132,5 +132,58 @@ describe('what a type chooses for how it looks', () => {
       properties: { a: { kind: 'select', options: ['y'] }, b: { kind: 'select', colors: ['y'] } },
     });
     expect(type.properties.map((property) => property.colors)).toEqual([undefined, undefined]);
+  });
+});
+
+describe('objectTypeProblems (#683)', () => {
+  it('has none for a type that reads as written', () => {
+    expect(
+      objectTypeProblems({
+        name: 'project',
+        properties: { status: 'select', owner: { kind: 'relation', target: 'person' } },
+      }),
+    ).toEqual([]);
+  });
+
+  it('has none for frontmatter that is no type at all', () => {
+    expect(objectTypeProblems({})).toEqual([]);
+    expect(objectTypeProblems({ title: 'Notes on the types', tags: ['meta'] })).toEqual([]);
+  });
+
+  it('says a type with no name needs one', () => {
+    expect(objectTypeProblems({ label: 'Recipe', properties: { serves: 'number' } })).toEqual([
+      'It has no name, and a type needs one.',
+    ]);
+    expect(objectTypeProblems({ name: '  ' })).toEqual(['It has no name, and a type needs one.']);
+  });
+
+  it('names each property that is left out, and why', () => {
+    expect(
+      objectTypeProblems({
+        name: 'recipe',
+        properties: { serves: 'nmber', cook: { kind: 'relation' }, title: 'text' },
+      }),
+    ).toEqual([
+      'Its property “serves” has a kind DFAI does not know: “nmber”.',
+      'Its property “cook” is a relation that names no type to point at.',
+    ]);
+  });
+
+  it('says when its properties are not written as keys', () => {
+    expect(objectTypeProblems({ name: 'recipe', properties: ['serves', 'cook'] })).toEqual([
+      'Its properties are not written as key: kind.',
+    ]);
+    // Written with nothing in it, a type simply has no properties yet.
+    expect(objectTypeProblems({ name: 'recipe', properties: null })).toEqual([]);
+  });
+
+  it('names only what parseObjectType leaves out', () => {
+    const frontmatter = {
+      name: 'recipe',
+      properties: { serves: 'nmber', cook: { kind: 'relation' }, title: 'text' },
+    };
+    expect(parseObjectType(frontmatter).properties.map((property) => property.key)).toEqual([
+      'title',
+    ]);
   });
 });

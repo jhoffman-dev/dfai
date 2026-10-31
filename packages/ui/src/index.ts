@@ -27,6 +27,7 @@ export type {
   ActivityRowLink,
   InboxRowLink,
   HeaderMenu,
+  SidebarBrokenType,
   SidebarQuickView,
   SidebarTree,
   SidebarType,

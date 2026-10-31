@@ -2,6 +2,7 @@ export {
   appendToBody,
   joinDocument,
   joinFrontmatter,
+  opensUnclosedFrontmatter,
   isBlankFrontmatter,
   splitFrontmatter,
   withBody,

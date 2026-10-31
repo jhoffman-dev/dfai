@@ -30,6 +30,15 @@ export interface SidebarType {
   readonly icon: SidebarIcon;
 }
 
+/** A type file that does not read whole, listed under Types with why (#683). */
+export interface SidebarBrokenType {
+  readonly path: VaultPath;
+  readonly name: string;
+  readonly problem: string;
+}
+
+const NONE_BROKEN: readonly SidebarBrokenType[] = [];
+
 /** A saved view lifted to the top of the sidebar — Today, or Inbox. */
 export interface SidebarQuickView {
   readonly id: QuickViewId;
@@ -88,6 +97,7 @@ const QUICK_GLYPHS: Readonly<Record<QuickViewId, IconName>> = { today: 'sun', in
 export function Sidebar({
   favorites,
   types,
+  brokenTypes = NONE_BROKEN,
   views,
   dashboards,
   quick,
@@ -119,6 +129,8 @@ export function Sidebar({
 }: {
   favorites: readonly SidebarEntry[];
   types: readonly SidebarType[];
+  /** Type files that do not read whole, listed under the types. */
+  brokenTypes?: readonly SidebarBrokenType[];
   views: readonly SidebarEntry[];
   dashboards: readonly SidebarEntry[];
   quick: readonly SidebarQuickView[];
@@ -226,13 +238,16 @@ export function Sidebar({
         ),
       }),
       children: (
-        <TypeList
-          types={types}
-          openTypeName={openTypeName}
-          onOpenType={openType}
-          {...(onEditType !== undefined && { onEditType: editType })}
-          {...(onEditTemplate !== undefined && { onEditTemplate: editTemplate })}
-        />
+        <>
+          <TypeList
+            types={types}
+            openTypeName={openTypeName}
+            onOpenType={openType}
+            {...(onEditType !== undefined && { onEditType: editType })}
+            {...(onEditTemplate !== undefined && { onEditTemplate: editTemplate })}
+          />
+          <BrokenTypeList broken={brokenTypes} onOpen={openEntry} />
+        </>
       ),
     },
     views: {
@@ -746,6 +761,39 @@ const TypeList = memo(function TypeList({
         />
       )}
     </>
+  );
+});
+
+/**
+ * The type files that do not read whole, below the types: each opens its file
+ * to be mended, and says why under its name. Nothing is drawn when all read.
+ */
+const BrokenTypeList = memo(function BrokenTypeList({
+  broken,
+  onOpen,
+}: {
+  broken: readonly SidebarBrokenType[];
+  onOpen: (path: VaultPath, how: OpenHow) => void;
+}) {
+  if (broken.length === 0) return null;
+  return (
+    <ul className="sidebar__list">
+      {broken.map((type) => (
+        <li key={type.path} className="sidebar__item">
+          <button
+            type="button"
+            className="sidebar__row"
+            aria-label={`${type.name} has a problem: ${type.path}`}
+            title={type.path}
+            onClick={(event) => onOpen(type.path, openHowFrom(event))}
+          >
+            <Icon name="doc" className="sidebar__icon" />
+            <span className="sidebar__name">{type.name}</span>
+          </button>
+          <p className="sidebar__empty sidebar__problem">{type.problem}</p>
+        </li>
+      ))}
+    </ul>
   );
 });
 

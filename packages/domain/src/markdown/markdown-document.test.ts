@@ -4,9 +4,23 @@ import {
   isBlankFrontmatter,
   joinDocument,
   joinFrontmatter,
+  opensUnclosedFrontmatter,
   splitFrontmatter,
   withBody,
 } from './markdown-document.ts';
+
+describe('opensUnclosedFrontmatter (#683)', () => {
+  it('is a file that opens a block on its first line and never closes it', () => {
+    expect(opensUnclosedFrontmatter('---\nname: recipe\nlabel: Recipe\n\n# Recipe\n')).toBe(true);
+    expect(opensUnclosedFrontmatter('﻿---\r\nname: recipe\r\n')).toBe(true);
+  });
+
+  it('is not a file whose block closes, or that opens no block', () => {
+    expect(opensUnclosedFrontmatter('---\nname: recipe\n---\n')).toBe(false);
+    expect(opensUnclosedFrontmatter('# Recipe\n\n---\n')).toBe(false);
+    expect(opensUnclosedFrontmatter('')).toBe(false);
+  });
+});
 
 describe('appendToBody', () => {
   it('adds the markdown after one blank line', () => {
