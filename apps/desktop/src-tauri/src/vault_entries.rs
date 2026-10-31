@@ -530,6 +530,9 @@ mod folder_tests {
 mod move_link_tests;
 
 #[cfg(test)]
+mod trash_link_tests;
+
+#[cfg(test)]
 mod move_tests {
     use super::move_entry_at;
     use std::fs;
