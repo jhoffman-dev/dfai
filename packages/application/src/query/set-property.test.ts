@@ -215,6 +215,20 @@ describe('writeFrontmatterChanges, on a file whose block never closes (#683)', (
     expect(writes[0]?.contents.endsWith(UNCLOSED)).toBe(true);
   });
 
+  it('refuses a note written under .atlas too, as the API may aim one there: those are DFAI’s own', async () => {
+    const { fs, writes } = vault(UNCLOSED);
+    await expect(
+      setNoteProperties({
+        today: '2026-10-08',
+        fs,
+        markdown: fakeMarkdown(),
+        path: '.atlas/templates/Film.md',
+        values: { status: 'done' },
+      }),
+    ).rejects.toThrowError(new UnclosedFrontmatterError('.atlas/templates/Film.md'));
+    expect(writes).toEqual([]);
+  });
+
   it('still gives a file with no block one of its own', async () => {
     const { fs, writes } = vault('# Film\n');
     await writeFrontmatterChanges({

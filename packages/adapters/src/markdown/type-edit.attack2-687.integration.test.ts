@@ -63,7 +63,9 @@ describe('unread properties survive an edit (attack 2 on #687)', () => {
 
   // Pre-existing in the YAML port, not new in #687: the `properties` pair is
   // re-stringified, so the spacing inside an unread spec is normalised — the
-  // values and comment survive, the bytes the person typed do not.
+  // values and comment survive, the bytes the person typed do not. Left failing
+  // for issue #697 (rewriting a type's properties map changes the spacing of
+  // entries it didn't touch); it flips when that is fixed.
   it.fails(
     'keeps the bytes of an unread spec, spacing and all, when another property moves',
     async () => {

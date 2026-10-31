@@ -239,3 +239,32 @@ describe('typeFrontmatterChanges, beside a property the file holds unread (#683)
     );
   });
 });
+
+describe('typeFrontmatterChanges, on keys the file holds twice as the parser trims them (#683)', () => {
+  it('moves a property beside " author" and author, keeping each spec under its own key', () => {
+    const written = {
+      name: 'book',
+      properties: { ' author': { kind: 'wizard' }, author: 'text', rating: 'number' },
+    };
+    const before = parseObjectType(written);
+    const after = moveProperty(before, { key: 'rating', to: 0 });
+    const properties = typeFrontmatterChanges({ before, after, written })['properties'];
+    expect(properties).toEqual({ ' author': { kind: 'wizard' }, rating: 'number', author: 'text' });
+  });
+
+  it('adds a property beside two blank keys, carrying both through as they were', () => {
+    const written = {
+      name: 'book',
+      properties: { rating: 'number', '': { kind: 'wizard' }, '  ': 'text' },
+    };
+    const before = parseObjectType(written);
+    const after = addProperty(before, { label: 'Pages' });
+    const properties = typeFrontmatterChanges({ before, after, written })['properties'];
+    expect(properties).toEqual({
+      rating: 'number',
+      '': { kind: 'wizard' },
+      '  ': 'text',
+      pages: 'text',
+    });
+  });
+});

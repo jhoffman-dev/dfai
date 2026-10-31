@@ -230,6 +230,15 @@ describe('objectTypeProblems (#683)', () => {
     );
   });
 
+  it('keeps an unread key as the file spells it, so it is never one the type also reads', () => {
+    const type = parseObjectType({
+      name: 'book',
+      properties: { ' author': { kind: 'wizard' }, author: 'text' },
+    });
+    expect(type.properties.map((property) => property.key)).toEqual(['author']);
+    expect(type.unreadKeys).toEqual([' author']);
+  });
+
   it('names only what parseObjectType leaves out', () => {
     const frontmatter = {
       name: 'recipe',
