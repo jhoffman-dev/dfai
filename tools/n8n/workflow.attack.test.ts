@@ -24,4 +24,42 @@ describe('the failure email', () => {
     expect(message).toContain('$json.error');
     expect(message).not.toMatch(/is in Notion/i);
   });
+
+  it('cannot be given a forged line by a meeting’s title, source id or error', () => {
+    const notify = committed.nodes.find((each) => each.name === NODES.notify);
+    const forged = 'Retro\r\nSource ID: forged\u2028Execution: none';
+    const forging = () => ({ item: { json: { title: forged, sourceId: `id\nMeeting: forged` } } });
+    const render = (template: string, $: (name: string) => unknown = forging) =>
+      template
+        .replace(/^=/, '')
+        .replace(/\{\{ ([\s\S]+?) \}\}/g, (_, expression: string) =>
+          String(
+            new Function('$', '$json', '$workflow', '$execution', `return (${expression});`)(
+              $,
+              { error: 'GitHub said\n409' },
+              { name: 'Meeting to DFAI' },
+              { id: '7' },
+            ),
+          ),
+        );
+    const lines = render(String(notify?.parameters.message)).split('\n');
+    expect(lines).toEqual([
+      'This meeting did not reach DFAI: GitHub said 409',
+      '',
+      'Meeting: Retro Source ID: forged Execution: none',
+      'Source ID: id Meeting: forged',
+      'Execution: Meeting to DFAI #7',
+    ]);
+    expect(render(String(notify?.parameters.subject))).toBe(
+      'DFAI did not get a meeting: Retro Source ID: forged Execution: none',
+    );
+    // A node that never ran leaves its value empty; the email still goes.
+    const neverRan = () => {
+      throw new Error('node has not run');
+    };
+    expect(render(String(notify?.parameters.message), neverRan).split('\n').slice(2, 4)).toEqual([
+      'Meeting: ',
+      'Source ID: ',
+    ]);
+  });
 });

@@ -13,6 +13,7 @@ import {
   resolveBlockSync,
   resolveIndexPorts,
   resolveKindle,
+  resolveSlack,
   resolveLocalApiPorts,
   resolveChatPorts,
   resolveNotePorts,
@@ -52,6 +53,7 @@ createRoot(root).render(
       meetings={resolveMeetingSync()}
       blocks={resolveBlockSync()}
       kindle={resolveKindle()}
+      slack={resolveSlack()}
       globalCapture={resolveGlobalCapture()}
       exporting={resolveExportPorts()}
     />

@@ -41,6 +41,12 @@ export interface QueryField {
   readonly targets?: readonly string[];
   /** Whether a note can hold several values of it. */
   readonly many: boolean;
+  /**
+   * For a field reached through a relation: whether the linked note holds
+   * several values of it, whatever the relation does — `many` is true for
+   * either. Absent for a field of the note's own, where `many` says it.
+   */
+  readonly valueMany?: boolean;
 }
 
 /** The fields every note has, whatever its type. */
@@ -127,6 +133,7 @@ export function fieldsThrough(relation: QueryField, types: readonly ObjectType[]
       label: `${relation.label} · ${field.label}`,
       via: relation.key,
       many: field.many || relation.many,
+      valueMany: field.many,
     }));
 }
 

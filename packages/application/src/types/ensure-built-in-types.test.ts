@@ -234,13 +234,20 @@ describe('ensureBuiltInTypes', () => {
     expect(extension?.added.map((property) => property.key)).toEqual(['project']);
   });
 
-  it('only offers to change a type the vault has: its task file is not touched on opening', async () => {
+  it('only offers to change a type the vault has: its task file gains `focus` alone on opening (#108)', async () => {
     const v = vault({
       '.atlas/types/project.md': JAMES_PROJECT,
       '.atlas/types/task.md': JAMES_TASK,
     });
     const ensured = await ensureBuiltInTypes(v);
-    expect(v.files.get('.atlas/types/task.md')).toBe(JAMES_TASK);
+    expect(propertiesOf(v, '.atlas/types/task.md')).toEqual({
+      status: 'select',
+      estimate: { kind: 'text', label: 'Size' },
+      focus: { kind: 'date', label: 'Chosen for' },
+    });
+    expect(splitFrontmatter(v.files.get('.atlas/types/task.md') ?? '').body).toBe(
+      '\n# Task\n\nJames’s own words about tasks.\n',
+    );
     expect(ensured.offer.extensions.map((extension) => extension.before.path)).toEqual([
       '.atlas/types/task.md',
     ]);
@@ -417,22 +424,47 @@ describe('ensureBuiltInTypes, on a built-in type file older than what DFAI ships
     ]);
   });
 
-  it('leaves a type of the vault’s own alone, and PARA’s and Task’s, which stay an offer', async () => {
+  it('leaves a type of the vault’s own alone, and PARA’s and Task’s GTD keys, which stay an offer', async () => {
     const recipe = note({ name: 'recipe', properties: { serves: 'number' } });
     const theirs = {
       '.atlas/types/recipe.md': recipe,
-      '.atlas/types/task.md': JAMES_TASK,
       '.atlas/types/project.md': JAMES_PROJECT,
       '.atlas/types/resource.md': note({ name: 'resource', properties: { shelf: 'text' } }),
       '.atlas/types/area.md': note({ name: 'area' }),
     };
-    const v = vault(theirs);
+    const v = vault({ ...theirs, '.atlas/types/task.md': JAMES_TASK });
 
     const ensured = await ensureBuiltInTypes(v);
 
     for (const [path, text] of Object.entries(theirs)) expect(v.files.get(path)).toBe(text);
-    expect(ensured.properties).toEqual({ gained: [], skipped: [], failed: [] });
-    expect(v.files.has(RECORD)).toBe(false);
+    expect(Object.keys(propertiesOf(v, '.atlas/types/task.md'))).toEqual([
+      'status',
+      'estimate',
+      'focus',
+    ]);
+    expect(ensured.properties).toEqual({
+      gained: [{ path: '.atlas/types/task.md', label: 'Task', added: ['Chosen for'] }],
+      skipped: [],
+      failed: [],
+    });
+  });
+
+  it('never writes `focus` over a Task type’s own, nor again once it is taken off (#108)', async () => {
+    const own = note({
+      name: 'task',
+      properties: { status: 'select', focus: { kind: 'text', label: 'Focus area' } },
+    });
+    const v = vault({ '.atlas/types/task.md': own });
+
+    const first = await ensureBuiltInTypes(v);
+    expect(v.files.get('.atlas/types/task.md')).toBe(own);
+    expect(first.properties.gained).toEqual([]);
+
+    const bare = note({ name: 'task', properties: { status: 'select' } });
+    v.files.set('.atlas/types/task.md', bare);
+    const again = await ensureBuiltInTypes(v);
+    expect(v.files.get('.atlas/types/task.md')).toBe(bare);
+    expect(again.properties.gained).toEqual([]);
   });
 
   it('never touches a vault’s own Resource type, even where the vault files by project', async () => {
@@ -622,6 +654,7 @@ describe('acceptTypeSetup', () => {
     expect(properties).toEqual({
       status: 'select',
       estimate: { kind: 'text', label: 'Size' },
+      focus: { kind: 'date', label: 'Chosen for' },
       project: { kind: 'relation', target: ['project', 'area'] },
     });
   });

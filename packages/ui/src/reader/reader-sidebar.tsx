@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ReaderDocument, ReaderOutlineEntry, ReaderPageSize } from './reader-types.ts';
+import { useRangeVirtualizer } from '../range-virtualizer.ts';
 
 /*
  * The reader's side: the PDF's outline, or its pages as small pictures, to
@@ -91,7 +91,7 @@ const THUMB_GAP = 28;
 function Thumbnails({ pdf, estimate, currentPage, onGoTo }: ReaderSidebarProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const height = (estimate.height / estimate.width) * THUMB_WIDTH;
-  const rows = useVirtualizer({
+  const rows = useRangeVirtualizer({
     count: pdf.pageCount,
     getScrollElement: () => scroller.current,
     estimateSize: () => height + THUMB_GAP,

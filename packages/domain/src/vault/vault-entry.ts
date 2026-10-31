@@ -8,12 +8,16 @@ export interface VaultFile {
   readonly modified?: number;
   /** How many bytes it holds, where the host said. */
   readonly size?: number;
+  /** Whether it is a symlink, where the host said; absent for one that is not. */
+  readonly link?: true;
 }
 
 export interface VaultDirectory {
   readonly kind: 'directory';
   readonly name: string;
   readonly path: VaultPath;
+  /** Whether it is a symlink, where the host said; absent for one that is not. */
+  readonly link?: true;
 }
 
 export type VaultEntry = VaultFile | VaultDirectory;

@@ -34,8 +34,8 @@ use crate::vault::{
 };
 pub use shapes::Reach;
 use shapes::{
-    clone_name, clone_url, new_remote_url, overwritten_path, vet_folder_args, vet_repo_name,
-    vet_vault_args, writes_working_tree,
+    clone_name, clone_url, new_remote_url, overwritten_path, remote_settings_branch,
+    vet_folder_args, vet_repo_name, vet_vault_args, writes_working_tree,
 };
 
 /// Where `git` is looked for, in order: Homebrew's, then Apple's.
@@ -343,6 +343,9 @@ impl GitHost {
                 format!("You cancelled connecting the vault to {url}."),
             )?;
         }
+        if let Some(branch) = remote_settings_branch(args) {
+            self.refuse_unless_checked_out(root, branch)?;
+        }
         let _turn = writes_working_tree(args).then(git_write_turn);
         if let (Some(path), Some(seen)) = (overwritten, seen) {
             self.refuse_if_changed(root, path, seen)?;
@@ -360,6 +363,21 @@ impl GitHost {
             remove_lock_made_since(root, started);
         }
         Ok(output)
+    }
+
+    /// Refuses a read of the settings on GitHub for any branch but the one
+    /// checked out, as git itself says it: the other Mac's last word is on that
+    /// branch alone (#630).
+    fn refuse_unless_checked_out(&self, root: &Path, branch: &str) -> Result<(), String> {
+        let asked = ["symbolic-ref", "--quiet", "--short", "HEAD"].map(String::from);
+        let checked_out = self.git_in_vault_seen(root, &asked, None)?;
+        if checked_out.code == Some(0) && checked_out.stdout.trim_end() == branch {
+            Ok(())
+        } else {
+            Err(format!(
+                "{branch} is not the branch checked out, so its settings on GitHub are not read"
+            ))
+        }
     }
 
     /// Refuses with `changed:` when the file at `path` no longer holds what the sync saw.

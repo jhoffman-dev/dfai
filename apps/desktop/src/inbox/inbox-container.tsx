@@ -8,6 +8,10 @@ import { localClock } from '../today.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import type { PendingWrites } from '../workspace/pending-writes.ts';
 import { useMakeRelated } from '../types/use-create-related.ts';
+import type { MeetingsWaitingStore } from '../meetings/meetings-waiting-store.ts';
+import { useMeetingsWaitingBanner } from '../meetings/use-meetings-waiting-banner.ts';
+import { useMeetingSetup, type MeetingSetupWiring } from '../meetings/use-meeting-setup.ts';
+import type { SyncStore } from '../sync/sync-store.ts';
 import { useInbox } from './use-inbox.ts';
 
 type InboxPageProps = ComponentProps<typeof InboxPage>;
@@ -35,8 +39,14 @@ export interface InboxWiring extends Pick<
   readonly closing: WindowClosingPort;
   /** Where the page holds its writes for a vault switch and the window's close (#217, #166). */
   readonly pendingWrites: PendingWrites;
+  /** What the meeting import says waits for the named Mac, on a Mac that is not named (ADR-0035). */
+  readonly meetingsWaiting: MeetingsWaitingStore;
+  /** Where sync says how it stands, and the claim "Process here" makes (ADR-0035 part 2). */
+  readonly sync: SyncStore;
   /** Opens the line a proposal cites, in the focused pane. */
   readonly onOpenSource: (link: string) => void;
+  /** Setting up meeting post-processing in one yes (#191), shared with the Automations page. */
+  readonly meetingSetup: MeetingSetupWiring;
 }
 
 /**
@@ -53,7 +63,14 @@ export interface InboxWiring extends Pick<
 export function InboxContainer({ wiring, chrome }: PageContainerProps) {
   const { pages, pane } = wiring;
   // The offers are spread below, since each is given only while the window makes it.
-  const { closing, pendingWrites, onOpenSource, ...offers } = pages.inbox;
+  const { closing, pendingWrites, onOpenSource, meetingsWaiting, sync, meetingSetup, ...offers } =
+    pages.inbox;
+  const setup = useMeetingSetup(meetingSetup, { vault: pane.vault, where: 'inbox' });
+  const waitingBanner = useMeetingsWaitingBanner({
+    waiting: meetingsWaiting,
+    sync,
+    vaultKey: pane.vault,
+  });
   // The list and the proposals are read again for news of the Inbox's notes
   // alone, the projects and people it offers for news of those (#325).
   const indexKey = useScopedIndexKey({
@@ -128,9 +145,12 @@ export function InboxContainer({ wiring, chrome }: PageContainerProps) {
       onClarify={inbox.clarify}
       busy={inbox.busy}
       problem={inbox.problem}
+      onUndo={inbox.takeBackLast}
       refusals={inbox.refusals}
       summaryPending={inbox.summaryPending}
+      meetingsWaiting={waitingBanner}
       {...offers}
+      meetingSetup={setup}
       proposals={{ ...proposals.section, onOpen: pages.openNote, onOpenSource }}
       {...chrome}
     />

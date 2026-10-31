@@ -78,7 +78,8 @@ async function writeBothAtOnce(
     return results.map((result) =>
       result.status === 'fulfilled'
         ? { status: result.status }
-        : { status: result.status, message: String((result.reason as Error).message) },
+        : // The host rejects with the string its `Err` held, as Tauri hands it over.
+          { status: result.status, message: String(result.reason) },
     );
   });
 }

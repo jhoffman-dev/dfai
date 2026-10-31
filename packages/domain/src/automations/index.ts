@@ -27,6 +27,7 @@ export type {
 export { automationQuery, MAX_ACTIONS_PER_RUN, movingDate } from './automation-query.ts';
 export { capFor, cappedLine, describePlan, planAutomation, planVerb } from './automation-plan.ts';
 export type { AutomationPlan, PassedOver } from './automation-plan.ts';
+export { describeNotLinked, relinksMeetings } from './relink-plan.ts';
 export {
   describeSchedule,
   isDue,
@@ -136,6 +137,7 @@ export {
   DECLARED_STEP_ASKS_PER_HOUR,
   DECLARED_STEP_ASKS_PER_RUN,
   DECLARED_STEP_MODEL,
+  isDeclaredStep,
   SHARED_STEP_BUDGET,
   sharesAskAllowance,
 } from './claude-step-budget.ts';
@@ -277,6 +279,7 @@ export type { NoteAnswer, NoteAnswerValue } from './note-answer.ts';
 export {
   asksSpentInHour,
   backoffMinutes,
+  unavailableBackoffMinutes,
   dueTrigger,
   nextRunOf,
   ruleClockOf,
@@ -330,7 +333,7 @@ export {
   madeTaskMeeting,
   unarchiveProblem,
 } from './undo-check.ts';
-export { AUTOMATION_PRESETS, BLANK_AUTOMATION } from './presets.ts';
+export { AFTER_A_MEETING_PRESET, AUTOMATION_PRESETS, BLANK_AUTOMATION } from './presets.ts';
 export {
   CITED_ITEMS_INSTRUCTIONS,
   keepCitedItems,
@@ -338,3 +341,16 @@ export {
   UNCITED_REASON,
 } from './cited-items.ts';
 export type { CitedBody } from './cited-items.ts';
+export {
+  emailsLostSince,
+  meetingSetupPlan,
+  meetingSetupWithin,
+  meetingSetupWritesNothing,
+  meetingsProcessedOnArrival,
+} from './meeting-setup.ts';
+export type {
+  MeetingSetupFacts,
+  MeetingSetupLine,
+  MeetingSetupLoss,
+  MeetingSetupPlan,
+} from './meeting-setup.ts';

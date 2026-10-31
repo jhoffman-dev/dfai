@@ -5,7 +5,7 @@ export {
   deleteSkill,
   saveSkill,
   SkillRefusedError,
-  skillOtherFiles,
+  skillFolderContents,
 } from './manage-skills.ts';
 export { listPromptNotes } from './prompt-notes.ts';
 export type { PromptNote } from './prompt-notes.ts';

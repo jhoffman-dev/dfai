@@ -34,6 +34,7 @@ function reportOf(tasks: readonly ReviewTask[]): TodayReport {
   return {
     ...lists,
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
   };

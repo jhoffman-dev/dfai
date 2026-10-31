@@ -1,3 +1,4 @@
+import { foldedTypeName, foldedTypeSql } from '../types/note-type-sql.ts';
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { TASK_KEYS } from '../gtd/gtd-status.ts';
 import { tagKey } from '../tags/tag-name.ts';
@@ -138,16 +139,19 @@ export function compileFollowUpsQuery({
     'SELECT l.dst, a.path, a.self FROM links AS l JOIN around AS a ON l.src = a.path',
     'SELECT l.src, a.path, a.self FROM links AS l JOIN around AS a ON l.dst = a.path',
   ].join(' UNION ');
-  const linkedWith = [
-    't.path IN (SELECT r.dst FROM relations AS r WHERE r.src = f.path)',
-    't.path IN (SELECT r.src FROM relations AS r WHERE r.dst = f.path)',
-    't.path IN (SELECT l.dst FROM links AS l WHERE l.src = f.path)',
-    't.path IN (SELECT l.src FROM links AS l WHERE l.dst = f.path)',
-  ].join(' OR ');
+  // The notes linked with the follow-up either way, by a property or a body
+  // link — then, of those alone, whether one is a person: each linked note is
+  // sought by its path, never every note's type row once per task.
+  const linked = [
+    'SELECT r.dst AS path FROM relations AS r WHERE r.src = f.path',
+    'SELECT r.src FROM relations AS r WHERE r.dst = f.path',
+    'SELECT l.dst FROM links AS l WHERE l.src = f.path',
+    'SELECT l.src FROM links AS l WHERE l.dst = f.path',
+  ].join(' UNION ALL ');
   const namesOtherPerson =
     personType === null
       ? '0'
-      : `EXISTS (SELECT 1 FROM props AS t WHERE t.key = 'type' AND t.value_text = ? AND t.path <> ? AND (${linkedWith}))`;
+      : `EXISTS (SELECT 1 FROM (${linked}) AS linked CROSS JOIN props AS t ON t.path = linked.path WHERE t.key = 'type' AND ${foldedTypeSql('t.value_text')} = ? AND t.path <> ?)`;
   const open = done === null ? [] : ["  AND COALESCE(status, '') <> ?"];
   return {
     sql: [
@@ -164,7 +168,7 @@ export function compileFollowUpsQuery({
       '    (SELECT MIN(h.around) FROM hits AS h WHERE h.task = f.path AND h.self = 0) AS meeting,',
       `    ${namesOtherPerson} AS other`,
       '  FROM files AS f',
-      "  WHERE f.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = ?)",
+      `  WHERE f.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = ?)`,
       '    AND f.path IN (SELECT path FROM tags WHERE tag = ?)',
       '    AND f.path IN (SELECT task FROM hits)',
       `    AND ${outsideArchiveSql('f.path')} AND ${userSpaceNoteSql('f.path')}`,
@@ -184,8 +188,8 @@ export function compileFollowUpsQuery({
       TASK_KEYS.due,
       TASK_KEYS.source,
       TASK_KEYS.waitingOn,
-      ...(personType === null ? [] : [personType, entity]),
-      taskType,
+      ...(personType === null ? [] : [foldedTypeName(personType), entity]),
+      foldedTypeName(taskType),
       tagKey(FOLLOW_UP_TAG),
       ...(done === null ? [] : [done]),
       limit,

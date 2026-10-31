@@ -945,3 +945,13 @@
 .agenda__more:hover {
   background: var(--hover);
 }
+
+/* A task chosen for today (#108): a muted yellow chip, like the Today page's pressed Today. */
+.plan-tray__chosen {
+  align-self: flex-start;
+  background: var(--hue-yellow-bg);
+  border-radius: var(--radius-chip);
+  color: var(--hue-yellow-ink);
+  font-size: var(--text-meta);
+  padding: 0 6px;
+}

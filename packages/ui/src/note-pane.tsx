@@ -31,7 +31,9 @@ import { NoteLinksPanel, type MentionsState } from './note-links.tsx';
 import { LinkPicker } from './link-picker.tsx';
 import { EditableTitle, HiddenTitle, PageHead } from './page-head.tsx';
 import { PageBar, type PageHistory, type PageMenuItem } from './page-bar.tsx';
+import type { RelatedPanel } from './related-notes.tsx';
 import { TemplateBanner, type TemplateNotice } from './template-banner.tsx';
+import { TrailBar, type TrailWalk } from './trail-bar.tsx';
 import { MeetingCorrectionsBand, type CorrectionsNotice } from './meeting-corrections-band.tsx';
 import { PromotionBanner, type LinePromotion } from './promotion-notice.tsx';
 import { PropertiesStrip } from './peek/properties-strip.tsx';
@@ -153,6 +155,10 @@ export interface NotePaneProps {
   mentions: MentionsState;
   onFindMentions: () => void;
   onLinkMention: (path: VaultPath) => void;
+  /** Notes close in meaning and not linked yet, for its foot (P32-03); left out, none are offered. */
+  related?: RelatedPanel;
+  /** The trail the pane is walking, while it stands on this note (P32-03). */
+  trail?: TrailWalk;
   onOpenNote: (path: VaultPath) => void;
   loadImage: (src: string) => Promise<string | null>;
   /** Saves an image pasted, dropped or picked into the note; left out where a page takes none. */
@@ -315,6 +321,7 @@ function ReadyPage(props: NotePaneProps & { state: ReadyState; heading: PageHead
       {props.template !== undefined && <TemplateBanner {...props.template} />}
       {props.corrections !== undefined && <MeetingCorrectionsBand {...props.corrections} />}
       <PromotionBanner notice={props.promotion?.notice ?? null} />
+      {props.trail !== undefined && <TrailBar trail={props.trail} />}
       <div className={peek ? 'peek__page' : 'panel__body'}>
         {/* A view is a table or a board, not prose, so it is not held to a
             reading width — it uses the window it has been given. */}
@@ -555,6 +562,7 @@ function NoteBody({
         mentions={props.mentions}
         onFindMentions={props.onFindMentions}
         onLinkMention={props.onLinkMention}
+        {...(props.related !== undefined && { related: props.related })}
       />
     </>
   );

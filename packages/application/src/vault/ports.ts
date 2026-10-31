@@ -22,6 +22,13 @@ export interface NoteFile {
 }
 
 /** A note's text and the modification time it was read at. */
+/** A file as it was read, for the host to hold a change to. */
+export interface AsRead {
+  readonly path: VaultPath;
+  readonly modified: number;
+  readonly text: string;
+}
+
 export interface NoteContents {
   readonly text: string;
   readonly modified: number;
@@ -77,8 +84,13 @@ export interface VaultFsPort {
   /**
    * Puts a note or a folder in the system Trash, where it can be recovered.
    * Fails rather than deleting it any other way.
+   *
+   * `unchanged` names files as they were read — the entry itself among them,
+   * say. Given, the host checks each still has that modification time and
+   * exactly that text, and trashes only then, in the same step; otherwise it
+   * refuses with {@link EntryChangedError} and nothing moves (#235).
    */
-  trashEntry: (args: { path: VaultPath }) => Promise<void>;
+  trashEntry: (args: { path: VaultPath; unchanged?: readonly AsRead[] }) => Promise<void>;
   /**
    * Replaces a note's contents and reports its new modification time.
    * `expectedModified` is the time the note was read at; the host refuses the
@@ -189,6 +201,14 @@ export class VaultAccessError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'VaultAccessError';
+  }
+}
+
+/** The host refused to act on an entry: a file it was told was as read had changed since (#235). */
+export class EntryChangedError extends VaultAccessError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EntryChangedError';
   }
 }
 

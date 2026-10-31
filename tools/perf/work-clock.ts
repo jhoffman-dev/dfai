@@ -16,12 +16,21 @@ import { expect, type Page } from '@playwright/test';
  *   `requestAnimationFrame` are kept in a list and run only when the harness
  *   moves time on (`runUntil`), in the order they are due. `Date` is
  *   `startsAt` plus that time. Nothing the app schedules fires on its own.
+ * - **A timer of a minute or more never fires while counting** (#243). The
+ *   app's minute ticks (automations, Today's day check, the panes' clock) are
+ *   due wherever the minute falls, which has nothing to do with the action
+ *   being counted: one that lands in a window adds its commits there, and a
+ *   window starting a little earlier or later moves it to the next action or
+ *   out of every count. Held while counting, it fires on the first step that
+ *   is not counted, so no count depends on where the minute falls.
  * - **The host answers one at a time, in the order it was asked.** A host
  *   command (and a request to the index worker) is sent at once, but its
  *   answer is handed to the app only when the page is quiet — and the oldest
  *   question first, whenever the answers arrived.
  * - **Animations a script starts** (`element.animate`) are held, and finish
  *   when their time on the work clock is up.
+ * - **Layout observers' reports** (`ResizeObserver`, `IntersectionObserver`)
+ *   are held, and handed over after a frame the clock waited for (#243).
  * - **Quiet** means no React or `MessageChannel` task pending, the answer
  *   just handed over drawn, one frame after it so that layout observers have
  *   run, and no finite animation still playing.
@@ -89,7 +98,10 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     order: number;
     readonly run: () => void;
     readonly every: number | null;
+    /** Held while counting: a minute tick, not the action's own work. */
+    readonly long: boolean;
   }
+  const LONG_TIMER_MS = 60_000;
   interface Question {
     readonly command: string;
     answer: (() => void) | null;
@@ -112,10 +124,14 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       ? window.requestAnimationFrame.bind(window)
       : (callback: () => void) => realSetTimeout(callback, 16);
 
+  // As a browser takes a delay: a 32-bit long (2 ** 31 and Infinity wrap or
+  // fall to 0, as NaN does), and never below 0.
+  const delayOf = (delay: unknown) => Math.max(0, Number(delay) | 0);
   const addTimer = (run: () => void, delay: unknown, every: number | null) => {
     const id = state.nextId++;
-    const wait = Math.max(0, Number(delay) || 0);
-    state.timers.set(id, { id, due: state.now + wait, order: state.order++, run, every });
+    const wait = delayOf(delay);
+    const long = wait >= LONG_TIMER_MS;
+    state.timers.set(id, { id, due: state.now + wait, order: state.order++, run, every, long });
     return id;
   };
   const call = (handler: unknown, args: unknown[]) => () => {
@@ -127,7 +143,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       addTimer(call(handler, args), delay, null),
     // Never every 0 ms: an interval that is always due would never let time move on.
     setInterval: (handler: unknown, delay?: unknown, ...args: unknown[]) =>
-      addTimer(call(handler, args), delay, Math.max(1, Number(delay) || 0)),
+      addTimer(call(handler, args), delay, Math.max(1, delayOf(delay))),
     clearTimeout: clear,
     clearInterval: clear,
     requestAnimationFrame: (callback: FrameRequestCallback) =>
@@ -148,6 +164,92 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       if (Number.isFinite(ends)) addTimer(() => animation.finish(), ends, null);
       return animation;
     } as typeof Element.prototype.animate;
+  }
+
+  // A layout observer reports on a real rendering step, which can land between
+  // two of React's tasks or after them: dnd-kit then saw the drag's first
+  // `over` in one run and not the next, and the drag counted 41 commits or 42
+  // (#243). While the clock runs or counts, each report is held and handed over
+  // after a frame `quiet` drew, so it reaches the app at the same point in the
+  // work on every run. As one rendering step would report them: one call per
+  // observer, in the order the observers were made; a resize report keeps the
+  // latest entry for each element, where it first came, and an intersection
+  // report keeps every entry in the order it came, since going in and out
+  // again is two crossings, not one. Counting stops with nothing held, so no
+  // report crosses from one count into the next or lands after a newer one.
+  interface Held {
+    readonly made: number;
+    readonly report: (entries: unknown[], observer: object) => void;
+    entries: { readonly target: Element }[];
+  }
+  const heldReports = new Map<object, Held>();
+  let observersMade = 0;
+  const handOverReports = () => {
+    const due = [...heldReports.entries()].sort(([, one], [, other]) => one.made - other.made);
+    let handed = false;
+    for (const [observer] of due) {
+      // Gone if an earlier callback in this hand-over disconnected or unobserved it.
+      const held = heldReports.get(observer);
+      if (held === undefined) continue;
+      heldReports.delete(observer);
+      handed = true;
+      try {
+        held.report.call(observer, held.entries, observer);
+      } catch (error) {
+        // Thrown again outside, as an observer's error reaches `window.onerror`
+        // in a real page, and the other observers still get their reports.
+        realSetTimeout(() => {
+          throw error;
+        }, 0);
+      }
+    }
+    return handed;
+  };
+  type Observer = new (
+    report: Held['report'],
+    options?: unknown,
+  ) => {
+    unobserve(target: Element): void;
+    disconnect(): void;
+  };
+  for (const kind of ['ResizeObserver', 'IntersectionObserver'] as const) {
+    const Real = (window as unknown as Record<string, Observer | undefined>)[kind];
+    if (typeof Real !== 'function') continue;
+    const latestOnly = kind === 'ResizeObserver';
+    const HeldObserver = class extends Real {
+      constructor(report: Held['report'], options?: unknown) {
+        const made = observersMade++;
+        super((entries, observer) => {
+          if (!state.running && !state.counting)
+            return void report.call(observer, entries, observer);
+          const held = heldReports.get(observer) ?? { made, report, entries: [] };
+          for (const entry of entries as { target: Element }[]) {
+            const at = latestOnly
+              ? held.entries.findIndex(({ target }) => target === entry.target)
+              : -1;
+            if (at === -1) held.entries.push(entry);
+            else held.entries[at] = entry;
+          }
+          heldReports.set(observer, held);
+        }, options);
+      }
+      // A resize observer drops what it had not reported yet, and calls no one
+      // with nothing; an intersection observer's spec leaves [[QueuedEntries]]
+      // to be delivered. So does the clock.
+      override unobserve(target: Element) {
+        const held = latestOnly ? heldReports.get(this) : undefined;
+        if (held !== undefined) {
+          held.entries = held.entries.filter((entry) => entry.target !== target);
+          if (held.entries.length === 0) heldReports.delete(this);
+        }
+        super.unobserve(target);
+      }
+      override disconnect() {
+        if (latestOnly) heldReports.delete(this);
+        super.disconnect();
+      }
+    };
+    Object.assign(window, { [kind]: HeldObserver });
   }
 
   // React's scheduler and the index's breaths post themselves messages: counted, to be waited for.
@@ -293,18 +395,21 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
         state.lastCommitSeen = committed;
         busy = true;
       }
-      if (!busy && !animating()) return;
+      if (!busy && !animating() && heldReports.size === 0) return;
       busy = false;
-      // Drawn, so that resize and intersection observers have seen it.
+      // Drawn, so that resize and intersection observers have seen it, and a
+      // turn more for a notification the drawing queued as a task of its own.
       await aFrame();
+      await aTurn();
+      if (handOverReports()) busy = true;
     }
   }
 
-  /** The timer due first, by `horizon` at the latest. */
+  /** The timer due first, by `horizon` at the latest; never a long one while counting. */
   const dueBy = (horizon: number): Timer | undefined => {
     let first: Timer | undefined;
     for (const timer of state.timers.values()) {
-      if (timer.due > horizon) continue;
+      if (timer.due > horizon || (state.counting && timer.long)) continue;
       if (
         first === undefined ||
         timer.due < first.due ||
@@ -318,7 +423,12 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   const fire = (timer: Timer) => {
     state.now = Math.max(state.now, timer.due);
     if (timer.every === null) state.timers.delete(timer.id);
-    else Object.assign(timer, { due: timer.due + timer.every, order: state.order++ });
+    else {
+      // Its next period after now, on its own phase: a browser skips the
+      // periods an interval missed (held while counting) rather than run them all at once.
+      const missed = Math.floor((state.now - timer.due) / timer.every);
+      Object.assign(timer, { due: timer.due + (missed + 1) * timer.every, order: state.order++ });
+    }
     try {
       timer.run();
     } catch (error) {
@@ -354,7 +464,10 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
   void (async () => {
     for (;;) {
       await aTurn();
-      if (!state.running && !state.counting) answerOldest();
+      if (!state.running && !state.counting) {
+        answerOldest();
+        handOverReports();
+      }
     }
   })();
 
@@ -404,6 +517,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     },
     stopCounting() {
       state.counting = false;
+      handOverReports();
       return { ...state.calls };
     },
   };

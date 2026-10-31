@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
+import { sweep } from './today-sweep.ts';
 
 /**
  * Adversarial pass on #247 (Performance B, #238), in WebKit: Today places only
@@ -136,29 +137,6 @@ function focusedNow(page: Page): Promise<Focused> {
       inView,
     };
   });
-}
-
-/** Presses `key` until the focus leaves the page, recording every stop. */
-async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number) {
-  const rows = new Set<string>();
-  const offScreen: string[] = [];
-  let lostAfter: string | null = null;
-  let last = '';
-  for (let presses = 0; presses < limit; presses += 1) {
-    // Option+Tab: WebKit's Tab alone skips buttons and checkboxes, as Safari does
-    // until Keyboard navigation is turned on; with it, every control is a stop.
-    await page.keyboard.press(key === 'Tab' ? 'Alt+Tab' : 'Alt+Shift+Tab');
-    const now = await focusedNow(page);
-    if (now.lost) {
-      lostAfter = last;
-      break;
-    }
-    if (!now.inPage) break;
-    if (now.row !== null) rows.add(now.row);
-    if (!now.inView) offScreen.push(now.label);
-    last = now.label;
-  }
-  return { rows, offScreen, lostAfter, last };
 }
 
 test.describe.configure({ timeout: 600_000 });

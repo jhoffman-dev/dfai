@@ -364,13 +364,18 @@ describe('deleting', () => {
       entry: folder('Old'),
       notes: [path('Old/a.md')],
     });
-    expect(others).toBe(3);
+    expect(others).toEqual({ link: false, count: 3, links: [], reachedThrough: null });
   });
 
   it('counts nothing else for a note', async () => {
     const vault = memoryVault({ notes: ['a.md', 'b.png'] });
     const note = { path: path('a.md'), kind: 'file' as const };
-    expect(await countOtherFiles({ fs: vault.fs, entry: note, notes: [note.path] })).toBe(0);
+    expect(await countOtherFiles({ fs: vault.fs, entry: note, notes: [note.path] })).toEqual({
+      link: false,
+      count: 0,
+      links: [],
+      reachedThrough: null,
+    });
   });
 
   it('says why DFAI’s own folder cannot go', () => {

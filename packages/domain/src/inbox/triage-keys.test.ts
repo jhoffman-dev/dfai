@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GTD_STATUSES } from '../gtd/gtd-status.ts';
-import { TRIAGE_KEYS, triageActionOf } from './triage-keys.ts';
+import { TRIAGE_KEYS, triageActionOf, triageKeysOf } from './triage-keys.ts';
 
 /** #109, #307 (Q11): one key on a focused Inbox row — N/W/S/D write the status alone, P and T open a picker. */
 
@@ -17,13 +17,29 @@ describe('triageActionOf', () => {
     expect(triageActionOf('t')).toEqual({ kind: 'pick', field: 'defer' });
   });
 
+  it('reads X as D: X ticks done on Today, so it finishes an Inbox row too (#109)', () => {
+    expect(triageActionOf('x')).toEqual({ kind: 'status', status: 'archive' });
+    expect(triageActionOf('X')).toEqual(triageActionOf('d'));
+    expect(
+      triageActionOf(
+        'x',
+        GTD_STATUSES.filter((status) => status !== 'archive'),
+      ),
+    ).toBeNull();
+  });
+
+  it('names every key that does what a listed key does: D and X finish, P is P alone', () => {
+    expect(triageKeysOf('d')).toEqual(['d', 'x']);
+    expect(triageKeysOf('p')).toEqual(['p']);
+  });
+
   it('reads the key whatever its case: Shift held is still the key', () => {
     expect(triageActionOf('N')).toEqual(triageActionOf('n'));
     expect(triageActionOf('P')).toEqual(triageActionOf('p'));
   });
 
   it('refuses a key it does not know: another letter, a digit, or a named key', () => {
-    for (const key of ['x', 'l', '1', ' ', '', 'Enter', 'Tab', 'nn', 'ArrowDown']) {
+    for (const key of ['l', 'u', 'j', '1', ' ', '', 'Enter', 'Tab', 'nn', 'ArrowDown']) {
       expect(triageActionOf(key), key).toBeNull();
     }
   });

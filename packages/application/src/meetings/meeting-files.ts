@@ -76,12 +76,18 @@ export async function mayWriteInto(context: ImportContext, path: VaultPath): Pro
  * Done to a meeting just before it is stamped, with what the run has read
  * for it. `vault-changed` says the vault the run is for is no longer the one
  * open: the meeting is then left unstamped, to be let in when it is next
- * looked at.
+ * looked at. A `stamp` is more for the stamp write to carry: the mark of a
+ * meeting whose linking failed (#192).
  */
 export type BeforeLetIn = (
   path: VaultPath,
   reading: { readonly vocabulary: Vocabulary },
-) => Promise<void | 'vault-changed'>;
+) => Promise<void | 'vault-changed' | LetInStamp>;
+
+/** What a meeting's stamp write carries besides the stamp, from what was done before it. */
+export interface LetInStamp {
+  readonly stamp: Readonly<Record<string, unknown>>;
+}
 
 /** Why a meeting was not let in once its vault was no longer the one open. */
 export const VAULT_CHANGED =
@@ -252,6 +258,7 @@ export async function letIn(
     path,
     modified,
     values: {
+      ...(typeof went === 'object' && went.stamp),
       [IMPORT_OUTCOME_KEY]: 'imported',
       ...(fixed && { [IMPORT_ERROR_KEY]: null }),
       ...corrected?.values,

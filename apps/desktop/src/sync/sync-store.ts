@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { shallow } from 'zustand/shallow';
+import { syncFailing } from '@dfai/domain';
 import { useShallow } from 'zustand/react/shallow';
 import type { SyncController } from './use-sync.ts';
 import type { PulledFilesGate } from './use-pulled-files.ts';
@@ -33,7 +34,13 @@ export function createSyncStore(): SyncStore {
  * Before the runner has said anything, no pull has happened, and nothing may
  * act on what one brought in: the gate stays shut until the real one replaces it.
  */
-const NO_PULL_YET: PulledFilesGate = { standing: null, acts: async () => false };
+const NO_PULL_YET: PulledFilesGate = {
+  standing: null,
+  acts: async () => false,
+  countGate: async () => ({ open: false, why: 'no-pull' }),
+  slept: false,
+  paused: false,
+};
 const NONE_SYNCED: ReadonlySet<string> = new Set();
 const NO_PULLS: ReadonlyMap<string, number> = new Map();
 
@@ -68,6 +75,13 @@ export interface SyncForRunners {
   readonly automationsHere: boolean;
   /** Whether this Mac's id and the vault's sync settings are both known yet. */
   readonly macKnown: boolean;
+  /**
+   * Whether the settings, as known, name another Mac than this one: compared
+   * by id (`automationsHere`), never by name. False until both are known.
+   */
+  readonly namedElsewhere: boolean;
+  /** The name the settings keep for the Mac they name; null when they keep none. */
+  readonly namedMacName: string | null;
   readonly pulledFiles: PulledFilesGate;
 }
 
@@ -86,15 +100,21 @@ function controllerFor(state: SyncState, vault: string | null): SyncController |
  * did, draws nothing.
  */
 export function useSyncForRunners(store: SyncStore, vaultKey: string | null): SyncForRunners {
-  const { standing, ...facts } = useStore(
+  const { standing, slept, paused, ...facts } = useStore(
     store,
     useShallow((state) => {
       const controller = controllerFor(state, vaultKey);
+      const automationsHere = controller?.automationsHere ?? false;
+      const macKnown =
+        controller !== null && controller.thisMac !== null && controller.settings !== null;
       return {
-        automationsHere: controller?.automationsHere ?? false,
-        macKnown:
-          controller !== null && controller.thisMac !== null && controller.settings !== null,
+        automationsHere,
+        macKnown,
+        namedElsewhere: macKnown && !automationsHere,
+        namedMacName: controller?.settings?.automationsMacName ?? null,
         standing: controller?.pulledFiles.standing ?? null,
+        slept: controller?.pulledFiles.slept ?? false,
+        paused: controller?.pulledFiles.paused ?? false,
       };
     }),
   );
@@ -106,8 +126,12 @@ export function useSyncForRunners(store: SyncStore, vaultKey: string | null): Sy
           vault,
           arrival,
         ),
+      countGate: (vault) =>
+        (controllerFor(store.getState(), vaultKey)?.pulledFiles ?? NO_PULL_YET).countGate(vault),
+      slept,
+      paused,
     }),
-    [store, standing, vaultKey],
+    [store, standing, slept, paused, vaultKey],
   );
   return { ...facts, pulledFiles };
 }
@@ -122,6 +146,44 @@ export function useAutomationsHere(store: SyncStore, vaultKey: string | null): b
   return useStore(
     store,
     (state) => vaultKey !== null && (controllerFor(state, vaultKey)?.automationsHere ?? false),
+  );
+}
+
+/** What "Process here" acts with (ADR-0035 part 2): the claim, and whether the last sync or look failed. */
+export interface ProcessHereSync {
+  readonly failing: boolean;
+  readonly processHere: SyncController['processHere'];
+  /** While this Mac's claim is set here and not yet shared, the Mac it was taken from. */
+  readonly pending: SyncController['claimPending'];
+}
+
+/**
+ * "Process here" for the vault at `vaultKey`; null until sync says where that
+ * vault stands, never the last vault's (#419). Drawn only when one changes.
+ */
+export function useProcessHereSync(
+  store: SyncStore,
+  vaultKey: string | null,
+): ProcessHereSync | null {
+  const facts = useStore(
+    store,
+    useShallow((state) => {
+      const controller = controllerFor(state, vaultKey);
+      return controller === null
+        ? { failing: false, processHere: null, pending: null }
+        : {
+            failing: syncFailing(controller.phase),
+            processHere: controller.processHere,
+            pending: controller.claimPending,
+          };
+    }),
+  );
+  return useMemo(
+    () =>
+      facts.processHere === null
+        ? null
+        : { failing: facts.failing, processHere: facts.processHere, pending: facts.pending },
+    [facts],
   );
 }
 

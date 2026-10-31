@@ -1,7 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 import { createVaultPath, type VaultEntry, type VaultPath } from '@dfai/domain';
-import type { HostVaultFsPort, NoteContents } from '@dfai/application';
+import {
+  EntryChangedError,
+  VaultAccessError,
+  type AsRead,
+  type HostVaultFsPort,
+  type NoteContents,
+} from '@dfai/application';
 import { throughHost } from './host-error.ts';
+
+/** What `vault_entries.rs` refuses a trash with when a file it was to hold still has changed. */
+const TRASH_REFUSED_AS_CHANGED =
+  'a file changed on disk since it was read, so nothing was moved to the Trash';
 
 /** The shape the Rust side sends back. Validated here before it becomes a domain type. */
 interface RawEntry {
@@ -10,6 +20,7 @@ interface RawEntry {
   kind: string;
   modified: number;
   size: number;
+  link?: boolean;
 }
 
 interface RawNoteFile {
@@ -27,13 +38,15 @@ async function digestOf(text: string): Promise<string> {
 
 function toEntry(raw: RawEntry): VaultEntry {
   const path = createVaultPath(raw.path);
-  if (raw.kind === 'directory') return { kind: 'directory', name: raw.name, path };
+  const link = raw.link === true && { link: true as const };
+  if (raw.kind === 'directory') return { kind: 'directory', name: raw.name, path, ...link };
   return {
     kind: 'file',
     name: raw.name,
     path,
     ...(typeof raw.modified === 'number' && { modified: raw.modified }),
     ...(typeof raw.size === 'number' && { size: raw.size }),
+    ...link,
   };
 }
 
@@ -106,8 +119,33 @@ export const tauriVaultFs: HostVaultFsPort = {
     await throughHost(invoke('move_entry', { from, to, vault }));
   },
 
-  async trashEntry({ path, vault }: { path: VaultPath; vault: string }) {
-    await throughHost(invoke('trash_entry', { path, vault }));
+  // Each file the host is to hold still crosses as its time and its digest (#235).
+  async trashEntry({
+    path,
+    vault,
+    unchanged,
+  }: {
+    path: VaultPath;
+    vault: string;
+    unchanged?: readonly AsRead[];
+  }) {
+    const held =
+      unchanged === undefined
+        ? undefined
+        : await Promise.all(
+            unchanged.map(async (file) => ({
+              path: file.path,
+              modified: file.modified,
+              digest: await digestOf(file.text),
+            })),
+          );
+    await throughHost(
+      invoke('trash_entry', { path, vault, ...(held !== undefined && { unchanged: held }) }),
+      (message) =>
+        message === TRASH_REFUSED_AS_CHANGED
+          ? new EntryChangedError(message)
+          : new VaultAccessError(message),
+    );
   },
 
   // The text a save was read as crosses as its digest, which the host

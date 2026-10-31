@@ -68,12 +68,16 @@ async function atlasIgnored({
 /** How deep `.atlas` is walked: far past any folder DFAI makes, and short of a link to a folder above. */
 const MAX_ATLAS_DEPTH = 8;
 
-/** Every file under a folder, as the host lists them; a folder that cannot be listed holds none. */
+/**
+ * Every file under a folder, as the host lists them; a folder that cannot be
+ * listed holds none. A link is one entry, as git tracks it, never walked into
+ * (#169): what is listed through it is never a path git could hold.
+ */
 async function filesUnder(fs: Fs, folder: string, depth: number): Promise<string[]> {
   if (depth > MAX_ATLAS_DEPTH) return [];
   const found: string[] = [];
   for (const entry of await listed(fs, folder)) {
-    if (entry.kind === 'file') found.push(entry.path);
+    if (entry.kind === 'file' || entry.link === true) found.push(entry.path);
     else found.push(...(await filesUnder(fs, entry.path, depth + 1)));
   }
   return found;

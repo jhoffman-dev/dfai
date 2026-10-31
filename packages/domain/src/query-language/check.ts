@@ -7,10 +7,19 @@
  * points at it. A query that passes compiles to SQL that can run.
  */
 
+import { foldedTypeName } from '../types/note-type-sql.ts';
 import { isDateLike } from '../index/property-value.ts';
 import { isTagName } from '../tags/tag-name.ts';
 import type { ObjectType } from '../types/property-def.ts';
-import type { AtlasQuery, Comparison, Condition, Expression, FieldRef, QueryValue } from './ast.ts';
+import type {
+  AtlasQuery,
+  Comparison,
+  Condition,
+  Expression,
+  FieldRef,
+  Name,
+  QueryValue,
+} from './ast.ts';
 import { resolveField, type FieldKind, type QueryField } from './fields.ts';
 import { movingDateProblem } from './moving-date.ts';
 import { opText } from './parse.ts';
@@ -114,7 +123,29 @@ function checkFrom(query: AtlasQuery, types: readonly ObjectType[]): void {
       throw new QueryTextError(`There is no type called ${name.text}.`, name.span);
     }
     if (seen.has(name.text)) throw new QueryTextError(`${name.text} is listed twice.`, name.span);
+    refuseSpellings(name, types);
     seen.add(name.text);
+  }
+}
+
+/**
+ * FROM finds a note's type in any case (foldedTypeSql), so two types whose
+ * names differ only in case — `Book` and `book` — would read one set of notes
+ * through two definitions. That is refused, by name, rather than guessed.
+ */
+function refuseSpellings(name: Name, types: readonly ObjectType[]): void {
+  const spellings = [
+    ...new Set(
+      types
+        .map((type) => type.name)
+        .filter((typeName) => foldedTypeName(typeName) === foldedTypeName(name.text)),
+    ),
+  ];
+  if (spellings.length > 1) {
+    throw new QueryTextError(
+      `Two types are called ${name.text}: ${spellings.join(' and ')}. Rename one, so ${name.text} names one type.`,
+      name.span,
+    );
   }
 }
 

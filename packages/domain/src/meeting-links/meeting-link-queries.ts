@@ -1,3 +1,4 @@
+import { foldedTypeSql } from '../types/note-type-sql.ts';
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { COMPANY_TYPE } from '../people/company.ts';
 import { PERSON_TYPE } from '../people/person.ts';
@@ -49,19 +50,19 @@ export function compileLinkDirectoryQuery(page: number): CompiledQuery {
   return {
     sql: `/* meeting links: directory */ SELECT "path", "title", "type", "key", "value" FROM (
   SELECT files.path AS "path", files.title AS "title",
-         (SELECT typed.value_text FROM props AS typed
-           WHERE typed.path = files.path AND typed.key = 'type' AND typed.value_text IN (${types})
+         (SELECT ${foldedTypeSql('typed.value_text')} FROM props AS typed
+           WHERE typed.path = files.path AND typed.key = 'type' AND ${foldedTypeSql('typed.value_text')} IN (${types})
            ORDER BY typed.idx LIMIT 1) AS "type",
          item.key AS "key", item.value_text AS "value", item.idx AS "idx"
     FROM files
     LEFT JOIN props AS item ON item.path = files.path AND item.key IN (${keys})
-   WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text IN (${types}))
+   WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} IN (${types}))
      AND ${userSpaceNoteSql('files.path')}
   UNION ALL
   SELECT relations.src, files.title, NULL, relations.key, relations.dst, relations.idx
     FROM relations JOIN files ON files.path = relations.src
    WHERE relations.key = ? AND relations.dst IS NOT NULL
-     AND relations.src IN (SELECT path FROM props WHERE key = 'type' AND value_text = ?)
+     AND relations.src IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = ?)
      AND ${userSpaceNoteSql('files.path')}
 ) ORDER BY "path", "key", "idx" LIMIT ? OFFSET ?`,
     parameters: [
@@ -150,7 +151,7 @@ export function compileProjectTiesQuery({
   return {
     sql: `/* meeting links: projects */ WITH open_projects AS (
   SELECT files.path AS path, files.title AS title FROM files
-   WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = ?)
+   WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = ?)
      AND ${userSpaceNoteSql('files.path')} AND ${outsideArchiveSql('files.path')}
      AND ${paraFiledUnderSql('files.path')}
      AND NOT EXISTS (SELECT 1 FROM props AS state WHERE state.path = files.path

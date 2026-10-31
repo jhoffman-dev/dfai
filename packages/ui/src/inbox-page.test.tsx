@@ -564,6 +564,111 @@ describe('InboxPage: while the vault’s settings note cannot be read (#226)', (
   });
 });
 
+describe('InboxPage: meetings waiting for the named Mac (ADR-0035 part 1, #175)', () => {
+  const banner = () => screen.queryByRole('status', { name: 'Meetings waiting' });
+
+  const line = (text: string) => ({ line: text, processHere: null });
+
+  it('shows the line it is given, above the rows', () => {
+    page({ meetingsWaiting: line('3 meetings waiting for Studio') });
+
+    expect(banner()?.textContent).toBe('3 meetings waiting for Studio');
+    const list = screen.getByRole('article', { name: 'Inbox' });
+    const firstRow = rowOf('Idea');
+    expect(list.contains(banner())).toBe(true);
+    // Drawn before the rows, so it is read first.
+    expect(
+      banner()!.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('draws nothing on the named Mac, which is given no line', () => {
+    const { rerender } = page({ meetingsWaiting: line('1 meeting waiting for Studio') });
+    expect(banner()).not.toBeNull();
+
+    rerender({ meetingsWaiting: null });
+    expect(banner()).toBeNull();
+    expect(screen.queryByText(/waiting for Studio/)).toBeNull();
+  });
+});
+
+describe('InboxPage: "Process here" on the banner (ADR-0035 part 2, #176)', () => {
+  const banner = () => screen.getByRole('status', { name: 'Meetings waiting' });
+  const button = () => within(banner()).getByRole('button', { name: /Process here|Processing/ });
+  const offer = (over: Partial<NonNullable<InboxPageProps['meetingsWaiting']>['processHere']>) => ({
+    line: '2 meetings waiting for Studio',
+    processHere: { refused: null, busy: false, problem: null, onPress: vi.fn(), ...over },
+  });
+
+  it('claims when pressed', async () => {
+    const onPress = vi.fn();
+    page({ meetingsWaiting: offer({ onPress }) });
+
+    await userEvent.click(button());
+
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('is refused, and says which, while sync could not share the claim', async () => {
+    const onPress = vi.fn();
+    page({
+      meetingsWaiting: offer({ onPress, refused: 'Sync is paused on this Mac: resume it.' }),
+    });
+
+    expect((button() as HTMLButtonElement).disabled).toBe(true);
+    expect(within(banner()).getByText('Sync is paused on this Mac: resume it.')).toBeTruthy();
+    await userEvent.click(button());
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('cannot be pressed twice while one press is written', () => {
+    page({ meetingsWaiting: offer({ busy: true }) });
+
+    expect((button() as HTMLButtonElement).disabled).toBe(true);
+    expect(button().textContent).toBe('Processing…');
+  });
+
+  it('says why the last press named no Mac', () => {
+    page({ meetingsWaiting: offer({ problem: 'The vault’s settings cannot be read.' }) });
+
+    expect(within(banner()).getByText('The vault’s settings cannot be read.')).toBeTruthy();
+    expect((button() as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows the live refusal before an older press’s problem (#630 review)', () => {
+    page({
+      meetingsWaiting: offer({ refused: 'Sync is paused on this Mac.', problem: 'Older problem.' }),
+    });
+
+    expect(within(banner()).getByText('Sync is paused on this Mac.')).toBeTruthy();
+    expect(within(banner()).queryByText('Older problem.')).toBeNull();
+  });
+
+  it('shows no button until sync says where the vault stands', () => {
+    page({ meetingsWaiting: { line: '2 meetings waiting for Studio', processHere: null } });
+
+    expect(banner().textContent).toBe('2 meetings waiting for Studio');
+    expect(within(banner()).queryByRole('button')).toBeNull();
+  });
+});
+
+describe('InboxPage: the named Mac’s step cannot reach Claude (#182)', () => {
+  it('shows the line and the fix-it words under it, with nothing to press', () => {
+    page({
+      meetingsWaiting: {
+        line: 'Claude is unavailable on Studio: summaries and tasks are pending for 2 meetings.',
+        detail: 'Claude Code is installed but not logged in. Fix: claude auth login',
+        processHere: null,
+      },
+    });
+
+    const banner = screen.getByRole('status', { name: 'Meetings waiting' });
+    expect(within(banner).getByText(/pending for 2 meetings/)).toBeTruthy();
+    expect(within(banner).getByText(/Fix: claude auth login/)).toBeTruthy();
+    expect(within(banner).queryByRole('button')).toBeNull();
+  });
+});
+
 const VAULT_TIDY: NonNullable<InboxPageProps['vaultTidy']> = {
   preview: {
     moves: [{ from: 'Loose idea.md', to: 'Notes/2026/Loose idea.md' }],
@@ -861,7 +966,8 @@ describe('InboxPage — one-key triage on the focused row (#109, #307)', () => {
     focusRow('Fix the gate');
     await userEvent.keyboard('n');
     view.rerender({ contents: { ...only, items: [], total: 0 } });
-    expect(document.activeElement).toBe(document.body);
+    // The page holds the focus the last row had, so U still reaches it (#109).
+    expect(document.activeElement).toBe(screen.getByRole('article', { name: 'Inbox' }));
 
     // Refused: the row comes back, and the next key must land on it, not on the page.
     await act(async () => refuse(false));

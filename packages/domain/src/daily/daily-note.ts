@@ -36,22 +36,6 @@ export const DAILY_TYPE_FILE: BuiltInTypeFile = {
   ].join('\n'),
 };
 
-/**
- * What today's note starts as in a vault with no Daily template: a note of the
- * Daily type with a heading for the day and one for what comes next. A Daily
- * template of the vault's own always wins over this.
- */
-export const DAILY_NOTE_CONTENTS = [
-  '---',
-  `type: ${DAILY_TYPE}`,
-  '---',
-  '',
-  '## What happened',
-  '',
-  '## What is next',
-  '',
-].join('\n');
-
 /** A vault's type name as the disk compares its file's: in any case. */
 const folded = (name: string) => name.trim().toLowerCase();
 

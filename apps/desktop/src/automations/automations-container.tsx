@@ -6,6 +6,7 @@ import { localClock } from '../today.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
 import { useAutomationsController, type AutomationsStore } from './automations-store.ts';
+import { useMeetingSetup, type MeetingSetupWiring } from '../meetings/use-meeting-setup.ts';
 
 const AutomationsScreen = automationsScreen.Component;
 
@@ -19,6 +20,8 @@ const AutomationsScreen = automationsScreen.Component;
 export interface AutomationsWiring {
   readonly store: AutomationsStore;
   readonly ports: ComponentProps<typeof AutomationsScreen>['ports'];
+  /** Setting up meeting post-processing in one yes (#191), shared with the Inbox. */
+  readonly setup: MeetingSetupWiring;
 }
 
 /** The Automations page as a tab (P29, tab-model.md PR B). */
@@ -32,6 +35,10 @@ export function AutomationsContainer({ wiring, chrome }: PageContainerProps) {
     reader: ['rule-editor'],
     scope: RULE_QUERY_SCOPE,
   });
+  const setup = useMeetingSetup(pages.automations.setup, {
+    vault: pane.vault,
+    where: 'automations',
+  });
   // The page's frame, as while its chunk loads, until the runner has said where the rules stand.
   if (automations === null) return <PageFrameFallback {...chrome} />;
   return (
@@ -44,6 +51,7 @@ export function AutomationsContainer({ wiring, chrome }: PageContainerProps) {
         activity={pane.activity}
         vault={pane.vault}
         onOpenNote={pages.openNote}
+        setup={setup}
         {...chrome}
       />
     </LoadedLater>

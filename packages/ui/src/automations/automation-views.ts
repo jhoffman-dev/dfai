@@ -42,5 +42,7 @@ export type DryRunView =
       readonly summary: string;
       readonly notes: readonly { readonly path: string; readonly title: string }[];
       readonly passedOver: readonly { readonly title: string; readonly reason: string }[];
+      /** Meetings whose linking failed, which Run now links again first (#192); left out for none. */
+      readonly notLinked?: readonly { readonly path: string; readonly title: string }[];
     }
   | { readonly kind: 'error'; readonly message: string };

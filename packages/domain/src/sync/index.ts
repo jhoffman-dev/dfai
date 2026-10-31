@@ -45,8 +45,16 @@ export {
   isConflictCopyPath,
   macLabel,
   planConflictSteps,
+  settingsFileOfCopy,
 } from './conflict-copy.ts';
 export type { ConflictStep } from './conflict-copy.ts';
+export {
+  extrasDfaiWrote,
+  jsonHasDuplicateKeys,
+  liveExtras,
+  recordExtrasShipped,
+} from './settled-copy.ts';
+export type { LiveExtras } from './settled-copy.ts';
 export {
   DEFAULT_PULL_INTERVAL_MINUTES,
   DEFAULT_PUSH_DELAY_SECONDS,
@@ -111,6 +119,20 @@ export type {
   PullStanding,
   SettingsReading,
 } from './pull-freshness.ts';
+export {
+  claimedSettings,
+  claimProblem,
+  claimRefusal,
+  claimRefusalLine,
+  claimReport,
+  claimSharedReport,
+  claimUnsharedLine,
+  claimUnsharedOf,
+  githubSettingsUnreadableReport,
+  namesThisMac,
+  syncFailing,
+} from './automations-claim.ts';
+export type { ClaimingMac, ClaimOutcome, ClaimRefusal } from './automations-claim.ts';
 export { syncActivityMessage, syncBadge, syncStanding } from './sync-state.ts';
 export type {
   ConflictCopy,

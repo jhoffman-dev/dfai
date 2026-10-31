@@ -1,3 +1,4 @@
+import { foldedTypeSql } from '../types/note-type-sql.ts';
 import { MEETING_TYPE, type MeetingAttendee } from '../meetings/meeting-header.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import { PARA_KEY } from '../types/para.ts';
@@ -47,7 +48,7 @@ export function compileSeriesMeetingsQuery(page: number): CompiledQuery {
   LEFT JOIN relations AS filed ON filed.src = files.path AND filed.key = ?
    AND filed.idx = (SELECT MIN(first.idx) FROM relations AS first WHERE first.src = files.path AND first.key = ?)
   LEFT JOIN files AS target ON target.path = filed.dst
- WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = ?)
+ WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = ?)
    AND ${userSpaceNoteSql('files.path')}
  ORDER BY files.path LIMIT ? OFFSET ?`,
     parameters: [

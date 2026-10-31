@@ -13,7 +13,14 @@ import {
   type Clock,
   type RuleQueryPorts,
 } from '@dfai/application';
-import { AutomationEditor, AutomationsPage, QueryComposer, type PageHistory } from '@dfai/ui';
+import {
+  AutomationEditor,
+  AutomationsPage,
+  MeetingSetup,
+  QueryComposer,
+  type MeetingSetupProps,
+  type PageHistory,
+} from '@dfai/ui';
 import { useSkillChoices } from '../skills/use-skill-choices.ts';
 import { localTimeZone } from '../today.ts';
 import { automationRows, logViews } from './automation-rows.ts';
@@ -38,6 +45,7 @@ export function AutomationsScreen({
   onOpenNote,
   onShowSidebar,
   history,
+  setup = null,
 }: {
   automations: ReturnType<typeof useAutomations>;
   ports: AutomationPorts & Pick<RuleQueryPorts, 'notePaths'>;
@@ -49,6 +57,8 @@ export function AutomationsScreen({
   onOpenNote: (path: VaultPath) => void;
   onShowSidebar?: () => void;
   history?: PageHistory;
+  /** The offer to set meeting post-processing up in one yes (#191). */
+  setup?: MeetingSetupProps | null;
 }) {
   const editor = useAutomationEditor({ automations, ports, clock, indexKey, activity });
   // Read only while a rule is open in the editor: the list itself needs no skills.
@@ -84,6 +94,7 @@ export function AutomationsScreen({
       presets={PRESET_NAMES}
       notice={automations.notice}
       busy={automations.busy}
+      setup={setup === null ? null : <MeetingSetup {...setup} />}
       onNew={editor.newRule}
       onAddPreset={editor.addPreset}
       onOpen={(id) => {

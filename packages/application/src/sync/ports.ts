@@ -73,6 +73,18 @@ export interface GitPort {
   hashFile(path: string): Promise<GitResult>;
   /** `cat-file blob <oid>`: a blob's bytes, as text — a side of a settings file both Macs changed. */
   readBlob(oid: string): Promise<GitResult>;
+  /**
+   * `cat-file -e refs/remotes/origin/<branch>:.atlas/settings.md`: whether
+   * GitHub, as the last fetch left it, holds the settings note — by exit code,
+   * never git's words, which are in the person's language.
+   */
+  remoteSettingsExist(branch: string): Promise<GitResult>;
+  /**
+   * `cat-file blob refs/remotes/origin/<branch>:.atlas/settings.md`: the settings note on
+   * GitHub as the last fetch left it, one blob (#630). The host reads it only
+   * for the branch checked out.
+   */
+  remoteSettings(branch: string): Promise<GitResult>;
   /** `update-index --add --cacheinfo <mode>,<oid>,<path>`: a blob already in git, staged under a path. */
   stageBlob(args: { mode: string; oid: string; path: string }): Promise<GitResult>;
   /** `checkout-index -- <path>`: writes the path from the index, never over a file already there. */

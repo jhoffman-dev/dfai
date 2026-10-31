@@ -83,6 +83,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_append_to_note`        | `POST /v1/notes/{path}/append`                                               | yes     |
 | `atlas_replace_note_body`     | `PUT /v1/notes/{path}/body`                                                  | yes     |
 | `atlas_backlinks`             | `GET /v1/notes/{path}/backlinks`                                             | no      |
+| `atlas_related`               | `GET /v1/notes/{path}/related`                                               | no      |
 | `atlas_export_note`           | `GET /v1/notes/{path}/export?format=confluence`                              | no      |
 | `atlas_list_types`            | `GET /v1/types`                                                              | no      |
 | `atlas_list_views`            | `GET /v1/views`                                                              | no      |
@@ -97,6 +98,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_run_query`             | `POST /v1/atlas-query`                                                       | no      |
 | `atlas_sql`                   | `POST /v1/sql`                                                               | no      |
 | `atlas_daily_note`            | `POST /v1/daily`                                                             | yes     |
+| `atlas_capture`               | `POST /v1/captures`                                                          | yes     |
 | `atlas_capture_task`          | `POST /v1/capture`                                                           | yes     |
 | `atlas_save_artifact`         | `POST /v1/artifacts`, then `PUT /v1/artifacts/{path}/files/{name}` per chunk | yes     |
 | `atlas_add_image`             | `PUT /v1/notes/{path}/images/{name}` per chunk, then `.../append`            | yes     |
@@ -106,6 +108,7 @@ Normally none. These environment variables override the connection file:
 | `atlas_move_card`             | `POST /v1/views/{path}/move`                                                 | yes     |
 | `atlas_add_to_view`           | `POST /v1/views/{path}/notes`                                                | yes     |
 | `atlas_refresh_source`        | `POST /v1/sources/{path}/refresh`                                            | yes     |
+| `atlas_sync_granola`          | `POST /v1/granola/pull`                                                      | yes     |
 | `atlas_tags`                  | `GET /v1/tags`                                                               | no      |
 | `atlas_tagged_notes`          | `GET /v1/tags/{tag}/notes`                                                   | no      |
 | `atlas_rename_tag`            | `POST /v1/tags/{tag}/rename`                                                 | yes     |
@@ -184,6 +187,16 @@ what it captures in the Inbox, and `atlas_inbox` lists what waits there —
 every note in `Inbox/`, and every task still at `status: inbox` wherever it
 lives — each meeting with what the import made of it and each task with what
 it already says; proposals are listed by `atlas_proposals`, not by it.
+
+`atlas_capture` saves one Slack message — and its thread, when asked — that
+the model read through a Slack connector, as `POST /v1/captures` does for n8n:
+a task or a note in `Inbox/Captures/`, once per message (its channel and ts),
+so asking again answers `in-vault` with the note that holds it. Its description
+tells the model to pass the permalink, channel id and ts, to choose task or
+note from the person's words, and to pass only what it read. A call without
+`source.url`, or with a field the contract does not have (a misspelt
+`replies` for `thread`), is refused before any request; a `null` is taken as
+left out.
 
 `atlas_clarify_inbox_item` is GTD's clarify step for one item, as a row of the
 Inbox page does it: status, `waitingOn`, `defer`, `due` and `contexts` are

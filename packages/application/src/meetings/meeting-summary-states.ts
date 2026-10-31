@@ -1,15 +1,18 @@
 import {
-  addDays,
+  answeredIn,
   createVaultPath,
   lastRunOf,
   meetingSummaryState,
   splitFrontmatter,
-  SUMMARY_PENDING_DAYS,
   writesSummaries,
   type MeetingSummaryState,
   type VaultPath,
 } from '@dfai/domain';
 import { loadAutomations, type LoadedAutomation } from '../automations/load-automations.ts';
+import {
+  postProcessingKeyOf,
+  postProcessingLedgerOf,
+} from '../automations/post-processing-ledger.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 
@@ -49,36 +52,27 @@ export async function readMeetingSummaryStates({
   if (paths.length === 0) return { states: new Map(), pendingWhy: '' };
   const { automations } = await loadAutomations({ fs, markdown, notePaths });
   const summarising = automations.filter(({ rule }) => writesSummaries(rule));
-  const answered = answeredPaths(summarising);
-  const from = addDays(today, -SUMMARY_PENDING_DAYS) ?? today;
+  const ledger = postProcessingLedgerOf(automations, () => today);
   const files = await fs.readNotes(paths);
   const states = new Map<VaultPath, MeetingSummaryState>();
   for (const file of files) {
     const path = createVaultPath(file.path);
     const { frontmatter, body } = splitFrontmatter(file.text);
+    const properties = markdown.frontmatterProperties(frontmatter);
+    const key = postProcessingKeyOf({ text: file.text, properties });
     const state = meetingSummaryState({
       path,
       body,
-      properties: markdown.frontmatterProperties(frontmatter),
-      step: { summarising: summarising.length > 0, from, answered: answered.has(path) },
+      properties,
+      step: {
+        summarising: ledger.summarising,
+        from: ledger.from,
+        answered: answeredIn(ledger, { path, key }),
+      },
     });
     states.set(path, state);
   }
   return { states, pendingWhy: pendingWhyOf(summarising) };
-}
-
-/** The meetings the rules that write summaries have answered: their ledgers, and the runs their logs still hold. */
-function answeredPaths(rules: readonly LoadedAutomation[]): Set<string> {
-  const paths = new Set<string>();
-  for (const { ledger, log } of rules) {
-    for (const path of ledger?.paths.keys() ?? []) paths.add(path);
-    for (const { path } of ledger?.answered ?? []) paths.add(path);
-    for (const entry of log) {
-      if (entry.kind !== 'run') continue;
-      for (const version of entry.versions ?? []) paths.add(version.path);
-    }
-  }
-  return paths;
 }
 
 /** Why a summary waits: a rule's failed last run, said as it logged it; else that the rule has yet to run on it. */

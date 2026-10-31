@@ -141,6 +141,16 @@ describe('compileMeetingHoldersQuery', () => {
     ]);
   });
 
+  // Follow-up to #110: a type in any case, as FROM meeting finds it.
+  it('finds a meeting whose type is written in capitals or with spaces', () => {
+    const spelt = meetingIndex([
+      { path: 'Inbox/Meetings/A.md', props: meeting('g-7', { type: 'Meeting' }) },
+      { path: 'Inbox/Meetings/B.md', props: meeting('g-7', { type: ' MEETING ' }) },
+      { path: 'Inbox/Meetings/C.md', props: meeting('g-7', { type: 'meetings' }) },
+    ]);
+    expect(spelt.holders('gemini', 'g-7')).toEqual(['Inbox/Meetings/A.md', 'Inbox/Meetings/B.md']);
+  });
+
   it('leaves out another provider, another id, and notes of no meeting type', () => {
     expect(vault.holders('gemini', 'g-1')).not.toContain('Notes/Not a meeting.md');
     expect(vault.holders('granola', 'g-1')).toEqual(['Inbox/Meetings/Other provider.md']);

@@ -180,3 +180,20 @@
   color: var(--ink-3);
   font-size: var(--text-column);
 }
+
+/* Today, pressed while a task is chosen for today (#108): a muted yellow, to scan for. */
+.today__choose[aria-pressed='true'] {
+  background: var(--hue-yellow-bg);
+  color: var(--hue-yellow-ink);
+}
+
+/* The row the keys act on (#109), as the Inbox marks its own: the focus is on
+   one of the row's controls — its Done box, where the keys put it — so the
+   whole row is tinted while it holds it, and drawn again for nothing. */
+.today .table__row:focus-within > td {
+  background: color-mix(in srgb, var(--focus) 10%, transparent);
+}
+
+.today .table__row:has(.done-check:focus-visible) > td:first-child {
+  box-shadow: inset 3px 0 0 var(--focus);
+}

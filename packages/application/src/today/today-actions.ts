@@ -78,13 +78,17 @@ const sameValue = (left: unknown, right: unknown) =>
  * rules take a reopened task's day away unless the change names one.
  */
 function keysChanged(before: Frontmatter, after: Frontmatter): string[] {
+  return [...new Set([...keysDiffering(before, after), TASK_KEYS.completed])];
+}
+
+/** The keys whose text or value differs between two reads of a task's frontmatter. */
+function keysDiffering(before: Frontmatter, after: Frontmatter): string[] {
   const keys = new Set([...Object.keys(before.properties), ...Object.keys(after.properties)]);
-  const changed = [...keys].filter(
+  return [...keys].filter(
     (key) =>
       before.texts[key] !== after.texts[key] ||
       !sameValue(before.properties[key], after.properties[key]),
   );
-  return [...new Set([...changed, TASK_KEYS.completed])];
 }
 
 /**
@@ -116,10 +120,12 @@ export async function changeUndoably({
   // The change is written by now. If the task cannot be read back, what it
   // changed is not known, so no undo is offered — it is not a failed write.
   const after = await frontmatterOf({ fs, markdown, path }).catch(() => null);
-  if (after === null) return { was, undo: null };
+  if (after === null) return { was, undo: null, wrote: true };
   const keys = keysChanged(before, after);
   return {
     was,
+    // The task reads as it did: the change came to nothing (#107), so there is nothing to read back.
+    wrote: keysDiffering(before, after).length > 0,
     undo: (properties) => {
       const asLeft = keys.every((key) => sameValue(properties[key], after.properties[key]));
       if (!asLeft) throw new ChangedSinceError(STALE_UNDO);
@@ -138,6 +144,12 @@ export interface UndoableChange {
   readonly undo: PropertyChanges | null;
   /** What the task was before the change — and is again once it is undone. */
   readonly was: TaskAsRead;
+  /**
+   * Whether the file was written. False when the change came to nothing —
+   * already so — which leaves the index nothing to read back. True when it
+   * could not be read back, since then it is not known.
+   */
+  readonly wrote: boolean;
 }
 
 /** A key as the task held it before: its own text when the block's keys can be told apart, else its value; null for none. */

@@ -1,3 +1,4 @@
+import { foldedTypeSql } from '../types/note-type-sql.ts';
 import { outsideArchiveSql } from '../archive/archive.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import {
@@ -19,7 +20,7 @@ const valueOf = (key: string) =>
   `(SELECT COALESCE(p.value_date, p.value_text) FROM props AS p WHERE p.path = files.path AND p.key = '${key}' ORDER BY p.idx LIMIT 1)`;
 
 /** Notes of the Meeting type, as a condition on `files.path`. */
-const IS_MEETING = `files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = ?)`;
+const IS_MEETING = `files.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = ?)`;
 
 /**
  * The notes the index says hold a meeting's provider + external_id: what a

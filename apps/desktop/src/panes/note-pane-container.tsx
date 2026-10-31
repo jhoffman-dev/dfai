@@ -111,6 +111,8 @@ import { useTabReveal } from './reveals.ts';
 import { useOutsideChangeReload } from './use-outside-change-reload.ts';
 import { artifactViewer, dashboardView, widgetEditor } from '../pages-on-first-use.ts';
 import { useUnlinkedMentions } from '../graph/use-unlinked-mentions.ts';
+import { useNoteRelated } from '../related/use-note-related.ts';
+import type { RelatedPorts } from '../related/use-related-notes.ts';
 import { useImages } from '../notes/use-images.ts';
 import { useBookmarks } from '../notes/use-bookmarks.ts';
 import { useEmbedImage } from '../notes/use-embed-image.ts';
@@ -234,6 +236,8 @@ export interface PaneContext {
   readonly linkedRanges: LinkedRangeStore;
   /** Every note and connection, which each note's links are read from; null until read. */
   readonly graph: VaultGraph | null;
+  /** Related notes and trails (P32-03): search by meaning, dismissals, and each tab's trail. */
+  readonly related: RelatedPorts;
   /** The panes as a write from outside them reaches them — linking a mention. */
   readonly openNotes: OpenNotes;
   /** Every view note's path, SQL views included, so a new view's name is checked against them. */
@@ -641,6 +645,8 @@ export function useNotePane({
     viewPaths: context.viewPaths,
     onChanged,
     onOpenNote: (target) => onOpenNote(createVaultPath(target)),
+    clock: localClock,
+    toasts: context.toasts,
   });
   const viewRows = useMemo(() => rowPaths(savedView.result), [savedView.result]);
   const choosing = useViewChoosing({
@@ -827,6 +833,25 @@ export function useNotePane({
   const steadyCreateRelated = useSteadyCallback(createRelated);
   const steadyFind = useSteadyCallback(links.mentions.find);
   const steadyLink = useSteadyCallback(links.mentions.link);
+  const steadyFlush = useSteadyCallback(note.flush);
+  const steadyReload = useSteadyCallback(note.reload);
+  const noteEditor = useMemo(
+    () => ({ flush: steadyFlush, reload: steadyReload }),
+    [steadyFlush, steadyReload],
+  );
+  const relatedHere = useNoteRelated({
+    ports: context.related,
+    tab: tabId,
+    path,
+    isTemplate: template !== null,
+    graph: context.graph,
+    links: links.links,
+    fs: notes.fs,
+    index,
+    editor: noteEditor,
+    onOpenNote: steadyOpenNote,
+    onChanged,
+  });
   const { typeName, typeLabel, rows, relationChoices, relationTargets, keys } = noteProperties;
   const steadyMergeInto = useSteadyCallback(() => {
     if (path !== null) onMergeInto?.(path);
@@ -946,6 +971,8 @@ export function useNotePane({
       mentions={links.mentions.state}
       onFindMentions={links.mentions.find}
       onLinkMention={links.mentions.link}
+      {...(relatedHere.related !== undefined && { related: relatedHere.related })}
+      {...(relatedHere.trail !== undefined && { trail: relatedHere.trail })}
       onOpenNote={onOpenNote}
       loadImage={loadImage}
       {...(embedImage !== undefined && { embedImage })}

@@ -83,8 +83,29 @@ export interface GranolaPullController {
    */
   readonly dismissToast: (shown: number) => void;
   readonly syncNow: () => void;
+  /**
+   * Sync now for `vault`, settling to its report: the local API's pull
+   * (P28-13). It shows on the card, never as a toast, since no one in the
+   * window asked for it. A vault that is not open is not pulled: what was
+   * synced and caught up is the open vault's, so its report ends `not-synced`.
+   */
+  readonly syncNowFor: (vault: string) => Promise<GranolaPullReport>;
+  /**
+   * Whether `vault` may be pulled into now, as the puller judges it: it is
+   * open, has synced this session (or does not sync), and the index has caught
+   * up with every sync into it. Read as it is asked, never a render behind.
+   */
+  readonly readyFor: (vault: string) => boolean;
   /** Takes the key's status the host answered a change of key with. */
   readonly knowKey: (status: GranolaKeyStatus) => void;
+}
+
+/** A pull asked for, and whether the window may say how it ended as a toast. */
+interface PullAsked {
+  readonly vault: string;
+  readonly mode: GranolaPullMode;
+  /** False for the API's pull: no one in the window asked for it, so the card alone says it. */
+  readonly toasts: boolean;
 }
 
 /** One pull under way, told apart from another of the same vault by its identity. */
@@ -214,36 +235,49 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
   // Each pull under way, by the vault it pulls: Sync now asked for during another pull runs after it.
   const [flights, setFlights] = useState<readonly Flight[]>([]);
   const { settled, openedReady } = caughtUp;
+  /** One pull of `vault`, once its index has caught up, with what it did known to the card. */
+  const pullAndKnow = useCallback(
+    async ({ vault, mode, toasts }: PullAsked): Promise<GranolaPullReport> => {
+      const caughtUpInTime = await settled(vault);
+      const report = await puller.pull({ vault, mode });
+      if (!caughtUpInTime && report.ended === 'not-synced') {
+        latest.current.activity.inVault(vault).record(granolaIndexWaitReport());
+      }
+      if (report.written.length > 0 && latest.current.vaultKey === vault) {
+        latest.current.onWrote();
+      }
+      update(vault, (known) => {
+        const toast = toasts ? toastOf(report) : null;
+        return {
+          report,
+          lastPullAt: latest.current.records.read(vault).lastPullAt,
+          toast: toast ?? known.toast,
+          toastShown: toast === null ? known.toastShown : known.toastShown + 1,
+        };
+      });
+      return report;
+    },
+    [puller, update, settled],
+  );
+  const pullVault = useCallback(
+    async (asked: PullAsked): Promise<GranolaPullReport> => {
+      const { vault } = asked;
+      const flight: Flight = { vault };
+      setFlights((under) => [...under, flight]);
+      const report = await pullAndKnow(asked).finally(() =>
+        setFlights((under) => under.filter((each) => each !== flight)),
+      );
+      await readKey(vault);
+      return report;
+    },
+    [pullAndKnow, readKey],
+  );
   const pull = useCallback(
     async (mode: GranolaPullMode) => {
       const vault = latest.current.vaultKey;
-      if (vault === null) return;
-      const flight: Flight = { vault };
-      setFlights((under) => [...under, flight]);
-      try {
-        const caughtUpInTime = await settled(vault);
-        const report = await puller.pull({ vault, mode });
-        if (!caughtUpInTime && report.ended === 'not-synced') {
-          latest.current.activity.inVault(vault).record(granolaIndexWaitReport());
-        }
-        if (report.written.length > 0 && latest.current.vaultKey === vault) {
-          latest.current.onWrote();
-        }
-        update(vault, (known) => {
-          const toast = toastOf(report);
-          return {
-            report,
-            lastPullAt: latest.current.records.read(vault).lastPullAt,
-            toast: toast ?? known.toast,
-            toastShown: toast === null ? known.toastShown : known.toastShown + 1,
-          };
-        });
-      } finally {
-        setFlights((under) => under.filter((each) => each !== flight));
-      }
-      await readKey(vault);
+      if (vault !== null) await pullVault({ vault, mode, toasts: true });
     },
-    [puller, update, readKey, settled],
+    [pullVault],
   );
 
   const usable = mine.key?.hasKey === true && mine.key.lastRefusal === null;
@@ -277,6 +311,11 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
       [vaultKey, update],
     ),
     syncNow: useCallback(() => void pull('sync-now'), [pull]),
+    syncNowFor: useCallback(
+      (vault: string) => pullVault({ vault, mode: 'sync-now', toasts: false }),
+      [pullVault],
+    ),
+    readyFor: caughtUp.has,
     knowKey: useCallback(
       (key: GranolaKeyStatus) => {
         // Newer than any read still out: that read's answer is set aside when it lands.

@@ -141,6 +141,35 @@ export function deleteRefusal(entry: MovableEntry): string | null {
 }
 
 /**
+ * Why an entry reached through `link`, a folder above it that is a symlink,
+ * is not deleted: the Trash would take what the link points at, and where
+ * that is — so which notes, and whose unsaved typing, would go — cannot be
+ * told from the link's side (#169).
+ */
+export function deleteThroughLinkRefusal(link: VaultPath): string {
+  return (
+    `It is inside “${link}”, which is a link: deleting it here would delete what the link ` +
+    'points at. Delete it where it really is, or delete the link.'
+  );
+}
+
+/** How many links a deletion question names before saying how many more. */
+const LINKS_NAMED = 5;
+
+/**
+ * What a deletion question says of the links a folder holds: the Trash takes
+ * each as a link, and what it points at stays. Empty when there are none.
+ */
+export function linksGoAsLinks(names: readonly string[]): string {
+  if (names.length === 0) return '';
+  const rest = names.length - LINKS_NAMED;
+  const shown = names.slice(0, LINKS_NAMED).join(', ') + (rest > 0 ? ` and ${rest} more` : '');
+  return names.length === 1
+    ? `The link in it, ${shown}, goes as a link: what it points at stays where it is.`
+    : `The ${names.length} links in it, ${shown}, go as links: what they point at stays where it is.`;
+}
+
+/**
  * Why an entry cannot be renamed where it is, or null when it can.
  *
  * Renaming keeps an entry in its folder, so a view or a dashboard can be

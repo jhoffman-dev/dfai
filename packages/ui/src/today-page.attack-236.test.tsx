@@ -41,6 +41,7 @@ function report(tasks: readonly ReviewTask[]): TodayReport {
   return {
     ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
     stalledProjects: 0,
@@ -72,6 +73,7 @@ function props(overrides: Partial<TodayPageProps> = {}): TodayPageProps {
     onDone: vi.fn(),
     onSetStatus: vi.fn(),
     onDefer: vi.fn(),
+    onChoose: vi.fn(),
     ...overrides,
   };
 }
@@ -207,7 +209,7 @@ describe('TodayPage row memo — #236', () => {
       const { renders } = stopCountingRenders();
       // Settling, its own Done waits, though its row was not drawn again for it (#247).
       const waits = screen.getByRole('checkbox', { name: `Mark ${picked.title} done` });
-      expect(waits.matches(':disabled')).toBe(true);
+      expect(waits.matches(':disabled, [aria-disabled="true"]')).toBe(true);
       view.unmount();
 
       expect({ picked: picked.title, rows: renders['TaskRow'] ?? 0 }).toEqual({

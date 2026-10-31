@@ -15,6 +15,7 @@ import type { VaultFsPort } from '../vault/ports.ts';
 import { ApiError } from './api-error.ts';
 import type { ApiRequest, ApiSuccessBody } from './contract.ts';
 import type {
+  ApiGranola,
   ApiRouterDeps,
   ApiSourcePorts,
   AppNotices,
@@ -81,6 +82,8 @@ export interface VaultRequest {
   readonly claudeStep: ClaudeStepPorts | null;
   readonly meetingDrafts: MeetingDrafts;
   readonly notices: AppNotices;
+  /** The app's Granola; null when the app has not given the API one. */
+  readonly granola: ApiGranola | null;
   /** The Activity log of the vault this request is for, kept there even after another opens. */
   readonly activity: ActivityRecorder;
   /** Refuses with `no_vault` once the vault this request arrived for is no longer open. */
@@ -137,6 +140,7 @@ export function vaultRequest({
     claudeStep: deps.claudeStep?.() ?? null,
     meetingDrafts: deps.meetingDrafts,
     notices: deps.notices,
+    granola: deps.granola ?? null,
     activity: deps.activity.inVault(vault),
     assertStillOpen: () => {
       if (deps.host.currentVault()?.absolutePath !== vault) {

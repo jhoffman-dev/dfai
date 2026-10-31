@@ -1,33 +1,10 @@
 import StarterKit from '@tiptap/starter-kit';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
-import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
-import { createLowlight } from 'lowlight';
-import bash from 'highlight.js/lib/languages/bash';
-import css from 'highlight.js/lib/languages/css';
-import json from 'highlight.js/lib/languages/json';
-import markdown from 'highlight.js/lib/languages/markdown';
-import python from 'highlight.js/lib/languages/python';
-import rust from 'highlight.js/lib/languages/rust';
-import sql from 'highlight.js/lib/languages/sql';
-import typescript from 'highlight.js/lib/languages/typescript';
-import xml from 'highlight.js/lib/languages/xml';
-import yaml from 'highlight.js/lib/languages/yaml';
-
-/**
- * Languages are registered one by one rather than pulling in all of highlight.js,
- * which would more than double the bundle for languages no note will use.
- */
-const lowlight = createLowlight();
-lowlight.register({ bash, css, json, markdown, python, rust, sql, typescript, xml, yaml });
-lowlight.registerAlias({
-  bash: ['sh', 'shell', 'zsh'],
-  typescript: ['ts', 'js', 'javascript', 'jsx', 'tsx'],
-  xml: ['html', 'svg'],
-  yaml: ['yml'],
-});
 import type { MentionSuggestion, NoteSuggestion, TagSuggestion } from '@dfai/domain';
 import { BlockId } from './block-id.ts';
+import { CodeHighlight } from './code-highlight.ts';
+import type { CodeLanguages } from './code-languages.ts';
 import { BlockAnchor } from './block-anchor.ts';
 import { RevealedBlock } from './revealed-block.ts';
 import { BlockEmbed, type TransclusionSource } from './block-embed.tsx';
@@ -86,6 +63,7 @@ export function createEditorExtensions({
   createNote = null,
   readerLinks = null,
   highlights = null,
+  codeLanguages = null,
 }: {
   suggest: (query: string) => NoteSuggestion[];
   onView: (view: WikiSuggestionView | null) => void;
@@ -118,9 +96,12 @@ export function createEditorExtensions({
   readerLinks?: ReaderLinks | null;
   /** A literature note's highlights, which its raw blocks are drawn as (#523); left out, as source. */
   highlights?: HighlightBlocks | null;
+  /** Where code blocks' grammars load from (#265); left out, code blocks are plain. */
+  codeLanguages?: CodeLanguages | null;
 }) {
   return [
     ...baseExtensions,
+    CodeHighlight.configure({ languages: codeLanguages }),
     ControlKeys,
     RawBlock.configure({ readerLinks, highlights }),
     TombstoneGuard,
@@ -137,7 +118,8 @@ export function createEditorExtensions({
     Bookmark.configure({ source: bookmarks }),
     BlockEmbed.configure({
       source: transclusions,
-      reading: (loadBlockImage) => createReadingExtensions({ loadImage: loadBlockImage }),
+      reading: (loadBlockImage) =>
+        createReadingExtensions({ loadImage: loadBlockImage, codeLanguages }),
     }),
     QueryBlock.configure({ source: queries }),
     LinkKeys,
@@ -185,11 +167,15 @@ const NO_PEOPLE: EditorPeople = {
  */
 export function createReadingExtensions({
   loadImage,
+  codeLanguages = null,
 }: {
   loadImage: (src: string) => Promise<string | null>;
+  /** Where code blocks' grammars load from (#265); left out, code blocks are plain. */
+  codeLanguages?: CodeLanguages | null;
 }) {
   return [
     ...baseExtensions,
+    CodeHighlight.configure({ languages: codeLanguages }),
     RawBlock,
     TagHighlight,
     VaultImage.configure({ loadImage }),
@@ -208,15 +194,14 @@ const baseExtensions = [
     // Markdown has no underline, so offering it would produce HTML in a .md file.
     underline: false,
     link: { openOnClick: false },
-    // Replaced below by the highlighting version, which keeps the same schema.
-    codeBlock: false,
+    // Coloured by `CodeHighlight`, whose grammars load on first use (#265).
+    codeBlock: { languageClassPrefix: 'language-' },
     // Where a dragged block will land (#569): a line drawn by the stylesheet, in the accent.
     dropcursor: { color: false, width: 2, class: 'editor-drop-line' },
     // Replaced below by one that does not count a hidden tombstone as the note's end.
     trailingNode: false,
   }),
   TrailingLine,
-  CodeBlockLowlight.configure({ lowlight, languageClassPrefix: 'language-' }),
   TaskList,
   TaskItem.configure({ nested: true }),
   TableKit.configure({ table: { resizable: false } }),

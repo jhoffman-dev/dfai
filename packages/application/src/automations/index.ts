@@ -5,8 +5,17 @@ export type { RuleLog } from './automation-log.ts';
 export { changeProperties, UNSAVED_TYPING } from './apply-changes.ts';
 export type { PropertyChange, PropertyOutcome } from './apply-changes.ts';
 export { loadAutomations } from './load-automations.ts';
+export {
+  createRulesTakeCache,
+  meetingsTheRulesTake,
+  postProcessingKeyOf,
+  postProcessingLedgerOf,
+  postProcessingMark,
+  stepUnavailable,
+} from './post-processing-ledger.ts';
+export type { RulesTakeArgs } from './post-processing-ledger.ts';
 export type { AutomationListing, LoadedAutomation } from './load-automations.ts';
-export { dryRunAutomation, withPeriodNote } from './dry-run-automation.ts';
+export { dryRunAutomation, withMeetingsNotLinked, withPeriodNote } from './dry-run-automation.ts';
 export { NoteRunsCappedError, planRuleNow } from './note-runs.ts';
 export type { RuleTarget } from './note-runs.ts';
 export { planRun } from './plan-run.ts';
@@ -24,7 +33,13 @@ export { HeldForPullError } from './fresh-pull-hold.ts';
 export type { FreshPullCheck } from './fresh-pull-hold.ts';
 export { guardedFs, stillInVault, VaultChangedError } from './vault-guard.ts';
 export type { VaultGuard } from './vault-guard.ts';
-export { CLAUDE_RUN_TIMEOUT_MS, ClaudeStepFailed, runClaudeStep } from './claude-step.ts';
+export {
+  CLAUDE_RUN_TIMEOUT_MS,
+  ClaudeStepFailed,
+  ClaudeUnavailableError,
+  runClaudeStep,
+} from './claude-step.ts';
+export type { UnavailableFoundBy } from './claude-step.ts';
 export type { ClaudeStepOutcome, ClaudeStepPorts } from './claude-step.ts';
 export {
   applyMeetingCleanup,
@@ -35,3 +50,10 @@ export {
 export type { CleanupOwner, ListedCleanupTask, MeetingCleanupPorts } from './meeting-cleanup.ts';
 export { clockForRule, clockOnZone, planNowOf, waitsForPlanZone } from './rule-clock.ts';
 export type { RunClock } from './rule-clock.ts';
+export { acceptMeetingSetup, previewMeetingSetup } from './meeting-setup.ts';
+export type {
+  MeetingSetupDone,
+  MeetingSetupFailure,
+  MeetingSetupOffer,
+  MeetingSetupPorts,
+} from './meeting-setup.ts';

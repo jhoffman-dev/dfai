@@ -8,12 +8,31 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
+import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
+import { isIntendedRefusal, recordStubBug, stubBugOf, UnstubbedCommandError } from './stub-bugs.ts';
 
-/** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
 /** What a stubbed command answers to reject with a value, as Tauri does for a command's `Err`. */
 const REJECT = '__atlasReject';
 
+/**
+ * A stub's refusal as the real host would reject: Tauri hands the page what a
+ * command's `Err` serialized to — for the `Result<_, String>` commands, a bare
+ * string — never an `Error`. Thrown as an `Error`, it would reach the page as
+ * one, and `throughHost` would pass it through instead of making the
+ * `VaultAccessError` the app really sees. A bug in the stub is not a refusal:
+ * it is recorded, so the test fails with its stack, and thrown on.
+ */
+function rejectionAsTauriSends(thrown: unknown): { [REJECT]: unknown } {
+  if (!isIntendedRefusal(thrown)) {
+    const bug = stubBugOf(thrown);
+    recordStubBug(bug);
+    throw bug;
+  }
+  return { [REJECT]: thrown instanceof Error ? thrown.message : thrown };
+}
+
+/** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
 const SYNC_COMMANDS = new Set([
   'git_run',
   'git_run_in',
@@ -119,32 +138,19 @@ interface StoredNote {
   }[];
 }
 
-/** A declared property as the index is told it, to become a column of its type's view. */
-interface ViewColumn {
-  key: string;
-  kind: string;
-  many: boolean;
-}
-
-/** A type's view as the index is told to build it. */
+/** A type's view as the index is told to make it: the SELECT TypeScript wrote for it. */
 interface ViewSpec {
-  columns: readonly ViewColumn[];
-  /** Whether it carries each note's checklist progress. */
-  progress: boolean;
+  select: string;
 }
-
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * A statement written by hand, run for real by SQLite over what was indexed.
  *
- * The tables are the real index's (`files`, `props`, `relations`), and each `v_<type>` view
- * is built the way `rebuild_views` in `src-tauri/src/index.rs` builds it: its
- * own `path`, `title`, `summary` and `modified` (and `progress`, when told
- * to carry it), then a column per declared
- * property — a number's from `value_num`, a date's from `value_date`, the rest
- * from `value_text`, several values joined with ", ". A key the type does not
- * declare is not a column, as in the app. The read-only guard is reduced to
+ * The tables are the real index's (`files`, `props`, `relations`), with its
+ * indexes, and each `v_<type>` view is made as `rebuild_views` in
+ * `src-tauri/src/index.rs` makes it: from the SELECT TypeScript sent for the
+ * type (`typeViewSelectSql`), run as it is — so a type's table holds each
+ * note as a query's cells do, here as in the app. The read-only guard is reduced to
  * "reads only" — the real guard (the authorizer and `readonly`) is the Rust
  * tests' to prove. A compiled view that reads `relations` runs here too, with
  * what it binds.
@@ -169,31 +175,8 @@ function runHandWrittenSql(
     }
   }
   for (const [type, spec] of types) {
-    if (!IDENTIFIER.test(type)) continue;
-    const progress = spec.progress ? ', files.progress AS "progress"' : '';
-    const columns = spec.columns
-      .filter((column) => IDENTIFIER.test(column.key))
-      .map((column) => {
-        const source =
-          column.kind === 'number'
-            ? 'props.value_num'
-            : column.kind === 'date'
-              ? 'props.value_date'
-              : 'props.value_text';
-        const picked = `CASE WHEN props.key = '${column.key}' THEN ${source} END`;
-        const aggregate = column.many ? `group_concat(${picked}, ', ')` : `MAX(${picked})`;
-        return `, ${aggregate} AS "${column.key}"`;
-      })
-      .join('');
-    database.exec(`
-      CREATE VIEW "v_${type}" AS
-      SELECT files.path AS "path",
-             COALESCE(MAX(CASE WHEN props.key = 'title' THEN props.value_text END), files.title) AS "title",
-             files.summary AS "summary",
-             files.modified AS "modified"${progress}${columns}
-      FROM files JOIN props ON props.path = files.path
-      WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text = '${type}')
-      GROUP BY files.path;`);
+    // As the index makes it: the SELECT TypeScript sent (typeViewSelectSql), run as it is.
+    database.exec(`CREATE VIEW "v_${type}" AS ${spec.select};`);
   }
   const prepared = database.prepare(statement);
   const columns = prepared.columns().map((column) => column.name);
@@ -211,7 +194,11 @@ function filesAndProps(notes: Iterable<StoredNote>): DatabaseSync {
     CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
                         modified INTEGER NOT NULL, size INTEGER NOT NULL, progress INTEGER);
     CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
-                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);`);
+                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
+    -- As index.rs indexes them: a note's own rows are sought, not scanned.
+    CREATE INDEX props_path ON props(path, key, value_text);
+    CREATE INDEX props_key ON props(key, value_text);
+    ${PROPS_TYPE_FOLD_INDEX};`);
   const file = database.prepare('INSERT INTO files VALUES (?, ?, ?, ?, ?, ?)');
   const prop = database.prepare('INSERT INTO props VALUES (?, ?, ?, ?, ?, ?, NULL)');
   for (const note of notes) {
@@ -324,7 +311,6 @@ function researchTables(): (writes: number, notes: Iterable<StoredNote>) => Data
     fillHighlights(database, stored);
     // The indexes `src-tauri/src/index.rs` makes on what these views read by note.
     database.exec(`
-      CREATE INDEX props_path ON props(path, key, value_text);
       CREATE INDEX tags_path ON tags(path);
       CREATE INDEX relations_src ON relations(src, key);
       CREATE INDEX highlights_path_idx ON highlights(path, idx);`);
@@ -511,6 +497,8 @@ export interface FakeHost {
   holdEchoes(): Promise<() => Promise<void>>;
   /** Makes the next call of this command fail with this message, as the Rust host would answer `Err`. */
   failNext(command: string, message: string): void;
+  /** What the page reported through `report_error` — a failure it caught before the app could handle it. */
+  reportedErrors(): string[];
   /**
    * The Activity log's file for the vault open now, as `activity.rs` keeps it
    * in the app's data folder — here, in memory, one per vault.
@@ -531,6 +519,15 @@ export interface FakeHost {
    * the Rust host answers `Err`, and write nothing.
    */
   holdWrites(relativePath: string): (outcome?: { readonly fail: string }) => void;
+  /**
+   * Holds a move of this file — a filing out of the Inbox, say — in flight
+   * until the returned function is called. Called with `{ fail }`, the move
+   * is refused with that message, as the Rust host answers `Err`, and
+   * nothing moves.
+   */
+  holdMoves(relativePath: string): (outcome?: { readonly fail: string }) => void;
+  /** How many moves of this file have reached the host, held or not. */
+  movesFrom(relativePath: string): number;
   /**
    * Holds every read of this file in flight — on its own or in a batch —
    * until the returned function is called, so a test can make one of the
@@ -646,6 +643,21 @@ export interface FakeHost {
     serve(path: string, answer: { status: number; body: string }): void;
     hasKey(): boolean;
     requests(): readonly { path: string; query: Readonly<Record<string, string>> }[];
+  };
+  /**
+   * Slack, as `slack.rs` answers for it (#105): a user token kept per vault,
+   * and a Web API method answered with what a test served for it — for
+   * `users.info`, served per user id — as a 200, or `ok: false` where nothing
+   * was. The Keychain item, the pinned origin, the list of methods and the
+   * token struck from every answer are Rust's, tested there against a fake Slack.
+   */
+  readonly slack: {
+    serve(method: string, body: unknown, options?: { status?: number; retryAfter?: number }): void;
+    serveUser(id: string, body: unknown): void;
+    hasToken(): boolean;
+    requests(): readonly { method: string; query: Readonly<Record<string, string>> }[];
+    /** How many times the app asked whether a token is kept. */
+    statusCalls(): number;
   };
   /**
    * Kindle, as `kindle.rs` answers for it (#508): Connect makes the session
@@ -795,10 +807,20 @@ export async function installHost(
   // Rust's and is tested there; this answers the commands the app calls.
   const api = { enabled: false, token: 'token-1', rotations: 0, file: '/stub/api.json' };
   /**
-   * The routers that said they listen (`api_router_ready`), by the id each
-   * named. The real host refuses every request while this is empty (#158).
+   * The routers that said they listen (`api_router_ready`), by the id
+   * `api_router_register` gave each. The real host refuses every request while
+   * this is empty (#158). As there, a page load forgets them and refuses the
+   * ids it gave before, so a gone page's late "I listen" counts for nothing
+   * (#161).
    */
-  const routerListeners = new Set<unknown>();
+  const routerListeners = new Set<number>();
+  const routerIds = { next: 0, thisPageFrom: 0 };
+  page.on('request', (request) => {
+    // A document load, not an in-page route change: the host's `PageLoadEvent::Started`.
+    if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return;
+    routerListeners.clear();
+    routerIds.thisPageFrom = routerIds.next;
+  });
   const apiStatus = () => ({
     enabled: api.enabled,
     port: api.enabled ? STUB_API_PORT : null,
@@ -811,6 +833,8 @@ export async function installHost(
   const writes = new Map<string, number>();
   /** Files whose writes wait, and what lets them go. */
   const held = new Map<string, Promise<void>>();
+  const heldMoves = new Map<string, Promise<void>>();
+  const moves = new Map<string, number>();
   /** Files whose reads wait, and what lets them go. */
   const heldReads = new Map<
     string,
@@ -871,6 +895,7 @@ export async function installHost(
   const activityFiles = new Map<string, string>();
   /** Commands told to fail once, and why. */
   const failures = new Map<string, string>();
+  const reportedErrors: string[] = [];
   const secrets = new Map<string, string>();
   /** The sites each secret may be sent to, as `secrets.rs` keeps them beside it. */
   const bindings = new Map<string, readonly string[]>();
@@ -922,6 +947,25 @@ export async function installHost(
       granolaRefusals.delete(root);
     }
     return answer;
+  };
+  /** Slack tokens by vault root, what each method answers, and every request. */
+  const slackTokens = new Map<string, string>();
+  const slackAnswers = new Map<
+    string,
+    { status: number; body: string; retryAfter: number | null }
+  >();
+  const slackRequests: { method: string; query: Readonly<Record<string, string>> }[] = [];
+  let slackStatusCalls = 0;
+  const slackGet = (method: string, query: Record<string, string>) => {
+    slackRequests.push({ method, query });
+    const key = method === 'users.info' ? `${method}|${query['user'] ?? ''}` : method;
+    return (
+      slackAnswers.get(key) ?? {
+        status: 200,
+        body: '{"ok":false,"error":"not_served"}',
+        retryAfter: null,
+      }
+    );
   };
   const databases = new Map<string, { columns: string[]; rows: unknown[][] }>();
   const sqliteQueries: { file: string; sql: string }[] = [];
@@ -1115,6 +1159,10 @@ export async function installHost(
       }
       // What @tauri-apps/api/app asks for; without these the status bar reports
       // a failure on every page, which shows up as an alert in every test.
+      // As `lib.rs` does: logged, and nothing answered.
+      case 'report_error':
+        reportedErrors.push((args as { message: string }).message);
+        return null;
       case 'plugin:app|name':
         return 'DFAI';
       case 'plugin:app|version':
@@ -1148,6 +1196,8 @@ export async function installHost(
         // As vault_entries.rs does: refuses to write over anything, and a
         // folder into itself, and lets a case-only rename through.
         const { from, to } = args as { from: string; to: string };
+        moves.set(from, (moves.get(from) ?? 0) + 1);
+        await heldMoves.get(from);
         const { rename, lstat } = await import('node:fs/promises');
         const root = writeRoot(args);
         const source = containedPath(root, from);
@@ -1167,6 +1217,29 @@ export async function installHost(
         // that it went nowhere else. Never a permanent delete.
         const { rename, mkdir: makeDirectory } = await import('node:fs/promises');
         const entry = containedPath(writeRoot(args), path);
+        // As `vault_entries.rs` does (#235): nothing moves unless each file named is as read.
+        const { unchanged = [] } = args as {
+          unchanged?: { path: string; modified: number; digest: string }[];
+        };
+        for (const file of unchanged) {
+          const { readFile, stat: statFile } = await import('node:fs/promises');
+          const { createHash } = await import('node:crypto');
+          const named = containedPath(writeRoot(args), file.path);
+          const info = await statFile(named).catch(() => null);
+          const digest =
+            info === null
+              ? null
+              : createHash('sha256')
+                  .update(await readFile(named))
+                  .digest('hex');
+          if (
+            info === null ||
+            Math.floor(info.mtimeMs) !== file.modified ||
+            digest !== file.digest
+          ) {
+            throw 'a file changed on disk since it was read, so nothing was moved to the Trash';
+          }
+        }
         // Removed with the test's folders, whichever test bins first (#486).
         removeWithTempFolders(trashRoot);
         await makeDirectory(trashRoot, { recursive: true });
@@ -1419,7 +1492,7 @@ export async function installHost(
           // Milliseconds since the epoch are all 13 digits wide, so ordering them
           // as text below orders them in time.
           if (column === 'modified') return note.modified ?? 0;
-          if (column === 'progress' && views.get(type)?.progress === true) {
+          if (column === 'progress' && views.get(type)?.select.includes('n.progress') === true) {
             return note.progress ?? null;
           }
           if (column === 'title') {
@@ -1431,7 +1504,7 @@ export async function installHost(
           // view's group_concat joins it.
           const items = (note.properties ?? []).filter((item) => item.key === column);
           const many =
-            views.get(type)?.columns.find((declared) => declared.key === column)?.many ?? false;
+            views.get(type)?.select.includes(`group_concat(CASE WHEN p.key = '${column}'`) ?? false;
           if (many && items.length > 0) return items.map((item) => item.text).join(', ');
           return items[0]?.text ?? null;
         };
@@ -1524,8 +1597,11 @@ export async function installHost(
         const wanted = (args as { type: string }).type;
         return [...indexed.values()]
           .filter((note) =>
+            // As notes_of_type folds a type: in any case and spacing.
             (note.properties ?? []).some(
-              (property) => property.key === 'type' && property.text === wanted,
+              (property) =>
+                property.key === 'type' &&
+                property.text?.trim().toLowerCase() === wanted.trim().toLowerCase(),
             ),
           )
           .map((note) => ({ path: note.path, title: note.title }))
@@ -1691,6 +1767,28 @@ export async function installHost(
         }
         const { path, query } = args as { path: string; query: Record<string, string> };
         return granolaGet(root, path, query);
+      }
+      case 'slack_status':
+        slackStatusCalls += 1;
+        return { hasToken: slackTokens.has(writeRoot(args)) };
+      case 'slack_connect': {
+        const root = writeRoot(args);
+        const { token } = args as { token: string };
+        if (!/^(xoxp-|xoxe\.xoxp-)[\x21-\x7e]+$/.test(token)) {
+          return { [REJECT]: { kind: 'invalid', message: 'that is not a Slack user token' } };
+        }
+        slackTokens.set(root, token);
+        return { hasToken: true };
+      }
+      case 'slack_disconnect':
+        slackTokens.delete(writeRoot(args));
+        return { hasToken: false };
+      case 'slack_request': {
+        if (!slackTokens.has(writeRoot(args))) {
+          return { [REJECT]: { kind: 'no_token', message: 'no Slack token is kept' } };
+        }
+        const { method, query } = args as { method: string; query: Record<string, string> };
+        return slackGet(method, query);
       }
       case 'kindle_connect':
         kindleSession = true;
@@ -1922,10 +2020,13 @@ export async function installHost(
         api.rotations += 1;
         api.token = `token-${api.rotations + 1}`;
         return api.token;
+      case 'api_router_register':
+        return routerIds.next++;
       case 'api_router_ready': {
-        const { listener, ready } = args as { listener: unknown; ready: boolean };
-        if (ready) routerListeners.add(listener);
-        else routerListeners.delete(listener);
+        const { listener, ready } = args as { listener: number; ready: boolean };
+        const thisPage = listener >= routerIds.thisPageFrom && listener < routerIds.next;
+        if (ready && thisPage) routerListeners.add(listener);
+        else if (!ready) routerListeners.delete(listener);
         return null;
       }
       case 'global_capture_status':
@@ -1973,7 +2074,7 @@ export async function installHost(
       }
       default:
         if (embeddings.handles(command)) return embeddings.answer(command, args, openRoot());
-        throw new Error(`unexpected command ${command}`);
+        throw new UnstubbedCommandError(command);
     }
   };
 
@@ -1986,7 +2087,7 @@ export async function installHost(
   });
   await page.exposeFunction('__atlasInvoke', async (command: string, args: unknown) => {
     calls.set(command, (calls.get(command) ?? 0) + 1);
-    const answered = await answer(command, args);
+    const answered = await answer(command, args).catch(rejectionAsTauriSends);
     // Logged only once a secret exists: before that there is nothing to leak,
     // and the replies that carry whole files would only slow every test.
     if (secrets.size > 0) answers.push(JSON.stringify(answered) ?? '');
@@ -2092,6 +2193,14 @@ export async function installHost(
       );
     }
 
+    // Every refusal rejects with a value, as Tauri hands the webview whatever
+    // a command's `Err` serializes to: a string, or the object it built.
+    function rejectedWithValue(value: unknown): unknown {
+      return typeof value === 'object' && value !== null && '__atlasReject' in value
+        ? Promise.reject((value as { __atlasReject: unknown }).__atlasReject)
+        : value;
+    }
+
     function invokeHost(
       command: string,
       args: unknown,
@@ -2108,7 +2217,9 @@ export async function installHost(
       if (args instanceof Uint8Array) {
         const answer = (
           window as unknown as { __atlasInvoke: (c: string, a: unknown) => Promise<unknown> }
-        ).__atlasInvoke(command, { bytes: Array.from(args), headers: options?.headers ?? {} });
+        )
+          .__atlasInvoke(command, { bytes: Array.from(args), headers: options?.headers ?? {} })
+          .then(rejectedWithValue);
         return command === 'snapshot_page' || command === 'export_render_pdf'
           ? answer.then((numbers) => new Uint8Array(numbers as number[]).buffer)
           : answer;
@@ -2117,13 +2228,7 @@ export async function installHost(
         window as unknown as { __atlasInvoke: (c: string, a: unknown) => Promise<unknown> }
       )
         .__atlasInvoke(command, args)
-        // A command that rejects with a value rather than a message, as
-        // Tauri hands the webview whatever a command's `Err` serializes to.
-        .then((value) =>
-          typeof value === 'object' && value !== null && '__atlasReject' in value
-            ? Promise.reject((value as { __atlasReject: unknown }).__atlasReject)
-            : value,
-        );
+        .then(rejectedWithValue);
       // Counted by the host above; the bytes come over HTTP, as the real ones come as a binary response.
       if (command === 'embedding_cache_load')
         return answer.then(async (length) => {
@@ -2243,6 +2348,7 @@ export async function installHost(
       return () => hold(false);
     },
     failNext: (command, message) => void failures.set(command, message),
+    reportedErrors: () => [...reportedErrors],
     activityLog: () => activityFiles.get(openRoot()) ?? '',
     seedActivity: (root, text) => void activityFiles.set(root, text),
     trashed: () => [...trashed],
@@ -2301,6 +2407,23 @@ export async function installHost(
       hasKey: () => granolaKeys.size > 0,
       requests: () => [...granolaRequests],
     },
+    slack: {
+      serve: (method, body, { status = 200, retryAfter } = {}) =>
+        void slackAnswers.set(method, {
+          status,
+          body: JSON.stringify(body),
+          retryAfter: retryAfter ?? null,
+        }),
+      serveUser: (id, body) =>
+        void slackAnswers.set(`users.info|${id}`, {
+          status: 200,
+          body: JSON.stringify(body),
+          retryAfter: null,
+        }),
+      hasToken: () => slackTokens.size > 0,
+      requests: () => [...slackRequests],
+      statusCalls: () => slackStatusCalls,
+    },
     kindle: {
       serveLibrary: (html) => void kindlePages.set('library', html),
       serveAnnotations: (asin, token, html) => void kindlePages.set(`${asin}|${token}`, html),
@@ -2343,22 +2466,9 @@ export async function installHost(
         release();
       };
     },
-    holdWrites(relativePath) {
-      let release: () => void = () => {};
-      let refuse: (cause: Error) => void = () => {};
-      const holding = new Promise<void>((resolve, reject) => {
-        release = resolve;
-        refuse = reject;
-      });
-      // Handled here as well, so a refusal with no write waiting on it is not an unhandled rejection.
-      holding.catch(() => {});
-      held.set(relativePath, holding);
-      return (outcome) => {
-        held.delete(relativePath);
-        if (outcome === undefined) release();
-        else refuse(new Error(outcome.fail));
-      };
-    },
+    holdWrites: (relativePath) => holdIn(held, relativePath),
+    holdMoves: (relativePath) => holdIn(heldMoves, relativePath),
+    movesFrom: (relativePath) => moves.get(relativePath) ?? 0,
     holdReads(relativePath, options) {
       let release: () => void = () => {};
       const until = new Promise<void>((resolve) => (release = resolve));
@@ -2658,5 +2768,29 @@ function fakeCalendarEvents() {
       const others = (listed.get(calendarId) ?? []).filter((each) => each['id'] !== event['id']);
       listed.set(calendarId, event['status'] === 'cancelled' ? others : [...others, event]);
     },
+  };
+}
+
+/**
+ * Holds what waits on `relativePath` in `holds` until the returned function
+ * is called; called with `{ fail }`, it is refused with that message.
+ */
+function holdIn(
+  holds: Map<string, Promise<void>>,
+  relativePath: string,
+): (outcome?: { readonly fail: string }) => void {
+  let release: () => void = () => {};
+  let refuse: (cause: Error) => void = () => {};
+  const holding = new Promise<void>((resolve, reject) => {
+    release = resolve;
+    refuse = reject;
+  });
+  // Handled here as well, so a refusal with nothing waiting on it is not an unhandled rejection.
+  holding.catch(() => {});
+  holds.set(relativePath, holding);
+  return (outcome) => {
+    holds.delete(relativePath);
+    if (outcome === undefined) release();
+    else refuse(new Error(outcome.fail));
   };
 }

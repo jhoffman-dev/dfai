@@ -84,6 +84,10 @@ export { LinkPicker } from './link-picker.tsx';
 export { VaultEmptyState } from './vault-empty.tsx';
 export { NoteLinksPanel } from './note-links.tsx';
 export type { MentionRow, MentionsState } from './note-links.tsx';
+export { RelatedNotesList } from './related-notes.tsx';
+export type { RelatedPanel, RelatedPanelState, RelatedRow } from './related-notes.tsx';
+export { TrailBar } from './trail-bar.tsx';
+export type { SavedTrailNote, TrailNote, TrailWalk } from './trail-bar.tsx';
 export { EditableTitle, HiddenTitle, PageHead } from './page-head.tsx';
 export type { PageHeadProps } from './page-head.tsx';
 export { PageAction, PageBar } from './page-bar.tsx';
@@ -133,6 +137,10 @@ export { SecretsSettings } from './secrets-settings.tsx';
 export type { SecretRow, SecretSave } from './secrets-settings.tsx';
 export { GoogleCalendarSettings } from './google-calendar-settings.tsx';
 export { GranolaSettings } from './granola-settings.tsx';
+export { SlackSettings } from './slack-settings.tsx';
+export type { SlackTokenState, SlackView } from './slack-settings.tsx';
+export { SlackMessageOffer } from './slack-message-offer.tsx';
+export type { SlackOfferView } from './slack-message-offer.tsx';
 export { KindleSettings } from './kindle-settings.tsx';
 export type { KindleBusy, KindleView } from './kindle-settings.tsx';
 export type { GranolaKeyState, GranolaNoteLine, GranolaView } from './granola-settings.tsx';
@@ -162,6 +170,7 @@ export { SettingsDialog, SettingsUnavailable } from './settings-dialog.tsx';
 export type { ConnectionSettingsState } from './settings-dialog.tsx';
 export { SETTINGS_SECTIONS } from './settings-section-links.ts';
 export type { SettingsSectionLink } from './settings-section-links.ts';
+export { SettingsSectionWhenShown } from './settings-section.tsx';
 export { ArchivedButton, ViewToolbar } from './view-toolbar.tsx';
 export { ViewTabs } from './view-tabs.tsx';
 export type { ViewTabEditing } from './view-tabs.tsx';
@@ -183,6 +192,16 @@ export type { GroupOption } from './view-settings-popovers.tsx';
 export { QueryPage } from './query-page.tsx';
 export type { AddToDashboard, QueryChoice, QueryPageProps, SaveAsView } from './query-page.tsx';
 export { LinkedNote, NoteNamesProvider, useNoteNames } from './note-names.tsx';
+export { CodeLanguagesProvider } from './editor/code-languages-context.ts';
+export {
+  CODE_GRAMMARS,
+  createCodeLanguages,
+  grammarFor,
+  type CodeGrammar,
+  type CodeLanguages,
+  type LoadGrammar,
+} from './editor/code-languages.ts';
+export { CODE_GRAMMAR_IMPORTS } from './editor/code-grammars.ts';
 export { LinkHintsProvider, useLinkHints } from './link-suggest/link-hints.tsx';
 export type { LinkHintsSource } from './link-suggest/link-hints.tsx';
 export { ArtifactViewer, ARTIFACT_SANDBOX } from './artifact-viewer.tsx';
@@ -253,7 +272,13 @@ export { TemplateToNoteDialog } from './template-to-note-dialog.tsx';
 export type { TemplateNotice } from './template-banner.tsx';
 export { lostUsesText, templateUsesText } from './template-words.ts';
 export type { ArchiveContents, ArchivePageProps } from './archive-page.tsx';
-export type { InboxContents, InboxPageProps, InboxTypesOffer } from './inbox-page.tsx';
+export type {
+  InboxContents,
+  InboxPageProps,
+  InboxTypesOffer,
+  MeetingsWaitingProps,
+  ProcessHereProps,
+} from './inbox-page.tsx';
 export type { InboxOfferReading } from './inbox-offer.ts';
 export type { InboxRefusal } from './inbox/inbox-rows.tsx';
 export type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';
@@ -264,6 +289,8 @@ export type { TodayAction, TodayPageProps } from './today-page.tsx';
 export { ParaMigration } from './para-migration.tsx';
 export { MeetingProjects } from './meeting-projects.tsx';
 export type { MeetingProjectRow, MeetingProjectsProps } from './meeting-projects.tsx';
+export { MeetingSetup } from './meeting-setup.tsx';
+export type { MeetingSetupLineView, MeetingSetupProps } from './meeting-setup.tsx';
 export type { ParaMigrationPreviewData, ParaMigrationProps } from './para-migration.tsx';
 export { TaskMigration } from './task-migration.tsx';
 export type {

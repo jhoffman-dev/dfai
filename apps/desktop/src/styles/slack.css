@@ -1,0 +1,51 @@
+/* A pasted Slack link's offer to save the message (#105): under quick
+   capture's field, or floating over the content panel when pasted into a note. */
+.slack-offer {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+.shell__main > .slack-offer {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  bottom: 12px;
+  box-shadow: var(--shadow-soft);
+  max-width: 360px;
+  position: absolute;
+  right: 12px;
+  z-index: 3;
+}
+
+.slack-offer__author {
+  font-weight: 600;
+  margin: 0;
+}
+
+.slack-offer__text {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  color: var(--ink-2);
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-line;
+}
+
+.slack-offer__status {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+  margin: 0;
+}
+
+.slack-offer__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.slack-offer__dismiss {
+  align-self: flex-end;
+}
