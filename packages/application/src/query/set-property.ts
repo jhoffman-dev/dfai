@@ -1,4 +1,9 @@
-import { createVaultPath, repeatingTaskUpdate, splitFrontmatter } from '@dfai/domain';
+import {
+  createVaultPath,
+  opensUnclosedFrontmatter,
+  repeatingTaskUpdate,
+  splitFrontmatter,
+} from '@dfai/domain';
 import type { VaultFsPort } from '../vault/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { NoteChangedError } from '../notes/note-changed-error.ts';
@@ -139,7 +144,22 @@ export async function writeFrontmatterChanges(write: FrontmatterWrite): Promise<
   await writeChanges({
     ...write,
     read: (frontmatter) => write.markdown.frontmatterProperties(frontmatter, { forWriting: true }),
+    settingsFile: true,
   });
+}
+
+/**
+ * A write refused because the file opens a frontmatter block it never closes.
+ * Its settings are that block, which reads as none: a block written above it
+ * would hold only the change, and the file would no longer say what it is (#683).
+ */
+export class UnclosedFrontmatterError extends Error {
+  constructor(path: string) {
+    super(
+      `${path} has a frontmatter block with no closing ---, so nothing was written to it: add the --- line that ends the block, then try again`,
+    );
+    this.name = 'UnclosedFrontmatterError';
+  }
 }
 
 /** The read-change-write itself, `values` given as a rule worked out against what `read` gives. */
@@ -150,12 +170,16 @@ async function writeChanges({
   values,
   ifModified,
   read,
+  settingsFile = false,
 }: FrontmatterWrite & {
   read: (frontmatter: string | null) => Readonly<Record<string, unknown>>;
+  /** A file whose settings are its frontmatter, which a block it never closes would lose. */
+  settingsFile?: boolean;
 }): Promise<void> {
   const target = createVaultPath(path);
   const { text, modified } = await fs.readTextFile(target);
   if (ifModified !== undefined && ifModified !== modified) throw new NoteChangedError(target);
+  if (settingsFile && opensUnclosedFrontmatter(text)) throw new UnclosedFrontmatterError(target);
   const document = splitFrontmatter(text);
 
   const changes = typeof values === 'function' ? values(read(document.frontmatter)) : values;
