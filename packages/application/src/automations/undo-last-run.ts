@@ -5,6 +5,7 @@ import {
   lastUndoableRun,
   loggedActionProblem,
   madeTaskMeeting,
+  messageOf,
   splitFrontmatter,
   unarchiveProblem,
   type DoneAction,
@@ -74,7 +75,8 @@ async function undoOnce(run: AutomationRun): Promise<LogEntry | null> {
   const trusted = rule.action.kind === 'claude' ? await onMeetings(ports, logged, refused) : logged;
   let archived: PropertyOutcome = { done: [], left: [] };
   let restored: PropertyOutcome = { done: [], left: [] };
-  let summaries: SummariesTakenBack = { done: [], left: [], handled: new Set() };
+  // Filled as each meeting is taken back, so an undo that fails partway still logs what it did.
+  const summaries: SummariesTakenBack = { done: [], left: [], handled: new Set() };
   const entry = (): LogEntry => ({
     kind: 'undo',
     at,
@@ -85,7 +87,7 @@ async function undoOnce(run: AutomationRun): Promise<LogEntry | null> {
   try {
     archived = await putBack({ ports, run: last, done: trusted });
     const sets = restoringChanges(trusted);
-    summaries = await takeBackSummaries({ ports, run: last, done: trusted, sets });
+    await takeBackSummaries({ ports, run: last, done: trusted, sets, into: summaries });
     // What a meeting's own write took back is not restored again; the rest, and what it left, is.
     restored = await changeProperties({
       ports,
@@ -190,8 +192,10 @@ function restoringChanges(done: readonly DoneAction[]): PropertyChange[] {
 }
 
 /** What taking back the meetings' writes did, and which `project` lines it dealt with. */
-interface SummariesTakenBack extends PropertyOutcome {
-  readonly handled: ReadonlySet<PropertyChange>;
+interface SummariesTakenBack {
+  readonly done: DoneAction[];
+  readonly left: PassedOver[];
+  readonly handled: Set<PropertyChange>;
 }
 
 const CHANGED_SINCE = 'It was changed since the run made it, so it was kept.';
@@ -214,84 +218,124 @@ interface MadeTask {
  * while its tasks are trashed is left, saying why, still linking them: they
  * are in the Trash to put back. No summary says a task was made that is gone.
  * A logged task undo cannot believe the run made (A25-01) is left, and named.
+ *
+ * What it does goes into `into` as it is done, so an error that stops the undo
+ * partway — a meeting write that fails, a Trash that breaks — still leaves the
+ * tasks it trashed, and the meeting it stopped at, for the log.
  */
 async function takeBackSummaries({
   ports,
   run,
   done,
   sets,
+  into,
 }: {
   ports: UndoPorts;
   run: Run;
   done: readonly DoneAction[];
   /** The `project` lines to put back: a meeting's own are taken in its one write. */
   sets: readonly PropertyChange[];
-}): Promise<SummariesTakenBack> {
+  into: SummariesTakenBack;
+}): Promise<void> {
   const summaries = new Map<VaultPath, SummaryToTakeBack>();
   for (const action of done) {
     if (action.kind === 'summarised') summaries.set(action.path, action);
   }
   const { made, left } = await madeTasks({ ports, run, done, meetings: [...summaries.keys()] });
+  into.left.push(...left);
   const meetings = [...new Set([...summaries.keys(), ...made.map(({ meeting }) => meeting)])];
-  const did: DoneAction[] = [];
-  const handled = new Set<PropertyChange>();
   for (const meeting of meetings) {
     const trashing = made.filter((task) => task.meeting === meeting).map(({ path }) => path);
-    const summary = summaries.get(meeting) ?? null;
-    const project = sets.find((change) => change.path === meeting) ?? null;
-    const asked = new Set<VaultPath>();
-    const trash = async (tasks: readonly VaultPath[]) => {
-      const trashed = await trashTasks(ports.fs, tasks, left);
-      tasks.forEach((path) => asked.add(path));
-      did.push(...trashed.map((path) => ({ kind: 'trashed' as const, path })));
-      return trashed;
-    };
-    try {
-      const undone = await undoMeetingSummary(ports, {
-        meeting,
-        summary,
-        trashing,
-        trash,
-        notePaths: ports.notePaths,
-        project,
-      });
-      if (project !== null) handled.add(project);
-      if (undone.restored !== null) did.push(undone.restored);
-      if (undone.projectLeft !== null) left.push({ path: meeting, reason: undone.projectLeft });
-    } catch (cause) {
-      if (!(cause instanceof MeetingSummaryRefused)) throw cause;
-      if (summary !== null) left.push({ path: meeting, reason: cause.message });
-      // Refused after its tasks were trashed, those are logged as trashed; the rest are kept.
-      const kept = trashing.filter((path) => !asked.has(path));
-      left.push(...kept.map((path) => ({ path, reason: meetingKept(cause.message) })));
-      continue;
-    }
-    if (summary !== null) did.push({ kind: 'unsummarised', path: meeting });
+    await takeBackMeeting({
+      ports,
+      meeting,
+      summary: summaries.get(meeting) ?? null,
+      trashing,
+      project: sets.find((change) => change.path === meeting) ?? null,
+      into,
+    });
   }
-  return { done: did, left, handled };
+}
+
+/** One meeting of {@link takeBackSummaries}: its tasks trashed, then its one write. */
+async function takeBackMeeting({
+  ports,
+  meeting,
+  summary,
+  trashing,
+  project,
+  into,
+}: {
+  ports: UndoPorts;
+  meeting: VaultPath;
+  summary: SummaryToTakeBack | null;
+  trashing: readonly VaultPath[];
+  project: PropertyChange | null;
+  into: SummariesTakenBack;
+}): Promise<void> {
+  const asked = new Set<VaultPath>();
+  const trash = async (tasks: readonly VaultPath[]) => {
+    const trashed: VaultPath[] = [];
+    await trashTasks(ports.fs, tasks, {
+      left: into.left,
+      took: (path) => {
+        trashed.push(path);
+        into.done.push({ kind: 'trashed', path });
+      },
+      tried: (path) => asked.add(path),
+    });
+    return trashed;
+  };
+  try {
+    const undone = await undoMeetingSummary(ports, {
+      meeting,
+      summary,
+      trashing,
+      trash,
+      notePaths: ports.notePaths,
+      project,
+    });
+    if (project !== null) into.handled.add(project);
+    if (undone.restored !== null) into.done.push(undone.restored);
+    if (undone.projectLeft !== null) into.left.push({ path: meeting, reason: undone.projectLeft });
+  } catch (cause) {
+    const refused = cause instanceof MeetingSummaryRefused;
+    const reason = messageOf(cause);
+    // Named whenever its summary stays, or it still links tasks now in the Trash, or it failed.
+    if (summary !== null || asked.size > 0 || !refused) into.left.push({ path: meeting, reason });
+    const kept = trashing.filter((path) => !asked.has(path));
+    into.left.push(...kept.map((path) => ({ path, reason: meetingKept(reason) })));
+    if (!refused) throw cause;
+    return;
+  }
+  if (summary !== null) into.done.push({ kind: 'unsummarised', path: meeting });
 }
 
 /**
- * Trashes each task, and answers with those the Trash took. One the host
- * refuses — any host refusal: reached through a link (#685), a Trash that
- * says no — is left and named instead. Any other error stops the undo.
+ * Trashes each task, saying of each that it was tried and, if so, that the
+ * Trash took it. One the host refuses — any host refusal: reached through a
+ * link (#685), a Trash that says no — is left and named instead. Any other
+ * error stops the undo, with what was taken before it already said.
  */
 async function trashTasks(
   fs: UndoPorts['fs'],
   tasks: readonly VaultPath[],
-  left: PassedOver[],
-): Promise<VaultPath[]> {
-  const trashed: VaultPath[] = [];
+  {
+    left,
+    took,
+    tried,
+  }: { left: PassedOver[]; took: (path: VaultPath) => void; tried: (path: VaultPath) => void },
+): Promise<void> {
   for (const path of tasks) {
     try {
       await fs.trashEntry({ path });
-      trashed.push(path);
+      took(path);
     } catch (cause) {
       if (!(cause instanceof VaultAccessError)) throw cause;
       left.push({ path, reason: cause.message });
     }
+    tried(path);
   }
-  return trashed;
 }
 
 /**

@@ -246,7 +246,7 @@ describe('Undo last run, the meeting write fails after its tasks are trashed (at
   // undoOnce's `finally` logs `summaries.done` as its initial empty value: the
   // tasks are in the Trash, the undo entry says nothing was trashed, and that entry
   // marks the run undone (lastUndoableRun), so it can never be retried.
-  it.fails('logs every task it trashed when the meeting write then throws', async () => {
+  it('logs every task it trashed when the meeting write then throws', async () => {
     const at = setUp([digest()]);
     await at.run();
     const trashedBefore = allTasks(at);
@@ -261,20 +261,17 @@ describe('Undo last run, the meeting write fails after its tasks are trashed (at
     for (const path of gone) expect(logged).toContainEqual({ kind: 'trashed', path });
   });
 
-  it.fails(
-    'names the meeting as left when its write throws after its tasks are trashed',
-    async () => {
-      const at = setUp([digest()]);
-      await at.run();
-      breakMeetingWrite(at, new VaultAccessError('permission denied'));
+  it('names the meeting as left when its write throws after its tasks are trashed', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    breakMeetingWrite(at, new VaultAccessError('permission denied'));
 
-      await expect(at.undo()).rejects.toThrow('permission denied');
+    await expect(at.undo()).rejects.toThrow('permission denied');
 
-      // The summary still says the tasks were made, and they are in the Trash.
-      expect(at.body()).toContain('atlas:summary');
-      expect(lastUndo(at)?.left.map(({ path }) => path)).toContain(SYNC);
-    },
-  );
+    // The summary still says the tasks were made, and they are in the Trash.
+    expect(at.body()).toContain('atlas:summary');
+    expect(lastUndo(at)?.left.map(({ path }) => path)).toContain(SYNC);
+  });
 
   // Renamed from "leaves the run undoable when its meeting write threw before
   // anything was logged". Its tasks were trashed before the write threw, so the
@@ -282,21 +279,18 @@ describe('Undo last run, the meeting write fails after its tasks are trashed (at
   // domain rule). What is right is that the log names the meeting, with the
   // error, so the person can take the summary out by hand. A retry then has
   // nothing more to do.
-  it.fails(
-    'names the meeting left with the write’s error, and a retry has nothing more to do',
-    async () => {
-      const at = setUp([digest()]);
-      await at.run();
-      const write = at.vault.ports.fs.writeTextFile;
-      breakMeetingWrite(at, new Error('disk full'));
-      await expect(at.undo()).rejects.toThrow('disk full');
-      at.vault.ports.fs.writeTextFile = write;
+  it('names the meeting left with the write’s error, and a retry has nothing more to do', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const write = at.vault.ports.fs.writeTextFile;
+    breakMeetingWrite(at, new Error('disk full'));
+    await expect(at.undo()).rejects.toThrow('disk full');
+    at.vault.ports.fs.writeTextFile = write;
 
-      expect(lastUndo(at)?.left).toContainEqual({ path: SYNC, reason: 'disk full' });
-      expect(await at.undo()).toBeNull();
-      expect(at.body()).toContain('atlas:summary');
-    },
-  );
+    expect(lastUndo(at)?.left).toContainEqual({ path: SYNC, reason: 'disk full' });
+    expect(await at.undo()).toBeNull();
+    expect(at.body()).toContain('atlas:summary');
+  });
 
   it('never asks the Trash for anything when the run made no task', async () => {
     const at = setUp([digest({ items: [] })]);
@@ -370,22 +364,19 @@ describe('Undo last run, the meeting changes while its tasks are trashed (attack
   // are trashed, the meeting's write is refused, and it keeps links to notes in the
   // Trash. With `summary === null` the catch pushes nothing for the meeting, so the
   // log never says the meeting was left, nor why, though it still links them.
-  it.fails(
-    'names a meeting with no summary as left when it changed while its tasks were trashed',
-    async () => {
-      const at = setUp([digest({ summary: 42 })]);
-      await at.run();
-      expect(at.body().includes('atlas:summary')).toBe(false);
-      expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
-      duringTrash(at, saveMeeting(at));
+  it('names a meeting with no summary as left when it changed while its tasks were trashed', async () => {
+    const at = setUp([digest({ summary: 42 })]);
+    await at.run();
+    expect(at.body().includes('atlas:summary')).toBe(false);
+    expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
+    duringTrash(at, saveMeeting(at));
 
-      const undone = (await at.undo()) as Undo | null;
+    const undone = (await at.undo()) as Undo | null;
 
-      expect(at.tasks()).toHaveLength(0);
-      expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
-      expect(undone?.left.map(({ path }) => path)).toContain(SYNC);
-    },
-  );
+    expect(at.tasks()).toHaveLength(0);
+    expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
+    expect(undone?.left.map(({ path }) => path)).toContain(SYNC);
+  });
 });
 
 describe('Undo last run, the links the one write takes off (attack2 #691)', () => {
