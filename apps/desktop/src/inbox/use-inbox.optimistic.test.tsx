@@ -92,6 +92,10 @@ function inbox() {
     onSettled,
     closes,
     shown,
+    /** What the index will list from the next read on, with nothing said yet. */
+    list: (still: readonly (typeof CALL)[]) => {
+      listed = [...still];
+    },
     /** The index catches up: it lists only these, and says so with a new key. */
     refresh: (still: readonly (typeof CALL)[], indexKey: string) => {
       listed = [...still];
@@ -273,6 +277,61 @@ describe('useInbox — one triage key per row, in turn (#308)', () => {
     });
     expect(files.get(PAY)).toBe(CAPTURED);
     expect(files.get(CALL)).toBe(CAPTURED.replace('status: inbox', 'status: waiting'));
+  });
+});
+
+describe('useInbox — U takes the last back and says where it is listed (#109)', () => {
+  it('resolves once the list holds the row again, not on a read begun before the index caught up', async () => {
+    const { hook, shown, files, onSettled, refresh, list } = inbox();
+    await waitFor(() => expect(shown()).toEqual([CALL, PAY]));
+    await act(() =>
+      hook.result.current.clarify({ path: CALL, clarification: { status: 'next-action' } }),
+    );
+    refresh([PAY], 'ready:2');
+    await waitFor(() => expect(shown()).toEqual([PAY]));
+
+    // The refresh after the undo's write is held: until it lands, the index still lists the row as gone.
+    const caughtUp = gate();
+    onSettled.mockImplementation(() => caughtUp.opened);
+    let back: VaultPath | null | undefined;
+    act(() => {
+      void hook.result.current.takeBackLast().then((path) => {
+        back = path;
+      });
+    });
+    await waitFor(() => expect(files.get(CALL)).toBe(CAPTURED));
+    // Reads the page makes meanwhile — begun before the index caught up — do not list it.
+    refresh([PAY], 'ready:3');
+    refresh([PAY], 'ready:4');
+    refresh([PAY], 'ready:5');
+    await waitFor(() => expect(shown()).toEqual([PAY]));
+    expect(back).toBeUndefined();
+
+    list([CALL, PAY]);
+    await act(async () => caughtUp.open());
+    await waitFor(() => expect(back).toBe(CALL));
+    expect(shown()).toContain(CALL);
+  });
+
+  it('still resolves, to the row, when a read after the index caught up does not list it', async () => {
+    const { hook, shown, files, refresh } = inbox();
+    await waitFor(() => expect(shown()).toEqual([CALL, PAY]));
+    await act(() =>
+      hook.result.current.clarify({ path: CALL, clarification: { status: 'next-action' } }),
+    );
+    refresh([PAY], 'ready:2');
+    await waitFor(() => expect(shown()).toEqual([PAY]));
+
+    // Taken back, but listed nowhere the Inbox reads (filtered out, say): the page gives up on it itself.
+    let back: VaultPath | null | undefined;
+    act(() => {
+      void hook.result.current.takeBackLast().then((path) => {
+        back = path;
+      });
+    });
+    await waitFor(() => expect(files.get(CALL)).toBe(CAPTURED));
+    await waitFor(() => expect(back).toBe(CALL));
+    expect(shown()).toEqual([PAY]);
   });
 });
 
