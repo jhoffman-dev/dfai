@@ -64,8 +64,9 @@ function yamlFailingOn(unreadable: string): MarkdownPort {
 describe('loadTypeListing', () => {
   it('lists a type file whose frontmatter cannot be read as broken, with the parser reason, and loads the types beside it (#683)', async () => {
     const texts: Record<string, string> = {
-      '.atlas/types/book.md': '---\nname: book\n---\n',
+      // The broken file is read first: the files after it still load.
       '.atlas/types/Recipe.md': '---\nname: recipe\nproperties: [\n---\n',
+      '.atlas/types/book.md': '---\nname: book\n---\n',
       '.atlas/types/README.md': '# What these types are\n',
       '.atlas/types/Notes.md': '---\ntitle: Notes on the types\n---\n',
     };
