@@ -1,5 +1,6 @@
 import {
   createVaultPath,
+  isBlankFrontmatter,
   noteTitle,
   objectTypeProblems,
   opensUnclosedFrontmatter,
@@ -88,13 +89,12 @@ function readTypeFile(
   file: NoteFile,
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>,
 ): { type: DefinedType | null; problem: string | null } {
-  // An unclosed or unreadable block reads as no properties, so it would be skipped
-  // as no type: in the types folder it most likely is one, gone without a word (#683).
+  // An unclosed or unreadable block, or one that is a list or one value, reads as
+  // no properties, so it would be skipped as no type: in the types folder it most
+  // likely is one, gone without a word (#683). In the words PR #682 gives a rule
+  // file in the same state (its readRuleBlock), so the two read alike.
   if (opensUnclosedFrontmatter(file.text)) {
-    return {
-      type: null,
-      problem: 'Its frontmatter has no closing --- line, so none of it is read.',
-    };
+    return { type: null, problem: 'Its frontmatter has no closing ---.' };
   }
   const block = blockOf(file);
   const unreadable = markdown.frontmatterProblem(block);
@@ -103,6 +103,9 @@ function readTypeFile(
   }
   const frontmatter = propertiesOf(block, markdown);
   if (frontmatter === null) return { type: null, problem: null };
+  if (block !== null && !isBlankFrontmatter(block) && Object.keys(frontmatter).length === 0) {
+    return { type: null, problem: 'Its frontmatter is not a set of properties.' };
+  }
   const problems = objectTypeProblems(frontmatter);
   return {
     type: definedType(file, frontmatter),
