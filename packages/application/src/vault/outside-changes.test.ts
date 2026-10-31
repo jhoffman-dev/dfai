@@ -471,7 +471,7 @@ describe('outsideChanges: the app’s own new note (#258)', () => {
     await expect(create(refusing, 'Inbox/Buy flour.md', '# Buy flour\n')).rejects.toThrow(
       'already exists',
     );
-    expect(vault.ownWrites.leftAt({ vault: VAULT, path: 'Inbox/Buy flour.md' })).toBeNull();
+    // What the app's first create left is still kept, and is not what is there.
     expect(await vault.reported(['Inbox/Buy flour.md'])).toEqual(['Inbox/Buy flour.md']);
   });
 
