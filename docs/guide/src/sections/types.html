@@ -33,11 +33,12 @@
       <p>A typo in a file in <code>.atlas/types</code> never costs you the other types: they still load, and that file is listed under <b>Types</b> in the sidebar by its name, with what is wrong below it. Click it to open the file and mend it; once it reads, it leaves the list.</p>
       <ul>
         <li><i>Its frontmatter is not valid YAML:</i> and what the parser says is wrong, with the line and column — an unclosed <code>[</code>, a tab for an indent.</li>
-        <li><i>Its frontmatter has no closing --- line, so none of it is read.</i></li>
+        <li><i>Its frontmatter has no closing ---.</i> Without it, none of the block is read.</li>
+        <li><i>Its frontmatter is not a set of properties.</i> It reads as a list, or as one value, where a type is <code>key: value</code> lines.</li>
         <li><i>It has no name, and a type needs one.</i> The type is not loaded until it has a <code>name:</code>.</li>
         <li><i>Its property “pages” has a kind DFAI does not know: “nmber”.</i>, or <i>…is a relation that names no type to point at.</i> The type still loads, without that property.</li>
       </ul>
-      <p>A file there with no frontmatter, or whose frontmatter has none of a type's keys (<code>name</code>, <code>label</code>, <code>properties</code>, <code>icon</code>, <code>folder</code>) — a README, say — is left out without a word.</p>
+      <p>A file there with no frontmatter, a blank one, or frontmatter with none of a type's keys (<code>name</code>, <code>label</code>, <code>properties</code>, <code>icon</code>, <code>folder</code>) — a README, say — is left out without a word.</p>
       <h3>Built-in types</h3>
       <p><b>Person</b>, <b>Task</b>, <b>Project</b>, <b>Artifact</b>, <b>Meeting</b>, <b>Company</b>, <b>Term</b>, <b>Proposal</b>, <b>Decision</b>, <b>Block</b> and <b>Daily</b> are marked <b>Built in</b>: DFAI's own features depend on them. In the type's editor their <b>Delete</b> button is turned off, with the reason beside it — for example <i>“Person is built in — @ mentions find people by it — so it cannot be deleted. Its properties are yours to change.”</i> Their properties stay yours to edit. Their files in <code>.atlas/types</code> can't be deleted or renamed from Pages either, whatever the file is called: <i>“DFAI’s built-in types stay — its features depend on them.”</i></p>
       <p>A type you made has <b>Delete &lt;Type&gt;…</b> under its properties in the type's editor; it asks first, as deleting any note does, and puts the type's file in the Trash.</p>
