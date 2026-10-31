@@ -1,5 +1,5 @@
 // Attack on PR #652 (#134): sources the assembler publishes with no complaint,
-// though the page they make is wrong. Each `it.fails` passes while the bug stands.
+// though the page they make is wrong. Each was an `it.fails` until the assembler refused it.
 import { describe, expect, it } from 'vitest';
 import { assembleGuide } from './assemble.ts';
 
@@ -36,7 +36,7 @@ const publishedOrRefused = (files: string, page = PAGE): string | null => {
 };
 
 describe('the field guide refuses sources that publish a broken page (attack #652)', () => {
-  it.fails('refuses a link to a section id no section has, as when a section is renamed', () => {
+  it('refuses a link to a section id no section has, as when a section is renamed', () => {
     // claude.html renamed to claude-chat.html leaves every `#claude` in other sections dead.
     const files = section(
       'files',
@@ -46,13 +46,13 @@ describe('the field guide refuses sources that publish a broken page (attack #65
     expect(() => assemble(files)).toThrow();
   });
 
-  it.fails('refuses an element id another section already uses as its anchor', () => {
+  it('refuses an element id another section already uses as its anchor', () => {
     // The contents link "Start the app" may now land on this heading instead.
     const files = section('files', 'Your files', '      <h3 id="start">Start here</h3>\n');
     expect(() => assemble(files)).toThrow();
   });
 
-  it.fails('refuses a second section written <section> with no attributes', () => {
+  it('refuses a second section written <section> with no attributes', () => {
     const files = section(
       'files',
       'Your files',
@@ -61,7 +61,7 @@ describe('the field guide refuses sources that publish a broken page (attack #65
     expect(() => assemble(files)).toThrow('must hold one <section>');
   });
 
-  it.fails('refuses content after the section closes, published outside any section', () => {
+  it('refuses content after the section closes, published outside any section', () => {
     const files = section(
       'files',
       'Your files',
@@ -70,25 +70,22 @@ describe('the field guide refuses sources that publish a broken page (attack #65
     expect(() => assemble(files)).toThrow();
   });
 
-  it.fails('publishes a contents label as text, never as markup', () => {
+  it('publishes a contents label as text, never as markup', () => {
     const page = publishedOrRefused(section('files', 'Pay </a><b>stubs</b> & <i>tax'));
     // Refusing the label is as good as escaping it; publishing it raw is not.
     if (page !== null) expect(page).toContain('Pay &lt;/a&gt;&lt;b&gt;stubs');
     expect(page ?? '').not.toContain('</a><b>stubs</b>');
   });
 
-  it.fails('refuses a contents label that is only spaces, an empty link in the contents', () => {
+  it('refuses a contents label that is only spaces, an empty link in the contents', () => {
     expect(() => assemble(section('files', '   '))).toThrow();
   });
 
-  it.fails(
-    'refuses a section marker inside an HTML comment, whose section is listed but hidden',
-    () => {
-      const page = PAGE.replace(
-        '<!-- guide:section files -->',
-        '<!-- Parked until the files view ships:\n<!-- guide:section files -->\n-->',
-      );
-      expect(() => assemble(section('files', 'Your files'), page)).toThrow();
-    },
-  );
+  it('refuses a section marker inside an HTML comment, whose section is listed but hidden', () => {
+    const page = PAGE.replace(
+      '<!-- guide:section files -->',
+      '<!-- Parked until the files view ships:\n<!-- guide:section files -->\n-->',
+    );
+    expect(() => assemble(section('files', 'Your files'), page)).toThrow();
+  });
 });
