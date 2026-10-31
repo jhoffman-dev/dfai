@@ -61,6 +61,29 @@ function yamlFailingOn(unreadable: string): MarkdownPort {
   };
 }
 
+/** `key: value` lines, each value read as JSON when it is JSON: enough for a type's properties. */
+function jsonProperties(): MarkdownPort {
+  const markdown = fakeMarkdown();
+  const valueOf = (raw: unknown) => {
+    try {
+      return JSON.parse(String(raw)) as unknown;
+    } catch {
+      // Not JSON: the plain text it was written as.
+      return raw;
+    }
+  };
+  return {
+    ...markdown,
+    frontmatterProperties: (frontmatter) =>
+      Object.fromEntries(
+        Object.entries(markdown.frontmatterProperties(frontmatter)).map(([key, raw]) => [
+          key,
+          valueOf(raw),
+        ]),
+      ),
+  };
+}
+
 describe('loadTypeListing', () => {
   it('lists a type file whose frontmatter cannot be read as broken, with the parser reason, and loads the types beside it (#683)', async () => {
     const texts: Record<string, string> = {
@@ -84,6 +107,42 @@ describe('loadTypeListing', () => {
         path: '.atlas/types/Recipe.md',
         name: 'Recipe',
         problem: `Its frontmatter is not valid YAML: ${PARSER_REASON}`,
+      },
+    ]);
+  });
+
+  it('lists a type file that reads but is no whole type, with why, and loads what it can', async () => {
+    const texts: Record<string, string> = {
+      // No name: not a type at all, so it is listed and not loaded.
+      '.atlas/types/Recipe.md': '---\nlabel: Recipe\nproperties: {"serves": "number"}\n---\n',
+      // A property of a kind there is not: the type loads without it, and says so.
+      '.atlas/types/book.md': '---\nname: book\nproperties: {"pages": "nmber"}\n---\n',
+      // A closing fence deleted: the block is not frontmatter, so it cannot say it is a type.
+      '.atlas/types/Film.md': '---\nname: film\nlabel: Film\n\n# Film\n',
+    };
+    const fs = fakeVaultFs({
+      listDirectory: async () =>
+        Object.keys(texts).map((path) => file(path.split('/').at(-1) ?? '')),
+      readNotes: async (paths) =>
+        paths.map((path) => ({ path, text: texts[path] ?? '', modified: 1, size: 1 })),
+    });
+    const listing = await loadTypeListing({ fs, markdown: jsonProperties() });
+    expect(listing.types.map((type) => [type.name, type.properties.length])).toEqual([['book', 0]]);
+    expect(listing.broken).toEqual([
+      {
+        path: '.atlas/types/book.md',
+        name: 'book',
+        problem: 'Its property “pages” has a kind DFAI does not know: “nmber”.',
+      },
+      {
+        path: '.atlas/types/Film.md',
+        name: 'Film',
+        problem: 'Its frontmatter has no closing --- line, so none of it is read.',
+      },
+      {
+        path: '.atlas/types/Recipe.md',
+        name: 'Recipe',
+        problem: 'It has no name, and a type needs one.',
       },
     ]);
   });

@@ -162,7 +162,8 @@ describe('Sidebar', () => {
     // The readable type is still listed beside it.
     expect(within(types).getByRole('button', { name: 'Task, 62 notes' })).toBeDefined();
     const row = within(types).getByRole('button', {
-      name: 'Recipe cannot be read: .atlas/types/Recipe.md',
+      // Not "cannot be read": a type that loads without a property it names is listed too.
+      name: 'Recipe has a problem: .atlas/types/Recipe.md',
     });
     expect(within(types).getByText(problem)).toBeDefined();
     await userEvent.click(row);
