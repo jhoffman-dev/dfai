@@ -9,7 +9,13 @@ import {
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
-import { createSkill, deleteSkill, saveSkill, SkillRefusedError } from './manage-skills.ts';
+import {
+  createSkill,
+  deleteSkill,
+  saveSkill,
+  skillFolderContents,
+  SkillRefusedError,
+} from './manage-skills.ts';
 import { listSkills, readSkill } from './skills.ts';
 
 /**
@@ -596,5 +602,126 @@ describe('after the attack on #620', () => {
     });
 
     expect(vault.notes.get(SKILL_PATH)?.text.endsWith('\nA.\r\nB.\r\n')).toBe(true);
+  });
+});
+
+describe('skills reached through links (#169)', () => {
+  const FOLDER = '.atlas/skills/weekly-review';
+  const ESCAPES = 'path escapes the vault';
+
+  /**
+   * `vault` as the host shows it with links in it: each path in `links` is
+   * listed as a link, and anything below a path in `outside` — a link out of
+   * the vault — is refused, as the host refuses it.
+   */
+  function withLinks(
+    vault: ReturnType<typeof memoryVault>,
+    { links, outside = [] }: { links: readonly string[]; outside?: readonly string[] },
+  ): VaultFsPort {
+    const refuseThrough = (path: string) => {
+      if (outside.some((link) => path === link || path.startsWith(`${link}/`))) {
+        throw new VaultAccessError(ESCAPES);
+      }
+    };
+    return {
+      ...vault.fs,
+      listDirectory: async (path) => {
+        refuseThrough(path);
+        const entries = await vault.fs.listDirectory(path);
+        return entries.map((entry) =>
+          links.includes(entry.path) ? { ...entry, link: true } : entry,
+        );
+      },
+      readTextFile: async (path) => (refuseThrough(path), vault.fs.readTextFile(path)),
+      createNote: async (write) => (refuseThrough(write.path), vault.fs.createNote(write)),
+      writeTextFile: async (write) => (refuseThrough(write.path), vault.fs.writeTextFile(write)),
+      createFolder: async (write) => (refuseThrough(write.path), vault.fs.createFolder(write)),
+    };
+  }
+
+  const linkedOut = () => {
+    const vault = memoryVault({}, [FOLDER]);
+    return { vault, fs: withLinks(vault, { links: [FOLDER], outside: [FOLDER] }) };
+  };
+
+  it('a folder linked out of the vault reads as one that cannot be read, saying why', async () => {
+    const { fs } = linkedOut();
+
+    const [skill] = await listSkills({ fs, markdown });
+
+    expect(skill).toMatchObject({ name: 'weekly-review', text: '', unreadable: true });
+    expect(skill?.problems).toEqual([
+      { field: 'file', message: `The skill’s folder cannot be read: ${ESCAPES}.` },
+    ]);
+  });
+
+  it('a folder linked out of the vault is not saved into: nothing is tried', async () => {
+    const { vault, fs } = linkedOut();
+    const skill = await readSkill({ fs, markdown, name: 'weekly-review' });
+    if (skill === null) throw new Error('no skill');
+
+    await expect(saveSkill({ fs, markdown, skill, draft: DRAFT })).rejects.toThrow(
+      SkillRefusedError,
+    );
+    expect(vault.writes).toEqual([]);
+  });
+
+  it('a folder linked out of the vault is deleted as the link, without looking in it', async () => {
+    const { vault, fs } = linkedOut();
+    const skill = await readSkill({ fs, markdown, name: 'weekly-review' });
+    if (skill === null) throw new Error('no skill');
+
+    expect(await skillFolderContents({ fs, skill })).toEqual({
+      link: true,
+      otherFiles: [],
+      links: [],
+    });
+    const deleted = await deleteSkill({ fs, skill });
+
+    expect(vault.trashed).toEqual([FOLDER]);
+    expect(deleted).toEqual({ folder: FOLDER, link: true, otherFiles: [], links: [] });
+  });
+
+  it('a real skill holding a folder linked out of the vault is deleted, naming the link', async () => {
+    const vault = memoryVault({ [SKILL_PATH]: TEXT, [`${FOLDER}/reference.md`]: 'ref' }, [
+      `${FOLDER}/scripts`,
+    ]);
+    const fs = withLinks(vault, { links: [`${FOLDER}/scripts`], outside: [`${FOLDER}/scripts`] });
+    const skill = await readSkill({ fs, markdown, name: 'weekly-review' });
+    if (skill === null) throw new Error('no skill');
+
+    const deleted = await deleteSkill({ fs, skill });
+
+    expect(vault.trashed).toEqual([FOLDER]);
+    expect(deleted).toEqual({
+      folder: FOLDER,
+      link: false,
+      otherFiles: [`${FOLDER}/reference.md`],
+      links: [`${FOLDER}/scripts`],
+    });
+  });
+
+  it('an alias of another skill in the vault is deleted as the link, naming none of its files', async () => {
+    const real = '.atlas/skills/real';
+    // The host follows a link inside the vault, so the alias lists the real skill's files.
+    const vault = memoryVault({
+      [`${real}/SKILL.md`]: TEXT.replace('weekly-review', 'real'),
+      [`${real}/scripts/run.sh`]: 'echo',
+      [SKILL_PATH]: TEXT,
+      [`${FOLDER}/scripts/run.sh`]: 'echo',
+    });
+    const fs = withLinks(vault, { links: [FOLDER] });
+    const skill = await readSkill({ fs, markdown, name: 'weekly-review' });
+    if (skill === null) throw new Error('no skill');
+
+    expect(await skillFolderContents({ fs, skill })).toEqual({
+      link: true,
+      otherFiles: [],
+      links: [],
+    });
+    await deleteSkill({ fs, skill });
+
+    expect(vault.trashed).toEqual([FOLDER]);
+    expect(vault.notes.has(`${real}/scripts/run.sh`)).toBe(true);
   });
 });

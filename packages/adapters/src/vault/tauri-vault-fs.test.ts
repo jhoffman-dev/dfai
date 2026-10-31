@@ -42,6 +42,20 @@ describe('tauriVaultFs.listDirectory', () => {
     ]);
   });
 
+  it('keeps which entries are links, and nothing for one that is not (#169)', async () => {
+    invoke.mockResolvedValue([
+      { name: 'alias', path: 'alias', kind: 'directory', link: true },
+      { name: 'a.md', path: 'a.md', kind: 'file', link: true },
+      { name: 'b.md', path: 'b.md', kind: 'file', link: false },
+    ]);
+    const entries = await tauriVaultFs.listDirectory(VAULT_ROOT);
+    expect(entries).toEqual([
+      { kind: 'directory', name: 'alias', path: 'alias', link: true },
+      { kind: 'file', name: 'a.md', path: 'a.md', link: true },
+      { kind: 'file', name: 'b.md', path: 'b.md' },
+    ]);
+  });
+
   it('treats an unrecognised kind as a file rather than trusting the host', async () => {
     invoke.mockResolvedValue([{ name: 'odd', path: 'odd', kind: 'socket' }]);
     const [entry] = await tauriVaultFs.listDirectory(VAULT_ROOT);

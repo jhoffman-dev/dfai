@@ -290,6 +290,35 @@ describe('DeleteDialog', () => {
     expect(screen.getByRole('alertdialog').textContent).toContain(words);
   });
 
+  it('names the links in a folder, which go as links (#169)', () => {
+    render(
+      <DeleteDialog
+        subject={{ ...folder, notes: 1, otherFiles: 0, links: ['scripts', 'ref.md'] }}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('alertdialog').textContent).toContain(
+      'The 1 note in it goes too. The 2 links in it, scripts, ref.md, go as links: what they ' +
+        'point at stays where it is.',
+    );
+  });
+
+  it('says only the link goes for a folder that is a link (#169)', () => {
+    render(
+      <DeleteDialog
+        subject={{ ...folder, notes: 2, otherFiles: 0, link: true }}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const text = screen.getByRole('alertdialog').textContent ?? '';
+    expect(text).toContain(
+      'It is a link: only the link goes to the Trash, and what it points at stays where it is.',
+    );
+    expect(text).not.toContain('notes in it');
+  });
+
   it('says a folder with nothing in it has no notes to lose', () => {
     render(
       <DeleteDialog subject={{ ...folder, notes: 0 }} onConfirm={vi.fn()} onClose={vi.fn()} />,

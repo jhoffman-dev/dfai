@@ -29,7 +29,7 @@ export type {
   LinkUpdatePanes,
   LinkUpdateReport,
 } from './update-links.ts';
-export type { DeletionPreview } from './delete-entry.ts';
+export type { DeletionPreview, OtherFilesCount } from './delete-entry.ts';
 export type {
   AsRead,
   HostVaultFsPort,

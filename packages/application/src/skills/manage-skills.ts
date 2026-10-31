@@ -12,12 +12,13 @@ import {
   SKILLS_DIRECTORY,
   splitFrontmatter,
   type SkillDraft,
+  type SkillFolderContents,
   type VaultPath,
 } from '@dfai/domain';
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
-import { filesUnder } from '../vault/delete-entry.ts';
+import { filesAndLinksUnder, isListedAsLink } from '../vault/delete-entry.ts';
 import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
 import { listSkillFolders, readSkillFileAt, skillFileOf, type SkillFile } from './skills.ts';
 
@@ -179,7 +180,8 @@ async function refuseUnlessUnchanged(
 /** Refuses a skill whose SKILL.md is there but could not be read: nothing is done to it here. */
 function refuseUnreadable(skill: SkillFile, doing: string): void {
   if (skill.unreadable) {
-    throw new SkillRefusedError(`${SKILL_FILE_UNREADABLE} It is not ${doing} here.`);
+    const why = skill.problems.find((problem) => problem.field === 'file')?.message;
+    throw new SkillRefusedError(`${why ?? SKILL_FILE_UNREADABLE} It is not ${doing} here.`);
   }
 }
 
@@ -253,29 +255,39 @@ const isDotted = (folder: VaultPath, path: VaultPath) =>
     .some((segment) => segment.startsWith('.'));
 
 /**
- * The files a skill's folder holds besides SKILL.md, which deleting it takes
- * too, as deep as a folder is walked; dotfiles such as `.DS_Store` go
- * unnamed. `skillDeletionWarning` says that deeper files go as well.
+ * What deleting a skill takes: the files its folder holds besides SKILL.md,
+ * as deep as a folder is walked, with dotfiles such as `.DS_Store` unnamed;
+ * and the links in it, which go as links. A folder that is itself a link is
+ * not looked in at all: only the link goes (#169). `skillDeletionWarning`
+ * says that deeper files go as well.
  */
-export async function skillOtherFiles({
+export async function skillFolderContents({
   fs,
   skill,
 }: {
   fs: Pick<VaultFsPort, 'listDirectory'>;
   skill: Pick<SkillFile, 'folder' | 'path'>;
-}): Promise<VaultPath[]> {
-  const files = await filesUnder({ fs, folder: skill.folder });
-  return files.filter(
-    (path) => path.toLowerCase() !== skill.path.toLowerCase() && !isDotted(skill.folder, path),
-  );
+}): Promise<SkillFolderContents> {
+  if (await isListedAsLink(fs, skill.folder)) return { link: true, otherFiles: [], links: [] };
+  const { files, links } = await filesAndLinksUnder({ fs, folder: skill.folder });
+  const named = (path: VaultPath) => !isDotted(skill.folder, path);
+  return {
+    link: false,
+    otherFiles: files.filter(
+      (path) => path.toLowerCase() !== skill.path.toLowerCase() && named(path),
+    ),
+    links: links.filter(named),
+  };
 }
 
 /**
  * Puts a skill's whole folder in the system Trash, where it can be got back,
  * only while its SKILL.md is unchanged since `skill` read it — checked after
  * the folder is walked, right before the Trash. Refused for a SKILL.md that
- * is there but cannot be read. Answers the other files that went with it, so
- * the person can be told.
+ * is there but cannot be read. A folder that is a link, or one whose SKILL.md
+ * is, is trashed whatever the link points at, readable or not: the link goes
+ * as a link and nothing it points at goes, so there is nothing to hold still
+ * (#169). Answers what went with it, so the person can be told.
  */
 export async function deleteSkill({
   fs,
@@ -283,10 +295,15 @@ export async function deleteSkill({
 }: {
   fs: VaultFsPort;
   skill: SkillFile;
-}): Promise<{ readonly folder: VaultPath; readonly otherFiles: readonly VaultPath[] }> {
-  refuseUnreadable(skill, 'deleted');
-  const otherFiles = await skillOtherFiles({ fs, skill });
-  await refuseUnlessUnchanged(fs, skill);
+}): Promise<{ readonly folder: VaultPath } & SkillFolderContents> {
+  const contents = await skillFolderContents({ fs, skill });
+  const skillFileLinked = contents.links.some(
+    (path) => path.toLowerCase() === skill.path.toLowerCase(),
+  );
+  if (!contents.link && !skillFileLinked) {
+    refuseUnreadable(skill, 'deleted');
+    await refuseUnlessUnchanged(fs, skill);
+  }
   await fs.trashEntry({ path: skill.folder });
-  return { folder: skill.folder, otherFiles };
+  return { folder: skill.folder, ...contents };
 }

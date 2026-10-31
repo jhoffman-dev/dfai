@@ -10,6 +10,7 @@
 
 import { MAX_PROMPT_CHARACTERS } from '../automations/claude-step.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
+import { linksGoAsLinks } from '../vault/vault-moves.ts';
 import { SKILLS_DIRECTORY } from '../vault/vault-visibility.ts';
 
 /** The one file of a skill's folder DFAI reads; anything else in it is left alone. */
@@ -245,13 +246,27 @@ function declaredNameProblem(folder: string, declared: string | null): SkillProb
 }
 
 /** What SKILL.md was when its folder was read: its contents, unreadable, or not there. */
-export type SkillFileState = SkillFileContents | { readonly unreadable: true } | null;
+/** Why the host would not read SKILL.md, when it said: its folder or SKILL.md itself is a link it will not follow (#169). */
+export interface SkillFileRefusal {
+  readonly by: 'folder' | 'link';
+  readonly reason: string;
+}
+
+export type SkillFileState =
+  SkillFileContents | { readonly unreadable: true; readonly refusal?: SkillFileRefusal } | null;
 
 /**
  * What is said of a SKILL.md that is there but cannot be read: DFAI's own
  * words, never the host's, which can name the Mac's folders (ADR-0017).
  */
 export const SKILL_FILE_UNREADABLE = `${SKILL_FILE} is there but cannot be read: it may be too large, not text, or not allowed.`;
+
+function unreadableMessage(refusal: SkillFileRefusal | undefined): string {
+  if (refusal === undefined) return SKILL_FILE_UNREADABLE;
+  return refusal.by === 'folder'
+    ? `The skill’s folder cannot be read: ${refusal.reason}.`
+    : `${SKILL_FILE} is a link that cannot be followed: ${refusal.reason}.`;
+}
 
 /** What is wrong with a folder's own name, which is the skill's. */
 function folderNameProblems(folder: string): SkillProblem[] {
@@ -294,7 +309,7 @@ export function skillReadingOf({
 }): SkillReading {
   if (file === null) return emptyReading(folder, `The folder has no ${SKILL_FILE}.`);
   if ('unreadable' in file) {
-    return emptyReading(folder, SKILL_FILE_UNREADABLE);
+    return emptyReading(folder, unreadableMessage(file.refusal));
   }
   const declaredName = textOrNull(file.properties['name']);
   const description = textOrNull(file.properties['description']) ?? '';
@@ -321,19 +336,46 @@ function withinFolder(path: string): string {
   return at === -1 ? path : path.slice(at + 1);
 }
 
+/** What deleting a skill takes, as its folder was walked. */
+export interface SkillFolderContents {
+  /** Whether the folder is itself a link: then only the link goes, and nothing in it is named. */
+  readonly link: boolean;
+  /** The files it holds besides SKILL.md. */
+  readonly otherFiles: readonly string[];
+  /** The links it holds, which go as links: what they point at stays. */
+  readonly links: readonly string[];
+}
+
+const TRASH = 'goes to the Trash, where it can be got back';
+
 /**
  * What the person is asked before a skill is deleted: the whole folder goes,
  * with each other file it holds named, and — since a folder is listed only so
- * deep — everything in its subfolders, however deep, goes too.
+ * deep — everything in its subfolders, however deep, goes too. A link goes as
+ * a link, and the warning says so rather than naming what it points at (#169).
  */
-export function skillDeletionWarning(name: string, otherFiles: readonly string[]): string {
-  const trash = 'goes to the Trash, where it can be got back';
-  if (otherFiles.length === 0)
-    return `Delete “${name}”? Its folder, holding only ${SKILL_FILE}, ${trash}.`;
+export function skillDeletionWarning(name: string, contents: SkillFolderContents): string {
+  if (contents.link) {
+    return (
+      `Delete “${name}”? Its folder is a link: only the link ${TRASH}, ` +
+      'and what it points at stays where it is.'
+    );
+  }
+  const links = contents.links.map(withinFolder);
+  const linked = links.length === 0 ? '' : ` ${linksGoAsLinks(links)}`;
+  return `Delete “${name}”? ${whatGoes(contents.otherFiles, links.length > 0)}${linked}`;
+}
+
+function whatGoes(otherFiles: readonly string[], holdsLinks: boolean): string {
+  if (otherFiles.length === 0) {
+    return holdsLinks
+      ? `Its whole folder ${TRASH}.`
+      : `Its folder, holding only ${SKILL_FILE}, ${TRASH}.`;
+  }
   const count = otherFiles.length === 1 ? '1 other file' : `${otherFiles.length} other files`;
   const named = otherFiles.map(withinFolder).join(', ');
   return (
-    `Delete “${name}”? Its whole folder ${trash}, with ${count}: ${named} — ` +
+    `Its whole folder ${TRASH}, with ${count}: ${named} — ` +
     'and everything in its subfolders, however deep.'
   );
 }
