@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
-use super::{trash_entry_at, trash_entry_at_unless_changed};
+use super::{trash_entry_at, trash_entry_at_unless_changed, Unchanged};
 
 /// `Shelf/Plan.md` and `Shelf/Plans/garden.md`, the real entries the links
 /// point at, beside an empty `Work`.
@@ -79,18 +79,25 @@ fn the_refusal_names_the_first_link_from_the_vault_root() {
     assert!(vault.path().join("Shelf/Plans/garden.md").is_file());
 }
 
-/// The refusal comes before the files to hold still are compared, so a caller
-/// that names them gets the same answer and nothing is trashed.
+/// The link is named before the files to hold still are compared: a caller
+/// whose copy is stale is told the real reason it cannot trash there, and
+/// nothing is trashed.
 #[test]
-fn the_refusal_holds_when_the_caller_names_files_to_hold_still() {
+fn the_link_is_named_before_the_files_to_hold_still_are_compared() {
     let vault = vault_with_shelf();
     symlink("../Shelf", vault.path().join("Work/Alias")).unwrap();
+    let stale = Unchanged {
+        path: "Work/Alias/Plan.md".into(),
+        modified: 0,
+        digest: "not what it holds".into(),
+    };
     let asked = Cell::new(false);
 
-    let result = trash_entry_at_unless_changed(vault.path(), "Work/Alias/Plan.md", &[], |_| {
-        asked.set(true);
-        Ok(())
-    });
+    let result =
+        trash_entry_at_unless_changed(vault.path(), "Work/Alias/Plan.md", &[stale], |_| {
+            asked.set(true);
+            Ok(())
+        });
 
     assert_eq!(result.unwrap_err(), "path goes through a link: Work/Alias");
     assert!(!asked.get(), "the Trash was asked");
