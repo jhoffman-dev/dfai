@@ -119,6 +119,10 @@ describe('loadTypeListing', () => {
       '.atlas/types/book.md': '---\nname: book\nproperties: {"pages": "nmber"}\n---\n',
       // A closing fence deleted: the block is not frontmatter, so it cannot say it is a type.
       '.atlas/types/Film.md': '---\nname: film\nlabel: Film\n\n# Film\n',
+      // A block that reads as no properties at all, though it holds something.
+      '.atlas/types/Song.md': '---\n- name: song\n---\n',
+      // A blank block says nothing, so there is nothing wrong with it.
+      '.atlas/types/Draft.md': '---\n---\n\n# Draft\n',
     };
     const fs = fakeVaultFs({
       listDirectory: async () =>
@@ -137,12 +141,17 @@ describe('loadTypeListing', () => {
       {
         path: '.atlas/types/Film.md',
         name: 'Film',
-        problem: 'Its frontmatter has no closing --- line, so none of it is read.',
+        problem: 'Its frontmatter has no closing ---.',
       },
       {
         path: '.atlas/types/Recipe.md',
         name: 'Recipe',
         problem: 'It has no name, and a type needs one.',
+      },
+      {
+        path: '.atlas/types/Song.md',
+        name: 'Song',
+        problem: 'Its frontmatter is not a set of properties.',
       },
     ]);
   });

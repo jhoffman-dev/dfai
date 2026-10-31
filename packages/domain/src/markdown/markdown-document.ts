@@ -50,9 +50,9 @@ export function splitFrontmatter(text: string): MarkdownDocument {
 }
 
 /**
- * Whether the text opens a frontmatter block on its first line and never
- * closes it: read as no frontmatter, which a file that must have some —
- * a type, a rule — should say rather than be taken for none (#683).
+ * Whether the text opens a frontmatter block on its first byte and never
+ * closes it: read as all body, which is right for a note and wrong for a file
+ * whose settings are its frontmatter.
  */
 export function opensUnclosedFrontmatter(text: string): boolean {
   return OPENING.test(text) && splitFrontmatter(text).frontmatter === null;

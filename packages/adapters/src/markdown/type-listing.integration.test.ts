@@ -71,25 +71,24 @@ describe('the types through the real markdown port', () => {
     const path = '.atlas/types/Film.md';
     const text = ['---', 'name: film', 'label: Film', '', '# Film', ''].join('\n');
     expect(await brokenBeside({ [path]: text })).toEqual([
-      [path, 'Its frontmatter has no closing --- line, so none of it is read.'],
+      // In the words a rule file in the same state gets (PR #682).
+      [path, 'Its frontmatter has no closing ---.'],
     ]);
   });
 
-  // The port reads a block that is a list or one scalar as no properties, and says
-  // nothing is wrong, so it cannot say it is a type. Fixed by PR #682, which makes
-  // `frontmatterProblem` report a block that is not a mapping: these flip then.
-  it.fails(
-    'lists a type file whose frontmatter is a list, not a mapping (fixed by PR #682)',
-    async () => {
-      const path = '.atlas/types/Film.md';
-      const text = ['---', '- name: film', '  label: Film', '---', ''].join('\n');
-      expect((await brokenBeside({ [path]: text })).map(([listed]) => listed)).toEqual([path]);
-    },
-  );
-
-  it.fails('lists a type file whose frontmatter is one scalar (fixed by PR #682)', async () => {
+  // The port reads a list or one scalar as no properties, and is right to for any
+  // other note; in the types folder it is most likely a type with a typo.
+  it.each([
+    ['a list', ['---', '- name: film', '  label: Film', '---', '']],
+    ['one scalar', ['---', 'name film', '---', '']],
+  ])('lists a type file whose frontmatter is %s, not a set of properties', async (_, lines) => {
     const path = '.atlas/types/Film.md';
-    const text = ['---', 'name film', '---', ''].join('\n');
-    expect((await brokenBeside({ [path]: text })).map(([listed]) => listed)).toEqual([path]);
+    expect(await brokenBeside({ [path]: lines.join('\n') })).toEqual([
+      [path, 'Its frontmatter is not a set of properties.'],
+    ]);
+  });
+
+  it('does not list a type file whose frontmatter is blank', async () => {
+    expect(await brokenBeside({ '.atlas/types/Film.md': '---\n---\n\n# Film\n' })).toEqual([]);
   });
 });

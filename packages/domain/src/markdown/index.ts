@@ -2,8 +2,8 @@ export {
   appendToBody,
   joinDocument,
   joinFrontmatter,
-  opensUnclosedFrontmatter,
   isBlankFrontmatter,
+  opensUnclosedFrontmatter,
   splitFrontmatter,
   withBody,
 } from './markdown-document.ts';
