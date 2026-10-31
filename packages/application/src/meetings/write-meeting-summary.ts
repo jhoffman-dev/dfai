@@ -183,8 +183,15 @@ export interface SummaryToTakeBack {
  * run): the block while it is still the one written — out, or back to the
  * summary it replaced, with that one's keys — and the links to the tasks the
  * undo is to trash, and the `project` the run filled, while it is still the
- * run's. Written before any task is trashed, so a refusal leaves
- * the meeting and its tasks as they are and no link names a trashed note.
+ * run's.
+ *
+ * The meeting is checked, then `trash` is handed the tasks, then the one
+ * write drops the links of only those it took (#685). So a refusal found in
+ * the check leaves the meeting and its tasks as they are, and a task the
+ * Trash will not take keeps its link. Should the meeting change while its
+ * tasks are trashed, the write is refused and a link names a trashed note:
+ * the one failure left, and the safe one, since the Trash gives the note back
+ * and the link shows where it was.
  *
  * Rejects with {@link MeetingSummaryRefused}, writing nothing, when the block
  * was edited since, the meeting has unsaved typing, changed meanwhile, or is
@@ -196,14 +203,17 @@ export async function undoMeetingSummary(
     meeting,
     summary,
     trashing,
+    trash,
     notePaths,
     project = null,
   }: {
     meeting: VaultPath;
     /** What the run wrote of the summary; null when it wrote none (it only joined tasks). */
     summary: SummaryToTakeBack | null;
-    /** The tasks the undo is to trash: their links leave the meeting's `tasks`. */
+    /** The tasks the undo is to trash. */
     trashing: readonly VaultPath[];
+    /** Trashes those tasks once the meeting is checked; the ones it took leave the meeting's `tasks`. */
+    trash: (tasks: readonly VaultPath[]) => Promise<readonly VaultPath[]>;
     /** Every note the links were spelt against, the tasks included. */
     notePaths: readonly VaultPath[];
     /** The `project` the run filled the meeting under, to clear in this same write (#227). */
@@ -213,10 +223,11 @@ export async function undoMeetingSummary(
   const link = await readMeeting(ports, meeting, UNDOING);
   const taken = summary === null ? null : summaryTakenBack(link.document.body, summary);
   if (taken !== null && !taken.ok) throw new MeetingSummaryRefused(taken.reason);
+  const trashed = trashing.length === 0 ? [] : await trash(trashing);
   const tasks =
-    trashing.length === 0
+    trashed.length === 0
       ? undefined
-      : tasksParted({ value: link.target.value, tasks: trashing, notePaths });
+      : tasksParted({ value: link.target.value, tasks: trashed, notePaths });
   const properties = ports.markdown.frontmatterProperties(link.document.frontmatter);
   const filing = projectFiling(properties, project);
   const values = {

@@ -2,11 +2,11 @@
 //!
 //! Like the rest of the host this decides nothing (ADR-0005). Which folder a note
 //! may go to, what is protected and what to do with an open pane are the
-//! frontend's rules; here a path is checked to be inside the vault, the move is
-//! refused rather than writing over something, moving what a link reaches, or
-//! changing what a link it carries points at (#680; a link elsewhere into what
-//! moves is issue #686), and a trash is refused through a link (#685), and
-//! that is all.
+//! frontend's rules. Here a path is checked to be inside the vault, and these
+//! are the only refusals besides. A move is refused rather than write over
+//! something, move what a link reaches, or change what a link it carries
+//! points at (#680; a link elsewhere into what moves is issue #686). A trash
+//! is refused through a link (#685).
 
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -360,9 +360,12 @@ pub struct Unchanged {
 /// changes between them. Which files to hold still is the client's to say;
 /// this only compares, as `write_text_file` does its `expected_modified`.
 ///
-/// A path through a link is refused first, as a move's is (#685): the Trash
-/// would take the real entry behind the link while the caller believes it
-/// trashed another path. An entry that is itself a link is trashed as the link.
+/// A path through a link is refused, as a move's is (#685): the Trash would
+/// take the real entry behind the link while the caller believes it trashed
+/// another path. An entry that is itself a link is trashed as the link. The
+/// check is made first, so a stale file to hold still does not hide the link,
+/// and again just before the Trash, so a link swapped in while those files are
+/// hashed is not followed.
 pub(crate) fn trash_entry_at_unless_changed(
     root: &Path,
     relative: &str,
@@ -380,6 +383,7 @@ pub(crate) fn trash_entry_at_unless_changed(
             return Err(CHANGED_SINCE_READ.into());
         }
     }
+    refuse_through_link(root, relative)?;
     let entry = resolve_entry(root, relative)?;
     trash(&entry)
 }

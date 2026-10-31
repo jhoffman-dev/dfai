@@ -282,7 +282,6 @@ fn a_held_file_read_through_a_link_is_compared_as_the_file_behind_it() {
 /// handed, so the window is as wide as that hashing, and it is cheap to close
 /// (check the resolved parent, or check again after resolving).
 #[test]
-#[ignore = "bug: link check runs before the held files are hashed, not on the path handed to the Trash (#685 TOCTOU)"]
 fn a_link_swapped_in_while_held_files_are_compared_is_not_followed_to_the_trash() {
     let vault = vault_with_shelf();
     fs::create_dir_all(vault.path().join("Work/Sub")).unwrap();

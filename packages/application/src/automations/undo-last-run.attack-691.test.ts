@@ -202,7 +202,7 @@ describe('Undo last run, a task the host will not trash (attack #691)', () => {
   // takeBackSummaries: "A task changed since stays, and so does its link." A task
   // the Trash refused stays too, but the meeting's one write has already dropped
   // its link, so the meeting no longer names a task that is still there.
-  it.fails('keeps the link to a task the host would not trash through a link', async () => {
+  it('keeps the link to a task the host would not trash through a link', async () => {
     const at = setUp([digest()]);
     await at.run();
     const [task] = at.tasks();
@@ -216,7 +216,7 @@ describe('Undo last run, a task the host will not trash (attack #691)', () => {
     expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
   });
 
-  it.fails('keeps the link to a task the Trash refused for any other reason', async () => {
+  it('keeps the link to a task the Trash refused for any other reason', async () => {
     const at = setUp([digest()]);
     await at.run();
     const [task] = at.tasks();

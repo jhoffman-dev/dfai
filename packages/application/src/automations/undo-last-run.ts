@@ -19,6 +19,8 @@ import {
   type SummaryToTakeBack,
 } from '../meetings/write-meeting-summary.ts';
 import { homeFolderFor } from '../notes/home-folder.ts';
+import { VaultAccessError } from '../vault/ports.ts';
+import { listVaultNotes } from '../vault/read-vault.ts';
 import {
   changeProperties,
   UNSAVED_TYPING,
@@ -28,8 +30,6 @@ import {
 import { appendForRun, reported } from './automation-activity.ts';
 import { readRuleLog } from './automation-log.ts';
 import { archiveRecord, type AutomationPorts, type AutomationRun } from './run-automation.ts';
-import { VaultAccessError } from '../vault/ports.ts';
-import { listVaultNotes } from '../vault/read-vault.ts';
 import { guardedFs, stillInVault } from './vault-guard.ts';
 
 const MOVED_SINCE = 'It is no longer where the run put it, so it was left where it is.';
@@ -205,14 +205,15 @@ interface MadeTask {
 }
 
 /**
- * Takes back what the declared step wrote (#185), one meeting at a time:
- * first the meeting — its summary block out, or back to the one it replaced,
- * and the links to its tasks — in one write, then each of its tasks to the
- * Trash. A task changed since stays, and so does its link. A meeting that
- * refuses (its block edited since, typed in, changed meanwhile) is left, and
- * so is every task of it: no link names a trashed note, and no summary says
- * a task was made that is gone. A logged task undo cannot believe the run
- * made (A25-01) is left, and named.
+ * Takes back what the declared step wrote (#185), one meeting at a time: the
+ * meeting is checked, its tasks go to the Trash, and then one write takes its
+ * summary block out, or back to the one it replaced, with the links to the
+ * tasks the Trash took. A task changed since stays, and so does its link, as
+ * does one the Trash refused (#685). A meeting that refuses (its block edited
+ * since, typed in) is left, and so is every task of it. One that changes
+ * while its tasks are trashed is left, saying why, still linking them: they
+ * are in the Trash to put back. No summary says a task was made that is gone.
+ * A logged task undo cannot believe the run made (A25-01) is left, and named.
  */
 async function takeBackSummaries({
   ports,
@@ -238,11 +239,19 @@ async function takeBackSummaries({
     const trashing = made.filter((task) => task.meeting === meeting).map(({ path }) => path);
     const summary = summaries.get(meeting) ?? null;
     const project = sets.find((change) => change.path === meeting) ?? null;
+    const asked = new Set<VaultPath>();
+    const trash = async (tasks: readonly VaultPath[]) => {
+      const trashed = await trashTasks(ports.fs, tasks, left);
+      tasks.forEach((path) => asked.add(path));
+      did.push(...trashed.map((path) => ({ kind: 'trashed' as const, path })));
+      return trashed;
+    };
     try {
       const undone = await undoMeetingSummary(ports, {
         meeting,
         summary,
         trashing,
+        trash,
         notePaths: ports.notePaths,
         project,
       });
@@ -252,24 +261,37 @@ async function takeBackSummaries({
     } catch (cause) {
       if (!(cause instanceof MeetingSummaryRefused)) throw cause;
       if (summary !== null) left.push({ path: meeting, reason: cause.message });
-      left.push(...trashing.map((path) => ({ path, reason: meetingKept(cause.message) })));
+      // Refused after its tasks were trashed, those are logged as trashed; the rest are kept.
+      const kept = trashing.filter((path) => !asked.has(path));
+      left.push(...kept.map((path) => ({ path, reason: meetingKept(cause.message) })));
       continue;
-    }
-    for (const path of trashing) {
-      // One the host will not trash — reached through a link (#685), say — is
-      // left and named, so the meeting's write already done is still logged.
-      try {
-        await ports.fs.trashEntry({ path });
-      } catch (cause) {
-        if (!(cause instanceof VaultAccessError)) throw cause;
-        left.push({ path, reason: cause.message });
-        continue;
-      }
-      did.push({ kind: 'trashed', path });
     }
     if (summary !== null) did.push({ kind: 'unsummarised', path: meeting });
   }
   return { done: did, left, handled };
+}
+
+/**
+ * Trashes each task, and answers with those the Trash took. One the host
+ * refuses — any host refusal: reached through a link (#685), a Trash that
+ * says no — is left and named instead. Any other error stops the undo.
+ */
+async function trashTasks(
+  fs: UndoPorts['fs'],
+  tasks: readonly VaultPath[],
+  left: PassedOver[],
+): Promise<VaultPath[]> {
+  const trashed: VaultPath[] = [];
+  for (const path of tasks) {
+    try {
+      await fs.trashEntry({ path });
+      trashed.push(path);
+    } catch (cause) {
+      if (!(cause instanceof VaultAccessError)) throw cause;
+      left.push({ path, reason: cause.message });
+    }
+  }
+  return trashed;
 }
 
 /**
