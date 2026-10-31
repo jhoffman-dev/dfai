@@ -196,6 +196,7 @@ describe('a meeting written between the read and the write', () => {
         meeting: MEETING,
         summary: { digest: digest! },
         trashing: [],
+        trash: async () => [],
         notePaths: [],
       }),
     ).rejects.toThrow(/changed just now, so its summary was left as it is/);
@@ -222,11 +223,65 @@ describe('undoMeetingSummary', () => {
       meeting: MEETING,
       summary: { digest: digest! },
       trashing: [TASK],
+      trash: async (tasks) => tasks,
       notePaths: [MEETING, TASK],
     });
     expect(at.body()).toBe(before);
     expect(at.properties()).not.toHaveProperty('atlas_summary_digest');
     expect(at.properties()).not.toHaveProperty('tasks');
+  });
+
+  it('keeps the link to a task the Trash did not take, in the same one write (#685)', async () => {
+    const at = setUp();
+    const { digest } = await at.write();
+    const linked = at.properties()['tasks'];
+    const writes = at.vault.log.filter((line) => line === `write ${MEETING}`).length;
+    await undoMeetingSummary(at.vault.ports, {
+      meeting: MEETING,
+      summary: { digest: digest! },
+      trashing: [TASK],
+      trash: async () => [],
+      notePaths: [MEETING, TASK],
+    });
+    expect(at.properties()).not.toHaveProperty('atlas_summary_digest');
+    expect(at.properties()['tasks']).toEqual(linked);
+    expect(at.vault.log.filter((line) => line === `write ${MEETING}`)).toHaveLength(writes + 1);
+  });
+
+  it('takes out the links of only the tasks the Trash took (#685)', async () => {
+    const at = setUp();
+    const other = createVaultPath('Tasks/Book the room.md');
+    const notePaths = [MEETING, TASK, other];
+    const { digest } = await at.write({ tasks: [TASK, other], notePaths });
+    expect(at.properties()['tasks']).toEqual(['[[Send the file]]', '[[Book the room]]']);
+    await undoMeetingSummary(at.vault.ports, {
+      meeting: MEETING,
+      summary: { digest: digest! },
+      trashing: [TASK, other],
+      trash: async () => [other],
+      notePaths,
+    });
+    expect(at.properties()['tasks']).toEqual(['[[Send the file]]']);
+  });
+
+  it('asks the Trash for nothing when the meeting refuses', async () => {
+    const at = setUp();
+    const { digest } = await at.write();
+    at.vault.unsaved.add(MEETING);
+    let asked = false;
+    await expect(
+      undoMeetingSummary(at.vault.ports, {
+        meeting: MEETING,
+        summary: { digest: digest! },
+        trashing: [TASK],
+        trash: async (tasks) => {
+          asked = true;
+          return tasks;
+        },
+        notePaths: [MEETING, TASK],
+      }),
+    ).rejects.toThrow(/has unsaved typing/);
+    expect(asked).toBe(false);
   });
 
   it('is refused when the block was edited, or typed in', async () => {
@@ -243,6 +298,7 @@ describe('undoMeetingSummary', () => {
         meeting: MEETING,
         summary: { digest: digest! },
         trashing: [],
+        trash: async () => [],
         notePaths: [],
       });
     await expect(undo()).rejects.toThrow(/edited since Claude wrote it/);

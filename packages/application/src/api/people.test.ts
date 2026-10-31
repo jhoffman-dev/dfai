@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, type VaultPath } from '@dfai/domain';
+import { createVaultPath, deleteThroughLinkRefusal, type VaultPath } from '@dfai/domain';
 import { refreshIndex } from '../index/refresh-index.ts';
 import { apiFixture, bodyOf, codeOf } from '../testing/api-fixture.ts';
 import {
@@ -7,6 +7,7 @@ import {
   jsonFrontmatterNote as note,
 } from '../testing/guarded-vault.ts';
 import { sqliteIndexPort } from '../testing/sqlite-index.ts';
+import { VaultAccessError } from '../vault/ports.ts';
 
 /* #464 through the local API: the possible duplicate people, and merging them. */
 
@@ -150,6 +151,29 @@ describe('POST /v1/people/merge', () => {
     expect(trashed).toEqual([SHORT]);
     // An answer that wrote is said in the Activity log; a preview is not.
     expect(api.activity.reports.length).toBeGreaterThan(0);
+  });
+
+  it('reports a merged person the host will not trash through a link, in the domain’s words (#685)', async () => {
+    const { api } = await vault();
+    const refusal = deleteThroughLinkRefusal(createVaultPath('Shared'));
+    api.deps = {
+      ...api.deps,
+      fs: {
+        ...api.deps.fs,
+        trashEntry: async () => {
+          throw new VaultAccessError(refusal);
+        },
+      },
+    };
+    const version = await versionOf(api);
+    const response = await merge(api, { keep: KEPT, merge: [SHORT], confirm: true, version });
+
+    expect(response.status).toBe(200);
+    const report = bodyOf(response)['report'] as Record<string, unknown>;
+    expect(report['trashed']).toEqual([]);
+    expect(report['notTrashed']).toEqual([SHORT]);
+    expect(report['failures']).toEqual([{ path: SHORT, step: 'trash', reason: refusal }]);
+    expect(api.files.has(SHORT)).toBe(true);
   });
 
   it('saves typing in the app first, and is a conflict while some cannot be saved', async () => {

@@ -17,6 +17,7 @@ import {
   claudeAsks,
   createVaultPath,
   DECLARED_STEP_MODEL,
+  deleteThroughLinkRefusal,
   digestOf,
   logPathFor,
   parseObjectType,
@@ -34,6 +35,7 @@ import type { ModelEvent } from '../chat/ports.ts';
 import { automationVault, jsonNote } from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
+import { VaultAccessError } from '../vault/ports.ts';
 import type { ScriptedRound } from '../testing/fake-model.ts';
 import { runAutomation } from './run-automation.ts';
 import { undoLastRun } from './undo-last-run.ts';
@@ -568,6 +570,64 @@ describe('Undo last run', () => {
     expect(at.vault.files.has(task!)).toBe(false);
   });
 
+  it('leaves a task the host will not trash through a link, saying why, and logs the rest (#685)', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const [task] = at.tasks();
+    const refusal = deleteThroughLinkRefusal(createVaultPath('Tasks'));
+    at.vault.ports.fs.trashEntry = async () => {
+      throw new VaultAccessError(refusal);
+    };
+
+    const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
+
+    expect(undone?.done).toEqual([{ kind: 'unsummarised', path: SYNC }]);
+    expect(undone?.left).toContainEqual({ path: task, reason: refusal });
+    expect(at.vault.files.has(task!)).toBe(true);
+    // A task kept keeps its link, as one changed since does.
+    expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
+    expect(at.body().includes('atlas:summary')).toBe(false);
+    const logged = at.entries().at(-1);
+    expect(logged?.kind === 'undo' && logged.left).toContainEqual({ path: task, reason: refusal });
+  });
+
+  it('stops on an error that is not a host refusal, keeping the task and its link (#685)', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const [task] = at.tasks();
+    at.vault.ports.fs.trashEntry = async () => {
+      throw new Error('the port broke');
+    };
+
+    await expect(at.undo()).rejects.toThrow('the port broke');
+    expect(at.vault.files.has(task!)).toBe(true);
+    expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
+  });
+
+  it('logs a task trashed before its meeting changed, and leaves the meeting saying why (#685)', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const [task] = at.tasks();
+    const trash = at.vault.ports.fs.trashEntry;
+    at.vault.ports.fs.trashEntry = async (args) => {
+      // Someone saves the meeting while its tasks go to the Trash.
+      await at.vault.ports.fs.writeTextFile({
+        path: createVaultPath(SYNC),
+        contents: `${at.meeting()}\nTyped meanwhile.\n`,
+        expectedModified: null,
+      });
+      await trash(args);
+    };
+
+    const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
+
+    expect(at.vault.files.has(task!)).toBe(false);
+    expect(undone?.done).toEqual([{ kind: 'trashed', path: task }]);
+    expect(undone?.left.map(({ path }) => path)).toContain(SYNC);
+    expect(undone?.left.map(({ path }) => path)).not.toContain(task);
+    expect(at.body()).toContain('Typed meanwhile.');
+  });
+
   it('keeps a task changed since, and its link, and a block edited since', async () => {
     const at = setUp([digest()]);
     await at.run();
@@ -610,6 +670,58 @@ const RETRO_ITEM = {
   source_block: 't0003',
   confidence: 'high',
 };
+
+describe('Undo last run, a trash that fails partway with an error that is not a host refusal', () => {
+  it('logs the meeting it took back and the task it trashed before the error, and still fails (#685)', async () => {
+    const at = setUp([digest(), digest({ items: [RETRO_ITEM] })], {
+      ...NOTES,
+      [RETRO]: retroWith(BODY),
+    });
+    await at.run();
+    const made = [...taskNamed(at, 'rollout note'), ...taskNamed(at, 'cache numbers')];
+    expect(made).toHaveLength(2);
+    const trash = at.vault.ports.fs.trashEntry;
+    let calls = 0;
+    at.vault.ports.fs.trashEntry = async (args) => {
+      calls += 1;
+      if (calls === 2) throw new TypeError('the port broke');
+      await trash(args);
+    };
+
+    await expect(at.undo()).rejects.toThrow('the port broke');
+
+    const gone = made.filter((path) => !at.vault.files.has(path));
+    expect(gone).toHaveLength(1);
+    const logged = at.entries().at(-1);
+    expect(logged?.kind).toBe('undo');
+    const done = logged?.kind === 'undo' ? logged.done : [];
+    expect(done).toContainEqual({ kind: 'trashed', path: gone[0] });
+    expect(done.filter(({ kind }) => kind === 'unsummarised')).toHaveLength(1);
+    // The task the error stopped at is still there, linked, and named as kept.
+    const stopped = made.find((path) => at.vault.files.has(path));
+    const left = logged?.kind === 'undo' ? logged.left : [];
+    expect(left).toContainEqual({
+      path: stopped,
+      reason: expect.stringContaining('the port broke'),
+    });
+  });
+
+  it('names the meeting it stopped at, even one with no summary, and nothing trashed (#685)', async () => {
+    const at = setUp([digest({ summary: 42 })]);
+    await at.run();
+    expect(at.body().includes('atlas:summary')).toBe(false);
+    expect(at.tasks()).toHaveLength(1);
+    at.vault.ports.fs.trashEntry = async () => {
+      throw new TypeError('the port broke');
+    };
+
+    await expect(at.undo()).rejects.toThrow('the port broke');
+
+    const logged = at.entries().at(-1);
+    const left = logged?.kind === 'undo' ? logged.left : [];
+    expect(left).toContainEqual({ path: SYNC, reason: 'the port broke' });
+  });
+});
 
 describe('Undo last run reaches the last run, even one that wrote no summary', () => {
   it('a later run that made a task but wrote no summary (it did not read) is the one undone', async () => {
