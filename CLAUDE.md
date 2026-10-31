@@ -81,9 +81,9 @@ change is merged. Don't wait to be asked:
   `docs/guide/src/sections/`, listed in order in `docs/guide/src/page.html`;
   `pnpm guide:build` assembles them (and the contents list) into
   `docs/guide/index.html`, the self-contained page that is published, and a test
-  fails while it is stale. Never edit `index.html` by hand. Publish it as a claude.ai artifact from the account the session runs under;
-  the first publish from a new account creates a new URL — tell James the URL
-  and record it here. The current published copy is
+  fails while it is stale. Never edit `index.html` by hand. Publish it as a
+  claude.ai artifact from the account the session runs under; the first publish
+  from a new account creates a new URL — tell James the URL and record it here. The current published copy is
   `claude.ai/artifact/XS3G54GvnJqpG5RFw6DjF8`, published 2026-10-11 from the
   work-account session. (The earlier personal-account copy is
   `claude.ai/artifact/QXvTge2zPuY5YS5g7QYveH`, last updated 2026-10-07.)

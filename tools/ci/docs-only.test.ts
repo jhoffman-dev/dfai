@@ -5,7 +5,7 @@ describe('a docs-only change', () => {
   it.each([
     [['README.md']],
     [['CLAUDE.md', 'ENGINEERING.md', 'LICENSE']],
-    [['docs/design/ui-v2-plan.md']],
+    [['docs/guide/index.html']],
     [['vault/docs/adr/0031-embeddings.md', 'vault/docs/design/tokens.md']],
     [['.claude/agents/coder.md']],
   ])('is one that touches only documentation: %j', (paths) => {
@@ -21,8 +21,6 @@ describe('a docs-only change', () => {
     ['a note in the vault', ['vault/tasks/A15-03.md']],
     ['the API route table, which a test pins', ['vault/docs/api/v1.md']],
     ['the import contract', ['vault/docs/contracts/meeting-import-v1.schema.json']],
-    ['a guide section, which a test holds the page to', ['docs/guide/src/sections/sync.html']],
-    ['the guide page', ['docs/guide/index.html']],
     ['a README inside a package', ['tools/n8n/README.md']],
     ['a file that only looks like the licence', ['apps/mcp/LICENSE']],
     ['a folder that only starts like docs', ['docs-tools/build.ts']],

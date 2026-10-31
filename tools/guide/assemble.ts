@@ -32,10 +32,22 @@ function parseSection(id: string, text: string): Section {
   if (!body.endsWith('</section>\n')) {
     throw new Error(`guide section ${id}: must end with </section> and a newline`);
   }
+  if (body.split('<section ').length !== 2) {
+    throw new Error(`guide section ${id}: must hold one <section>, not more`);
+  }
   return { id, label: label[1] ?? '', body: body.slice(0, -1) };
 }
 
+/** A marker line that is nearly right would be published as a comment, its section left out. */
+function refuseLooseMarkers(frame: readonly string[]): void {
+  const loose = frame.find((line) => line.includes('guide:section') && !SECTION_MARKER.test(line));
+  if (loose !== undefined) {
+    throw new Error(`guide page: not a section marker <!-- guide:section <id> -->: ${loose}`);
+  }
+}
+
 function sectionsInOrder(frame: readonly string[], sources: GuideSources): Section[] {
+  refuseLooseMarkers(frame);
   const ids = frame.flatMap((line) => SECTION_MARKER.exec(line)?.[1] ?? []);
   const seen = new Set<string>();
   const sections = ids.map((id) => {

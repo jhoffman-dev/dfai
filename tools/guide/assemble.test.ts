@@ -95,6 +95,27 @@ describe('the field guide, assembled from its section files (#134)', () => {
     );
   });
 
+  it.each([
+    ['a trailing space', '<!-- guide:section files --> '],
+    ['an indent', '  <!-- guide:section files -->'],
+    ['an underscore', '<!-- guide:section my_files -->'],
+  ])('refuses a section marker with %s, which would drop its section unseen', (_what, line) => {
+    const page = PAGE.replace('<!-- guide:section files -->', line);
+    expect(() => assembleGuide(sources({ start: section('start', 'Start') }, page))).toThrow(
+      'not a section marker',
+    );
+  });
+
+  it('refuses a section file holding a second section', () => {
+    const files = section('files', 'Files').replace(
+      '      <p>Some words.</p>\n',
+      '      <p>Some words.</p>\n    </section>\n    <section id="more">\n',
+    );
+    expect(() => assembleGuide(sources({ start: section('start', 'Start'), files }))).toThrow(
+      'guide section files: must hold one <section>, not more',
+    );
+  });
+
   it('refuses a page with no place for the contents, or two', () => {
     const both = { start: section('start', 'Start'), files: section('files', 'Files') };
     const none = PAGE.replace('<!-- guide:contents -->\n', '');
