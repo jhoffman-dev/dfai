@@ -274,7 +274,7 @@ export default tseslint.config(
     files: ['**/*.{ts,tsx,mjs}'],
     ignores: [
       '**/*.test.{ts,tsx}',
-      // A suite's own support, imported only by its tests.
+      // A suite's own support may use test support; the pattern below keeps the app from importing it.
       '**/*.test-support.ts',
       '**/*.spec.ts',
       'packages/*/src/testing/**',
@@ -291,6 +291,13 @@ export default tseslint.config(
             {
               group: ['@dfai/*/testing', '@dfai/*/testing/*'],
               message: 'Test support is for tests: import it only from a test or test tooling.',
+            },
+            {
+              // A suite's support file, or a test itself: ignored above so that
+              // tests may import them, and so never imported by the app.
+              group: ['**/*.test-support', '**/*.test-support.*', '**/*.test', '**/*.test.*'],
+              message:
+                'A test or its support is for tests: import it only from a test or test tooling.',
             },
           ],
         },

@@ -262,8 +262,20 @@ function bodyOf(sent: unknown): string | null {
   }
 }
 
-/** The seeds the attack runs, 400 in all, and the files they are split over to run side by side. */
+/** The seeds the attack runs, 400 in all. */
 export const SEEDS = 400;
+
+/**
+ * The seeds of each file the attack is split over, in order: seeds-1 runs the
+ * first, seeds-2 the second (captures-roundtrip.attack-615c.seeds.test.ts
+ * holds the files to it).
+ */
+export const SEED_PARTS = [
+  { from: 1, to: 100 },
+  { from: 101, to: 200 },
+  { from: 201, to: 300 },
+  { from: 301, to: 400 },
+] as const;
 
 /**
  * Seeds `from` to `to` of the attack, each its own test. The 400 are split over

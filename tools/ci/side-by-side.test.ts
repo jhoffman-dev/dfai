@@ -1,4 +1,6 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -7,19 +9,25 @@ import { describe, expect, it } from 'vitest';
 const SCRIPT = join(import.meta.dirname, 'side-by-side.sh');
 
 const run = (...commands: string[]) =>
-  spawnSync('bash', [SCRIPT, ...commands], { encoding: 'utf8' });
+  spawnSync('bash', [SCRIPT, ...commands], { encoding: 'utf8', timeout: 30_000 });
 
 describe('side-by-side.sh', () => {
   it('runs the commands at once and prints each whole, in the order given', () => {
-    // The first waits on a file only the second writes: run one after the other, it never ends.
-    const flag = join(import.meta.dirname, `.side-by-side-${process.pid}`);
-    const result = run(
-      `for i in $(seq 1 100); do [ -f '${flag}' ] && break; sleep 0.05; done; [ -f '${flag}' ] && echo first saw it; rm -f '${flag}'`,
-      `echo second; touch '${flag}'`,
-    );
-    expect(result.status).toBe(0);
-    expect(result.stdout.indexOf('first saw it')).toBeGreaterThan(-1);
-    expect(result.stdout.indexOf('first saw it')).toBeLessThan(result.stdout.indexOf('second'));
+    // The first waits to hear from the second through a pipe: run one after the other, it never would.
+    const folder = mkdtempSync(join(tmpdir(), 'side-by-side-'));
+    try {
+      const pipe = join(folder, 'pipe');
+      execFileSync('mkfifo', [pipe]);
+      const result = run(
+        `exec 3<>'${pipe}'; read -r -t 10 -u 3 heard && echo "first heard $heard"`,
+        `echo second; echo hello > '${pipe}'`,
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('first heard hello');
+      expect(result.stdout.indexOf('first heard')).toBeLessThan(result.stdout.indexOf('second'));
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 
   it('fails when any command fails, naming it and still printing the others', () => {
