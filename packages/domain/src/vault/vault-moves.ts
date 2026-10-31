@@ -153,6 +153,29 @@ export function deleteThroughLinkRefusal(link: VaultPath): string {
   );
 }
 
+/**
+ * Why an entry reached through `link`, a folder above it that is a symlink,
+ * is not moved or renamed: the host would move what the link points at, while
+ * its panes and the links naming it were moved for the path by the link (#680).
+ */
+export function moveThroughLinkRefusal(link: VaultPath): string {
+  return (
+    `It is inside “${link}”, which is a link: moving or renaming it here would move what ` +
+    'the link points at. Do it where it really is, or move the link.'
+  );
+}
+
+/**
+ * Why nothing is moved into `link`, or into a folder reached through it: it
+ * would land where the link points, a path the app cannot tell (#680).
+ */
+export function moveIntoLinkRefusal(link: VaultPath): string {
+  return (
+    `“${link}” is a link: moving into it would put it where the link points. ` +
+    'Move it into that folder itself.'
+  );
+}
+
 /** How many links a deletion question names before saying how many more. */
 const LINKS_NAMED = 5;
 
