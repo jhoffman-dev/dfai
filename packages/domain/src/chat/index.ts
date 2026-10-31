@@ -35,6 +35,14 @@ export {
   rowsContextText,
 } from './window-context.ts';
 export type { ChatContext, ChatContextKind } from './window-context.ts';
+export {
+  skillCommandOf,
+  skillQueryOf,
+  skillSection,
+  SKILL_TAG,
+  usedSkillLine,
+} from './chat-skill.ts';
+export type { ChatSkill } from './chat-skill.ts';
 export { chatWriteRefusal } from './writable.ts';
 export { FULL_TOOL_RESULTS, SUMMARY_CHARACTERS, trimTranscript } from './trim-transcript.ts';
 export { ownerSection } from './owner-section.ts';

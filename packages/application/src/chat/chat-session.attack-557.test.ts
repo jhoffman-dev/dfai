@@ -68,6 +68,7 @@ function session(rounds: ScriptedRound[]) {
     vault: () => ({ fs: reads.fs, notePaths: [...fixture.files.keys()].map(createVaultPath) }),
     accept: (proposal) => acceptProposal({ fs: reads.fs, openNotes, proposal }),
     undo: (applied) => undoProposal({ fs: reads.fs, openNotes, applied }),
+    skill: () => Promise.resolve({ kind: 'missing' as const }),
     stamp: () => '2026-09-22 09:00',
     activity: recordingActivity(),
     newId,

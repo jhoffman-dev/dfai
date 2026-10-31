@@ -16,6 +16,7 @@ const state = (items: readonly ChatItem[], busy: boolean): ChatState => ({
   busy,
   error: null,
   context: null,
+  skill: null,
   chatPath: null,
   notice: null,
 });
