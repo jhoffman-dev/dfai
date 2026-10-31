@@ -48,7 +48,7 @@ export async function loadObjectTypes({
 }): Promise<DefinedType[]> {
   const types: DefinedType[] = [];
   for (const file of await readTypeFiles(fs)) {
-    const type = definedType(file, markdown.frontmatterProperties(blockOf(file)));
+    const type = definedType(file, blockOf(file), markdown);
     if (type !== null) types.push(type);
   }
   return types.sort(byName);
@@ -77,7 +77,7 @@ export async function loadTypeListing({
       broken.push(unreadableType(file.path, problem));
       continue;
     }
-    const type = definedType(file, markdown.frontmatterProperties(block));
+    const type = definedType(file, block, markdown);
     if (type !== null) types.push(type);
   }
   return { types: types.sort(byName), broken: broken.sort(byName) };
@@ -101,9 +101,14 @@ function blockOf(file: NoteFile): string | null {
   return splitFrontmatter(file.text).frontmatter;
 }
 
-function definedType(file: NoteFile, frontmatter: Record<string, unknown>): DefinedType | null {
+function definedType(
+  file: NoteFile,
+  block: string | null,
+  markdown: Pick<MarkdownPort, 'frontmatterProperties'>,
+): DefinedType | null {
   try {
-    return { ...parseObjectType(frontmatter), path: createVaultPath(file.path) };
+    const type = parseObjectType(markdown.frontmatterProperties(block));
+    return { ...type, path: createVaultPath(file.path) };
   } catch {
     // Skipped: a broken definition costs that one type, nothing else.
     return null;
