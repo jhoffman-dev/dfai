@@ -586,9 +586,12 @@ pnpm tauri:dev</pre>
         <li><i>Its frontmatter is not valid YAML:</i> and what the parser says is wrong, with the line and column — an unclosed <code>[</code>, a tab for an indent.</li>
         <li><i>Its frontmatter has no closing ---.</i> Without it, none of the block is read.</li>
         <li><i>Its frontmatter is not a set of properties.</i> It reads as a list, or as one value, where a type is <code>key: value</code> lines.</li>
-        <li><i>It has no name, and a type needs one.</i> The type is not loaded until it has a <code>name:</code>.</li>
-        <li><i>Its property “pages” has a kind DFAI does not know: “nmber”.</i>, or <i>…is a relation that names no type to point at.</i> The type still loads, without that property.</li>
+        <li><i>It has no name, and a type needs one.</i> The type is not loaded until it has a <code>name:</code>. <i>Its name must be text, not a list or a map.</i> is the same for <code>name: [a, b]</code>.</li>
+        <li><i>Its keys must be lowercase: Name → name, Properties → properties.</i> A type's own keys are read lowercase only.</li>
+        <li><i>Its properties are not written as key: kind.</i> <code>properties:</code> holds a list or one value; the type loads with no properties.</li>
+        <li><i>Its property “pages” has a kind DFAI does not know: “nmber”.</i>, or <i>…is a relation that names no type to point at</i> (with <i>write target:, not targets:</i> when that is the slip). The type still loads, without that property.</li>
       </ul>
+      <p>While a property is listed like this, its name is still the file's: a property you add in the type's editor with that name is stored under a key of its own (<code>author_2</code>, say), and renaming one onto it is refused — mend or remove it in the file first. And a type file whose closing <code>---</code> is gone is not written to at all: an edit to it says why, and changes nothing.</p>
       <p>A file there with no frontmatter, a blank one, or frontmatter with none of a type's keys (<code>name</code>, <code>label</code>, <code>properties</code>, <code>icon</code>, <code>folder</code>) — a README, say — is left out without a word.</p>
       <h3>Built-in types</h3>
       <p><b>Person</b>, <b>Task</b>, <b>Project</b>, <b>Artifact</b>, <b>Meeting</b>, <b>Company</b>, <b>Term</b>, <b>Proposal</b>, <b>Decision</b>, <b>Block</b> and <b>Daily</b> are marked <b>Built in</b>: DFAI's own features depend on them. In the type's editor their <b>Delete</b> button is turned off, with the reason beside it — for example <i>“Person is built in — @ mentions find people by it — so it cannot be deleted. Its properties are yours to change.”</i> Their properties stay yours to edit. Their files in <code>.atlas/types</code> can't be deleted or renamed from Pages either, whatever the file is called: <i>“DFAI’s built-in types stay — its features depend on them.”</i></p>
