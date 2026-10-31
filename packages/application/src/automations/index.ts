@@ -15,7 +15,7 @@ export {
 } from './post-processing-ledger.ts';
 export type { RulesTakeArgs } from './post-processing-ledger.ts';
 export type { AutomationListing, LoadedAutomation } from './load-automations.ts';
-export { dryRunAutomation, withPeriodNote } from './dry-run-automation.ts';
+export { dryRunAutomation, withMeetingsNotLinked, withPeriodNote } from './dry-run-automation.ts';
 export { NoteRunsCappedError, planRuleNow } from './note-runs.ts';
 export type { RuleTarget } from './note-runs.ts';
 export { planRun } from './plan-run.ts';
@@ -50,3 +50,10 @@ export {
 export type { CleanupOwner, ListedCleanupTask, MeetingCleanupPorts } from './meeting-cleanup.ts';
 export { clockForRule, clockOnZone, planNowOf, waitsForPlanZone } from './rule-clock.ts';
 export type { RunClock } from './rule-clock.ts';
+export { acceptMeetingSetup, previewMeetingSetup } from './meeting-setup.ts';
+export type {
+  MeetingSetupDone,
+  MeetingSetupFailure,
+  MeetingSetupOffer,
+  MeetingSetupPorts,
+} from './meeting-setup.ts';

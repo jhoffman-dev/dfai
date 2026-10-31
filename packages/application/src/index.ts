@@ -38,6 +38,8 @@ export {
   recordingExportFiles,
 } from './testing/fake-export.ts';
 export { fakeGranola, granolaNote, granolaTurn } from './testing/fake-granola.ts';
+export { fakeSlack } from './testing/fake-slack.ts';
+export type { FakeSlack, SlackCall } from './testing/fake-slack.ts';
 export { fakeEmbedder, memoryEmbeddingCache } from './testing/fake-embeddings.ts';
 export type { FakeEmbedder, MemoryEmbeddingCache } from './testing/fake-embeddings.ts';
 export type { GranolaCall, GranolaCallKey } from './testing/fake-granola.ts';
@@ -78,6 +80,7 @@ export * from './proposals/index.ts';
 export * from './meeting-links/index.ts';
 export * from './granola/index.ts';
 export * from './kindle/index.ts';
+export * from './slack/index.ts';
 export * from './transclusion/index.ts';
 export * from './activity/index.ts';
 export * from './sync/index.ts';

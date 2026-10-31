@@ -1,8 +1,15 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { GtdStatus, InboxItem, VaultPath } from '@dfai/domain';
 import { Icon } from './icon.tsx';
-import { InboxRows, type CreateFiling, type InboxRefusal } from './inbox/inbox-rows.tsx';
+import {
+  inboxKeyStrip,
+  InboxRows,
+  type CreateFiling,
+  type InboxRefusal,
+} from './inbox/inbox-rows.tsx';
 import type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';
+import type { UndoLast } from './row-keys.ts';
+import { useInboxHome } from './inbox/use-inbox-home.ts';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
 import { ROW_SCROLLER_MARK, RowScrollerContext } from './row-scroller.ts';
@@ -13,6 +20,7 @@ import {
 } from './proposals/proposals-section.tsx';
 import type { RelationChoice } from './properties-panel.tsx';
 import { MeetingProjects, type MeetingProjectsProps } from './meeting-projects.tsx';
+import { MeetingSetup, type MeetingSetupProps } from './meeting-setup.tsx';
 import { ParaMigration, type ParaMigrationProps } from './para-migration.tsx';
 import { TaskMigration, type TaskMigrationProps } from './task-migration.tsx';
 import { VaultTidy, type VaultTidyProps } from './vault-tidy.tsx';
@@ -94,6 +102,11 @@ export interface InboxPageProps {
   busy: boolean;
   /** Why the last undo could not be done, or null. */
   problem: string | null;
+  /**
+   * Takes the last clarification back, as its toast's Undo does — U or ⌘Z on
+   * a row (#109) — resolving to the row it took back, or null.
+   */
+  onUndo?: UndoLast;
   /** Why each row's clarification was refused, shown on that row, until it is clarified again. */
   refusals?: readonly InboxRefusal[];
   /** Why each imported meeting's summary still waits, by path; a meeting not in it waits for none (#186). */
@@ -127,6 +140,8 @@ export interface InboxPageProps {
   meetingCleanup?: MeetingCleanupProps | null;
   /** Filing the meetings that have no project as their series is, previewed first (#227). */
   meetingProjects?: MeetingProjectsProps | null;
+  /** Setting up meeting post-processing in one previewed yes (#191); null once a rule does it. */
+  meetingSetup?: MeetingSetupProps | null;
   /** The vault's own Inbox view, which the sidebar's Inbox row opened before this page. */
   view?: { readonly title: string; readonly onOpen: () => void } | null;
   /** What Claude or an automation proposed, answered here rather than filed (P29-02). */
@@ -155,6 +170,7 @@ export function InboxPage(props: InboxPageProps) {
   const meetingsWaiting = props.meetingsWaiting ?? null;
   const cleanup = props.meetingCleanup ?? null;
   const meetingProjects = props.meetingProjects ?? null;
+  const meetingSetup = props.meetingSetup ?? null;
   const proposals = props.proposals ?? null;
   const problem = props.problem ?? leftRefusal(props);
   const counted = describe(props.contents, proposals?.contents?.open.length ?? 0);
@@ -173,6 +189,12 @@ export function InboxPage(props: InboxPageProps) {
     offersRead.some((read) => read?.waitingForIndex === true),
   );
   const anchor = useListAnchor(parts, live);
+  const home = useInboxHome({
+    page: article,
+    empty: props.contents?.items.length === 0,
+    busy: props.busy,
+    onUndo: props.onUndo,
+  });
   return (
     <>
       <PageBar
@@ -195,7 +217,7 @@ export function InboxPage(props: InboxPageProps) {
         {...ROW_SCROLLER_MARK}
       >
         <RowScrollerContext.Provider value={scroller}>
-          <article className="page page--wide inbox" aria-label="Inbox" ref={article}>
+          <article className="page page--wide inbox" aria-label="Inbox" ref={article} {...home}>
             <HiddenTitle>To process</HiddenTitle>
             {settingsUnreadable !== null && <SettingsUnreadable {...settingsUnreadable} />}
             {ownerUnknown !== null && <OwnerUnknown {...ownerUnknown} />}
@@ -208,6 +230,7 @@ export function InboxPage(props: InboxPageProps) {
                 slot('tidy', tidy, (known) => <VaultTidy {...known} />),
                 slot('cleanup', cleanup, (known) => <MeetingCleanup {...known} />),
                 slot('meetings', meetingProjects, (known) => <MeetingProjects {...known} />),
+                slot('setup', meetingSetup, (known) => <MeetingSetup {...known} />),
               ]}
             />
             <div style={IN_PLACE} ref={answers}>
@@ -498,6 +521,7 @@ function InboxList({
   busy,
   refusals = NO_REFUSALS,
   summaryPending,
+  onUndo,
 }: InboxPageProps) {
   const stranded = useRef<VaultPath | null>(null);
   if (error !== null) {
@@ -523,6 +547,7 @@ function InboxList({
           New tasks land here with status Inbox. Nothing is required.
         </span>
       </h2>
+      {inboxKeyStrip(statuses)}
       <div className="table__sheet">
         <table className="table__grid inbox__grid" aria-rowcount={contents.items.length + 1}>
           <thead>
@@ -549,6 +574,7 @@ function InboxList({
             refusals={refusals}
             {...(summaryPending !== undefined && { summaryPending })}
             stranded={stranded}
+            onUndo={onUndo}
           />
         </table>
         {contents.truncated && (

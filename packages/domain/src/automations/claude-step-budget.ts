@@ -52,7 +52,12 @@ const DECLARED_STEP_BUDGET: ClaudeStepBudget = {
   asksPerHour: DECLARED_STEP_ASKS_PER_HOUR,
 };
 
-function isDeclaredStep(action: AutomationAction): boolean {
+/**
+ * Whether a rule's step is the declared step that post-processes meetings: a
+ * Claude step that says `apply: mine` (ADR-0036), under whatever name. One
+ * saved with `output: meeting-items` is read as the digest, so it counts too.
+ */
+export function isDeclaredStep(action: AutomationAction): boolean {
   return action.kind === 'claude' && action.apply === 'mine';
 }
 

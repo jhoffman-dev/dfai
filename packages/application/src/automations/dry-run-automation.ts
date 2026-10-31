@@ -9,6 +9,7 @@ import {
   type RuleNamed,
 } from '@dfai/domain';
 import type { ActivityLog } from '../activity/ports.ts';
+import { meetingsNotLinked } from './meetings-not-linked.ts';
 import { planRuleNow } from './note-runs.ts';
 import { periodStateOf } from './period-state.ts';
 import type { RuleQueryPorts } from './plan-run.ts';
@@ -54,10 +55,11 @@ export async function dryRunAutomation({
   const recorder = activity.inOpenVault();
   try {
     const target = await planRuleNow({ ports, rule, log, ledger, today });
-    const plan =
+    const planned =
       at === undefined
         ? target.plan
         : await withPeriodNote({ plan: target.plan, rule, log, at, ports });
+    const plan = await withMeetingsNotLinked({ plan: planned, rule, ports, today });
     recorder.record(dryRunReport(named, { plan }));
     return plan;
   } catch (cause) {
@@ -96,4 +98,23 @@ export async function withPeriodNote({
     notePaths: ports.notePaths,
   });
   return state === null ? plan : { ...plan, periodNote: state };
+}
+
+/**
+ * The plan with the meetings a run by hand would link again first (#192),
+ * when the rule links meetings and some it matches are not linked.
+ */
+export async function withMeetingsNotLinked({
+  plan,
+  rule,
+  ports,
+  today,
+}: {
+  plan: AutomationPlan;
+  rule: Pick<AutomationRule, 'which' | 'olderThanDays' | 'action'>;
+  ports: RuleQueryPorts;
+  today: string;
+}): Promise<AutomationPlan> {
+  const notLinked = await meetingsNotLinked({ ports, rule, today });
+  return notLinked === null ? plan : { ...plan, notLinked };
 }

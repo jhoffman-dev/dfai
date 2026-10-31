@@ -1,6 +1,8 @@
 import { archiveRefusal } from '../archive/archive.ts';
 import { isProposalPath } from '../proposals/proposal.ts';
 import { isAtlasNote } from '../vault/vault-visibility.ts';
+import type { MeetingsNotLinked } from '../meeting-links/meeting-relink.ts';
+import { describeNotLinked } from './relink-plan.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { MAX_ACTIONS_PER_RUN } from './automation-query.ts';
 import type { AutomationAction } from './automation-rule.ts';
@@ -31,6 +33,12 @@ export interface AutomationPlan {
    * domain; the dry run says it, since it takes the log and the vault's notes.
    */
   readonly periodNote?: { readonly period: OutputPeriod; readonly made: boolean };
+  /**
+   * The meetings it matched whose linking failed (#192), which a run by hand
+   * links again before anything else. Left off by the domain, and when there
+   * are none; the dry run reads them from the meetings.
+   */
+  readonly notLinked?: MeetingsNotLinked;
 }
 
 /**
@@ -89,8 +97,17 @@ function refusalOf(action: AutomationAction, path: VaultPath): string | null {
 export const MEETING_BRIEFS_PLAN =
   'Would write a brief for each of today’s meetings with a linked person or company that has none yet.';
 
-/** The plan in a sentence: "Would archive 12 notes." */
+/** The plan in a sentence: "Would archive 12 notes.", then the meetings it would link again. */
 export function describePlan(plan: AutomationPlan): string {
+  const said = describeNotes(plan);
+  if (plan.notLinked === undefined) return said;
+  const relink = describeNotLinked(plan.notLinked);
+  return said === NOTHING_TO_DO ? relink : `${said} ${relink}`;
+}
+
+const NOTHING_TO_DO = 'Nothing to do right now.';
+
+function describeNotes(plan: AutomationPlan): string {
   const count = plan.paths.length;
   const notes = `${count} ${count === 1 ? 'note' : 'notes'}`;
   if (plan.periodNote?.made === true) {
@@ -103,9 +120,7 @@ export function describePlan(plan: AutomationPlan): string {
         ? MEETING_BRIEFS_PLAN
         : 'Would write its note.'
       : null;
-  const head =
-    writes ??
-    (count === 0 ? 'Nothing to do right now.' : `Would ${planVerb(plan.action)} ${notes}.`);
+  const head = writes ?? (count === 0 ? NOTHING_TO_DO : `Would ${planVerb(plan.action)} ${notes}.`);
   return plan.capped ? `${head} ${cappedLine(plan.paths.length)}` : head;
 }
 

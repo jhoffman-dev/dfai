@@ -1,3 +1,4 @@
+import type { CaptureKind } from '../mapping/capture-payload.ts';
 import {
   fittedAttachments,
   fittedEmail,
@@ -6,18 +7,25 @@ import {
   holdsLink,
   type Attachment,
 } from './slack-fit.ts';
-import type { SlackCaptureAction } from './slack-request.ts';
 
 /*
- * Slack's Web API answers as one capture/v1 payload (ADR-0049, #104): the
- * message the shortcut or reaction was on, the rest of its thread, its files
- * as links (never downloaded), and the names of everyone in it. Compiled
- * into the workflow's Code nodes; the app's own mapper reads the result.
+ * Slack's Web API answers as one capture/v1 payload (ADR-0049): the message,
+ * the rest of its thread, its files as links (never downloaded), and the
+ * names of everyone in it. Written for n8n (#104, PR #623) and moved here for
+ * a pasted link (#105), so that both senders shape a message alike and the
+ * contract's mapper writes it alike. Beside the mapping folder rather than
+ * in it, and importing only from it, so n8n can compile it into its own Code
+ * node without the contract's mapper carrying it.
  */
 
 /** A Web API answer that is not `ok`: Slack answers 200 with `ok: false` and why. */
 export class SlackApiError extends Error {
-  override readonly name = 'SlackApiError';
+  override readonly name: string = 'SlackApiError';
+}
+
+/** The message is not among what Slack sent: deleted, or not the reader's to see. */
+export class SlackMessageMissingError extends SlackApiError {
+  override readonly name = 'SlackMessageMissingError';
 }
 
 /** The most people looked up for one capture; a mention past it is written by its id. */
@@ -53,15 +61,24 @@ export function threadMessages(replies: unknown): readonly Fields[] {
 }
 
 /**
- * Whose names the capture needs: whoever asked (always one, so n8n's lookup
- * runs at least once), the saved message's author, then every other author
- * and everyone mentioned, at most {@link MAX_LOOKUPS}.
+ * Whose names the capture needs: `first` (whoever asked, for n8n), the
+ * saved message's author, then every other author and everyone mentioned,
+ * at most {@link MAX_LOOKUPS}.
  */
-export function usersToLookUp(action: SlackCaptureAction, replies: unknown): string[] {
+export function usersToLookUp({
+  ts,
+  replies,
+  first = null,
+}: {
+  /** The saved message's ts. */
+  ts: string;
+  replies: unknown;
+  first?: string | null;
+}): string[] {
   const messages = threadMessages(replies);
-  const saved = messages.find((message) => message['ts'] === action.ts)?.['user'];
-  // The saved message's author first: the cap must never leave out whose message it is.
-  const ids = new Set<string>([action.userId]);
+  const saved = messages.find((message) => message['ts'] === ts)?.['user'];
+  // The saved message's author early: the cap must never leave out whose message it is.
+  const ids = new Set<string>(first === null ? [] : [first]);
   if (typeof saved === 'string' && USER_ID.test(saved)) ids.add(saved);
   for (const message of messages) {
     const author = message['user'];
@@ -123,36 +140,37 @@ function attachmentsOf(messages: readonly Fields[]): Attachment[] {
   return fittedAttachments(all);
 }
 
-/** What the Slack API answered for one capture, as the build node gathers it. */
+/** What the Slack API answered for one message, as a sender gathers it. */
 export interface SlackAnswers {
-  readonly action: SlackCaptureAction;
+  /** The message: its channel and ts, and whether it is saved as a note or a task. */
+  readonly message: { readonly channel: string; readonly ts: string; readonly kind: CaptureKind };
   /** `chat.getPermalink`'s answer. */
   readonly permalink: unknown;
   /** `conversations.replies`' answer. */
   readonly replies: unknown;
-  /** One `users.info` answer per id {@link usersToLookUp} named. */
+  /** One `users.info` answer per id {@link usersToLookUp} named; one Slack refused may be null. */
   readonly users: readonly unknown[];
 }
 
 /**
- * The capture/v1 payload for the message the action was on. The thread is
- * every other message `conversations.replies` listed — the replies, or, for
- * a reply saved by itself, the parent and the other replies — and the
- * mapper puts them in ts order. Throws {@link SlackApiError} when Slack did
- * not answer `ok`, or the message is not among what it sent.
+ * The capture/v1 payload for the message. The thread is every other message
+ * `conversations.replies` listed — the replies, or, for a reply saved by
+ * itself, the parent and the other replies — and the mapper puts them in ts
+ * order. Throws {@link SlackApiError} when Slack did not answer `ok`, and
+ * {@link SlackMessageMissingError} when the message is not among what it sent.
  */
 export function slackCapturePayload(answers: SlackAnswers) {
-  const { action } = answers;
+  const { message: target } = answers;
   const url = text(okAnswer(answers.permalink, 'chat.getPermalink')['permalink']);
   if (url === null) throw new SlackApiError("Slack's chat.getPermalink sent no permalink");
   const messages = threadMessages(answers.replies);
-  const message = messages.find((each) => each['ts'] === action.ts);
+  const message = messages.find((each) => each['ts'] === target.ts);
   if (message === undefined) {
-    throw new SlackApiError(
+    throw new SlackMessageMissingError(
       'the message is not in the thread Slack sent (deleted, or not yours to see)',
     );
   }
-  // A lookup Slack refused (a profile hidden from James, say) names that person by id instead.
+  // A lookup Slack refused (a profile hidden from the reader, say) names that person by id instead.
   const people = new Map<string, Person>(
     answers.users.flatMap((answer) => {
       const person = personOf(answer);
@@ -163,14 +181,14 @@ export function slackCapturePayload(answers: SlackAnswers) {
     .filter((each) => each !== message && typeof each['ts'] === 'string')
     .map((reply) => ({ reply, ts: String(reply['ts']), text: String(reply['text'] ?? '') }));
   const savedText = String(message['text'] ?? '');
-  const thread = fittedThread(replies, { ts: action.ts, text: savedText });
+  const thread = fittedThread(replies, { ts: target.ts, text: savedText });
   return {
     contract: 'capture/v1',
-    kind: action.kind,
+    kind: target.kind,
     source: {
       provider: 'slack',
-      channel: { id: action.channel },
-      ts: action.ts,
+      channel: { id: target.channel },
+      ts: target.ts,
       url,
       author: authorOf(message, people),
     },

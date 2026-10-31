@@ -3,6 +3,7 @@ export {
   ACTIVITY_LEVELS,
   ACTIVITY_SUBJECT_KINDS,
   MAX_ACTIVITY_MESSAGE,
+  MAX_ACTIVITY_NOTES,
   activityEvent,
   insideVault,
 } from './activity-event.ts';
@@ -69,3 +70,5 @@ export type {
   VaultWrite,
 } from './activity-reports.ts';
 export { withoutSecrets } from './without-secrets.ts';
+export { groupActivity } from './activity-groups.ts';
+export type { ActivityItem } from './activity-groups.ts';

@@ -966,7 +966,8 @@ describe('InboxPage — one-key triage on the focused row (#109, #307)', () => {
     focusRow('Fix the gate');
     await userEvent.keyboard('n');
     view.rerender({ contents: { ...only, items: [], total: 0 } });
-    expect(document.activeElement).toBe(document.body);
+    // The page holds the focus the last row had, so U still reaches it (#109).
+    expect(document.activeElement).toBe(screen.getByRole('article', { name: 'Inbox' }));
 
     // Refused: the row comes back, and the next key must land on it, not on the page.
     await act(async () => refuse(false));

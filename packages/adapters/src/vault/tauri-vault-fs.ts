@@ -20,6 +20,7 @@ interface RawEntry {
   kind: string;
   modified: number;
   size: number;
+  link?: boolean;
 }
 
 interface RawNoteFile {
@@ -37,13 +38,15 @@ async function digestOf(text: string): Promise<string> {
 
 function toEntry(raw: RawEntry): VaultEntry {
   const path = createVaultPath(raw.path);
-  if (raw.kind === 'directory') return { kind: 'directory', name: raw.name, path };
+  const link = raw.link === true && { link: true as const };
+  if (raw.kind === 'directory') return { kind: 'directory', name: raw.name, path, ...link };
   return {
     kind: 'file',
     name: raw.name,
     path,
     ...(typeof raw.modified === 'number' && { modified: raw.modified }),
     ...(typeof raw.size === 'number' && { size: raw.size }),
+    ...link,
   };
 }
 

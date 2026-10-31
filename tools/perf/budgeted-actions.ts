@@ -22,10 +22,13 @@ export const BUDGETED_ACTIONS = [
   'Idle 3 s on Today',
   'Tick a task on Today',
   'Choose a task on Today',
+  // A scroll that keeps the same rows drawn draws none of the list again (#238).
+  'Scroll Today a little',
   'Open the Inbox',
   'Decide an Inbox row',
   "Open a person's page",
   'Open the 420-row table',
+  'Scroll the 420-row table a little',
   '⌘K + 5 keys over the table',
   'Drag a board card',
   'Run a 2,000-row SQL query',

@@ -8,6 +8,7 @@ import { ArchiveContainer } from '../archive/archive-container.tsx';
 import { AutomationsContainer } from '../automations/automations-container.tsx';
 import { createAutomationsStore, publishAutomations } from '../automations/automations-store.ts';
 import { createIndexStatusStore } from '../index/index-status-store.ts';
+import { createMeetingSetupStore } from '../meetings/use-meeting-setup.ts';
 import { changePalette, createOverlayStore, showOverlay } from '../overlay-store.ts';
 import { QueryContainer } from '../query/query-container.tsx';
 import { createQueryTextStore } from '../query/query-text-store.ts';
@@ -137,7 +138,11 @@ function wiringOf(status: ReturnType<typeof newsOf>['status'], index: IndexPort)
       openPage: noop,
       terms: { templates: [] },
       tags: { tags: { kind: 'ready', counts: [] }, renames: {} },
-      automations: { store: automations, ports: {} },
+      automations: {
+        store: automations,
+        ports: {},
+        setup: { store: createMeetingSetupStore(), automations },
+      },
       query: { text: createQueryTextStore() },
       type: { onEditType: noop, onNewNote: noop, onEditTemplate: noop },
     },

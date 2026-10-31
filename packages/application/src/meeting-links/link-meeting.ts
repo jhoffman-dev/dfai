@@ -1,11 +1,13 @@
 import {
   attendeesOf,
   isMeetingType,
+  markRemoval,
   linkedEntities,
   linkedNotes,
   matchAttendees,
   matchSpeakers,
   messageWithoutPaths,
+  MEETING_LINKS_KEY,
   MEETING_PROJECT_KEY,
   namedSpeakers,
   ownerAddressesInUse,
@@ -77,7 +79,8 @@ export class MeetingLinkRefusedError extends Error {
  * says how) — the speakers as the vocabulary corrects them (P28-06), whether
  * or not the meeting's words have been corrected yet, so the order of the two
  * steps does not change who is linked. What is sure is added to the meeting's `people` and `companies`,
- * and its `project` set — the only keys it writes — recording what each held before, so
+ * and its `project` set — the only keys it writes, with the mark of linking
+ * still owed (#192) taken out in the same write — recording what each held before, so
  * {@link undoMeetingLink} can put it back. A meeting with unsaved typing, or
  * changed since it was read, is left as it is, and said. What is unsure is
  * written as proposals in the Inbox, each once, however often this runs.
@@ -107,12 +110,13 @@ export async function linkMeeting({
   vocabulary?: Vocabulary | undefined;
 }): Promise<MeetingLinkRun> {
   const plan = await planFor({ ports, path, owner: { selfName, selfEmails }, vocabulary });
+  const links = [
+    ...relationChanges(path, plan.properties, plan.changes),
+    ...filingChanges(path, plan),
+  ];
   const linked = await changeProperties({
     ports,
-    changes: [
-      ...relationChanges(path, plan.properties, plan.changes),
-      ...filingChanges(path, plan),
-    ],
+    changes: [...links, ...markChanges({ path, plan, links: links.length })],
     kind: 'set',
     today,
   });
@@ -302,6 +306,37 @@ function filingChanges(
       to: { value: plan.filing.link },
     },
   ];
+}
+
+/**
+ * The mark of linking still owed (#192) taken out as `markRemoval` says: in
+ * the same write as the links, and made only if one of them is — so a try
+ * that wrote no link leaves the meeting marked — or alone for a meeting with
+ * nothing left to link.
+ */
+function markChanges({
+  path,
+  plan,
+  links,
+}: {
+  path: VaultPath;
+  plan: Pick<MeetingRead, 'properties'> & Pick<MeetingLinkPlan, 'unreadable'>;
+  links: number;
+}): PropertyChange[] {
+  const { properties } = plan;
+  const removal = markRemoval({
+    properties,
+    linkChanges: links,
+    unreadable: plan.unreadable.length,
+  });
+  if (removal === 'keep') return [];
+  const change: PropertyChange = {
+    path,
+    key: MEETING_LINKS_KEY,
+    expect: priorOf(properties, MEETING_LINKS_KEY),
+    to: { absent: true },
+  };
+  return [removal === 'with-links' ? { ...change, alongside: true } : change];
 }
 
 function priorOf(properties: Readonly<Record<string, unknown>>, key: string): PriorValue {

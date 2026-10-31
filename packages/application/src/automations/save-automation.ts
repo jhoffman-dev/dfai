@@ -112,7 +112,15 @@ export async function updateAutomation({
  * A prompt that is there is the person's, edited or not, and is left as it is.
  */
 async function ensureBuiltInPrompt(fs: VaultFsPort, { action }: AutomationDraft): Promise<void> {
-  const prompt = action.kind === 'claude' ? builtInPromptAt(action.prompt) : null;
+  if (action.kind === 'claude') await ensureShippedPrompt(fs, action.prompt);
+}
+
+/**
+ * Writes the prompt DFAI ships at `path` where the vault has no note there;
+ * a path DFAI ships nothing at, or a note already there, is left alone.
+ */
+export async function ensureShippedPrompt(fs: VaultFsPort, path: string): Promise<void> {
+  const prompt = builtInPromptAt(path);
   if (prompt === null) return;
   const [held] = await fs.readNotes([prompt.path]);
   if (held !== undefined) return;

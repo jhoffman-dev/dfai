@@ -29,7 +29,9 @@ export type {
   SkillDraft,
   SkillField,
   SkillFileContents,
+  SkillFileRefusal,
   SkillFileState,
+  SkillFolderContents,
   SkillProblem,
   SkillReading,
 } from './skill-rules.ts';

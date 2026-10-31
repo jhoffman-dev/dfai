@@ -25,3 +25,5 @@ export {
   laterChoiceOf,
 } from './chosen.ts';
 export type { FocusStanding, TodayChoice } from './chosen.ts';
+export { TODAY_KEYS, todayKeyActionOf } from './today-keys.ts';
+export type { TodayKeyAction, TodayKeyLetter, TodayRowStanding } from './today-keys.ts';

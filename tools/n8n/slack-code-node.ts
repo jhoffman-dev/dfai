@@ -87,28 +87,34 @@ export function verifySlackScript(node: VerifyNodeSettings = PLACEHOLDER_SETTING
 }
 
 const CONTRACT = '../../packages/domain/src/capture/mapping/';
+const SHAPING = '../../packages/domain/src/capture/slack/';
 
-/** The payload's modules: the contract's own rules and limits first, which the fitting reads. */
+/**
+ * The payload's modules: the contract's own rules and limits first, which
+ * the fitting reads, then the domain's Slack shaping — the one a pasted link
+ * in the app uses too (#105) — and the action's view of it.
+ */
 const CAPTURE_MODULES = [
   `${CONTRACT}capture-refusal.ts`,
   `${CONTRACT}capture-text.ts`,
   `${CONTRACT}capture-payload.ts`,
-  './slack-fit.ts',
-  './slack-capture.ts',
+  `${SHAPING}slack-fit.ts`,
+  `${SHAPING}slack-answers.ts`,
+  './slack-action-answers.ts',
 ] as const;
 
 /** The "Who is in it?" node: one item per person to look up, whoever asked always among them. */
 export function usersToLookUpScript(): string {
   return slackScript('who to look up', CAPTURE_MODULES, [
     `const action = $('${N.verify}').first().json;`,
-    `return usersToLookUp(action, $('${N.thread}').first().json).map((userId) => ({ json: { userId } }));`,
+    `return lookUpFor(action, $('${N.thread}').first().json).map((userId) => ({ json: { userId } }));`,
   ]);
 }
 
 /** The "Build the capture" node: everything Slack sent, as one capture/v1 payload. */
 export function buildCaptureScript(): string {
   return slackScript('the capture/v1 payload', CAPTURE_MODULES, [
-    'const payload = slackCapturePayload({',
+    'const payload = captureFor({',
     `  action: $('${N.verify}').first().json,`,
     `  permalink: $('${N.permalink}').first().json,`,
     `  replies: $('${N.thread}').first().json,`,

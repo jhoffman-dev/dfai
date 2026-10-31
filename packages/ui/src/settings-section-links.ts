@@ -27,6 +27,7 @@ export const SETTINGS_SECTIONS = {
   secrets: { id: 'settings-secrets', title: 'Secrets', icon: 'key' },
   googleCalendar: { id: 'settings-google-calendar', title: 'Google Calendar', icon: 'calendar' },
   granola: { id: 'settings-granola', title: 'Granola', icon: 'event' },
+  slack: { id: 'settings-slack', title: 'Slack', icon: 'hash' },
   kindle: { id: 'settings-kindle', title: 'Kindle', icon: 'doc' },
   claude: { id: 'settings-claude', title: 'Claude', icon: 'spark' },
   sync: { id: 'settings-sync', title: 'Sync', icon: 'cloud' },

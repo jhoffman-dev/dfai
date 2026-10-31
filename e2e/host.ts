@@ -10,11 +10,29 @@ import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
 import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
+import { isIntendedRefusal, recordStubBug, stubBugOf, UnstubbedCommandError } from './stub-bugs.ts';
 
-/** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
 /** What a stubbed command answers to reject with a value, as Tauri does for a command's `Err`. */
 const REJECT = '__atlasReject';
 
+/**
+ * A stub's refusal as the real host would reject: Tauri hands the page what a
+ * command's `Err` serialized to — for the `Result<_, String>` commands, a bare
+ * string — never an `Error`. Thrown as an `Error`, it would reach the page as
+ * one, and `throughHost` would pass it through instead of making the
+ * `VaultAccessError` the app really sees. A bug in the stub is not a refusal:
+ * it is recorded, so the test fails with its stack, and thrown on.
+ */
+function rejectionAsTauriSends(thrown: unknown): { [REJECT]: unknown } {
+  if (!isIntendedRefusal(thrown)) {
+    const bug = stubBugOf(thrown);
+    recordStubBug(bug);
+    throw bug;
+  }
+  return { [REJECT]: thrown instanceof Error ? thrown.message : thrown };
+}
+
+/** The host commands sync runs through (`git_process.rs`), answered by the git stub. */
 const SYNC_COMMANDS = new Set([
   'git_run',
   'git_run_in',
@@ -479,6 +497,8 @@ export interface FakeHost {
   holdEchoes(): Promise<() => Promise<void>>;
   /** Makes the next call of this command fail with this message, as the Rust host would answer `Err`. */
   failNext(command: string, message: string): void;
+  /** What the page reported through `report_error` — a failure it caught before the app could handle it. */
+  reportedErrors(): string[];
   /**
    * The Activity log's file for the vault open now, as `activity.rs` keeps it
    * in the app's data folder — here, in memory, one per vault.
@@ -623,6 +643,21 @@ export interface FakeHost {
     serve(path: string, answer: { status: number; body: string }): void;
     hasKey(): boolean;
     requests(): readonly { path: string; query: Readonly<Record<string, string>> }[];
+  };
+  /**
+   * Slack, as `slack.rs` answers for it (#105): a user token kept per vault,
+   * and a Web API method answered with what a test served for it — for
+   * `users.info`, served per user id — as a 200, or `ok: false` where nothing
+   * was. The Keychain item, the pinned origin, the list of methods and the
+   * token struck from every answer are Rust's, tested there against a fake Slack.
+   */
+  readonly slack: {
+    serve(method: string, body: unknown, options?: { status?: number; retryAfter?: number }): void;
+    serveUser(id: string, body: unknown): void;
+    hasToken(): boolean;
+    requests(): readonly { method: string; query: Readonly<Record<string, string>> }[];
+    /** How many times the app asked whether a token is kept. */
+    statusCalls(): number;
   };
   /**
    * Kindle, as `kindle.rs` answers for it (#508): Connect makes the session
@@ -860,6 +895,7 @@ export async function installHost(
   const activityFiles = new Map<string, string>();
   /** Commands told to fail once, and why. */
   const failures = new Map<string, string>();
+  const reportedErrors: string[] = [];
   const secrets = new Map<string, string>();
   /** The sites each secret may be sent to, as `secrets.rs` keeps them beside it. */
   const bindings = new Map<string, readonly string[]>();
@@ -911,6 +947,25 @@ export async function installHost(
       granolaRefusals.delete(root);
     }
     return answer;
+  };
+  /** Slack tokens by vault root, what each method answers, and every request. */
+  const slackTokens = new Map<string, string>();
+  const slackAnswers = new Map<
+    string,
+    { status: number; body: string; retryAfter: number | null }
+  >();
+  const slackRequests: { method: string; query: Readonly<Record<string, string>> }[] = [];
+  let slackStatusCalls = 0;
+  const slackGet = (method: string, query: Record<string, string>) => {
+    slackRequests.push({ method, query });
+    const key = method === 'users.info' ? `${method}|${query['user'] ?? ''}` : method;
+    return (
+      slackAnswers.get(key) ?? {
+        status: 200,
+        body: '{"ok":false,"error":"not_served"}',
+        retryAfter: null,
+      }
+    );
   };
   const databases = new Map<string, { columns: string[]; rows: unknown[][] }>();
   const sqliteQueries: { file: string; sql: string }[] = [];
@@ -1104,6 +1159,10 @@ export async function installHost(
       }
       // What @tauri-apps/api/app asks for; without these the status bar reports
       // a failure on every page, which shows up as an alert in every test.
+      // As `lib.rs` does: logged, and nothing answered.
+      case 'report_error':
+        reportedErrors.push((args as { message: string }).message);
+        return null;
       case 'plugin:app|name':
         return 'DFAI';
       case 'plugin:app|version':
@@ -1709,6 +1768,28 @@ export async function installHost(
         const { path, query } = args as { path: string; query: Record<string, string> };
         return granolaGet(root, path, query);
       }
+      case 'slack_status':
+        slackStatusCalls += 1;
+        return { hasToken: slackTokens.has(writeRoot(args)) };
+      case 'slack_connect': {
+        const root = writeRoot(args);
+        const { token } = args as { token: string };
+        if (!/^(xoxp-|xoxe\.xoxp-)[\x21-\x7e]+$/.test(token)) {
+          return { [REJECT]: { kind: 'invalid', message: 'that is not a Slack user token' } };
+        }
+        slackTokens.set(root, token);
+        return { hasToken: true };
+      }
+      case 'slack_disconnect':
+        slackTokens.delete(writeRoot(args));
+        return { hasToken: false };
+      case 'slack_request': {
+        if (!slackTokens.has(writeRoot(args))) {
+          return { [REJECT]: { kind: 'no_token', message: 'no Slack token is kept' } };
+        }
+        const { method, query } = args as { method: string; query: Record<string, string> };
+        return slackGet(method, query);
+      }
       case 'kindle_connect':
         kindleSession = true;
         return null;
@@ -1993,7 +2074,7 @@ export async function installHost(
       }
       default:
         if (embeddings.handles(command)) return embeddings.answer(command, args, openRoot());
-        throw new Error(`unexpected command ${command}`);
+        throw new UnstubbedCommandError(command);
     }
   };
 
@@ -2006,7 +2087,7 @@ export async function installHost(
   });
   await page.exposeFunction('__atlasInvoke', async (command: string, args: unknown) => {
     calls.set(command, (calls.get(command) ?? 0) + 1);
-    const answered = await answer(command, args);
+    const answered = await answer(command, args).catch(rejectionAsTauriSends);
     // Logged only once a secret exists: before that there is nothing to leak,
     // and the replies that carry whole files would only slow every test.
     if (secrets.size > 0) answers.push(JSON.stringify(answered) ?? '');
@@ -2112,6 +2193,14 @@ export async function installHost(
       );
     }
 
+    // Every refusal rejects with a value, as Tauri hands the webview whatever
+    // a command's `Err` serializes to: a string, or the object it built.
+    function rejectedWithValue(value: unknown): unknown {
+      return typeof value === 'object' && value !== null && '__atlasReject' in value
+        ? Promise.reject((value as { __atlasReject: unknown }).__atlasReject)
+        : value;
+    }
+
     function invokeHost(
       command: string,
       args: unknown,
@@ -2128,7 +2217,9 @@ export async function installHost(
       if (args instanceof Uint8Array) {
         const answer = (
           window as unknown as { __atlasInvoke: (c: string, a: unknown) => Promise<unknown> }
-        ).__atlasInvoke(command, { bytes: Array.from(args), headers: options?.headers ?? {} });
+        )
+          .__atlasInvoke(command, { bytes: Array.from(args), headers: options?.headers ?? {} })
+          .then(rejectedWithValue);
         return command === 'snapshot_page' || command === 'export_render_pdf'
           ? answer.then((numbers) => new Uint8Array(numbers as number[]).buffer)
           : answer;
@@ -2137,13 +2228,7 @@ export async function installHost(
         window as unknown as { __atlasInvoke: (c: string, a: unknown) => Promise<unknown> }
       )
         .__atlasInvoke(command, args)
-        // A command that rejects with a value rather than a message, as
-        // Tauri hands the webview whatever a command's `Err` serializes to.
-        .then((value) =>
-          typeof value === 'object' && value !== null && '__atlasReject' in value
-            ? Promise.reject((value as { __atlasReject: unknown }).__atlasReject)
-            : value,
-        );
+        .then(rejectedWithValue);
       // Counted by the host above; the bytes come over HTTP, as the real ones come as a binary response.
       if (command === 'embedding_cache_load')
         return answer.then(async (length) => {
@@ -2263,6 +2348,7 @@ export async function installHost(
       return () => hold(false);
     },
     failNext: (command, message) => void failures.set(command, message),
+    reportedErrors: () => [...reportedErrors],
     activityLog: () => activityFiles.get(openRoot()) ?? '',
     seedActivity: (root, text) => void activityFiles.set(root, text),
     trashed: () => [...trashed],
@@ -2320,6 +2406,23 @@ export async function installHost(
       },
       hasKey: () => granolaKeys.size > 0,
       requests: () => [...granolaRequests],
+    },
+    slack: {
+      serve: (method, body, { status = 200, retryAfter } = {}) =>
+        void slackAnswers.set(method, {
+          status,
+          body: JSON.stringify(body),
+          retryAfter: retryAfter ?? null,
+        }),
+      serveUser: (id, body) =>
+        void slackAnswers.set(`users.info|${id}`, {
+          status: 200,
+          body: JSON.stringify(body),
+          retryAfter: null,
+        }),
+      hasToken: () => slackTokens.size > 0,
+      requests: () => [...slackRequests],
+      statusCalls: () => slackStatusCalls,
     },
     kindle: {
       serveLibrary: (html) => void kindlePages.set('library', html),
