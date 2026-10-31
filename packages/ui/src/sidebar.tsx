@@ -779,7 +779,7 @@ const BrokenTypeList = memo(function BrokenTypeList({
   return (
     <ul className="sidebar__list">
       {broken.map((type) => (
-        <li key={type.path} className="sidebar__item">
+        <li key={type.path} className="sidebar__item sidebar__item--problem">
           <button
             type="button"
             className="sidebar__row"

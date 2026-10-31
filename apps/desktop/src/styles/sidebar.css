@@ -199,6 +199,25 @@ ul.sidebar__sections {
   transition: background 120ms ease;
 }
 
+/*
+ * A type file with a problem (#683): its row, and why under it. The item grows
+ * to hold both; held to one row's height, the reason spilled over the row above.
+ */
+.sidebar__item--problem {
+  align-items: stretch;
+  flex-direction: column;
+  height: auto;
+}
+
+.sidebar__item--problem .sidebar__row {
+  flex: none;
+  height: var(--sidebar-row);
+}
+
+.sidebar__problem {
+  overflow-wrap: anywhere;
+}
+
 .sidebar__item:hover {
   background: var(--hover);
 }
