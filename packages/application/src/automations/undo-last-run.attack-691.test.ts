@@ -269,15 +269,15 @@ describe('Undo last run, a task edited between its check and the Trash (#693)', 
       (path) => at.vault.properties(path)['type'] === 'task',
     );
     expect(tasks.length).toBeGreaterThan(0);
-    const { fs } = at.vault.ports;
+    const fs = { ...at.vault.ports.fs };
     const edited = new Map(
       tasks.map((path) => [path, `${at.vault.files.get(path)}Typed meanwhile.\n`]),
     );
-    at.vault.ports.fs = editedBeforeTrash(fs, async () => {
+    at.vault.ports.fs.trashEntry = editedBeforeTrash(fs, async () => {
       for (const [path, contents] of edited) {
         await fs.writeTextFile({ path: createVaultPath(path), contents, expectedModified: null });
       }
-    });
+    }).trashEntry;
 
     const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
 
@@ -290,5 +290,25 @@ describe('Undo last run, a task edited between its check and the Trash (#693)', 
     }
     expect(undone?.done.some((action) => action.kind === 'trashed')).toBe(false);
     expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
+  });
+
+  it('trashes and logs every task left as made, through the same hold', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const tasks = [...at.vault.files.keys()].filter(
+      (path) => at.vault.properties(path)['type'] === 'task',
+    );
+    expect(tasks.length).toBeGreaterThan(0);
+    at.vault.ports.fs.trashEntry = editedBeforeTrash(
+      { ...at.vault.ports.fs },
+      () => undefined,
+    ).trashEntry;
+
+    const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
+
+    for (const task of tasks) {
+      expect(at.vault.files.has(task)).toBe(false);
+      expect(undone?.done).toContainEqual({ kind: 'trashed', path: task });
+    }
   });
 });

@@ -141,22 +141,22 @@ async function heldInNote(
 
 /**
  * Puts the picture in the Trash unless the note, read again, embeds it. The
- * re-read only sees writes that landed before it: a write embedding the
- * picture that lands between the re-read and the trash is not caught. The
- * port's compare-and-trash (`trashEntry`'s `unchanged`, #235) could catch it
- * by holding the note still; this does not use it yet.
+ * Trash is held to the note as re-read (`trashEntry`'s `unchanged`, #235), so
+ * a write embedding the picture that lands between the re-read and the trash
+ * keeps it (#693).
  */
 async function discardUnlessEmbedded(
   ports: { readonly fs: Pick<VaultFsPort, 'readTextFile' | 'trashEntry'> },
   { note, image }: { note: VaultPath; image: VaultPath },
 ): Promise<void> {
   try {
-    const { text } = await ports.fs.readTextFile(note);
+    const { text, modified } = await ports.fs.readTextFile(note);
     if (text.includes(`![[${image}]]`)) return;
-    await ports.fs.trashEntry({ path: image });
+    await ports.fs.trashEntry({ path: image, unchanged: [{ path: note, modified, text }] });
   } catch {
-    // The refusal that sent us here is the news. A note that cannot be read again may embed the
-    // picture, so it is kept; a picture left unlinked in the vault costs nothing.
+    // The refusal that sent us here is the news. A note that cannot be read again, or that
+    // changed before the Trash, may embed the picture, so it is kept; a picture left unlinked
+    // in the vault costs nothing.
   }
 }
 

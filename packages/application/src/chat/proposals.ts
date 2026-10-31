@@ -26,7 +26,7 @@ import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { noteModified } from '../notes/note-modified.ts';
 import { openNote } from '../notes/open-note.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
-import type { VaultFsPort } from '../vault/ports.ts';
+import { EntryChangedError, type VaultFsPort } from '../vault/ports.ts';
 
 /**
  * Changes the model proposes (P27-04). Nothing here writes until the person
@@ -327,8 +327,7 @@ export async function undoProposal({
   const { path } = applied;
   const pane = refuseUnsaved(openNotes, path);
   if (applied.kind === 'created') {
-    if ((await noteModified({ fs, path })) !== applied.modified) throw changedSince(path);
-    await fs.trashEntry({ path });
+    await trashAsCreated({ fs, path, expected: applied.modified });
     return;
   }
   await guarded({ fs, path, expected: applied.modified }, () =>
@@ -360,6 +359,29 @@ async function guarded<T>(
   } catch (error) {
     if (error instanceof NoteChangedError) throw changedSince(path);
     if ((await noteModified({ fs, path })) !== expected) throw changedSince(path);
+    throw error;
+  }
+}
+
+/**
+ * Trashes a created note held to the version checked here, so an edit that
+ * lands between the check and the Trash keeps the note (#693).
+ */
+async function trashAsCreated({
+  fs,
+  path,
+  expected,
+}: {
+  fs: VaultFsPort;
+  path: VaultPath;
+  expected: number;
+}): Promise<void> {
+  const { text, modified } = await readPrevious({ fs, path });
+  if (modified !== expected) throw changedSince(path);
+  try {
+    await fs.trashEntry({ path, unchanged: [{ path, modified, text }] });
+  } catch (error) {
+    if (error instanceof EntryChangedError) throw changedSince(path);
     throw error;
   }
 }

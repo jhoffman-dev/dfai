@@ -251,6 +251,27 @@ describe('proposeNote and accepting it', () => {
     expect(fixture.files.get('Idea.md')?.text).toBe('Typed meanwhile.\n');
   });
 
+  it('trashes a created note left as made, through the same hold (#693)', async () => {
+    const { fs, markdown, fixture } = vault({});
+    const trashing = editedBeforeTrash(
+      {
+        ...fs,
+        trashEntry: async ({ path: gone }: { path: string }) => void fixture.files.delete(gone),
+      },
+      () => undefined,
+    );
+    const made = proposeNote({
+      today: '2026-10-08',
+      markdown,
+      input: { title: 'Idea' },
+      id: 'n1',
+      notePaths: [],
+    });
+    const applied = await acceptProposal({ fs: trashing, openNotes: closed, proposal: made });
+    await undoProposal({ fs: trashing, openNotes: closed, applied });
+    expect(fixture.files.has('Idea.md')).toBe(false);
+  });
+
   it.each([
     [{ title: '  ' }, /needs a "title"/],
     [{ title: 'x', folder: '.atlas/templates' }, /hidden configuration/],

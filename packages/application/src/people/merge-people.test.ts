@@ -456,6 +456,15 @@ describe('finding every link before a merge (#467)', () => {
     ]);
     expect(vault.text(SHORT)).toBe('Changed meanwhile.\n');
   });
+
+  it('trashes every merged person left as checked, through the same hold (#693)', async () => {
+    const { vault, preview, ports } = await setUp();
+    const shown = await preview();
+    const holding = editedBeforeTrash(vault.fs, () => undefined);
+    const report = await applyPeopleMerge({ ports: { ...ports, fs: holding }, preview: shown });
+    expect(report.trashed).toEqual([SHORT, TYPO]);
+    expect(report.failures).toEqual([]);
+  });
 });
 
 describe('saved views and dashboards linking to a merged person (#467)', () => {
