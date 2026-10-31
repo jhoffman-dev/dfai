@@ -11,7 +11,7 @@ import {
   type FakeVault,
 } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
-import { LINE_END } from './platform-keys.ts';
+import { LINE_END } from './platform.ts';
 
 /**
  * Attack on #281 (#245): the app's own saves on a disk whose clock is coarse.
@@ -65,7 +65,7 @@ async function replaceLastCharacter(page: Page, text: string, typed: string) {
 }
 
 async function findsInSearch(page: Page, word: string) {
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   const search = palette.getByRole('searchbox', { name: 'Search the vault' });
   await expect(async () => {

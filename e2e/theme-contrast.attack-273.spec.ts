@@ -294,7 +294,7 @@ const PAGES: Record<string, (page: Page) => Promise<void>> = {
     await expect(page.getByRole('heading', { name: 'Settings' }).first()).toBeVisible();
   },
   palette: async (page) => {
-    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.press('Meta+k');
     await expect(page.locator('.palette')).toBeVisible();
     await page.keyboard.type('Task');
     await expect(page.locator('.palette__place').first()).toBeVisible();

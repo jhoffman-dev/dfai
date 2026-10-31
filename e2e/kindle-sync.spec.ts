@@ -70,7 +70,7 @@ async function openVault(page: Page) {
 }
 
 async function runCommand(page: Page, label: string) {
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill(label);
   await page.getByRole('option', { name: label }).click();
 }

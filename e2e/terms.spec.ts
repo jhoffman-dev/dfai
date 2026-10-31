@@ -88,7 +88,7 @@ test('a variant two terms claim is shown as a conflict, and the page opens from 
 }) => {
   await openVault(page);
 
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Terms');
   await page.getByRole('option', { name: 'Terms' }).click();
   await expect(termsPage(page)).toBeVisible();

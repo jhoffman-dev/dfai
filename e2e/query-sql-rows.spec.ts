@@ -55,7 +55,7 @@ for (const { width, height, panelScrolls } of WINDOWS) {
     await openQueryPage(page, { width, height });
     const editor = page.getByRole('textbox', { name: 'SQL' });
     await editor.fill(NUMBERS);
-    await editor.press('ControlOrMeta+Enter');
+    await editor.press('Meta+Enter');
     await expect(page.locator('.query__count')).toHaveText(`${ROWS} rows`);
 
     // However short the window, the sheet has room to show rows, and the panel brings it into view.

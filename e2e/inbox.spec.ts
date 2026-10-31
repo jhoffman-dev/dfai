@@ -79,11 +79,11 @@ const goTo = (page: Page) => page.getByRole('list', { name: 'Go to' });
 const inboxPage = (page: Page) => page.getByRole('article', { name: 'Inbox' });
 
 async function capture(page: Page, line: string) {
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.down('Shift');
   await page.keyboard.press('n');
   await page.keyboard.up('Shift');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   const field = page.getByRole('textbox', { name: 'What needs doing' });
   await field.fill(line);
   await field.press('Enter');

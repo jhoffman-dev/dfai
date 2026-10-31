@@ -102,9 +102,7 @@ test('⌘-click on the chip opens the reader in a new tab, leaving the note open
   page,
 }) => {
   await openVault(page);
-  await chip(page, 'Open The Lantern Keepers, p. 3 in the reader').click({
-    modifiers: ['ControlOrMeta'],
-  });
+  await chip(page, 'Open The Lantern Keepers, p. 3 in the reader').click({ modifiers: ['Meta'] });
   await expect(tabs(page)).toHaveCount(2);
   await expect(reader(page)).toBeVisible();
   await expect(pageOf(page, 3).locator('.pdf-mark')).toBeInViewport();

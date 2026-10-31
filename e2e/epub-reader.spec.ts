@@ -37,7 +37,7 @@ async function openVault(
 }
 
 async function addEpub(page: Page, { name, bytes }: { name: string; bytes: Buffer }) {
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Add EPUB');
   await page.getByRole('option', { name: 'Add EPUB…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add EPUB to Library' });

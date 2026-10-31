@@ -67,11 +67,11 @@ const rowName = (page: Page, at: number) =>
 const peek = (page: Page) => page.getByRole('dialog');
 
 async function chord(page: Page, key: string, { shift = false } = {}) {
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   if (shift) await page.keyboard.down('Shift');
   await page.keyboard.press(key);
   if (shift) await page.keyboard.up('Shift');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
 }
 
 test('typing then ⌥↓ writes the typing to the note it was typed in, once, and not the next', async ({

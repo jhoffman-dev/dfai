@@ -20,10 +20,10 @@
  * ⌘→ goes to the end of the line as drawn, so on a paragraph that wraps it
  * stops short of the block's end: the check then fails loudly, never passes.
  *
- * The keys are the platform's own (platform-keys.ts): End and Home on Linux.
+ * The keys are the platform's own (platform.ts): End and Home on Linux.
  */
 import { expect, type Locator } from '@playwright/test';
-import { LINE_END, LINE_START } from './platform-keys.ts';
+import { LINE_END, LINE_START } from './platform.ts';
 
 /** Click the line `line` is in, and put the caret at that line's end. */
 export async function caretAtLineEnd(line: Locator): Promise<void> {

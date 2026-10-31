@@ -209,7 +209,7 @@ test.describe('attack-390: guards (passing on the PR head)', () => {
     await openNote(page, 'Journal', 1);
     await expect(embedIn(page, 1)).toHaveText('Pack the tent');
 
-    await page.keyboard.press('ControlOrMeta+t');
+    await page.keyboard.press('Meta+t');
     await expect(tabsOf(page, 1)).toHaveCount(2);
     await openNote(page, 'Elsewhere', 1);
 
@@ -230,7 +230,7 @@ test.describe('attack-390: guards (passing on the PR head)', () => {
     const vault = await notesVault();
     await open(page, vault);
     await openNote(page, 'Journal', 1);
-    await page.keyboard.press('ControlOrMeta+t');
+    await page.keyboard.press('Meta+t');
     await expect(tabsOf(page, 1)).toHaveCount(2);
     await openNote(page, 'Elsewhere', 1);
 

@@ -42,7 +42,7 @@ test('⌘J opens Ask with the keys in its box, and goes back to the note from it
 }) => {
   await openJournal(page);
 
-  await page.keyboard.press('ControlOrMeta+j');
+  await page.keyboard.press('Meta+j');
   await expect(ask(page)).toBeVisible();
   await expect(ask(page).getByRole('textbox', { name: 'Ask Claude' })).toBeFocused();
   // The questions asked before, from Chats/.
@@ -50,7 +50,7 @@ test('⌘J opens Ask with the keys in its box, and goes back to the note from it
     ask(page).getByRole('navigation', { name: 'Recent questions' }).getByRole('button'),
   ).toHaveText(['What is open for Larkspur']);
 
-  await page.keyboard.press('ControlOrMeta+j');
+  await page.keyboard.press('Meta+j');
   await expect(page.getByRole('article', { name: 'Journal' })).toBeVisible();
   await expect(ask(page)).toHaveCount(0);
 
@@ -65,7 +65,7 @@ test('a question reads a note, the answer cites it, the citation opens the block
   const host = await openJournal(page);
   host.claude.reply(READ, ANSWER);
 
-  await page.keyboard.press('ControlOrMeta+j');
+  await page.keyboard.press('Meta+j');
   const box = ask(page).getByRole('textbox', { name: 'Ask Claude' });
   await box.fill('What is left on the bank file?');
   await box.press('Enter');
@@ -107,14 +107,14 @@ test('⌘-click on a citation opens the block in a new tab, and Ask stays', asyn
   const host = await openJournal(page);
   host.claude.reply(ANSWER);
 
-  await page.keyboard.press('ControlOrMeta+j');
+  await page.keyboard.press('Meta+j');
   const box = ask(page).getByRole('textbox', { name: 'Ask Claude' });
   await box.fill('What is left?');
   await box.press('Enter');
   const cite = ask(page)
     .getByRole('region', { name: 'Answer' })
     .getByRole('button', { name: 'Plans' });
-  await cite.click({ modifiers: ['ControlOrMeta'] });
+  await cite.click({ modifiers: ['Meta'] });
 
   await expect(page.getByRole('article', { name: 'Plans' })).toBeVisible();
   await expect(page.locator('.editor .is-revealed')).toHaveText(
@@ -125,7 +125,7 @@ test('⌘-click on a citation opens the block in a new tab, and Ask stays', asyn
 
 test('a recent question opens its chat again', async ({ page }) => {
   await openJournal(page);
-  await page.keyboard.press('ControlOrMeta+j');
+  await page.keyboard.press('Meta+j');
   await ask(page).getByRole('button', { name: 'What is open for Larkspur' }).click();
   await expect(ask(page).getByRole('heading', { name: 'What is open for Larkspur' })).toBeVisible();
 });

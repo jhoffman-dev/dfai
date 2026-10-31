@@ -109,7 +109,7 @@ test('closing PDF tabs lets their pdf.js workers go', async ({ page }) => {
     // The open PDF has a worker of its own: what is counted is real.
     expect(await liveWorkers()).toBeGreaterThan(before);
     await page.locator('.pdf-reader__pages').click({ position: { x: 4, y: 4 } });
-    await page.keyboard.press('ControlOrMeta+w');
+    await page.keyboard.press('Meta+w');
     await expect(page.locator('.pdf-reader')).toHaveCount(0);
   }
   await expect.poll(liveWorkers).toBeLessThanOrEqual(before + 1);

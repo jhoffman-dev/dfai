@@ -61,7 +61,7 @@ test('a restart brings back both panes, the focused one, and each pane tab’s o
   await row(page, 'alpha').click();
   await row(page, 'beta').click();
   await expect(article(page, 1, 'beta')).toBeVisible();
-  await row(page, 'gamma').click({ modifiers: ['ControlOrMeta', 'Shift'] });
+  await row(page, 'gamma').click({ modifiers: ['Meta', 'Shift'] });
   await expect(article(page, 2, 'gamma')).toBeVisible();
   await row(page, 'delta').click();
   await expect(article(page, 2, 'delta')).toBeVisible();
@@ -123,7 +123,7 @@ test('a huge remembered history starts the app, and is trimmed as it is written 
   await plantAndRestart(page, vault, JSON.stringify(stored));
   await expect(article(page, 1, 'delta')).toBeVisible();
   await expect(backIn(page, 1)).toBeEnabled();
-  await page.keyboard.press('ControlOrMeta+t');
+  await page.keyboard.press('Meta+t');
   await expect(tabsOf(page, 1)).toHaveText(['delta', 'New tab']);
   const written = await page.evaluate(
     (key) => window.localStorage.getItem(key) ?? '',
@@ -137,7 +137,7 @@ test('a remembered tab whose note was deleted while the app was closed opens on 
 }) => {
   const vault = await openVault(page);
   await row(page, 'alpha').click();
-  await row(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
   await expect(tabsOf(page, 1)).toHaveText(['alpha', 'beta']);
   await rm(join(vault.root, 'beta.md'));
   await restart(page);
@@ -151,7 +151,7 @@ test('a note renamed while hidden in a tab is followed by its tab, and the tab o
 }) => {
   const vault = await openVault(page);
   await row(page, 'alpha').click();
-  await row(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
   await expect(article(page, 1, 'beta')).toBeVisible();
   // Rename alpha from the sidebar while its tab is hidden.
   const pages = sidebarSection(page, 'userSpace');
@@ -175,7 +175,7 @@ test('a note deleted in the app while hidden in a tab leaves no tab on it after 
 }) => {
   const vault = await openVault(page);
   await row(page, 'alpha').click();
-  await row(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
   await expect(article(page, 1, 'beta')).toBeVisible();
   const pages = sidebarSection(page, 'userSpace');
   await row(page, 'alpha').hover();

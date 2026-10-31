@@ -23,9 +23,9 @@ test('the vault is indexed when it is opened', async ({ page }) => {
 test('search finds a note by a word in its body and opens it', async ({ page }) => {
   await openIndexedVault(page);
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
 
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await expect(palette).toBeVisible();
@@ -59,9 +59,9 @@ test('a note is found under the name its page shows, never a heading in its body
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('tauri');
 
@@ -80,9 +80,9 @@ test('a note is found under the name its page shows, never a heading in its body
 test('search says so when nothing matches', async ({ page }) => {
   await openIndexedVault(page);
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('zzzznothing');
 
   await expect(page.getByText('Nothing matches.')).toBeVisible();
@@ -91,9 +91,9 @@ test('search says so when nothing matches', async ({ page }) => {
 test('escape closes the search palette', async ({ page }) => {
   await openIndexedVault(page);
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   await expect(page.getByRole('dialog', { name: 'Search notes' })).toBeVisible();
 
   await page.keyboard.press('Escape');
@@ -132,9 +132,9 @@ test('rebuilding the index throws it away and puts it back', async ({ page }) =>
 
   // Search finds the note only the rebuild read, and still finds the old ones,
   // so nothing depended on the old database.
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   const search = page.getByRole('searchbox', { name: 'Search the vault' });
   await search.fill('focaccia');
   await expect(page.getByRole('option', { name: /^bread / })).toBeVisible();

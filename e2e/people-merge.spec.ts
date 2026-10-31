@@ -67,9 +67,9 @@ async function askToMergeMara(page: Page) {
 }
 
 async function openDuplicates(page: Page) {
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('possible duplicate');
   await page.getByRole('option', { name: /Possible duplicate people/ }).click();
   const list = page.getByRole('dialog', { name: 'Possible duplicates' });
@@ -136,7 +136,7 @@ test('ticking people in the Person table and choosing Merge into… merges them 
 test('the right sidebar of a person offers Merge into… too', async ({ page }) => {
   await openVault(page);
   await openNote(page, 'Mara');
-  await page.keyboard.press('Alt+ControlOrMeta+Backslash');
+  await page.keyboard.press('Alt+Meta+Backslash');
   const aside = page.getByRole('complementary', { name: 'Right sidebar' });
   await aside.getByRole('tab', { name: 'Properties' }).click();
   await aside.getByRole('button', { name: 'Merge into…' }).click();

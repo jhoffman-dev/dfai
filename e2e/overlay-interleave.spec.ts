@@ -21,11 +21,11 @@ async function openVault(page: Page) {
 }
 
 async function chord(page: Page, key: string, { shift = false } = {}) {
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   if (shift) await page.keyboard.down('Shift');
   await page.keyboard.press(key);
   if (shift) await page.keyboard.up('Shift');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
 }
 
 /** What the browser says has focus, as a tag and class. */

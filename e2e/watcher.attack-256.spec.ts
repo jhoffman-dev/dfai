@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.ts';
+import { seenAsMac } from './platform.ts';
 import {
   createVault,
   emitVaultChanged,
@@ -324,6 +325,7 @@ test('the Block type’s echo, heard while the opening walk is still under way, 
   // still waits behind that walk. That refresh walks after the echo, as it
   // would with no echo at all; the echo itself adds none.
   const unheard = await browser.newPage();
+  await seenAsMac(unheard.context());
   try {
     const withNoEcho = await walksOpeningSlowly(unheard, false);
     expect(withNoEcho).toBeGreaterThan(0);

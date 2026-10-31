@@ -53,7 +53,7 @@ const article = (page: Page, which: 1 | 2, name: string) =>
 async function noteThenTable(page: Page) {
   await row(page, 'beta').click();
   await expect(article(page, 1, 'beta')).toBeVisible();
-  await page.keyboard.press('ControlOrMeta+t');
+  await page.keyboard.press('Meta+t');
   await sidebarSection(page, 'types')
     .getByRole('button', { name: /^Task, \d+ notes?$/ })
     .click();
@@ -66,14 +66,14 @@ async function typeIntoStatusCell(page: Page, value: string) {
   await page.getByRole('button', { name: 'Doing', exact: true }).click();
   const input = page.locator('.table__input');
   await expect(input).toBeFocused();
-  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('Meta+a');
   await page.keyboard.type(value);
 }
 
 for (const [chord, label] of [
   ['Control+Tab', '⌃Tab'],
-  ['ControlOrMeta+1', '⌘1'],
-  ['ControlOrMeta+w', '⌘W'],
+  ['Meta+1', '⌘1'],
+  ['Meta+w', '⌘W'],
 ] as const) {
   test(`${label} while typing in a table cell does not throw the typed value away`, async ({
     page,
@@ -101,13 +101,13 @@ test('⌘1 in the search palette leaves the palette, its query and the tabs as t
 }) => {
   await openVault(page);
   await row(page, 'beta').click();
-  await row(page, 'gamma').click({ modifiers: ['ControlOrMeta'] });
+  await row(page, 'gamma').click({ modifiers: ['Meta'] });
   await expect(tab(page, 1, 'gamma')).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   const search = page.getByLabel('Search the vault', { exact: true });
   await expect(search).toBeFocused();
   await page.keyboard.type('bet');
-  await page.keyboard.press('ControlOrMeta+1');
+  await page.keyboard.press('Meta+1');
   await expect(search).toBeVisible();
   await expect(search).toHaveValue('bet');
   await page.keyboard.press('Escape');
@@ -128,20 +128,20 @@ test('⌃T in the editor is the Mac’s transpose, not a new tab', async ({ page
 test('⌘⇧T reopens the most recently closed tab first, then the one before', async ({ page }) => {
   await openVault(page);
   await row(page, 'alpha').click();
-  await row(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
-  await row(page, 'gamma').click({ modifiers: ['ControlOrMeta'] });
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await row(page, 'gamma').click({ modifiers: ['Meta'] });
   await expect(tabsOf(page, 1)).toHaveText(['alpha', 'beta', 'gamma']);
   await tab(page, 1, 'beta').click();
   await expect(tab(page, 1, 'beta')).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press('ControlOrMeta+w');
+  await page.keyboard.press('Meta+w');
   await expect(tabsOf(page, 1)).toHaveText(['alpha', 'gamma']);
   await tab(page, 1, 'alpha').click();
-  await page.keyboard.press('ControlOrMeta+w');
+  await page.keyboard.press('Meta+w');
   await expect(tabsOf(page, 1)).toHaveText(['gamma']);
-  await page.keyboard.press('ControlOrMeta+Shift+t');
+  await page.keyboard.press('Meta+Shift+t');
   await expect(tabsOf(page, 1)).toHaveCount(2);
   await expect(tab(page, 1, 'alpha')).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press('ControlOrMeta+Shift+t');
+  await page.keyboard.press('Meta+Shift+t');
   await expect(tabsOf(page, 1)).toHaveCount(3);
   await expect(tab(page, 1, 'beta')).toHaveAttribute('aria-selected', 'true');
   await expect(article(page, 1, 'beta')).toBeVisible();
@@ -152,7 +152,7 @@ test('⌘-click on a table row’s title opens the note in a new tab, keeping th
 }) => {
   await openVault(page);
   await noteThenTable(page);
-  await page.locator('.table__link', { hasText: 'First' }).click({ modifiers: ['ControlOrMeta'] });
+  await page.locator('.table__link', { hasText: 'First' }).click({ modifiers: ['Meta'] });
   await expect(tabsOf(page, 1)).toHaveCount(3);
   await expect(article(page, 1, 'first')).toBeVisible();
 });
@@ -160,9 +160,7 @@ test('⌘-click on a table row’s title opens the note in a new tab, keeping th
 test('⌘⇧-click on a table row’s title opens the note beside, in a split', async ({ page }) => {
   await openVault(page);
   await noteThenTable(page);
-  await page
-    .locator('.table__link', { hasText: 'First' })
-    .click({ modifiers: ['ControlOrMeta', 'Shift'] });
+  await page.locator('.table__link', { hasText: 'First' }).click({ modifiers: ['Meta', 'Shift'] });
   await expect(article(page, 2, 'first')).toBeVisible();
   await expect(page.locator('.table__link', { hasText: 'First' })).toBeVisible();
 });
@@ -190,7 +188,7 @@ test('⌘-click on a link in a note opens it in a new tab, keeping the note', as
   await expect(article(page, 1, 'alpha')).toBeVisible();
   await article(page, 1, 'alpha')
     .getByRole('link', { name: 'beta' })
-    .click({ modifiers: ['ControlOrMeta'] });
+    .click({ modifiers: ['Meta'] });
   await expect(tabsOf(page, 1)).toHaveText(['alpha', 'beta']);
 });
 

@@ -68,9 +68,9 @@ test('after merging people chosen in the Person table, ⌘K "Merge selected peop
   const { host } = await openVault(page);
   await mergeTwoFromTheTable(page, host);
   await page.keyboard.press('Escape');
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('merge selected');
   await page.getByRole('option', { name: /Merge selected people/ }).click();
   await expect(page.getByText(/No people are selected/)).toBeVisible();

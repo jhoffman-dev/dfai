@@ -197,7 +197,7 @@ async function reopenLiteratureNote(page: Page) {
 
 // The note opens with its highlight block selected, as a note whose first block is one does.
 // The keys follow the link — ⇧↩ here, ⌘↩ in a new tab — so the note is opened again to look.
-for (const keys of ['ControlOrMeta+Enter', 'Shift+Enter']) {
+for (const keys of ['Meta+Enter', 'Shift+Enter']) {
   test(`${keys} on "Open in PDF" leaves the highlight in its note`, async ({ page }) => {
     const { vault, offer } = await openLiteratureNote(page);
     const before = await vault.read(LITERATURE);
@@ -211,10 +211,10 @@ for (const keys of ['ControlOrMeta+Enter', 'Shift+Enter']) {
   });
 }
 
-test('⌘↩ on "Open in PDF" opens the reader in a new tab', async ({ page }) => {
+test('Meta+Enter on "Open in PDF" opens the reader in a new tab', async ({ page }) => {
   const { offer } = await openLiteratureNote(page);
   await offer.focus();
-  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('Meta+Enter');
   await expect(tabs(page)).toHaveCount(2);
   await expect(page.locator('.pdf-reader')).toBeVisible();
 });

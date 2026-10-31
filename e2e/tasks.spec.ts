@@ -103,11 +103,11 @@ test('a captured line becomes a task in the Inbox, without leaving the note in v
 }) => {
   const vault = await openTaskVault(page);
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.down('Shift');
   await page.keyboard.press('n');
   await page.keyboard.up('Shift');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
 
   const capture = page.getByRole('dialog', { name: 'Capture a task' });
   await expect(capture).toBeVisible();
@@ -124,11 +124,11 @@ test('a captured line becomes a task in the Inbox, without leaving the note in v
 test('capture stays open for the next thought', async ({ page }) => {
   const vault = await openTaskVault(page);
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.down('Shift');
   await page.keyboard.press('n');
   await page.keyboard.up('Shift');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
 
   const field = page.getByRole('textbox', { name: 'What needs doing' });
   await field.fill('First thing');
@@ -171,11 +171,11 @@ test('finishing an ordinary task just finishes it', async ({ page }) => {
 test('capture does not also make a blank note', async ({ page }) => {
   const vault = await openTaskVault(page);
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.down('Shift');
   await page.keyboard.press('n');
   await page.keyboard.up('Shift');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
 
   await page.getByRole('textbox', { name: 'What needs doing' }).fill('Only this');
   await page.getByRole('textbox', { name: 'What needs doing' }).press('Enter');

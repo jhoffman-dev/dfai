@@ -329,7 +329,7 @@ test('a type is edited from its sidebar menu and from the search palette', async
 
   await openType(page, 'Project');
   await expect(tabTitles(page)).toHaveText(['Projects']);
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('edit task type');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: 'Edit type' })).toHaveAttribute(

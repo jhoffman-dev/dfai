@@ -130,11 +130,11 @@ test('without Slack connected, a link pasted into quick capture says how to conn
 }) => {
   const { host, vault } = await openVault(page);
   serveSlack(host);
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.down('Shift');
   await page.keyboard.press('N');
   await page.keyboard.up('Shift');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   const capture = page.getByRole('dialog', { name: 'Capture a task' });
   await expect(capture).toBeVisible();
 

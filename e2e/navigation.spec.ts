@@ -56,9 +56,9 @@ test('Cmd+[ and Cmd+] go back and forward', async ({ page }) => {
   await row(page, 'beta').click();
   await showing(page, 'beta');
 
-  await page.keyboard.press('ControlOrMeta+[');
+  await page.keyboard.press('Meta+[');
   await showing(page, 'alpha');
-  await page.keyboard.press('ControlOrMeta+]');
+  await page.keyboard.press('Meta+]');
   await showing(page, 'beta');
 });
 

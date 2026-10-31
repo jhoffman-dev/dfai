@@ -67,7 +67,7 @@ test('after Add block below and typing, one undo takes back the typing, the new 
     'Second line.',
     'Third line.',
   ]);
-  await page.keyboard.press('ControlOrMeta+z');
+  await page.keyboard.press('Meta+z');
   await expect(editor.locator('p')).toHaveText(['First line.', '', 'Second line.', 'Third line.']);
 });
 
@@ -76,7 +76,7 @@ test('⇧⌘↑ in a note whose first block is a paragraph selects to the start 
 }) => {
   const editor = await openPlan(page, OPENING);
   await caretAtLineEnd(line(editor, 'Opening line.'));
-  await page.keyboard.press('ControlOrMeta+Shift+ArrowUp');
+  await page.keyboard.press('Meta+Shift+ArrowUp');
   // From the end of the first block back to the start of the note: the whole block, no more.
   await expect
     .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
@@ -87,7 +87,7 @@ test('⇧⌘↑ in a note whose first block is a paragraph selects to the start 
 test('Esc on the block menu opened by ⌘/ puts the caret back in the note', async ({ page }) => {
   const editor = await openPlan(page);
   await caretAtLineEnd(line(editor, 'Second line.'));
-  await page.keyboard.press('ControlOrMeta+/');
+  await page.keyboard.press('Meta+/');
   await expect(page.getByRole('menu', { name: 'Block' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu', { name: 'Block' })).toBeHidden();

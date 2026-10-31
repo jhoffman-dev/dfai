@@ -160,9 +160,9 @@ test('templates stay out of the vault’s notes: search and the tree do not list
 }) => {
   await openVault(page);
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   const search = page.getByRole('searchbox', { name: 'Search the vault' });
   // A note is found, so the search is working…

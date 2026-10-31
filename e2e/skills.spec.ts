@@ -169,9 +169,9 @@ test('a skill is deleted after asking, its whole folder to the Trash', async ({ 
 
 test('the Skills page is in ⌘K', async ({ page }) => {
   await openVault(page, { [SKILL_PATH]: WEEKLY });
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Skills');
   await page
     .getByRole('dialog', { name: 'Search notes' })

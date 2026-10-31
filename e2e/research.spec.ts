@@ -215,7 +215,7 @@ test('a highlight dragged from All highlights into a note becomes its embed ther
 
 test('⌘K finds a highlight by its comment and opens its note at the block', async ({ page }) => {
   await openVault(page);
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   const search = page.getByRole('searchbox', { name: 'Search the vault' });
   await expect(search).toBeFocused();
   await search.fill('Larkspur pitch');
@@ -235,14 +235,14 @@ test('⌘K finds a highlight by its comment and opens its note at the block', as
 
 test('⌘K offers the Library and All highlights as pages to open', async ({ page }) => {
   await openVault(page);
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('All highl');
   await page
     .getByRole('listbox', { name: 'Results' })
     .getByRole('option', { name: /All highlights/ })
     .click();
   await expect(highlights(page)).toBeVisible();
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Library');
   await page
     .getByRole('listbox', { name: 'Results' })

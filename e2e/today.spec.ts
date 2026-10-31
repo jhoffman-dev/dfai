@@ -1,6 +1,7 @@
 import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
+import { seenAsMac } from './platform.ts';
 import {
   createVault,
   emitVaultChanged,
@@ -285,9 +286,9 @@ test('a saved view titled Today does not make a second sidebar row', async ({ pa
 
 test('⌘K opens Today', async ({ page }) => {
   await openTodayVault(page);
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   const palette = page.getByRole('dialog', { name: 'Search notes' });
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Today');
   await palette.getByRole('option', { name: 'Today', exact: true }).click();
@@ -332,6 +333,7 @@ test('the watcher’s echo of a tick is not refreshed for again, and a change fr
   browser,
 }) => {
   const [quiet, echoing] = await Promise.all([browser.newPage(), browser.newPage()]);
+  await Promise.all([seenAsMac(quiet.context()), seenAsMac(echoing.context())]);
   try {
     const withoutEcho = await walksForATick(quiet, { echoWrites: false });
     const withEcho = await walksForATick(echoing, { echoWrites: true });

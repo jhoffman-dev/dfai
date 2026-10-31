@@ -81,7 +81,7 @@ test('Match system follows the system', async ({ page }) => {
   await expect(switchTo(page, 'dark')).toBeVisible();
   expect(await theme(page)).toBe('light');
 
-  await page.keyboard.press('ControlOrMeta+Comma');
+  await page.keyboard.press('Meta+Comma');
   await expect(matchSystem(page)).toHaveAttribute('aria-checked', 'false');
   await matchSystem(page).click();
   await expect(matchSystem(page)).toHaveAttribute('aria-checked', 'true');

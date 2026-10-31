@@ -87,9 +87,9 @@ test('the new note can be found by search straight away', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'Blank note' }).click();
   await expect(page.getByRole('article', { name: 'Untitled', exact: true })).toBeVisible();
 
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Untitled');
 
   await expect(page.getByRole('option', { name: /Untitled/ }).first()).toBeVisible();

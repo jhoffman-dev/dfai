@@ -153,7 +153,7 @@ test('the close button tooltip names the shortcut only on the pane it closes', a
   expect(await titleOf(1)).toBe('Close pane (⇧⌘\\)');
   await openNote(page, 'other'); // lands in the focused (left) pane, so the two can be told apart
   await expect(pane(page, 1).getByRole('article', { name: 'other' })).toBeVisible();
-  await page.keyboard.press('Shift+ControlOrMeta+Backslash');
+  await page.keyboard.press('Shift+Meta+Backslash');
   await expect(pane(page, 2)).toHaveCount(0);
   // The pane whose button advertised the shortcut is the one that went.
   await expect(pane(page, 1).getByRole('article', { name: 'note' })).toBeVisible();
@@ -266,7 +266,7 @@ test('split from the button, then the shortcut closes the new pane and keeps the
   await pane(page, 1).getByRole('button', { name: 'Split right' }).click();
   await openNote(page, 'other');
   await expect(pane(page, 2).getByRole('article', { name: 'other' })).toBeVisible();
-  await page.keyboard.press('Shift+ControlOrMeta+Backslash');
+  await page.keyboard.press('Shift+Meta+Backslash');
   await expect(pane(page, 2)).toHaveCount(0);
   await expect(pane(page, 1).getByRole('article', { name: 'note' })).toBeVisible();
 });

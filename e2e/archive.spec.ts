@@ -67,9 +67,9 @@ const tableRow = (page: Page, name: string) =>
   page.locator('.table').getByRole('button', { name, exact: true });
 
 async function search(page: Page, words: string) {
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('k');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
   await page.getByRole('searchbox', { name: 'Search the vault' }).fill(words);
   return page.getByRole('dialog', { name: 'Search notes' });
 }

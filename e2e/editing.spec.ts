@@ -83,9 +83,9 @@ test('a note saved without being edited keeps every byte', async ({ page }) => {
   // Put the cursor in the document and take it straight out again.
   await page.getByText('First paragraph.').click();
   await page.keyboard.press('ArrowRight');
-  await page.keyboard.down('ControlOrMeta');
+  await page.keyboard.down('Meta');
   await page.keyboard.press('s');
-  await page.keyboard.up('ControlOrMeta');
+  await page.keyboard.up('Meta');
 
   // Polled, not read once: the save writes a temporary file and renames it over
   // this one, and a single read that lands inside that window sees no file at

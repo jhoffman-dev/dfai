@@ -108,7 +108,7 @@ test("a comment typed in place changes only the comment's bytes", async ({ page 
   const comment = comments(page).first();
   await comment.click();
   await comment.fill('Like [[Larkspur Payroll]].\nA second thought.');
-  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('Meta+Enter');
   await expectFile(vault, 'Library/Brightwater.md').toBe(
     BRIGHTWATER.replace(
       '> Like [[Larkspur Payroll]]: 50%\\% sure.',

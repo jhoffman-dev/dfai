@@ -179,7 +179,7 @@ test('a new note of a type is listed by the name typed at the top of its page', 
   await expect(table.getByRole('button', { name: /^New Company/ })).toHaveCount(0);
 
   // And search finds it under the same name.
-  await page.keyboard.press('ControlOrMeta+k');
+  await page.keyboard.press('Meta+k');
   const search = page.getByRole('searchbox', { name: 'Search the vault' });
   await search.fill('Globex');
   await expect(page.getByRole('option', { name: /Globex/ }).first()).toBeVisible();

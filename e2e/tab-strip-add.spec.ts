@@ -41,7 +41,7 @@ const addOf = (page: Page, which: 1 | 2) =>
 async function openTabs(page: Page, count: 1 | 3) {
   await row(page, NOTES[0]).click();
   for (const name of NOTES.slice(1, count)) {
-    await row(page, name).click({ modifiers: ['ControlOrMeta'] });
+    await row(page, name).click({ modifiers: ['Meta'] });
   }
   await expect(tabsOf(page, 1)).toHaveCount(count);
 }
@@ -91,7 +91,7 @@ test('with more tabs than fit, the + stays visible, clear of the tabs, and still
   await openVault(page, 1280);
   await openTabs(page, 1);
   for (let opened = 2; opened <= 14; opened += 1) {
-    await page.keyboard.press('ControlOrMeta+t');
+    await page.keyboard.press('Meta+t');
     await expect(tabsOf(page, 1)).toHaveCount(opened);
   }
   const list = await box(strip(page, 1));
