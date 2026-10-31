@@ -440,6 +440,7 @@ describe("#616b attack: a type's view takes a list's first item by written order
     return (database.prepare(select).get() as { due: unknown }).due;
   }
 
+  // 1.2 s on a Mac, up to 4.1 s on a loaded 4-core CI runner (#648): the default 5 s is too close.
   it('a date list of a million and one items shows its first item, written last of all', () => {
     const due = viewed((database) => {
       database.exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000000)
@@ -450,7 +451,7 @@ describe("#616b attack: a type's view takes a list's first item by written order
       );
     });
     expect(due).toBe('2026-01-01');
-  });
+  }, 15_000);
 
   it('a rowid past 2^32 still orders a nested list by rowid within one idx', () => {
     const due = viewed((database) => {

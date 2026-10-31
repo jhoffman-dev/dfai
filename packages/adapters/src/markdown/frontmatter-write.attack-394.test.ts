@@ -271,6 +271,7 @@ function seededBlock(random: () => number) {
 }
 
 describe('#394 seeded round trips over indented blocks', () => {
+  // 120 rounds of 8 edits: 0.4 s on a Mac, up to ~5 s on a loaded 4-core CI runner (main reached 4.1 s, #648).
   it('N random edits: the block stays readable, reads as edited, and untouched keys keep their bytes', () => {
     const random = seeded(394);
     for (let round = 0; round < 120; round += 1) {
@@ -294,7 +295,7 @@ describe('#394 seeded round trips over indented blocks', () => {
         text = written;
       }
     }
-  });
+  }, 15_000);
 
   it('N random edits, each undone with the key texts read before it: the block comes back byte for byte', () => {
     const random = seeded(3940);

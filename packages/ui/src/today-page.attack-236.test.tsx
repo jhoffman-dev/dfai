@@ -173,6 +173,7 @@ describe('TodayPage lazy Move to… menu — #236', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
+  // 0.6 s on a Mac, up to 4.3 s on a loaded 4-core CI runner (#648): the default 5 s is too close.
   it('builds a menu only for the rows opened: 12 rows each opened once leave one menu up at most', async () => {
     const many = Array.from({ length: 12 }, (_, at) => task(`Task ${String(at).padStart(2, '0')}`));
     const user = userEvent.setup({ delay: null });
@@ -189,7 +190,7 @@ describe('TodayPage lazy Move to… menu — #236', () => {
     expect(screen.queryAllByRole('menu')).toHaveLength(0);
     expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(0);
     // Twelve, without userEvent's pauses: under a second, where forty with them took 20 s on a CI shard.
-  });
+  }, 15_000);
 });
 
 describe('TodayPage row memo — #236', () => {

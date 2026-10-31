@@ -56,6 +56,7 @@ function thrownBy(map: () => unknown): unknown {
 }
 
 describe('a Granola note the mapper must refuse by name, never crash on', () => {
+  // 0.7 s on a Mac, up to 3.5 s on a loaded 4-core CI runner (#648): the default 5 s is too close.
   it('maps, or refuses with a MeetingMappingError, 130,000 short timed turns (under the 5 MB transcript cap)', () => {
     // 130,000 "Ok." turns is ~390 KB of transcript text. `extreme` spreads every
     // turn's time into Math.min/Math.max, which overflows V8's argument stack
@@ -63,7 +64,7 @@ describe('a Granola note the mapper must refuse by name, never crash on', () => 
     const transcript = Array.from({ length: 130_000 }, (_, at) => turn('Ok.', at));
     const thrown = thrownBy(() => mapGranolaNote({ ...NOTE, transcript }, OPTIONS));
     expect(thrown === null || thrown instanceof MeetingMappingError, String(thrown)).toBe(true);
-  });
+  }, 15_000);
 });
 
 describe('a Granola instant naming a day the calendar does not have', () => {

@@ -200,7 +200,7 @@ build first or you are testing the previous bundle — which can fail code that
 works, and pass code that does not.
 
 **CI splits the slow work across machines** (`.github/workflows/gate.yml`): the
-unit tests over three Linux shards whose coverage the `coverage` job merges and
+unit tests over six Linux shards, dealt by recorded duration, whose coverage the `coverage` job merges and
 holds to the thresholds, the e2e suite over four macOS shards, Rust on a fifth
 Mac. `gate` is still the one required check. A pull request that touches only
 documentation, as `tools/ci/docs-only.ts` defines it, runs `static` alone. A
@@ -239,7 +239,8 @@ counts into the file and only ever lowers a budget. A count under half its budge
 too (the action probably did not happen), and `write` will not lower past that floor
 without `PERF_BUDGETS_ALLOW_DROP=1`, nor drop an action it no longer measures without
 `PERF_BUDGETS_ALLOW_RENAME=1`. `PERF_BUDGETS_RUNS=N` counts N times and fails on any
-difference (CI counts twice). `pnpm perf` here builds minified; CI's `perf` job times
+difference (CI counts twice, each run on its own Linux machine, in four parts in all; the `perf`
+job holds run 2 to run 1 and checks every action was counted on both runs and timed, once each). `pnpm perf` here builds minified; CI's `perf` job times
 the unminified build it counts with, so local times differ a little from CI's.
 
 Each checkout serves its e2e build on its own port, derived from its path (see

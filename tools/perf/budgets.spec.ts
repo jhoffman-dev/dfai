@@ -14,6 +14,12 @@
  * Built without minifying, so components keep their names. Each pass does
  * every action in `BUDGETED_ACTIONS`' order, each from where the last left it.
  *
+ * `PERF_BUDGETS_RUNS=N` counts N times and fails on any count that differs
+ * between the runs. `PERF_BUDGETS_FIXTURES` and `PERF_BUDGETS_PASSES` do only
+ * part of it, and `PERF_BUDGETS_FIRST_RUN=2` numbers this run's counts from
+ * the second, as CI does on its machines; `combine-budgets.ts` puts the parts'
+ * results back together, comparing the runs that were counted apart.
+ *
  * `PERF_BUDGETS=write` writes the counts into `budgets.json` instead of
  * failing, and only ever lowers a budget (`lowered`). Raising one is James's
  * call, made by hand.
@@ -24,7 +30,15 @@ import { expect, test, type Browser, type Locator, type Page } from '../../e2e/f
 import { installHost, sidebarSection, type FakeVault } from '../../e2e/host.ts';
 import { literatureNote } from '../../e2e/research-notes.ts';
 import { installRenderCounter } from '../../packages/ui/src/testing/render-counter.ts';
-import { BUDGETED_ACTIONS, type BudgetedAction } from './budgeted-actions.ts';
+import {
+  actionsOn,
+  BUDGETED_ACTIONS,
+  RUN_TOLERANCE,
+  budgetsPart,
+  partLabel,
+  type BudgetedAction,
+  type BudgetFixture,
+} from './budgeted-actions.ts';
 import type { FixtureFile } from './fixture-vault.ts';
 import { installProbe, measure, waitForQuiet } from './probe.ts';
 import { RESEARCH_SOURCES, HIGHLIGHTS_PER_SOURCE, researchVault } from './research-vault.ts';
@@ -46,11 +60,13 @@ import {
   differencesBetween,
   looksMinified,
   lowered,
+  measurementsOf,
   reportTable,
+  timesTable,
   type ActionBudget,
   type BudgetsFile,
-  type Measurement,
-  type RunTolerance,
+  type PartResult,
+  type Times,
   type Work,
 } from './work-budgets.ts';
 
@@ -61,15 +77,28 @@ const ALLOW_DROP = process.env.PERF_BUDGETS_ALLOW_DROP === '1';
 /** `PERF_BUDGETS_ALLOW_RENAME=1`: `write` may drop a budget whose action is no longer measured. */
 const ALLOW_RENAME = process.env.PERF_BUDGETS_ALLOW_RENAME === '1';
 /** How many times the counted pass runs; more than one fails on any count that differs between runs. */
-const COUNTED_RUNS = countedRuns(process.env.PERF_BUDGETS_RUNS);
+const COUNTED_RUNS = wholeRuns('PERF_BUDGETS_RUNS', process.env.PERF_BUDGETS_RUNS);
+/**
+ * Which run the first counted here is. Only run 1 is held to the budgets; a
+ * later one, counted on a machine of its own, is compared with run 1 by
+ * `combine-budgets.ts`.
+ */
+const FIRST_RUN = wholeRuns('PERF_BUDGETS_FIRST_RUN', process.env.PERF_BUDGETS_FIRST_RUN);
+/**
+ * `PERF_BUDGETS_FIXTURES` and `PERF_BUDGETS_PASSES`: which fixtures, and which
+ * of the counted and timed passes, this run does. All, unless CI splits them
+ * over machines; `tools/perf/combine-budgets.ts` puts the parts together.
+ */
+const PART = budgetsPart({
+  fixtures: process.env.PERF_BUDGETS_FIXTURES,
+  passes: process.env.PERF_BUDGETS_PASSES,
+});
 
-function countedRuns(given: string | undefined): number {
+function wholeRuns(variable: string, given: string | undefined): number {
   if (given === undefined || given === '') return 1;
   const runs = Number(given);
   if (!Number.isInteger(runs) || runs < 1) {
-    throw new Error(
-      `PERF_BUDGETS_RUNS must be a whole number of runs, 1 or more; it is "${given}"`,
-    );
+    throw new Error(`${variable} must be a whole number of runs, 1 or more; it is "${given}"`);
   }
   return runs;
 }
@@ -97,17 +126,6 @@ const ROW_RULES: Partial<Record<BudgetedAction, ActionBudget['rows']>> = {
   // each. No other row is drawn: today-page.renders.test.tsx holds the page to that.
   'Choose a task on Today': { TaskRow: 3 },
   'Decide an Inbox row': { InboxRow: 2 },
-};
-
-/**
- * The actions allowed to differ between two counted runs, and by how much.
- * Opening the vault indexes 2,000 notes: on CI it counted 121 commits on one
- * run and 122 on the next, each component one render apart, host calls the
- * same (#130). Every other action must match exactly, the drag included
- * (#243).
- */
-const RUN_TOLERANCE: Partial<Record<BudgetedAction, RunTolerance>> = {
-  'Open a vault': { commits: 2, rendersEach: 2 },
 };
 
 /** A board of the fixture's 48 projects, all active, by status: what "drag a board card" drags on. */
@@ -174,62 +192,83 @@ interface Pass {
   until(step: Omit<Phase, 'act'>): Promise<void>;
 }
 
+/** The first counted run's counts, held to the budgets, and the timed pass's times. */
 const counted = new Map<string, Work>();
-const timed = new Map<string, { inputToReady: number; longestFrame: number }>();
+/** Which runs were counted here, the first being `counted`'s. */
+const countedRuns: number[] = [];
+const timed = new Map<string, Times>();
 
 test('the app does no more work than its budget', async ({ browser }) => {
   test.setTimeout(TIMEOUT_MS);
   const budgets = JSON.parse(await readFile(BUDGETS_FILE, 'utf8')) as BudgetsFile;
+  const actions = actionsOn(PART.fixtures);
 
-  await test.step('counted, on the work clock', async () => {
-    const pass = await countedPass(browser, counted);
-    await everyAction(pass);
-    await pass.page.close();
-    await everyResearchAction(await countedPass(browser, counted, RESEARCH));
-    await everyLongNoteAction(await countedPass(browser, counted, LONG_NOTE));
-    await everyCodeNoteAction(await countedPass(browser, counted, CODE_NOTE));
-  });
-  for (let again = 2; again <= COUNTED_RUNS; again += 1) {
-    await test.step(`counted again (${again} of ${COUNTED_RUNS}), to show the counts repeat`, async () => {
-      const recount = new Map<string, Work>();
-      const pass = await countedPass(browser, recount);
-      await everyAction(pass);
-      await pass.page.close();
-      await everyResearchAction(await countedPass(browser, recount, RESEARCH));
-      await everyLongNoteAction(await countedPass(browser, recount, LONG_NOTE));
-      await everyCodeNoteAction(await countedPass(browser, recount, CODE_NOTE));
-      for (const action of BUDGETED_ACTIONS) {
-        const [first, now] = [counted.get(action), recount.get(action)];
-        expect.soft(first, `"${action}" was not counted on run 1`).toBeDefined();
-        expect.soft(now, `"${action}" was not counted on run ${again}`).toBeDefined();
-        if (first === undefined || now === undefined) continue;
-        const changed = differencesBetween(first, now, RUN_TOLERANCE[action]);
-        expect.soft(changed, `"${action}" counted differently on run ${again}`).toEqual([]);
-      }
-    });
+  if (PART.passes.includes('counted')) {
+    const runs = Array.from({ length: COUNTED_RUNS }, (_, at) => FIRST_RUN + at);
+    for (const run of runs) {
+      await test.step(`counted (run ${run}), on the work clock`, async () => {
+        const counts = await countEvery(browser, PART.fixtures);
+        if (run === FIRST_RUN) for (const [action, work] of counts) counted.set(action, work);
+        else expectTheSameCounts(actions, counts, run);
+      });
+    }
+    countedRuns.push(...runs);
+    // Held to the budgets as they were even when writing: a regression is red either way.
+    // Run 1 only: a later run is held to run 1's counts instead.
+    if (FIRST_RUN === 1)
+      for (const action of actions) holdToBudget(action, budgets.actions[action]);
+    const names = [...new Set([...counted.values()].flatMap((work) => Object.keys(work.renders)))];
+    expect(
+      looksMinified(names),
+      'the components have no names: build without minifying (pnpm perf:budgets does)',
+    ).toBe(false);
   }
-  // Held to the budgets as they were even when writing: a regression is red either way.
-  for (const action of BUDGETED_ACTIONS) holdToBudget(action, budgets.actions[action]);
-  const names = [...new Set([...counted.values()].flatMap((work) => Object.keys(work.renders)))];
-  expect(
-    looksMinified(names),
-    'the components have no names: build without minifying (pnpm perf:budgets does)',
-  ).toBe(false);
 
   try {
-    await test.step('timed, against the wall clock (reported, not gated)', async () => {
-      const pass = await timedPass(browser);
-      await everyAction(pass);
-      await pass.page.close();
-      await everyResearchAction(await timedPass(browser, RESEARCH));
-      await everyLongNoteAction(await timedPass(browser, LONG_NOTE));
-      await everyCodeNoteAction(await timedPass(browser, CODE_NOTE));
-    });
+    if (PART.passes.includes('timed')) {
+      await test.step('timed, against the wall clock (reported, not gated)', async () => {
+        for (const fixture of PART.fixtures) {
+          const pass = await timedPass(browser, FIXTURES[fixture].fixture);
+          await FIXTURES[fixture].doEvery(pass);
+          await pass.page.close();
+        }
+      });
+    }
   } finally {
-    await report(budgets);
+    await report(budgets, actions);
   }
   if (WRITING) await writeBudgets(budgets);
 });
+
+/** One counted run: each of `fixtures` on a fresh page, in order, its counts by action. */
+async function countEvery(
+  browser: Browser,
+  fixtures: readonly BudgetFixture[],
+): Promise<Map<string, Work>> {
+  const into = new Map<string, Work>();
+  for (const fixture of fixtures) {
+    const pass = await countedPass(browser, into, FIXTURES[fixture].fixture);
+    await FIXTURES[fixture].doEvery(pass);
+    await pass.page.close();
+  }
+  return into;
+}
+
+/** Fails each action run `run` counted differently from the first counted here, beyond its tolerance. */
+function expectTheSameCounts(
+  actions: readonly BudgetedAction[],
+  recount: ReadonlyMap<string, Work>,
+  run: number,
+): void {
+  for (const action of actions) {
+    const [first, now] = [counted.get(action), recount.get(action)];
+    expect.soft(first, `"${action}" was not counted on run ${FIRST_RUN}`).toBeDefined();
+    expect.soft(now, `"${action}" was not counted on run ${run}`).toBeDefined();
+    if (first === undefined || now === undefined) continue;
+    const changed = differencesBetween(first, now, RUN_TOLERANCE[action]);
+    expect.soft(changed, `"${action}" counted differently on run ${run}`).toEqual([]);
+  }
+}
 
 function holdToBudget(action: BudgetedAction, budget: ActionBudget | undefined): void {
   const work = counted.get(action);
@@ -318,6 +357,19 @@ const CODE_NOTE: PassFixture = {
     ]),
   openIsBudgeted: false,
   indexed: /^\d+ notes? indexed/,
+};
+
+/** Each fixture's pass: the vault it opens, and every action done on it, in order. */
+const FIXTURES: Readonly<
+  Record<
+    BudgetFixture,
+    { readonly fixture: PassFixture; readonly doEvery: (pass: Pass) => Promise<void> }
+  >
+> = {
+  main: { fixture: MAIN, doEvery: everyAction },
+  research: { fixture: RESEARCH, doEvery: everyResearchAction },
+  'long-note': { fixture: LONG_NOTE, doEvery: everyLongNoteAction },
+  'code-note': { fixture: CODE_NOTE, doEvery: everyCodeNoteAction },
 };
 
 /** A fresh page on a fixture, its time and host held by the work clock from the first script. */
@@ -715,7 +767,6 @@ async function everyResearchAction(pass: Pass): Promise<void> {
     openResearchPage(pass, { row: 'All highlights', list: 'Highlights', count: HIGHLIGHTS_COUNT }),
   ]);
   await expectFewDrawn(page, 'Highlights');
-  await page.close();
 }
 
 /** Opening the literature note of 500 highlights, then saving a comment typed in the first. */
@@ -741,7 +792,6 @@ async function everyLongNoteAction(pass: Pass): Promise<void> {
   await pass.budgeted('Save a comment in a 500-highlight note', [
     phase(() => page.keyboard.press('Meta+Enter'), caused, { write_text_file: 1 }),
   ]);
-  await page.close();
 }
 
 /** Opening the note of code in five languages; ready once every block is highlighted (#265). */
@@ -764,7 +814,6 @@ async function everyCodeNoteAction(pass: Pass): Promise<void> {
       { blocks: `${editorOf(CODE_NOTE_TITLE)} pre code`, count: CODE_FENCES.length },
     ),
   ]);
-  await page.close();
 }
 
 /** The list is virtualised: some rows are drawn, and never more than a screenful's worth. */
@@ -1414,31 +1463,31 @@ async function centreOf(target: Locator): Promise<{ x: number; y: number }> {
 }
 
 /** Prints the run beside the budgets, keeps it as JSON, and adds it to the CI job's summary. */
-async function report(budgets: BudgetsFile): Promise<void> {
-  const rows: Measurement[] = BUDGETED_ACTIONS.flatMap((action) => {
-    const work = counted.get(action);
-    if (work === undefined) return [];
-    const times = timed.get(action);
-    return [
-      {
-        action,
-        work,
-        budget: budgets.actions[action],
-        inputToReady: times?.inputToReady ?? Number.NaN,
-        longestFrame: times?.longestFrame ?? Number.NaN,
-      },
-    ];
-  });
-  const table = reportTable(rows);
+async function report(budgets: BudgetsFile, actions: readonly BudgetedAction[]): Promise<void> {
+  const result: PartResult = {
+    runs: countedRuns,
+    counted: Object.fromEntries(counted),
+    timed: Object.fromEntries(timed),
+  };
+  const rows = measurementsOf(actions, result, budgets);
+  const label = [partLabel(PART), FIRST_RUN > 1 ? `from-run-${FIRST_RUN}` : '']
+    .filter(Boolean)
+    .join('.');
   const folder = join('test-results', 'perf');
   await mkdir(folder, { recursive: true });
-  await writeFile(join(folder, 'budgets.json'), `${JSON.stringify(rows, null, 2)}\n`);
-  process.stdout.write(`\nWork budgets (counts gated, times reported only):\n\n${table}\n`);
+  // What the run measured, for `tools/perf/combine-budgets.ts` to put back together with the other parts.
+  await writeFile(
+    join(folder, label === '' ? 'budgets.json' : `budgets.${label}.json`),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+  const table = rows.length > 0 ? reportTable(rows) : timesTable(actions, result.timed);
+  const of = label === '' ? '' : ` (${label})`;
+  process.stdout.write(`\nWork budgets${of} (counts gated, times reported only):\n\n${table}\n`);
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary !== undefined && summary !== '') {
     await appendFile(
       summary,
-      `## Work budgets\n\nCounts are held to \`tools/perf/budgets.json\`; times are reported only.\n\n${table}\n`,
+      `## Work budgets${of}\n\nCounts are held to \`tools/perf/budgets.json\`; times are reported only.\n\n${table}\n`,
     );
   }
 }

@@ -114,6 +114,7 @@ describe('correctMeetingBody', () => {
 });
 
 describe('correctMeetingBody, at scale', () => {
+  // 0.6 s on a Mac, up to 3.2 s on a loaded 4-core CI runner (#648): the default 5 s is too close.
   it('finds the block of each change in a section of many blocks with work that is not quadratic', () => {
     const sectionOf = (blocks: number) => {
       const paragraphs = Array.from({ length: blocks }, (_, at) => `Lark Spur Pay item. ^p${at}`);
@@ -129,7 +130,7 @@ describe('correctMeetingBody, at scale', () => {
     const small = countedWork(correcting(sectionOf(5000)));
     const large = countedWork(correcting(sectionOf(20000)));
     expect(large).toBeLessThan(small * 8);
-  });
+  }, 15_000);
 });
 
 describe('a meeting read with nothing to correct', () => {
