@@ -233,21 +233,20 @@ fn refuses_to_move_an_entry_reached_through_a_link() {
     assert!(!vault.path().join("Play/garden.md").exists());
 }
 
+/// A move into a folder by a link lands where the link points, which the path
+/// by the link still reaches: nothing is lost, so it is not refused.
 #[test]
-fn refuses_to_move_into_a_folder_that_is_or_is_reached_through_a_link() {
+fn a_move_into_a_folder_reached_through_a_link_lands_where_the_link_points() {
     let vault = vault_with_shelf();
     symlink("../Shelf", vault.path().join("Work/Alias")).unwrap();
     fs::write(vault.path().join("note.md"), "mine").unwrap();
 
+    move_entry_at(vault.path(), "note.md", "Work/Alias/Plans/note.md").unwrap();
+
     assert_eq!(
-        move_entry_at(vault.path(), "note.md", "Work/Alias/note.md").unwrap_err(),
-        "path goes through a link: Work/Alias"
+        fs::read_to_string(vault.path().join("Work/Alias/Plans/note.md")).unwrap(),
+        "mine"
     );
-    assert_eq!(
-        move_entry_at(vault.path(), "note.md", "Work/Alias/Plans/note.md").unwrap_err(),
-        "path goes through a link: Work/Alias"
-    );
-    assert!(vault.path().join("note.md").is_file());
-    assert!(!vault.path().join("Shelf/note.md").exists());
-    assert!(!vault.path().join("Shelf/Plans/note.md").exists());
+    assert!(vault.path().join("Shelf/Plans/note.md").is_file());
+    assert!(!vault.path().join("note.md").exists());
 }

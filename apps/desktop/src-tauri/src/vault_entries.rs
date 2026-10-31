@@ -3,8 +3,8 @@
 //! Like the rest of the host this decides nothing (ADR-0005). Which folder a note
 //! may go to, what is protected and what to do with an open pane are the
 //! frontend's rules; here a path is checked to be inside the vault, the move is
-//! refused rather than writing over something, going through a link, or changing
-//! what a link points at (#680), and that is all.
+//! refused rather than writing over something, moving what a link reaches or
+//! changing what a link points at (#680), and that is all.
 
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -68,7 +68,6 @@ pub(crate) fn move_entry_at(root: &Path, from: &str, to: &str) -> Result<(), Str
     let source = resolve_entry(root, from)?;
     let target = resolve_new(root, to)?;
     refuse_through_link(root, from)?;
-    refuse_through_link(root, to)?;
 
     if source == target {
         return Ok(());
@@ -101,8 +100,10 @@ pub(crate) fn move_entry_at(root: &Path, from: &str, to: &str) -> Result<(), Str
 /// `resolve_new` follows a link inside the vault, so `Work/Alias/Plans`, with
 /// `Work/Alias` a link to `Shelf`, would move the real `Shelf/Plans` while the
 /// app believes it moved another path, and would rewrite links and re-point
-/// panes on that belief. Moving into such a folder puts the entry where the
-/// link points, the same mistake the other way. The name itself may be a link:
+/// panes on that belief. The name itself may be a link: that is moved as the
+/// link. A move *into* a folder by a link is left alone: it lands where the
+/// link points, which is still the path the app re-points to, so nothing is
+/// lost — and a note's image or a filed note may well go there.
 /// that is moved as the link.
 fn refuse_through_link(root: &Path, relative: &str) -> Result<(), String> {
     let segments: Vec<&str> = relative
