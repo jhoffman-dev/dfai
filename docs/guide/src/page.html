@@ -1,0 +1,193 @@
+<title>DFAI Field Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+:root {
+  --ground: #E3E7F0; --panel: #F4F6FA; --raised: #FFFFFF;
+  --ink: #151D3B; --ink-2: #4E577A; --ink-3: #5D6685;
+  --line: rgba(21,29,59,0.10); --chip: rgba(21,29,59,0.06);
+  --accent: #2468D8; --accent-text: #1D56B8; --accent-soft: rgba(36,104,216,0.10);
+  --cyan: #0E8FB0; --warn-bg: #FFF4E0; --warn-ink: #7A4B00; --warn-line: #F0C274;
+  --hero: linear-gradient(155deg, #23397A 0%, #0F1B42 78%);
+  --shadow: 0 1px 2px rgba(20,30,70,0.05), 0 10px 28px rgba(20,30,70,0.08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #070F24; --panel: #0C1834; --raised: #11224A;
+    --ink: #E9EFFF; --ink-2: #A9B5DA; --ink-3: #8C99C2;
+    --line: rgba(125,170,255,0.14); --chip: rgba(125,170,255,0.10);
+    --accent: #22D3EE; --accent-text: #67E8F9; --accent-soft: rgba(34,211,238,0.12);
+    --cyan: #22E3F2; --warn-bg: rgba(240,180,60,0.12); --warn-ink: #F6CF83; --warn-line: rgba(240,180,60,0.45);
+    --hero: linear-gradient(155deg, #1D3F86 0%, #0A1738 78%);
+    --shadow: 0 0 0 1px rgba(90,160,255,0.14), 0 12px 30px rgba(0,0,0,0.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #070F24; --panel: #0C1834; --raised: #11224A;
+  --ink: #E9EFFF; --ink-2: #A9B5DA; --ink-3: #8C99C2;
+  --line: rgba(125,170,255,0.14); --chip: rgba(125,170,255,0.10);
+  --accent: #22D3EE; --accent-text: #67E8F9; --accent-soft: rgba(34,211,238,0.12);
+  --cyan: #22E3F2; --warn-bg: rgba(240,180,60,0.12); --warn-ink: #F6CF83; --warn-line: rgba(240,180,60,0.45);
+  --hero: linear-gradient(155deg, #1D3F86 0%, #0A1738 78%);
+  --shadow: 0 0 0 1px rgba(90,160,255,0.14), 0 12px 30px rgba(0,0,0,0.35);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--ground); color: var(--ink);
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif; font-size: 15.5px; line-height: 1.65;
+  padding-inline: 16px; padding-block: 24px 80px;
+}
+a { color: var(--accent-text); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+code, kbd, pre { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+code { font-size: 0.86em; background: var(--chip); padding: 1px 6px; border-radius: 6px; }
+kbd {
+  display: inline-block; font-size: 0.8em; font-weight: 500; line-height: 1.4;
+  padding: 1px 7px; border-radius: 7px; background: var(--raised); color: var(--ink);
+  box-shadow: inset 0 -1px 0 var(--line), 0 0 0 1px var(--line); white-space: nowrap;
+}
+pre { background: var(--chip); border-radius: 12px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.55; margin: 0; }
+.shell { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 880px) { .shell { grid-template-columns: minmax(0, 1fr); } .toc { position: static !important; } }
+
+.hero {
+  grid-column: 1 / -1; background: var(--hero); color: #FFFFFF; border-radius: 24px;
+  padding: 30px 32px; display: flex; flex-wrap: wrap; gap: 20px 28px; align-items: center; box-shadow: var(--shadow);
+}
+.tile { width: 60px; height: 60px; border-radius: 18px; background: rgba(255,255,255,0.10); display: flex; align-items: center; justify-content: center; color: #5EEAF4; flex-shrink: 0; }
+.hero h1 { margin: 0; font-size: clamp(28px, 4.5vw, 40px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; text-wrap: balance; }
+.hero p { margin: 6px 0 0; color: #B8C6EC; max-width: 62ch; }
+.hero .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.hero .fact { font-size: 12.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.10); color: #E6EDFF; }
+
+.toc {
+  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px);
+  background: var(--panel); border-radius: 20px; padding: 16px 12px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.toc .label { font-size: 11px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); padding: 2px 10px 8px; }
+.toc a { text-decoration: none; color: var(--ink-2); font-weight: 600; font-size: 13.5px; padding: 5px 10px; border-radius: 9px; }
+.toc a:hover { background: var(--chip); color: var(--ink); }
+
+main { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+section { background: var(--panel); border-radius: 22px; padding: 26px 28px; box-shadow: var(--shadow); scroll-margin-top: 16px; }
+@media (max-width: 520px) { section { padding: 20px 18px; } .hero { padding: 24px 20px; } }
+section > h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; text-wrap: balance; }
+section > .sub { margin: 0 0 16px; color: var(--ink-2); max-width: 68ch; }
+h3 { margin: 22px 0 6px; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+p, li { max-width: 72ch; }
+p { margin: 0 0 10px; }
+ul, ol { margin: 0 0 10px; padding-left: 22px; }
+li { margin-bottom: 4px; }
+li::marker { color: var(--ink-3); }
+.where { display: inline-block; font-size: 12px; font-weight: 800; color: var(--accent-text); background: var(--accent-soft); padding: 1px 8px; border-radius: 999px; vertical-align: 1px; }
+.steps { counter-reset: s; list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.steps li { counter-increment: s; position: relative; padding-left: 36px; }
+.steps li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-text); font-size: 12.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 8px 0 12px; }
+@media (max-width: 640px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--raised); border-radius: 14px; padding: 14px 16px; }
+.card h4 { margin: 0 0 4px; font-size: 14px; font-weight: 800; }
+.card p { margin: 0; font-size: 14px; color: var(--ink-2); }
+.note { border-radius: 14px; padding: 12px 16px; background: var(--accent-soft); color: var(--ink); margin: 12px 0; font-size: 14.5px; }
+.note b { color: var(--accent-text); }
+.warn { border-radius: 14px; padding: 12px 16px; background: var(--warn-bg); color: var(--warn-ink); box-shadow: inset 0 0 0 1px var(--warn-line); margin: 12px 0; font-size: 14.5px; }
+.table-wrap { overflow-x: auto; margin: 8px 0 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+th { text-align: left; font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); padding: 6px 12px 8px 0; border-bottom: 1px solid var(--line); }
+td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+.copy { font: inherit; font-size: 12.5px; font-weight: 700; border: 0; border-radius: 999px; padding: 4px 12px; background: var(--accent); color: #FFFFFF; cursor: pointer; margin-top: 8px; }
+:root[data-theme="dark"] .copy { color: #05213A; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .copy { color: #05213A; } }
+.muted { color: var(--ink-3); font-size: 13.5px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="shell">
+  <header class="hero">
+    <div class="tile" aria-hidden="true">
+      <svg width="30" height="30" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+    </div>
+    <div>
+      <h1>DFAI Field Guide</h1>
+      <p>How to use DFAI (Daily Flow AI) day to day: notes and pictures, today's note and capture from any app, PARA and the Inbox, the Archive, types, views and the calendar, queries across types, dashboards, the graph and bookmarks, meetings and how names are spelt, Claude artifacts, outside data, and connecting other tools. Everything you make is a markdown file in your vault.</p>
+      <div class="facts"><span class="fact">Version 0.1 · updated Oct 11, 2026</span><span class="fact">macOS · Tauri</span><span class="fact">Works alongside Obsidian</span></div>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <span class="label">Contents</span>
+<!-- guide:contents -->
+  </nav>
+
+  <main>
+<!-- guide:section start -->
+<!-- guide:section screen -->
+<!-- guide:section notes -->
+<!-- guide:section images -->
+<!-- guide:section pages -->
+<!-- guide:section export -->
+<!-- guide:section archive -->
+<!-- guide:section para -->
+<!-- guide:section home-folders -->
+<!-- guide:section types -->
+<!-- guide:section templates -->
+<!-- guide:section skills -->
+<!-- guide:section views -->
+<!-- guide:section calendar -->
+<!-- guide:section google-calendar -->
+<!-- guide:section todays-meetings -->
+<!-- guide:section morning-brief -->
+<!-- guide:section thumbnails -->
+<!-- guide:section queries -->
+<!-- guide:section sql -->
+<!-- guide:section dashboards -->
+<!-- guide:section tasks -->
+<!-- guide:section timeblocking -->
+<!-- guide:section graph -->
+<!-- guide:section related -->
+<!-- guide:section bookmarks -->
+<!-- guide:section blocks -->
+<!-- guide:section people -->
+<!-- guide:section linked-pages -->
+<!-- guide:section meetings -->
+<!-- guide:section granola -->
+<!-- guide:section terms -->
+<!-- guide:section proposals -->
+<!-- guide:section tags -->
+<!-- guide:section automations -->
+<!-- guide:section activity -->
+<!-- guide:section claude -->
+<!-- guide:section artifacts -->
+<!-- guide:section sources -->
+<!-- guide:section connect -->
+<!-- guide:section sync -->
+<!-- guide:section two-macs -->
+<!-- guide:section keys -->
+<!-- guide:section files -->
+  </main>
+</div>
+
+<script>
+document.querySelectorAll('.copy').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var text = button.getAttribute('data-copy');
+    var done = function () { button.textContent = 'Copied'; setTimeout(function () { button.textContent = 'Copy'; }, 1600); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { selectPre(button); });
+    } else { selectPre(button); }
+  });
+});
+function selectPre(button) {
+  var pre = button.previousElementSibling;
+  if (!pre) return;
+  var range = document.createRange(); range.selectNodeContents(pre);
+  var selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  button.textContent = 'Press ⌘C';
+}
+</script>

@@ -65,6 +65,8 @@ export function useAutomationEditor({
   activity: ActivityLog;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
+  // Counts each rule opened or begun, so the editor's own state starts afresh for each.
+  const [opened, setOpened] = useState(0);
   const [dryRun, setDryRun] = useState<DryRunView | null>(null);
   const query = useAtlasQuery({
     initialText: '',
@@ -95,6 +97,7 @@ export function useAutomationEditor({
   const start = useCallback(
     (next: Editing) => {
       setEditing(next);
+      setOpened((count) => count + 1);
       setDryRun(null);
       load(next.draft.which);
     },
@@ -190,6 +193,7 @@ export function useAutomationEditor({
 
   return {
     editing,
+    opened,
     problem,
     dryRun,
     composer,

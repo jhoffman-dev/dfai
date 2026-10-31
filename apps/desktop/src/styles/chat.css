@@ -331,6 +331,106 @@
   color: var(--ink);
 }
 
+/* The chips over the box: what the chat knows, the skill it asks with, and
+   the way to pick one (#169). They wrap rather than widen the panel. */
+.chat__chips {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat__chips:empty {
+  display: none;
+}
+
+.chat__skill {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.chat__skill[data-problem] .chat__skill-chip {
+  border-color: var(--danger);
+}
+
+.chat__skill-problem {
+  color: var(--danger);
+  font-size: var(--text-meta);
+}
+
+.chat__skill-add {
+  align-items: center;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-chip);
+  color: var(--ink-3);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--text-meta);
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+}
+
+.chat__skill-add:hover,
+.chat__skill-add[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.chat__skill-picker {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.chat__skill-picker ul {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.chat__skill-picker [role='option'] {
+  align-items: center;
+  background: none;
+  border: 0;
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: var(--text-body);
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.chat__skill-picker [role='option']:hover,
+.chat__skill-picker [role='option'][aria-selected='true'] {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.chat__skill-unusable {
+  color: var(--danger);
+  font-size: var(--text-meta);
+  margin-left: auto;
+}
+
+.chat__skill-empty {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+  margin: 0;
+  padding: 8px 10px;
+}
+
 /* The box to ask in is a field: a hairline on the surface, the ring while
    it is written in. */
 .chat__ask {

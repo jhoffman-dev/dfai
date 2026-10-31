@@ -1,0 +1,45 @@
+<!-- contents: Archive -->
+    <section id="archive">
+      <h2>Archive</h2>
+      <p class="sub">Put a note away without deleting it. It leaves your lists, searches and graph, and can be found and brought back at any time.</p>
+      <h3>Archive a note</h3>
+      <div class="grid2">
+        <div class="card"><h4>Page menu</h4><p><b>…</b> in the note's top bar → <b>Archive</b>.</p></div>
+        <div class="card"><h4>Pages</h4><p>Right-click a note → <b>Archive</b>. On a folder, <b>Archive N notes</b> archives every note in it; the folder and any other files stay put.</p></div>
+        <div class="card"><h4>Search</h4><p><kbd>⌘K</kbd> → <b>Archive this note</b>, for the note you're on. <b>Open Archive</b> is there too.</p></div>
+        <div class="card"><h4>Several at once</h4><p>In a table view, <b>Select</b>, tick the rows, then <b>Archive N notes</b> — see <a href="#views">Views</a>.</p></div>
+      </div>
+      <ul>
+        <li><b>A project, an area or a resource is archived where it stands.</b> Every way of archiving above — the page menu, Pages, <kbd>⌘K</kbd>, a view and the weekly review — sets a Project note's <a href="#para">PARA</a> to <b>Archive</b> and keeps what it was in <code>para_before_archive</code>; <b>Unarchive</b> gives that back — an area comes back an area — and takes the record off. With nothing readable kept, it comes back a project. The file doesn't move and nothing else in it changes. Setting PARA by hand archives it too.</li>
+        <li>A note of the old <b>Area</b> or <b>Resource</b> type is archived the same way: it becomes <code>type: project</code> with <code>para: archive</code> and <code>para_before_archive: area</code> (or <code>resource</code>), so it comes back as what it was. In a vault with no Project type it is moved instead.</li>
+        <li>A note whose <code>para</code> is something of your own — <i>Life admin</i>, a list — is never written over: it is archived by moving it, as below. Everything below is how every other note is archived.</li>
+        <li>It moves to <code>Archive/</code> at the path it had — <code>Projects/Plan.md</code> becomes <code>Archive/Projects/Plan.md</code>, numbered if that is taken — and gets <code>archived: &lt;today&gt;</code> and <code>archivedFrom: &lt;where it was&gt;</code> in its properties. Nothing else in the file changes.</li>
+        <li>If the note already had its own <code>archived</code> or <code>archivedFrom</code> property, it is kept aside and given back, exactly as written, when the note comes out.</li>
+        <li><b>Links:</b> archiving one note offers <b>Update N links</b>, as a move does. Archiving several updates the links to them by itself.</li>
+        <li>A note with unsaved typing is saved first, then archived.</li>
+        <li><b>On a schedule, or as notes arrive:</b> an <a href="#automations">automation</a> can archive the notes a query finds — the ready-made one archives done tasks after 30 days; another could file each new standup <a href="#automation-note">as it appears</a>. It leaves a note with unsaved typing where it is rather than save it, and its last run can be undone.</li>
+        <li>A note more than 32 folders deep can't be archived: <i>“It is too many folders deep: in the Archive, DFAI would no longer read it.”</i> If some notes in a batch can't go, a message names each one and why.</li>
+      </ul>
+      <h3>Out of the way</h3>
+      <ul>
+        <li>In Pages the whole Archive is one <b>Archive</b> row; click it to open the Archive page rather than a long folder.</li>
+        <li>Archived notes are left out of views and type counts, search, the graph, <code>[[</code> suggestions and note pickers, the Tags page's counts, and the <b>Links</b> panel's links in and unlinked mentions.</li>
+        <li>A project note with PARA = Archive is left out of the Project type's views and query blocks, note pickers, a board's project groups, the sidebar's Project count, the weekly review, the projects a meeting is linked to, and what Inbox notes can be filed under. Search and the graph still find it, and the Archive page lists it.</li>
+        <li>To reach them anyway: <b>Include archived</b> in search (<kbd>⌘K</kbd>) and on a view's toolbar, and the <b>Archived</b> switch on the graph. On a view it turns itself off when you go to another view; search starts without it each time.</li>
+        <li>Renaming a tag still changes it in archived notes, so they read right when they come back.</li>
+      </ul>
+      <h3>The Archive page</h3>
+      <p>Open it from the <b>Archive</b> row in Pages, or <kbd>⌘K</kbd> → <b>Open Archive</b>. It lists archived notes — in the Archive folder, and project notes with PARA = Archive where they stand — most recently archived first, with where each <b>Came from</b> and the day it was <b>Archived</b>. A project archived where it stands came from where it is, and shows no day.</p>
+      <ul>
+        <li><b>Search the Archive…</b> matches notes whose title or path holds every word you type, in any capitals — <i>überblick</i> finds <i>Überblick</i>, however the Mac stored its accent. It shows up to 500 at a time; with more, it says <i>More are archived; search to narrow them.</i></li>
+        <li>Click a name to open the note. <b>Unarchive</b> on its row puts it back.</li>
+        <li>Tick several and press <b>Unarchive N notes</b>. Any that couldn't go back stay ticked, with the reason in a message.</li>
+      </ul>
+      <h3>Unarchive</h3>
+      <ul>
+        <li>From the Archive page, the note's own <b>…</b> menu (<b>Unarchive</b>), or <kbd>⌘K</kbd> → <b>Unarchive this note</b>. Several at once: on the Archive page, or in a table view with <b>Include archived</b> and <b>Select</b> on.</li>
+        <li>It goes back to where the Archive holds it, minus <code>Archive/</code>: <code>Archive/Projects/Plan.md</code> goes to <code>Projects/Plan.md</code>, numbered if something has taken that place since. The <code>archived</code> and <code>archivedFrom</code> properties come off.</li>
+        <li>A project note comes back in one step however it was archived: out of <code>Archive/</code> if it's there, and its PARA set back to what <code>para_before_archive</code> kept.</li>
+        <li>Editing <code>archivedFrom</code> doesn't change where it goes: that record only spells the same place as the note had it.</li>
+      </ul>
+    </section>

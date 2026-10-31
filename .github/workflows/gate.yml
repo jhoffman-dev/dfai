@@ -101,6 +101,10 @@ jobs:
       - name: No Node built-in in the app's bundle
         run: pnpm check:node-builtins
 
+      # Here, not in `unit`, so a guide-only change (docs-only) still runs it (#134).
+      - name: The guide's page is built from its section files
+        run: pnpm exec vitest run tools/guide
+
   unit:
     needs: changes
     if: needs.changes.outputs.code == 'true'

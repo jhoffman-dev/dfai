@@ -1,0 +1,17 @@
+<!-- contents: Thumbnails -->
+    <section id="thumbnails">
+      <h2>Thumbnails</h2>
+      <p class="sub">A picture of a note's page, made by DFAI, that fronts its card in a gallery. Any type can have one.</p>
+      <ol class="steps">
+        <li>Add a <b>Thumbnail</b> property: to a whole type in <b>Edit type</b>, or to one note with <b>+ Add a property</b> → kind <b>Thumbnail</b>.</li>
+        <li>That's it. A little after you stop typing (about four seconds, once the note is saved), DFAI takes a picture of the page — title, text and pictures — and redoes it whenever the note changes.</li>
+        <li>Galleries of that type show the picture on each card.</li>
+      </ol>
+      <p>The Thumbnail row on the note shows the picture, with:</p>
+      <ul>
+        <li><b>Generate</b> / <b>Regenerate</b> — take the picture again now. If the note points at a picture on the web, DFAI asks first, because that one can't be brought back.</li>
+        <li><b>Choose image…</b> — use a picture of your own instead. It's copied into the vault like a pasted image, and stays until you change it.</li>
+        <li><b>Clear</b> — no thumbnail. It stays cleared (the row says <i>None</i>) until you press Generate; the gallery falls back to the note's cover or first image.</li>
+      </ul>
+      <p class="muted">Pictures DFAI makes are kept in <code>.atlas-cache/thumbnails</code>, not in your notes; the note just says <code>auto</code>. A picture you choose is saved in the vault. Board and list cards don't show thumbnails yet.</p>
+    </section>

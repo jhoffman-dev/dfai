@@ -816,6 +816,71 @@ which broke "never overwriting one" in spirit: two drafts of one brief.
   prompt `.atlas/prompts/friday-review.md` (written once, never over yours),
   `output: note` into `Reviews/`, `data: weekly-review`, no query.
 
+## Amendment, 2026-10-28: a Claude step can ask with a skill (#169, ADR-0050)
+
+Skills (ADR-0050) are instructions the person writes once and reuses; a rule
+should be able to use one instead of a prompt note.
+
+- **`skill: <name>` in place of `prompt:`.** A rule names one or the other.
+  One that names both is refused with _"Name one: prompt:
+  .atlas/prompts/<name>.md, or skill: <name>, not both."_ — a missing, null or
+  blank-text (`'  '`) key counts as none, `skill:` and `prompt:` alike; any
+  other value, an empty list (`[]`, `['']`) among them, is a value written and
+  is refused as one. An all-digit name that YAML reads as a number
+  (`skill: 123`) is never coerced: the rule is refused, asking for
+  `skill: "123"`. The name is held to a skill's name
+  rule (`skillNameProblem`) when the rule is read, so a path or a capital never
+  reaches the run.
+- **One path, either way.** `ClaudeAction` gains an optional `skill`; its
+  `prompt` holds the skill's `SKILL.md` (`.atlas/skills/<name>/SKILL.md`), so
+  everything that shows or plans a step reads one field. A rule with a prompt
+  carries no `skill` key at all, and its file is saved byte for byte as
+  before (tested through the real markdown port). `claudeActionFields` writes
+  `skill:` and clears `prompt:` for a step with a skill, and writes a null
+  `skill` (which takes nothing out of a file without one) for one with a
+  prompt.
+- **The run's check is widened, not loosened.** `isClaudeStepPrompt` accepts
+  a prompt note for a step with no skill, exactly as before — a `SKILL.md`
+  named as `prompt:` is still refused — and, for a step with a skill, only
+  that skill's own `SKILL.md`.
+- **What Claude is handed.** The run finds the skill as the Skills page does
+  (`readSkill`: the folder exactly, else in any case) and asks with its
+  instructions — `SKILL.md`'s body, the frontmatter left out — trimmed, as a
+  prompt note's body is. The same instructions as a prompt note give the same
+  system prompt. A skill that is gone, has no `SKILL.md`, cannot be read, or
+  has any problem the Skills page shows (no description, a `name:` that is
+  not its folder's) fails the run before Claude is asked, and nothing is
+  written (`skillRunProblem`).
+- **One measure for what is handed over.** At run time a skill's
+  instructions are held to the prompt note's limit as a prompt note is:
+  20,000 UTF-16 units (`.length`), where an emoji is two — the one argument
+  of ADR-0021. The Skills page keeps its own rule in characters (code points,
+  as Agent Skills count), so a skill the page passes can fail the run; the
+  run says _"Its instructions are 30000 characters as Claude is handed them,
+  an emoji counting as two; a prompt may be at most 20000."_ The limit lives
+  in `domain/chat` (`MAX_PROMPT_CHARACTERS`), which neither automations nor
+  skills is, so each takes it from there.
+- **Seen where skills are.** The editor's **Asks with** picks a prompt note or
+  a skill and hides the prompt path for a skill. A skill a run could not ask
+  with is marked _(has problems)_ or _(too long to run)_ but can still be
+  picked, and a skill a rule names that the vault no longer has stays in the
+  list, so the rule reads as it is. The Skills page lists, under each skill,
+  the rules that use it (in any case), from the runner's own reading of the
+  rules — no more is read — and the delete question warns that they will
+  fail. A rule is the user of the folder its run would read (the exact name,
+  else the first the same in any case and form, as `readSkill` finds it), so
+  of two folders told apart only by case, one claims it. Letting a picked
+  skill go before saving gives back the prompt note the step had; the
+  editor starts afresh for each rule opened. A broken rule counts when its `skill:` still reads as a name
+  (`BrokenAutomation.skill`, `namedSkill`): fixing its other key must not
+  find the skill gone. The page draws again only when which rules use which
+  skill changes, compared by content, never for the runner's minute or a
+  run. `usesSkill` and `skillUsers` are the skills module's: automations
+  depend on skills, never the other way.
+- **API and MCP.** `ApiClaudeStep` gains `skill` (the name, or null), on
+  `/v1/automations` and in the dry run's `claude`; the MCP tools' words say
+  so. Rules stay read-only through the API.
+
 ## Amendment, 2026-10-29: a Claude step that cannot reach Claude is retried (#182, PR #637)
 
 Applies to every rule a note sets off whose step is `claude`, not only the

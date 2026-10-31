@@ -107,17 +107,26 @@ export {
   CLAUDE_DATA,
   CLAUDE_NOTES_PER_RUN,
   claudeActionFields,
+  isClaudeStepPrompt,
   isPromptPath,
   describeClaudeAction,
   outputHasItems,
-  MAX_PROMPT_CHARACTERS,
   PROMPTS_DIRECTORY,
   readClaudeAction,
   readsData,
   withClaudeChoices,
   withClaudeData,
+  withClaudeSkill,
+  namedSkill,
+  skillRunProblem,
 } from './claude-step.ts';
-export type { ClaudeAction, ClaudeApply, ClaudeData, ClaudeOutput } from './claude-step.ts';
+export type {
+  ClaudeAction,
+  ClaudeApply,
+  ClaudeData,
+  ClaudeOutput,
+  SkillRunProblem,
+} from './claude-step.ts';
 export {
   claudeAskRefusal,
   claudeRunAsks,

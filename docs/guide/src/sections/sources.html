@@ -1,0 +1,28 @@
+<!-- contents: Outside data and secrets -->
+    <section id="sources">
+      <h2>Outside data and secrets</h2>
+      <p class="sub">A source brings data from outside the vault — a calendar feed, a CSV or JSON file or web address, or someone else's SQLite database — in as ordinary notes.</p>
+      <p>A source is a note in <code>.atlas/sources</code> (under <b>System</b> in Pages) whose properties say where to read, the format (<code>ics</code>, <code>csv</code>, <code>json</code> or <code>sqlite</code>), which folder to write into, which type the notes are, and which field becomes which property. The DFAI project's own vault has one, <i>Milestones</i>, to copy from.</p>
+      <ul>
+        <li>Open the source note and press <b>Refresh</b>. It shows what it <b>Reads</b>, where it <b>Writes to</b>, how often it <b>Refreshes</b> (only when you ask, or every few minutes while the note is open), and what the last refresh did: created, refreshed, kept your text, no longer in the feed.</li>
+        <li>If you've edited a note since, your text is kept; only the fields the source owns are rewritten. A record that has gone from the feed marks its note — it is never deleted.</li>
+        <li>The folder it writes into must already exist.</li>
+      </ul>
+      <div class="note"><b>Where a source may run.</b> A plain public feed, or a file inside the vault, works from a note anywhere. A source that sends a secret, or reads a SQLite file outside the vault, runs only when its note is in <code>.atlas/sources</code> (<b>System</b> → <b>sources</b> in Pages). Anywhere else, <b>Refresh</b> fetches nothing and says <i>This source sends the secret “github”, so it runs only from .atlas/sources. Move the note there (System → sources) to refresh it.</i> — or, for a database, <i>This source reads a database outside the vault, so it runs only from .atlas/sources. Move the note there (System → sources) to refresh it.</i> That's because other tools, like the Local API or a synced folder, can write notes in your pages but not in <code>.atlas</code>.</div>
+      <h3>Secrets (tokens for private feeds)</h3>
+      <p>Some feeds need a key. Keep it in <b>Settings</b> (<kbd>⌘,</kbd>) → <b>Secrets</b>, which stores it in your Mac's Keychain — never in the vault — and a source names it rather than holding it: <code>{{secret:github}}</code> in its address or a header, or <code>auth: { secret: github }</code>.</p>
+      <ol class="steps">
+        <li>Under the list, fill in the three boxes — the name (e.g. <code>github</code>), the value, and the sites it may be sent to (e.g. <code>api.github.com</code>; several separated by commas) — and press <b>Add</b>. All three are needed.</li>
+        <li>Each secret in the list says which sources use it and <i>Sent only to …</i> the sites you gave.</li>
+        <li><b>Replace…</b> changes the value, <b>Sites…</b> changes where it may go, <b>Delete</b> removes it from the Keychain (it tells you which sources will stop refreshing).</li>
+      </ol>
+      <p>The same list holds the key for <a href="#claude-setup">Claude by API key</a>: a secret named <code>anthropic</code>, with the site <code>api.anthropic.com</code>. DFAI sends it only to Anthropic's API.</p>
+      <div class="note"><b>Why a secret can be paused.</b> A source note is just text — something synced in, or a tool using the Local API, could have written it — so the note doesn't get to decide where your key goes. DFAI sends a secret only over https, only to the sites you bound it to, and won't follow a redirect to anywhere else. A secret with no sites (for example one set before this rule arrived) shows <i>Sent nowhere until you choose the sites it is for</i> and is refused until you press <b>Sites…</b> and add them. Adding a site to a key that's already saved asks you in a Mac dialog first.</div>
+      <p class="muted">A secret a source names but this Mac doesn't have shows as <i>not set on this Mac</i>, with <b>Set…</b>. Secrets belong to one vault on one Mac: a vault that's moved or copied to another Mac needs them set again. DFAI never shows a secret's value back, and strikes it out of anything a server echoes.</p>
+      <h3>A SQLite file</h3>
+      <ul>
+        <li>A source with <code>format: sqlite</code>, a <code>file:</code> and a <code>query:</code> turns the query's rows into notes. The query follows the same read-only rules as <a href="#sql">SQL on the Query page</a>.</li>
+        <li>The file is opened strictly read-only: DFAI never writes to it or leaves files beside it. A database that's being written to (unfinished changes still pending) or that changes while it's read is refused rather than read wrong — try again later.</li>
+        <li>A file outside the vault must be picked with <b>Choose file…</b> on the source note. That choice counts only on this Mac; elsewhere, choose it again.</li>
+      </ul>
+    </section>

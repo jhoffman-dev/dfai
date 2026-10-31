@@ -3,6 +3,7 @@ import {
   renderTranscript,
   toolProtocolInstructions,
   type ScannedPiece,
+  type ToolCallScanner,
 } from '@dfai/domain';
 import {
   ChatCancelled,
@@ -54,7 +55,11 @@ export function claudeCodeProvider(
  * web fetch, so what the model can reach is only what DFAI runs for it.
  */
 export function claudeCodeArgs(request: ModelRequest): string[] {
-  const system = `${request.system}\n\n${toolProtocolInstructions(request.tools)}`;
+  // A request with no tools is told of no protocol for calling one (#169).
+  const system =
+    request.tools.length === 0
+      ? request.system
+      : `${request.system}\n\n${toolProtocolInstructions(request.tools)}`;
   return [
     '-p',
     '--output-format',
@@ -91,7 +96,7 @@ async function* streamReply({
 }): AsyncGenerator<ModelEvent> {
   const deadline = withDeadline(signal, limit);
   const queue = createEventQueue<ModelEvent>();
-  const scanner = createToolCallScanner();
+  const scanner = request.tools.length === 0 ? TEXT_ONLY : createToolCallScanner();
   let verdict: { isError: boolean; message: string } | null = null;
   const onLine = (line: string) => {
     const read = readStreamJsonLine(line);
@@ -118,6 +123,12 @@ async function* streamReply({
   yield* queue.drain();
   await running;
 }
+
+/** With no tools to call, nothing in a reply is a call: its words are passed on whole. */
+const TEXT_ONLY: ToolCallScanner = {
+  push: (text) => [{ kind: 'text', text }],
+  end: () => [],
+};
 
 /**
  * `signal`, aborted also once `limit` has passed — which kills the process —

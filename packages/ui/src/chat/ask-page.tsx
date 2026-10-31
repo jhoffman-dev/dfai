@@ -5,7 +5,7 @@ import { HiddenTitle } from '../page-head.tsx';
 import { AskAnswer, UncitedCount } from './ask-answer.tsx';
 import type { AskActions, AskRecent, AskState } from './ask-view.ts';
 import { Composer, ProblemNotice, type ChatDraft } from './chat-panel.tsx';
-import type { ChatEntryView, ChatProblemView } from './chat-view.ts';
+import type { ChatEntryView, ChatProblemView, ChatSkillsView } from './chat-view.ts';
 import { ProposalCard } from './proposal-card.tsx';
 
 export interface AskPageProps {
@@ -28,6 +28,8 @@ export interface AskPageProps {
   readonly loadImage: (src: string) => Promise<string | null>;
   readonly onShowSidebar?: () => void;
   readonly history?: PageHistory;
+  /** The skill attached and the vault's to pick from (#169): the sidebar chat's, since Ask is that chat. */
+  readonly skills?: ChatSkillsView;
 }
 
 /** Ask's question box is taller than the sidebar chat's: it is the page. */
@@ -83,7 +85,14 @@ export function AskPage(props: AskPageProps) {
           )}
           {asked ? <Conversation {...props} /> : <Lede />}
           {/* One box in one place, before and after the first question, so sending keeps the keys in it. */}
-          <AskBox box={box} draft={props.draft} actions={actions} busy={state.busy} />
+          <AskBox
+            box={box}
+            draft={props.draft}
+            actions={actions}
+            busy={state.busy}
+            error={state.error}
+            {...(props.skills !== undefined && { skills: props.skills })}
+          />
           {!asked && <StartFoot {...props} />}
         </article>
       </div>
@@ -179,19 +188,23 @@ function AskBox({
   draft,
   actions,
   busy,
-}: Pick<AskPageProps, 'draft' | 'actions'> & {
+  error,
+  skills,
+}: Pick<AskPageProps, 'draft' | 'actions' | 'skills'> & {
   box: RefObject<HTMLDivElement | null>;
   busy: boolean;
+  error: AskState['error'];
 }) {
   return (
     <div className="ask__box" ref={box}>
       <Composer
-        state={{ busy, context: null }}
+        state={{ busy, context: null, error }}
         // Ask is opened on no page, so there is never a context chip to remove.
         actions={{ ...actions, onRemoveContext: () => {} }}
         draft={draft}
         focusOnMount={false}
         rows={ASK_ROWS}
+        {...(skills !== undefined && { skills })}
       />
     </div>
   );

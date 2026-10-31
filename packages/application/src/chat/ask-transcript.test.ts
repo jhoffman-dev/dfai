@@ -48,6 +48,7 @@ function askSession(rounds: ScriptedRound[]) {
     vault: () => ({ fs: api.fs, notePaths: [] }),
     accept: () => Promise.reject(new Error('nothing to accept')),
     undo: () => Promise.resolve(),
+    skill: () => Promise.resolve({ kind: 'missing' as const }),
     stamp: () => '2999-03-13 09:00',
     newId,
     activity: recordingActivity(),
@@ -167,5 +168,13 @@ describe('recentQuestions', () => {
 });
 
 function stateWith(items: ChatState['items']): ChatState {
-  return { items, busy: false, error: null, context: null, chatPath: null, notice: null };
+  return {
+    items,
+    busy: false,
+    error: null,
+    context: null,
+    skill: null,
+    chatPath: null,
+    notice: null,
+  };
 }

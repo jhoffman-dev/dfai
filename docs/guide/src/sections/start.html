@@ -1,0 +1,16 @@
+<!-- contents: Start the app -->
+    <section id="start">
+      <h2>Start the app</h2>
+      <p class="sub">DFAI runs from its project folder in development mode, which reloads screen changes by itself.</p>
+      <pre>cd ~/Projects/atlas
+pnpm tauri:dev</pre>
+      <button type="button" class="copy" data-copy="cd ~/Projects/atlas&#10;pnpm tauri:dev">Copy</button>
+      <h3>When to restart</h3>
+      <ul>
+        <li><b>Screen changes</b> appear live while <code>pnpm tauri:dev</code> is running.</li>
+        <li><b>Changes to the Rust side</b> (new commands, the index): stop with <kbd>Ctrl</kbd> <kbd>C</kbd> and run <code>pnpm tauri:dev</code> again. The first rebuild takes a minute or two.</li>
+        <li><b>New packages</b>: stop, run <code>pnpm install</code>, then <code>pnpm tauri:dev</code>.</li>
+      </ul>
+      <p>The first time, choose your vault folder. DFAI remembers it and reopens it next time. The search index rebuilds itself when it needs to.</p>
+      <div class="note"><b>Used it when it was called Atlas?</b> The first time DFAI opens on a Mac that ran Atlas, it copies what Atlas kept on that Mac: the vault it had open, the API's token, your secrets, this Mac's sync name and your settings. macOS may ask once for each secret — choose <b>Always Allow</b>. A secret it can't read is asked for again on the next two launches; after that DFAI says which, so you can set it again in <b>Settings → Secrets</b>. Atlas's own copy is left as it was. If Atlas is still open, DFAI asks you to quit it first; if something can't be copied, DFAI says why and doesn't open, and the next launch tries again.</div>
+    </section>
