@@ -2,15 +2,13 @@ import {
   deleteRefusal,
   deleteThroughLinkRefusal,
   notesUnder,
-  parentVaultPath,
-  VAULT_ROOT,
-  vaultPathName,
   type MovableEntry,
   type VaultPath,
 } from '@dfai/domain';
 import type { IndexPort } from '../index/ports.ts';
 import { forgetNotes } from '../index/refresh-index.ts';
 import { withDeclaredType } from './declared-type.ts';
+import { isListedAsLink, linkAbove } from './listed-links.ts';
 import { MoveRefusedError } from './relocate-entry.ts';
 import type { OpenEditorsPort, VaultFsPort } from './ports.ts';
 
@@ -83,27 +81,6 @@ export async function countOtherFiles({
   const known = new Set<string>(notes);
   const { files, links } = await filesAndLinksUnder({ fs, folder: entry.path });
   return { ...nothing, count: files.filter((path) => !known.has(path)).length, links };
-}
-
-/** The nearest folder above `path` that is a link, or null when none is. */
-export async function linkAbove(
-  fs: Pick<VaultFsPort, 'listDirectory'>,
-  path: VaultPath,
-): Promise<VaultPath | null> {
-  const above: VaultPath[] = [];
-  for (let at = parentVaultPath(path); at !== VAULT_ROOT; at = parentVaultPath(at)) above.push(at);
-  const linked = await Promise.all(above.map((folder) => isListedAsLink(fs, folder)));
-  return above.find((_, at) => linked[at]) ?? null;
-}
-
-/** Whether the folder above lists `path` as a link. */
-export async function isListedAsLink(
-  fs: Pick<VaultFsPort, 'listDirectory'>,
-  path: VaultPath,
-): Promise<boolean> {
-  const name = vaultPathName(path);
-  const entries = await fs.listDirectory(parentVaultPath(path));
-  return entries.some((entry) => entry.name === name && entry.link === true);
 }
 
 /**

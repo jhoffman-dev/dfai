@@ -58,12 +58,16 @@ export {
   isWithin,
   moveDestination,
   movedPath,
+  moveIntoLinkRefusal,
   moveRefusal,
+  moveRepointsLinkRefusal,
   moveTargets,
+  moveThroughLinkRefusal,
   nameClashes,
   newFolderRefusal,
   notesUnder,
   renameRefusal,
+  unsavedThroughLinkRefusal,
 } from './vault-moves.ts';
 export type { EntryMove, MovableEntry, NameClash } from './vault-moves.ts';
 export { newNoteFolder } from './new-note-folder.ts';
