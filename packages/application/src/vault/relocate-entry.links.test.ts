@@ -3,6 +3,7 @@ import {
   createVaultPath,
   moveIntoLinkRefusal,
   moveThroughLinkRefusal,
+  unsavedThroughLinkRefusal,
   type EntryMove,
   type VaultEntry,
   type VaultPath,
@@ -10,7 +11,7 @@ import {
 import { fakeIndexPort, fakeVaultFs } from '../testing/fake-ports.ts';
 import { listVaultFolders } from './create-folder.ts';
 import { VaultAccessError, type OpenEditorsPort } from './ports.ts';
-import { moveEntryInto, renameEntry, MoveRefusedError } from './relocate-entry.ts';
+import { moveEntryInto, moveEntryTo, renameEntry, MoveRefusedError } from './relocate-entry.ts';
 import { linksToUpdate } from './update-links.ts';
 
 /*
@@ -55,8 +56,11 @@ const notePaths = [
   'Projects/plan.md',
 ].map(path);
 
-/** The host as `listings` describes it, recording what it is asked to do. */
-function host() {
+/**
+ * The host as `listings` describes it, recording what it is asked to do; the
+ * panes hold unsaved typing in the notes `dirty` names, every note by default.
+ */
+function host({ dirty = notePaths }: { dirty?: readonly string[] } = {}) {
   const log: string[] = [];
   const fs = fakeVaultFs({
     listDirectory: async (at) => {
@@ -72,7 +76,7 @@ function host() {
     },
   });
   const editors: OpenEditorsPort = {
-    state: () => 'dirty',
+    state: (at) => (dirty.includes(at) ? 'dirty' : 'closed'),
     flush: async (paths) => {
       log.push(...paths.map((at) => `flush ${at}`));
     },
@@ -132,7 +136,7 @@ describe('a folder that is a link (#680)', () => {
 
 describe('a real folder holding a link out of the vault (#680)', () => {
   it('moves whole in one move, without looking through the link', async () => {
-    const { ports, log } = host();
+    const { ports, log } = host({ dirty: ['Projects/plan.md'] });
 
     await moveEntryInto({ ports, entry: folder('Projects'), folder: path('Play'), notePaths });
 
@@ -141,6 +145,63 @@ describe('a real folder holding a link out of the vault (#680)', () => {
       'move Projects -> Play/Projects',
       'follow Projects -> Play/Projects',
     ]);
+  });
+});
+
+/*
+ * A pane typing in a note by way of a link might be typing in what moves; the
+ * app cannot tell where the link points, so it cannot flush and follow it as
+ * the moved note, and the move waits for the typing to be saved (PR #684).
+ */
+describe('a pane on a note open by way of a link (PR #684 review)', () => {
+  it('holds up any move while it has unsaved typing, before any pane is saved', async () => {
+    const { ports, log } = host({ dirty: ['Projects/plan.md', 'Work/Alias/Plans/garden.md'] });
+
+    const moving = moveEntryInto({
+      ports,
+      entry: folder('Projects'),
+      folder: path('Play'),
+      notePaths,
+    });
+
+    await expect(moving).rejects.toThrow(
+      new MoveRefusedError(
+        unsavedThroughLinkRefusal(path('Work/Alias/Plans/garden.md'), path('Work/Alias')),
+      ),
+    );
+    expect(log).toEqual([]);
+  });
+
+  it('does not hold up a move once its typing is saved', async () => {
+    const { ports, log } = host({ dirty: [] });
+
+    await moveEntryInto({ ports, entry: folder('Shelf/Plans'), folder: path('Play'), notePaths });
+
+    expect(log).toContain('move Shelf/Plans -> Play/Plans');
+  });
+
+  it('does not hold up the move of the link it is open by, which carries it', async () => {
+    const { ports, log } = host({ dirty: ['Work/Alias/Plans/garden.md'] });
+
+    await renameEntry({ ports, entry: folder('Work/Alias'), name: 'Desk', notePaths });
+
+    expect(log).toContain('move Work/Alias -> Work/Desk');
+  });
+
+  it('holds up an archive too, which moves through the same path', async () => {
+    const { ports, log } = host({ dirty: ['Work/Alias/Plans/garden.md'] });
+
+    const moving = moveEntryTo({
+      ports,
+      entry: note('Work/todo.md'),
+      to: path('Archive/todo.md'),
+      notePaths,
+    });
+
+    await expect(moving).rejects.toThrow(
+      unsavedThroughLinkRefusal(path('Work/Alias/Plans/garden.md'), path('Work/Alias')),
+    );
+    expect(log).toEqual([]);
   });
 });
 

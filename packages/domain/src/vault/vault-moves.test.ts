@@ -10,8 +10,10 @@ import {
   movedPath,
   moveIntoLinkRefusal,
   moveRefusal,
+  moveRepointsLinkRefusal,
   moveTargets,
   moveThroughLinkRefusal,
+  unsavedThroughLinkRefusal,
   nameClashes,
   newFolderRefusal,
   pathAfterMoves,
@@ -337,6 +339,20 @@ describe('a move by way of a link (#680)', () => {
     expect(moveIntoLinkRefusal(path('Work/Alias'))).toBe(
       '“Work/Alias” is a link: moving into it would put it where the link points. ' +
         'Move it into that folder itself.',
+    );
+  });
+
+  it('says which link the move would point elsewhere (PR #684 review)', () => {
+    expect(moveRepointsLinkRefusal(path('Work/Projects/shelf'))).toBe(
+      'Moving it would point the link “Work/Projects/shelf” at something else: a link is read ' +
+        'from where it is. Move it where the link still reaches the same place.',
+    );
+  });
+
+  it('names the unsaved note open by way of a link, and the link (PR #684 review)', () => {
+    expect(unsavedThroughLinkRefusal(path('Work/Alias/Plans/garden.md'), path('Work/Alias'))).toBe(
+      '“Work/Alias/Plans/garden.md” has typing not yet saved, and it is open by way of the link ' +
+        '“Work/Alias”, which may point into what is moving. Wait for it to save, then try again.',
     );
   });
 });

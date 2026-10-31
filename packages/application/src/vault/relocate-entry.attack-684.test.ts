@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, type EntryMove, type VaultEntry } from '@dfai/domain';
+import {
+  createVaultPath,
+  unsavedThroughLinkRefusal,
+  type EntryMove,
+  type VaultEntry,
+} from '@dfai/domain';
 import { fakeIndexPort, fakeVaultFs } from '../testing/fake-ports.ts';
 import { VaultAccessError, type OpenEditorsPort } from './ports.ts';
 import { moveEntryInto, renameEntry, MoveRefusedError } from './relocate-entry.ts';
@@ -7,8 +12,7 @@ import { moveEntryInto, renameEntry, MoveRefusedError } from './relocate-entry.t
 /*
  * Attack on PR #684 (#680). `Work/Alias -> Shelf`: the host lists the same
  * notes under `Work/Alias/...` and `Shelf/...`, and a pane may be open on
- * either path. `it.fails` marks a finding: the test states the invariant and
- * currently fails.
+ * either path.
  */
 
 const path = (raw: string) => createVaultPath(raw);
@@ -64,18 +68,27 @@ function host(unreadable: readonly string[] = []) {
 
 describe('attack #684: the real folder behind a link', () => {
   // Moving the real `Shelf/Plans` is allowed, and is the advice the refusal
-  // gives ("do it where it really is"). But a pane typing in the same note by
-  // its link path, `Work/Alias/Plans/Deep/garden.md`, is not flushed first and
-  // not followed after: its unsaved typing is then saved to a path whose folder
-  // is gone, and the pane is left on a note that no longer exists.
-  it.fails('flushes a pane open on the moved note by its link path before the move', async () => {
+  // gives ("do it where it really is"). But a pane may be typing in the same
+  // note by its link path, `Work/Alias/Plans/Deep/garden.md`. The app cannot
+  // tell where a link points, so it cannot flush and follow that pane as the
+  // moved note; the move is refused while it holds unsaved typing, before
+  // anything is touched (decided on review of PR #684).
+  it('refuses while a pane holds unsaved typing in a note open by way of a link', async () => {
     const { ports, log } = host();
 
-    await moveEntryInto({ ports, entry: folder('Shelf/Plans'), folder: path('Play'), notePaths });
+    const moving = moveEntryInto({
+      ports,
+      entry: folder('Shelf/Plans'),
+      folder: path('Play'),
+      notePaths,
+    });
 
-    const moveAt = log.indexOf('move Shelf/Plans -> Play/Plans');
-    expect(moveAt).toBeGreaterThan(-1);
-    expect(log.slice(0, moveAt)).toContain('flush Work/Alias/Plans/Deep/garden.md');
+    await expect(moving).rejects.toThrow(
+      new MoveRefusedError(
+        unsavedThroughLinkRefusal(path('Work/Alias/Plans/Deep/garden.md'), path('Work/Alias')),
+      ),
+    );
+    expect(log).toEqual([]);
   });
 });
 
