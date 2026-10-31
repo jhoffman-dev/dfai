@@ -241,6 +241,7 @@ export function Sidebar({
         <>
           <TypeList
             types={types}
+            anyBroken={brokenTypes.length > 0}
             openTypeName={openTypeName}
             onOpenType={openType}
             {...(onEditType !== undefined && { onEditType: editType })}
@@ -670,19 +671,25 @@ const AskQuickButton = memo(function AskQuickButton({
 
 const TypeList = memo(function TypeList({
   types,
+  anyBroken,
   openTypeName,
   onOpenType,
   onEditType,
   onEditTemplate,
 }: {
   types: readonly SidebarType[];
+  /** Whether a type file is listed as broken below, so the types are not "none yet". */
+  anyBroken: boolean;
   openTypeName: string | null;
   onOpenType: (name: string) => void;
   onEditType?: (name: string) => void;
   onEditTemplate?: (name: string) => void;
 }) {
   const [menu, setMenu] = useState<{ type: SidebarType; anchor: TypeMenuAnchor } | null>(null);
-  if (types.length === 0) return <p className="sidebar__empty">No types defined yet.</p>;
+  // A type file that cannot be read is listed below, so none are "defined yet" only without one.
+  if (types.length === 0) {
+    return anyBroken ? null : <p className="sidebar__empty">No types defined yet.</p>;
+  }
 
   const openMenu = (type: SidebarType, anchor: TypeMenuAnchor) => {
     if (onEditType !== undefined) setMenu({ type, anchor });
