@@ -21,10 +21,14 @@ export const BUDGETED_ACTIONS = [
   'Open Today',
   'Idle 3 s on Today',
   'Tick a task on Today',
+  'Choose a task on Today',
+  // A scroll that keeps the same rows drawn draws none of the list again (#238).
+  'Scroll Today a little',
   'Open the Inbox',
   'Decide an Inbox row',
   "Open a person's page",
   'Open the 420-row table',
+  'Scroll the 420-row table a little',
   '⌘K + 5 keys over the table',
   'Drag a board card',
   'Run a 2,000-row SQL query',
@@ -43,6 +47,8 @@ export const BUDGETED_ACTIONS = [
   // On a literature note of 500 highlights, each drawn as its quote and a comment to type in (#534).
   'Open a 500-highlight literature note',
   'Save a comment in a 500-highlight note',
+  // A note of code in five languages, each language's grammar loaded on first use (#265).
+  'Open a note with code in 5 languages',
   // Last on the main fixture: once on, the cache of meanings follows every later write (P32-02).
   '⌘K by meaning + 5 keys',
 ] as const;

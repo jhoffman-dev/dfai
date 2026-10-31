@@ -41,6 +41,7 @@ function report(): TodayReport {
   return {
     ...todayLists({ tasks: TITLES.map(task), projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
     stalledProjects: 0,
@@ -64,6 +65,29 @@ function without(read: TodayReport, gone: VaultPath): TodayReport {
   };
 }
 
+/** The report with one task chosen for today, as a new object changed at `modified`; the rest kept. */
+function chosenIn(read: TodayReport, chosen: VaultPath, modified: number): TodayReport {
+  const tasks = read.sections.flatMap((section) => section.groups.flatMap((group) => group.tasks));
+  const lists = todayLists({
+    tasks: tasks.map((each) => (each.path === chosen ? { ...each, focus: TODAY, modified } : each)),
+    projects: [],
+    at: { today: TODAY, now: NOW },
+  });
+  const kept = new Map(tasks.map((each) => [each.path, each]));
+  return {
+    ...read,
+    sections: lists.sections.map((section) => ({
+      ...section,
+      groups: section.groups.map((group) => ({
+        ...group,
+        tasks: group.tasks.map((each) =>
+          each.path === chosen ? each : (kept.get(each.path) ?? each),
+        ),
+      })),
+    })),
+  };
+}
+
 /** The page as the app hands it over: every callback made again on each of its renders. */
 function props(overrides: Partial<TodayPageProps> = {}): TodayPageProps {
   return {
@@ -79,6 +103,7 @@ function props(overrides: Partial<TodayPageProps> = {}): TodayPageProps {
     onDone: vi.fn(),
     onSetStatus: vi.fn(),
     onDefer: vi.fn(),
+    onChoose: vi.fn(),
     ...overrides,
   };
 }
@@ -106,6 +131,34 @@ describe('TodayPage — ticking one row', () => {
     expect(renders['TaskRow'] ?? 0).toBe(0);
   });
 
+  it('draws only the row chosen for today, through the write and the read after it (#108)', async () => {
+    const read = report();
+    const onChoose = vi.fn();
+    const view = render(<TodayPage {...props({ today: read, onChoose })} />);
+    startCountingRenders();
+    await userEvent.click(screen.getByRole('button', { name: 'Choose Call the bank for today' }));
+    expect(onChoose).toHaveBeenCalledWith({
+      path: path('Call the bank'),
+      title: 'Call the bank',
+      choice: 'choose',
+    });
+
+    // Drawn chosen as the click lands, then read back from its file: every other task the same object.
+    const pending = chosenIn(read, path('Call the bank'), NOW + 1);
+    view.rerender(
+      <TodayPage {...props({ today: pending, settling: new Set([path('Call the bank')]) })} />,
+    );
+    view.rerender(
+      <TodayPage {...props({ today: chosenIn(read, path('Call the bank'), NOW + 2) })} />,
+    );
+    const { renders } = stopCountingRenders();
+
+    const chosen = screen.getByRole('region', { name: 'Chosen for today' });
+    expect(within(chosen).getByText('Call the bank')).toBeDefined();
+    // The chosen row is drawn once where it lands and once read back; the three others never.
+    expect(renders['TaskRow'] ?? 0).toBe(2);
+  });
+
   it('still offers no action on any row while one is under way', () => {
     render(<TodayPage {...props({ busy: true })} />);
     const controls = [
@@ -113,7 +166,9 @@ describe('TodayPage — ticking one row', () => {
       screen.getByRole('button', { name: 'Move Ship the page to…' }),
       screen.getByRole('button', { name: 'Defer Ship the page 1 day' }),
     ];
-    expect(controls.map((control) => control.matches(':disabled'))).toEqual([true, true, true]);
+    expect(controls.map((control) => control.matches(':disabled, [aria-disabled="true"]'))).toEqual(
+      [true, true, true],
+    );
   });
 });
 

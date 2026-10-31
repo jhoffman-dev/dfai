@@ -19,6 +19,7 @@ import {
   tauriGoogleDrive,
   tauriPdfRenderer,
   tauriGranola,
+  tauriSlack,
   tauriKindleNotebook,
   tauriKindleSession,
   tauriSqliteSource,
@@ -58,6 +59,7 @@ import type {
   GoogleDrivePort,
   NotePageRenderer,
   PdfRendererPort,
+  SlackPort,
 } from '@dfai/application';
 import { createKindleSync } from '@dfai/application';
 import { createExportPageRenderer } from '@dfai/ui';
@@ -171,6 +173,11 @@ export function resolveBlockSync(): BlockSyncHost {
 /** Granola, through the host's pinned module (ADR-0034), and where this Mac keeps each vault's pull record. */
 export function resolveGranola(): { port: GranolaPort; records: GranolaPullRecords } {
   return { port: tauriGranola, records: browserGranolaPullRecords };
+}
+
+/** Slack, through the host's pinned module, which keeps the token (#105, ADR-0017). */
+export function resolveSlack(): SlackPort {
+  return tauriSlack;
 }
 
 /** The global capture shortcut: registered by the host, chosen and kept on this Mac (#81). */

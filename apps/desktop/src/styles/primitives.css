@@ -550,6 +550,22 @@
   padding: 0 var(--space-4);
 }
 
+/* A page's keys (#109): the same line, above its rows rather than along an
+   overlay's foot, so no hairline and no inset of its own. One line at any
+   width, scrolled sideways when narrow: a strip that wrapped as the window
+   narrowed would move every row under it, which the Inbox's list anchor
+   holds still (#130). */
+.key-hints--page {
+  border-top: 0;
+  flex-wrap: nowrap;
+  height: 28px;
+  min-height: 0;
+  overflow-x: auto;
+  padding: 0;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
 .key-hints__hint {
   align-items: center;
   display: inline-flex;
@@ -722,4 +738,10 @@
   .spinner__ring {
     animation: spinner-shown 0s linear 150ms forwards;
   }
+}
+
+/* A page that holds the focus once its last row has gone (#109): only so its
+   keys still reach it. It is not a control, so it draws no ring. */
+[data-keys-home]:focus {
+  outline: none;
 }

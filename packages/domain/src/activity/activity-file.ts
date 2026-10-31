@@ -19,6 +19,7 @@ import {
   type ActivitySubject,
   type ActivitySubjectKind,
 } from './activity-event.ts';
+import type { VaultPath } from '../vault/vault-path.ts';
 
 const DAY_MS = 86_400_000;
 
@@ -36,8 +37,8 @@ export const ACTIVITY_TRIM_TO_BYTES = 4 * 1024 * 1024;
 
 /** A line of the file, newline included. */
 export function activityLine(event: ActivityEvent): string {
-  const { at, level, kind, message, subject } = event;
-  return `${JSON.stringify({ at, level, kind, message, subject })}\n`;
+  const { at, level, kind, message, subject, notes } = event;
+  return `${JSON.stringify({ at, level, kind, message, subject, ...(notes !== undefined && { notes }) })}\n`;
 }
 
 /**
@@ -63,7 +64,7 @@ function parseLine(line: string): ActivityEvent | null {
     return null;
   }
   if (typeof value !== 'object' || value === null) return null;
-  const { at, level, kind, message, subject } = value as Record<string, unknown>;
+  const { at, level, kind, message, subject, notes } = value as Record<string, unknown>;
   if (typeof at !== 'number' || !Number.isFinite(at)) return null;
   if (!isOneOf(ACTIVITY_LEVELS, level) || !isOneOf(ACTIVITY_KINDS, kind)) return null;
   if (typeof message !== 'string') return null;
@@ -73,6 +74,7 @@ function parseLine(line: string): ActivityEvent | null {
     kind: kind as ActivityKind,
     message,
     subject: parseSubject(subject),
+    notes: parseNotes(notes),
   });
 }
 
@@ -82,6 +84,14 @@ function parseSubject(value: unknown): ActivitySubject | null {
   if (!isOneOf(ACTIVITY_SUBJECT_KINDS, kind) || typeof path !== 'string') return null;
   const inside = insideVault(path);
   return inside === null ? null : { kind: kind as ActivitySubjectKind, path: inside };
+}
+
+/** The notes a line is about besides its subject: each a path inside the vault, the rest dropped. */
+function parseNotes(value: unknown): VaultPath[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((note: unknown) =>
+    typeof note === 'string' ? (insideVault(note) ?? []) : [],
+  );
 }
 
 function isOneOf(options: readonly string[], value: unknown): boolean {

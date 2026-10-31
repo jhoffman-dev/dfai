@@ -1,3 +1,4 @@
+import { foldedTypeSql } from '../types/note-type-sql.ts';
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { COMPANY_TYPE } from '../people/company.ts';
 import { PERSON_TYPE } from '../people/person.ts';
@@ -32,13 +33,13 @@ export function compileVocabularyQuery(page: number): CompiledQuery {
   const named = VOCABULARY_TYPES.map(() => '?').join(', ');
   return {
     sql: `/* terms:notes */ SELECT files.path AS "path", files.title AS "title",
-        (SELECT typed.value_text FROM props AS typed
-          WHERE typed.path = files.path AND typed.key = 'type' AND typed.value_text IN (${named})
+        (SELECT ${foldedTypeSql('typed.value_text')} FROM props AS typed
+          WHERE typed.path = files.path AND typed.key = 'type' AND ${foldedTypeSql('typed.value_text')} IN (${named})
           ORDER BY typed.idx LIMIT 1) AS "type",
         spelt.key AS "key", spelt.value_text AS "value"
  FROM files
  LEFT JOIN props AS spelt ON spelt.path = files.path AND spelt.key IN (?, ?, ?)
- WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND value_text IN (${named}))
+ WHERE files.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} IN (${named}))
    AND ${userSpaceNoteSql('files.path')} AND ${outsideArchiveSql('files.path')}
  ORDER BY files.path, spelt.key, spelt.idx LIMIT ? OFFSET ?`,
     parameters: [

@@ -19,6 +19,8 @@ assembled meeting before any Notion step, and nothing in it can stop the run.
 | `github-file.ts`                                    | Whether a file already at a meeting's path is that meeting (compiled in too). |
 | `validate-meeting.mjs`                              | Checks a file with the validator DFAI runs: `pnpm validate:meeting <file.md>` |
 | `build-workflow.mjs`, `code-node.ts`, `workflow.ts` | Rebuild the JSON after changing the mapper: `pnpm n8n:build`.                 |
+| `granola-webhook.workflow.json`                     | Granola's webhooks into DFAI ("Granola webhooks → DFAI" below).               |
+| `github-branch.ts`                                  | The GitHub nodes both workflows end in.                                       |
 
 The file format is the meeting import contract,
 `vault/docs/contracts/meeting-import-v1.md`.
@@ -583,6 +585,144 @@ read instead), and its other properties. A page's sections the workflow did
 not write, such as a summary you added by hand, go into Notes under their own
 heading, so nothing in the page is dropped.
 
+## Granola webhooks → DFAI
+
+A second workflow, `granola-webhook.workflow.json`, brings a Granola meeting
+into the vault the moment Granola writes its summary, while every Mac is
+asleep (ADR-0034, P28-14). Granola sends `note.generated` to n8n; n8n checks
+the signature, fetches the note, maps it with the app's own mapper and commits
+it through the same GitHub nodes as the Gemini workflow. The app's own
+Granola pull stays the safety net: anything this misses, the pull catches.
+
+```
+Granola webhook → Verify Granola signature → Signed by Granola? → Answer 200 → Fetch Granola note → (200) Map → GitHub branch
+                         │                          └ no, or a fault → Answer 401    └ anything else, or no answer → email
+                         └ signed, but the body names no note → Answer 200 → email
+```
+
+| Granola or GitHub says…                                 | n8n answers Granola | Then                                      |
+| ------------------------------------------------------- | ------------------- | ----------------------------------------- |
+| A delivery not signed with the secret, or stale         | `401`               | Nothing (Granola does not retry a 4xx).   |
+| A body over 64 KB (refused before it is hashed)         | `401`               | Nothing.                                  |
+| A signed delivery                                       | `200`, at once      | Fetch, map, commit.                       |
+| Signed, but the body names no note (or is not JSON)     | `200`               | Emailed, quoting its first 200 bytes.     |
+| No body, or a fault before the signature is proven      | `401`               | Nothing: see Executions.                  |
+| Granola's fetch: `404` (gone, or still processing)      | `200` (already)     | Emailed; the pull catches the meeting.    |
+| Granola's fetch: any other status (`401`, `413`, `5xx`) | `200` (already)     | Emailed; the pull catches the meeting.    |
+| Granola's fetch: no answer in 10 s                      | `200` (already)     | Emailed; the pull catches the meeting.    |
+| A refused note, or GitHub fails                         | `200` (already)     | Emailed: "Email me: meeting not in DFAI". |
+
+The `200` goes the moment the signature holds, before the fetch, as ADR-0034
+says: well inside the 15 seconds Granola waits, however slow n8n is to start
+or Granola's API is to answer. The workflow answers only `200` or `401`, on
+purpose: Granola retries anything else for four days and then **disables
+the endpoint without replaying what it missed**, so no answer may spend that
+budget, not even on a note that is still processing. The ticket asked for a
+`503` on a `404`; that was dropped in favour of the ADR, because a note that
+404s for good (deleted, or never visible to your key) — or Granola's own
+test event — would have spent the whole budget with no email.
+
+**Only a delivery Granola is proven to have sent can make the workflow
+email you.** Until the signature holds, the request may be anyone's — the
+webhook URL is public — so everything that goes wrong before then is
+answered `401` in silence: a bad or missing signature, a stale or missing
+timestamp, the secret not pasted, a body over 64 KB (Granola's payload
+holds only a note id), and **any fault before the signature is proven** —
+no body, no binary (Raw Body off, or a multipart request with no file
+part), n8n's `getBinaryDataBuffer` failing. Otherwise anyone could send
+such a request and have it mail you every time (PR #623's review). Those
+show only in n8n's **Executions**. A delivery Granola did sign but whose
+body names no note (or is not JSON, or not UTF-8) leaves by the verify
+node's error output and is answered **`200` and emailed**: a `200` asks
+Granola for nothing more, and a `500` would spend the retry budget. The
+email quotes the body's first 200 bytes, printable ASCII only (`\xNN` for
+every other byte).
+
+Every value the failure email interpolates — a meeting's title, its source
+id, the error, the workflow's name — has its control characters (CR, LF,
+tab, U+2028…) turned to spaces, so none can forge a line of the email; one
+that cannot be read is left empty. This is the same in the Gemini workflow
+(`meeting-to-atlas.workflow.json` changed for it: re-import or re-paste
+**Email me: meeting not in DFAI** there too).
+
+### What only you can do, in n8n and Granola
+
+1. **Granola API credential.** In Granola's desktop app, **Settings →
+   Connectors**, make a personal API key (`grn_…`). In n8n: **Credentials →
+   Add credential → Header Auth**, **Name** `Granola API` exactly; header
+   **Name** `Authorization`, **Value** `Bearer grn_…`. The key lives only
+   there and in each Mac's Keychain (rotate it in all of them).
+2. **Import** `granola-webhook.workflow.json` as a new workflow (**Workflows →
+   Import from file**). Point **Email me: meeting not in DFAI** at your
+   address (`NOTIFY_TO` is a placeholder) and its Gmail credential; the
+   GitHub nodes use `GitHub pkm-space (contents)` from step 2 above.
+3. **Map node OPTIONS.** In **Map meeting to DFAI file**, set `OPTIONS` to
+   the vault's settings **byte for byte**: `timeZone` = `granola_time_zone`
+   (default `America/Los_Angeles`), `selfEmails` = your own addresses
+   (`selfEmails`), `groupAddresses` = `granola_group_addresses`. If they differ
+   from the app's, n8n and the app write the same meeting differently and you
+   get a sync conflict copy.
+4. **Register the webhook.** In Granola: **Settings → Connectors →
+   Webhooks**, add the workflow's **production** URL,
+   `https://<your n8n>/webhook/granola-to-dfai` (it must be public HTTPS),
+   with the events **`note.generated`** and **`note.access_granted`** only
+   (never `note.edited`: an imported meeting is not rewritten).
+5. **The secret.** Granola shows the endpoint's signing secret (`whsec_…`).
+   Open **Verify Granola signature** and replace
+   `whsec_PASTE_THE_SECRET_FROM_GRANOLA_HERE` with it. Until you do, the node
+   refuses every delivery with a `401`. The secret is in the node's code
+   because an n8n Code node cannot read a credential; keep your copy of it
+   under the name `Granola webhook secret` in your password manager, never in
+   this repository, and do not export the workflow with it in. Re-paste it
+   whenever you re-import a rebuilt JSON.
+6. **Activate** the workflow, then send Granola's **test event** from the
+   webhook's page. It should be answered `200`. Then open n8n's
+   **Executions** for the workflow and check the run: it must have gone from
+   **Signed by Granola?** to **Answer 200: signature verified**. A `401`
+   there sends **no email** — a secret
+   never pasted, or a wrong one, refuses every delivery in silence — so this
+   is the one place to see it. Past the check, a test event that names no real
+   note gets a `404` from the fetch and the failure email; a real meeting
+   arrives at `Meetings/<YYYY>/<MM>/`.
+7. **In DFAI**, set `granola_webhook: true` in the vault's settings, so the
+   pull warns when a note it finds should have come by webhook long since (a
+   sign Granola disabled the endpoint).
+
+### What to confirm in the n8n UI (the spike)
+
+The ticket asked whether an n8n Cloud Code node can `require('crypto')`. It
+no longer matters: the signature check is HMAC-SHA256 in plain JavaScript
+(`sha256.ts`, `standard-webhook.ts`), tested against Node's crypto and the
+Standard Webhooks spec's own vector, and run under JavaScriptCore to prove it
+needs no `crypto`, `Buffer` or `TextEncoder`. What the tests here cannot
+reach, and you must see work on the first run:
+
+- **The raw body.** The Webhook node's **Raw Body** option is on, and the
+  verify node reads the bytes with
+  `await this.helpers.getBinaryDataBuffer(0, "data")` (n8n's documented
+  Code-node helper, in "Run Once for All Items" mode). If n8n refuses it,
+  every delivery is refused `401` with **no email** (`body: missing (is Raw
+Body on?)` in the run): check Executions after the test event.
+- **Where the note id is.** Granola documents that the payload carries a
+  `note_id`, not where; the check reads it at the top or under `data`. A test
+  event emailed as `signed by Granola, but body: no note_id` means it is elsewhere: tell the
+  next agent the payload's shape.
+- **The email's expressions.** Each value in the failure email is a small
+  `(() => { try { … } catch … })()` expression, so a control character or a
+  node that never ran cannot break it. If n8n's expression editor refuses
+  one, the email node fails (it stops nothing) — say so, and the next agent
+  will flatten it.
+- **The status branches.** The fetch is set to "Include Response Headers and
+  Status" and "Never Error", so its output has `statusCode`; the If nodes read
+  `$json.statusCode`.
+
+### Files
+
+`granola-webhook.workflow.ts` builds the workflow, `granola-code-node.ts` its
+two Code nodes' scripts, `granola-webhook.ts` and `standard-webhook.ts` the
+check, `sha256.ts` the hash. `github-branch.ts` is the GitHub half both
+workflows share, so a change to it changes both JSON files.
+
 ## Changing the mapper
 
 The mapper is `packages/domain/src/meetings/mapping/` (since #93, so the app's
@@ -591,8 +731,223 @@ workflow's own checks. Edit them, run `pnpm n8n:build`, then in n8n replace the
 three Code nodes' code (**Map meeting to DFAI file**, **Same meeting?**,
 **Same meeting at the other path?**) with the new `jsCode` from the JSON — or
 delete the twelve nodes and paste the file again. A test fails while the JSON
-is out of date with the mapper.
+is out of date with the mapper. The Granola workflow's **Map meeting to DFAI
+file**, **Same meeting?** and **Same meeting at the other path?** nodes carry
+the same compiled mapper: replace their code too, keeping your `OPTIONS`, and
+re-paste the secret into **Verify Granola signature** if you re-import it.
 
 The node names the fields are read from are `EXAMPLE_SOURCES` in
 `workflow.ts`; `meetingWorkflow(scripts, sources)` builds the same nodes for
 other names. The notification's address is `NOTIFY_TO`, a placeholder.
+
+## The Slack capture mapper (#103)
+
+`mapCaptureScript()` in `code-node.ts` compiles the capture mapper
+(`packages/domain/src/capture/mapping/`, ADR-0049) into one Code node script
+the same way: the Slack workflow's **Map capture to DFAI file** (below). The
+mapper builds the note's body as a markdown tree; the script holds the app's
+own writer of that tree too (`capture-markdown.bundle.js`, bundled from
+`packages/adapters/src/markdown/capture-markdown.ts` by `pnpm n8n:build`,
+about 59 kB), so n8n writes the bytes the app writes. A test fails while the
+bundle is out of date.
+
+**JavaScriptCore parity is checked on a Mac only.** `capture-code-node.test.ts`
+(and `code-node.jsc.attack.test.ts` for meetings) runs the compiled script
+under macOS's `jsc` and requires the bytes Node writes. CI's unit shards are
+Linux, where `jsc` does not exist: there the parity test is skipped, and a test
+that runs only there says so in the output. Run `pnpm exec vitest run tools/n8n` on a
+Mac after changing either mapper.
+
+## Slack messages into DFAI (#104)
+
+Save a Slack message — and its whole thread — into DFAI's Inbox from inside
+Slack, with one gesture: the message's **⋮ → Save to DFAI as a note / as a
+task** shortcut, or an emoji reaction (`:inbox_tray:` saves a note,
+`:ballot_box_with_check:` a task; both can be changed). n8n checks Slack's
+signature, answers Slack at once, fetches the message, its thread and its
+people, and sends the capture to DFAI's `POST /v1/captures` (ADR-0049).
+When DFAI does not take it — closed, asleep, or an n8n that is not on the Mac
+— n8n maps it with the app's own mapper and commits the file to pkm-space at
+`Inbox/Captures/<title> (slack <hash>).md`, which DFAI pulls within a minute.
+Either way the app's bot DMs you a one-line answer: saved, already there, or
+not saved and why. A failure is emailed too.
+
+| File                                                           | What it is                                                              |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `slack-capture.workflow.json`                                  | The workflow to import. No secrets: placeholders, credentials by name.  |
+| `slack-app.manifest.json`                                      | The Slack app, to create from a manifest: shortcuts, event, scopes.     |
+| `slack-signature.ts`                                           | Slack's `v0=` HMAC-SHA256 check, in plain JavaScript (`sha256.ts`).     |
+| `slack-request.ts`                                             | What a signed request asks: save (shortcut, reaction), URL check, none. |
+| `slack-action-answers.ts`                                      | The action's view of the domain's shaping into one capture/v1 payload.  |
+| `capture-github.ts`                                            | The fallback's "is a file for this message in pkm-space already?"       |
+| `slack-reply.ts`                                               | The DM's words.                                                         |
+| `slack-code-node.ts`, `*.workflow.ts`, `slack-app-manifest.ts` | Build the JSON: `pnpm n8n:build`.                                       |
+
+`sha256.ts`, `standard-webhook.ts` and `n8n-nodes.ts` are byte-for-byte
+copies of PR #617's (the Granola webhook), so those files merge cleanly.
+**`build-workflow.mjs` does conflict with PR #617**: both add their
+workflow to it. Merge PR #617 first, then this one, keeping both sides of
+`build-workflow.mjs` (and of this README), then run `pnpm n8n:build` and
+check that nothing changes.
+
+### What it answers Slack
+
+- **`401`, in silence**, to any request not proven Slack's: not signed with
+  the signing secret, signed more than five minutes from now, with no raw
+  body to check (a multipart request with no file part, say), or with
+  headers that cannot be read. No email: a forger cannot fill your mailbox.
+  While the secret is still the placeholder, every request is a `401`, so
+  check the first run in n8n's **Executions**.
+- **`200` with the challenge** to the Events API's URL check.
+- **`200`, nothing else**, to a request that saves nothing: another emoji,
+  someone else's reaction or shortcut, another event — and every request
+  while `OWNER` is still the placeholder (no email, or every reaction in your
+  channels would be one; the execution in n8n says `OWNER is not set`).
+- **`200` the moment the signature holds**, before any fetch, for a message
+  to save: Slack wants an answer within 3 seconds and retries otherwise.
+- **`200` and an email** only for a request proven Slack's — signature and
+  fresh timestamp checked over its bytes — that cannot be read.
+
+Everything after the `200` is never answered to Slack: a failure is emailed
+and DMed, at most one email a run. Saving one message twice (a retry, both
+emoji, the shortcut after the emoji, a note then a task) writes one Inbox
+item: DFAI answers `in-vault`, and the commit finds a file already named for
+the message.
+
+**One odd detail never loses the message.** What Slack sends is fitted to
+capture/v1 before the contract reads it, by the contract's own rules
+(imported from `capture-payload.ts`, so they cannot drift):
+
+- a `users.info` lookup that fails, or names nobody, leaves that person
+  named by id; it never fails the capture;
+- an address the contract will not hold (an apostrophe, say) is left out,
+  and the person kept by name;
+- a name that cleans to nothing (only direction or zero-width marks) falls
+  back to the real name, the handle, then the id; every name is cut to 200
+  characters between code points;
+- the first 100 files are kept (the contract's most);
+- a thread holding more than 1,000,000 characters keeps the saved message
+  whole and leaves out the replies farthest from it first. The note cannot
+  say so (capture/v1 has no place for it); the DM does: `(N replies were
+left out: …)`.
+
+### What only you can do, in Slack and n8n
+
+1. **Create the Slack app.** At api.slack.com/apps: **Create New App → From
+   a manifest**, pick the workspace, paste `slack-app.manifest.json`, and
+   replace `YOUR-N8N-HOST` (twice) with your n8n's public host. Slack must
+   reach it over HTTPS, so this is the public n8n, not one only the Mac can
+   see. **Your workspace may need an admin to approve the app** (Slack asks
+   on install when it does); the user scopes read as you, so say so in the
+   request. The scopes, and why each:
+   - you (user token): `channels:history`, `groups:history`, `im:history`,
+     `mpim:history` to read a message and its thread wherever you can see
+     it; `reactions:read` for the reaction event; `users:read` and
+     `users:read.email` for names and addresses (an address is what links
+     an author to a Person note).
+   - the bot: `commands` for the shortcuts, `chat:write` for its DM to you.
+2. **Install it** (**Install App → Install to Workspace**). Slack shows a
+   **User OAuth Token** (`xoxp-…`) and a **Bot User OAuth Token** (`xoxb-…`).
+3. **Two credentials in n8n**, both **Header Auth**, header **Name**
+   `Authorization`:
+   - `Slack user token (DFAI capture)`, **Value** `Bearer xoxp-…`;
+   - `Slack bot token (DFAI capture)`, **Value** `Bearer xoxb-…`.
+     The tokens live only there: never in the workflow, a Code node, the vault
+     or this repository. DFAI never sees them.
+4. **Import** `slack-capture.workflow.json` (**Workflows → Import from
+   file**). Point **Email me: Slack message not in DFAI** at your address
+   (`NOTIFY_TO` is a placeholder) and its Gmail credential. **Commit capture
+   file** and **List Inbox/Captures** use `GitHub pkm-space (contents)`
+   (step 2 at the top).
+5. **The DFAI send.** In **Send to DFAI**, replace `DFAI_PORT` in the URL and
+   in the `Host` header with the port from DFAI's Settings → Connections, and
+   give it the `DFAI local API` credential ("API destination" above). This
+   reaches DFAI only when n8n runs in Docker on the Mac DFAI runs on. An n8n
+   anywhere else never reaches it, and every capture goes by commit; that
+   works, and the DM says "DFAI did not answer" each time.
+6. **Verify Slack signature.** Open it and paste in:
+   - `SIGNING_SECRET`: the app's **Basic Information → App Credentials →
+     Signing Secret**, in place of `PASTE_THE_SLACK_SIGNING_SECRET_HERE`. It
+     is in the node's code because a Code node cannot read a credential;
+     keep your copy under `Slack signing secret (DFAI capture)` in your
+     password manager, and never export the workflow with it in;
+   - `OWNER`: your member id (your Slack profile → **⋮ → Copy member ID**),
+     in place of `U_PASTE_YOUR_SLACK_MEMBER_ID`. Only your shortcuts and
+     reactions save; anyone else's are ignored;
+   - `EMOJI`, if you want others (names without colons).
+     Re-paste **all three** whenever you re-import a rebuilt JSON: with the
+     secret back but `OWNER` still the placeholder, nothing is saved.
+     **Every reaction anyone adds in a conversation you are in starts one n8n
+     execution** (the event cannot be narrowed to your own, or to one emoji);
+     all but yours are answered and end at once, but a hosted n8n plan that
+     bills per execution counts each.
+7. **Activate** the workflow. In the Slack app's **Event Subscriptions**,
+   Slack checks the Request URL as soon as it is saved: it should say
+   **Verified** (that is the challenge answer). **Interactivity &
+   Shortcuts** uses the same URL.
+8. **Dry run.** In a channel with only you (or your own DM), post a test
+   message with a reply, then react `:inbox_tray:`. Within a few seconds the
+   app's bot DMs you `Saved to DFAI: Inbox/Captures/…` (or `Saved to
+pkm-space for DFAI (…)`). Open the note: the message, `## Thread` with the
+   reply, and any file as a link. React again, or use the shortcut: the DM
+   says `Already in …`, and there is still one note. Then quit DFAI and save
+   another message: it arrives by commit.
+
+### What to confirm live (the tests cannot reach Slack or n8n)
+
+Every request and answer is tested against fixtures written from Slack's
+documentation, and the signature against Slack's own example. These are
+assumptions only a real run settles; if one is wrong, tell the next agent
+what you saw:
+
+- **Raw Body for a shortcut.** The Webhook node's **Raw Body** option puts
+  the bytes in its `data` binary for a form-encoded shortcut as for a JSON
+  event. If not, every shortcut is refused `401` in silence (`no raw body`
+  in the execution), while reactions still work: the shortcut shows Slack's
+  error, and n8n's **Executions** say why.
+- **Three seconds.** The `200` goes after the verify node only. A cold n8n
+  could be slow; n8n's **Executions** show the timing. A late answer makes
+  Slack retry; the retry is saved once, but the shortcut may show an error.
+- **`chat.getPermalink` needs no scope**, and **`conversations.replies`**
+  given a reply's ts lists its whole thread, parent first (Slack's docs say
+  both). A reply saved by itself is saved with the rest of its thread, the
+  parent among it.
+- **The reaction event as a user event** reaches n8n for every conversation
+  you are in, the bot a member of none.
+- **The bot's DM.** `chat.postMessage` to your member id with the bot token
+  lands in the app's **Messages** tab. If Slack answers `ok: false`, it is
+  emailed (`Slack took the reply?`).
+- **A capture of more than 100 people** names the rest by id. Whoever
+  asked and the saved message's author are always looked up first.
+- **The email's expressions** are PR #617's: if n8n's expression editor
+  refuses one, the email node fails (it stops nothing).
+
+### Known gaps
+
+- **Replies past 1,000 cannot be saved.** One `conversations.replies` call
+  asks for Slack's most, 1,000 messages; a longer thread keeps the first
+  1,000 (the parent among them), and the rest are not in the note.
+- **Slack's retries** (`x-slack-retry-num`) are not told apart: a retry is
+  saved again, and the key (`<channel>/<ts>`) makes it the same one note.
+- **`Retry-After` is not honoured.** A Slack `429` is retried three times,
+  two seconds apart, whatever Slack asks; past that the capture fails, is
+  emailed and DMed.
+- **A listing of 1,000 files** in `Inbox/Captures/` is GitHub's most and
+  may be cut short, so the commit refuses it rather than risk a second file:
+  the capture fails, is emailed and DMed. File your Inbox, or send to DFAI,
+  which finds a message anywhere in the vault.
+
+- The commit cannot see a note filed out of `Inbox/Captures/`: a message
+  saved again by commit after you filed it lands in the Inbox a second time.
+  The send to DFAI finds it wherever it is. (ADR-0049, Consequences: DFAI
+  does not yet mark a dropped file as a duplicate of one already filed.)
+- Two saves racing on the commit (both emoji at once) may both find the path
+  free; the second commit fails, is emailed, and the DM says not saved,
+  though the first is there.
+- **Send to DFAI** is tried three times, 2 seconds apart, so a slow DFAI
+  that wrote the note answers `in-vault` on a retry. Only a DFAI that wrote
+  it and then failed to answer all three, within 10 seconds each, is
+  followed by a commit, which cannot see the Mac's file yet: a sync conflict
+  copy is possible (ADR-0049, "the zone and the author's Person link").
+- The channel's name is not fetched (one fewer scope): the note shows the
+  channel's id.

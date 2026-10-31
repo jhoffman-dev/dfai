@@ -102,7 +102,9 @@ export const sql = defineTool({
     'props(path, key, idx, value_text, value_num, value_date, value_json), one row per ' +
     'property value, idx ordering a list; links(src, dst, target, kind), dst null when the ' +
     'link points at no note; fts, an FTS5 table (path, title, body) for MATCH. Each type has ' +
-    'a view v_<type> with path, title, summary and a column per property. Read sqlite_master ' +
+    'a view v_<type> with path, title, summary and a column per property, each cell as ' +
+    'atlas_query shows it (the type matched in any case, a date its first real day, a single ' +
+    'value written as a list as none). Read sqlite_master ' +
     'for the exact definitions. Writes are rejected, and a query that runs too long fails with ' +
     `"query_failed". Use ? placeholders with "params" rather than pasting values into the SQL. ${ROWS}`,
   inputSchema: z.object({

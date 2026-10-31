@@ -52,6 +52,10 @@ pub struct VaultEntry {
     /// Only meaningful for notes; the tree ignores both.
     pub modified: u64,
     pub size: u64,
+    /// Whether the entry is itself a symlink. `kind` is what it points at, so
+    /// a caller that would act on the folder's contents — a delete's warning —
+    /// can tell that only the link would go (#169).
+    pub link: bool,
 }
 
 #[derive(Default)]
@@ -122,6 +126,9 @@ fn recall(app: &AppHandle) -> Option<VaultLocation> {
 /// Two checks, because neither alone is enough: the lexical check rejects `..`
 /// before it touches the disk, and the canonical check catches a symlink whose
 /// target sits outside the vault.
+///
+/// Both are decided here, and the caller then opens the path resolved: a local
+/// program swapping a folder for a link in between is out of scope.
 pub(crate) fn resolve(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if relative.contains('\0') {
         return Err("path contains a null byte".into());
@@ -483,9 +490,17 @@ fn list_entries(root: &Path, path: &str) -> Result<Vec<VaultEntry>, String> {
             },
             modified: modified_ms(&metadata).unwrap_or(0),
             size: metadata.len(),
+            link: is_link(&entry),
         });
     }
     Ok(entries)
+}
+
+/// Whether a listed entry is a symlink; the entry's own type, never what it points at.
+fn is_link(entry: &fs::DirEntry) -> bool {
+    entry
+        .file_type()
+        .is_ok_and(|file_type| file_type.is_symlink())
 }
 
 fn modified_ms(metadata: &fs::Metadata) -> Result<u64, String> {
@@ -626,6 +641,30 @@ fn write_text(root: &Path, path: &str, contents: &str, based_on: BasedOn) -> Res
 
 const CHANGED_ON_DISK: &str = "the note changed on disk since it was opened";
 
+/// Whether the file at `relative` is still the version `read` names: its time,
+/// and its bytes when a digest is given (#235). A file that is gone is not.
+pub(crate) fn is_as_read(root: &Path, relative: &str, read: BasedOn) -> Result<bool, String> {
+    match fs::symlink_metadata(resolve_new(root, relative)?) {
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("cannot read: {error}")),
+        Ok(_) => {}
+    }
+    let file = resolve(root, relative)?;
+    let metadata = fs::metadata(&file).map_err(|error| format!("cannot read: {error}"))?;
+    let modified = modified_ms(&metadata)?;
+    if read.modified.is_some_and(|expected| expected != modified) {
+        return Ok(false);
+    }
+    match read
+        .digest
+        .map(|expected| refuse_other_bytes(&file, expected))
+    {
+        Some(Err(error)) if error == CHANGED_ON_DISK => Ok(false),
+        Some(Err(error)) => Err(error),
+        _ => Ok(true),
+    }
+}
+
 /// Refuses a save when the note's bytes are not the ones it was read as.
 ///
 /// Read only once the time has matched, so a stale save the time already
@@ -761,6 +800,7 @@ impl NoteWalk<'_> {
                     kind: "file",
                     modified: modified_ms(&metadata).unwrap_or(0),
                     size: metadata.len(),
+                    link: is_link(&entry),
                 });
             }
         }
@@ -1089,6 +1129,9 @@ pub async fn write_text_file(
     })
     .await
 }
+
+#[cfg(test)]
+mod skill_link_tests;
 
 #[cfg(test)]
 mod tests {

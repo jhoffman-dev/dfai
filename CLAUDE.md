@@ -156,6 +156,29 @@ is a lie about the state of the project.
 cards, read-only); don't add cards there. Its ids (`P<phase>-<nn>`, `U-<nn>`, `A…`)
 are what older commits and ADRs refer to.
 
+## Running tickets in parallel
+
+Clean layers do not stop two features from editing the same use-case, or every
+feature from appending to the same few files. On 2026-10-12 three features built
+side by side each had to be re-merged and re-verified after every other merge
+(#134). So:
+
+- **Every ticket lists what it touches** — `Touches` (the shared use-cases,
+  ports and append-point files it edits), `Must land after` and
+  `Must not run beside`. The issue template
+  (`.github/ISSUE_TEMPLATE/ticket.md`) has the sections and the list of known
+  append points; `gh issue create --template ticket.md` starts from it. A
+  ticket without the lists gets them before it is picked up.
+- **The coordinator runs tickets in parallel only when their lists do not
+  overlap.** Tickets in one epic that share a use-case are stacked or done in
+  order, never side by side.
+- **A shared seam change is its own small PR, merged first.** When two tickets
+  need the same change to a shared use-case or port, that change lands alone
+  before either feature starts.
+- **Never hard-code a cross-feature count in a test** — a tool count, a route
+  count, a number of surfaces. Every feature that adds one breaks every other
+  open PR. Derive the expected list from its source instead.
+
 ## Commands
 
 ```sh
@@ -226,6 +249,14 @@ Rust lives in `~/.cargo`; the npm scripts put it on PATH themselves.
 
 Dependencies point inward, and ESLint enforces it — each layer has a
 `no-restricted-imports` zone in `eslint.config.js`.
+
+**The webview has no Node.** Vitest runs on Node, so `Buffer`, `process` or an
+import of `node:fs` passes every unit test and fails only in WebKit. ESLint
+forbids Node's globals and modules in the packages and `apps/desktop/src`
+(tests are exempt, and test support that runs on Node is named in
+`eslint.config.js`, where nothing the app builds may import it), and
+`pnpm check:node-builtins` fails the gate when a built-in or a polyfill of one
+reaches the built bundle anyway (#53, #114).
 
 | Where                  | What belongs there                                |
 | ---------------------- | ------------------------------------------------- |

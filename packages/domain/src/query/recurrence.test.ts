@@ -98,3 +98,18 @@ describe('nextOccurrence at the last day a date can hold', () => {
     expect(nextOccurrence(from, { unit, every: 1 })).toBeNull();
   });
 });
+
+describe('parseRecurrence reads a list by the one-value rule (#107, as PR #616)', () => {
+  it('reads one rule written as a list, a blank item being no item', () => {
+    expect(parseRecurrence(['every week'])).toEqual({ unit: 'week', every: 1 });
+    expect(parseRecurrence(['', 'every week'])).toEqual({ unit: 'week', every: 1 });
+    expect(parseRecurrence([' daily ', null])).toEqual({ unit: 'day', every: 1 });
+  });
+
+  it('reads no rule from two, nested or not, nor from nothing but blanks', () => {
+    expect(parseRecurrence(['every week', 'every day'])).toBeNull();
+    expect(parseRecurrence([['every week', 'every day']])).toBeNull();
+    expect(parseRecurrence(['', ''])).toBeNull();
+    expect(parseRecurrence([])).toBeNull();
+  });
+});

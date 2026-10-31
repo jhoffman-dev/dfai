@@ -6,6 +6,7 @@ export { noticingWrites, serveApi } from './serve.ts';
 export type {
   ApiBridgePort,
   ApiConnectionStatus,
+  ApiGranola,
   ApiHost,
   ApiRouterDeps,
   ApiSettingsPort,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type { VaultPath } from '@dfai/domain';
+import type { VaultEntry, VaultPath } from '@dfai/domain';
 import { fakeIndexPort, fakeVaultFs, type VaultFsPort } from '@dfai/application';
 import { useVaultEntries, type VaultEntryPorts } from './use-vault-entries.ts';
 
@@ -206,5 +206,34 @@ describe('useVaultEntries', () => {
     act(() => result.current.links?.dismiss());
     expect(result.current.links).toBeNull();
     expect(fs.writeTextFile).not.toHaveBeenCalled();
+  });
+
+  it('asks about a folder reached through a link with why it cannot go, and names links (#169)', async () => {
+    const listings: Record<string, VaultEntry[]> = {
+      '': [{ kind: 'directory', name: 'Work', path: 'Work' as VaultPath }],
+      Work: [
+        { kind: 'directory', name: 'Alias', path: 'Work/Alias' as VaultPath, link: true },
+        { kind: 'directory', name: 'Shelf', path: 'Work/Shelf' as VaultPath },
+      ],
+      'Work/Shelf': [
+        { kind: 'directory', name: 'garden', path: 'Work/Shelf/garden' as VaultPath, link: true },
+      ],
+    };
+    const fs = fakeVaultFs({ listDirectory: async (path) => listings[path] ?? [] });
+    const { result } = renderHook(() =>
+      useVaultEntries(
+        ports(async () => {}, fs),
+        [],
+      ),
+    );
+
+    act(() =>
+      result.current.askDelete({ kind: 'directory', path: 'Work/Alias/Plans' as VaultPath }),
+    );
+    await waitFor(() => expect(result.current.question?.subject.refusal).toMatch(/“Work\/Alias”/));
+
+    act(() => result.current.askDelete({ kind: 'directory', path: 'Work/Shelf' as VaultPath }));
+    await waitFor(() => expect(result.current.question?.subject.links).toEqual(['garden']));
+    expect(result.current.question?.subject.refusal ?? null).toBeNull();
   });
 });

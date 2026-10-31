@@ -130,8 +130,17 @@ async function expectCardIn(page: Page, path: string, column: string) {
 test('the move to GTD is previewed task by task, run, and undone byte for byte', async ({
   page,
 }) => {
-  const files = { '.atlas/types/task.md': OLD_TASK_TYPE, ...OLD_TASKS };
-  const vault = await openVault(page, files);
+  // Opening gives the Task type DFAI's own `focus` (#108), before any move: that is the vault the move starts from.
+  const opened = {
+    '.atlas/types/task.md': OLD_TASK_TYPE.replace(
+      '  estimate: text\n',
+      '  estimate: text\n  focus:\n    kind: date\n    label: Chosen for\n',
+    ),
+    ...OLD_TASKS,
+  };
+  const vault = await openVault(page, { '.atlas/types/task.md': OLD_TASK_TYPE, ...OLD_TASKS });
+  await expectFile(vault, '.atlas/types/task.md').toBe(opened['.atlas/types/task.md']);
+  const files = opened;
   const offer = await openInbox(page);
 
   await expect(offer).toContainText('4 tasks would move to them.');

@@ -40,6 +40,21 @@ export {
 export type { LinkDirectory, LinkDirectoryRow } from './meeting-link-queries.ts';
 export { meetingLinkReport } from './meeting-link-report.ts';
 export {
+  compileAnyMarkQuery,
+  compileMarkedAmongQuery,
+  LINKING_FAILED,
+  linkingFailed,
+  linkingFailedStamp,
+  linkingOwed,
+  MARKED_AMONG_CHUNK,
+  markedMeetingsOf,
+  markRemoval,
+  MEETING_LINKS_KEY,
+  meetingsToRelink,
+  RELINKS_PER_RUN,
+} from './meeting-relink.ts';
+export type { MeetingsNotLinked } from './meeting-relink.ts';
+export {
   isFiledByDefault,
   NO_SERIES_PROJECT,
   planProjectBackfill,

@@ -23,6 +23,22 @@ interface Clock {
 const STARTS_AT = Date.UTC(2026, 5, 15, 9);
 const realSetTimeout = globalThis.setTimeout;
 
+/**
+ * What the clock threw again on the page's own timer, as a callback's error
+ * reaches `window.onerror` in a browser: kept here for a test to read, rather
+ * than failing the run as an error no test caught.
+ */
+const thrownOnThePage: unknown[] = [];
+const pageSetTimeout = window.setTimeout.bind(window);
+window.setTimeout = ((handler: () => void, delay?: number) =>
+  pageSetTimeout(() => {
+    try {
+      handler();
+    } catch (error) {
+      thrownOnThePage.push(error);
+    }
+  }, delay)) as typeof window.setTimeout;
+
 /** A host whose answers come back when the test says, not in the order asked. */
 function installSlowHost() {
   const pending = new Map<string, (value: unknown) => void>();
@@ -58,6 +74,38 @@ class StandInWorker {
   }
 }
 (window as unknown as { Worker: unknown }).Worker = StandInWorker;
+
+/**
+ * A layout observer whose reports come when the test says, as a browser's
+ * come on a rendering step of its own: jsdom has neither kind.
+ */
+class StandInObserver {
+  readonly #report: (entries: readonly { target: Element }[], observer: unknown) => void;
+  constructor(report: (entries: readonly { target: Element }[], observer: unknown) => void) {
+    this.#report = report;
+  }
+  readonly observing = new Set<Element>();
+  observe(target: Element) {
+    this.observing.add(target);
+  }
+  unobserve(target: Element) {
+    this.observing.delete(target);
+  }
+  disconnect() {
+    this.observing.clear();
+  }
+  /** What the browser does on a rendering step: hands the observer what changed. */
+  reportOn(...targets: Element[]) {
+    this.#report(
+      targets.map((target) => ({ target, size: target.getAttribute('data-size') })),
+      this,
+    );
+  }
+}
+Object.assign(window, {
+  ResizeObserver: class extends StandInObserver {},
+  IntersectionObserver: class extends StandInObserver {},
+});
 
 const clock = () => (window as unknown as { __workClock: Clock }).__workClock;
 const invoke = (command: string) =>
@@ -150,6 +198,218 @@ describe('the work clock', () => {
     await expect(clock().run('() => false', null, 0, 500)).rejects.toThrow(
       'not ready after 500 ms of the work clock',
     );
+  });
+
+  it.each([
+    ['just after it starts', 59_999],
+    ['in its middle', 59_500],
+    ['on its last moment', 59_000],
+  ])(
+    'never fires a timer of a minute or more while counting, its due time %s (#243)',
+    async (_where, countFrom) => {
+      const fired: string[] = [];
+      const base = Date.now() - STARTS_AT;
+      const tick = setInterval(() => fired.push('minute tick'), 60_000);
+      setTimeout(() => fired.push('a minute later'), 60_000);
+      // Up to the window's start, uncounted, as the harness's set-up moves time on.
+      await clock().run(null, null, countFrom, 0);
+      expect(fired).toEqual([]);
+      clock().startCounting();
+      setTimeout(() => fired.push('autosave'), 300);
+      // A counted action: its own short timers fire, the minute's do not.
+      await clock().run(null, null, 1_000, 0);
+      clock().stopCounting();
+      expect(Date.now() - STARTS_AT - base).toBe(countFrom + 1_000);
+      expect(fired).toEqual(['autosave']);
+      // The next uncounted step takes them, once each, before anything else.
+      await clock().run(null, null, 0, 0);
+      expect(fired).toEqual(['autosave', 'minute tick', 'a minute later']);
+      clearInterval(tick);
+    },
+  );
+
+  it('keeps a held minute tick on its minute: due plus a minute, not released plus a minute (#243)', async () => {
+    const base = Date.now() - STARTS_AT;
+    const firedAt: number[] = [];
+    const tick = setInterval(() => firedAt.push(Date.now() - STARTS_AT - base), 60_000);
+    await clock().run(null, null, 59_500, 0);
+    // Due at 60,000, inside a window that runs to 60,500: held.
+    clock().startCounting();
+    await clock().run(null, null, 1_000, 0);
+    clock().stopCounting();
+    expect(firedAt).toEqual([]);
+    // Released on the next uncounted step, at 60,500.
+    await clock().run(null, null, 0, 0);
+    expect(firedAt).toEqual([60_500]);
+    // Up to the next minute: it fires once more, on the minute it always had.
+    await clock().run(null, null, 59_500, 0);
+    expect(firedAt).toEqual([60_500, 120_000]);
+    clearInterval(tick);
+  });
+
+  describe.each(['ResizeObserver', 'IntersectionObserver'] as const)('a %s', (kind) => {
+    type Entry = { readonly target: Element; readonly size: string | null };
+    const observerOf = (heard: string[]) =>
+      new (
+        window as unknown as Record<
+          typeof kind,
+          new (report: (entries: Entry[]) => void) => StandInObserver
+        >
+      )[kind]((entries) =>
+        heard.push(entries.map(({ target, size }) => `${target.id} ${size}`).join(', ')),
+      );
+    const element = (id: string, size: string) => {
+      const made = document.createElement('div');
+      Object.assign(made, { id });
+      made.setAttribute('data-size', size);
+      return made;
+    };
+
+    it('holds a report that comes while counting, and hands it over once the clock has drawn a frame (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      clock().startCounting();
+      // A rendering step between two inputs: in a page it can land before
+      // React's work or after it, so the app must not see it then.
+      observer.reportOn(element('card', '38'));
+      expect(heard).toEqual([]);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['card 38']);
+    });
+
+    it('hands over the reports it held for one observer as one call (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      const [card, column] = [element('card', '38'), element('column', '723')];
+      clock().startCounting();
+      observer.reportOn(card);
+      observer.reportOn(column);
+      card.setAttribute('data-size', '40');
+      observer.reportOn(card);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      // A size has only its latest; a crossing in and out again is two crossings, in order.
+      expect(heard).toEqual([
+        kind === 'ResizeObserver' ? 'card 40, column 723' : 'card 38, column 723, card 40',
+      ]);
+    });
+
+    // A resize observer's disconnect and unobserve drop what it had not
+    // reported; an intersection observer's leave [[QueuedEntries]] to be
+    // delivered, as its spec says (PR #640's attack).
+    const drops = kind === 'ResizeObserver';
+
+    it('on disconnect, drops a held resize report and keeps a held crossing, as a browser does (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      clock().startCounting();
+      observer.reportOn(element('card', '38'));
+      observer.disconnect();
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(drops ? [] : ['card 38']);
+    });
+
+    it('on unobserve, drops what it held for the element, and calls no one for nothing, if a resize observer (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      const [card, column] = [element('card', '38'), element('column', '723')];
+      clock().startCounting();
+      observer.reportOn(card);
+      observer.unobserve(card);
+      await clock().run(null, null, 0, 0);
+      expect(heard).toEqual(drops ? [] : ['card 38']);
+      observer.reportOn(card, column);
+      observer.unobserve(card);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(drops ? ['column 723'] : ['card 38', 'card 38, column 723']);
+    });
+
+    it('hands the other observers their reports when one throws, and lets the error reach the page (#243)', async () => {
+      const heard: string[] = [];
+      thrownOnThePage.length = 0;
+      const throwing = new (window as unknown as Record<typeof kind, typeof StandInObserver>)[kind](
+        () => {
+          throw new Error('a broken measure');
+        },
+      );
+      const after = observerOf(heard);
+      clock().startCounting();
+      throwing.reportOn(element('card', '38'));
+      after.reportOn(element('column', '723'));
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      await aMoment();
+      expect(heard).toEqual(['column 723']);
+      expect(thrownOnThePage).toEqual([new Error('a broken measure')]);
+    });
+
+    it('skips a resize observer that an earlier one disconnected in the same hand-over (#243)', async () => {
+      const heard: string[] = [];
+      const Kind = (window as unknown as Record<typeof kind, typeof StandInObserver>)[kind];
+      let later: StandInObserver | null = null;
+      const first = new Kind(() => {
+        heard.push('first');
+        later?.disconnect();
+      });
+      later = observerOf(heard);
+      clock().startCounting();
+      first.reportOn(element('card', '38'));
+      later.reportOn(element('column', '723'));
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(drops ? ['first'] : ['first', 'column 723']);
+    });
+
+    it('hands the reports over in the order the observers were made, whatever order they came in (#243)', async () => {
+      const heard: string[] = [];
+      const [made, madeNext] = [observerOf(heard), observerOf(heard)];
+      clock().startCounting();
+      madeNext.reportOn(element('next', '2'));
+      made.reportOn(element('first', '1'));
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['first 1', 'next 2']);
+    });
+
+    it('holds a report while the clock runs, though not counting (#243)', async () => {
+      const heard: string[] = [];
+      const observer = observerOf(heard);
+      let heardInTheTimer: number | null = null;
+      setTimeout(() => {
+        observer.reportOn(element('card', '38'));
+        heardInTheTimer = heard.length;
+      }, 100);
+      await clock().run(null, null, 200, 0);
+      expect(heardInTheTimer).toBe(0);
+      expect(heard).toEqual(['card 38']);
+    });
+
+    it('takes in, before the run ends, the reports that a handed-over report leads to (#243)', async () => {
+      const heard: string[] = [];
+      const card = element('card', '38');
+      const observer: StandInObserver = observerOf(heard);
+      // As dnd-kit's measuring does: a report makes the app observe again, which
+      // the browser answers with a report of its own, on its next rendering step.
+      const Kind = (window as unknown as Record<typeof kind, typeof StandInObserver>)[kind];
+      const reobserving = new Kind(() => {
+        heard.push('measured');
+        if (heard.length === 1) observer.reportOn(card);
+      });
+      clock().startCounting();
+      reobserving.reportOn(card);
+      await clock().run(null, null, 0, 0);
+      clock().stopCounting();
+      expect(heard).toEqual(['measured', 'card 38']);
+    });
+
+    it("hands a report over at once outside counting and the clock's runs", () => {
+      const heard: string[] = [];
+      observerOf(heard).reportOn(element('card', '38'));
+      expect(heard).toEqual(['card 38']);
+    });
   });
 
   it('counts the host commands sent while counting, by name', async () => {

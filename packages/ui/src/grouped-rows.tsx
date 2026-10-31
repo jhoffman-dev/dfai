@@ -1,5 +1,4 @@
 import { useMemo, useRef, type ReactNode } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   columnSummary,
   countLabel,
@@ -13,6 +12,7 @@ import {
 import { Icon } from './icon.tsx';
 import { ROW_STOP, useRowFocus } from './row-focus.ts';
 import { StatusPill } from './status-pill.tsx';
+import { useRangeVirtualizer } from './range-virtualizer.ts';
 
 /** A table's groups, which are folded shut, and what can be done to them. */
 export interface TableGrouping {
@@ -140,7 +140,7 @@ export function GroupedRows({
 }) {
   const { onToggle, onNew } = grouping;
   const body = useRef<HTMLTableSectionElement>(null);
-  const virtualizer = useVirtualizer({
+  const virtualizer = useRangeVirtualizer({
     count: lines.length,
     getScrollElement: () => scroller,
     estimateSize: (index) => LINE_HEIGHT[lines[index]?.kind ?? 'row'],

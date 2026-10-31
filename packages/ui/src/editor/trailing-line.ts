@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { onlyRedraws } from './code-highlight.ts';
 import { isTombstone } from './tombstone-guard.ts';
 
 /*
@@ -47,6 +48,8 @@ export const TrailingLine = Extension.create({
         // gets its line on the first, and an undo that brings the atom back gives
         // the note exactly what it had before.
         appendTransaction: (transactions, _before, state) => {
+          // A redraw (code coloured as its grammar arrives) is no visit to the note.
+          if (onlyRedraws(transactions)) return null;
           const paragraph = state.schema.nodes['paragraph'];
           if (paragraph === undefined || !needsTrailingLine(state.doc)) return null;
           const line = state.tr.insert(state.doc.content.size, paragraph.create());

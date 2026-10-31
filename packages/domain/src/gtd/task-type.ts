@@ -1,5 +1,6 @@
 import { MEETING_ITEM_TASK_PROPERTIES } from '../meetings/meeting-extraction-properties.ts';
 import { PERSON_TYPE } from '../people/person.ts';
+import { declaresFocus, FOCUS_PROPERTY } from '../today/chosen.ts';
 import { FILED_UNDER, type BuiltInTypeFile } from '../types/para.ts';
 import type { ObjectType, PropertyDef } from '../types/property-def.ts';
 import { statusOf } from '../types/status-property.ts';
@@ -48,8 +49,12 @@ const TASK_PROPERTIES: readonly PropertyDef[] = [
 ];
 
 /**
- * The Task type, as written into a vault that has none: GTD's keys, and the
- * keys a task made from a meeting's action item carries (#177). A vault's
+ * The Task type, as written into a vault that has none: GTD's keys, the day
+ * it was chosen for (#108), and the keys a task made from a meeting's action
+ * item carries (#177). `focus` is not one of GTD's keys: a vault's own Task
+ * type gains it on opening, as DFAI's shipped properties are added
+ * (`SHIPPED_PROPERTIES`), so it never makes a vault already on GTD be offered
+ * the move again. A vault's
  * own Task type is offered those with meeting post-processing's setup (#191),
  * not with the move to GTD, so a vault already on GTD is not offered the move
  * again for them.
@@ -59,7 +64,12 @@ export const TASK_TYPE_FILE: BuiltInTypeFile = {
     name: TASK_TYPE,
     label: 'Task',
     icon: 'task',
-    properties: [GTD_STATUS_PROPERTY, ...TASK_PROPERTIES, ...MEETING_ITEM_TASK_PROPERTIES],
+    properties: [
+      GTD_STATUS_PROPERTY,
+      ...TASK_PROPERTIES,
+      FOCUS_PROPERTY,
+      ...MEETING_ITEM_TASK_PROPERTIES,
+    ],
   },
   body: [
     '# Task',
@@ -67,6 +77,7 @@ export const TASK_TYPE_FILE: BuiltInTypeFile = {
     `Something to do. Its status is one of ${GTD_STATUSES.map((status) => GTD_STATUS_LABELS[status]).join(', ')}:`,
     'a captured task starts in the Inbox, and ticking one off moves it to the Archive with the day it was',
     'finished. A Waiting task may say who it waits on, or not; a deferred one stays out of Next actions until its day.',
+    'Chosen for is the day it was chosen to be done on, from the Today page.',
     '',
   ].join('\n'),
 };
@@ -187,6 +198,16 @@ export function capturedTaskStatus(type: ObjectType | null): GtdStatus | null {
 /** Whether the vault's tasks start in the Inbox: its Task type has that status (ADR-0029). */
 export const tasksStartInInbox = (types: readonly ObjectType[]): boolean =>
   capturedTaskStatus(taskTypeOf(types)) !== null;
+
+/**
+ * Whether the vault chooses tasks for today (#108): its Task type has
+ * `focus` as a date, which is where a choice is written. A vault with no
+ * Task type yet is taken to have the built-in one, as it would be given. One
+ * whose type took `focus` off, or made it its own kind, never has a choice
+ * written over what it keeps there.
+ */
+export const choosesForToday = (types: readonly ObjectType[]): boolean =>
+  declaresFocus(taskTypeOf(types) ?? TASK_TYPE_FILE.type);
 
 /** The statuses a row may give a task, and where a note made a task starts. */
 export interface ClarifyVocabulary {

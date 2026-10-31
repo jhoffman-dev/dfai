@@ -214,6 +214,23 @@ describe('compileFollowUpsQuery', () => {
     });
   });
 
+  // Follow-up to #110: a type in any case, as FROM finds it.
+  it('reads a task and a person whose types are written in capitals or with spaces', () => {
+    const spelt = assistantIndex(
+      withBodyLink.map((note) => {
+        if (note.path === TOBIAS) return { ...note, props: { type: 'Person' } };
+        if (note.path === 'Tasks/Chase the quote.md') {
+          return { ...note, props: { ...note.props, type: ' TASK ' } };
+        }
+        return note;
+      }),
+    );
+    const found = followUpRowsOf(spelt(compile()) ?? []).map((row) => row.path);
+    expect(found).toContain('Tasks/Chase the quote.md');
+    // Tobias is still a person, so his follow-up through the shared meeting stays out.
+    expect(found).not.toContain('Tasks/Tobias to send it.md');
+  });
+
   it('keeps every shared-meeting follow-up when the vault has no Person type to tell by', () => {
     expect(followUps({ personType: null })).toContain('Tasks/Tobias to send it.md');
   });

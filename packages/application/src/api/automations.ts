@@ -24,6 +24,7 @@ import {
 import {
   loadAutomations,
   planRuleNow,
+  withMeetingsNotLinked,
   withPeriodNote,
   type LoadedAutomation,
 } from '../automations/index.ts';
@@ -125,12 +126,18 @@ export async function automationDryRunRoute(request: VaultRequest): Promise<Rout
       `This automation’s query could not run: ${messageWithoutPaths(error)}`,
     );
   });
-  const plan = await withPeriodNote({
+  const planned = await withPeriodNote({
     plan: target.plan,
     rule,
     log,
     at: request.clock.localNow(),
     ports,
+  });
+  const plan = await withMeetingsNotLinked({
+    plan: planned,
+    rule,
+    ports,
+    today: request.clock.today(),
   });
   // The index answers for the vault open now: a plan read after a switch would be the other vault's notes.
   request.assertStillOpen();
@@ -326,5 +333,11 @@ function planOf(plan: AutomationPlan): ApiAutomationPlan {
     passedOverMore: Math.max(0, plan.passedOver.length - PASSED_OVER_LISTED),
     capped: plan.capped,
     cap: capFor(plan.action),
+    ...(plan.notLinked !== undefined && {
+      notLinked: {
+        meetings: plan.notLinked.paths.map((path) => ({ path, title: noteTitle(path) })),
+        capped: plan.notLinked.capped,
+      },
+    }),
   };
 }

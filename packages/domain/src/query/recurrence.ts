@@ -1,3 +1,5 @@
+import { singleTextOf } from '../gtd/gtd-status.ts';
+
 /**
  * When a repeating task comes round again.
  *
@@ -19,9 +21,13 @@ const PATTERNS: readonly (readonly [RegExp, Recurrence['unit']])[] = [
 
 const EVERY_N = /^every\s+(\d+)\s+(day|week|month|year)s?$/i;
 
+/**
+ * A recurrence as written, read by the one-value rule the index reads it by
+ * (`singleTextOf`): `[every week]` and `["", every week]` repeat weekly; a
+ * list of two rules is no rule.
+ */
 export function parseRecurrence(value: unknown): Recurrence | null {
-  if (typeof value !== 'string') return null;
-  const text = value.trim();
+  const text = singleTextOf(value)?.trim() ?? '';
   if (text === '') return null;
 
   for (const [pattern, unit] of PATTERNS) {

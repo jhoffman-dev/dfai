@@ -8,6 +8,7 @@ import {
   profileSettingsCard,
   quickAddSettingsCard,
   secretsSettingsCard,
+  slackSettingsCard,
   syncSettingsCard,
 } from '../pages-on-first-use.ts';
 
@@ -23,6 +24,7 @@ export const ImageSettingsPanel = imageSettingsPanel.Component;
 export const ProfileSettingsCard = profileSettingsCard.Component;
 export const QuickAddSettingsCard = quickAddSettingsCard.Component;
 export const SecretsSettingsCard = secretsSettingsCard.Component;
+export const SlackSettingsCard = slackSettingsCard.Component;
 export const SyncSettingsCard = syncSettingsCard.Component;
 
 /** The app's sections in the order `app.tsx` draws them; `withVault` ones only once a vault is open. */
@@ -35,6 +37,7 @@ const ORDER: readonly { readonly section: SettingsSectionLink; readonly withVaul
   { section: SETTINGS_SECTIONS.secrets, withVault: true },
   { section: SETTINGS_SECTIONS.googleCalendar, withVault: true },
   { section: SETTINGS_SECTIONS.granola, withVault: true },
+  { section: SETTINGS_SECTIONS.slack, withVault: true },
   { section: SETTINGS_SECTIONS.kindle, withVault: true },
   { section: SETTINGS_SECTIONS.claude, withVault: false },
   { section: SETTINGS_SECTIONS.sync, withVault: true },

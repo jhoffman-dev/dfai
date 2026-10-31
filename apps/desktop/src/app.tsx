@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ComponentProps,
 } from 'react';
@@ -63,6 +64,7 @@ import {
   type VaultRead,
   type ActivityStore,
   type WindowClosingPort,
+  type ApiGranola,
   type ApiRouterDeps,
   type AppInfoPort,
   type ExternalLinkPort,
@@ -75,6 +77,7 @@ import {
   type GranolaPort,
   type GranolaPullRecords,
   type PageSnapshotPort,
+  type SlackPort,
 } from '@dfai/application';
 import {
   AppShell,
@@ -85,6 +88,7 @@ import {
   collapseFor,
   useSteadyCallback,
   CapturePalette,
+  SlackMessageOffer,
   DeleteDialog,
   lostUsesText,
   TemplateToNoteDialog,
@@ -101,10 +105,12 @@ import {
   NewArtifactDialog,
   AddDocumentDialog,
   NoteNamesProvider,
+  CodeLanguagesProvider,
   Toast,
   type AppInfoState,
   type OpenHow,
 } from '@dfai/ui';
+import { codeLanguages } from './code-languages.ts';
 import { useVault, type VaultPorts } from './vault/use-vault.ts';
 import { boundToVault, type OnHost } from './vault/bound-to-vault.ts';
 import type { NotePorts } from './notes/use-note.ts';
@@ -200,6 +206,7 @@ import { PEEK_EDITOR, PeekLayer } from './panes/peek-container.tsx';
 import { leavePeek } from './panes/peek-moves.ts';
 import { SearchPaletteSlot } from './search-palette-slot.tsx';
 import { useSemanticSearch, type SemanticPorts } from './semantic/use-semantic-search.ts';
+import { useRelatedPorts } from './related/use-related-ports.ts';
 import { linkPlacesOf } from './reader/link-places.ts';
 import { movingEditorsIn, openNotesIn } from './panes/open-notes.ts';
 import { useVaultEntries, type VaultEntryPorts } from './vault/use-vault-entries.ts';
@@ -217,6 +224,8 @@ import { createOwnerNameRelay } from './api/owner-name-relay.ts';
 import { createClaudeStepRelay } from './api/claude-step-relay.ts';
 import { createMoveRelay } from './api/move-relay.ts';
 import { SettingsPanel } from './settings/settings-panel.tsx';
+import { useSlackPaste } from './slack/use-slack-paste.ts';
+import { useSlackPasteListener } from './slack/slack-paste-listener.ts';
 import {
   GlobalCaptureSettings,
   GoogleCalendarSettingsCard,
@@ -226,6 +235,7 @@ import {
   ProfileSettingsCard,
   QuickAddSettingsCard,
   SecretsSettingsCard,
+  SlackSettingsCard,
   SyncSettingsCard,
   settingsSectionLinks,
 } from './settings/settings-sections.ts';
@@ -299,6 +309,7 @@ import { useInboxWaiting } from './inbox/use-inbox-waiting.ts';
 import { createPendingWrites } from './workspace/pending-writes.ts';
 import { createPageHoldsByVault } from './workspace/page-holds.ts';
 import { useBuiltInTypes } from './types/use-built-in-types.ts';
+import { createMeetingSetupStore } from './meetings/use-meeting-setup.ts';
 import { useBlockType } from './timeblocks/use-block-type.ts';
 import { useTaskMigration } from './gtd/use-task-migration.ts';
 import { useParaMigration } from './para/use-para-migration.ts';
@@ -308,6 +319,7 @@ import { useMeetingProjects } from './meetings/use-meeting-projects.ts';
 import { AutomationsRunner } from './automations/automations-runner.tsx';
 import { createAutomationsStore, useOwnerNeeded } from './automations/automations-store.ts';
 import { MeetingImportRunner } from './meetings/meeting-import-runner.tsx';
+import { createMeetingsWaitingStore } from './meetings/meetings-waiting-store.ts';
 import { archiveCommand, withCommandBeforeDelete } from './archive/archive-menu.ts';
 import { paletteArchiveCommands, runPaletteArchiveCommand } from './archive/palette-archive.ts';
 import { ChatPane, ClaudeSettingsCard } from './chat/chat-pane.tsx';
@@ -466,6 +478,7 @@ function AppWindow({
   meetings: meetingPorts,
   blocks: blockPorts,
   kindle: kindlePorts,
+  slack: slackPort,
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
 }: {
@@ -498,6 +511,8 @@ function AppWindow({
   blocks?: BlockSyncHost;
   /** Kindle through the host's own Amazon session (ADR-0044), and the app's one sync; left out, Kindle is not offered. */
   kindle?: KindleHost;
+  /** Slack, through the host, which keeps the token (#105): a pasted Slack link is offered for saving. */
+  slack: SlackPort;
   /** The shortcut that opens quick capture from any app, registered by the host (#81). */
   globalCapture: { port: GlobalCapturePort; store: GlobalCaptureStore };
   /** Where exports go, how a PDF is made and how a Doc reaches Drive (#501); left out, nothing is exported. */
@@ -523,6 +538,9 @@ function AppWindow({
   // be refused half-done (U-29).
   const [syncStore] = useState(createSyncStore);
   const [automationsStore] = useState(createAutomationsStore);
+  const [meetingSetupStore] = useState(createMeetingSetupStore);
+  // What the meeting import says waits for the named Mac, read by the Inbox alone (ADR-0035 part 1).
+  const [meetingsWaiting] = useState(createMeetingsWaitingStore);
   // The Inbox and Proposals tabs hold their background writes here: a switch
   // waits for the clarifications and answers still being written behind those
   // pages, which the host would refuse once another vault is open (#217, #166).
@@ -669,6 +687,7 @@ function AppWindow({
     changes: noteChanges,
     indexReady,
   });
+  const relatedPorts = useRelatedPorts({ semantic, idle: semanticPorts?.idle ?? null, vaultKey });
 
   // Anything that edits the vault from outside — Obsidian, a sync client — should
   // show up here without a restart. The echo of the app's own writes is left
@@ -845,6 +864,17 @@ function AppWindow({
   const apiOwner = useMemo(() => createOwnerNameRelay(), []);
   const apiClaude = useMemo(() => createClaudeStepRelay(), []);
   const meetingDrafts = useMemo(() => createMeetingDrafts(), []);
+  // Granola for the API (P28-13): the host's word on the key, this Mac's record, and the app's own Sync now.
+  const apiGranolaSyncNow = useSteadyCallback((vault: string) => granolaPull.syncNowFor(vault));
+  const apiGranola = useMemo<ApiGranola>(
+    () => ({
+      keyStatus: (vault) => granolaPorts.port.status({ vault }),
+      record: (vault) => granolaPorts.records.read(vault),
+      ready: granolaPull.readyFor,
+      syncNow: apiGranolaSyncNow,
+    }),
+    [granolaPorts.port, granolaPorts.records, granolaPull.readyFor, apiGranolaSyncNow],
+  );
   const apiDeps = useMemo<ApiRouterDeps>(
     () => ({
       host: apiHost,
@@ -878,6 +908,7 @@ function AppWindow({
       meetingDrafts,
       // A draft that failed after the API answered is said in the window, where no caller is left.
       notices: { warn: (message) => toasts.show({ message, tone: 'error' }) },
+      granola: apiGranola,
     }),
     [
       apiHost,
@@ -902,6 +933,7 @@ function AppWindow({
       apiClaude.ports,
       meetingDrafts,
       toasts,
+      apiGranola,
     ],
   );
   // A write from another tool shows up the way one made here does.
@@ -1650,6 +1682,34 @@ function AppWindow({
     () => ({ ...archivePorts, types, notePaths, claude: claudeStep }),
     [archivePorts, types, notePaths, claudeStep],
   );
+  // Meeting post-processing set up in one previewed yes, from the Inbox or Automations (#191).
+  const meetingSetup = useMemo(
+    () => ({
+      store: meetingSetupStore,
+      automations: automationsStore,
+      fs: vault.fs,
+      markdown: notes.markdown,
+      suggestedEmails: ownerEmails,
+      activity: activityLog,
+      onChanged: typesChanged,
+    }),
+    [
+      meetingSetupStore,
+      automationsStore,
+      vault.fs,
+      notes.markdown,
+      ownerEmails,
+      activityLog,
+      typesChanged,
+    ],
+  );
+  // The meeting import asks the rules' queries through the ports as they are
+  // at the ask: they move as the tree fills, and its runner is not drawn for it.
+  const automationPortsNow = useRef(automationPorts);
+  useEffect(() => {
+    automationPortsNow.current = automationPorts;
+  }, [automationPorts]);
+  const rulePorts = useCallback(() => automationPortsNow.current, []);
   // The automations, and the meeting import, are run by their runners, drawn below (#326).
   const treeMenuFor = useCallback(
     (entry: VaultEntry) =>
@@ -1726,6 +1786,38 @@ function AppWindow({
     },
     [captureNote, captureTemplate, openNote, overlays],
   );
+
+  const slackPastePorts = useMemo(
+    () => ({
+      slack: slackPort,
+      capture: { fs: vault.fs, markdown: notes.markdown, index: index.index },
+      vault: vaultKey,
+      timeZone: localTimeZone,
+      openNote,
+    }),
+    [slackPort, vault.fs, notes.markdown, index.index, vaultKey, openNote],
+  );
+  const slackPaste = useSlackPaste(slackPastePorts);
+  useSlackPasteListener(slackPaste.offer);
+  const slackOffer =
+    slackPaste.view === null ? null : (
+      <SlackMessageOffer
+        view={slackPaste.view}
+        onSave={slackPaste.save}
+        onOpen={() => {
+          slackPaste.open();
+          slackPaste.dismiss();
+          hideOverlay('capture');
+        }}
+        onOpenSettings={() => {
+          slackPaste.dismiss();
+          // Quick capture holds the screen while it is open: it gives way to Settings.
+          hideOverlay('capture');
+          showOverlay('settings');
+        }}
+        onDismiss={slackPaste.dismiss}
+      />
+    );
 
   /** Today's note, made on demand — where and from what is `ensureDailyNote`'s to say. */
   const openDailyNote = useCallback(async () => {
@@ -1833,6 +1925,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       graph: vaultGraph.kind === 'ready' ? vaultGraph.graph : null,
+      related: relatedPorts,
       openNotes: paneOpenNotes,
       viewPaths,
       viewDrafts,
@@ -1876,6 +1969,7 @@ function AppWindow({
       groupFolds,
       linkedRanges,
       vaultGraph,
+      relatedPorts,
       paneOpenNotes,
       viewPaths,
       viewDrafts,
@@ -2153,6 +2247,8 @@ function AppWindow({
     () => ({
       closing: closing.writes,
       pendingWrites,
+      meetingsWaiting,
+      sync: syncStore,
       onOpenSource: followSource,
       typesOffer:
         typesOffer === null
@@ -2176,6 +2272,7 @@ function AppWindow({
             },
       ownerUnknown: ownerNeeded ? { onOpenSettings: () => showOverlay('settings') } : null,
       meetingProjects,
+      meetingSetup,
       view:
         inboxView === null
           ? null
@@ -2184,6 +2281,8 @@ function AppWindow({
     [
       closing.writes,
       pendingWrites,
+      meetingsWaiting,
+      syncStore,
       followSource,
       typesOffer,
       taskMigration,
@@ -2193,6 +2292,7 @@ function AppWindow({
       settingsProblem,
       ownerNeeded,
       meetingProjects,
+      meetingSetup,
       inboxView,
       openNote,
       showOverlay,
@@ -2229,12 +2329,17 @@ function AppWindow({
           live={automationsShown}
           sync={syncStore}
           ownerKnown={ownerKnown}
+          selfName={ownerName}
+          selfEmails={ownerEmails}
           // A rule a note sets off hears of it here (P29-01).
           changes={noteChanges}
         />
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
           sync={syncStore}
+          automations={automationsStore}
+          rulePorts={rulePorts}
+          waiting={meetingsWaiting}
           changes={noteChanges}
           ports={archivePorts}
           clock={localClock}
@@ -2400,7 +2505,11 @@ function AppWindow({
                       templates: templatesPage.page,
                       terms: { templates },
                       activity: { activity },
-                      automations: { store: automationsStore, ports: automationPorts },
+                      automations: {
+                        store: automationsStore,
+                        ports: automationPorts,
+                        setup: meetingSetup,
+                      },
                       graph: { state: vaultGraph },
                       query: { text: queryText },
                       tags: {
@@ -2471,7 +2580,10 @@ function AppWindow({
           status={location === null ? null : indexStatusText(indexStatus)}
           floating={
             location === null ? null : (
-              <IndexProgressPill status={indexStatus} progress={indexProgress} />
+              <>
+                <IndexProgressPill status={indexStatus} progress={indexProgress} />
+                {overlay === 'capture' ? null : slackOffer}
+              </>
             )
           }
           overlay={
@@ -2509,6 +2621,7 @@ function AppWindow({
                   <GoogleCalendarSettingsCard setting={googleCalendarSetting} />
                 )}
                 {location !== null && <GranolaSettingsCard setting={granolaSetting} />}
+                {location !== null && <SlackSettingsCard port={slackPort} vault={vaultKey} />}
                 {location !== null && kindlePorts !== undefined && (
                   <KindleSettingsCard kindle={kindleSync} />
                 )}
@@ -2647,7 +2760,9 @@ function AppWindow({
                 onCapture={(name) => void captureTask(name)}
                 onClose={() => hideOverlay('capture')}
                 fallbackFocus={focusFallback}
-              />
+              >
+                {slackOffer}
+              </CapturePalette>
             ) : (
               <SearchPaletteSlot
                 store={overlays}
@@ -2670,7 +2785,7 @@ function AppWindow({
   );
   return (
     <LinkHintsHost index={index.index} status={indexStore} vault={vaultKey}>
-      {shell}
+      <CodeLanguagesProvider value={codeLanguages}>{shell}</CodeLanguagesProvider>
     </LinkHintsHost>
   );
 }

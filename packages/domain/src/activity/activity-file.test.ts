@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
-import type { ActivityEvent } from './activity-event.ts';
+import { activityEvent, MAX_ACTIVITY_NOTES, type ActivityEvent } from './activity-event.ts';
 import {
   ACTIVITY_MAX_AGE_MS,
   ACTIVITY_MAX_BYTES,
@@ -150,5 +150,44 @@ describe('the bound when the clock is wrong', () => {
     expect(boundActivity([kept, soon, farAhead], NOW)).toEqual([kept, soon]);
     expect(hasExpiredActivity([kept, soon, farAhead], NOW)).toBe(true);
     expect(hasExpiredActivity([kept, soon], NOW)).toBe(false);
+  });
+});
+
+describe('the notes a line is about besides its subject (#192)', () => {
+  const MEETING = 'Inbox/Meetings/2026-10-06 Standup.md';
+  const ran = (notes: readonly string[]) =>
+    activityEvent({
+      at: 1,
+      level: 'info',
+      kind: 'automation',
+      message: 'After a meeting: Ran.',
+      subject: null,
+      notes: notes.map((note) => note as ReturnType<typeof createVaultPath>),
+    });
+
+  it('are kept in the file and read back', () => {
+    const event = ran([MEETING]);
+    expect(event.notes).toEqual([MEETING]);
+    expect(parseActivityLog(activityLine(event))).toEqual([event]);
+  });
+
+  it('are left out of a line about none, as lines were before', () => {
+    expect(activityLine(ran([]))).not.toContain('notes');
+    expect(parseActivityLog(activityLine(ran([])))[0]).not.toHaveProperty('notes');
+  });
+
+  it('keep only paths inside the vault, no chat note, each once, at most twenty', () => {
+    const many = Array.from({ length: MAX_ACTIVITY_NOTES + 5 }, (_, at) => `M${at}.md`);
+    expect(
+      ran(['/Users/someone/Vault/A.md', '../B.md', 'Chats/Private.md', MEETING, MEETING]).notes,
+    ).toEqual([MEETING]);
+    expect(ran(many).notes).toHaveLength(MAX_ACTIVITY_NOTES);
+  });
+
+  it('drop what a hand-edited file holds that is not a path', () => {
+    const text = `${JSON.stringify({ at: 1, level: 'info', kind: 'app', message: 'M', subject: null, notes: [3, MEETING, null] })}\n`;
+    expect(parseActivityLog(text)[0]?.notes).toEqual([MEETING]);
+    const notList = `${JSON.stringify({ at: 1, level: 'info', kind: 'app', message: 'M', subject: null, notes: 'A.md' })}\n`;
+    expect(parseActivityLog(notList)[0]).not.toHaveProperty('notes');
   });
 });

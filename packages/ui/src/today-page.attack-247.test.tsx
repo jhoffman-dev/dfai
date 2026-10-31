@@ -37,6 +37,7 @@ function report(tasks: readonly ReviewTask[]): TodayReport {
   return {
     ...todayLists({ tasks, projects: [], at: { today: TODAY, now: NOW } }),
     today: TODAY,
+    choosing: true,
     inbox: { count: 0, toFile: 0, toAnswer: 0, more: false },
     truncated: false,
     stalledProjects: 0,
@@ -61,6 +62,7 @@ function props(today: TodayReport, overrides: Partial<TodayPageProps> = {}): Tod
     onDone: vi.fn(),
     onSetStatus: vi.fn(),
     onDefer: vi.fn(),
+    onChoose: vi.fn(),
     ...overrides,
   };
 }

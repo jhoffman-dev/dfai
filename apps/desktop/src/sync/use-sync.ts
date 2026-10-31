@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_PULL_INTERVAL_MINUTES,
   DEFAULT_PUSH_DELAY_SECONDS,
   runsAutomationsHere,
+  type ClaimOutcome,
   type SyncPhase,
 } from '@dfai/domain';
 import {
@@ -17,6 +18,7 @@ import {
   type SyncFilesPort,
   type SyncRemoteChoice,
   type SyncSettings,
+  type SyncTimingChanges,
   type SleepClockPort,
   type SyncSetup,
   type ThisMacPort,
@@ -26,6 +28,8 @@ import {
 import { useVaultSetting } from '../settings/use-vault-setting.ts';
 import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 import type { SyncPauseStore } from './browser-sync-pause.ts';
+import { useClaimAutomations } from './use-claim-automations.ts';
+import { usePhase } from './use-phase.ts';
 import { usePulledFiles, type PulledFilesGate } from './use-pulled-files.ts';
 import { useExclusive, useInspection, useSyncRuns, type ThisMac } from './use-sync-runs.ts';
 import { useSyncSchedule } from './use-sync-schedule.ts';
@@ -107,7 +111,20 @@ export interface SyncController {
   readonly setPullInterval: (minutes: number) => void;
   readonly setPushDelay: (seconds: number) => void;
   readonly setPaused: (paused: boolean) => void;
+  /** Settings → Sync: names this Mac as the one that runs the automations (ADR-0025). */
   readonly claimAutomations: () => void;
+  /**
+   * "Process here" on the Inbox (ADR-0035 part 2): the same claim, refused
+   * while sync is paused, failing or has not pulled since launch or wake.
+   */
+  readonly processHere: () => Promise<ClaimOutcome>;
+  /** Whether a claim of the automations is waiting for its turn or being written. */
+  readonly claiming: boolean;
+  /**
+   * While this Mac's claim is written here and no sync has pushed it: the
+   * name of the Mac it was taken from, which still believes it is named.
+   */
+  readonly claimPending: { readonly was: string | null } | null;
   /** Settles once any sync, or setting one up, under way has finished: another vault must not open under it. */
   readonly settle: () => Promise<void>;
 }
@@ -124,7 +141,7 @@ export function useSync(options: SyncOptions): SyncController {
   const thisMac = useThisMac(host.thisMac);
   const settings = useSyncSettings(options);
   const [setup, setSetup] = useState<SyncSetup | null>(null);
-  const [phase, setPhase] = useState<SyncPhase>({ kind: 'unknown' });
+  const { phase, setPhase, phaseNow } = usePhase();
   const [behind, setBehind] = useState(0);
   const { paused, setPaused } = usePause(host.pause, vaultKey);
   const git = useMemo(() => (vaultKey === null ? null : host.git(vaultKey)), [host, vaultKey]);
@@ -135,18 +152,35 @@ export function useSync(options: SyncOptions): SyncController {
     thisMac !== null &&
     settings.value !== null &&
     runsAutomationsHere({ automationsMac: settings.value.automationsMac, thisMacId: thisMac.id });
-  const { gate: pulledFiles, pulls } = usePulledFiles({
+  const {
+    gate: pulledFiles,
+    pulls,
+    claimRefusal,
+    claimed,
+    claimUnsharedNow,
+    claimUnshared,
+    claimWas,
+    namedOnGitHub,
+  } = usePulledFiles({
     vaultKey,
     sleepClock: host.sleepClock,
     fs: options.fs,
     markdown: options.markdown,
     thisMacId: thisMac?.id ?? null,
     paused: (vault) => host.pause.read(vault),
+    pausedNow: paused,
     clock: options.clock,
     activity: options.activity,
+    gitOf: host.git,
+    // A claim a look found not on GitHub is pushed now, not at the next edit (#630 attack).
+    onClaimUnshared: (vault) => {
+      if (vault === vaultKey && !host.pause.read(vault)) void runNow.current();
+    },
   });
   const shared = { ...options, git, files, thisMac, setPhase, markSynced, exclusive, pulls };
   const { run, check, lastSyncAt, lastCheckAt } = useSyncRuns({ ...shared, setBehind });
+  const runNow = useRef(run);
+  runNow.current = run;
   useInspection({
     ...shared,
     folders: host.folders,
@@ -171,6 +205,31 @@ export function useSync(options: SyncOptions): SyncController {
   const { setUp, problem } = useSetUp({ ...shared, folders: host.folders, setSetup });
   const repositories = useRepositories(host.github);
   const { save } = settings;
+  // After a restart only git knows of the claim: shown from what the gates found.
+  const gitPending = useMemo(
+    () => (claimUnshared ? { was: claimWas } : null),
+    [claimUnshared, claimWas],
+  );
+  const claims = useClaimAutomations({
+    named: automationsHere,
+    fs: options.fs,
+    markdown: options.markdown,
+    vaultKey,
+    thisMac,
+    syncs: setup?.kind === 'set-up',
+    paused,
+    phaseNow,
+    claimRefusal,
+    claimed,
+    claimUnsharedNow,
+    namedOnGitHub,
+    claimUnshared,
+    exclusive,
+    activity: options.activity,
+    readAgain: settings.readAgain,
+    run,
+  });
+  const claimPending = claims.pending ?? gitPending;
   return {
     phase,
     setup,
@@ -182,7 +241,7 @@ export function useSync(options: SyncOptions): SyncController {
     syncPulls,
     pulledFiles,
     automationsHere,
-    problem: problem ?? settings.problem,
+    problem: claims.problem ?? problem ?? settings.problem,
     repositories: repositories.list,
     loadRepositories: repositories.load,
     setUp,
@@ -193,9 +252,10 @@ export function useSync(options: SyncOptions): SyncController {
     ),
     setPushDelay: useCallback((seconds: number) => save({ pushDelaySeconds: seconds }), [save]),
     setPaused,
-    claimAutomations: useCallback(() => {
-      if (thisMac !== null) save({ automationsMac: thisMac.id, automationsMacName: thisMac.name });
-    }, [save, thisMac]),
+    claimAutomations: claims.claimAutomations,
+    processHere: claims.processHere,
+    claiming: claims.claiming,
+    claimPending,
     settle: exclusive.settle,
   };
 }
@@ -246,11 +306,18 @@ function usePause(store: SyncPauseStore, vaultKey: string | null) {
   return { paused, setPaused };
 }
 
-/** The vault's sync settings, read from its settings note and saved through its one writer. */
+/**
+ * The vault's sync settings, read from its settings note; its timing saved
+ * through its one writer. Who runs the automations is changed by the claim
+ * alone (`useClaimAutomations`), which reads them again once it has written.
+ */
 function useSyncSettings({ fs, markdown, vaultKey, activity }: SyncOptions) {
   const store = useCallback(
-    (value: SyncSettings) =>
-      saveSyncSettings({ settings: vaultSettingsWriter({ fs, markdown }), changes: value }),
+    ({ pullIntervalMinutes, pushDelaySeconds }: SyncSettings) =>
+      saveSyncSettings({
+        settings: vaultSettingsWriter({ fs, markdown }),
+        changes: { pullIntervalMinutes, pushDelaySeconds },
+      }),
     [fs, markdown],
   );
   const setting = useVaultSetting({
@@ -263,7 +330,7 @@ function useSyncSettings({ fs, markdown, vaultKey, activity }: SyncOptions) {
   });
   const { value, save: saveWhole } = setting;
   const save = useCallback(
-    (changes: Partial<SyncSettings>) =>
+    (changes: SyncTimingChanges) =>
       saveWhole({
         pullIntervalMinutes:
           changes.pullIntervalMinutes ??
@@ -271,10 +338,15 @@ function useSyncSettings({ fs, markdown, vaultKey, activity }: SyncOptions) {
           DEFAULT_PULL_INTERVAL_MINUTES,
         pushDelaySeconds:
           changes.pushDelaySeconds ?? value?.pushDelaySeconds ?? DEFAULT_PUSH_DELAY_SECONDS,
-        automationsMac: changes.automationsMac ?? value?.automationsMac ?? null,
-        automationsMacName: changes.automationsMacName ?? value?.automationsMacName ?? null,
+        automationsMac: value?.automationsMac ?? null,
+        automationsMacName: value?.automationsMacName ?? null,
       }),
     [saveWhole, value],
   );
-  return { value, save, problem: setting.problem ?? setting.unreadable };
+  return {
+    value,
+    save,
+    readAgain: setting.readAgain,
+    problem: setting.problem ?? setting.unreadable,
+  };
 }

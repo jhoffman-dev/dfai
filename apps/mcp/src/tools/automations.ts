@@ -93,7 +93,9 @@ export const automationDryRun = defineTool({
     'left out — or ask Claude about, with the prompt, skill and tools under "claude"; Claude is not ' +
     'asked. "capped" is ' +
     'true when more matched than one run may do ("cap"). "passedOver" lists at most 500 notes it ' +
-    'would leave alone; "passedOverMore" counts the rest. A rule whose query does not read is ' +
+    'would leave alone; "passedOverMore" counts the rest. For the "After a meeting" step only, ' +
+    '"notLinked": { meetings: [{ path, title }], capped } names meetings whose linking failed, ' +
+    'which Run now links again first; left out when there are none. A rule whose query does not read is ' +
     `"query_failed", with why. ${IN_THE_APP}`,
   inputSchema: z.object({ id }),
   annotations: READ_ONLY,

@@ -171,6 +171,27 @@ describe('![[ then #: picking a note, then its block', () => {
     expect(blocks.textContent).toContain('Embed');
   });
 
+  it('offers nothing, rather than the last answer, once reading the note fails (#225, PR #612)', async () => {
+    let reads = 0;
+    const blocks = picking({
+      choicesFor: async (target) => {
+        reads += 1;
+        if (reads > 1) throw new Error('the disk stopped answering');
+        return { same: false, target, path: 'Plans.md' as VaultPath, entries: ENTRIES };
+      },
+    });
+    const rendered = renderEditor(doc(paragraph('')), { blocks });
+    const editor = await editorIn(rendered.container);
+    typeInto(editor, '![[Plans#');
+    const listbox = await screen.findByRole('listbox', { name: 'Link to block' });
+    await waitFor(() => expect(listbox.querySelectorAll('[role="option"]')).toHaveLength(3));
+
+    typeInto(editor, 'P');
+
+    await waitFor(() => expect(reads).toBe(2));
+    await waitFor(() => expect(screen.queryAllByRole('option')).toHaveLength(0));
+  });
+
   it('shows a block that has an id, as a block of its own, where the line held only the embed', async () => {
     const rendered = renderEditor(doc(paragraph('')));
     const editor = await editorIn(rendered.container);

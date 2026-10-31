@@ -1,5 +1,4 @@
 import { useRef, type ReactNode } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import type { BoardRow } from '@dfai/domain';
 import {
   OVERSCAN,
@@ -10,6 +9,7 @@ import {
   type LinePlace,
 } from './grouped-rows.tsx';
 import { useRowFocus } from './row-focus.ts';
+import { useRangeVirtualizer } from './range-virtualizer.ts';
 
 /**
  * A table's rows when it does not group them. Virtualised, as the grouped
@@ -35,7 +35,7 @@ export function FlatRows({
   scroller: HTMLElement | null;
 }) {
   const body = useRef<HTMLTableSectionElement>(null);
-  const virtualizer = useVirtualizer({
+  const virtualizer = useRangeVirtualizer({
     count: rows.length,
     getScrollElement: () => scroller,
     estimateSize: () => ROW_ESTIMATE,

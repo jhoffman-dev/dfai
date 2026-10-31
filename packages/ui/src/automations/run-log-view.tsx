@@ -34,6 +34,19 @@ export function DryRunResult({
           ))}
         </ul>
       )}
+      {result.notLinked !== undefined && result.notLinked.length > 0 && (
+        <ul className="page-list" aria-label="Meetings not linked">
+          {result.notLinked.map((note) => (
+            <li key={note.path} className="page-list__row">
+              <button type="button" className="table__link" onClick={() => onOpenNote(note.path)}>
+                <Icon name="doc" size={15} />
+                <span className="table__title">{note.title}</span>
+              </button>
+              <span className="automation-dry-run__path">Not linked</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {result.passedOver.length > 0 && (
         <ul className="automation-dry-run__passed" aria-label="Notes it would leave">
           {result.passedOver.map((note) => (

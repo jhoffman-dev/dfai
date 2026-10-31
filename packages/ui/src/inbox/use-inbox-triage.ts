@@ -4,12 +4,15 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type FocusEvent,
   type MutableRefObject,
   type KeyboardEvent,
   type PointerEvent,
+  type SetStateAction,
 } from 'react';
 import { useRowHandles } from '../row-handles.ts';
+import { focusIsHome, typesInto, useRowKeys, type UndoLast } from '../row-keys.ts';
 import { useSteadyCallback } from '../steady-callback.ts';
 import {
   GTD_STATUSES,
@@ -32,20 +35,6 @@ const NOTHING_PICKED: InboxDraft = {};
 
 /** Where a row that left holding the focus, with no row to hand it to, is kept. */
 export type StrandedRow = MutableRefObject<VaultPath | null>;
-
-/**
- * Where a key never fires (#307): a field, where the letter is typed; a
- * dialog or a menu, which has the keyboard; anything editable.
- */
-const KEYS_SLEEP = 'input, select, textarea, [role="dialog"], [role="menu"]';
-
-/** Whether a key pressed on `target` is a letter being typed rather than a triage key. */
-function typesInto(target: Element): boolean {
-  return (
-    target.closest(KEYS_SLEEP) !== null ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
-}
 
 /**
  * A picker P or T opened. What writes its pick is an explicit act on the
@@ -79,6 +68,8 @@ export function useInboxTriage({
   onClarify,
   busy = false,
   stranded: keptStranded,
+  onOpen,
+  onUndo,
 }: {
   items: readonly InboxItem[];
   /** The statuses the vault's Task type declares: a key for one it lacks does nothing. */
@@ -88,6 +79,10 @@ export function useInboxTriage({
   busy?: boolean;
   /** Kept by whatever outlives the rows: the list unmounts once it is empty. */
   stranded?: StrandedRow;
+  /** Opens a row's note: Return on the row (#109). */
+  onOpen: (path: VaultPath) => void;
+  /** Takes the last clarification back: U or ⌘Z on a row (#109). */
+  onUndo?: UndoLast | undefined;
 }) {
   const [drafts, setDrafts] = useState<Readonly<Record<string, InboxDraft>>>({});
   const [focused, setFocused] = useState<VaultPath | null>(null);
@@ -118,6 +113,14 @@ export function useInboxTriage({
 
   // The app makes its callback anew on many of its renders; the rows' actions stay the same.
   const clarify = useSteadyCallback(onClarify);
+  // The rows being written, by how many writes each: one that leaves the list
+  // meanwhile is the app's, which brings it back, picks and all, should it be refused.
+  const writing = useRef(new Map<VaultPath, number>());
+  // Rows whose write was refused. The app brings such a row back as it refuses, so a
+  // refused row the list then lacks was taken away meanwhile — by sync, say — and its
+  // picks go with it. Read after the render that follows, when the list is the app's answer.
+  const refused = useRef(new Set<VaultPath>());
+  const [refusals, setRefusals] = useState(0);
 
   const focusRow = useCallback(
     (path: VaultPath) => {
@@ -137,6 +140,7 @@ export function useInboxTriage({
   useEffect(() => {
     const before = listed.current;
     listed.current = items;
+    forgetPicksOfRowsGone({ before, items, writing: writing.current, setDrafts });
     const back = stranded.current;
     if (back !== null && items.some((item) => item.path === back)) {
       // Its write refused, the last row is back: the next key is for it, unless the focus has gone elsewhere.
@@ -155,6 +159,19 @@ export function useInboxTriage({
     else if (before.some((item) => item.path === path)) stranded.current = path;
   }, [items, focusRow, stranded]);
 
+  useEffect(() => {
+    const gone = [...refused.current].filter(
+      (path) => !writing.current.has(path) && !listed.current.some((item) => item.path === path),
+    );
+    refused.current.clear();
+    if (gone.length === 0) return;
+    setDrafts((held) =>
+      Object.fromEntries(
+        Object.entries(held).filter(([path]) => !gone.includes(path as VaultPath)),
+      ),
+    );
+  }, [refusals]);
+
   // The last row leaving empties the list, and the page draws no rows at all:
   // what held the focus is kept where the page can give it back.
   useEffect(
@@ -168,7 +185,18 @@ export function useInboxTriage({
   const act = useCallback(
     async (path: VaultPath, clarification: Clarification) => {
       const next = rowAfter(listed.current, path);
-      if (!(await clarify({ path, clarification }))) return;
+      writing.current.set(path, (writing.current.get(path) ?? 0) + 1);
+      const done = await clarify({ path, clarification }).finally(() => {
+        const left = (writing.current.get(path) ?? 1) - 1;
+        if (left === 0) writing.current.delete(path);
+        else writing.current.set(path, left);
+      });
+      if (!done) {
+        // Looked at once the app's own answer to the refusal is drawn: see `refused`.
+        refused.current.add(path);
+        setRefusals((count) => count + 1);
+        return;
+      }
       setDrafts((held) => Object.fromEntries(Object.entries(held).filter(([at]) => at !== path)));
       // Focus that has gone elsewhere since — another note opened, say — is left there.
       const at = document.activeElement;
@@ -253,17 +281,27 @@ export function useInboxTriage({
     [act],
   );
 
+  const rowKey = useRowKeys({
+    order,
+    focusRow,
+    elementOf,
+    onOpen,
+    onUndo,
+    // The undo on offer is the one before a clarification still being written, and the undo itself writes.
+    undoWaits: useCallback(() => writing.current.size > 0 || !idle.current, []),
+  });
+
   /** The key handler, on the list rather than each row: a letter on a focused row, never in a field. */
   const onListKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
       pointed.current = false;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (!(event.target instanceof Element)) return;
       const arm = armed.current;
       if (
         arm !== null &&
         elementOf(arm.path)?.querySelector(`[data-field="${arm.field}"]`) === event.target
       ) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
         if (event.key === 'Escape') {
           event.preventDefault();
           disarm(true);
@@ -276,7 +314,8 @@ export function useInboxTriage({
       }
       if (typesInto(event.target)) return;
       const path = focusedRow.current;
-      if (path === null) return;
+      if (path === null || rowKey(event, path)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       const action = triageActionOf(event.key, declared.current);
       if (action === null) return;
       event.preventDefault();
@@ -284,7 +323,7 @@ export function useInboxTriage({
       if (event.repeat || !idle.current) return;
       keyAction(path, action);
     },
-    [keyAction, elementOf, disarm, focusRow, commitArmed],
+    [keyAction, elementOf, disarm, focusRow, commitArmed, rowKey],
   );
 
   /** The pointer opening the armed picker's list: the pick it makes next is its own. */
@@ -393,10 +432,39 @@ export function useInboxTriage({
   };
 }
 
+/**
+ * Forgets what was picked on rows that left the list while not being written —
+ * taken away by sync, say — so a note that lands at the same path later is a
+ * row of its own, picked nothing. A row scrolled out of the page is still on
+ * the list, so it keeps its picks (#238).
+ */
+function forgetPicksOfRowsGone({
+  before,
+  items,
+  writing,
+  setDrafts,
+}: {
+  before: readonly InboxItem[];
+  items: readonly InboxItem[];
+  writing: ReadonlyMap<VaultPath, number>;
+  setDrafts: Dispatch<SetStateAction<Readonly<Record<string, InboxDraft>>>>;
+}): void {
+  const listed = new Set(items.map((item) => item.path));
+  const gone = new Set(
+    before.map((item) => item.path).filter((path) => !listed.has(path) && !writing.has(path)),
+  );
+  if (gone.size === 0) return;
+  setDrafts((held) =>
+    Object.keys(held).some((path) => gone.has(path as VaultPath))
+      ? Object.fromEntries(Object.entries(held).filter(([path]) => !gone.has(path as VaultPath)))
+      : held,
+  );
+}
+
 /** Whether the focus went with a row that left the DOM: it falls back to the page then. */
 function focusLeftWithRow(): boolean {
-  const at = document.activeElement;
-  return at === null || at === document.body;
+  // The page's home holds it once the last row has gone (`useInboxHome`).
+  return focusIsHome();
 }
 
 /**
