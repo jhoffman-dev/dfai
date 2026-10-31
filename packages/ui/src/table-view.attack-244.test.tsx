@@ -200,6 +200,7 @@ const STEPS: readonly Step[] = [
 
 describe('TableView (#244) — memoised rows never go stale', () => {
   for (const seed of [1, 2, 3, 42, 2026]) {
+    // Under 0.5 s on a Mac, up to 4.0 s on a loaded 4-core CI runner (#648): the default 5 s is too close.
     it(`after every random change, the rows equal a fresh render of the same data (seed ${seed})`, () => {
       const rng = seeded(seed);
       const model = startModel(8);
@@ -211,7 +212,7 @@ describe('TableView (#244) — memoised rows never go stale', () => {
         expect(seen(live.container), `step ${step}: ${what}`).toEqual(seen(fresh.container));
         fresh.unmount();
       }
-    });
+    }, 15_000);
   }
 
   it('shows "1" after 1 when a cell becomes the string of the same number, and 2 after that', () => {
