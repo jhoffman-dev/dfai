@@ -305,3 +305,82 @@ describe('useToday — attacks on settling by the index key (#239)', () => {
     await waitFor(() => expect(result.current.page.settling.has(PATH)).toBe(false));
   });
 });
+
+describe('useToday — U says where the row is once it is listed again (PR #649 review)', () => {
+  const listed = (
+    today: {
+      sections: readonly { groups: readonly { tasks: readonly { path: string }[] }[] }[];
+    } | null,
+  ) =>
+    (today?.sections ?? []).some((section) =>
+      section.groups.some((group) => group.tasks.some((task) => task.path === PATH)),
+    );
+
+  it('resolves only once a read lists the row again, not on one from before the index caught up', async () => {
+    const { result, rerender, indexed, ports, text, samePortsAgain } = setUp();
+    await waitFor(() => expect(listed(result.current.page.today)).toBe(true));
+
+    // Someday leaves Today; the index catches up and the row is gone.
+    await act(async () => result.current.page.onSetStatus({ ...ROW, status: 'someday' }));
+    indexed.status = 'someday';
+    rerender(props({ ports, indexKey: 'ready:2' }));
+    await waitFor(() => expect(result.current.page.settling.has(PATH)).toBe(false));
+    expect(listed(result.current.page.today)).toBe(false);
+
+    let back: string | null | undefined;
+    act(() => {
+      void result.current.page.onUndo?.().then((path) => {
+        back = path;
+      });
+    });
+    await waitFor(() => expect(statusOf(text())).toBe('next-action'));
+    // A read of the index from before the undo: the row is still not listed.
+    const readBefore = result.current.page.today;
+    rerender(props({ ports: samePortsAgain(ports), indexKey: 'ready:2' }));
+    await waitFor(() => expect(result.current.page.today).not.toBe(readBefore));
+    expect(listed(result.current.page.today)).toBe(false);
+    expect(back).toBeUndefined();
+
+    indexed.status = 'next-action';
+    rerender(props({ ports, indexKey: 'ready:3' }));
+    await waitFor(() => expect(back).toBe(PATH));
+    expect(listed(result.current.page.today)).toBe(true);
+  });
+});
+
+describe('useToday — U and a vault opened while its undo is written (PR #649 attack)', () => {
+  it('says no row, at once, when another vault opened while the undo was being written', async () => {
+    const { result, rerender, indexed, ports, memory } = setUp();
+    await waitFor(() => expect(result.current.page.today).not.toBeNull());
+    await act(async () => result.current.page.onSetStatus({ ...ROW, status: 'someday' }));
+    indexed.status = 'someday';
+    rerender(props({ ports, indexKey: 'ready:2' }));
+    await waitFor(() => expect(result.current.page.settling.has(PATH)).toBe(false));
+
+    // The undo's write is held, as on a busy disk.
+    let open = () => {};
+    const opened = new Promise<void>((resolve) => (open = resolve));
+    const holding = {
+      ...ports,
+      fs: fakeVaultFs({
+        ...memory.fs,
+        writeTextFile: async (write) => {
+          await opened;
+          return memory.fs.writeTextFile(write);
+        },
+      }),
+    };
+    rerender(props({ ports: holding, indexKey: 'ready:2' }));
+    const said: { back?: string | null } = {};
+    act(() => {
+      void result.current.page.onUndo?.().then((path) => {
+        said.back = path;
+      });
+    });
+    // Another vault opens while it is written.
+    rerender(props({ ports: holding, indexKey: 'ready:2', vaultKey: 'vault-b' }));
+    await act(async () => open());
+    await waitFor(() => expect(said.back).not.toBeUndefined(), { timeout: 1_000 });
+    expect(said.back).toBeNull();
+  });
+});

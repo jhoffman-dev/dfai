@@ -1,6 +1,7 @@
 import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
+import { seenAsMac } from './platform.ts';
 import {
   createVault,
   emitVaultChanged,
@@ -332,6 +333,7 @@ test('the watcher’s echo of a tick is not refreshed for again, and a change fr
   browser,
 }) => {
   const [quiet, echoing] = await Promise.all([browser.newPage(), browser.newPage()]);
+  await Promise.all([seenAsMac(quiet.context()), seenAsMac(echoing.context())]);
   try {
     const withoutEcho = await walksForATick(quiet, { echoWrites: false });
     const withEcho = await walksForATick(echoing, { echoWrites: true });

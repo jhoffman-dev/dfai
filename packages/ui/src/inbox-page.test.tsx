@@ -821,6 +821,37 @@ describe('InboxPage — nothing moves under the pointer once the rows are drawn 
     );
   });
 
+  it('holds the rows back while the meeting setup offer is still being read, as it does for the others', () => {
+    const setup: NonNullable<InboxPageProps['meetingSetup']> = {
+      reading: true,
+      open: false,
+      lines: null,
+      asksEmails: false,
+      writesNothing: false,
+      emails: '',
+      busy: false,
+      result: null,
+      problem: null,
+      dismissable: true,
+      onOpen: vi.fn(),
+      onEmailsChange: vi.fn(),
+      onAccept: vi.fn(),
+      onClose: vi.fn(),
+      onDismiss: vi.fn(),
+    };
+    const view = page({ meetingSetup: setup });
+    expect(firstRow()).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Process meetings when they arrive' })).toBeNull();
+
+    view.rerender({ meetingSetup: { ...setup, reading: false } });
+    const offer = screen.getByRole('region', { name: 'Process meetings when they arrive' });
+    const row = firstRow();
+    expect(row).not.toBeNull();
+    expect((offer.compareDocumentPosition(row!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(
+      true,
+    );
+  });
+
   it('shows an offer that arrives after the rows are drawn, without waiting for the next open', () => {
     const view = page();
     expect(firstRow()).not.toBeNull();

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
+import { macOnly } from './platform.ts';
 
 /**
  * Attack on PR #371 (UI v2 slice 13f): Settings' list of sections in a narrow
@@ -39,39 +40,43 @@ function titleCut(button: HTMLElement): boolean {
   return range.getBoundingClientRect().right > visibleRight;
 }
 
-test('at the narrowest window, no row in the list of sections is cut off', async ({ page }) => {
-  // tauri.conf.json's minWidth.
-  await page.setViewportSize({ width: 720, height: 480 });
-  await openVault(page);
-  await openSettings(page);
+test(
+  'at the narrowest window, no row in the list of sections is cut off',
+  macOnly('laid out in macOS’s system font; Linux WebKit falls back to a wider one'),
+  async ({ page }) => {
+    // tauri.conf.json's minWidth.
+    await page.setViewportSize({ width: 720, height: 480 });
+    await openVault(page);
+    await openSettings(page);
 
-  const rows = await list(page)
-    .getByRole('button')
-    .evaluateAll((buttons, cut) => {
-      const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
-      return buttons.map((button) => ({
-        text: button.textContent,
-        cut: isCut(button as HTMLElement),
-      }));
-    }, titleCut.toString());
-  expect(rows.length).toBeGreaterThan(4);
-  expect(rows.filter((row) => row.cut)).toEqual([]);
+    const rows = await list(page)
+      .getByRole('button')
+      .evaluateAll((buttons, cut) => {
+        const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
+        return buttons.map((button) => ({
+          text: button.textContent,
+          cut: isCut(button as HTMLElement),
+        }));
+      }, titleCut.toString());
+    expect(rows.length).toBeGreaterThan(4);
+    expect(rows.filter((row) => row.cut)).toEqual([]);
 
-  // The measure can see a cut title: one far longer than the list is wide.
-  const longCut = await list(page)
-    .getByRole('button')
-    .first()
-    .evaluate((button, cut) => {
-      const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
-      const clone = button.cloneNode(true) as HTMLElement;
-      clone.lastChild!.textContent += ' and a title much too long for the list of sections';
-      button.parentElement!.append(clone);
-      const result = isCut(clone);
-      clone.remove();
-      return result;
-    }, titleCut.toString());
-  expect(longCut).toBe(true);
-});
+    // The measure can see a cut title: one far longer than the list is wide.
+    const longCut = await list(page)
+      .getByRole('button')
+      .first()
+      .evaluate((button, cut) => {
+        const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
+        const clone = button.cloneNode(true) as HTMLElement;
+        clone.lastChild!.textContent += ' and a title much too long for the list of sections';
+        button.parentElement!.append(clone);
+        const result = isCut(clone);
+        clone.remove();
+        return result;
+      }, titleCut.toString());
+    expect(longCut).toBe(true);
+  },
+);
 
 test('the list of sections does not overflow sideways: its rows stay inside it', async ({
   page,

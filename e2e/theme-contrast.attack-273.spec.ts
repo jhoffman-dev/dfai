@@ -296,6 +296,9 @@ const PAGES: Record<string, (page: Page) => Promise<void>> = {
   palette: async (page) => {
     await page.keyboard.press('Meta+k');
     await expect(page.locator('.palette')).toBeVisible();
+    // The dialog hands its field the focus once it has opened, not as it is
+    // drawn: letters typed before then went nowhere (Linux CI, run 41188467508).
+    await expect(page.getByRole('searchbox', { name: 'Search the vault' })).toBeFocused();
     await page.keyboard.type('Task');
     await expect(page.locator('.palette__place').first()).toBeVisible();
   },

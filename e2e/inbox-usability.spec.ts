@@ -76,6 +76,21 @@ async function firstCard(page: Page) {
 }
 
 const inboxPage = (page: Page) => page.getByRole('article', { name: 'Inbox' });
+
+/**
+ * Every offer this vault makes is on the Inbox. One read after the page stops
+ * holding its rows for them lands above the list, and the list is held still
+ * by scrolling (#130): what is placed, and where, moves with it.
+ */
+async function everyOfferShown(page: Page) {
+  const inbox = inboxPage(page);
+  await expect(
+    inbox.getByRole('complementary', { name: 'Set your types up for the Inbox' }),
+  ).toBeVisible();
+  for (const offer of ['Move tasks to GTD statuses', 'Process meetings when they arrive']) {
+    await expect(inbox.getByRole('region', { name: offer })).toBeVisible();
+  }
+}
 const cards = (page: Page) =>
   page.getByRole('list', { name: 'Open proposals' }).getByRole('region');
 
@@ -156,8 +171,8 @@ test('every note waiting can be reached past the first 500, and the page says ho
   await expect(table).toHaveAttribute('aria-rowcount', '501', { timeout: 15_000 });
   await expect(page.getByText(/^505 to process/)).toBeVisible();
   await expect(inbox.getByText('Showing the newest 500 of 505.')).toBeVisible();
-  // Not before the GTD offer has landed above the list, moving "Show more" down.
-  await expect(inbox.getByRole('region', { name: 'Move tasks to GTD statuses' })).toBeVisible();
+  // Not before the offers have landed above the list, moving "Show more" down.
+  await everyOfferShown(page);
 
   await inbox.getByRole('button', { name: 'Show more' }).click();
 
@@ -175,6 +190,8 @@ test('Tab walks on past the rows on screen, each row put in the page and in view
   await openInbox(page, { proposals: 0, waiting: 300 });
   const table = inboxPage(page).locator('table.inbox__grid');
   await expect(table).toHaveAttribute('aria-rowcount', '301', { timeout: 15_000 });
+  // The rows placed are read once: an offer landing after that scrolls the list, and places others.
+  await everyOfferShown(page);
   const placed = table.locator('tbody tr.table__row');
   expect(await placed.count()).toBeLessThan(100);
   // The last of the rows placed from the top down, before the list's gap; its own last row is kept too.

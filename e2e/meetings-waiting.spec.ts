@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { expect, test, type Browser, type Page } from './fixtures.ts';
+import { seenAsMac } from './platform.ts';
 import { createVault, emitVaultChanged, installHost, type FakeVault } from './host.ts';
 import { gitIn, otherMac } from './git-host.ts';
 
@@ -55,6 +56,7 @@ async function openVault(page: Page, macName?: string) {
 /** A second Mac running DFAI, in a window of its own: its own id, and a clone of the vault's repository. */
 async function secondMac(browser: Browser, remote: string, env: NodeJS.ProcessEnv, name: string) {
   const context = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  await seenAsMac(context);
   const page = await context.newPage();
   await page.setViewportSize({ width: 1440, height: 900 });
   const vault: FakeVault = await createVault();

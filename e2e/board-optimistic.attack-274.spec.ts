@@ -114,7 +114,7 @@ test('a move whose write fails leaves the board drawn, with the card back where 
 });
 
 test('a move that fails does not hide another card moved meanwhile', async ({ page }) => {
-  const { host } = await openBoard(page);
+  const { host, vault } = await openBoard(page);
   await expect(cardIn(page, 'Doing', 'second card.md')).toBeVisible();
   const refuse = host.holdWrites('one off.md');
   const land = host.holdWrites('second card.md');
@@ -129,4 +129,7 @@ test('a move that fails does not hide another card moved meanwhile', async ({ pa
   // Its own write is still on its way: it is drawn where it was dropped.
   await expect(cardIn(page, 'Backlog', 'second card.md')).toBeVisible();
   land();
+  // Landed before the test ends: a write let go and not waited for was still
+  // being made as the vault was removed (Linux CI, run 41229221316, ENOTEMPTY).
+  await expectFile(vault, 'second card.md').toContain('status: backlog');
 });
