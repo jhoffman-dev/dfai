@@ -1,7 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { toastSaying } from './toasts.ts';
-import { macOnly } from './platform.ts';
 
 /**
  * P30-03: a task's checklist is its subtasks. Its progress is a bar on the
@@ -85,49 +84,47 @@ test('a task with 2 of 5 boxes ticked shows 40% on the board', async ({ page }) 
   await expect(bar).toHaveText('40%');
 });
 
-test(
-  'promoting a line makes the task, links it back, and one Undo takes back both',
-  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (PR #649)'),
-  async ({ page }) => {
-    const vault = await openVault(page);
-    await openBoard(page);
-    await page
-      .locator('[data-path="tasks/Plan the launch.md"]')
-      .getByRole('button', { name: 'Plan the launch' })
-      .click();
-    await expect(page.getByRole('article', { name: 'Plan the launch' })).toBeVisible();
+test('promoting a line makes the task, links it back, and one Undo takes back both', async ({
+  page,
+}) => {
+  const vault = await openVault(page);
+  await openBoard(page);
+  await page
+    .locator('[data-path="tasks/Plan the launch.md"]')
+    .getByRole('button', { name: 'Plan the launch' })
+    .click();
+  await expect(page.getByRole('article', { name: 'Plan the launch' })).toBeVisible();
 
-    await page
-      .getByLabel('Note', { exact: true })
-      .getByText('Order chairs', { exact: true })
-      .click();
-    await page.getByRole('button', { name: 'Make this line a task' }).click();
+  await page.getByLabel('Note', { exact: true }).getByText('Order chairs', { exact: true }).click();
+  await page.getByRole('button', { name: 'Make this line a task' }).click();
 
-    const made = `Tasks/${YEAR}/${MONTH}/Order chairs.md`;
-    await expectFile(vault, made).toMatch(/source: "\[\[Plan the launch#\^[a-z0-9]{6}\]\]"/);
-    const task = await vault.read(made);
-    expect(task).toContain('type: task\n');
-    expect(task).toContain('status: inbox\n');
-    expect(task).toContain('project: "[[Larkspur launch]]"\n');
-    const id = /#\^([a-z0-9]{6})/.exec(task)?.[1] ?? '';
-    await expectFile(vault, 'tasks/Plan the launch.md').toBe(
-      PLAN.replace('- [ ] Order chairs\n', `- [ ] [[Order chairs]] ^${id}\n`),
-    );
-    // Said in the window's toast (UI v2, slice 15), held under the pointer while the file is read.
-    const notice = toastSaying(page, 'is a task now');
-    await expect(notice).toContainText('“Order chairs” is a task now.');
-    await notice.hover();
-    const link = page.getByLabel('Note', { exact: true }).locator('[data-wikilink="Order chairs"]');
-    await expect(link).toHaveCount(1);
+  // In the vault's own `tasks` folder: the type's home is Tasks/<y>/<m>, and the
+  // app writes into the folder already there under another case rather than
+  // make a second beside it. A case-sensitive disk (Linux) tells them apart.
+  const made = `tasks/${YEAR}/${MONTH}/Order chairs.md`;
+  await expectFile(vault, made).toMatch(/source: "\[\[Plan the launch#\^[a-z0-9]{6}\]\]"/);
+  const task = await vault.read(made);
+  expect(task).toContain('type: task\n');
+  expect(task).toContain('status: inbox\n');
+  expect(task).toContain('project: "[[Larkspur launch]]"\n');
+  const id = /#\^([a-z0-9]{6})/.exec(task)?.[1] ?? '';
+  await expectFile(vault, 'tasks/Plan the launch.md').toBe(
+    PLAN.replace('- [ ] Order chairs\n', `- [ ] [[Order chairs]] ^${id}\n`),
+  );
+  // Said in the window's toast (UI v2, slice 15), held under the pointer while the file is read.
+  const notice = toastSaying(page, 'is a task now');
+  await expect(notice).toContainText('“Order chairs” is a task now.');
+  await notice.hover();
+  const link = page.getByLabel('Note', { exact: true }).locator('[data-wikilink="Order chairs"]');
+  await expect(link).toHaveCount(1);
 
-    await notice.getByRole('button', { name: 'Undo' }).click();
-    await expectFile(vault, 'tasks/Plan the launch.md').toBe(PLAN);
-    await expect.poll(() => vault.exists(made)).toBe(false);
-    await expect(notice).toHaveCount(0);
-    // The pane reads the note back as it was: the line is words again, not a link.
-    await expect(link).toHaveCount(0);
-    await expect(
-      page.getByLabel('Note', { exact: true }).getByText('Order chairs', { exact: true }),
-    ).toBeVisible();
-  },
-);
+  await notice.getByRole('button', { name: 'Undo' }).click();
+  await expectFile(vault, 'tasks/Plan the launch.md').toBe(PLAN);
+  await expect.poll(() => vault.exists(made)).toBe(false);
+  await expect(notice).toHaveCount(0);
+  // The pane reads the note back as it was: the line is words again, not a link.
+  await expect(link).toHaveCount(0);
+  await expect(
+    page.getByLabel('Note', { exact: true }).getByText('Order chairs', { exact: true }),
+  ).toBeVisible();
+});
