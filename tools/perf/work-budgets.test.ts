@@ -325,6 +325,21 @@ describe('putting the parts of a run together', () => {
     ]);
   });
 
+  it('flags a part that counted a run beyond the runs wanted', () => {
+    const { problems } = combineParts(
+      [
+        { runs: [1], counted: { Open: counts(10) }, timed: { Open: times } },
+        { runs: [2, 3], counted: { Open: counts(10) }, timed: {} },
+      ],
+      ['Open'],
+      ONE_RUN,
+    );
+    expect(problems).toEqual([
+      'a part counted run 2, beyond the 1 wanted',
+      'a part counted run 3, beyond the 1 wanted',
+    ]);
+  });
+
   it('keeps run 1 as the result, whatever a later run counted', () => {
     const { result } = combineParts(
       [

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 /*
  * Attack on PR #648: tools/ci/side-by-side.sh, which runs format, typecheck
- * and lint at once in the `static` job. `it.fails` marks a gap.
+ * and lint at once in the `static` job. Each gap found was closed in the same PR.
  */
 
 const SCRIPT = join(import.meta.dirname, 'side-by-side.sh');
@@ -21,7 +21,7 @@ describe('side-by-side.sh, attacked', () => {
     expect(run('exec >&- 2>&-; exit 3').status).toBe(1);
   });
 
-  it.fails('refuses an empty command rather than counting it as passed', () => {
+  it('refuses an empty command rather than counting it as passed', () => {
     // An unset variable in the workflow (`"$LINT"`) becomes '' and the check it named never runs.
     expect(run('', 'true').status).not.toBe(0);
   });

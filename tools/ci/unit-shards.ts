@@ -94,11 +94,36 @@ export function durationsFromReport(files: readonly ReportedFile[], root: string
   return recorded;
 }
 
+/** One test file's result in the merged report, and its tests' outcomes. */
+export interface FileResult {
+  readonly name: string;
+  readonly assertionResults: readonly { readonly status: string }[];
+}
+
 /**
- * The listed test files the merged report has no result for: a file no shard
- * ran. Empty when the shards between them ran the whole suite.
+ * The listed test files the merged report shows did not run: no result, fewer
+ * results than the projects it is listed under, or no test that passed or
+ * failed, every one skipped, unless `maySkip` names it. Empty when the shards
+ * between them ran the whole suite.
  */
-export function filesNotRun(listed: readonly string[], reported: readonly string[]): string[] {
-  const ran = new Set(reported);
-  return listed.filter((file) => !ran.has(file)).sort();
+export function filesNotRun(
+  listed: readonly string[],
+  reported: readonly FileResult[],
+  maySkip: readonly string[] = [],
+): string[] {
+  const ran = new Map<string, number>();
+  for (const { name, assertionResults } of reported) {
+    const ranATest = assertionResults.some(
+      ({ status }) => status === 'passed' || status === 'failed',
+    );
+    if (ranATest || maySkip.some((file) => name.endsWith(`/${file}`))) {
+      ran.set(name, (ran.get(name) ?? 0) + 1);
+    }
+  }
+  const wanted = new Map<string, number>();
+  for (const file of listed) wanted.set(file, (wanted.get(file) ?? 0) + 1);
+  return [...wanted]
+    .filter(([file, times]) => (ran.get(file) ?? 0) < times)
+    .map(([file]) => file)
+    .sort();
 }

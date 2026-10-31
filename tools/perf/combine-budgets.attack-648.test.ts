@@ -8,8 +8,8 @@ import { combineParts, type PartResult, type Work } from './work-budgets.ts';
 
 /*
  * Attack on PR #648: ways the `perf` job could pass with a budget's second
- * counted run, or the response-time budgets, not checked. Each `it.fails` is
- * a gap, failing on purpose until it is closed.
+ * counted run, or the response-time budgets, not checked. Each gap found
+ * is closed, and held closed here.
  */
 
 const SCRIPT = join(import.meta.dirname, 'combine-budgets.ts');
@@ -63,12 +63,12 @@ describe('putting the work budgets parts together, attacked', () => {
     expect(combine({ PERF_BUDGETS_RUNS: '2' }).status).toBe(1);
   });
 
-  it.fails('fails a run 2 that counted differently even when PERF_BUDGETS_RUNS is unset', () => {
+  it('fails a run 2 that counted differently even when PERF_BUDGETS_RUNS is unset', () => {
     // Unset, it takes one run and never looks at the part that counted run 2.
     expect(combine({}).status).not.toBe(0);
   });
 
-  it.fails('flags a part that counted a run beyond the runs wanted', () => {
+  it('flags a part that counted a run beyond the runs wanted', () => {
     const { problems } = combineParts(Object.values(PARTS), BUDGETED_ACTIONS, {
       runs: 1,
       tolerance: RUN_TOLERANCE,
@@ -78,7 +78,7 @@ describe('putting the work budgets parts together, attacked', () => {
 });
 
 describe('the response-time budgets in the split perf jobs', () => {
-  it.fails('are proven to have run by the perf job, as the work budgets are', () => {
+  it('are proven to have run by the perf job, as the work budgets are', () => {
     // Only the part with `latency: true` runs them; drop it and the gate stays green.
     const yaml = readFileSync(GATE, 'utf8');
     const perfJob = yaml.slice(yaml.indexOf('\n  perf:\n'), yaml.indexOf('\n  gate:\n'));

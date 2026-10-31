@@ -12,6 +12,15 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
+for at in $(seq 1 "$#"); do
+  # An unset variable in the workflow becomes '': the check it named would never run.
+  command="${!at}"
+  if [ -z "${command//[[:space:]]/}" ]; then
+    echo "side-by-side.sh: command $at is empty" >&2
+    exit 2
+  fi
+done
+
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 

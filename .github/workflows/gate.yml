@@ -481,8 +481,9 @@ jobs:
   perf:
     # The parts' work budgets as one report, and proof that between them they
     # counted every budgeted action on each of the two runs and timed it, once
-    # each, and that run 2 counted what run 1 did. The parts that counted run 1
-    # have already held it to the budgets. Run even when a part failed, so a red run
+    # each, and that run 2 counted what run 1 did, and that one part ran the
+    # response-time budgets. The parts that counted run 1, and the response
+    # times, have already been held to their budgets. Run even when a part failed, so a red run
     # still reports what was counted, and failed then.
     needs: [changes, perf-part]
     if: always() && needs.changes.outputs.code == 'true'
@@ -500,12 +501,11 @@ jobs:
           pattern: perf-*
           path: perf-parts
 
-      - name: The work budgets, every part together
+      # Every action counted twice, a count that differs between the two runs
+      # failing, so the work clock stays proven deterministic on the runners;
+      # and the latency budgets' results there, from the part that ran them.
+      - name: The work budgets and the latency budgets, every part together
         run: node tools/perf/combine-budgets.ts perf-parts
-        env:
-          # Counted twice: a count that differs between the two runs fails, so the
-          # work clock stays proven deterministic on the runners, not only here.
-          PERF_BUDGETS_RUNS: 2
 
       - name: Every part passed
         env:

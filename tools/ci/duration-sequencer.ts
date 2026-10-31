@@ -21,15 +21,25 @@ export class DurationSequencer extends BaseSequencer {
 
   override shard(specs: TestSpecification[]): Promise<TestSpecification[]> {
     const { index, count } = this.ctx.config.shard ?? { index: 1, count: 1 };
-    const byPath = new Map(specs.map((spec) => [this.pathOf(spec), spec]));
+    const byPath = this.byPath(specs);
     const mine = filesOfShard([...byPath.keys()], this.durations, { index, count });
-    return Promise.resolve(mine.map((path) => byPath.get(path)!));
+    return Promise.resolve(mine.flatMap((path) => byPath.get(path)!));
   }
 
   override sort(specs: TestSpecification[]): Promise<TestSpecification[]> {
-    const byPath = new Map(specs.map((spec) => [this.pathOf(spec), spec]));
+    const byPath = this.byPath(specs);
     const order = longestFirst([...byPath.keys()], this.durations);
-    return Promise.resolve(order.map((path) => byPath.get(path)!));
+    return Promise.resolve(order.flatMap((path) => byPath.get(path)!));
+  }
+
+  /** The specs by file: a file in two projects is two specs, dealt to one shard together. */
+  private byPath(specs: readonly TestSpecification[]): Map<string, TestSpecification[]> {
+    const byPath = new Map<string, TestSpecification[]>();
+    for (const spec of specs) {
+      const path = this.pathOf(spec);
+      byPath.set(path, [...(byPath.get(path) ?? []), spec]);
+    }
+    return byPath;
   }
 
   private pathOf(spec: TestSpecification): string {

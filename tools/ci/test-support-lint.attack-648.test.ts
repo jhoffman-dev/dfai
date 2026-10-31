@@ -1,8 +1,8 @@
 /*
  * Attack on PR #648: imports that bring a test, or a suite's support file,
  * into the app past the rule that keeps them out (eslint.config.js, the
- * `@typescript-eslint/no-restricted-imports` block). Each `it.fails` is a way
- * through, failing on purpose until it is closed.
+ * `@typescript-eslint/no-restricted-imports` block). Each way
+ * through that was found is closed, and held closed here.
  */
 import { ESLint } from 'eslint';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +32,7 @@ describe('test code reaching the app past the lint rule', () => {
     ).not.toEqual([]);
   });
 
-  it.fails('refuses a dynamic import() of a support file', async () => {
+  it('refuses a dynamic import() of a support file', async () => {
     expect(
       await refusals(
         "export const load = () => import('./captures-roundtrip-615c.test-support.ts');\n",
@@ -40,24 +40,18 @@ describe('test code reaching the app past the lint rule', () => {
     ).not.toEqual([]);
   });
 
-  it.fails(
-    'refuses importing a Playwright spec, which the rule lets use test support',
-    async () => {
-      expect(
-        await refusals("import { cases } from './frontmatter-write.spec.ts';\nexport { cases };\n"),
-      ).not.toEqual([]);
-    },
-  );
+  it('refuses importing a Playwright spec, which the rule lets use test support', async () => {
+    expect(
+      await refusals("import { cases } from './frontmatter-write.spec.ts';\nexport { cases };\n"),
+    ).not.toEqual([]);
+  });
 
-  it.fails(
-    'refuses a relative import of a package’s testing folder, which may re-export support',
-    async () => {
-      // `packages/*/src/testing/**` is ignored by the rule, so it may re-export a `.test-support` file.
-      expect(
-        await refusals(
-          "import { seededRandom } from '../../../domain/src/testing/index.ts';\nexport { seededRandom };\n",
-        ),
-      ).not.toEqual([]);
-    },
-  );
+  it('refuses a relative import of a package’s testing folder, which may re-export support', async () => {
+    // `packages/*/src/testing/**` is ignored by the rule, so it may re-export a `.test-support` file.
+    expect(
+      await refusals(
+        "import { seededRandom } from '../../../domain/src/testing/index.ts';\nexport { seededRandom };\n",
+      ),
+    ).not.toEqual([]);
+  });
 });

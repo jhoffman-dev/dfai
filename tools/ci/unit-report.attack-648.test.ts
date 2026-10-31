@@ -10,8 +10,8 @@ import { DurationSequencer } from './duration-sequencer.ts';
 /*
  * Attack on PR #648: ways the `coverage` job's "every test file ran on a
  * shard" check (unit-report.mjs) and the duration sequencer could let a run
- * pass with a test that did not run. Each `it.fails` is a gap, failing on
- * purpose until it is closed.
+ * pass with a test that did not run. Each gap found is
+ * closed, and held closed here.
  */
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -55,12 +55,12 @@ describe('the check that every test file ran on a shard', () => {
     expect(unitReport([{ file: FILE_A }], [passed(FILE_A)]).status).toBe(0);
   });
 
-  it.fails('refuses an empty list of test files rather than passing on none', () => {
+  it('refuses an empty list of test files rather than passing on none', () => {
     // A `vitest list` run from the wrong folder, or with a filter, lists nothing: 0 of 0 "ran".
     expect(unitReport([], [passed(FILE_A)]).status).not.toBe(0);
   });
 
-  it.fails('does not count a file whose every test was skipped as run', () => {
+  it('does not count a file whose every test was skipped as run', () => {
     // A `testNamePattern`, `describe.skip` or a shard filter leaves the file in the report, no test run.
     const skipped: Reported = {
       name: FILE_B,
@@ -71,7 +71,7 @@ describe('the check that every test file ran on a shard', () => {
     ).not.toBe(0);
   });
 
-  it.fails('counts a file listed under two projects as run only when both ran it', () => {
+  it('counts a file listed under two projects as run only when both ran it', () => {
     // `vitest list` lists a file once per project; the check matches by path alone.
     const listed = [
       { file: FILE_A, projectName: 'node' },
@@ -97,7 +97,7 @@ describe('the duration sequencer over the shards', () => {
     expect(dealt.flat()).toHaveLength(2);
   });
 
-  it.fails('runs a file that is in two projects in both of them', async () => {
+  it('runs a file that is in two projects in both of them', async () => {
     // Keyed by path, the second project's spec of a file is dropped on every shard.
     const specs = [spec(FILE_A, 'node'), spec(FILE_A, 'jsdom'), spec(FILE_B, 'node')];
     const dealt = await Promise.all([1, 2].map((index) => sequencerFor(index, 2).shard(specs)));

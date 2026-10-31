@@ -334,6 +334,12 @@ export function combineParts(
   wanted: RunsWanted,
 ): { readonly result: PartResult; readonly problems: string[] } {
   const problems: string[] = [];
+  const beyond = [...new Set(parts.flatMap((part) => part.runs))].filter(
+    (run) => run > wanted.runs,
+  );
+  for (const run of beyond.sort((a, b) => a - b)) {
+    problems.push(`a part counted run ${run}, beyond the ${wanted.runs} wanted`);
+  }
   const firstRuns = parts.filter((part) => part.runs[0] === 1);
   const counted = onePerAction(
     'counted on run 1',

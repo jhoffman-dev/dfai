@@ -106,10 +106,46 @@ describe('recording durations from a run', () => {
 });
 
 describe('checking every file ran', () => {
+  const ran = (name: string) => ({ name, assertionResults: [{ status: 'passed' }] });
+  const skipped = (name: string) => ({
+    name,
+    assertionResults: [{ status: 'skipped' }, { status: 'skipped' }],
+  });
+
   it('names the listed files no shard reported, and nothing when all ran', () => {
-    expect(filesNotRun(['/r/b.test.ts', '/r/a.test.ts', '/r/c.test.ts'], ['/r/b.test.ts'])).toEqual(
-      ['/r/a.test.ts', '/r/c.test.ts'],
+    expect(
+      filesNotRun(['/r/b.test.ts', '/r/a.test.ts', '/r/c.test.ts'], [ran('/r/b.test.ts')]),
+    ).toEqual(['/r/a.test.ts', '/r/c.test.ts']);
+    expect(filesNotRun(['/r/a.test.ts'], [ran('/r/a.test.ts'), ran('/r/extra.test.ts')])).toEqual(
+      [],
     );
-    expect(filesNotRun(['/r/a.test.ts'], ['/r/a.test.ts', '/r/extra.test.ts'])).toEqual([]);
+  });
+
+  it('counts a file as run only if one of its tests passed or failed', () => {
+    const failed = { name: '/r/a.test.ts', assertionResults: [{ status: 'failed' }] };
+    expect(filesNotRun(['/r/a.test.ts'], [failed])).toEqual([]);
+    expect(filesNotRun(['/r/a.test.ts'], [skipped('/r/a.test.ts')])).toEqual(['/r/a.test.ts']);
+    expect(filesNotRun(['/r/a.test.ts'], [{ name: '/r/a.test.ts', assertionResults: [] }])).toEqual(
+      ['/r/a.test.ts'],
+    );
+  });
+
+  it('lets a file it is told may skip every test do so', () => {
+    expect(
+      filesNotRun(
+        ['/r/tools/x.jsc.test.ts'],
+        [skipped('/r/tools/x.jsc.test.ts')],
+        ['tools/x.jsc.test.ts'],
+      ),
+    ).toEqual([]);
+  });
+
+  it('wants a file listed under two projects run in both', () => {
+    expect(filesNotRun(['/r/a.test.ts', '/r/a.test.ts'], [ran('/r/a.test.ts')])).toEqual([
+      '/r/a.test.ts',
+    ]);
+    expect(
+      filesNotRun(['/r/a.test.ts', '/r/a.test.ts'], [ran('/r/a.test.ts'), ran('/r/a.test.ts')]),
+    ).toEqual([]);
   });
 });

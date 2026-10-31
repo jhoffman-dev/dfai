@@ -153,6 +153,45 @@ const dynamicImports = (restrictions) => [
   }),
 ];
 
+/**
+ * A test, a suite's support file, a Playwright spec, or a package's testing
+ * folder, as an import names it: test code, which the app never loads.
+ */
+const TEST_CODE =
+  /(^|\/)[^/]*\.(test|test-support|spec)(\.[^/]*)?$|(^|\/)src\/testing(\/|$)|^@dfai\/[^/]+\/testing(\/|$)/;
+
+/**
+ * `no-restricted-imports` reads only static imports: this is its rule for an
+ * `import()` of test code. A template's holes are read as any text.
+ */
+const testCode = {
+  rules: {
+    'no-restricted-imports-dynamic': {
+      meta: {
+        type: 'problem',
+        schema: [],
+        messages: {
+          testCode:
+            'A test or its support is for tests: import it only from a test or test tooling.',
+        },
+      },
+      create: (context) => ({
+        ImportExpression(node) {
+          const { source } = node;
+          const named =
+            source.type === 'Literal' && typeof source.value === 'string'
+              ? source.value
+              : source.type === 'TemplateLiteral'
+                ? source.quasis.map((quasi) => quasi.value.cooked).join('*')
+                : null;
+          if (named !== null && TEST_CODE.test(named))
+            context.report({ node, messageId: 'testCode' });
+        },
+      }),
+    },
+  },
+};
+
 const webviewNode = [
   ...Object.keys(forbidden).map((layer) => ({
     files: [`packages/${layer}/src/**/*.{ts,tsx}`],
@@ -283,7 +322,9 @@ export default tseslint.config(
       'vitest.config.ts',
       'vitest.setup.ts',
     ],
+    plugins: { 'test-code': testCode },
     rules: {
+      'test-code/no-restricted-imports-dynamic': 'error',
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
@@ -293,9 +334,19 @@ export default tseslint.config(
               message: 'Test support is for tests: import it only from a test or test tooling.',
             },
             {
-              // A suite's support file, or a test itself: ignored above so that
+              // A test, a spec or a suite's support file: ignored above so that
               // tests may import them, and so never imported by the app.
-              group: ['**/*.test-support', '**/*.test-support.*', '**/*.test', '**/*.test.*'],
+              group: [
+                '**/*.test-support',
+                '**/*.test-support.*',
+                '**/*.test',
+                '**/*.test.*',
+                '**/*.spec',
+                '**/*.spec.*',
+                // A package's test support by its path rather than its alias.
+                '**/src/testing',
+                '**/src/testing/**',
+              ],
               message:
                 'A test or its support is for tests: import it only from a test or test tooling.',
             },
