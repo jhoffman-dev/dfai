@@ -178,6 +178,41 @@ describe('properties', () => {
   });
 });
 
+describe('keys the type file has but cannot read (#683)', () => {
+  const book = parseObjectType({
+    name: 'book',
+    label: 'Book',
+    properties: { rating: 'number', author: { kind: 'relation', targets: 'person' } },
+  });
+
+  it('gives a new property a key of its own, never one the file holds unread', () => {
+    const added = addProperty(book, { label: 'Author', kind: 'text' }).properties.at(-1);
+    expect(added?.label).toBe('Author');
+    expect(added?.key).not.toBe('author');
+    expect(added?.key).toMatch(/^author/);
+  });
+
+  it('names a new property clear of one the file holds unread', () => {
+    const placeholder = addProperty(book, { label: NEW_PROPERTY_LABEL });
+    const key = placeholder.properties.at(-1)?.key ?? '';
+    const named = renameProperty(placeholder, { key, newKey: key, label: 'Author' }).type;
+    expect(named.properties.at(-1)?.key).not.toBe('author');
+  });
+
+  it('refuses to rename a property onto a key the file holds unread, and says why', () => {
+    expect(() =>
+      renameProperty(book, { key: 'rating', newKey: 'author', label: 'Author' }),
+    ).toThrowError(
+      new TypeEditError(
+        '"author" is already in the type file, as a property DFAI cannot read: mend or remove it there first',
+      ),
+    );
+    expect(() =>
+      renameProperty(book, { key: 'rating', newKey: 'Author', label: 'Author' }),
+    ).toThrowError(TypeEditError);
+  });
+});
+
 describe('changing a kind', () => {
   it('keeps the options between the two select kinds, and many follows multiSelect', () => {
     const multi = changePropertyKind(TASK, { key: 'status', kind: 'multiSelect' });

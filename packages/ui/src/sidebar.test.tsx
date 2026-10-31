@@ -174,6 +174,8 @@ describe('Sidebar', () => {
     const recipe = createVaultPath('.atlas/types/Recipe.md');
     show({ types: [], brokenTypes: [{ path: recipe, name: 'Recipe', problem: 'Bad YAML' }] });
     expect(within(region('Types')).getByText('Bad YAML')).toBeDefined();
+    // There is a type file, so "none defined yet" would be wrong.
+    expect(within(region('Types')).queryByText('No types defined yet.')).toBeNull();
   });
 
   it('opens the type when its row is clicked', async () => {

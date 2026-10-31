@@ -177,6 +177,59 @@ describe('objectTypeProblems (#683)', () => {
     expect(objectTypeProblems({ name: 'recipe', properties: null })).toEqual([]);
   });
 
+  it.each([['folder'], ['icon'], ['properties'], ['label']])(
+    'takes frontmatter holding only %s for a type that needs a name',
+    (key) => {
+      expect(objectTypeProblems({ [key]: key === 'properties' ? {} : 'x' })).toEqual([
+        'It has no name, and a type needs one.',
+      ]);
+    },
+  );
+
+  it('says a type key written with capitals must be lowercase, rather than reading it as no type', () => {
+    expect(
+      objectTypeProblems({ Name: 'recipe', Label: 'Recipe', Properties: { serves: 'number' } }),
+    ).toEqual(['Its keys must be lowercase: Name → name, Label → label, Properties → properties.']);
+    expect(objectTypeProblems({ name: 'recipe', Properties: { serves: 'number' } })).toEqual([
+      'Its keys must be lowercase: Properties → properties.',
+    ]);
+    // A key that is no type key is the file's own business, capitals and all.
+    expect(objectTypeProblems({ name: 'recipe', Notes: 'kept' })).toEqual([]);
+  });
+
+  it('says a name that is not text cannot name a type, and parseObjectType does not take it', () => {
+    for (const name of [{ film: true }, ['a', 'b']]) {
+      expect(objectTypeProblems({ name })).toEqual(['Its name must be text, not a list or a map.']);
+      expect(() => parseObjectType({ name })).toThrowError(InvalidTypeError);
+    }
+    // A number reads as the text it is written as.
+    expect(parseObjectType({ name: 2024 }).name).toBe('2024');
+  });
+
+  it('suggests target: for a relation written with targets:', () => {
+    expect(
+      objectTypeProblems({
+        name: 'book',
+        properties: { author: { kind: 'relation', targets: 'person' } },
+      }),
+    ).toEqual([
+      'Its property “author” is a relation that names no type to point at: write target:, not targets:.',
+    ]);
+  });
+
+  it('keeps the keys of the properties it leaves out, so an edit can steer clear of them', () => {
+    const type = parseObjectType({
+      name: 'book',
+      properties: { rating: 'number', author: { kind: 'relation' }, pages: 'nmber' },
+    });
+    expect(type.properties.map((property) => property.key)).toEqual(['rating']);
+    expect(type.unreadKeys).toEqual(['author', 'pages']);
+    // None left out, none kept: the type reads as it always has.
+    expect(parseObjectType({ name: 'book', properties: { rating: 'number' } })).not.toHaveProperty(
+      'unreadKeys',
+    );
+  });
+
   it('names only what parseObjectType leaves out', () => {
     const frontmatter = {
       name: 'recipe',

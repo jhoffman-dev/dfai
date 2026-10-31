@@ -10,7 +10,12 @@
 import { describe, expect, it } from 'vitest';
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
-import { setNoteProperties, setNoteProperty } from './set-property.ts';
+import {
+  setNoteProperties,
+  setNoteProperty,
+  UnclosedFrontmatterError,
+  writeFrontmatterChanges,
+} from './set-property.ts';
 
 const NOTE = [
   '---',
@@ -175,6 +180,50 @@ describe('setNoteProperties', () => {
     });
 
     expect(writes).toHaveLength(0);
+  });
+});
+
+describe('writeFrontmatterChanges, on a file whose block never closes (#683)', () => {
+  const UNCLOSED = '---\nname: film\nlabel: Film\n\n# Film\n';
+
+  it('writes nothing over it, and says why', async () => {
+    const { fs, writes } = vault(UNCLOSED);
+    await expect(
+      writeFrontmatterChanges({
+        fs,
+        markdown: fakeMarkdown(),
+        path: '.atlas/types/film.md',
+        values: { label: 'Films' },
+      }),
+    ).rejects.toThrowError(new UnclosedFrontmatterError('.atlas/types/film.md'));
+    expect(writes).toEqual([]);
+    expect(new UnclosedFrontmatterError('.atlas/types/film.md').message).toBe(
+      '.atlas/types/film.md has a frontmatter block with no closing ---, so nothing was written to it: add the --- line that ends the block, then try again',
+    );
+  });
+
+  it('leaves a note as it was: a note whose block never closes is all body, as Obsidian reads it', async () => {
+    const { fs, writes } = vault(UNCLOSED);
+    await setNoteProperties({
+      today: '2026-10-08',
+      fs,
+      markdown: fakeMarkdown(),
+      path: 'Film.md',
+      values: { status: 'done' },
+    });
+    // Its text is kept whole under a block of its own; nothing in it is lost.
+    expect(writes[0]?.contents.endsWith(UNCLOSED)).toBe(true);
+  });
+
+  it('still gives a file with no block one of its own', async () => {
+    const { fs, writes } = vault('# Film\n');
+    await writeFrontmatterChanges({
+      fs,
+      markdown: fakeMarkdown(),
+      path: '.atlas/settings.md',
+      values: { label: 'Films' },
+    });
+    expect(writes).toHaveLength(1);
   });
 });
 
