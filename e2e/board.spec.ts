@@ -108,6 +108,24 @@ test('escape puts a keyboard-held card down without writing anything', async ({ 
   expect(await vault.read('first.md')).toContain('status: backlog');
 });
 
+test('a key pressed straight after a keyboard pick-up is not lost on a slow runner', async ({
+  page,
+}) => {
+  const vault = await openBoard(page);
+  // A loaded CI runner gets to the page's timers late. dnd-kit's keyboard sensor
+  // starts listening for arrows from a timer set at the pick-up, so this stands
+  // in for that runner: every timer fires 200ms late, in its usual order.
+  await page.evaluate(() => {
+    const onTime = window.setTimeout.bind(window);
+    window.setTimeout = ((run: TimerHandler, delay = 0, ...rest: unknown[]) =>
+      onTime(run, Number(delay) + 200, ...rest)) as typeof window.setTimeout;
+  });
+
+  await dragWithKeyboard(page, cardHandle(page, 'first'), ['ArrowRight']);
+
+  await expectFile(vault, 'first.md').toContain('status: doing');
+});
+
 test('clicking a card after dragging another still opens it', async ({ page }) => {
   const vault = await openBoard(page);
   await dragCardTo(page, 'second.md', 'Done');

@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { escapeLeftByEditor } from '../editor/escape-unused.ts';
 import { Icon, type IconName } from '../icon.tsx';
@@ -30,6 +37,14 @@ export interface PeekDialogProps {
   /** Shows the row at `index` of the same list instead. */
   onStep: (index: number) => void;
   onClose: () => void;
+  /**
+   * Whether something is open above the peek — the search palette, a menu —
+   * whose Escape it is. Read as the key goes down, before either dialog has
+   * answered it. Left out, nothing ever is.
+   */
+  covered?: () => boolean;
+  /** An Escape pressed while `covered`: the peek stays, and what is above closes instead. */
+  onEscapeAbove?: () => void;
   /** Opens the note as the page, in place of the tab under the peek. */
   onExpand?: () => void;
   onOpenInNewTab?: () => void;
@@ -70,10 +85,16 @@ export function PeekDialog(props: PeekDialogProps) {
   const popup = useRef<HTMLDivElement>(null);
   const shown = props.position?.index;
   useLayoutEffect(() => keepFocusIn(popup.current), [shown]);
+  const coveredEscapes = useCoveredEscapes(props.covered);
   return (
     <Dialog.Root
       open
       onOpenChange={(open, details) => {
+        if (details.reason === 'escape-key' && coveredEscapes.has(details.event)) {
+          details.cancel();
+          props.onEscapeAbove?.();
+          return;
+        }
         if (details.reason === 'escape-key' && escapeTakenInside(details.event)) {
           details.cancel();
           return;
@@ -112,6 +133,26 @@ function escapeTakenInside(event: Event): boolean {
   if (!(event instanceof globalThis.KeyboardEvent)) return false;
   const answered = event.defaultPrevented && !escapeLeftByEditor(event);
   return answered || event.isComposing || event.keyCode === 229;
+}
+
+/**
+ * The Escapes pressed while something was open above the peek. Read on the
+ * window, on the way down, so that what is above closing on the same key
+ * first does not make it the peek's: two dialogs each dismiss on an Escape
+ * pressed in the peek, and the palette's field takes the focus only after it
+ * opens (on Linux WebKit, later than on macOS).
+ */
+function useCoveredEscapes(covered: (() => boolean) | undefined): WeakSet<Event> {
+  const [escapes] = useState(() => new WeakSet<Event>());
+  useLayoutEffect(() => {
+    if (covered === undefined) return;
+    const note = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape' && covered()) escapes.add(event);
+    };
+    window.addEventListener('keydown', note, { capture: true });
+    return () => window.removeEventListener('keydown', note, { capture: true });
+  }, [covered, escapes]);
+  return escapes;
 }
 
 /** After a step: the focus back on the peek when what held it went or was disabled. */

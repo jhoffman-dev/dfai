@@ -76,6 +76,27 @@ async function openParaHost(page: Page): Promise<{ vault: FakeVault; host: FakeH
 }
 
 const goTo = (page: Page) => page.getByRole('list', { name: 'Go to' });
+
+/**
+ * Every offer the PARA vault makes is on the Inbox. The page holds its rows for
+ * its offers only so long (`INBOX_OFFERS_WAIT_MS`); one read after that lands
+ * above the list, and the list is held still by scrolling (#130), so the offers
+ * already shown move up by its height. A click aimed at one before then can
+ * land where its button was. Once all four are shown, nothing more arrives.
+ */
+async function everyParaOfferShown(page: Page) {
+  const inbox = inboxPage(page);
+  await expect(
+    inbox.getByRole('complementary', { name: 'Set your types up for the Inbox' }),
+  ).toBeVisible();
+  for (const offer of [
+    'Move notes onto the Project type',
+    'Process meetings when they arrive',
+    'Move tasks to GTD statuses',
+  ]) {
+    await expect(inbox.getByRole('region', { name: offer })).toBeVisible();
+  }
+}
 const inboxPage = (page: Page) => page.getByRole('article', { name: 'Inbox' });
 
 async function capture(page: Page, line: string) {
@@ -117,6 +138,7 @@ test('the Inbox offers to move Area notes onto the Project type, and moves them 
 
   const move = inboxPage(page).getByRole('region', { name: 'Move notes onto the Project type' });
   await expect(move).toContainText('1 note would move onto it.');
+  await everyParaOfferShown(page);
   await move.getByRole('button', { name: 'Preview the move' }).click();
   await expect(move.getByRole('list', { name: 'Notes that move' })).toHaveText(
     'Garden: Area → Project, PARA Area',
@@ -243,6 +265,7 @@ test('a task’s project, once its type is extended, offers projects and areas a
       '    options: [backlog, doing, done]\n  focus:\n    kind: date\n    label: Chosen for\n',
     ),
   );
+  await everyParaOfferShown(page);
   await offer.getByRole('button', { name: 'Add to the types' }).click();
   await expectFile(vault, '.atlas/types/task.md').toContain('- area');
   expect(await vault.read('.atlas/types/task.md')).toContain(

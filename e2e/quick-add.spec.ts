@@ -68,3 +68,22 @@ for (const keys of ['Shift+Meta+n', 'Alt+Meta+n']) {
     await expect(page.getByRole('dialog', { name: 'Capture a task' })).toHaveCount(0);
   });
 }
+
+test('Shift+Meta+n pressed the moment the window shows is heard', async ({ page }) => {
+  // React runs a render's effects from a task it schedules after the paint; a
+  // loaded runner gets to that task late. This stands in for that runner: every
+  // task the page schedules through a MessageChannel runs 300ms late.
+  await page.addInitScript(() => {
+    const post = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (this: MessagePort, ...args: unknown[]) {
+      setTimeout(() => Reflect.apply(post, this, args), 300);
+    } as typeof post;
+  });
+  await installHost(page, await createVault());
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Open a vault' })).toBeVisible();
+
+  await page.keyboard.press('Shift+Meta+n');
+
+  await expect(page.getByText(/^Quick capture needs a vault/)).toBeVisible();
+});
