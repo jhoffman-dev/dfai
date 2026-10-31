@@ -129,7 +129,11 @@ function recordSweep(): void {
     const Original = table[name] as new (
       callback: (...args: unknown[]) => void,
       options?: unknown,
-    ) => { observe(target: Element, options?: unknown): void };
+    ) => {
+      observe(target: Element, options?: unknown): void;
+      unobserve(target: Element): void;
+      disconnect(): void;
+    };
     table[name] = class extends Original {
       readonly kind = name;
       constructor(callback: (...args: unknown[]) => void, options?: unknown) {
@@ -153,6 +157,15 @@ function recordSweep(): void {
         );
         unanswered.set(this, (unanswered.get(this) ?? new Set()).add(target));
         super.observe(target, options);
+      }
+      // One let go of owes nothing: it will not answer for it.
+      override unobserve(target: Element) {
+        unanswered.get(this)?.delete(target);
+        super.unobserve(target);
+      }
+      override disconnect() {
+        unanswered.delete(this);
+        super.disconnect();
       }
     };
     restores.push(() => {
