@@ -18,7 +18,7 @@ export function foldedTypeName(name: string): string {
 /**
  * The index every read of a note's type is sought through: the type folded as
  * {@link foldedTypeSql} folds it, after the key and before the note. The one
- * text of it: index.rs's schema holds it word for word and the e2e host makes
+ * text of it: the host's schema (`index_schema.sql`) holds it word for word and the e2e host makes
  * it from here, which `type-index.plan.sqlite.test.ts` holds them to.
  */
 export const PROPS_TYPE_FOLD_INDEX =

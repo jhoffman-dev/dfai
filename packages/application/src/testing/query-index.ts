@@ -1,3 +1,4 @@
+import { INDEX_SCHEMA } from './index-schema.ts';
 import { DatabaseSync } from './node-sqlite.ts';
 import {
   createVaultPath,
@@ -13,10 +14,10 @@ import type { IndexPort, QueryResult } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 
 /**
- * The index tables a DFAI query reads — `files`, `props`, `relations`,
- * `tags`, and `links` from the body's wiki links — filled from notes the way
- * refreshing the index fills them, so a
- * compiled query runs for real. Titles are the note's name without its folder
+ * The index, made from the host's own schema, with the tables a DFAI query
+ * reads (`files`, `props`, `relations`, `tags`, `blocks`, and `links` from the
+ * body's wiki links) filled from notes the way refreshing the index fills
+ * them, so a compiled query runs for real. Titles are the note's name without its folder
  * and `.md`; a note's frontmatter `title:` renames it, as the index's does.
  * Test support only.
  */
@@ -31,23 +32,7 @@ export function atlasQueryIndex({
   modified?: Readonly<Record<string, number>>;
 }): IndexPort['query'] {
   const database = new DatabaseSync(':memory:');
-  database.exec(`
-    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                        modified INTEGER NOT NULL, size INTEGER NOT NULL);
-    CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
-                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
-    CREATE INDEX props_path ON props(path, key, value_text);
-    CREATE INDEX props_key ON props(key, value_text);
-    CREATE TABLE relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL,
-                            target TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', dst TEXT);
-    CREATE INDEX relations_src ON relations(src, key);
-    CREATE INDEX relations_dst ON relations(dst, src);
-    CREATE TABLE tags (path TEXT NOT NULL, idx INTEGER NOT NULL, tag TEXT NOT NULL, name TEXT NOT NULL);
-    CREATE TABLE blocks (path TEXT NOT NULL, idx INTEGER NOT NULL, id TEXT NOT NULL, text TEXT NOT NULL);
-    CREATE INDEX blocks_path ON blocks(path);
-    CREATE TABLE links (src TEXT NOT NULL, dst TEXT, target TEXT NOT NULL, kind TEXT NOT NULL);
-    CREATE INDEX links_src ON links(src);
-    CREATE INDEX links_dst ON links(dst, src);`);
+  database.exec(INDEX_SCHEMA);
   const paths = Object.keys(files).map(createVaultPath);
   for (const [path, text] of Object.entries(files)) {
     addNote(database, {
@@ -90,7 +75,9 @@ function addNote(
   const properties = markdown.frontmatterProperties(document.frontmatter);
   const named = typeof properties['title'] === 'string' ? properties['title'] : null;
   const title = named ?? path.replace(/^.*\//, '').replace(/\.md$/i, '');
-  database.prepare('INSERT INTO files VALUES (?, ?, ?, ?, 1)').run(path, title, '', modified);
+  database
+    .prepare('INSERT INTO files (path, title, summary, modified, size) VALUES (?, ?, ?, ?, 1)')
+    .run(path, title, '', modified);
   addBlocks(database, path, document.body);
   for (const row of indexablePropertiesOf(properties)) {
     database
@@ -113,7 +100,7 @@ function addNote(
   for (const piece of splitWikiLinks(document.body)) {
     if (piece.kind !== 'wikiLink') continue;
     database
-      .prepare("INSERT INTO links VALUES (?, ?, ?, 'wikilink')")
+      .prepare("INSERT INTO links (src, dst, target, kind) VALUES (?, ?, ?, 'wikilink')")
       .run(path, resolve(piece.target), piece.target);
   }
 }

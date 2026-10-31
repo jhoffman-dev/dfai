@@ -266,6 +266,15 @@ reaches the built bundle anyway (#53, #114).
 | `packages/ui`          | React components. No business rules.              |
 | `apps/desktop`         | The composition root, plus `src-tauri` (Rust).    |
 
+**Where new things go, so parallel work adds files rather than editing shared
+ones (#134).** A route goes in its area's `packages/application/src/api/contract/<area>.ts`
+(route, request and answer shapes) and `api/handlers/<area>.ts` (what answers it);
+a new area adds one line each to `contract.ts` and `routes.ts`, which only compose.
+A module's exports go in its own `index.ts`. The index's tables and indexes live
+only in `apps/desktop/src-tauri/src/index_schema.sql`: the host `include_str!`s it,
+test indexes read it (`testing/index-schema.ts`), and `index-schema.test.ts` fails
+if an inline copy in a test drifts from it.
+
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and
 `0014-the-host-walks-the-vault-and-is-told-what-to-skip.md` for the one nuance:

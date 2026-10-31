@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { indexablePropertiesOf } from '../index/property-value.ts';
@@ -15,25 +16,19 @@ import { todayLists } from './today-lists.ts';
 /**
  * Adversarial pass on #111 (Today page): the page's two statements run
  * against the index as the host makes it — the same tables and the same
- * indexes (`apps/desktop/src-tauri/src/index.rs`), which never runs ANALYZE.
+ * indexes (`apps/desktop/src-tauri/src/index_schema.sql`), which never runs ANALYZE.
  * The page asks them again after every change to a file while it is open, its
  * own row actions included, so what they cost is paid on every tick.
  */
+/** The index's tables and indexes, from the file the host makes them from (#134). */
+const HOST_SCHEMA = readFileSync(
+  new URL('../../../../apps/desktop/src-tauri/src/index_schema.sql', import.meta.url),
+  'utf8',
+);
+
 function hostIndex() {
   const database = new DatabaseSync(':memory:');
-  database.exec(`
-    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-      modified INTEGER NOT NULL, size INTEGER NOT NULL, digest TEXT NOT NULL DEFAULT '',
-      note_type TEXT, progress INTEGER);
-    CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
-      value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
-    CREATE INDEX props_path ON props(path, key);
-    CREATE INDEX props_key ON props(key, value_text);
-    CREATE TABLE relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL,
-      target TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', dst TEXT);
-    CREATE INDEX relations_src ON relations(src, key);
-    CREATE INDEX relations_dst ON relations(dst);
-  `);
+  database.exec(HOST_SCHEMA);
   return database;
 }
 
@@ -101,7 +96,9 @@ describe('the Today page’s read on a vault of 1,000 open tasks', () => {
     expect(database.prepare(projects.sql).all(...projects.parameters)).toHaveLength(PROJECTS);
     const reads = [tasks, projects].flatMap((statement) => correlatedReads(database, statement));
     expect(reads.length).toBeGreaterThan(0);
-    for (const read of reads) expect(read).toMatch(/ \((path|src|dst)=\?/);
+    // Each read is a seek that pins the note: by its path, or by type then path
+    // through the host's props_type_fold, which the old inline copy here lacked.
+    for (const read of reads) expect(read).toMatch(/ \((?:[^)]* AND )?(path|src|dst)=\?/);
   });
 
   it('sorts tasks into sections with work that grows with their number, not its square', () => {

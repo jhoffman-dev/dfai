@@ -1,30 +1,17 @@
+import { INDEX_SCHEMA } from './index-schema.ts';
 import { DatabaseSync } from './node-sqlite.ts';
 import type { VaultPath } from '@dfai/domain';
 import type { IndexedNote, IndexEntry, IndexPort, QueryResult } from '../index/ports.ts';
 
 /**
- * An index that keeps what it is handed in SQLite, in the tables
- * `src-tauri/src/index.rs` makes, so a sync writes it and a compiled query
+ * An index that keeps what it is handed in SQLite, in the tables the host
+ * makes (`index_schema.sql`), so a sync writes it and a compiled query
  * reads it back for real. A put replaces the note's rows, as the host's does.
  * Views, search and backlinks are not kept. Test support only.
  */
 export function sqliteIndexPort(): IndexPort {
   const database = new DatabaseSync(':memory:');
-  database.exec(`
-    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                        modified INTEGER NOT NULL, size INTEGER NOT NULL, digest TEXT NOT NULL,
-                        note_type TEXT, progress REAL);
-    CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
-                        value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
-    CREATE TABLE relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL,
-                            target TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', dst TEXT);
-    CREATE TABLE tags (path TEXT NOT NULL, idx INTEGER NOT NULL, tag TEXT NOT NULL, name TEXT NOT NULL);
-    CREATE TABLE links (src TEXT NOT NULL, dst TEXT, target TEXT NOT NULL, kind TEXT NOT NULL,
-                        leaf TEXT NOT NULL DEFAULT '');
-    CREATE TABLE highlights (path TEXT NOT NULL, idx INTEGER NOT NULL, id TEXT NOT NULL,
-                             kind TEXT NOT NULL, quote TEXT NOT NULL, comment TEXT NOT NULL,
-                             mark TEXT NOT NULL, color TEXT NOT NULL, anchor TEXT NOT NULL);
-    CREATE INDEX highlights_path_idx ON highlights(path, idx);`);
+  database.exec(INDEX_SCHEMA);
   const removeNote = (path: string) => {
     for (const [table, column] of TABLES) {
       database.prepare(`DELETE FROM ${table} WHERE ${column} = ?`).run(path);
