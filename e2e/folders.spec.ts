@@ -9,7 +9,7 @@ import {
   type FakeHost,
   type FakeVault,
 } from './host.ts';
-import { dragAnnouncement, dragWithPointer } from './drag.ts';
+import { dragAnnouncement, dragWithPointer, keyboardSensorListening } from './drag.ts';
 import { caretAtLineEnd } from './caret.ts';
 
 /**
@@ -216,6 +216,7 @@ test('a note moves into a folder from the keyboard alone', async ({ page }) => {
   await row(page, 'one').focus();
   await page.keyboard.press('Space');
   await expect(dragAnnouncement(page)).toContainText('Picked up one.');
+  await keyboardSensorListening(page);
   await page.keyboard.press('ArrowUp');
   await expect(dragAnnouncement(page)).toContainText('one is over Projects.');
   await page.keyboard.press('Space');

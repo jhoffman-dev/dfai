@@ -96,7 +96,8 @@ describe('useMeetingSetup', () => {
   it('on the Inbox, waits for the rules, shows while none post-processes meetings, and reads nothing', () => {
     preview.mockReset();
     const { hook, automations } = setup();
-    expect(hook.result.current).toBeNull();
+    // Not yet known: said to be reading, so the Inbox holds its rows until it is (#130).
+    expect(hook.result.current?.reading).toBe(true);
     act(() => rulesRead(automations, []));
     expect(hook.result.current?.open).toBe(false);
     expect(hook.result.current?.dismissable).toBe(true);

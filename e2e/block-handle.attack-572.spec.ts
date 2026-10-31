@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { caretAtLineEnd } from './caret.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { macOnly } from './platform.ts';
 
 /*
  * Attack on PR #572 (#569), in WebKit: reaching the handle the way a person
@@ -71,18 +72,24 @@ test('after Add block below and typing, one undo takes back the typing, the new 
   await expect(editor.locator('p')).toHaveText(['First line.', '', 'Second line.', 'Third line.']);
 });
 
-test('⇧⌘↑ in a note whose first block is a paragraph selects to the start of the note and moves nothing', async ({
-  page,
-}) => {
-  const editor = await openPlan(page, OPENING);
-  await caretAtLineEnd(line(editor, 'Opening line.'));
-  await page.keyboard.press('Meta+Shift+ArrowUp');
-  // From the end of the first block back to the start of the note: the whole block, no more.
-  await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
-    .toBe('Opening line.');
-  await expect(editor.locator('p')).toHaveText(['Opening line.', 'Middle line.', 'Closing line.']);
-});
+test(
+  '⇧⌘↑ in a note whose first block is a paragraph selects to the start of the note and moves nothing',
+  macOnly('macOS text system: ⇧⌘↑ selects to the start; Linux WebKit has no such binding'),
+  async ({ page }) => {
+    const editor = await openPlan(page, OPENING);
+    await caretAtLineEnd(line(editor, 'Opening line.'));
+    await page.keyboard.press('Meta+Shift+ArrowUp');
+    // From the end of the first block back to the start of the note: the whole block, no more.
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+      .toBe('Opening line.');
+    await expect(editor.locator('p')).toHaveText([
+      'Opening line.',
+      'Middle line.',
+      'Closing line.',
+    ]);
+  },
+);
 
 test('Esc on the block menu opened by ⌘/ puts the caret back in the note', async ({ page }) => {
   const editor = await openPlan(page);

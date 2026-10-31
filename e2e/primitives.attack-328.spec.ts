@@ -394,6 +394,9 @@ for (const theme of THEMES) {
     await page.keyboard.press('ArrowDown');
     const highlighted = menu.locator('button[data-highlighted]');
     await expect(highlighted).toHaveCount(1);
+    // The mark is the focus ring, and the menu moves focus to the row after it
+    // marks it highlighted: read before then and there is no ring yet.
+    await expect(highlighted).toBeFocused();
     const best = await highlighted.evaluate((row) => {
       const { parse, ratio, groundOf, indicatorColours, over } = (
         globalThis as unknown as { attack328: Contrast }

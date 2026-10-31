@@ -78,19 +78,22 @@ export function useMeetingSetup(
   const held = useStore(store);
   // One object while another vault's state is held, so the props stay the same across renders.
   const state = held.vault === vault ? held : IDLE;
+  // Null until the rules are read: whether the Inbox needs the offer is not known yet.
   const needed = useStore(automations, (s) => {
     const listing = s.automations?.listing ?? null;
-    return (
-      listing !== null && !meetingsProcessedOnArrival(listing.automations.map(({ rule }) => rule))
-    );
+    if (listing === null) return null;
+    return !meetingsProcessedOnArrival(listing.automations.map(({ rule }) => rule));
   });
   const commands = useSetupCommands(wiring, vault);
   return useMemo(() => {
     const busyOrSaid = state.open || state.result !== null || state.problem !== null;
-    const shown = where === 'automations' || busyOrSaid || (needed && !state.dismissed);
+    const shown = where === 'automations' || busyOrSaid || (needed !== false && !state.dismissed);
     if (vault === null || !shown) return null;
     const offer = state.offer;
     return {
+      // Said while the rules are read, so the Inbox holds its rows rather than
+      // let the offer land above them once they are drawn (#130).
+      reading: where === 'inbox' && !busyOrSaid && needed === null,
       open: state.open,
       lines: offer === null ? null : offer.lines,
       asksEmails: offer?.asksEmails ?? false,

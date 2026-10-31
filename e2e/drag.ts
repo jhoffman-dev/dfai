@@ -26,6 +26,10 @@ async function centreOf(target: Locator): Promise<Point> {
 export const dragAnnouncement = (page: Page) =>
   page.locator('[id^="DndLiveRegion"]').filter({ hasText: /\S/ });
 
+/** Everything the drag surfaces' live regions say now. */
+const announced = async (page: Page) =>
+  (await page.locator('[id^="DndLiveRegion"]').allTextContents()).join('\n');
+
 /**
  * Press on `source`, travel to `to` in small steps, and release once the drag
  * says it is where it was sent.
@@ -130,6 +134,18 @@ export async function tabTo(page: Page, handle: Locator, { limit = 80 } = {}) {
 }
 
 /**
+ * Once a keyboard pick-up has been seen (the handle pressed, or "Picked up"
+ * said), waits until the drag hears keys. It is not listening yet: dnd-kit's
+ * keyboard sensor adds its key listener from a timer it sets at the pick-up,
+ * and on a loaded runner that timer can run after the next key, which is then
+ * lost. Timers set with the same delay run in the order they were set, so once
+ * one set now has run, the sensor's has.
+ */
+export async function keyboardSensorListening(page: Page) {
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve)));
+}
+
+/**
  * Tab to `handle`, Space to pick it up, each key in `moves`, then `finish` —
  * Space to drop, or Escape to cancel.
  */
@@ -143,7 +159,15 @@ export async function dragWithKeyboard(
   await page.keyboard.press('Space');
   // Picked up: dnd-kit marks the handle pressed for as long as it is held.
   await expect(handle).toHaveAttribute('aria-pressed', 'true');
-  for (const move of moves) await page.keyboard.press(move);
+  await keyboardSensorListening(page);
+  for (const move of moves) {
+    const before = await announced(page);
+    await page.keyboard.press(move);
+    // dnd-kit says where a move went once it has measured it; a key pressed
+    // before then moves from the old place, and on a slower runner (Linux CI)
+    // a second ArrowRight was lost that way. So each key waits, as a person's would.
+    await expect.poll(() => announced(page)).not.toBe(before);
+  }
   await page.keyboard.press(finish);
   await expect(handle).not.toHaveAttribute('aria-pressed', 'true');
 }

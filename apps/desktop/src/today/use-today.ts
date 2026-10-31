@@ -29,6 +29,7 @@ import { useDayOf } from './use-day-of.ts';
 import { createTodayWrites, NOTHING_SETTLING, type TodayWrites } from './today-writes.ts';
 import { useReviewWrites, type ReviewWritesOptions } from '../review/use-review-writes.ts';
 import type { Toasts } from '../toasts/toasts.ts';
+import { useUntilListedAgain } from '../rows/until-listed-again.ts';
 
 /** Why nothing was chosen, in a vault whose Task type has no `focus` as a date: the page offers no choice there. */
 const NOT_CHOOSING =
@@ -329,12 +330,34 @@ export function useToday(options: TodayOptions) {
     async () => (undoable === null ? undefined : undoChange(undoable)),
     [undoable, undoChange],
   );
-  /** The last change taken back from the keyboard (#109): settles to its row, or null when none was. */
-  const takeBackLast = useCallback(
-    async (): Promise<VaultPath | null> =>
-      undoable !== null && (await undoChange(undoable)) ? undoable.path : null,
-    [undoable, undoChange],
+  // The row taken back is listed again, or a read since the index caught up
+  // with the undo let go of what it knew of the task (`withoutSettledBy`).
+  const listedAgain = useUntilListedAgain(
+    useCallback(
+      (back: TakenBack) => {
+        if (rows.has(back.path)) return true;
+        if (knownHere.has(back.path)) {
+          back.knownSince = true;
+          return false;
+        }
+        return back.knownSince;
+      },
+      [rows, knownHere],
+    ),
+    vaultKey,
   );
+  /**
+   * The last change taken back from the keyboard (#109): settles to its row
+   * once it is listed again — reads from before the index caught up still
+   * lack it — or null when none was taken back.
+   */
+  const takeBackLast = useCallback(async (): Promise<VaultPath | null> => {
+    if (undoable === null || !(await undoChange(undoable))) return null;
+    // Another vault opened while it was written: no row here is the one taken back.
+    if (!sameVault(undoable, vaultNow.current)) return null;
+    await listedAgain({ path: undoable.path, knownSince: false });
+    return undoable.path;
+  }, [undoable, undoChange, listedAgain]);
   const dismiss = useCallback(() => setLast(null), []);
   // One notice per change, kept across renders, so its time runs from when it was shown (#165).
   const undoNow = useRef(undo);
@@ -484,6 +507,12 @@ function withoutSettledBy(
   const known = new Map([...settling.known].filter(([, landed]) => behind(landed)));
   const unchanged = rows.size === settling.rows.size && known.size === settling.known.size;
   return unchanged ? settling : { ...settling, rows, changes, known };
+}
+
+/** A row an undo took back, waiting to be listed again; `knownSince` once the page held what the undo left. */
+interface TakenBack {
+  readonly path: VaultPath;
+  knownSince: boolean;
 }
 
 /** The row acted on: its task, and what the page calls it. */

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
+import { macOnly, SELECT_ALL } from './platform.ts';
 
 /*
  * Attack on #346: the tab shortcuts and the click routes against the text
@@ -66,7 +67,7 @@ async function typeIntoStatusCell(page: Page, value: string) {
   await page.getByRole('button', { name: 'Doing', exact: true }).click();
   const input = page.locator('.table__input');
   await expect(input).toBeFocused();
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press(SELECT_ALL);
   await page.keyboard.type(value);
 }
 
@@ -115,15 +116,19 @@ test('⌘1 in the search palette leaves the palette, its query and the tabs as t
   await expect(tab(page, 1, 'gamma')).toHaveAttribute('aria-selected', 'true');
 });
 
-test('⌃T in the editor is the Mac’s transpose, not a new tab', async ({ page }) => {
-  const vault = await openVault(page);
-  await row(page, 'beta').click();
-  await caretAtLineEnd(article(page, 1, 'beta').getByText('Line of beta.'));
-  await page.keyboard.type(' ab');
-  await page.keyboard.press('Control+t');
-  await expect(tabsOf(page, 1)).toHaveText(['beta']);
-  await expectFile(vault, 'beta.md').toBe('# beta\n\nLine of beta. ba\n');
-});
+test(
+  '⌃T in the editor is the Mac’s transpose, not a new tab',
+  macOnly('macOS text system: ⌃T transposes; Linux WebKit has no such binding'),
+  async ({ page }) => {
+    const vault = await openVault(page);
+    await row(page, 'beta').click();
+    await caretAtLineEnd(article(page, 1, 'beta').getByText('Line of beta.'));
+    await page.keyboard.type(' ab');
+    await page.keyboard.press('Control+t');
+    await expect(tabsOf(page, 1)).toHaveText(['beta']);
+    await expectFile(vault, 'beta.md').toBe('# beta\n\nLine of beta. ba\n');
+  },
+);
 
 test('⌘⇧T reopens the most recently closed tab first, then the one before', async ({ page }) => {
   await openVault(page);

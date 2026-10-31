@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { caretAtLineEnd } from './caret.ts';
 import { createVault, expectFile, installHost, saveNow, sidebarSection } from './host.ts';
+import { macOnly } from './platform.ts';
 
 /*
  * A block's handle (#569), end to end in WebKit: hovering a block shows ⋮⋮
@@ -206,20 +207,22 @@ test("Delete on a highlight removes it by the note's write, which leaves its tom
   await expect(editor.locator('[data-highlight-block="kd0041"]')).toHaveCount(1);
 });
 
-test('⇧⌘↑ on the first block, where nothing can move, selects to the start as macOS does', async ({
-  page,
-}) => {
-  const { editor } = await openNote(page, null, 'Garden plan');
-  // The note's first block is its heading; "First line." is the second.
-  await caretAtLineEnd(editor.locator('h1', { hasText: 'Garden plan' }));
-  await page.keyboard.press('Meta+Shift+ArrowUp');
-  await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
-    .toContain('Garden plan');
-  await expect(editor.locator('h1, p')).toHaveText([
-    'Garden plan',
-    'First line.',
-    'Second line.',
-    'Third line.',
-  ]);
-});
+test(
+  '⇧⌘↑ on the first block, where nothing can move, selects to the start as macOS does',
+  macOnly('macOS text system: ⇧⌘↑ selects to the start; Linux WebKit has no such binding'),
+  async ({ page }) => {
+    const { editor } = await openNote(page, null, 'Garden plan');
+    // The note's first block is its heading; "First line." is the second.
+    await caretAtLineEnd(editor.locator('h1', { hasText: 'Garden plan' }));
+    await page.keyboard.press('Meta+Shift+ArrowUp');
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+      .toContain('Garden plan');
+    await expect(editor.locator('h1, p')).toHaveText([
+      'Garden plan',
+      'First line.',
+      'Second line.',
+      'Third line.',
+    ]);
+  },
+);

@@ -143,7 +143,7 @@ test('a card opens its note by a click or Mod+Enter; Enter starts a line after i
   await caretAtLineStart(page.getByText('Also Naples.'));
   await page.keyboard.press('ArrowUp');
   await expect(page.locator('.bookmark--selected')).toBeVisible();
-  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('Meta+Enter');
   await expect(page.getByRole('article', { name: 'Rome' })).toBeVisible();
 });
 

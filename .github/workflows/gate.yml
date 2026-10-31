@@ -22,11 +22,11 @@ defaults:
     shell: bash
 
 # The slow work is split across machines: the unit tests over six, the
-# end-to-end suite over four, the response-time and work budgets over four.
+# end-to-end suite over eight, the response-time and work budgets over four.
 # `gate`, at the bottom, is the one check to require.
 #
-# macOS: the account runs only five macOS jobs at once, and a full run uses
-# exactly five (four end-to-end shards and `rust`). Add a sixth and it queues.
+# macOS: the account runs only five macOS jobs at once, so a run uses one,
+# `rust`, and two pull requests' runs never queue behind each other for it.
 
 jobs:
   changes:
@@ -214,7 +214,9 @@ jobs:
   rust:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    # macOS because the Tauri shell links against WebKit.
+    # macOS: the Tauri shell links against WebKit, and these tests are what
+    # guard the vault's files on the file system they ship on (APFS's case
+    # folding, the Trash, symlinks, git). It is the one macOS job per run.
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -262,18 +264,30 @@ jobs:
         env:
           ATLAS_TEST_MODEL_DIR: ${{ runner.temp }}/atlas-test-models
 
+      # A deleted note goes to the real macOS Trash. Left out of `cargo test`
+      # because it leaves a file in the Trash of whoever runs it, which on a
+      # runner thrown away after the job is no one's.
+      - name: Test the real Trash
+        run: pnpm rust:test the_system_trash_takes_a_note -- --ignored
+
   e2e:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    # macOS because the end-to-end suite drives the same WebKit the Tauri window
-    # uses. One worker per machine, as before; the four machines are the speed-up.
-    runs-on: macos-latest
-    timeout-minutes: 20
+    # Linux. The suite drives Playwright's WebKit against a stand-in host
+    # (e2e/host.ts) on either OS, and Linux runners are many where macOS ones
+    # are five to the account: on macOS the four shards and `rust` filled every
+    # slot, so a second pull request's suite queued behind the first. What
+    # differs on macOS (its editing keys, its text system) is tagged `@mac`
+    # and skipped here; e2e-macos-nightly.yml runs the whole suite on macOS.
+    # Two workers to a 4-vCPU runner, eight runners: one worker each made the
+    # longest shard 12 minutes against 9, and failed no fewer tests (#649).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
-    name: e2e (${{ matrix.shard }}/4)
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    name: e2e (${{ matrix.shard }}/8)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -288,24 +302,64 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The OS release goes in the key (`ImageOS`, e.g. macos15): Playwright
-      # builds WebKit per release, so a runner moving to a new one must not
-      # restore the old build. `ImageOS` is a runner variable, not in `env`.
-      - name: Read the Playwright version and the OS release
+      # WebKit and its apt packages as the `perf` job has them, from the same
+      # caches (#519), so the two jobs share one download.
+      - name: Read the Playwright version and the runner image
         id: playwright
         run: |
-          echo "version=$(pnpm exec playwright --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-          echo "os=${ImageOS}" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$(pnpm exec playwright --version | cut -d' ' -f2)"
+            echo "os=${ImageOS}"
+            echo "image=${ImageOS}-${ImageVersion}"
+          } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Make apt time out and retry
+        run: |
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-519 > /dev/null
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # A restore that stalls is given up on after two minutes, not the action's
+        # ten: a miss only means installing (seconds), and a ten-minute stall once
+        # took an e2e shard past its time limit (run 41196967743).
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
         id: webkit
         with:
-          path: ~/Library/Caches/ms-playwright
+          path: ~/.cache/ms-playwright
           key: playwright-webkit-${{ runner.os }}-${{ steps.playwright.outputs.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
 
-      - name: Install WebKit for end-to-end tests
+      - name: Install WebKit
         if: steps.webkit.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps webkit
+        timeout-minutes: 5
+        run: pnpm exec playwright install webkit
+
+      # Only the first shard saves, so eight do not race to write one key.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.webkit.outputs.cache-hit != 'true' && matrix.shard == 1
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.webkit.outputs.cache-primary-key }}
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+        id: webkit-debs
+        with:
+          path: ~/.cache/webkit-debs
+          key: webkit-debs-${{ steps.playwright.outputs.image }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install WebKit's system packages
+        timeout-minutes: 9
+        env:
+          WEBKIT_DEBS_CACHE_HIT: ${{ steps.webkit-debs.outputs.cache-hit }}
+        run: tools/ci/install-webkit-deps.sh "$HOME/.cache/webkit-debs"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.webkit-debs.outputs.cache-hit != 'true' && matrix.shard == 1
+        with:
+          path: ~/.cache/webkit-debs
+          key: ${{ steps.webkit-debs.outputs.cache-primary-key }}
 
       # `pnpm e2e` builds first, here on the shard: the build takes seconds, and
       # handing `dist` over from another job would hold every shard back until
@@ -314,8 +368,8 @@ jobs:
       # No `--trace=retain-on-failure`: tracing every test took the four shards
       # from 1114 s to 1479 s between them when it was measured (#113). A failed
       # shard uploads the HTML report and each failure's error context instead.
-      - name: End-to-end, a quarter of the suite
-        run: pnpm e2e --shard=${{ matrix.shard }}/4 --reporter=list,html
+      - name: End-to-end, an eighth of the suite
+        run: pnpm e2e --shard=${{ matrix.shard }}/8 --workers=2 --reporter=list,html
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
@@ -406,6 +460,11 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/99-ci-519 > /dev/null
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # A restore that stalls is given up on after two minutes, not the action's
+        # ten: a miss only means installing (seconds), and a ten-minute stall once
+        # took an e2e shard past its time limit (run 41196967743).
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
         id: webkit
         with:
           path: ~/.cache/ms-playwright
@@ -427,6 +486,8 @@ jobs:
       # The .deb files apt downloaded for WebKit, keyed on the runner image so
       # they match what is already installed on it. A new image misses once.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
         id: webkit-debs
         with:
           path: ~/.cache/webkit-debs
