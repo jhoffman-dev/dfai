@@ -26,13 +26,13 @@ async function writeThenRead(): Promise<{ refused: unknown } | { read: Uint8Arra
 }
 
 describe('the web stub keeps the files it says it wrote (attack #689)', () => {
-  it.fails('reads back the bytes a binary write accepted, or refuses the write', async () => {
+  it('reads back the bytes a binary write accepted, or refuses the write', async () => {
     const outcome = await writeThenRead();
     if ('refused' in outcome) return;
     expect([...outcome.read]).toEqual([...bytes]);
   });
 
-  it.fails('lists a file a binary write accepted among the vault’s files', async () => {
+  it('lists a file a binary write accepted among the vault’s files', async () => {
     const { fs } = composeWeb().vault;
     try {
       await fs.writeBinaryFile({ vault, path, bytes, offset: 0 });

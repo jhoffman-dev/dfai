@@ -42,6 +42,8 @@ export function workspaceAliases(): Record<string, string> {
     '@dfai/adapters/pdf': source('adapters/src/pdf/index.ts'),
     // The same for foliate-js: it stays in the EPUB reader's chunk, loaded the first time a book opens.
     '@dfai/adapters/epub': source('adapters/src/epub/index.ts'),
+    // Only the desktop's composition root imports it (#656).
+    '@dfai/adapters/tauri': source('adapters/src/tauri/index.ts'),
     '@dfai/adapters': pkg('adapters'),
     '@dfai/ui': pkg('ui'),
     // Before '@dfai/shell', for the same reason: the shell's one stylesheet.

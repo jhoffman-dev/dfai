@@ -9,7 +9,7 @@ import { fromAdapters, workspaceAliases } from '../../tools/vite/workspace-alias
 
 /**
  * Writes where each chunk loaded on first use landed into index.html, by the
- * chunk's name, for `src/chunk-files.ts`: a chunk that failed to parse or run
+ * chunk's name, for `packages/shell/src/chunk-files.ts`: a chunk that failed to parse or run
  * can then be imported again under a fresh address. A meta tag, not a script,
  * since it is only data.
  */

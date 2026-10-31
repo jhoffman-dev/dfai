@@ -65,6 +65,13 @@ export default defineConfig({
           new URL('./packages/adapters/src/epub/index.ts', import.meta.url),
         ),
       },
+      // The adapters that speak to the Tauri host, for the desktop alone (#656).
+      {
+        find: '@dfai/adapters/tauri',
+        replacement: fileURLToPath(
+          new URL('./packages/adapters/src/tauri/index.ts', import.meta.url),
+        ),
+      },
       { find: '@dfai/adapters', replacement: pkg('adapters') },
       { find: '@dfai/ui', replacement: pkg('ui') },
       // The app shell (#656). Exact, so its stylesheet export resolves through its package.json.

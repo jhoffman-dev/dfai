@@ -5,6 +5,7 @@ import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 
 /**
@@ -16,17 +17,70 @@ const appStateOnly = ['zustand', 'zustand/*', '@tanstack/react-query'];
 /** The shell, and the apps that compose it: outermost, so no package imports them. */
 const composed = ['@dfai/shell', '@dfai/desktop', '@dfai/web'];
 
+const TAURI_ONLY_WHY =
+  'Tauri is apps/desktop’s alone; the shell and the web build compose without it (#656).';
+
 /**
- * Tauri, and the adapters that speak to its host (by their `tauri…` names):
+ * Tauri, and the adapters that speak to its host (`@dfai/adapters/tauri`):
  * only `apps/desktop` composes them (#656). The shell is every platform's, and
  * a browser has no Tauri to answer them.
  */
 const tauriOnly = [
-  { group: '@tauri-apps/*' },
-  { group: '@dfai/adapters', importNamePattern: '^tauri', what: "@dfai/adapters' tauri… adapters" },
+  { group: ['@tauri-apps/*'], why: TAURI_ONLY_WHY },
+  { group: ['@dfai/adapters/tauri'], why: TAURI_ONLY_WHY },
+  { group: ['@dfai/desktop', '@dfai/desktop/*'], why: TAURI_ONLY_WHY },
 ];
-const TAURI_ONLY_WHY =
-  'Tauri is apps/desktop’s alone; the shell and the web build compose without it (#656).';
+
+/**
+ * Another package's or app's files by a relative path, which skips its public
+ * entry and every rule on it: `../../desktop/src/composition` reached Tauri
+ * from the web with the entry rules green (#689).
+ */
+const OTHER_PACKAGE_PATH =
+  '(^|/)(apps|packages)/|(^|/)(adapters|application|desktop|domain|mcp|shell|ui|web)/src(/|$)';
+const otherPackageByPath = {
+  regex: OTHER_PACKAGE_PATH,
+  what: 'another package’s files by a relative path',
+  why: 'import its public entry (@dfai/…) instead (#656).',
+};
+
+/**
+ * The adapters the shell may import itself: only the readers' entries, which
+ * are no platform's. Everything else a platform hands it through ports (#656).
+ * Its tests may use the root barrel, which holds no Tauri.
+ */
+const shellAdapters = {
+  // A regex, not a group: a group cannot let a path back in below one it refuses.
+  regex: '^@dfai/adapters(/(?!pdf$|epub$).*)?$',
+  what: '@dfai/adapters, but for /pdf and /epub',
+  why: 'a platform hands the shell its adapters through ports (#656).',
+};
+
+/** Every name `@dfai/application` re-exports from its test support, read from the file. */
+const applicationTestSupport = [
+  ...readFileSync(new URL('./packages/application/src/testing/index.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/export\s+(?:type\s+)?\{([^}]*)\}/g),
+].flatMap(([, names]) =>
+  names
+    .split(',')
+    .map((name) =>
+      name
+        .trim()
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)
+        .pop(),
+    )
+    .filter(Boolean),
+);
+
+/** The web build composes real adapters, never the application's fakes, which drop what they are handed. */
+const noTestSupport = {
+  group: ['@dfai/application'],
+  importNames: applicationTestSupport,
+  what: '@dfai/application’s test support',
+  why: 'a fake keeps nothing; the web composes its own ports (#656).',
+};
 
 /** Every layer that must stay out of a given layer's imports. */
 const forbidden = {
@@ -49,29 +103,77 @@ const forbidden = {
   ],
   adapters: ['@dfai/ui', 'react*', ...appStateOnly, ...composed],
   ui: ['@dfai/adapters', ...appStateOnly, ...composed],
-  shell: [...tauriOnly, '@dfai/desktop', '@dfai/web'],
+  shell: [...tauriOnly, otherPackageByPath, '@dfai/web', '@dfai/web/*'],
 };
 
-/** A forbidden entry as `no-restricted-imports` takes it: a group, or a group and the names in it. */
+/** What a layer's production code, but not its tests, must also stay out of. */
+const forbiddenOutsideTests = { shell: [shellAdapters] };
+
+/**
+ * A forbidden entry as `no-restricted-imports` takes it: a module's name, or
+ * a pattern (`group` or `regex`, maybe narrowed to `importNames`) with what it
+ * names and why it is refused.
+ */
 const restriction = (where, entry) => {
   const {
-    group,
-    importNamePattern,
-    what = group,
-  } = typeof entry === 'string' ? { group: entry } : entry;
-  const why = tauriOnly.includes(entry) ? TAURI_ONLY_WHY : 'dependencies point inward.';
-  return {
-    group: [group],
-    ...(importNamePattern === undefined ? {} : { importNamePattern }),
-    message: `${where} must not import ${what} — ${why}`,
-  };
+    what,
+    why = 'dependencies point inward.',
+    ...match
+  } = typeof entry === 'string' ? { group: [entry] } : entry;
+  const named = what ?? (match.group ?? [match.regex]).join(', ');
+  return { ...match, message: `${where} must not import ${named} — ${why}` };
 };
 
-const layerPatterns = (layer) =>
-  forbidden[layer].map((entry) => restriction(`packages/${layer}`, entry));
+const layerPatterns = (layer, { tests = true } = {}) =>
+  [...forbidden[layer], ...(tests ? [] : (forbiddenOutsideTests[layer] ?? []))].map((entry) =>
+    restriction(`packages/${layer}`, entry),
+  );
 
-/** The web app: its own composition root, on everything but Tauri. */
-const webPatterns = tauriOnly.map((entry) => restriction('apps/web', entry));
+/** The web app: its own composition root, on everything but Tauri and the desktop's files. */
+const webPatterns = [...tauriOnly, otherPackageByPath, '@dfai/shell/*'].map((entry) =>
+  restriction('apps/web', entry),
+);
+const webProductionPatterns = [...webPatterns, restriction('apps/web', noTestSupport)];
+
+/**
+ * Tauri reached without an import: its globals on the window, and a tauri…
+ * adapter by name off a module loaded with `import()` (#689).
+ */
+const NO_TAURI_SYNTAX = [
+  ['Identifier[name=/^__TAURI/]', 'Tauri’s globals'],
+  ['Literal[value=/^__TAURI/]', 'Tauri’s globals'],
+  ['Identifier[name=/^tauri[A-Z]/]', 'a tauri… adapter'],
+].map(([selector, what]) => ({
+  selector,
+  message: `Shared code must not reach ${what} — ${TAURI_ONLY_WHY}`,
+}));
+
+/** A <StrictMode> in a test, which React 19 does not mount twice (#159). */
+const STRICT_MODE_IN_TESTS = [
+  "ImportDeclaration[source.value='react'] > ImportSpecifier[imported.name='StrictMode']",
+  "MemberExpression[object.name='React'][property.name='StrictMode']",
+  "JSXMemberExpression[object.name='React'][property.name='StrictMode']",
+].map((selector) => ({
+  selector,
+  message:
+    'Render with `{ reactStrictMode: true }` (render or renderHook) to mount twice as main.tsx does.',
+}));
+
+/** The same modules, refused when loaded with `import()`. */
+const noTauriImport = [
+  { regex: '^@tauri-apps/', message: TAURI_ONLY_WHY },
+  { regex: '^@dfai/adapters/tauri$', message: TAURI_ONLY_WHY },
+  { regex: '^@dfai/desktop(/|$)', message: TAURI_ONLY_WHY },
+  {
+    regex: OTHER_PACKAGE_PATH,
+    message: 'Import another package by its public entry (@dfai/…), not its files (#656).',
+  },
+];
+/** And for the shell's production code, the adapters it may not import itself. */
+const noShellAdaptersImport = {
+  regex: shellAdapters.regex,
+  message: shellAdapters.why,
+};
 
 const architecture = [
   ...Object.keys(forbidden).map((layer) => ({
@@ -246,10 +348,21 @@ const webviewNode = [
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...layerPatterns(layer), noNodeModules, noNodeSupport] },
+        { patterns: [...layerPatterns(layer, { tests: false }), noNodeModules, noNodeSupport] },
       ],
     },
   })),
+  {
+    // A suite's own support is test code: held as the shell's tests are, not its production code.
+    files: ['packages/shell/src/**/*.test-support.ts'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...layerPatterns('shell'), noNodeModules, noNodeSupport] },
+      ],
+    },
+  },
   {
     // The rest of the application's test support, beside the SQLite files.
     files: ['packages/application/src/testing/**/*.{ts,tsx}'],
@@ -279,7 +392,7 @@ const webviewNode = [
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [...webPatterns, noNodeModules, noNodeSupport] },
+        { patterns: [...webProductionPatterns, noNodeModules, noNodeSupport] },
       ],
     },
   },
@@ -318,14 +431,23 @@ const webviewNode = [
   },
   {
     // The same, with Tauri added, for the code every platform shares and the web's own.
-    files: ['packages/shell/src/**/*.{ts,tsx}', 'apps/web/src/**/*.{ts,tsx}'],
+    files: ['apps/web/src/**/*.{ts,tsx}'],
     ignores: nodeOnly,
     rules: {
-      'no-restricted-syntax': dynamicImports([
-        noNodeModules,
-        noNodeSupport,
-        { regex: '^@tauri-apps/', message: TAURI_ONLY_WHY },
-      ]),
+      'no-restricted-syntax': [
+        ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport]),
+        ...NO_TAURI_SYNTAX,
+      ],
+    },
+  },
+  {
+    files: ['packages/shell/src/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-syntax': [
+        ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport, noShellAdaptersImport]),
+        ...NO_TAURI_SYNTAX,
+      ],
     },
   },
 ];
@@ -458,18 +580,17 @@ export default tseslint.config(
     // A <StrictMode> inside a test's wrapper does not run effects twice under
     // React 19, so a test that means the double mount must ask for it (#159).
     files: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: { 'no-restricted-syntax': ['error', ...STRICT_MODE_IN_TESTS] },
+  },
+  {
+    // After the block above, whose rule it repeats: the shell's and the web's tests
+    // may not reach Tauri either, by import() or off the window (#689).
+    files: ['packages/shell/**/*.test.{ts,tsx}', 'apps/web/**/*.test.{ts,tsx}'],
     rules: {
       'no-restricted-syntax': [
-        'error',
-        ...[
-          "ImportDeclaration[source.value='react'] > ImportSpecifier[imported.name='StrictMode']",
-          "MemberExpression[object.name='React'][property.name='StrictMode']",
-          "JSXMemberExpression[object.name='React'][property.name='StrictMode']",
-        ].map((selector) => ({
-          selector,
-          message:
-            'Render with `{ reactStrictMode: true }` (render or renderHook) to mount twice as main.tsx does.',
-        })),
+        ...dynamicImports(noTauriImport),
+        ...NO_TAURI_SYNTAX,
+        ...STRICT_MODE_IN_TESTS,
       ],
     },
   },

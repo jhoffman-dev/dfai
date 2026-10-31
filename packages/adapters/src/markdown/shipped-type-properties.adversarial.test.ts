@@ -287,7 +287,7 @@ describe('#162 migration, when its record is there but cannot be listed', () => 
 });
 
 describe('#162 migration, when the vault is opened twice at once', () => {
-  // React StrictMode (apps/desktop/src/main.tsx) runs useBuiltInTypes' effect
+  // React StrictMode (packages/shell/src/mount-shell.tsx) runs useBuiltInTypes' effect
   // twice in development; the first run is only marked cancelled, not stopped.
   it('reports no failure for a type the other open just gave the properties', async () => {
     const meeting = ['---', 'name: meeting', 'properties:', '  title: text', '---', ''].join('\n');

@@ -52,7 +52,7 @@ describe('mountShell on one page (attack #689)', () => {
     expect(live()).toBe(oneShell);
   });
 
-  it.fails('refuses a second shell on a page that already holds one', () => {
+  it('refuses a second shell on a page that already holds one', () => {
     document.body.innerHTML = '<div id="root"></div>';
     unmounts.push(mountShell({ ports: composeWeb() }));
     // A second call would put two Apps on one #root and two drag guards on the window.

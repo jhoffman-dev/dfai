@@ -33,8 +33,6 @@ describe('the web build (#656)', () => {
       await screen.findByRole('treeitem', { name: 'Larkspur garden' }, { timeout: 10_000 }),
     ).toBeDefined();
     expect(screen.getByRole('treeitem', { name: 'Welcome' })).toBeDefined();
-    // Nothing answered as Tauri would: the page has no Tauri at all.
-    expect('__TAURI_INTERNALS__' in window).toBe(false);
   });
 
   it('takes the window down again when asked', { timeout: 20_000 }, async () => {

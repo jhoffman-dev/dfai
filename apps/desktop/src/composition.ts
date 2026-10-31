@@ -2,8 +2,14 @@ import { isTauri } from '@tauri-apps/api/core';
 import desktopPackage from '../package.json' with { type: 'json' };
 import {
   anthropicApiProvider,
+  browserIdle,
   claudeCodeProvider,
   remarkMarkdown,
+  staticAppInfo,
+  webWorkerNoteChunker,
+  webWorkerNoteDeriver,
+} from '@dfai/adapters';
+import {
   tauriModelHttp,
   tauriModelProcess,
   tauriApiBridge,
@@ -27,10 +33,6 @@ import {
   tauriIndex,
   tauriEmbeddings,
   tauriEmbeddingCache,
-  browserIdle,
-  webWorkerNoteChunker,
-  webWorkerNoteDeriver,
-  staticAppInfo,
   tauriAppInfo,
   tauriVaultFs,
   tauriVaultPicker,
@@ -44,7 +46,7 @@ import {
   tauriMacName,
   tauriSleepClock,
   tauriSyncFiles,
-} from '@dfai/adapters';
+} from '@dfai/adapters/tauri';
 import type {
   ActivityStore,
   WindowClosingPort,

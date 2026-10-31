@@ -71,7 +71,7 @@ describe('IPC contract', () => {
       .map((name) => name.replace(/_(\w)/g, (_, letter: string) => letter.toUpperCase()));
     expect(taken).toEqual(['path', 'contents', 'expectedModified', 'expectedDigest', 'vault']);
 
-    const { tauriVaultFs } = await import('@dfai/adapters');
+    const { tauriVaultFs } = await import('@dfai/adapters/tauri');
     invoke.mockResolvedValue(1);
     await tauriVaultFs.writeTextFile({
       path: createVaultPath('Plan.md'),

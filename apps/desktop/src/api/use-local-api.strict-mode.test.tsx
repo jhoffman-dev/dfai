@@ -13,7 +13,8 @@ import {
   createMeetingDrafts,
   type ApiRouterDeps,
 } from '@dfai/application';
-import { remarkMarkdown, tauriApiBridge } from '@dfai/adapters';
+import { remarkMarkdown } from '@dfai/adapters';
+import { tauriApiBridge } from '@dfai/adapters/tauri';
 import { useLocalApi } from '@dfai/shell';
 
 /**

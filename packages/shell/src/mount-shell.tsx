@@ -16,10 +16,15 @@ export type AppPorts = ComponentProps<typeof App>;
  */
 export type ShellComposition = { readonly ports: AppPorts };
 
+/** The pages holding a shell now: one each, or two Apps share a root and two guards a window. */
+const holding = new WeakSet<Window>();
+
 /** Draws the app into the page's `#root`, as every platform starts it; the answer takes it down again. */
 export function mountShell({ ports }: ShellComposition, page: Window = window): () => void {
   const element = page.document.getElementById('root');
   if (!element) throw new Error('index.html is missing #root');
+  if (holding.has(page)) throw new Error('this page already holds the app: take it down first');
+  holding.add(page);
   const stopGuarding = guardStrayFileDrops(page);
   const root = createRoot(element);
   root.render(
@@ -32,5 +37,6 @@ export function mountShell({ ports }: ShellComposition, page: Window = window): 
   return () => {
     root.unmount();
     stopGuarding();
+    holding.delete(page);
   };
 }

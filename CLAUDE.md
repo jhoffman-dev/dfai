@@ -262,13 +262,14 @@ forbids Node's globals and modules in the packages, `apps/desktop/src` and
 `apps/web/src` (tests are exempt, and test support that runs on Node is named in
 `eslint.config.js`, where nothing the app builds may import it), and
 `pnpm check:node-builtins` fails the gate when a built-in or a polyfill of one
-reaches the built bundle anyway (#53, #114).
+reaches either built bundle, the desktop's or the web's, anyway (#53, #114), and
+when anything of Tauri reaches the web's (#656).
 
 | Where                  | What belongs there                                                                                               |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `packages/domain`      | The rules. Pure, no I/O, no clock, no randomness.                                                                |
 | `packages/application` | Use-cases and the ports they need.                                                                               |
-| `packages/adapters`    | Tauri IPC, markdown, the index. Thin translators.                                                                |
+| `packages/adapters`    | Markdown, the index, the readers. Thin translators. Tauri IPC is its own entry, `@dfai/adapters/tauri` (#656).   |
 | `packages/ui`          | React components. No business rules.                                                                             |
 | `packages/shell`       | The app shell every platform shares: the window, its hooks, stores and styles. No Tauri (ESLint holds it, #656). |
 | `apps/desktop`         | The desktop's composition root (the shell on the Tauri adapters), plus `src-tauri` (Rust).                       |

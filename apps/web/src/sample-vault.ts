@@ -1,18 +1,13 @@
-import { createVaultPath } from '@dfai/domain';
-import {
-  fakeHostVaultFs,
-  memoryIndexPort,
-  memoryVault,
-  type VaultLocation,
-} from '@dfai/application';
+import type { VaultLocation } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import type { IndexPorts, NotePorts, OnHost, VaultPorts } from '@dfai/shell';
+import { sessionVaultFs } from './session-vault.ts';
+import { sessionIndex, sessionVaultStore } from './session-stores.ts';
 
 /**
- * The web stub's vault (#656): a few notes held in memory, on the same
- * in-memory ports the shell's own tests run on, so the shell draws a real
- * vault with no host behind it. The GitHub vault (#664) and the browser's
- * index (#666) take its place.
+ * The web stub's vault (#656): a few notes held for the page's session, so
+ * the shell draws a real vault with no host behind it. The GitHub vault
+ * (#664) and the browser's index (#666) take its place.
  */
 
 export const SAMPLE_LOCATION: VaultLocation = { absolutePath: '/sample', name: 'Sample vault' };
@@ -28,32 +23,17 @@ export function sampleVault(): {
   notes: OnHost<NotePorts>;
   index: OnHost<IndexPorts>;
 } {
-  const memory = memoryVault({ ...SAMPLE_NOTES });
-  const notesNow = () => [...memory.files].filter(([path]) => path.endsWith('.md'));
-  const fs = fakeHostVaultFs({
-    ...memory.fs,
-    listNotes: async () =>
-      notesNow().map(([path, text]) => ({
-        name: path.split('/').at(-1) ?? path,
-        path: createVaultPath(path),
-        modified: 1,
-        size: text.length,
-      })),
-    readNotes: async (paths) =>
-      paths.flatMap((path) => {
-        const text = memory.files.get(path);
-        return text === undefined ? [] : [{ path, text, modified: 1, size: text.length }];
-      }),
-  });
+  const fs = sessionVaultFs(SAMPLE_NOTES);
   return {
     vault: {
       fs,
       picker: { pickDirectory: async () => SAMPLE_LOCATION },
-      store: { read: async () => SAMPLE_LOCATION, write: async () => {} },
+      store: sessionVaultStore(SAMPLE_LOCATION),
+      // Nothing but the page writes the session's vault, so there is nothing to watch for.
       watch: { start: async () => {}, onChange: async () => () => {} },
     },
     notes: { fs, markdown: remarkMarkdown },
     // On the window's thread: a sample this small needs no worker, and the browser's index brings its own (#666).
-    index: { fs, index: memoryIndexPort(), markdown: remarkMarkdown },
+    index: { fs, index: sessionIndex(), markdown: remarkMarkdown },
   };
 }
