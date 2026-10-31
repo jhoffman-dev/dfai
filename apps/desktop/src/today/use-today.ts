@@ -353,6 +353,8 @@ export function useToday(options: TodayOptions) {
    */
   const takeBackLast = useCallback(async (): Promise<VaultPath | null> => {
     if (undoable === null || !(await undoChange(undoable))) return null;
+    // Another vault opened while it was written: no row here is the one taken back.
+    if (!sameVault(undoable, vaultNow.current)) return null;
     await listedAgain({ path: undoable.path, knownSince: false });
     return undoable.path;
   }, [undoable, undoChange, listedAgain]);
