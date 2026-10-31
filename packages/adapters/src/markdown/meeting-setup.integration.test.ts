@@ -93,8 +93,10 @@ describe('meeting setup through the real markdown port', () => {
     expect(fixture.files.get(MALFORMED_PATH)?.text).toBe(MALFORMED);
     const listing = await loadAutomations({ ...ports, notePaths: await listVaultNotes(ports) });
     expect(listing.automations.map(({ rule }) => rule.name)).toEqual(['After a meeting']);
-    // The rule that cannot run is listed as broken, as the Automations page shows it.
-    expect(listing.broken.map(({ path }) => path)).toEqual([UNRUNNABLE_PATH]);
+    // Both are listed as broken, as the Automations page shows them: the file that is
+    // not YAML with the parser's reason, never silently left out (#679).
+    expect(listing.broken.map(({ path }) => path)).toEqual([MALFORMED_PATH, UNRUNNABLE_PATH]);
+    expect(listing.broken[0]?.problem).toMatch(/^Its frontmatter cannot be read: \S/);
     expect(fixture.files.get(UNRUNNABLE_PATH)?.text).toBe(UNRUNNABLE);
     const [rule] = listing.automations;
     expect(rule?.rule.action).toMatchObject({ kind: 'claude', apply: 'mine' });
