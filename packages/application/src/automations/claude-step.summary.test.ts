@@ -671,6 +671,35 @@ const RETRO_ITEM = {
   confidence: 'high',
 };
 
+describe('Undo last run, a trash that fails partway with an error that is not a host refusal', () => {
+  it('logs the meeting it took back and the task it trashed before the error, and still fails (#685)', async () => {
+    const at = setUp([digest(), digest({ items: [RETRO_ITEM] })], {
+      ...NOTES,
+      [RETRO]: retroWith(BODY),
+    });
+    await at.run();
+    const made = [...taskNamed(at, 'rollout note'), ...taskNamed(at, 'cache numbers')];
+    expect(made).toHaveLength(2);
+    const trash = at.vault.ports.fs.trashEntry;
+    let calls = 0;
+    at.vault.ports.fs.trashEntry = async (args) => {
+      calls += 1;
+      if (calls === 2) throw new TypeError('the port broke');
+      await trash(args);
+    };
+
+    await expect(at.undo()).rejects.toThrow('the port broke');
+
+    const gone = made.filter((path) => !at.vault.files.has(path));
+    expect(gone).toHaveLength(1);
+    const logged = at.entries().at(-1);
+    expect(logged?.kind).toBe('undo');
+    const done = logged?.kind === 'undo' ? logged.done : [];
+    expect(done).toContainEqual({ kind: 'trashed', path: gone[0] });
+    expect(done.filter(({ kind }) => kind === 'unsummarised')).toHaveLength(1);
+  });
+});
+
 describe('Undo last run reaches the last run, even one that wrote no summary', () => {
   it('a later run that made a task but wrote no summary (it did not read) is the one undone', async () => {
     const at = setUp([digest(), digest({ summary: 42, items: [RETRO_ITEM] })]);

@@ -276,8 +276,14 @@ describe('Undo last run, the meeting write fails after its tasks are trashed (at
     },
   );
 
+  // Renamed from "leaves the run undoable when its meeting write threw before
+  // anything was logged". Its tasks were trashed before the write threw, so the
+  // undo is logged, and a logged undo marks the run undone (lastUndoableRun, a
+  // domain rule). What is right is that the log names the meeting, with the
+  // error, so the person can take the summary out by hand. A retry then has
+  // nothing more to do.
   it.fails(
-    'leaves the run undoable when its meeting write threw before anything was logged',
+    'names the meeting left with the write’s error, and a retry has nothing more to do',
     async () => {
       const at = setUp([digest()]);
       await at.run();
@@ -286,10 +292,9 @@ describe('Undo last run, the meeting write fails after its tasks are trashed (at
       await expect(at.undo()).rejects.toThrow('disk full');
       at.vault.ports.fs.writeTextFile = write;
 
-      // A retry once the disk is fine takes the summary out.
-      await at.undo();
-
-      expect(at.body().includes('atlas:summary')).toBe(false);
+      expect(lastUndo(at)?.left).toContainEqual({ path: SYNC, reason: 'disk full' });
+      expect(await at.undo()).toBeNull();
+      expect(at.body()).toContain('atlas:summary');
     },
   );
 
