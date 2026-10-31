@@ -274,6 +274,8 @@ export default tseslint.config(
     files: ['**/*.{ts,tsx,mjs}'],
     ignores: [
       '**/*.test.{ts,tsx}',
+      // A suite's own support, imported only by its tests.
+      '**/*.test-support.ts',
       '**/*.spec.ts',
       'packages/*/src/testing/**',
       'tools/**',

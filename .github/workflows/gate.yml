@@ -21,8 +21,8 @@ defaults:
     # Named, so a failure on the left of a pipe fails the step (`-o pipefail`).
     shell: bash
 
-# The slow work is split across machines: the unit tests over three, the
-# end-to-end suite over four, the response-time budgets on one more.
+# The slow work is split across machines: the unit tests over six, the
+# end-to-end suite over four, the response-time and work budgets over three.
 # `gate`, at the bottom, is the one check to require.
 #
 # macOS: the account runs only five macOS jobs at once, and a full run uses
@@ -79,17 +79,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Format
-        run: pnpm format:check
-
       - name: Every version file says the same version
         run: pnpm version:check
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
+      # Each keeps one core busy, so side by side they take about as long as
+      # lint alone: 55 s, 46 s and 72 s one after another. Each one's output is
+      # printed whole, in this order, in a group of its own.
+      - name: Format, typecheck and lint
+        run: tools/ci/side-by-side.sh 'pnpm format:check' 'pnpm typecheck' 'pnpm lint'
 
       - name: Build frontend
         run: pnpm build
@@ -113,8 +110,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-    name: unit (${{ matrix.shard }}/3)
+        shard: [1, 2, 3, 4, 5, 6]
+    name: unit (${{ matrix.shard }}/6)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -137,14 +134,16 @@ jobs:
           sudo usermod --comment 'DFAI CI' "$(whoami)"
           sudo hostname "$(hostname).local"
 
-      # A third of the tests cannot meet the coverage thresholds, so the shard
+      # A sixth of the tests cannot meet the coverage thresholds, so the shard
       # config leaves them out. What this shard covered goes into its blob, and
-      # the `coverage` job holds the three together to the thresholds.
-      - name: Test, a third of the suite
+      # the `coverage` job holds the six together to the thresholds. The files
+      # are dealt out by how long each took on CI (tools/ci/unit-shards.ts):
+      # dealt by Vitest's hash of their paths, three shards took 8 to 12 minutes.
+      - name: Test, a sixth of the suite
         run: >
           pnpm exec vitest run --config tools/ci/vitest.shard.config.ts
           --coverage --coverage.reporter=text-summary
-          --shard=${{ matrix.shard }}/3 --reporter=default --reporter=blob
+          --shard=${{ matrix.shard }}/6 --reporter=default --reporter=blob
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -155,8 +154,9 @@ jobs:
           retention-days: 1
 
   coverage:
-    # Puts the three shards' coverage back together and holds it to the
+    # Puts the six shards' coverage back together and holds it to the
     # thresholds in vitest.config.ts: the repo floor and each module's own.
+    # Then checks every test file ran on some shard.
     needs: [changes, unit]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -182,7 +182,23 @@ jobs:
           merge-multiple: true
 
       - name: Merge coverage and enforce the thresholds
-        run: pnpm exec vitest --merge-reports --coverage
+        run: >
+          pnpm exec vitest --merge-reports --coverage
+          --reporter=default --reporter=json --outputFile.json=unit-report.json
+
+      # The shards are dealt by recorded durations rather than by Vitest, so
+      # this proves the deal left no file out. It also writes this run's
+      # durations, the `unit-durations` artifact, for when the shards drift.
+      - name: Every test file ran on a shard
+        run: |
+          pnpm exec vitest list --filesOnly --json > unit-files.json
+          node tools/ci/unit-report.mjs unit-report.json unit-files.json unit-durations.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unit-durations
+          path: unit-durations.json
+          retention-days: 30
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -306,7 +322,7 @@ jobs:
             test-results/
           retention-days: 7
 
-  perf:
+  perf-part:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     # On the 2,000-note fixture vault: the response-time budgets (#217) for
@@ -314,8 +330,32 @@ jobs:
     # (`tools/perf/budgets.json`), counts of what each action makes the app
     # do. Linux, because macOS jobs are the scarce ones and WebKit runs here
     # too; the time budgets have headroom for it, and counts do not vary.
+    #
+    # In three parts, each on a machine of its own: on one, the work budgets
+    # took 13 minutes, three of them building the cache of meanings for the
+    # main fixture's last action, once per pass (#648). The main fixture's two
+    # counted runs share one machine, side by side: on the work clock a busy
+    # machine changes how long a run takes, never what it counts. Its timed
+    # pass has a machine to itself, so its times are not a busy machine's.
+    # The response times, which are gated, run alone too, before the rest.
+    # `perf` below puts the parts' reports back together.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: main counted
+            fixtures: main
+            passes: counted
+          - part: main timed
+            fixtures: main
+            passes: timed
+          - part: latency, and the other fixtures
+            fixtures: research,long-note,code-note
+            passes: counted,timed
+            latency: true
+    name: perf (${{ matrix.part }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -403,6 +443,7 @@ jobs:
         run: pnpm --filter @dfai/desktop exec vite build --minify false
 
       - name: Response times on the fixture vault
+        if: matrix.latency
         run: pnpm exec playwright test --config playwright.perf.config.ts --project latency --reporter=list
 
       # Run even when a time budget failed, so a red run still says what the
@@ -412,6 +453,8 @@ jobs:
         if: (success() || failure()) && steps.build.outcome == 'success'
         run: pnpm exec playwright test --config playwright.perf.config.ts --project budgets --reporter=list
         env:
+          PERF_BUDGETS_FIXTURES: ${{ matrix.fixtures }}
+          PERF_BUDGETS_PASSES: ${{ matrix.passes }}
           # Counted twice: a count that differs between the two runs fails, so the
           # work clock stays proven deterministic on the runner, not only here.
           PERF_BUDGETS_RUNS: 2
@@ -419,11 +462,42 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: perf
+          name: perf-${{ strategy.job-index }}
           path: |
             test-results/perf/
             test-results/**/error-context.md
           retention-days: 7
+
+  perf:
+    # The parts' work budgets as one report, and proof that between them they
+    # counted and timed every budgeted action once. Each part has already held
+    # its counts to the budgets. Run even when a part failed, so a red run
+    # still reports what was counted, and failed then.
+    needs: [changes, perf-part]
+    if: always() && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: perf-*
+          path: perf-parts
+
+      - name: The work budgets, every part together
+        run: node tools/perf/combine-budgets.ts perf-parts
+
+      - name: Every part passed
+        env:
+          PARTS: ${{ needs.perf-part.result }}
+        run: |
+          echo "perf parts: $PARTS"
+          [ "$PARTS" = success ]
 
   gate:
     # The one check to require. `always()` because a job skipped after a failed

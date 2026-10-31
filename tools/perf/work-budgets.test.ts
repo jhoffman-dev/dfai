@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   breachesOf,
   budgetFor,
+  combineParts,
   describeBreaches,
   differencesBetween,
   looksMinified,
   lowered,
+  measurementsOf,
   reportTable,
+  timesTable,
   topOf,
   withHeadroom,
   withRenderHeadroom,
@@ -263,5 +266,67 @@ describe('two runs compared', () => {
       'renders of Sidebar: 3 → 0',
       'host calls to list_notes: 0 → 1',
     ]);
+  });
+});
+
+describe('putting the parts of a run together', () => {
+  const counts = (commits: number): Work => ({ commits, renders: { Row: 2 }, calls: {} });
+  const times = { inputToReady: 12, longestFrame: 8 };
+
+  it('takes each action from the one part that counted it and the one that timed it', () => {
+    const { result, problems } = combineParts(
+      [
+        { counted: { Open: counts(3) }, timed: {} },
+        { counted: {}, timed: { Open: times, Close: times } },
+        { counted: { Close: counts(1) }, timed: {} },
+      ],
+      ['Open', 'Close'],
+    );
+    expect(problems).toEqual([]);
+    expect(result).toEqual({
+      counted: { Open: counts(3), Close: counts(1) },
+      timed: { Open: times, Close: times },
+    });
+  });
+
+  it('names an action no part counted or timed, and one two parts did', () => {
+    const { problems } = combineParts(
+      [
+        { counted: { Open: counts(3) }, timed: { Open: times } },
+        { counted: { Open: counts(3) }, timed: {} },
+      ],
+      ['Open', 'Close'],
+    );
+    expect(problems).toEqual([
+      '"Open" was counted by 2 parts',
+      '"Close" was counted by no part',
+      '"Close" was timed by no part',
+    ]);
+  });
+
+  it('reports each counted action with its times, and a dash where it was not timed', () => {
+    const budgets: BudgetsFile = {
+      $comment: [],
+      actions: { Open: { commits: 4, renders: 3, calls: {} } },
+    };
+    const rows = measurementsOf(
+      ['Open', 'Close', 'Never'],
+      { counted: { Open: counts(3), Close: counts(1) }, timed: { Open: times } },
+      budgets,
+    );
+    expect(rows.map((row) => row.action)).toEqual(['Open', 'Close']);
+    const table = reportTable(rows);
+    expect(table).toContain('| Open | 3 / 4 | 2 / 3 | 0 / 0 | none | 12 | 8 |');
+    expect(table).toContain('| Close | 1 / none | 2 / none | 0 / none | none | – | – |');
+  });
+
+  it('tables a part that only timed by its times', () => {
+    expect(timesTable(['Open', 'Close'], { Open: times })).toBe(
+      [
+        '| Action | Input→ready (ms) | Longest frame (ms) |',
+        '| --- | --- | --- |',
+        '| Open | 12 | 8 |',
+      ].join('\n'),
+    );
   });
 });

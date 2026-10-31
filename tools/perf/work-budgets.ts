@@ -252,9 +252,106 @@ export function reportTable(measured: readonly Measurement[]): string {
   const rows = measured.map(({ action, work, budget, inputToReady, longestFrame }) => {
     const calls = sum(work.calls);
     const allowed = budget === undefined ? undefined : sum(budget.calls);
-    return `| ${action} | ${against(work.commits, budget?.commits)} | ${against(sum(work.renders), budget?.renders)} | ${against(calls, allowed)} | ${topOf(work.calls, 3)} | ${Math.round(inputToReady)} | ${Math.round(longestFrame)} |`;
+    return `| ${action} | ${against(work.commits, budget?.commits)} | ${against(sum(work.renders), budget?.renders)} | ${against(calls, allowed)} | ${topOf(work.calls, 3)} | ${ms(inputToReady)} | ${ms(longestFrame)} |`;
   });
   return [...head, ...rows].join('\n');
+}
+
+/** Milliseconds, whole; a dash for an action the run did not time. */
+const ms = (value: number) => (Number.isFinite(value) ? String(Math.round(value)) : '–');
+
+/** What the timed pass took over one action: reported, never gated. */
+export interface Times {
+  readonly inputToReady: number;
+  readonly longestFrame: number;
+}
+
+/**
+ * What one run of the harness measured, by action: the first counted run's
+ * counts and the timed pass's times. CI does the fixtures and passes on
+ * machines of their own, each writing one of these, and puts them together.
+ */
+export interface PartResult {
+  readonly counted: Readonly<Record<string, Work>>;
+  readonly timed: Readonly<Record<string, Times>>;
+}
+
+/** The report's rows: each of `actions` that was counted, its times beside it where it was timed. */
+export function measurementsOf(
+  actions: readonly string[],
+  { counted, timed }: PartResult,
+  budgets: BudgetsFile,
+): Measurement[] {
+  return actions.flatMap((action) => {
+    const work = counted[action];
+    if (work === undefined) return [];
+    const times = timed[action];
+    return [
+      {
+        action,
+        work,
+        budget: budgets.actions[action],
+        inputToReady: times?.inputToReady ?? Number.NaN,
+        longestFrame: times?.longestFrame ?? Number.NaN,
+      },
+    ];
+  });
+}
+
+/** A part that only timed: its times as a table, the counts being another part's. */
+export function timesTable(actions: readonly string[], timed: PartResult['timed']): string {
+  const rows = actions.flatMap((action) => {
+    const times = timed[action];
+    return times === undefined
+      ? []
+      : [`| ${action} | ${ms(times.inputToReady)} | ${ms(times.longestFrame)} |`];
+  });
+  return [
+    '| Action | Input→ready (ms) | Longest frame (ms) |',
+    '| --- | --- | --- |',
+    ...rows,
+  ].join('\n');
+}
+
+/**
+ * The parts put back together, and what is wrong with them as a whole: an
+ * action of `actions` no part counted or timed, or that two parts did.
+ */
+export function combineParts(
+  parts: readonly PartResult[],
+  actions: readonly string[],
+): { readonly result: PartResult; readonly problems: string[] } {
+  const problems: string[] = [];
+  const counted = onePerAction(
+    'counted',
+    actions,
+    parts.map((part) => part.counted),
+    problems,
+  );
+  const timed = onePerAction(
+    'timed',
+    actions,
+    parts.map((part) => part.timed),
+    problems,
+  );
+  return { result: { counted, timed }, problems };
+}
+
+/** Each action's one entry among `lists`; an action in none, or in more than one, is a problem. */
+function onePerAction<Entry>(
+  kind: string,
+  actions: readonly string[],
+  lists: readonly Readonly<Record<string, Entry>>[],
+  problems: string[],
+): Record<string, Entry> {
+  const one: Record<string, Entry> = {};
+  for (const action of actions) {
+    const found = lists.flatMap((list) => (action in list ? [list[action]!] : []));
+    if (found.length === 0) problems.push(`"${action}" was ${kind} by no part`);
+    else if (found.length > 1) problems.push(`"${action}" was ${kind} by ${found.length} parts`);
+    else one[action] = found[0]!;
+  }
+  return one;
 }
 
 /** How far two runs of one action may differ and still count as the same: none, unless said. */
