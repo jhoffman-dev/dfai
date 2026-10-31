@@ -311,6 +311,9 @@ mod folder_tests {
 }
 
 #[cfg(test)]
+mod move_link_tests;
+
+#[cfg(test)]
 mod move_tests {
     use super::move_entry_at;
     use std::fs;
