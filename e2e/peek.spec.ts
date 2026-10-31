@@ -9,7 +9,6 @@ import { readdir } from 'node:fs/promises';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
-import { macOnly } from './platform.ts';
 
 const TASKS = 150;
 const TASK_TYPE = ['---', 'name: task', 'label: Task', '---', ''].join('\n');
@@ -165,30 +164,28 @@ test('a wikilink clicked peeks the note it names, leaving the page where it is',
   await expect(plan).toBeVisible();
 });
 
-test(
-  '⌘K opens over the peek; Esc closes it alone, and a result picked shows in the peek',
-  macOnly('fails on Linux WebKit, passes on macOS; cause not found yet (PR #649)'),
-  async ({ page }) => {
-    await openVault(page);
-    await openTaskTable(page);
-    await rowName(page, 1).click();
-    await expect(page.getByRole('dialog', { name: title(1) })).toBeVisible();
+test('⌘K opens over the peek; Esc closes it alone, and a result picked shows in the peek', async ({
+  page,
+}) => {
+  await openVault(page);
+  await openTaskTable(page);
+  await rowName(page, 1).click();
+  await expect(page.getByRole('dialog', { name: title(1) })).toBeVisible();
 
-    await chord(page, 'k');
-    const search = page.getByRole('dialog', { name: 'Search notes' });
-    await expect(search).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(search).toHaveCount(0);
-    await expect(page.locator('.peek')).toBeVisible();
+  await chord(page, 'k');
+  const search = page.getByRole('dialog', { name: 'Search notes' });
+  await expect(search).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(search).toHaveCount(0);
+  await expect(page.locator('.peek')).toBeVisible();
 
-    await chord(page, 'k');
-    await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Plan');
-    await page.getByRole('option', { name: /Plan/ }).first().click();
-    await expect(search).toHaveCount(0);
-    await expect(page.getByRole('dialog', { name: 'Plan' })).toBeVisible();
-    await expect(page.locator('.peek__where')).toHaveCount(0);
-  },
-);
+  await chord(page, 'k');
+  await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Plan');
+  await page.getByRole('option', { name: /Plan/ }).first().click();
+  await expect(search).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Plan' })).toBeVisible();
+  await expect(page.locator('.peek__where')).toHaveCount(0);
+});
 
 test('a note-making shortcut does nothing while a note is peeked', async ({ page }) => {
   const vault = await openVault(page);
