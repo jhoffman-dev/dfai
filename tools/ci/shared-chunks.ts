@@ -1,7 +1,7 @@
 /*
  * Whether a part loaded on first use shares a chunk with anything else (#552).
  *
- * A part's chunk (`apps/desktop/src/pages-on-first-use.ts`) recovers from a
+ * A part's chunk (`packages/shell/src/pages-on-first-use.ts`) recovers from a
  * failed load by being imported again under a fresh address. A chunk it imports
  * statically is not: the browser keeps the failed load of that chunk under its
  * one address, so the part stays broken past Reload. The build makes such a

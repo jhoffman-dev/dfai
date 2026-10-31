@@ -9,8 +9,8 @@ const styles = join(
   '..',
   '..',
   '..',
-  'apps',
-  'desktop',
+  'packages',
+  'shell',
   'src',
   'styles',
 );

@@ -36,7 +36,9 @@ const WEBVIEW = [
   'packages/application/src/probe.ts',
   'packages/adapters/src/vault/probe.ts',
   'packages/ui/src/probe.tsx',
+  'packages/shell/src/probe.ts',
   'apps/desktop/src/probe.ts',
+  'apps/web/src/probe.ts',
 ];
 
 const NODE_ONLY = [
@@ -44,8 +46,8 @@ const NODE_ONLY = [
   // Test support that runs on Node, each named in the config.
   'packages/application/src/testing/node-sqlite.ts',
   'packages/application/src/testing/query-index.ts',
-  'apps/desktop/src/sync/two-macs.harness.ts',
-  'apps/desktop/src/styles.test-support.ts',
+  'packages/shell/src/sync/two-macs.harness.ts',
+  'packages/shell/src/styles.test-support.ts',
   'packages/domain/src/calendar/zones.test-support.ts',
   'packages/adapters/src/markdown/frontmatter-write-cases.attack-454.ts',
   'tools/ci/probe.ts',
@@ -134,7 +136,7 @@ describe('Node in the webview’s code (#114)', () => {
 
   it.each([
     'packages/application/src/testing/fake-ports.ts',
-    'apps/desktop/src/sync/probe.harness.ts',
+    'packages/shell/src/sync/probe.harness.ts',
     'packages/ui/src/probe.fixture.ts',
     'packages/adapters/src/probe.attack-1.ts',
   ])(
@@ -152,17 +154,17 @@ describe('Node in the webview’s code (#114)', () => {
     ],
     [
       'an alias',
-      'apps/desktop/src/probe.ts',
+      'packages/shell/src/probe.ts',
       "import { atlasQueryIndex } from '@dfai/application/testing/sqlite';\nexport const x = atlasQueryIndex;",
     ],
     [
       'app code',
-      'apps/desktop/src/probe.ts',
+      'packages/shell/src/probe.ts',
       "import { sectionFiles } from './styles.test-support.ts';\nexport const x = sectionFiles;",
     ],
     [
       'app code, deeper',
-      'apps/desktop/src/notes/probe.ts',
+      'packages/shell/src/notes/probe.ts',
       "import { x } from '../sync/two-macs.harness';\nexport const y = x;",
     ],
     [

@@ -8,10 +8,25 @@ import globals from 'globals';
 import { builtinModules } from 'node:module';
 
 /**
- * The app's state libraries (#238): stores and queries belong to `apps/desktop`,
- * so the packages stay plain and `packages/ui` stays prop-driven.
+ * The app's state libraries (#238): stores and queries belong to the app shell
+ * (`packages/shell`), so the other packages stay plain and `packages/ui` stays prop-driven.
  */
 const appStateOnly = ['zustand', 'zustand/*', '@tanstack/react-query'];
+
+/** The shell, and the apps that compose it: outermost, so no package imports them. */
+const composed = ['@dfai/shell', '@dfai/desktop', '@dfai/web'];
+
+/**
+ * Tauri, and the adapters that speak to its host (by their `tauri…` names):
+ * only `apps/desktop` composes them (#656). The shell is every platform's, and
+ * a browser has no Tauri to answer them.
+ */
+const tauriOnly = [
+  { group: '@tauri-apps/*' },
+  { group: '@dfai/adapters', importNamePattern: '^tauri', what: "@dfai/adapters' tauri… adapters" },
+];
+const TAURI_ONLY_WHY =
+  'Tauri is apps/desktop’s alone; the shell and the web build compose without it (#656).';
 
 /** Every layer that must stay out of a given layer's imports. */
 const forbidden = {
@@ -22,22 +37,52 @@ const forbidden = {
     'react*',
     '@tauri-apps/*',
     ...appStateOnly,
+    ...composed,
   ],
-  application: ['@dfai/adapters', '@dfai/ui', 'react*', '@tauri-apps/*', ...appStateOnly],
-  adapters: ['@dfai/ui', 'react*', ...appStateOnly],
-  ui: ['@dfai/adapters', ...appStateOnly],
+  application: [
+    '@dfai/adapters',
+    '@dfai/ui',
+    'react*',
+    '@tauri-apps/*',
+    ...appStateOnly,
+    ...composed,
+  ],
+  adapters: ['@dfai/ui', 'react*', ...appStateOnly, ...composed],
+  ui: ['@dfai/adapters', ...appStateOnly, ...composed],
+  shell: [...tauriOnly, '@dfai/desktop', '@dfai/web'],
+};
+
+/** A forbidden entry as `no-restricted-imports` takes it: a group, or a group and the names in it. */
+const restriction = (where, entry) => {
+  const {
+    group,
+    importNamePattern,
+    what = group,
+  } = typeof entry === 'string' ? { group: entry } : entry;
+  const why = tauriOnly.includes(entry) ? TAURI_ONLY_WHY : 'dependencies point inward.';
+  return {
+    group: [group],
+    ...(importNamePattern === undefined ? {} : { importNamePattern }),
+    message: `${where} must not import ${what} — ${why}`,
+  };
 };
 
 const layerPatterns = (layer) =>
-  forbidden[layer].map((group) => ({
-    group: [group],
-    message: `packages/${layer} must not import ${group} — dependencies point inward.`,
-  }));
+  forbidden[layer].map((entry) => restriction(`packages/${layer}`, entry));
 
-const architecture = Object.keys(forbidden).map((layer) => ({
-  files: [`packages/${layer}/**/*.{ts,tsx}`],
-  rules: { 'no-restricted-imports': ['error', { patterns: layerPatterns(layer) }] },
-}));
+/** The web app: its own composition root, on everything but Tauri. */
+const webPatterns = tauriOnly.map((entry) => restriction('apps/web', entry));
+
+const architecture = [
+  ...Object.keys(forbidden).map((layer) => ({
+    files: [`packages/${layer}/**/*.{ts,tsx}`],
+    rules: { 'no-restricted-imports': ['error', { patterns: layerPatterns(layer) }] },
+  })),
+  {
+    files: ['apps/web/**/*.{ts,tsx}'],
+    rules: { 'no-restricted-imports': ['error', { patterns: webPatterns }] },
+  },
+];
 
 /**
  * Code that runs in Tauri's webview, where there is no Node (#114). Node's
@@ -46,8 +91,8 @@ const architecture = Object.keys(forbidden).map((layer) => ({
  * (PR #99). `pnpm check:node-builtins` is the same rule over the built bundle (#53).
  */
 const webview = [
-  'packages/{domain,application,adapters,ui}/src/**/*.{ts,tsx}',
-  'apps/desktop/src/**/*.{ts,tsx}',
+  'packages/{domain,application,adapters,ui,shell}/src/**/*.{ts,tsx}',
+  'apps/{desktop,web}/src/**/*.{ts,tsx}',
 ];
 
 /** The SQLite test support: SQL run for real through `node:sqlite`, and what is built on it. */
@@ -72,9 +117,9 @@ const sqliteSupport = [
  */
 const nodeSupport = [
   // Reads the stylesheet's section files from disk, as the build ships them.
-  'apps/desktop/src/styles.test-support.ts',
+  'packages/shell/src/styles.test-support.ts',
   // Two simulated Macs syncing through the real git, over the real disk (U-29).
-  'apps/desktop/src/sync/two-macs.harness.ts',
+  'packages/shell/src/sync/two-macs.harness.ts',
   // Judges a rewrite with node:util's deep equality.
   'packages/adapters/src/markdown/frontmatter-write-cases.attack-454.ts',
   // Sets the process's time zone, which is how Node takes one.
@@ -229,6 +274,16 @@ const webviewNode = [
     rules: { 'no-restricted-imports': ['error', { patterns: [noNodeModules, noNodeSupport] }] },
   },
   {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...webPatterns, noNodeModules, noNodeSupport] },
+      ],
+    },
+  },
+  {
     files: webview,
     ignores: nodeOnly,
     rules: {
@@ -259,6 +314,18 @@ const webviewNode = [
     ignores: nodeOnly,
     rules: {
       'no-restricted-syntax': dynamicImports([noNodeModules, noNodeSupport, noSqliteSibling]),
+    },
+  },
+  {
+    // The same, with Tauri added, for the code every platform shares and the web's own.
+    files: ['packages/shell/src/**/*.{ts,tsx}', 'apps/web/src/**/*.{ts,tsx}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-syntax': dynamicImports([
+        noNodeModules,
+        noNodeSupport,
+        { regex: '^@tauri-apps/', message: TAURI_ONLY_WHY },
+      ]),
     },
   },
 ];
@@ -293,7 +360,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/ui/**/*.tsx', 'apps/**/*.tsx'],
+    files: ['packages/{ui,shell}/**/*.tsx', 'apps/**/*.tsx'],
     plugins: { react, 'react-hooks': reactHooks },
     languageOptions: react.configs.flat.recommended.languageOptions,
     // Pinned rather than detected: eslint-plugin-react 7.37's detection breaks on ESLint 10.
