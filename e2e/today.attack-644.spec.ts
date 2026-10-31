@@ -112,6 +112,9 @@ for (const [kind, standIn] of [
     const forward = await sweep(page, 'Tab', 200);
 
     expect(forward.rows.size).toBe(TASKS);
-    expect(fromTheTarget(forward.offScreen)).not.toEqual([]);
+    expect(
+      fromTheTarget(forward.offScreen),
+      `the stops around the target, as the recorder saw them:\n${fromTheTarget(forward.trace).join('\n')}`,
+    ).not.toEqual([]);
   });
 }

@@ -13,6 +13,12 @@ interface SweepLog {
   lostAfter: string | null;
   last: string;
   done: boolean;
+  /**
+   * Why each stop was read when it was, and what the observers made during the
+   * sweep did, by frame: what a failing sweep test prints, so a run that
+   * misses something shows which wait let it through. The latest few hundred.
+   */
+  trace: string[];
 }
 
 /**
@@ -41,6 +47,7 @@ function recordSweep(): void {
     lostAfter: null,
     last: '',
     done: false,
+    trace: [],
   };
   host.todaySweep = log;
   const scroller = () => document.querySelector('.panel__body');
@@ -48,6 +55,13 @@ function recordSweep(): void {
   const nextFrame = window.requestAnimationFrame.bind(window);
   let frame = 0;
   let stopped = false;
+  const TRACE_KEPT = 400;
+  const note = (line: string) => {
+    log.trace.push(`f${frame} ${line}`);
+    if (log.trace.length > TRACE_KEPT) log.trace.shift();
+  };
+  const named = (element: Element) =>
+    element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 40) ?? '';
   const tick = () => {
     frame += 1;
     if (!stopped) nextFrame(tick);
@@ -120,15 +134,23 @@ function recordSweep(): void {
       readonly kind = name;
       constructor(callback: (...args: unknown[]) => void, options?: unknown) {
         changed = true;
+        note(`${name} made`);
         super((...args: unknown[]) => {
           changed = true;
           const entries = args[0] as { target: Element }[];
-          for (const { target } of entries) unanswered.get(this)?.delete(target);
+          for (const { target } of entries) {
+            note(`${name} answered for ${named(target)}`);
+            unanswered.get(this)?.delete(target);
+          }
           callback(...args);
         }, options);
       }
       override observe(target: Element, options?: unknown) {
         changed = true;
+        const box = target.getBoundingClientRect();
+        note(
+          `${name} watches ${named(target)} (${Math.round(box.width)}x${Math.round(box.height)})`,
+        );
         unanswered.set(this, (unanswered.get(this) ?? new Set()).add(target));
         super.observe(target, options);
       }
@@ -196,6 +218,9 @@ function recordSweep(): void {
       return;
     }
     const stop = readStop();
+    note(
+      `read ${stop?.label ?? 'nothing'} inView=${stop?.inView ?? '-'} moved@f${movedAt} owed=${observersOwe()} running=${animationRunning()} held=${log.held}`,
+    );
     if (log.moves > 0) {
       if (stop === null) log.lostAfter = log.last;
       if (stop === null || !stop.inPage) {
@@ -276,6 +301,7 @@ export async function sweep(page: Page, key: 'Tab' | 'Shift+Tab', limit: number)
     rows: new Set(log.rows),
     offScreen: log.offScreen,
     lostAfter: log.lostAfter,
+    trace: log.trace,
     last: log.last,
   };
 }
