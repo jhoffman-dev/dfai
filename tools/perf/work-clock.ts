@@ -92,8 +92,20 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     calls: {} as Record<string, number>,
     lastCommitSeen: null as number | null,
   };
+  // DIAGNOSTIC (temporary): what the clock did while counting, line by line.
+  const traceLines: string[] = [];
+  const note = (line: string) => {
+    if (state.counting) traceLines.push(`${state.now} ${line}`);
+  };
+  const shortStack = () =>
+    (new Error().stack ?? '')
+      .split('\n')
+      .slice(2, 7)
+      .map((frame) => frame.replace(/@.*\/([^/]+)$/, '@$1'))
+      .join(' < ');
   interface Timer {
     readonly id: number;
+    readonly from?: string;
     due: number;
     order: number;
     readonly run: () => void;
@@ -131,7 +143,8 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     const id = state.nextId++;
     const wait = delayOf(delay);
     const long = wait >= LONG_TIMER_MS;
-    state.timers.set(id, { id, due: state.now + wait, order: state.order++, run, every, long });
+    const from = state.counting ? `${wait}ms ${shortStack()}` : `${wait}ms (before counting)`;
+    state.timers.set(id, { id, due: state.now + wait, order: state.order++, run, every, long, from });
     return id;
   };
   const call = (handler: unknown, args: unknown[]) => () => {
@@ -193,6 +206,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       if (held === undefined) continue;
       heldReports.delete(observer);
       handed = true;
+      note(`report ${held.entries.length} entries, observer ${held.made}`);
       try {
         held.report.call(observer, held.entries, observer);
       } catch (error) {
@@ -268,6 +282,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       set: (next: ((event: MessageEvent) => void) | null) => {
         handler = next;
         onmessage?.set?.call(handled, (event: MessageEvent) => {
+          note('msg');
           try {
             handler?.call(handled, event);
           } finally {
@@ -349,6 +364,36 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     });
   };
 
+  for (const kind of ['scroll', 'focusin', 'focusout', 'mouseover', 'mouseout', 'pointerover', 'pointerout', 'transitionrun', 'transitionstart', 'transitionend', 'transitioncancel', 'animationstart', 'animationend', 'load', 'error', 'resize', 'selectionchange', 'click', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'input', 'change', 'keydown']) {
+    window.addEventListener(
+      kind,
+      (event) => {
+        const target = event.target as Element | null;
+        const label =
+          target instanceof Element
+            ? `${target.tagName.toLowerCase()}.${String(target.className).slice(0, 40)}[${target.getAttribute('aria-label') ?? ''}]`
+            : String(target);
+        note(`event ${kind} ${label}`);
+      },
+      { capture: true },
+    );
+  }
+  const hook = (window as unknown as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: { onCommitFiberRoot: (...given: unknown[]) => void } }).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  if (hook !== undefined) {
+    const onCommit = hook.onCommitFiberRoot;
+    hook.onCommitFiberRoot = (...given: unknown[]) => {
+      const renders = (window as unknown as { __renderCounter?: { renders: Record<string, number> } }).__renderCounter?.renders ?? {};
+      const before = { ...renders };
+      onCommit(...given);
+      const after = (window as unknown as { __renderCounter?: { renders: Record<string, number> } }).__renderCounter?.renders ?? {};
+      const diff = Object.entries(after)
+        .filter(([name, count]) => count !== (before[name] ?? 0))
+        .map(([name, count]) => `${name}+${count - (before[name] ?? 0)}`)
+        .join(',');
+      note(`COMMIT ${diff} focus=${document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? ''} scrollTop=${document.querySelector('article[aria-label="Today"] .panel__body')?.scrollTop ?? '-'}`);
+    };
+  }
+
   // Every key and pointer event the page has been given, so a harness can wait
   // for its input to have arrived before it moves time on.
   let inputs = 0;
@@ -371,6 +416,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     const oldest = state.waiting[0];
     if (oldest === undefined || oldest.answer === null) return false;
     state.waiting.shift();
+    note(`answer ${oldest.command}`);
     oldest.answer();
     return true;
   };
@@ -399,6 +445,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       busy = false;
       // Drawn, so that resize and intersection observers have seen it, and a
       // turn more for a notification the drawing queued as a task of its own.
+      note('frame');
       await aFrame();
       await aTurn();
       if (handOverReports()) busy = true;
@@ -429,6 +476,7 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       const missed = Math.floor((state.now - timer.due) / timer.every);
       Object.assign(timer, { due: timer.due + (missed + 1) * timer.every, order: state.order++ });
     }
+    note(`timer ${timer.from ?? ''}`);
     try {
       timer.run();
     } catch (error) {
@@ -513,8 +561,10 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     /** The host commands counted so far, by name: for a ready test that the action itself caused. */
     callsSoFar: () => ({ ...state.calls }),
     startCounting() {
+      traceLines.length = 0;
       Object.assign(state, { counting: true, calls: {} });
     },
+    trace: () => [...traceLines],
     stopCounting() {
       state.counting = false;
       handOverReports();

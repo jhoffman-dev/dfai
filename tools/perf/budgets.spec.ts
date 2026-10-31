@@ -174,10 +174,52 @@ interface Pass {
   until(step: Omit<Phase, 'act'>): Promise<void>;
 }
 
+// DIAGNOSTIC (temporary): count only Today's tick and choose, many times, with a trace of each.
+const TODAY_LOOP = Number(process.env.PERF_TODAY_LOOP ?? 0) || 0;
+const TODAY_LOOP_FULL = process.env.PERF_TODAY_LOOP_MODE === 'full';
+const traces = new Map<string, string[]>();
+
+test('Today tick and choose count the same every time (diagnostic)', async ({ browser }) => {
+  test.skip(TODAY_LOOP === 0, 'PERF_TODAY_LOOP not set');
+  test.setTimeout(TODAY_LOOP * (TODAY_LOOP_FULL ? 400_000 : 200_000) + 120_000);
+  const out = join('test-results', 'perf', 'today-loop');
+  await mkdir(out, { recursive: true });
+  const machine = process.env.PERF_TODAY_MACHINE ?? 'local';
+  const lines: string[] = [];
+  for (let at = 1; at <= TODAY_LOOP; at += 1) {
+    const into = new Map<string, Work>();
+    traces.clear();
+    const pass = await countedPass(browser, into);
+    if (TODAY_LOOP_FULL) await everyAction(pass);
+    else {
+      await pass.budgeted('Open Today', [
+        phase(() => sidebarButton(pass.page, /^Today/).click(), exists, TODAY_TICKS),
+      ]);
+      await pass.idle('Idle 3 s on Today');
+      await tickATask(pass);
+      await chooseATask(pass);
+    }
+    await pass.page.close();
+    const tick = into.get('Tick a task on Today');
+    const choose = into.get('Choose a task on Today');
+    const line = `${machine} ${TODAY_LOOP_FULL ? 'full' : 'short'} pass ${at}: tick ${tick?.commits} choose ${choose?.commits}`;
+    console.log(line);
+    lines.push(line);
+    for (const [action, trace] of traces) {
+      await writeFile(
+        join(out, `${machine}-${TODAY_LOOP_FULL ? 'full' : 'short'}-${at}-${action.split(' ')[0]}.txt`),
+        `${trace.join('\n')}\n`,
+      );
+    }
+  }
+  await writeFile(join(out, `${machine}-summary.txt`), `${lines.join('\n')}\n`);
+});
+
 const counted = new Map<string, Work>();
 const timed = new Map<string, { inputToReady: number; longestFrame: number }>();
 
 test('the app does no more work than its budget', async ({ browser }) => {
+  test.skip(TODAY_LOOP > 0, 'PERF_TODAY_LOOP: the diagnostic only');
   test.setTimeout(TIMEOUT_MS);
   const budgets = JSON.parse(await readFile(BUDGETS_FILE, 'utf8')) as BudgetsFile;
 
@@ -350,6 +392,14 @@ async function countedPass(
         await runUntil(page, { ready, arg: arg as never, untrackedMs: untrackedMs ?? 0 });
       }
       into.set(action, await stopCounting(page));
+      if (TODAY_LOOP > 0 && /on Today$/.test(action)) {
+        traces.set(
+          action,
+          await page.evaluate(() =>
+            (window as unknown as { __workClock: { trace(): string[] } }).__workClock.trace(),
+          ),
+        );
+      }
     },
     async idle(action) {
       await restThePointer(page);
@@ -551,6 +601,7 @@ async function everyAction(pass: Pass): Promise<void> {
   await pass.idle('Idle 3 s on Today');
   await tickATask(pass);
   await chooseATask(pass);
+  if (TODAY_LOOP > 0) return;
   const TODAY_SCROLLER = { inside: 'article[aria-label="Today"]', scroller: '.panel__body' };
   await pass.budgeted('Scroll Today a little', [scrollALittle(page, TODAY_SCROLLER)]);
   await expectScrolledALittle(page, 'Scroll Today a little');
