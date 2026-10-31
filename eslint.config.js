@@ -56,23 +56,61 @@ const shellAdapters = {
   why: 'a platform hands the shell its adapters through ports (#656).',
 };
 
-/** Every name `@dfai/application` re-exports from its test support, read from the file. */
-const applicationTestSupport = [
-  ...readFileSync(new URL('./packages/application/src/testing/index.ts', import.meta.url), 'utf8')
+/** The forms of `export` a module's names are read from, each with how it names them. */
+const EXPORT_FORMS = [
+  // export { a, b as c } from …, export type { … }
+  [/^export\s+(?:type\s+)?\{([^}]*)\}/gm, (list) => list.split(',')],
+  // export const a, export function a, export class a, export interface a, …
+  [
+    /^export\s+(?:declare\s+)?(?:async\s+)?(?:const|let|var|function\*?|class|interface|type|enum)\s+([\w$]+)/gm,
+    (name) => [name],
+  ],
+  // export * as a from …
+  [/^export\s+\*\s+as\s+([\w$]+)/gm, (name) => [name]],
+];
+
+/**
+ * Every name a module exports, following `export * from` into the modules it
+ * names. A form it cannot read stops the config loading, rather than leaving
+ * a name out of the rule that depends on the list (#689).
+ */
+function exportedNames(url, seen = new Set()) {
+  if (seen.has(url.href)) return [];
+  seen.add(url.href);
+  const source = readFileSync(url, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
-    .matchAll(/export\s+(?:type\s+)?\{([^}]*)\}/g),
-].flatMap(([, names]) =>
-  names
-    .split(',')
-    .map((name) =>
-      name
-        .trim()
-        .replace(/^type\s+/, '')
-        .split(/\s+as\s+/)
-        .pop(),
-    )
-    .filter(Boolean),
-);
+    .replace(/^\s*\/\/.*$/gm, '');
+  const read = new Set();
+  const names = EXPORT_FORMS.flatMap(([form, split]) =>
+    [...source.matchAll(form)].flatMap((match) => {
+      read.add(match.index);
+      return split(match[1]);
+    }),
+  );
+  const starred = [...source.matchAll(/^export\s+\*\s+from\s+'([^']+)'/gm)].flatMap((match) => {
+    read.add(match.index);
+    return exportedNames(new URL(match[1], url), seen);
+  });
+  const unread = [...source.matchAll(/^export\b/gm)].filter((match) => !read.has(match.index));
+  if (unread.length > 0) {
+    const line = source.slice(unread[0].index).split('\n')[0];
+    throw new Error(`eslint.config.js cannot read this export in ${url.pathname}: ${line}`);
+  }
+  const bare = (name) =>
+    name
+      .trim()
+      .replace(/^type\s+/, '')
+      .split(/\s+as\s+/)
+      .pop();
+  return [...names.map(bare), ...starred].filter(Boolean);
+}
+
+/** Every name `@dfai/application` re-exports from its test support, read from its files. */
+const applicationTestSupport = [
+  ...new Set(
+    exportedNames(new URL('./packages/application/src/testing/index.ts', import.meta.url)),
+  ),
+];
 
 /** The web build composes real adapters, never the application's fakes, which drop what they are handed. */
 const noTestSupport = {
@@ -102,7 +140,8 @@ const forbidden = {
     ...composed,
   ],
   adapters: ['@dfai/ui', 'react*', ...appStateOnly, ...composed],
-  ui: ['@dfai/adapters', ...appStateOnly, ...composed],
+  // The shell draws it and the web bundles it: Tauri here is Tauri in the web build (#689).
+  ui: ['@dfai/adapters', ...appStateOnly, ...composed, tauriOnly[0]],
   shell: [...tauriOnly, otherPackageByPath, '@dfai/web', '@dfai/web/*'],
 };
 
@@ -136,17 +175,30 @@ const webPatterns = [...tauriOnly, otherPackageByPath, '@dfai/shell/*'].map((ent
 const webProductionPatterns = [...webPatterns, restriction('apps/web', noTestSupport)];
 
 /**
- * Tauri reached without an import: its globals on the window, and a tauri…
- * adapter by name off a module loaded with `import()` (#689).
+ * Tauri reached without an import: its globals on the window, named as an
+ * identifier, a string or a template (#689).
  */
 const NO_TAURI_SYNTAX = [
-  ['Identifier[name=/^__TAURI/]', 'Tauri’s globals'],
-  ['Literal[value=/^__TAURI/]', 'Tauri’s globals'],
-  ['Identifier[name=/^tauri[A-Z]/]', 'a tauri… adapter'],
-].map(([selector, what]) => ({
+  'Identifier[name=/^__TAURI/]',
+  'Literal[value=/^__TAURI/]',
+  'TemplateElement[value.raw=/__TAURI/]',
+].map((selector) => ({
   selector,
-  message: `Shared code must not reach ${what} — ${TAURI_ONLY_WHY}`,
+  message: `Shared code must not reach Tauri’s globals — ${TAURI_ONLY_WHY}`,
 }));
+
+/**
+ * The web's own code loads the adapters and the application statically, so
+ * the names it takes are the ones the rules above can read: off a module
+ * loaded with `import()`, any name could be a tauri… adapter or a fake (#689).
+ */
+const noWebLoadedLater = [
+  {
+    regex: '^@dfai/(adapters|application)$',
+    message:
+      'Import @dfai/adapters and @dfai/application statically, so the zone can see what is taken (#689).',
+  },
+];
 
 /** A <StrictMode> in a test, which React 19 does not mount twice (#159). */
 const STRICT_MODE_IN_TESTS = [
@@ -169,6 +221,14 @@ const noTauriImport = [
     message: 'Import another package by its public entry (@dfai/…), not its files (#656).',
   },
 ];
+/** Tauri, and a `tauri-*` module or the `tauri/` entry, as an adapter that is neither imports them. */
+const ADAPTER_TAURI_WHY =
+  'only a tauri-* module speaks to Tauri, so the root barrel holds none of it (#689).';
+const adapterTauriOnly = [
+  { regex: '^@tauri-apps/', what: '@tauri-apps/*', why: ADAPTER_TAURI_WHY },
+  { regex: '(^|/)tauri(-[^/]*|/.*)?$', what: 'a tauri-* module', why: ADAPTER_TAURI_WHY },
+];
+
 /** And for the shell's production code, the adapters it may not import itself. */
 const noShellAdaptersImport = {
   regex: shellAdapters.regex,
@@ -177,11 +237,11 @@ const noShellAdaptersImport = {
 
 const architecture = [
   ...Object.keys(forbidden).map((layer) => ({
-    files: [`packages/${layer}/**/*.{ts,tsx}`],
+    files: [`packages/${layer}/**/*.{ts,tsx,mts,cts}`],
     rules: { 'no-restricted-imports': ['error', { patterns: layerPatterns(layer) }] },
   })),
   {
-    files: ['apps/web/**/*.{ts,tsx}'],
+    files: ['apps/web/**/*.{ts,tsx,mts,cts}'],
     rules: { 'no-restricted-imports': ['error', { patterns: webPatterns }] },
   },
 ];
@@ -193,8 +253,8 @@ const architecture = [
  * (PR #99). `pnpm check:node-builtins` is the same rule over the built bundle (#53).
  */
 const webview = [
-  'packages/{domain,application,adapters,ui,shell}/src/**/*.{ts,tsx}',
-  'apps/{desktop,web}/src/**/*.{ts,tsx}',
+  'packages/{domain,application,adapters,ui,shell}/src/**/*.{ts,tsx,mts,cts}',
+  'apps/{desktop,web}/src/**/*.{ts,tsx,mts,cts}',
 ];
 
 /** The SQLite test support: SQL run for real through `node:sqlite`, and what is built on it. */
@@ -235,7 +295,7 @@ const nodeSupport = [
  */
 const nodeOnly = [
   // Tests run in Vitest, on Node.
-  '**/*.test.{ts,tsx}',
+  '**/*.test.{ts,tsx,mts,cts}',
   ...nodeSupport,
 ];
 
@@ -343,7 +403,7 @@ const testCode = {
 
 const webviewNode = [
   ...Object.keys(forbidden).map((layer) => ({
-    files: [`packages/${layer}/src/**/*.{ts,tsx}`],
+    files: [`packages/${layer}/src/**/*.{ts,tsx,mts,cts}`],
     ignores: nodeOnly,
     rules: {
       'no-restricted-imports': [
@@ -365,7 +425,7 @@ const webviewNode = [
   },
   {
     // The rest of the application's test support, beside the SQLite files.
-    files: ['packages/application/src/testing/**/*.{ts,tsx}'],
+    files: ['packages/application/src/testing/**/*.{ts,tsx,mts,cts}'],
     ignores: nodeOnly,
     rules: {
       'no-restricted-imports': [
@@ -382,12 +442,12 @@ const webviewNode = [
     },
   },
   {
-    files: ['apps/desktop/src/**/*.{ts,tsx}'],
+    files: ['apps/desktop/src/**/*.{ts,tsx,mts,cts}'],
     ignores: nodeOnly,
     rules: { 'no-restricted-imports': ['error', { patterns: [noNodeModules, noNodeSupport] }] },
   },
   {
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: ['apps/web/src/**/*.{ts,tsx,mts,cts}'],
     ignores: nodeOnly,
     rules: {
       'no-restricted-imports': [
@@ -423,7 +483,7 @@ const webviewNode = [
   },
   {
     // After the block above, whose `import()` rule it repeats with the siblings added.
-    files: ['packages/application/src/testing/**/*.{ts,tsx}'],
+    files: ['packages/application/src/testing/**/*.{ts,tsx,mts,cts}'],
     ignores: nodeOnly,
     rules: {
       'no-restricted-syntax': dynamicImports([noNodeModules, noNodeSupport, noSqliteSibling]),
@@ -431,7 +491,18 @@ const webviewNode = [
   },
   {
     // The same, with Tauri added, for the code every platform shares and the web's own.
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: ['apps/web/src/**/*.{ts,tsx,mts,cts}'],
+    ignores: nodeOnly,
+    rules: {
+      'no-restricted-syntax': [
+        ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport, ...noWebLoadedLater]),
+        ...NO_TAURI_SYNTAX,
+      ],
+    },
+  },
+  {
+    // The shell draws packages/ui and the web bundles it (#689).
+    files: ['packages/ui/src/**/*.{ts,tsx,mts,cts}'],
     ignores: nodeOnly,
     rules: {
       'no-restricted-syntax': [
@@ -441,13 +512,40 @@ const webviewNode = [
     },
   },
   {
-    files: ['packages/shell/src/**/*.{ts,tsx}'],
+    files: ['packages/shell/src/**/*.{ts,tsx,mts,cts}'],
     ignores: nodeOnly,
     rules: {
       'no-restricted-syntax': [
         ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport, noShellAdaptersImport]),
         ...NO_TAURI_SYNTAX,
       ],
+    },
+  },
+  {
+    // Only a `tauri-*` module, or the `tauri/` entry, speaks to Tauri: anything
+    // else in the adapters (the root barrel among them) reaching one would put
+    // Tauri back in what the web composes (#689).
+    files: ['packages/adapters/src/**/*.{ts,tsx,mts,cts}'],
+    ignores: [...nodeOnly, '**/tauri-*', 'packages/adapters/src/tauri/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...layerPatterns('adapters', { tests: false }),
+            noNodeModules,
+            noNodeSupport,
+            ...adapterTauriOnly.map((entry) =>
+              restriction('An adapter that is not tauri-*', entry),
+            ),
+          ],
+        },
+      ],
+      'no-restricted-syntax': dynamicImports([
+        noNodeModules,
+        noNodeSupport,
+        ...adapterTauriOnly.map(({ regex, why }) => ({ regex, message: why })),
+      ]),
     },
   },
 ];
@@ -503,7 +601,7 @@ export default tseslint.config(
     // app. Its own rule name, so the architecture rule above is not replaced.
     files: ['**/*.{ts,tsx,mjs}'],
     ignores: [
-      '**/*.test.{ts,tsx}',
+      '**/*.test.{ts,tsx,mts,cts}',
       // A suite's own support may use test support; the pattern below keeps the app from importing it.
       '**/*.test-support.ts',
       '**/*.spec.ts',
@@ -585,7 +683,10 @@ export default tseslint.config(
   {
     // After the block above, whose rule it repeats: the shell's and the web's tests
     // may not reach Tauri either, by import() or off the window (#689).
-    files: ['packages/shell/**/*.test.{ts,tsx}', 'apps/web/**/*.test.{ts,tsx}'],
+    files: [
+      'packages/{shell,ui}/**/*.test.{ts,tsx,mts,cts}',
+      'apps/web/**/*.test.{ts,tsx,mts,cts}',
+    ],
     rules: {
       'no-restricted-syntax': [
         ...dynamicImports(noTauriImport),

@@ -42,6 +42,13 @@ export default defineConfig({
           new URL('./packages/application/src/testing/sqlite.ts', import.meta.url),
         ),
       },
+      // The vault contract every vault runs (#689): it imports vitest, so it is kept out of the barrel.
+      {
+        find: '@dfai/application/testing/vault-fs-contract',
+        replacement: fileURLToPath(
+          new URL('./packages/application/src/testing/vault-fs-contract.ts', import.meta.url),
+        ),
+      },
       // Test support (work counted rather than timed), kept out of the domain's barrel.
       {
         find: '@dfai/domain/testing',

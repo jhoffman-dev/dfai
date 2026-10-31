@@ -34,7 +34,12 @@ export function mountShell({ ports }: ShellComposition, page: Window = window): 
       <PreloadAfterStart preload={preloadPages} />
     </StrictMode>,
   );
+  let down = false;
+  // Once only: a teardown run again (a hot reload, a cleanup run twice) must not
+  // release the hold of an app mounted after it.
   return () => {
+    if (down) return;
+    down = true;
     root.unmount();
     stopGuarding();
     holding.delete(page);

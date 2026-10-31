@@ -2,8 +2,8 @@
  * Second attack on PR #689 (#656): the regex zone that 8869c6e7 put in
  * eslint.config.js. Each case is code that, committed where it says, reaches
  * Tauri or the application's fakes from what the web build bundles with lint
- * green — or, the last, a harmless name the zone refuses. Each is `it.fails`
- * until the zone answers it.
+ * green — or, the last, a harmless name the zone refuses. Each was `it.fails`
+ * until the zone answered it.
  */
 import { ESLint } from 'eslint';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +33,7 @@ const TAURI_ADAPTERS =
   "import { tauriVaultFs } from '@dfai/adapters/tauri';\nexport const x = tauriVaultFs;";
 
 describe('the Tauri zone, second attack (#689)', () => {
-  it.fails.each([SHELL, WEB])(
+  it.each([SHELL, WEB])(
     'refuses Tauri’s globals named by a template literal in %s',
     async (path) => {
       const code =
@@ -42,29 +42,29 @@ describe('the Tauri zone, second attack (#689)', () => {
     },
   );
 
-  it.fails('refuses the application’s fakes loaded by import() in the web', async () => {
+  it('refuses the application’s fakes loaded by import() in the web', async () => {
     const code = "export const x = () => import('@dfai/application').then((m) => m.fakeVaultFs);";
     expect(await importFindings(WEB, code)).not.toEqual([]);
   });
 
   // The shell draws @dfai/ui and the web bundles it: Tauri there is Tauri in the web build.
-  it.fails('refuses Tauri in packages/ui, which the shell and the web draw', async () => {
+  it('refuses Tauri in packages/ui, which the shell and the web draw', async () => {
     expect(await importFindings('packages/ui/src/probe.tsx', TAURI_API)).not.toEqual([]);
   });
 
   // The Tauri adapters sit beside the others (kindle/tauri-kindle.ts): only the root barrel's
   // own exports keep them out of what the web composes, and nothing lints those.
-  it.fails('refuses a tauri… adapter exported from the root @dfai/adapters barrel', async () => {
+  it('refuses a tauri… adapter exported from the root @dfai/adapters barrel', async () => {
     const code = "export { tauriKindleNotebook } from './kindle/tauri-kindle.ts';";
     expect(await importFindings('packages/adapters/src/index.ts', code)).not.toEqual([]);
   });
 
   // The zone's globs are *.{ts,tsx}; TypeScript and Vite take .mts as well.
-  it.fails('refuses the Tauri adapters from a .mts file in the shell', async () => {
+  it('refuses the Tauri adapters from a .mts file in the shell', async () => {
     expect(await importFindings('packages/shell/src/probe.mts', TAURI_ADAPTERS)).not.toEqual([]);
   });
 
-  it.fails.each([SHELL, WEB])(
+  it.each([SHELL, WEB])(
     'lets a local name that only starts with tauri through in %s',
     async (path) => {
       const code = 'const tauriLike = 1;\nexport const tauriConfigured = tauriLike > 0;';

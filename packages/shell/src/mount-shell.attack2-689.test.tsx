@@ -2,7 +2,7 @@
 /*
  * Second attack on PR #689 (#656): mountShell's one-app-per-page hold. A
  * teardown called twice (a hot reload, a cleanup run again) must not release
- * the hold of an app mounted after it. `it.fails` until it does not.
+ * the hold of an app mounted after it. It was `it.fails` until it did not.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
@@ -33,7 +33,7 @@ const mount = () => {
 };
 
 describe('one app per page, whatever order teardowns come in (attack 2, #689)', () => {
-  it.fails('still refuses a second app after an old teardown runs again', async () => {
+  it('still refuses a second app after an old teardown runs again', async () => {
     document.body.innerHTML = '<div id="root"></div>';
     const first = mount();
     first();

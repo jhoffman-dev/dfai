@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeTauriFinding, tauriInBundle } from './tauri-in-bundle.ts';
+import { describeTauriFinding, tauriInBundle, webBundleProblems } from './tauri-in-bundle.ts';
 
 describe('Tauri in the web bundle (#656)', () => {
   it('finds each of Tauri’s markers, by the file that carries it', () => {
@@ -18,6 +18,15 @@ describe('Tauri in the web bundle (#656)', () => {
 
   it('finds nothing in a bundle with no Tauri', () => {
     expect(tauriInBundle([{ file: 'assets/index.js', source: 'export {}' }])).toEqual([]);
+  });
+
+  it('fails a bundle with no script in it, which would otherwise pass with nothing checked', () => {
+    expect(webBundleProblems([])).toEqual([expect.stringContaining('no script to check')]);
+    expect(webBundleProblems([{ file: 'index.html', source: '<html></html>' }])).toHaveLength(1);
+    expect(webBundleProblems([{ file: 'assets/index.js', source: 'export {}' }])).toEqual([]);
+    expect(webBundleProblems([{ file: 'assets/index.js', source: 'window.__TAURI__' }])).toEqual([
+      expect.stringContaining('Tauri reached the web build'),
+    ]);
   });
 
   it('names the file and the marker when it fails', () => {

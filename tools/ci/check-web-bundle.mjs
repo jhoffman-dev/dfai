@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describeTauriFinding, tauriInBundle } from './tauri-in-bundle.ts';
+import { webBundleProblems } from './tauri-in-bundle.ts';
 
 const dist = fileURLToPath(new URL('../../apps/web/dist', import.meta.url));
 
@@ -23,9 +23,9 @@ const sources = files.sort().map((file) => ({
   file: file.replaceAll('\\', '/'),
   source: readFileSync(join(dist, file), 'utf8'),
 }));
-const found = tauriInBundle(sources);
-if (found.length > 0) {
-  console.error(found.map(describeTauriFinding).join('\n'));
+const problems = webBundleProblems(sources);
+if (problems.length > 0) {
+  console.error(problems.join('\n'));
   process.exit(1);
 }
 console.log(`No Tauri in the web build: ${sources.length} files.`);

@@ -83,6 +83,18 @@ describe('Tauri outside apps/desktop (#656)', () => {
     expect(await importFindings('apps/web/src/probe.test.ts', FAKE)).toEqual([]);
   });
 
+  it('keeps Tauri in the adapters to the tauri-* modules and their entry', async () => {
+    const plain = 'packages/adapters/src/sync/probe.ts';
+    expect(says(await importFindings(plain, TAURI_API), 'tauri-* module')).toBe(true);
+    const sibling = "import { tauriGit } from './tauri-git.ts';\nexport const x = tauriGit;";
+    expect(says(await importFindings(plain, sibling), 'tauri-* module')).toBe(true);
+    expect(await importFindings('packages/adapters/src/sync/tauri-probe.ts', TAURI_API)).toEqual(
+      [],
+    );
+    const entry = "export { tauriGit } from '../sync/tauri-git.ts';";
+    expect(await importFindings('packages/adapters/src/tauri/index.ts', entry)).toEqual([]);
+  });
+
   it.each([TAURI_API, TAURI_ADAPTERS, TAURI_LATER, TAURI_ADAPTERS_LATER])(
     'leaves Tauri to the desktop’s composition root: %s',
     async (code) => {

@@ -24,6 +24,9 @@
       "@dfai/domain": ["./packages/domain/src/index.ts"],
       "@dfai/application": ["./packages/application/src/index.ts"],
       "@dfai/application/testing/sqlite": ["./packages/application/src/testing/sqlite.ts"],
+      "@dfai/application/testing/vault-fs-contract": [
+        "./packages/application/src/testing/vault-fs-contract.ts"
+      ],
       "@dfai/adapters": ["./packages/adapters/src/index.ts"],
       "@dfai/adapters/pdf": ["./packages/adapters/src/pdf/index.ts"],
       "@dfai/adapters/epub": ["./packages/adapters/src/epub/index.ts"],

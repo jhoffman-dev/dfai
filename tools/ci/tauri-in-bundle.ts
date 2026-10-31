@@ -19,6 +19,15 @@ export function tauriInBundle(
   );
 }
 
+/** What fails the web bundle: no script to check at all, which a check must never pass, or Tauri in one. */
+export function webBundleProblems(
+  sources: readonly { readonly file: string; readonly source: string }[],
+): string[] {
+  if (!sources.some(({ file }) => /\.m?js$/.test(file)))
+    return ['The web build has no script to check: build it first (`pnpm build`).'];
+  return tauriInBundle(sources).map(describeTauriFinding);
+}
+
 export function describeTauriFinding({ file, marker }: TauriFinding): string {
   return `${file} carries "${marker}": Tauri reached the web build (#656). Find the import that brought it in.`;
 }

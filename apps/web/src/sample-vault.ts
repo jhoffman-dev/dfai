@@ -1,7 +1,7 @@
 import type { VaultLocation } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import type { IndexPorts, NotePorts, OnHost, VaultPorts } from '@dfai/shell';
-import { sessionVaultFs } from './session-vault.ts';
+import { SESSION_VAULT, sessionVaultFs } from './session-vault.ts';
 import { sessionIndex, sessionVaultStore } from './session-stores.ts';
 
 /**
@@ -10,7 +10,7 @@ import { sessionIndex, sessionVaultStore } from './session-stores.ts';
  * (#664) and the browser's index (#666) take its place.
  */
 
-export const SAMPLE_LOCATION: VaultLocation = { absolutePath: '/sample', name: 'Sample vault' };
+export const SAMPLE_LOCATION: VaultLocation = { absolutePath: SESSION_VAULT, name: 'Sample vault' };
 
 export const SAMPLE_NOTES: Readonly<Record<string, string>> = {
   'Welcome.md': '# Welcome\n\nThis is DFAI in a browser, on a vault held in memory.\n',
