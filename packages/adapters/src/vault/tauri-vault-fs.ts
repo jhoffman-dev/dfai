@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   createVaultPath,
+  InvalidVaultPathError,
   moveRepointsLinkRefusal,
   moveThroughLinkRefusal,
   type VaultEntry,
@@ -29,8 +30,13 @@ const MOVE_REFUSALS: readonly (readonly [string, (link: VaultPath) => string])[]
 /** A refused move in the domain's words when the host's are one of those, else as the host said it. */
 function moveRefused(message: string): Error {
   for (const [start, words] of MOVE_REFUSALS) {
-    if (message.startsWith(start)) {
+    if (!message.startsWith(start)) continue;
+    try {
       return new MoveRefusedError(words(createVaultPath(message.slice(start.length))));
+    } catch (cause) {
+      // A link may be named what no vault path may be (`a\b`): then the host's own words.
+      if (cause instanceof InvalidVaultPathError) return new MoveRefusedError(message);
+      throw cause;
     }
   }
   return new VaultAccessError(message);

@@ -59,8 +59,11 @@ export class MoveRefusedError extends Error {
  * A pane may hold a note by way of a link, and the host does not say where a
  * link points, so it may be a note that moves, by another path: it could be
  * neither flushed nor followed as one. Nothing moves while such a pane has
- * unsaved typing (PR #684). Only panes with typing are looked into, so a move
- * with none asks the host nothing more.
+ * unsaved typing (PR #684), looked at before the carried panes are saved and
+ * again after, just before the host moves. Only panes with typing are looked
+ * into, so a move with none asks the host nothing more. The hold is broad: any
+ * pane typing by way of any link holds every move, since the host does not say
+ * where a link points and so which links reach what moves.
  */
 async function relocate({
   ports,
@@ -78,6 +81,8 @@ async function relocate({
   await refuseUnsavedThroughLink({ ports, carried, notePaths });
 
   await ports.editors.flush(carried);
+  // Typing may have started by way of a link while the save was on its way.
+  await refuseUnsavedThroughLink({ ports, carried, notePaths });
   await ports.fs.moveEntry(move);
   ports.editors.follow(move);
   await forget(ports.index, carried);
@@ -98,7 +103,8 @@ async function refuseUnsavedThroughLink({
   const typing = notePaths.filter(
     (path) => !moving.has(path) && ports.editors.state(path) === 'dirty',
   );
-  const links = await Promise.all(typing.map((path) => linkAbove(ports.fs, path)));
+  // The note itself may be the link (`Work/alias.md -> ../Shelf/garden.md`).
+  const links = await Promise.all(typing.map((path) => linkAtOrAbove(ports.fs, path)));
   const found = typing
     .map((note, at) => ({ note, link: links[at] ?? null }))
     .find(({ link }) => link !== null);

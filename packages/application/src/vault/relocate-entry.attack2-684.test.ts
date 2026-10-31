@@ -11,7 +11,7 @@ import { moveEntryInto, MoveRefusedError } from './relocate-entry.ts';
 
 /*
  * Second attack on PR #684: the hold on a move while a pane types in a note
- * open by way of a link. `it.fails` marks a finding: the hold does not hold.
+ * open by way of a link. The two findings are fixed and pass.
  *
  * `Work/Alias -> Shelf` is a folder link; `Work/alias.md -> ../Shelf/Plans/garden.md`
  * is a note that is itself a link; `Play/Hop -> ../Work/Alias` is a link to a link.
@@ -81,7 +81,7 @@ describe('the hold on a move while a pane types by way of a link (PR #684, attac
    * ahead while the pane types in the moving note under another path: its
    * typing is saved to `Work/alias.md`, which then points at nothing.
    */
-  it.fails('holds while a pane types in a note that is itself a link', async () => {
+  it('holds while a pane types in a note that is itself a link', async () => {
     const { ports, log } = host(() => ['Work/alias.md']);
 
     const moving = moveEntryInto({
@@ -100,7 +100,7 @@ describe('the hold on a move while a pane types by way of a link (PR #684, attac
    * `Work/Alias/Plans/garden.md` that starts typing while that save is on its
    * way is not looked at again, and the host moves `Shelf/Plans` under it.
    */
-  it.fails('holds when typing by way of a link starts before the host moves', async () => {
+  it('holds when typing by way of a link starts before the host moves', async () => {
     let flushed = false;
     const { ports, log } = host(() => (flushed ? ['Work/Alias/Plans/garden.md'] : []));
     const flush = ports.editors.flush;

@@ -9,7 +9,7 @@ const { tauriVaultFs } = await import('./tauri-vault-fs.ts');
 
 /*
  * Second attack on PR #684: the adapter putting two host refusals in the
- * domain's words. `it.fails` marks a finding.
+ * domain's words. The finding is fixed and passes.
  */
 describe('tauriVaultFs.moveEntry refusals (PR #684, attack 2)', () => {
   const notes = createVaultPath('Projects');
@@ -29,14 +29,11 @@ describe('tauriVaultFs.moveEntry refusals (PR #684, attack 2)', () => {
    * refusal arrives as an InvalidVaultPathError about a path, not as the
    * refusal, and the notice shows neither the host's words nor the domain's.
    */
-  it.fails(
-    'still says a link would be re-pointed when the link has a backslash in its name',
-    async () => {
-      await expect(refuse('moving it would point a link elsewhere: Projects/a\\b')).rejects.toThrow(
-        MoveRefusedError,
-      );
-    },
-  );
+  it('still says a link would be re-pointed when the link has a backslash in its name', async () => {
+    await expect(refuse('moving it would point a link elsewhere: Projects/a\\b')).rejects.toThrow(
+      MoveRefusedError,
+    );
+  });
 
   it('leaves a host error that only mentions a refusal mid-sentence as the host said it', async () => {
     const message = 'cannot move: path goes through a link: Work/Alias';
