@@ -88,19 +88,49 @@ function recordSweep(): void {
   // an observer called back — counts as a change too. Observers made before
   // the sweep are not wrapped; what their callbacks do still shows as a
   // change, as every stop waits out a frame (below).
+  //
+  // An observer made during the sweep also holds the stop until it has
+  // answered for what it was given to watch: when an engine calls one back is
+  // its own, and on Linux it was not within the frames a stop waits. Only an
+  // element it will answer for holds it: a ResizeObserver says nothing of one
+  // that is not drawn (no box), and neither says anything of a removed one.
+  const unanswered = new Map<object, Set<Element>>();
+  const answersFor = (name: string, target: Element) => {
+    if (!target.isConnected) return false;
+    if (name !== 'ResizeObserver') return true;
+    const box = target.getBoundingClientRect();
+    return box.width > 0 || box.height > 0;
+  };
+  const observersOwe = () => {
+    for (const [observer, targets] of unanswered) {
+      const name = (observer as { kind: string }).kind;
+      for (const target of targets) if (!answersFor(name, target)) targets.delete(target);
+      if (targets.size > 0) return true;
+      unanswered.delete(observer);
+    }
+    return false;
+  };
   const observing = (name: 'ResizeObserver' | 'IntersectionObserver') => {
     const table = window as unknown as Record<string, unknown>;
     const Original = table[name] as new (
       callback: (...args: unknown[]) => void,
       options?: unknown,
-    ) => object;
+    ) => { observe(target: Element, options?: unknown): void };
     table[name] = class extends Original {
+      readonly kind = name;
       constructor(callback: (...args: unknown[]) => void, options?: unknown) {
         changed = true;
         super((...args: unknown[]) => {
           changed = true;
+          const entries = args[0] as { target: Element }[];
+          for (const { target } of entries) unanswered.get(this)?.delete(target);
           callback(...args);
         }, options);
+      }
+      override observe(target: Element, options?: unknown) {
+        changed = true;
+        unanswered.set(this, (unanswered.get(this) ?? new Set()).add(target));
+        super.observe(target, options);
       }
     };
     restores.push(() => {
@@ -115,6 +145,16 @@ function recordSweep(): void {
   const renderEvents = ['transitionrun', 'transitionstart', 'animationstart'];
   for (const name of renderEvents) document.addEventListener(name, onRender, { capture: true });
   const animations = new WeakSet<Animation>();
+  // A transition or animation that will end holds the stop until it has: its
+  // delay is the page's to set, and it lands when it ends, not frames later.
+  const animationRunning = () =>
+    document
+      .getAnimations()
+      .some(
+        (animation) =>
+          animation.playState === 'running' &&
+          Number.isFinite(animation.effect?.getComputedTiming().endTime),
+      );
   const animationBegun = () => {
     let begun = false;
     for (const animation of document.getAnimations()) {
@@ -140,6 +180,10 @@ function recordSweep(): void {
       changedAt = frame;
     }
     if (changedAt !== null && frame < changedAt + 2) return true;
+    if (animationRunning() || observersOwe()) {
+      changedAt = frame;
+      return true;
+    }
     changedAt = null;
     return false;
   };
