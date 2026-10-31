@@ -86,7 +86,7 @@ fn refuses_to_move_a_relative_link_where_it_would_point_elsewhere() {
 
     assert_eq!(
         move_entry_at(vault.path(), "Work/Alias", "Play/Deep/Alias").unwrap_err(),
-        "moving it would point a link elsewhere: Alias"
+        "moving it would point a link elsewhere: Work/Alias"
     );
     assert_eq!(
         link_target(&vault.path().join("Work/Alias")),
@@ -141,7 +141,7 @@ fn refuses_to_move_a_folder_whose_relative_link_would_point_elsewhere() {
 
     assert_eq!(
         move_entry_at(vault.path(), "Work/Projects", "Projects").unwrap_err(),
-        "moving it would point a link elsewhere: Projects/shelf"
+        "moving it would point a link elsewhere: Work/Projects/shelf"
     );
     assert!(vault.path().join("Work/Projects/plan.md").is_file());
     assert!(vault
@@ -193,6 +193,23 @@ fn refuses_to_move_a_folder_holding_an_absolute_link_into_itself() {
         "moving it would point a link elsewhere: Projects/latest"
     );
     assert!(v2.is_dir());
+}
+
+/// The folder named in another case than the disk keeps is still the folder
+/// the link points into (review of PR #684).
+#[cfg(target_os = "macos")]
+#[test]
+fn refuses_to_move_a_folder_named_in_another_case_holding_an_absolute_link_into_it() {
+    let vault = vault_with_shelf();
+    fs::create_dir_all(vault.path().join("Projects/v2")).unwrap();
+    let v2 = vault.path().join("Projects/v2").canonicalize().unwrap();
+    symlink(&v2, vault.path().join("Projects/latest")).unwrap();
+
+    assert_eq!(
+        move_entry_at(vault.path(), "projects", "Play/projects").unwrap_err(),
+        "moving it would point a link elsewhere: Projects/latest"
+    );
+    assert!(vault.path().join("Projects/latest").is_dir());
 }
 
 /// On a disk that ignores case, `../Projects/v2` still finds `projects/v2`,
@@ -249,6 +266,58 @@ fn a_move_into_a_folder_reached_through_a_link_lands_where_the_link_points() {
     );
     assert!(vault.path().join("Shelf/Plans/note.md").is_file());
     assert!(!vault.path().join("note.md").exists());
+}
+
+/// A link pointing at nothing would start pointing at whatever has that name
+/// where it lands, so it is judged like any other.
+#[test]
+fn refuses_to_move_a_broken_relative_link_to_another_depth() {
+    let vault = vault_with_shelf();
+    symlink("../Nowhere", vault.path().join("Work/gone")).unwrap();
+
+    assert_eq!(
+        move_entry_at(vault.path(), "Work/gone", "Play/Deep/gone").unwrap_err(),
+        "moving it would point a link elsewhere: Work/gone"
+    );
+    assert!(fs::symlink_metadata(vault.path().join("Work/gone")).is_ok());
+}
+
+/// On a disk that keeps case apart, `../Projects/v2` would not find
+/// `projects/v2`: the same rename that is made on macOS is refused.
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn a_case_only_rename_that_would_lose_a_link_by_its_name_is_refused_where_case_matters() {
+    let vault = vault_with_shelf();
+    fs::create_dir_all(vault.path().join("Projects/v2")).unwrap();
+    symlink("../Projects/v2", vault.path().join("Projects/latest")).unwrap();
+
+    assert_eq!(
+        move_entry_at(vault.path(), "Projects", "projects").unwrap_err(),
+        "moving it would point a link elsewhere: Projects/latest"
+    );
+    assert!(vault.path().join("Projects/latest/").is_dir());
+}
+
+/// A name that went away between its folder being read and being looked at
+/// has nothing to re-point; an unreadable folder is said, by name.
+#[test]
+fn the_link_check_passes_over_what_is_gone_and_names_what_it_cannot_read() {
+    let vault = vault_with_shelf();
+    let gone = vault.path().join("Shelf/gone");
+
+    assert_eq!(
+        super::refuse_retargeted_links(vault.path(), &gone, &vault.path().join("Play/gone")),
+        Ok(())
+    );
+    assert_eq!(
+        super::entries_of(&gone).unwrap(),
+        Vec::<std::path::PathBuf>::new()
+    );
+    let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+    assert_eq!(
+        super::cannot_check("Shelf/Locked", &denied),
+        "cannot check the links inside Shelf/Locked: permission denied"
+    );
 }
 
 #[path = "move_link_attack_684_tests.rs"]

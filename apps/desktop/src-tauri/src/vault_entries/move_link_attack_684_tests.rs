@@ -59,7 +59,6 @@ fn dangling_links(dir: &Path) -> Vec<PathBuf> {
 /// match, and so is taken as pointing outside: the move goes ahead and the
 /// link is left pointing at where the folder was.
 #[test]
-#[ignore = "bug: absolute link into the moved folder spelled by the vault's non-canonical root is not seen, move dangles it (PR #684)"]
 fn an_absolute_link_into_the_folder_by_the_vaults_own_spelling_never_dangles() {
     let outer = tempdir().unwrap();
     let real = outer.path().join("real");
@@ -82,7 +81,6 @@ fn an_absolute_link_into_the_folder_by_the_vaults_own_spelling_never_dangles() {
 /// The same gap by case: on a disk that ignores case, `/…/projects/v2` is the
 /// folder's own `v2`, but is not a prefix match for `/…/Projects`.
 #[test]
-#[ignore = "bug: absolute link into the moved folder in another case is not seen, move dangles it (PR #684)"]
 fn an_absolute_link_into_the_folder_in_another_case_never_dangles() {
     let vault = tempdir().unwrap();
     let root = vault.path().canonicalize().unwrap();
@@ -108,7 +106,6 @@ fn an_absolute_link_into_the_folder_in_another_case_never_dangles() {
 
 /// The same gap by Unicode form: APFS finds `Café` (NFC) by `Café` (NFD).
 #[test]
-#[ignore = "bug: absolute link into the moved folder in the other Unicode form is not seen, move dangles it (PR #684)"]
 fn an_absolute_link_into_the_folder_in_another_unicode_form_never_dangles() {
     let vault = tempdir().unwrap();
     let root = vault.path().canonicalize().unwrap();
@@ -134,7 +131,7 @@ fn an_absolute_link_into_the_folder_in_another_unicode_form_never_dangles() {
 /// the moved folder — the very `Work/Alias -> ../Shelf` of #680, whose notes
 /// the tree lists and panes may hold open — is left pointing at nothing.
 #[test]
-#[ignore = "bug: a link outside the moved folder into it is not checked, move dangles it (PR #684, design)"]
+#[ignore = "tracked by issue #686"]
 fn moving_the_folder_a_link_points_at_never_dangles_the_link() {
     let vault = vault_with_shelf();
     symlink("../Shelf", vault.path().join("Work/Alias")).unwrap();
@@ -148,12 +145,12 @@ fn moving_the_folder_a_link_points_at_never_dangles_the_link() {
     );
 }
 
-/// A move used to be one rename. The new walk reads every folder the move
-/// carries, so one the user cannot list makes the whole move fail, though the
-/// rename itself would succeed (it needs only the parent's permission).
+/// A move used to be one rename. The walk reads every folder the move
+/// carries, and one the user cannot list might hold a link the move would
+/// re-point, so the move is refused with the folder named (decided on review
+/// of PR #684), and nothing moves.
 #[test]
-#[ignore = "bug: regression, a folder holding an unreadable subfolder can no longer be moved (PR #684)"]
-fn a_folder_holding_an_unreadable_subfolder_still_moves() {
+fn a_folder_holding_an_unreadable_subfolder_is_refused_naming_it() {
     let vault = vault_with_shelf();
     let locked = vault.path().join("Shelf/Locked");
     fs::create_dir_all(&locked).unwrap();
@@ -168,8 +165,12 @@ fn a_folder_holding_an_unreadable_subfolder_still_moves() {
         &locked
     };
     fs::set_permissions(restore, fs::Permissions::from_mode(0o755)).unwrap();
-    assert_eq!(moved, Ok(()));
-    assert!(vault.path().join("Play/Shelf/Plans/garden.md").is_file());
+    assert_eq!(
+        moved,
+        Err("cannot check the links inside Shelf/Locked: permission denied".to_string())
+    );
+    assert!(vault.path().join("Shelf/Plans/garden.md").is_file());
+    assert!(!vault.path().join("Play/Shelf").exists());
 }
 
 /// `a.md` and `b.md` are one file by two hard links. Moving `a.md` to `B.md`
@@ -177,7 +178,6 @@ fn a_folder_holding_an_unreadable_subfolder_still_moves() {
 /// plain rename, which between two names of one file does nothing and
 /// succeeds: the app is told `a.md` is now `B.md` while both names stay.
 #[test]
-#[ignore = "bug: move onto a hard link's other name in another case reports success and moves nothing (pre-existing, case-only branch)"]
 fn a_reported_move_onto_a_hard_links_other_name_leaves_no_source_behind() {
     let vault = tempdir().unwrap();
     let root = vault.path();

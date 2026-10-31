@@ -3,8 +3,9 @@
 //! Like the rest of the host this decides nothing (ADR-0005). Which folder a note
 //! may go to, what is protected and what to do with an open pane are the
 //! frontend's rules; here a path is checked to be inside the vault, the move is
-//! refused rather than writing over something, moving what a link reaches or
-//! changing what a link points at (#680), and that is all.
+//! refused rather than writing over something, moving what a link reaches, or
+//! changing what a link it carries points at (#680; a link elsewhere into what
+//! moves is issue #686), and that is all.
 
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -84,10 +85,10 @@ pub(crate) fn move_entry_at(root: &Path, from: &str, to: &str) -> Result<(), Str
     }
     // The source under another spelling: a case-only rename, which has to
     // replace "itself" and so cannot be exclusive.
-    if same_entry(&source, &target) && !is_listed_as_itself(&target) {
+    if is_case_only_rename(&source, &target) {
         return fs::rename(&source, &target).map_err(|error| format!("cannot move: {error}"));
     }
-    refuse_retargeted_links(&source, &target)?;
+    refuse_retargeted_links(root, &source, &target)?;
 
     rename_exclusive(&source, &target).map_err(|error| match error.kind() {
         std::io::ErrorKind::AlreadyExists => "something with that name is already there".into(),
@@ -104,7 +105,6 @@ pub(crate) fn move_entry_at(root: &Path, from: &str, to: &str) -> Result<(), Str
 /// link. A move *into* a folder by a link is left alone: it lands where the
 /// link points, which is still the path the app re-points to, so nothing is
 /// lost — and a note's image or a filed note may well go there.
-/// that is moved as the link.
 fn refuse_through_link(root: &Path, relative: &str) -> Result<(), String> {
     let segments: Vec<&str> = relative
         .split('/')
@@ -136,68 +136,163 @@ fn refuse_through_link(root: &Path, relative: &str) -> Result<(), String> {
 /// absolute path is left pointing at where the folder was. A link that still
 /// points at the same thing afterwards — at the same place, or into the folder
 /// as it moved — is fine. Nothing is followed, so a link loop costs nothing.
-fn refuse_retargeted_links(source: &Path, target: &Path) -> Result<(), String> {
-    let mut waiting = vec![source.to_path_buf()];
+/// Paths are compared as the disk spells them, so a vault reached through a
+/// link, another case or another Unicode form is still recognised.
+///
+/// Only the links the move carries are checked. A link elsewhere that points
+/// into the moved folder (`Work/latest -> ../Projects/v2`) is issue #686.
+fn refuse_retargeted_links(root: &Path, source: &Path, target: &Path) -> Result<(), String> {
+    let vault = root
+        .canonicalize()
+        .map_err(|error| format!("vault is unreadable: {error}"))?;
+    let shown = |at: &Path| at.strip_prefix(&vault).unwrap_or(at).display().to_string();
+    let source = &spelled_on_disk(source)?;
+    let mut waiting = vec![source.clone()];
     while let Some(at) = waiting.pop() {
-        let metadata =
-            fs::symlink_metadata(&at).map_err(|error| format!("cannot move: {error}"))?;
+        let metadata = match fs::symlink_metadata(&at) {
+            Ok(metadata) => metadata,
+            // Gone since its folder was read: nothing there to re-point.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(cannot_check(&shown(&at), &error)),
+        };
         if metadata.file_type().is_symlink() {
-            let points_at = fs::read_link(&at).map_err(|error| format!("cannot move: {error}"))?;
-            if !keeps_pointing(source, target, &at, &points_at) {
-                let shown = at
-                    .strip_prefix(source.parent().unwrap_or(source))
-                    .unwrap_or(&at);
+            let points_at =
+                fs::read_link(&at).map_err(|error| cannot_check(&shown(&at), &error))?;
+            let carried = CarriedLink {
+                source,
+                target,
+                link: &at,
+                points_at: &points_at,
+            };
+            if !carried.keeps_pointing() {
                 return Err(format!(
                     "moving it would point a link elsewhere: {}",
-                    shown.display()
+                    shown(&at)
                 ));
             }
         } else if metadata.is_dir() {
-            for entry in fs::read_dir(&at).map_err(|error| format!("cannot move: {error}"))? {
-                waiting.push(
-                    entry
-                        .map_err(|error| format!("cannot move: {error}"))?
-                        .path(),
-                );
-            }
+            waiting.extend(entries_of(&at).map_err(|error| cannot_check(&shown(&at), &error))?);
         }
     }
     Ok(())
 }
 
-/// Whether `link`, pointing at `points_at`, points at the same thing once
-/// `source` is moved to `target`: where it pointed, carried by the move if
-/// that was inside `source`.
-fn keeps_pointing(source: &Path, target: &Path, link: &Path, points_at: &Path) -> bool {
-    let moved_link = match link.strip_prefix(source) {
-        Ok(rest) if rest.as_os_str().is_empty() => target.to_path_buf(),
-        Ok(rest) => target.join(rest),
-        Err(_) => return true,
+/// The paths in `folder`; none when it went away after it was found.
+fn entries_of(folder: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
     };
-    let read_from = |at: &Path| at.parent().map_or_else(PathBuf::new, Path::to_path_buf);
-    let before = plain(&read_from(link).join(points_at));
-    let after = plain(&read_from(&moved_link).join(points_at));
-    let expected = match before.strip_prefix(source) {
-        Ok(rest) if rest.as_os_str().is_empty() => target.to_path_buf(),
-        Ok(rest) => target.join(rest),
-        Err(_) => before,
+    entries
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect()
+}
+
+/// Why a move is refused when what it carries cannot be looked at: a link in
+/// there might be re-pointed, and that cannot be ruled out.
+fn cannot_check(shown: &str, error: &std::io::Error) -> String {
+    let reason = match error.kind() {
+        std::io::ErrorKind::PermissionDenied => "permission denied".to_string(),
+        _ => error.to_string(),
     };
-    after == expected
+    format!("cannot check the links inside {shown}: {reason}")
+}
+
+/// `entry` as the disk spells it. A link is taken as itself: only the folder
+/// it is in is looked up.
+fn spelled_on_disk(entry: &Path) -> Result<PathBuf, String> {
+    let is_link = fs::symlink_metadata(entry).is_ok_and(|metadata| metadata.is_symlink());
+    if is_link {
+        return Ok(entry.to_path_buf());
+    }
+    match entry.canonicalize() {
+        Ok(spelled) => Ok(spelled),
+        // Gone already: the walk finds nothing in it, and the rename says so.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(entry.to_path_buf()),
+        Err(error) => Err(format!("cannot move: {error}")),
+    }
+}
+
+/// A link the move carries, and where it is going.
+struct CarriedLink<'a> {
+    source: &'a Path,
+    target: &'a Path,
+    link: &'a Path,
+    points_at: &'a Path,
+}
+
+impl CarriedLink<'_> {
+    /// Whether the link points at the same thing once the source is at the
+    /// target: where it pointed, carried by the move if that was inside it.
+    fn keeps_pointing(&self) -> bool {
+        let Some(moved_link) = moved(self.link, self.source, self.target) else {
+            return true;
+        };
+        let read_from = |at: &Path| at.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+        let before = as_disk_spells(&read_from(self.link).join(self.points_at));
+        let after = as_disk_spells(&read_from(&moved_link).join(self.points_at));
+        let expected = moved(&before, self.source, self.target).unwrap_or(before);
+        after == expected
+    }
+}
+
+/// Where `path` is once `source` is at `target`, or None when it is not inside it.
+fn moved(path: &Path, source: &Path, target: &Path) -> Option<PathBuf> {
+    let rest = path.strip_prefix(source).ok()?;
+    Some(if rest.as_os_str().is_empty() {
+        target.to_path_buf()
+    } else {
+        target.join(rest)
+    })
+}
+
+/// `path` worked out by name, then with the deepest folder of it that exists
+/// spelled as the disk spells it. Its last name is never looked up, so a link
+/// there is not followed.
+fn as_disk_spells(path: &Path) -> PathBuf {
+    let named = by_name(path);
+    let mut rest = Vec::new();
+    let mut at = named.as_path();
+    while let (Some(parent), Some(name)) = (at.parent(), at.file_name()) {
+        rest.push(name.to_os_string());
+        if let Ok(real) = parent.canonicalize() {
+            return rest.iter().rev().fold(real, |whole, part| whole.join(part));
+        }
+        at = parent;
+    }
+    named
 }
 
 /// `path` with `.` and `..` worked out by name alone, without asking the disk.
-fn plain(path: &Path) -> PathBuf {
-    let mut plain = PathBuf::new();
+fn by_name(path: &Path) -> PathBuf {
+    let mut worked_out = PathBuf::new();
     for component in path.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                plain.pop();
+                worked_out.pop();
             }
-            other => plain.push(other),
+            other => worked_out.push(other),
         }
     }
-    plain
+    worked_out
+}
+
+/// Whether `target` is `source` itself, its name spelled in another case.
+///
+/// Two hard links to one file look like one entry too, but `a.md` onto `B.md`,
+/// where `b.md` is the other link, is a move onto another name: a plain rename
+/// between them does nothing and reports success, so it must stay exclusive.
+fn is_case_only_rename(source: &Path, target: &Path) -> bool {
+    let spelled = |path: &Path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+    };
+    source.parent() == target.parent()
+        && spelled(source) == spelled(target)
+        && same_entry(source, target)
+        && !is_listed_as_itself(target)
 }
 
 /// Whether `path`'s own name is an entry of its folder, spelled exactly so.
