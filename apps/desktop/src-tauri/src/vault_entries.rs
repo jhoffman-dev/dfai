@@ -5,7 +5,8 @@
 //! frontend's rules; here a path is checked to be inside the vault, the move is
 //! refused rather than writing over something, moving what a link reaches, or
 //! changing what a link it carries points at (#680; a link elsewhere into what
-//! moves is issue #686), and that is all.
+//! moves is issue #686), and a trash is refused through a link (#685), and
+//! that is all.
 
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -358,6 +359,10 @@ pub struct Unchanged {
 /// (#235). The checks and the Trash are one change: nothing else in the vault
 /// changes between them. Which files to hold still is the client's to say;
 /// this only compares, as `write_text_file` does its `expected_modified`.
+///
+/// A path through a link is refused first, as a move's is (#685): the Trash
+/// would take the real entry behind the link while the caller believes it
+/// trashed another path. An entry that is itself a link is trashed as the link.
 pub(crate) fn trash_entry_at_unless_changed(
     root: &Path,
     relative: &str,
@@ -365,6 +370,7 @@ pub(crate) fn trash_entry_at_unless_changed(
     trash: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<(), String> {
     let _turn = change_turn();
+    refuse_through_link(root, relative)?;
     for file in unchanged {
         let read = BasedOn {
             modified: Some(file.modified),
