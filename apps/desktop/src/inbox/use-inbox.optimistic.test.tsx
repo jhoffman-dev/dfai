@@ -92,6 +92,8 @@ function inbox() {
     onSettled,
     closes,
     shown,
+    /** Another vault is opened in the window. */
+    switchVault: (vaultKey: string) => hook.rerender({ ...initial, vaultKey }),
     /** What the index will list from the next read on, with nothing said yet. */
     list: (still: readonly (typeof CALL)[]) => {
       listed = [...still];
@@ -371,6 +373,12 @@ describe('useInbox — U never waits for ever for its row (PR #649 review)', () 
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('resolves as another vault opens', async () => {
+    const { said, switchVault } = await takenBackWithNoRefresh();
+    act(() => switchVault('/vaults/quill'));
+    await waitFor(() => expect(said.back).toBe(CALL));
   });
 
   it('resolves as the page goes away', async () => {

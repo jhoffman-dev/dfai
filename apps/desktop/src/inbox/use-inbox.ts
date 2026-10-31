@@ -207,7 +207,7 @@ export function useInbox(options: InboxOptions) {
     [shown, leaving, vaultKey],
   );
 
-  const listedAgain = useListedAgain(contents, shown?.read ?? null);
+  const listedAgain = useListedAgain(contents, shown?.read ?? null, vaultKey);
 
   /** Says what a write left, of the vault it was asked in; `kept` leaves the last action to take back. */
   const say = useCallback(
@@ -627,6 +627,7 @@ function keepingMoves(ports: ArchivePorts): {
 function useListedAgain(
   contents: InboxListing | null,
   read: ReadMoment | null,
+  vaultKey: string | null,
 ): (row: ReturningRow) => Promise<void> {
   const waiting = useRef<{ readonly row: ReturningRow; readonly resolve: () => void }[]>([]);
   const now = useRef({ contents, read });
@@ -640,15 +641,36 @@ function useListedAgain(
     });
   }, []);
   useEffect(settle, [contents, read, settle]);
+  // Another vault, or the page gone: nothing will list the row here, so none waits on.
+  useEffect(
+    () => () => {
+      for (const each of waiting.current) each.resolve();
+      waiting.current = [];
+    },
+    [vaultKey],
+  );
   return useCallback(
     (row: ReturningRow) =>
       new Promise<void>((resolve) => {
-        waiting.current.push({ row, resolve });
+        // A refresh that never lands — it failed — is waited for this long, and no longer.
+        const limit = setTimeout(done, LISTED_AGAIN_LIMIT_MS);
+        function done() {
+          clearTimeout(limit);
+          waiting.current = waiting.current.filter((each) => each.resolve !== done);
+          resolve();
+        }
+        waiting.current.push({ row, resolve: done });
         settle();
       }),
     [settle],
   );
 }
+
+/**
+ * The longest U waits for the row it took back to be listed again before it
+ * says where the row is anyway: a refresh that failed is never answered for.
+ */
+export const LISTED_AGAIN_LIMIT_MS = 5_000;
 
 const NO_ROWS: readonly LeavingRow[] = [];
 
