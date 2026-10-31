@@ -37,7 +37,7 @@ describe('attack #681: platform capabilities', () => {
   // caller can push to or reorder, changing every platform value built after
   // and the order capabilitiesLacking reports in. The values are frozen; the
   // list they are built from is not.
-  it.fails('freezes the capability list itself', () => {
+  it('freezes the capability list itself', () => {
     expect(Object.isFrozen(PLATFORM_CAPABILITIES)).toBe(true);
   });
 

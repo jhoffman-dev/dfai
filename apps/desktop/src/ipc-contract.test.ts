@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { API_RESPOND_COMMAND } from '@dfai/application';
 import { createVaultPath, PLATFORM_CAPABILITIES, WEB_CAPABILITIES } from '@dfai/domain';
 import type { PlatformCapability } from '@dfai/domain';
+import { commandFatesIn, hostCommandsIn, type CommandFate } from './host-commands.test-support.ts';
 
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
@@ -18,15 +19,9 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 function commandsExposedByRust(): Set<string> {
-  const source = readFileSync(here('../src-tauri/src/lib.rs'), 'utf8');
-  const handler = /generate_handler!\[([\s\S]*?)\]/.exec(source);
-  expect(handler, 'generate_handler! block not found in lib.rs').not.toBeNull();
-  return new Set(
-    (handler?.[1] ?? '')
-      .split(',')
-      .map((entry) => entry.trim().split('::').at(-1) ?? '')
-      .filter((name) => name !== ''),
-  );
+  const exposed = hostCommandsIn(readFileSync(here('../src-tauri/src/lib.rs'), 'utf8'));
+  expect(exposed, 'generate_handler! block not found in lib.rs').not.toBeNull();
+  return exposed ?? new Set();
 }
 
 /** Every adapter source file, in every folder: a command called from any of them crosses the boundary. */
@@ -288,33 +283,15 @@ const WINDOWS_FATES = ['same', 'port'];
 /** The capability cell of a command every platform needs. */
 const EVERY_PLATFORM = '—';
 
-interface CommandFate {
-  readonly command: string;
-  readonly capability: string;
-  readonly web: string;
-  readonly windows: string;
-}
-
-/** Each table row of the ADR whose first cell is a command, as written. */
+/** Each command row of the ADR's tables, as a reader sees it. */
 function commandFates(): CommandFate[] {
-  const source = readFileSync(here(PLATFORM_MAP), 'utf8');
-  const row = /^\|\s*`(\w+)`\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|/gm;
-  return [...source.matchAll(row)].map(([, command, capability, web, windows]) => ({
-    command: command ?? '',
-    capability: capability ?? '',
-    web: web ?? '',
-    windows: windows ?? '',
-  }));
+  return commandFatesIn(readFileSync(here(PLATFORM_MAP), 'utf8'));
 }
 
 const isCapability = (name: string): name is PlatformCapability =>
   (PLATFORM_CAPABILITIES as readonly string[]).includes(name);
 
 describe('the platform map (ADR-0051)', () => {
-  it('finds the commands it maps', () => {
-    expect(commandFates().length).toBeGreaterThan(0);
-  });
-
   it('maps every command Rust exposes', () => {
     const mapped = new Set(commandFates().map((fate) => fate.command));
     const unmapped = [...commandsExposedByRust()].filter((name) => !mapped.has(name));
@@ -342,12 +319,34 @@ describe('the platform map (ADR-0051)', () => {
     expect(unknown).toEqual([]);
   });
 
-  it('serves a capability the web lacks with every command absent on the web', () => {
+  it('gives a command absent on the web a capability the web lacks, so its screen hides it', () => {
     const shown = commandFates().filter(
       (fate) =>
         fate.web === 'absent' &&
         (!isCapability(fate.capability) || WEB_CAPABILITIES[fate.capability]),
     );
     expect(shown).toEqual([]);
+  });
+
+  it('gives a command serving a capability the web lacks no fate on the web but absent', () => {
+    const hiddenYetServed = commandFates().filter(
+      (fate) =>
+        isCapability(fate.capability) &&
+        !WEB_CAPABILITIES[fate.capability] &&
+        fate.web !== 'absent',
+    );
+    expect(hiddenYetServed).toEqual([]);
+  });
+
+  it('serves every capability the web lacks with at least one command absent there', () => {
+    const absentOnTheWeb = new Set(
+      commandFates()
+        .filter((fate) => fate.web === 'absent')
+        .map((fate) => fate.capability),
+    );
+    const unserved = PLATFORM_CAPABILITIES.filter(
+      (name) => !WEB_CAPABILITIES[name] && !absentOnTheWeb.has(name),
+    );
+    expect(unserved).toEqual([]);
   });
 });

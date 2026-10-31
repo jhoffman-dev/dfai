@@ -49,31 +49,6 @@ describe('the web build', () => {
   it('keeps Markdown export, as a download', () => {
     expect(WEB_CAPABILITIES.markdownExport).toBe(true);
   });
-
-  it('lacks everything that needs a host: a disk, a process, a held secret or the system', () => {
-    expect(capabilitiesLacking(WEB_CAPABILITIES)).toEqual([
-      'syncByGit',
-      'wholeVaultOffline',
-      'fileWatching',
-      'localFolderVault',
-      'repoCreation',
-      'localModels',
-      'claudeCodeChat',
-      'heldSecrets',
-      'webFetch',
-      'googleCalendar',
-      'granola',
-      'slack',
-      'kindle',
-      'globalCapture',
-      'localApi',
-      'sqliteSources',
-      'googleDriveExport',
-      'pdfExport',
-      'pageThumbnails',
-      'systemTrash',
-    ]);
-  });
 });
 
 describe('the capabilities a platform lacks', () => {
@@ -87,10 +62,10 @@ describe('the capabilities a platform lacks', () => {
   });
 
   it('come in the order the capabilities are listed, whatever order they were named in', () => {
-    expect(capabilitiesLacking(allBut('systemTrash', 'kindle', 'syncByGit'))).toEqual([
+    expect(capabilitiesLacking(allBut('pageThumbnails', 'kindle', 'syncByGit'))).toEqual([
       'syncByGit',
       'kindle',
-      'systemTrash',
+      'pageThumbnails',
     ]);
   });
 });

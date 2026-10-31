@@ -5,15 +5,18 @@
  * branch in every component (#657).
  *
  * Each name is one thing the person can see or use, not one host command:
- * ADR-0051 maps every command to the capability it serves.
+ * ADR-0051 maps every command to the capability it serves, and each one the
+ * web lacks is served by at least one command absent there.
+ *
+ * The platform values live here, beside the list, rather than in each app's
+ * composition: they are policy (what the web build is), and the rules across
+ * them, such as every platform having one way to save, are tested in one place.
  */
-export const PLATFORM_CAPABILITIES = [
+export const PLATFORM_CAPABILITIES = Object.freeze([
   /** The vault is a git clone, pulled and pushed in the background (ADR-0025). */
   'syncByGit',
   /** Each save is a commit through the GitHub API, refused when the note moved. */
   'saveAsCommit',
-  /** Every note is on the device, so the whole vault opens with no network. */
-  'wholeVaultOffline',
   /** A change made to the vault by another app shows up without a reload. */
   'fileWatching',
   /** Any folder on disk can be opened, or a repository cloned into one, as a vault. */
@@ -50,9 +53,7 @@ export const PLATFORM_CAPABILITIES = [
   'pdfExport',
   /** A picture of an artifact's first screen for its card. */
   'pageThumbnails',
-  /** A deleted entry goes to the system's Trash. */
-  'systemTrash',
-] as const;
+] as const);
 
 export type PlatformCapability = (typeof PLATFORM_CAPABILITIES)[number];
 
@@ -80,7 +81,6 @@ export const DESKTOP_CAPABILITIES: PlatformCapabilities = capabilitiesWithout(['
  */
 export const WEB_CAPABILITIES: PlatformCapabilities = capabilitiesWithout([
   'syncByGit',
-  'wholeVaultOffline',
   'fileWatching',
   'localFolderVault',
   'repoCreation',
@@ -98,7 +98,6 @@ export const WEB_CAPABILITIES: PlatformCapabilities = capabilitiesWithout([
   'googleDriveExport',
   'pdfExport',
   'pageThumbnails',
-  'systemTrash',
 ]);
 
 /** The capabilities a platform lacks, in the order they are listed, for saying what it cannot do. */
