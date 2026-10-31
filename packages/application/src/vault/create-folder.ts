@@ -105,7 +105,8 @@ export async function listVaultFolders({ fs }: { fs: VaultFsPort }): Promise<Vau
     const listings = await Promise.all(level.map((folder) => fs.listDirectory(folder)));
     level = listings
       .flat()
-      .filter((entry) => entry.kind === 'directory' && isVisibleEntry(entry))
+      // A link is not offered, nor walked into: a move into it is refused (#680).
+      .filter((entry) => entry.kind === 'directory' && entry.link !== true && isVisibleEntry(entry))
       .map((entry) => entry.path);
     found.push(...level);
   }

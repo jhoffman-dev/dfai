@@ -2,7 +2,9 @@ import {
   foldedVaultPath,
   moveDestination,
   landingRefusal,
+  moveIntoLinkRefusal,
   moveRefusal,
+  moveThroughLinkRefusal,
   nameClashes,
   nextAvailableFolderPath,
   nextAvailableNotePath,
@@ -19,6 +21,7 @@ import {
 import type { IndexPort } from '../index/ports.ts';
 import { forgetNotes } from '../index/refresh-index.ts';
 import { withDeclaredType } from './declared-type.ts';
+import { linkAbove, linkAtOrAbove } from './listed-links.ts';
 import type { OpenEditorsPort, VaultFsPort } from './ports.ts';
 
 /** What a move needs to reach: the files, the index and the open panes. */
@@ -85,7 +88,9 @@ async function forget(index: IndexPort, paths: readonly VaultPath[]): Promise<vo
 /**
  * Moves an entry to exactly `to`, a path its caller has already worked out —
  * archiving, which files a note under `Archive/` by rules of its own. The
- * folder `to` is in must already exist.
+ * folder `to` is in must already exist. Links on the way are not looked for
+ * here, which would list every folder above both paths on each note archived;
+ * the host refuses a move through a link before anything moves (#680).
  */
 export async function moveEntryTo(args: {
   ports: RelocationPorts;
@@ -94,6 +99,16 @@ export async function moveEntryTo(args: {
   notePaths: readonly VaultPath[];
 }): Promise<Relocation> {
   return relocate(args);
+}
+
+/**
+ * Refuses an entry reached through a link, which the host would move as what
+ * the link points at while every pane and link followed the path by the link
+ * (#680). The entry itself may be a link: that moves as the link.
+ */
+async function refuseThroughLink(fs: VaultFsPort, entry: MovableEntry): Promise<void> {
+  const link = await linkAbove(fs, entry.path);
+  if (link !== null) throw new MoveRefusedError(moveThroughLinkRefusal(link));
 }
 
 /** Moves an entry into `folder`, keeping its name. Refused by the domain's rules before anything moves. */
@@ -110,6 +125,9 @@ export async function moveEntryInto({
 }): Promise<Relocation> {
   const refusal = moveRefusal(entry, folder);
   if (refusal !== null) throw new MoveRefusedError(refusal);
+  await refuseThroughLink(ports.fs, entry);
+  const into = await linkAtOrAbove(ports.fs, folder);
+  if (into !== null) throw new MoveRefusedError(moveIntoLinkRefusal(into));
   return relocate({ ports, entry, to: moveDestination(entry, folder), notePaths });
 }
 
@@ -136,6 +154,7 @@ export async function renameEntry({
   if (refusal !== null) throw new MoveRefusedError(refusal);
   const templateRefusal = templateEditRefusal(entry.path);
   if (templateRefusal !== null) throw new MoveRefusedError(templateRefusal);
+  await refuseThroughLink(ports.fs, entry);
 
   const to = await renamedPath({ fs: ports.fs, entry, name, notePaths });
   if (to === entry.path) return null;
