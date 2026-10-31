@@ -1,0 +1,143 @@
+<!-- contents: Claude in DFAI -->
+    <section id="claude">
+      <h2>Claude in DFAI</h2>
+      <p class="sub">Ask Claude about your vault without leaving the app. It starts out knowing the page you're on, can search and read everything, and proposes changes you accept — it never writes on its own.</p>
+      <h3 id="ask">Ask</h3>
+      <p>Ask is where a question starts: a page of its own, like Today. Press <kbd>⌘J</kbd>, or <b>Ask</b> beside <b>Search</b> in the sidebar, and type. Before you ask, it lists your <b>Recent questions</b> (the chats kept in <code>Chats/</code>); pick one to carry it on. <kbd>⌘J</kbd> on Ask takes you back to where you were.</p>
+      <ul>
+        <li>Every answer links to the notes it came from. A link shows as a coloured chip: click it to open the note at that block, or <kbd>⌘</kbd>-click for a new tab. A highlight's chip opens in the reader.</li>
+        <li>A paragraph, list item or quote with no link is still shown, marked <i>not cited</i>, and the answer's foot counts them (<i>1 paragraph not cited</i>).</li>
+        <li>Answers are text only: the only links are to your notes and to <code>https://</code> addresses, which open in your browser. A link whose words don't name its site shows the site beside them.</li>
+        <li>Ask and the chat beside the page are one conversation, kept as a note in <code>Chats/</code>.</li>
+      </ul>
+      <h3>Open it</h3>
+      <ul>
+        <li>Press the spark button in any page's top bar (<b>Claude beside the page (⇧⌘J)</b>), or <kbd>⇧⌘J</kbd>. It opens in the <a href="#right-sidebar">right sidebar</a>, on its <b>Claude</b> tab; the same button, <kbd>⇧⌘J</kbd> or the chat's own <b>×</b> closes the sidebar. With the sidebar already open on another tab, <kbd>⇧⌘J</kbd> switches it to Claude. Not while a dialog is open.</li>
+        <li>What you have open comes along as a chip above the box: a note (its title, properties and text), a view (its first 20 rows), a dashboard (its widgets), or, on the Query page in <b>DFAI query</b>, the query you're writing and its first rows. The <b>×</b> on the chip (<b>Leave this out</b>) drops it.</li>
+        <li>Nothing needs turning on first: the chat doesn't use the Local API, only the way to Claude chosen in <a href="#claude-setup">Settings → Claude</a>.</li>
+      </ul>
+      <h3>Ask</h3>
+      <ul>
+        <li>Type in <b>Ask Claude…</b> and press <kbd>Return</kbd> (<kbd>⇧</kbd> <kbd>Return</kbd> for a new line). The answer streams in; <b>Stop</b> ends it.</li>
+        <li>Under an answer, <b>Copy</b> copies it; under the latest one, <b>Retry</b> asks again.</li>
+        <li>Answers are drawn as on <a href="#ask">Ask</a>: each link to a note is a coloured chip that opens the note at that block (<kbd>⌘</kbd>-click for a new tab), a paragraph, list item or quote with no link is marked <i>not cited</i>, and the answer's foot counts them (<i>1 paragraph not cited</i>). Long titles and words wrap to the sidebar's width.</li>
+      </ul>
+      <h3 id="chat-skill">Ask with a skill</h3>
+      <ul>
+        <li>Press <b>Skill</b> by the box (<b>Use a skill</b>) and pick one of your <a href="#skills">skills</a>, or type <code>/</code> and the start of its name and pick it from the list. You can also type <code>/weekly-review</code> and your question after it, like <code>/weekly-review What did I finish?</code>, and press <kbd>Return</kbd>. The skill shows as a chip above the box; its <b>×</b> (<b>Ask without this skill</b>) takes it off. While the list shows, <kbd>↓</kbd> and <kbd>↑</kbd> move through it from the box, <kbd>Return</kbd> picks the one marked, and <kbd>Esc</kbd> closes it; a screen reader hears how many skills match. A <code>/word</code> that isn't one of your skills — or any <code>/word</code> while the skills can't be read — is sent as you typed it. A <code>/name</code> question shows at once and holds the chat until it's asked, so nothing sent meanwhile overtakes it; <b>Stop</b> ends the wait at once, and the question stays as you typed it, for <b>Retry</b>. While the skills are still being read, the list says <i>Reading skills…</i> and <kbd>Return</kbd> waits rather than send what you typed.</li>
+        <li>Each question you ask while the chip is there is asked with the skill's instructions, read again each time, so an edit on the Skills page counts from the next question. Claude follows them within DFAI's own rules: its tools still only read, and a change is still a proposal you accept.</li>
+        <li>Only you attach a skill. Claude isn't shown your skills to pick from, and nothing in a note or a tool's answer can bring one in.</li>
+        <li>A skill that's gone, has a problem the Skills page shows, or is longer than 20,000 characters counting an emoji as two — the same limit as an <a href="#automation-claude">automation</a> — isn't asked with. The chip says why, like <i>“The skill weekly-review cannot be used: Its instructions are 20001 characters as Claude is handed them, an emoji counting as two; a prompt may be at most 20000.”</i>, and the question waits with <b>Retry</b> until you fix the skill or take the chip off. Claude isn't asked.</li>
+        <li>The chat's note says which skill each answer used: <i>“Used the skill weekly-review”</i>.</li>
+        <li>A skill stays with the conversation you attached it to. <b>New chat</b> starts without one, and a past chat you open again doesn't bring its skill back — attach it again if you want it.</li>
+        <li>Ask and the chat beside the page share the chip, as they share the conversation.</li>
+      </ul>
+      <h3>What Claude can do</h3>
+      <ul>
+        <li>Search and read everything with the same read-only tools a <a href="#connect">connected Claude</a> has over MCP: notes, types, backlinks, views, dashboards, queries, calendars, tags and the Archive. Each call shows in the conversation as a line, like <i>Searched for “…”</i> or <i>Ran the query “…”</i>.</li>
+        <li>Archived notes come only when you ask about them.</li>
+        <li><b>Never a whole huge folder.</b> Every list of notes it reads — here or through an <a href="#connect">MCP client</a> — is a page of at most 500, with the <code>total</code> and a cursor for the next page. Backlinks are paged too.</li>
+        <li>Ask about a day — <i>“what did today's meetings say?”</i> — and it lists that day's notes: those named for it, like <code>Meetings/2026/10/2026-10-14 Larkspur Standup.md</code>, and those whose <code>date</code> is that day. Search finds a note by the words of its title first, and by the day in its file name. If Claude asks for a note that isn't there, it's told the real notes with a name like it, so it never has to guess where one is filed.</li>
+        <li>It can't run automations, refresh sources or reach the web, and nothing it reads is changed.</li>
+        <li><b>It can draft for you</b>, as proposals: the tasks of a meeting (<a href="#ask-meeting-tasks">below</a>) and a dashboard or a view (<a href="#ask-dashboard">below</a>). Those wait in the <a href="#proposals">Inbox</a> until you answer them.</li>
+      </ul>
+      <h3 id="ask-meeting-tasks">Drafting tasks from a meeting</h3>
+      <p>Ask <i>“pull the tasks out of today's Larkspur Payroll sync”</i> and Claude runs the same reading the <a href="#meeting-extraction">meeting extraction</a> automation does, on that one meeting, now. You don't need the automation turned on.</p>
+      <ul>
+        <li>The conversation shows <i>Drafted the tasks of Meetings/2026-10-14 Larkspur Payroll sync.md as proposals</i>. Each item — yours, a waiting-for on someone else, a decision, a follow-up — is a proposal in the <a href="#proposals">Inbox</a>, citing the turn it came from, exactly as the automation's are. Nothing else is written: no task is made and the meeting isn't touched until you accept.</li>
+        <li><b>Ask again and nothing is proposed twice</b> — not what you already accepted or rejected, and not what the automation already proposed for that meeting. If the meeting's words haven't changed since Claude drafted it, Claude isn't asked again at all; once they change (a corrected transcript, say), it reads the meeting afresh.</li>
+        <li>It asks Claude as your Claude steps do, with the provider and model in <a href="#claude-setup">Settings → Claude</a>. A long meeting takes a while: if Claude is still reading after about 25 seconds, the conversation says it's still running, and the proposals turn up in the Inbox when it's done. If it fails then — Claude stopped, or you deleted the meeting or opened another vault meanwhile — DFAI says so in a notice and in <a href="#activity">Activity</a>, naming the meeting, and nothing is written.</li>
+        <li>A note that isn't a meeting is refused: <i>Tasks/Send it.md is not a meeting note.</i></li>
+        <li>A <a href="#connect">connected Claude</a> can do the same with <code>atlas_propose_tasks</code>.</li>
+      </ul>
+      <h3 id="ask-dashboard">Asking for a dashboard</h3>
+      <p>Ask <i>“build me a dashboard of my tasks by status”</i> — or a saved view, <i>“a board of open tasks”</i> — and Claude describes it and DFAI checks it the way the <a href="#dashboards">widget editor</a> and the <b>New view</b> dialog check yours. A dashboard lives in <code>.atlas/dashboards</code>, which nothing outside the app writes, so what Claude makes is a <b>proposal</b>:</p>
+      <ol class="steps">
+        <li>The conversation shows <i>Proposed the dashboard “Task board”</i>, and the <a href="#proposals">Inbox</a> has a <b>Dashboard</b> card listing each widget — its kind and title — and saying <i>Accepting makes it in .atlas/dashboards.</i> A view's card says its type and layout.</li>
+        <li><b>Accept</b> writes the dashboard and it appears under <b>Dashboards</b> in the sidebar. A dashboard of that name already there is left alone: the new one is <i>Task board 2</i>. <b>Edit</b> lets you rename it first. <b>Undo</b> takes it back out.</li>
+        <li><b>Reject</b> writes nothing.</li>
+      </ol>
+      <ul>
+        <li><b>A dashboard that wouldn't draw is never proposed.</b> If a widget counts a type your vault doesn't have, or a chart has nothing to group by, Claude is told exactly what the editor would tell you — <i>widgets[1]: A bar chart needs a property to group by.</i> — and fixes it before proposing. Accept checks again, in case you deleted a type since.</li>
+        <li><b>Read a query before you accept it.</b> The card shows each widget's filters (<i>status is inbox</i>), and a widget that runs SQL or a DFAI query shows it whole, in monospace — what you'd be accepting is exactly what's written.</li>
+        <li><b>No loose reading.</b> A filter DFAI can't read, a width that isn't a whole number of columns, an icon or chart style that doesn't exist, or a name with invisible characters is refused and Claude told why — never quietly dropped, which could make a tile count every note.</li>
+        <li>The same dashboard asked for twice is proposed once, and Claude is told what became of the first: still waiting, or accepted or rejected and when.</li>
+        <li>A <a href="#connect">connected Claude</a> can propose one with <code>atlas_make_dashboard</code>, but only <b>Accept</b> here in DFAI makes it: <code>atlas_accept_proposal</code> refuses a dashboard or view proposal.</li>
+      </ul>
+      <h3>Changes you accept</h3>
+      <p>When you ask for a change, Claude proposes it as a card — <b>Proposed edit</b> or <b>Proposed new note</b> — showing the full vault path it would write, any property changes, and the text as the note would show it: removed blocks struck through, added ones marked, unchanged runs folded (<i>3 unchanged blocks</i>).</p>
+      <ol class="steps">
+        <li>Nothing is written until you press <b>Accept</b>; <b>Reject</b> drops it. The buttons grey out while it writes, so one Accept is one write.</li>
+        <li><b>Accept</b> writes exactly what the card showed, at exactly that path.</li>
+        <li><b>Undo</b> on an accepted card puts the note back as it was, if nothing has written it since.</li>
+      </ol>
+      <p>A chat's cards live in the chat. What Claude proposes while you're away waits as a note in the <a href="#proposals">Inbox</a> instead, answered the same way.</p>
+      <div class="note"><b>When Accept refuses.</b> If the note changed after the proposal, the card says <i>&lt;note&gt; changed since this was proposed; nothing was written.</i> If it's open with typing not yet saved: <i>&lt;note&gt; has unsaved typing; save it first, so nothing you typed is written over.</i> Nothing can be proposed into <code>.atlas</code>, any other hidden folder, or <code>Chats/</code>. A tool call Claude shows inside a code block is shown as an example, not run.</div>
+      <ul>
+        <li>Cards sit in the conversation, which scrolls on its own; the window doesn't.</li>
+        <li>If a proposal can't be made, the conversation says so, with the reason: <i>Could not propose an edit to &lt;path&gt;</i> or <i>Could not propose a new note, “&lt;title&gt;”</i>. The chat's note keeps it as a line: <code>&gt; Could not propose an edit to X: &lt;reason&gt;</code>.</li>
+        <li>A chat reopened from <b>Past chats</b> shows its past proposals as lines only, with no card. To get a card, ask again.</li>
+      </ul>
+      <h3>Chats</h3>
+      <ul>
+        <li>Each chat is saved as a note in <code>Chats/</code>, named from the first words you asked. After the first turn DFAI only adds to it, so anything you edit in an old chat is kept.</li>
+        <li><b>Past chats</b> in the pane's header lists them and reopens one; <b>New chat</b> starts over.</li>
+        <li>If a past chat's note is gone (deleted or moved since the list was read), picking it says <i>That chat could not be opened: …</i> and the list is read again, so the row goes. A list that can't be read says <i>Past chats could not be read: …</i>.</li>
+        <li>While an answer is still arriving, the Past chats rows are greyed out (<i>Wait for the answer to finish</i>); press <b>Stop</b> or let it finish first.</li>
+        <li>If a chat can't be saved, the pane says <i>The chat could not be saved to Chats/: …</i> and the reason.</li>
+      </ul>
+      <h3 id="profile">Your name (Settings → Profile)</h3>
+      <p>Settings (<kbd>⌘,</kbd>) → <b>Profile</b> has two fields: <b>Full name</b>, the way you want it written, and <b>Preferred name</b> — <i>What you go by, if it is not your first name</i>. Press <kbd>Return</kbd> or leave the field to save it; <kbd>Esc</kbd> puts back what it held.</p>
+      <ul>
+        <li>The name is kept in this vault's settings (<code>.atlas/settings.md</code>), not on this Mac, so every Mac that <a href="#sync">syncs</a> the vault has it. Set it once.</li>
+        <li>Clearing a field removes the name; it isn't saved as a blank. Changing one leaves the other as the file holds it.</li>
+        <li>Invisible characters (zero-width spaces, direction marks and the like) and line breaks are dropped, and a name is cut at 100 characters, never halfway through an emoji or a flag.</li>
+        <li>Until the vault's settings have been read, both fields are greyed out and the line under <b>Full name</b> says <i>Not read yet: Claude asks for your name</i>. With no full name it says <i>Not set: Claude writes “[Your name]” rather than guess one</i>; with one, <i>What Claude writes for you</i>. If the name can't be read or saved, the reason shows under the fields.</li>
+      </ul>
+      <p>What Claude does with it:</p>
+      <ul>
+        <li><b>A full name is set:</b> Claude uses exactly that name wherever a note needs yours — an owner, author, assignee, attendee or signature — never another spelling of it.</li>
+        <li><b>No full name:</b> it writes <code>[Your name]</code> there, or asks you. A preferred name alone isn't enough for this.</li>
+        <li><b>DFAI can't read the name yet</b> (the settings aren't read, or can't be): it asks you rather than writing <code>[Your name]</code>, since you may well have set one.</li>
+        <li>It never guesses a name — not from your username, an email address, a folder path or anything else. A name set mid-chat counts from the next question.</li>
+      </ul>
+      <p>While no full name is set — even if a preferred name is — an empty chat says <i>Claude doesn’t know your name, so where a note needs it, it writes “[Your name]” rather than guess.</i>, with a <b>Set your name</b> button that opens Settings.</p>
+      <h3 id="profile-emails">Your emails (Settings → Profile)</h3>
+      <p>Under your name, <b>Your emails</b> holds the addresses that are you in a meeting. DFAI knows you by these as well as by your name: an attendee at one of them is you — never proposed as someone new — so are the action items they take on, and in a Granola meeting you own, “me” is written as <b>You</b>. DFAI never makes one up: not from your name, your username or a folder path.</p>
+      <ul>
+        <li><b>Type them; they save as you go.</b> There's no Save button: what you type is saved once you pause, and when you leave the field (or close Settings), and the line under it says <i>Saved</i> — or <i>Couldn’t save: …</i> with why. The field takes several lines: one address on each line, or separated with commas or semicolons. A pasted <i>Mara Quill &lt;mara.quill@example.com&gt;</i> or <i>"Quill, Mara" &lt;mara.quill@example.com&gt;</i> keeps just the address (the name may sit on the line above it), and addresses are kept in lower case. If something you typed isn't an address — a stray word, or an invisible character a copy brought with it — the card names it and saves nothing until you fix it. If the save itself fails, what you typed stays in the field and the reason shows under it; leave the field again to try again. More than 10 KB of text is refused without being read.</li>
+        <li><b>Accents and international domains match however they arrive.</b> <code>rén@example.com</code> typed with a separate accent, or <code>mara@bücher.example</code> sent as <code>mara@xn--bcher-kva.example</code>, is the same address.</li>
+        <li><b>Until you save some</b>, the addresses on your own Person note — the one your full name names — are you, everywhere DFAI asks: linking, whose an action item is, and a Granola meeting's “me”. The field shows them with <i>In use from your Person note</i>; nothing needs pressing for them to count. Once you save addresses here (or while <code>granola_self_emails</code> holds some), only those count.</li>
+        <li><b>They're kept in the vault's settings</b> (<code>selfEmails</code> in <code>.atlas/settings.md</code>), beside your name, so every Mac that syncs the vault has them. Emptying the field removes the setting, and your Person note's addresses are used again.</li>
+        <li><b>Set them in Settings → Granola before?</b> Those (<code>granola_self_emails</code>) are still used while <code>selfEmails</code> is empty, and the field shows them with <i>In use from granola_self_emails</i>. Edit them here to move them: the same save writes <code>selfEmails</code> and removes <code>granola_self_emails</code>. Empty the field to remove them both.</li>
+        <li><b>An address here is you even if it looks like a group</b> (<code>team@…</code>): DFAI takes your word for it, links you, and never reads that attendee as a group.</li>
+        <li><b>With none set</b>, and no Person note of yours, DFAI knows you by your name alone.</li>
+        <li><b>If n8n maps Granola meetings too</b>, change the addresses in both places: here, and <code>selfEmails</code> in the <code>OPTIONS</code> of the n8n Code node that maps them (<a href="https://github.com/jhoffman-dev/dfai/tree/main/tools/n8n">tools/n8n</a>). Both must hold the same addresses, or the same meeting is written two ways and becomes a sync conflict copy. Nothing checks this for you.</li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">You see</th><th scope="col">What it means</th></tr></thead>
+          <tbody>
+            <tr><td><i>Your emails in settings could not be read</i></td><td>The settings note holds something under <code>selfEmails</code> (or, while that is empty, <code>granola_self_emails</code>) that isn't all addresses — usually a hand edit. Until it's fixed DFAI uses no address at all, not even the readable ones, and the card names what it couldn't read. Type your addresses into <i>Your emails</i> (they save as you go), or fix the note.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="claude-setup">Set it up (Settings → Claude)</h3>
+      <p>Settings (<kbd>⌘,</kbd>) → <b>Claude</b> → <b>Reach Claude through</b>: <b>Claude Code</b> (the default) or <b>API key</b>. The line under it says <b>Ready</b>, or what's wrong and the command that fixes it. The choice is kept on this Mac, not in the vault.</p>
+      <div class="grid2">
+        <div class="card"><h4>Claude Code</h4><p>Runs through the Claude Code you installed and logged into, so DFAI never sees your login. It runs locked down: none of Claude Code's own tools, no settings, hooks or MCP servers, started away from any project, and only from where Claude Code installs.</p></div>
+        <div class="card"><h4>API key</h4><p>An Anthropic API key kept as a <a href="#sources">secret</a> named <code>anthropic</code>, bound to <code>api.anthropic.com</code>; then choose <b>API key</b> here. Answers arrive whole rather than word by word.</p></div>
+      </div>
+      <p>If Claude Code isn't installed: <i>Claude Code is not installed on this Mac, or not where DFAI looks for it.</i> Install it with</p>
+      <pre>curl -fsSL https://claude.ai/install.sh | bash</pre>
+      <button type="button" class="copy" data-copy="curl -fsSL https://claude.ai/install.sh | bash">Copy</button>
+      <p style="margin-top:12px">If it isn't logged in: <i>Claude Code is installed but not logged in.</i> Log in with</p>
+      <pre>claude auth login</pre>
+      <button type="button" class="copy" data-copy="claude auth login">Copy</button>
+      <p style="margin-top:12px">The chat pane shows the same message and command, with its own copy button. With an API key and none set: <i>No Anthropic API key is set for this vault.</i> — or, if the secret goes elsewhere, <i>The "anthropic" secret is not bound to api.anthropic.com.</i></p>
+      <ul>
+        <li><b>Time limits.</b> Checking Claude Code gets 15 seconds (<i>Claude Code did not say whether it is logged in within 15 seconds.</i>); each round of an answer gets 10 minutes (<i>Claude Code did not finish within 10 minutes.</i>).</li>
+        <li><b>Model.</b> Blank means <code>claude-opus-5-5</code>; type another model's name in <b>Model</b> to use it. The pane's header shows which.</li>
+      </ul>
+      <p class="muted">Not yet: formatted answers, pictures in a proposed change's before and after, and the query as context when the Query page is in SQL.</p>
+    </section>

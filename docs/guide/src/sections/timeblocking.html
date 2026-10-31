@@ -1,0 +1,59 @@
+<!-- contents: Timeblocking -->
+    <section id="timeblocking">
+      <h2>Timeblocking</h2>
+      <p class="sub">Set time aside on the calendar for your tasks: one block for a big task, or one block that several small tasks are pushed into. Each task shows how much of its estimate is scheduled.</p>
+      <h3>Blocks</h3>
+      <ul>
+        <li>A block is a note of the <b>Block</b> type: <b>Start</b> and <b>End</b>, each a day and a time (<code>2026-10-12T09:00</code>), and <b>Tasks</b>, the tasks it holds. Make one like any note of a type, with <b>New block</b> on the Block type's page.</li>
+        <li>DFAI adds the Block type once your tasks follow <a href="#tasks">GTD</a> — when the vault opens, or as soon as you move your tasks — and says so in <a href="#activity">Activity</a>. A Block type you already have is left as it is, and it can't be deleted — its properties are yours to change.</li>
+        <li>A block also keeps the Google Calendar event it syncs with (<b>Google event</b>, <b>Google version</b>, <b>Google calendar</b>, <b>Deleted in Google</b>, and the <b>Title</b>, <b>Start</b> and <b>End agreed with Google</b>); leave them alone. See <a href="#blocks-on-google">Blocks on Google Calendar</a>.</li>
+      </ul>
+      <h3>Plan the day</h3>
+      <p>Open the <b>Block</b> type, add a view with <b>+</b> and choose <b>Calendar</b>: each block sits on the clock from its start to its end. In <b>Week</b>, <b>3 days</b> or <b>Day</b>, your <b>Next actions</b> stand beside the clock, each with <i>1h of 2h scheduled</i> under its name. What you <a href="#today">chose for today</a> comes first, marked <i>Chosen for today</i>, whatever its status, then the rest. In each part, the tasks with no time set aside yet are at the top.</p>
+      <ul>
+        <li><b>Drag a task onto empty time</b> to make a block for it, starting on the quarter hour you let go in and as long as the task still needs — its estimate less what its blocks already give it (half an hour if it has no estimate, or already has all it needs; a day at most). The block is named after the task — <i>Quarterly report block</i> — and uses your <b>Block</b> <a href="#templates">template</a> if you have one.</li>
+        <li><b>Drag a task onto a block</b> to add it to the block's tasks. The block then shares its time among them, as the table below says. A block that already holds the task is left as it is.</li>
+        <li><b>Split a task</b> by dragging it again: the next block is sized to what is left. Shorten the first block from its bottom edge, and the next drag fills the rest.</li>
+        <li><b>Undo</b>, beside the last drop, takes it back: a block it made goes to the Trash — unless you've changed it since, or are typing in it, which DFAI tells you and leaves — and a task it added to a block comes out again.</li>
+        <li><b>Keyboard:</b> <kbd>Tab</kbd> to a task and press <kbd>Return</kbd> (or click it). Focus goes to 9:00 today, or on the first day shown; <kbd>↑</kbd> <kbd>↓</kbd> move through the hours and <kbd>Tab</kbd> to the next day, or to a block. <kbd>Return</kbd> places the task there; <kbd>Esc</kbd> puts it back.</li>
+        <li>Press <kbd>Esc</kbd> during a drag to cancel it: nothing is written. The clock doesn't scroll while you drag a task, so scroll to the part of the day first.</li>
+      </ul>
+      <h3>Scheduled, estimate and done</h3>
+      <p>A task's page shows, under its properties, <b>Scheduled</b> — <i>1h 30m of 2h</i> — and <b>Done</b> — <i>0m of 2h</i>. Both follow from the blocks and the status, so there is nothing to type.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>The block holds</th><th>What each task gets</th></tr></thead>
+          <tbody>
+            <tr><td>One task</td><td>The whole block, whatever its estimate.</td></tr>
+            <tr><td>Several tasks that need the whole block or more</td><td>A share in proportion to what each has left of its estimate. An hour with three 20-minute tasks gives each 20m.</td></tr>
+            <tr><td>Several tasks that need less</td><td>What each has left; the rest goes in equal parts to the tasks with no estimate, or stays free.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>Split a big task</b> by putting it in several blocks: a 2-hour task in blocks of 1h, 30m and 30m reads <i>2h of 2h</i>.</li>
+        <li><b>Over-scheduled</b>: more time than the estimate says so — <i>30m over the estimate</i>. Two blocks that overlap both count, so a task in both shows up this way.</li>
+        <li><b>Done</b> is all of the estimate once the task is finished (in <b>Archive</b>), none before. A finished task has nothing left, so a block of several gives it no more time.</li>
+        <li><b>Estimate</b> is in minutes. A vault that keeps its own text estimates can write <code>2h</code> or <code>1h30m</code>; a day or a week (<code>1d</code>) is read as no estimate, since only you know how many hours your day holds. A task with no estimate shows the time scheduled alone.</li>
+        <li>Times are read as written, on the wall clock. A block from 23:45 to 00:15 is half an hour, into the next day; one across a daylight-saving change is as long as the clock says. A block without a time at both ends, or ending before it starts, gives no time to anything.</li>
+      </ul>
+      <h3 id="blocks-on-google">Blocks on Google Calendar</h3>
+      <p>Your blocks can show as <b>busy</b> on your real Google Calendar, so colleagues see the time is taken. Moving a block on either side moves the other.</p>
+      <ol>
+        <li><a href="#google-calendar">Connect Google Calendar</a> and choose the calendar for blocks — press <b>Create “DFAI blocks”</b> to have DFAI make one. Blocks go only to that calendar, never to your main calendar or any other.</li>
+        <li>In Settings → <b>Google Calendar</b> → <b>Blocks</b>, press <b>Sync blocks with Google Calendar</b>. No new permission is asked for: the sign-in already lets DFAI change the calendars it made, and nothing else. (If your sign-in is missing that permission, your browser asks for it once.)</li>
+      </ol>
+      <ul>
+        <li>DFAI syncs every 15 minutes while the vault is open, and when you press <b>Sync blocks now</b>. Only the Mac that runs the vault's automations (Settings → <b>Sync</b>) talks to Google; your other Mac sees the changes when sync brings them.</li>
+        <li>A new block becomes an event named after the block, from its start to its end. A block needs a time at both ends, the end after the start; DFAI says in <a href="#activity">Activity</a> when one can't go on the calendar. Blocks that started more than two weeks ago stay off Google.</li>
+        <li>Move or rename a block in DFAI and its event follows. Move the event in Google Calendar and the block's <b>Start</b> and <b>End</b> follow. Changing anything else on the event in Google — its description, colour or reminders — never undoes a move you made in DFAI. An event renamed in Google gets the block's name back, in the same sync: rename the block in DFAI instead.</li>
+        <li>Moved on both sides since the last sync? Google's time is kept, and Activity says so for that block. Each block remembers the time both sides last agreed on (the <code>gcal_synced_</code> fields), so this works the same whichever Mac runs the sync, even one that has never synced before.</li>
+        <li>A move that never reached Google — the Mac was offline, or you pressed Stop — is marked <b>Waiting for Google</b> (<code>gcal_pending</code>) and sent again at the next sync. It's never quietly undone: if the event was changed in Google meanwhile, Google's time is kept and Activity says so for that block.</li>
+        <li>A block's times mean the same clock as your meetings: your main Google calendar's time zone, or the Mac's if DFAI can't read it. If the vault doesn't read meetings, the block sync keeps that zone in the vault's settings (<code>google_plan_zone</code>) instead. A block at 9:00 and a meeting at 9:00 on Today are at the same time. If that zone changes (you moved your main calendar to another zone, say), Activity says so once, with how far the blocks' times moved on this Mac.</li>
+        <li>Delete the event in Google and the block is kept, marked <b>Deleted in Google</b> (<code>gcal_missing</code>), and no longer synced. Deleting a block in DFAI never deletes its event — delete it in Google Calendar.</li>
+        <li>DFAI only ever writes a block's times and its <code>gcal_</code> fields (<b>Google event</b>, <b>Google version</b>, <b>Google calendar</b>, <b>Deleted in Google</b>, <b>Waiting for Google</b>, and what was agreed with Google). Turning on block sync also gives the vault an id of its own (<code>vault_id</code> in its settings), so two vaults syncing to one calendar never share an event. A vault whose block sync was turned on before this has no id yet: turn <b>Sync blocks with Google Calendar</b> off and on again to give it one. Its body, tasks and your own fields are never touched, and a block is never deleted or renamed.</li>
+        <li>A block that won't sync — Google can't be reached, say — is named in Activity, and the others still sync; the next sync tries it again. <b>Stop syncing blocks</b> takes effect at once on this Mac. If you save a block while a sync is writing it, your edit is what both sides end on.</li>
+        <li>Copy a block — duplicate it in Finder, or copy an old one into this week — and the copy becomes a block of its own with its own event, at the next sync. The original keeps its event, however old it is, and is never moved by the copy — even when you renamed it too: a note named like a copy of another (<i>Retro copy</i> beside <i>Retro</i>, <i>Sprint 2</i> beside <i>Sprint</i>) never takes the event from it. A name that just ends in a number, like <i>Week 43</i>, counts for nothing. Activity says which note was the copy. A copy dated more than two weeks back stays off Google.</li>
+      </ul>
+      <p class="muted">The <a href="#connect">Local API and MCP</a> see a block's sync state among its properties. They can't call Google, and there is no way to sync through them.</p>
+    </section>

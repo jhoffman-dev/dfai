@@ -1,0 +1,61 @@
+<!-- contents: Set up a second Mac -->
+    <section id="two-macs">
+      <h2>Set up a second Mac</h2>
+      <p class="sub">A checklist for running DFAI on two Macs with one vault: install, open the same synced vault, set what each Mac keeps for itself, decide which Mac runs automations and the meeting import, and check it worked. It assumes the first Mac already <a href="#sync">syncs</a> the vault.</p>
+      <h3>On the first Mac, before you start</h3>
+      <ul>
+        <li>Settings (<kbd>⌘,</kbd>) → <b>Sync</b> says <i>“Sync set up: this vault now syncs with its GitHub repository.”</i>, and the light at the bottom of the sidebar says <b>Synced</b>. Press <b>Sync now</b> so the second Mac starts from everything.</li>
+        <li>Note whether <b>Run automations on this Mac</b> is on. The Mac that set up sync first has it.</li>
+      </ul>
+      <h3>1. Install DFAI on the second Mac</h3>
+      <ol class="steps">
+        <li>Install the tools, once: <code>xcode-select --install</code>; <a href="https://brew.sh">Homebrew</a>; <code>brew install node@22 pnpm gh</code>; Rust with the rustup installer (<code>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh</code>, accept the default). The README's <b>Prerequisites</b> has the details.</li>
+        <li>Log in to GitHub, which sync uses: <code>gh auth login</code>, then <code>gh auth setup-git</code>.</li>
+        <li>Get DFAI and start it. The first build takes a few minutes.</li>
+      </ol>
+      <pre>git clone https://github.com/jhoffman-dev/dfai.git ~/Projects/atlas
+cd ~/Projects/atlas
+pnpm install
+pnpm tauri:dev</pre>
+      <button type="button" class="copy" data-copy="git clone https://github.com/jhoffman-dev/dfai.git ~/Projects/atlas&#10;cd ~/Projects/atlas&#10;pnpm install&#10;pnpm tauri:dev">Copy</button>
+      <h3>2. Open the same vault</h3>
+      <ol class="steps">
+        <li>On <b>Open a vault</b>, press <b>Open a vault from GitHub…</b> — or, with a vault already open, the vault's name → <b>Open a vault from GitHub…</b>.</li>
+        <li>Paste the vault repository's address from GitHub's <b>Code</b> button (the plain address — one with a token in it is refused).</li>
+        <li><b>Choose folder…</b>: somewhere outside the DFAI folder and outside any other git repository, such as <code>~/Vaults</code>. DFAI copies the vault there and opens it; the search index builds itself.</li>
+      </ol>
+      <div class="note"><b>One way to sync, not two.</b> Don't copy the vault across by hand, or keep it in iCloud Drive or Dropbox as well: two syncs writing the same files make conflicts. GitHub, through DFAI, is the one.</div>
+      <h3>3. Set what each Mac keeps for itself</h3>
+      <p>The vault brings its notes, types, views, templates, automations and the vault's settings (quick add types, your profile, which Google calendar). These stay on each Mac and need doing again:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What</th><th scope="col">On the second Mac</th></tr></thead>
+          <tbody>
+            <tr><td>GitHub login</td><td><code>gh auth login</code> and <code>gh auth setup-git</code> in Terminal (step 1).</td></tr>
+            <tr><td><a href="#sources">Secrets</a></td><td>Settings → <b>Secrets</b>: <b>Set…</b> each one marked <i>not set on this Mac</i>, with its sites. They live in this Mac's Keychain.</td></tr>
+            <tr><td><a href="#google-calendar">Google Calendar</a></td><td>Settings → <b>Google Calendar</b>: sign in. The client ID and the calendar come with the vault.</td></tr>
+            <tr><td><a href="#claude">Claude</a></td><td>Log in to Claude Code on this Mac, or set the API key in Settings → <b>Claude</b>.</td></tr>
+            <tr><td><a href="#connect">Local API and MCP</a></td><td>Settings → <b>Connections</b>: turn it on if you want it here, then <code>claude mcp add</code> on this Mac. Each Mac has its own token.</td></tr>
+            <tr><td><a href="#capture-anywhere">Quick capture from anywhere</a></td><td><kbd>⌃⌥N</kbd> from the start. If a press doesn't bring DFAI forward — another app on this Mac may use the same keys, which DFAI can't always tell — choose other keys.</td></tr>
+            <tr><td>Sync</td><td><b>Pause sync on this Mac</b> stops this Mac only.</td></tr>
+            <tr><td>Look</td><td>The theme (and <b>Match system</b>) and where pictures go are each Mac's own.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>4. Choose the Mac that runs automations and the meeting import</h3>
+      <ul>
+        <li><b>One Mac does both.</b> <a href="#automations">Automations</a> and the <a href="#meeting-import">meeting import</a> run only on the Mac with <b>Run automations on this Mac</b> on, so two Macs never run the same rule. Connecting the second Mac leaves them where they are. The other Mac's Inbox says how many meetings are waiting for this one, with <b>Process here</b> to move them (see <a href="#meeting-import">the meeting import</a>).</li>
+        <li><b>Pick the Mac that is awake most of the day.</b> n8n sends each meeting to the Mac it runs on, and that Mac's DFAI, open with the Local API on, writes it into the vault. The importing Mac files it in the Inbox at its next pull after the file reaches it — within a minute or so if it's the same Mac, otherwise once sync brings it over.</li>
+        <li><b>It waits for a pull after starting or waking.</b> Even the chosen Mac imports nothing, and runs no Claude rule, until a pull has finished since DFAI started or the Mac last woke, and the settings that pull brought still name it. After a night asleep it catches up as soon as that first pull is done. While <b>Pause sync on this Mac</b> is on, it waits; Settings → Sync says so.</li>
+        <li><b>To move them</b>, turn on <b>Run automations on this Mac</b> in Settings → Sync on the Mac you want. Until the other Mac next syncs and reads that, both may import a meeting; they come to the same answer for every file, and sync keeps both if they write the same one. A Mac that was asleep when you moved them reads it at its first pull after waking, before it imports anything.</li>
+      </ul>
+      <h3>5. Check it on the second Mac</h3>
+      <ol class="steps">
+        <li>The light says <b>Synced</b>, and the sidebar shows the same notes, types and views as the first Mac.</li>
+        <li>Press <kbd>⇧⌘D</kbd>: <a href="#daily">today's note</a> opens — the same one the first Mac made today, once it has synced; made here otherwise.</li>
+        <li>From another app, press <kbd>⌃⌥N</kbd>, type a line and press <kbd>Return</kbd>: it's in the Inbox here, and on the first Mac within a couple of minutes.</li>
+        <li>Edit a note on the first Mac; it appears here within about a minute, or at once with <b>Sync now</b>.</li>
+        <li>Settings → Sync on each Mac: <b>Run automations on this Mac</b> is on on exactly one of them.</li>
+        <li>The light never says <b>Sync failed</b> or <b>N conflicts</b>; if it does, click it — Settings → Sync says what happened.</li>
+      </ol>
+    </section>

@@ -1,0 +1,37 @@
+<!-- contents: Where notes live -->
+    <section id="home-folders">
+      <h2>Where notes live</h2>
+      <p class="sub">Every type has a home folder. A new note of a type goes there, whatever note is open. What it's filed under is a link, not a folder.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">Home, unless its type file says otherwise</th></tr></thead>
+          <tbody>
+            <tr><td>Task</td><td><code>Tasks/{YYYY}/{MM}</code></td></tr>
+            <tr><td>Meeting</td><td><code>Meetings/{YYYY}/{MM}</code></td></tr>
+            <tr><td>Daily</td><td><code>Daily/{YYYY}</code></td></tr>
+            <tr><td>Person</td><td><code>People</code></td></tr>
+            <tr><td>Company</td><td><code>Companies</code></td></tr>
+            <tr><td>Project, Area, Resource</td><td><code>Projects</code></td></tr>
+            <tr><td>Notes, and a note with no type when it's filed or tidied</td><td><code>Notes/{YYYY}</code></td></tr>
+            <tr><td>Proposal</td><td><code>Inbox/Proposals</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>Change a home</b> with <code>folder:</code> in the type's file in <code>.atlas/types</code> — <code>folder: Work/Tasks/{YYYY}</code>. <code>{YYYY}</code> and <code>{MM}</code> come from the note's own <code>date</code>, else a date its file name starts with, else today. A blank <code>folder:</code> means no home: its notes go where they always did.</li>
+        <li>A folder DFAI can't use — an unknown token, outside the vault, in <code>.atlas</code>, hidden, the Archive, too deep — is ignored, not refused.</li>
+        <li><b>Every way of making a typed note uses it:</b> a template, a view's <b>+ New</b> or a board card, <b>New &lt;type&gt;…</b> in a relation, a type's table, <a href="#tasks">Make task</a> on a checklist line, a task from a meeting's action item or an accepted proposal, <a href="#connect">quick add</a> through the API and MCP, and <code>POST /v1/notes</code> with no folder. A decision has no home and goes at the top.</li>
+        <li><b>A folder you choose wins.</b> <b>New note here</b> on a folder puts it there; quick capture (<kbd>⇧⌘N</kbd>) puts it in the <code>Inbox</code>. A plain note with no type still goes beside the note you're on, or at the top.</li>
+      </ul>
+      <h3>Tidy the vault, once</h3>
+      <p>A vault from before home folders is offered a tidy on the <a href="#para">Inbox page</a>: <i>“Every type has a home folder now. 212 notes could move to theirs, out of the root of the vault and the old Inbox/Meetings.”</i></p>
+      <ol class="steps">
+        <li>Press <b>Preview the tidy</b>. Nothing is written yet.</li>
+        <li>Check the list: each note, <b>Now</b> → <b>Moves to</b>. Under <b>Left where they are</b>, each note that stays and why — its home already has a note by that name; two notes would land on the same path (refused, never renamed: rename one first); or a meeting the import hasn't let in yet.</li>
+        <li>Press <b>Move N notes</b>, or <b>Cancel</b>. It moves notes loose at the top of the vault to their homes, and imported meetings from <code>Inbox/Meetings</code> to their months, rewriting links so every link and relation opens the same note.</li>
+      </ol>
+      <ul>
+        <li>Activity gets <i>“Tidied the vault: moved 212 notes to their home folders”</i>, and a warning for each note left as it was.</li>
+        <li>Running it again moves nothing. <b>Not now</b> hides it until the vault is opened again.</li>
+      </ul>
+    </section>

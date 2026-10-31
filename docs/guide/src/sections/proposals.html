@@ -1,0 +1,53 @@
+<!-- contents: Proposals in the Inbox -->
+    <section id="proposals">
+      <h2>The Inbox: what Claude proposes</h2>
+      <p class="sub">Claude never edits a note on its own. What it — or an automation — suggests lands as a <b>proposal</b>, a note waiting in <code>Inbox/Proposals</code>, and nothing it proposes is written until you accept it.</p>
+      <h3>Open the proposals</h3>
+      <ol class="steps">
+        <li>Open the <a href="#para">Inbox</a>: proposals are its <b>Proposals</b> section, above the notes waiting to be filed. The section shows while something waits for an answer, and the Inbox's count includes them.</li>
+        <li>Each card says what it would make — <i>TASK · Send Mara the payroll file</i> — with why it was proposed and what it would write under it, how sure its maker was (a <i>High</i>, <i>Medium</i> or <i>Low</i> pill; a <i>Low</i> row has a coloured edge, so you check it first), and the line it came from: click <b>[[2026-10-01 Standup#^t0003]]</b> and the meeting opens at that line. A proposal that cites nothing says <b>Cites no source</b>, so you know to check it yourself.</li>
+        <li>Answer it: <b>Accept</b>, <b>Edit</b> or <b>Reject</b> — each in its own colour on the row, so they are told apart at a glance.</li>
+      </ol>
+      <h3>Pick one, filter, accept the sure ones</h3>
+      <ul>
+        <li><b>Proposals that disagree are one question.</b> Two proposals conflict when they are of the same kind, from the same line (or the same meeting), for the same slot — the <b>owner</b> of one meeting, say — but say different things: three links for one “Mara Quill”, or two projects for one meeting. They show as one row, <i>Which link for owner of 2026-10-16 Platform Standup?</i>, with a radio per answer. <b>Accept choice</b> accepts the one you picked and, only once that is written, rejects the rest; if the accept is refused nothing is rejected and the question stays. One <b>Undo</b> takes the accept back and opens the others again. <b>Reject all</b> rejects every one. Links to the same note count as one answer however they are written (<i>[[Mara Quill]]</i>, <i>[[mara quill|Mara]]</i>), and the same answer proposed twice shows as one card: accepting it rejects the copy, and <b>Accept all high confidence</b> takes it once. A relation that holds many notes (a meeting's <b>people</b>) is never a question: each proposal for it is its own card. Different slots never conflict, and nothing about a question is saved: it is worked out from what is open each time.</li>
+        <li><b>Filters.</b> <b>All</b>, <b>High confidence</b> (the sure ones that need no choice) and <b>Needs a choice</b> (the questions) narrow the list; the count beside the heading stays the whole.</li>
+        <li><b>Accept all high confidence</b> accepts every high-confidence proposal that needs no choice, as one run, with one Undo; it shows only while there is one.</li>
+      </ul>
+      <h3>What each answer does</h3>
+      <ul>
+        <li><b>Accept</b> writes what the card shows and files the proposal in the <a href="#archive">Archive</a> with <code>state: accepted</code> and <code>answered_via: app</code> — <code>api</code> when Claude answered it for you through the <a href="#connect">Local API</a>, so the Archive keeps who said yes. The card leaves at once and the next one can be answered straight away; what it makes is written behind it. Answered from the keyboard, the focus moves to the next card, so <kbd>Enter</kbd> on the next Accept is all it takes. Closing the window waits for answers still being written. The <a href="#undo">box at the bottom right</a> says <i>“Accepted: Send Mara the payroll file.”</i> with <b>Open Send Mara the payroll file</b> to go to it, and <b>Undo</b>. If the write fails, the card comes back with why on it, still waiting for an answer.</li>
+        <li><b>Edit</b> opens what it would write — the title, each property, the body (for a link, just the link) — so you can change it, then <b>Accept as edited</b>. A list shows as items with commas between; an item holding a comma of its own is in double quotes (<code>"[[Larkspur Payroll, Inc.]]", [[Fenn &amp; Co]]</code>). A property you don't touch is written exactly as proposed. <b>Cancel</b> leaves it as it was. The proposal is archived with your edit, so the Archive shows what was actually accepted.</li>
+        <li><b>Reject</b> writes nothing it proposed and files it in the Archive with <code>state: rejected</code> — kept, never deleted.</li>
+        <li><b>Several at once.</b> With two or more waiting, each card has a box: tick the ones you want — <kbd>Shift</kbd>-click a second box to take every card between — or <b>Select all</b>. The bar says <i>3 selected</i> with <b>Accept 3 proposals</b>, <b>Reject 3 proposals</b> and <b>Clear</b>. Each is answered in turn exactly as its own Accept or Reject would; one that can't be stays on the list, still ticked, with why on its card — and any card you tick while they are written stays ticked too — and the box says so — <i>“Accepted 2 proposals. 1 was not: its card says why.”</i> One <b>Undo</b> takes back every accept in the batch.</li>
+        <li><b>Undo</b> after an accept takes away what it made — if nothing has changed it since — and puts the proposal back, open again. The box goes by itself after 5 seconds (it waits while the pointer is on it or the focus is in it), and once it has gone so has the undo; a newer answer's box takes its place. Each box's Undo takes back the accept it names: an undo still being written never takes away a later accept's Undo. A reject is said too, with no Undo. Something that failed with nothing to undo — an undo that could not be done — is said at the top of the proposals instead, and stays until you press <b>×</b>.</li>
+      </ul>
+      <h3>What a proposal can make</h3>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td>Task, Follow-up</td><td>A new task, with <code>source</code> linking the line it came from and <code>meeting</code> linking the meeting the proposal names — whatever made it from a meeting says which. A follow-up is a task to chase someone.</td></tr>
+            <tr><td>Decision</td><td>A new note of the built-in <b>Decision</b> type — title, date, meeting, project, people — citing its line the same way.</td></tr>
+            <tr><td>Person, Term, Project</td><td>A new note of that type. A person proposed from a <a href="#meeting-links">meeting</a> is added to that meeting's <b>People</b> too.</td></tr>
+            <tr><td>Dashboard, View</td><td>A new dashboard in <code>.atlas/dashboards</code>, or a saved view in <code>.atlas/views</code> — what <a href="#ask-dashboard">asking Claude for one</a> proposes. Only <b>Accept</b> in DFAI makes it, never a connected tool. Its card lists the widgets, or the view's type and layout; <b>Edit</b> changes only its name.</td></tr>
+            <tr><td>Link</td><td>Adds one link to a note's relation — Mara Quill's <b>Companies</b> gets <code>[[Larkspur Payroll]]</code>. A link from <a href="#meeting-links">meeting linking</a> goes in even if the meeting has changed since, but never replaces a link already there: a meeting whose project you set is left with yours.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>When it says no</h3>
+      <p>Accept never writes over anything. If it can't go ahead, the reason shows on the card and the proposal stays waiting:</p>
+      <ul>
+        <li><i>“There is already a note at Send Mara the payroll file.md, which may be this one. Edit the title to make another.”</i></li>
+        <li><i>“Mara Quill changed since this was proposed, so it was left as it is.”</i> — the note a link would change has been edited since; check it and answer again.</li>
+        <li><i>“2026-10-06 Payroll sync already links [[Payrun]] in project; this would replace it.”</i> — the meeting got a project since the proposal was made.</li>
+        <li>A proposal, or the note it would change, with unsaved typing: save it first.</li>
+        <li>A proposal may only write where your notes live — apart from a <a href="#ask-dashboard">dashboard or view</a>, which goes in its own folder of <code>.atlas</code> — never in <code>.atlas</code>, a hidden folder, a folder DFAI doesn't show (<code>node_modules</code>), the Archive or <code>Inbox/Proposals</code> itself. A title too long for a file name is cut to fit.</li>
+      </ul>
+      <h3>Where they live</h3>
+      <ul>
+        <li>A proposal is an ordinary note of the built-in <b>Proposal</b> type, so it syncs to your other Mac, survives a restart, and shows in queries. Only open ones stay in <code>Inbox/Proposals</code>; one answered that the Archive couldn't take is listed under <b>Answered, still in the Inbox</b>, to archive from its page.</li>
+        <li><b>Proposal</b> and <b>Decision</b> are <a href="#types">built-in types</a>, and every task gains a <b>Meeting</b> link.</li>
+        <li>Claude can list and answer them for you through <a href="#connect"><code>atlas_proposals</code></a> — only when you ask it to.</li>
+      </ul>
+      <div class="note"><b>Proposals that arrive by themselves.</b> An automation can <a href="#automation-claude">ask Claude</a> about each new meeting, or any note, and what it answers lands here as proposals. A ready-made rule for a meeting's action items is coming later in phase 29.</div>
+    </section>

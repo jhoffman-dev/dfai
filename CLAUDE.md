@@ -76,11 +76,14 @@ change is merged. Don't wait to be asked:
   needs neither keeper. Say so in the hand-off rather than skipping it silently.
 - A hand-off names both keepers' results: guide updated or not needed, and API/MCP
   updated or not needed.
-- The guide's source is `docs/guide/index.html`, in the repo, so it is public:
-  examples use fictional names only. It is a self-contained page (no build).
-  Publish it as a claude.ai artifact from the account the session runs under;
-  the first publish from a new account creates a new URL — tell James the URL
-  and record it here. The current published copy is
+- The guide's source is `docs/guide/src/`, in the repo, so it is public:
+  examples use fictional names only. Each section is a file in
+  `docs/guide/src/sections/`, listed in order in `docs/guide/src/page.html`;
+  `pnpm guide:build` assembles them (and the contents list) into
+  `docs/guide/index.html`, the self-contained page that is published, and a test
+  fails while it is stale. Never edit `index.html` by hand. Publish it as a
+  claude.ai artifact from the account the session runs under; the first publish
+  from a new account creates a new URL — tell James the URL and record it here. The current published copy is
   `claude.ai/artifact/XS3G54GvnJqpG5RFw6DjF8`, published 2026-10-11 from the
   work-account session. (The earlier personal-account copy is
   `claude.ai/artifact/QXvTge2zPuY5YS5g7QYveH`, last updated 2026-10-07.)
@@ -265,6 +268,13 @@ reaches the built bundle anyway (#53, #114).
 | `packages/adapters`    | Tauri IPC, markdown, the index. Thin translators. |
 | `packages/ui`          | React components. No business rules.              |
 | `apps/desktop`         | The composition root, plus `src-tauri` (Rust).    |
+
+**A feature adds a file rather than editing a shared one** (#134). Styles: a new
+`apps/desktop/src/styles/<feature>.css`, imported from `styles/index.css` at the
+place its rules belong in the cascade (the build still emits one stylesheet).
+Guide: a new `docs/guide/src/sections/<id>.html` and its line in `page.html`,
+then `pnpm guide:build`. Shots: a new `tools/design/shots/<surface>.shots.spec.ts`
+on the helpers in `kit.ts`.
 
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and

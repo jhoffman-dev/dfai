@@ -1,0 +1,37 @@
+<!-- contents: Types and properties -->
+    <section id="types">
+      <h2>Types and properties</h2>
+      <p class="sub">A type is a kind of note — Task, Project, Person — with its own properties. Types live as files in <code>.atlas/types</code>.</p>
+      <ol class="steps">
+        <li>Press <b>+</b> next to <b>Types</b> in the sidebar, give it a name and an icon.</li>
+        <li>Open the type's definition with <b>Edit type</b> — see <a href="#edit-type">Edit a type</a> below.</li>
+        <li>Add properties, choose each kind, drag to reorder, tick <b>Required on new notes</b> on the ones every note should have.</li>
+        <li>For a <b>Relation</b>, choose the type it points at, and tick <b>Allow many</b> for it to hold several notes.</li>
+        <li>For a <b>Thumbnail</b>, nothing more to choose: each note of the type gets a picture of its own page (see <a href="#thumbnails">Thumbnails</a>). A type can have only one.</li>
+      </ol>
+      <h3 id="edit-type">Edit a type</h3>
+      <p>Clicking a type in the sidebar opens its <a href="#views">views</a>, not its definition. The type itself is edited in the <a href="#right-sidebar">right sidebar</a>'s <b>Type</b> tab, beside its notes. Any of these opens it:</p>
+      <ul>
+        <li>The gear at the end of the type's view tabs (<b>Edit Task type</b>, for Task). The view stays where it is, with the editor beside it.</li>
+        <li><b>Edit type</b> in the bar of the type's own page. It stays pressed while the editor is showing; press it again to put the sidebar away.</li>
+        <li>Right-click the type in the sidebar (or focus it and press <kbd>⇧F10</kbd>) → <b>Edit type</b>. The same menu has <b>Open</b>.</li>
+        <li>Search <kbd>⌘K</kbd>: type <i>edit</i> and pick <b>Edit &lt;type&gt; type</b>, e.g. <b>Edit Task type</b>. These only appear once what you type starts with “edit”, so they never crowd out notes.</li>
+      </ul>
+      <p>Each of these places also has <b>Edit template</b>, for what new notes of the type start as — see <a href="#edit-template">Templates</a>.</p>
+      <p>The editor shows the type's icon and name at the top — click the icon to choose another, click the name to rename it. Below, its <b>Properties</b>, with how many there are. Each row shows the property's name and kind — a relation by the type it points at, <i>Person, many</i> — and its arrow opens it in place:</p>
+      <ul>
+        <li><b>Name</b> and <b>Kind</b>, and for a relation <b>Points at</b>.</li>
+        <li><b>Allow many</b> — for a select, a relation: several values instead of one. A select that allows many is a multi-select.</li>
+        <li><b>Required on new notes</b> — written as <code>required: true</code> in the type's file. It never stops you saving a note: an empty required property just says <i>“Date is required”</i> under it until it is filled.</li>
+        <li><b>Stored as</b> — the key the value is saved under in each note's file.</li>
+      </ul>
+      <p>At the bottom, <b>Template</b> and <b>Default view</b> open what new notes start as and the type's first view, and the foot says <i>Saved · edits apply to every Session note</i>: every change is written to the type's file straight away, and nothing else in that file is touched. The sidebar follows the page: open another type and it edits that one. In a window too narrow for the sidebar (under about 1060px with the left sidebar open), asking for the editor hides the left sidebar to make room.</p>
+      <h3>Options for select properties</h3>
+      <p>Rename, reorder, colour and remove options — for example a project's statuses <code>planned, active, paused, done</code>. (A task's eight <a href="#tasks">GTD statuses</a> are moved to all at once, from the Inbox.) Renaming an option asks <i>“N notes use ‘review’…”</i> and offers to update them. Order sets the order of a board's columns and lanes, and of a table's groups. The <b>Done option</b> decides which status a ticked checkbox sets.</p>
+      <p><b>Colours.</b> Every option is a muted pastel pill, so a column of them is easy to scan. A status (<i>Doing</i>, <i>Review</i>, <i>Done</i>…) keeps its own colour and dot. Any other option — a meeting's <i>Interview</i> or <i>1on1</i> — gets a colour from its name: the same name is always the same colour, in a table, on a board, in the properties panel and on cards. To choose one yourself, pick it from the option's colour menu: one of the status colours, or gray, brown, orange, yellow, green, blue, purple, pink or red. In the type file it is written as <code>colors: { Interview: blue }</code>. Linked notes (a meeting's <i>Larkspur Payroll</i> or <i>Mara Quill</i>) and #tags are coloured from their names the same way.</p>
+      <h3>Built-in types</h3>
+      <p><b>Person</b>, <b>Task</b>, <b>Project</b>, <b>Artifact</b>, <b>Meeting</b>, <b>Company</b>, <b>Term</b>, <b>Proposal</b>, <b>Decision</b>, <b>Block</b> and <b>Daily</b> are marked <b>Built in</b>: DFAI's own features depend on them. In the type's editor their <b>Delete</b> button is turned off, with the reason beside it — for example <i>“Person is built in — @ mentions find people by it — so it cannot be deleted. Its properties are yours to change.”</i> Their properties stay yours to edit. Their files in <code>.atlas/types</code> can't be deleted or renamed from Pages either, whatever the file is called: <i>“DFAI’s built-in types stay — its features depend on them.”</i></p>
+      <p>A type you made has <b>Delete &lt;Type&gt;…</b> under its properties in the type's editor; it asks first, as deleting any note does, and puts the type's file in the Trash.</p>
+      <h3>Projects</h3>
+      <p>DFAI ships a <b>Project</b> type (status: planned, active, paused, done; owner; due; summary). Every task has a <code>project</code> relation — to a project or an area, once your types are set up for <a href="#para">PARA</a> — and the <b>Projects</b> view is a board grouped by project.</p>
+    </section>

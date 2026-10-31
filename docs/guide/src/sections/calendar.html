@@ -1,0 +1,23 @@
+<!-- contents: Calendar -->
+    <section id="calendar">
+      <h2>Calendar</h2>
+      <p class="sub">A calendar view places each note on the day its date property names. A note with no date isn't on the calendar.</p>
+      <p>The toolbar switches between five ranges: <b>Month</b> · <b>Week</b> · <b>3 days</b> · <b>Day</b> · <b>Agenda</b>. Beside them, <b>‹</b> and <b>›</b> step back and forward, and <b>Today</b> jumps to today.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Range</th><th scope="col">What you see</th></tr></thead>
+          <tbody>
+            <tr><td>Month</td><td>Six weeks of days. A busy day shows <b>+N more</b>; click it for the rest.</td></tr>
+            <tr><td>Week, 3 days, Day</td><td>A column per day. Notes with only a date sit in the strip at the top; notes with a time sit on the day's clock, from start to end (half an hour if no end).</td></tr>
+            <tr><td>Agenda</td><td>A list: <b>Overdue</b> first, then each day from the one shown with its notes in order. <b>Load more</b> adds another thirty days.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>Add:</b> click an empty part of a day — or, on the clock, an empty time — to make a note there.</li>
+        <li><b>Move:</b> drag a note to another day or time. On the clock, drag its bottom edge to change when it ends.</li>
+        <li><b>Plan:</b> a calendar of blocks has your next actions beside its week, to drag into time — see <a href="#timeblocking">Timeblocking</a>.</li>
+        <li><b>Keyboard:</b> click the calendar, then <kbd>M</kbd> <kbd>W</kbd> <kbd>3</kbd> <kbd>D</kbd> <kbd>A</kbd> pick the range, <kbd>T</kbd> goes to today, and <kbd>←</kbd> <kbd>→</kbd> (or <kbd>[</kbd> <kbd>]</kbd>) step. In the month, <kbd>Tab</kbd> to a note, <kbd>Space</kbd> to pick it up, arrows to move it a day or a week, <kbd>Space</kbd> to drop.</li>
+      </ul>
+      <p class="muted">In the agenda, a past note of a type with no “done” status (a meeting, a journal entry) stays under Overdue. That's on purpose for now.</p>
+    </section>

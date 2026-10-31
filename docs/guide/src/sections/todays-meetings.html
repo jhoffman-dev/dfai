@@ -1,0 +1,42 @@
+<!-- contents: Today's meetings -->
+    <section id="todays-meetings">
+      <h2>Today's meetings from Google Calendar</h2>
+      <p class="sub">With your permission, DFAI reads your calendar, and never changes it. Each meeting becomes a note in <code>Calendar/</code>, linked to the people in it. Today lists the day's meetings above your tasks.</p>
+      <h3>Turn it on</h3>
+      <ol class="steps">
+        <li>In your Google Cloud project's <b>OAuth consent screen</b>, also add the scope <code>…/auth/calendar.events.readonly</code>.</li>
+        <li><a href="#google-calendar">Connect Google Calendar</a>, then in Settings → <b>Google Calendar</b> → <b>Meetings</b> press <b>Allow reading meetings</b>. Your browser asks once more, for permission to see the events on your calendars. Tick it and press <b>Allow</b>.</li>
+        <li>DFAI reads yesterday through six days ahead. It reads again every 15 minutes while the vault is open, and whenever you press <b>Read meetings now</b>. Settings shows when it last read them.</li>
+      </ol>
+      <p>Meetings are read from your main calendar. To add more, list them by id in the vault's settings, under <code>google_meeting_calendars</code>. The calendar DFAI's blocks go to is never read for meetings.</p>
+      <h3>One Mac writes them</h3>
+      <p>Only the Mac that <a href="#sync">runs the vault's automations</a> (Settings → <b>Sync</b> → <i>Run automations on this Mac</i>) reads Google and writes meeting notes. Your other Mac gets the notes through sync, shows them on Today, and never asks Google for them. Its Settings says so. A vault that isn't synced writes them wherever it is open. Only the writing Mac needs <b>Allow reading meetings</b>.</p>
+      <h3>What's in a meeting note</h3>
+      <ul>
+        <li>The title, the start (<code>date</code>) and the end (<code>ends</code>), in your main calendar's time zone — every calendar's meetings on that one clock, so Today never mixes two (the first calendar read that names a zone when the main one isn't read). DFAI keeps that zone in the vault's settings (<code>google_plan_zone</code>), so your other Mac, the morning brief and Today all read the meetings on the same clock. The other attendees' addresses, and links to their <b>People</b> and <b>Companies</b> notes when DFAI is sure who they are.</li>
+        <li>A link to the notetaker's meeting note, once one arrives for the same title, day and time. A notetaker note with no start time, on a day with two meetings of that title, is linked to neither. Link it yourself.</li>
+        <li>Your answer (<code>gcal_response</code>). A meeting you declined isn't on Today.</li>
+        <li>The body is yours, for prep, and DFAI never writes in it. DFAI keeps the title, times, attendees and <code>gcal_</code> fields as Google says, so edit those in Google Calendar. Links you add or remove, and fields of your own, are kept.</li>
+      </ul>
+      <h3>Cancelled and deleted</h3>
+      <p>When a meeting is cancelled, its note is kept, marked <code>gcal_missing: true</code>, and taken off Today. If the meeting comes back, the mark comes off. An invitation on two of your calendars follows the calendar its note came from. A change or cancellation on the other calendar leaves it as it is.</p>
+      <p>If you delete a meeting note, DFAI makes it again at the next full read (each new day) while the meeting is still ahead. To keep it gone, decline the meeting in Google Calendar.</p>
+      <h3>Stop</h3>
+      <p><b>Stop reading meetings</b> stops at once on this Mac, for this vault. Your other Mac stops once sync brings the change over. A read already under way writes nothing more. The notes already made stay. Google keeps DFAI's permission to read your calendar on this Mac until you press <b>Disconnect</b>. Google can't take back one permission on its own, and disconnecting also ends the blocks calendar.</p>
+      <h3>If it doesn't read them</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Settings says</th><th scope="col">Do this</th></tr></thead>
+          <tbody>
+            <tr><td><i>this Mac has not been allowed to read your calendar yet</i></td><td>Press <b>Allow reading meetings</b> on this Mac.</td></tr>
+            <tr><td><i>its Google sign-in may not see events</i></td><td>Press <b>Allow reading meetings</b> and tick the permission to view events. DFAI doesn't ask Google again until you do.</td></tr>
+            <tr><td><i>… did not sync</i>, naming one calendar</td><td>That calendar's id is wrong, or it is no longer shared with you. Your other calendars are still read. Fix or remove it in <code>google_meeting_calendars</code>.</td></tr>
+            <tr><td><i>Google could not be reached</i></td><td>Nothing to do. The notes you have stay, and the next read catches up.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>On a trip</h3>
+      <p>Today's meetings are your calendar's day, not the Mac's. Away in another time zone, Today lists the meetings of the day it is where your main calendar is, at that calendar's times, the same as the morning brief, and heads them with that day and clock — <i>Meetings · Tue 27 Oct, Chicago time</i>. At midnight on your calendar's clock the list turns to the next day by itself. Your tasks and the daily note still follow the Mac's day.</p>
+      <p>If you change your main calendar's time zone in Google (you moved, say), the next sync writes every meeting of the days it reads again on the new clock, once, and changes nothing else in those notes. A sync in which Google refuses your main calendar keeps the zone it had, so one bad sync never moves your meetings. If DFAI can't save the zone in the vault's settings, Activity says so once.</p>
+      <p class="muted">The <a href="#connect">Local API and MCP</a> read the day's meetings from these notes (<code>GET /v1/calendar/meetings?day=YYYY-MM-DD</code>, <code>atlas_day_meetings</code>). The day you ask for is your calendar's day, and the answer names its time zone. The morning brief and n8n use this. Neither reaches Google.</p>
+    </section>
