@@ -107,7 +107,11 @@ these, or says what else it needs.
   `MOVEFILE_REPLACE_EXISTING`, and a test that races two creations of one name.
 - **W3 — paths as Windows spells them.** Drive letters, the verbatim `\\?\`
   prefix `canonicalize` adds, case-insensitive names and junctions, in the
-  path guard every vault command shares and in git's folder grants.
+  path guard every vault command shares and in git's folder grants. The link
+  check before a move or a trash (`refuse_through_link` in `vault_entries.rs`,
+  #680, #685) splits the path on `/` only. On Windows it must also split on
+  `\`, or refuse a path that has one, or a link reached by `Work\Alias\Plan.md`
+  goes unnoticed.
 - **W4 — replacing a file.** Every whole-file write renames a temporary over
   the old file. Windows refuses that while another program holds the file
   open, so one Windows replace (a retry, or `ReplaceFileW`) serves every one
