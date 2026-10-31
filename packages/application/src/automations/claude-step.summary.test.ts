@@ -584,8 +584,47 @@ describe('Undo last run', () => {
     expect(undone?.done).toEqual([{ kind: 'unsummarised', path: SYNC }]);
     expect(undone?.left).toContainEqual({ path: task, reason: refusal });
     expect(at.vault.files.has(task!)).toBe(true);
+    // A task kept keeps its link, as one changed since does.
+    expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
+    expect(at.body().includes('atlas:summary')).toBe(false);
     const logged = at.entries().at(-1);
     expect(logged?.kind === 'undo' && logged.left).toContainEqual({ path: task, reason: refusal });
+  });
+
+  it('stops on an error that is not a host refusal, keeping the task and its link (#685)', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const [task] = at.tasks();
+    at.vault.ports.fs.trashEntry = async () => {
+      throw new Error('the port broke');
+    };
+
+    await expect(at.undo()).rejects.toThrow('the port broke');
+    expect(at.vault.files.has(task!)).toBe(true);
+    expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
+  });
+
+  it('logs a task trashed before its meeting changed, and leaves the meeting saying why (#685)', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const [task] = at.tasks();
+    const trash = at.vault.ports.fs.trashEntry;
+    at.vault.ports.fs.trashEntry = async (args) => {
+      // Someone saves the meeting while its tasks go to the Trash.
+      await at.vault.ports.fs.writeTextFile({
+        path: createVaultPath(SYNC),
+        contents: `${at.meeting()}\nTyped meanwhile.\n`,
+        expectedModified: null,
+      });
+      await trash(args);
+    };
+
+    const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
+
+    expect(at.vault.files.has(task!)).toBe(false);
+    expect(undone?.done).toEqual([{ kind: 'trashed', path: task }]);
+    expect(undone?.left.map(({ path }) => path)).toContain(SYNC);
+    expect(at.body()).toContain('Typed meanwhile.');
   });
 
   it('keeps a task changed since, and its link, and a block edited since', async () => {

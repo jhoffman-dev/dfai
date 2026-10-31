@@ -147,5 +147,20 @@ fn a_note_beside_a_link_is_trashed() {
     assert_eq!(asked.unwrap().file_name().unwrap(), "own.md");
 }
 
+/// An entry that is a link is trashed as the link only where it really is: by
+/// way of a folder that is a link, it is refused like any other entry.
+#[test]
+fn a_link_reached_through_a_folder_link_is_refused_naming_the_folder() {
+    let vault = vault_with_shelf();
+    symlink("../Shelf", vault.path().join("Work/Alias")).unwrap();
+    symlink("Plan.md", vault.path().join("Shelf/link.md")).unwrap();
+
+    let (result, asked) = trash_recording(vault.path(), "Work/Alias/link.md");
+
+    assert_eq!(result.unwrap_err(), "path goes through a link: Work/Alias");
+    assert!(asked.is_none(), "the Trash was asked for {asked:?}");
+    assert!(fs::symlink_metadata(vault.path().join("Shelf/link.md")).is_ok());
+}
+
 #[path = "trash_link_attack_691_tests.rs"]
 mod attack_691;
