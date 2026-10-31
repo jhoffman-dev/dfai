@@ -18,6 +18,7 @@ import {
 } from '@dfai/domain';
 import type { ModelEvent } from '../chat/ports.ts';
 import { automationVault, jsonNote } from '../testing/automation-vault.ts';
+import { editedBeforeTrash } from '../testing/edited-before-trash.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
 import { VaultAccessError } from '../vault/ports.ts';
@@ -257,5 +258,37 @@ describe('Undo last run, a task the host will not trash (attack #691)', () => {
 
     await expect(at.undo()).rejects.toThrow('the port broke');
     expect(at.vault.files.has(task!)).toBe(true);
+  });
+});
+
+describe('Undo last run, a task edited between its check and the Trash (#693)', () => {
+  it('keeps the task and its link, and names it as left, trashing nothing', async () => {
+    const at = setUp([digest()]);
+    await at.run();
+    const tasks = [...at.vault.files.keys()].filter(
+      (path) => at.vault.properties(path)['type'] === 'task',
+    );
+    expect(tasks.length).toBeGreaterThan(0);
+    const { fs } = at.vault.ports;
+    const edited = new Map(
+      tasks.map((path) => [path, `${at.vault.files.get(path)}Typed meanwhile.\n`]),
+    );
+    at.vault.ports.fs = editedBeforeTrash(fs, async () => {
+      for (const [path, contents] of edited) {
+        await fs.writeTextFile({ path: createVaultPath(path), contents, expectedModified: null });
+      }
+    });
+
+    const undone = (await at.undo()) as Extract<LogEntry, { kind: 'undo' }> | null;
+
+    for (const [task, contents] of edited) {
+      expect(at.vault.files.get(task)).toBe(contents);
+      expect(undone?.left).toContainEqual({
+        path: task,
+        reason: 'It was changed since the run made it, so it was kept.',
+      });
+    }
+    expect(undone?.done.some((action) => action.kind === 'trashed')).toBe(false);
+    expect(at.properties()['tasks']).toContain('[[Write the rollout note]]');
   });
 });
