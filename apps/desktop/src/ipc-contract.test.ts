@@ -3,7 +3,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { API_RESPOND_COMMAND } from '@dfai/application';
-import { createVaultPath } from '@dfai/domain';
+import { createVaultPath, PLATFORM_CAPABILITIES, WEB_CAPABILITIES } from '@dfai/domain';
+import type { PlatformCapability } from '@dfai/domain';
 
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
@@ -277,3 +278,76 @@ function threadOf(command: string): CommandThread {
   }
   throw new Error(`no #[tauri::command] named ${command} in src-tauri/src`);
 }
+
+/** ADR-0051: what each host command becomes on the web and on Windows. */
+const PLATFORM_MAP =
+  '../../../vault/docs/adr/0051-every-host-command-has-a-fate-on-the-web-and-on-windows.md';
+
+const WEB_FATES = ['browser', 'server', 'absent'];
+const WINDOWS_FATES = ['same', 'port'];
+/** The capability cell of a command every platform needs. */
+const EVERY_PLATFORM = '—';
+
+interface CommandFate {
+  readonly command: string;
+  readonly capability: string;
+  readonly web: string;
+  readonly windows: string;
+}
+
+/** Each table row of the ADR whose first cell is a command, as written. */
+function commandFates(): CommandFate[] {
+  const source = readFileSync(here(PLATFORM_MAP), 'utf8');
+  const row = /^\|\s*`(\w+)`\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|/gm;
+  return [...source.matchAll(row)].map(([, command, capability, web, windows]) => ({
+    command: command ?? '',
+    capability: capability ?? '',
+    web: web ?? '',
+    windows: windows ?? '',
+  }));
+}
+
+const isCapability = (name: string): name is PlatformCapability =>
+  (PLATFORM_CAPABILITIES as readonly string[]).includes(name);
+
+describe('the platform map (ADR-0051)', () => {
+  it('finds the commands it maps', () => {
+    expect(commandFates().length).toBeGreaterThan(0);
+  });
+
+  it('maps every command Rust exposes', () => {
+    const mapped = new Set(commandFates().map((fate) => fate.command));
+    const unmapped = [...commandsExposedByRust()].filter((name) => !mapped.has(name));
+    expect(unmapped, `add a row to ADR-0051 for: ${unmapped.join(', ')}`).toEqual([]);
+  });
+
+  it('maps no command Rust no longer exposes, and none twice', () => {
+    const exposed = commandsExposedByRust();
+    const commands = commandFates().map((fate) => fate.command);
+    expect(commands.filter((name) => !exposed.has(name))).toEqual([]);
+    expect(commands.filter((name, at) => commands.indexOf(name) !== at)).toEqual([]);
+  });
+
+  it('gives every command a fate the ADR names, on the web and on Windows', () => {
+    const unnamed = commandFates().filter(
+      (fate) => !WEB_FATES.includes(fate.web) || !WINDOWS_FATES.includes(fate.windows),
+    );
+    expect(unnamed).toEqual([]);
+  });
+
+  it('ties every command to a capability, or to every platform', () => {
+    const unknown = commandFates().filter(
+      (fate) => fate.capability !== EVERY_PLATFORM && !isCapability(fate.capability),
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  it('serves a capability the web lacks with every command absent on the web', () => {
+    const shown = commandFates().filter(
+      (fate) =>
+        fate.web === 'absent' &&
+        (!isCapability(fate.capability) || WEB_CAPABILITIES[fate.capability]),
+    );
+    expect(shown).toEqual([]);
+  });
+});
