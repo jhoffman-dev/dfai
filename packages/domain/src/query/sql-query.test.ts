@@ -63,7 +63,7 @@ describe('the index’s schema', () => {
     database.exec(`
       CREATE TABLE files (path TEXT, title TEXT);
       CREATE VIEW v_task AS SELECT path, title, 'x' AS status FROM files;
-      CREATE VIRTUAL TABLE fts USING fts5(body);
+      CREATE VIRTUAL TABLE fts USING fts5(path, title, body, tokenize = 'unicode61 remove_diacritics 2');
     `);
     return database;
   }
@@ -79,7 +79,7 @@ describe('the index’s schema', () => {
     expect(schema).toEqual([
       { name: 'v_task', kind: 'view', columns: ['path', 'title', 'status'] },
       { name: 'files', kind: 'table', columns: ['path', 'title'] },
-      { name: 'fts', kind: 'table', columns: ['body'] },
+      { name: 'fts', kind: 'table', columns: ['path', 'title', 'body'] },
     ]);
   });
 

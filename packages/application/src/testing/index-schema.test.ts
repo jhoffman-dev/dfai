@@ -20,21 +20,29 @@ interface Column {
   readonly name: string;
   readonly type: string;
   readonly notnull: number;
+  readonly dflt_value: string | null;
 }
 
 function columnsOf(database: DatabaseSync, table: string): Column[] {
   return (database.prepare(`PRAGMA table_xinfo("${table}")`).all() as unknown as Column[]).map(
-    ({ name, type, notnull }) => ({ name, type, notnull }),
+    ({ name, type, notnull, dflt_value }) => ({ name, type, notnull, dflt_value }),
   );
 }
 
-/** A CREATE INDEX as the shape it makes: no `IF NOT EXISTS`, spacing folded. */
-const indexShape = (sql: string) =>
+/** A CREATE statement as the shape it makes: no `IF NOT EXISTS`, case and spacing folded. */
+const shapeOf = (sql: string) =>
   sql
-    .replace(/\s+IF NOT EXISTS\s+/i, ' ')
+    .replace(/\s+IF\s+NOT\s+EXISTS\s+/i, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/\s*([(),])\s*/g, '$1')
-    .trim();
+    .replace(/\s*([(),=])\s*/g, '$1')
+    .trim()
+    .toLowerCase();
+
+const CREATE = /CREATE\s+(VIRTUAL\s+)?(TABLE|INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/i;
+
+/** The tables full-text search keeps beside a virtual one, which are SQLite's rather than ours. */
+const isShadowOf = (name: string, virtual: readonly string[]) =>
+  virtual.some((table) => new RegExp(`^${table}_(data|idx|content|docsize|config)$`).test(name));
 
 function schemaOf(sql: string) {
   const database = new DatabaseSync(':memory:');
@@ -42,19 +50,22 @@ function schemaOf(sql: string) {
   const entries = database
     .prepare('SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL')
     .all() as { type: string; name: string; sql: string }[];
-  // Full-text search keeps its own tables beside each virtual one; they are SQLite's, not ours.
-  const ours = entries.filter((entry) => !/_(data|idx|content|docsize|config)$/.test(entry.name));
+  const virtual = entries
+    .filter((entry) => CREATE.exec(entry.sql)?.[1] !== undefined)
+    .map((entry) => entry.name);
+  const ours = entries.filter((entry) => !isShadowOf(entry.name, virtual));
   const tables = new Map(
     ours
       .filter((entry) => entry.type === 'table')
       .map((entry) => [entry.name, columnsOf(database, entry.name)]),
   );
-  const indexes = new Map(
+  // An index, or a virtual table's options, is held to its whole statement.
+  const statements = new Map(
     ours
-      .filter((entry) => entry.type === 'index')
-      .map((entry) => [entry.name, indexShape(entry.sql)]),
+      .filter((entry) => entry.type === 'index' || virtual.includes(entry.name))
+      .map((entry) => [entry.name, shapeOf(entry.sql)]),
   );
-  return { tables, indexes };
+  return { tables, statements };
 }
 
 const CANONICAL = schemaOf(INDEX_SCHEMA);
@@ -83,11 +94,9 @@ const unescaped = (source: string) => source.replace(/\\n/g, '\n').replace(/\\([
 /** The CREATE TABLE and CREATE INDEX statements in a file that name the index's own tables and indexes. */
 function inlineCopies(text: string): string[] {
   const found: string[] = [];
-  for (const match of text.matchAll(
-    /CREATE (?:VIRTUAL )?(?:TABLE|INDEX) (?:IF NOT EXISTS )?"?(\w+)"?/g,
-  )) {
-    const name = match[1]!;
-    if (!CANONICAL.tables.has(name) && !CANONICAL.indexes.has(name)) continue;
+  for (const match of text.matchAll(new RegExp(CREATE.source, 'gi'))) {
+    const name = match[3]!;
+    if (!CANONICAL.tables.has(name) && !CANONICAL.statements.has(name)) continue;
     const statement = statementAt(text, match.index);
     // A statement built from interpolations is the code's own; only literal copies can drift.
     if (statement !== null && !statement.includes('${')) found.push(unescaped(statement));
@@ -95,33 +104,44 @@ function inlineCopies(text: string): string[] {
   return found;
 }
 
+/** What the copies a file holds say that the index's own do not. */
+const driftIn = (text: string) => inlineCopies(text).flatMap(driftOf);
+
+/** A copy that is not SQL after all (a pattern that matches a statement, say): SQL a test runs fails that test. */
+const UNREADABLE = ['unreadable'];
+
 /** What a copy of a table or index says that the index's own does not. */
 function driftOf(statement: string): string[] {
-  const database = new DatabaseSync(':memory:');
-  const made = /CREATE (?:VIRTUAL )?TABLE (?:IF NOT EXISTS )?"?(\w+)"?/.exec(statement);
-  if (made === null) {
-    const name = /CREATE INDEX (?:IF NOT EXISTS )?"?(\w+)"?/.exec(statement)![1]!;
-    const shape = indexShape(statement);
-    return shape === CANONICAL.indexes.get(name) ? [] : [`index ${name}: ${shape}`];
+  const [, virtual, kind, name] = CREATE.exec(statement)!;
+  if (kind!.toUpperCase() === 'INDEX' || virtual !== undefined) {
+    const shape = shapeOf(statement);
+    if (shape !== CANONICAL.statements.get(name!)) return [`${name}: ${shape}`];
+    if (kind!.toUpperCase() === 'INDEX') return [];
   }
-  const table = made[1]!;
+  const database = new DatabaseSync(':memory:');
   try {
     database.exec(statement);
   } catch {
-    // Not SQL after all (a pattern that matches a statement, say): SQL that a test runs fails that test.
-    return [];
+    return UNREADABLE;
   }
-  const own = new Map(CANONICAL.tables.get(table)!.map((column) => [column.name, column]));
-  return columnsOf(database, table).flatMap((column) => {
-    const theirs = own.get(column.name);
-    if (theirs === undefined) return [`${table}.${column.name}: not in the index`];
-    if (theirs.type !== column.type)
-      return [`${table}.${column.name}: ${column.type}, not ${theirs.type}`];
-    // Looser than the host's is only a fixture that takes less care; stricter would hide a null the host can hold.
-    if (column.notnull > theirs.notnull)
-      return [`${table}.${column.name}: NOT NULL, and the index's is not`];
-    return [];
-  });
+  const own = new Map(CANONICAL.tables.get(name!)!.map((column) => [column.name, column]));
+  return columnsOf(database, name!).flatMap((column) => columnDrift(name!, column, own));
+}
+
+function columnDrift(table: string, column: Column, own: ReadonlyMap<string, Column>): string[] {
+  const theirs = own.get(column.name);
+  const at = `${table}.${column.name}`;
+  if (theirs === undefined) return [`${at}: not in the index`];
+  if (theirs.type !== column.type) return [`${at}: ${column.type}, not ${theirs.type}`];
+  // Looser than the host's is only a fixture that takes less care; stricter would hide a null the host can hold.
+  if (column.notnull > theirs.notnull) return [`${at}: NOT NULL, and the index's is not`];
+  // No default is a fixture that always says, and one on a column the host makes every row
+  // name is only a convenience; another default, or one where the host leaves null, is not.
+  const named = theirs.notnull === 1 && theirs.dflt_value === null;
+  if (column.dflt_value !== null && column.dflt_value !== theirs.dflt_value && !named) {
+    return [`${at}: DEFAULT ${column.dflt_value}, not ${theirs.dflt_value}`];
+  }
+  return [];
 }
 
 describe('the index schema has one source', () => {
@@ -145,9 +165,14 @@ describe('the index schema has one source', () => {
     expect(copies.map(({ file }) => file)).toContain(
       'packages/domain/src/graph/graph-query.sqlite.test.ts',
     );
-    const drift = copies.flatMap(({ file, statement }) =>
-      driftOf(statement).map((problem) => `${file}: ${problem}`),
-    );
+    const found = copies.map(({ file, statement }) => ({ file, drift: driftOf(statement) }));
+    // The one copy that is not SQL, named, so a new skip shows here rather than passing unseen.
+    expect(found.filter(({ drift }) => drift === UNREADABLE).map(({ file }) => file)).toEqual([
+      'packages/domain/src/query-language/type-index.plan.sqlite.test.ts',
+    ]);
+    const drift = found
+      .filter(({ drift }) => drift !== UNREADABLE)
+      .flatMap(({ file, drift }) => drift.map((problem) => `${file}: ${problem}`));
     expect(drift).toEqual([]);
   });
 
@@ -159,12 +184,45 @@ describe('the index schema has one source', () => {
       'links.gone: not in the index',
     ]);
     expect(driftOf('CREATE INDEX links_dst ON links(dst)')).toEqual([
-      'index links_dst: CREATE INDEX links_dst ON links(dst)',
+      'links_dst: create index links_dst on links(dst)',
     ]);
     expect(driftOf('CREATE INDEX IF NOT EXISTS links_dst ON links (dst, src)')).toEqual([]);
     expect(driftOf('CREATE TABLE relations (src TEXT NOT NULL, dst TEXT NOT NULL)')).toEqual([
       "relations.dst: NOT NULL, and the index's is not",
     ]);
     expect(driftOf('CREATE TABLE relations (src TEXT, dst TEXT)')).toEqual([]);
+  });
+
+  it.each([
+    ['an index the host also has', 'CREATE INDEX highlights_path_idx ON highlights(idx)'],
+    ['in lower case', 'create table files (path TEXT PRIMARY KEY, progress REAL)'],
+    ['with doubled spaces', 'CREATE  TABLE files (path TEXT PRIMARY KEY, progress REAL)'],
+    ['across lines', 'CREATE TABLE\n  files (path TEXT PRIMARY KEY, progress REAL)'],
+    [
+      'a search table of other options',
+      "CREATE VIRTUAL TABLE fts USING fts5(path, title, body, tokenize = 'porter')",
+    ],
+    ['a default where the host leaves null', "CREATE TABLE files (note_type TEXT DEFAULT 'task')"],
+    [
+      'a column of another default',
+      "CREATE TABLE files (path TEXT PRIMARY KEY, summary TEXT NOT NULL DEFAULT 'none')",
+    ],
+  ])('would see a copy drift written %s', (_name, copy) => {
+    expect(driftIn(copy)).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      'a search table spaced and cased otherwise',
+      "create virtual table fts using fts5(path,title,body,tokenize='unicode61 remove_diacritics 2')",
+    ],
+    ['a column with no default where the host has one', 'CREATE TABLE files (summary TEXT)'],
+    [
+      'a default on a column every host row names',
+      'CREATE TABLE files (path TEXT PRIMARY KEY, size INTEGER NOT NULL DEFAULT 0)',
+    ],
+  ])('lets a copy be %s', (_name, copy) => {
+    expect(inlineCopies(copy)).toHaveLength(1);
+    expect(driftIn(copy)).toEqual([]);
   });
 });
