@@ -26,6 +26,10 @@ async function centreOf(target: Locator): Promise<Point> {
 export const dragAnnouncement = (page: Page) =>
   page.locator('[id^="DndLiveRegion"]').filter({ hasText: /\S/ });
 
+/** Everything the drag surfaces' live regions say now. */
+const announced = async (page: Page) =>
+  (await page.locator('[id^="DndLiveRegion"]').allTextContents()).join('\n');
+
 /**
  * Press on `source`, travel to `to` in small steps, and release once the drag
  * says it is where it was sent.
@@ -143,7 +147,14 @@ export async function dragWithKeyboard(
   await page.keyboard.press('Space');
   // Picked up: dnd-kit marks the handle pressed for as long as it is held.
   await expect(handle).toHaveAttribute('aria-pressed', 'true');
-  for (const move of moves) await page.keyboard.press(move);
+  for (const move of moves) {
+    const before = await announced(page);
+    await page.keyboard.press(move);
+    // dnd-kit says where a move went once it has measured it; a key pressed
+    // before then moves from the old place, and on a slower runner (Linux CI)
+    // a second ArrowRight was lost that way. So each key waits, as a person's would.
+    await expect.poll(() => announced(page)).not.toBe(before);
+  }
   await page.keyboard.press(finish);
   await expect(handle).not.toHaveAttribute('aria-pressed', 'true');
 }
