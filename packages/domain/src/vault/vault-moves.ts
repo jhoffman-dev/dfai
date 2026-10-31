@@ -176,6 +176,29 @@ export function moveIntoLinkRefusal(link: VaultPath): string {
   );
 }
 
+/**
+ * Why a move is refused that would point `link`, which it carries, at
+ * something else: a relative link is read from where it is (PR #684).
+ */
+export function moveRepointsLinkRefusal(link: VaultPath): string {
+  return (
+    `Moving it would point the link “${link}” at something else: a link is read from ` +
+    'where it is. Move it where the link still reaches the same place.'
+  );
+}
+
+/**
+ * Why nothing moves while `note`, open by way of `link`, holds unsaved typing:
+ * where the link points cannot be told, so it may be what is moving, and its
+ * pane could not be followed there (PR #684).
+ */
+export function unsavedThroughLinkRefusal(note: VaultPath, link: VaultPath): string {
+  return (
+    `“${note}” has typing not yet saved, and it is open by way of the link “${link}”, ` +
+    'which may point into what is moving. Wait for it to save, then try again.'
+  );
+}
+
 /** How many links a deletion question names before saying how many more. */
 const LINKS_NAMED = 5;
 

@@ -1,7 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
-import { createVaultPath, type VaultEntry, type VaultPath } from '@dfai/domain';
+import {
+  createVaultPath,
+  moveRepointsLinkRefusal,
+  moveThroughLinkRefusal,
+  type VaultEntry,
+  type VaultPath,
+} from '@dfai/domain';
 import {
   EntryChangedError,
+  MoveRefusedError,
   VaultAccessError,
   type AsRead,
   type HostVaultFsPort,
@@ -12,6 +19,22 @@ import { throughHost } from './host-error.ts';
 /** What `vault_entries.rs` refuses a trash with when a file it was to hold still has changed. */
 const TRASH_REFUSED_AS_CHANGED =
   'a file changed on disk since it was read, so nothing was moved to the Trash';
+
+/** How `vault_entries.rs` begins the move refusals the domain has words for, each naming a link (#680). */
+const MOVE_REFUSALS: readonly (readonly [string, (link: VaultPath) => string])[] = [
+  ['path goes through a link: ', moveThroughLinkRefusal],
+  ['moving it would point a link elsewhere: ', moveRepointsLinkRefusal],
+];
+
+/** A refused move in the domain's words when the host's are one of those, else as the host said it. */
+function moveRefused(message: string): Error {
+  for (const [start, words] of MOVE_REFUSALS) {
+    if (message.startsWith(start)) {
+      return new MoveRefusedError(words(createVaultPath(message.slice(start.length))));
+    }
+  }
+  return new VaultAccessError(message);
+}
 
 /** The shape the Rust side sends back. Validated here before it becomes a domain type. */
 interface RawEntry {
@@ -116,7 +139,7 @@ export const tauriVaultFs: HostVaultFsPort = {
   },
 
   async moveEntry({ from, to, vault }: { from: VaultPath; to: VaultPath; vault: string }) {
-    await throughHost(invoke('move_entry', { from, to, vault }));
+    await throughHost(invoke('move_entry', { from, to, vault }), moveRefused);
   },
 
   // Each file the host is to hold still crosses as its time and its digest (#235).

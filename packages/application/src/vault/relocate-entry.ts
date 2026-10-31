@@ -13,6 +13,7 @@ import {
   vaultPathName,
   renameRefusal,
   templateEditRefusal,
+  unsavedThroughLinkRefusal,
   type EntryMove,
   type MovableEntry,
   type NameClash,
@@ -54,6 +55,12 @@ export class MoveRefusedError extends Error {
  * lands during the move stays unsaved in the pane and is saved to the new
  * path. The index forgets the old paths straight away — the refresh that
  * follows every change files them under the new ones.
+ *
+ * A pane may hold a note by way of a link, and the host does not say where a
+ * link points, so it may be a note that moves, by another path: it could be
+ * neither flushed nor followed as one. Nothing moves while such a pane has
+ * unsaved typing (PR #684). Only panes with typing are looked into, so a move
+ * with none asks the host nothing more.
  */
 async function relocate({
   ports,
@@ -68,12 +75,34 @@ async function relocate({
 }): Promise<Relocation> {
   const move = { from: entry.path, to };
   const carried = notesUnder(entry, notePaths);
+  await refuseUnsavedThroughLink({ ports, carried, notePaths });
 
   await ports.editors.flush(carried);
   await ports.fs.moveEntry(move);
   ports.editors.follow(move);
   await forget(ports.index, carried);
   return { move, clashes: nameClashes(move, notePaths) };
+}
+
+/** Refuses while a pane not carried by the move has unsaved typing in a note open by way of a link. */
+async function refuseUnsavedThroughLink({
+  ports,
+  carried,
+  notePaths,
+}: {
+  ports: RelocationPorts;
+  carried: readonly VaultPath[];
+  notePaths: readonly VaultPath[];
+}): Promise<void> {
+  const moving = new Set(carried);
+  const typing = notePaths.filter(
+    (path) => !moving.has(path) && ports.editors.state(path) === 'dirty',
+  );
+  const links = await Promise.all(typing.map((path) => linkAbove(ports.fs, path)));
+  const found = typing
+    .map((note, at) => ({ note, link: links[at] ?? null }))
+    .find(({ link }) => link !== null);
+  if (found?.link) throw new MoveRefusedError(unsavedThroughLinkRefusal(found.note, found.link));
 }
 
 /**
@@ -90,7 +119,8 @@ async function forget(index: IndexPort, paths: readonly VaultPath[]): Promise<vo
  * archiving, which files a note under `Archive/` by rules of its own. The
  * folder `to` is in must already exist. Links on the way are not looked for
  * here, which would list every folder above both paths on each note archived;
- * the host refuses a move through a link before anything moves (#680).
+ * the host refuses a move through a link before anything moves (#680). The
+ * caller has made the folder by then, so such a refusal can leave it empty.
  */
 export async function moveEntryTo(args: {
   ports: RelocationPorts;
@@ -125,8 +155,11 @@ export async function moveEntryInto({
 }): Promise<Relocation> {
   const refusal = moveRefusal(entry, folder);
   if (refusal !== null) throw new MoveRefusedError(refusal);
-  await refuseThroughLink(ports.fs, entry);
-  const into = await linkAtOrAbove(ports.fs, folder);
+  const [through, into] = await Promise.all([
+    linkAbove(ports.fs, entry.path),
+    linkAtOrAbove(ports.fs, folder),
+  ]);
+  if (through !== null) throw new MoveRefusedError(moveThroughLinkRefusal(through));
   if (into !== null) throw new MoveRefusedError(moveIntoLinkRefusal(into));
   return relocate({ ports, entry, to: moveDestination(entry, folder), notePaths });
 }
