@@ -697,6 +697,29 @@ describe('Undo last run, a trash that fails partway with an error that is not a 
     const done = logged?.kind === 'undo' ? logged.done : [];
     expect(done).toContainEqual({ kind: 'trashed', path: gone[0] });
     expect(done.filter(({ kind }) => kind === 'unsummarised')).toHaveLength(1);
+    // The task the error stopped at is still there, linked, and named as kept.
+    const stopped = made.find((path) => at.vault.files.has(path));
+    const left = logged?.kind === 'undo' ? logged.left : [];
+    expect(left).toContainEqual({
+      path: stopped,
+      reason: expect.stringContaining('the port broke'),
+    });
+  });
+
+  it('names the meeting it stopped at, even one with no summary, and nothing trashed (#685)', async () => {
+    const at = setUp([digest({ summary: 42 })]);
+    await at.run();
+    expect(at.body().includes('atlas:summary')).toBe(false);
+    expect(at.tasks()).toHaveLength(1);
+    at.vault.ports.fs.trashEntry = async () => {
+      throw new TypeError('the port broke');
+    };
+
+    await expect(at.undo()).rejects.toThrow('the port broke');
+
+    const logged = at.entries().at(-1);
+    const left = logged?.kind === 'undo' ? logged.left : [];
+    expect(left).toContainEqual({ path: SYNC, reason: 'the port broke' });
   });
 });
 
