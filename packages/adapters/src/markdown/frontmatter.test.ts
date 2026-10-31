@@ -8,6 +8,18 @@ describe('frontmatterProblem', () => {
     expect(frontmatterProblem(null)).toBeNull();
   });
 
+  it('says nothing of a block holding only a comment or an empty map', () => {
+    expect(frontmatterProblem('---\n# a comment\n---\n')).toBeNull();
+    expect(frontmatterProblem('---\n{}\n---\n')).toBeNull();
+  });
+
+  it('says why YAML that is a list or one value is not a set of properties (#679)', () => {
+    expect(frontmatterProblem('---\n- atlas: automation\n  name: Digest\n---\n')).toBe(
+      'it is a list',
+    );
+    expect(frontmatterProblem('---\natlas automation\n---\n')).toBe('it is one value');
+  });
+
   it('says why a block with a key given twice cannot be read', () => {
     const problem = frontmatterProblem('---\nsidebarOrder: [views]\nsidebarOrder: [types]\n---\n');
     expect(problem).toMatch(/unique/i);

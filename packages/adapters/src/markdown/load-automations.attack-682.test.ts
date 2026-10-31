@@ -1,7 +1,7 @@
 /**
  * Attack on PR #682 (#679): a file in the rules folder is either loaded as a
  * rule or listed as broken, never silently dropped, through the real YAML
- * port. The `it.fails` cases are files that still vanish without a word.
+ * port: an unclosed block, and YAML that is a list or one value, included.
  */
 import { describe, expect, it } from 'vitest';
 import { apiFixture, listVaultNotes, loadAutomations } from '@dfai/application';
@@ -31,29 +31,36 @@ async function accountedFor(path: string, text: string) {
   return listing.broken.map((broken) => broken.path);
 }
 
+/** As {@link accountedFor}, with why each broken file is broken. */
+async function brokenWithWhy(path: string, text: string) {
+  const listing = await listingOf({ [path]: text, '.atlas/automations/Tidy.md': VALID });
+  expect(listing.automations.map(({ rule }) => rule.name)).toEqual(['Tidy']);
+  return listing.broken.map((broken) => ({ path: broken.path, problem: broken.problem }));
+}
+
 describe('loadAutomations through the real YAML port (attack #682)', () => {
-  it.fails(
-    'a rule file whose closing fence was deleted is listed as broken, not dropped',
-    async () => {
-      const path = '.atlas/automations/Digest.md';
-      const text = ['---', 'atlas: automation', 'name: Digest', 'when: manually', '', 'Body.', ''];
-      expect(await accountedFor(path, text.join('\n'))).toEqual([path]);
-    },
-  );
+  it('a rule file whose closing fence was deleted is listed as broken, not dropped', async () => {
+    const path = '.atlas/automations/Digest.md';
+    const text = ['---', 'atlas: automation', 'name: Digest', 'when: manually', '', 'Body.', ''];
+    expect(await brokenWithWhy(path, text.join('\n'))).toEqual([
+      { path, problem: 'Its frontmatter has no closing ---.' },
+    ]);
+  });
 
-  it.fails(
-    'a rule file whose readable frontmatter is a list, not a mapping, is listed as broken',
-    async () => {
-      const path = '.atlas/automations/Digest.md';
-      const text = ['---', '- atlas: automation', '  name: Digest', '---', ''].join('\n');
-      expect(await accountedFor(path, text)).toEqual([path]);
-    },
-  );
+  it('a rule file whose readable frontmatter is a list, not a mapping, is listed as broken', async () => {
+    const path = '.atlas/automations/Digest.md';
+    const text = ['---', '- atlas: automation', '  name: Digest', '---', ''].join('\n');
+    expect(await brokenWithWhy(path, text)).toEqual([
+      { path, problem: 'Its frontmatter cannot be read as properties: it is a list' },
+    ]);
+  });
 
-  it.fails('a rule file whose readable frontmatter is one scalar is listed as broken', async () => {
+  it('a rule file whose readable frontmatter is one scalar is listed as broken', async () => {
     const path = '.atlas/automations/Digest.md';
     const text = ['---', 'atlas automation', '---', ''].join('\n');
-    expect(await accountedFor(path, text)).toEqual([path]);
+    expect(await brokenWithWhy(path, text)).toEqual([
+      { path, problem: 'Its frontmatter cannot be read as properties: it is one value' },
+    ]);
   });
 
   // Guards for what the fix gets right; each was probed and holds.
@@ -99,7 +106,7 @@ describe('loadAutomations through the real YAML port (attack #682)', () => {
         path,
         name: 'Two',
         problem: expect.stringMatching(
-          /^Its frontmatter is not valid YAML: Source contains multiple documents.*column 1$/,
+          /^Its frontmatter cannot be read as properties: Source contains multiple documents.*column 1$/,
         ),
       },
     ]);
