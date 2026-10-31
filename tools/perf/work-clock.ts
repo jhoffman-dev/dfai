@@ -339,14 +339,18 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
     const question: Question = { command, answer: null };
     state.waiting.push(question);
     return new Promise((resolve, reject) => {
-      invoke(command, ...rest).then(
-        (value) => {
-          arrived(() => Object.assign(question, { answer: () => resolve(value) }));
-        },
-        (error: unknown) => {
-          arrived(() => Object.assign(question, { answer: () => reject(error) }));
-        },
-      );
+      const refused = (error: unknown) =>
+        arrived(() => Object.assign(question, { answer: () => reject(error) }));
+      // A call that throws as it is made is answered too, as a refusal in its
+      // turn: left unanswered, it would hold every later question behind it.
+      try {
+        invoke(command, ...rest).then(
+          (value) => arrived(() => Object.assign(question, { answer: () => resolve(value) })),
+          refused,
+        );
+      } catch (error) {
+        refused(error);
+      }
     });
   };
 
@@ -363,10 +367,13 @@ export function installWorkClock({ startsAt, virtual, hostDelayMs = 0 }: WorkClo
       const question: Question = { command: 'crypto digest', answer: null };
       state.waiting.push(question);
       return new Promise<ArrayBuffer>((resolve, reject) => {
-        digest(...given).then(
-          (value) => void (question.answer = () => resolve(value)),
-          (error: unknown) => void (question.answer = () => reject(error)),
-        );
+        const refused = (error: unknown) => void (question.answer = () => reject(error));
+        // One that throws as it is called (an unknown algorithm) is refused in its turn, as the host's are.
+        try {
+          digest(...given).then((value) => void (question.answer = () => resolve(value)), refused);
+        } catch (error) {
+          refused(error);
+        }
       });
     }) as SubtleCrypto['digest'];
   }
