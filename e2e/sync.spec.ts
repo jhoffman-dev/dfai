@@ -334,15 +334,26 @@ test('picks a repository from the GitHub list, then sends and brings in changes 
 
   // Behind: changes wait on GitHub while this Mac has typing not yet sent.
   await openSyncSettings(page);
-  await syncCard(page).getByRole('combobox', { name: 'When to send changes' }).selectOption('300');
+  const sendWhen = syncCard(page).getByRole('combobox', { name: 'When to send changes' });
+  await sendWhen.selectOption('300');
+  // The delay is the vault's setting: written before anything is timed by it.
+  await expectFile(vault, '.atlas/settings.md').toContain('syncPushDelay: 300');
   await closeSettings(page);
   await laptop.pull();
   await writeFile(join(laptop.root, 'Later.md'), '# Later\n');
   await laptop.commitAndPush('DFAI sync from Laptop 2026-09-28 10:05');
   await vault.write('Welcome.md', '# Welcome\n\nStill typing.\n');
   await emitVaultChanged(page, ['Welcome.md']);
+  // Counted as typing not yet sent only once the index has taken it (#238):
+  // a look made before then finds nothing waiting here and brings the change
+  // in, sending the typing with it (run 41206753224). The vault's search
+  // finding the new words is the index having taken them.
+  await page.keyboard.press('Meta+k');
+  await page.getByRole('searchbox', { name: 'Search the vault' }).fill('Still typing');
+  await expect(page.getByRole('option', { name: /Welcome/ })).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.clock.fastForward('01:05');
-  // PROBE (PR #649): what the repositories and the vault hold when this misses on Linux.
+  // Says what the repositories and the vault hold, should this miss.
   try {
     await expect(syncLight(page)).toHaveAccessibleName('Sync: 1 change to bring in');
   } catch (cause) {

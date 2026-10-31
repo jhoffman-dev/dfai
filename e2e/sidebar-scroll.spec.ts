@@ -323,7 +323,7 @@ test('a note dragged to the edge scrolls the sidebar and drops into a folder', a
   }).toPass({ intervals: [50], timeout: 15_000 });
   await page.mouse.up();
 
-  // PROBE (PR #649): what the drag said, and where things were, when this misses on Linux.
+  // Says what the drag said, and where things were, should this miss.
   try {
     await expect.poll(() => vault.exists(`Projects/Note ${NOTES}.md`)).toBe(true);
   } catch (cause) {
@@ -367,7 +367,7 @@ test('a carried row is drawn over the work panel, not under it', async ({ page }
   await expect(lifted).toBeVisible();
 
   // What the pointer is on is the picture of the row it carries.
-  // PROBE (PR #649): says what is there instead when this misses on Linux.
+  // Says what is there instead, should this miss.
   await expect
     .poll(() =>
       page.evaluate(({ x, y }) => {
