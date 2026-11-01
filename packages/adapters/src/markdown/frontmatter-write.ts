@@ -108,7 +108,9 @@ export function updateFrontmatter(
   }
   // Blank lines were all a block held: they stay above the keys it now has.
   const blank = source.trim() === '' ? content.replace(/\r\n/g, '\n') : '';
-  const written = checkedBody({ document, before, edit, was, blank, lists, found });
+  // A block the reader reads (no key written twice) must still be one after the change.
+  const strict = parseDocument(source).errors.length === 0;
+  const written = checkedBody({ document, before, edit, was, blank, lists, found, strict });
   const ended = withOriginalEndings({ original: content, edited: `${written}\n`, fallback: eol });
   return `${opening}${ended}${closing}`;
 }
@@ -171,6 +173,7 @@ export function checkedBody({
   blank,
   lists,
   found = null,
+  strict = true,
   compose = composed,
 }: {
   document: Document;
@@ -181,6 +184,8 @@ export function checkedBody({
   lists: ReturnType<typeof listIndent>;
   /** The block as the library wrote it before the change, when the change reaches a map. */
   found?: string | null;
+  /** Whether the block must read without errors as the reader reads it, as the source did. */
+  strict?: boolean;
   /** How the block is written under each set of rules; its test gives one that writes it wrong. */
   compose?: typeof composed;
 }): string {
@@ -197,11 +202,11 @@ export function checkedBody({
     if (
       byEntry !== null &&
       keepsComments({ written: byEntry, whole, source: textOf(before) }) &&
-      readsBack(byEntry, wanted, was, edit.keys)
+      readsBack(byEntry, wanted, was, edit.keys, strict)
     ) {
       return byEntry;
     }
-    if (readsBack(whole, wanted, was, edit.keys)) return whole;
+    if (readsBack(whole, wanted, was, edit.keys, strict)) return whole;
     for (const putBack of edit.cleared.values()) putBack();
     edit.cleared.clear();
   }
@@ -325,14 +330,18 @@ function valuesOf(document: Document): Record<string, unknown> | null {
 /**
  * Whether the written `body` reads as `wanted`, and every key not among
  * `changed` reads as it `was`. Nothing to compare with (`wanted` null)
- * asks only that it can be read.
+ * asks only that it can be read. `strict`, it must also read without
+ * errors as the reader reads it.
  */
 function readsBack(
   body: string,
   wanted: Record<string, unknown> | null,
   was: Record<string, unknown> | null,
   changed: ReadonlySet<string>,
+  strict = false,
 ): boolean {
+  // The reader parses with keys unique (frontmatter.ts): a key written twice it cannot read.
+  if (strict && parseDocument(body).errors.length > 0) return false;
   const read = readBody(body);
   if (read === null) return false;
   if (wanted === null) return true;
@@ -772,45 +781,21 @@ function reconcileItems(document: Document, items: readonly unknown[], values: r
 /**
  * The map's keys set to `value`'s, each written into the pair that held it,
  * and put in `value`'s order — so a property moved or renamed in an editor
- * lands where the editor put it, and a new key where it was added. A key
- * gone whose value comes back under a new key was renamed: its pair takes
- * the new name and keeps its value as written, and the comment and blank
- * line above it (#697).
+ * lands where the editor put it, and a new key where it was added.
  */
 function reconcileMap(
   document: Document,
   existing: { items: { key: unknown; value: unknown }[] },
   value: Readonly<Record<string, unknown>>,
 ): void {
-  const gone = existing.items.filter((pair) => !Object.hasOwn(value, keyOf(pair.key, document)));
-  existing.items = existing.items.filter((pair) => !gone.includes(pair));
+  existing.items = existing.items.filter((pair) => Object.hasOwn(value, keyOf(pair.key, document)));
   for (const [key, wanted] of Object.entries(value)) {
     // The last spelling of a key is the one the reader reads.
     const pair = existing.items.findLast((item) => keyOf(item.key, document) === key);
-    const renamed = pair === undefined ? renamedPair(document, gone, wanted) : undefined;
-    if (renamed !== undefined) {
-      (renamed.key as Scalar).value = key;
-      existing.items.push(renamed);
-    } else if (pair === undefined) existing.items.push(document.createPair(key, wanted));
+    if (pair === undefined) existing.items.push(document.createPair(key, wanted));
     else pair.value = reconcile(document, pair.value, wanted);
   }
   existing.items = inOrderOf(document, Object.keys(value), existing.items);
-}
-
-/** The first pair of `gone` with a plain key that holds `wanted`, taken out of `gone`. */
-function renamedPair<Item extends { key: unknown; value: unknown }>(
-  document: Document,
-  gone: Item[],
-  wanted: unknown,
-): Item | undefined {
-  const at = gone.findIndex(
-    (pair) =>
-      isScalar(pair.key) &&
-      // A key another refers to by its anchor would change what that one reads.
-      pair.key.anchor === undefined &&
-      sameValue(document, pair.value, wanted),
-  );
-  return at === -1 ? undefined : gone.splice(at, 1)[0];
 }
 
 /**
@@ -1315,8 +1300,17 @@ function partKept({
   found: string;
   by: number;
 }) {
-  return now === then && /^(?:[ \t]*(?:#.*)?\n)*$/.test(now) ? found : shifted(now, by);
+  return now === then && /^(?:[ \t]*(?:#.*)?\n)*$/.test(now) ? found : writtenAt(now, by);
 }
+
+/**
+ * Text the library wrote, moved `by` columns, the blank lines above it left
+ * empty: the library writes some as lines of spaces.
+ */
+const writtenAt = (text: string, by: number) => {
+  const blanks = leadingBlanks(text);
+  return `${blanks.replace(/[ \t]+\n/g, '\n')}${shifted(text.slice(blanks.length), by)}`;
+};
 
 /**
  * A block map's lines, `written` by the library after the change, with each
@@ -1343,10 +1337,13 @@ function mapKept({
   const entryText = (entry: Entry) => {
     const render = rendered.get(entry.id);
     const source = original.get(entry.id);
-    if (render === undefined || source === undefined) return shifted(entry.text, by);
+    // A key the change adds has no blank line of its own: one the library
+    // writes above it is another key's, which that key's source text holds.
+    if (render === undefined) return shifted(withoutLeadingBlanks(entry.text), by);
+    if (source === undefined) return writtenAt(entry.text, by);
     // The blank lines above it are where the library put them; the source's go with it.
     if (withoutLeadingBlanks(render.text) === withoutLeadingBlanks(entry.text)) return source.text;
-    return entryKept(entry, render, source, 'head') ?? shifted(entry.text, by);
+    return entryKept(entry, render, source, 'head') ?? writtenAt(entry.text, by);
   };
   const entries = now.entries.map((entry, at) => {
     const text = entryText(entry);
@@ -1378,7 +1375,12 @@ function entriesOf(
 ): { head: string; indent: number; entries: Entry[]; tail: string } | null {
   const cut = segments(text.replace(/\n$/, ''));
   if (cut === null) return null;
-  let carried = '';
+  // Blank lines closing the head stand above the first key: the library
+  // writes them, some as lines of spaces, with whichever key comes first.
+  const opening = /(?:^|\n)((?:[ \t]*\n)+)$/.exec(cut.head);
+  const ownBlanks = opening?.[1] ?? '';
+  const head = cut.head.slice(0, cut.head.length - ownBlanks.length);
+  let carried = ownBlanks;
   const entries = cut.keys.map((segment) => {
     const entry = entryOf(segment);
     const blanks = entry.holdsBlanks ? null : /\n((?:[ \t]*\n)+)$/.exec(entry.text);
@@ -1393,7 +1395,7 @@ function entriesOf(
   if (last !== undefined && held !== '')
     entries[entries.length - 1] = { ...last, text: `${last.text}${held}` };
   const tail = `${carried}${cut.tail.slice(held.length)}`;
-  return { head: cut.head, indent: cut.indent.length, entries, tail };
+  return { head, indent: cut.indent.length, entries, tail };
 }
 
 /** Whether two texts hold the same comments, each as often: none lost, none written twice. */
