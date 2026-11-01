@@ -71,9 +71,10 @@ function standingOfFile(
         ? 'pending'
         : 'not';
   if (counted === 'not') return 'not';
-  // An unknown time is after every pull: left for the next one, as the gate would hold it.
-  const arrived = modifiedAt ?? Number.POSITIVE_INFINITY;
-  return pulledAfterArrival({ standing, modifiedAt: arrived }) ? counted : 'deferred';
+  // An unknown time is counted (ADR-0053): read as after every pull it would
+  // be deferred for good, and the count only says what waits; it writes nothing.
+  if (modifiedAt === null) return counted;
+  return pulledAfterArrival({ standing, modifiedAt }) ? counted : 'deferred';
 }
 
 /** Whether one file waits for the named Mac to import it, judged against the pull that lets it be counted. */

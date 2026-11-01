@@ -86,8 +86,10 @@ for an unknown time: **it is never "changed since" anything.** So:
 
 - the catch-up finds nothing missed (as when the rule's file cannot be read);
 - `ruleSince` is null, so every meeting is a backfill: proposals only;
-- the fresh-pull gate stays shut on an arrival it cannot date, and a waiting
-  meeting that cannot be dated is left for the next pull;
+- the fresh-pull gate stays shut on an arrival it cannot date;
+- a waiting meeting that cannot be dated is counted as waiting. Read as
+  after every pull, no pull would ever count it, and the count writes
+  nothing: it only says what waits;
 - `use-note` decides by the pane's own order, never by `modified`: a held
   `landed` is always the newer, since a read begun after it lets it go and a
   read begun before it is not shown. The desktop's choices are the same;
