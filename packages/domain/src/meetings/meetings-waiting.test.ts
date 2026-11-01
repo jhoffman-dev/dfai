@@ -407,3 +407,12 @@ describe('processHereRefusal (ADR-0035 part 2, #176)', () => {
     expect(processHereRefusal({ waiting: uncounted('no-pull'), failing: true })).toBe('failing');
   });
 });
+
+describe('a waiting meeting whose vault cannot tell when it was written (#720, ADR-0053)', () => {
+  it('is left for the next pull, not counted, however its version compares', () => {
+    expect(waitsForImport(file('Inbox/Meetings/a.md', { modifiedAt: null }), PULLED, NONE)).toBe(
+      false,
+    );
+    expect(waitsForImport(file('Inbox/Meetings/a.md'), PULLED, NONE)).toBe(true);
+  });
+});
