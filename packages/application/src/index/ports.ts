@@ -1,4 +1,5 @@
 import type { HighlightRow, NoteVersion, VaultPath } from '@dfai/domain';
+import type { WrittenAt } from '../vault/ports.ts';
 
 /**
  * A type's SQL view as the index is told to make it: its name and the
@@ -37,9 +38,10 @@ export interface IndexedLinkRow {
   readonly kind: 'wikilink' | 'markdown';
 }
 
-export interface IndexedNote extends NoteVersion {
+export interface IndexedNote extends NoteVersion, WrittenAt {
   readonly path: string;
   readonly title: string;
+  /** Its file's version, as the vault reports it; when it was written is `writtenAt` of it (ADR-0053). */
   readonly modified: number;
   readonly size: number;
   /** Words with the markup removed, for searching. */

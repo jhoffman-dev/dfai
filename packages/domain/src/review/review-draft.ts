@@ -101,8 +101,9 @@ export type ReviewDraftData = CitedStepData;
 /** Each section of the draft's data, the items it lists, and how each is said. */
 export function reviewDraftData(input: ReviewDraftInput): ReviewDraftData {
   const { review, now } = input;
+  // Only a task whose time is known is ever untouched: an unknown time is never stale (ADR-0053).
   const since = (task: ReviewTask) =>
-    `untouched for ${Math.floor((now - task.modified) / DAY_MS)} days`;
+    `untouched for ${Math.floor((now - (task.modified ?? now)) / DAY_MS)} days`;
   const sections: readonly Section[] = [
     { about: `Done in the last ${REVIEW_DRAFT_DAYS} days`, items: input.done.map(plainLine) },
     {

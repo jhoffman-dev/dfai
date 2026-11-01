@@ -17,7 +17,13 @@ const NAMED = `---\nsync: github\nautomationsMac: ${THIS_MAC}\nautomationsMacNam
  * host's counter is faked; the wall clock is the test's.
  */
 function gateOn({ settings = NAMED as string | null, paused = false } = {}) {
-  const vault = { settings, paused, modified: new Map<string, number>(), now: 1_000 };
+  const vault = {
+    settings,
+    paused,
+    modified: new Map<string, number>(),
+    timeUnknown: new Set<string>(),
+    now: 1_000,
+  };
   const sleep = fakeSleepClock();
   const activity = recordingActivity();
   const told: (PullStanding | null)[] = [];
@@ -31,7 +37,9 @@ function gateOn({ settings = NAMED as string | null, paused = false } = {}) {
             : [{ path, text: vault.settings, modified: 1, size: 1 }];
         }
         const modified = vault.modified.get(path);
-        return modified === undefined ? [] : [{ path, text: '', modified, size: 1 }];
+        if (modified === undefined) return [];
+        const modifiedAt = vault.timeUnknown.has(path) ? { modifiedAt: null } : {};
+        return [{ path, text: '', modified, size: 1, ...modifiedAt }];
       }),
   });
   const gate = createFreshPullGate({
@@ -280,6 +288,22 @@ describe('createFreshPullGate: gate 1 (a pull completed after the file arrived)'
     expect(await gate.acts(VAULT, { paths: ['Inbox/Meetings/a.md', 'Inbox/Meetings/b.md'] })).toBe(
       false,
     );
+  });
+
+  it('stays shut on a note whose vault cannot tell when it was written (ADR-0053)', async () => {
+    const { gate, vault, runs } = gateOn();
+    vault.now = 5_000;
+    // A version, as the GitHub vault gives: read as a time it would look long before the pull.
+    vault.modified.set('Inbox/Meetings/a.md', 1_000).set('Inbox/Meetings/b.md', 1_000);
+    vault.timeUnknown.add('Inbox/Meetings/b.md');
+    await runs({ kind: 'synced' });
+    expect(await gate.acts(VAULT, { paths: ['Inbox/Meetings/a.md'] })).toBe(true);
+    expect(
+      await gate.verdict(VAULT, { paths: ['Inbox/Meetings/a.md', 'Inbox/Meetings/b.md'] }),
+    ).toEqual({
+      open: false,
+      shut: 'arrived-after-pull',
+    });
   });
 });
 

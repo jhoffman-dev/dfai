@@ -19,6 +19,7 @@ import type { ActivityLog } from '../activity/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
+import { writtenAt } from '../vault/written-at.ts';
 import { programWasMissing } from './git-steps.ts';
 import type { SleepClockPort } from './ports.ts';
 import type { AutomationsOnGitHub } from './automations-on-github.ts';
@@ -206,7 +207,10 @@ export function createFreshPullGate({
     if (arrival === undefined) return null;
     if ('modifiedAt' in arrival) return arrival.modifiedAt;
     const notes = await ports.fs.readNotes(arrival.paths);
-    return notes.length === 0 ? null : Math.max(...notes.map((note) => note.modified));
+    if (notes.length === 0) return null;
+    const known = notes.map(writtenAt).filter((time): time is number => time !== null);
+    // A time the vault cannot tell is after every pull, so the gate stays shut (ADR-0053).
+    return known.length < notes.length ? Number.POSITIVE_INFINITY : Math.max(...known);
   };
 
   /** Says in Activity a wait the person can end, once until the gates open again. */

@@ -6,15 +6,28 @@ export interface VaultLocation {
   readonly name: string;
 }
 
+/**
+ * When a file was last written, beside its `modified` (ADR-0053).
+ *
+ * `modified` is the file's version: what a write is refused against and what
+ * the index spots a change by, compared for equality only. On the desktop
+ * host it is also the file's mtime, so the host leaves `modifiedAt` out. A
+ * vault whose `modified` is not a time says so with `modifiedAt: null` — the
+ * GitHub vault, whose trees carry no per-file time. Read it with `writtenAt`.
+ */
+export interface WrittenAt {
+  readonly modifiedAt?: number | null;
+}
+
 /** A note in the vault, with what the index needs to spot a change. */
-export interface NoteListing {
+export interface NoteListing extends WrittenAt {
   readonly name: string;
   readonly path: VaultPath;
   readonly modified: number;
   readonly size: number;
 }
 
-export interface NoteFile {
+export interface NoteFile extends WrittenAt {
   readonly path: string;
   readonly text: string;
   readonly modified: number;
@@ -29,7 +42,7 @@ export interface AsRead {
   readonly text: string;
 }
 
-export interface NoteContents {
+export interface NoteContents extends WrittenAt {
   readonly text: string;
   readonly modified: number;
 }
