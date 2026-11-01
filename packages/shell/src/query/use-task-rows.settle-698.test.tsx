@@ -6,7 +6,7 @@
  * write landed reaches the view later, and a run begun on it is of the vault
  * from before the write: drawing it put the row back as it was.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { TASK_ROW_COLUMNS, TASK_TYPE_FILE, taskAsRead, type BoardRow } from '@dfai/domain';
 import { fakeVaultFs, memoryVault, recordingActivity } from '@dfai/application';
@@ -36,27 +36,38 @@ function rowAt(status: string): BoardRow {
   };
 }
 
-function view() {
+function view({ refreshThrows = false }: { refreshThrows?: boolean } = {}) {
   const memory = memoryVault({ [CALL]: TASK });
   /** The index's own key, ahead of the news the view runs on, and the runs begun. */
   const index = { key: 'ready:1', runs: 1 };
+  // A write the test holds mid-way, and the refreshes the view has asked for.
+  let held: Promise<void> | null = null;
+  let refreshes = 0;
   const initial: TaskRowsOptions = {
     rows: [rowAt('next-action')],
     read: { at: 1, indexKey: 'ready:1' },
     runsBegun: () => index.runs,
-    indexKey: 'ready:1',
     indexKeyNow: () => index.key,
     enabled: true,
     scope: ['index', 'Views/Next actions.md'],
     ports: {
-      fs: fakeVaultFs(memory.fs),
+      fs: fakeVaultFs({
+        ...memory.fs,
+        writeTextFile: async (write) => {
+          if (held !== null) await held;
+          return memory.fs.writeTextFile(write);
+        },
+      }),
       markdown: remarkMarkdown,
       editors: noPane,
       activity: recordingActivity(),
     },
     clock: { today: () => '2026-10-28' },
     types: [TASK_TYPE_FILE.type],
-    onChanged: () => {},
+    onChanged: () => {
+      refreshes += 1;
+      if (refreshThrows) throw new Error('the index is closed');
+    },
   };
   const hook = renderHook((options: TaskRowsOptions) => useTaskRows(options), {
     initialProps: initial,
@@ -65,22 +76,34 @@ function view() {
   const run = (status: string) => {
     index.runs += 1;
     const read = { at: index.runs, indexKey: index.key };
-    hook.rerender({ ...initial, rows: [rowAt(status)], read, indexKey: index.key });
+    hook.rerender({ ...initial, rows: [rowAt(status)], read });
   };
   const status = () => hook.result.current.rows[0]?.values['status'];
   const file = () => memory.files.get(CALL) ?? '';
-  return { hook, index, run, status, file };
+  /** Holds the next writes until the function it returns is called. */
+  const holdWrites = () => {
+    let release = () => {};
+    held = new Promise<void>((resolve) => (release = resolve));
+    return () => {
+      held = null;
+      release();
+    };
+  };
+  return { hook, index, run, status, file, holdWrites, refreshes: () => refreshes };
 }
 
 describe('useTaskRows — settling on news that comes late (#698)', () => {
   it('keeps a row as its change left it through a run of an index that moved before the write landed', async () => {
-    const { hook, index, run, status, file } = view();
-    // Another note's refresh, which read the vault before this write, has moved the index.
-    index.key = 'ready:2';
+    const { hook, index, run, status, file, holdWrites, refreshes } = view();
     const row = hook.result.current.rows[0] ?? expect.fail('no row');
+    // The write is under way when another note's refresh, which read the vault before it,
+    // moves the index.
+    const release = holdWrites();
     act(() => hook.result.current.controls?.onMove(row, 'someday'));
-    await waitFor(() => expect(file()).toContain('status: someday'));
-    await act(async () => {});
+    index.key = 'ready:2';
+    release();
+    await waitFor(() => expect(refreshes()).toBe(1));
+    expect(file()).toContain('status: someday');
     expect(status()).toBe('someday');
 
     // Its news arrives after the write landed: the run is of the index from before it.
@@ -104,5 +127,28 @@ describe('useTaskRows — settling on news that comes late (#698)', () => {
     index.key = 'ready:2';
     run('next-action');
     expect(status()).toBe('next-action');
+  });
+
+  it('lands a row whose refresh throws as it is asked, says why, and settles it on the next ready run', async () => {
+    const said = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { hook, index, run, status, refreshes } = view({ refreshThrows: true });
+      const row = hook.result.current.rows[0] ?? expect.fail('no row');
+      act(() => hook.result.current.controls?.onMove(row, 'someday'));
+      await waitFor(() => expect(refreshes()).toBe(1));
+      await act(async () => {});
+      expect(said).toHaveBeenCalledWith(
+        'The index could not be refreshed after a view row was written:',
+        expect.objectContaining({ message: 'the index is closed' }),
+      );
+      // Landed all the same: a run of the key it landed at holds it, one past it reads it back.
+      run('next-action');
+      expect(status()).toBe('someday');
+      index.key = 'ready:2';
+      run('next-action');
+      expect(status()).toBe('next-action');
+    } finally {
+      said.mockRestore();
+    }
   });
 });

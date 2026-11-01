@@ -53,6 +53,7 @@ describe('a board grouped by a relation to a project or an area', () => {
         types: TYPES,
         notePaths: [],
         indexKey: 'ready:1',
+        indexKeyNow: () => 'ready:1',
         onChanged: () => {},
         editors: EDITORS,
         tickMemory: TICKS,

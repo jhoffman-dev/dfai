@@ -28,8 +28,8 @@ function board({
         rows,
         read,
         runsBegun: () => index.runs,
-        indexKey: read.indexKey,
-        ...(withKeyNow && { indexKeyNow: () => index.key }),
+        // Without the index's own key, the news a run began on stands for it.
+        indexKeyNow: withKeyNow ? () => index.key : () => read.indexKey,
         scope: ['index-a', 'Board.md'],
         write,
         onChanged: () => {},
@@ -48,20 +48,26 @@ function board({
 }
 
 describe('usePendingCards — attack #701', () => {
-  // FINDING: the move's refresh failed, so the index still holds the card where it was.
-  // `failed:2` differs from `ready:1`, so the run reads as standing for the move, and the
-  // card is drawn back in its old column although its file has it moved.
-  it.fails(
-    'keeps a moved card where it was put through a run of an index whose refresh failed',
-    async () => {
-      const { index, run, move, shown } = board();
-      await act(async () => move('done'));
-      expect(shown()).toBe('done');
-      index.key = 'failed:2';
-      run('doing');
-      expect(shown()).toBe('done');
-    },
-  );
+  // FOUND, and fixed: the move's refresh failed, so the index still held the card where it
+  // was, and `failed:2` differing from `ready:1` read as standing for the move. A run of an
+  // index that is not ready now stands for no move: the card stays where it was put until
+  // the index is ready past it.
+  it('keeps a moved card where it was put through a run of an index whose refresh failed, until the index is ready', async () => {
+    const { index, run, move, shown } = board();
+    await act(async () => move('done'));
+    expect(shown()).toBe('done');
+    index.key = 'failed:2';
+    run('doing');
+    expect(shown()).toBe('done');
+    // Still failed on the next run: still drawn where it was put, not snapped back.
+    index.key = 'failed:3';
+    run('doing');
+    expect(shown()).toBe('done');
+    // Ready again, past the move: the index's read stands, whatever it says.
+    index.key = 'ready:4';
+    run('doing');
+    expect(shown()).toBe('doing');
+  });
 
   it('probe: a second move of a card holds through a run that read back only the first', async () => {
     let writes = 0;

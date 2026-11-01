@@ -135,6 +135,7 @@ async function showView(args: {
       types: TYPES,
       notePaths: NOTE_PATHS,
       indexKey: 'ready:1',
+      indexKeyNow: () => 'ready:1',
       onChanged: args.onChanged ?? (() => {}),
       editors: args.editors,
       tickMemory,

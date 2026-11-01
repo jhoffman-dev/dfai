@@ -18,16 +18,19 @@ const rowsAt = (status: string): readonly BoardRow[] => [
 function board() {
   /** The index's own key, ahead of the news the view runs on. */
   const index = { key: 'ready:1', runs: 1 };
+  // A write the test holds mid-way.
+  let held: Promise<void> | null = null;
   const hook = renderHook(
     ({ rows, read }: { rows: readonly BoardRow[]; read: ReadMoment }) =>
       usePendingCards({
         rows,
         read,
         runsBegun: () => index.runs,
-        indexKey: read.indexKey,
         indexKeyNow: () => index.key,
         scope: ['index-a', 'Board.md'],
-        write: async () => {},
+        write: async () => {
+          if (held !== null) await held;
+        },
         onChanged: () => {},
       }),
     { initialProps: { rows: rowsAt('doing'), read: { at: 1, indexKey: 'ready:1' } } },
@@ -37,20 +40,36 @@ function board() {
     index.runs += 1;
     hook.rerender({ rows: rowsAt(status), read: { at: index.runs, indexKey: index.key } });
   };
-  return { hook, index, run };
+  /** Holds the next writes until the function it returns is called. */
+  const holdWrites = () => {
+    let release = () => {};
+    held = new Promise<void>((resolve) => (release = resolve));
+    return () => {
+      held = null;
+      release();
+    };
+  };
+  return { hook, index, run, holdWrites };
 }
 
 describe('usePendingCards — settling on news that comes late (#698)', () => {
   it('keeps a moved card where it was put through a run of an index that moved before the move landed', async () => {
-    const { hook, index, run } = board();
-    // Another note's refresh, which read the vault before this move, has moved the index.
-    index.key = 'ready:2';
-    await act(async () => {
-      await hook.result.current.move({
+    const { hook, index, run, holdWrites } = board();
+    // The move is being written when another note's refresh, which read the vault before
+    // it, moves the index.
+    const release = holdWrites();
+    let moved: Promise<void> = Promise.resolve();
+    act(() => {
+      moved = hook.result.current.move({
         path: 'One.md',
         values: { status: 'done' },
         shown: () => ({ status: 'done' }),
       });
+    });
+    index.key = 'ready:2';
+    await act(async () => {
+      release();
+      await moved;
     });
     expect(hook.result.current.shownOf('One.md')?.['status']).toBe('done');
 

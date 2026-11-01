@@ -81,7 +81,8 @@ describe('useToday toast across a vault switch (attack-455)', () => {
       clock: CLOCK,
       types: TYPES,
       vaultKey: 'vault-a',
-      indexKey: '1',
+      indexKey: 'ready:1',
+      indexKeyNow: () => '1',
       open: true,
       onSettled: vi.fn(),
       toasts,
@@ -98,7 +99,7 @@ describe('useToday toast across a vault switch (attack-455)', () => {
 
     // Switch to vault B with the toast still up (nothing clears the store).
     vaultBPaneOpen = true;
-    hook.rerender({ ...base, ports: b.ports, vaultKey: 'vault-b', indexKey: '2' });
+    hook.rerender({ ...base, ports: b.ports, vaultKey: 'vault-b', indexKey: 'ready:2' });
     expect(hook.result.current.notice).toBeNull();
 
     await act(async () => {

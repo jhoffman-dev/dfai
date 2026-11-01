@@ -30,7 +30,7 @@ function board(written: string[], holds: Promise<void>[]) {
         rows: ROWS,
         read: READ,
         runsBegun: () => 1,
-        indexKey: 'ready:1',
+        indexKeyNow: () => 'ready:1',
         scope,
         write: async ({ values }: { path: string; values: PropertyChanges }) => {
           const hold = holds.shift();

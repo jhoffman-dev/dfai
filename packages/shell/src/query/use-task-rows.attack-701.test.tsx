@@ -43,7 +43,6 @@ function view() {
     rows: [rowAt('next-action')],
     read: { at: 1, indexKey: 'ready:1' },
     runsBegun: () => index.runs,
-    indexKey: 'ready:1',
     indexKeyNow: () => index.key,
     enabled: true,
     scope: ['index', 'Views/Next actions.md'],
@@ -64,8 +63,7 @@ function view() {
   const begin = () => {
     index.runs += 1;
     const read = { at: index.runs, indexKey: index.key };
-    return (status: string) =>
-      hook.rerender({ ...initial, rows: [rowAt(status)], read, indexKey: index.key });
+    return (status: string) => hook.rerender({ ...initial, rows: [rowAt(status)], read });
   };
   const run = (status: string) => begin()(status);
   const status = () => hook.result.current.rows[0]?.values['status'];
@@ -93,17 +91,19 @@ describe('useTaskRows — attack #701', () => {
     expect(status()).toBe('someday');
   });
 
-  // FINDING: the write's refresh failed, so the index never took the write in; `failed:2`
-  // differs from `ready:1`, so the run stands for the write and the row is drawn as it was,
-  // and offered as free to act on, though its file says someday.
-  it.fails(
-    'keeps a row as its change left it through a run of an index whose refresh failed',
-    async () => {
-      const { index, run, status, someday } = view();
-      await someday();
-      index.key = 'failed:2';
-      run('next-action');
-      expect(status()).toBe('someday');
-    },
-  );
+  // FOUND, and fixed: the write's refresh failed, so the index never took the write in, and
+  // `failed:2` differing from `ready:1` read as standing for the write. A run of an index
+  // that is not ready now stands for no write: the row stays as its change left it, waiting,
+  // until the index is ready past it.
+  it('keeps a row as its change left it through a run of an index whose refresh failed, until the index is ready', async () => {
+    const { index, run, status, someday } = view();
+    await someday();
+    index.key = 'failed:2';
+    run('next-action');
+    expect(status()).toBe('someday');
+    // Ready again, past the write: the index's read stands, whatever it says.
+    index.key = 'ready:3';
+    run('next-action');
+    expect(status()).toBe('next-action');
+  });
 });

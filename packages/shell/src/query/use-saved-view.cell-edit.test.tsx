@@ -119,6 +119,7 @@ async function table() {
         types: TYPES,
         notePaths: [HALL],
         indexKey,
+        indexKeyNow: () => indexKey,
         onChanged: () => {},
         editors: noPane,
         tickMemory,

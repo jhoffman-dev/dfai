@@ -23,6 +23,7 @@ function queryEditor() {
       types: TYPES,
       notePaths: NO_NOTES,
       indexKey: 'ready',
+      indexKeyNow: () => 'ready',
     }),
   );
   return { hook, limits };

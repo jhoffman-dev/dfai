@@ -88,6 +88,7 @@ function setUp() {
         types: TYPES,
         vaultKey: props.vaultKey,
         indexKey: props.indexKey,
+        indexKeyNow: () => props.indexKey,
         indexReady: props.indexReady,
         open: true,
         onSettled,

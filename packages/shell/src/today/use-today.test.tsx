@@ -84,7 +84,8 @@ function setUp({
       clock: CLOCK,
       types,
       vaultKey: 'vault-a',
-      indexKey: '1',
+      indexKey: 'ready:1',
+      indexKeyNow: () => '1',
       indexReady,
       open,
       onSettled,
@@ -322,7 +323,8 @@ describe('useToday', () => {
         clock: CLOCK,
         types: TYPES,
         vaultKey: 'vault-a',
-        indexKey: '1',
+        indexKey: 'ready:1',
+        indexKeyNow: () => '1',
         open: true,
         onSettled: () => {},
       }),
@@ -353,8 +355,9 @@ describe('useToday', () => {
             open: true,
             onSettled,
             indexKey,
+            indexKeyNow: () => indexKey,
           }),
-        { initialProps: { indexKey: '1' } },
+        { initialProps: { indexKey: 'ready:1' } },
       );
       return { ...hook, onSettled, files: memory.files, text: () => memory.files.get(PATH) ?? '' };
     }
@@ -373,7 +376,7 @@ describe('useToday', () => {
       expect(onSettled).toHaveBeenCalledTimes(1);
       expect(result.current.page.problem).toBeNull();
 
-      rerender({ indexKey: '2' });
+      rerender({ indexKey: 'ready:2' });
       await waitFor(() => expect(result.current.page.settling.has(PATH)).toBe(false));
     });
 
@@ -398,8 +401,9 @@ describe('useToday', () => {
             open: true,
             onSettled: () => {},
             indexKey,
+            indexKeyNow: () => indexKey,
           }),
-        { initialProps: { indexKey: '1', ports: first } },
+        { initialProps: { indexKey: 'ready:1', ports: first } },
       );
       await waitFor(() => expect(result.current.page.today).not.toBeNull());
       await act(async () => result.current.page.onDefer({ ...ROW, days: 1 }));
@@ -410,11 +414,11 @@ describe('useToday', () => {
       // yet what its task is.
       const again = { ...first, fs: fakeVaultFs(memory.fs) };
       const readBefore = result.current.page.today;
-      rerender({ indexKey: '1', ports: again });
+      rerender({ indexKey: 'ready:1', ports: again });
       await waitFor(() => expect(result.current.page.today).not.toBe(readBefore));
       expect(result.current.page.settling.has(PATH)).toBe(true);
 
-      rerender({ indexKey: '2', ports: again });
+      rerender({ indexKey: 'ready:2', ports: again });
       await waitFor(() => expect(result.current.page.settling.has(PATH)).toBe(false));
     });
 
@@ -445,15 +449,16 @@ describe('useToday', () => {
             open: true,
             onSettled,
             indexKey,
+            indexKeyNow: () => indexKey,
           }),
-        { initialProps: { indexKey: '1' } },
+        { initialProps: { indexKey: 'ready:1' } },
       );
       await waitFor(() => expect(result.current.page.today).not.toBeNull());
       await act(async () => result.current.page.onDefer({ ...ROW, days: 1 }));
       await waitFor(() => expect(result.current.page.settling.has(PATH)).toBe(true));
 
       index.failing = true;
-      rerender({ indexKey: '2' });
+      rerender({ indexKey: 'ready:2' });
       await waitFor(() => expect(result.current.page.error).toBe('the index is closed'));
       expect(result.current.page.settling.has(PATH)).toBe(false);
     });
@@ -484,7 +489,8 @@ describe('useToday', () => {
           clock: CLOCK,
           types: TYPES,
           vaultKey: 'vault-a',
-          indexKey: '1',
+          indexKey: 'ready:1',
+          indexKeyNow: () => '1',
           open: true,
           onSettled,
         }),
@@ -538,7 +544,8 @@ describe('useToday', () => {
             clock,
             types: TYPES,
             vaultKey: 'vault-a',
-            indexKey: '1',
+            indexKey: 'ready:1',
+            indexKeyNow: () => '1',
             open: true,
             onSettled,
           }),
@@ -580,8 +587,9 @@ describe('useToday', () => {
             open: true,
             onSettled,
             ...given,
+            indexKeyNow: () => given.indexKey,
           }),
-        { initialProps: { vaultKey: 'vault-a', indexReady: true, indexKey: '1' } },
+        { initialProps: { vaultKey: 'vault-a', indexReady: true, indexKey: 'ready:1' } },
       );
       return { ...hook, query };
     }
@@ -594,12 +602,12 @@ describe('useToday', () => {
       expect(shown).not.toBeNull();
       const asked = query.mock.calls.length;
 
-      rerender({ vaultKey: 'vault-a', indexReady: false, indexKey: '1' });
+      rerender({ vaultKey: 'vault-a', indexReady: false, indexKey: 'ready:1' });
       expect(result.current.page.today).toBe(shown);
       expect(result.current.notice).not.toBeNull();
       expect(query.mock.calls.length).toBe(asked);
 
-      rerender({ vaultKey: 'vault-a', indexReady: true, indexKey: '2' });
+      rerender({ vaultKey: 'vault-a', indexReady: true, indexKey: 'ready:2' });
       await waitFor(() => expect(result.current.page.today).not.toBe(shown));
       expect(query.mock.calls.length).toBeGreaterThan(asked);
     });
@@ -609,7 +617,7 @@ describe('useToday', () => {
       await act(async () => result.current.page.onDefer({ ...ROW, days: 1 }));
       await waitFor(() => expect(result.current.notice).not.toBeNull());
 
-      rerender({ vaultKey: 'vault-b', indexReady: false, indexKey: '1' });
+      rerender({ vaultKey: 'vault-b', indexReady: false, indexKey: 'ready:1' });
       expect(result.current.page.today).toBeNull();
       expect(result.current.notice).toBeNull();
     });
@@ -634,7 +642,8 @@ describe('useToday', () => {
           clock: CLOCK,
           types: TYPES,
           vaultKey: 'vault-a',
-          indexKey: '1',
+          indexKey: 'ready:1',
+          indexKeyNow: () => '1',
           open: true,
           onSettled: () => {},
         }),
@@ -685,10 +694,11 @@ describe('useToday — a read again (#217)', () => {
           types: TYPES,
           vaultKey: 'vault-a',
           indexKey,
+          indexKeyNow: () => indexKey,
           open: true,
           onSettled: vi.fn(),
         }),
-      { initialProps: { indexKey: '1' } },
+      { initialProps: { indexKey: 'ready:1' } },
     );
     const taskOf = (path: string) =>
       hook.result.current.page.today?.sections
@@ -704,7 +714,7 @@ describe('useToday — a read again (#217)', () => {
     const before = hook.result.current.page.today;
 
     answerNext(twoTasks('2026-10-01'));
-    hook.rerender({ indexKey: '2' });
+    hook.rerender({ indexKey: 'ready:2' });
     await waitFor(() => expect(hook.result.current.page.today).not.toBe(before));
 
     expect(taskOf(PATH)).toBe(shipBefore);

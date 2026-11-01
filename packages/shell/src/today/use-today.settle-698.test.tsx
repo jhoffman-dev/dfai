@@ -59,9 +59,17 @@ function answer(index: Index, sql: string): QueryResult {
 function setUp() {
   const memory = memoryVault({ [PATH]: TASK_TEXT });
   const index: Index = { status: 'next-action', key: 'ready:1', reads: 0 };
+  // A write the test holds mid-way, as a slow disk would.
+  let held: Promise<void> | null = null;
   const ports = {
     index: fakeIndexPort({ query: async (sql: string) => answer(index, sql) }),
-    fs: fakeVaultFs(memory.fs),
+    fs: fakeVaultFs({
+      ...memory.fs,
+      writeTextFile: async (write) => {
+        if (held !== null) await held;
+        return memory.fs.writeTextFile(write);
+      },
+    }),
     markdown: remarkMarkdown,
   };
   const activity = recordingActivity();
@@ -92,18 +100,33 @@ function setUp() {
       .flatMap((section) => section.groups)
       .flatMap((group) => group.tasks)
       .some((task) => task.path === PATH) ?? false;
-  return { ...hook, index, listed, portsAgain };
+  /** Holds the next writes until the function it returns is called. */
+  const holdWrites = () => {
+    let release = () => {};
+    held = new Promise<void>((resolve) => (release = resolve));
+    return () => {
+      held = null;
+      release();
+    };
+  };
+  const file = () => memory.files.get(PATH) ?? '';
+  return { ...hook, index, listed, portsAgain, holdWrites, file };
 }
 
 describe('useToday — settling on news that comes late (#698)', () => {
   it('keeps a row off the page through a read of an index that moved before its write landed', async () => {
-    const { result, rerender, index, listed } = setUp();
+    const { result, rerender, index, listed, holdWrites, file } = setUp();
     await waitFor(() => expect(listed()).toBe(true));
 
-    // Another file's refresh, which read the vault before this write, has moved the index;
-    // its news has not reached the page yet.
+    // The write is under way when another file's refresh, which read the vault before it,
+    // moves the index; its news has not reached the page yet.
+    const release = holdWrites();
+    act(() => result.current.page.onSetStatus({ ...ROW, status: 'someday' }));
+    expect(listed()).toBe(false);
     index.key = 'ready:2';
-    await act(async () => result.current.page.onSetStatus({ ...ROW, status: 'someday' }));
+    release();
+    await waitFor(() => expect(file()).toContain('status: someday'));
+    await waitFor(() => expect(result.current.page.busy).toBe(false));
     expect(listed()).toBe(false);
 
     // The news arrives once the write has landed: the read it begins is of the index from before it.
