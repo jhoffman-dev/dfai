@@ -71,10 +71,8 @@ export function fakeAuthGateway(): FakeAuthGateway {
       if (fake.holdRefreshes) await new Promise<void>((go) => held.push(go));
       failing();
       if (!fake.hasCookie) throw new AuthError('no-session');
-      if (fake.revoked) {
-        fake.hasCookie = false;
-        throw new AuthError('revoked');
-      }
+      // The cookie is kept, as the function keeps it: another tab may have just replaced it.
+      if (fake.revoked) throw new AuthError('revoked');
       return grant();
     },
     signOut: async ({ accessToken }) => {
