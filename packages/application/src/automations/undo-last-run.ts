@@ -20,7 +20,7 @@ import {
   type SummaryToTakeBack,
 } from '../meetings/write-meeting-summary.ts';
 import { homeFolderFor } from '../notes/home-folder.ts';
-import { VaultAccessError } from '../vault/ports.ts';
+import { EntryChangedError, VaultAccessError, type AsRead } from '../vault/ports.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import {
   changeProperties,
@@ -206,6 +206,8 @@ const meetingKept = (reason: string) => `Its meeting was left as it is, so it wa
 interface MadeTask {
   readonly path: VaultPath;
   readonly meeting: VaultPath;
+  /** The task as it was checked: the Trash is held to it (#693). */
+  readonly read: AsRead;
 }
 
 /**
@@ -245,7 +247,7 @@ async function takeBackSummaries({
   into.left.push(...left);
   const meetings = [...new Set([...summaries.keys(), ...made.map(({ meeting }) => meeting)])];
   for (const meeting of meetings) {
-    const trashing = made.filter((task) => task.meeting === meeting).map(({ path }) => path);
+    const trashing = made.filter((task) => task.meeting === meeting).map(({ read }) => read);
     await takeBackMeeting({
       ports,
       meeting,
@@ -269,14 +271,16 @@ async function takeBackMeeting({
   ports: UndoPorts;
   meeting: VaultPath;
   summary: SummaryToTakeBack | null;
-  trashing: readonly VaultPath[];
+  /** The meeting's tasks, each as it was checked. */
+  trashing: readonly AsRead[];
   project: PropertyChange | null;
   into: SummariesTakenBack;
 }): Promise<void> {
   const asked = new Set<VaultPath>();
+  const checked = new Map(trashing.map((task) => [task.path, task]));
   const trash = async (tasks: readonly VaultPath[]) => {
     const trashed: VaultPath[] = [];
-    await trashTasks(ports.fs, tasks, {
+    await trashTasks(ports.fs, tasks.map(asChecked(checked)), {
       left: into.left,
       took: (path) => {
         trashed.push(path);
@@ -290,7 +294,7 @@ async function takeBackMeeting({
     const undone = await undoMeetingSummary(ports, {
       meeting,
       summary,
-      trashing,
+      trashing: [...checked.keys()],
       trash,
       notePaths: ports.notePaths,
       project,
@@ -303,7 +307,7 @@ async function takeBackMeeting({
     const reason = messageOf(cause);
     // Named whenever its summary stays, or it still links tasks now in the Trash, or it failed.
     if (summary !== null || asked.size > 0 || !refused) into.left.push({ path: meeting, reason });
-    const kept = trashing.filter((path) => !asked.has(path));
+    const kept = [...checked.keys()].filter((path) => !asked.has(path));
     into.left.push(...kept.map((path) => ({ path, reason: meetingKept(reason) })));
     if (!refused) throw cause;
     return;
@@ -311,28 +315,40 @@ async function takeBackMeeting({
   if (summary !== null) into.done.push({ kind: 'unsummarised', path: meeting });
 }
 
+/** The task at a path as it was checked; a path never checked is a bug, not a task to trash unheld. */
+const asChecked = (checked: ReadonlyMap<VaultPath, AsRead>) => (path: VaultPath) => {
+  const task = checked.get(path);
+  if (task === undefined) throw new Error(`${path} was not checked before its trash`);
+  return task;
+};
+
 /**
- * Trashes each task, saying of each that it was tried and, if so, that the
- * Trash took it. One the host refuses — any host refusal: reached through a
- * link (#685), a Trash that says no — is left and named instead. Any other
- * error stops the undo, with what was taken before it already said.
+ * Trashes each task, held to the version checked (#693), saying of each that
+ * it was tried and, if so, that the Trash took it. One the host refuses — any
+ * host refusal: changed since it was checked, reached through a link (#685),
+ * a Trash that says no — is left and named instead. Any other error stops the
+ * undo, with what was taken before it already said.
  */
 async function trashTasks(
   fs: UndoPorts['fs'],
-  tasks: readonly VaultPath[],
+  tasks: readonly AsRead[],
   {
     left,
     took,
     tried,
   }: { left: PassedOver[]; took: (path: VaultPath) => void; tried: (path: VaultPath) => void },
 ): Promise<void> {
-  for (const path of tasks) {
+  for (const task of tasks) {
+    const { path } = task;
     try {
-      await fs.trashEntry({ path });
+      await fs.trashEntry({ path, unchanged: [task] });
       took(path);
     } catch (cause) {
       if (!(cause instanceof VaultAccessError)) throw cause;
-      left.push({ path, reason: cause.message });
+      left.push({
+        path,
+        reason: cause instanceof EntryChangedError ? CHANGED_SINCE : cause.message,
+      });
     }
     tried(path);
   }
@@ -382,8 +398,13 @@ async function madeTasks({
       notePaths: ports.notePaths,
       home,
     });
-    if (ours.ok) made.push({ path, meeting: ours.meeting });
-    else left.push({ path, reason: ours.reason });
+    if (ours.ok) {
+      made.push({
+        path,
+        meeting: ours.meeting,
+        read: { path, text: read.text, modified: read.modified },
+      });
+    } else left.push({ path, reason: ours.reason });
   }
   return { made, left };
 }
@@ -393,11 +414,11 @@ async function readUnchangedTask(
   ports: UndoPorts,
   path: VaultPath,
   digest: string,
-): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; text: string; modified: number } | { ok: false; reason: string }> {
   if (ports.editors.state(path) === 'dirty') return { ok: false, reason: UNSAVED_TYPING };
   const [file] = await ports.fs.readNotes([path]);
   if (file === undefined) return { ok: false, reason: NOT_THERE };
   return digestOf(file.text) === digest
-    ? { ok: true, text: file.text }
+    ? { ok: true, text: file.text, modified: file.modified }
     : { ok: false, reason: CHANGED_SINCE };
 }

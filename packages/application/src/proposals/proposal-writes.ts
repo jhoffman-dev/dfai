@@ -187,8 +187,9 @@ async function createNote(
 ): Promise<AppliedProposal> {
   const folder = await ensureFolder({ fs: ports.fs, folder: parentVaultPath(proposed) });
   const path = joinVaultPath(folder, vaultPathName(proposed));
+  let modified: number;
   try {
-    await ports.fs.createNote({ path, contents });
+    modified = await ports.fs.createNote({ path, contents });
   } catch (error) {
     // Made in the moment between the check and the write — by another accept, say.
     if ((await noteModified({ fs: ports.fs, path })) !== null) {
@@ -196,7 +197,8 @@ async function createNote(
     }
     throw error;
   }
-  return { kind: 'created', path, modified: (await noteModified({ fs: ports.fs, path })) ?? 0 };
+  // The time the create reports, not one read after it: a read could take in an edit made since.
+  return { kind: 'created', path, modified, text: contents };
 }
 
 async function setOnNote(
@@ -207,12 +209,13 @@ async function setOnNote(
   // applyProposal only sets on a note it was handed, so `link` is that note.
   if (link === null) throw new ProposalRefused(`${write.path} is not there any more.`);
   const { path } = write;
-  const contents = ports.markdown.updateFrontmatter(link.document.frontmatter, write.changes);
+  const text =
+    ports.markdown.updateFrontmatter(link.document.frontmatter, write.changes) + link.document.body;
   let modified: number;
   try {
     modified = await ports.fs.writeTextFile({
       path,
-      contents: contents + link.document.body,
+      contents: text,
       expectedModified: link.modified,
     });
   } catch (error) {
@@ -223,7 +226,7 @@ async function setOnNote(
     throw error;
   }
   ports.editors.reload(path);
-  return { kind: 'edited', path, previous: link.text, modified };
+  return { kind: 'edited', path, previous: link.text, modified, text };
 }
 
 /**

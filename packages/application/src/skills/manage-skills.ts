@@ -20,7 +20,7 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import { filesAndLinksUnder } from '../vault/delete-entry.ts';
 import { isListedAsLink } from '../vault/listed-links.ts';
-import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
+import { EntryChangedError, VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
 import { listSkillFolders, readSkillFileAt, skillFileOf, type SkillFile } from './skills.ts';
 
 /*
@@ -301,10 +301,21 @@ export async function deleteSkill({
   const skillFileLinked = contents.links.some(
     (path) => path.toLowerCase() === skill.path.toLowerCase(),
   );
-  if (!contents.link && !skillFileLinked) {
+  const held = !contents.link && !skillFileLinked;
+  if (held) {
     refuseUnreadable(skill, 'deleted');
     await refuseUnlessUnchanged(fs, skill);
   }
-  await fs.trashEntry({ path: skill.folder });
+  // Held to SKILL.md as checked, so an edit landing before the Trash keeps the skill (#694).
+  const asRead =
+    held && skill.modified !== null
+      ? { unchanged: [{ path: skill.path, modified: skill.modified, text: skill.text }] }
+      : {};
+  try {
+    await fs.trashEntry({ path: skill.folder, ...asRead });
+  } catch (cause) {
+    if (cause instanceof EntryChangedError) throw new NoteChangedError(skill.path);
+    throw cause;
+  }
   return { folder: skill.folder, ...contents };
 }

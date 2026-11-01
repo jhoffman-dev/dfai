@@ -302,12 +302,12 @@ describe('makeTaskFromMeeting — when a write fails', () => {
       fs: {
         ...fs,
         createNote: async (args: Parameters<typeof fs.createNote>[0]) => {
-          await fs.createNote(args);
+          const made = await fs.createNote(args);
           const before = setup.fixture.files.get(MEETING);
           if (before !== undefined) {
             setup.fixture.files.set(MEETING, { ...before, modified: before.modified + 1000 });
           }
-          return 0;
+          return made;
         },
       },
     };
