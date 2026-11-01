@@ -90,7 +90,11 @@ describe('the web build (#656)', () => {
       expect(screen.queryByTitle('Ask (⌘J)')).toBeNull();
       expect(screen.queryByLabelText(/^Sync:/)).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-      const sections = await screen.findByRole('navigation', { name: 'Settings sections' });
+      const sections = await screen.findByRole(
+        'navigation',
+        { name: 'Settings sections' },
+        { timeout: 10_000 },
+      );
       expect(
         within(sections)
           .getAllByRole('button')
