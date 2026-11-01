@@ -234,6 +234,26 @@ describe('Sidebar', () => {
       expect(onEditType).toHaveBeenCalledExactlyOnceWith('task');
     });
 
+    it('with no menu to offer, a hold is only a slow tap, and a right-click is the browser’s', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+      const onOpenType = vi.fn();
+      show({ onOpenType });
+      const row = screen.getByRole('button', { name: 'Task, 62 notes' });
+      const finger = { pointerType: 'touch', isPrimary: true, clientX: 40, clientY: 300 };
+
+      // A sidebar that cannot edit types opens no menu, so nothing was offered
+      // under the finger — and the tap that lets go still opens the type.
+      fireEvent.pointerDown(row, finger);
+      act(() => vi.advanceTimersByTime(LONG_PRESS.holdMs * 2));
+      fireEvent.pointerUp(row, finger);
+      fireEvent.click(row, { detail: 1 });
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(onOpenType).toHaveBeenCalledExactlyOnceWith('task');
+
+      // Nor is the browser's own context menu taken from a right-click.
+      expect(fireEvent.contextMenu(row)).toBe(true);
+    });
+
     it('leaves a finger that swipes off the row to the page: no menu, and no type opened', () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
       const onOpenType = vi.fn();
