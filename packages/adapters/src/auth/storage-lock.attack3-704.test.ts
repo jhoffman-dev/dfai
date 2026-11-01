@@ -24,7 +24,7 @@ function memoryStorage(): Storage {
 }
 
 describe('a stale hold from a closed tab after the clock went back', () => {
-  it.fails('lapses within HOLD_MS, not after the clock catches up', async () => {
+  it('lapses within HOLD_MS, not after the clock catches up', async () => {
     const storage = memoryStorage();
     let now = 1_000_000;
     // Written by a tab that closed mid-refresh, when the clock read an hour ahead.

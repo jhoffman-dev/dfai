@@ -128,7 +128,7 @@ describe('the localStorage lock', () => {
 
   it('wakes on the storage event rather than waiting out the poll', async () => {
     const { deps, storage } = browser();
-    storage.setItem(KEY, JSON.stringify({ holder: 'other', until: 9e15 }));
+    storage.setItem(KEY, JSON.stringify({ holder: 'other', until: 1_000 + HOLD_MS }));
     const target = new EventTarget();
     let polls = 0;
     const lock = storageLock(

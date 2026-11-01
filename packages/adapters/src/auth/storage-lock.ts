@@ -70,7 +70,9 @@ export function storageLock(deps: StorageLockDeps): CrossTabLock {
 async function acquire(deps: StorageLockDeps, key: string, holder: string): Promise<void> {
   for (;;) {
     const hold = readHold(deps.storage, key);
-    if (hold === null || hold.until <= deps.now()) {
+    const now = deps.now();
+    // A hold running past HOLD_MS from now was set by a clock ahead of this one: it has lapsed.
+    if (hold === null || hold.until <= now || hold.until > now + HOLD_MS) {
       deps.storage.setItem(key, JSON.stringify({ holder, until: deps.now() + HOLD_MS }));
       await deps.wait(SETTLE_MS);
       if (readHold(deps.storage, key)?.holder === holder) return;
