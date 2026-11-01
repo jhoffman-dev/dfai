@@ -13,7 +13,7 @@ import {
 import { leavePeek, leavingPeek, useHoldersFlushed } from './peek-moves.ts';
 import { peekPosition, type Peek } from '../overlay.ts';
 import { clickLink, openNote } from '../workspace/open-place.ts';
-import { workspaceNow } from '../workspace/workspace-store.ts';
+import { useCanSplit, workspaceNow } from '../workspace/workspace-store.ts';
 import { useWorkspaceStores, useWorkspaceWiring } from '../workspace/workspace-wiring.tsx';
 import { LinkPreviewLayer } from './link-preview-layer.tsx';
 import { useNotePane } from './note-pane-container.tsx';
@@ -48,6 +48,8 @@ function PeekContainer({ peek }: { peek: Peek }) {
   const { store, overlays, reveals, note, pane: context } = wiring;
   const { watch, store: hovered } = useLinkHover();
   const focused = () => workspaceNow(store).focused;
+  // Open in split, and its ⌘⇧↵ hint, only while the window has room for another pane (#658).
+  const canSplit = useCanSplit(store);
   const ready = useHoldersFlushed(context.editors, peek.path);
   // What was typed is on disk before anything else is shown, so what opens reads it.
   const leave = (act: () => void) => leavePeek(overlays, { flush: () => drawn.flush(), act });
@@ -111,7 +113,7 @@ function PeekContainer({ peek }: { peek: Peek }) {
       onEscapeAbove={closeAbove}
       onExpand={() => leaveFor(peek.path, 'here')}
       onOpenInNewTab={() => leaveFor(peek.path, 'new-tab')}
-      onOpenInSplit={() => leaveFor(peek.path, 'split')}
+      {...(canSplit && { onOpenInSplit: () => leaveFor(peek.path, 'split') })}
       toastSlot={context.toasts.placeIn}
     >
       <div ref={watch}>{ready && drawn.page}</div>

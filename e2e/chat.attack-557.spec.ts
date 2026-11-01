@@ -256,8 +256,9 @@ test('a plain click on a chip in the sidebar opens the note in place of the one 
 });
 
 test('many chips in one line stay in the sidebar column in a narrow window', async ({ page }) => {
-  await page.setViewportSize({ width: 820, height: 700 });
   const host = await openPlan(page);
+  // Opened wide, then squeezed: under 944px the left sidebar is a drawer (#658).
+  await page.setViewportSize({ width: 820, height: 700 });
   host.claude.reply(`Owners: ${Array.from({ length: 30 }, () => '[[Rollback#^r1]]').join('')}.`);
   await ask(page, 'Who owns what?');
   const answer = chat(page).getByRole('region', { name: 'Answer' });

@@ -79,7 +79,6 @@ const sidewaysSpill = (dashboard: Locator) =>
 test('a strip of many figures does not push the dashboard into a sideways scroll at 800px', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 800, height: 800 });
   const titles = [
     'Open',
     'Doing',
@@ -99,14 +98,16 @@ test('a strip of many figures does not push the dashboard into a sideways scroll
     [...titles.flatMap(numberWidget), ...barWidget('Per phase')],
     FEW_TASKS,
   );
+  // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize({ width: 800, height: 800 });
   await expect(dashboard.locator('.kpi')).toHaveCount(titles.length);
   expect(await sidewaysSpill(dashboard)).toBeLessThanOrEqual(0);
 });
 
 test('every strip figure stays inside its own cell at 800px', async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 800 });
   const titles = ['Open', 'Doing', 'Done', 'Backlog', 'Waiting', 'Review', 'Inbox', 'Next'];
   const dashboard = await openDashboard(page, titles.flatMap(numberWidget), FEW_TASKS);
+  await page.setViewportSize({ width: 800, height: 800 });
   await expect(dashboard.locator('.kpi')).toHaveCount(titles.length);
   const spilled = await dashboard.locator('.kpi').evaluateAll((cells) =>
     cells
@@ -123,12 +124,12 @@ test('every strip figure stays inside its own cell at 800px', async ({ page }) =
 test('panels at 600px neither spill sideways nor leave the grid wider than the pane', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 600, height: 800 });
   const dashboard = await openDashboard(
     page,
     [...numberWidget('Open'), ...barWidget('Per phase', 5), ...barWidget('Again', 7)],
     FEW_TASKS,
   );
+  await page.setViewportSize({ width: 600, height: 800 });
   await expect(dashboard.getByRole('region', { name: 'Again' })).toBeVisible();
   expect(await sidewaysSpill(dashboard)).toBeLessThanOrEqual(0);
 });

@@ -1,3 +1,5 @@
+import { SIDEBAR_WIDTH } from '@dfai/domain';
+
 /**
  * How a narrow window folds the shell (brief §4): the right sidebar collapses
  * first, then the left. The widths are the brief's — 224px sidebar, 300px
@@ -15,8 +17,13 @@
  * collapse.test.ts holds them to the same numbers. Slice 8b reads this to
  * know what the window is showing (the toggle's pressed state, where the
  * focus may go) without measuring.
+ *
+ * Under 944px none of this applies: the sidebar is a drawer over the work,
+ * not beside it (`shellLayoutFor`, the domain), and the app asks these with
+ * `sidebarOpen: false`. The sidebar's width is the domain's constant, held
+ * here under the name this file always had.
  */
-export const SIDEBAR_WIDTH = 224;
+export { SIDEBAR_WIDTH };
 export const ASIDE_WIDTH = 300;
 /** The type editor's aside (`.aside--type`, slice 12). */
 export const ASIDE_WIDTH_TYPE = 340;

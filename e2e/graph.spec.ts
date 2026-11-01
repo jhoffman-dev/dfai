@@ -173,11 +173,12 @@ test('a long linked title stays inside the list in a narrow pane, ellipsised wit
   await vault.write('Hub.md', `# Hub\n\nLinks [[${long}]].\n`);
   await vault.write(`${long}.md`, `# ${long}\n\nThe long one.\n`);
   await installHost(page, vault);
-  await page.setViewportSize({ width: 720, height: 900 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
   await page.getByRole('list', { name: 'Go to' }).getByRole('button', { name: 'Graph' }).click();
+  // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize({ width: 720, height: 900 });
   await page.getByRole('radio', { name: 'List' }).click();
 
   const list = page.getByRole('list', { name: 'Notes in the graph' });

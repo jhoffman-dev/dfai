@@ -20,6 +20,7 @@ import { TypeContainer } from '../types/type-container.tsx';
 import { DocumentContainer } from '../reader/document-container.tsx';
 import { samePageWiring, type PageWiringContext } from './page-wiring.ts';
 import { useTabPageHistory } from './tab-history.ts';
+import { useIsFirstShownPane } from './workspace-store.ts';
 import { sameWiringParts, type WorkspaceWiring } from './workspace-wiring.tsx';
 
 /**
@@ -66,10 +67,12 @@ const PAGE_TAB_WIRING = [
 function usePageTab({ wiring, pane, tab, place }: PageTabProps) {
   const { store, nameOf, onShowSidebar, overlays, reveals } = wiring;
   const history = useTabPageHistory({ store, pane, id: tab.id, nameOf });
-  // The way back to a hidden sidebar sits where it went: the first pane's top-left corner.
+  // The way back to a hidden sidebar sits where it went: the top-left corner
+  // of the first pane on screen (#658).
+  const firstShown = useIsFirstShownPane(store, pane);
   const chrome: PageChrome = {
     history,
-    ...(pane === 0 && onShowSidebar !== null && { onShowSidebar }),
+    ...(firstShown && onShowSidebar !== null && { onShowSidebar }),
   };
   const pages: PageWiringContext = { pages: wiring.pages, pane: wiring.pane, overlays, reveals };
   return (

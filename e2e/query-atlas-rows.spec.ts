@@ -33,7 +33,6 @@ const ITEM_TYPE = front(
 const title = (index: number) => `Row ${String(index).padStart(4, '0')}`;
 
 async function openQueryPage(page: Page, size: { width: number; height: number }) {
-  await page.setViewportSize(size);
   const vault = await createVault();
   await vault.mkdir('.atlas/types');
   await vault.mkdir('items');
@@ -50,6 +49,8 @@ async function openQueryPage(page: Page, size: { width: number; height: number }
   await page.getByRole('button', { name: 'New in Views' }).click();
   await page.getByRole('menuitem', { name: 'New query' }).click();
   await expect(page.getByRole('heading', { name: 'Query', exact: true })).toBeVisible();
+  // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize(size);
   await page
     .getByRole('radiogroup', { name: 'Edit the query as' })
     .getByRole('radio', { name: 'Text' })

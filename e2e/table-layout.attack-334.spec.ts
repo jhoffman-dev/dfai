@@ -31,7 +31,6 @@ const TASK_TYPE = [
 const PROJECTS = ['Garden', 'Orchard', 'Henhouse', 'Pond', 'Greenhouse', 'Beehives', 'Meadow'];
 
 async function openVault(page: Page, { width = 1440, tasks = 40 } = {}) {
-  await page.setViewportSize({ width, height: 900 });
   const vault = await createVault();
   for (const folder of ['.atlas/types', '.atlas/views', 'Tasks', 'Projects']) {
     await vault.mkdir(folder);
@@ -115,6 +114,8 @@ async function openVault(page: Page, { width = 1440, tasks = 40 } = {}) {
   await expect(page.getByText(/notes indexed/)).toBeVisible({ timeout: 30_000 });
   await sidebarSection(page, 'views').getByRole('button', { name: 'Chores', exact: true }).click();
   await expect(page.locator('.table__row').first()).toBeVisible();
+  // Opened wide, then sized: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize({ width, height: 900 });
   return vault;
 }
 

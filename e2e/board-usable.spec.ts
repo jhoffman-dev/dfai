@@ -113,8 +113,9 @@ test('a full column scrolls its own cards rather than growing past the board', a
 });
 
 test('the board scrolls sideways when the columns do not fit', async ({ page }) => {
-  await page.setViewportSize({ width: 900, height: 800 });
   await openBusyBoard(page);
+  // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize({ width: 900, height: 800 });
 
   const scroll = await page.evaluate(() => {
     const board = document.querySelector('.board');

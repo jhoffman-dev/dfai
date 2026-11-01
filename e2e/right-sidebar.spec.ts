@@ -6,6 +6,7 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
+import { revealSidebar } from './sidebar-drawer.ts';
 
 const TASK_TYPE = [
   '---',
@@ -93,6 +94,7 @@ const toggle = (page: Page) =>
 const leftSidebar = (page: Page) => page.getByRole('navigation', { name: 'Vault' });
 
 async function openNote(page: Page, name: string) {
+  await revealSidebar(page);
   await page.getByRole('treeitem', { name, exact: true }).click();
   await expect(page.getByRole('article', { name })).toBeVisible();
 }
@@ -349,13 +351,15 @@ test.describe('a narrow window, asked for the aside twice (#387 verification)', 
     await expect(aside(page)).toBeVisible();
   });
 
-  test('at 750px, where hiding the sidebar would make no room, ⇧⌘J leaves it as it was', async ({
+  test('at 750px, where the sidebar is a drawer and the aside folds, ⇧⌘J leaves the drawer closed (#658)', async ({
     page,
   }) => {
     await openVault(page, { width: 750 });
     await openNote(page, 'Ship it');
+    await expect(leftSidebar(page)).toHaveCount(0);
     await page.keyboard.press('Meta+Shift+KeyJ');
-    await expect(leftSidebar(page)).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Sidebar' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Show sidebar' }).first()).toBeVisible();
     await expect(chat(page)).toHaveCount(0);
   });
 });

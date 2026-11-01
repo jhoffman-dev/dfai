@@ -119,8 +119,9 @@ for (const width of [1024, 720]) {
   test(`at ${width}px the Inbox does not scroll sideways, Save stays reachable and a row keeps its height when it takes the focus`, async ({
     page,
   }) => {
-    await page.setViewportSize({ width, height: 800 });
     const inbox = await openInbox(page, await vaultWith([LONG, 'Call Tobias Fenn']));
+    // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+    await page.setViewportSize({ width, height: 800 });
     const row = inbox
       .getByRole('row')
       .filter({ has: page.getByRole('button', { name: 'Call Tobias Fenn', exact: true }) });
