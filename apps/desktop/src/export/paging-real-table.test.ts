@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { EXPORT_PAGE } from '@dfai/domain';
-import { remarkMarkdown, tauriPdfRenderer } from '@dfai/adapters';
+import { remarkMarkdown } from '@dfai/adapters';
+import { tauriPdfRenderer } from '@dfai/adapters/tauri';
 import { createExportPageRenderer } from '@dfai/ui';
 
 /*

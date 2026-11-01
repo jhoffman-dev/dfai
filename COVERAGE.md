@@ -19,7 +19,7 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `domain/meetings`           | Decides whether a meeting is let in, what it says, and how its words are put right and back.  | 28      |
 | `domain/capture`            | Reads a Slack capture, refuses it with reasons, writes its file safe from hostile text.       | #103    |
 | `application/sources`       | Writes files into your vault from outside it.                                                 | 12      |
-| `desktop/notes/*stranded*`  | Holds unsaved work the vault does not have, across a quit.                                    | 13      |
+| `shell/notes/*stranded*`    | Holds unsaved work the vault does not have, across a quit.                                    | 13      |
 | `mcp/{connection,client}`   | Handles the API token; every failure an AI tool is told.                                      | 15      |
 | `application/api`           | Writes into your vault on behalf of other programs.                                           | 15      |
 | `application/artifacts`     | Writes a folder of files into your vault, from outside it.                                    | 17      |

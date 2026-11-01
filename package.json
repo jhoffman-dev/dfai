@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "pnpm --filter @dfai/desktop dev",
     "tauri:dev": "pnpm --filter @dfai/desktop tauri:dev",
-    "build": "pnpm --filter @dfai/desktop --filter @dfai/mcp build",
+    "build": "pnpm --filter @dfai/desktop --filter @dfai/web --filter @dfai/mcp build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -22,7 +22,7 @@
     "version:set": "node tools/release/version.mjs set",
     "version:check": "node tools/release/version.mjs check",
     "check:chunks": "node tools/ci/check-chunks.mjs",
-    "check:node-builtins": "node tools/ci/check-node-builtins.mjs",
+    "check:node-builtins": "node tools/ci/check-node-builtins.mjs && node tools/ci/check-node-builtins.mjs apps/web/dist && node tools/ci/check-web-bundle.mjs",
     "gate": "pnpm format:check && pnpm version:check && pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build && pnpm check:chunks && pnpm check:node-builtins && pnpm rust:lint && pnpm rust:test",
     "rust:test": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "rust:lint": "cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check",

@@ -32,10 +32,10 @@ Then tick every append-point file it edits.
 
 Append points:
 
-- [ ] `apps/desktop/src/app.tsx`
-- [ ] `apps/desktop/src/composition.ts`
-- [ ] `apps/desktop/src/pages-on-first-use.ts`
-- [ ] `apps/desktop/src/styles/index.css` (a new stylesheet is imported here)
+- [ ] `packages/shell/src/app.tsx`
+- [ ] `apps/desktop/src/composition.ts` (and `apps/web/src/composition.ts`, which composes the same ports)
+- [ ] `packages/shell/src/pages-on-first-use.ts`
+- [ ] `packages/shell/src/styles/index.css` (a new stylesheet is imported here)
 - [ ] `packages/application/src/api/routes.ts` and `contract.ts`
 - [ ] `packages/application/src/index.ts` (or the `domain`, `adapters`, `ui` package `index.ts`)
 - [ ] `packages/application/src/testing/query-index.ts`, `fake-reader.ts`, `api-fixture.ts`

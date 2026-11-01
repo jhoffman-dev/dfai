@@ -33,7 +33,7 @@ export type OpenNoteState = 'closed' | 'clean' | 'dirty';
  * still holds the modification time it read, and saves its older copy over the
  * new one (ADR-0016). So a write from outside asks first, and goes through the
  * pane when there is one. The desktop app answers with its pane registry
- * (`apps/desktop/src/panes/open-editors.ts`).
+ * (`packages/shell/src/panes/open-editors.ts`).
  */
 export interface OpenNotes {
   /** `dirty` when any pane holding the note has unsaved edits. */
@@ -84,7 +84,7 @@ export interface AutomationClockState {
 
 /**
  * The app's automation runner, as the API reads it. The desktop app answers
- * with its runner's state (`apps/desktop/src/api/automation-relay.ts`).
+ * with its runner's state (`packages/shell/src/api/automation-relay.ts`).
  */
 export interface AutomationClock {
   /** Its state for this vault; null when it is not watching that one (yet). */

@@ -81,7 +81,7 @@ _As built in 7a:_ names that would collide with the `pane-layout.ts` and `naviga
 
 ## 3. The store (Performance 8)
 
-`apps/desktop/src/workspace/workspace-store.ts` follows the shape of `overlay-store.ts`.
+`packages/shell/src/workspace/workspace-store.ts` follows the shape of `overlay-store.ts`.
 
 - **State:** `{ vault, workspace, paneKeys }`.
 - **Actions** are module functions:

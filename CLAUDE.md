@@ -258,22 +258,25 @@ Dependencies point inward, and ESLint enforces it — each layer has a
 
 **The webview has no Node.** Vitest runs on Node, so `Buffer`, `process` or an
 import of `node:fs` passes every unit test and fails only in WebKit. ESLint
-forbids Node's globals and modules in the packages and `apps/desktop/src`
-(tests are exempt, and test support that runs on Node is named in
+forbids Node's globals and modules in the packages, `apps/desktop/src` and
+`apps/web/src` (tests are exempt, and test support that runs on Node is named in
 `eslint.config.js`, where nothing the app builds may import it), and
 `pnpm check:node-builtins` fails the gate when a built-in or a polyfill of one
-reaches the built bundle anyway (#53, #114).
+reaches either built bundle, the desktop's or the web's, anyway (#53, #114), and
+when anything of Tauri reaches the web's (#656).
 
-| Where                  | What belongs there                                |
-| ---------------------- | ------------------------------------------------- |
-| `packages/domain`      | The rules. Pure, no I/O, no clock, no randomness. |
-| `packages/application` | Use-cases and the ports they need.                |
-| `packages/adapters`    | Tauri IPC, markdown, the index. Thin translators. |
-| `packages/ui`          | React components. No business rules.              |
-| `apps/desktop`         | The composition root, plus `src-tauri` (Rust).    |
+| Where                  | What belongs there                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `packages/domain`      | The rules. Pure, no I/O, no clock, no randomness.                                                                |
+| `packages/application` | Use-cases and the ports they need.                                                                               |
+| `packages/adapters`    | Markdown, the index, the readers. Thin translators. Tauri IPC is its own entry, `@dfai/adapters/tauri` (#656).   |
+| `packages/ui`          | React components. No business rules.                                                                             |
+| `packages/shell`       | The app shell every platform shares: the window, its hooks, stores and styles. No Tauri (ESLint holds it, #656). |
+| `apps/desktop`         | The desktop's composition root (the shell on the Tauri adapters), plus `src-tauri` (Rust).                       |
+| `apps/web`             | The web's composition root: a stub, the shell on an in-memory sample vault, until the web adapters land (#656).  |
 
 **A feature adds a file rather than editing a shared one** (#134). Styles: a new
-`apps/desktop/src/styles/<feature>.css`, imported from `styles/index.css` at the
+`packages/shell/src/styles/<feature>.css`, imported from `styles/index.css` at the
 place its rules belong in the cascade (the build still emits one stylesheet).
 Guide: a new `docs/guide/src/sections/<id>.html` and its line in `page.html`,
 then `pnpm guide:build`. Shots: a new `tools/design/shots/<surface>.shots.spec.ts`
