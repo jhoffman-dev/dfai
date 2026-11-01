@@ -171,6 +171,9 @@ test('the theme button keeps focus and flips its name when pressed from the keyb
   const button = themeButton(page);
   await page.keyboard.press('Tab');
   await button.focus();
+  // The root's theme is written after the button renders (#695), so wait for it
+  // before reading which way the toggle should go.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', /^(light|dark)$/);
   const before = await theme(page);
   const other = before === 'dark' ? 'light' : 'dark';
   await expect(button).toHaveAccessibleName(`Switch to ${other} theme`);
@@ -230,6 +233,7 @@ for (const wanted of ['light', 'dark'] as const) {
     page,
   }) => {
     await openVault(page);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', /^(light|dark)$/);
     if ((await theme(page)) !== wanted) await themeButton(page).click();
     await expect.poll(() => theme(page)).toBe(wanted);
     expect(await contrastOf(page, '--focus', '--bg'), 'ring on the sidebar').toBeGreaterThanOrEqual(
