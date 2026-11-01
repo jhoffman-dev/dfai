@@ -53,3 +53,19 @@ describe('a block whose aliases do not resolve is refused (#708)', () => {
     expectRefused(text, { properties: { a: {}, b: { kind: 't' } } }, 'properties');
   });
 });
+
+describe('a change that would rename a key aliasing it is refused (#708)', () => {
+  it('names the key being changed and keeps its message', () => {
+    let thrown: unknown;
+    try {
+      updateFrontmatter(block('a: &k [1, 2]', '? *k', ': v'), { a: 'x' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(FrontmatterRefusedError);
+    expect((thrown as FrontmatterRefusedError).key).toBe('a');
+    expect((thrown as Error).message).toBe(
+      'Cannot change "a": the key "*k" is an alias of it, and would be renamed',
+    );
+  });
+});
