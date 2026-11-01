@@ -22,6 +22,8 @@ export {
   recordingExportFiles,
 } from './fake-export.ts';
 export { fakeGranola, granolaNote, granolaTurn } from './fake-granola.ts';
+export { countingRandom, fakeAuthGateway, fakeSha256, memoryPendingSignIn } from './fake-auth.ts';
+export type { AuthGatewayCall, FakeAuthGateway } from './fake-auth.ts';
 export { fakeSlack } from './fake-slack.ts';
 export type { FakeSlack, SlackCall } from './fake-slack.ts';
 export { fakeEmbedder, memoryEmbeddingCache } from './fake-embeddings.ts';

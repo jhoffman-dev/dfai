@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { nodeBuiltinsReport } from '../../tools/ci/node-builtins-report.ts';
+import { devSignIn } from '../../tools/vite/dev-sign-in.ts';
 import { workspaceAliases } from '../../tools/vite/workspace-aliases.ts';
 
 /** What the build drew in of Node, for `pnpm check:node-builtins` (#53), as the desktop's does. */
@@ -33,7 +34,8 @@ function devCsp(): Plugin {
  * host (pdf.js's files, the chunk table) joins as the web build needs it.
  */
 export default defineConfig({
-  plugins: [react(), devCsp(), nodeBuiltins.window],
+  // `pnpm dev` answers the sign-in function's routes itself (#663); a build has none of it.
+  plugins: [react(), devCsp(), devSignIn(), nodeBuiltins.window],
   worker: { plugins: () => [nodeBuiltins.worker] },
   resolve: { alias: workspaceAliases() },
   build: {

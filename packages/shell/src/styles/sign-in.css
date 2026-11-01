@@ -1,0 +1,48 @@
+/* The web build's sign-in screen and its sign-out (#663): a card centred on
+   the ground, and a small button at the window's bottom-left corner, clear of
+   the content panel's floating offers at the bottom right. */
+
+.sign-in {
+  align-items: center;
+  background: var(--ground);
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+}
+
+.sign-in__card {
+  align-items: flex-start;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 420px;
+  padding: var(--space-7);
+  width: 100%;
+}
+
+.sign-in__title {
+  font-size: var(--text-note-title);
+  font-weight: 600;
+  margin: 0;
+}
+
+.sign-in__text {
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.sign-in__problem {
+  color: var(--danger);
+  margin: 0;
+}
+
+.sign-out {
+  bottom: var(--space-3);
+  left: var(--space-3);
+  position: fixed;
+  z-index: 10;
+}

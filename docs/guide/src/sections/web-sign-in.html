@@ -1,0 +1,22 @@
+<!-- contents: Signing in on the web -->
+    <section id="web-sign-in">
+      <h2>Signing in on the web</h2>
+      <p class="sub">DFAI in a browser — for an iPad — opens your vault by signing in with GitHub. It is coming in steps: today the web build signs in and shows a sample vault; reading and writing your own vault there comes next.</p>
+      <h3>Sign in</h3>
+      <ol class="steps">
+        <li><b>Once, first:</b> install the <b>DFAI</b> GitHub App on your vault. On the app's GitHub page press <b>Install</b>, choose <b>Only select repositories</b> and pick your vault's repository alone. It asks to read and write that repository's files and nothing else: not your other repositories, not your profile, not your email.</li>
+        <li>Open DFAI's web address and press <b>Sign in with GitHub</b>, then <b>Authorize</b> on GitHub.</li>
+        <li>GitHub sends you back and DFAI opens. On later visits you are let straight in.</li>
+      </ol>
+      <h3>What stays where</h3>
+      <ul>
+        <li><b>No server keeps your notes.</b> A small sign-in service swaps GitHub's one-time code for a key and hands it to the page; it never sees a note and stores nothing.</li>
+        <li>The key lives in the page's memory and lasts a few hours; DFAI renews it before it runs out. What renews it is kept by the browser where the page's own code cannot read it.</li>
+      </ul>
+      <h3>Sign out</h3>
+      <ul>
+        <li>Press <b>Sign out</b> at the bottom-left corner. DFAI forgets this browser and cancels its key at GitHub.</li>
+        <li><b>To cut DFAI off everywhere</b>, on GitHub go to Settings → <b>Applications</b> → <b>Installed GitHub Apps</b> and remove DFAI, or narrow it to fewer repositories. The web build then signs you out with <i>“GitHub no longer lets DFAI reach your vault”</i>, and signing in again reconnects it.</li>
+        <li>If DFAI says it <i>could not reach its sign-in service</i> while you were signing out, sign out again once you are online, or this browser may let you back in on its next visit.</li>
+      </ul>
+    </section>

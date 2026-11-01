@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { minimatch } from 'minimatch';
 
 /*
@@ -7,7 +8,9 @@ import { minimatch } from 'minimatch';
  * ever reach its own site. The Firebase project dailyflowai-app has a default
  * site, dailyflowai-app, serving something else; the web build goes to the
  * site dailyflowai-web through the hosting target `web`, and nowhere else.
- * The deploy workflow's own checks are in web-hosting-workflow.ts.
+ * Beside it, one functions codebase may be configured: the sign-in function
+ * (#663), which the site reaches on /api/** and nothing else does. The
+ * deploy workflow's own checks are in web-hosting-workflow.ts.
  *
  * Each check returns the problems it found, worded for a failing test.
  */
@@ -19,16 +22,74 @@ export const SITE = 'dailyflowai-web';
 interface HostingEntry {
   readonly target?: unknown;
   readonly site?: unknown;
+  readonly rewrites?: unknown;
 }
 
 const asList = (hosting: unknown): readonly HostingEntry[] =>
   Array.isArray(hosting) ? hosting : [hosting as HostingEntry];
 
-/** firebase.json: hosting only, and every entry deploys through the `web` target. */
+/** The sign-in function's codebase (#663): the one functions entry firebase.json may hold. */
+export const FUNCTIONS_CODEBASE = 'dfai-auth';
+export const FUNCTIONS_SOURCE = 'apps/auth-function';
+
+/**
+ * The functions entry, held exactly: no other codebase or source, and no
+ * predeploy or postdeploy hook, which would run a command on every deploy.
+ */
+export const EXPECTED_FUNCTIONS: readonly Record<string, unknown>[] = [
+  {
+    codebase: FUNCTIONS_CODEBASE,
+    source: FUNCTIONS_SOURCE,
+    runtime: 'nodejs22',
+    ignore: [
+      'node_modules',
+      '.git',
+      'src',
+      '*.local',
+      'firebase-debug.log',
+      'firebase-debug.*.log',
+    ],
+  },
+];
+
+/** The one rewrite to a function, first so the SPA's rewrites cannot claim /api/** before it. */
+export const API_REWRITE = {
+  source: '/api/**',
+  function: { functionId: 'auth', region: 'us-central1' },
+} as const;
+
+const show = (value: unknown) => JSON.stringify(value);
+
+/**
+ * A hosting entry's rewrites: the API rewrite first, if at all, then only
+ * rewrites to the page. No other function, no Cloud Run service, no
+ * Dynamic Links, nothing off the site.
+ */
+export function rewriteProblems(rewrites: unknown): string[] {
+  if (rewrites === undefined) return [];
+  if (!Array.isArray(rewrites)) return [`the rewrites are ${show(rewrites)}, not a list`];
+  return rewrites.flatMap((rule: unknown, at) => {
+    if (isDeepStrictEqual(rule, API_REWRITE))
+      return at === 0 ? [] : [`the /api/** rewrite is rule ${at + 1}, not the first`];
+    const { source, destination, ...rest } = (rule ?? {}) as Record<string, unknown>;
+    const ok =
+      typeof source === 'string' && destination === '/index.html' && Object.keys(rest).length === 0;
+    return ok ? [] : [`rewrite ${at + 1} is ${show(rule)}: only the page or ${show(API_REWRITE)}`];
+  });
+}
+
+/**
+ * firebase.json: hosting through the `web` target, and at most the one
+ * functions codebase. Anything else would be deployed from here too.
+ */
 export function firebaseJsonProblems(config: Record<string, unknown>): string[] {
   const problems = Object.keys(config)
-    .filter((key) => key !== 'hosting')
+    .filter((key) => key !== 'hosting' && key !== 'functions')
     .map((key) => `firebase.json configures "${key}"; only hosting is deployed from here`);
+  if (config.functions !== undefined && !isDeepStrictEqual(config.functions, EXPECTED_FUNCTIONS))
+    problems.push(
+      `firebase.json configures "functions" as ${show(config.functions)}, not only ${show(EXPECTED_FUNCTIONS)}`,
+    );
   if (config.hosting === undefined) return [...problems, 'firebase.json has no hosting entry'];
   const entries = asList(config.hosting);
   if (entries.length === 0) problems.push('firebase.json has an empty hosting list');
@@ -37,6 +98,7 @@ export function firebaseJsonProblems(config: Record<string, unknown>): string[] 
       problems.push(`a hosting entry names site "${String(entry.site)}"; use the target`);
     if (entry.target !== TARGET)
       problems.push(`a hosting entry has target "${String(entry.target)}", not "${TARGET}"`);
+    problems.push(...rewriteProblems(entry.rewrites));
   }
   return problems;
 }
