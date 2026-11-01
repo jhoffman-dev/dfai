@@ -43,6 +43,18 @@ describe('SourcePanel', () => {
     expect(screen.getByText('person')).toBeDefined();
   });
 
+  it('offers no Refresh where the platform cannot reach the source (#657)', () => {
+    render(
+      <SourcePanel
+        source={sourceFor({ format: 'sqlite', query: 'select 1' })}
+        report={null}
+        refreshing={false}
+      />,
+    );
+    expect(screen.getByText('SQLITE')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+  });
+
   it('shows the URL when the source fetches one', () => {
     render(
       <SourcePanel
@@ -181,7 +193,6 @@ describe('SourcePanel', () => {
       <SourcePanel source={sourceFor({})} report={null} refreshing={false} onRefresh={() => {}} />,
     );
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Choose file…' })).toBeNull();
   });
 
   it('says when the file is outside the vault', () => {

@@ -1,4 +1,4 @@
 import { mountShell } from '@dfai/shell';
-import { composeWeb } from './composition.ts';
+import { composeWebShell } from './composition.ts';
 
-mountShell({ ports: composeWeb() });
+mountShell(composeWebShell());

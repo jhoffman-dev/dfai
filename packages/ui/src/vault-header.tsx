@@ -29,8 +29,9 @@ export function VaultHeader({
   /** The letter on the vault's tile. */
   vaultInitial: string;
   templates: readonly TemplateChoice[];
-  onChooseVault: () => void;
-  /** Given when a vault can be opened from GitHub: the name then opens a menu of both ways. */
+  /** Given when another folder can be opened as the vault: the name then opens one. */
+  onChooseVault?: () => void;
+  /** Given with `onChooseVault`, when a vault can be opened from GitHub: the name then opens a menu of both ways. */
   onOpenFromGitHub?: () => void;
   onNewNote: () => void;
   onNewFromTemplate: (path: string) => void;
@@ -51,7 +52,13 @@ export function VaultHeader({
       <span className="vault-header__tile" aria-hidden="true">
         {vaultInitial}
       </span>
-      {onOpenFromGitHub === undefined ? (
+      {onChooseVault === undefined ? (
+        <span className="vault-header__name">
+          <span className="vault-header__label" title={vaultName}>
+            {vaultName}
+          </span>
+        </span>
+      ) : onOpenFromGitHub === undefined ? (
         <button
           className="vault-header__name"
           type="button"

@@ -30,7 +30,7 @@ const view = (overrides: Partial<SyncSettingsView> = {}): SyncSettingsView => ({
   ...overrides,
 });
 
-function show(overrides: Partial<SyncSettingsView> = {}) {
+function show(overrides: Partial<SyncSettingsView> = {}, { creates = true } = {}) {
   const actions = {
     onCreate: vi.fn(),
     onConnect: vi.fn(),
@@ -42,7 +42,8 @@ function show(overrides: Partial<SyncSettingsView> = {}) {
     onLoadRepositories: vi.fn(),
     findRepositories: vi.fn(() => []),
   };
-  render(<SyncSettings view={view(overrides)} {...actions} />);
+  const { onCreate, ...rest } = actions;
+  render(<SyncSettings view={view(overrides)} {...rest} {...(creates && { onCreate })} />);
   return actions;
 }
 
@@ -57,6 +58,12 @@ describe('SyncSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set up sync with GitHub' }));
     expect(onCreate).toHaveBeenCalledWith('my-notes');
     expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull();
+  });
+
+  it('offers no new repository where none can be made, and still connects one (#657)', () => {
+    show({ stage: 'not-set-up', statusLine: 'Not set up', remote: null }, { creates: false });
+    expect(screen.queryByRole('form', { name: 'Set up sync with GitHub' })).toBeNull();
+    expect(screen.getByRole('form', { name: 'Connect an existing repository' })).toBeDefined();
   });
 
   it('connects an existing repository by its address, once one is typed', async () => {

@@ -140,7 +140,7 @@ describe('useLocalApi under React StrictMode (issue #158)', () => {
       resetHost(holdAnswers);
       const deps = emptyVault();
       const view = renderHook(
-        () => useLocalApi({ bridge: tauriApiBridge, deps, onWrote: () => {} }),
+        () => useLocalApi({ bridge: tauriApiBridge, deps, onWrote: () => {}, enabled: true }),
         // As `main.tsx` renders it: StrictMode at the root. (A `wrapper` holding
         // <StrictMode> does not run effects twice under React 19.)
         { reactStrictMode: true },

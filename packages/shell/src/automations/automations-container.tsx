@@ -22,6 +22,10 @@ export interface AutomationsWiring {
   readonly ports: ComponentProps<typeof AutomationsScreen>['ports'];
   /** Setting up meeting post-processing in one yes (#191), shared with the Inbox. */
   readonly setup: MeetingSetupWiring;
+  /** Whether a rule may ask Claude here: the editor's "Ask Claude" action (#657). */
+  readonly offersClaude: boolean;
+  /** The presets offered here, by name: none that would write a rule only ever held (#657). */
+  readonly presets: readonly string[];
 }
 
 /** The Automations page as a tab (P29, tab-model.md PR B). */
@@ -52,6 +56,8 @@ export function AutomationsContainer({ wiring, chrome }: PageContainerProps) {
         vault={pane.vault}
         onOpenNote={pages.openNote}
         setup={setup}
+        offersClaude={pages.automations.offersClaude}
+        presets={pages.automations.presets}
         {...chrome}
       />
     </LoadedLater>

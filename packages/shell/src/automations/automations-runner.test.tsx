@@ -11,6 +11,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import {
+  EVERY_ENTRY_POINT,
   createNoteChanges,
   fakeClaudeStepPorts,
   fakeIndexPort,
@@ -158,6 +159,7 @@ function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
   const windowDraws = { count: 0 };
   let showPage: (shown: boolean) => void = () => {};
   const props: Omit<AutomationsRunnerProps, 'live'> = {
+    offered: EVERY_ENTRY_POINT,
     store,
     status,
     relay,

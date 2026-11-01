@@ -114,6 +114,7 @@ function show(stores: ReturnType<typeof openOn>, rows: RowPorts) {
         <AsideContainer
           rows={rows}
           types={{ onDelete: () => {}, onEditTemplate: () => {}, onOpenType: () => {} }}
+          offersClaude
         />
       </ClaudeSeatProvider>
     </WorkspaceStoresProvider>,

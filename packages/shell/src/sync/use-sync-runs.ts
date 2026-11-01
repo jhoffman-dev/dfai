@@ -252,6 +252,7 @@ export function useInspection({
   pulls,
   run,
   paused,
+  enabled,
 }: {
   git: GitPort | null;
   folders: GitFoldersPort;
@@ -269,6 +270,8 @@ export function useInspection({
   run: () => Promise<SyncReport | null>;
   /** Whether sync is paused on this Mac as the vault opens: then it does not pull on open. */
   paused: () => boolean;
+  /** Whether the platform syncs at all: where not, the vault is one that does not sync, unlooked at. */
+  enabled: boolean;
 }) {
   const runOnOpen = useRef(run);
   runOnOpen.current = run;
@@ -278,6 +281,13 @@ export function useInspection({
     setSetup(null);
     setPhase({ kind: 'unknown' });
     setBehind(0);
+    if (vaultKey !== null && !enabled) {
+      setSetup(NOT_SET_UP);
+      setPhase(phaseOf(NOT_SET_UP));
+      pulls.inspected(vaultKey, false);
+      markSynced(vaultKey);
+      return;
+    }
     if (git === null || vaultKey === null || thisMac === null) return;
     let live = true;
     inspectSync({ git, folders, fs, markdown, vaultRoot: vaultKey })
@@ -315,8 +325,12 @@ export function useInspection({
     setBehind,
     markSynced,
     pulls,
+    enabled,
   ]);
 }
+
+/** A vault that does not sync, as one is taken where the platform has no sync (#657). */
+const NOT_SET_UP: SyncSetup = { kind: 'not-set-up' };
 
 /** What the vault's sync state reads as, once how it stands is known. */
 export function phaseOf(setup: SyncSetup): SyncPhase {

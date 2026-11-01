@@ -1,4 +1,4 @@
 import { mountShell } from '@dfai/shell';
-import { composeDesktop } from './composition.ts';
+import { composeDesktopShell } from './composition.ts';
 
-mountShell({ ports: composeDesktop() });
+mountShell(composeDesktopShell());

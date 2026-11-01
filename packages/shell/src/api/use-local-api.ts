@@ -18,16 +18,20 @@ export function useLocalApi({
   bridge,
   deps,
   onWrote,
+  enabled,
 }: {
   bridge: ApiBridgePort;
   /** Stable for the life of the app; the parts that change are read through it at call time. */
   deps: ApiRouterDeps;
   onWrote: () => void;
+  /** Whether the platform runs a local API (#657): where not, nothing is served. */
+  enabled: boolean;
 }): void {
   const wrote = useRef(onWrote);
   wrote.current = onWrote;
 
   useEffect(() => {
+    if (!enabled) return;
     let stop: (() => void) | null = null;
     let cancelled = false;
 
@@ -45,5 +49,5 @@ export function useLocalApi({
       cancelled = true;
       stop?.();
     };
-  }, [bridge, deps]);
+  }, [bridge, deps, enabled]);
 }

@@ -6,13 +6,15 @@ import {
   sqliteFileReference,
   type Datasource,
 } from '@dfai/domain';
-import type {
-  IndexPort,
-  MarkdownPort,
-  OpenNote,
-  SourceRefresher,
-  SourceReport,
-  VaultFsPort,
+import {
+  sourceRefreshOffered,
+  type EntryPointsOffered,
+  type IndexPort,
+  type MarkdownPort,
+  type OpenNote,
+  type SourceRefresher,
+  type SourceReport,
+  type VaultFsPort,
 } from '@dfai/application';
 import type { SourcePorts } from './source-ports.ts';
 
@@ -32,6 +34,7 @@ export function useSource({
   index,
   sources,
   refresher,
+  offered,
   vaultRoot,
   setProperty,
   onChanged,
@@ -43,6 +46,8 @@ export function useSource({
   sources: SourcePorts;
   /** The window's one refresher, so the pane and the local API never refresh at once. */
   refresher: SourceRefresher;
+  /** Which entry points the platform offers: a source it cannot reach is not refreshed (#657). */
+  offered: EntryPointsOffered;
   /** The open vault's absolute path, which a picked file is named relative to. */
   vaultRoot: string | null;
   /** Writes one property of the open note, as the properties panel does. */
@@ -53,6 +58,8 @@ export function useSource({
   source: Datasource | null;
   report: SourceReport | null;
   refreshing: boolean;
+  /** Whether this platform can refresh the source at all: fetch it, or open its SQLite file. */
+  refreshOffered: boolean;
   refresh: () => void;
   /** The secrets the source sends, by name. */
   secrets: readonly string[];
@@ -108,7 +115,9 @@ export function useSource({
     setFileProblem(null);
   }, [sourcePath]);
 
-  const interval = source?.interval ?? 0;
+  const refreshOffered = source !== null && sourceRefreshOffered(source, offered);
+  // A source this platform cannot reach is never refreshed on a timer either.
+  const interval = refreshOffered ? source.interval : 0;
 
   // The timer fires the latest refresh without being rebuilt by it. Tying the
   // interval to `run` would restart — and so re-fire — every time a refresh
@@ -148,6 +157,7 @@ export function useSource({
     source,
     report,
     refreshing,
+    refreshOffered,
     refresh: () => void run(),
     secrets: source === null ? [] : secretsUsedBy(source),
     outsideVault:

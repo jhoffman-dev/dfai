@@ -12,14 +12,19 @@ import {
   type PullStanding,
   type VaultEntry,
   type VaultPath,
+  WEB_CAPABILITIES,
 } from '@dfai/domain';
 import {
+  NEEDS_THE_DESKTOP_APP,
+  entryPointsOffered,
+  EVERY_ENTRY_POINT,
   fakeClaudeStepPorts,
   fakeIndexPort,
   fakeVaultFs,
   ModelProviderError,
   recordingActivity,
   type AutomationPorts,
+  type EntryPointsOffered,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import {
@@ -186,6 +191,7 @@ describe('useAutomations: opening a vault whose rule missed a meeting’s arriva
     );
     const activity = recordingActivity();
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: vault.ports,
       clock,
       vaultKey: VAULT,
@@ -226,6 +232,7 @@ describe('useAutomations: the catch-up again once this Mac is named (ADR-0035, #
     const vault = memoryVault({ [RULE]: RULE_TEXT, [MEETING]: LET_IN }, modified);
     const activity = recordingActivity();
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: vault.ports,
       clock,
       vaultKey: VAULT,
@@ -314,7 +321,11 @@ describe('useAutomations: a Claude step waits for fresh sync state (ADR-0035 par
     namedAfter: true,
   };
 
-  const open = (rule: { path: string; text: string }, pulledFiles: Gate) => {
+  const open = (
+    rule: { path: string; text: string },
+    pulledFiles: Gate,
+    offered: EntryPointsOffered = EVERY_ENTRY_POINT,
+  ) => {
     const vault = memoryVault(
       {
         [rule.path]: rule.text,
@@ -325,6 +336,7 @@ describe('useAutomations: a Claude step waits for fresh sync state (ADR-0035 par
     );
     const claude = fakeClaudeStepPorts();
     const options: AutomationsOptions = {
+      offered,
       ports: { ...vault.ports, claude },
       clock,
       vaultKey: VAULT,
@@ -356,6 +368,29 @@ describe('useAutomations: a Claude step waits for fresh sync state (ADR-0035 par
     hook.rerender({ ...options, pulledFiles: { standing: PULLED, acts: async () => true } });
     await settle();
     expect(claude.fake.requests).toHaveLength(1);
+  });
+
+  it('asks no Claude where there is none, and says the rule needs the desktop app (#657)', async () => {
+    const { claude, hook, vault } = open(
+      { path: ASK_RULE, text: ASK_RULE_TEXT },
+      { standing: PULLED, acts: async () => true },
+      entryPointsOffered(WEB_CAPABILITIES),
+    );
+    await settle();
+    expect(claude.fake.requests).toHaveLength(0);
+    const rule = hook.result.current.listing?.automations[0]?.rule;
+    expect(rule).toBeDefined();
+    expect(hook.result.current.pauses.get(rule!.id)).toEqual({
+      reason: NEEDS_THE_DESKTOP_APP,
+      failures: 0,
+      retryAt: null,
+    });
+    // Nothing was written for it: no log entry saying it failed.
+    expect(Object.keys(vault.files).filter((path) => path.includes('/log/'))).toEqual([]);
+    // Nor is it tried again as the minutes pass.
+    await act(async () => vi.advanceTimersByTimeAsync(5 * SCHEDULE_TICK_MS));
+    await settle();
+    expect(claude.fake.requests).toHaveLength(0);
   });
 
   it('asks the gate again when its turn comes: shut by then, the news waits for a pull', async () => {
@@ -452,6 +487,7 @@ describe('useAutomations: opening a vault whose rule handled more meetings than 
     const activity = recordingActivity();
     renderHook((props: AutomationsOptions) => useAutomations(props), {
       initialProps: {
+        offered: EVERY_ENTRY_POINT,
         ports: vault.ports,
         clock,
         vaultKey: VAULT,
@@ -548,6 +584,7 @@ describe('adversarial #174: a Claude step the Mac slept through', () => {
       namedAfter: true,
     };
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: { ...vault.ports, claude },
       clock,
       vaultKey: VAULT,
@@ -632,6 +669,7 @@ describe('useAutomations: a Claude step the clock or opening sets off waits for 
             },
     };
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: { ...vault.ports, index, claude },
       clock,
       vaultKey: VAULT,
@@ -776,6 +814,7 @@ describe('useAutomations: a Claude step that cannot reach Claude backs off and i
             },
     };
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: { ...vault.ports, index, claude },
       clock: ticking,
       vaultKey: VAULT,
@@ -871,6 +910,7 @@ describe('useAutomations: a Claude step that cannot reach Claude backs off and i
       rounds: [[{ type: 'text', text: JSON.stringify({ proposals: [] }) }]],
     });
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: { ...vault.ports, claude },
       clock: ticking,
       vaultKey: VAULT,
@@ -953,6 +993,7 @@ describe('useAutomations: a Claude step the status calls ready but whose ask is 
     };
     const activity = recordingActivity();
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: { ...vault.ports, claude },
       clock: ticking,
       vaultKey: VAULT,

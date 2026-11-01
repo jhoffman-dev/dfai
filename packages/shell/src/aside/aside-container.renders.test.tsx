@@ -95,6 +95,7 @@ describe('what a keystroke draws in the aside (#387 review)', () => {
           <AsideContainer
             rows={{ pane: { types: [], savedViews: [] } } as unknown as RowPorts}
             types={{ onDelete: () => {}, onEditTemplate: () => {}, onOpenType: () => {} }}
+            offersClaude
           />
         </ClaudeSeatProvider>
       </WorkspaceStoresProvider>,

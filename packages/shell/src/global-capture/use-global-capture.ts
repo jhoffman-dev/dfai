@@ -19,10 +19,13 @@ export function useGlobalCapture({
   port,
   store,
   pressed,
+  enabled,
 }: {
   port: GlobalCapturePort;
   store: GlobalCaptureStore;
   pressed: () => void;
+  /** Whether the platform has a system-wide shortcut (#657): where not, none is registered or heard. */
+  enabled: boolean;
 }): GlobalCapture {
   const [status, setStatus] = useState<GlobalCaptureShortcut | null>(null);
   const latest = useRef(pressed);
@@ -46,10 +49,11 @@ export function useGlobalCapture({
   // is no reason to register the shortcut again.
   const chosen = useRef(store);
   useEffect(() => {
-    void register(chosen.current.read());
-  }, [register]);
+    if (enabled) void register(chosen.current.read());
+  }, [register, enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     let stop: (() => void) | null = null;
     let cancelled = false;
     port
@@ -66,7 +70,7 @@ export function useGlobalCapture({
       cancelled = true;
       stop?.();
     };
-  }, [port]);
+  }, [port, enabled]);
 
   const change = useCallback(
     (shortcut: string | null) => {

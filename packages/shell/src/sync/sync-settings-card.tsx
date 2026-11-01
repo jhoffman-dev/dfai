@@ -5,7 +5,16 @@ import { syncSettingsView } from './sync-view.ts';
 import type { SyncController } from './use-sync.ts';
 
 /** Settings → Sync, wired to the vault's sync. */
-export function SyncSettingsCard({ sync, vaultName }: { sync: SyncController; vaultName: string }) {
+export function SyncSettingsCard({
+  sync,
+  vaultName,
+  canCreateRepository,
+}: {
+  sync: SyncController;
+  vaultName: string;
+  /** Whether a new private repository can be made here, or only one that exists connected. */
+  canCreateRepository: boolean;
+}) {
   const { repositories } = sync;
   const findRepositories = useCallback(
     (query: string) =>
@@ -15,7 +24,9 @@ export function SyncSettingsCard({ sync, vaultName }: { sync: SyncController; va
   return (
     <SyncSettings
       view={syncSettingsView(sync, vaultName)}
-      onCreate={(name) => sync.setUp({ kind: 'new-github', name })}
+      {...(canCreateRepository && {
+        onCreate: (name: string) => sync.setUp({ kind: 'new-github', name }),
+      })}
       onConnect={(url) => sync.setUp({ kind: 'existing', url })}
       onSyncNow={sync.syncNow}
       onPushDelay={sync.setPushDelay}

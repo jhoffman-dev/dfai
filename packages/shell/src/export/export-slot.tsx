@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { useStore } from 'zustand';
+import type { ExportFormat } from '@dfai/domain';
 import { ExportDialog } from '@dfai/ui';
 import type { ExportCommands, ExportStore } from './export-flow.ts';
 
@@ -11,9 +12,12 @@ export const ExportSlot = memo(function ExportSlot({
   store,
   commands,
   fallbackFocus,
+  formats,
 }: {
   store: ExportStore;
   commands: ExportCommands;
+  /** The formats this platform offers. */
+  formats: readonly ExportFormat[];
   fallbackFocus?: () => HTMLElement | null;
 }) {
   const flow = useStore(store, (state) => state.flow);
@@ -24,6 +28,7 @@ export const ExportSlot = memo(function ExportSlot({
       state={flow.state}
       onExport={commands.run}
       onClose={commands.close}
+      formats={formats}
       {...(fallbackFocus !== undefined && { fallbackFocus })}
     />
   );

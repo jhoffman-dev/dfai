@@ -30,7 +30,15 @@ function panesSaying(state: 'closed' | 'clean' | 'dirty'): PaneEditors {
   };
 }
 
-function queueOver({ note, panes }: { note: string; panes: 'closed' | 'clean' | 'dirty' }) {
+function queueOver({
+  note,
+  panes,
+  enabled = true,
+}: {
+  note: string;
+  panes: 'closed' | 'clean' | 'dirty';
+  enabled?: boolean;
+}) {
   const text = new Map<string, string>([[DUNE, note]]);
   let modified = 1;
   const fs = fakeVaultFs({
@@ -53,10 +61,26 @@ function queueOver({ note, panes }: { note: string; panes: 'closed' | 'clean' | 
       editors: panesSaying(panes),
       types: [BOOK],
       onChanged,
+      enabled,
     }),
   );
   return { queue: hook.result.current, capture, onChanged, text };
 }
+
+describe('useThumbnailQueue, where no page can be pictured (#657)', () => {
+  it('pictures nothing, writes nothing and says nothing failed, even when asked', async () => {
+    const { queue, capture, onChanged, text } = queueOver({
+      note: '---\ntype: book\nart: false\n---\nA\n',
+      panes: 'closed',
+      enabled: false,
+    });
+    await expect(queue.request({ path: DUNE, asked: true })).resolves.toBeNull();
+    expect(queue.snapshot().state(DUNE)).toBeNull();
+    expect(capture).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(text.get(DUNE)).toContain('art: false');
+  });
+});
 
 describe('useThumbnailQueue, while a pane holds unsaved edits', () => {
   it('leaves a page being typed in alone, unasked', async () => {
