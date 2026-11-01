@@ -7,6 +7,7 @@ import {
   renameOption,
   renameProperty,
   setOptionColor,
+  setPropertyRequired,
   setTypeIcon,
   setTypeLabel,
 } from './type-edit.ts';
@@ -204,5 +205,78 @@ describe('a shorthand property edited and put back', () => {
       written: { properties: { date: { kind: 'date', required: true, note: 'mine' } } },
     });
     expect(changes).toEqual({ properties: { date: { kind: 'date', note: 'mine' } } });
+  });
+});
+
+describe('typeFrontmatterChanges, beside a property the file holds unread (#683)', () => {
+  const written = {
+    name: 'book',
+    properties: {
+      rating: 'number',
+      author: { kind: 'relation', targets: 'person' },
+      pages: 'number',
+    },
+  };
+  const before = parseObjectType(written);
+  const author = {
+    ...before.properties[0]!,
+    key: 'author',
+    label: 'Author',
+    kind: 'text' as const,
+  };
+
+  it('refuses a property given the unread key, rather than write over what the file says of it', () => {
+    // Made by hand: the editor keeps clear of the key, so only a caller around it could.
+    const after = { ...before, properties: [...before.properties, author] };
+    expect(() => typeFrontmatterChanges({ before, after, written })).toThrowError(
+      'The type file already holds "author", so it is not written over',
+    );
+  });
+
+  it('refuses one put first, too, rather than moving the valid properties into its place', () => {
+    const after = { ...before, properties: [author, ...before.properties] };
+    expect(() => typeFrontmatterChanges({ before, after, written })).toThrowError(
+      'The type file already holds "author", so it is not written over',
+    );
+  });
+});
+
+describe('typeFrontmatterChanges, on keys the file holds twice as the parser trims them (#683)', () => {
+  it('moves a property beside " author" and author, keeping each spec under its own key', () => {
+    const written = {
+      name: 'book',
+      properties: { ' author': { kind: 'wizard' }, author: 'text', rating: 'number' },
+    };
+    const before = parseObjectType(written);
+    const after = moveProperty(before, { key: 'rating', to: 0 });
+    const properties = typeFrontmatterChanges({ before, after, written })['properties'];
+    expect(properties).toEqual({ ' author': { kind: 'wizard' }, rating: 'number', author: 'text' });
+  });
+
+  it('writes an edit of the read author into its own entry, never the skipped " author"', () => {
+    const written = { name: 'book', properties: { ' author': { kind: 'wizard' }, author: 'text' } };
+    const before = parseObjectType(written);
+    const after = setPropertyRequired(before, { key: 'author', required: true });
+    const properties = typeFrontmatterChanges({ before, after, written })['properties'];
+    expect(properties).toEqual({
+      ' author': { kind: 'wizard' },
+      author: { kind: 'text', required: true },
+    });
+  });
+
+  it('adds a property beside two blank keys, carrying both through as they were', () => {
+    const written = {
+      name: 'book',
+      properties: { rating: 'number', '': { kind: 'wizard' }, '  ': 'text' },
+    };
+    const before = parseObjectType(written);
+    const after = addProperty(before, { label: 'Pages' });
+    const properties = typeFrontmatterChanges({ before, after, written })['properties'];
+    expect(properties).toEqual({
+      rating: 'number',
+      '': { kind: 'wizard' },
+      '  ': 'text',
+      pages: 'text',
+    });
   });
 });

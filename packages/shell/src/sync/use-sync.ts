@@ -67,6 +67,12 @@ export interface SyncOptions {
   readonly closing: WindowClosingPort;
   /** Re-reads the tree and the index once a sync has brought changes in. */
   readonly onPulled: () => void;
+  /**
+   * Whether the platform syncs a vault by itself (#657). Where not, the vault
+   * is taken as one that does not sync, without a look at its repository:
+   * nothing waits on a pull, and nothing is pulled or pushed.
+   */
+  readonly enabled: boolean;
 }
 
 export interface SyncController {

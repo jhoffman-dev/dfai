@@ -61,6 +61,7 @@ export function ExportDialog({
   onExport,
   onClose,
   fallbackFocus,
+  formats,
 }: {
   /** What is exported, for the title: a note's title, or "3 notes". */
   subject: string;
@@ -68,9 +69,12 @@ export function ExportDialog({
   onExport: (choice: ExportChoice) => void;
   onClose: () => void;
   fallbackFocus?: FocusFallback;
+  /** The formats offered here, Markdown first. */
+  formats: readonly ExportFormat[];
 }) {
   const finalFocus = useReturnFocus(fallbackFocus);
   const [format, setFormat] = useState<ExportFormat>('markdown');
+  const options = FORMATS.filter((option) => formats.includes(option.value));
   const [keepFrontmatter, setKeepFrontmatter] = useState(true);
   const working = state.kind === 'working';
   return (
@@ -86,7 +90,7 @@ export function ExportDialog({
             <Dialog.Title className="confirm__title">Export {subject}</Dialog.Title>
             <fieldset className="export__formats" disabled={working}>
               <legend className="export__legend">Format</legend>
-              {FORMATS.map((option) => (
+              {options.map((option) => (
                 <label key={option.value} className="export__format">
                   <input
                     type="radio"

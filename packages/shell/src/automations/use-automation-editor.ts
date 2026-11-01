@@ -74,6 +74,8 @@ export function useAutomationEditor({
     types: ports.types,
     notePaths: ports.notePaths,
     indexKey,
+    // A rule's query writes nothing of its own, so no write waits on a run of it: the news stands for the key.
+    indexKeyNow: () => indexKey,
     enabled: editing !== null,
   });
   const choices = useQueryChoices({

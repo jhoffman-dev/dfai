@@ -19,12 +19,14 @@ function showWith({
   placeholder = false,
   chosen = null,
   sections = [],
+  connections = true,
 }: {
   connection?: Partial<ConnectionSettingsState>;
   placeholder?: boolean;
   /** The theme the store holds; null for none chosen. */
   chosen?: Theme | null;
   sections?: readonly SettingsSectionLink[];
+  connections?: boolean;
 }) {
   const store = themeStoreHolding(chosen);
   const handlers = {
@@ -40,6 +42,7 @@ function showWith({
       mcp={{ command: 'claude mcp add atlas -- node /x/main.js', placeholder }}
       themeStore={store}
       sections={sections}
+      connections={connections}
       {...handlers}
     >
       {sections.map((section) => (
@@ -56,6 +59,28 @@ function showWith({
 
 const statusText = () => screen.getByTestId('api-status').textContent;
 const apiSwitch = () => screen.getByRole('switch', { name: 'Local API' });
+
+describe('SettingsDialog, where there is no local API (#657)', () => {
+  it('draws Connections, and lists it, by default', () => {
+    showWith({});
+    expect(apiSwitch()).toBeDefined();
+    const list = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(within(list).getByRole('button', { name: 'Connections' })).toBeDefined();
+  });
+
+  it('neither draws nor lists Connections when it is not offered', () => {
+    showWith({ connections: false });
+    expect(screen.getByRole('heading', { name: 'Appearance' })).toBeDefined();
+    expect(screen.queryByRole('switch', { name: 'Local API' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Connections' })).toBeNull();
+    const list = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(
+      within(list)
+        .getAllByRole('button')
+        .map((row) => row.textContent),
+    ).toEqual(['Appearance']);
+  });
+});
 
 describe('SettingsDialog, Connections', () => {
   it('reads Off, with the switch off, while the API is off', () => {

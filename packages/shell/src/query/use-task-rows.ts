@@ -15,6 +15,7 @@ import {
   changeUndoably,
   FocusNotChosenError,
   NoteChangedError,
+  landedAsRefreshAsked,
   readAnswers,
   taskRowAsChanged,
   taskRowChange,
@@ -29,6 +30,7 @@ import {
 } from '@dfai/application';
 import {
   todayActionWords,
+  useSteadyCallback,
   type TaskRowControls,
   type TaskRowShown,
   type TodayAction,
@@ -75,7 +77,12 @@ export interface TaskRowsOptions {
   /** When that run was asked, and how many runs have begun since. */
   readonly read: ReadMoment;
   readonly runsBegun: () => number;
-  readonly indexKey: string;
+  /**
+   * The index's own key as it stands when asked (`useIndexKeyNow`): a write
+   * lands at it as its refresh is asked, and the view's runs are stamped
+   * with it as they begin (#698).
+   */
+  readonly indexKeyNow: () => string;
   /** Whether the rows carry their task's state (`compiled.taskRows`): without it, they are look-only. */
   readonly enabled: boolean;
   /** The index and the view the rows are of: when either changes, nothing carries over. */
@@ -121,7 +128,8 @@ export function useTaskRows(options: TaskRowsOptions): {
 
   const held = useRef(here);
   held.current = here;
-  const act = useAct({ latest, held, setState });
+  const keyNow = useSteadyCallback(options.indexKeyNow);
+  const act = useAct({ latest, held, setState, keyNow });
   // Drawn against the day it is drawn on: the view is drawn again as the day
   // turns, as Today is (`useDayOf`), and any drawing reads the clock afresh.
   useDayOf(clock, enabled);
@@ -206,11 +214,14 @@ function useAct({
   latest,
   held,
   setState,
+  keyNow,
 }: {
   latest: { readonly current: TaskRowsOptions };
   /** What the rows hold now, read when a control is pressed. */
   held: { readonly current: RowsState };
   setState: (next: (was: RowsState) => RowsState) => void;
+  /** The index's own key now: a write lands at it as its refresh is asked (#698). */
+  keyNow: () => string;
 }): Act {
   const change = useCallback(
     (update: (was: RowsState) => RowsState) =>
@@ -231,7 +242,6 @@ function useAct({
       const action = actionOf(press, today);
       const values = taskRowChange(action);
       const changes = taskRowAsChanged({ task, values, today }) ?? {};
-      const asked = options.indexKey;
       const retry = () => {
         // Judged afresh, on the day it is pressed: a task read differently since is left as it is.
         const now = latest.current.rows.find((each) => each.path === row.path);
@@ -255,10 +265,20 @@ function useAct({
             change((was) => withoutOwn(was, row.path, pending));
             return;
           }
-          const landed = { ...pending, landed: { at: options.runsBegun(), indexKey: asked } };
+          const landedAt = landedAsRefreshAsked({
+            refresh: options.onChanged,
+            readsBegun: options.runsBegun,
+            indexKeyNow: keyNow,
+            // The write was made: it is held as it left it until the index is next ready past it.
+            refreshFailed: (cause) =>
+              console.error(
+                'The index could not be refreshed after a view row was written:',
+                cause,
+              ),
+          });
+          const landed = { ...pending, landed: landedAt };
           change((was) => replacing(was, row.path, pending, landed));
           announce({ options, made, title: row.title, said, path: row.path });
-          options.onChanged();
         },
         (cause: unknown) => {
           const refused = { message: errorMessage(cause), retry };
@@ -266,7 +286,7 @@ function useAct({
         },
       );
     },
-    [latest, held, change],
+    [latest, held, change, keyNow],
   );
   return act;
 }

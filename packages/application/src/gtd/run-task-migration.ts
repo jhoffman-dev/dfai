@@ -15,7 +15,7 @@ import { UNSAVED_TYPING } from '../automations/apply-changes.ts';
 import type { Clock } from '../ports.ts';
 import type { LinkUpdatePanes } from '../vault/update-links.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
-import type { OpenEditorsPort, VaultFsPort } from '../vault/ports.ts';
+import { EntryChangedError, type OpenEditorsPort, type VaultFsPort } from '../vault/ports.ts';
 import { readMigrationRecord } from './migration-record-file.ts';
 import {
   planTaskMigration,
@@ -204,6 +204,8 @@ export interface TaskMigrationUndo {
 
 const CHANGED_SINCE = 'It has changed since the migration wrote it, so it was left as it is.';
 const GONE = 'It is no longer there.';
+const RECORD_CHANGED =
+  'The migration’s record changed while it was being undone, so it was kept: run Undo again to see what is left.';
 
 /**
  * Undoes the migration from its record: each file that still says what the
@@ -234,13 +236,21 @@ export async function undoTaskMigration({
     else if (outcome !== 'unchanged') left.push({ path: file.path, reason: outcome.reason });
     if (outcome !== 'restored' && outcome !== 'unchanged' && outcome.retry) retry.push(file);
   }
+  const record = { path: MIGRATION_RECORD_PATH, modified: kept.modified, text: kept.text };
   if (retry.length === 0) {
-    await fs.trashEntry({ path: MIGRATION_RECORD_PATH });
+    try {
+      // Held to the record as read: one a second run rewrote meanwhile is kept (#694).
+      await fs.trashEntry({ path: MIGRATION_RECORD_PATH, unchanged: [record] });
+    } catch (cause) {
+      if (!(cause instanceof EntryChangedError)) throw cause;
+      left.push({ path: MIGRATION_RECORD_PATH, reason: RECORD_CHANGED });
+    }
   } else {
     await fs.writeTextFile({
       path: MIGRATION_RECORD_PATH,
       contents: migrationRecordText({ ...kept.record, files: retry, undoUnfinished: true }),
       expectedModified: kept.modified,
+      expectedText: kept.text,
     });
   }
   return { restored, left };
@@ -264,7 +274,11 @@ async function undoFile(
   try {
     if (file.kind === 'created') {
       if (current.text !== file.contents) return { reason: CHANGED_SINCE, retry: false };
-      await fs.trashEntry({ path: file.path });
+      // Held to the read just checked, so an edit landing before the Trash keeps the file (#694).
+      await fs.trashEntry({
+        path: file.path,
+        unchanged: [{ path: file.path, modified: current.modified, text: current.text }],
+      });
       return 'restored';
     }
     const { frontmatter, body } = splitFrontmatter(current.text);
@@ -276,6 +290,7 @@ async function undoFile(
       expectedModified: current.modified,
     });
   } catch (cause) {
+    if (cause instanceof EntryChangedError) return { reason: CHANGED_SINCE, retry: false };
     return { reason: reasonOf(cause), retry: true };
   }
   if (panes.state(file.path) === 'clean') panes.reload(file.path);

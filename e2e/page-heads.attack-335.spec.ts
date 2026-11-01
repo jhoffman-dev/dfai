@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection, splitWindow } from './host.ts';
+import { SIDEBAR_BESIDE_FROM } from './sidebar-drawer.ts';
 import { macOnly } from './platform.ts';
 
 // Attack on #335 (UI v2 slice 3b, #295): every page headed by its nav bar,
@@ -346,7 +347,9 @@ const nameAndCount = (bar: Locator) =>
 const SQUEEZED: readonly { which: string; width: number; split: boolean; counted: boolean }[] = [
   // The type page is not a pane, so it never splits: the window's minimum is its narrowest.
   { which: 'a type page', width: 720, split: false, counted: false },
-  { which: 'a view', width: 720, split: true, counted: true },
+  // Under 944px one pane shows (#658), so the narrowest a split pane gets is
+  // there, beside the sidebar: 360px each.
+  { which: 'a view', width: SIDEBAR_BESIDE_FROM, split: true, counted: true },
   { which: 'Today', width: 720, split: false, counted: true },
   { which: 'Archive', width: 720, split: false, counted: true },
   { which: 'Graph', width: 720, split: false, counted: true },
@@ -357,11 +360,15 @@ const SQUEEZED: readonly { which: string; width: number; split: boolean; counted
 for (const { which, width, split, counted } of SQUEEZED) {
   const where = `${which} at ${width}px${split ? ', split' : ''}`;
 
-  /** Each bar on screen once the page is open at that width. */
+  /**
+   * Each bar on screen once the page is open at that width. Opened wide, then
+   * squeezed: under 944px the sidebar is a drawer (#658), and the bars are
+   * what is measured, not the way to the page.
+   */
   async function bars(page: Page): Promise<Locator[]> {
-    await page.setViewportSize({ width, height: 700 });
     await openVault(page);
     await open(page, which);
+    await page.setViewportSize({ width, height: 700 });
     if (counted) await expect(main(page).locator('.page-bar__count').first()).not.toBeEmpty();
     if (!split) return [main(page).locator('.page-bar').first()];
     await splitWindow(page);
@@ -519,13 +526,13 @@ for (const theme of ['light', 'dark'] as const) {
     test(`Today, ${theme}, ${width}px: every group name, long ones too, is ${GROUP_NAME_HEIGHT}px tall`, async ({
       page,
     }) => {
-      await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ colorScheme: theme });
       await openVault(page);
       await page.evaluate((wanted) => {
         document.documentElement.dataset['theme'] = wanted;
       }, theme);
       await open(page, 'Today');
+      await page.setViewportSize({ width, height: 900 });
       const names = main(page).locator('.today__group-name');
       await expect(names.filter({ hasText: LONG_PROJECT })).toBeVisible();
       const heights = await names.evaluateAll((all) =>

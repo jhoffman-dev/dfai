@@ -34,7 +34,6 @@ import {
   type TagSuggestion,
   type QueryViewSummary,
   type SavedViewSummary,
-  isWorkspaceSplit,
   tabPlace,
   type NavigationPlace,
   type NoteNames,
@@ -48,6 +47,7 @@ import type {
   ActivityLog,
   DefinedType,
   NoteChanges,
+  EntryPointsOffered,
   ExternalLinkPort,
   IndexPort,
   LinkedRangeStore,
@@ -87,6 +87,7 @@ import {
 import { useNote, type NotePorts } from '../notes/use-note.ts';
 import type { IndexStatusStore } from '../index/index-status-store.ts';
 import type { ReadTypesAgain } from '../types/use-types.ts';
+import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
 import { hideOverlay, openPeek, showOverlay } from '../overlay-store.ts';
 import {
@@ -104,6 +105,9 @@ import {
   openInPane,
   openPlace,
   splitPane,
+  useCanClosePane,
+  useCanSplit,
+  useIsFirstShownPane,
   type WorkspaceStore,
 } from '../workspace/workspace-store.ts';
 import { sameWiringParts, type WorkspaceWiring } from '../workspace/workspace-wiring.tsx';
@@ -250,6 +254,8 @@ export interface PaneContext {
   readonly peopleMerge: ChosenPeopleMerge;
   /** Exporting notes (#501): a page's menu, the peek's, a view's chosen rows. Null where none can be made. */
   readonly exporting: ExportCommands | null;
+  /** Which entry points a platform may lack are offered here (#657): a source's Refresh among them. */
+  readonly offered: EntryPointsOffered;
   /** Told the problem with a link — one that could not be made or followed — or null once one leads somewhere. */
   readonly onLinkProblem: (message: string | null) => void;
   /** Where a link to a highlight or a PDF leads (#506), read from the vault. */
@@ -349,7 +355,9 @@ function useNoteTab({ wiring, names, chat, pane, tab, hidden }: NoteTabProps) {
   const overlay = useStore(overlays, (state) =>
     hidden ? null : paneOverlayOf(state.overlay, pane),
   );
-  const split = useStore(store, (state) => isWorkspaceSplit(state.workspace));
+  const canSplit = useCanSplit(store);
+  const canClose = useCanClosePane(store);
+  const firstShown = useIsFirstShownPane(store, pane);
   const menu = pageMenuOverlay(pane);
   const drawn = useNotePane({
     tabId: tab.id,
@@ -394,12 +402,13 @@ function useNoteTab({ wiring, names, chat, pane, tab, hidden }: NoteTabProps) {
     onShowInGraph: note.onShowInGraph,
     arrangement: {
       // Which of these a pane offers is the domain's rule; the bar draws a
-      // button and a menu item for each it is given.
-      ...(!split && { onSplit: () => splitPane(store, pane) }),
-      ...(split && { onClose: () => closePane(store, pane) }),
-      // The way back to a hidden sidebar sits where it went: the first
-      // pane's top-left corner.
-      ...(pane === 0 && onShowSidebar !== null && { onShowSidebar }),
+      // button and a menu item for each it is given. Split only while the
+      // window has room for another pane, Close only while both are on screen (#658).
+      ...(canSplit && { onSplit: () => splitPane(store, pane) }),
+      ...(canClose && { onClose: () => closePane(store, pane) }),
+      // The way back to a hidden sidebar sits where it went: the top-left
+      // corner of the first pane on screen.
+      ...(firstShown && onShowSidebar !== null && { onShowSidebar }),
       history,
       menuOpen: overlay === menu,
       onMenuOpenChange: (open) =>
@@ -595,6 +604,8 @@ export function useNotePane({
   });
   const { toasts, openNotes } = context;
   const viewToasts = useMemo(() => ({ toasts, panes: openNotes }), [toasts, openNotes]);
+  // The index's own key, ahead of `indexKey`'s news: a view's writes land at it (#698).
+  const indexKeyNow = useIndexKeyNow(context.indexStatus, context.vault);
   const savedView = useSavedView({
     note: note.open,
     index,
@@ -603,6 +614,7 @@ export function useNotePane({
     types,
     notePaths,
     indexKey,
+    indexKeyNow,
     onChanged,
     editors,
     tickMemory: context.tickMemory,
@@ -640,6 +652,7 @@ export function useNotePane({
     types,
     notePaths,
     indexKey,
+    indexKeyNow,
     queryViews: context.queryViews,
     dashboards: context.dashboards,
     viewPaths: context.viewPaths,
@@ -673,6 +686,7 @@ export function useNotePane({
     index,
     sources,
     refresher: context.sourceRefresher,
+    offered: context.offered,
     vaultRoot: context.vault,
     setProperty: note.setProperty,
     onChanged,
@@ -814,14 +828,18 @@ export function useNotePane({
           typeName: noteProperties.typeName,
           sql: savedView.result?.sql ?? sqlView.sql,
         });
+  // Where no picture can be made (ADR-0051), no Regenerate is offered: the card keeps its placeholder.
+  const regenerates = context.offered.regenerateThumbnail;
   const customPropertyValues = useMemo(
     () => ({
-      ...(artifact !== null && { [ARTIFACT_KEYS.cover]: thumbnailValue(artifact, loadImage) }),
+      ...(artifact !== null && {
+        [ARTIFACT_KEYS.cover]: thumbnailValue(artifact, loadImage, regenerates),
+      }),
       ...(pageThumbnail !== null && {
-        [pageThumbnail.key]: pageThumbnailValue(pageThumbnail, loadImage),
+        [pageThumbnail.key]: pageThumbnailValue(pageThumbnail, loadImage, regenerates),
       }),
     }),
-    [artifact, pageThumbnail, loadImage],
+    [artifact, pageThumbnail, loadImage, regenerates],
   );
   // What the aside shows for this tab (#306): said through the store, read by
   // a selector there, so the aside follows the focused tab without `App`.
@@ -1023,7 +1041,7 @@ export function useNotePane({
         if (path !== null) onToggleFavorite(path);
       }}
       aside={
-        artifactAside(artifact, path) ?? (
+        artifactAside(artifact, path, regenerates) ?? (
           <>
             {taskSchedule !== null && <TaskScheduleSummary {...taskSchedule} />}
             {linked !== null && (
@@ -1102,7 +1120,12 @@ export function useNotePane({
 }
 
 /** An artifact's saved copy, under its properties; nothing for any other note. */
-function artifactAside(artifact: ArtifactCopyView | null, path: VaultPath | null): ReactNode {
+function artifactAside(
+  artifact: ArtifactCopyView | null,
+  path: VaultPath | null,
+  /** Whether a picture can be made here: where none can, the card keeps its placeholder. */
+  regenerates: boolean,
+): ReactNode {
   if (artifact === null || path === null) return null;
   return (
     <Suspense fallback={null}>
@@ -1115,10 +1138,12 @@ function artifactAside(artifact: ArtifactCopyView | null, path: VaultPath | null
         onOpenLink={artifact.openLink}
         onReload={artifact.reload}
         onAddCopy={artifact.addCopy}
-        thumbnail={{
-          generating: artifact.thumbnail.generating,
-          onRegenerate: artifact.thumbnail.regenerate,
-        }}
+        {...(regenerates && {
+          thumbnail: {
+            generating: artifact.thumbnail.generating,
+            onRegenerate: artifact.thumbnail.regenerate,
+          },
+        })}
       />
     </Suspense>
   );
@@ -1128,6 +1153,7 @@ function artifactAside(artifact: ArtifactCopyView | null, path: VaultPath | null
 function thumbnailValue(
   artifact: ArtifactCopyView,
   load: (src: string) => Promise<string | null>,
+  regenerates: boolean,
 ): (id: string) => ReactNode {
   const { thumbnail } = artifact;
   return function thumbnailRow(id) {
@@ -1138,7 +1164,7 @@ function thumbnailValue(
         shown={thumbnail.shown}
         generating={thumbnail.generating}
         failure={thumbnail.failure}
-        canGenerate={thumbnail.canGenerate}
+        canGenerate={regenerates && thumbnail.canGenerate}
         load={load}
         onRegenerate={thumbnail.regenerate}
         onClear={thumbnail.clear}
@@ -1151,6 +1177,7 @@ function thumbnailValue(
 function pageThumbnailValue(
   thumbnail: PageThumbnailView,
   load: (src: string) => Promise<string | null>,
+  regenerates: boolean,
 ): (id: string) => ReactNode {
   return function pageThumbnailRow(id) {
     return (
@@ -1160,7 +1187,7 @@ function pageThumbnailValue(
         shown={thumbnail.shown}
         generating={thumbnail.generating}
         failure={thumbnail.failure}
-        canGenerate
+        canGenerate={regenerates}
         load={load}
         onRegenerate={thumbnail.regenerate}
         regenerateDiscards={thumbnail.discards}
@@ -1346,10 +1373,11 @@ function paneBody({
         source={source.source}
         report={source.report}
         refreshing={source.refreshing}
-        onRefresh={source.refresh}
+        {...(source.refreshOffered && { onRefresh: source.refresh })}
         secrets={source.secrets}
         outsideVault={source.outsideVault}
-        {...(source.chooseFile !== null && { onChooseFile: source.chooseFile })}
+        {...(source.refreshOffered &&
+          source.chooseFile !== null && { onChooseFile: source.chooseFile })}
         fileProblem={source.fileProblem}
       />
     );

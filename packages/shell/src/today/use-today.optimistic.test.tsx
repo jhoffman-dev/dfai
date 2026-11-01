@@ -87,6 +87,8 @@ function today() {
     }),
     markdown: remarkMarkdown,
   };
+  // The index's own key: it moves as the index reads the files again, with its news.
+  let keyNow = 'ready:1';
   const initial: TodayOptions = {
     ports,
     editors: noPane,
@@ -95,6 +97,7 @@ function today() {
     types: TYPES,
     vaultKey: 'vault-a',
     indexKey: 'ready:1',
+    indexKeyNow: () => keyNow,
     open: true,
     onSettled: () => {},
   };
@@ -117,6 +120,7 @@ function today() {
           /status: (\S+)/.exec(memory.files.get(at) ?? '')?.[1] ?? '',
         ]),
       );
+      keyNow = indexKey;
       hook.rerender({ ...initial, indexKey });
     },
     /**

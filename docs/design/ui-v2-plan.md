@@ -174,6 +174,7 @@ Conventions for every slice: one PR, opened as a draft, mergeable on its own aga
   | `grouped-tables.css`    | grouped tables (issue #6)                                                                                                                                              |
   | `swimlanes.css`         | board swimlanes (issue #6)                                                                                                                                             |
   | `proposals.css`         | Proposals (P29-02)                                                                                                                                                     |
+  | `responsive.css`        | Narrow screens: the sidebar as a drawer, one pane (#658)                                                                                                               |
 
 ### Slice 1 — Tokens and theme, light and dark (M) — done
 

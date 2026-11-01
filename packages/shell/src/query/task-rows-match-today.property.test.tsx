@@ -209,6 +209,7 @@ async function fromToday(text: string, press: Pressed): Promise<string | undefin
     types: TYPES,
     vaultKey: 'vault-a',
     indexKey: 'ready:1',
+    indexKeyNow: () => 'ready:1',
     open: true,
     onSettled: () => {},
   };
@@ -233,7 +234,7 @@ async function fromQueryView(text: string, press: Pressed): Promise<string | und
     rows: [row],
     read: { at: 1, indexKey: 'ready:1' },
     runsBegun: () => 1,
-    indexKey: 'ready:1',
+    indexKeyNow: () => 'ready:1',
     enabled: true,
     scope: ['index', 'Views/Next actions.md'],
     ports: {

@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { createVaultPath, type VaultEntry } from '@dfai/domain';
+import { createVaultPath, WEB_CAPABILITIES, type VaultEntry } from '@dfai/domain';
 import {
+  entryPointsOffered,
+  EVERY_ENTRY_POINT,
+  type EntryPointsOffered,
   recordingActivity,
   createSourceRefresher,
   fakeIndexPort,
@@ -114,9 +117,11 @@ const render = (
   {
     ports = sources,
     setProperty = () => {},
+    offered = EVERY_ENTRY_POINT,
   }: {
     ports?: SourcePorts;
     setProperty?: (key: string, value: unknown) => void;
+    offered?: EntryPointsOffered;
   } = {},
 ) => {
   const refresher = createSourceRefresher({ activity: recordingActivity() });
@@ -128,6 +133,7 @@ const render = (
       index: fakeIndexPort(),
       sources: ports,
       refresher,
+      offered,
       vaultRoot: VAULT_ROOT,
       setProperty,
       onChanged,
@@ -224,6 +230,55 @@ describe('useSource', () => {
 
     expect(fetched).toEqual([]);
     expect(result.current.report?.error).toMatch(/move the note there \(System → sources\)/i);
+  });
+
+  it('offers no refresh of a fetched source where the platform cannot fetch, nor runs its timer (#657)', async () => {
+    const note = [
+      '---',
+      'atlas: source',
+      'format: csv',
+      'url: https://example.test/people.csv',
+      'into: People',
+      'type: person',
+      'interval: 1',
+      '---',
+      '',
+    ].join('\n');
+    const fs = fakeFs({ [SOURCE_PATH]: note });
+    const fetched: unknown[] = [];
+    const ports: SourcePorts = {
+      ...sources,
+      http: {
+        get: async (request) => {
+          fetched.push(request);
+          return PEOPLE;
+        },
+      },
+    };
+    const offered = entryPointsOffered(WEB_CAPABILITIES);
+    const { result } = render(await openSource(fs), fs, () => {}, { ports, offered });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+    });
+
+    expect(result.current.refreshOffered).toBe(false);
+    expect(fetched).toEqual([]);
+  });
+
+  it('still refreshes a source reading a file in the vault on the web (#657)', async () => {
+    const files = vaultWith(sourceNote(1));
+    const fs = fakeFs(files);
+    const onChanged = vi.fn();
+    const offered = entryPointsOffered(WEB_CAPABILITIES);
+    const { result } = render(await openSource(fs), fs, onChanged, { offered });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.refreshOffered).toBe(true);
+    expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
   it('leaves a source with no interval alone until it is asked', async () => {

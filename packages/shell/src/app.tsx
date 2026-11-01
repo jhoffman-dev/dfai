@@ -7,10 +7,12 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
 } from 'react';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
   activeNotePaths,
+  AUTOMATION_PRESETS,
   activeTabOf,
   ASK_PLACE,
   tabPlace,
@@ -42,6 +44,7 @@ import {
   type VaultEntry,
   type VaultPath,
   typeShownAt,
+  shellLayoutFor,
 } from '@dfai/domain';
 import {
   createNoteChanges,
@@ -78,6 +81,9 @@ import {
   type GranolaPullRecords,
   type PageSnapshotPort,
   type SlackPort,
+  exportFormatsOffered,
+  presetsOffered,
+  type EntryPointsOffered,
 } from '@dfai/application';
 import {
   AppShell,
@@ -177,9 +183,11 @@ import {
   previousTab,
   activateNthTab,
   reopenClosedTab,
+  setPanesFit,
   toggleSplit as toggleSplitIn,
   workspaceNow,
 } from './workspace/workspace-store.ts';
+import { useShellLayout } from './layout/use-shell-layout.ts';
 import {
   WorkspaceStoresProvider,
   WorkspaceWiringProvider,
@@ -237,7 +245,8 @@ import {
   SecretsSettingsCard,
   SlackSettingsCard,
   SyncSettingsCard,
-  settingsSectionLinks,
+  settingsSectionsShown,
+  type AppSettingsSection,
 } from './settings/settings-sections.ts';
 import { browserImagePlacementStore } from './notes/browser-image-placement-store.ts';
 import { useTickMemory } from './query/tick-memory.ts';
@@ -417,6 +426,11 @@ const paletteOffers = (query: string) => pastedArtifactCommands(query);
 
 export { localToday };
 
+/** A shortcut whose feature this platform lacks: the key does nothing. */
+const DO_NOTHING = () => {};
+/** A paste read where no Slack is offered: never taken as a link to save. */
+const OFFER_NOTHING = () => false;
+
 /**
  * Where focus goes when an overlay closes and what opened it has gone: the
  * note being edited, or else the tree — somewhere a keyboard can carry on
@@ -426,6 +440,18 @@ function focusFallback(): HTMLElement | null {
   return (
     document.querySelector<HTMLElement>('.pane--focused [contenteditable="true"]') ??
     document.querySelector<HTMLElement>('[role="tree"] [tabindex="0"]')
+  );
+}
+
+/**
+ * Where the focus goes as the sidebar drawer closes (#658) when what opened it
+ * took no focus — a tap, or a click in WebKit: the way back into the drawer,
+ * else where any overlay's focus goes.
+ */
+function drawerReturnFocus(): HTMLElement | null {
+  return (
+    document.querySelector<HTMLElement>('.shell__main [aria-label="Show sidebar"]') ??
+    focusFallback()
   );
 }
 
@@ -481,6 +507,7 @@ function AppWindow({
   slack: slackPort,
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
+  offered,
 }: {
   appInfo: AppInfoPort;
   vault: OnHost<VaultPorts>;
@@ -522,8 +549,20 @@ function AppWindow({
     drive: GoogleDrivePort;
     renderer: NotePageRenderer;
   };
+  /**
+   * Which of the entry points a platform may lack are offered here, decided
+   * from its capabilities as the shell mounts (#657): one object for the
+   * window's life. A port for one that is off is not handed in at all.
+   */
+  offered: EntryPointsOffered;
 }) {
   const [app, setApp] = useState<AppInfoState>({ kind: 'loading' });
+  const exportOffered = offered.exportNotes;
+  const exportFormats = useMemo(() => exportFormatsOffered(offered), [offered]);
+  const presetNames = useMemo(
+    () => presetsOffered(AUTOMATION_PRESETS, offered).map((preset) => preset.name),
+    [offered],
+  );
   // The last sync runs before the Activity log's final write, so its line is kept.
   const closing = useMemo(() => closingInStages(activityPorts.closing), [activityPorts.closing]);
   const editors = useOpenEditors();
@@ -728,6 +767,7 @@ function AppWindow({
   });
   const {
     types,
+    broken: brokenTypes,
     failure: typesFailure,
     reload: reloadTypes,
   } = useTypes({
@@ -786,6 +826,7 @@ function AppWindow({
     clock: localClock,
     activity: activityLog,
     onWrote: onChanged,
+    enabled: offered.granolaPull,
   });
   // Today's meetings from Google Calendar (ADR-0046): once the index is ready, every 15 minutes, and on asking.
   // Only the Mac that runs the vault's automations writes its meeting notes (U-29), so two never write one note.
@@ -837,7 +878,14 @@ function AppWindow({
     onWrote: onChanged,
   });
 
-  const thumbnails = useThumbnailQueue({ notes, snapshot, editors, types, onChanged });
+  const thumbnails = useThumbnailQueue({
+    notes,
+    snapshot,
+    editors,
+    types,
+    onChanged,
+    enabled: offered.regenerateThumbnail,
+  });
   const thumbnailsNow = useThumbnailsNow(thumbnails);
   // One of each for the whole window: the panes and the API share the refresher,
   // so a source is never refreshed twice at once.
@@ -937,7 +985,12 @@ function AppWindow({
     ],
   );
   // A write from another tool shows up the way one made here does.
-  useLocalApi({ bridge: api.bridge, deps: apiDeps, onWrote: onChanged });
+  useLocalApi({
+    bridge: api.bridge,
+    deps: apiDeps,
+    onWrote: onChanged,
+    enabled: offered.localApiServer,
+  });
   // A chat's drafting tools write through the API's routes in-process; the vault catches up as after any API write.
   const draftWrote = useSteadyCallback(() => onChanged());
   // One toolbox construction for the chat and for a rule's Claude step (P29-03).
@@ -958,10 +1011,10 @@ function AppWindow({
     ...PALETTE_COMMANDS,
     ...paletteArchiveCommands(focused?.kind === 'note' ? focused.path : null),
     // Offered wherever the host can export: the commands themselves are made further down.
-    ...(exportPorts === undefined
+    ...(!exportOffered
       ? []
       : paletteExportCommands(focused?.kind === 'note' ? focused.path : null)),
-    ...(kindlePorts === undefined || location === null
+    ...(location === null || !offered.kindleCommands
       ? []
       : paletteKindleCommands(kindleSync.view.connected)),
   ]);
@@ -974,6 +1027,7 @@ function AppWindow({
   const [overlays] = useState(createOverlayStore);
   const overlay = useWindowOverlay(overlays);
   const showOverlay = useCallback((requested: Overlay) => showIn(overlays, requested), [overlays]);
+  const openFromGitHubDialog = useCallback(() => showOverlay('open-from-github'), [showOverlay]);
   const hideOverlay = useCallback((closing: Overlay) => hideIn(overlays, closing), [overlays]);
   // One object, so what is handed it is not made anew each time the window draws.
   const overlayPort = useMemo(
@@ -981,6 +1035,42 @@ function AppWindow({
     [showOverlay, hideOverlay],
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // A narrow screen (#658): the sidebar is a drawer over the work, opened and
+  // closed in place of hidden and shown, and one pane shows. The drawer starts
+  // closed and closes as a page is opened from it; a wide window keeps the
+  // sidebar's own state untouched for when it comes back.
+  const layout = useShellLayout();
+  const compact = layout.sidebar === 'drawer';
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // A drawer left open when the window went wide is not waiting to come back:
+  // it would open unasked, modal, over whatever is being typed. Reset as the
+  // layout flips, in the render that sees it, so no frame draws it open.
+  const [drawerLayout, setDrawerLayout] = useState(compact);
+  if (drawerLayout !== compact) {
+    setDrawerLayout(compact);
+    if (drawerOpen) setDrawerOpen(false);
+  }
+  const sidebarBeside = sidebarOpen && !compact;
+  const toggleSidebar = useCallback(
+    () => (compact ? setDrawerOpen((was) => !was) : setSidebarOpen((was) => !was)),
+    [compact],
+  );
+  const drawer = useMemo(
+    () =>
+      compact
+        ? { open: drawerOpen, onOpenChange: setDrawerOpen, returnFocus: drawerReturnFocus }
+        : null,
+    [compact, drawerOpen],
+  );
+  useEffect(() => setPanesFit(workspace, layout.panes), [workspace, layout.panes]);
+  useEffect(
+    () =>
+      // Subscribed, not drawn for: the window is not drawn again for each page opened.
+      workspace.subscribe((state, before) => {
+        if (activePlace(state.workspace) !== activePlace(before.workspace)) setDrawerOpen(false);
+      }),
+    [workspace],
+  );
   // Capture asked for with no vault open: it has no Inbox to land in.
   const [captureWantedVault, setCaptureWantedVault] = useState(false);
   // Capture asked for — by ⇧⌘N, ⌥⌘N or the global shortcut: put up with a
@@ -989,7 +1079,11 @@ function AppWindow({
     setCaptureWantedVault(location === null);
     if (location !== null) showOverlay('capture');
   }, [location, showOverlay]);
-  const globalCapture = useGlobalCapture({ ...globalCapturePorts, pressed: askForCapture });
+  const globalCapture = useGlobalCapture({
+    ...globalCapturePorts,
+    pressed: askForCapture,
+    enabled: offered.globalCaptureShortcut,
+  });
   const captureNeedsVault =
     captureWantedVault && location === null
       ? 'Quick capture needs a vault: open one, and what you capture lands in its Inbox.'
@@ -1036,10 +1130,12 @@ function AppWindow({
     savedViews: catalog.savedViews,
     types,
   });
-  const asideCollapsed = useAsideCollapsed({ sidebarOpen, asideWidth });
+  const asideCollapsed = useAsideCollapsed({ sidebarOpen: sidebarBeside, asideWidth });
   useEffect(() => setAsideFolded(asideStore, asideCollapsed), [asideStore, asideCollapsed]);
   const roomForAside = useCallback((wanted: number) => {
     const width = window.innerWidth;
+    // On a narrow screen the sidebar is a drawer, out of the way already.
+    if (shellLayoutFor(width).sidebar === 'drawer') return;
     const folds = (open: boolean) =>
       collapseFor({ width, sidebarOpen: open, asideWidth: wanted }).aside;
     if (folds(true) && !folds(false)) setSidebarOpen(false);
@@ -1526,7 +1622,7 @@ function AppWindow({
         .catch((cause: unknown) => console.error('The Google Doc could not be opened:', cause));
     },
   });
-  const exportCommands = exportPorts === undefined ? null : exporting.commands;
+  const exportCommands = exportOffered ? exporting.commands : null;
   // Each one function for as long as the entries' ports: the panes are handed them (#325).
   const { rename: renameEntry, askMove: askEntryMove, askDelete: askEntryDelete } = entries;
   const templatesPage = useTemplatesPage({
@@ -1679,7 +1775,10 @@ function AppWindow({
   // has an Inbox view or something waits in it.
   const inboxRowShown = inboxView !== null || (waiting ?? 0) > 0;
   // Ask Claude on the Skills page reaches Claude as a rule's step does: Settings' provider and model.
-  const skillsWiring = useMemo(() => ({ claude: claudeStep }), [claudeStep]);
+  const skillsWiring = useMemo(
+    () => ({ claude: claudeStep, offersAsk: offered.skillDraft }),
+    [claudeStep, offered.skillDraft],
+  );
   const automationPorts = useMemo(
     () => ({ ...archivePorts, types, notePaths, claude: claudeStep }),
     [archivePorts, types, notePaths, claudeStep],
@@ -1694,8 +1793,10 @@ function AppWindow({
       suggestedEmails: ownerEmails,
       activity: activityLog,
       onChanged: typesChanged,
+      offered: offered.claudeAutomations,
     }),
     [
+      offered.claudeAutomations,
       meetingSetupStore,
       automationsStore,
       vault.fs,
@@ -1800,7 +1901,7 @@ function AppWindow({
     [slackPort, vault.fs, notes.markdown, index.index, vaultKey, openNote],
   );
   const slackPaste = useSlackPaste(slackPastePorts);
-  useSlackPasteListener(slackPaste.offer);
+  useSlackPasteListener(offered.slackLinkOffer ? slackPaste.offer : OFFER_NOTHING);
   const slackOffer =
     slackPaste.view === null ? null : (
       <SlackMessageOffer
@@ -1934,6 +2035,7 @@ function AppWindow({
       archive: archiveCommands,
       peopleMerge: peopleMerge.commands,
       exporting: exportCommands,
+      offered,
       onLinkProblem: setLinkError,
       linkPlaces,
       notesBeingMade,
@@ -1978,6 +2080,7 @@ function AppWindow({
       archiveCommands,
       peopleMerge,
       exportCommands,
+      offered,
       templateCommands,
       notesBeingMade,
       linkPlaces,
@@ -2007,7 +2110,7 @@ function AppWindow({
         peekNow(overlays) === null ? activeTabOf(workspaceNow(workspace)).id : PEEK_EDITOR,
       ),
     newNote: () => void createNewNote(),
-    toggleSidebar: () => setSidebarOpen((was) => !was),
+    toggleSidebar,
     toggleSplit: () => toggleSplitIn(workspace),
     dailyNote: () => void openDailyNote(),
     back: () => goBack(workspace),
@@ -2015,9 +2118,11 @@ function AppWindow({
     show: showOverlay,
     capture: askForCapture,
     ask: () => {
-      if (toggleAsk(workspace)) askFocus.request(workspaceNow(workspace).focused);
+      if (offered.claudeChat && toggleAsk(workspace)) {
+        askFocus.request(workspaceNow(workspace).focused);
+      }
     },
-    toggleChat: chat.toggle,
+    toggleChat: offered.claudeChat ? chat.toggle : DO_NOTHING,
     toggleAside: () =>
       asideShownNow(asideStore.getState()) ? hideAside(asideStore) : askForAside(toggleAsideIn),
     tabs: {
@@ -2031,7 +2136,6 @@ function AppWindow({
   });
 
   const treeRows = useMemo(() => sidebarTreeRows(rows), [rows]);
-  const toggleSidebar = useCallback(() => setSidebarOpen((was) => !was), []);
   const asideShown = useAsideShown(asideStore);
   const toggleAsideSeat = useCallback(
     () =>
@@ -2227,8 +2331,9 @@ function AppWindow({
     [todayView, openNote, openDailyNote],
   );
   const chatToggle = useMemo(
-    () => (location === null ? null : { open: chat.open, onToggle: chat.toggle }),
-    [location, chat.open, chat.toggle],
+    () =>
+      location === null || !offered.claudeChat ? null : { open: chat.open, onToggle: chat.toggle },
+    [location, offered.claudeChat, chat.open, chat.toggle],
   );
   // Ask's tab reads the chat through its own context (#37), drawn again with each streamed word.
   const followInFocusedPane = useCallback(
@@ -2300,11 +2405,72 @@ function AppWindow({
       showOverlay,
     ],
   );
+  const settingsShown = settingsSectionsShown({ vaultOpen: location !== null, offered });
+  /** One section of Settings, as `settingsShown` names it; the vault's ones only with a vault open. */
+  const settingsSection = (key: AppSettingsSection): ReactNode => {
+    switch (key) {
+      case 'profile':
+        return (
+          location !== null && (
+            <ProfileSettingsCard setting={profileSetting} emails={selfEmailsSetting} />
+          )
+        );
+      case 'index':
+        return location === null ? (
+          <IndexSettings index={null} onRebuild={() => void rebuild()} />
+        ) : (
+          <LiveIndexSettings
+            index={indexStatus}
+            progress={indexProgress}
+            onRebuild={() => void rebuild()}
+          />
+        );
+      case 'images':
+        return <ImageSettingsPanel store={browserImagePlacementStore} />;
+      case 'globalCapture':
+        return (
+          <GlobalCaptureSettings view={globalCapture.status} onChange={globalCapture.change} />
+        );
+      case 'quickAdd':
+        return (
+          location !== null && <QuickAddSettingsCard setting={quickAddSetting} types={types} />
+        );
+      case 'secrets':
+        return location !== null && <SecretsSettingsCard setting={secrets} />;
+      case 'googleCalendar':
+        return location !== null && <GoogleCalendarSettingsCard setting={googleCalendarSetting} />;
+      case 'granola':
+        return location !== null && <GranolaSettingsCard setting={granolaSetting} />;
+      case 'slack':
+        return location !== null && <SlackSettingsCard port={slackPort} vault={vaultKey} />;
+      case 'kindle':
+        return location !== null && <KindleSettingsCard kindle={kindleSync} />;
+      case 'claude':
+        return <ClaudeSettingsCard chat={chat} />;
+      case 'sync':
+        return (
+          location !== null && (
+            <SyncSettingsSlot store={syncStore}>
+              {(syncNow) => (
+                <SyncSettingsCard
+                  sync={syncNow}
+                  vaultName={location.name}
+                  canCreateRepository={offered.newSyncRepository}
+                />
+              )}
+            </SyncSettingsSlot>
+          )
+        );
+      case 'about':
+        return <AboutSettings app={app} />;
+    }
+  };
   const shell = (
     <NoteNamesProvider value={names}>
       <ChatToggleProvider value={chatToggle}>
         <SyncRunner
           store={syncStore}
+          enabled={offered.backgroundSync}
           host={syncPorts}
           fs={vault.fs}
           markdown={notes.markdown}
@@ -2335,6 +2501,7 @@ function AppWindow({
           selfEmails={ownerEmails}
           // A rule a note sets off hears of it here (P29-01).
           changes={noteChanges}
+          offered={offered}
         />
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
@@ -2354,7 +2521,8 @@ function AppWindow({
           onWritten={settleArchive}
         />
         <AppShell
-          sidebarOpen={sidebarOpen}
+          sidebarOpen={sidebarBeside}
+          drawer={drawer}
           asideOpen={asideShown}
           // Every page carries its own way back in its bar; only the empty
           // state, which has no page, needs the shell's.
@@ -2367,8 +2535,8 @@ function AppWindow({
                     vaultName={location.name}
                     vaultInitial={vaultInitial(location.name)}
                     templates={templates}
-                    onChooseVault={chooseVault}
-                    onOpenFromGitHub={() => showOverlay('open-from-github')}
+                    {...(offered.chooseVaultFolder && { onChooseVault: chooseVault })}
+                    {...(offered.openVaultFromGitHub && { onOpenFromGitHub: openFromGitHubDialog })}
                     onNewNote={() => void createNewNote()}
                     onNewFromTemplate={(path) => void createFromTemplate(path)}
                     onDailyNote={() => void openDailyNote()}
@@ -2384,6 +2552,7 @@ function AppWindow({
                     viewOwner={typeViews.ownerOf}
                     favorites={catalog.favorites}
                     types={sidebarTypes}
+                    brokenTypes={brokenTypes}
                     views={catalog.views}
                     dashboards={catalog.dashboards}
                     quick={quick}
@@ -2426,7 +2595,7 @@ function AppWindow({
                     onSearch={() => showOverlay('search')}
                     onOpenGraph={() => openGraph({ kind: 'vault' })}
                     onOpenTags={() => openTags(null)}
-                    onOpenAsk={openAsk}
+                    {...(offered.claudeChat && { onOpenAsk: openAsk })}
                     onOpenLibrary={() => openPage({ kind: 'library' })}
                     onOpenHighlights={() => openPage({ kind: 'highlights' })}
                     onOpenAutomations={() => openPage({ kind: 'automations' })}
@@ -2465,7 +2634,9 @@ function AppWindow({
               <SidebarFooter
                 themeStore={browserThemeStore}
                 onOpenSettings={() => showOverlay('settings')}
-                sync={<SyncLight store={syncStore} onOpen={openSyncSettings} />}
+                {...(offered.syncLight && {
+                  sync: <SyncLight store={syncStore} onOpen={openSyncSettings} />,
+                })}
               />
             </>
           }
@@ -2480,8 +2651,8 @@ function AppWindow({
           main={
             location === null ? (
               <VaultEmptyState
-                onChooseVault={chooseVault}
-                onOpenFromGitHub={() => showOverlay('open-from-github')}
+                {...(offered.chooseVaultFolder && { onChooseVault: chooseVault })}
+                {...(offered.openVaultFromGitHub && { onOpenFromGitHub: openFromGitHubDialog })}
               />
             ) : null
           }
@@ -2492,7 +2663,7 @@ function AppWindow({
                   value={{
                     ...workspaceStores,
                     pane: paneContext,
-                    onShowSidebar: sidebarOpen ? null : toggleSidebar,
+                    onShowSidebar: sidebarBeside ? null : toggleSidebar,
                     note: noteCommands,
                     pages: {
                       ports: archivePorts,
@@ -2511,6 +2682,8 @@ function AppWindow({
                         store: automationsStore,
                         ports: automationPorts,
                         setup: meetingSetup,
+                        offersClaude: offered.claudeAutomations,
+                        presets: presetNames,
                       },
                       skills: skillsWiring,
                       graph: { state: vaultGraph },
@@ -2553,6 +2726,7 @@ function AppWindow({
               <WorkspaceStoresProvider value={workspaceStores}>
                 <ClaudeSeatProvider
                   value={
+                    offered.claudeChat &&
                     chat.open && (
                       <ChatPane
                         chat={chat}
@@ -2575,7 +2749,12 @@ function AppWindow({
                     )
                   }
                 >
-                  <AsideContainer rows={rowPorts} types={typeAside} onSelectType={selectTypeTab} />
+                  <AsideContainer
+                    rows={rowPorts}
+                    types={typeAside}
+                    onSelectType={selectTypeTab}
+                    offersClaude={offered.claudeChat}
+                  />
                 </ClaudeSeatProvider>
               </WorkspaceStoresProvider>
             )
@@ -2595,46 +2774,15 @@ function AppWindow({
                 ports={api}
                 themeStore={browserThemeStore}
                 activity={activityLog}
-                sections={settingsSectionLinks({ vaultOpen: location !== null })}
+                sections={settingsShown.links}
+                connections={offered.connectionsSettings}
                 onClose={() => hideOverlay('settings')}
                 fallbackFocus={focusFallback}
               >
-                {location !== null && (
-                  <ProfileSettingsCard setting={profileSetting} emails={selfEmailsSetting} />
-                )}
-                {location === null ? (
-                  <IndexSettings index={null} onRebuild={() => void rebuild()} />
-                ) : (
-                  <LiveIndexSettings
-                    index={indexStatus}
-                    progress={indexProgress}
-                    onRebuild={() => void rebuild()}
-                  />
-                )}
-                <ImageSettingsPanel store={browserImagePlacementStore} />
-                <GlobalCaptureSettings
-                  view={globalCapture.status}
-                  onChange={globalCapture.change}
-                />
-                {location !== null && (
-                  <QuickAddSettingsCard setting={quickAddSetting} types={types} />
-                )}
-                {location !== null && <SecretsSettingsCard setting={secrets} />}
-                {location !== null && (
-                  <GoogleCalendarSettingsCard setting={googleCalendarSetting} />
-                )}
-                {location !== null && <GranolaSettingsCard setting={granolaSetting} />}
-                {location !== null && <SlackSettingsCard port={slackPort} vault={vaultKey} />}
-                {location !== null && kindlePorts !== undefined && (
-                  <KindleSettingsCard kindle={kindleSync} />
-                )}
-                <ClaudeSettingsCard chat={chat} />
-                {location !== null && (
-                  <SyncSettingsSlot store={syncStore}>
-                    {(syncNow) => <SyncSettingsCard sync={syncNow} vaultName={location.name} />}
-                  </SyncSettingsSlot>
-                )}
-                <AboutSettings app={app} />
+                {/* The list on the left and these come from one table: what it leaves out is not drawn. */}
+                {settingsShown.keys.map((key) => (
+                  <Fragment key={key}>{settingsSection(key)}</Fragment>
+                ))}
               </SettingsPanel>
             ) : overlay === 'move-picker' && entries.picker !== null ? (
               <MovePicker
@@ -2648,6 +2796,7 @@ function AppWindow({
               <ExportSlot
                 store={exporting.store}
                 commands={exporting.commands}
+                formats={exportFormats}
                 fallbackFocus={focusFallback}
               />
             ) : overlay === 'merge-people' ? (

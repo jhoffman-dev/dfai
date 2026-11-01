@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { dragAnnouncement } from './drag.ts';
 import { createVault, installHost, sidebarSection, type FakeVault } from './host.ts';
+import { revealSidebar } from './sidebar-drawer.ts';
 
 // Issue #17: in a short window every section squeezed into a scrollbar of its
 // own. The sections now share one scroller between the fixed quick rows and
@@ -37,6 +38,8 @@ async function openVault(page: Page): Promise<FakeVault> {
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
+  // Under 944px the sidebar is a drawer (#658): the same sidebar, opened first.
+  await revealSidebar(page);
   await expect(
     sidebarSection(page, 'favorites').getByRole('button', { name: 'Note 06', exact: true }),
   ).toHaveCount(1);

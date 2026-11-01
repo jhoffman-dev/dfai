@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { createVaultPath, type VaultEntry, type VaultPath } from '@dfai/domain';
 import {
+  EVERY_ENTRY_POINT,
   VaultAccessError,
   memoryActivityStore,
   memoryIndexPort,
@@ -301,6 +302,7 @@ const renderApp = (
 ) =>
   render(
     <App
+      offered={EVERY_ENTRY_POINT}
       appInfo={appInfo}
       vault={vault}
       notes={notesFor(vault)}
@@ -782,6 +784,7 @@ describe('the palettes and the shortcuts around them', () => {
     ];
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={vault}
         notes={notesFor(vault)}
@@ -1024,6 +1027,7 @@ describe('the Activity log, adversarial (U-28)', () => {
     const activity = memoryActivityStore();
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={vault}
         notes={notesFor(vault)}
@@ -1130,6 +1134,7 @@ describe('opening a vault while its index is still being built (ADR-0034)', () =
     };
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={vault}
         notes={notesFor(vault)}
@@ -1236,6 +1241,7 @@ describe('reading the vault after a change (#259)', () => {
     const watched = { ...vault, fs: counting.fs, watch };
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={watched}
         notes={notesFor(watched)}
@@ -1376,6 +1382,7 @@ describe('the window’s kept reads, attacked (#259, PR 272)', () => {
     const watched = { ...vault, fs, watch };
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={watched}
         notes={notesFor(watched)}
@@ -1621,6 +1628,7 @@ describe('⌘K held in the overlay store (#261, attack)', () => {
     ];
     return render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={vault}
         notes={notesFor(vault)}
@@ -2154,6 +2162,7 @@ describe('pages as tabs', () => {
   const renderOn = (vault: ReturnType<typeof fakeVault>, index = fakeIndexPorts(vault)) =>
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={vault}
         notes={notesFor(vault)}
@@ -2611,6 +2620,7 @@ describe('each pane reads what it shows, and nothing for a note saved elsewhere 
   const renderOn = ({ vault, index }: ReturnType<typeof editedVault>) =>
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={vault}
         notes={notesFor(vault)}
@@ -2773,6 +2783,7 @@ describe("a highlight's comment typed, then the window closed (#534)", () => {
     });
     render(
       <App
+        offered={EVERY_ENTRY_POINT}
         appInfo={appInfo}
         vault={vault}
         notes={notesFor(vault)}

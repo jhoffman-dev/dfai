@@ -33,6 +33,7 @@ export * from './notes/index.ts';
 export * from './para/index.ts';
 export * from './pending/index.ts';
 export * from './people/index.ts';
+export * from './platform/index.ts';
 export * from './profile/index.ts';
 export * from './proposals/index.ts';
 export * from './query/index.ts';

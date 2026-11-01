@@ -53,6 +53,7 @@ function held<T>() {
 function setUp(overrides: Partial<GranolaPullOptions> = {}) {
   const granola = fakeGranola();
   const options: GranolaPullOptions = {
+    enabled: true,
     granola: granola.port,
     records: memoryRecords(),
     fs: vaultWith(),

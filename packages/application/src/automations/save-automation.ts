@@ -9,6 +9,7 @@ import {
   parentVaultPath,
   draftProblem,
   logPathFor,
+  opensUnclosedFrontmatter,
   splitFrontmatter,
   type AutomationDraft,
   type AutomationRule,
@@ -16,6 +17,7 @@ import {
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
+import { UnclosedFrontmatterError } from '../query/set-property.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { appendToRuleLog } from './automation-log.ts';
@@ -91,6 +93,8 @@ export async function updateAutomation({
   if (problem !== null) throw new AutomationRefusedError(problem);
   await ensureBuiltInPrompt(write.fs, draft);
   const { text, modified } = await write.fs.readTextFile(rule.path);
+  // Unclosed since it was read: a block on top would hold only the edit (#683).
+  if (opensUnclosedFrontmatter(text)) throw new UnclosedFrontmatterError(rule.path);
   const document = splitFrontmatter(text);
   const frontmatter = write.markdown.updateFrontmatter(document.frontmatter, {
     ...automationFrontmatter(draft),

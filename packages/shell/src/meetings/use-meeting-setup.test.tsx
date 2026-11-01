@@ -74,10 +74,11 @@ function rulesRead(store: AutomationsStore, rules: readonly AutomationRule[]) {
   publishAutomations(store, { listing } as unknown as AutomationsController);
 }
 
-function setup(where: 'inbox' | 'automations' = 'inbox') {
+function setup(where: 'inbox' | 'automations' = 'inbox', offered = true) {
   const automations = createAutomationsStore();
   const activity = recordingActivity();
   const wiring: MeetingSetupWiring = {
+    offered,
     store: createMeetingSetupStore(),
     automations,
     fs: fakeVaultFs(),
@@ -105,6 +106,14 @@ describe('useMeetingSetup', () => {
     const rule = { ...AFTER_A_MEETING_PRESET, id: 'x', path: 'x.md' } as AutomationRule;
     act(() => rulesRead(automations, [rule]));
     expect(hook.result.current).toBeNull();
+  });
+
+  it('is offered nowhere where the Claude rules it installs cannot run (#657)', () => {
+    for (const where of ['inbox', 'automations'] as const) {
+      const { hook, automations } = setup(where, false);
+      act(() => rulesRead(automations, []));
+      expect(hook.result.current).toBeNull();
+    }
   });
 
   it('on Automations, always stands, with no "Not now"', () => {

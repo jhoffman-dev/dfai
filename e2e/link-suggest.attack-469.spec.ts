@@ -18,7 +18,7 @@ const TASK_TYPE = [
   '    done: archive',
   '  project:',
   '    kind: relation',
-  '    targets: [project, area]',
+  '    target: [project, area]',
   '---',
   '',
   '# Task',

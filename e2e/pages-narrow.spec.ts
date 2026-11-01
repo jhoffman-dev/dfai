@@ -35,11 +35,13 @@ async function openNarrow(page: Page, seed: (root: string, line: string) => void
   });
   seed(vault.root, `${line}\n`);
   host.seedActivity(vault.root, `${line}\n`);
-  await page.setViewportSize({ width: 720, height: 600 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
 }
+
+/** Squeezes the window once the page is open: under 944px the sidebar is a drawer (#658). */
+const squeeze = (page: Page) => page.setViewportSize({ width: 720, height: 600 });
 
 test('a long rule name is cut short in its own column, so its centre still opens the rule', async ({
   page,
@@ -49,6 +51,7 @@ test('a long rule name is cut short in its own column, so its centre still opens
     .getByRole('list', { name: 'Go to' })
     .getByRole('button', { name: 'Automations', exact: true })
     .click();
+  await squeeze(page);
   const list = page.getByRole('list', { name: 'All automations' });
   const name = list.getByRole('button', { name: LONG_NAME, exact: true });
   await expect(name).toBeVisible();
@@ -73,6 +76,7 @@ test('a long "Open …" subject is capped, so an Activity line never runs past t
     .getByRole('list', { name: 'Go to' })
     .getByRole('button', { name: /^Activity/ })
     .click();
+  await squeeze(page);
   const lines = page.getByRole('list', { name: 'Activity lines' });
   const open = lines.getByRole('button', { name: `Open ${LONG_TITLE}` });
   await expect(open).toBeVisible();

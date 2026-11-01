@@ -3,17 +3,15 @@ import {
   createVaultPath,
   isAutomationNote,
   isAutomationPath,
-  isBlankFrontmatter,
   noteTitle,
-  opensUnclosedFrontmatter,
   parseAutomationRule,
-  splitFrontmatter,
   type AutomationRule,
   type BrokenAutomation,
   type HandledLedger,
   type LogEntry,
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
+import { readSettingsBlock } from '../notes/settings-block.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { readRuleLog } from './automation-log.ts';
 
@@ -56,7 +54,7 @@ export async function loadAutomations({
   const broken: BrokenAutomation[] = [];
   const ids = new Set<string>();
   for (const file of files) {
-    const block = readRuleBlock(markdown, file.text);
+    const block = readSettingsBlock(markdown, file.text);
     if ('problem' in block) {
       broken.push(unreadableRule(file.path, block.problem));
       continue;
@@ -95,27 +93,4 @@ function unreadableRule(path: string, problem: string): BrokenAutomation {
     name: noteTitle(vaultPath),
     problem,
   };
-}
-
-/**
- * A rules-folder file's properties, or why it has frontmatter that gives none.
- * Each of these reads as no properties, so it cannot say it is a rule: in the
- * rules folder it most likely is one, and leaving it out stops it silently (#679).
- * A file with no block, or a blank one, has nothing to say and is not a problem.
- */
-function readRuleBlock(
-  markdown: MarkdownPort,
-  text: string,
-): { properties: Readonly<Record<string, unknown>> } | { problem: string } {
-  if (opensUnclosedFrontmatter(text)) return { problem: 'Its frontmatter has no closing ---.' };
-  const block = splitFrontmatter(text).frontmatter;
-  const reason = markdown.frontmatterProblem(block);
-  if (reason !== null) return { problem: `Its frontmatter is not valid YAML: ${reason}` };
-  const properties = markdown.frontmatterProperties(block);
-  // YAML that reads as a list or one value: as Confluence export tells it, not the port,
-  // which reads such a block as none and is right to for every other note.
-  if (block !== null && !isBlankFrontmatter(block) && Object.keys(properties).length === 0) {
-    return { problem: 'Its frontmatter is not a set of properties.' };
-  }
-  return { properties };
 }

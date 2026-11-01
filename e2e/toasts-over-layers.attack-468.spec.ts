@@ -75,9 +75,10 @@ test('Alt+Cmd+N with no vault open opens no capture, as the global shortcut does
 });
 
 test('a toast left up hides no control of the Settings dialog opened over it', async ({ page }) => {
-  await page.setViewportSize({ width: 900, height: 600 });
   const vault = await openVault(page);
   const said = await changeWithToast(page, vault);
+  // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize({ width: 900, height: 600 });
 
   await page.keyboard.press('Meta+Comma');
   const settings = page.getByRole('dialog', { name: 'Settings' });

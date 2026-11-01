@@ -24,7 +24,7 @@ import {
   type IndexPort,
   type ReadMoment,
 } from '@dfai/application';
-import type { ComposerMode, GroupedResultProps } from '@dfai/ui';
+import { useSteadyCallback, type ComposerMode, type GroupedResultProps } from '@dfai/ui';
 import { errorMessage } from './error-message.ts';
 
 /** How the query was last opened in the editor: as dropdowns, or as text and why. */
@@ -50,6 +50,7 @@ export function useAtlasQuery({
   types,
   notePaths,
   indexKey,
+  indexKeyNow,
   enabled = true,
   taskRows = false,
 }: {
@@ -58,6 +59,11 @@ export function useAtlasQuery({
   types: readonly ObjectType[];
   notePaths: readonly string[];
   indexKey: string;
+  /**
+   * The index's own key as it stands when asked, which each run is stamped
+   * with as it begins (#698).
+   */
+  indexKeyNow: () => string;
   /** False while there is no query to ask — a pane holding an ordinary note. */
   enabled?: boolean;
   /** Whether a query of tasks alone carries each task's state, for its row's controls (#107). */
@@ -67,7 +73,17 @@ export function useAtlasQuery({
   const [editing, setEditing] = useState<Editing>(() => editingFor(initialText));
   // Typed text is asked about once typing pauses; a pick in the builder at once.
   const asked = useSettled(text, editing.mode === 'text' ? TYPING_PAUSE_MS : 0);
-  const run = useRunning({ text: asked, index, types, notePaths, indexKey, enabled, taskRows });
+  const keyNow = useSteadyCallback(indexKeyNow);
+  const run = useRunning({
+    text: asked,
+    index,
+    types,
+    notePaths,
+    indexKey,
+    keyNow,
+    enabled,
+    taskRows,
+  });
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
   const setBuilder = useCallback((builder: BuilderQuery) => {
@@ -178,6 +194,7 @@ function useRunning({
   types,
   notePaths,
   indexKey,
+  keyNow,
   enabled,
   taskRows,
 }: {
@@ -185,7 +202,10 @@ function useRunning({
   index: IndexPort;
   types: readonly ObjectType[];
   notePaths: readonly string[];
+  /** The index's news: the text runs again on it. */
   indexKey: string;
+  /** The index's own key now, which each run is stamped with as it begins (#698). */
+  keyNow: () => string;
   enabled: boolean;
   taskRows: boolean;
 }) {
@@ -208,7 +228,7 @@ function useRunning({
     }
     let cancelled = false;
     begun.current += 1;
-    const asked = { at: begun.current, indexKey };
+    const asked = { at: begun.current, indexKey: keyNow() };
     runAtlasQuery({ index, text, types, notePaths, taskRows })
       .then((found) => {
         if (cancelled) return;
@@ -231,7 +251,7 @@ function useRunning({
     return () => {
       cancelled = true;
     };
-  }, [index, text, types, notePaths, indexKey, runs, enabled, taskRows]);
+  }, [index, text, types, notePaths, indexKey, keyNow, runs, enabled, taskRows]);
 
   return {
     answer,

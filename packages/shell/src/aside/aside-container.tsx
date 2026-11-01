@@ -34,6 +34,7 @@ export const AsideContainer = memo(function AsideContainer({
   rows,
   types,
   onSelectType,
+  offersClaude,
 }: {
   rows: RowPorts;
   types: TypeAsideWiring;
@@ -42,6 +43,8 @@ export const AsideContainer = memo(function AsideContainer({
    * as Edit type does. Without it, the tab is only chosen.
    */
   onSelectType?: () => void;
+  /** Whether the Claude tab is offered: not where the platform has no chat. */
+  offersClaude: boolean;
 }) {
   const { store, aside, shown } = useWorkspaceStores();
   const chosen = useAsideTab(aside);
@@ -63,7 +66,7 @@ export const AsideContainer = memo(function AsideContainer({
     type === undefined
       ? {}
       : { type: <TypeAside key={type.name} type={type} ports={rows} wiring={types} /> };
-  const panels = { ...editor, ...subject, claude: <ClaudeSeat /> };
+  const panels = { ...editor, ...subject, ...(offersClaude && { claude: <ClaudeSeat /> }) };
   // Shown for the page at hand only: a page without an Outline does not
   // forget that the person chose Outline, so the choice is not written over.
   const tab = shownAsideTab(chosen, panels) ?? chosen;

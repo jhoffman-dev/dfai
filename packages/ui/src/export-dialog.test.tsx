@@ -1,17 +1,35 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { EXPORT_FORMATS } from '@dfai/domain';
 import { ExportDialog, type ExportDialogState } from './export-dialog.tsx';
 
 function draw(state: ExportDialogState = { kind: 'choosing' }) {
   const calls = { onExport: vi.fn(), onClose: vi.fn() };
-  render(<ExportDialog subject="Kickoff" state={state} {...calls} />);
+  render(<ExportDialog subject="Kickoff" state={state} formats={EXPORT_FORMATS} {...calls} />);
   return calls;
 }
 
 const exportButton = () => screen.getByRole('button', { name: 'Export…' });
 
 describe('ExportDialog (#501)', () => {
+  it('offers only the formats it is handed, Markdown chosen first (#657)', () => {
+    const calls = { onExport: vi.fn(), onClose: vi.fn() };
+    render(
+      <ExportDialog
+        subject="Kickoff"
+        state={{ kind: 'choosing' }}
+        formats={['markdown', 'standalone']}
+        {...calls}
+      />,
+    );
+    const radios = screen.getAllByRole('radio') as HTMLInputElement[];
+    expect(radios.map((radio) => radio.value)).toEqual(['markdown', 'standalone']);
+    expect(radios[0]?.checked).toBe(true);
+    expect(screen.queryByRole('radio', { name: /^PDF/ })).toBeNull();
+    expect(screen.queryByRole('radio', { name: /^Google Doc/ })).toBeNull();
+  });
+
   it('offers the four formats, Markdown as is first, and exports the one chosen', () => {
     const calls = draw();
     expect(screen.getByRole('dialog', { name: 'Export Kickoff' })).toBeTruthy();

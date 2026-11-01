@@ -94,6 +94,7 @@ async function show({
       types: TYPES,
       notePaths: [],
       indexKey: 'ready:1',
+      indexKeyNow: () => 'ready:1',
       onChanged: () => {},
       editors,
       tickMemory: createTickMemory(),

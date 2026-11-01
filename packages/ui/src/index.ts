@@ -1,4 +1,5 @@
 export { AppShell, PaneSplit } from './app-shell.tsx';
+export type { SidebarDrawer } from './app-shell.tsx';
 export { AsideToggleProvider, useAsideToggle } from './aside/aside-toggle.tsx';
 export type { AsideToggle } from './aside/aside-toggle.tsx';
 export { BacklinksPane } from './aside/backlinks-pane.tsx';
@@ -27,6 +28,7 @@ export type {
   ActivityRowLink,
   InboxRowLink,
   HeaderMenu,
+  SidebarBrokenType,
   SidebarQuickView,
   SidebarTree,
   SidebarType,

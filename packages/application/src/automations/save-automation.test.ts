@@ -10,6 +10,8 @@ import {
 import { automationVault, jsonNote } from '../testing/automation-vault.ts';
 import { loadAutomations } from './load-automations.ts';
 import { runAutomation } from './run-automation.ts';
+import { UnclosedFrontmatterError } from '../query/set-property.ts';
+import { adoptAutomations } from './adopt-automations.ts';
 import { AutomationRefusedError, createAutomation, updateAutomation } from './save-automation.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 
@@ -106,6 +108,58 @@ describe('updateAutomation', () => {
     await expect(write({ ...rule!, name: ' ' })).rejects.toThrow('Name the automation.');
     await expect(write({ ...rule!, which: '' })).rejects.toThrow(/Say which notes/);
     expect(vault.files.get(path)).toBe(text);
+  });
+});
+
+/** A rule file with its closing `---` deleted by hand after it was read (#683). */
+const unclosed = (text: string) => text.replace(/\n---\n/, '\n');
+
+describe('a rule file whose block stops closing after it was read (#683)', () => {
+  it('updateAutomation writes nothing over it, and says why', async () => {
+    const vault = emptyVault();
+    const path = await create(vault);
+    const [{ rule } = { rule: null }] = (await load(vault)).automations;
+    const broken = unclosed(vault.files.get(path) ?? '');
+    vault.files.set(path, broken);
+    const { fs, markdown } = vault.ports;
+    await expect(
+      updateAutomation({
+        fs,
+        markdown,
+        clock: CLOCK,
+        rule: rule!,
+        draft: { ...rule!, enabled: false },
+      }),
+    ).rejects.toThrow(UnclosedFrontmatterError);
+    expect(vault.files.get(path)).toBe(broken);
+  });
+
+  it('adoptAutomations leaves it as it is, and still stamps the rule beside it', async () => {
+    const vault = emptyVault({
+      '.atlas/automations/Tidy.md': jsonNote({
+        atlas: 'automation',
+        name: 'Tidy',
+        when: 'manually',
+        which: 'FROM task',
+        do: 'archive',
+        enabled: true,
+      }),
+      '.atlas/automations/Sweep.md': jsonNote({
+        atlas: 'automation',
+        name: 'Sweep',
+        when: 'manually',
+        which: 'FROM task',
+        do: 'archive',
+        enabled: true,
+      }),
+    });
+    const listing = await load(vault);
+    const broken = unclosed(vault.files.get('.atlas/automations/Sweep.md') ?? '');
+    vault.files.set('.atlas/automations/Sweep.md', broken);
+    const { fs, markdown } = vault.ports;
+    await adoptAutomations({ fs, markdown, clock: CLOCK, listing });
+    expect(vault.files.get('.atlas/automations/Sweep.md')).toBe(broken);
+    expect(vault.properties('.atlas/automations/Tidy.md')['id']).toBe('Tidy');
   });
 });
 

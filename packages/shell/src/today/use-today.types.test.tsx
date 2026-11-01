@@ -40,7 +40,8 @@ function today(types: readonly ObjectType[]) {
     activity: recordingActivity(),
     clock: { today: () => '2026-10-13', now: () => Date.UTC(2026, 9, 13, 15) },
     vaultKey: 'vault-a',
-    indexKey: '1',
+    indexKey: 'ready:1',
+    indexKeyNow: () => '1',
     open: true,
     onSettled: () => {},
   };

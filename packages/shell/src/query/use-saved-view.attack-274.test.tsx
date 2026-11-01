@@ -132,6 +132,7 @@ async function board() {
         types: TYPES,
         notePaths: [ONE_OFF, WATER],
         indexKey,
+        indexKeyNow: () => indexKey,
         onChanged: () => {},
         editors: noPane,
         tickMemory,

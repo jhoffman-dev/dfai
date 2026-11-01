@@ -69,7 +69,7 @@ function viewOf(
     rows: [row],
     read: { at: 1, indexKey: 'ready:1' },
     runsBegun: () => runs,
-    indexKey: 'ready:1',
+    indexKeyNow: () => 'ready:1',
     enabled: true,
     scope: ['index', 'Views/Next actions.md'],
     ports: { fs, markdown: remarkMarkdown, editors: noPane, activity: recordingActivity() },
@@ -91,7 +91,12 @@ function viewOf(
     runAgain: (next: BoardRow, moved: boolean) => {
       runs += 1;
       const indexKey = moved ? `ready:${runs}` : 'ready:1';
-      hook.rerender({ ...initial, rows: [next], read: { at: runs, indexKey }, indexKey });
+      hook.rerender({
+        ...initial,
+        rows: [next],
+        read: { at: runs, indexKey },
+        indexKeyNow: () => indexKey,
+      });
     },
     /** Something else draws the view again: the same rows, the same read. */
     redraw: () => hook.rerender({ ...initial }),
@@ -239,7 +244,7 @@ describe('useTaskRows racing the disk (PR #625)', () => {
           rows: [rowOf({ status: 'next-action' })],
           read: { at: 1, indexKey: 'ready:1' },
           runsBegun: () => 1,
-          indexKey: 'ready:1',
+          indexKeyNow: () => 'ready:1',
           enabled: true,
           scope: ['index', 'Views/Next actions.md'],
           ports: {
@@ -269,7 +274,7 @@ describe('useTaskRows racing the disk (PR #625)', () => {
       rows: [rowOf({ status: 'next-action' })],
       read: { at: 1, indexKey: 'ready:1' },
       runsBegun: () => runs,
-      indexKey: 'ready:1',
+      indexKeyNow: () => 'ready:1',
       enabled: true,
       scope: ['index', 'Views/Next actions.md'],
       ports: {
@@ -298,7 +303,7 @@ describe('useTaskRows racing the disk (PR #625)', () => {
       ...options,
       rows: [rowOf({ status: 'archive' })],
       read: { at: runs, indexKey: 'ready:2' },
-      indexKey: 'ready:2',
+      indexKeyNow: () => 'ready:2',
     });
     const moved = (memory.files.get(PATH) ?? '').replace('status: archive', 'status: waiting');
     memory.files.set(PATH, moved);

@@ -169,6 +169,7 @@ function Editor({
   const [draft, setDraft] = useState<AutomationDraft>(start ?? AUTOMATION_PRESETS[0]!);
   return (
     <AutomationEditor
+      offersClaude
       draft={draft}
       onChange={(next) => {
         setDraft(next);

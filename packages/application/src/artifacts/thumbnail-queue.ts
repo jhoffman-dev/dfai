@@ -44,6 +44,28 @@ export interface ThumbnailQueue {
   subscribe(listener: () => void): () => void;
 }
 
+/** What asking a queue that makes nothing says. */
+export const NO_THUMBNAILS_HERE = 'No thumbnail can be made on this platform.';
+
+const NOTHING_MADE: ThumbnailSnapshot = Object.freeze({
+  state: () => null,
+  made: () => 0,
+  madeInAll: () => 0,
+});
+
+/**
+ * A queue that makes nothing, for a platform that cannot picture a page
+ * (ADR-0051): every card keeps its placeholder, and nothing is said to fail.
+ */
+export const NO_THUMBNAIL_QUEUE: ThumbnailQueue = Object.freeze({
+  request: async () => null,
+  requestOrFail: async () => {
+    throw new Error(NO_THUMBNAILS_HERE);
+  },
+  snapshot: () => NOTHING_MADE,
+  subscribe: () => () => {},
+});
+
 /** How many pictures are made at once: each is a web page loaded in a process of its own. */
 export const THUMBNAIL_CONCURRENCY = 2;
 

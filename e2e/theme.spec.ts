@@ -16,7 +16,13 @@ const openVault = async (page: Page) => {
   return vault;
 };
 
-const theme = (page: Page) => page.evaluate(() => document.documentElement.dataset['theme']);
+/**
+ * The theme the app has written on the root. `useTheme` writes it in an effect,
+ * after the commit that renders the sidebar's button, so a single read can land
+ * between the two (#695); this retries until the root holds it.
+ */
+const expectTheme = (page: Page, theme: 'light' | 'dark') =>
+  expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
 /** The one theme button, named for the theme it would switch to. */
 const switchTo = (page: Page, theme: 'light' | 'dark') =>
@@ -26,12 +32,12 @@ test('the switch turns the whole app over, and back', async ({ page }) => {
   await openVault(page);
 
   await switchTo(page, 'dark').click();
-  expect(await theme(page)).toBe('dark');
+  await expectTheme(page, 'dark');
   await expect(switchTo(page, 'light')).toBeVisible();
   await expect(switchTo(page, 'dark')).toHaveCount(0);
 
   await switchTo(page, 'light').click();
-  expect(await theme(page)).toBe('light');
+  await expectTheme(page, 'light');
   await expect(switchTo(page, 'dark')).toBeVisible();
   await expect(switchTo(page, 'light')).toHaveCount(0);
 });
@@ -48,14 +54,14 @@ test('the switch lives in the sidebar, beside Settings', async ({ page }) => {
 test('the choice survives a reload', async ({ page }) => {
   await openVault(page);
   await switchTo(page, 'dark').click();
-  expect(await theme(page)).toBe('dark');
+  await expectTheme(page, 'dark');
 
   // The host stub is installed on the page, not the document, so it survives a
   // reload — which is what makes this a real second visit.
   await page.reload();
   await expect(switchTo(page, 'light')).toBeVisible();
 
-  expect(await theme(page)).toBe('dark');
+  await expectTheme(page, 'dark');
 });
 
 /** Settings → Appearance → Match system, with Settings open. */
@@ -68,10 +74,10 @@ const matchSystem = (page: Page) =>
 test('Match system follows the system', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await openVault(page);
-  expect(await theme(page)).toBe('light');
+  await expectTheme(page, 'light');
 
   await page.emulateMedia({ colorScheme: 'dark' });
-  await expect.poll(() => theme(page)).toBe('dark');
+  await expectTheme(page, 'dark');
   await expect(switchTo(page, 'light')).toBeVisible();
 
   // A choice holds, whatever the system does.
@@ -79,13 +85,13 @@ test('Match system follows the system', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(switchTo(page, 'dark')).toBeVisible();
-  expect(await theme(page)).toBe('light');
+  await expectTheme(page, 'light');
 
   await page.keyboard.press('Meta+Comma');
   await expect(matchSystem(page)).toHaveAttribute('aria-checked', 'false');
   await matchSystem(page).click();
   await expect(matchSystem(page)).toHaveAttribute('aria-checked', 'true');
-  await expect.poll(() => theme(page)).toBe('dark');
+  await expectTheme(page, 'dark');
   // The sidebar's button agrees, once Settings is out of the way.
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0);
@@ -94,9 +100,9 @@ test('Match system follows the system', async ({ page }) => {
   // Nothing is stored any more, so a second visit follows the system too.
   await page.reload();
   await expect(switchTo(page, 'light')).toBeVisible();
-  expect(await theme(page)).toBe('dark');
+  await expectTheme(page, 'dark');
   await page.emulateMedia({ colorScheme: 'light' });
-  await expect.poll(() => theme(page)).toBe('light');
+  await expectTheme(page, 'light');
 });
 
 /** The design's statuses and button kinds, each with tokens the palette must carry. */
@@ -206,6 +212,7 @@ test('the work sits flat on the surface; the sidebar is the grey beside it', asy
   });
 
   await switchTo(page, 'dark').click();
+  await expectTheme(page, 'dark');
   expect(await surfaces()).toEqual({
     shell: 'rgb(24, 24, 27)',
     sidebar: 'rgb(17, 17, 19)',

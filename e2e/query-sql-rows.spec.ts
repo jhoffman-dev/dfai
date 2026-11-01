@@ -18,7 +18,6 @@ const NUMBERS = `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n 
 SELECT 'Row ' || i AS title, i AS number FROM n`;
 
 async function openQueryPage(page: Page, size: { width: number; height: number }) {
-  await page.setViewportSize(size);
   const vault = await createVault();
   await vault.write('first.md', '# First\n\nA note.\n');
   await installHost(page, vault);
@@ -28,6 +27,8 @@ async function openQueryPage(page: Page, size: { width: number; height: number }
   await page.getByRole('button', { name: 'New in Views' }).click();
   await page.getByRole('menuitem', { name: 'New query' }).click();
   await expect(page.getByRole('heading', { name: 'Query', exact: true })).toBeVisible();
+  // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize(size);
   await page
     .getByRole('radiogroup', { name: 'Query language' })
     .getByRole('radio', { name: 'SQL' })

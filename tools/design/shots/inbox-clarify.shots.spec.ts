@@ -42,7 +42,7 @@ async function inboxClarifyVault(): Promise<FakeVault> {
       '    target: person',
       '  project:',
       '    kind: relation',
-      '    targets: [project, area]',
+      '    target: [project, area]',
       '  defer: date',
       '  due: date',
       '---',

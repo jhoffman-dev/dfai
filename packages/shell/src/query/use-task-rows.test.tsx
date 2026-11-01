@@ -70,7 +70,7 @@ function rows(text: string, read: Readonly<Record<string, unknown>> = { status: 
     rows: [rowOf(CALL, read)],
     read: { at: 1, indexKey: 'ready:1' },
     runsBegun: () => runs,
-    indexKey: 'ready:1',
+    indexKeyNow: () => 'ready:1',
     enabled: true,
     scope: ['index', 'Views/Next actions.md'],
     ports: { fs, markdown: remarkMarkdown, editors: noPane, activity },
@@ -121,7 +121,7 @@ function rows(text: string, read: Readonly<Record<string, unknown>> = { status: 
         ...initial,
         rows: [rowOf(CALL, properties)],
         read: { at: runs, indexKey: `ready:${runs}` },
-        indexKey: `ready:${runs}`,
+        indexKeyNow: () => `ready:${runs}`,
       });
     },
   };

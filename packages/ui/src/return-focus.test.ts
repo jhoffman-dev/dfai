@@ -33,6 +33,31 @@ describe('useReturnFocus', () => {
     expect(result.current()).toBe(fallback);
   });
 
+  it('hands focus to the fallback when nothing held it as the dialog opened', () => {
+    // WebKit leaves the focus on <body> when a button is clicked.
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    const fallback = document.createElement('div');
+    const { result } = renderHook(() => useReturnFocus(() => fallback));
+
+    expect(result.current()).toBe(fallback);
+  });
+
+  it('hands focus to the fallback when the opener is one the dialog says held nothing', () => {
+    // WebKit focuses the nearest focusable ancestor of a clicked button: a frame, not a choice.
+    const frame = document.createElement('section');
+    frame.tabIndex = -1;
+    frame.className = 'frame';
+    document.body.append(frame);
+    frame.focus();
+    const fallback = document.createElement('div');
+    const { result } = renderHook(() =>
+      useReturnFocus(() => fallback, { unheld: (opener) => opener.classList.contains('frame') }),
+    );
+
+    expect(result.current()).toBe(fallback);
+  });
+
   it("falls back to Base UI's restore when there is no fallback to give", () => {
     const opener = focusedButton();
     const { result } = renderHook(() => useReturnFocus(() => null));
