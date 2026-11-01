@@ -9,6 +9,7 @@ import {
 import { postProcessingKeyOf } from '../automations/post-processing-ledger.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
+import { writtenAt } from '../vault/written-at.ts';
 import { readFrontmatter } from './meeting-reading.ts';
 
 /** What reading the files where meetings land needs. */
@@ -59,7 +60,7 @@ async function readWaitingMeeting(
     read: {
       importDeclared: declaresImport(reading.properties),
       importOutcome: importOutcomeOf(reading.properties),
-      modifiedAt: read.modified,
+      modifiedAt: writtenAt(read),
       postProcessing: postProcessingFactsOf({
         body,
         properties: reading.properties,

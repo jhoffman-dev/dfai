@@ -41,8 +41,8 @@ export interface WaitingMeetingFile {
     readonly importDeclared: boolean;
     /** Its `atlas_import_outcome` stamp; null when it has none. */
     readonly importOutcome: ImportOutcome | null;
-    /** When it was last modified on this Mac, on its clock. */
-    readonly modifiedAt: number;
+    /** When it was last modified on this Mac, on its clock; null when the vault cannot tell (ADR-0053). */
+    readonly modifiedAt: number | null;
     /** What says whether its summary and tasks are still to come. */
     readonly postProcessing: PostProcessingFacts;
   } | null;
@@ -71,7 +71,9 @@ function standingOfFile(
         ? 'pending'
         : 'not';
   if (counted === 'not') return 'not';
-  return pulledAfterArrival({ standing, modifiedAt }) ? counted : 'deferred';
+  // An unknown time is after every pull: left for the next one, as the gate would hold it.
+  const arrived = modifiedAt ?? Number.POSITIVE_INFINITY;
+  return pulledAfterArrival({ standing, modifiedAt: arrived }) ? counted : 'deferred';
 }
 
 /** Whether one file waits for the named Mac to import it, judged against the pull that lets it be counted. */
