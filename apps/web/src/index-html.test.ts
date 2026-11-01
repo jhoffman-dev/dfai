@@ -11,12 +11,21 @@ const policy = () =>
 describe("the web page's policy (#656)", () => {
   it('runs only its own scripts, talks only to its own origin, and frames nothing live', () => {
     const directives = (policy() ?? '').split(';').map((directive) => directive.trim());
-    expect(directives).toEqual(["script-src 'self'", "connect-src 'self'", "frame-src 'none'"]);
+    expect(directives).toEqual([
+      "script-src 'self'",
+      "connect-src 'self'",
+      "frame-src 'none'",
+      "object-src 'none'",
+      "base-uri 'none'",
+    ]);
   });
 
   it('is the one the dev server loosens, so `pnpm dev` does not ship it loosened by mistake', () => {
     // vite.config.ts replaces this exact text, and only while serving.
-    expect(CONFIG).toContain(`const WEB_CSP = "${policy()}";`);
+    // Prettier may wrap the constant onto the next line.
+    expect(CONFIG.replace(/const WEB_CSP =\s+/, 'const WEB_CSP = ')).toContain(
+      `const WEB_CSP = "${policy()}";`,
+    );
     expect(CONFIG).toMatch(/apply: 'serve'/);
   });
 });

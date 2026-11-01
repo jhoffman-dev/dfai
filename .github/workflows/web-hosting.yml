@@ -1,0 +1,185 @@
+name: web-hosting
+
+# Builds apps/web and deploys it to the `web` hosting target (#662): the site
+# dailyflowai-web in the Firebase project dailyflowai-app, and never that
+# project's default site. A pull request gets a preview channel; a push to
+# `main` goes live, from a job in the `web-live` environment so the live
+# deploy can be held to `main` and given a key of its own. A workflow of its
+# own, beside `gate` rather than inside it, so it never holds the required
+# check up; and filtered by path, because it is not a required check and a
+# change that cannot alter the web build or its hosting has nothing to ship.
+#
+# A pull request's run deploys with that pull request's config before `gate`
+# has looked at it, so each job runs the hosting checks
+# (tools/ci/web-hosting.test.ts) on the config and the built files before it
+# deploys. They hold this file, parsed, to the allowlist in
+# tools/ci/web-hosting-workflow.ts, job for job and step for step: a change
+# here changes that file too.
+#
+# The deploy key reaches only the action that deploys: never the job's env,
+# where `pnpm install` and the build (third-party code) could read it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/web/**
+      - packages/**
+      - tools/vite/**
+      - tools/ci/node-builtins*.ts
+      - tools/ci/web-hosting*.ts
+      - firebase.json
+      - .firebaserc
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.json
+      - vitest.config.ts
+      - .github/workflows/web-hosting.yml
+  pull_request:
+    paths:
+      - apps/web/**
+      - packages/**
+      - tools/vite/**
+      - tools/ci/node-builtins*.ts
+      - tools/ci/web-hosting*.ts
+      - firebase.json
+      - .firebaserc
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.json
+      - vitest.config.ts
+      - .github/workflows/web-hosting.yml
+
+concurrency:
+  group: web-hosting-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  preview:
+    # A fork's pull request gets no secrets, so it has nothing to deploy with.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # The action comments the preview's address on the pull request.
+      pull-requests: write
+      checks: write
+    steps:
+      # Until the secret is added there is nothing to deploy with: say so and
+      # stop green, rather than fail every run that touches the web build.
+      - name: Is the deploy key set?
+        id: key
+        env:
+          HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP != '' }}
+        run: |
+          echo "set=$HAS_KEY" >> "$GITHUB_OUTPUT"
+          [ "$HAS_KEY" = true ] || echo "::notice::FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP is not set; skipping the deploy."
+
+      - if: steps.key.outputs.set == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - if: steps.key.outputs.set == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11
+
+      - if: steps.key.outputs.set == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - if: steps.key.outputs.set == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the web app
+        if: steps.key.outputs.set == 'true'
+        run: pnpm --filter @dfai/web build
+
+      - name: Check the hosting config and the files it uploads
+        if: steps.key.outputs.set == 'true'
+        env:
+          WEB_DIST_REQUIRED: '1'
+        run: pnpm exec vitest run tools/ci/web-hosting.test.ts
+
+      - name: Deploy a preview channel
+        if: steps.key.outputs.set == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@500ac625ca2dd40cbd15f7659af953801858032a # v0.11.0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP }}
+          projectId: dailyflowai-app
+          target: web
+          expires: 7d
+          firebaseToolsVersion: 15.28.2
+
+  live:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Its protection rules (deploy from `main` only) and its own copy of the
+    # key are set on the environment in the repo's settings.
+    environment: web-live
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Is the deploy key set?
+        id: key
+        env:
+          HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP != '' }}
+        run: |
+          echo "set=$HAS_KEY" >> "$GITHUB_OUTPUT"
+          [ "$HAS_KEY" = true ] || echo "::notice::FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP is not set; skipping the deploy."
+
+      - if: steps.key.outputs.set == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - if: steps.key.outputs.set == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11
+
+      - if: steps.key.outputs.set == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - if: steps.key.outputs.set == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the web app
+        if: steps.key.outputs.set == 'true'
+        run: pnpm --filter @dfai/web build
+
+      - name: Check the hosting config and the files it uploads
+        if: steps.key.outputs.set == 'true'
+        env:
+          WEB_DIST_REQUIRED: '1'
+        run: pnpm exec vitest run tools/ci/web-hosting.test.ts
+
+      - name: Deploy live
+        if: steps.key.outputs.set == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@500ac625ca2dd40cbd15f7659af953801858032a # v0.11.0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP }}
+          projectId: dailyflowai-app
+          target: web
+          channelId: live
+          firebaseToolsVersion: 15.28.2
