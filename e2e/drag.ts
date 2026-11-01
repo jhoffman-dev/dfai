@@ -142,14 +142,34 @@ export async function dragWithTouch(
   await pointerSensorReleased(page);
 }
 
+/** The pointer event a browser raises for the same finger, so a sensor that listens for pointers hears it too. */
+function fingerPointerAt({ x, y }: Point) {
+  return {
+    pointerType: 'touch',
+    isPrimary: true,
+    button: 0,
+    clientX: x,
+    clientY: y,
+    bubbles: true,
+  };
+}
+
 /**
  * A finger that lands on `source` and swipes at once, as a scroll begins. The
  * finger is left down, so a drag that wrongly took it would show as held.
+ *
+ * The browser raises a pointer event for every touch event, so both are sent:
+ * the pointer sensor must leave a finger alone (it would otherwise take the
+ * swipe for a drag after a few pixels), and only a finger that is also a
+ * pointer can show that it does.
  */
 export async function swipeFrom(source: Locator, by: Point) {
   const start = await centreOf(source);
+  const end = { x: start.x + by.x, y: start.y + by.y };
+  await source.dispatchEvent('pointerdown', fingerPointerAt(start));
   await source.dispatchEvent('touchstart', fingerAt(start));
-  await source.dispatchEvent('touchmove', fingerAt({ x: start.x + by.x, y: start.y + by.y }));
+  await source.dispatchEvent('pointermove', fingerPointerAt(end));
+  await source.dispatchEvent('touchmove', fingerAt(end));
 }
 
 /**
