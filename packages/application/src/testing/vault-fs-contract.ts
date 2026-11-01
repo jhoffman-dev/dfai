@@ -240,6 +240,25 @@ function movesContract(seeded: Seeded) {
 }
 
 function pathsContract(seeded: Seeded) {
+  it('refuses the vault itself as what a trash, a move, a create or a write is of', async () => {
+    const { fs, vault } = seeded();
+    const root = p('');
+    const named = 'a note needs a name';
+    await expect(fs.trashEntry({ vault, path: root })).rejects.toThrow(named);
+    await expect(fs.moveEntry({ vault, from: root, to: p('Elsewhere') })).rejects.toThrow(named);
+    await expect(fs.moveEntry({ vault, from: p('Welcome.md'), to: root })).rejects.toThrow(named);
+    await expect(fs.createNote({ vault, path: root, contents: 'x' })).rejects.toThrow(named);
+    await expect(fs.createFolder({ vault, path: root })).rejects.toThrow(named);
+    await expect(
+      fs.writeBinaryFile({ vault, path: root, bytes: bytes(1), offset: 0, replace: true }),
+    ).rejects.toThrow(named);
+    await expect(
+      fs.writeTextFile({ vault, path: root, contents: 'x', expectedModified: null }),
+    ).rejects.toThrow('that is a directory');
+    const listed = (await fs.listNotes(WALK)).map((note) => note.path).sort();
+    expect(listed).toEqual(['Projects/Larkspur.md', 'Projects/Old/Plan.md', 'Welcome.md']);
+  });
+
   it('refuses anything in git’s own folder, in any case, read or write', async () => {
     const { fs, vault } = seeded();
     await expect(fs.createFolder({ vault, path: p('.git') })).rejects.toThrow('git');
