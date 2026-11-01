@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { REVIEW_SCOPE, todayScope, type ReadScope } from '@dfai/application';
 import { TodayMeetings, TodayPage } from '@dfai/ui';
+import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
 import { localClock, localTimeZone } from '../today.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
@@ -33,6 +34,7 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
     reader: ['today'],
     scope,
   });
+  const indexKeyNow = useIndexKeyNow(pane.indexStatus, pane.vault);
   const today = useToday({
     ports: pages.ports,
     editors: pane.editors,
@@ -40,6 +42,7 @@ export function TodayContainer({ wiring, chrome }: PageContainerProps) {
     types: pane.types,
     vaultKey: pane.vault,
     indexKey,
+    indexKeyNow,
     indexReady: pages.indexReady,
     open: true,
     onSettled: pages.onSettled,

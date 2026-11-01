@@ -102,6 +102,7 @@ async function show(layout: 'table' | 'board', text = view(layout)) {
       types: TYPES,
       notePaths: [],
       indexKey: 'ready:1',
+      indexKeyNow: () => 'ready:1',
       onChanged: () => {},
       editors: editors.registry,
       tickMemory: createTickMemory(),

@@ -65,6 +65,7 @@ describe('Include archived belongs to the view it was turned on in (A23)', () =>
           types: TYPES,
           notePaths: [],
           indexKey: 'ready:1',
+          indexKeyNow: () => 'ready:1',
           onChanged: () => {},
           editors: EDITORS,
           tickMemory: TICKS,

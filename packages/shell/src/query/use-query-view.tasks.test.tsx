@@ -46,6 +46,7 @@ async function opened(query: string) {
     types: [TASK_TYPE_FILE.type, { name: 'project', label: 'Project', properties: [] }],
     notePaths: [TASK],
     indexKey: 'ready:1',
+    indexKeyNow: () => 'ready:1',
     queryViews: [],
     dashboards: [],
     viewPaths: [],

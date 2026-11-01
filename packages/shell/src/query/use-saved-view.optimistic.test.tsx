@@ -96,6 +96,8 @@ async function board() {
   let indexed = indexedNow();
   let held: Promise<void> | null = null;
   let failing: string | null = null;
+  // The index's own key, ahead of the news the view runs on (#698); null, the news stands for it.
+  let keyNow: string | null = null;
   const asked: string[] = [];
   const fs = fakeVaultFs({
     readTextFile: async (path) => {
@@ -134,6 +136,7 @@ async function board() {
         types: TYPES,
         notePaths: [ONE_OFF, WATER],
         indexKey,
+        indexKeyNow: () => keyNow ?? indexKey,
         onChanged: () => {},
         editors: noPane,
         tickMemory,
@@ -174,6 +177,10 @@ async function board() {
     },
     fail: (reason: string) => {
       failing = reason;
+    },
+    /** The index moves, by a refresh of what it already holds; its news is yet to reach the view. */
+    moveIndex: (key: string) => {
+      keyNow = key;
     },
   };
 }
@@ -232,6 +239,38 @@ describe('useSavedView — a card moved on a board shows at once (#260)', () => 
     await waitFor(() => expect(page.view.result.current.result?.rows[0]?.[2]).toBe('done'));
     expect(page.cardsIn('done')).toEqual([ONE_OFF]);
     expect(page.cardsIn('doing')).toEqual([WATER]);
+  });
+
+  it('keeps the card where it was dropped through a run on news of an index that moved before its write landed (#698)', async () => {
+    const page = await board();
+    // Another note's refresh, which read the vault before this move, has moved the index.
+    page.moveIndex('ready:2');
+    act(() => page.view.result.current.moveCard({ path: ONE_OFF, value: 'done' }));
+    await waitFor(() => expect(page.files[ONE_OFF]).toContain('status: done'));
+    await act(async () => {});
+
+    // Its news arrives once the move has landed: the run it begins is of the index from before.
+    const before = page.view.result.current.result;
+    page.view.rerender({ indexKey: 'ready:2' });
+    await waitFor(() => expect(page.view.result.current.result).not.toBe(before));
+    // Stamped with the index's own key as it began, not with the news.
+    expect(page.view.result.current.pendingBoard.pending.read.indexKey).toBe('ready:2');
+    expect(page.cardsIn('done')).toEqual([ONE_OFF]);
+
+    // The move's own refresh: the index has it, and the card is read back where it was dropped.
+    page.moveIndex('ready:3');
+    page.refresh('ready:3');
+    await waitFor(() => expect(page.view.result.current.result?.rows[0]?.[2]).toBe('done'));
+    expect(page.cardsIn('done')).toEqual([ONE_OFF]);
+  });
+
+  it('stamps each run with the index’s own key as it begins, not with the news it ran on (#698)', async () => {
+    const page = await board();
+    page.moveIndex('ready:5');
+    const before = page.view.result.current.result;
+    page.view.rerender({ indexKey: 'ready:4' });
+    await waitFor(() => expect(page.view.result.current.result).not.toBe(before));
+    expect(page.view.result.current.pendingBoard.pending.read.indexKey).toBe('ready:5');
   });
 
   it('draws what the index says once it has caught up, even when that is not where the card was dropped', async () => {

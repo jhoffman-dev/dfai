@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { readyIndexKey } from '@dfai/application';
 
 /**
  * Where the index is for the vault it was last synced for. `building` is only
@@ -82,7 +83,9 @@ export function useIndexFailure(store: IndexStatusStore, open: string | null): s
  */
 export function indexKeyOf(state: IndexStatusState, open: string | null): string {
   const phase = phaseFor(state, open);
-  return phase === 'ready' || phase === 'failed' ? `${phase}:${state.revision}` : phase;
+  // Ready, it is the key a read stands for a page's own write at (`readAnswers`).
+  if (phase === 'ready') return readyIndexKey(state.revision);
+  return phase === 'failed' ? `${phase}:${state.revision}` : phase;
 }
 
 /** The open vault's status, for what shows it. */

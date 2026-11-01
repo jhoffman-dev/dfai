@@ -74,6 +74,7 @@ async function opened(text: string) {
       types: TYPES,
       notePaths: NONE,
       indexKey: 'ready:1',
+      indexKeyNow: () => 'ready:1',
       queryViews: NONE,
       dashboards: NONE,
       viewPaths: NONE,
