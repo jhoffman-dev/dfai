@@ -37,6 +37,11 @@ export interface AutomationEditorProps {
   readonly which: ReactNode;
   /** The vault's types, by name: what a note trigger can watch for. */
   readonly typeNames: readonly string[];
+  /**
+   * Whether "Ask Claude" is offered as what a rule does: not where there is
+   * no Claude Code (#657). A rule that already asks Claude still shows so.
+   */
+  readonly offersClaude: boolean;
   /** The read tools a Claude step may be given (P29-03). */
   readonly claudeTools: readonly string[];
   /** The proposal schemas a Claude step can answer with, by name: `proposals` first. */
@@ -161,6 +166,7 @@ export function AutomationEditor(props: AutomationEditorProps) {
         <ActionField
           draft={draft}
           onChange={onChange}
+          offersClaude={props.offersClaude}
           claudeTools={props.claudeTools}
           claudeOutputs={props.claudeOutputs}
           skills={props.skills}
@@ -339,8 +345,11 @@ function AgeField({ draft, onChange }: Pick<AutomationEditorProps, 'draft' | 'on
 
 type ActionProps = Pick<
   AutomationEditorProps,
-  'draft' | 'onChange' | 'claudeTools' | 'claudeOutputs' | 'skills'
+  'draft' | 'onChange' | 'offersClaude' | 'claudeTools' | 'claudeOutputs' | 'skills'
 >;
+
+/** The actions offered: Claude's only where it is, or where the rule already asks it. */
+const WITHOUT_CLAUDE = ACTIONS.filter((each) => each.value !== 'claude');
 
 /** What picking an action starts from: a Claude step reads the note with the first schema. */
 function actionOf(kind: AutomationAction['kind'], outputs: readonly string[]): AutomationAction {
@@ -354,8 +363,19 @@ function actionOf(kind: AutomationAction['kind'], outputs: readonly string[]): A
   };
 }
 
-function ActionField({ draft, onChange, claudeTools, claudeOutputs, skills }: ActionProps) {
+function ActionField({
+  draft,
+  onChange,
+  offersClaude,
+  claudeTools,
+  claudeOutputs,
+  skills,
+}: ActionProps) {
   const { action } = draft;
+  // What the rule did as it was opened: a Claude step it had can always be
+  // chosen again, as it was, so a misclick away is never saved for good (#657).
+  const [loaded] = useState(action);
+  const asksClaude = offersClaude || loaded.kind === 'claude' || action.kind === 'claude';
   const [key = '', value = ''] =
     action.kind === 'set' ? (Object.entries(action.values)[0] ?? []) : [];
   const setTo = (nextKey: string, nextValue: string): AutomationAction => ({
@@ -368,9 +388,17 @@ function ActionField({ draft, onChange, claudeTools, claudeOutputs, skills }: Ac
       <div className="automation-editor__row">
         <SegmentedControl
           label="What it does"
-          options={ACTIONS}
+          options={asksClaude ? ACTIONS : WITHOUT_CLAUDE}
           value={action.kind}
-          onChange={(kind) => onChange({ ...draft, action: actionOf(kind, claudeOutputs) })}
+          onChange={(kind) =>
+            onChange({
+              ...draft,
+              action:
+                kind === 'claude' && loaded.kind === 'claude'
+                  ? loaded
+                  : actionOf(kind, claudeOutputs),
+            })
+          }
         />
         {action.kind === 'set' && (
           <>
@@ -408,7 +436,13 @@ function ActionField({ draft, onChange, claudeTools, claudeOutputs, skills }: Ac
 }
 
 /** A Claude step's prompt or skill, what it writes, and the read tools it may call. */
-function ClaudeFields({ draft, onChange, claudeTools, claudeOutputs, skills }: ActionProps) {
+function ClaudeFields({
+  draft,
+  onChange,
+  claudeTools,
+  claudeOutputs,
+  skills,
+}: Omit<ActionProps, 'offersClaude'>) {
   const { action } = draft;
   if (action.kind !== 'claude') return null;
   const change = (next: Partial<typeof action>) =>

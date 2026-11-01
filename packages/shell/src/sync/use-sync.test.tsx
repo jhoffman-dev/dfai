@@ -138,6 +138,7 @@ function setUpHook({
   sleep = fakeSleepClock(),
   edits = toldNews(),
   query = queryWrapper(),
+  enabled = true,
 }: {
   script?: GitScript;
   parentTop?: ReturnType<typeof said>;
@@ -154,6 +155,8 @@ function setUpHook({
   /** Where sync hears of an edit: the index's news, told by hand unless a test wires the real one. */
   edits?: { feed: SyncOptions['edits']; tell: () => void };
   query?: ReturnType<typeof queryWrapper>;
+  /** Whether the platform syncs at all (#657). */
+  enabled?: boolean;
 } = {}) {
   // GitHub holds the settings this Mac has: a claim made here is shared (#630 attack).
   const onGitHub: GitScript = {
@@ -161,7 +164,7 @@ function setUpHook({
     remoteSettingsExist: OK,
     remoteSettings: said(`---\n${settings}\n---\n`),
   };
-  const { git, called } = scriptedGit({ script: { ...onGitHub, ...script } });
+  const { git, called, calls } = scriptedGit({ script: { ...onGitHub, ...script } });
   const order: string[] = [];
   const closeTasks: (() => Promise<void>)[] = [];
   const activity = recordingActivity();
@@ -182,6 +185,7 @@ function setUpHook({
     ),
   );
   const options: SyncOptions = {
+    enabled,
     host: {
       git: () => ({
         ...git,
@@ -228,6 +232,7 @@ function setUpHook({
   return {
     hook,
     called,
+    calls,
     order,
     closeTasks,
     clock,
@@ -250,6 +255,19 @@ async function wait(clock: ReturnType<typeof handClock>, ms: number) {
 afterEach(() => vi.useRealTimers());
 
 describe('useSync', () => {
+  it('takes a vault as one that does not sync, asking git nothing, where the platform has no sync (#657)', async () => {
+    const model = modelGit();
+    model.state.onGitHub = 1;
+    const { hook, calls, order, onPulled } = setUpHook({ script: model.script, enabled: false });
+    await waitFor(() => expect(hook.result.current.phase.kind).toBe('not-set-up'));
+    expect(hook.result.current.setup).toEqual({ kind: 'not-set-up' });
+    // Nothing waits on a pull that will never come.
+    expect(hook.result.current.syncedThisSession.has('/Users/j/Notes')).toBe(true);
+    expect(calls).toEqual([]);
+    expect(order).toEqual([]);
+    expect(onPulled).not.toHaveBeenCalled();
+  });
+
   it('pulls as a synced vault opens, writing unsaved typing before it commits', async () => {
     const model = modelGit();
     model.state.edits = ['Today.md'];

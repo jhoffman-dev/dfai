@@ -11,6 +11,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import {
+  EVERY_ENTRY_POINT,
   createNoteChanges,
   fakeClaudeStepPorts,
   fakeIndexPort,
@@ -191,6 +192,7 @@ describe('useAutomations: a rule held back while more arrives than it keeps', ()
     const changes = createNoteChanges({ onError: (cause) => void cause });
     const activity = recordingActivity();
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: vault.ports,
       clock,
       vaultKey: VAULT,
@@ -245,6 +247,7 @@ describe('useAutomations: a rule held back while more arrives than it keeps', ()
     const changes = createNoteChanges({ onError: (cause) => void cause });
     const activity = recordingActivity();
     const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: vault.ports,
       clock,
       vaultKey: VAULT,

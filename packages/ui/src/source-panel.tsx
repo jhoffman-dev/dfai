@@ -21,7 +21,8 @@ export function SourcePanel({
   /** The last refresh, or null when none has run since the note was opened. */
   report: SourceReport | null;
   refreshing: boolean;
-  onRefresh: () => void;
+  /** Refreshes the source; left out where the platform cannot reach it, and nothing is offered. */
+  onRefresh?: () => void;
   /** The secrets this source sends, by name. */
   secrets?: readonly string[];
   /** A file named by its absolute path, which opens only on the Mac it was picked on. */
@@ -77,9 +78,16 @@ export function SourcePanel({
       </dl>
 
       <div className="source__actions">
-        <button type="button" className="source__refresh" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
+        {onRefresh !== undefined && (
+          <button
+            type="button"
+            className="source__refresh"
+            onClick={onRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        )}
         {onChooseFile !== undefined && (
           <button
             type="button"

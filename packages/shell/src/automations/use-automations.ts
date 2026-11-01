@@ -31,11 +31,13 @@ import {
   runAutomation,
   runOnMissedArrivals,
   runOnNoteChanges,
+  ruleHeldByPlatform,
   undoLastRun,
   updateAutomation,
   VaultChangedError,
   type ActivityLog,
   type AutomationListing,
+  type EntryPointsOffered,
   type ModelProvider,
   type UnavailableFoundBy,
   type AutomationPorts,
@@ -125,6 +127,12 @@ export interface AutomationsOptions {
   readonly selfName?: string | null;
   /** The vault owner's own addresses, its `selfEmails`, likewise. */
   readonly selfEmails?: readonly string[];
+  /**
+   * What the platform offers (#657): a rule it cannot carry out — a Claude
+   * step with no Claude Code here — is held, saying why, instead of run and
+   * failed at every tick.
+   */
+  readonly offered: EntryPointsOffered;
 }
 
 /**
@@ -241,7 +249,9 @@ export function useAutomations(options: AutomationsOptions) {
     [onSettled],
   );
 
-  const { clear: clearPause, record: recordFailure, isUnavailable } = pauses;
+  const { clear: clearPause, record: recordFailure, hold, isUnavailable } = pauses;
+  const offeredNow = useRef(options.offered);
+  offeredNow.current = options.offered;
   const recheck = useClaudeRecheck({
     tick,
     pauses,
@@ -281,8 +291,13 @@ export function useAutomations(options: AutomationsOptions) {
       rule: AutomationRule,
       carryOut: (vault: string) => Promise<LogEntry | null>,
       options?: { wait?: boolean },
-    ) =>
-      exclusive(async (vault) => {
+    ) => {
+      const held = ruleHeldByPlatform(rule, offeredNow.current);
+      if (held !== null) {
+        hold(rule.id, held);
+        return Promise.resolve(null);
+      }
+      return exclusive(async (vault) => {
         heldForPull.current.delete(rule.id);
         try {
           const entry = await carryOut(vault);
@@ -297,8 +312,9 @@ export function useAutomations(options: AutomationsOptions) {
           recordFailure(rule.id, cause);
           throw cause;
         }
-      }, options),
-    [exclusive, clearPause, recordFailure, isUnavailable],
+      }, options);
+    },
+    [exclusive, clearPause, recordFailure, hold, isUnavailable],
   );
   const relinkIn = useMeetingRelink({
     ports,
@@ -508,13 +524,25 @@ function usePauses(vaultKey: string | null, clock: Pick<Clock, 'localNow'>) {
     return pause !== undefined && (pause.retryAt === null || now < pause.retryAt);
   }, []);
 
+  /** Holds a rule the platform cannot carry out, until it is run where it can be (#657). */
+  const hold = useCallback(
+    (id: string, reason: string) => {
+      change((pauses) =>
+        pauses.get(id)?.reason === reason
+          ? pauses
+          : new Map(pauses).set(id, { reason, failures: 0, retryAt: null }),
+      );
+    },
+    [change],
+  );
+
   /** Whether the rule is held back because its Claude step could not reach Claude (#182). */
   const isUnavailable = useCallback(
     (id: string) => latest.current.get(id)?.unavailable !== undefined,
     [],
   );
 
-  return { all, clear, record, isPaused, isUnavailable };
+  return { all, clear, record, hold, isPaused, isUnavailable };
 }
 
 /**

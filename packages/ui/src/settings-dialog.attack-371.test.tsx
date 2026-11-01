@@ -21,6 +21,7 @@ function open(sections: readonly SettingsSectionLink[], drawn = sections) {
       mcp={{ command: 'claude mcp add atlas -- node /x/main.js', placeholder: false }}
       themeStore={themeStoreHolding(null)}
       sections={sections}
+      connections
       onEnable={vi.fn()}
       onCopyToken={vi.fn()}
       onRotateToken={vi.fn()}

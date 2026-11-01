@@ -1,5 +1,6 @@
 import webPackage from '../package.json' with { type: 'json' };
 import { staticAppInfo } from '@dfai/adapters';
+import { WEB_CAPABILITIES } from '@dfai/domain';
 import {
   browserClipboard,
   browserGlobalCaptureStore,
@@ -7,6 +8,7 @@ import {
   browserMacId,
   browserSyncPause,
   type AppPorts,
+  type ShellComposition,
 } from '@dfai/shell';
 import { sampleVault } from './sample-vault.ts';
 import { sessionActivityStore, sessionSyncFiles } from './session-stores.ts';
@@ -23,6 +25,11 @@ import {
   NO_SOURCES,
   notYet,
 } from './not-yet-ports.ts';
+
+/** The web build as the shell is handed it: its ports, and what a browser can do (#657). */
+export function composeWebShell(): ShellComposition {
+  return { ports: composeWeb(), capabilities: WEB_CAPABILITIES };
+}
 
 /**
  * The web's composition root, as a stub (#656): the shared shell on the

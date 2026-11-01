@@ -1,3 +1,4 @@
+import type { EntryPoint, EntryPointsOffered } from '@dfai/application';
 import { SETTINGS_SECTIONS, type SettingsSectionLink } from '@dfai/ui';
 import {
   globalCaptureSettings,
@@ -27,40 +28,95 @@ export const SecretsSettingsCard = secretsSettingsCard.Component;
 export const SlackSettingsCard = slackSettingsCard.Component;
 export const SyncSettingsCard = syncSettingsCard.Component;
 
-/** The app's sections in the order `app.tsx` draws them; `withVault` ones only once a vault is open. */
-const ORDER: readonly { readonly section: SettingsSectionLink; readonly withVault: boolean }[] = [
-  { section: SETTINGS_SECTIONS.profile, withVault: true },
-  { section: SETTINGS_SECTIONS.index, withVault: false },
-  { section: SETTINGS_SECTIONS.images, withVault: false },
-  { section: SETTINGS_SECTIONS.globalCapture, withVault: false },
-  { section: SETTINGS_SECTIONS.quickAdd, withVault: true },
-  { section: SETTINGS_SECTIONS.secrets, withVault: true },
-  { section: SETTINGS_SECTIONS.googleCalendar, withVault: true },
-  { section: SETTINGS_SECTIONS.granola, withVault: true },
-  { section: SETTINGS_SECTIONS.slack, withVault: true },
-  { section: SETTINGS_SECTIONS.kindle, withVault: true },
-  { section: SETTINGS_SECTIONS.claude, withVault: false },
-  { section: SETTINGS_SECTIONS.sync, withVault: true },
-  { section: SETTINGS_SECTIONS.about, withVault: false },
-];
-
-const WITH_VAULT: readonly SettingsSectionLink[] = ORDER.map((entry) => entry.section);
-const WITHOUT_VAULT: readonly SettingsSectionLink[] = ORDER.filter((entry) => !entry.withVault).map(
-  (entry) => entry.section,
-);
+/** The sections the app draws after the dialog's own, by the name `SETTINGS_SECTIONS` gives each. */
+export type AppSettingsSection =
+  | 'profile'
+  | 'index'
+  | 'images'
+  | 'globalCapture'
+  | 'quickAdd'
+  | 'secrets'
+  | 'googleCalendar'
+  | 'granola'
+  | 'slack'
+  | 'kindle'
+  | 'claude'
+  | 'sync'
+  | 'about';
 
 /**
- * The app's sections, for the dialog's list on the left. Some are only drawn
- * with a vault open: they want its settings note, its Keychain entries or its
- * repository. Kept here rather than gathered from the sections as they
- * mount, so that opening Settings costs no extra commit;
- * e2e/settings-sections.spec.ts holds this list and `app.tsx` in step. The
- * same array each time, so the dialog's list of them can be memoised on it.
+ * The app's sections in the order they are drawn and listed; `withVault`
+ * ones only once a vault is open, and one with an `entry` only where it is
+ * offered (#657). The one table both the list on the left and the sections
+ * themselves are drawn from, so the two cannot disagree.
  */
-export function settingsSectionLinks({
+const ORDER: readonly {
+  readonly key: AppSettingsSection;
+  readonly withVault: boolean;
+  readonly entry?: EntryPoint;
+}[] = [
+  { key: 'profile', withVault: true },
+  { key: 'index', withVault: false },
+  { key: 'images', withVault: false },
+  { key: 'globalCapture', withVault: false, entry: 'globalCaptureSettings' },
+  { key: 'quickAdd', withVault: true },
+  { key: 'secrets', withVault: true, entry: 'secretsSettings' },
+  { key: 'googleCalendar', withVault: true, entry: 'googleCalendarSettings' },
+  { key: 'granola', withVault: true, entry: 'granolaSettings' },
+  { key: 'slack', withVault: true, entry: 'slackSettings' },
+  { key: 'kindle', withVault: true, entry: 'kindleSettings' },
+  { key: 'claude', withVault: false, entry: 'claudeSettings' },
+  { key: 'sync', withVault: true, entry: 'syncSettings' },
+  { key: 'about', withVault: false },
+];
+
+/** The sections shown, as the app draws them and as the dialog lists them. */
+export interface SettingsSectionsShown {
+  readonly keys: readonly AppSettingsSection[];
+  readonly links: readonly SettingsSectionLink[];
+}
+
+interface SectionLists {
+  readonly withVault: SettingsSectionsShown;
+  readonly withoutVault: SettingsSectionsShown;
+}
+
+/** Each platform's lists, made once: the window is handed one `offered` for its life. */
+const listsFor = new WeakMap<EntryPointsOffered, SectionLists>();
+
+function shownOf(keys: readonly AppSettingsSection[]): SettingsSectionsShown {
+  return { keys, links: keys.map((key) => SETTINGS_SECTIONS[key]) };
+}
+
+function sectionLists(offered: EntryPointsOffered): SectionLists {
+  const made = listsFor.get(offered);
+  if (made !== undefined) return made;
+  const shown = ORDER.filter((entry) => entry.entry === undefined || offered[entry.entry]);
+  const lists = {
+    withVault: shownOf(shown.map((entry) => entry.key)),
+    withoutVault: shownOf(shown.filter((entry) => !entry.withVault).map((entry) => entry.key)),
+  };
+  listsFor.set(offered, lists);
+  return lists;
+}
+
+/**
+ * The app's sections: which to draw, in order, and their links for the
+ * dialog's list on the left. Some are only drawn with a vault open: they want
+ * its settings note, its Keychain entries or its repository, and some only
+ * where the platform offers them. Kept here rather than gathered from the
+ * sections as they mount, so that opening Settings costs no extra commit;
+ * e2e/settings-sections.spec.ts holds the list in step with what is drawn.
+ * The same object each time for the same `offered`, so the dialog's list can
+ * be memoised on it.
+ */
+export function settingsSectionsShown({
   vaultOpen,
+  offered,
 }: {
   vaultOpen: boolean;
-}): readonly SettingsSectionLink[] {
-  return vaultOpen ? WITH_VAULT : WITHOUT_VAULT;
+  offered: EntryPointsOffered;
+}): SettingsSectionsShown {
+  const lists = sectionLists(offered);
+  return vaultOpen ? lists.withVault : lists.withoutVault;
 }

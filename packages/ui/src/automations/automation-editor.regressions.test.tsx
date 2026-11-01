@@ -22,6 +22,7 @@ function Editor({ onChange }: { onChange: (draft: AutomationDraft) => void }) {
   const [draft, setDraft] = useState<AutomationDraft>(FRIDAY);
   return (
     <AutomationEditor
+      offersClaude
       draft={draft}
       onChange={(next) => {
         setDraft(next);

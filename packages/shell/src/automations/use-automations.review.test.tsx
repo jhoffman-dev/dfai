@@ -17,6 +17,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import {
+  EVERY_ENTRY_POINT,
   fakeClaudeStepPorts,
   fakeIndexPort,
   fakeVaultFs,
@@ -154,6 +155,7 @@ const clock = {
 
 function mount(vault: ReturnType<typeof memoryVault>, options: Partial<AutomationsOptions> = {}) {
   const initial: AutomationsOptions = {
+    offered: EVERY_ENTRY_POINT,
     ports: vault.ports,
     clock,
     vaultKey: '/vaults/home',

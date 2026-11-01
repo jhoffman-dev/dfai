@@ -7,7 +7,8 @@ export function VaultEmptyState({
   onChooseVault,
   onOpenFromGitHub,
 }: {
-  onChooseVault: () => void;
+  /** Given when a folder on disk can be opened as the vault. */
+  onChooseVault?: () => void;
   /** Given when a vault can be copied from GitHub instead. */
   onOpenFromGitHub?: () => void;
 }) {
@@ -22,9 +23,11 @@ export function VaultEmptyState({
           nothing is imported, moved or converted.
         </p>
         <div className="empty__actions">
-          <button className="btn btn--secondary" type="button" onClick={onChooseVault}>
-            Choose folder…
-          </button>
+          {onChooseVault !== undefined && (
+            <button className="btn btn--secondary" type="button" onClick={onChooseVault}>
+              Choose folder…
+            </button>
+          )}
           {onOpenFromGitHub !== undefined && (
             <button className="btn btn--secondary" type="button" onClick={onOpenFromGitHub}>
               Open a vault from GitHub…

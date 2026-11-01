@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '@dfai/domain';
 import type { ThumbnailResult } from './artifact-thumbnail.ts';
-import { createThumbnailQueue, type ThumbnailJob } from './thumbnail-queue.ts';
+import {
+  createThumbnailQueue,
+  NO_THUMBNAIL_QUEUE,
+  NO_THUMBNAILS_HERE,
+  type ThumbnailJob,
+} from './thumbnail-queue.ts';
 
 const path = (name: string) => createVaultPath(`artifacts/${name}.md`);
 const MADE = (name: string): ThumbnailResult => ({
@@ -34,6 +39,25 @@ function controlled() {
   };
   return { started, generate, settle };
 }
+
+describe('NO_THUMBNAIL_QUEUE (#657)', () => {
+  it('makes nothing and says nothing failed: the card keeps its placeholder', async () => {
+    let told = 0;
+    const stop = NO_THUMBNAIL_QUEUE.subscribe(() => (told += 1));
+    expect(await NO_THUMBNAIL_QUEUE.request({ path: path('a'), asked: true })).toBeNull();
+    expect(NO_THUMBNAIL_QUEUE.snapshot().state(path('a'))).toBeNull();
+    expect(NO_THUMBNAIL_QUEUE.snapshot().madeInAll()).toBe(0);
+    expect(NO_THUMBNAIL_QUEUE.snapshot()).toBe(NO_THUMBNAIL_QUEUE.snapshot());
+    expect(told).toBe(0);
+    stop();
+  });
+
+  it('says why to a caller that must report a failure (the local API)', async () => {
+    await expect(
+      NO_THUMBNAIL_QUEUE.requestOrFail({ path: path('a'), asked: true }),
+    ).rejects.toThrow(NO_THUMBNAILS_HERE);
+  });
+});
 
 describe('createThumbnailQueue', () => {
   it('makes at most `concurrency` at once, and the rest in the order asked', async () => {

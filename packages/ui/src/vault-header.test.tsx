@@ -34,6 +34,22 @@ describe('VaultHeader', () => {
     expect(screen.getByRole('button', { name: 'Vault' })).toBeDefined();
   });
 
+  it('names the vault without a way to another where none can be opened (#657)', () => {
+    render(
+      <VaultHeader
+        vaultName="Vault"
+        vaultInitial="V"
+        templates={[]}
+        onOpenFromGitHub={() => {}}
+        onNewNote={() => {}}
+        onNewFromTemplate={() => {}}
+        onDailyNote={() => {}}
+      />,
+    );
+    expect(screen.getByText('Vault')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Vault' })).toBeNull();
+  });
+
   it('shows the vault’s tile beside its name, without adding to the name', () => {
     render(<VaultHeader {...props} vaultInitial="Q" />);
     expect(screen.getByText('Q')).toBeDefined();

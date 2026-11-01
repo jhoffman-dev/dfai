@@ -48,6 +48,7 @@ import type {
   ActivityLog,
   DefinedType,
   NoteChanges,
+  EntryPointsOffered,
   ExternalLinkPort,
   IndexPort,
   LinkedRangeStore,
@@ -250,6 +251,8 @@ export interface PaneContext {
   readonly peopleMerge: ChosenPeopleMerge;
   /** Exporting notes (#501): a page's menu, the peek's, a view's chosen rows. Null where none can be made. */
   readonly exporting: ExportCommands | null;
+  /** Which entry points a platform may lack are offered here (#657): a source's Refresh among them. */
+  readonly offered: EntryPointsOffered;
   /** Told the problem with a link — one that could not be made or followed — or null once one leads somewhere. */
   readonly onLinkProblem: (message: string | null) => void;
   /** Where a link to a highlight or a PDF leads (#506), read from the vault. */
@@ -673,6 +676,7 @@ export function useNotePane({
     index,
     sources,
     refresher: context.sourceRefresher,
+    offered: context.offered,
     vaultRoot: context.vault,
     setProperty: note.setProperty,
     onChanged,
@@ -814,14 +818,18 @@ export function useNotePane({
           typeName: noteProperties.typeName,
           sql: savedView.result?.sql ?? sqlView.sql,
         });
+  // Where no picture can be made (ADR-0051), no Regenerate is offered: the card keeps its placeholder.
+  const regenerates = context.offered.regenerateThumbnail;
   const customPropertyValues = useMemo(
     () => ({
-      ...(artifact !== null && { [ARTIFACT_KEYS.cover]: thumbnailValue(artifact, loadImage) }),
+      ...(artifact !== null && {
+        [ARTIFACT_KEYS.cover]: thumbnailValue(artifact, loadImage, regenerates),
+      }),
       ...(pageThumbnail !== null && {
-        [pageThumbnail.key]: pageThumbnailValue(pageThumbnail, loadImage),
+        [pageThumbnail.key]: pageThumbnailValue(pageThumbnail, loadImage, regenerates),
       }),
     }),
-    [artifact, pageThumbnail, loadImage],
+    [artifact, pageThumbnail, loadImage, regenerates],
   );
   // What the aside shows for this tab (#306): said through the store, read by
   // a selector there, so the aside follows the focused tab without `App`.
@@ -1023,7 +1031,7 @@ export function useNotePane({
         if (path !== null) onToggleFavorite(path);
       }}
       aside={
-        artifactAside(artifact, path) ?? (
+        artifactAside(artifact, path, regenerates) ?? (
           <>
             {taskSchedule !== null && <TaskScheduleSummary {...taskSchedule} />}
             {linked !== null && (
@@ -1102,7 +1110,12 @@ export function useNotePane({
 }
 
 /** An artifact's saved copy, under its properties; nothing for any other note. */
-function artifactAside(artifact: ArtifactCopyView | null, path: VaultPath | null): ReactNode {
+function artifactAside(
+  artifact: ArtifactCopyView | null,
+  path: VaultPath | null,
+  /** Whether a picture can be made here: where none can, the card keeps its placeholder. */
+  regenerates: boolean,
+): ReactNode {
   if (artifact === null || path === null) return null;
   return (
     <Suspense fallback={null}>
@@ -1115,10 +1128,12 @@ function artifactAside(artifact: ArtifactCopyView | null, path: VaultPath | null
         onOpenLink={artifact.openLink}
         onReload={artifact.reload}
         onAddCopy={artifact.addCopy}
-        thumbnail={{
-          generating: artifact.thumbnail.generating,
-          onRegenerate: artifact.thumbnail.regenerate,
-        }}
+        {...(regenerates && {
+          thumbnail: {
+            generating: artifact.thumbnail.generating,
+            onRegenerate: artifact.thumbnail.regenerate,
+          },
+        })}
       />
     </Suspense>
   );
@@ -1128,6 +1143,7 @@ function artifactAside(artifact: ArtifactCopyView | null, path: VaultPath | null
 function thumbnailValue(
   artifact: ArtifactCopyView,
   load: (src: string) => Promise<string | null>,
+  regenerates: boolean,
 ): (id: string) => ReactNode {
   const { thumbnail } = artifact;
   return function thumbnailRow(id) {
@@ -1138,7 +1154,7 @@ function thumbnailValue(
         shown={thumbnail.shown}
         generating={thumbnail.generating}
         failure={thumbnail.failure}
-        canGenerate={thumbnail.canGenerate}
+        canGenerate={regenerates && thumbnail.canGenerate}
         load={load}
         onRegenerate={thumbnail.regenerate}
         onClear={thumbnail.clear}
@@ -1151,6 +1167,7 @@ function thumbnailValue(
 function pageThumbnailValue(
   thumbnail: PageThumbnailView,
   load: (src: string) => Promise<string | null>,
+  regenerates: boolean,
 ): (id: string) => ReactNode {
   return function pageThumbnailRow(id) {
     return (
@@ -1160,7 +1177,7 @@ function pageThumbnailValue(
         shown={thumbnail.shown}
         generating={thumbnail.generating}
         failure={thumbnail.failure}
-        canGenerate
+        canGenerate={regenerates}
         load={load}
         onRegenerate={thumbnail.regenerate}
         regenerateDiscards={thumbnail.discards}
@@ -1346,10 +1363,11 @@ function paneBody({
         source={source.source}
         report={source.report}
         refreshing={source.refreshing}
-        onRefresh={source.refresh}
+        {...(source.refreshOffered && { onRefresh: source.refresh })}
         secrets={source.secrets}
         outsideVault={source.outsideVault}
-        {...(source.chooseFile !== null && { onChooseFile: source.chooseFile })}
+        {...(source.refreshOffered &&
+          source.chooseFile !== null && { onChooseFile: source.chooseFile })}
         fileProblem={source.fileProblem}
       />
     );

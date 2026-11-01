@@ -1,5 +1,4 @@
 import {
-  AUTOMATION_PRESETS,
   CHAT_READ_TOOLS,
   createVaultPath,
   planClockLabel,
@@ -27,7 +26,6 @@ import { automationRows, logViews } from './automation-rows.ts';
 import { useAutomationEditor } from './use-automation-editor.ts';
 import type { useAutomations } from './use-automations.ts';
 
-const PRESET_NAMES = AUTOMATION_PRESETS.map((preset) => preset.name);
 const CLAUDE_OUTPUTS = Object.keys(PROPOSAL_SCHEMAS);
 
 /**
@@ -46,6 +44,8 @@ export function AutomationsScreen({
   onShowSidebar,
   history,
   setup = null,
+  offersClaude,
+  presets,
 }: {
   automations: ReturnType<typeof useAutomations>;
   ports: AutomationPorts & Pick<RuleQueryPorts, 'notePaths'>;
@@ -59,6 +59,10 @@ export function AutomationsScreen({
   history?: PageHistory;
   /** The offer to set meeting post-processing up in one yes (#191). */
   setup?: MeetingSetupProps | null;
+  /** Whether a rule may ask Claude on this platform (#657). */
+  offersClaude: boolean;
+  /** The presets offered here, by name: only those the platform can run (#657). */
+  presets: readonly string[];
 }) {
   const editor = useAutomationEditor({ automations, ports, clock, indexKey, activity });
   // Read only while a rule is open in the editor: the list itself needs no skills.
@@ -91,7 +95,7 @@ export function AutomationsScreen({
       rows={rows}
       error={automations.error}
       openId={open?.rule.path ?? null}
-      presets={PRESET_NAMES}
+      presets={presets}
       notice={automations.notice}
       busy={automations.busy}
       setup={setup === null ? null : <MeetingSetup {...setup} />}
@@ -119,6 +123,7 @@ export function AutomationsScreen({
             problem={editor.problem}
             which={<QueryComposer {...editor.composer} />}
             typeNames={ports.types.map((type) => type.name)}
+            offersClaude={offersClaude}
             claudeTools={CHAT_READ_TOOLS}
             claudeOutputs={CLAUDE_OUTPUTS}
             skills={skills}

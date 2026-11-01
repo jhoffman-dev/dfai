@@ -74,6 +74,7 @@ describe('a vault set up from Settings syncs by itself (issue #8)', () => {
       const clock = handClock();
       const edits = toldNews();
       const options: SyncOptions = {
+        enabled: true,
         host: {
           git: () => mac.git,
           files: () => mac.syncFiles,
