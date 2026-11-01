@@ -14,7 +14,7 @@ const read = (path: string) => readFileSync(here(path), 'utf8');
 const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 const css = stripComments(readStylesheet());
-const galleryCss = stripComments(read('./gallery/gallery.css'));
+const galleryCss = stripComments(read('../../../apps/desktop/src/gallery/gallery.css'));
 
 /** Every source file under a folder, tests left out: they read no token. */
 function sourcesUnder(folder: string): string[] {
@@ -26,7 +26,12 @@ function sourcesUnder(folder: string): string[] {
   });
 }
 
-const SOURCES = [here('.'), here('../../../packages/ui/src')].flatMap(sourcesUnder);
+// The gallery is the desktop's, and draws the shell's sheet.
+const SOURCES = [
+  here('.'),
+  here('../../../packages/ui/src'),
+  here('../../../apps/desktop/src/gallery'),
+].flatMap(sourcesUnder);
 
 /** A name a stylesheet declares, or a component sets inline (`'--x': …`, `setProperty`). */
 const declared = new Set([

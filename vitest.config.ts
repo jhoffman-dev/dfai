@@ -42,6 +42,13 @@ export default defineConfig({
           new URL('./packages/application/src/testing/sqlite.ts', import.meta.url),
         ),
       },
+      // The vault contract every vault runs (#689): it imports vitest, so it is kept out of the barrel.
+      {
+        find: '@dfai/application/testing/vault-fs-contract',
+        replacement: fileURLToPath(
+          new URL('./packages/application/src/testing/vault-fs-contract.ts', import.meta.url),
+        ),
+      },
       // Test support (work counted rather than timed), kept out of the domain's barrel.
       {
         find: '@dfai/domain/testing',
@@ -65,8 +72,17 @@ export default defineConfig({
           new URL('./packages/adapters/src/epub/index.ts', import.meta.url),
         ),
       },
+      // The adapters that speak to the Tauri host, for the desktop alone (#656).
+      {
+        find: '@dfai/adapters/tauri',
+        replacement: fileURLToPath(
+          new URL('./packages/adapters/src/tauri/index.ts', import.meta.url),
+        ),
+      },
       { find: '@dfai/adapters', replacement: pkg('adapters') },
       { find: '@dfai/ui', replacement: pkg('ui') },
+      // The app shell (#656). Exact, so its stylesheet export resolves through its package.json.
+      { find: /^@dfai\/shell$/, replacement: pkg('shell') },
     ],
   },
   test: {
@@ -157,7 +173,7 @@ export default defineConfig({
         // Who the vault's owner is — their name and addresses — decides whose a meeting's tasks are (#173).
         'packages/application/src/profile/**': { lines: 90, functions: 90, branches: 85 },
         // Kept work is the only copy of typing the vault never got.
-        'apps/desktop/src/notes/*stranded*.ts': { lines: 90, functions: 90, branches: 85 },
+        'packages/shell/src/notes/*stranded*.ts': { lines: 90, functions: 90, branches: 85 },
         // Carries the API token, and turns every failure into what the model is told.
         'apps/mcp/src/{connection,client}.ts': { lines: 90, functions: 90, branches: 85 },
         // n8n's workflow builder and its GitHub checks decide what is committed into the vault (P28-02);

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Gallery } from './gallery.tsx';
-import '../styles/index.css';
+import '@dfai/shell/styles.css';
 import './gallery.css';
 
 const root = document.getElementById('root');
