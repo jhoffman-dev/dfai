@@ -136,7 +136,7 @@ const ANSWER: ModelEvent[] = [
   },
 ];
 
-function setUp() {
+function setUp({ ruleTimeUnknown = false }: { ruleTimeUnknown?: boolean } = {}) {
   const claude = fakeClaudeStepPorts({
     rounds: [ANSWER],
     model: 'claude-opus-5-5',
@@ -165,9 +165,19 @@ function setUp() {
     types: TYPES,
     claude,
   });
+  // The GitHub vault's way (#720): a version far below the meeting's, and no time.
+  const fs: typeof vault.ports.fs = {
+    ...vault.ports.fs,
+    readTextFile: async (path) => {
+      const read = await vault.ports.fs.readTextFile(path);
+      return ruleTimeUnknown && path === RULE_FILE
+        ? { ...read, modified: 5, modifiedAt: null }
+        : read;
+    },
+  };
   const run = () =>
     runAutomation({
-      ports: vault.ports,
+      ports: { ...vault.ports, fs },
       rule: RULE,
       clock: CLOCK,
       guard: GUARD,
@@ -206,6 +216,17 @@ describe('one After a meeting run over a mix of items (#226, #185, #227)', () =>
     expect(proposals).toEqual([
       'Inbox/Proposals/Review what 2026-10-14 Renewal review left for you.md',
     ]);
+  });
+
+  it('only proposes, and writes no task, when the vault cannot tell when the rule was saved (#720)', async () => {
+    const { vault, run } = setUp({ ruleTimeUnknown: true });
+
+    await run();
+
+    const tasks = [...vault.files.keys()].filter((at) => vault.properties(at)['type'] === 'task');
+    expect(tasks).toEqual([]);
+    expect(vault.properties(MEETING)['tasks']).toBeUndefined();
+    expect([...vault.files.keys()].some((at) => at.startsWith('Inbox/Proposals/'))).toBe(true);
   });
 
   it('logs the meeting with its tallies, and the line reads back', async () => {
