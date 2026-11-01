@@ -13,6 +13,3 @@ export {
 } from './claude-code-provider.ts';
 export { ProgramNotFound } from './model-process.ts';
 export type { ModelProcessHost, ProcessExit } from './model-process.ts';
-export { MODEL_PROCESS_EVENT, tauriModelProcess } from './tauri-model-process.ts';
-export type { ModelProcessPayload } from './tauri-model-process.ts';
-export { tauriModelHttp } from './tauri-model-http.ts';

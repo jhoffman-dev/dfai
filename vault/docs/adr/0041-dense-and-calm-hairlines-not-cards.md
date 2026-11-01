@@ -43,7 +43,7 @@ mockup wins on look and the brief wins on behaviour. The plan,
    peek and toasts, 0 for cards and panels; fully round only for dots and
    avatars. The system font stack, replacing the bundled Manrope, at weights
    400, 500 and 600. Shadows only on what floats. All of it is in
-   `apps/desktop/src/styles/tokens.css`, and `vault/docs/design/system.md`
+   `packages/shell/src/styles/tokens.css`, and `vault/docs/design/system.md`
    is the reference.
 3. **The eight rules** of the brief (§3), also on the `Tokens` board: no
    shadows on content; colour as pastel tints only, never a filled area
@@ -52,7 +52,7 @@ mockup wins on look and the brief wins on behaviour. The plan,
    compact page chrome with no hero tile or subtitle; board columns of equal
    width, square; status as a tinted pill, the bare dot on a board column's
    head.
-4. **The rules are guards.** `apps/desktop/src/styles.test.ts` ("the v2
+4. **The rules are guards.** `packages/shell/src/styles.test.ts` ("the v2
    rules") fails on a blurred shadow outside what floats over the page or is
    being dragged, on a radius above 8px other than a round mark's 50%, on CSS
    capitals, and on a weight above 600. What breaks a rule today is named in

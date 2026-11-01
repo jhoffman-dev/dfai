@@ -46,13 +46,13 @@ And the rules of the house, which v2 keeps:
 - **Internals stay off screen.** No `.atlas/`, no `.md`, no SQL, no raw
   markdown in a summary (`plainText`), no unlabelled value (`cardChips`).
 - **One overlay at a time.** Only one is ever up
-  (`apps/desktop/src/overlay.ts`).
+  (`packages/shell/src/overlay.ts`).
 - **Judge it side by side.** `pnpm shots && pnpm design:compare`, both
   themes, before calling a surface done.
 
 ### The guards
 
-`apps/desktop/src/styles.test.ts` holds these rules over the whole
+`packages/shell/src/styles.test.ts` holds these rules over the whole
 stylesheet, for good.
 
 - **"the stylesheet"**: every token read is declared; a declared token is
@@ -80,7 +80,7 @@ on.
 
 ## Tokens
 
-All in `apps/desktop/src/styles/tokens.css`. Light is `:root` and
+All in `packages/shell/src/styles/tokens.css`. Light is `:root` and
 `[data-theme='light']`; dark is `[data-theme='dark']` and the
 `prefers-color-scheme: dark` block. The explicit selectors are not anchored to
 `:root`, so a subtree can carry a theme of its own (the primitives gallery
@@ -232,7 +232,7 @@ are literally code, never for a title or a label.
 
 ## Primitives
 
-The shared pieces are in `apps/desktop/src/styles/primitives.css`; the
+The shared pieces are in `packages/shell/src/styles/primitives.css`; the
 components that draw them are in `packages/ui/src`. One kind of thing is
 drawn one way.
 
