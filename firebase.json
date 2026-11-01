@@ -3,8 +3,11 @@
     {
       "target": "web",
       "public": "apps/web/dist",
-      "ignore": ["**/.*"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "ignore": ["**/.*", "**/.*/**"],
+      "rewrites": [
+        { "source": "/!(assets)", "destination": "/index.html" },
+        { "source": "/!(assets)/**", "destination": "/index.html" }
+      ],
       "headers": [
         {
           "source": "**",
@@ -12,7 +15,7 @@
             { "key": "Cache-Control", "value": "no-cache" },
             {
               "key": "Content-Security-Policy",
-              "value": "script-src 'self'; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'"
+              "value": "script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
             },
             { "key": "X-Content-Type-Options", "value": "nosniff" },
             { "key": "X-Frame-Options", "value": "DENY" },

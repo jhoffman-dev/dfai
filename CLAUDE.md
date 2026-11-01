@@ -295,17 +295,26 @@ if an inline copy in a test drifts from it.
 on its own site `dailyflowai-web` (dailyflowai-web.web.app) through the hosting
 target `web` (`.firebaserc`). The project's default site, `dailyflowai-app`,
 serves something else: never deploy to it, and never touch the projects
-`gcal-timeblocking` or `student-games-be188`. `firebase.json` holds the site's
-SPA rewrite, cache headers (`/assets/**` immutable, everything else `no-cache`;
-the assets rule comes last so it wins) and security headers, whose CSP is
-`apps/web/index.html`'s plus `frame-ancestors 'none'`: change the two together.
-`.github/workflows/web-hosting.yml` builds and deploys it, apart from `gate` and
-only when a path the web build reads changed: live on a push to `main`, a 7-day
-preview channel on a pull request; it skips green until the secret
-`FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP` exists. Deploy by hand only with
-`firebase deploy --only hosting:web`, never a bare `firebase deploy`;
-`tools/ci/web-hosting.test.ts` fails on a config or workflow that could reach
-another site. A later functions codebase (#663) widens that test on purpose.
+`gcal-timeblocking` or `student-games-be188`. `firebase.json` holds the upload's
+`ignore` (dotfiles _and_ dot-folders: `**/.*` alone ships `.vite/`), the SPA
+rewrite (every path but `/assets/**`, so a missing chunk 404s rather than caching
+the page for a year), cache headers (`/assets/**` immutable, everything else
+`no-cache`; the assets rule comes last so it wins) and security headers, whose
+CSP is `apps/web/index.html`'s plus `frame-ancestors 'none'`: change the two
+together. `.github/workflows/web-hosting.yml` builds and deploys it, apart from
+`gate`, when a path the web build, its config or these checks read changed: a
+7-day preview channel on a pull request (job `preview`), live on a push to `main`
+from the `web-live` environment (job `live`). Both skip green until the secret
+`FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP` exists, and both run
+`tools/ci/web-hosting.test.ts` on the config and the built files before they
+deploy. That test fails on a config or workflow that could reach another site or
+project, a bare `firebase deploy`, a dotfile in the upload, or the key anywhere
+but the deploy action. It cannot stop a pull request that edits the workflow
+and the test together: its preview deploy runs that branch's copy of both, and
+the key can deploy to every site in the project. Only review, and the `web-live`
+environment's rules for the live deploy, cover that. Deploy by hand only with
+`firebase deploy --only hosting:web`. A later functions codebase (#663) widens
+that test on purpose.
 
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and

@@ -1,3 +1,5 @@
+import { minimatch } from 'minimatch';
+
 /*
  * What the web build's hosting config may say (#662), so a deploy can only
  * ever reach its own site. The Firebase project dailyflowai-app has a default
@@ -10,12 +12,14 @@
 export const PROJECT = 'dailyflowai-app';
 export const TARGET = 'web';
 export const SITE = 'dailyflowai-web';
+export const LIVE_ENVIRONMENT = 'web-live';
+
+/** The command each deploy job runs before it deploys. */
+export const HOSTING_CHECK = 'pnpm exec vitest run tools/ci/web-hosting.test.ts';
 
 interface HostingEntry {
   readonly target?: unknown;
   readonly site?: unknown;
-  readonly public?: unknown;
-  readonly headers?: readonly { source?: unknown; headers?: { key: string; value: string }[] }[];
 }
 
 const asList = (hosting: unknown): readonly HostingEntry[] =>
@@ -27,7 +31,9 @@ export function firebaseJsonProblems(config: Record<string, unknown>): string[] 
     .filter((key) => key !== 'hosting')
     .map((key) => `firebase.json configures "${key}"; only hosting is deployed from here`);
   if (config.hosting === undefined) return [...problems, 'firebase.json has no hosting entry'];
-  for (const entry of asList(config.hosting)) {
+  const entries = asList(config.hosting);
+  if (entries.length === 0) problems.push('firebase.json has an empty hosting list');
+  for (const entry of entries) {
     if (entry.site !== undefined)
       problems.push(`a hosting entry names site "${String(entry.site)}"; use the target`);
     if (entry.target !== TARGET)
@@ -58,6 +64,25 @@ export function firebasercProblems(rc: {
   if (!(TARGET in hosting)) problems.push(`.firebaserc does not map target "${TARGET}"`);
   return problems;
 }
+
+/** What firebase-tools' listFiles always leaves out, before the config's own `ignore`. */
+const CLI_IGNORES = ['**/firebase-debug.log', '**/firebase-debug.*.log', '.firebase/*'];
+
+/**
+ * The files a deploy uploads, of `paths` (relative to `public`, `/`-separated),
+ * matched as firebase-tools does: glob's ignore list, which is minimatch with
+ * `dot: true`. A pattern skips a file, not a folder's contents, unless it
+ * reaches inside the folder — `**\/.*` alone uploads `.vite/x.json`.
+ */
+export function uploadedFiles(paths: readonly string[], ignore: readonly string[]): string[] {
+  const patterns = [...CLI_IGNORES, ...ignore];
+  return paths.filter(
+    (path) => !patterns.some((pattern) => minimatch(path, pattern, { dot: true })),
+  );
+}
+
+/** A file under a dot-folder, or a dotfile: never served. */
+export const isDotPath = (path: string) => path.split('/').some((part) => part.startsWith('.'));
 
 const directives = (policy: string) =>
   policy
@@ -95,24 +120,87 @@ const withoutComments = (text: string) =>
     .filter((line) => !line.trimStart().startsWith('#'))
     .join('\n');
 
+/** `firebase deploy`, `firebase-tools deploy`, `firebase hosting:channel:deploy`. */
+const DEPLOY_COMMAND =
+  /\bfirebase(?:-tools)?(?:@\S+)?\s+(deploy|hosting:channel:deploy)\b[^\n;&|]*/g;
+
+function commandProblems(code: string): string[] {
+  const problems: string[] = [];
+  for (const [command, verb] of code.matchAll(DEPLOY_COMMAND)) {
+    // `deploy` scopes by service (`hosting:web`); a channel deploy by target name alone.
+    const only = verb === 'deploy' ? `hosting:${TARGET}` : TARGET;
+    if (!new RegExp(`--only[ =]${only}(?![\\w:,-])`).test(command))
+      problems.push(`"${command.trim()}" is not --only ${only}`);
+  }
+  for (const [flag, project] of code.matchAll(/(?:--project|\s-P)[ =](\S+)/g)) {
+    if (project !== PROJECT)
+      problems.push(`"${flag.trim()}" names a project other than ${PROJECT}`);
+  }
+  return problems;
+}
+
+/** Each job under `jobs:`, by name, as its text. */
+function jobsOf(code: string): Map<string, string> {
+  const body = code.split(/^jobs:\s*$/m)[1] ?? '';
+  const jobs = new Map<string, string>();
+  for (const part of body.split(/^(?= {2}[\w-]+:\s*$)/m)) {
+    const name = /^ {2}([\w-]+):/.exec(part)?.[1];
+    if (name) jobs.set(name, part);
+  }
+  return jobs;
+}
+
+function deployJobProblems(name: string, job: string): string[] {
+  const problems: string[] = [];
+  const deployAt = job.indexOf('action-hosting-deploy');
+  const checkAt = job.indexOf(HOSTING_CHECK);
+  if (checkAt < 0 || checkAt > deployAt)
+    problems.push(`job "${name}" deploys without first running ${HOSTING_CHECK}`);
+  if (
+    /^\s*channelId:\s*live\s*$/m.test(job) &&
+    !new RegExp(`^ {4}environment:\\s*${LIVE_ENVIRONMENT}\\s*$`, 'm').test(job)
+  )
+    problems.push(`job "${name}" deploys live outside the ${LIVE_ENVIRONMENT} environment`);
+  for (const step of job.split(/\n\s*- /).filter((s) => s.includes('action-hosting-deploy'))) {
+    if (!new RegExp(`\\btarget:\\s*${TARGET}\\s*$`, 'm').test(step))
+      problems.push(`a deploy step in "${name}" does not name target: ${TARGET}`);
+    if (!new RegExp(`\\bprojectId:\\s*${PROJECT}\\s*$`, 'm').test(step))
+      problems.push(`a deploy step in "${name}" does not name projectId: ${PROJECT}`);
+  }
+  return problems;
+}
+
+/** Where a secret may appear: handed to the deploy action, or asked whether it is set. */
+const SECRET_USES = [
+  /^\s*firebaseServiceAccount:\s*\$\{\{\s*secrets\.\w+\s*\}\}\s*$/,
+  /^\s*repoToken:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}\s*$/,
+  /^\s*\w+:\s*\$\{\{\s*secrets\.\w+\s*!=\s*''\s*\}\}\s*$/,
+];
+
 /**
- * The workflow: no `firebase deploy` that is not `--only hosting:web`, and
- * every use of the deploy action names the project and the `web` target.
+ * A secret anywhere else (a job's env, a step's env, a `run`) reaches code
+ * other than the deploy action: `pnpm install` and the build run third-party code.
+ */
+function secretUseProblems(code: string): string[] {
+  return code
+    .split('\n')
+    .filter((line) => line.includes('secrets.') && !SECRET_USES.some((use) => use.test(line)))
+    .map((line) => `"${line.trim()}" hands a secret to more than the deploy action`);
+}
+
+/**
+ * The workflow: every deploy command limited to the `web` target and the one
+ * project; every job that deploys runs the hosting checks first, names the
+ * project and target, and deploys live only from the live environment; and a
+ * secret reaches the deploy action alone.
  */
 export function workflowProblems(workflow: string): string[] {
   const code = withoutComments(workflow);
-  const problems: string[] = [];
-  for (const match of code.matchAll(/firebase\s+deploy\b[^\n]*/g)) {
-    if (!new RegExp(`--only[ =]hosting:${TARGET}(?![\\w:,-])`).test(match[0]))
-      problems.push(`"${match[0].trim()}" is not --only hosting:${TARGET}`);
-  }
-  const steps = code.split(/\n\s*- /).filter((step) => step.includes('action-hosting-deploy'));
-  if (steps.length === 0) problems.push('the workflow never uses action-hosting-deploy');
-  for (const step of steps) {
-    if (!new RegExp(`\\btarget:\\s*${TARGET}\\s*$`, 'm').test(step))
-      problems.push('a deploy step does not name target: ' + TARGET);
-    if (!new RegExp(`\\bprojectId:\\s*${PROJECT}\\s*$`, 'm').test(step))
-      problems.push('a deploy step does not name projectId: ' + PROJECT);
-  }
-  return problems;
+  const deployJobs = [...jobsOf(code)].filter(([, job]) => job.includes('action-hosting-deploy'));
+  return [
+    ...commandProblems(code),
+    ...(deployJobs.length === 0 ? ['the workflow never uses action-hosting-deploy'] : []),
+    ...deployJobs.flatMap(([name, job]) => deployJobProblems(name, job)),
+    ...secretUseProblems(code),
+  ];
 }
