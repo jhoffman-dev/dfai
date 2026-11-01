@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { createVaultPath, type EditorDocument, type VaultPath } from '@dfai/domain';
+import {
+  createVaultPath,
+  type EditorDocument,
+  type StrandedEdit,
+  type VaultPath,
+} from '@dfai/domain';
 import type { VaultFsPort } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { useNote } from './use-note.ts';
+import type { Stranding } from './stranded-edits.ts';
 
 /**
  * Issue #727: a pane that leaves a note with unsaved typing and comes
@@ -23,13 +29,19 @@ const docOf = (body: string): EditorDocument => remarkMarkdown.parseBody(body).d
 
 const settle = () => act(async () => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 
-/** One note on disk, whose writes the test holds until it lets them go; any other path does not exist. */
+/**
+ * One note on disk, whose writes the test holds until it lets them go, and
+ * whose reads it can hold and answer newest first; any other path does not exist.
+ */
 function heldWritesVault() {
   const file = { text: ORIGINAL, modified: 1 };
   let open = true;
   let waiting: (() => void)[] = [];
+  let readsOpen = true;
+  const heldReads: (() => void)[] = [];
   const fs = {
     readTextFile: async (path: VaultPath) => {
+      if (!readsOpen) await new Promise<void>((resolve) => heldReads.push(resolve));
       if (path !== NOTE) throw new Error(`no such file: ${path}`);
       return { text: file.text, modified: file.modified };
     },
@@ -57,8 +69,23 @@ function heldWritesVault() {
   return {
     fs,
     contents: () => file.text,
+    /** Another app writes the note, so the pane's next write is refused. */
+    writeOutside: (text: string) => {
+      file.text = text;
+      file.modified += 1;
+    },
     hold: () => {
       open = false;
+    },
+    holdReads: () => {
+      readsOpen = false;
+    },
+    /** Answers the newest held read, if any; the test settles between answers. */
+    answerNewestRead: () => {
+      readsOpen = true;
+      const next = heldReads.pop();
+      next?.();
+      return next !== undefined;
     },
     release: () => {
       open = true;
@@ -67,6 +94,24 @@ function heldWritesVault() {
       for (const resolve of queued) resolve();
     },
   };
+}
+
+/** A pane on the held vault that keeps what it could not save and is handed it back, as the app does. */
+function paneKeepingStranded(vault: ReturnType<typeof heldWritesVault>) {
+  const kept = new Map<VaultPath, StrandedEdit>();
+  return renderHook(
+    ({ path }: { path: VaultPath }) =>
+      useNote({
+        ports: { fs: vault.fs, markdown: remarkMarkdown },
+        vault: THIS_VAULT,
+        path,
+        onStranded: ({ vault: _vault, ...edit }: Stranding) =>
+          void kept.set(edit.path, { ...edit, keptAt: 1 }),
+        recoverStranded: (at) => kept.get(at) ?? null,
+        settleStranded: ({ path: at }) => void kept.delete(at),
+      }),
+    { initialProps: { path: NOTE as VaultPath } },
+  );
 }
 
 describe('a pane back on a note before the write it made on the way out has landed (#727)', () => {
@@ -130,5 +175,65 @@ describe('a pane back on a note before the write it made on the way out has land
       saveError: null,
       doc: docOf('Saved before leaving.\n'),
     });
+  });
+
+  it('hands back typing whose write on the way out was refused, rather than showing the disk without it', async () => {
+    const vault = heldWritesVault();
+    const view = paneKeepingStranded(vault);
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Typed before leaving.\n')));
+
+    vault.hold();
+    view.rerender({ path: OTHER });
+    await settle();
+    vault.writeOutside('# Note\n\nWritten by another app.\n');
+    view.rerender({ path: NOTE });
+    // The read on the way back is answered before the one that keeps the refused typing.
+    vault.holdReads();
+    vault.release();
+    await settle();
+    while (vault.answerNewestRead()) await settle();
+    await settle();
+
+    expect(vault.contents()).toBe('# Note\n\nWritten by another app.\n');
+    expect(view.result.current.state).toMatchObject({
+      kind: 'ready',
+      dirty: true,
+      doc: docOf('Typed before leaving.\n'),
+    });
+  });
+
+  it('shows "Keep mine" landing, not the other writer\'s text, after leaving before it landed', async () => {
+    const vault = heldWritesVault();
+    const view = paneKeepingStranded(vault);
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Mine.\n')));
+    vault.writeOutside('# Note\n\nTheirs.\n');
+    act(() => view.result.current.save());
+    await settle();
+    expect(view.result.current.state).toMatchObject({
+      kind: 'ready',
+      saveError: expect.any(String),
+    });
+
+    // "Keep mine" reads the file before it writes; held, the pane leaves and
+    // comes back first, and the read on the way back is answered first.
+    vault.holdReads();
+    act(() => view.result.current.overwrite());
+    await settle();
+    view.rerender({ path: OTHER });
+    await settle();
+    view.rerender({ path: NOTE });
+    await settle();
+    while (vault.answerNewestRead()) await settle();
+    await settle();
+
+    expect(vault.contents()).toBe('Mine.\n');
+    expect(view.result.current.state).toMatchObject({ kind: 'ready', doc: docOf('Mine.\n') });
+    act(() => view.result.current.changeDoc(docOf('Mine.\n\nAnd more.\n')));
+    act(() => view.result.current.save());
+    await settle();
+    expect(view.result.current.state).toMatchObject({ kind: 'ready', saveError: null });
+    expect(vault.contents()).toBe('Mine.\n\nAnd more.\n');
   });
 });
