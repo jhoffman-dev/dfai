@@ -24,8 +24,7 @@ import {
   type IndexPort,
   type ReadMoment,
 } from '@dfai/application';
-import type { ComposerMode, GroupedResultProps } from '@dfai/ui';
-import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
+import { useSteadyCallback, type ComposerMode, type GroupedResultProps } from '@dfai/ui';
 import { errorMessage } from './error-message.ts';
 
 /** How the query was last opened in the editor: as dropdowns, or as text and why. */
@@ -62,9 +61,9 @@ export function useAtlasQuery({
   indexKey: string;
   /**
    * The index's own key as it stands when asked, which each run is stamped
-   * with as it begins (#698); `indexKey` stands for it when left out.
+   * with as it begins (#698).
    */
-  indexKeyNow?: () => string;
+  indexKeyNow: () => string;
   /** False while there is no query to ask — a pane holding an ordinary note. */
   enabled?: boolean;
   /** Whether a query of tasks alone carries each task's state, for its row's controls (#107). */
@@ -74,7 +73,7 @@ export function useAtlasQuery({
   const [editing, setEditing] = useState<Editing>(() => editingFor(initialText));
   // Typed text is asked about once typing pauses; a pick in the builder at once.
   const asked = useSettled(text, editing.mode === 'text' ? TYPING_PAUSE_MS : 0);
-  const keyNow = useIndexKeyNow(indexKeyNow, indexKey);
+  const keyNow = useSteadyCallback(indexKeyNow);
   const run = useRunning({
     text: asked,
     index,

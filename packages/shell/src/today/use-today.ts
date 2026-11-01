@@ -23,9 +23,8 @@ import {
   type TodayReport,
   type UndoableChange,
 } from '@dfai/application';
-import { todayActionWords, type TodayAction } from '@dfai/ui';
+import { todayActionWords, useSteadyCallback, type TodayAction } from '@dfai/ui';
 import { errorMessage } from '../query/error-message.ts';
-import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { keptTodayReport } from './kept-today-report.ts';
 import { useDayOf } from './use-day-of.ts';
 import { createTodayWrites, NOTHING_SETTLING, type TodayWrites } from './today-writes.ts';
@@ -51,12 +50,12 @@ export interface TodayOptions extends Omit<ReviewWritesOptions, 'ports' | 'clock
   /** Changes when the index does, so the page shows what it now holds. */
   readonly indexKey: string;
   /**
-   * The index's key as it stands the moment it is asked. `indexKey` is its
-   * news, which reaches the page a little after the index moves (#698): a
-   * read begun on the news of a refresh that ran before a write is still of
-   * the vault from before it. Left out, `indexKey` stands for it.
+   * The index's own key as it stands the moment it is asked (`useIndexKeyNow`).
+   * `indexKey` is its news, which reaches the page a little after the index
+   * moves (#698): a read begun on the news of a refresh that ran before a
+   * write is still of the vault from before it.
    */
-  readonly indexKeyNow?: () => string;
+  readonly indexKeyNow: () => string;
   /**
    * Whether the index is ready to be asked; while it is not, nothing is read.
    * What was last read of this vault stays on the page meanwhile: the index
@@ -121,7 +120,7 @@ export function useToday(options: TodayOptions) {
   // the write can still be of the index from before it, now that a refresh
   // keeps the index ready (#239): the row settles only on a read of an index
   // that has moved since (#698).
-  const keyAsAsked = useIndexKeyNow(options.indexKeyNow, indexKey);
+  const keyAsAsked = useSteadyCallback(options.indexKeyNow);
   // The vault open now, read when a toast's Undo is pressed: one made in
   // another vault writes nothing here, through the window's panes or not.
   const vaultNow = useRef({ index: ports.index, vaultKey });
@@ -138,6 +137,9 @@ export function useToday(options: TodayOptions) {
       refresh: onSettled,
       readsBegun: () => readsBegun.begun,
       indexKeyNow: keyAsAsked,
+      // The write was made: its row is held as it left it until the index is next ready past it.
+      refreshFailed: (cause) =>
+        console.error('The index could not be refreshed after Today was written:', cause),
     });
     landedAt.current = { since: at, askedAt };
   }, [onSettled, readsBegun, keyAsAsked]);

@@ -30,12 +30,12 @@ import {
 } from '@dfai/application';
 import {
   todayActionWords,
+  useSteadyCallback,
   type TaskRowControls,
   type TaskRowShown,
   type TodayAction,
 } from '@dfai/ui';
 import { withGiveUpRecorded } from '../activity/with-give-up-recorded.ts';
-import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { useDayOf } from '../today/use-day-of.ts';
 import type { Toasts } from '../toasts/toasts.ts';
 import { errorMessage } from './error-message.ts';
@@ -77,12 +77,12 @@ export interface TaskRowsOptions {
   /** When that run was asked, and how many runs have begun since. */
   readonly read: ReadMoment;
   readonly runsBegun: () => number;
-  readonly indexKey: string;
   /**
-   * The index's own key as it stands when asked, which the view's runs are
-   * stamped with as they begin (#698); `indexKey` stands for it when left out.
+   * The index's own key as it stands when asked (`useIndexKeyNow`): a write
+   * lands at it as its refresh is asked, and the view's runs are stamped
+   * with it as they begin (#698).
    */
-  readonly indexKeyNow?: () => string;
+  readonly indexKeyNow: () => string;
   /** Whether the rows carry their task's state (`compiled.taskRows`): without it, they are look-only. */
   readonly enabled: boolean;
   /** The index and the view the rows are of: when either changes, nothing carries over. */
@@ -128,7 +128,7 @@ export function useTaskRows(options: TaskRowsOptions): {
 
   const held = useRef(here);
   held.current = here;
-  const keyNow = useIndexKeyNow(options.indexKeyNow, options.indexKey);
+  const keyNow = useSteadyCallback(options.indexKeyNow);
   const act = useAct({ latest, held, setState, keyNow });
   // Drawn against the day it is drawn on: the view is drawn again as the day
   // turns, as Today is (`useDayOf`), and any drawing reads the clock afresh.
@@ -269,6 +269,12 @@ function useAct({
             refresh: options.onChanged,
             readsBegun: options.runsBegun,
             indexKeyNow: keyNow,
+            // The write was made: it is held as it left it until the index is next ready past it.
+            refreshFailed: (cause) =>
+              console.error(
+                'The index could not be refreshed after a view row was written:',
+                cause,
+              ),
           });
           const landed = { ...pending, landed: landedAt };
           change((was) => replacing(was, row.path, pending, landed));

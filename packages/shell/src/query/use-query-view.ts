@@ -84,7 +84,7 @@ export function useQueryView({
   notePaths: readonly string[];
   indexKey: string;
   /** The index's own key as it stands when asked (#698): rows land at it, runs are stamped with it. */
-  indexKeyNow?: () => string;
+  indexKeyNow: () => string;
   /** Every saved query, for the tabs. */
   queryViews: readonly QueryViewSummary[];
   dashboards: readonly SidebarEntry[];
@@ -100,7 +100,7 @@ export function useQueryView({
     types,
     notePaths,
     indexKey,
-    ...(indexKeyNow !== undefined && { indexKeyNow }),
+    indexKeyNow,
     enabled: saved !== null,
     taskRows: true,
   });
@@ -114,8 +114,7 @@ export function useQueryView({
     rows: answered,
     read: editor.read,
     runsBegun: editor.runsBegun,
-    indexKey,
-    ...(indexKeyNow !== undefined && { indexKeyNow }),
+    indexKeyNow,
     enabled: editor.answer?.compiled.taskRows === true,
     scope: [index, path],
     ports: writing,

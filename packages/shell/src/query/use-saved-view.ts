@@ -57,7 +57,6 @@ import {
   type ReadHeldCell,
 } from '@dfai/ui';
 import type { OpenEditors } from '../panes/open-editors.ts';
-import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { errorMessage } from './error-message.ts';
 import type { TickMemory } from './tick-memory.ts';
 import { useCardCreation } from './use-card-creation.ts';
@@ -107,10 +106,9 @@ export function useSavedView({
   indexKey: string;
   /**
    * The index's own key as it stands when asked: a moved card lands at it,
-   * and each run is stamped with it as it begins (#698). `indexKey` stands
-   * for it when left out.
+   * and each run is stamped with it as it begins (#698).
    */
-  indexKeyNow?: () => string;
+  indexKeyNow: () => string;
   onChanged: () => void;
   /** The panes, so a note one of them holds is written through it. */
   editors: OpenEditors;
@@ -211,7 +209,7 @@ export function useSavedView({
     (include: boolean) => setArchivedIn(include ? (note?.path ?? null) : null),
     [note?.path],
   );
-  const keyNow = useIndexKeyNow(indexKeyNow, indexKey);
+  const keyNow = useSteadyCallback(indexKeyNow);
   const shownView = useShownView({
     note,
     index,
@@ -250,7 +248,6 @@ export function useSavedView({
     rows: readRows,
     read: shownView.read,
     runsBegun: shownView.runsBegun,
-    indexKey,
     indexKeyNow: keyNow,
     scope: [index, note?.path],
     write: writeProperties,

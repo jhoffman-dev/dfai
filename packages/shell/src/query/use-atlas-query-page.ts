@@ -40,7 +40,15 @@ export function useAtlasQueryPage({
   onChanged: () => void;
   onOpenNote: (path: string) => void;
 }): Omit<AtlasQueryPanelProps, 'popups'> {
-  const editor = useAtlasQuery({ initialText: '', index: ports.index, types, notePaths, indexKey });
+  const editor = useAtlasQuery({
+    initialText: '',
+    index: ports.index,
+    types,
+    notePaths,
+    indexKey,
+    // Its rows are look-only, so no write waits on a run of it: the news stands for the key.
+    indexKeyNow: () => indexKey,
+  });
   const [layout, setLayout] = useState<ViewLayout>('table');
   const choices = useQueryChoices({
     index: ports.index,

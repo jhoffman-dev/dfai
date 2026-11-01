@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
+import { useSteadyCallback } from '@dfai/ui';
 import type { BoardLane, BoardRow, RowGroup } from '@dfai/domain';
 import {
   landedAsRefreshAsked,
@@ -11,7 +12,6 @@ import {
   type ReadMoment,
   type TableRows,
 } from '@dfai/application';
-import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { errorMessage } from './error-message.ts';
 
 /** Writes a note's properties, settling once the write has landed. */
@@ -80,7 +80,6 @@ export function usePendingCards({
   rows,
   read,
   runsBegun,
-  indexKey,
   indexKeyNow,
   scope,
   write,
@@ -92,12 +91,12 @@ export function usePendingCards({
   read: ReadMoment;
   /** How many runs of the view have begun, now. */
   runsBegun: () => number;
-  indexKey: string;
   /**
-   * The index's own key as it stands when asked, which the view's runs are
-   * stamped with as they begin (#698); `indexKey` stands for it when left out.
+   * The index's own key as it stands when asked (`useIndexKeyNow`): a write
+   * lands at it as its refresh is asked, and the view's runs are stamped
+   * with it as they begin (#698).
    */
-  indexKeyNow?: () => string;
+  indexKeyNow: () => string;
   /** The index and the view the cards are of: when either changes, no card carries over. */
   scope: readonly unknown[];
   write: WriteProperties;
@@ -127,7 +126,7 @@ export function usePendingCards({
   // Read when a move begins, not when the board draws.
   const latest = useRef({ rows, read });
   latest.current = { rows, read };
-  const keyNow = useIndexKeyNow(indexKeyNow, indexKey);
+  const keyNow = useSteadyCallback(indexKeyNow);
   const [first, second] = scope;
   useEffect(() => () => store.setState(NOTHING_MOVING), [store, first, second]);
   const { inTurn, settled } = useCardTurns();
@@ -158,6 +157,12 @@ export function usePendingCards({
             refresh: onChanged,
             readsBegun: runsBegun,
             indexKeyNow: keyNow,
+            // The write was made: it is held as it left it until the index is next ready past it.
+            refreshFailed: (cause) =>
+              console.error(
+                'The index could not be refreshed after a board card was written:',
+                cause,
+              ),
           });
           landedAt.current.set(card, moment);
         },

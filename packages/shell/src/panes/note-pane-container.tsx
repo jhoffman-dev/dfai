@@ -85,8 +85,9 @@ import {
   useSteadyCallback,
 } from '@dfai/ui';
 import { useNote, type NotePorts } from '../notes/use-note.ts';
-import { indexKeyOf, type IndexStatusStore } from '../index/index-status-store.ts';
+import type { IndexStatusStore } from '../index/index-status-store.ts';
 import type { ReadTypesAgain } from '../types/use-types.ts';
+import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
 import { hideOverlay, openPeek, showOverlay } from '../overlay-store.ts';
 import {
@@ -596,11 +597,7 @@ export function useNotePane({
   const { toasts, openNotes } = context;
   const viewToasts = useMemo(() => ({ toasts, panes: openNotes }), [toasts, openNotes]);
   // The index's own key, ahead of `indexKey`'s news: a view's writes land at it (#698).
-  const { indexStatus, vault } = context;
-  const indexKeyNow = useCallback(
-    () => indexKeyOf(indexStatus.getState(), vault),
-    [indexStatus, vault],
-  );
+  const indexKeyNow = useIndexKeyNow(context.indexStatus, context.vault);
   const savedView = useSavedView({
     note: note.open,
     index,
