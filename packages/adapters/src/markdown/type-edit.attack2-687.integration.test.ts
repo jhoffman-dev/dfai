@@ -61,21 +61,15 @@ describe('unread properties survive an edit (attack 2 on #687)', () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  // Pre-existing in the YAML port, not new in #687: the `properties` pair is
-  // re-stringified, so the spacing inside an unread spec is normalised — the
-  // values and comment survive, the bytes the person typed do not. Left failing
-  // for issue #697 (rewriting a type's properties map changes the spacing of
-  // entries it didn't touch); it flips when that is fixed.
-  it.fails(
-    'keeps the bytes of an unread spec, spacing and all, when another property moves',
-    async () => {
-      const unread = "  author:\n    kind: relation\n    targets:   'person'   # who wrote it\n";
-      const text = `---\nname: book\nproperties:\n  rating: number\n${unread}  pages: number\n---\n`;
-      const { save, before } = await opened(text);
-      const written = await save(moveProperty(before, { key: 'pages', to: 0 }));
-      expect(written).toContain(unread);
-    },
-  );
+  // #697: the `properties` map is rewritten entry by entry, so an unread spec
+  // the edit does not reach keeps the bytes the person typed.
+  it('keeps the bytes of an unread spec, spacing and all, when another property moves', async () => {
+    const unread = "  author:\n    kind: relation\n    targets:   'person'   # who wrote it\n";
+    const text = `---\nname: book\nproperties:\n  rating: number\n${unread}  pages: number\n---\n`;
+    const { save, before } = await opened(text);
+    const written = await save(moveProperty(before, { key: 'pages', to: 0 }));
+    expect(written).toContain(unread);
+  });
 
   it('keeps a flow-style map’s unread entry when a property is added under its name', async () => {
     const text = lines(
