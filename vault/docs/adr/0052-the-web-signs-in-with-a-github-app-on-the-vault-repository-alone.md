@@ -93,28 +93,61 @@ Secure; SameSite=Strict`. The name is Firebase Hosting's: it strips
      redeems anything without the code and the client secret.
 
 4. **Refresh and rotation.** The domain's session model decides, with an
-   injected clock: a token is `fresh` until 5 minutes before it expires,
-   then `refresh-due` (refreshed before it is sent; sent as it is if only the
-   network failed), then `expired` (never sent). Refresh is lazy, on the
-   next request, and **single-flight**: callers in one tab share the one in
-   flight, and **Web Locks** (`dfai-auth-refresh`) serialise tabs, because a
-   refresh token is spent by its use and two tabs spending one at once
-   would sign one of them out. A page load restores the session by one
-   refresh. The lifetime is counted from before each call, never after.
+   injected clock — in the browser the page's monotonic clock
+   (`performance.timeOrigin + performance.now()`), so a wall clock set back
+   cannot keep a token past its expiry: a token is `fresh` until 5 minutes
+   before it expires, then `refresh-due` (refreshed before it is sent; sent
+   as it is if only the network failed), then `expired` (never sent).
+   Refresh is lazy, on the next request, and **single-flight**: callers in
+   one tab share the one in flight. Tabs are serialised by **Web Locks**
+   (`dfai-auth-refresh`), because a refresh token is spent by its use: two
+   tabs sending one at once get one grant and one `bad_refresh_token`.
+   - **Where a browser has no Web Locks** (Safari before 15.4), a
+     **localStorage lock** stands in (`storage-lock.ts`): a key naming its
+     holder and when the hold lapses (30 s, so a tab closed mid-refresh
+     cannot keep the rest out); a tab writes a free or lapsed key, waits
+     25 ms and reads it back (the later of two near-simultaneous writes
+     wins); others wait for the `storage` event or poll every 100 ms. It
+     narrows the race, it does not close it. Chosen over BroadcastChannel
+     leader election because it needs no tab to stay alive as leader and
+     works on the same Safari versions that lack Web Locks.
+   - **What gets through is retried.** A refresh refused as revoked waits
+     300 ms and is tried once more, by which time the other tab's grant has
+     put its replacement in the cookie; revoked twice is revoked. The
+     function therefore **does not clear the cookie on a revoked refresh**:
+     it cannot know whether the cookie still holds the token it was sent,
+     or one another tab has just put there, and clearing it threw the
+     winner's away (PR #704's attack). A dead refresh token left in the
+     cookie refreshes nothing; a sign-in or sign-out replaces it.
+   - A page load restores the session by one refresh. The lifetime is
+     counted from before each call, never after.
 
 5. **Revocation and sign-out.**
    - **Sign out** revokes the access token at GitHub and clears the cookie.
-     It first waits out a refresh or restore in flight, so the token revoked
-     is the newest and no late `Set-Cookie` puts the cookie back. GitHub has
-     no call to revoke one refresh token alone; cleared from the only place
-     it was kept, it is unreachable.
+     Once it begins, no refresh starts in that tab; it waits out a refresh
+     or restore in flight, so the token revoked is the newest (a restore
+     that lands then is revoked without the app ever showing), and its call
+     to the function runs **under the refresh lock**, so another tab's
+     refresh cannot land after it and set the cookie again. GitHub has no
+     call to revoke one refresh token alone; cleared from the only place it
+     was kept, it is unreachable.
+   - **Other tabs** are told on a BroadcastChannel (`dfai-auth`) and end
+     their sessions too, showing the sign-in screen. Their access tokens
+     are **dropped, not revoked**: each tab revoking its own would clear
+     the cookie again, and could clear a new sign-in's; a dropped token is
+     never sent again and expires within 8 hours. A browser without
+     BroadcastChannel tells nobody, and those tabs end at their next
+     refresh, which finds no cookie.
    - **The person removes the App** (or narrows it, or revokes its
      authorization) on GitHub: the next refresh is refused
-     (`bad_refresh_token`), the function clears the cookie, and the web
-     build signs out with _"GitHub no longer lets DFAI reach your vault"_.
-     A 401 from the API on a request (#664) does the same, but only for the
-     token the session still holds: a slow answer to a request sent with a
-     replaced token ends nothing.
+     (`bad_refresh_token`) twice and the web build signs out with _"GitHub
+     no longer lets DFAI reach your vault"_. The cookie is left as it is
+     (above).
+   - **A 401 from the API** on a request (#664) is first met with one
+     refresh, since it may mean only that this clock ran slow; a refused
+     refresh ends the session as above, an unreachable one ends it with the
+     network message. Only the token the session still holds counts: a slow
+     answer to a request sent with a replaced token ends nothing.
    - **"Sign out everywhere"** is GitHub's: remove the App's authorization.
 
 6. **CSRF and the callback.**
@@ -125,7 +158,8 @@ Secure; SameSite=Strict`. The name is Firebase Hosting's: it strips
      still restores from the cookie, so a crafted link cannot sign out
      someone signed in. A pending sign-in older than 10 minutes is stale.
      The callback is read on `/auth/callback` alone, and its query is taken
-     out of the address bar and history before the code is redeemed.
+     out of the address bar and history before the code is redeemed; on any
+     other page the same parameters are taken out and redeem nothing.
    - **PKCE (S256)**, which GitHub supports for GitHub Apps: the verifier,
      32 random bytes, never leaves the tab until the exchange; a code read
      from a log, a Referer or history redeems nothing without it.
@@ -133,7 +167,9 @@ Secure; SameSite=Strict`. The name is Firebase Hosting's: it strips
      (configured as `DFAI_WEB_ORIGIN`) and a JSON body, which a cross-site
      form cannot send without a preflight; with `SameSite=Strict` the cookie
      does not travel on a cross-site request at all. Bodies are capped at
-     4 KB. Every answer is `Cache-Control: no-store`.
+     4 KB, GitHub's answers at 16 KB, and an error name GitHub sends is
+     matched only against its own list (no inherited names such as
+     `__proto__`). Every answer is `Cache-Control: no-store`.
 
 ## Threats
 
@@ -146,7 +182,8 @@ Secure; SameSite=Strict`. The name is Firebase Hosting's: it strips
 | Code leaked by Referer or history      | `Referrer-Policy: no-referrer` (#662); the callback query is removed before the exchange; PKCE.                                                                                                                                                                                                                                                                                                        |
 | A token reaching more than the vault   | A GitHub App, Contents only, one selected repository; #664 refuses an installation reaching more than one.                                                                                                                                                                                                                                                                                             |
 | Client secret leaked                   | In Secret Manager, read only by the function; never in the bundle, the repo, a log or an answer. Rotate it in the App's settings.                                                                                                                                                                                                                                                                      |
-| Two tabs spending one refresh token    | Web Locks; where a browser lacks them (Safari before 15.4), one tab may be signed out, and signing in again puts it right.                                                                                                                                                                                                                                                                             |
+| Two tabs spending one refresh token    | Web Locks; where a browser lacks them, a localStorage lock; what still gets through is retried once with the newer cookie, which a refusal no longer clears. **Left:** a retry that runs before the other tab's answer has landed (over 300 ms apart) is refused twice and that tab is told its access was removed; signing in again puts it right.                                                    |
+| A sign-out undone by another tab       | No refresh starts once a sign-out has begun; the sign-out's call runs under the refresh lock, after any refresh in flight; the other tabs end their sessions on the broadcast. **Left:** without Web Locks, the localStorage lock's race.                                                                                                                                                              |
 | The function or GitHub down            | A due-but-valid token is still used; at start the screen says the service could not be reached. Nothing is lost: no note goes through it.                                                                                                                                                                                                                                                              |
 | A hosting deploy reaching another site | Unchanged from #662: `tools/ci/web-hosting.ts` holds firebase.json to the `web` target and now to exactly one functions entry (`dfai-auth`, no hooks) and one function rewrite, first.                                                                                                                                                                                                                 |
 | A preview channel (`--pr-n-…` origins) | Sign-in refuses it (its `Origin` is not the site's, and the callback is not registered there). Previews show the sign-in screen only.                                                                                                                                                                                                                                                                  |
