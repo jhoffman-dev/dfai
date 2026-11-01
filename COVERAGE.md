@@ -58,6 +58,8 @@ rule tested**. Each entry gets its own threshold in `vitest.config.ts` as it lan
 | `application/skills`        | Writes and trashes skill folders, refusing a stale SKILL.md; asks Claude for a draft.         | #169    |
 | `domain/kindle`             | Reads Amazon's notebook page into highlights; a wrong rule writes junk or drops highlights.   | #508    |
 | `*/kindle`                  | Syncs Kindle highlights into source notes by itself; the Amazon session stays in Rust.        | #508    |
+| `domain/auth`               | When a GitHub token is sent, refreshed or refused; reads GitHub's callback against its state. | #663    |
+| `*/auth`, `auth-function`   | The web sign-in: holds the App's secret and the refresh cookie; every refusal and revocation. | #663    |
 
 `src-tauri/src/kindle*` (#508) holds the Amazon session's cookies, and is held to
 named tests the same way: no page or failure handed to the webview carries a

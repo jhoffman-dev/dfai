@@ -18,6 +18,9 @@ playwright-report/
 design/out/
 *.orig
 
+# The sign-in function's build, made before a deploy (#663).
+apps/auth-function/lib/
+
 # The Firebase CLI's deploy cache and logs (#662).
 .firebase/
 firebase-debug*.log

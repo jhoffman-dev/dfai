@@ -8,6 +8,7 @@ export * from './api/index.ts';
 export * from './archive/index.ts';
 export * from './artifacts/index.ts';
 export * from './assistant/index.ts';
+export * from './auth/index.ts';
 export * from './automations/index.ts';
 export * from './bookmarks/index.ts';
 export * from './capture/index.ts';

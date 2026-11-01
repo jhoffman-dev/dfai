@@ -12,6 +12,7 @@ export {
 export { webWorkerNoteDeriver } from './index/web-worker-note-deriver.ts';
 export { browserIdle } from './embeddings/browser-idle.ts';
 export { webWorkerNoteChunker } from './embeddings/web-worker-note-chunker.ts';
+export * from './auth/index.ts';
 export * from './chat/index.ts';
 export { gitCommands } from './sync/git-commands.ts';
 export type { RunGit } from './sync/git-commands.ts';
