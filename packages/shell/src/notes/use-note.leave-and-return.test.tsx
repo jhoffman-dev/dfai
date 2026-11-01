@@ -99,7 +99,7 @@ function heldWritesVault() {
 /** A pane on the held vault that keeps what it could not save and is handed it back, as the app does. */
 function paneKeepingStranded(vault: ReturnType<typeof heldWritesVault>) {
   const kept = new Map<VaultPath, StrandedEdit>();
-  return renderHook(
+  const view = renderHook(
     ({ path }: { path: VaultPath }) =>
       useNote({
         ports: { fs: vault.fs, markdown: remarkMarkdown },
@@ -112,6 +112,7 @@ function paneKeepingStranded(vault: ReturnType<typeof heldWritesVault>) {
       }),
     { initialProps: { path: NOTE as VaultPath } },
   );
+  return Object.assign(view, { kept });
 }
 
 describe('a pane back on a note before the write it made on the way out has landed (#727)', () => {
@@ -216,20 +217,28 @@ describe('a pane back on a note before the write it made on the way out has land
       saveError: expect.any(String),
     });
 
-    // "Keep mine" reads the file before it writes; held, the pane leaves and
-    // comes back first, and the read on the way back is answered first.
-    vault.holdReads();
+    // "Keep mine" is held on its way to disk while the pane leaves, writing
+    // the same typing on the way out, and comes back.
+    vault.hold();
     act(() => view.result.current.overwrite());
     await settle();
     view.rerender({ path: OTHER });
     await settle();
     view.rerender({ path: NOTE });
     await settle();
-    while (vault.answerNewestRead()) await settle();
+    vault.release();
+    await settle();
     await settle();
 
     expect(vault.contents()).toBe('Mine.\n');
-    expect(view.result.current.state).toMatchObject({ kind: 'ready', doc: docOf('Mine.\n') });
+    // The write on the way out starts from "Keep mine" rather than being
+    // refused for it and handing the typing back unsaved.
+    expect(view.kept.size).toBe(0);
+    expect(view.result.current.state).toMatchObject({
+      kind: 'ready',
+      dirty: false,
+      doc: docOf('Mine.\n'),
+    });
     act(() => view.result.current.changeDoc(docOf('Mine.\n\nAnd more.\n')));
     act(() => view.result.current.save());
     await settle();
