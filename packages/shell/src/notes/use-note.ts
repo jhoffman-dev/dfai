@@ -248,7 +248,11 @@ export function useNote({
    * coarse clock the two can share a time (#245), so which came later is
    * told by `step`, which counts each landing and each read begun, rather
    * than by the time. `landedIn` is the vault it landed in: a note of the
-   * same name in the next vault is another note.
+   * same name in the next vault is another note. `pending` is, by note, the
+   * queue as it stood once the pane's write on the way out of that note was
+   * put on it: a read of the note waits on that, and on no other note's.
+   * A save still out when the pane leaves is always followed by one, as the
+   * note is still unsaved until it lands.
    */
   const writes = useRef<{
     queue: Promise<unknown>;
@@ -256,7 +260,15 @@ export function useNote({
     landedIn: string | null;
     landedAt: number;
     step: number;
-  }>({ queue: Promise.resolve(), landed: null, landedIn: null, landedAt: 0, step: 0 });
+    pending: Map<string, Promise<unknown>>;
+  }>({
+    queue: Promise.resolve(),
+    landed: null,
+    landedIn: null,
+    landedAt: 0,
+    step: 0,
+    pending: new Map(),
+  });
 
   /**
    * Where each note this pane followed through a move went, by the key it
@@ -312,8 +324,16 @@ export function useNote({
     }
     setFailure(null);
     setSaveError(null);
-    const readAt = ++writes.current.step;
-    openNote({ fs: ports.fs, markdown: ports.markdown, path })
+    // Behind the pane's own writes of this note: one still out — the save on
+    // the way out of it, before coming straight back — has the typing, and a
+    // read begun beside it is the text from before it, shown for the next save
+    // to be refused over and "Keep mine" to write over the typing (#727).
+    let readAt = 0;
+    (writes.current.pending.get(opening) ?? Promise.resolve())
+      .then(() => {
+        readAt = ++writes.current.step;
+        return openNote({ fs: ports.fs, markdown: ports.markdown, path });
+      })
       .then((opened) => {
         if (cancelled || holding.current !== opening) return;
         // Typing that landed while this read was in flight belongs to the
@@ -593,6 +613,7 @@ export function useNote({
       const leavingWrite = writes.current.queue.then(run, run);
       // Handled just below; the queue only has to know it is over.
       writes.current.queue = leavingWrite.catch(() => undefined);
+      writes.current.pending.set(noteKey(vault, leaving.path), writes.current.queue);
       void leavingWrite.then(
         // Landed: the work handed back, if any, is on disk now, and a pane
         // still showing the note is behind the file until it re-reads it.
