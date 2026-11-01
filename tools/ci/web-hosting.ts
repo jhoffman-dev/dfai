@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { minimatch } from 'minimatch';
 
 /*
@@ -5,6 +7,7 @@ import { minimatch } from 'minimatch';
  * ever reach its own site. The Firebase project dailyflowai-app has a default
  * site, dailyflowai-app, serving something else; the web build goes to the
  * site dailyflowai-web through the hosting target `web`, and nowhere else.
+ * The deploy workflow's own checks are in web-hosting-workflow.ts.
  *
  * Each check returns the problems it found, worded for a failing test.
  */
@@ -12,10 +15,6 @@ import { minimatch } from 'minimatch';
 export const PROJECT = 'dailyflowai-app';
 export const TARGET = 'web';
 export const SITE = 'dailyflowai-web';
-export const LIVE_ENVIRONMENT = 'web-live';
-
-/** The command each deploy job runs before it deploys. */
-export const HOSTING_CHECK = 'pnpm exec vitest run tools/ci/web-hosting.test.ts';
 
 interface HostingEntry {
   readonly target?: unknown;
@@ -65,24 +64,76 @@ export function firebasercProblems(rc: {
   return problems;
 }
 
+/** The `ignore` firebase.json must carry: dotfiles, and everything in a dot-folder. */
+export const UPLOAD_IGNORE: readonly string[] = ['**/.*', '**/.*/**'];
+
 /** What firebase-tools' listFiles always leaves out, before the config's own `ignore`. */
 const CLI_IGNORES = ['**/firebase-debug.log', '**/firebase-debug.*.log', '.firebase/*'];
 
 /**
+ * The list is held to UPLOAD_IGNORE exactly rather than interpreted: glob
+ * drops a `!` pattern from an ignore list where minimatch would negate it,
+ * and a list nobody has checked against firebase-tools is a guess.
+ */
+export function ignoreProblems(ignore: readonly string[]): string[] {
+  const problems = ignore
+    .filter((pattern) => pattern.startsWith('!'))
+    .map((pattern) => `ignore pattern "${pattern}" is dropped by firebase-tools (no negations)`);
+  if (JSON.stringify(ignore) !== JSON.stringify(UPLOAD_IGNORE))
+    problems.push(`ignore is ${JSON.stringify(ignore)}, not ${JSON.stringify(UPLOAD_IGNORE)}`);
+  return problems;
+}
+
+/** One ignore pattern as glob's ignore list reads it: `x/**` covers `x` too. */
+const ignoredBy = (pattern: string) => (path: string) =>
+  minimatch(path, pattern, { dot: true }) ||
+  (pattern.endsWith('/**') && minimatch(path, pattern.slice(0, -3), { dot: true }));
+
+/**
  * The files a deploy uploads, of `paths` (relative to `public`, `/`-separated),
- * matched as firebase-tools does: glob's ignore list, which is minimatch with
- * `dot: true`. A pattern skips a file, not a folder's contents, unless it
- * reaches inside the folder — `**\/.*` alone uploads `.vite/x.json`.
+ * matched as firebase-tools' listFiles does on Linux: glob with `dot: true`,
+ * case-sensitive, negations dropped. A pattern skips a file, not a folder's
+ * contents, unless it reaches inside the folder: `**\/.*` alone uploads `.vite/x.json`.
  */
 export function uploadedFiles(paths: readonly string[], ignore: readonly string[]): string[] {
-  const patterns = [...CLI_IGNORES, ...ignore];
-  return paths.filter(
-    (path) => !patterns.some((pattern) => minimatch(path, pattern, { dot: true })),
-  );
+  const patterns = [...CLI_IGNORES, ...ignore.filter((pattern) => !pattern.startsWith('!'))];
+  return paths.filter((path) => !patterns.some((pattern) => ignoredBy(pattern)(path)));
 }
 
 /** A file under a dot-folder, or a dotfile: never served. */
 export const isDotPath = (path: string) => path.split('/').some((part) => part.startsWith('.'));
+
+/** Every entry under `root`, links not followed: its files and its symlinks, `/`-separated. */
+export function walkPublic(root: string): { files: string[]; symlinks: string[] } {
+  const files: string[] = [];
+  const symlinks: string[] = [];
+  const visit = (dir: string, prefix: string) => {
+    for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+      const path = `${prefix}${entry.name}`;
+      if (entry.isSymbolicLink()) symlinks.push(path);
+      else if (entry.isDirectory()) visit(join(dir, entry.name), `${path}/`);
+      else files.push(path);
+    }
+  };
+  visit('', '');
+  return { files, symlinks };
+}
+
+/**
+ * What is wrong with uploading `root` under `ignore`. firebase-tools follows
+ * symlinks, so a link can ship a dot-folder under a plain name or a file from
+ * outside the build: any symlink at all is refused.
+ */
+export function publicDirProblems(root: string, ignore: readonly string[]): string[] {
+  const { files, symlinks } = walkPublic(root);
+  return [
+    ...ignoreProblems(ignore),
+    ...symlinks.map((path) => `"${path}" is a symlink, which firebase-tools would follow`),
+    ...uploadedFiles(files, ignore)
+      .filter(isDotPath)
+      .map((path) => `"${path}" would be uploaded`),
+  ];
+}
 
 const directives = (policy: string) =>
   policy
@@ -112,95 +163,4 @@ export function cspHeaderProblems(header: string, meta: string): string[] {
   if (!served.has("frame-ancestors 'none'"))
     problems.push("the CSP header lacks frame-ancestors 'none'");
   return problems;
-}
-
-const withoutComments = (text: string) =>
-  text
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('#'))
-    .join('\n');
-
-/** `firebase deploy`, `firebase-tools deploy`, `firebase hosting:channel:deploy`. */
-const DEPLOY_COMMAND =
-  /\bfirebase(?:-tools)?(?:@\S+)?\s+(deploy|hosting:channel:deploy)\b[^\n;&|]*/g;
-
-function commandProblems(code: string): string[] {
-  const problems: string[] = [];
-  for (const [command, verb] of code.matchAll(DEPLOY_COMMAND)) {
-    // `deploy` scopes by service (`hosting:web`); a channel deploy by target name alone.
-    const only = verb === 'deploy' ? `hosting:${TARGET}` : TARGET;
-    if (!new RegExp(`--only[ =]${only}(?![\\w:,-])`).test(command))
-      problems.push(`"${command.trim()}" is not --only ${only}`);
-  }
-  for (const [flag, project] of code.matchAll(/(?:--project|\s-P)[ =](\S+)/g)) {
-    if (project !== PROJECT)
-      problems.push(`"${flag.trim()}" names a project other than ${PROJECT}`);
-  }
-  return problems;
-}
-
-/** Each job under `jobs:`, by name, as its text. */
-function jobsOf(code: string): Map<string, string> {
-  const body = code.split(/^jobs:\s*$/m)[1] ?? '';
-  const jobs = new Map<string, string>();
-  for (const part of body.split(/^(?= {2}[\w-]+:\s*$)/m)) {
-    const name = /^ {2}([\w-]+):/.exec(part)?.[1];
-    if (name) jobs.set(name, part);
-  }
-  return jobs;
-}
-
-function deployJobProblems(name: string, job: string): string[] {
-  const problems: string[] = [];
-  const deployAt = job.indexOf('action-hosting-deploy');
-  const checkAt = job.indexOf(HOSTING_CHECK);
-  if (checkAt < 0 || checkAt > deployAt)
-    problems.push(`job "${name}" deploys without first running ${HOSTING_CHECK}`);
-  if (
-    /^\s*channelId:\s*live\s*$/m.test(job) &&
-    !new RegExp(`^ {4}environment:\\s*${LIVE_ENVIRONMENT}\\s*$`, 'm').test(job)
-  )
-    problems.push(`job "${name}" deploys live outside the ${LIVE_ENVIRONMENT} environment`);
-  for (const step of job.split(/\n\s*- /).filter((s) => s.includes('action-hosting-deploy'))) {
-    if (!new RegExp(`\\btarget:\\s*${TARGET}\\s*$`, 'm').test(step))
-      problems.push(`a deploy step in "${name}" does not name target: ${TARGET}`);
-    if (!new RegExp(`\\bprojectId:\\s*${PROJECT}\\s*$`, 'm').test(step))
-      problems.push(`a deploy step in "${name}" does not name projectId: ${PROJECT}`);
-  }
-  return problems;
-}
-
-/** Where a secret may appear: handed to the deploy action, or asked whether it is set. */
-const SECRET_USES = [
-  /^\s*firebaseServiceAccount:\s*\$\{\{\s*secrets\.\w+\s*\}\}\s*$/,
-  /^\s*repoToken:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}\s*$/,
-  /^\s*\w+:\s*\$\{\{\s*secrets\.\w+\s*!=\s*''\s*\}\}\s*$/,
-];
-
-/**
- * A secret anywhere else (a job's env, a step's env, a `run`) reaches code
- * other than the deploy action: `pnpm install` and the build run third-party code.
- */
-function secretUseProblems(code: string): string[] {
-  return code
-    .split('\n')
-    .filter((line) => line.includes('secrets.') && !SECRET_USES.some((use) => use.test(line)))
-    .map((line) => `"${line.trim()}" hands a secret to more than the deploy action`);
-}
-
-/**
- * The workflow: every deploy command limited to the `web` target and the one
- * project; every job that deploys runs the hosting checks first, names the
- * project and target, and deploys live only from the live environment; and a
- * secret reaches the deploy action alone.
- */
-export function workflowProblems(workflow: string): string[] {
-  const code = withoutComments(workflow);
-  const deployJobs = [...jobsOf(code)].filter(([, job]) => job.includes('action-hosting-deploy'));
-  return [
-    ...commandProblems(code),
-    ...(deployJobs.length === 0 ? ['the workflow never uses action-hosting-deploy'] : []),
-    ...deployJobs.flatMap(([name, job]) => deployJobProblems(name, job)),
-    ...secretUseProblems(code),
-  ];
 }

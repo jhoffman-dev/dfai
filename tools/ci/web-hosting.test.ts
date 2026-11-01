@@ -1,16 +1,22 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { minimatch } from 'minimatch';
 import { describe, expect, it } from 'vitest';
 import {
   cspHeaderProblems,
   firebaseJsonProblems,
   firebasercProblems,
-  isDotPath,
+  ignoreProblems,
   metaCsp,
+  publicDirProblems,
   uploadedFiles,
-  workflowProblems,
 } from './web-hosting.ts';
+import {
+  actionProblems,
+  otherWorkflowProblems,
+  scriptProblems,
+  workflowProblems,
+} from './web-hosting-workflow.ts';
 
 /*
  * The web build's hosting config (#662), as committed, and the checks that
@@ -31,8 +37,19 @@ interface Hosting {
 
 const firebaseJson = JSON.parse(read('firebase.json')) as { hosting: Hosting[] };
 const firebaserc = JSON.parse(read('.firebaserc'));
-const workflow = read('.github/workflows/web-hosting.yml');
 const indexHtml = read('apps/web/index.html');
+
+const WORKFLOWS = '.github/workflows';
+const workflowFiles = readdirSync(join(ROOT, WORKFLOWS)).filter((file) => /\.ya?ml$/.test(file));
+
+const packageFiles = [
+  'package.json',
+  ...['apps', 'packages'].flatMap((dir) =>
+    readdirSync(join(ROOT, dir))
+      .map((name) => `${dir}/${name}/package.json`)
+      .filter((path) => existsSync(join(ROOT, path))),
+  ),
+];
 
 const [web] = firebaseJson.hosting;
 const header = (source: string, key: string) =>
@@ -41,10 +58,6 @@ const rewritten = (path: string) =>
   (web?.rewrites ?? []).some((rule) => minimatch(path, rule.source));
 
 const DIST = join(ROOT, 'apps/web/dist');
-const distFiles = () =>
-  readdirSync(DIST, { recursive: true, encoding: 'utf8' })
-    .filter((path) => statSync(join(DIST, path)).isFile())
-    .map((path) => path.split(sep).join('/'));
 
 describe('the web build hosting config, as committed', () => {
   it('deploys only through the web target', () => {
@@ -52,8 +65,26 @@ describe('the web build hosting config, as committed', () => {
     expect(firebasercProblems(firebaserc)).toEqual([]);
   });
 
-  it('deploys only the web target, after the checks, with the key in the deploy action alone', () => {
-    expect(workflowProblems(workflow)).toEqual([]);
+  it('deploys with exactly the allowed workflow', () => {
+    expect(workflowProblems(read(`${WORKFLOWS}/web-hosting.yml`))).toEqual([]);
+  });
+
+  it('uses only pinned, allowed actions in every workflow', () => {
+    expect(workflowFiles.length).toBeGreaterThan(1);
+    expect(workflowFiles.flatMap((file) => actionProblems(read(`${WORKFLOWS}/${file}`)))).toEqual(
+      [],
+    );
+  });
+
+  it('touches Firebase from no other workflow, and from no package script', () => {
+    const others = workflowFiles.filter((file) => file !== 'web-hosting.yml');
+    expect(others.length).toBeGreaterThan(0);
+    expect(
+      others.flatMap((file) => otherWorkflowProblems(file, read(`${WORKFLOWS}/${file}`))),
+    ).toEqual([]);
+    expect(packageFiles.flatMap((file) => scriptProblems(file, JSON.parse(read(file))))).toEqual(
+      [],
+    );
   });
 
   it('serves the web build as a single-page app, but lets a missing asset 404', () => {
@@ -82,7 +113,8 @@ describe('the web build hosting config, as committed', () => {
     expect(web?.headers.map((rule) => rule.source)).toEqual(['**', '/assets/**']);
   });
 
-  it('uploads no dotfile and nothing inside a dot-folder', () => {
+  it('ignores dotfiles and dot-folders, with the one list checked against firebase-tools', () => {
+    expect(ignoreProblems(web?.ignore ?? [])).toEqual([]);
     const listing = [
       'index.html',
       'assets/index-abc.js',
@@ -99,11 +131,10 @@ describe('the web build hosting config, as committed', () => {
   });
 
   it.skipIf(!existsSync(DIST) && process.env.WEB_DIST_REQUIRED !== '1')(
-    'uploads none of the built dotfiles (the deploy jobs run this after the build)',
+    'uploads no built dotfile and holds no symlink (the deploy jobs run this after the build)',
     () => {
-      const files = distFiles();
-      expect(files).toContain('index.html');
-      expect(uploadedFiles(files, web?.ignore ?? []).filter(isDotPath)).toEqual([]);
+      expect(readdirSync(DIST)).toContain('index.html');
+      expect(publicDirProblems(DIST, web?.ignore ?? [])).toEqual([]);
     },
   );
 });
@@ -113,6 +144,14 @@ describe('the file listing', () => {
     expect(uploadedFiles(['.vite/node-builtins.json', '.env'], ['**/.*'])).toEqual([
       '.vite/node-builtins.json',
     ]);
+  });
+
+  it.each([
+    ['a negation', ['**/.*', '**/.*/**', '!index.html'], 'dropped by firebase-tools'],
+    ['a shorter list', ['**/.*'], 'not ["**/.*","**/.*/**"]'],
+    ['another order', ['**/.*/**', '**/.*'], 'not ["**/.*","**/.*/**"]'],
+  ])('refuses an ignore list with %s', (_what, ignore, problem) => {
+    expect(ignoreProblems(ignore)).toContainEqual(expect.stringContaining(problem));
   });
 });
 
@@ -211,104 +250,5 @@ describe('the CSP header', () => {
     const served =
       "script-src  'self';connect-src 'self'; frame-src 'none'; frame-ancestors 'none';";
     expect(cspHeaderProblems(served, meta)).toEqual([]);
-  });
-});
-
-describe('the workflow', () => {
-  const CHECK = '      - run: pnpm exec vitest run tools/ci/web-hosting.test.ts\n';
-  const DEPLOY = '      - uses: FirebaseExtended/action-hosting-deploy@abc\n        with:\n';
-  const KEY = '          firebaseServiceAccount: ${{ secrets.KEY }}\n';
-  const job = (name: string, body: string) => `  ${name}:\n    runs-on: ubuntu-latest\n${body}`;
-  const preview = job(
-    'preview',
-    `    steps:\n${CHECK}${DEPLOY}${KEY}          projectId: dailyflowai-app\n          target: web\n`,
-  );
-  const live = job(
-    'live',
-    `    environment: web-live\n    steps:\n${CHECK}${DEPLOY}${KEY}          projectId: dailyflowai-app\n          target: web\n          channelId: live\n`,
-  );
-  const good = `jobs:\n${preview}${live}`;
-  const withRun = (command: string) =>
-    `${good}${job('extra', `    steps:\n      - run: ${command}\n`)}`;
-
-  it('passes a preview job and a live job in its environment, each checking first', () => {
-    expect(workflowProblems(good)).toEqual([]);
-  });
-
-  it('ignores comments', () => {
-    expect(workflowProblems(`# never a bare firebase deploy\n${good}`)).toEqual([]);
-  });
-
-  it.each([
-    ['a bare firebase deploy', 'npx firebase deploy', 'is not --only hosting:web'],
-    ['a bare firebase-tools deploy', 'npx firebase-tools deploy', 'is not --only hosting:web'],
-    ['a pinned firebase-tools deploy', 'npx firebase-tools@15 deploy', 'is not --only hosting:web'],
-    ['every hosting site', 'firebase deploy --only hosting', 'is not --only hosting:web'],
-    ['another target', 'firebase deploy --only hosting:web-old', 'is not --only hosting:web'],
-    ['the web target and functions', 'firebase deploy --only hosting:web,functions', 'is not'],
-    [
-      'a channel deploy of every target',
-      'firebase hosting:channel:deploy pr1',
-      'is not --only web',
-    ],
-    [
-      'another project',
-      'firebase deploy --only hosting:web --project gcal-timeblocking',
-      'names a project other than dailyflowai-app',
-    ],
-    [
-      'another project by alias',
-      'firebase deploy --only hosting:web -P student-games-be188',
-      'names a project other than dailyflowai-app',
-    ],
-  ])('fails on %s', (_what, command, problem) => {
-    expect(workflowProblems(withRun(command))).toEqual([expect.stringContaining(problem)]);
-  });
-
-  it('passes deploys limited to the web target and the project', () => {
-    expect(
-      workflowProblems(
-        withRun(
-          'firebase deploy --only hosting:web --project dailyflowai-app && firebase hosting:channel:deploy pr1 --only web',
-        ),
-      ),
-    ).toEqual([]);
-  });
-
-  it.each([
-    ['a deploy job that does not check first', preview.replace(CHECK, ''), 'without first running'],
-    ['a deploy job that checks after', preview.replace(CHECK, '') + CHECK, 'without first running'],
-    ['a step without a target', preview.replace('          target: web\n', ''), 'target: web'],
-    ['a step with another target', preview.replace('target: web', 'target: site'), 'target: web'],
-    [
-      'a step without the project',
-      preview.replace('          projectId: dailyflowai-app\n', ''),
-      'projectId',
-    ],
-    [
-      'a live deploy outside its environment',
-      live.replace('    environment: web-live\n', ''),
-      'web-live',
-    ],
-    [
-      'the key in a job env',
-      preview.replace('    steps:\n', '    env:\n      KEY: ${{ secrets.KEY }}\n    steps:\n'),
-      'hands a secret',
-    ],
-    [
-      'the key in the build step env',
-      preview.replace(CHECK, `${CHECK}        env:\n          KEY: \${{ secrets.KEY }}\n`),
-      'hands a secret',
-    ],
-  ])('fails on %s', (_what, changed, problem) => {
-    // Each case changes one job; the other stays as it should be.
-    const text = `jobs:\n${changed.includes('  live:') ? preview : live}${changed}`;
-    expect(workflowProblems(text)).toEqual([expect.stringContaining(problem)]);
-  });
-
-  it('fails when nothing deploys', () => {
-    expect(workflowProblems('jobs:\n  build:\n    steps:\n      - run: echo\n')).toEqual([
-      'the workflow never uses action-hosting-deploy',
-    ]);
   });
 });

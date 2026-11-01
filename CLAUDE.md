@@ -307,14 +307,21 @@ together. `.github/workflows/web-hosting.yml` builds and deploys it, apart from
 from the `web-live` environment (job `live`). Both skip green until the secret
 `FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP` exists, and both run
 `tools/ci/web-hosting.test.ts` on the config and the built files before they
-deploy. That test fails on a config or workflow that could reach another site or
-project, a bare `firebase deploy`, a dotfile in the upload, or the key anywhere
-but the deploy action. It cannot stop a pull request that edits the workflow
-and the test together: its preview deploy runs that branch's copy of both, and
-the key can deploy to every site in the project. Only review, and the `web-live`
-environment's rules for the live deploy, cover that. Deploy by hand only with
+deploy. That test fails on a config that could reach another site or project, a
+dotfile or symlink in the upload, or an `ignore` other than the one checked
+against firebase-tools. The workflow is held to an **allowlist**, not searched
+for bad patterns: `tools/ci/web-hosting-workflow.ts` describes it job for job and
+step for step (parsed, anchors resolved), the key may appear only in the deploy
+action's input and the is-it-set check, every workflow may use only the
+SHA-pinned actions listed there (a new action in any workflow adds its pin
+there), and no other workflow or package script may touch Firebase. Changing
+web-hosting.yml means changing that file too. None of it stops a pull request
+that edits the workflow and the checks together: its preview deploy runs that
+branch's copy of both. A Hosting Admin key is project-wide, so it can reach the
+default site too; IAM does not protect that site. Review, the `web-live`
+environment's rules and these checks do. Deploy by hand only with
 `firebase deploy --only hosting:web`. A later functions codebase (#663) widens
-that test on purpose.
+the checks on purpose.
 
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and

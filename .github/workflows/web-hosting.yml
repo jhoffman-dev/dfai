@@ -12,8 +12,9 @@ name: web-hosting
 # A pull request's run deploys with that pull request's config before `gate`
 # has looked at it, so each job runs the hosting checks
 # (tools/ci/web-hosting.test.ts) on the config and the built files before it
-# deploys. They fail on a bare `firebase deploy` here, on a target or site
-# other than `web`, and on a dotfile in the upload.
+# deploys. They hold this file, parsed, to the allowlist in
+# tools/ci/web-hosting-workflow.ts, job for job and step for step: a change
+# here changes that file too.
 #
 # The deploy key reaches only the action that deploys: never the job's env,
 # where `pnpm install` and the build (third-party code) could read it.
