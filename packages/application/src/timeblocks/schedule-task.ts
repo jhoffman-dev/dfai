@@ -20,7 +20,7 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import type { PropertyChanges } from '../query/set-property.ts';
 import { findTypeTemplate, loadTemplates, readTemplate } from '../types/templates.ts';
 import { forgetNotes } from '../index/refresh-index.ts';
-import type { OpenEditorsPort, VaultFsPort } from '../vault/ports.ts';
+import { EntryChangedError, type OpenEditorsPort, type VaultFsPort } from '../vault/ports.ts';
 
 /**
  * Writes a note's properties through whichever of the task rules' chokepoints
@@ -224,13 +224,20 @@ export async function undoScheduling({
   notePaths: readonly VaultPath[];
 }): Promise<void> {
   if (scheduling.kind === 'created') {
-    const { text } = await fs.readTextFile(scheduling.block);
+    const { text, modified } = await fs.readTextFile(scheduling.block);
     if (text !== scheduling.contents) throw new BlockChangedError(scheduling.block);
     // Asked after the read, as close to the Trash as it can be.
     if (editors.state(scheduling.block) === 'dirty') {
       throw new BlockBeingEditedError(scheduling.block);
     }
-    await fs.trashEntry({ path: scheduling.block });
+    const made = scheduling.block;
+    try {
+      // Held to the read just checked, so an edit landing before the Trash keeps the block (#694).
+      await fs.trashEntry({ path: made, unchanged: [{ path: made, modified, text }] });
+    } catch (cause) {
+      if (cause instanceof EntryChangedError) throw new BlockChangedError(made);
+      throw cause;
+    }
     // Safe to let go of, as deleting a note does: the refresh after every
     // change removes what is no longer on disk, so a failure only delays it.
     await forgetNotes(index, [scheduling.block]).catch(() => undefined);

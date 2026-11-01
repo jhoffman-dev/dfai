@@ -172,13 +172,13 @@ describe('acceptProposalNote — refusals', () => {
       fs: {
         ...fs,
         createNote: async (args: Parameters<typeof fs.createNote>[0]) => {
-          await fs.createNote(args);
+          const made = await fs.createNote(args);
           // Someone edits the proposal between the task's write and its stamp.
           const before = setup.fixture.files.get(PROPOSAL);
           if (before !== undefined) {
             setup.fixture.files.set(PROPOSAL, { ...before, modified: before.modified + 1000 });
           }
-          return 0;
+          return made;
         },
       },
     };

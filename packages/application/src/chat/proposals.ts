@@ -26,7 +26,7 @@ import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { noteModified } from '../notes/note-modified.ts';
 import { openNote } from '../notes/open-note.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
-import { EntryChangedError, type VaultFsPort } from '../vault/ports.ts';
+import { EntryChangedError, isChangedOnDiskRefusal, type VaultFsPort } from '../vault/ports.ts';
 
 /**
  * Changes the model proposes (P27-04). Nothing here writes until the person
@@ -77,15 +77,26 @@ export interface NoteProposal {
 
 export type Proposal = EditProposal | NoteProposal;
 
-/** What accepting did, kept so it can be undone in one step. */
+/**
+ * What accepting did, kept so it can be undone in one step. `modified` and
+ * `text` are the note as accepting left it: undo is held to both, since a
+ * disk that keeps the time to the second cannot tell a same-second edit by
+ * the time alone (#245, #694).
+ */
 export type AppliedProposal =
   | {
       readonly kind: 'edited';
       readonly path: VaultPath;
       readonly previous: string;
       readonly modified: number;
+      readonly text: string;
     }
-  | { readonly kind: 'created'; readonly path: VaultPath; readonly modified: number };
+  | {
+      readonly kind: 'created';
+      readonly path: VaultPath;
+      readonly modified: number;
+      readonly text: string;
+    };
 
 /**
  * The properties a proposal writes, held to the task rules against the note
@@ -251,7 +262,7 @@ export async function acceptProposal({
     fs.writeTextFile({ path, contents: proposal.contents, expectedModified: previous.modified }),
   );
   if (pane === 'clean') openNotes.reload(path);
-  return { kind: 'edited', path, previous: previous.text, modified };
+  return { kind: 'edited', path, previous: previous.text, modified, text: proposal.contents };
 }
 
 /**
@@ -265,15 +276,17 @@ async function createProposed({
   fs: VaultFsPort;
   proposal: NoteProposal;
 }): Promise<AppliedProposal> {
-  const { path } = proposal;
+  const { path, contents } = proposal;
   if ((await noteModified({ fs, path })) !== null) throw takenSince(path);
+  let modified: number;
   try {
-    await fs.createNote({ path, contents: proposal.contents });
+    modified = await fs.createNote({ path, contents });
   } catch (error) {
     if ((await noteModified({ fs, path })) !== null) throw takenSince(path);
     throw error;
   }
-  return { kind: 'created', path, modified: (await noteModified({ fs, path })) ?? 0 };
+  // The time the create reports, not one read after it: a read could take in an edit made since.
+  return { kind: 'created', path, modified, text: contents };
 }
 
 async function readPrevious({ fs, path }: { fs: VaultFsPort; path: VaultPath }) {
@@ -309,9 +322,8 @@ export async function checkUndo({
   openNotes: Pick<OpenNotes, 'state'>;
   applied: AppliedProposal;
 }): Promise<void> {
-  const { path } = applied;
-  refuseUnsaved(openNotes, path);
-  if ((await noteModified({ fs, path })) !== applied.modified) throw changedSince(path);
+  refuseUnsaved(openNotes, applied.path);
+  await readAsApplied({ fs, applied });
 }
 
 /** Puts back what an accepted proposal replaced, if nothing has written the note since. */
@@ -327,11 +339,17 @@ export async function undoProposal({
   const { path } = applied;
   const pane = refuseUnsaved(openNotes, path);
   if (applied.kind === 'created') {
-    await trashAsCreated({ fs, path, expected: applied.modified });
+    await trashAsCreated({ fs, applied });
     return;
   }
+  await readAsApplied({ fs, applied });
   await guarded({ fs, path, expected: applied.modified }, () =>
-    fs.writeTextFile({ path, contents: applied.previous, expectedModified: applied.modified }),
+    fs.writeTextFile({
+      path,
+      contents: applied.previous,
+      expectedModified: applied.modified,
+      expectedText: applied.text,
+    }),
   );
   if (pane === 'clean') openNotes.reload(path);
 }
@@ -357,27 +375,40 @@ async function guarded<T>(
   try {
     return await write();
   } catch (error) {
-    if (error instanceof NoteChangedError) throw changedSince(path);
+    if (error instanceof NoteChangedError || isChangedOnDiskRefusal(error)) {
+      throw changedSince(path);
+    }
     if ((await noteModified({ fs, path })) !== expected) throw changedSince(path);
     throw error;
   }
 }
 
+/** Refuses unless the note still holds what accepting left: the same time and the same text. */
+async function readAsApplied({
+  fs,
+  applied,
+}: {
+  fs: VaultFsPort;
+  applied: AppliedProposal;
+}): Promise<void> {
+  const { path } = applied;
+  const now = await readPrevious({ fs, path });
+  if (now.modified !== applied.modified || now.text !== applied.text) throw changedSince(path);
+}
+
 /**
- * Trashes a created note held to the version checked here, so an edit that
- * lands between the check and the Trash keeps the note (#693).
+ * Trashes a created note held to the version accepting made, so an edit —
+ * before the check, or between it and the Trash — keeps the note (#693).
  */
 async function trashAsCreated({
   fs,
-  path,
-  expected,
+  applied,
 }: {
   fs: VaultFsPort;
-  path: VaultPath;
-  expected: number;
+  applied: Extract<AppliedProposal, { kind: 'created' }>;
 }): Promise<void> {
-  const { text, modified } = await readPrevious({ fs, path });
-  if (modified !== expected) throw changedSince(path);
+  const { path, modified, text } = applied;
+  await readAsApplied({ fs, applied });
   try {
     await fs.trashEntry({ path, unchanged: [{ path, modified, text }] });
   } catch (error) {

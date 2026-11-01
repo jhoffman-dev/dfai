@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createVaultPath, parseObjectType, TASK_TYPE_FILE } from '@dfai/domain';
 import {
+  EntryChangedError,
   fakeVaultFs,
   promoteChecklistLine,
   LineAlreadyPromotedError,
@@ -312,6 +313,51 @@ describe('promoting refuses, and changes nothing', () => {
     await expect(promote(racing)).rejects.toThrow('changed while the line was being promoted');
     expect(text('plans/Order chairs.md')).toBeUndefined();
     expect(text(source)).toBe(edited);
+  });
+
+  it('when the note changes and the new task is typed in meanwhile: the task is kept (#694)', async () => {
+    const { fs, fixture, text } = vault();
+    let task = '';
+    const racing: VaultFsPort = {
+      ...fs,
+      createNote: async (note) => {
+        const made = await fs.createNote(note);
+        task = note.path;
+        fixture.files.set(note.path, { text: `${note.contents}Typed.\n`, modified: made });
+        fixture.files.set(source, { text: `${PLAN}Edited elsewhere.\n`, modified: 999 });
+        return made;
+      },
+    };
+    await expect(promote(racing)).rejects.toThrow('could not be taken back');
+    expect(text(task)).toMatch(/Typed\.\n$/);
+  });
+
+  it('when the note changes and the new task is typed in just before its trash: the task is kept (#694)', async () => {
+    const { fs, fixture, text } = vault();
+    let task = '';
+    const racing: VaultFsPort = {
+      ...fs,
+      createNote: async (note) => {
+        const made = await fs.createNote(note);
+        task = note.path;
+        fixture.files.set(source, { text: `${PLAN}Edited elsewhere.\n`, modified: 999 });
+        return made;
+      },
+      // Typing lands between the take-back's check and its trash; the Trash holds, as the host's does.
+      trashEntry: async (args) => {
+        const now = fixture.files.get(args.path)!;
+        fixture.files.set(args.path, { text: `${now.text}Typed.\n`, modified: now.modified + 1 });
+        for (const held of args.unchanged ?? []) {
+          const file = fixture.files.get(held.path);
+          if (file?.text !== held.text || file.modified !== held.modified) {
+            throw new EntryChangedError(`${held.path} changed`);
+          }
+        }
+        await fs.trashEntry(args);
+      },
+    };
+    await expect(promote(racing)).rejects.toThrow('could not be taken back');
+    expect(text(task)).toMatch(/Typed\.\n$/);
   });
 
   it('when typing begins in a pane while the task is being made: the task is taken back', async () => {

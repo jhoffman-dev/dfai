@@ -49,17 +49,14 @@ function editSameSecond(fixture: ReturnType<typeof apiFixture>, path: string, te
 }
 
 describe('undoing a created note, an edit in the same second as its creation (attack #694)', () => {
-  it.fails(
-    'keeps a created note edited in the same second, rather than trashing the typing',
-    async () => {
-      const { fixture, fs, applied } = await createdIdea();
-      editSameSecond(fixture, IDEA, 'Typed in the same second.\n');
+  it('keeps a created note edited in the same second, rather than trashing the typing', async () => {
+    const { fixture, fs, applied } = await createdIdea();
+    editSameSecond(fixture, IDEA, 'Typed in the same second.\n');
 
-      await undoProposal({ fs, openNotes: closed, applied }).catch(() => undefined);
+    await undoProposal({ fs, openNotes: closed, applied }).catch(() => undefined);
 
-      expect(fixture.files.get(IDEA)?.text).toBe('Typed in the same second.\n');
-    },
-  );
+    expect(fixture.files.get(IDEA)?.text).toBe('Typed in the same second.\n');
+  });
 
   it('refuses to trash a created note only touched: a new time alone refuses it', async () => {
     // Conservative, not a loss: a touch keeps the text but moves the time, and the
@@ -105,23 +102,44 @@ describe('undoing a created note, an edit in the same second as its creation (at
 });
 
 describe('undoing an edit, an edit in the same second as the accepted write (attack #694)', () => {
-  it.fails(
-    'keeps typing made in the same second as the accepted write, rather than writing over it',
-    async () => {
-      const at = trashingVault({ 'Plan.md': PLAN });
-      const made = await proposeEdit({
-        today: '2026-10-08',
-        fs: at.fs,
-        markdown: at.markdown,
-        input: { path: 'Plan.md', append: 'More.' },
-        id: 'p1',
-      });
-      const applied = await acceptProposal({ fs: at.fs, openNotes: closed, proposal: made });
-      editSameSecond(at.fixture, PLAN_PATH, 'Typed in the same second.\n');
+  it('keeps typing made in the same second as the accepted write, rather than writing over it', async () => {
+    const at = trashingVault({ 'Plan.md': PLAN });
+    const made = await proposeEdit({
+      today: '2026-10-08',
+      fs: at.fs,
+      markdown: at.markdown,
+      input: { path: 'Plan.md', append: 'More.' },
+      id: 'p1',
+    });
+    const applied = await acceptProposal({ fs: at.fs, openNotes: closed, proposal: made });
+    editSameSecond(at.fixture, PLAN_PATH, 'Typed in the same second.\n');
 
-      await undoProposal({ fs: at.fs, openNotes: closed, applied }).catch(() => undefined);
+    await undoProposal({ fs: at.fs, openNotes: closed, applied }).catch(() => undefined);
 
-      expect(at.fixture.files.get(PLAN_PATH)?.text).toBe('Typed in the same second.\n');
-    },
-  );
+    expect(at.fixture.files.get(PLAN_PATH)?.text).toBe('Typed in the same second.\n');
+  });
+
+  it('holds the putting-back write to the accepted text, for typing between the check and it', async () => {
+    const at = trashingVault({ 'Plan.md': PLAN });
+    const made = await proposeEdit({
+      today: '2026-10-08',
+      fs: at.fs,
+      markdown: at.markdown,
+      input: { path: 'Plan.md', append: 'More.' },
+      id: 'p1',
+    });
+    const applied = await acceptProposal({ fs: at.fs, openNotes: closed, proposal: made });
+    const typingFirst = {
+      ...at.fs,
+      writeTextFile: async (args: Parameters<typeof at.fs.writeTextFile>[0]) => {
+        editSameSecond(at.fixture, PLAN_PATH, 'Typed in the same second.\n');
+        return at.fs.writeTextFile(args);
+      },
+    };
+
+    await expect(undoProposal({ fs: typingFirst, openNotes: closed, applied })).rejects.toThrow(
+      /changed since this was proposed/,
+    );
+    expect(at.fixture.files.get(PLAN_PATH)?.text).toBe('Typed in the same second.\n');
+  });
 });

@@ -135,6 +135,42 @@ describe("an area highlight's picture when the note embeds it between the re-rea
     expect(memory.files.has(picture)).toBe(true);
   });
 
+  it('is kept when the note embeds it with a size (#694)', async () => {
+    const memory = memoryFiles({ [NOTE]: SOURCE, [PDF]: new Uint8Array([37]) });
+    const picture = 'attachments/The Lantern Keepers p2 area.png';
+    const sized = {
+      ...memory.fs,
+      // The write lands with the embed resized, then reports a failure.
+      writeTextFile: async (args: Parameters<typeof memory.fs.writeTextFile>[0]) => {
+        await memory.fs.writeTextFile({
+          ...args,
+          contents: args.contents.replace(`![[${picture}]]`, `![[${picture}|300]]`),
+        });
+        throw new Error('the host did not answer in time');
+      },
+    };
+    let draws = 0;
+    const ports = {
+      fs: sized,
+      markdown: readerMarkdown(),
+      openNotes: fakeOpenNotes(),
+      rng: { next: () => ((draws += 1) % 36) / 36 + 0.001 },
+    };
+    await expect(
+      highlightArea(ports, {
+        note: NOTE,
+        pdf: PDF,
+        page: 2,
+        box: { x: 0.1, y: 0.2, width: 0.3, height: 0.2 },
+        picture: async () => new Uint8Array([137, 80, 78, 71]),
+        placement: 'attachments',
+        style: DEFAULT_HIGHLIGHT_STYLE,
+      }),
+    ).rejects.toThrow('the host did not answer in time');
+    expect(memory.files.get(NOTE)).toContain(`![[${picture}|300]]`);
+    expect(memory.files.has(picture)).toBe(true);
+  });
+
   it('is trashed when the note stays as re-read, through the same hold', async () => {
     const memory = memoryFiles({ [NOTE]: SOURCE, [PDF]: new Uint8Array([37]) });
     const failingWrite = {

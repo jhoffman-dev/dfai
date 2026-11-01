@@ -151,7 +151,8 @@ async function discardUnlessEmbedded(
 ): Promise<void> {
   try {
     const { text, modified } = await ports.fs.readTextFile(note);
-    if (text.includes(`![[${image}]]`)) return;
+    // Embedded as written, or with a size or alias after `|` (`![[picture.png|300]]`).
+    if (text.includes(`![[${image}]]`) || text.includes(`![[${image}|`)) return;
     await ports.fs.trashEntry({ path: image, unchanged: [{ path: note, modified, text }] });
   } catch {
     // The refusal that sent us here is the news. A note that cannot be read again, or that
