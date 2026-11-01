@@ -192,6 +192,8 @@ export async function useTheme(page: Page, theme: 'light' | 'dark'): Promise<voi
     .getByRole('switch', { name: /dark/i })
     .or(page.getByRole('button', { name: /dark theme/i }));
   const current = () => page.evaluate(() => document.documentElement.dataset['theme']);
+  // Written after the shell renders (#695): wait for it before deciding to click.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', /^(light|dark)$/);
   if ((await current()) !== theme && (await toggle.count()) > 0) await toggle.first().click();
   if ((await current()) !== theme) console.warn(`theme is ${await current()}, wanted ${theme}`);
 }

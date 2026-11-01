@@ -184,7 +184,7 @@ test('a malformed stored theme reads as Match system on, and follows the system'
   await page.addInitScript(() => window.localStorage.setItem('atlas.theme', 'DARK'));
   await page.emulateMedia({ colorScheme: 'light' });
   await openVault(page);
-  expect(await theme(page)).toBe('light');
+  await expect.poll(() => theme(page)).toBe('light');
   await openSettings(page);
   await expect(matchSystem(page)).toHaveAttribute('aria-checked', 'true');
   await page.emulateMedia({ colorScheme: 'dark' });
