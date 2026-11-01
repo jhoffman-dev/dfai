@@ -146,7 +146,10 @@ describe('an untouched entry of a changed map keeps its bytes (#697)', () => {
     expect(written).toBe(block('properties:', '  c:  3', '  a:  1', '', '  # about b', '  b:  2'));
   });
 
-  it('renames an entry in its place, its value, comment and blank line above kept', () => {
+  // A rename cannot be told from a key deleted and another added with the
+  // same value (review of PR #707), so the new key is written as the library
+  // writes it, and what stood above the old one goes with it.
+  it('writes a renamed entry as a new one, keeping the rest', () => {
     const named = block(
       'properties:',
       '  a:  1',
@@ -161,9 +164,51 @@ describe('an untouched entry of a changed map keeps its bytes (#697)', () => {
         entries.map(([key, value]) => [key === 'b' ? 'bee' : key, value]),
       ),
     );
-    expect(written).toBe(
-      block('properties:', '  a:  1', '', '  # about b', '  bee: {kind: x}', '  c:  3'),
+    expect(written).toBe(block('properties:', '  a:  1', '  bee:', '    kind: x', '  c:  3'));
+  });
+
+  it('never gives a deleted key’s comments to a new key holding the same value', () => {
+    const dated = block(
+      'properties:',
+      '  # when it is due',
+      '  due: {kind: date}   # deadline',
+      '  start: {kind: date}',
     );
+    const written = updateFrontmatter(dated, {
+      properties: { start: { kind: 'date' }, end: { kind: 'date' } },
+    });
+    expect(read(written)['properties']).toEqual({ start: { kind: 'date' }, end: { kind: 'date' } });
+    expect(written).not.toContain('# deadline');
+    expect(written).toContain('  start: {kind: date}\n');
+  });
+
+  it('never gives a deleted key’s comments to a new one inside a list item', () => {
+    const listed = block(
+      'items:',
+      '  - name: x',
+      '    # note on old',
+      '    old: 1 # OLD',
+      '    k: 2',
+    );
+    const written = updateFrontmatter(listed, { items: [{ name: 'x', k: 2, new: 1 }] });
+    expect(read(written)['items']).toEqual([{ name: 'x', k: 2, new: 1 }]);
+    expect(written).not.toContain('# OLD');
+    expect(written).not.toContain('# note on old');
+  });
+
+  it.each([
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+  ])('writes no line of only spaces where a moved entry stood (%s)', (_label, eol) => {
+    const spaced = block('properties:', '  a: 1', '', '  b:  2').replace(/\n/g, eol);
+    const written = updateFrontmatter(spaced, changed(spaced, moved(1, 0)));
+    expect(written).toBe(block('properties:', '', '  b:  2', '  a: 1').replace(/\n/g, eol));
+  });
+
+  it('writes no line of only spaces above a moved entry’s comment', () => {
+    const spaced = block('properties:', '  a: 1', '', '  # about b', '  b:  2');
+    const written = updateFrontmatter(spaced, changed(spaced, moved(1, 0)));
+    expect(written).toBe(block('properties:', '', '  # about b', '  b:  2', '  a: 1'));
   });
 
   it('takes a key gone and a new one holding another value as two changes, not a rename', () => {
@@ -373,7 +418,7 @@ function entriesOf(random: () => number, indent: string): Entry[] {
   });
 }
 
-type Operation = 'move' | 'add' | 'delete' | 'rename' | 'edit';
+type Operation = 'move' | 'add' | 'delete' | 'rename' | 'replace' | 'edit';
 
 interface Drawn {
   readonly frontmatter: string;
@@ -439,6 +484,11 @@ function editOf(
   } else if (operation === 'rename') {
     next = values.map(([key, value]) => [key === target.key ? 'renamed' : key, value]);
     return { properties: Object.fromEntries(next), untouched, touched: 'renamed' };
+  } else if (operation === 'replace') {
+    // A key deleted, and another added holding the value it held.
+    next = values.filter(([key]) => key !== target.key);
+    next.splice(Math.floor(random() * (next.length + 1)), 0, ['added', values[at]?.[1]]);
+    return { properties: Object.fromEntries(next), untouched, touched: 'added' };
   } else {
     const map = entries.find((entry) => entry.map);
     if (map === undefined) return null;
@@ -483,19 +533,20 @@ function problemsOf(seed: number, operation: Operation, notes = false): string[]
     if (!written.includes(eol(kept))) problems.push(`bytes of ${entry.key}`);
     if (first && !written.includes(eol(`${map.opener}${entry.above}`))) problems.push('lead');
   }
-  const blanks = (text: string) =>
-    inner(text)
-      .split('\n')
-      .filter((line) => line === '').length;
+  // A line of only spaces counts as blank, and is never written where there was none.
+  const lines = (text: string) => inner(text).split('\n');
+  const blanks = (text: string) => lines(text).filter((line) => /^[ \t]*$/.test(line)).length;
+  const spaced = (text: string) => lines(text).filter((line) => /^[ \t]+$/.test(line)).length;
+  if (spaced(written) > spaced(map.frontmatter)) problems.push('line of only spaces');
   // A blank line goes only with the entry deleted, or when it would stand
   // under text that keeps its trailing lines (`|+`) and be read as that text.
   const removed = map.entries.find((entry) => !edit.untouched.includes(entry));
   const lost =
-    (operation === 'delete'
+    (operation === 'delete' || operation === 'rename' || operation === 'replace'
       ? (removed?.text
           .split('\n')
           .slice(0, -1)
-          .filter((line) => line === '').length ?? 0)
+          .filter((line) => /^[ \t]*$/.test(line)).length ?? 0)
       : 0) + map.entries.filter((entry) => entry.keeps).length;
   // Where the library writes an entry among comments it places, it may move
   // a blank line, as it always has.
@@ -505,13 +556,14 @@ function problemsOf(seed: number, operation: Operation, notes = false): string[]
   ) {
     problems.push('blank lines');
   }
-  // No comment is lost or written twice — but those of an entry deleted, and
-  // one under it, which may go with it.
+  // No comment is lost or written twice — but those of an entry deleted (or
+  // renamed, which is one deleted and one added), and one under it, which
+  // may go with it.
   const comments = (text: string) => (inner(text).match(/#[^\n]*/g) ?? []).map((c) => c.trimEnd());
   const had = comments(map.frontmatter);
   const has = comments(written);
   const going = new Set(
-    operation === 'delete' && removed
+    operation !== 'move' && operation !== 'add' && operation !== 'edit' && removed
       ? [...comments(removed.text), `# deep under ${removed.key}`]
       : [],
   );
@@ -539,14 +591,17 @@ function problemsOf(seed: number, operation: Operation, notes = false): string[]
   }
   // Every anchor once: never dropped, never written twice.
   const anchors = (text: string) => (text.match(/&m\d+/g) ?? []).sort().join();
-  const gone = operation === 'delete' ? (removed?.text.match(/&m\d+/)?.[0] ?? null) : null;
+  const gone =
+    operation !== 'move' && operation !== 'add' && operation !== 'edit'
+      ? (removed?.text.match(/&m\d+/)?.[0] ?? null)
+      : null;
   const left = (map.frontmatter.match(/&m\d+/g) ?? []).filter((anchor) => anchor !== gone);
   if (anchors(written) !== left.sort().join()) problems.push('anchors');
   return problems.length === 0 ? [] : [`seed ${seed} ${operation}: ${problems.join(', ')}`];
 }
 
 describe('a changed map keeps its untouched entries’ bytes, as a property (#697)', () => {
-  it.each<Operation>(['move', 'add', 'delete', 'rename', 'edit'])(
+  it.each<Operation>(['move', 'add', 'delete', 'rename', 'replace', 'edit'])(
     'on a %s of another entry',
     (operation) => {
       const broken: string[] = [];
@@ -556,7 +611,7 @@ describe('a changed map keeps its untouched entries’ bytes, as a property (#69
     60_000,
   );
 
-  it.each<Operation>(['move', 'add', 'delete', 'rename', 'edit'])(
+  it.each<Operation>(['move', 'add', 'delete', 'rename', 'replace', 'edit'])(
     'never loses a value or comment on a %s, among comments the library places',
     (operation) => {
       const broken: string[] = [];
@@ -609,6 +664,11 @@ describe('the map written entry by entry, checked against it written whole (#697
 
   it('takes it whole when entry by entry leaves a comment out', () => {
     expect(check({ byEntry: 'm:\n  a: 2', whole: 'm:\n  a: 2 # n' }).body).toBe('m:\n  a: 2 # n');
+  });
+
+  it('takes it whole when entry by entry writes a key twice', () => {
+    const { body } = check({ byEntry: 'm:\n  a: 2\n  a: 2', whole: 'm:\n  a: 2' });
+    expect(body).toBe('m:\n  a: 2');
   });
 
   it('takes it whole when entry by entry writes a comment twice', () => {
