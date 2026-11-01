@@ -291,6 +291,22 @@ only in `apps/desktop/src-tauri/src/index_schema.sql`: the host `include_str!`s 
 test indexes read it (`testing/index-schema.ts`), and `index-schema.test.ts` fails
 if an inline copy in a test drifts from it.
 
+**The web build is hosted on Firebase (#662)**, in the project `dailyflowai-app`,
+on its own site `dailyflowai-web` (dailyflowai-web.web.app) through the hosting
+target `web` (`.firebaserc`). The project's default site, `dailyflowai-app`,
+serves something else: never deploy to it, and never touch the projects
+`gcal-timeblocking` or `student-games-be188`. `firebase.json` holds the site's
+SPA rewrite, cache headers (`/assets/**` immutable, everything else `no-cache`;
+the assets rule comes last so it wins) and security headers, whose CSP is
+`apps/web/index.html`'s plus `frame-ancestors 'none'`: change the two together.
+`.github/workflows/web-hosting.yml` builds and deploys it, apart from `gate` and
+only when a path the web build reads changed: live on a push to `main`, a 7-day
+preview channel on a pull request; it skips green until the secret
+`FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP` exists. Deploy by hand only with
+`firebase deploy --only hosting:web`, never a bare `firebase deploy`;
+`tools/ci/web-hosting.test.ts` fails on a config or workflow that could reach
+another site. A later functions codebase (#663) widens that test on purpose.
+
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and
 `0014-the-host-walks-the-vault-and-is-told-what-to-skip.md` for the one nuance:
