@@ -18,3 +18,28 @@ export interface ReadMoment {
 export function readAnswers(landed: ReadMoment | null, read: ReadMoment): boolean {
   return landed !== null && read.at > landed.at && read.indexKey !== landed.indexKey;
 }
+
+/**
+ * Asks for the refresh a write that has landed needs, and says when it
+ * landed: as that refresh is asked, at the index's own key then (#698). A
+ * sync that moves the index after this runs after the write, so a read begun
+ * once the index has moved past it stands for the write. Each read is to be
+ * stamped with the same key as it begins, not with the index's news: that
+ * reaches the page a little late, and a sync that read the vault before the
+ * write can move the index just before the write lands, its news just after.
+ */
+export function landedAsRefreshAsked({
+  refresh,
+  readsBegun,
+  indexKeyNow,
+}: {
+  /** Asks the index to read the vault again. */
+  readonly refresh: () => void;
+  /** How many reads the page has begun, now. */
+  readonly readsBegun: () => number;
+  /** The index's own key now. */
+  readonly indexKeyNow: () => string;
+}): ReadMoment {
+  refresh();
+  return { at: readsBegun(), indexKey: indexKeyNow() };
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
 import type { BoardLane, BoardRow, RowGroup } from '@dfai/domain';
 import {
+  landedAsRefreshAsked,
   readAnswers,
   resultAsPending,
   rowsAsPending,
@@ -10,6 +11,7 @@ import {
   type ReadMoment,
   type TableRows,
 } from '@dfai/application';
+import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { errorMessage } from './error-message.ts';
 
 /** Writes a note's properties, settling once the write has landed. */
@@ -79,6 +81,7 @@ export function usePendingCards({
   read,
   runsBegun,
   indexKey,
+  indexKeyNow,
   scope,
   write,
   onChanged,
@@ -90,6 +93,11 @@ export function usePendingCards({
   /** How many runs of the view have begun, now. */
   runsBegun: () => number;
   indexKey: string;
+  /**
+   * The index's own key as it stands when asked, which the view's runs are
+   * stamped with as they begin (#698); `indexKey` stands for it when left out.
+   */
+  indexKeyNow?: () => string;
   /** The index and the view the cards are of: when either changes, no card carries over. */
   scope: readonly unknown[];
   write: WriteProperties;
@@ -117,8 +125,9 @@ export function usePendingCards({
   const landedAt = useRef(new WeakMap<MovingCard, ReadMoment>());
   const landedOf = useCallback((card: MovingCard) => landedAt.current.get(card) ?? null, []);
   // Read when a move begins, not when the board draws.
-  const latest = useRef({ rows, read, indexKey });
-  latest.current = { rows, read, indexKey };
+  const latest = useRef({ rows, read });
+  latest.current = { rows, read };
+  const keyNow = useIndexKeyNow(indexKeyNow, indexKey);
   const [first, second] = scope;
   useEffect(() => () => store.setState(NOTHING_MOVING), [store, first, second]);
   const { inTurn, settled } = useCardTurns();
@@ -139,15 +148,18 @@ export function usePendingCards({
         failure: null,
       });
       failedPath.current = null;
-      // As the drop is asked, like Today's rows: only a read of the index since moves on from here.
-      const askedAt = now.indexKey;
       const landed = inTurn(path, () =>
         write({ path, values, ...(said !== undefined && { said }) }),
       );
       landed.then(
         () => {
-          landedAt.current.set(card, { at: runsBegun(), indexKey: askedAt });
-          onChanged();
+          // As its refresh is asked, like Today's rows: only a read of the index since moves on (#698).
+          const moment = landedAsRefreshAsked({
+            refresh: onChanged,
+            readsBegun: runsBegun,
+            indexKeyNow: keyNow,
+          });
+          landedAt.current.set(card, moment);
         },
         (cause: unknown) => {
           failedPath.current = path;
@@ -159,7 +171,7 @@ export function usePendingCards({
       );
       return landed;
     },
-    [store, landedOf, inTurn, runsBegun, write, onChanged],
+    [store, landedOf, inTurn, runsBegun, write, onChanged, keyNow],
   );
 
   const shownOf = useCallback(

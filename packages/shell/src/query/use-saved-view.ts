@@ -57,6 +57,7 @@ import {
   type ReadHeldCell,
 } from '@dfai/ui';
 import type { OpenEditors } from '../panes/open-editors.ts';
+import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { errorMessage } from './error-message.ts';
 import type { TickMemory } from './tick-memory.ts';
 import { useCardCreation } from './use-card-creation.ts';
@@ -87,6 +88,7 @@ export function useSavedView({
   types,
   notePaths,
   indexKey,
+  indexKeyNow,
   onChanged,
   editors,
   drafts,
@@ -103,6 +105,12 @@ export function useSavedView({
   notePaths: readonly string[];
   /** Changes when the index does, so the table refreshes after an edit. */
   indexKey: string;
+  /**
+   * The index's own key as it stands when asked: a moved card lands at it,
+   * and each run is stamped with it as it begins (#698). `indexKey` stands
+   * for it when left out.
+   */
+  indexKeyNow?: () => string;
   onChanged: () => void;
   /** The panes, so a note one of them holds is written through it. */
   editors: OpenEditors;
@@ -203,10 +211,12 @@ export function useSavedView({
     (include: boolean) => setArchivedIn(include ? (note?.path ?? null) : null),
     [note?.path],
   );
+  const keyNow = useIndexKeyNow(indexKeyNow, indexKey);
   const shownView = useShownView({
     note,
     index,
     indexKey,
+    indexKeyNow: keyNow,
     includeArchived,
     drafts,
     viewPaths,
@@ -241,6 +251,7 @@ export function useSavedView({
     read: shownView.read,
     runsBegun: shownView.runsBegun,
     indexKey,
+    indexKeyNow: keyNow,
     scope: [index, note?.path],
     write: writeProperties,
     onChanged,
@@ -401,6 +412,7 @@ function useShownView({
   note,
   index,
   indexKey,
+  indexKeyNow,
   drafts,
   viewPaths,
   fs,
@@ -414,6 +426,7 @@ function useShownView({
   note: OpenNote | null;
   index: IndexPort;
   indexKey: string;
+  indexKeyNow: () => string;
   includeArchived: boolean;
   drafts: ViewDrafts;
   viewPaths: readonly string[];
@@ -482,6 +495,7 @@ function useShownView({
     index,
     query: layoutRun?.query ?? null,
     indexKey,
+    indexKeyNow,
     includeArchived,
   });
   const hidden = useMemo(() => layoutRun?.hidden ?? [], [layoutRun]);
@@ -507,11 +521,15 @@ function useViewResult({
   index,
   query,
   indexKey,
+  indexKeyNow,
   includeArchived,
 }: {
   index: IndexPort;
   query: ViewQuery | null;
+  /** The index's news: the view runs again on it. */
   indexKey: string;
+  /** The index's own key now, which each run is stamped with as it begins (#698). */
+  indexKeyNow: () => string;
   includeArchived: boolean;
 }) {
   const [ran, setRan] = useState<{ result: ViewResult | null; read: ReadMoment }>(NOT_RUN);
@@ -530,7 +548,7 @@ function useViewResult({
 
     let cancelled = false;
     begun.current += 1;
-    const read = { at: begun.current, indexKey };
+    const read = { at: begun.current, indexKey: indexKeyNow() };
     setError(null);
     runView({ index, query, includeArchived, resolveLink })
       .then((found) => {
@@ -546,7 +564,7 @@ function useViewResult({
     return () => {
       cancelled = true;
     };
-  }, [index, query, indexKey, includeArchived, resolveLink]);
+  }, [index, query, indexKey, indexKeyNow, includeArchived, resolveLink]);
 
   return { result: ran.result, read: ran.read, runsBegun, error, setError };
 }

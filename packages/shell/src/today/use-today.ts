@@ -12,6 +12,7 @@ import {
 } from '@dfai/domain';
 import {
   changeUndoably,
+  landedAsRefreshAsked,
   readAnswers,
   readToday,
   taskRowChange,
@@ -24,6 +25,7 @@ import {
 } from '@dfai/application';
 import { todayActionWords, type TodayAction } from '@dfai/ui';
 import { errorMessage } from '../query/error-message.ts';
+import { useIndexKeyNow } from '../reads/use-index-key-now.ts';
 import { keptTodayReport } from './kept-today-report.ts';
 import { useDayOf } from './use-day-of.ts';
 import { createTodayWrites, NOTHING_SETTLING, type TodayWrites } from './today-writes.ts';
@@ -115,31 +117,29 @@ export function useToday(options: TodayOptions) {
   );
   // Counts the reads begun by any tab, so a row can tell one made after its write from one already under way.
   const readsBegun = held.reads;
-  // The index's key as a change begins. A read begun after the write can still
-  // be of the index from before it, now that a refresh keeps the index ready
-  // (#239): the row settles only on a read of an index that has moved since.
-  const keyNow = useRef(indexKey);
+  // The index's key as a write lands and as a read begins. A read begun after
+  // the write can still be of the index from before it, now that a refresh
+  // keeps the index ready (#239): the row settles only on a read of an index
+  // that has moved since (#698).
+  const keyAsAsked = useIndexKeyNow(options.indexKeyNow, indexKey);
   // The vault open now, read when a toast's Undo is pressed: one made in
   // another vault writes nothing here, through the window's panes or not.
   const vaultNow = useRef({ index: ports.index, vaultKey });
   vaultNow.current = { index: ports.index, vaultKey };
-  keyNow.current = indexKey;
-  const keyAsAskedNow = useRef(options.indexKeyNow);
-  keyAsAskedNow.current = options.indexKeyNow;
-  /** The index's key now, not as its news last reached the page. */
-  const keyAsAsked = useCallback(() => keyAsAskedNow.current?.() ?? keyNow.current, []);
   const day = useDayOf(clock, open);
   // The types the sidebar's Inbox count is read with, so the page's Inbox link counts the same.
   const startInInbox = tasksStartInInbox(types);
   // Whether tasks can be chosen for today (#108): worked out once, from the vault's Task type.
   const choosing = choosesForToday(types);
-  // When a write landed, taken as its refresh is asked: any sync that moves
-  // the index after that one runs after the write, so a read begun once the
-  // index has moved since is of the vault with the write in it (#698).
+  // When the write just made landed, taken as its refresh is asked (#698).
   const landedAt = useRef<Landed | null>(null);
   const refreshAsked = useCallback(() => {
-    onSettled();
-    landedAt.current = { since: readsBegun.begun, askedAt: keyAsAsked() };
+    const { at, indexKey: askedAt } = landedAsRefreshAsked({
+      refresh: onSettled,
+      readsBegun: () => readsBegun.begun,
+      indexKeyNow: keyAsAsked,
+    });
+    landedAt.current = { since: at, askedAt };
   }, [onSettled, readsBegun, keyAsAsked]);
   const { busy, problem, setProblem, actOn } = useReviewWrites({
     ports,
