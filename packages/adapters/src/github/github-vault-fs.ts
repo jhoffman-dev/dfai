@@ -3,13 +3,14 @@ import {
   HELD_REFUSAL,
   heldBinaryWrite,
   heldChildren,
+  heldEntryPathRefusal,
   heldFileRefusal,
   heldFilesWithExtension,
   heldMove,
   heldPathRefusal,
   heldPlaceRefusal,
+  heldTrash,
   heldWalk,
-  isHeld,
   isHeldNote,
   vaultPathName,
   type HeldVault,
@@ -50,7 +51,11 @@ import type { GitTreeEntry } from './github-answers.ts';
  *   no commit, a move carries each blob unread, and a blob read back is
  *   checked to be the blob named.
  * - **Git has no empty folders**: a folder made here holds a `.gitkeep`,
- *   which is never listed; a move or a trash of the folder takes it along.
+ *   which is never listed, written, created or moved onto; a move or a
+ *   trash of the folder takes it along.
+ * - **A link (mode 120000) is not a file here**: it is not listed, read or
+ *   written, and no new entry lands on its name; it moves and goes with its
+ *   folder, as Rust refuses links (#685).
  * - **GitHub's trees are case-sensitive and the Mac's disk is not**: the
  *   domain's rule refuses a name that only differs in case from one there.
  * - Writes go one at a time, so two of this page's own never race each other.
@@ -71,9 +76,16 @@ interface GitFile {
 interface Snapshot extends HeldVault<GitFile> {
   readonly head: string;
   readonly tree: string;
-  /** Every blob, placeholders included: what a move or a trash takes along. */
+  /** Every blob, placeholders and links included: what a move or a trash takes along. */
   readonly blobs: ReadonlyMap<string, GitFile>;
+  /** Every name taken, by a file, a placeholder or a link: what a new entry may not land on. */
+  readonly taken: HeldVault<GitFile>;
 }
+
+/** A plain file, executable or not: what is listed, read and written. A link (120000) is neither. */
+const FILE_MODES = new Set(['100644', '100755']);
+const LINK_REFUSAL = 'that is a link, which DFAI does not read or write on GitHub';
+const PLACEHOLDER_REFUSAL = `${FOLDER_PLACEHOLDER} is how git keeps an empty folder, so nothing of that name is written`;
 
 const refuse = (message: string): never => {
   throw new VaultAccessError(message);
@@ -101,9 +113,22 @@ function snapshotOf(head: string, tree: string, entries: readonly GitTreeEntry[]
     if (entry.type !== 'blob') continue;
     const file = { sha: entry.sha, size: entry.size ?? 0, mode: entry.mode };
     blobs.set(entry.path, file);
-    if (!isPlaceholder(entry.path)) files.set(entry.path, file);
+    if (!isPlaceholder(entry.path) && FILE_MODES.has(entry.mode)) files.set(entry.path, file);
   }
-  return { head, tree, files, folders, blobs };
+  return { head, tree, files, folders, blobs, taken: { files: blobs, folders } };
+}
+
+/** Refuses a placeholder's name as an entry to write, create or move, wherever it is. */
+function refusePlaceholder(...paths: readonly string[]): void {
+  if (paths.some(isPlaceholder)) refuse(PLACEHOLDER_REFUSAL);
+}
+
+/** Why a path cannot be read or written as a file: the host's refusal, or that it is a link. */
+function fileRefusal(snapshot: Snapshot, path: string): string | null {
+  const refusal = heldFileRefusal(snapshot, path);
+  if (refusal !== HELD_REFUSAL.noEntry || !snapshot.blobs.has(path) || isPlaceholder(path))
+    return refusal;
+  return LINK_REFUSAL;
 }
 
 export interface GitHubVaultFsDeps {
@@ -178,7 +203,7 @@ function reads({ branch, at }: Through) {
   const fileAt = async (path: string) => {
     refuseIf(heldPathRefusal(path));
     const snapshot = await at();
-    refuseIf(heldFileRefusal(snapshot, path));
+    refuseIf(fileRefusal(snapshot, path));
     return snapshot;
   };
   return {
@@ -256,7 +281,8 @@ function writing({ branch, at }: Through) {
 
   /** A new file of these bytes where nothing is, in a folder that is there. */
   const create: Create = async (snapshot, { path, bytes, taken }) => {
-    refuseIf(heldPlaceRefusal(snapshot, { path, taken }));
+    refusePlaceholder(path);
+    refuseIf(heldPlaceRefusal(snapshot.taken, { path, taken }));
     const sha = await branch.upload(bytes);
     await commitOn(snapshot, { changes: [put(path, sha)], message: `Create ${path}` });
     return sha;
@@ -268,8 +294,9 @@ function writing({ branch, at }: Through) {
         await create(await at(), { path, bytes: utf8(contents), taken: HELD_REFUSAL.noteTaken }),
       ),
     createFolder: async ({ path }: { path: VaultPath }) => {
+      refusePlaceholder(path);
       const snapshot = await at();
-      refuseIf(heldPlaceRefusal(snapshot, { path, taken: HELD_REFUSAL.nameTaken }));
+      refuseIf(heldPlaceRefusal(snapshot.taken, { path, taken: HELD_REFUSAL.nameTaken }));
       const sha = await branch.upload(new Uint8Array());
       await commitOn(snapshot, {
         changes: [put(`${path}/${FOLDER_PLACEHOLDER}`, sha)],
@@ -278,8 +305,9 @@ function writing({ branch, at }: Through) {
     },
     writeTextFile: (args: TextWrite) => saveText({ at, branch, commitOn }, args),
     moveEntry: async ({ from, to }: Move) => {
+      refusePlaceholder(from, to);
       const snapshot = await at();
-      const { renames } = unlessRefused(heldMove(snapshot, { from, to }));
+      const { renames } = unlessRefused(heldMove(snapshot.taken, { from, to }));
       if (renames.length === 0) return;
       const carried = [...snapshot.blobs].filter(([path]) => within(path, from));
       const changes = carried.flatMap(([path, file]) => [
@@ -289,9 +317,9 @@ function writing({ branch, at }: Through) {
       await commitOn(snapshot, { changes, message: `Move ${from} to ${to}` });
     },
     trashEntry: async ({ path, unchanged = [] }: Trash) => {
-      refuseIf(heldPathRefusal(path));
+      refuseIf(heldEntryPathRefusal(path));
       const snapshot = await at();
-      if (!isHeld(snapshot, path)) refuse(HELD_REFUSAL.noEntry);
+      unlessRefused(heldTrash(snapshot, path));
       for (const file of unchanged) if (!(await isAsRead(snapshot, file))) throw changedTrash();
       const changes = [...snapshot.blobs]
         .filter(([blob]) => within(blob, path))
@@ -326,7 +354,7 @@ async function saveText(
 ): Promise<number> {
   refuseIf(heldPathRefusal(path));
   const snapshot = await at();
-  refuseIf(heldFileRefusal(snapshot, path));
+  refuseIf(fileRefusal(snapshot, path));
   const file = snapshot.files.get(path)!;
   const stale =
     (expectedModified !== null && versionOfBlob(file.sha) !== expectedModified) ||
@@ -353,15 +381,17 @@ async function writeBytes(
   },
   { path, bytes, offset, replace = false }: BinaryWrite,
 ): Promise<number> {
-  refuseIf(heldPathRefusal(path));
+  refusePlaceholder(path);
+  refuseIf(heldEntryPathRefusal(path));
   const snapshot = await at();
-  const there = snapshot.files.get(path);
+  const there = snapshot.blobs.get(path);
   const asked = { path, length: bytes.byteLength, offset, replace, sizeThere: there?.size ?? null };
-  const { how } = unlessRefused(heldBinaryWrite(snapshot, asked));
+  const { how } = unlessRefused(heldBinaryWrite(snapshot.taken, asked));
   if (how === 'create') {
     await create(snapshot, { path, bytes, taken: HELD_REFUSAL.fileTaken });
     return bytes.byteLength;
   }
+  refuseIf(fileRefusal(snapshot, path));
   const whole = how === 'replace' ? bytes : joined(await branch.blob(there!.sha), bytes);
   const sha = await branch.upload(whole);
   await commitOn(snapshot, { changes: [put(path, sha, there!.mode)], message: `Save ${path}` });

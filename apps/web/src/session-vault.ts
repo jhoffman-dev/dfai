@@ -6,11 +6,9 @@ import {
   heldFileRefusal,
   heldFilesWithExtension,
   heldMove,
-  heldPathRefusal,
   heldPlaceRefusal,
-  heldUnder,
+  heldTrash,
   heldWalk,
-  isHeld,
   isHeldNote,
   vaultPathName,
   type HeldVault,
@@ -177,8 +175,7 @@ function trash(
   session: SessionFiles,
   { path, unchanged = [] }: { path: VaultPath; unchanged?: readonly AsRead[] },
 ) {
-  refuseIf(heldPathRefusal(path));
-  if (!isHeld(session, path)) refuse(HELD_REFUSAL.noEntry);
+  const gone = unlessRefused(heldTrash(session, path));
   for (const file of unchanged) {
     const held = session.files.get(file.path);
     if (held?.modified !== file.modified || textOf(held) !== file.text)
@@ -186,7 +183,6 @@ function trash(
         'a file changed on disk since it was read, so nothing was moved to the Trash',
       );
   }
-  const gone = heldUnder(session, path);
   for (const file of gone.files) session.files.delete(file);
   for (const folder of gone.folders) session.folders.delete(folder);
 }

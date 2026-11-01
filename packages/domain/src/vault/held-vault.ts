@@ -34,6 +34,7 @@ export const HELD_REFUSAL = {
   wrongLength: 'the file is not the length the write expected',
   gitFolder: "git's own folder is not part of the vault",
   nullByte: 'path contains a null byte',
+  noName: 'a note needs a name',
 } as const;
 
 /** Refused, with the host's message. */
@@ -83,12 +84,22 @@ export function heldNameLike<File>(vault: HeldVault<File>, path: string): string
   return null;
 }
 
+/**
+ * The checks of a path that names an entry rather than the vault: the root
+ * is never trashed, moved, created or written as one, as `resolve_new` in
+ * vault.rs refuses it. Passed the parent of a note at the root, a trash
+ * would otherwise take the whole vault.
+ */
+export function heldEntryPathRefusal(path: string): string | null {
+  return heldPathRefusal(path) ?? (path === '' ? HELD_REFUSAL.noName : null);
+}
+
 /** Where a new entry may go: its folder there, and no name there that differs only in case. */
 export function heldPlaceRefusal<File>(
   vault: HeldVault<File>,
   { path, taken }: { path: string; taken: string },
 ): string | null {
-  const odd = heldPathRefusal(path);
+  const odd = heldEntryPathRefusal(path);
   if (odd !== null) return odd;
   if (!isHeldFolder(vault, parentVaultPath(path as VaultPath))) return HELD_REFUSAL.noFolder;
   return heldNameLike(vault, path) === null ? null : taken;
@@ -115,6 +126,14 @@ export function heldUnder<File>(vault: HeldVault<File>, path: string): HeldEntri
   };
 }
 
+/** What a trash of `path` takes: the entry and everything under it; never the vault itself. */
+export function heldTrash<File>(vault: HeldVault<File>, path: string): Refused | HeldEntries {
+  const odd = heldEntryPathRefusal(path);
+  if (odd !== null) return { refused: odd };
+  if (!isHeld(vault, path)) return { refused: HELD_REFUSAL.noEntry };
+  return heldUnder(vault, path);
+}
+
 /** A move to make: every path it carries, from where to where. */
 export type HeldMove = { readonly renames: readonly (readonly [string, string])[] };
 
@@ -128,7 +147,7 @@ export function heldMove<File>(
   vault: HeldVault<File>,
   { from, to }: { from: string; to: string },
 ): Refused | HeldMove {
-  const odd = heldPathRefusal(from) ?? heldPathRefusal(to);
+  const odd = heldEntryPathRefusal(from) ?? heldEntryPathRefusal(to);
   if (odd !== null) return { refused: odd };
   if (!isHeld(vault, from)) return { refused: HELD_REFUSAL.noEntry };
   if (from === to) return { renames: [] };
@@ -164,7 +183,7 @@ export function heldBinaryWrite<File>(
   vault: HeldVault<File>,
   asked: BinaryWriteAsked,
 ): Refused | HeldBinaryWrite {
-  const odd = heldPathRefusal(asked.path);
+  const odd = heldEntryPathRefusal(asked.path);
   if (odd !== null) return { refused: odd };
   if (asked.offset + asked.length > MAX_HELD_BINARY_BYTES) return { refused: HELD_REFUSAL.tooBig };
   if (asked.replace) return replacing(vault, asked);

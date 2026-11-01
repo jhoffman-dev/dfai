@@ -127,8 +127,7 @@ function sending({
       const text = await response.text();
       return { status: response.status, headers: response.headers, ...parsed(text) };
     } catch (error) {
-      if (controller.signal.aborted)
-        throw new VaultAccessError('GitHub did not answer in time; nothing was changed by DFAI');
+      if (controller.signal.aborted) throw new VaultAccessError('GitHub did not answer in time');
       throw new VaultAccessError(`GitHub could not be reached: ${String(error)}`);
     }
   };
