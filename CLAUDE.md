@@ -320,8 +320,24 @@ that edits the workflow and the checks together: its preview deploy runs that
 branch's copy of both. A Hosting Admin key is project-wide, so it can reach the
 default site too; IAM does not protect that site. Review, the `web-live`
 environment's rules and these checks do. Deploy by hand only with
-`firebase deploy --only hosting:web`. A later functions codebase (#663) widens
-the checks on purpose.
+`firebase deploy --only hosting:web`.
+
+**The web build's sign-in is a GitHub App plus a Firebase Function (#663,
+ADR-0052).** The function is its own codebase, `dfai-auth` in
+`apps/auth-function`: the code-for-token exchange, refresh and sign-out, at
+`/api/auth/**` on the site's own origin through the one function rewrite,
+which comes first in `firebase.json` so the SPA rewrites cannot claim it. It
+holds the App's client secret and stores nothing; the refresh token lives in
+its httpOnly `__session` cookie (the one cookie Hosting passes on), the access
+token only in the page's memory. The checks hold `firebase.json` to exactly
+that functions entry (no `predeploy`/`postdeploy` hooks) and that rewrite. It
+imports no workspace package (ESLint zone and a test), because Firebase
+installs it alone from its own `package.json`. It is **not deployed yet**: the
+`web-hosting` workflow still deploys hosting only, and its Firebase wrapper
+waits on `firebase-functions` joining the lockfile. When it is, deploy it by
+hand only with `firebase deploy --only functions:dfai-auth`, before the first
+hosting deploy that carries the rewrite. `pnpm dev` answers `/api/auth/*`
+itself (`tools/vite/dev-sign-in.ts`) with a token that reaches nothing.
 
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and

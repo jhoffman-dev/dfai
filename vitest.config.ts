@@ -127,6 +127,10 @@ export default defineConfig({
           },
         // The local API writes into the vault on behalf of other programs.
         'packages/application/src/api/**': { lines: 90, functions: 90, branches: 85 },
+        // The web build's sign-in with GitHub (#663, ADR-0052): who may reach the vault, and for how long.
+        'packages/application/src/auth/**': { lines: 90, functions: 90, branches: 85 },
+        'packages/adapters/src/auth/**': { lines: 90, functions: 90, branches: 85 },
+        'apps/auth-function/src/**': { lines: 90, functions: 90, branches: 85 },
         // Renaming a tag rewrites every note that uses it.
         'packages/application/src/tags/**': { lines: 90, functions: 90, branches: 85 },
         // Saving an artifact writes a folder of files into the vault.
