@@ -5,6 +5,7 @@ import {
   isNode,
   isScalar,
   isSeq,
+  Lexer,
   parseDocument,
   visit,
   type Node,
@@ -88,6 +89,7 @@ export function updateFrontmatter(
   );
   const before = segments(source);
   const was = readBody(source);
+  const found = changesAMap(document, changed) ? rendered(document, lists) : null;
   const edit = applyChanges(document, changed, before);
   if (isEmptiedBlockMap(document)) {
     // The library would write `{}`; what is left is what stood around the
@@ -106,7 +108,7 @@ export function updateFrontmatter(
   }
   // Blank lines were all a block held: they stay above the keys it now has.
   const blank = source.trim() === '' ? content.replace(/\r\n/g, '\n') : '';
-  const written = checkedBody({ document, before, edit, was, blank, lists });
+  const written = checkedBody({ document, before, edit, was, blank, lists, found });
   const ended = withOriginalEndings({ original: content, edited: `${written}\n`, fallback: eol });
   return `${opening}${ended}${closing}`;
 }
@@ -168,6 +170,7 @@ export function checkedBody({
   was,
   blank,
   lists,
+  found = null,
   compose = composed,
 }: {
   document: Document;
@@ -176,13 +179,29 @@ export function checkedBody({
   was: Record<string, unknown> | null;
   blank: string;
   lists: ReturnType<typeof listIndent>;
+  /** The block as the library wrote it before the change, when the change reaches a map. */
+  found?: string | null;
   /** How the block is written under each set of rules; its test gives one that writes it wrong. */
   compose?: typeof composed;
 }): string {
   const wanted = valuesOf(document);
   for (const rules of ['kept', 'main'] as const) {
-    const body = `${blank}${compose({ document, before, edit, lists, rules })}`;
-    if (readsBack(body, wanted, was, edit.keys)) return body;
+    const write = (entriesFrom: string | null) =>
+      `${blank}${compose({ document, before, edit, lists, rules, found: entriesFrom })}`;
+    // Written as before first, so that writing is the same whatever follows.
+    const whole = write(null);
+    // A map's entries kept as found (#697), when that reads back right and
+    // holds every comment the writing as before does: the rest of the
+    // writing places comments with the rules of the map written whole.
+    const byEntry = found === null ? null : write(found);
+    if (
+      byEntry !== null &&
+      sameComments(byEntry, whole) &&
+      readsBack(byEntry, wanted, was, edit.keys)
+    ) {
+      return byEntry;
+    }
+    if (readsBack(whole, wanted, was, edit.keys)) return whole;
     for (const putBack of edit.cleared.values()) putBack();
     edit.cleared.clear();
   }
@@ -200,26 +219,20 @@ function composed({
   edit,
   lists,
   rules,
+  found = null,
 }: {
   document: Document;
   before: Segments | null;
   edit: Edit;
   lists: ReturnType<typeof listIndent>;
   rules: Rules;
+  /** The block as the library wrote it before the change; null writes each changed map whole. */
+  found?: string | null;
 }): string {
   const write = () =>
     keepUntouched({
       before,
-      written: document
-        .toString({
-          // Never wrap: a long value must not gain a line break it did not have.
-          lineWidth: 0,
-          // `[one, two]` rather than `[ one, two ]`, so an untouched inline list is
-          // written back exactly as it was found.
-          flowCollectionPadding: false,
-          ...lists,
-        })
-        .replace(/\n$/, ''),
+      written: withEntriesKept({ written: rendered(document, lists), found, before, edit }),
       edit,
       rules,
     });
@@ -233,6 +246,27 @@ function composed({
   }
   return write().text;
 }
+
+/** The block as the library writes it, without the newline it ends with. */
+function rendered(document: Document, lists: ReturnType<typeof listIndent>): string {
+  return document
+    .toString({
+      // Never wrap: a long value must not gain a line break it did not have.
+      lineWidth: 0,
+      // `[one, two]` rather than `[ one, two ]`, so an untouched inline list is
+      // written back exactly as it was found.
+      flowCollectionPadding: false,
+      ...lists,
+    })
+    .replace(/\n$/, '');
+}
+
+/** Whether a change reaches a key whose value is a map written in block style. */
+function changesAMap(document: Document, changed: readonly (readonly [string, unknown])[]) {
+  return changed.some(([key]) => isBlockMap(pairOf(document, key)?.value));
+}
+
+const isBlockMap = (node: unknown) => isMap(node) && node.flow !== true;
 
 /** What a block's YAML reads as, duplicates read as their last; null when it cannot be read. */
 function readBody(body: string): Record<string, unknown> | null {
@@ -703,21 +737,44 @@ function reconcileItems(document: Document, items: readonly unknown[], values: r
 /**
  * The map's keys set to `value`'s, each written into the pair that held it,
  * and put in `value`'s order — so a property moved or renamed in an editor
- * lands where the editor put it, and a new key where it was added.
+ * lands where the editor put it, and a new key where it was added. A key
+ * gone whose value comes back under a new key was renamed: its pair takes
+ * the new name and keeps its value as written, and the comment and blank
+ * line above it (#697).
  */
 function reconcileMap(
   document: Document,
   existing: { items: { key: unknown; value: unknown }[] },
   value: Readonly<Record<string, unknown>>,
 ): void {
-  existing.items = existing.items.filter((pair) => Object.hasOwn(value, keyOf(pair.key, document)));
+  const gone = existing.items.filter((pair) => !Object.hasOwn(value, keyOf(pair.key, document)));
+  existing.items = existing.items.filter((pair) => !gone.includes(pair));
   for (const [key, wanted] of Object.entries(value)) {
     // The last spelling of a key is the one the reader reads.
     const pair = existing.items.findLast((item) => keyOf(item.key, document) === key);
-    if (pair === undefined) existing.items.push(document.createPair(key, wanted));
+    const renamed = pair === undefined ? renamedPair(document, gone, wanted) : undefined;
+    if (renamed !== undefined) {
+      (renamed.key as Scalar).value = key;
+      existing.items.push(renamed);
+    } else if (pair === undefined) existing.items.push(document.createPair(key, wanted));
     else pair.value = reconcile(document, pair.value, wanted);
   }
   existing.items = inOrderOf(document, Object.keys(value), existing.items);
+}
+
+/** The first pair of `gone` with a plain key that holds `wanted`, taken out of `gone`. */
+function renamedPair<Item extends { key: unknown; value: unknown }>(
+  document: Document,
+  gone: Item[],
+  wanted: unknown,
+): Item | undefined {
+  const at = gone.findIndex(
+    (pair) =>
+      isScalar(pair.key) &&
+      pair.key.anchor === undefined &&
+      sameValue(document, pair.value, wanted),
+  );
+  return at === -1 ? undefined : gone.splice(at, 1)[0];
 }
 
 /**
@@ -822,6 +879,8 @@ interface Segments {
       readonly joins: number | null;
       readonly below: string;
     } | null;
+    /** Whether the value is a map written in block style, whose entries can be kept one by one. */
+    readonly map: boolean;
   }[];
   /** Whatever follows the last key's value: a trailing comment. */
   readonly tail: string;
@@ -1033,6 +1092,279 @@ const emptyUnder = (line: string, column: number) => /^ *$/.test(line) && line.l
 /** The column a line's text starts at; a whitespace-only line's length. */
 const columnOfText = (line: string) => /^ */.exec(line)?.[0].length ?? 0;
 
+/**
+ * `written` with the entries of each changed map that the change did not
+ * reach put back as the text they were found as (#697): moving, adding,
+ * removing or renaming one property of a type keeps every other one's
+ * spacing, padding and comments, at any depth. An entry is untouched when
+ * the library writes it the same before and after the change — the one test
+ * that sees every way a change can reach it, an anchor taken off included.
+ * Every other entry is the library's, at the columns the map was found at.
+ * A key the change gives as written, or a map whose comments would not come
+ * out the same, is written whole, as it always was.
+ */
+function withEntriesKept({
+  written,
+  found,
+  before,
+  edit,
+}: {
+  written: string;
+  /** The block as the library wrote it before the change; null keeps nothing. */
+  found: string | null;
+  before: Segments | null;
+  edit: Edit;
+}): string {
+  const after = found === null || before === null ? null : segments(written);
+  const was = found === null ? null : segments(found);
+  if (after === null || was === null || before === null) return written;
+  const rendered = new Map(was.keys.map((segment) => [segment.id, entryOf(segment)]));
+  const original = new Map(before.keys.map((segment) => [segment.id, entryOf(segment)]));
+  const keys = after.keys.map((segment) => {
+    const render = rendered.get(segment.id);
+    const found = original.get(segment.id);
+    if (!edit.touched.has(segment.id) || edit.asWritten.has(segment.id)) return segment.text;
+    if (render === undefined || found === undefined) return segment.text;
+    // The library writes keys at column 0; keepUntouched moves the text to the block's.
+    const source = rebased(found, before.indent.length);
+    const kept = source === null ? null : entryKept(entryOf(segment), render, source, 'line');
+    return kept !== null && sameComments(kept, segment.text) ? kept : segment.text;
+  });
+  return `${after.head}${keys.join('')}${after.tail}`.replace(/\n$/, '');
+}
+
+/** One entry of a map, cut by {@link segments}. */
+interface Entry {
+  readonly id: string;
+  readonly text: string;
+  readonly above: string;
+  readonly map: boolean;
+  /** Whether blank lines at its end are its value's own text (a block scalar keeping its trailing lines), not the map's. */
+  readonly holdsBlanks: boolean;
+}
+
+const entryOf = (segment: Segments['keys'][number]): Entry => ({
+  id: segment.id,
+  text: segment.text,
+  above: segment.above,
+  map: segment.map,
+  holdsBlanks: segment.value === null || segment.value.joins === 0,
+});
+
+/** `entry` moved left `by` columns; null when that would lose a space it could not give back. */
+function rebased(entry: Entry, by: number): Entry | null {
+  const text = shifted(entry.text, -by);
+  if (shifted(text, by) !== entry.text) return null;
+  return { ...entry, text, above: shifted(entry.above, -by) };
+}
+
+/**
+ * A changed entry whose value is a block map, its head and each entry under
+ * it kept as `source` has them wherever the library writes them the same
+ * before (`render`) and after (`written`) the change. `keep` says how much
+ * of its head may be the source's: the comments above it and its key line,
+ * or (for a block's own keys, whose comments above keepUntouched places)
+ * only the key line. Null when it cannot be cut so.
+ */
+function entryKept(
+  written: Entry,
+  render: Entry,
+  source: Entry,
+  keep: 'head' | 'line',
+): string | null {
+  if (!written.map || !render.map || !source.map) return null;
+  const now = headAndBody(written);
+  const then = headAndBody(render);
+  const found = headAndBody(source);
+  if (now === null || then === null || found === null) return null;
+  const by = keyColumnOf(source.text) - keyColumnOf(written.text);
+  const line = then.line === now.line ? found.line : null;
+  const lead = sharedLead({ now, then, found, keyLineKept: line !== null });
+  const body = mapKept(
+    lead?.bodies ?? { written: now.body, render: then.body, source: found.body },
+  );
+  if (body === null) return null;
+  const above =
+    keep === 'line'
+      ? now.above
+      : partKept({ now: now.above, then: then.above, found: found.above, by });
+  return `${above}${line ?? shifted(now.line, by)}${lead?.text ?? ''}${body}`;
+}
+
+/** An entry's comments above, its key's line, and the lines of its value under it. */
+function headAndBody(entry: Entry): { above: string; line: string; body: string } | null {
+  const ends = entry.text.indexOf('\n', entry.above.length);
+  if (ends === -1) return null;
+  return {
+    above: entry.above,
+    line: entry.text.slice(entry.above.length, ends + 1),
+    body: entry.text.slice(ends + 1),
+  };
+}
+
+type HeadAndBody = NonNullable<ReturnType<typeof headAndBody>>;
+
+/**
+ * The comment lines a map opens with, as the source has them, when the
+ * library writes the same ones at its top before and after the change. Those
+ * are the map's own — its key line's comment, or the comments over its first
+ * entry, which the library reads as the map's — and stay at its top whichever
+ * entry comes first. With them, the three bodies below them. Null when there
+ * are none, or the source's are not the same comments.
+ */
+function sharedLead({
+  now,
+  then,
+  found,
+  keyLineKept,
+}: {
+  now: HeadAndBody;
+  then: HeadAndBody;
+  found: HeadAndBody;
+  /** The source's key line is written: a comment on it is not the lead's to write. */
+  keyLineKept: boolean;
+}): { text: string; bodies: { written: string; render: string; source: string } } | null {
+  // The map's own comments open it before the change; after it, the new
+  // first entry's own may follow them.
+  const written = leadOf(then.body);
+  if (written === '' || !now.body.startsWith(written)) return null;
+  const text = leadOf(found.body);
+  // The library writes a key line's comment above the map's first entry.
+  const held = keyLineKept && commentsOf(then.line).length === 0 ? `${found.line}${text}` : text;
+  if (!sameComments(written, held)) return null;
+  return {
+    text,
+    bodies: {
+      written: now.body.slice(written.length),
+      render: then.body.slice(written.length),
+      source: found.body.slice(text.length),
+    },
+  };
+}
+
+/** The lines a map's body opens with up to its last comment line before its first key; blank lines below that are its first entry's. */
+function leadOf(body: string): string {
+  return /^(?:[ \t]*(?:#.*)?\n)*[ \t]*#.*\n/.exec(body)?.[0] ?? '';
+}
+
+/** Text without its blank lines, for comparing what the library writes where it moves only blank lines. */
+const withoutBlanks = (text: string) => text.replace(/^[ \t]*\n/gm, '');
+
+/**
+ * A map's lines before or after its entries, or the comments above one: the
+ * source's when the library writes the same there before and after the
+ * change but for blank lines — which it moves with the key under them, and
+ * never writes deeper than the line is — and the source's hold the same
+ * comments. Otherwise the library's, at the source's columns.
+ */
+function partKept({
+  now,
+  then,
+  found,
+  by,
+}: {
+  now: string;
+  then: string;
+  found: string;
+  by: number;
+}) {
+  if (withoutBlanks(now) === withoutBlanks(then) && sameComments(now, found)) return found;
+  return writtenAt(now, by);
+}
+
+/** Text the library wrote, moved `by` columns, its blank lines left empty: the library indents some. */
+const writtenAt = (text: string, by: number) => {
+  const blanks = leadingBlanks(text);
+  return `${blanks.replace(/[ \t]+\n/g, '\n')}${shifted(text.slice(blanks.length), by)}`;
+};
+
+/**
+ * A block map's lines, `written` by the library after the change, with each
+ * entry it wrote as it wrote `render` before the change put back as
+ * `source` holds it, and the rest moved to `source`'s columns. Null when one
+ * of them is not a block map that can be cut into entries.
+ */
+function mapKept({
+  written,
+  render,
+  source,
+}: {
+  written: string;
+  render: string;
+  source: string;
+}): string | null {
+  const now = entriesOf(written);
+  const then = entriesOf(render);
+  const found = entriesOf(source);
+  if (now === null || then === null || found === null) return null;
+  const rendered = new Map(then.entries.map((entry) => [entry.id, entry]));
+  const original = new Map(found.entries.map((entry) => [entry.id, entry]));
+  const by = found.indent - now.indent;
+  const entryText = (entry: Entry) => {
+    const render = rendered.get(entry.id);
+    const source = original.get(entry.id);
+    if (render === undefined || source === undefined) return writtenAt(entry.text, by);
+    // The blank lines above it are where the library put them; the source's go with it.
+    if (withoutLeadingBlanks(render.text) === withoutLeadingBlanks(entry.text)) return source.text;
+    return entryKept(entry, render, source, 'head') ?? writtenAt(entry.text, by);
+  };
+  const entries = now.entries.map((entry, at) => {
+    const text = entryText(entry);
+    // Blank lines under text that keeps its trailing lines (`|+`) would be
+    // read as that text: the library's, none, stand there.
+    if (now.entries[at - 1]?.holdsBlanks !== true) return text;
+    return `${writtenAt(leadingBlanks(entry.text), 0)}${withoutLeadingBlanks(text)}`;
+  });
+  const head = partKept({ now: now.head, then: then.head, found: found.head, by });
+  const tail = partKept({ now: now.tail, then: then.tail, found: found.tail, by });
+  // Each part ends in a newline; the last one's is the one the text was cut without.
+  const text = `${head}${entries.join('')}${tail}`.replace(/\n$/, '');
+  return `${text}${written.endsWith('\n') ? '\n' : ''}`;
+}
+
+const withoutLeadingBlanks = (text: string) => text.replace(/^(?:[ \t]*\n)+/, '');
+
+const leadingBlanks = (text: string) => /^(?:[ \t]*\n)*/.exec(text)?.[0] ?? '';
+
+/**
+ * A map's entries, each holding the blank lines above it rather than
+ * {@link segments}' lines below the one before: the library writes a blank
+ * line with the key it stands above, so that is where it moves when the
+ * entries do. Blank lines a block scalar keeping its trailing lines (`|+`)
+ * ends in are its text, and stay with it.
+ */
+function entriesOf(
+  text: string,
+): { head: string; indent: number; entries: Entry[]; tail: string } | null {
+  const cut = segments(text.replace(/\n$/, ''));
+  if (cut === null) return null;
+  let carried = '';
+  const entries = cut.keys.map((segment) => {
+    const entry = entryOf(segment);
+    const blanks = entry.holdsBlanks ? null : /\n((?:[ \t]*\n)+)$/.exec(entry.text);
+    const own = blanks === null ? entry.text : entry.text.slice(0, blanks.index + 1);
+    const moved = { ...entry, text: `${carried}${own}`, above: `${carried}${entry.above}` };
+    carried = blanks?.[1] ?? '';
+    return moved;
+  });
+  const last = entries.at(-1);
+  // segments ends the last key's text above blank lines; one that keeps its trailing lines holds them.
+  const held = last?.holdsBlanks === true ? (/^(?:[ \t]*\n)*/.exec(cut.tail)?.[0] ?? '') : '';
+  if (last !== undefined && held !== '')
+    entries[entries.length - 1] = { ...last, text: `${last.text}${held}` };
+  const tail = `${carried}${cut.tail.slice(held.length)}`;
+  return { head: cut.head, indent: cut.indent.length, entries, tail };
+}
+
+/** Whether two texts hold the same comments, each as often: none lost, none written twice. */
+function sameComments(left: string, right: string): boolean {
+  return JSON.stringify(commentsOf(left).sort()) === JSON.stringify(commentsOf(right).sort());
+}
+
+/** The comments a text holds, as YAML reads them: never a `#` inside quotes. */
+const commentsOf = (text: string) =>
+  [...new Lexer().lex(text)].filter((token) => token.startsWith('#'));
+
 function segments(text: string): Segments | null {
   // The text is lines without the last one's newline: a newline it ends with
   // is a blank line, the tail's to keep (#430).
@@ -1066,6 +1398,7 @@ function segments(text: string): Segments | null {
       text: source.slice(starts[at], ends),
       above: source.slice(starts[at], lines[at]),
       value: valueLines(source, pair.value, { from: lines[at] as number, to: ends }),
+      map: isBlockMap(pair.value),
     };
   });
   return { head: source.slice(0, starts[0]), indent, keys, tail: source.slice(end) };

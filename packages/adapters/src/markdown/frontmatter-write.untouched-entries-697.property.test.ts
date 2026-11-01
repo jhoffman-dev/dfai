@@ -7,14 +7,14 @@
  * columns. Seeded (mulberry32), so every run draws the same maps and edits.
  */
 import { describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
-import { updateFrontmatter } from './frontmatter-write.ts';
+import { parse, parseDocument } from 'yaml';
+import { checkedBody, updateFrontmatter, type Edit } from './frontmatter-write.ts';
 
 const block = (...lines: string[]) => `---\n${lines.join('\n')}\n---\n`;
 
 const inner = (frontmatter: string) =>
   frontmatter
-    .replace(/^﻿?---\r?\n/, '')
+    .replace(/^\uFEFF?---\r?\n/, '')
     .replace(/\r?\n?---(\r?\n)?$/, '')
     .replace(/\r\n/g, '\n');
 
@@ -111,8 +111,10 @@ describe('an untouched entry of a changed map keeps its bytes (#697)', () => {
         '    a:   1',
         '    b:',
         '        kind:   x',
+        // A new entry is written at the map's column; what is under it, the
+        // library's two deeper — the file has no column of its own for it.
         '    d:',
-        '        kind: y',
+        '      kind: y',
       ),
     );
   });
@@ -144,11 +146,88 @@ describe('an untouched entry of a changed map keeps its bytes (#697)', () => {
     expect(written).toBe(block('properties:', '  c:  3', '  a:  1', '', '  # about b', '  b:  2'));
   });
 
+  it('renames an entry in its place, its value, comment and blank line above kept', () => {
+    const named = block(
+      'properties:',
+      '  a:  1',
+      '',
+      '  # about b',
+      '  b:   {kind:   x}',
+      '  c:  3',
+    );
+    const written = updateFrontmatter(
+      named,
+      changed(named, (entries) =>
+        entries.map(([key, value]) => [key === 'b' ? 'bee' : key, value]),
+      ),
+    );
+    expect(written).toBe(
+      block('properties:', '  a:  1', '', '  # about b', '  bee: {kind: x}', '  c:  3'),
+    );
+  });
+
+  it('keeps an anchor and its alias when another entry moves', () => {
+    const linked = block('properties:', '  a: &spec {kind:  x}', '  b: *spec', '  c:  3');
+    const written = updateFrontmatter(linked, changed(linked, moved(2, 0)));
+    expect(written).toBe(block('properties:', '  c:  3', '  a: &spec {kind:  x}', '  b: *spec'));
+  });
+
+  it('keeps text that keeps its trailing lines, and those lines, when it moves', () => {
+    const kept = block('properties:', '  a: |+', '    keep', '', '  b:  2', '  c:  3');
+    const written = updateFrontmatter(kept, changed(kept, moved(0, 1)));
+    expect(written).toBe(block('properties:', '  b:  2', '  a: |+', '    keep', '', '  c:  3'));
+  });
+
+  it('writes no blank line under such text, where it would be read as the text', () => {
+    const kept = block('properties:', '  a: |+', '    keep', '', '  b:  2', '', '  c:  3');
+    const written = updateFrontmatter(kept, changed(kept, moved(1, 2)));
+    expect(read(written)['properties']).toEqual({ a: 'keep\n\n', c: 3, b: 2 });
+    expect(written).toBe(block('properties:', '  a: |+', '    keep', '', '  c:  3', '  b:  2'));
+  });
+
+  it('leaves the rest of the block as it was', () => {
+    const around = block(
+      'name:   book   # the name',
+      'properties:',
+      '  a:  1',
+      '  b:  2',
+      'label:  Book',
+    );
+    const written = updateFrontmatter(around, changed(around, moved(1, 0)));
+    expect(written).toBe(
+      block('name:   book   # the name', 'properties:', '  b:  2', '  a:  1', 'label:  Book'),
+    );
+  });
+
+  it('keeps entries of a map nested deeper than one level', () => {
+    const nested = block(
+      'properties:',
+      '  a:',
+      '    spec:',
+      '      kind:   x',
+      '      n:    1',
+      '  b:  2',
+    );
+    const written = updateFrontmatter(nested, {
+      properties: { a: { spec: { kind: 'y', n: 1 } }, b: 2 },
+    });
+    expect(written).toBe(
+      block('properties:', '  a:', '    spec:', '      kind: y', '      n:    1', '  b:  2'),
+    );
+  });
+
+  it('keeps a comment under an entry’s map when that entry moves to the end', () => {
+    const noted = block('properties:', '  a:', '    kind:  x', '    # under a', '  b:  2');
+    const written = updateFrontmatter(noted, changed(noted, moved(0, 1)));
+    expect(read(written)['properties']).toEqual({ b: 2, a: { kind: 'x' } });
+    expect(written).toContain('    # under a\n');
+  });
+
   it('keeps CRLF endings and a byte-order mark', () => {
-    const windows = `﻿${text.replace(/\n/g, '\r\n')}`;
+    const windows = `\uFEFF${text.replace(/\n/g, '\r\n')}`;
     const written = updateFrontmatter(windows, changed(windows, moved(2, 0)));
     expect(written).toBe(
-      `﻿${block('name: book', 'properties:', '  pages: number', '  rating: number', AUTHOR.trimEnd()).replace(/\n/g, '\r\n')}`,
+      `\uFEFF${block('name: book', 'properties:', '  pages: number', '  rating: number', AUTHOR.trimEnd()).replace(/\n/g, '\r\n')}`,
     );
   });
 });
@@ -171,9 +250,13 @@ interface Entry {
   readonly text: string;
   /** Whether its value is a block map, which an edit can change inside. */
   readonly map: boolean;
+  /** What stands above its key: a blank line, a comment, or nothing. */
+  readonly above: string;
+  /** Whether it is text that keeps its trailing lines (`|+`). */
+  readonly keeps?: boolean;
 }
 
-/** A map's entries drawn with hand-typed spacing: scalars, flow and block maps and lists, comments, blank lines. */
+/** A map's entries drawn with hand-typed spacing: scalars, block text, flow and block maps and lists, comments, blank lines. */
 function entriesOf(random: () => number, indent: string): Entry[] {
   const pick = <T>(items: readonly T[]) => items[Math.floor(random() * items.length)] as T;
   const spaces = () => ' '.repeat(1 + Math.floor(random() * 3));
@@ -186,25 +269,37 @@ function entriesOf(random: () => number, indent: string): Entry[] {
     const head = `${indent}${key}:`;
     if (roll < 0.3) {
       const value = pick(['number', "'quoted'", '"double"', 'two  words', '42']);
-      return { key, text: `${above}${head}${spaces()}${value}${comment()}\n`, map: false };
+      return { key, above, text: `${above}${head}${spaces()}${value}${comment()}\n`, map: false };
     }
     if (roll < 0.45) {
       const pad = pick(['', ' ', '  ']);
       const flow = `{${pad}kind:${spaces()}x,${spaces()}n:${spaces()}${at}${pad}}`;
-      return { key, text: `${above}${head}${spaces()}${flow}${comment()}\n`, map: false };
+      return { key, above, text: `${above}${head}${spaces()}${flow}${comment()}\n`, map: false };
     }
     if (roll < 0.55) {
       const list = `[${pick(['', ' '])}a,${spaces()}b${pick(['', ' '])}]`;
-      return { key, text: `${above}${head}${spaces()}${list}${comment()}\n`, map: false };
+      return { key, above, text: `${above}${head}${spaces()}${list}${comment()}\n`, map: false };
     }
-    if (roll < 0.65) {
+    if (roll < 0.6) {
+      const chomp = pick(['', '-', '+']);
+      const tail = chomp === '+' ? '\n' : '';
+      const lines = `${deeper}first  line\n${deeper}  deeper${spaces()}\n${tail}`;
+      return {
+        key,
+        above,
+        text: `${above}${head}${spaces()}|${chomp}${comment()}\n${lines}`,
+        map: false,
+        keeps: chomp === '+',
+      };
+    }
+    if (roll < 0.7) {
       const items = `${deeper}-${spaces()}a${comment()}\n${deeper}-${spaces()}b\n`;
-      return { key, text: `${above}${head}${comment()}\n${items}`, map: false };
+      return { key, above, text: `${above}${head}${comment()}\n${items}`, map: false };
     }
     const body =
       `${deeper}kind:${spaces()}relation${comment()}\n` +
       `${deeper}targets:${spaces()}'person'${spaces()}# who wrote it\n`;
-    return { key, text: `${above}${head}${comment()}\n${body}`, map: true };
+    return { key, above, text: `${above}${head}${comment()}\n${body}`, map: true };
   });
 }
 
@@ -215,20 +310,46 @@ interface Drawn {
   readonly entries: readonly Entry[];
   readonly indent: string;
   readonly eol: string;
+  /** The map's own key line. */
+  readonly opener: string;
 }
 
-function drawn(random: () => number): Drawn {
+function drawn(random: () => number, notes: boolean): Drawn {
   const indent = ' '.repeat(2 + Math.floor(random() * 3));
   const entries = entriesOf(random, indent);
   const eol = random() < 0.3 ? '\r\n' : '\n';
-  const bom = random() < 0.2 ? '﻿' : '';
+  const bom = random() < 0.2 ? '\uFEFF' : '';
   const opener = random() < 0.3 ? 'properties:   # specs\n' : 'properties:\n';
-  const body = `name: book\n${opener}${entries.map((entry) => entry.text).join('')}label: Book\n`;
-  return { frontmatter: `${bom}---\n${body}---\n`.replace(/\n/g, eol), entries, indent, eol };
+  // With `notes`, comments no entry's text holds: one deeper than the keys
+  // under an entry (never under block text, which would read it as text),
+  // one closing the map.
+  const note = (entry: Entry) =>
+    notes && !/: *\|/.test(entry.text) && random() < 0.2
+      ? `${indent}    # deep under ${entry.key}\n`
+      : '';
+  const closing = notes && random() < 0.3 ? `${indent}# end of the specs\n` : '';
+  const lines = entries.map((entry) => `${entry.text}${note(entry)}`).join('');
+  const body = `name: book\n${opener}${lines}${closing}label: Book\n`;
+  return {
+    frontmatter: `${bom}---\n${body}---\n`.replace(/\n/g, eol),
+    entries,
+    indent,
+    eol,
+    opener,
+  };
 }
 
 /** The change `operation` makes to one entry, and the entries it leaves untouched. */
-function editOf(random: () => number, { entries }: Drawn, operation: Operation) {
+function editOf(
+  random: () => number,
+  { entries }: Drawn,
+  operation: Operation,
+): {
+  properties: Record<string, unknown>;
+  untouched: readonly Entry[];
+  touched: string | null;
+  edited?: Entry;
+} | null {
   const at = Math.floor(random() * entries.length);
   const target = entries[at] as Entry;
   const values = Object.entries(
@@ -259,15 +380,21 @@ function editOf(random: () => number, { entries }: Drawn, operation: Operation) 
       properties: Object.fromEntries(next),
       untouched: entries.filter((e) => e !== map),
       touched: null,
+      edited: map,
     };
   }
   return { properties: Object.fromEntries(next), untouched, touched: null };
 }
 
-/** What is wrong with one seed's write, or nothing. */
-function problemsOf(seed: number, operation: Operation): string[] {
+/**
+ * What is wrong with one seed's write, or nothing. With `notes` — comments
+ * the library places by its own rules — an entry may be written as the
+ * library writes it, so only what may never change is held: the values,
+ * every comment once, the blank lines and the rest of the block.
+ */
+function problemsOf(seed: number, operation: Operation, notes = false): string[] {
   const random = seeded(seed);
-  const map = drawn(random);
+  const map = drawn(random, notes);
   const edit = editOf(random, map, operation);
   if (edit === null) return [];
   const written = updateFrontmatter(map.frontmatter, { properties: edit.properties });
@@ -276,12 +403,63 @@ function problemsOf(seed: number, operation: Operation): string[] {
   if (JSON.stringify(values['properties']) !== JSON.stringify(edit.properties))
     problems.push('values');
   if (values['name'] !== 'book' || values['label'] !== 'Book') problems.push('other keys');
-  for (const entry of edit.untouched) {
-    // A blank line above an entry is the map's, not the entry's: only the rest is held to its bytes.
-    const kept = entry.text.replace(/^\n/, '').replace(/\n/g, map.eol);
-    if (!written.includes(kept)) problems.push(`bytes of ${entry.key}`);
+  const eol = (text: string) => text.replace(/\n/g, map.eol);
+  for (const entry of notes ? [] : edit.untouched) {
+    // The comments over a map's first entry are the map's own (as the library
+    // reads them): they stay at its top, as found, whichever entry comes first.
+    const first = entry === map.entries[0] && entry.above.includes('#');
+    // A blank line above an entry moves with it; only the rest is held to its bytes.
+    const kept = first ? entry.text.slice(entry.above.length) : entry.text.replace(/^\n/, '');
+    if (!written.includes(eol(kept))) problems.push(`bytes of ${entry.key}`);
+    if (first && !written.includes(eol(`${map.opener}${entry.above}`))) problems.push('lead');
   }
-  if (edit.touched !== null && !inner(written).includes(`\n${map.indent}${edit.touched}:`)) {
+  const blanks = (text: string) =>
+    inner(text)
+      .split('\n')
+      .filter((line) => line === '').length;
+  // A blank line goes only with the entry deleted, or when it would stand
+  // under text that keeps its trailing lines (`|+`) and be read as that text.
+  const removed = map.entries.find((entry) => !edit.untouched.includes(entry));
+  const lost =
+    (operation === 'delete'
+      ? (removed?.text
+          .split('\n')
+          .slice(0, -1)
+          .filter((line) => line === '').length ?? 0)
+      : 0) + map.entries.filter((entry) => entry.keeps).length;
+  if (
+    blanks(written) < blanks(map.frontmatter) - lost ||
+    blanks(written) > blanks(map.frontmatter)
+  ) {
+    problems.push('blank lines');
+  }
+  // No comment is lost or written twice — but those of an entry deleted, and
+  // one under it, which may go with it.
+  const comments = (text: string) => (inner(text).match(/#[^\n]*/g) ?? []).map((c) => c.trimEnd());
+  const had = comments(map.frontmatter);
+  const has = comments(written);
+  const going = new Set(
+    operation === 'delete' && removed
+      ? [...comments(removed.text), `# deep under ${removed.key}`]
+      : [],
+  );
+  const missing = had.filter((comment) => !going.has(comment));
+  const count = (all: string[], one: string) => all.filter((other) => other === one).length;
+  if (
+    missing.some((comment) => count(has, comment) < count(missing, comment)) ||
+    has.some((comment) => count(has, comment) > count(had, comment))
+  ) {
+    problems.push('comments');
+  }
+  // Inside the entry edited, the line the edit did not reach keeps its bytes too.
+  const targets = edit.edited?.text.split('\n').find((line) => line.includes('targets:'));
+  if (!notes && targets !== undefined && !written.includes(eol(`${targets}\n`)))
+    problems.push('inner bytes');
+  if (
+    !notes &&
+    edit.touched !== null &&
+    !inner(written).includes(`\n${map.indent}${edit.touched}:`)
+  ) {
     problems.push(`column of ${edit.touched}`);
   }
   if (!written.startsWith(map.frontmatter.slice(0, map.frontmatter.indexOf('properties:') + 11))) {
@@ -295,9 +473,69 @@ describe('a changed map keeps its untouched entries’ bytes, as a property (#69
     'on a %s of another entry',
     (operation) => {
       const broken: string[] = [];
-      for (let seed = 1; seed <= 400; seed += 1) broken.push(...problemsOf(seed, operation));
+      for (let seed = 1; seed <= 500; seed += 1) broken.push(...problemsOf(seed, operation));
       expect(broken.slice(0, 5)).toEqual([]);
     },
     60_000,
   );
+
+  it.each<Operation>(['move', 'add', 'delete', 'rename', 'edit'])(
+    'never loses a value, comment or blank line on a %s, among comments the library places',
+    (operation) => {
+      const broken: string[] = [];
+      for (let seed = 1; seed <= 300; seed += 1) broken.push(...problemsOf(seed, operation, true));
+      expect(broken.slice(0, 5)).toEqual([]);
+    },
+    60_000,
+  );
+});
+
+describe('the map written entry by entry, checked against it written whole (#697)', () => {
+  /** `m.a` changed from 1 to 2, with a writer that writes `bodies` entry by entry or whole. */
+  function check(bodies: { byEntry: string; whole: string }) {
+    const document = parseDocument('m:\n  a: 1\n');
+    document.set('m', document.createNode({ a: 2 }));
+    const edit: Edit = {
+      touched: new Set(),
+      asWritten: new Map(),
+      cleared: new Map(),
+      keys: new Set(['m']),
+    };
+    const tried: string[] = [];
+    const body = checkedBody({
+      document,
+      before: null,
+      edit,
+      was: { m: { a: 1 } },
+      blank: '',
+      lists: {},
+      found: 'm:\n  a: 1',
+      compose: ({ rules, found }) => {
+        tried.push(`${rules} ${found === null ? 'whole' : 'by entry'}`);
+        return found === null ? bodies.whole : bodies.byEntry;
+      },
+    });
+    return { body, tried };
+  }
+
+  it('takes it entry by entry when that reads back right with every comment', () => {
+    const { body, tried } = check({ byEntry: 'm:\n  a:  2 # n', whole: 'm:\n  a: 2 # n' });
+    expect(body).toBe('m:\n  a:  2 # n');
+    expect(tried).toEqual(['kept whole', 'kept by entry']);
+  });
+
+  it('takes it whole, under the same rules, when entry by entry reads back wrong', () => {
+    const { body, tried } = check({ byEntry: 'm:\n  a: 3', whole: 'm:\n  a: 2' });
+    expect(body).toBe('m:\n  a: 2');
+    expect(tried).toEqual(['kept whole', 'kept by entry']);
+  });
+
+  it('takes it whole when entry by entry leaves a comment out', () => {
+    expect(check({ byEntry: 'm:\n  a: 2', whole: 'm:\n  a: 2 # n' }).body).toBe('m:\n  a: 2 # n');
+  });
+
+  it('takes it whole when entry by entry writes a comment twice', () => {
+    const { body } = check({ byEntry: 'm: # n\n  a: 2 # n', whole: 'm:\n  a: 2 # n' });
+    expect(body).toBe('m:\n  a: 2 # n');
+  });
 });
