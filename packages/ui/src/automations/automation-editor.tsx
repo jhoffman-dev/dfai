@@ -372,6 +372,10 @@ function ActionField({
   skills,
 }: ActionProps) {
   const { action } = draft;
+  // What the rule did as it was opened: a Claude step it had can always be
+  // chosen again, as it was, so a misclick away is never saved for good (#657).
+  const [loaded] = useState(action);
+  const asksClaude = offersClaude || loaded.kind === 'claude' || action.kind === 'claude';
   const [key = '', value = ''] =
     action.kind === 'set' ? (Object.entries(action.values)[0] ?? []) : [];
   const setTo = (nextKey: string, nextValue: string): AutomationAction => ({
@@ -384,9 +388,17 @@ function ActionField({
       <div className="automation-editor__row">
         <SegmentedControl
           label="What it does"
-          options={offersClaude || action.kind === 'claude' ? ACTIONS : WITHOUT_CLAUDE}
+          options={asksClaude ? ACTIONS : WITHOUT_CLAUDE}
           value={action.kind}
-          onChange={(kind) => onChange({ ...draft, action: actionOf(kind, claudeOutputs) })}
+          onChange={(kind) =>
+            onChange({
+              ...draft,
+              action:
+                kind === 'claude' && loaded.kind === 'claude'
+                  ? loaded
+                  : actionOf(kind, claudeOutputs),
+            })
+          }
         />
         {action.kind === 'set' && (
           <>

@@ -12,6 +12,7 @@ import {
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
   activeNotePaths,
+  AUTOMATION_PRESETS,
   activeTabOf,
   ASK_PLACE,
   tabPlace,
@@ -80,6 +81,7 @@ import {
   type PageSnapshotPort,
   type SlackPort,
   exportFormatsOffered,
+  presetsOffered,
   type EntryPointsOffered,
 } from '@dfai/application';
 import {
@@ -542,6 +544,10 @@ function AppWindow({
   const [app, setApp] = useState<AppInfoState>({ kind: 'loading' });
   const exportOffered = offered.exportNotes;
   const exportFormats = useMemo(() => exportFormatsOffered(offered), [offered]);
+  const presetNames = useMemo(
+    () => presetsOffered(AUTOMATION_PRESETS, offered).map((preset) => preset.name),
+    [offered],
+  );
   // The last sync runs before the Activity log's final write, so its line is kept.
   const closing = useMemo(() => closingInStages(activityPorts.closing), [activityPorts.closing]);
   const editors = useOpenEditors();
@@ -2622,6 +2628,7 @@ function AppWindow({
                         ports: automationPorts,
                         setup: meetingSetup,
                         offersClaude: offered.claudeAutomations,
+                        presets: presetNames,
                       },
                       skills: skillsWiring,
                       graph: { state: vaultGraph },

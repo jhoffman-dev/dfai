@@ -114,6 +114,30 @@ describe('mountShell (#656)', () => {
   });
 });
 
+describe('composedForApp, the calendar’s two syncs (#699 attack)', () => {
+  const offeredWithout = (left: readonly string[]) =>
+    composedForApp({
+      ports: Object.fromEntries(
+        Object.entries(ports).filter(([name]) => !left.includes(name)),
+      ) as unknown as AppPorts,
+      capabilities: DESKTOP_CAPABILITIES,
+    }).offered;
+
+  it('keeps Settings → Google Calendar while either sync has its port', () => {
+    expect(offeredWithout(['meetings']).googleCalendarSettings).toBe(true);
+    expect(offeredWithout(['blocks']).googleCalendarSettings).toBe(true);
+  });
+
+  it('offers no Settings → Google Calendar once neither sync has its port', () => {
+    const offered = offeredWithout(['meetings', 'blocks']);
+    expect([offered.meetingSync, offered.blockSync, offered.googleCalendarSettings]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+});
+
 describe('composedForApp (#657)', () => {
   it('hands the desktop every port and every entry point', () => {
     const composed = composedForApp({ ports, capabilities: DESKTOP_CAPABILITIES });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUTOMATION_PRESETS,
   createVaultPath,
   DESKTOP_CAPABILITIES,
   PLATFORM_CAPABILITIES,
@@ -14,6 +15,7 @@ import {
   EVERY_ENTRY_POINT,
   exportFormatsOffered,
   NEEDS_THE_DESKTOP_APP,
+  presetsOffered,
   ruleHeldByPlatform,
   sourceRefreshOffered,
   type EntryPoint,
@@ -157,6 +159,26 @@ describe('sourceRefreshOffered', () => {
     expect(
       sourceRefreshOffered({ url: 'https://example.com/x', format: 'sqlite' }, sqliteOff),
     ).toBe(true);
+  });
+});
+
+describe('presetsOffered', () => {
+  const names = (presets: readonly { name: string }[]) => presets.map((preset) => preset.name);
+
+  it('offers every preset on the desktop', () => {
+    const desktop = entryPointsOffered(DESKTOP_CAPABILITIES);
+    expect(names(presetsOffered(AUTOMATION_PRESETS, desktop))).toEqual(names(AUTOMATION_PRESETS));
+  });
+
+  it('offers on the web only the presets that ask no Claude, in their order', () => {
+    const web = entryPointsOffered(WEB_CAPABILITIES);
+    const offered = presetsOffered(AUTOMATION_PRESETS, web);
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((preset) => preset.action.kind !== 'claude')).toBe(true);
+    expect(names(offered)).toEqual(
+      names(AUTOMATION_PRESETS.filter((preset) => preset.action.kind !== 'claude')),
+    );
+    expect(names(offered)).not.toContain('Morning brief');
   });
 });
 

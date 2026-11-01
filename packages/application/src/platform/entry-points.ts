@@ -149,3 +149,14 @@ export function ruleHeldByPlatform(
 ): string | null {
   return rule.action.kind === 'claude' && !offered.claudeAutomations ? NEEDS_THE_DESKTOP_APP : null;
 }
+
+/**
+ * The presets a platform offers, in their order: only those it could run, so
+ * no preset writes a rule here that would only ever be held (#657).
+ */
+export function presetsOffered<Preset extends Pick<AutomationDraft, 'action'>>(
+  presets: readonly Preset[],
+  offered: EntryPointsOffered,
+): readonly Preset[] {
+  return presets.filter((preset) => ruleHeldByPlatform(preset, offered) === null);
+}

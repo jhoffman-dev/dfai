@@ -46,14 +46,11 @@ const actions = () =>
     .map((choice) => choice.textContent);
 
 describe('AutomationEditor without Claude Code (#699 attack)', () => {
-  it.fails(
-    'still offers Ask Claude after a misclick away from a rule that asks it, so the step can be put back',
-    () => {
-      expect(ASKING.action.kind).toBe('claude');
-      render(<Editing start={ASKING} />);
-      expect(actions()).toContain('Ask Claude');
-      fireEvent.click(screen.getByRole('radio', { name: 'Archive' }));
-      expect(actions()).toContain('Ask Claude');
-    },
-  );
+  it('still offers Ask Claude after a misclick away from a rule that asks it, so the step can be put back', () => {
+    expect(ASKING.action.kind).toBe('claude');
+    render(<Editing start={ASKING} />);
+    expect(actions()).toContain('Ask Claude');
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive' }));
+    expect(actions()).toContain('Ask Claude');
+  });
 });

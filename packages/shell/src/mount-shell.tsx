@@ -48,8 +48,30 @@ export function composedForApp({ ports, capabilities }: ShellComposition): {
       ...(has.googleCalendar && meetings !== undefined && { meetings }),
       ...(has.googleCalendar && blocks !== undefined && { blocks }),
     },
-    offered: entryPointsOffered(has),
+    offered: withCalendarPorts(entryPointsOffered(has), { meetings, blocks }),
   };
+}
+
+/**
+ * The calendar's two syncs each run on a port of their own, under the one
+ * Google Calendar capability: one left out is off, and Settings → Google
+ * Calendar, which sets both up, goes once neither is there.
+ */
+function withCalendarPorts(
+  offered: EntryPointsOffered,
+  ports: {
+    readonly meetings: AppPorts['meetings'] | undefined;
+    readonly blocks: AppPorts['blocks'] | undefined;
+  },
+): EntryPointsOffered {
+  const meetingSync = offered.meetingSync && ports.meetings !== undefined;
+  const blockSync = offered.blockSync && ports.blocks !== undefined;
+  return Object.freeze({
+    ...offered,
+    meetingSync,
+    blockSync,
+    googleCalendarSettings: offered.googleCalendarSettings && (meetingSync || blockSync),
+  });
 }
 
 /** The pages holding a shell now: one each, or two Apps share a root and two guards a window. */

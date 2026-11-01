@@ -29,7 +29,7 @@ describe('composedForApp (#699 attack)', () => {
     );
   });
 
-  it.fails.each(['meetings', 'blocks'] as const)(
+  it.each(['meetings', 'blocks'] as const)(
     'offers no calendar sync where the %s port is left out, as it does for kindle, semantic and exporting',
     (port) => {
       const { offered } = composedForApp({

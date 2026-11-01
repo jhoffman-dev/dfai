@@ -242,12 +242,16 @@ const NO_PLATFORM_CHECK = [
   'SwitchStatement[discriminant.name=/^platform$/i]',
   'SwitchStatement[discriminant.property.name=/^platform$/i]',
   'Identifier[name=/^is(Web|Desktop|Windows|Mac|MacOS|IPad|IOS|Browser|Tauri)$/]',
+  // The same flag in constant case: IS_WEB, ON_IPAD.
+  'Identifier[name=/^(IS|ON)_?(WEB|DESKTOP|IPAD|IOS|MAC|MACOS|WINDOWS|TAURI)$/]',
   // A platform named as a string: compared, or looked for in a list.
   ...['left', 'right'].map(
     (side) => `BinaryExpression[operator=/^[!=]==?$/][${side}.value=${PLATFORM_NAMES}]`,
   ),
   `CallExpression[callee.property.name='includes'] > Literal[value=${PLATFORM_NAMES}]`,
   `CallExpression[callee.property.name='includes'][callee.object.type='ArrayExpression'] Literal[value=${PLATFORM_NAMES}]`,
+  // Or matched by a string's own methods: startsWith('mac'), indexOf('web').
+  `CallExpression[callee.property.name=/^(startsWith|endsWith|indexOf|lastIndexOf|match|search)$/] > Literal[value=${PLATFORM_NAMES}]`,
 ].map((selector) => ({
   selector,
   message: `The screen must not ask which platform it is on — ${PLATFORM_CHECK_WHY}`,
@@ -258,13 +262,35 @@ const NO_PLATFORM_CHECK = [
  * test may read it to press the command key its platform uses, and the
  * shortcuts read it for that alone (`app-shortcuts.ts`).
  */
-const NO_PLATFORM_SNIFF = [
-  `MemberExpression[object.name='navigator'][property.name=${NAVIGATOR_SNIFFS}]`,
-  `MemberExpression[object.property.name='navigator'][property.name=${NAVIGATOR_SNIFFS}]`,
+const NO_DEVICE_SNIFF = [
+  // navigator.platform, navigator['platform'], window.navigator…, window['navigator']…
+  ...['name', 'value'].flatMap((key) => [
+    `MemberExpression[object.name='navigator'][property.${key}=${NAVIGATOR_SNIFFS}]`,
+    `MemberExpression[object.property.name='navigator'][property.${key}=${NAVIGATOR_SNIFFS}]`,
+    `MemberExpression[object.property.value='navigator'][property.${key}=${NAVIGATOR_SNIFFS}]`,
+  ]),
+  // const { platform } = navigator, under any name.
+  "VariableDeclarator[id.type='ObjectPattern'][init.name='navigator']",
+  "VariableDeclarator[id.type='ObjectPattern'][init.property.name='navigator']",
+  "VariableDeclarator[id.type='ObjectPattern'][init.property.value='navigator']",
 ].map((selector) => ({
   selector,
-  message: `The screen must not ask the browser which device it is on — ${PLATFORM_CHECK_WHY}`,
+  message: `Only a composition root may ask the browser which device it is on — ${PLATFORM_CHECK_WHY}`,
 }));
+
+/**
+ * A platform's capability values named in the screen's own code: reached by
+ * an `import()` or any other way the import rule cannot read (#657).
+ */
+const NO_CAPABILITY_VALUES = [
+  'Identifier[name=/^(PLATFORM_CAPABILITIES|DESKTOP_CAPABILITIES|WEB_CAPABILITIES|capabilitiesLacking)$/]',
+].map((selector) => ({
+  selector,
+  message: `The screen must not read a platform's capabilities — ${PLATFORM_CHECK_WHY}`,
+}));
+
+/** What the screen's production code may not do besides: ask the device, or name the capabilities. */
+const NO_PLATFORM_SNIFF = [...NO_DEVICE_SNIFF, ...NO_CAPABILITY_VALUES];
 
 /** The test files of a package's source, which may read the device to press its command key. */
 const testsOf = (root) => [`${root}/**/*.test.{ts,tsx}`, `${root}/**/*.test-support.ts`];
@@ -604,6 +630,22 @@ const webviewNode = [
       'no-restricted-syntax': [
         ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport, ...noWebLoadedLater]),
         ...NO_TAURI_SYNTAX,
+      ],
+    },
+  },
+  {
+    // The layers the screen asks for its answers may not ask the device either: only the
+    // composition roots in apps/ may (#657). Their tests and test support keep the rule above.
+    files: ['packages/{domain,application}/src/**/*.{ts,tsx,mts,cts}'],
+    ignores: [
+      ...nodeOnly,
+      'packages/{domain,application}/src/**/*.test.{ts,tsx}',
+      'packages/{domain,application}/src/testing/**',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        ...dynamicImports([noNodeModules, noNodeSupport]),
+        ...NO_DEVICE_SNIFF,
       ],
     },
   },

@@ -5,6 +5,7 @@ export {
   EVERY_ENTRY_POINT,
   exportFormatsOffered,
   NEEDS_THE_DESKTOP_APP,
+  presetsOffered,
   ruleHeldByPlatform,
   sourceRefreshOffered,
 } from './entry-points.ts';

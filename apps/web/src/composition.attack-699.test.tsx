@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 /*
  * Attack on PR #699 (#657): the web build, mounted as main.ts mounts it, on a
- * vault holding a rule with a Claude step. `it.fails` marks what the PR still
- * lets through; the plain `it`s are probes it holds.
+ * vault holding a rule with a Claude step, and the presets that would write one.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, screen, within } from '@testing-library/react';
@@ -120,7 +119,7 @@ describe('the web build and rules with a Claude step (#699 attack)', () => {
     },
   );
 
-  it.fails(
+  it(
     'offers no preset that asks Claude where no Claude Code runs',
     { timeout: 30_000 },
     async () => {
@@ -132,7 +131,7 @@ describe('the web build and rules with a Claude step (#699 attack)', () => {
     },
   );
 
-  it.fails('writes no Claude-step rule on the web from a preset', { timeout: 30_000 }, async () => {
+  it('writes no Claude-step rule on the web from a preset', { timeout: 30_000 }, async () => {
     const fs = await openedWith({});
     const page = await automationsPage();
     void page;

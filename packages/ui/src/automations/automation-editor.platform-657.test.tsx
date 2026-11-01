@@ -4,7 +4,8 @@
  * (#657): not offered for a new step, still shown for a rule that asks it.
  */
 import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { AUTOMATION_PRESETS, type AutomationDraft } from '@dfai/domain';
 import { AutomationEditor } from './automation-editor.tsx';
 
@@ -52,6 +53,46 @@ describe('AutomationEditor, by platform (#657)', () => {
 
   it('offers no Ask Claude for a rule that does not ask it, where it does not', () => {
     expect(drawn(ARCHIVING, false)).toEqual(['Archive', 'Set a property']);
+  });
+
+  it('puts a rule’s own Claude step back as it was, after a misclick away', () => {
+    expect(ASKING.action.kind).toBe('claude');
+    const changes: AutomationDraft[] = [];
+    function Editing() {
+      const [draft, setDraft] = useState(ASKING);
+      return (
+        <AutomationEditor
+          offersClaude={false}
+          draft={draft}
+          onChange={(next) => {
+            changes.push(next);
+            setDraft(next);
+          }}
+          isNew={false}
+          problem={null}
+          which={<p>query builder here</p>}
+          typeNames={['task']}
+          claudeTools={['atlas_search']}
+          claudeOutputs={['proposals']}
+          skills={[]}
+          busy={false}
+          onSave={() => {}}
+          onCancel={() => {}}
+          onDryRun={() => {}}
+          onRunNow={() => {}}
+          onUndo={() => {}}
+          canUndo={false}
+          dryRun={null}
+          log={[]}
+          onOpenNote={() => {}}
+        />
+      );
+    }
+    render(<Editing />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Ask Claude' }));
+    expect(changes.map((change) => change.action.kind)).toEqual(['archive', 'claude']);
+    expect(changes.at(-1)?.action).toEqual(ASKING.action);
   });
 
   it('still shows what a rule that asks Claude does, so the editor never hides its own step', () => {
