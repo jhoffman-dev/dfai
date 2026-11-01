@@ -12,7 +12,7 @@ export interface LongPressHandlers {
   onPointerMove: (event: ReactPointerEvent<Element>) => void;
   onPointerUp: () => void;
   onPointerCancel: () => void;
-  onClickCapture: (event: SyntheticEvent) => void;
+  onClickCapture: (event: ReactMouseEvent<Element>) => void;
 }
 
 /**
@@ -60,9 +60,12 @@ export function useLongPress(
 
   return {
     onPointerDown: (event) => {
+      // Any press starts clean. A hold does not always end in a click — the
+      // system's own long press can cancel the touch, or a contextmenu comes
+      // in the click's place — and what it left must not swallow the next one.
+      fired.current = false;
       if (event.pointerType === 'mouse' || !event.isPrimary) return;
       clear();
-      fired.current = false;
       const start = { x: event.clientX, y: event.clientY, at: latest.current.now() };
       const timer = window.setTimeout(check, holdRemaining(start, start.at));
       press.current = { start, last: start, timer };
@@ -77,7 +80,8 @@ export function useLongPress(
     onPointerUp: clear,
     onPointerCancel: clear,
     onClickCapture: (event) => {
-      if (!fired.current) return;
+      // A keyboard's click (Enter or Space, `detail` 0) is never the tap that let go.
+      if (!fired.current || event.detail === 0) return;
       fired.current = false;
       event.preventDefault();
       event.stopPropagation();

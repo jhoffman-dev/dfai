@@ -224,7 +224,8 @@ describe('Sidebar', () => {
       expect(screen.queryByRole('menu', { name: 'Task' })).toBeNull();
       act(() => vi.advanceTimersByTime(1));
       fireEvent.pointerUp(row, finger);
-      fireEvent.click(row);
+      // The tap that lets go, as a pointer's click (`detail` 1), not a keyboard's.
+      fireEvent.click(row, { detail: 1 });
       vi.useRealTimers();
 
       const menu = within(await screen.findByRole('menu', { name: 'Task' }));
