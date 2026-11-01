@@ -21,7 +21,10 @@ import { isHighlight, type HighlightBlocks } from './raw-block.ts';
  * block to block by this plugin's view, so hovering draws nothing in React
  * and changes nothing in the document. It hides on a key and comes back
  * with the pointer, so it is never in the way of typing, and it takes no
- * focus: the caret stays in the note until the menu takes it.
+ * focus: the caret stays in the note until the menu takes it. A finger has
+ * no hover, but WebKit raises a tap's mouse events too, so a tap on a block
+ * places the handle beside that block (#659), where the next tap opens its
+ * menu; touch.css gives the ⋮⋮ 44px to that finger.
  *
  * A drag is ProseMirror's own drag of the block selected whole, so a drop is
  * answered as any drop within the note is (tombstone-guard.ts): moved, it is

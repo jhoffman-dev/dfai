@@ -4,17 +4,20 @@
  * Only glue lives here: which sensors, which keys, and how a keyboard press is
  * turned into a position. What a press *means* is decided in `snapping.ts`.
  */
-import { useMemo } from 'react';
+import { useMemo, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   pointerWithin,
   useSensor,
   useSensors,
   type ClientRect,
   type CollisionDetection,
   type KeyboardCoordinateGetter,
+  type PointerSensorOptions,
 } from '@dnd-kit/core';
+import { LONG_PRESS } from '@dfai/domain';
 import {
   boxContaining,
   centredOn,
@@ -45,9 +48,43 @@ const KEYBOARD_CODES = {
 
 const POINTER_OPTIONS = { activationConstraint: { distance: DRAG_DISTANCE } };
 
-export function useDragSensors(coordinateGetter: KeyboardCoordinateGetter) {
+/**
+ * A finger is held still for the long-press rule's hold before anything
+ * moves (`LONG_PRESS`, the domain), and a finger that drifts further sooner is
+ * scrolling: the press is given back to the page (#659). The touch sensor is
+ * dnd-kit's own, since only it stops the page scrolling under a drag once the
+ * hold has passed.
+ */
+const TOUCH_OPTIONS = {
+  activationConstraint: { delay: LONG_PRESS.holdMs, tolerance: LONG_PRESS.slopPx },
+};
+
+/**
+ * The pointer sensor, for the mouse and the pen alone. A pointer event is
+ * raised for every touch too, and taking it would start the drag at the first
+ * few pixels, before the hold — and take the scroll with it. So a touch is the
+ * touch sensor's, and the mouse behaves exactly as it did.
+ */
+export class FinePointerSensor extends PointerSensor {
+  static override activators = [
+    {
+      eventName: 'onPointerDown' as const,
+      handler: (event: ReactPointerEvent, options: PointerSensorOptions): boolean =>
+        event.nativeEvent.pointerType !== 'touch' &&
+        (PointerSensor.activators[0]?.handler(event, options) ?? false),
+    },
+  ];
+}
+
+/** The sensors a press drags by, on every drag surface: a mouse or pen by travel, a finger by a hold. */
+export function usePressSensors() {
   // The same options from one render to the next: dnd-kit makes its sensors,
-  // and the context every draggable reads, anew for new ones — which drew
+  // and the context every draggable reads, anew for new ones (#238).
+  return [useSensor(FinePointerSensor, POINTER_OPTIONS), useSensor(TouchSensor, TOUCH_OPTIONS)];
+}
+
+export function useDragSensors(coordinateGetter: KeyboardCoordinateGetter) {
+  // Steady for the same reason as the press sensors' options: new options drew
   // every row of the sidebar again on each of its renders (#238).
   const keyboard = useMemo(
     () => ({
@@ -62,7 +99,7 @@ export function useDragSensors(coordinateGetter: KeyboardCoordinateGetter) {
     }),
     [coordinateGetter],
   );
-  return useSensors(useSensor(PointerSensor, POINTER_OPTIONS), useSensor(KeyboardSensor, keyboard));
+  return useSensors(...usePressSensors(), useSensor(KeyboardSensor, keyboard));
 }
 
 /**

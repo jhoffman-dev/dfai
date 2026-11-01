@@ -1,0 +1,98 @@
+/* Touch (#659).
+   One of the section files styles/index.css imports in cascade order; the
+   section-to-file table is in docs/design/ui-v2-plan.md under slice 0b. */
+
+/* ---- Touch ---------------------------------------------------------------
+   A finger has no hover and no right button. Under a coarse pointer every
+   control that waited for the pointer is simply there, each gives the finger
+   at least 44px, and what a hold picks up or opens is neither selected nor
+   offered the system's callout meanwhile. The mouse sees none of this: the
+   query is false for it, and the rules in the other files stand as they were.
+   The hold itself is not written here: it is the domain's (`LONG_PRESS`,
+   packages/domain/src/touch/long-press.ts), read by the drag sensors and the
+   long-press hook, so there is no number for this file to drift from.
+   -------------------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  /* Shown on hover elsewhere; here, shown. The selectors repeat the ones that
+     hide them, so the same specificity, later in the cascade, wins. */
+  .tree__more,
+  .star,
+  .sidebar__head > .sortable__handle,
+  .sidebar__chevron,
+  .widget__menu,
+  .board__cell-add,
+  .highlight__copy,
+  .bookmark__options,
+  .image__handle {
+    opacity: 1;
+  }
+
+  .props-strip
+    .props__row:not(:hover, :focus-within)
+    .props__links:has(.props__link-list)
+    .props__chip--add {
+    opacity: 1;
+    pointer-events: auto;
+    position: static;
+  }
+
+  /* 44px to the finger. A row's "…" takes the row's full height and 44px of
+     its width; a control on a row of its own grows to 44px both ways. The
+     star beside a name keeps its width: at 44px it and the "…" took the
+     middle of a 207px row, where a finger lands to open the note. The 44px
+     route to a favourite is the note's own star, in its page bar. */
+  .tree__more {
+    align-self: stretch;
+    height: auto;
+    min-width: 44px;
+  }
+
+  /* The section heading grows to 44px so its grip, in the gutter before the
+     label, is 44px square without reaching the rows above and below it. */
+  .sidebar__disclosure {
+    height: 44px;
+    padding-left: 36px;
+  }
+
+  .sidebar__head > .sortable__handle {
+    height: 44px;
+    width: 44px;
+  }
+
+  .widget__menu,
+  .board__cell-add,
+  .highlight__copy {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Drawn as they are — the ⋮⋮ beside the block, the 8px grip on an image's
+     edge — with a 44px hit area round each; the handle's reaches into the
+     gutter, not the text. */
+  .block-handle::before {
+    content: '';
+    inset: -11px 0 -11px -26px;
+    position: absolute;
+  }
+
+  .image__handle::before {
+    content: '';
+    inset: -4px -18px;
+    position: absolute;
+  }
+
+  /* A hold picks these up or opens their menu: the system's own long press —
+     the callout, the text selection — must not answer first. */
+  .board__card,
+  .tree__row,
+  .sidebar__row,
+  .sidebar__head,
+  .view-tabs__tab,
+  .sortable__handle,
+  .block-handle {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}

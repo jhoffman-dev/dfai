@@ -81,6 +81,77 @@ export async function dragWithPointer(
   await pointerSensorReleased(page);
 }
 
+/** One finger on the screen, as a TouchEvent's init names it: WebKit builds the Touch from the page coordinates. */
+function fingerAt({ x, y }: Point) {
+  const touch = {
+    identifier: 1,
+    clientX: x,
+    clientY: y,
+    pageX: x,
+    pageY: y,
+    screenX: x,
+    screenY: y,
+  };
+  return {
+    touches: [touch],
+    changedTouches: [touch],
+    targetTouches: [touch],
+    bubbles: true,
+    cancelable: true,
+  };
+}
+
+/**
+ * Hold a finger on `source` until the drag picks it up, travel to `to`, and
+ * lift once the drag says it is where it was sent (#659).
+ *
+ * The hold is the long-press rule's (`LONG_PRESS`, the domain): dnd-kit's
+ * touch sensor picks the item up once that has passed with the finger still.
+ * Nothing here waits that long by the clock — it waits for the pick-up to be
+ * announced, which is the state the hold ends in. Playwright's touchscreen can
+ * only tap, so the finger is a run of TouchEvents, every one dispatched on the
+ * item it landed on: a touch keeps its first target for its whole life, and
+ * that is where the sensor listens for the rest of it.
+ */
+export async function dragWithTouch(
+  page: Page,
+  { from, to, overText }: { from: Locator; to: Locator; overText: string | RegExp },
+) {
+  const start = await centreOf(from);
+  await from.dispatchEvent('touchstart', fingerAt(start));
+  // Picked up — or already past that, if the surface said at once what it is over.
+  await expect(dragAnnouncement(page)).toContainText(/Picked up|over/);
+  const first = await centreOf(to);
+  for (let step = 1; step <= 10; step += 1) {
+    const share = step / 10;
+    await from.dispatchEvent(
+      'touchmove',
+      fingerAt({
+        x: start.x + (first.x - start.x) * share,
+        y: start.y + (first.y - start.y) * share,
+      }),
+    );
+  }
+  await expect(async () => {
+    const aim = await centreOf(to);
+    await from.dispatchEvent('touchmove', fingerAt(aim));
+    await expect(dragAnnouncement(page)).toContainText(overText, { timeout: 250 });
+  }).toPass({ timeout: 10_000 });
+  const lifted = fingerAt(await centreOf(to));
+  await from.dispatchEvent('touchend', { ...lifted, touches: [], targetTouches: [] });
+  await pointerSensorReleased(page);
+}
+
+/**
+ * A finger that lands on `source` and swipes at once, as a scroll begins. The
+ * finger is left down, so a drag that wrongly took it would show as held.
+ */
+export async function swipeFrom(source: Locator, by: Point) {
+  const start = await centreOf(source);
+  await source.dispatchEvent('touchstart', fingerAt(start));
+  await source.dispatchEvent('touchmove', fingerAt({ x: start.x + by.x, y: start.y + by.y }));
+}
+
 /**
  * After a pointer drop, dnd-kit keeps swallowing clicks and clearing the text
  * selection until a 50ms timer lets go (so the drop is not also a click): a

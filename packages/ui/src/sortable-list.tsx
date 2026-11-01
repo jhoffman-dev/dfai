@@ -1,20 +1,16 @@
 import { useCallback, type KeyboardEvent, type ReactNode } from 'react';
 import {
   DndContext,
-  PointerSensor,
   closestCenter,
   useDraggable,
   useDroppable,
   pointerWithin,
-  useSensor,
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
 } from '@dnd-kit/core';
+import { usePressSensors } from './drag/dnd.ts';
 import { Icon } from './icon.tsx';
-
-/** How far a pointer travels before a press on a handle becomes a drag. */
-const DRAG_DISTANCE = 4;
 
 /**
  * The row under the pointer; in a gap between rows, or past either end of the
@@ -70,9 +66,7 @@ export function SortableList<Item>({
   className?: string;
   children: (item: Item, handle: ReactNode) => ReactNode;
 }) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: DRAG_DISTANCE } }),
-  );
+  const sensors = useSensors(...usePressSensors());
   const ids = items.map(idOf);
   const allowed = (move: { id: string; to: number }) =>
     move.to >= 0 && move.to < items.length && (canMove?.(move) ?? true);
