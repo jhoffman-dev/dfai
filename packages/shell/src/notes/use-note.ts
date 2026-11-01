@@ -635,7 +635,17 @@ export function useNote({
           note: startFrom(leaving, vault),
           doc: unwritten,
         });
-      const leavingWrite = writes.current.queue.then(run, run);
+      // What it leaves is the newest the pane knows of the note, which the next
+      // save starts from: back on it before the next note was read, the pane
+      // still holds the note as read before this write, and starting from that
+      // the save is refused for the pane's own bytes. Not counted as a landing
+      // (`landedAt`): every read of this note waits for it, so none is older,
+      // and counting it would throw away the next note's read begun beside it.
+      const leavingWrite = writes.current.queue.then(run, run).then((saved) => {
+        writes.current.landed = saved.note;
+        writes.current.landedIn = vault;
+        return saved;
+      });
       // Handled just below; the queue only has to know it is over.
       writes.current.queue = leavingWrite.catch(() => undefined);
       // A read on the way back waits for the work to be kept, not only refused:

@@ -160,31 +160,28 @@ describe('attack on PR #729: the way back to a note whose write on the way out i
     await settle();
   };
 
-  it.fails(
-    "saves typing made on a round trip quick enough to keep the note on screen, without the host refusing the pane's own bytes",
-    async () => {
-      const vault = heldVault();
-      const view = pane(vault);
-      await ready(view);
-      act(() => view.result.current.changeDoc(docOf('First.\n')));
-      vault.hold();
-      vault.holdReads();
-      view.rerender({ path: OTHER });
-      await settle();
-      // Back before OTHER was read: `loadedNote` is still this note, so the
-      // effect treats it as a re-read and keeps the old `note` (modified 1) on
-      // screen, editable. The leaving write lands at modified 2, is never
-      // recorded as `landed`, and the next save starts from 1 and is refused.
-      view.rerender({ path: NOTE });
-      await settle();
-      expect(view.result.current.state).toMatchObject({ kind: 'ready', doc: docOf('First.\n') });
-      act(() => view.result.current.changeDoc(docOf('First.\n\nSecond.\n')));
-      vault.release();
-      await drain(vault);
-      act(() => view.result.current.save());
-      await drain(vault);
-      expect(view.result.current.state).toMatchObject({ kind: 'ready', saveError: null });
-      expect(vault.contents()).toBe('First.\n\nSecond.\n');
-    },
-  );
+  it("saves typing made on a round trip quick enough to keep the note on screen, without the host refusing the pane's own bytes", async () => {
+    const vault = heldVault();
+    const view = pane(vault);
+    await ready(view);
+    act(() => view.result.current.changeDoc(docOf('First.\n')));
+    vault.hold();
+    vault.holdReads();
+    view.rerender({ path: OTHER });
+    await settle();
+    // Back before OTHER was read: `loadedNote` is still this note, so the
+    // effect treats it as a re-read and keeps the old `note` (modified 1) on
+    // screen, editable. The leaving write lands at modified 2, is never
+    // recorded as `landed`, and the next save starts from 1 and is refused.
+    view.rerender({ path: NOTE });
+    await settle();
+    expect(view.result.current.state).toMatchObject({ kind: 'ready', doc: docOf('First.\n') });
+    act(() => view.result.current.changeDoc(docOf('First.\n\nSecond.\n')));
+    vault.release();
+    await drain(vault);
+    act(() => view.result.current.save());
+    await drain(vault);
+    expect(view.result.current.state).toMatchObject({ kind: 'ready', saveError: null });
+    expect(vault.contents()).toBe('First.\n\nSecond.\n');
+  });
 });
