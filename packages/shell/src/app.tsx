@@ -42,6 +42,7 @@ import {
   type VaultEntry,
   type VaultPath,
   typeShownAt,
+  shellLayoutFor,
 } from '@dfai/domain';
 import {
   createNoteChanges,
@@ -177,9 +178,11 @@ import {
   previousTab,
   activateNthTab,
   reopenClosedTab,
+  setPanesFit,
   toggleSplit as toggleSplitIn,
   workspaceNow,
 } from './workspace/workspace-store.ts';
+import { useShellLayout } from './layout/use-shell-layout.ts';
 import {
   WorkspaceStoresProvider,
   WorkspaceWiringProvider,
@@ -426,6 +429,18 @@ function focusFallback(): HTMLElement | null {
   return (
     document.querySelector<HTMLElement>('.pane--focused [contenteditable="true"]') ??
     document.querySelector<HTMLElement>('[role="tree"] [tabindex="0"]')
+  );
+}
+
+/**
+ * Where the focus goes as the sidebar drawer closes (#658) when what opened it
+ * took no focus — a tap, or a click in WebKit: the way back into the drawer,
+ * else where any overlay's focus goes.
+ */
+function drawerReturnFocus(): HTMLElement | null {
+  return (
+    document.querySelector<HTMLElement>('.shell__main [aria-label="Show sidebar"]') ??
+    focusFallback()
   );
 }
 
@@ -981,6 +996,34 @@ function AppWindow({
     [showOverlay, hideOverlay],
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // A narrow screen (#658): the sidebar is a drawer over the work, opened and
+  // closed in place of hidden and shown, and one pane shows. The drawer starts
+  // closed and closes as a page is opened from it; a wide window keeps the
+  // sidebar's own state untouched for when it comes back.
+  const layout = useShellLayout();
+  const compact = layout.sidebar === 'drawer';
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarBeside = sidebarOpen && !compact;
+  const toggleSidebar = useCallback(
+    () => (compact ? setDrawerOpen((was) => !was) : setSidebarOpen((was) => !was)),
+    [compact],
+  );
+  const drawer = useMemo(
+    () =>
+      compact
+        ? { open: drawerOpen, onOpenChange: setDrawerOpen, returnFocus: drawerReturnFocus }
+        : null,
+    [compact, drawerOpen],
+  );
+  useEffect(() => setPanesFit(workspace, layout.panes), [workspace, layout.panes]);
+  useEffect(
+    () =>
+      // Subscribed, not drawn for: the window is not drawn again for each page opened.
+      workspace.subscribe((state, before) => {
+        if (activePlace(state.workspace) !== activePlace(before.workspace)) setDrawerOpen(false);
+      }),
+    [workspace],
+  );
   // Capture asked for with no vault open: it has no Inbox to land in.
   const [captureWantedVault, setCaptureWantedVault] = useState(false);
   // Capture asked for — by ⇧⌘N, ⌥⌘N or the global shortcut: put up with a
@@ -1036,10 +1079,12 @@ function AppWindow({
     savedViews: catalog.savedViews,
     types,
   });
-  const asideCollapsed = useAsideCollapsed({ sidebarOpen, asideWidth });
+  const asideCollapsed = useAsideCollapsed({ sidebarOpen: sidebarBeside, asideWidth });
   useEffect(() => setAsideFolded(asideStore, asideCollapsed), [asideStore, asideCollapsed]);
   const roomForAside = useCallback((wanted: number) => {
     const width = window.innerWidth;
+    // On a narrow screen the sidebar is a drawer, out of the way already.
+    if (shellLayoutFor(width).sidebar === 'drawer') return;
     const folds = (open: boolean) =>
       collapseFor({ width, sidebarOpen: open, asideWidth: wanted }).aside;
     if (folds(true) && !folds(false)) setSidebarOpen(false);
@@ -2007,7 +2052,7 @@ function AppWindow({
         peekNow(overlays) === null ? activeTabOf(workspaceNow(workspace)).id : PEEK_EDITOR,
       ),
     newNote: () => void createNewNote(),
-    toggleSidebar: () => setSidebarOpen((was) => !was),
+    toggleSidebar,
     toggleSplit: () => toggleSplitIn(workspace),
     dailyNote: () => void openDailyNote(),
     back: () => goBack(workspace),
@@ -2031,7 +2076,6 @@ function AppWindow({
   });
 
   const treeRows = useMemo(() => sidebarTreeRows(rows), [rows]);
-  const toggleSidebar = useCallback(() => setSidebarOpen((was) => !was), []);
   const asideShown = useAsideShown(asideStore);
   const toggleAsideSeat = useCallback(
     () =>
@@ -2354,7 +2398,8 @@ function AppWindow({
           onWritten={settleArchive}
         />
         <AppShell
-          sidebarOpen={sidebarOpen}
+          sidebarOpen={sidebarBeside}
+          drawer={drawer}
           asideOpen={asideShown}
           // Every page carries its own way back in its bar; only the empty
           // state, which has no page, needs the shell's.
@@ -2492,7 +2537,7 @@ function AppWindow({
                   value={{
                     ...workspaceStores,
                     pane: paneContext,
-                    onShowSidebar: sidebarOpen ? null : toggleSidebar,
+                    onShowSidebar: sidebarBeside ? null : toggleSidebar,
                     note: noteCommands,
                     pages: {
                       ports: archivePorts,

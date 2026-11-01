@@ -13,12 +13,19 @@ import { PaneFocusContext } from './pane-focus.ts';
 export function PaneFrame({
   label,
   focused,
+  hidden = false,
   onFocus,
   children,
 }: {
   /** Names the region: "Pane 1" is the left one. */
   label: string;
   focused: boolean;
+  /**
+   * Kept but not drawn: a pane the window has no room for (#658). Its tabs,
+   * editors and typing stay mounted behind the shown pane, as a hidden tab's
+   * do, and come back as they were when the window has room again.
+   */
+  hidden?: boolean;
   onFocus: () => void;
   children: ReactNode;
 }) {
@@ -26,6 +33,7 @@ export function PaneFrame({
     <section
       className={focused ? 'panel pane pane--focused' : 'panel pane'}
       aria-label={label}
+      hidden={hidden}
       // Focusable from script only, so focus has somewhere in the pane to land
       // while what it holds is still being read.
       tabIndex={-1}

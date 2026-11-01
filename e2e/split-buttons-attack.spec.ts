@@ -7,6 +7,7 @@ import {
   sidebarSection,
   type FakeVault,
 } from './host.ts';
+import { SIDEBAR_BESIDE_FROM } from './sidebar-drawer.ts';
 import { caretAtLineEnd } from './caret.ts';
 
 // Adversarial pass on issue #9: the pane bar's Split right and Close pane buttons.
@@ -227,10 +228,11 @@ async function expectBarControlsReachable(page: Page, which: 1 | 2) {
   expect(overlaps(close, crumbs)).toBe(false);
 }
 
-test('at the window minimum width (720px) both panes can still be closed and opened', async ({
+// Under 944px one pane shows (#658), so this is the narrowest a split gets.
+test('at the narrowest width that splits (944px) both panes can still be closed and opened', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 720, height: 700 });
+  await page.setViewportSize({ width: SIDEBAR_BESIDE_FROM, height: 700 });
   await openVault(page);
   await splitOnNote(page);
   await expectBarControlsReachable(page, 1);

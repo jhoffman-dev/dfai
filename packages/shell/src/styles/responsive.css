@@ -1,0 +1,47 @@
+/* Narrow screens (#658).
+   One of the section files styles/index.css imports in cascade order; the
+   section-to-file table is in docs/design/ui-v2-plan.md under slice 0b. */
+
+/* ---- Narrow screens --------------------------------------------------------
+   Under 944px — an iPad held upright, a phone, a desktop window dragged
+   narrow — the sidebar is a drawer over the work and one pane shows. The
+   width is not written here: the shell is given `shell--compact` by the one
+   rule that knows it (`shellLayoutFor`, packages/domain/src/panes/
+   shell-layout.ts), so there is no number for this file to drift from.
+   -------------------------------------------------------------------------- */
+
+/* The scrim under the drawer: the work is still there, dimmed. Under the
+   menus (30) a sidebar row opens, and under the palette and the dialogs (40). */
+.shell__scrim {
+  background: var(--scrim);
+  inset: 0;
+  position: fixed;
+  z-index: 20;
+}
+
+/* The drawer: the sidebar at its own width down the left edge, on its own
+   ground colour, as it is beside the work on a wide window. Never wider than
+   the screen leaves room to tap the scrim beside it. */
+.shell__drawer {
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  inset: 0 auto 0 0;
+  max-width: calc(100vw - 56px);
+  outline: none;
+  position: fixed;
+  width: var(--sidebar-width);
+  z-index: 21;
+}
+
+.shell__drawer > .shell__sidebar {
+  border-right: 0;
+  height: 100%;
+  width: 100%;
+}
+
+/* A pane the window has no room for: kept, with every tab in it, not drawn.
+   `.panel` is a flex box, which would otherwise win over the attribute. */
+.pane[hidden] {
+  display: none;
+}

@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection, splitWindow, type FakeVault } from './host.ts';
+import { revealSidebar, SIDEBAR_BESIDE_FROM } from './sidebar-drawer.ts';
 
 // Attack on #332 (UI v2 slice 3a, #294): truncation in the 224px sidebar, the
 // one theme button, and the 40px nav bar in narrow panes.
@@ -401,23 +402,33 @@ const OPENERS: Record<string, (page: Page) => Promise<void>> = {
   },
 };
 
+// Under 944px the sidebar is a drawer and one pane shows (#658): the bars
+// are squeezed most with the sidebar beside them at 944, or alone at the
+// window's 720px minimum; a split pane is narrowest at 944 either way.
 for (const sidebar of ['shown', 'hidden'] as const) {
   for (const [which, openPage] of Object.entries(OPENERS)) {
     const splits = which === 'a long note';
-    test(`at the minimum window width, ${which}${splits ? ', split' : ''}, sidebar ${sidebar}: each nav bar stays tidy`, async ({
+    const width = sidebar === 'shown' || splits ? SIDEBAR_BESIDE_FROM : 720;
+    test(`at ${width}px, ${which}${splits ? ', split' : ''}, sidebar ${sidebar}: each nav bar stays tidy`, async ({
       page,
     }) => {
-      await page.setViewportSize({ width: 720, height: 480 });
+      await page.setViewportSize({ width, height: 480 });
       await openVault(page);
+      await revealSidebar(page);
       await openPage(page);
       if (splits) {
         await splitWindow(page);
         await expect(page.getByRole('region', { name: 'Pane 2' })).toBeVisible();
       }
-      if (sidebar === 'hidden') {
+      if (sidebar === 'hidden' && width >= SIDEBAR_BESIDE_FROM) {
         await page.getByRole('button', { name: 'Hide sidebar' }).click();
-        await expect(nav(page)).toBeHidden();
       }
+      // Opening a type's page hides the sidebar to make room for its 340px
+      // editor (#387); brought back, the editor folds and the page is all there is.
+      if (sidebar === 'shown' && !(await nav(page).isVisible())) {
+        await page.keyboard.press('Meta+Backslash');
+      }
+      await expect(nav(page))[sidebar === 'shown' ? 'toBeVisible' : 'toBeHidden']();
       const panes = splits
         ? ([1, 2] as const).map((at) => page.getByRole('region', { name: `Pane ${at}` }))
         : [page.locator('main')];
@@ -436,7 +447,7 @@ for (const sidebar of ['shown', 'hidden'] as const) {
 }
 
 test('⌘\\ hides the sidebar and brings it back at 224px', async ({ page }) => {
-  await page.setViewportSize({ width: 720, height: 480 });
+  await page.setViewportSize({ width: SIDEBAR_BESIDE_FROM, height: 480 });
   await openVault(page);
   await tree(page).getByRole('treeitem', { name: 'Plain', exact: true }).click();
   await expect(nav(page)).toBeVisible();
@@ -447,6 +458,21 @@ test('⌘\\ hides the sidebar and brings it back at 224px', async ({ page }) => 
   await expect(nav(page)).toBeVisible();
   const width = await nav(page).evaluate((element) => element.getBoundingClientRect().width);
   expect(width).toBe(224);
+});
+
+test('at the window’s 720px minimum ⌘\\ opens the sidebar as a 224px drawer and closes it (#658)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 480 });
+  await openVault(page);
+  await expect(nav(page)).toHaveCount(0);
+  await page.keyboard.press('Meta+Backslash');
+  const drawer = page.getByRole('dialog', { name: 'Vault' });
+  await expect(drawer).toBeVisible();
+  await expect(nav(page)).toBeVisible();
+  expect(await nav(page).evaluate((element) => element.getBoundingClientRect().width)).toBe(224);
+  await page.keyboard.press('Meta+Backslash');
+  await expect(drawer).toHaveCount(0);
 });
 
 /**
@@ -473,9 +499,10 @@ for (const which of ['Today', 'Automations', 'Archive', 'a type page'] as const)
     test(`${which} at ${width}px: every bar button is 4em wide, or an icon with a title`, async ({
       page,
     }) => {
-      await page.setViewportSize({ width, height: 600 });
+      // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
       await openVault(page);
       await OPENERS[which]!(page);
+      await page.setViewportSize({ width, height: 600 });
       const bar = page.locator('main').locator('.page-bar').first();
       await expect(bar.locator('.page-bar__actions')).toBeVisible();
       const buttons = await barButtons(bar);

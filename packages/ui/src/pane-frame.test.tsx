@@ -23,6 +23,18 @@ describe('PaneFrame', () => {
     expect(pane('Pane 1')).toBeDefined();
   });
 
+  it('keeps a hidden pane mounted, out of sight and out of the reading order (#658)', () => {
+    show({ hidden: true });
+    expect(screen.queryByRole('region', { name: 'Pane 1' })).toBeNull();
+    const kept = screen.getByRole('button', { name: 'Inside the pane', hidden: true });
+    expect(kept.closest('section')?.hidden).toBe(true);
+  });
+
+  it('draws no hidden attribute on a shown pane', () => {
+    show();
+    expect(pane('Pane 1').hasAttribute('hidden')).toBe(false);
+  });
+
   it('takes the focus when anything inside it is clicked', async () => {
     const onFocus = vi.fn();
     show({ onFocus });

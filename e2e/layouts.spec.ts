@@ -270,8 +270,9 @@ test('an unbroken title stays inside its feed row, and a narrow list row cuts it
     (rowBox?.x ?? 0) + (rowBox?.width ?? 0) + 0.5,
   );
 
-  await page.setViewportSize({ width: 420, height: 900 });
   await openView(page, 'Narrow');
+  // Opened wide, then squeezed: under 944px the sidebar is a drawer (#658).
+  await page.setViewportSize({ width: 420, height: 900 });
   const list = page.getByRole('list', { name: 'Notes' });
   await expect(list.getByRole('button', { name: 'first', exact: true })).toBeVisible();
   // Nothing in any row runs past the list's own box.

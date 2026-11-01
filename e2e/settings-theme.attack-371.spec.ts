@@ -16,14 +16,16 @@ const theme = (page: Page) => page.evaluate(() => document.documentElement.datas
 async function openVault(page: Page): Promise<void> {
   const vault = await createVault();
   await vault.write('note.md', '# Note\n\nBody.\n');
+  await vault.write('other.md', '# Other\n\nBody.\n');
   await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
-  await expect(page.getByRole('navigation', { name: 'Vault' })).toBeVisible();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
 }
 
+/** By its key: at the narrow widths here the sidebar, with its Settings button, is a drawer (#658). */
 async function openSettings(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.keyboard.press('Meta+Comma');
   await expect(settings(page)).toBeVisible();
   await expect(settings(page).getByRole('heading', { name: 'Sync', exact: true })).toHaveCount(1);
 }

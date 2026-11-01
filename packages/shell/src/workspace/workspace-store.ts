@@ -71,6 +71,14 @@ export interface WorkspaceState {
   readonly restoredNotes: ReadonlySet<string>;
   /** Where the tabs are remembered, held here so every change can write itself. */
   readonly remembered: RememberedWorkspaces;
+  /**
+   * How many panes the window has room for (`shellLayoutFor`, #658): 1 on a
+   * narrow screen. The workspace may hold more — a split remembered from a
+   * wider window, or the window since narrowed — and keeps every one of them,
+   * with its tabs and typing; only the focused one is drawn, and a split is
+   * not offered. The window's, not the vault's: never written with the layout.
+   */
+  readonly panesFit: number;
 }
 
 /**
@@ -94,6 +102,7 @@ export function createWorkspaceStore({
     nextPaneKey: MAX_PANES,
     restoredNotes: new Set(),
     remembered,
+    panesFit: MAX_PANES,
   }));
 }
 
@@ -135,6 +144,19 @@ export function useTabHistory(
 ): NavigationHistory {
   return useStore(store, (state) => historyOf(state.workspace, { pane, id }));
 }
+
+/** How many panes the window has room for; the panes draw only that many. */
+export function usePanesFit(store: WorkspaceStore): number {
+  return useStore(store, (state) => state.panesFit);
+}
+
+/** Whether the window can be split: it is not yet, and the width has room for another pane. */
+export function useCanSplit(store: WorkspaceStore): boolean {
+  return useStore(store, (state) => roomToSplit(state));
+}
+
+const roomToSplit = (state: WorkspaceState): boolean =>
+  !isWorkspaceSplit(state.workspace) && state.panesFit > 1;
 
 /** What the focused pane shows: what the sidebar marks as where you are. */
 export function useFocusedPlace(store: WorkspaceStore): NavigationPlace | null {
@@ -256,13 +278,28 @@ function keyedAfter(
   return { paneKeys: unchanged ? paneKeys : keys, nextPaneKey: minted };
 }
 
-/** Opens a place where a click asked for it: here, in a new tab, or in a split. */
+/**
+ * Opens a place where a click asked for it: here, in a new tab, or in a split.
+ * Where the window has room for one pane only, a split is asked for by a
+ * shortcut nothing on screen offered, and the place opens in a new tab instead
+ * — the nearest thing to "beside this" that the width can show.
+ */
 export function openPlace(store: WorkspaceStore, place: NavigationPlace, how: OpenHow): void {
+  const fitted = how === 'split' && store.getState().panesFit <= 1 ? 'new-tab' : how;
   change(store, (ws) => {
-    if (how === 'new-tab') return openInNewTab(ws, place);
-    if (how === 'split') return openInSplit(ws, place);
+    if (fitted === 'new-tab') return openInNewTab(ws, place);
+    if (fitted === 'split') return openInSplit(ws, place);
     return openInActiveTab(ws, place);
   });
+}
+
+/**
+ * Tells the store how many panes the window has room for (`shellLayoutFor`).
+ * Nothing of the workspace changes: the panes it holds stay, hidden or shown.
+ */
+export function setPanesFit(store: WorkspaceStore, panesFit: number): void {
+  if (store.getState().panesFit === panesFit) return;
+  store.setState({ panesFit });
 }
 
 /** Opens in one named pane's active tab, which takes the focus: a link followed inside it. */
@@ -313,6 +350,7 @@ export function reopenClosedTab(store: WorkspaceStore): void {
  * focused pane's.
  */
 export function splitPane(store: WorkspaceStore, pane?: number): void {
+  if (store.getState().panesFit <= 1) return;
   change(store, (ws) => splitWithTab(pane === undefined ? ws : focusPaneInWorkspace(ws, pane)));
 }
 
@@ -322,6 +360,9 @@ export function closePane(store: WorkspaceStore, pane: number): void {
 
 /** Splits, or closes the focused pane once the window is split: ⇧⌘\. */
 export function toggleSplit(store: WorkspaceStore): void {
+  // Where one pane fits, neither splits nor closes: the other pane is not on
+  // screen to be compared with or seen going, so the key does nothing unseen.
+  if (store.getState().panesFit <= 1) return;
   change(store, (ws) =>
     isWorkspaceSplit(ws) ? closePaneInWorkspace(ws, ws.focused) : splitWithTab(ws),
   );

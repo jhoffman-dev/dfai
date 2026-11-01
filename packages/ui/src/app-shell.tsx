@@ -1,5 +1,20 @@
 import type { ReactNode } from 'react';
+import { Dialog } from '@base-ui/react/dialog';
 import { Icon } from './icon.tsx';
+import { useReturnFocus, type FocusFallback } from './return-focus.ts';
+
+/**
+ * The sidebar as a drawer over the work, where the window is too narrow for
+ * it beside (`shellLayoutFor`, #658). Open and closed are the app's to hold:
+ * the drawer closes itself on Escape, on a tap outside and when the app says
+ * so (a page opened from it), each through `onOpenChange`.
+ */
+export interface SidebarDrawer {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  /** Where the focus goes as the drawer closes, when what opened it did not take the focus. */
+  readonly returnFocus?: FocusFallback;
+}
 
 /**
  * The window: the sidebar on the ground colour behind a hairline, and the work
@@ -18,6 +33,7 @@ export function AppShell({
   onShowSidebar,
   aside = null,
   asideOpen = true,
+  drawer = null,
 }: {
   sidebar: ReactNode;
   /**
@@ -55,6 +71,12 @@ export function AppShell({
    * nothing in it can hold the focus or be read; the app remembers the state.
    */
   asideOpen?: boolean;
+  /**
+   * Given on a narrow screen: the sidebar is then a drawer over the work
+   * rather than beside it, and `sidebarOpen` is not read. Null, the default,
+   * is the wide window, drawn exactly as before.
+   */
+  drawer?: SidebarDrawer | null;
 }) {
   const work =
     main === null ? (
@@ -66,9 +88,13 @@ export function AppShell({
     );
 
   const asideShown = aside !== null && asideOpen;
+  // With the drawer the sidebar is out of the flow, which is what `shell--narrow`
+  // says to the stylesheet: the aside folds as it does with the sidebar hidden.
+  const sidebarBeside = drawer === null && sidebarOpen;
   const className = [
     'shell',
-    sidebarOpen ? null : 'shell--narrow',
+    sidebarBeside ? null : 'shell--narrow',
+    drawer === null ? null : 'shell--compact',
     asideShown ? 'shell--aside' : null,
   ]
     .filter((name) => name !== null)
@@ -76,15 +102,16 @@ export function AppShell({
 
   return (
     <div className={className}>
-      {sidebarOpen && (
+      {sidebarBeside && (
         <nav className="shell__sidebar" aria-label="Vault">
           {sidebar}
         </nav>
       )}
+      {drawer !== null && <DrawerSidebar drawer={drawer}>{sidebar}</DrawerSidebar>}
       <main className="shell__main">
         {notices}
         {work}
-        {!sidebarOpen && onShowSidebar !== undefined && (
+        {!sidebarBeside && onShowSidebar !== undefined && (
           <button
             className="icon-button shell__show"
             type="button"
@@ -105,6 +132,50 @@ export function AppShell({
     </div>
   );
 }
+
+/**
+ * The sidebar in a modal dialog over the work: the focus stays in it while it
+ * is open, Escape and a tap on the scrim close it, and the focus goes back to
+ * what opened it. The sidebar's own Hide button closes it too, through the
+ * app. Unmounted while closed, as the sidebar is while hidden on a wide
+ * window, so nothing in it can hold the focus or be read.
+ */
+function DrawerSidebar({ drawer, children }: { drawer: SidebarDrawer; children: ReactNode }) {
+  return (
+    <Dialog.Root open={drawer.open} onOpenChange={drawer.onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="shell__scrim" />
+        <DrawerPopup returnFocus={drawer.returnFocus}>{children}</DrawerPopup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/**
+ * Mounted as the drawer opens, so it reads what held the focus just then. A
+ * pane's frame (`PaneFrame`, focusable from script only) holding it means a
+ * button in its bar was clicked in WebKit, which focuses the frame rather
+ * than the button: nothing the person chose, so the focus goes to the way
+ * back in instead.
+ */
+function DrawerPopup({
+  returnFocus,
+  children,
+}: {
+  returnFocus: FocusFallback | undefined;
+  children: ReactNode;
+}) {
+  const finalFocus = useReturnFocus(returnFocus, { unheld: isPaneFrame });
+  return (
+    <Dialog.Popup className="shell__drawer" aria-label="Vault" finalFocus={finalFocus}>
+      <nav className="shell__sidebar" aria-label="Vault">
+        {children}
+      </nav>
+    </Dialog.Popup>
+  );
+}
+
+const isPaneFrame = (element: HTMLElement): boolean => element.classList.contains('pane');
 
 /**
  * The split, as equal columns.

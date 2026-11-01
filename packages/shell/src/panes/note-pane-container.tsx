@@ -104,6 +104,7 @@ import {
   openInPane,
   openPlace,
   splitPane,
+  useCanSplit,
   type WorkspaceStore,
 } from '../workspace/workspace-store.ts';
 import { sameWiringParts, type WorkspaceWiring } from '../workspace/workspace-wiring.tsx';
@@ -350,6 +351,7 @@ function useNoteTab({ wiring, names, chat, pane, tab, hidden }: NoteTabProps) {
     hidden ? null : paneOverlayOf(state.overlay, pane),
   );
   const split = useStore(store, (state) => isWorkspaceSplit(state.workspace));
+  const canSplit = useCanSplit(store);
   const menu = pageMenuOverlay(pane);
   const drawn = useNotePane({
     tabId: tab.id,
@@ -394,8 +396,9 @@ function useNoteTab({ wiring, names, chat, pane, tab, hidden }: NoteTabProps) {
     onShowInGraph: note.onShowInGraph,
     arrangement: {
       // Which of these a pane offers is the domain's rule; the bar draws a
-      // button and a menu item for each it is given.
-      ...(!split && { onSplit: () => splitPane(store, pane) }),
+      // button and a menu item for each it is given. Split only while the
+      // window has room for another pane (#658).
+      ...(canSplit && { onSplit: () => splitPane(store, pane) }),
       ...(split && { onClose: () => closePane(store, pane) }),
       // The way back to a hidden sidebar sits where it went: the first
       // pane's top-left corner.

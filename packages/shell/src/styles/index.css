@@ -11,6 +11,7 @@
 @import './sidebar.css';
 @import './editor.css';
 @import './overlays.css';
+@import './responsive.css';
 @import './page.css';
 @import './properties.css';
 @import './link-suggest.css';

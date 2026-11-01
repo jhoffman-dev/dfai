@@ -14,6 +14,7 @@ import {
   type FakeHost,
   type FakeVault,
 } from './host.ts';
+import { SIDEBAR_BESIDE_FROM } from './sidebar-drawer.ts';
 
 const TASK_TYPE = [
   '---',
@@ -88,16 +89,21 @@ test.describe('narrow windows (attack #387)', () => {
     await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('guard: at the window’s 720px minimum with the aside open, nothing overflows sideways and the left sidebar stays', async ({
+  test('guard: down to the window’s 720px minimum with the aside open, nothing overflows sideways; the left sidebar stays beside the work to 944px and is a drawer under it (#658)', async ({
     page,
   }) => {
     await openVault(page);
     await openNote(page, 'Ship it');
     await toggle(page).click();
     await expect(aside(page)).toBeVisible();
-    for (const width of [1100, 1019, 1020, 900, 720]) {
+    for (const width of [1100, 1019, 1020, SIDEBAR_BESIDE_FROM, 900, 720]) {
       await page.setViewportSize({ width, height: 800 });
-      await expect(page.getByRole('navigation', { name: 'Vault' })).toBeVisible();
+      const nav = page.getByRole('navigation', { name: 'Vault' });
+      if (width >= SIDEBAR_BESIDE_FROM) await expect(nav).toBeVisible();
+      else {
+        await expect(nav).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Show sidebar' }).first()).toBeVisible();
+      }
       await expect
         .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
         .toBeLessThanOrEqual(0);
