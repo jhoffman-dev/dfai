@@ -64,6 +64,7 @@ import type {
   SlackPort,
 } from '@dfai/application';
 import { createKindleSync } from '@dfai/application';
+import { DESKTOP_CAPABILITIES } from '@dfai/domain';
 import { createExportPageRenderer } from '@dfai/ui';
 import {
   browserBlockSyncRecords,
@@ -87,10 +88,16 @@ import {
   type NotePorts,
   type OnHost,
   type SemanticPorts,
+  type ShellComposition,
   type SourcePorts,
   type SyncHostPorts,
   type VaultPorts,
 } from '@dfai/shell';
+
+/** The desktop as the shell is handed it: its ports, and every capability but saving as a commit (#657). */
+export function composeDesktopShell(): ShellComposition {
+  return { ports: composeDesktop(), capabilities: DESKTOP_CAPABILITIES };
+}
 
 /**
  * The desktop's composition root: the shared shell (`@dfai/shell`) on the

@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import { mountShell } from '@dfai/shell';
-import { composeWeb } from './composition.ts';
+import { composeWebShell } from './composition.ts';
 
 /*
  * Attack on PR #689 (#656): mountShell's lifecycle, on the web's real ports.
@@ -42,20 +42,20 @@ describe('mountShell on one page (attack #689)', () => {
   it('leaves no drag guard behind after unmount, then remount', { timeout: 30_000 }, async () => {
     const live = watchDragListeners();
     document.body.innerHTML = '<div id="root"></div>';
-    const first = mountShell({ ports: composeWeb() });
+    const first = mountShell(composeWebShell());
     await screen.findByRole('treeitem', { name: 'Welcome' }, { timeout: 10_000 });
     const oneShell = live();
     first();
     expect(live()).toBe(0);
-    unmounts.push(mountShell({ ports: composeWeb() }));
+    unmounts.push(mountShell(composeWebShell()));
     await screen.findByRole('treeitem', { name: 'Welcome' }, { timeout: 10_000 });
     expect(live()).toBe(oneShell);
   });
 
   it('refuses a second shell on a page that already holds one', () => {
     document.body.innerHTML = '<div id="root"></div>';
-    unmounts.push(mountShell({ ports: composeWeb() }));
+    unmounts.push(mountShell(composeWebShell()));
     // A second call would put two Apps on one #root and two drag guards on the window.
-    expect(() => unmounts.push(mountShell({ ports: composeWeb() }))).toThrow();
+    expect(() => unmounts.push(mountShell(composeWebShell()))).toThrow();
   });
 });

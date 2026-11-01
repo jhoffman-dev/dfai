@@ -145,8 +145,24 @@ const forbidden = {
   shell: [...tauriOnly, otherPackageByPath, '@dfai/web', '@dfai/web/*'],
 };
 
+const PLATFORM_CHECK_WHY =
+  'the screen reads which entry points are offered (entryPointsOffered, #657), never which platform it is on.';
+
+/** A platform's capabilities, read by the screen itself rather than decided for it. */
+const platformValues = {
+  group: ['@dfai/domain'],
+  importNames: [
+    'PLATFORM_CAPABILITIES',
+    'DESKTOP_CAPABILITIES',
+    'WEB_CAPABILITIES',
+    'capabilitiesLacking',
+  ],
+  what: 'a platform’s capabilities',
+  why: PLATFORM_CHECK_WHY,
+};
+
 /** What a layer's production code, but not its tests, must also stay out of. */
-const forbiddenOutsideTests = { shell: [shellAdapters] };
+const forbiddenOutsideTests = { shell: [shellAdapters, platformValues], ui: [platformValues] };
 
 /**
  * A forbidden entry as `no-restricted-imports` takes it: a module's name, or
@@ -185,6 +201,20 @@ const NO_TAURI_SYNTAX = [
 ].map((selector) => ({
   selector,
   message: `Shared code must not reach Tauri’s globals — ${TAURI_ONLY_WHY}`,
+}));
+
+/** A platform asked for by name: compared, or named as a flag (#657). */
+const NO_PLATFORM_CHECK = [
+  ...['left', 'right'].flatMap((side) => [
+    `BinaryExpression[operator=/^[!=]==?$/][${side}.name=/^platform$/i]`,
+    `BinaryExpression[operator=/^[!=]==?$/][${side}.property.name=/^platform$/i]`,
+  ]),
+  'SwitchStatement[discriminant.name=/^platform$/i]',
+  'SwitchStatement[discriminant.property.name=/^platform$/i]',
+  'Identifier[name=/^is(Web|Desktop|Windows|Mac|MacOS|IPad|IOS|Browser|Tauri)$/]',
+].map((selector) => ({
+  selector,
+  message: `The screen must not ask which platform it is on — ${PLATFORM_CHECK_WHY}`,
 }));
 
 /**
@@ -508,6 +538,7 @@ const webviewNode = [
       'no-restricted-syntax': [
         ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport]),
         ...NO_TAURI_SYNTAX,
+        ...NO_PLATFORM_CHECK,
       ],
     },
   },
@@ -518,6 +549,7 @@ const webviewNode = [
       'no-restricted-syntax': [
         ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport, noShellAdaptersImport]),
         ...NO_TAURI_SYNTAX,
+        ...NO_PLATFORM_CHECK,
       ],
     },
   },

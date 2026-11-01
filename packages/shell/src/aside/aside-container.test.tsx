@@ -21,7 +21,7 @@ import { createWorkspaceStore, loadVault, workspaceNow } from '../workspace/work
 import { queryWrapper } from '../reads/query-wrapper.tsx';
 import { WorkspaceStoresProvider } from '../workspace/workspace-wiring.tsx';
 import { AsideContainer } from './aside-container.tsx';
-import { createAsideStore, focusRow, showAsideTab } from './aside-store.ts';
+import { createAsideStore, focusRow, selectAsideTab, showAsideTab } from './aside-store.ts';
 import { ClaudeSeatProvider } from './claude-seat.tsx';
 import type { RowPorts } from './row-aside.tsx';
 import {
@@ -99,13 +99,18 @@ const ROWS = {
   openNote: vi.fn(),
 } as unknown as RowPorts;
 
-function show(stores: ReturnType<typeof openOn>, claude = <p>the chat</p>) {
+function show(
+  stores: ReturnType<typeof openOn>,
+  claude = <p>the chat</p>,
+  { offersClaude }: { offersClaude?: boolean } = {},
+) {
   return render(
     <WorkspaceStoresProvider value={stores}>
       <ClaudeSeatProvider value={claude}>
         <AsideContainer
           rows={ROWS}
           types={{ onDelete: () => {}, onEditTemplate: () => {}, onOpenType: () => {} }}
+          {...(offersClaude !== undefined && { offersClaude })}
         />
       </ClaudeSeatProvider>
     </WorkspaceStoresProvider>,
@@ -154,6 +159,19 @@ describe('AsideContainer', () => {
     show(stores, <p>the chat</p>);
     await userEvent.click(screen.getByRole('tab', { name: 'Claude' }));
     expect(screen.getByText('the chat')).toBeDefined();
+  });
+
+  it('offers no Claude tab where the platform has no chat, even chosen before (#657)', () => {
+    const stores = openOn({ kind: 'note', path: NOTE });
+    publishShownNote(stores.shown, stores.tab, published(NOTE));
+    selectAsideTab(stores.aside, 'claude');
+    show(stores, <p>the chat</p>, { offersClaude: false });
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Properties',
+      'Backlinks',
+      'Outline',
+    ]);
+    expect(screen.queryByText('the chat')).toBeNull();
   });
 
   it('waits for a note the tab has not published yet, and reads the tab’s note, not another’s', () => {

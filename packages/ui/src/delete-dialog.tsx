@@ -75,6 +75,9 @@ export function DeleteDialog({
       <AlertDialog.Portal>
         <AlertDialog.Viewport className="palette__backdrop">
           <AlertDialog.Popup className="palette confirm" finalFocus={finalFocus}>
+            {/* Deleting is offered on every platform (#657). TODO(#670): on the web a
+                delete is a commit, recovered from the repository's history, and these
+                words must not promise a Trash there (ADR-0051). */}
             <AlertDialog.Title className="confirm__title">
               Move “{subject.name}” to the Trash?
             </AlertDialog.Title>

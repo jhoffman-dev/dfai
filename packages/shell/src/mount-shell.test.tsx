@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
+import { EVERY_ENTRY_POINT, type EntryPointsOffered } from '@dfai/application';
+import { DESKTOP_CAPABILITIES, WEB_CAPABILITIES } from '@dfai/domain';
 import { mountShell, type AppPorts } from './mount-shell.tsx';
 
+/** What the stand-in app was last handed as offered. */
+const handed = vi.hoisted(() => ({ offered: null as EntryPointsOffered | null }));
+
 // mountShell's own work, without the window it draws: the app and its later pages stand in.
-vi.mock('./app.tsx', () => ({ App: () => <p>the app</p> }));
+vi.mock('./app.tsx', () => ({
+  App: ({ offered }: { offered: EntryPointsOffered }) => {
+    handed.offered = offered;
+    return <p>the app</p>;
+  },
+}));
 vi.mock('./pages-on-first-use.ts', () => ({ preloadPages: async () => {} }));
 
 /** Never read: the app that would read them is the stand-in above. */
@@ -25,13 +35,15 @@ afterEach(() => {
 
 const mounted = () => {
   document.body.innerHTML = '<div id="root"></div>';
-  unmount = mountShell({ ports });
+  unmount = mountShell({ ports, capabilities: DESKTOP_CAPABILITIES });
 };
 
 describe('mountShell (#656)', () => {
   it('says so when the page has nowhere to draw the app', () => {
     document.body.innerHTML = '<main></main>';
-    expect(() => mountShell({ ports })).toThrow('index.html is missing #root');
+    expect(() => mountShell({ ports, capabilities: DESKTOP_CAPABILITIES })).toThrow(
+      'index.html is missing #root',
+    );
   });
 
   it('draws the app into #root and takes it down again', async () => {
@@ -57,9 +69,26 @@ describe('mountShell (#656)', () => {
 
   it('refuses a second app on a page that holds one, and takes one again once it is down', () => {
     mounted();
-    expect(() => mountShell({ ports })).toThrow('this page already holds the app');
+    expect(() => mountShell({ ports, capabilities: DESKTOP_CAPABILITIES })).toThrow(
+      'this page already holds the app',
+    );
     unmount?.();
     unmount = null;
     expect(() => mounted()).not.toThrow();
+  });
+
+  it('hands the app every entry point on the desktop (#657)', async () => {
+    mounted();
+    await screen.findByText('the app');
+    expect(handed.offered).toEqual(EVERY_ENTRY_POINT);
+  });
+
+  it('hands the app what the platform offers, decided from its capabilities (#657)', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    unmount = mountShell({ ports, capabilities: WEB_CAPABILITIES });
+    await screen.findByText('the app');
+    expect(handed.offered?.kindleSettings).toBe(false);
+    expect(handed.offered?.syncSettings).toBe(false);
+    expect(handed.offered?.exportNotes).toBe(true);
   });
 });

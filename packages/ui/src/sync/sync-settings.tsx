@@ -51,7 +51,8 @@ export interface SyncSettingsView {
 }
 
 export interface SyncSettingsActions {
-  readonly onCreate: (name: string) => void;
+  /** Makes a new private repository for the vault; left out, only an existing one is offered. */
+  readonly onCreate?: (name: string) => void;
   readonly onConnect: (url: string) => void;
   readonly onSyncNow: () => void;
   readonly onPushDelay: (seconds: number) => void;
@@ -180,30 +181,32 @@ function SetUpForms({
         onLoad={onLoadRepositories}
         onConnect={onConnect}
       />
-      <form
-        className="sync-form"
-        aria-label="Set up sync with GitHub"
-        onSubmit={(event) => submit(event, () => onCreate(name.trim()))}
-      >
-        <label className="sync-form__label" htmlFor="sync-repository-name">
-          Or create a new private repository
-        </label>
-        <input
-          id="sync-repository-name"
-          className="field sync-form__field"
-          value={name}
-          spellCheck={false}
-          autoComplete="off"
-          onChange={(event) => setName(event.target.value)}
-        />
-        <button
-          className="btn btn--primary"
-          type="submit"
-          disabled={view.busy || name.trim() === ''}
+      {onCreate !== undefined && (
+        <form
+          className="sync-form"
+          aria-label="Set up sync with GitHub"
+          onSubmit={(event) => submit(event, () => onCreate(name.trim()))}
         >
-          Set up sync with GitHub
-        </button>
-      </form>
+          <label className="sync-form__label" htmlFor="sync-repository-name">
+            Or create a new private repository
+          </label>
+          <input
+            id="sync-repository-name"
+            className="field sync-form__field"
+            value={name}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(event) => setName(event.target.value)}
+          />
+          <button
+            className="btn btn--primary"
+            type="submit"
+            disabled={view.busy || name.trim() === ''}
+          >
+            Set up sync with GitHub
+          </button>
+        </form>
+      )}
       <form
         className="sync-form"
         aria-label="Connect an existing repository"

@@ -29,11 +29,12 @@ function statusLine(state: ConnectionSettingsState): string {
   return 'On, but not running';
 }
 
-/** The sections the dialog draws itself, before the app's. */
+/** The sections the dialog draws itself, before the app's: Connections where it is offered. */
 const OWN_SECTIONS: readonly SettingsSectionLink[] = [
   SETTINGS_SECTIONS.appearance,
   SETTINGS_SECTIONS.connections,
 ];
+const APPEARANCE_ONLY: readonly SettingsSectionLink[] = [SETTINGS_SECTIONS.appearance];
 
 /**
  * Settings, as a dialog: a list of its sections on the left and the sections
@@ -49,6 +50,7 @@ export function SettingsDialog({
   mcp,
   themeStore,
   sections = [],
+  connections = true,
   onEnable,
   onCopyToken,
   onRotateToken,
@@ -63,6 +65,8 @@ export function SettingsDialog({
   themeStore: ThemeStore;
   /** The app's sections, in the order `children` draws them, for the list on the left. */
   sections?: readonly SettingsSectionLink[];
+  /** Whether Connections is drawn: false where there is no local API to connect to. */
+  connections?: boolean;
   onEnable: (enabled: boolean) => void;
   onCopyToken: () => void;
   onRotateToken: () => void;
@@ -76,7 +80,10 @@ export function SettingsDialog({
   const { status, problem, notice, pending } = connection;
   // The same array while the app's sections are, so the list is not redrawn
   // each time the connection's state comes in.
-  const listed = useMemo(() => [...OWN_SECTIONS, ...sections], [sections]);
+  const listed = useMemo(
+    () => [...(connections ? OWN_SECTIONS : APPEARANCE_ONLY), ...sections],
+    [connections, sections],
+  );
 
   return settingsFrame({
     onClose,
@@ -85,41 +92,43 @@ export function SettingsDialog({
     body: (
       <>
         <AppearanceSettings store={themeStore} />
-        <SettingsSection section={SETTINGS_SECTIONS.connections}>
-          <p className="settings__lede">
-            Let other tools on this Mac, such as Claude Code, read and write this vault through DFAI
-            while it is open.
-          </p>
-          <div className="settings__row">
-            <span className="settings__row-text">
-              <span className="settings__row-label">Local API</span>
-              <span className="settings__status" data-testid="api-status">
-                {statusLine(connection)}
+        {connections && (
+          <SettingsSection section={SETTINGS_SECTIONS.connections}>
+            <p className="settings__lede">
+              Let other tools on this Mac, such as Claude Code, read and write this vault through
+              DFAI while it is open.
+            </p>
+            <div className="settings__row">
+              <span className="settings__row-text">
+                <span className="settings__row-label">Local API</span>
+                <span className="settings__status" data-testid="api-status">
+                  {statusLine(connection)}
+                </span>
               </span>
-            </span>
-            <Toggle
-              label="Local API"
-              checked={status?.enabled ?? false}
-              disabled={pending || status === null}
-              onChange={onEnable}
-            />
-          </div>
-          {problem !== null && (
-            <p className="settings__problem" role="alert">
-              {problem}
+              <Toggle
+                label="Local API"
+                checked={status?.enabled ?? false}
+                disabled={pending || status === null}
+                onChange={onEnable}
+              />
+            </div>
+            {problem !== null && (
+              <p className="settings__problem" role="alert">
+                {problem}
+              </p>
+            )}
+            <p className="settings__notice" aria-live="polite">
+              {notice}
             </p>
-          )}
-          <p className="settings__notice" aria-live="polite">
-            {notice}
-          </p>
-          <TokenActions pending={pending} onCopy={onCopyToken} onRotate={onRotateToken} />
-          <McpCommand mcp={mcp} pending={pending} onCopy={onCopyMcpCommand} />
-          {status !== null && (
-            <p className="settings__file">
-              Connection file <code>{status.file}</code>
-            </p>
-          )}
-        </SettingsSection>
+            <TokenActions pending={pending} onCopy={onCopyToken} onRotate={onRotateToken} />
+            <McpCommand mcp={mcp} pending={pending} onCopy={onCopyMcpCommand} />
+            {status !== null && (
+              <p className="settings__file">
+                Connection file <code>{status.file}</code>
+              </p>
+            )}
+          </SettingsSection>
+        )}
         {children}
       </>
     ),

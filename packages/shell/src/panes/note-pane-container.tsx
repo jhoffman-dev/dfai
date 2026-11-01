@@ -48,6 +48,7 @@ import type {
   ActivityLog,
   DefinedType,
   NoteChanges,
+  EntryPointsOffered,
   ExternalLinkPort,
   IndexPort,
   LinkedRangeStore,
@@ -250,6 +251,8 @@ export interface PaneContext {
   readonly peopleMerge: ChosenPeopleMerge;
   /** Exporting notes (#501): a page's menu, the peek's, a view's chosen rows. Null where none can be made. */
   readonly exporting: ExportCommands | null;
+  /** Which entry points a platform may lack are offered here (#657): a source's Refresh among them. */
+  readonly offered: EntryPointsOffered;
   /** Told the problem with a link — one that could not be made or followed — or null once one leads somewhere. */
   readonly onLinkProblem: (message: string | null) => void;
   /** Where a link to a highlight or a PDF leads (#506), read from the vault. */
@@ -673,6 +676,7 @@ export function useNotePane({
     index,
     sources,
     refresher: context.sourceRefresher,
+    offered: context.offered,
     vaultRoot: context.vault,
     setProperty: note.setProperty,
     onChanged,
@@ -1346,10 +1350,11 @@ function paneBody({
         source={source.source}
         report={source.report}
         refreshing={source.refreshing}
-        onRefresh={source.refresh}
+        {...(source.refreshOffered && { onRefresh: source.refresh })}
         secrets={source.secrets}
         outsideVault={source.outsideVault}
-        {...(source.chooseFile !== null && { onChooseFile: source.chooseFile })}
+        {...(source.refreshOffered &&
+          source.chooseFile !== null && { onChooseFile: source.chooseFile })}
         fileProblem={source.fileProblem}
       />
     );

@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
+import { DESKTOP_CAPABILITIES } from '@dfai/domain';
 import { mountShell, type AppPorts } from './mount-shell.tsx';
 
 vi.mock('./app.tsx', () => ({ App: () => <p>the app</p> }));
@@ -27,7 +28,7 @@ afterEach(() => {
 });
 
 const mount = () => {
-  const teardown = mountShell({ ports });
+  const teardown = mountShell({ ports, capabilities: DESKTOP_CAPABILITIES });
   teardowns.push(teardown);
   return teardown;
 };

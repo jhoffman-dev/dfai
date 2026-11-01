@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { mountShell } from '@dfai/shell';
-import { composeWeb } from './composition.ts';
+import { composeWebShell } from './composition.ts';
 
 /*
  * #656: the web build composes the same shell as the desktop, on no host at
@@ -23,7 +23,7 @@ afterEach(() => {
 
 const startedAsMainStartsIt = () => {
   document.body.innerHTML = '<div id="root"></div>';
-  unmount = mountShell({ ports: composeWeb() });
+  unmount = mountShell(composeWebShell());
 };
 
 describe('the web build (#656)', () => {
@@ -34,6 +34,28 @@ describe('the web build (#656)', () => {
     ).toBeDefined();
     expect(screen.getByRole('treeitem', { name: 'Welcome' })).toBeDefined();
   });
+
+  it(
+    'hides what a browser cannot do, from the capabilities it is handed (#657)',
+    {
+      timeout: 20_000,
+    },
+    async () => {
+      startedAsMainStartsIt();
+      await screen.findByRole('treeitem', { name: 'Welcome' }, { timeout: 10_000 });
+      // The desktop's sidebar has Ask beside Search, and a sync light by Settings.
+      expect(screen.queryByTitle('Ask (⌘J)')).toBeNull();
+      expect(screen.queryByLabelText(/^Sync:/)).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+      const sections = await screen.findByRole('navigation', { name: 'Settings sections' });
+      expect(
+        within(sections)
+          .getAllByRole('button')
+          .map((link) => link.textContent),
+      ).toEqual(['Appearance', 'Profile', 'Index', 'Images', 'Quick add', 'About']);
+      expect(screen.queryByRole('switch', { name: 'Local API' })).toBeNull();
+    },
+  );
 
   it('takes the window down again when asked', { timeout: 20_000 }, async () => {
     startedAsMainStartsIt();

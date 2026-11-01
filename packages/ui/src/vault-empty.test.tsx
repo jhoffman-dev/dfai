@@ -16,4 +16,11 @@ describe('VaultEmptyState', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Choose folder…' }));
     expect(onChooseVault).toHaveBeenCalledOnce();
   });
+
+  it('offers no folder where a folder cannot be opened as the vault (#657)', () => {
+    render(<VaultEmptyState />);
+    expect(screen.getByRole('heading', { name: 'Open a vault' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Choose folder…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open a vault from GitHub…' })).toBeNull();
+  });
 });
