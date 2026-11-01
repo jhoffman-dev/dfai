@@ -690,9 +690,10 @@ function releaseAnchors(document: Document, key: string, removing: boolean): str
       // A list or map used as a key through an alias is named `*k` by the
       // reader; written out in its place it would be named by its items.
       if (keyOf(pair.key, document) !== was) {
-        throw new Error(
-          `Cannot change "${key}": the key "${was}" is an alias of it, and would be renamed`,
-        );
+        throw new FrontmatterRefusedError({
+          key,
+          message: `Cannot change "${key}": the key "${was}" is an alias of it, and would be renamed`,
+        });
       }
       return true;
     });
