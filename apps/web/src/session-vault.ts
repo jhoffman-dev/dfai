@@ -198,13 +198,17 @@ function forTheOpenVault<Args extends { vault: string }, Result>(
   };
 }
 
-/** The reads the shell makes of the session's notes and files. */
+/**
+ * The reads the shell makes of the session's notes and files. Its `modified`
+ * is a count of writes, a version and no time, so each read says the time is
+ * unknown (ADR-0053).
+ */
 function reads(session: SessionFiles) {
   const readText = (path: string) => {
     const held = session.held(path);
     const text = textOf(held);
     if (text === null) return refuse('not a text file');
-    return { text, modified: held.modified };
+    return { text, modified: held.modified, modifiedAt: null };
   };
   return {
     listDirectory: async (folder: VaultPath) => listDirectory(session, folder),
@@ -217,6 +221,7 @@ function reads(session: SessionFiles) {
             name: vaultPathName(createVaultPath(path)),
             path: createVaultPath(path),
             modified: held.modified,
+            modifiedAt: null,
             size: bytesOf(held).byteLength,
           };
         }),
@@ -228,7 +233,7 @@ function reads(session: SessionFiles) {
         const text = held === undefined ? null : textOf(held);
         return held === undefined || text === null
           ? []
-          : [{ path, text, modified: held.modified, size: bytesOf(held).byteLength }];
+          : [{ path, text, modified: held.modified, modifiedAt: null, size: bytesOf(held).byteLength }];
       }),
     readTextFile: async (path: VaultPath) => readText(path),
     readBinaryFile: async (path: VaultPath) => bytesOf(session.held(path)).slice().buffer,
