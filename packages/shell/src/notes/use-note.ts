@@ -158,6 +158,11 @@ export function useNote({
    * someone chooses to overwrite or discard, nothing writes it.
    */
   const [outdated, setOutdated] = useState<StrandedEdit | null>(null);
+  /**
+   * Work refused on the way out of a note that could not be handed back
+   * either, by note: the next read of it in this pane puts it back on screen.
+   */
+  const unkept = useRef(new Map<string, StrandedEdit>());
 
   /** Read when a save lands, so the callback need not be stable to be current. */
   const announceSaved = useRef(onSaved);
@@ -300,7 +305,8 @@ export function useNote({
    * of the note then, unless a later write of it has taken its place.
    */
   const holdReadsBehind = useCallback((key: string, settles: Promise<unknown>) => {
-    // A read only has to know it is over; how it went is the write's own to report.
+    // Caught only to let the reads go: how it went is reported by the write's
+    // own handlers, and a failure of those by the caller, never here.
     const over = settles.catch(() => undefined);
     writes.current.pending.set(key, over);
     void over.then(() => {
@@ -374,15 +380,21 @@ export function useNote({
         // else's edits — the pane says so and waits to be told.
         const rescued = recover.current?.(path) ?? null;
         recovered.current = rescued !== null && vault !== null ? { vault, path } : null;
+        // Work this pane could not hand back. The file's time it was refused
+        // against is unknown, so it waits to be told, as outdated work does.
+        const stillHere = rescued === null ? (unkept.current.get(opening) ?? null) : null;
+        unkept.current.delete(opening);
         setOutdated(
-          rescued !== null && changedSinceStranded({ edit: rescued, modified: opened.modified })
-            ? rescued
-            : null,
+          stillHere ??
+            (rescued !== null && changedSinceStranded({ edit: rescued, modified: opened.modified })
+              ? rescued
+              : null),
         );
-        onScreen.current = rescued?.doc ?? opened.doc;
-        setDoc(rescued?.doc ?? opened.doc);
-        setDirty(rescued !== null);
-        unsaved.current = rescued !== null;
+        const handedBack = rescued ?? stillHere;
+        onScreen.current = handedBack?.doc ?? opened.doc;
+        setDoc(handedBack?.doc ?? opened.doc);
+        setDirty(handedBack !== null);
+        unsaved.current = handedBack !== null;
       })
       .catch((cause: unknown) => {
         if (!cancelled) setFailure(message(cause));
@@ -670,16 +682,32 @@ export function useNote({
             vaultNow.current === vault
               ? await noteModified({ fs: ports.fs, path: leaving.path })
               : leaving.modified;
-          announceStranded.current?.({
-            path: leaving.path,
-            doc: unwritten,
-            reason: message(cause),
-            modified,
-            vault,
-          });
+          const reason = message(cause);
+          try {
+            announceStranded.current?.({
+              path: leaving.path,
+              doc: unwritten,
+              reason,
+              modified,
+              vault,
+            });
+          } catch (notKept: unknown) {
+            // Neither written nor handed back: the pane keeps it, and coming
+            // back to the note puts it on screen, unsaved, waiting to be told.
+            unkept.current.set(noteKey(vault, leaving.path), {
+              path: leaving.path,
+              doc: unwritten,
+              reason: `${reason}; ${message(notKept)}`,
+              modified: null,
+              keptAt: 0,
+            });
+          }
         },
       );
       holdReadsBehind(noteKey(vault, leaving.path), handled);
+      // Left unhandled on purpose: a failure in the handlers above has no pane
+      // to be shown in, and must still be heard rather than lost.
+      void handled.then(() => undefined);
     };
   }, [ports.fs, ports.markdown, vault, path, startFrom, holdReadsBehind]);
 

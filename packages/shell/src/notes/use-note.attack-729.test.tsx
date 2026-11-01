@@ -116,41 +116,45 @@ function pane(vault: ReturnType<typeof heldVault>, onStranded?: (stranding: Stra
 }
 
 describe('attack on PR #729: the way back to a note whose write on the way out is still out', () => {
-  it.fails(
-    'keeps typing whose stranding failed, or says so, rather than showing the disk as saved',
-    async () => {
-      const vault = heldVault();
-      const view = pane(vault, () => {
-        // The keeper of refused work fails (a store or a listener throwing). On
-        // main this was an unhandled rejection; under #729 `holdReadsBehind`
-        // catches it, and nothing reaches the person.
-        throw new Error('could not keep the work');
-      });
-      await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
-      act(() => view.result.current.changeDoc(docOf('Typed before leaving.\n')));
+  it('keeps typing whose stranding failed, or says so, rather than showing the disk as saved', async () => {
+    const vault = heldVault();
+    let keeperFailures = 1;
+    const view = pane(vault, () => {
+      // The keeper of refused work fails (a store or a listener throwing). On
+      // main this was an unhandled rejection; under #729 `holdReadsBehind`
+      // catches it, and nothing reaches the person. It fails once: the pane
+      // unmounting at the end of the test hands the work back again, and a
+      // keeper failing there too has no pane to fall back on, so throws.
+      if (keeperFailures-- > 0) throw new Error('could not keep the work');
+    });
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Typed before leaving.\n')));
 
-      vault.hold();
-      view.rerender({ path: OTHER });
-      await settle();
-      vault.writeOutside('# Note\n\nWritten by another app.\n');
-      view.rerender({ path: NOTE });
-      await settle();
-      vault.release();
-      await settle();
-      await settle();
+    vault.hold();
+    view.rerender({ path: OTHER });
+    await settle();
+    vault.writeOutside('# Note\n\nWritten by another app.\n');
+    view.rerender({ path: NOTE });
+    await settle();
+    vault.release();
+    await settle();
+    await settle();
 
-      const shown = view.result.current.state;
-      const typingOnScreen =
-        shown.kind === 'ready' &&
-        JSON.stringify(shown.doc) === JSON.stringify(docOf('Typed before leaving.\n'));
-      const errorShown =
-        shown.kind === 'failed' || (shown.kind === 'ready' && shown.saveError !== null);
-      // The typing is on disk, on screen, or the person is told it is not.
-      expect(
-        vault.contents()?.includes('Typed before leaving.') || typingOnScreen || errorShown,
-      ).toBe(true);
-    },
-  );
+    const shown = view.result.current.state;
+    const typingOnScreen =
+      shown.kind === 'ready' &&
+      JSON.stringify(shown.doc) === JSON.stringify(docOf('Typed before leaving.\n'));
+    const errorShown =
+      shown.kind === 'failed' || (shown.kind === 'ready' && shown.saveError !== null);
+    // The typing is on disk, on screen, or the person is told it is not.
+    expect(
+      vault.contents()?.includes('Typed before leaving.') || typingOnScreen || errorShown,
+    ).toBe(true);
+    // Neither on disk nor kept elsewhere, it is back on screen, unsaved, with
+    // the choice to overwrite or discard rather than an autosave over the file.
+    expect(typingOnScreen && errorShown).toBe(true);
+    expect(view.result.current.state).toMatchObject({ kind: 'ready', dirty: true });
+  });
 
   const ready = (view: ReturnType<typeof pane>) =>
     waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
