@@ -65,9 +65,15 @@ async function splitWithTypingInB(page: Page): Promise<FakeVault> {
   return vault;
 }
 
-/** Pane 1 takes the focus, then the window goes narrow: pane 2 is hidden. */
+/**
+ * Pane 1 takes the focus, then the window goes narrow: pane 2 is hidden. The
+ * click lands on the paragraph's first word: its centre is the `[[Another
+ * Note]]` link in Linux WebKit's wider font, which would open the peek instead.
+ */
 async function focusAThenNarrow(page: Page): Promise<void> {
-  await pane(page, 1).getByText('First paragraph').click();
+  await pane(page, 1)
+    .getByText('First paragraph')
+    .click({ position: { x: 6, y: 8 } });
   await page.setViewportSize(IPAD_PORTRAIT);
   await expect(pane(page, 1)).toBeVisible();
   await expect(page.locator('section.pane[hidden]')).toHaveCount(1);

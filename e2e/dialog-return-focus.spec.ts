@@ -27,15 +27,23 @@ async function openToday(page: Page): Promise<void> {
   await expect(page.getByRole('article', { name: 'today' })).toBeVisible();
 }
 
+/**
+ * Where the focus is: in the note's editor, on the Settings button that opened
+ * the dialog, on the body, or elsewhere. WebKit on macOS focuses nothing for
+ * the click, so the fallback takes the focus to the editor; WebKit on Linux
+ * focuses the clicked button, and Base UI rightly hands the focus back to it.
+ * Either is a place a keyboard can carry on from; the body is not.
+ */
 const focusHolder = (page: Page) =>
   page.evaluate(() => {
     const active = document.activeElement;
     if (active === null || active === document.body) return 'body';
     if (active.closest('[contenteditable="true"]') !== null) return 'the editor';
+    if (active.closest('button')?.textContent?.trim() === 'Settings') return 'the opener';
     return `${active.tagName.toLowerCase()} ${active.getAttribute('aria-label') ?? active.className}`;
   });
 
-test('Settings opened by a click and closed with Escape leaves the focus in the note, not on the body', async ({
+test('Settings opened by a click and closed with Escape leaves the focus somewhere a keyboard can go on from, not on the body', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -50,5 +58,5 @@ test('Settings opened by a click and closed with Escape leaves the focus in the 
 
   await page.keyboard.press('Escape');
   await expect(settings).toHaveCount(0);
-  await expect.poll(() => focusHolder(page)).toBe('the editor');
+  await expect.poll(() => focusHolder(page)).toMatch(/^the (editor|opener)$/);
 });
