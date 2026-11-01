@@ -1,11 +1,9 @@
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   DndContext,
-  PointerSensor,
   closestCenter,
   useDraggable,
   useDroppable,
-  useSensor,
   useSensors,
   type Announcements,
   type DragEndEvent,
@@ -23,10 +21,8 @@ import { Icon, sidebarGlyph } from './icon.tsx';
 import { MenuItems, type MenuCommand } from './menu-items.tsx';
 import { EditableTitle } from './page-head.tsx';
 import { tabWords } from './drag/announcements.ts';
+import { usePressSensors } from './drag/dnd.ts';
 import type { OverlaySlot, OverlaySlots } from './overlay-slot.ts';
-
-/** How far a pointer travels before a press on a tab becomes a drag; under it, a click. */
-const DRAG_DISTANCE = 4;
 
 /**
  * What a type's tabs can do besides switching (issue #11): add, rename, copy,
@@ -70,9 +66,7 @@ export function ViewTabs({
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [said, setSaid] = useState('');
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: DRAG_DISTANCE } }),
-  );
+  const sensors = useSensors(...usePressSensors());
   const held = useHeldOrder(tabs);
   const shown = held.tabs;
   const titleOf = useCallback(
