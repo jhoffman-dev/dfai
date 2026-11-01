@@ -17,6 +17,7 @@ import { VaultTree, type TreeEditing } from './vault-tree.tsx';
 import { MenuItems, type MenuCommand } from './menu-items.tsx';
 import { SortableList } from './sortable-list.tsx';
 import { TypeRowMenu, type TypeMenuAnchor } from './type-row-menu.tsx';
+import { useLongPress } from './long-press.ts';
 import { useReorderTransition } from './reorder-transition.ts';
 import { useSidebarSections, type SectionOrder, type SectionStore } from './sidebar-sections.ts';
 import { openHowFrom, type OpenHow } from './open-how.ts';
@@ -669,6 +670,59 @@ const AskQuickButton = memo(function AskQuickButton({
   );
 });
 
+/**
+ * One type's row. A click or a tap opens the type; its menu comes by
+ * right-click, Shift+F10 — or a finger held on the row (#659), since a touch
+ * screen has no right button and the row has no "…" of its own.
+ */
+function TypeRow({
+  type,
+  on,
+  onOpen,
+  onKeyDown,
+  onMenu,
+}: {
+  type: SidebarType;
+  on: boolean;
+  onOpen: (name: string) => void;
+  onKeyDown: (type: SidebarType, event: KeyboardEvent<HTMLButtonElement>) => void;
+  /** Null where the sidebar has no menu to offer: then a hold is only a slow tap, and a right-click is the browser's. */
+  onMenu: ((type: SidebarType, anchor: TypeMenuAnchor) => void) | null;
+}) {
+  const hold = useLongPress((at) => onMenu?.(type, at));
+  return (
+    <li className={on ? 'sidebar__item sidebar__item--on' : 'sidebar__item'}>
+      <button
+        type="button"
+        className="sidebar__row"
+        aria-label={`${type.label}, ${type.count === 1 ? '1 note' : `${type.count} notes`}`}
+        title={type.label}
+        aria-current={on ? 'page' : undefined}
+        {...(onMenu === null ? {} : hold)}
+        onClick={() => onOpen(type.name)}
+        onKeyDown={(event) => onKeyDown(type, event)}
+        onContextMenu={
+          onMenu === null
+            ? undefined
+            : (event) => {
+                event.preventDefault();
+                onMenu(type, { x: event.clientX, y: event.clientY });
+              }
+        }
+      >
+        <Icon name={sidebarGlyph(type.icon)} className="sidebar__icon" />
+        <span className="sidebar__name">{type.label}</span>
+        {/* A nought says nothing the row's name does not: the row stays, the count goes. */}
+        {type.count > 0 && (
+          <span className="sidebar__count" aria-hidden="true">
+            {type.count}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
 const TypeList = memo(function TypeList({
   types,
   anyBroken,
@@ -705,39 +759,16 @@ const TypeList = memo(function TypeList({
   return (
     <>
       <ul className="sidebar__list">
-        {types.map((type) => {
-          const on = type.name === openTypeName;
-          return (
-            <li
-              key={type.name}
-              className={on ? 'sidebar__item sidebar__item--on' : 'sidebar__item'}
-            >
-              <button
-                type="button"
-                className="sidebar__row"
-                aria-label={`${type.label}, ${type.count === 1 ? '1 note' : `${type.count} notes`}`}
-                title={type.label}
-                aria-current={on ? 'page' : undefined}
-                onClick={() => onOpenType(type.name)}
-                onKeyDown={(event) => onKeyDown(type, event)}
-                onContextMenu={(event) => {
-                  if (onEditType === undefined) return;
-                  event.preventDefault();
-                  openMenu(type, { x: event.clientX, y: event.clientY });
-                }}
-              >
-                <Icon name={sidebarGlyph(type.icon)} className="sidebar__icon" />
-                <span className="sidebar__name">{type.label}</span>
-                {/* A nought says nothing the row's name does not: the row stays, the count goes. */}
-                {type.count > 0 && (
-                  <span className="sidebar__count" aria-hidden="true">
-                    {type.count}
-                  </span>
-                )}
-              </button>
-            </li>
-          );
-        })}
+        {types.map((type) => (
+          <TypeRow
+            key={type.name}
+            type={type}
+            on={type.name === openTypeName}
+            onOpen={onOpenType}
+            onKeyDown={onKeyDown}
+            onMenu={onEditType === undefined ? null : openMenu}
+          />
+        ))}
       </ul>
       {onEditType !== undefined && (
         <TypeRowMenu

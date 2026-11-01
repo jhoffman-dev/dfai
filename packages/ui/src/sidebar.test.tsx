@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   createVaultPath,
   sidebarEntry,
   sidebarTreeRows,
+  LONG_PRESS,
   type SidebarSectionId,
 } from '@dfai/domain';
 import { Sidebar, type SidebarQuickView, type SidebarType } from './sidebar.tsx';
@@ -204,6 +205,77 @@ describe('Sidebar', () => {
       }),
     );
     expect(onOpenType).toHaveBeenCalledExactlyOnceWith('task');
+  });
+
+  describe('on a touch screen', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('opens a type’s menu under a finger held on its row, and the tap that follows opens nothing', async () => {
+      // The hold is measured on the page's clock, so that is faked with the timers.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+      const onOpenType = vi.fn();
+      const onEditType = vi.fn();
+      show({ onOpenType, onEditType });
+      const row = screen.getByRole('button', { name: 'Task, 62 notes' });
+      const finger = { pointerType: 'touch', isPrimary: true, clientX: 40, clientY: 300 };
+
+      fireEvent.pointerDown(row, finger);
+      act(() => vi.advanceTimersByTime(LONG_PRESS.holdMs - 1));
+      expect(screen.queryByRole('menu', { name: 'Task' })).toBeNull();
+      act(() => vi.advanceTimersByTime(1));
+      fireEvent.pointerUp(row, finger);
+      // The tap that lets go, as a pointer's click (`detail` 1), not a keyboard's.
+      fireEvent.click(row, { detail: 1 });
+      vi.useRealTimers();
+
+      const menu = within(await screen.findByRole('menu', { name: 'Task' }));
+      expect(onOpenType).not.toHaveBeenCalled();
+      await userEvent.click(menu.getByRole('menuitem', { name: 'Edit type' }));
+      expect(onEditType).toHaveBeenCalledExactlyOnceWith('task');
+    });
+
+    it('with no menu to offer, a hold is only a slow tap, and a right-click is the browser’s', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+      const onOpenType = vi.fn();
+      show({ onOpenType });
+      const row = screen.getByRole('button', { name: 'Task, 62 notes' });
+      const finger = { pointerType: 'touch', isPrimary: true, clientX: 40, clientY: 300 };
+
+      // A sidebar that cannot edit types opens no menu, so nothing was offered
+      // under the finger — and the tap that lets go still opens the type.
+      fireEvent.pointerDown(row, finger);
+      act(() => vi.advanceTimersByTime(LONG_PRESS.holdMs * 2));
+      fireEvent.pointerUp(row, finger);
+      fireEvent.click(row, { detail: 1 });
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(onOpenType).toHaveBeenCalledExactlyOnceWith('task');
+
+      // Nor is the browser's own context menu taken from a right-click.
+      expect(fireEvent.contextMenu(row)).toBe(true);
+    });
+
+    it('leaves a finger that swipes off the row to the page: no menu, and no type opened', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+      const onOpenType = vi.fn();
+      show({ onOpenType, onEditType: vi.fn() });
+      const row = screen.getByRole('button', { name: 'Task, 62 notes' });
+
+      fireEvent.pointerDown(row, {
+        pointerType: 'touch',
+        isPrimary: true,
+        clientX: 40,
+        clientY: 300,
+      });
+      fireEvent.pointerMove(row, {
+        pointerType: 'touch',
+        isPrimary: true,
+        clientX: 40,
+        clientY: 340,
+      });
+      act(() => vi.advanceTimersByTime(LONG_PRESS.holdMs * 2));
+      expect(screen.queryByRole('menu', { name: 'Task' })).toBeNull();
+      expect(onOpenType).not.toHaveBeenCalled();
+    });
   });
 
   it('offers Edit template from a type’s menu, beside Edit type (ADR-0026)', async () => {
