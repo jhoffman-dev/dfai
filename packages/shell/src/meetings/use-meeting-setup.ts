@@ -60,6 +60,11 @@ export interface MeetingSetupWiring {
   readonly activity: ActivityRecorder;
   /** After the yes wrote anything, so the types and the tree are read again. */
   readonly onChanged: () => void;
+  /**
+   * Whether the platform can run the Claude rules the set-up installs (#657):
+   * where not, it is offered nowhere.
+   */
+  readonly offered: boolean;
 }
 
 /**
@@ -88,7 +93,7 @@ export function useMeetingSetup(
   return useMemo(() => {
     const busyOrSaid = state.open || state.result !== null || state.problem !== null;
     const shown = where === 'automations' || busyOrSaid || (needed !== false && !state.dismissed);
-    if (vault === null || !shown) return null;
+    if (vault === null || !shown || !wiring.offered) return null;
     const offer = state.offer;
     return {
       // Said while the rules are read, so the Inbox holds its rows rather than

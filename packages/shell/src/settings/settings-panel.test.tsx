@@ -53,6 +53,7 @@ function showSettings(host: ReturnType<typeof fakeHost>, mcpEntry: string | null
       ports={{ settings: host.settings, clipboard: host.clipboard, mcpEntry }}
       themeStore={createBrowserThemeStore()}
       activity={activity}
+      connections
       onClose={() => {}}
     />,
   );

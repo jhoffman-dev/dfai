@@ -34,7 +34,7 @@ export const AsideContainer = memo(function AsideContainer({
   rows,
   types,
   onSelectType,
-  offersClaude = true,
+  offersClaude,
 }: {
   rows: RowPorts;
   types: TypeAsideWiring;
@@ -44,7 +44,7 @@ export const AsideContainer = memo(function AsideContainer({
    */
   onSelectType?: () => void;
   /** Whether the Claude tab is offered: not where the platform has no chat. */
-  offersClaude?: boolean;
+  offersClaude: boolean;
 }) {
   const { store, aside, shown } = useWorkspaceStores();
   const chosen = useAsideTab(aside);

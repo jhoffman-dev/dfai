@@ -8,12 +8,12 @@ import type { SyncController } from './use-sync.ts';
 export function SyncSettingsCard({
   sync,
   vaultName,
-  canCreateRepository = true,
+  canCreateRepository,
 }: {
   sync: SyncController;
   vaultName: string;
   /** Whether a new private repository can be made here, or only one that exists connected. */
-  canCreateRepository?: boolean;
+  canCreateRepository: boolean;
 }) {
   const { repositories } = sync;
   const findRepositories = useCallback(

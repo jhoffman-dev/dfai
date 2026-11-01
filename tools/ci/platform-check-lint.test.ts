@@ -44,12 +44,27 @@ const CHECKS = {
   'a switch on the platform':
     'export function f(platform: string) { switch (platform) { default: return 1; } }',
   'a flag naming one': 'export const f = (isWeb: boolean) => isWeb;',
+  'a platform’s name compared, under another name':
+    "export const f = (where: string) => where === 'iPad';",
+  'a platform’s name compared the other way round':
+    "export const f = (kind: string) => 'windows' !== kind;",
+  'a platform’s name looked for in a list':
+    "export const f = (where: string) => ['web', 'ios'].includes(where);",
+  'a platform’s name looked for in a string':
+    "export const f = (where: string) => where.includes('macos');",
+  'the device asked of the browser': 'export const f = () => navigator.platform;',
+  'the browser’s name asked of it': 'export const f = () => navigator.userAgent;',
+  'the device asked through the window': 'export const f = () => window.navigator.userAgentData;',
   'the web’s capabilities':
     "import { WEB_CAPABILITIES } from '@dfai/domain';\nexport const x = WEB_CAPABILITIES;",
   'the desktop’s capabilities':
     "import { DESKTOP_CAPABILITIES } from '@dfai/domain';\nexport const x = DESKTOP_CAPABILITIES;",
   'what a platform lacks':
     "import { capabilitiesLacking } from '@dfai/domain';\nexport const x = capabilitiesLacking;",
+  'a platform’s capabilities, as a type':
+    "import type { PlatformCapabilities } from '@dfai/domain';\nexport type X = PlatformCapabilities;",
+  'the decision from them':
+    "import { entryPointsOffered } from '@dfai/application';\nexport const x = entryPointsOffered;",
 } as const;
 
 const CASES = SCREEN.flatMap((path) =>
@@ -69,12 +84,44 @@ describe('the screen never asks which platform it is on (#657)', () => {
     expect(await refused(path, code)).toBe(false);
   });
 
-  it('lets the shell be handed a platform’s capabilities as a type, to decide from', async () => {
+  it.each(SCREEN)(
+    'lets %s compare a kind that only shares a name with a platform',
+    async (path) => {
+      // A citation's kind is 'web' (ask-answer.tsx): a switch case is no platform check.
+      const code =
+        "export function f(kind: string) { switch (kind) { case 'web': return 1; default: return 0; } }";
+      expect(await refused(path, code)).toBe(false);
+    },
+  );
+
+  it('lets the shell’s mount be handed a platform’s capabilities and decide from them', async () => {
     const code = [
+      "import { entryPointsOffered } from '@dfai/application';",
       "import type { PlatformCapabilities } from '@dfai/domain';",
-      'export type Handed = { readonly capabilities: PlatformCapabilities };',
+      'export const decide = (capabilities: PlatformCapabilities) => entryPointsOffered(capabilities);',
     ].join('\n');
-    expect(await refused('packages/shell/src/probe.tsx', code)).toBe(false);
+    expect(await refused('packages/shell/src/mount-shell.tsx', code)).toBe(false);
+  });
+
+  it('holds the shell’s mount to the rest of the zone', async () => {
+    const code =
+      "import { WEB_CAPABILITIES } from '@dfai/domain';\nexport const x = WEB_CAPABILITIES;";
+    expect(await refused('packages/shell/src/mount-shell.tsx', code)).toBe(true);
+  });
+
+  it.each([
+    'packages/shell/src/app-shortcuts.ts',
+    'packages/shell/src/probe.test.tsx',
+    'packages/ui/src/probe.test.tsx',
+  ])('lets %s read the device, for the command key it presses', async (path) => {
+    expect(await refused(path, 'export const mac = () => /Mac/.test(navigator.platform);')).toBe(
+      false,
+    );
+  });
+
+  it('still refuses a platform compared in the shortcuts, which read the device', async () => {
+    const code = "export const f = (platform: string) => platform === 'web';";
+    expect(await refused('packages/shell/src/app-shortcuts.ts', code)).toBe(true);
   });
 
   it.each([

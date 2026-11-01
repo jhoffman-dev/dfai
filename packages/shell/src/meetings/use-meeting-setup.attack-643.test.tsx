@@ -66,6 +66,7 @@ function setup(where: 'inbox' | 'automations' = 'inbox') {
   const automations = createAutomationsStore();
   const activity = recordingActivity();
   const wiring: MeetingSetupWiring = {
+    offered: true,
     store: createMeetingSetupStore(),
     automations,
     fs: fakeVaultFs(),

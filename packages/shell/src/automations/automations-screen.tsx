@@ -46,6 +46,7 @@ export function AutomationsScreen({
   onShowSidebar,
   history,
   setup = null,
+  offersClaude,
 }: {
   automations: ReturnType<typeof useAutomations>;
   ports: AutomationPorts & Pick<RuleQueryPorts, 'notePaths'>;
@@ -59,6 +60,8 @@ export function AutomationsScreen({
   history?: PageHistory;
   /** The offer to set meeting post-processing up in one yes (#191). */
   setup?: MeetingSetupProps | null;
+  /** Whether a rule may ask Claude on this platform (#657). */
+  offersClaude: boolean;
 }) {
   const editor = useAutomationEditor({ automations, ports, clock, indexKey, activity });
   // Read only while a rule is open in the editor: the list itself needs no skills.
@@ -119,6 +122,7 @@ export function AutomationsScreen({
             problem={editor.problem}
             which={<QueryComposer {...editor.composer} />}
             typeNames={ports.types.map((type) => type.name)}
+            offersClaude={offersClaude}
             claudeTools={CHAT_READ_TOOLS}
             claudeOutputs={CLAUDE_OUTPUTS}
             skills={skills}

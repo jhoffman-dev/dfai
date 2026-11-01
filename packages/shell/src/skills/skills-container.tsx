@@ -12,6 +12,8 @@ const SkillsPage = skillsPage.Component;
 /** The Skills page's own wiring: how Ask Claude reaches Claude. */
 export interface SkillsWiring {
   readonly claude: SkillDraftPorts;
+  /** Whether "Ask Claude…" drafts a skill here: not where there is no Claude Code (#657). */
+  readonly offersAsk: boolean;
 }
 
 /**
@@ -58,7 +60,11 @@ export function SkillsContainer({ wiring, chrome }: PageContainerProps) {
   });
   return (
     <LoadedLater chrome={chrome}>
-      <SkillsPage {...page} {...(ask !== undefined && { ask })} {...chrome} />
+      <SkillsPage
+        {...page}
+        {...(ask !== undefined && pages.skills.offersAsk && { ask })}
+        {...chrome}
+      />
     </LoadedLater>
   );
 }

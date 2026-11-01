@@ -9,6 +9,7 @@ import { act, renderHook } from '@testing-library/react';
 import { useEffect } from 'react';
 import { createVaultPath, type VaultEntry, type VaultPath } from '@dfai/domain';
 import {
+  EVERY_ENTRY_POINT,
   fakeClaudeStepPorts,
   fakeIndexPort,
   fakeVaultFs,
@@ -126,6 +127,7 @@ describe('the automation relay across a vault switch', () => {
     const relay = createAutomationRelay();
     const told: WatchedVault[] = [];
     const initial: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
       ports: refusingVault(),
       clock,
       vaultKey: HOME,

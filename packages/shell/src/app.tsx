@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
 } from 'react';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
@@ -78,7 +79,6 @@ import {
   type GranolaPullRecords,
   type PageSnapshotPort,
   type SlackPort,
-  EVERY_ENTRY_POINT,
   exportFormatsOffered,
   type EntryPointsOffered,
 } from '@dfai/application';
@@ -240,7 +240,8 @@ import {
   SecretsSettingsCard,
   SlackSettingsCard,
   SyncSettingsCard,
-  settingsSectionLinks,
+  settingsSectionsShown,
+  type AppSettingsSection,
 } from './settings/settings-sections.ts';
 import { browserImagePlacementStore } from './notes/browser-image-placement-store.ts';
 import { useTickMemory } from './query/tick-memory.ts';
@@ -473,7 +474,7 @@ function AppWindow({
   vault: vaultPorts,
   notes: notePorts,
   index: indexPorts,
-  semantic: semanticOnHost,
+  semantic: semanticPorts,
   sources,
   links,
   snapshot,
@@ -489,7 +490,7 @@ function AppWindow({
   slack: slackPort,
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
-  offered = EVERY_ENTRY_POINT,
+  offered,
 }: {
   appInfo: AppInfoPort;
   vault: OnHost<VaultPorts>;
@@ -533,14 +534,13 @@ function AppWindow({
   };
   /**
    * Which of the entry points a platform may lack are offered here, decided
-   * from its capabilities (#657); left out, every one is, as on the desktop.
+   * from its capabilities as the shell mounts (#657): one object for the
+   * window's life. A port for one that is off is not handed in at all.
    */
-  offered?: EntryPointsOffered;
+  offered: EntryPointsOffered;
 }) {
   const [app, setApp] = useState<AppInfoState>({ kind: 'loading' });
-  // Without a model on the device there is no search by meaning and no related notes.
-  const semanticPorts = offered.meaningSearch ? semanticOnHost : undefined;
-  const exportOffered = exportPorts !== undefined && offered.exportNotes;
+  const exportOffered = offered.exportNotes;
   const exportFormats = useMemo(() => exportFormatsOffered(offered), [offered]);
   // The last sync runs before the Activity log's final write, so its line is kept.
   const closing = useMemo(() => closingInStages(activityPorts.closing), [activityPorts.closing]);
@@ -804,6 +804,7 @@ function AppWindow({
     clock: localClock,
     activity: activityLog,
     onWrote: onChanged,
+    enabled: offered.granolaPull,
   });
   // Today's meetings from Google Calendar (ADR-0046): once the index is ready, every 15 minutes, and on asking.
   // Only the Mac that runs the vault's automations writes its meeting notes (U-29), so two never write one note.
@@ -855,7 +856,14 @@ function AppWindow({
     onWrote: onChanged,
   });
 
-  const thumbnails = useThumbnailQueue({ notes, snapshot, editors, types, onChanged });
+  const thumbnails = useThumbnailQueue({
+    notes,
+    snapshot,
+    editors,
+    types,
+    onChanged,
+    enabled: offered.regenerateThumbnail,
+  });
   const thumbnailsNow = useThumbnailsNow(thumbnails);
   // One of each for the whole window: the panes and the API share the refresher,
   // so a source is never refreshed twice at once.
@@ -955,7 +963,12 @@ function AppWindow({
     ],
   );
   // A write from another tool shows up the way one made here does.
-  useLocalApi({ bridge: api.bridge, deps: apiDeps, onWrote: onChanged });
+  useLocalApi({
+    bridge: api.bridge,
+    deps: apiDeps,
+    onWrote: onChanged,
+    enabled: offered.localApiServer,
+  });
   // A chat's drafting tools write through the API's routes in-process; the vault catches up as after any API write.
   const draftWrote = useSteadyCallback(() => onChanged());
   // One toolbox construction for the chat and for a rule's Claude step (P29-03).
@@ -979,7 +992,7 @@ function AppWindow({
     ...(!exportOffered
       ? []
       : paletteExportCommands(focused?.kind === 'note' ? focused.path : null)),
-    ...(kindlePorts === undefined || location === null || !offered.kindleCommands
+    ...(location === null || !offered.kindleCommands
       ? []
       : paletteKindleCommands(kindleSync.view.connected)),
   ]);
@@ -1008,7 +1021,11 @@ function AppWindow({
     setCaptureWantedVault(location === null);
     if (location !== null) showOverlay('capture');
   }, [location, showOverlay]);
-  const globalCapture = useGlobalCapture({ ...globalCapturePorts, pressed: askForCapture });
+  const globalCapture = useGlobalCapture({
+    ...globalCapturePorts,
+    pressed: askForCapture,
+    enabled: offered.globalCaptureShortcut,
+  });
   const captureNeedsVault =
     captureWantedVault && location === null
       ? 'Quick capture needs a vault: open one, and what you capture lands in its Inbox.'
@@ -1698,7 +1715,10 @@ function AppWindow({
   // has an Inbox view or something waits in it.
   const inboxRowShown = inboxView !== null || (waiting ?? 0) > 0;
   // Ask Claude on the Skills page reaches Claude as a rule's step does: Settings' provider and model.
-  const skillsWiring = useMemo(() => ({ claude: claudeStep }), [claudeStep]);
+  const skillsWiring = useMemo(
+    () => ({ claude: claudeStep, offersAsk: offered.skillDraft }),
+    [claudeStep, offered.skillDraft],
+  );
   const automationPorts = useMemo(
     () => ({ ...archivePorts, types, notePaths, claude: claudeStep }),
     [archivePorts, types, notePaths, claudeStep],
@@ -1713,8 +1733,10 @@ function AppWindow({
       suggestedEmails: ownerEmails,
       activity: activityLog,
       onChanged: typesChanged,
+      offered: offered.claudeAutomations,
     }),
     [
+      offered.claudeAutomations,
       meetingSetupStore,
       automationsStore,
       vault.fs,
@@ -1821,7 +1843,7 @@ function AppWindow({
   const slackPaste = useSlackPaste(slackPastePorts);
   useSlackPasteListener(offered.slackLinkOffer ? slackPaste.offer : OFFER_NOTHING);
   const slackOffer =
-    slackPaste.view === null || !offered.slackLinkOffer ? null : (
+    slackPaste.view === null ? null : (
       <SlackMessageOffer
         view={slackPaste.view}
         onSave={slackPaste.save}
@@ -2324,11 +2346,72 @@ function AppWindow({
       showOverlay,
     ],
   );
+  const settingsShown = settingsSectionsShown({ vaultOpen: location !== null, offered });
+  /** One section of Settings, as `settingsShown` names it; the vault's ones only with a vault open. */
+  const settingsSection = (key: AppSettingsSection): ReactNode => {
+    switch (key) {
+      case 'profile':
+        return (
+          location !== null && (
+            <ProfileSettingsCard setting={profileSetting} emails={selfEmailsSetting} />
+          )
+        );
+      case 'index':
+        return location === null ? (
+          <IndexSettings index={null} onRebuild={() => void rebuild()} />
+        ) : (
+          <LiveIndexSettings
+            index={indexStatus}
+            progress={indexProgress}
+            onRebuild={() => void rebuild()}
+          />
+        );
+      case 'images':
+        return <ImageSettingsPanel store={browserImagePlacementStore} />;
+      case 'globalCapture':
+        return (
+          <GlobalCaptureSettings view={globalCapture.status} onChange={globalCapture.change} />
+        );
+      case 'quickAdd':
+        return (
+          location !== null && <QuickAddSettingsCard setting={quickAddSetting} types={types} />
+        );
+      case 'secrets':
+        return location !== null && <SecretsSettingsCard setting={secrets} />;
+      case 'googleCalendar':
+        return location !== null && <GoogleCalendarSettingsCard setting={googleCalendarSetting} />;
+      case 'granola':
+        return location !== null && <GranolaSettingsCard setting={granolaSetting} />;
+      case 'slack':
+        return location !== null && <SlackSettingsCard port={slackPort} vault={vaultKey} />;
+      case 'kindle':
+        return location !== null && <KindleSettingsCard kindle={kindleSync} />;
+      case 'claude':
+        return <ClaudeSettingsCard chat={chat} />;
+      case 'sync':
+        return (
+          location !== null && (
+            <SyncSettingsSlot store={syncStore}>
+              {(syncNow) => (
+                <SyncSettingsCard
+                  sync={syncNow}
+                  vaultName={location.name}
+                  canCreateRepository={offered.newSyncRepository}
+                />
+              )}
+            </SyncSettingsSlot>
+          )
+        );
+      case 'about':
+        return <AboutSettings app={app} />;
+    }
+  };
   const shell = (
     <NoteNamesProvider value={names}>
       <ChatToggleProvider value={chatToggle}>
         <SyncRunner
           store={syncStore}
+          enabled={offered.backgroundSync}
           host={syncPorts}
           fs={vault.fs}
           markdown={notes.markdown}
@@ -2359,6 +2442,7 @@ function AppWindow({
           selfEmails={ownerEmails}
           // A rule a note sets off hears of it here (P29-01).
           changes={noteChanges}
+          offered={offered}
         />
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
@@ -2537,6 +2621,7 @@ function AppWindow({
                         store: automationsStore,
                         ports: automationPorts,
                         setup: meetingSetup,
+                        offersClaude: offered.claudeAutomations,
                       },
                       skills: skillsWiring,
                       graph: { state: vaultGraph },
@@ -2627,61 +2712,15 @@ function AppWindow({
                 ports={api}
                 themeStore={browserThemeStore}
                 activity={activityLog}
-                sections={settingsSectionLinks({ vaultOpen: location !== null, offered })}
+                sections={settingsShown.links}
                 connections={offered.connectionsSettings}
                 onClose={() => hideOverlay('settings')}
                 fallbackFocus={focusFallback}
               >
-                {location !== null && (
-                  <ProfileSettingsCard setting={profileSetting} emails={selfEmailsSetting} />
-                )}
-                {location === null ? (
-                  <IndexSettings index={null} onRebuild={() => void rebuild()} />
-                ) : (
-                  <LiveIndexSettings
-                    index={indexStatus}
-                    progress={indexProgress}
-                    onRebuild={() => void rebuild()}
-                  />
-                )}
-                <ImageSettingsPanel store={browserImagePlacementStore} />
-                {offered.globalCaptureSettings && (
-                  <GlobalCaptureSettings
-                    view={globalCapture.status}
-                    onChange={globalCapture.change}
-                  />
-                )}
-                {location !== null && (
-                  <QuickAddSettingsCard setting={quickAddSetting} types={types} />
-                )}
-                {location !== null && offered.secretsSettings && (
-                  <SecretsSettingsCard setting={secrets} />
-                )}
-                {location !== null && offered.googleCalendarSettings && (
-                  <GoogleCalendarSettingsCard setting={googleCalendarSetting} />
-                )}
-                {location !== null && offered.granolaSettings && (
-                  <GranolaSettingsCard setting={granolaSetting} />
-                )}
-                {location !== null && offered.slackSettings && (
-                  <SlackSettingsCard port={slackPort} vault={vaultKey} />
-                )}
-                {location !== null && kindlePorts !== undefined && offered.kindleSettings && (
-                  <KindleSettingsCard kindle={kindleSync} />
-                )}
-                {offered.claudeSettings && <ClaudeSettingsCard chat={chat} />}
-                {location !== null && offered.syncSettings && (
-                  <SyncSettingsSlot store={syncStore}>
-                    {(syncNow) => (
-                      <SyncSettingsCard
-                        sync={syncNow}
-                        vaultName={location.name}
-                        canCreateRepository={offered.newSyncRepository}
-                      />
-                    )}
-                  </SyncSettingsSlot>
-                )}
-                <AboutSettings app={app} />
+                {/* The list on the left and these come from one table: what it leaves out is not drawn. */}
+                {settingsShown.keys.map((key) => (
+                  <Fragment key={key}>{settingsSection(key)}</Fragment>
+                ))}
               </SettingsPanel>
             ) : overlay === 'move-picker' && entries.picker !== null ? (
               <MovePicker

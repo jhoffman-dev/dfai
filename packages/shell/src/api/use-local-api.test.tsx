@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import {
   fakeGoogleCalendar,
   recordingActivity,
@@ -87,14 +87,30 @@ function handBridge() {
 }
 
 describe('useLocalApi', () => {
+  it('serves nothing where the platform runs no local API (#657)', async () => {
+    const hand = handBridge();
+    const view = renderHook(() =>
+      useLocalApi({ bridge: hand.bridge, deps: emptyVault(), onWrote: () => {}, enabled: false }),
+    );
+    // Every effect the mount set going has run.
+    await act(async () => {});
+    expect(hand.bridge.serve).not.toHaveBeenCalled();
+    expect(hand.serving()).toBe(false);
+    view.unmount();
+    expect(hand.stop).not.toHaveBeenCalled();
+  });
+
   it('serves once, and tells the latest handler about a write', async () => {
     const deps = emptyVault();
     const hand = handBridge();
     const first = vi.fn();
     const latest = vi.fn();
-    const view = renderHook(({ onWrote }) => useLocalApi({ bridge: hand.bridge, deps, onWrote }), {
-      initialProps: { onWrote: first },
-    });
+    const view = renderHook(
+      ({ onWrote }) => useLocalApi({ bridge: hand.bridge, deps, onWrote, enabled: true }),
+      {
+        initialProps: { onWrote: first },
+      },
+    );
     await waitFor(() => expect(hand.serving()).toBe(true));
 
     view.rerender({ onWrote: latest });
@@ -109,7 +125,7 @@ describe('useLocalApi', () => {
   it('stops serving when the app goes away', async () => {
     const hand = handBridge();
     const view = renderHook(() =>
-      useLocalApi({ bridge: hand.bridge, deps: emptyVault(), onWrote: () => {} }),
+      useLocalApi({ bridge: hand.bridge, deps: emptyVault(), onWrote: () => {}, enabled: true }),
     );
     await waitFor(() => expect(hand.serving()).toBe(true));
 
@@ -123,7 +139,7 @@ describe('useLocalApi', () => {
     let arrive: (stop: () => void) => void = () => {};
     hand.bridge.serve = () => new Promise((resolve) => (arrive = resolve));
     const view = renderHook(() =>
-      useLocalApi({ bridge: hand.bridge, deps: emptyVault(), onWrote: () => {} }),
+      useLocalApi({ bridge: hand.bridge, deps: emptyVault(), onWrote: () => {}, enabled: true }),
     );
 
     view.unmount();
@@ -133,7 +149,9 @@ describe('useLocalApi', () => {
 
   it('carries on without the API when there is no host to listen to', async () => {
     const bridge: ApiBridgePort = { serve: vi.fn(async () => Promise.reject(new Error('no IPC'))) };
-    const view = renderHook(() => useLocalApi({ bridge, deps: emptyVault(), onWrote: () => {} }));
+    const view = renderHook(() =>
+      useLocalApi({ bridge, deps: emptyVault(), onWrote: () => {}, enabled: true }),
+    );
     await waitFor(() => expect(bridge.serve).toHaveBeenCalledOnce());
     expect(() => view.unmount()).not.toThrow();
   });

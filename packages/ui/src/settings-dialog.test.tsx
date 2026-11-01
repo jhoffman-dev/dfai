@@ -19,7 +19,7 @@ function showWith({
   placeholder = false,
   chosen = null,
   sections = [],
-  connections,
+  connections = true,
 }: {
   connection?: Partial<ConnectionSettingsState>;
   placeholder?: boolean;
@@ -42,7 +42,7 @@ function showWith({
       mcp={{ command: 'claude mcp add atlas -- node /x/main.js', placeholder }}
       themeStore={store}
       sections={sections}
-      {...(connections !== undefined && { connections })}
+      connections={connections}
       {...handlers}
     >
       {sections.map((section) => (

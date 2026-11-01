@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entryPointsOffered } from '@dfai/application';
+import { entryPointsOffered, EVERY_ENTRY_POINT } from '@dfai/application';
 import {
   DESKTOP_CAPABILITIES,
   PLATFORM_CAPABILITIES,
@@ -7,10 +7,10 @@ import {
   type PlatformCapabilities,
   type PlatformCapability,
 } from '@dfai/domain';
-import { settingsSectionLinks } from './settings-sections.ts';
+import { settingsSectionsShown } from './settings-sections.ts';
 
 const titles = (offered: ReturnType<typeof entryPointsOffered>, vaultOpen = true) =>
-  settingsSectionLinks({ vaultOpen, offered }).map((section) => section.title);
+  settingsSectionsShown({ vaultOpen, offered }).links.map((section) => section.title);
 
 const EVERYTHING = Object.fromEntries(
   PLATFORM_CAPABILITIES.map((name) => [name, true]),
@@ -18,9 +18,13 @@ const EVERYTHING = Object.fromEntries(
 const without = (name: PlatformCapability) => entryPointsOffered({ ...EVERYTHING, [name]: false });
 
 /** The list on the left of Settings, as `app.tsx` draws the sections (UI v2 slice 13f). */
-describe('settingsSectionLinks', () => {
+describe('settingsSectionsShown', () => {
   it('names every section, in the order the app draws them, with a vault open', () => {
-    expect(settingsSectionLinks({ vaultOpen: true }).map((section) => section.title)).toEqual([
+    expect(
+      settingsSectionsShown({ vaultOpen: true, offered: EVERY_ENTRY_POINT }).links.map(
+        (section) => section.title,
+      ),
+    ).toEqual([
       'Profile',
       'Index',
       'Images',
@@ -38,17 +42,17 @@ describe('settingsSectionLinks', () => {
   });
 
   it('leaves out the sections that want a vault, before one is open', () => {
-    expect(settingsSectionLinks({ vaultOpen: false }).map((section) => section.title)).toEqual([
-      'Index',
-      'Images',
-      'Quick capture from anywhere',
-      'Claude',
-      'About',
-    ]);
+    expect(
+      settingsSectionsShown({ vaultOpen: false, offered: EVERY_ENTRY_POINT }).links.map(
+        (section) => section.title,
+      ),
+    ).toEqual(['Index', 'Images', 'Quick capture from anywhere', 'Claude', 'About']);
   });
 
   it('links each row to a heading of its own', () => {
-    const ids = settingsSectionLinks({ vaultOpen: true }).map((section) => section.id);
+    const ids = settingsSectionsShown({ vaultOpen: true, offered: EVERY_ENTRY_POINT }).links.map(
+      (section) => section.id,
+    );
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -82,8 +86,8 @@ describe('settingsSectionLinks', () => {
 
   it('hands back the same list for the same platform, so the dialog can memoise it', () => {
     const web = entryPointsOffered(WEB_CAPABILITIES);
-    expect(settingsSectionLinks({ vaultOpen: true, offered: web })).toBe(
-      settingsSectionLinks({ vaultOpen: true, offered: web }),
+    expect(settingsSectionsShown({ vaultOpen: true, offered: web })).toBe(
+      settingsSectionsShown({ vaultOpen: true, offered: web }),
     );
   });
 });

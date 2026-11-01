@@ -71,24 +71,32 @@ function setUp({
   synced = [VAULT],
   catchUpIndex = async () => true,
   notes = [],
+  enabled = true,
 }: {
   key?: GranolaKeyStatus;
   settings?: string;
   synced?: readonly string[];
   catchUpIndex?: () => Promise<boolean>;
   notes?: readonly GranolaNote[];
+  enabled?: boolean;
 } = {}) {
   const granola = fakeGranola({ notes });
   const onWrote = vi.fn();
   const status = { current: key };
+  // How often the key was asked after.
+  const asked = { count: 0 };
   // Each listing waits on this first, so a test can hold one.
   const gate = { current: Promise.resolve() };
   const activity = recordingActivity();
   const records = memoryRecords();
   const options: GranolaPullOptions = {
+    enabled,
     granola: {
       ...granola.port,
-      status: async () => status.current,
+      status: async () => {
+        asked.count += 1;
+        return status.current;
+      },
       // As the host does, Granola's answer is kept as the key's status: a 401 marks it refused.
       listNotes: async (args) => {
         await gate.current;
@@ -118,7 +126,7 @@ function setUp({
     initialProps: options,
   });
   const lists = () => granola.count('list');
-  return { hook, granola, status, gate, activity, records, options, lists, onWrote };
+  return { hook, granola, status, asked, gate, activity, records, options, lists, onWrote };
 }
 
 /** Lets fifteen minutes pass on the fake timers. */
@@ -128,6 +136,15 @@ beforeEach(() => vi.useFakeTimers({ now: FIXED_NOW }));
 afterEach(() => vi.useRealTimers());
 
 describe('useGranolaPull', () => {
+  it('asks nothing of Granola and pulls nothing where the platform has none (#657)', async () => {
+    const { hook, lists, asked } = setUp({ enabled: false });
+    await fifteenMinutes();
+    await fifteenMinutes();
+    expect(asked.count).toBe(0);
+    expect(lists()).toBe(0);
+    expect(hook.result.current.report).toBeNull();
+  });
+
   it('pulls once as the vault opens, when it has synced and a key is held', async () => {
     const { hook, lists } = setUp();
     await settles(() => expect(hook.result.current.report?.ended).toBe('pulled'));

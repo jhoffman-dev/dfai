@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { EXPORT_FORMATS } from '@dfai/domain';
 import { ExportDialog, type ExportDialogState } from './export-dialog.tsx';
 
 function draw(state: ExportDialogState = { kind: 'choosing' }) {
   const calls = { onExport: vi.fn(), onClose: vi.fn() };
-  render(<ExportDialog subject="Kickoff" state={state} {...calls} />);
+  render(<ExportDialog subject="Kickoff" state={state} formats={EXPORT_FORMATS} {...calls} />);
   return calls;
 }
 

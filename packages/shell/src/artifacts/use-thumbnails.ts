@@ -3,6 +3,7 @@ import { isPageThumbnailPath } from '@dfai/domain';
 import {
   createThumbnailQueue,
   generateThumbnail,
+  NO_THUMBNAIL_QUEUE,
   type DefinedType,
   type PageSnapshotPort,
   type ThumbnailQueue,
@@ -29,6 +30,7 @@ export function useThumbnailQueue({
   editors,
   types,
   onChanged,
+  enabled,
 }: {
   /** Bound to the vault open now: a new vault is a new `notes`, and so a new queue. */
   notes: NotePorts;
@@ -38,6 +40,8 @@ export function useThumbnailQueue({
   types: readonly DefinedType[];
   /** Re-reads the tree and the index once a thumbnail has been written. */
   onChanged: () => void;
+  /** Whether a page can be pictured here; where not, nothing is made and nothing fails (ADR-0051). */
+  enabled: boolean;
 }): ThumbnailQueue {
   const changed = useRef(onChanged);
   const typesNow = useRef(types);
@@ -47,6 +51,7 @@ export function useThumbnailQueue({
   }, [onChanged, types]);
 
   return useMemo(() => {
+    if (!enabled) return NO_THUMBNAIL_QUEUE;
     const { fs, markdown } = notes;
     const deps = { fs, markdown, snapshot, renderer: notePageRenderer };
     return createThumbnailQueue({
@@ -67,7 +72,7 @@ export function useThumbnailQueue({
         return result;
       },
     });
-  }, [notes, snapshot, editors]);
+  }, [notes, snapshot, editors, enabled]);
 }
 
 /**

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { EXPORT_FORMATS, type ExportFormat } from '@dfai/domain';
+import type { ExportFormat } from '@dfai/domain';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /** Where the export question is: asking how, making the export, or saying why it could not. */
@@ -61,7 +61,7 @@ export function ExportDialog({
   onExport,
   onClose,
   fallbackFocus,
-  formats = EXPORT_FORMATS,
+  formats,
 }: {
   /** What is exported, for the title: a note's title, or "3 notes". */
   subject: string;
@@ -69,8 +69,8 @@ export function ExportDialog({
   onExport: (choice: ExportChoice) => void;
   onClose: () => void;
   fallbackFocus?: FocusFallback;
-  /** The formats offered here, Markdown first; left out, every one. */
-  formats?: readonly ExportFormat[];
+  /** The formats offered here, Markdown first. */
+  formats: readonly ExportFormat[];
 }) {
   const finalFocus = useReturnFocus(fallbackFocus);
   const [format, setFormat] = useState<ExportFormat>('markdown');

@@ -102,7 +102,7 @@ const ROWS = {
 function show(
   stores: ReturnType<typeof openOn>,
   claude = <p>the chat</p>,
-  { offersClaude }: { offersClaude?: boolean } = {},
+  { offersClaude = true }: { offersClaude?: boolean } = {},
 ) {
   return render(
     <WorkspaceStoresProvider value={stores}>
@@ -110,7 +110,7 @@ function show(
         <AsideContainer
           rows={ROWS}
           types={{ onDelete: () => {}, onEditTemplate: () => {}, onOpenType: () => {} }}
-          {...(offersClaude !== undefined && { offersClaude })}
+          offersClaude={offersClaude}
         />
       </ClaudeSeatProvider>
     </WorkspaceStoresProvider>,

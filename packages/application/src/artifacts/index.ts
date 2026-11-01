@@ -7,7 +7,12 @@ export type { ArtifactCopy } from './load-artifact-copy.ts';
 export type { ExternalLinkPort, PageSnapshotPort, PageSnapshotRequest } from './ports.ts';
 export { artifactsWithoutThumbnails, generateArtifactThumbnail } from './artifact-thumbnail.ts';
 export type { ThumbnailResult } from './artifact-thumbnail.ts';
-export { createThumbnailQueue, THUMBNAIL_CONCURRENCY } from './thumbnail-queue.ts';
+export {
+  createThumbnailQueue,
+  NO_THUMBNAIL_QUEUE,
+  NO_THUMBNAILS_HERE,
+  THUMBNAIL_CONCURRENCY,
+} from './thumbnail-queue.ts';
 export type {
   ThumbnailJob,
   ThumbnailQueue,

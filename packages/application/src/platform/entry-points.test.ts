@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createVaultPath,
   DESKTOP_CAPABILITIES,
   PLATFORM_CAPABILITIES,
   WEB_CAPABILITIES,
+  type AutomationDraft,
   type PlatformCapabilities,
   type PlatformCapability,
 } from '@dfai/domain';
@@ -11,6 +13,8 @@ import {
   entryPointsOffered,
   EVERY_ENTRY_POINT,
   exportFormatsOffered,
+  NEEDS_THE_DESKTOP_APP,
+  ruleHeldByPlatform,
   sourceRefreshOffered,
   type EntryPoint,
 } from './entry-points.ts';
@@ -34,30 +38,35 @@ const hidden = (capabilities: PlatformCapabilities): EntryPoint[] => {
  * What each capability's absence hides, written out by hand rather than read
  * back from the map, so a capability moved to another entry point shows here.
  * A capability with no entry point of its own works out of sight: watching the
- * vault, saving as a commit, and an artifact card's picture (which keeps its
- * placeholder, ADR-0051).
+ * vault, and saving as a commit.
  */
 const HIDES: Readonly<Record<PlatformCapability, readonly EntryPoint[]>> = {
-  syncByGit: ['syncSettings', 'syncLight', 'newSyncRepository', 'openVaultFromGitHub'],
+  syncByGit: [
+    'syncSettings',
+    'syncLight',
+    'backgroundSync',
+    'newSyncRepository',
+    'openVaultFromGitHub',
+  ],
   saveAsCommit: [],
   fileWatching: [],
   localFolderVault: ['chooseVaultFolder', 'openVaultFromGitHub'],
   repoCreation: ['newSyncRepository'],
   localModels: ['meaningSearch'],
-  claudeCodeChat: ['claudeSettings', 'claudeChat'],
+  claudeCodeChat: ['claudeSettings', 'claudeChat', 'skillDraft', 'claudeAutomations'],
   heldSecrets: ['secretsSettings'],
   webFetch: ['webSourceRefresh'],
-  googleCalendar: ['googleCalendarSettings'],
-  granola: ['granolaSettings'],
+  googleCalendar: ['googleCalendarSettings', 'meetingSync', 'blockSync'],
+  granola: ['granolaSettings', 'granolaPull'],
   slack: ['slackSettings', 'slackLinkOffer'],
   kindle: ['kindleSettings', 'kindleCommands'],
-  globalCapture: ['globalCaptureSettings'],
-  localApi: ['connectionsSettings'],
+  globalCapture: ['globalCaptureSettings', 'globalCaptureShortcut'],
+  localApi: ['connectionsSettings', 'localApiServer'],
   sqliteSources: ['sqliteSourceRefresh'],
   markdownExport: ['exportNotes', 'pdfExport', 'googleDocExport'],
   googleDriveExport: ['googleDocExport'],
   pdfExport: ['pdfExport'],
-  pageThumbnails: [],
+  pageThumbnails: ['regenerateThumbnail'],
 };
 
 describe('entryPointsOffered', () => {
@@ -148,5 +157,29 @@ describe('sourceRefreshOffered', () => {
     expect(
       sourceRefreshOffered({ url: 'https://example.com/x', format: 'sqlite' }, sqliteOff),
     ).toBe(true);
+  });
+});
+
+describe('ruleHeldByPlatform', () => {
+  const asking = {
+    action: {
+      kind: 'claude',
+      prompt: createVaultPath('.atlas/prompts/Triage.md'),
+      tools: [],
+      output: { kind: 'proposals', schema: 'proposals' },
+    },
+  } satisfies Pick<AutomationDraft, 'action'>;
+  const archiving = { action: { kind: 'archive' } } satisfies Pick<AutomationDraft, 'action'>;
+
+  it('holds a rule with a Claude step where there is no Claude Code, saying why', () => {
+    const web = entryPointsOffered(WEB_CAPABILITIES);
+    expect(ruleHeldByPlatform(asking, web)).toBe(NEEDS_THE_DESKTOP_APP);
+    expect(ruleHeldByPlatform(archiving, web)).toBeNull();
+  });
+
+  it('holds nothing on the desktop', () => {
+    const desktop = entryPointsOffered(DESKTOP_CAPABILITIES);
+    expect(ruleHeldByPlatform(asking, desktop)).toBeNull();
+    expect(ruleHeldByPlatform(archiving, desktop)).toBeNull();
   });
 });

@@ -55,6 +55,11 @@ export interface GranolaPullOptions {
   readonly activity: ActivityLog;
   /** Re-reads the tree and the index once a pull has written meetings into the vault. */
   readonly onWrote: () => void;
+  /**
+   * Whether Granola can be reached on this platform (#657): where not, its key
+   * is never asked after and nothing is pulled, on opening or on the clock.
+   */
+  readonly enabled: boolean;
 }
 
 export interface GranolaPullController {
@@ -164,7 +169,7 @@ function toastOf(report: GranolaPullReport): string | null {
  * One puller for the window, so a pull of a vault never runs twice at once.
  */
 export function useGranolaPull(options: GranolaPullOptions): GranolaPullController {
-  const { granola, records, fs, markdown, vaultKey } = options;
+  const { granola, records, fs, markdown, vaultKey, enabled } = options;
   const latest = useRef(options);
   latest.current = options;
   const caughtUp = useCaughtUp(options);
@@ -215,8 +220,8 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
       ...nothingFor(vaultKey),
       lastPullAt: vaultKey === null ? null : records.read(vaultKey).lastPullAt,
     });
-    if (vaultKey !== null) void readKey(vaultKey);
-  }, [vaultKey, records, readKey]);
+    if (vaultKey !== null && enabled) void readKey(vaultKey);
+  }, [vaultKey, records, readKey, enabled]);
 
   const { settings, unreadable } = useVaultSettingsRead({ fs, markdown, vaultKey });
   useEffect(() => {
@@ -280,6 +285,7 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
     [pullVault],
   );
 
+  // Where Granola is not offered its key is never asked after, so nothing is ever usable.
   const usable = mine.key?.hasKey === true && mine.key.lastRefusal === null;
   const periodic = mine.periodic === true;
 

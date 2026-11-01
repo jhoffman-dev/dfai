@@ -1,4 +1,5 @@
 import type {
+  AutomationDraft,
   Datasource,
   ExportFormat,
   PlatformCapabilities,
@@ -6,24 +7,35 @@ import type {
 } from '@dfai/domain';
 
 /**
- * Every place the screen offers a feature some platform lacks, with the
- * capabilities it needs (#657, ADR-0051). The screen reads which of these are
- * offered and never asks which platform it is on: a platform lacking a
- * capability loses each entry point that needs it, and nothing else.
+ * Every place the screen offers a feature some platform lacks, and every
+ * runner that works for one out of sight, with the capabilities each needs
+ * (#657, ADR-0051). The screen reads which of these are offered and never
+ * asks which platform it is on: a platform lacking a capability loses each
+ * entry point that needs it, and nothing else.
  *
  * Deleting is on every platform, so it has no entry here.
  */
 const NEEDS = {
   /** Settings → Connections: the local API's switch, its token and the MCP command. */
   connectionsSettings: ['localApi'],
+  /** The local API's server, answering other programs on the device. */
+  localApiServer: ['localApi'],
   /** Settings → Quick capture from anywhere: the system-wide shortcut. */
   globalCaptureSettings: ['globalCapture'],
+  /** The system-wide shortcut, registered as the app starts and heard after. */
+  globalCaptureShortcut: ['globalCapture'],
   /** Settings → Secrets: what feeds and the model API send, kept out of the page. */
   secretsSettings: ['heldSecrets'],
   /** Settings → Google Calendar. */
   googleCalendarSettings: ['googleCalendar'],
+  /** Today's meetings read from the calendar, on their own clock. */
+  meetingSync: ['googleCalendar'],
+  /** Time blocks written to and read from their calendar, on their own clock. */
+  blockSync: ['googleCalendar'],
   /** Settings → Granola. */
   granolaSettings: ['granola'],
+  /** Granola's meetings pulled as the vault opens and on their clock, and its key asked after. */
+  granolaPull: ['granola'],
   /** Settings → Slack. */
   slackSettings: ['slack'],
   /** A pasted Slack link offered for saving, under the editor or in quick capture. */
@@ -36,10 +48,19 @@ const NEEDS = {
   claudeSettings: ['claudeCodeChat'],
   /** The chat: the aside's Claude tab, its toggle, ⇧⌘J, and Ask (its other seat). */
   claudeChat: ['claudeCodeChat'],
+  /** Skills' "Ask Claude…", which drafts a skill. */
+  skillDraft: ['claudeCodeChat'],
+  /**
+   * Rules with a Claude step: the editor's "Ask Claude" action, the meeting
+   * set-up that installs such rules, and the runner carrying them out.
+   */
+  claudeAutomations: ['claudeCodeChat'],
   /** Settings → Sync. */
   syncSettings: ['syncByGit'],
   /** The sidebar's sync light, which opens Settings → Sync. */
   syncLight: ['syncByGit'],
+  /** The sync runner: the repository looked at as the vault opens, and the pulls and pushes after. */
+  backgroundSync: ['syncByGit'],
   /** Settings → Sync's "create a new private repository". */
   newSyncRepository: ['syncByGit', 'repoCreation'],
   /** "Choose folder…" and "Open another folder…": a folder on disk as the vault. */
@@ -58,6 +79,8 @@ const NEEDS = {
   webSourceRefresh: ['webFetch'],
   /** A source note's Refresh and Choose file, for a source reading another program's SQLite file. */
   sqliteSourceRefresh: ['sqliteSources'],
+  /** An artifact's Regenerate, and the queue picturing its first screen for its card. */
+  regenerateThumbnail: ['pageThumbnails'],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
 export type EntryPoint = keyof typeof NEEDS;
@@ -109,4 +132,20 @@ export function sourceRefreshOffered(
   if (source.url !== null) return offered.webSourceRefresh;
   if (source.format === 'sqlite') return offered.sqliteSourceRefresh;
   return true;
+}
+
+/** What a rule the platform cannot carry out says, in place of failing at each tick. */
+export const NEEDS_THE_DESKTOP_APP =
+  'Needs the desktop app: its Claude step runs Claude Code there.';
+
+/**
+ * Why a rule cannot run on this platform, or null when it can: a Claude step
+ * needs Claude Code on the device, so where there is none the rule is held,
+ * not run and failed (#657).
+ */
+export function ruleHeldByPlatform(
+  rule: Pick<AutomationDraft, 'action'>,
+  offered: EntryPointsOffered,
+): string | null {
+  return rule.action.kind === 'claude' && !offered.claudeAutomations ? NEEDS_THE_DESKTOP_APP : null;
 }

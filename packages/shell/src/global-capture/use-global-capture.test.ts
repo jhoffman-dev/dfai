@@ -31,6 +31,25 @@ function fakeHost(refuse: (shortcut: string) => string | null = () => null) {
 afterEach(() => window.localStorage.clear());
 
 describe('useGlobalCapture', () => {
+  it('registers and hears no shortcut where the platform has none (#657)', async () => {
+    const host = fakeHost();
+    const pressed = vi.fn();
+    const hook = renderHook(() =>
+      useGlobalCapture({
+        port: host.port,
+        store: createBrowserGlobalCaptureStore(),
+        pressed,
+        enabled: false,
+      }),
+    );
+    // Every effect the mount set going has run, and every promise it began has settled.
+    await act(async () => {});
+    host.press();
+    expect(host.asked).toEqual([]);
+    expect(pressed).not.toHaveBeenCalled();
+    expect(hook.result.current.status).toBeNull();
+  });
+
   it('hands the host ⌃⌥N as the app starts on a Mac that chose nothing', async () => {
     const host = fakeHost();
     const hook = renderHook(() =>
@@ -38,6 +57,7 @@ describe('useGlobalCapture', () => {
         port: host.port,
         store: createBrowserGlobalCaptureStore(),
         pressed: vi.fn(),
+        enabled: true,
       }),
     );
     await waitFor(() =>
@@ -58,6 +78,7 @@ describe('useGlobalCapture', () => {
         port: chosen.port,
         store: createBrowserGlobalCaptureStore(),
         pressed: vi.fn(),
+        enabled: true,
       }),
     );
     await waitFor(() => expect(chosen.asked).toEqual(['Control+Super+KeyK']));
@@ -69,6 +90,7 @@ describe('useGlobalCapture', () => {
         port: off.port,
         store: createBrowserGlobalCaptureStore(),
         pressed: vi.fn(),
+        enabled: true,
       }),
     );
     await waitFor(() => expect(off.asked).toEqual([null]));
@@ -77,7 +99,9 @@ describe('useGlobalCapture', () => {
   it('keeps a change for next time and registers it now', async () => {
     const host = fakeHost();
     const store = createBrowserGlobalCaptureStore();
-    const hook = renderHook(() => useGlobalCapture({ port: host.port, store, pressed: vi.fn() }));
+    const hook = renderHook(() =>
+      useGlobalCapture({ port: host.port, store, pressed: vi.fn(), enabled: true }),
+    );
     await waitFor(() => expect(hook.result.current.status).not.toBeNull());
 
     act(() => hook.result.current.change('Alt+Super+KeyJ'));
@@ -98,6 +122,7 @@ describe('useGlobalCapture', () => {
         port: host.port,
         store: createBrowserGlobalCaptureStore(),
         pressed: vi.fn(),
+        enabled: true,
       }),
     );
     await waitFor(() => expect(hook.result.current.status?.registered).toBe(true));
@@ -120,7 +145,12 @@ describe('useGlobalCapture', () => {
     const latest = vi.fn();
     const hook = renderHook(
       ({ pressed }) =>
-        useGlobalCapture({ port: host.port, store: createBrowserGlobalCaptureStore(), pressed }),
+        useGlobalCapture({
+          port: host.port,
+          store: createBrowserGlobalCaptureStore(),
+          pressed,
+          enabled: true,
+        }),
       { initialProps: { pressed: first } },
     );
     await waitFor(() => expect(hook.result.current.status).not.toBeNull());

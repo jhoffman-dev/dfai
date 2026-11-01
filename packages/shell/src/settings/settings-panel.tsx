@@ -23,7 +23,7 @@ export function SettingsPanel({
   themeStore,
   activity,
   sections,
-  connections = true,
+  connections,
   onClose,
   fallbackFocus,
   children,
@@ -36,7 +36,7 @@ export function SettingsPanel({
   /** The sections `children` draws, in order, for the dialog's list of them. */
   sections?: readonly SettingsSectionLink[];
   /** Whether Settings → Connections, the local API's, is offered here. */
-  connections?: boolean;
+  connections: boolean;
   onClose: () => void;
   fallbackFocus?: () => HTMLElement | null;
   /** Sections after Connections, which the app supplies. */

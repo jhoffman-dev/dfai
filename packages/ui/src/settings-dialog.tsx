@@ -50,7 +50,7 @@ export function SettingsDialog({
   mcp,
   themeStore,
   sections = [],
-  connections = true,
+  connections,
   onEnable,
   onCopyToken,
   onRotateToken,
@@ -66,7 +66,7 @@ export function SettingsDialog({
   /** The app's sections, in the order `children` draws them, for the list on the left. */
   sections?: readonly SettingsSectionLink[];
   /** Whether Connections is drawn: false where there is no local API to connect to. */
-  connections?: boolean;
+  connections: boolean;
   onEnable: (enabled: boolean) => void;
   onCopyToken: () => void;
   onRotateToken: () => void;

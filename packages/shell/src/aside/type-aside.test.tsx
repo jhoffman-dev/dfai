@@ -111,7 +111,7 @@ function show(place: NavigationPlace, chosen: 'type' | 'properties' = 'type') {
   render(
     <WorkspaceStoresProvider value={stores}>
       <ClaudeSeatProvider value={<p>the chat</p>}>
-        <AsideContainer rows={rows} types={wiring} />
+        <AsideContainer rows={rows} types={wiring} offersClaude />
       </ClaudeSeatProvider>
     </WorkspaceStoresProvider>,
     { wrapper: queryWrapper().wrapper },

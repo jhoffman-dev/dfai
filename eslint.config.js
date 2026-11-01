@@ -161,8 +161,33 @@ const platformValues = {
   why: PLATFORM_CHECK_WHY,
 };
 
+/**
+ * What decides from a platform's capabilities: only the shell's mount
+ * (`mount-shell.tsx`) is handed them and asks; everything else reads its answer.
+ */
+const platformDecision = [
+  {
+    group: ['@dfai/domain'],
+    importNames: ['PlatformCapabilities', 'PlatformCapability'],
+    what: 'a platform’s capabilities',
+    why: PLATFORM_CHECK_WHY,
+  },
+  {
+    group: ['@dfai/application'],
+    importNames: ['entryPointsOffered', 'capabilitiesNeeded'],
+    what: 'the decision from a platform’s capabilities',
+    why: `only mount-shell.tsx makes it — ${PLATFORM_CHECK_WHY}`,
+  },
+];
+
+/** The one file in the shell that is handed a platform's capabilities and decides from them. */
+const SHELL_MOUNT = 'packages/shell/src/mount-shell.tsx';
+
 /** What a layer's production code, but not its tests, must also stay out of. */
-const forbiddenOutsideTests = { shell: [shellAdapters, platformValues], ui: [platformValues] };
+const forbiddenOutsideTests = {
+  shell: [shellAdapters, platformValues, ...platformDecision],
+  ui: [platformValues, ...platformDecision],
+};
 
 /**
  * A forbidden entry as `no-restricted-imports` takes it: a module's name, or
@@ -203,6 +228,11 @@ const NO_TAURI_SYNTAX = [
   message: `Shared code must not reach Tauri’s globals — ${TAURI_ONLY_WHY}`,
 }));
 
+/** The platforms by name, as a string comparison could ask after one. */
+const PLATFORM_NAMES = '/^(web|desktop|ios|ipad|iphone|windows|macos|mac|android|tauri)$/i';
+/** What `navigator` says of the device. */
+const NAVIGATOR_SNIFFS = '/^(platform|userAgent|userAgentData|oscpu|vendor)$/';
+
 /** A platform asked for by name: compared, or named as a flag (#657). */
 const NO_PLATFORM_CHECK = [
   ...['left', 'right'].flatMap((side) => [
@@ -212,10 +242,57 @@ const NO_PLATFORM_CHECK = [
   'SwitchStatement[discriminant.name=/^platform$/i]',
   'SwitchStatement[discriminant.property.name=/^platform$/i]',
   'Identifier[name=/^is(Web|Desktop|Windows|Mac|MacOS|IPad|IOS|Browser|Tauri)$/]',
+  // A platform named as a string: compared, or looked for in a list.
+  ...['left', 'right'].map(
+    (side) => `BinaryExpression[operator=/^[!=]==?$/][${side}.value=${PLATFORM_NAMES}]`,
+  ),
+  `CallExpression[callee.property.name='includes'] > Literal[value=${PLATFORM_NAMES}]`,
+  `CallExpression[callee.property.name='includes'][callee.object.type='ArrayExpression'] Literal[value=${PLATFORM_NAMES}]`,
 ].map((selector) => ({
   selector,
   message: `The screen must not ask which platform it is on — ${PLATFORM_CHECK_WHY}`,
 }));
+
+/**
+ * The browser asked which device it runs on (#657). Production code only: a
+ * test may read it to press the command key its platform uses, and the
+ * shortcuts read it for that alone (`app-shortcuts.ts`).
+ */
+const NO_PLATFORM_SNIFF = [
+  `MemberExpression[object.name='navigator'][property.name=${NAVIGATOR_SNIFFS}]`,
+  `MemberExpression[object.property.name='navigator'][property.name=${NAVIGATOR_SNIFFS}]`,
+].map((selector) => ({
+  selector,
+  message: `The screen must not ask the browser which device it is on — ${PLATFORM_CHECK_WHY}`,
+}));
+
+/** The test files of a package's source, which may read the device to press its command key. */
+const testsOf = (root) => [`${root}/**/*.test.{ts,tsx}`, `${root}/**/*.test-support.ts`];
+
+/**
+ * The syntax rules of code every platform shares (packages/ui, packages/shell,
+ * #689): no `import()` of what the zone refuses, no Tauri globals, and no
+ * question of which platform it is on (#657). Its production code may not ask
+ * the browser which device it is on either, save the shortcuts, which read
+ * it for the command key alone.
+ */
+const screenSyntax = (root, dynamicRestrictions) => {
+  const shared = [...dynamicImports(dynamicRestrictions), ...NO_TAURI_SYNTAX, ...NO_PLATFORM_CHECK];
+  const shortcuts = 'packages/shell/src/app-shortcuts.ts';
+  return [
+    {
+      // The shell draws packages/ui and the web bundles it (#689).
+      files: [`${root}/**/*.{ts,tsx,mts,cts}`],
+      ignores: [...nodeOnly, ...testsOf(root), shortcuts],
+      rules: { 'no-restricted-syntax': [...shared, ...NO_PLATFORM_SNIFF] },
+    },
+    {
+      files: [...testsOf(root), ...(root === 'packages/shell/src' ? [shortcuts] : [])],
+      ignores: nodeOnly,
+      rules: { 'no-restricted-syntax': shared },
+    },
+  ];
+};
 
 /**
  * The web's own code loads the adapters and the application statically, so
@@ -530,26 +607,28 @@ const webviewNode = [
       ],
     },
   },
+  ...screenSyntax('packages/ui/src', [noNodeModules, noNodeSupport, ...noTauriImport]),
+  ...screenSyntax('packages/shell/src', [
+    noNodeModules,
+    noNodeSupport,
+    ...noTauriImport,
+    noShellAdaptersImport,
+  ]),
   {
-    // The shell draws packages/ui and the web bundles it (#689).
-    files: ['packages/ui/src/**/*.{ts,tsx,mts,cts}'],
-    ignores: nodeOnly,
+    // The shell's mount is handed a platform's capabilities and decides from them (#657).
+    files: [SHELL_MOUNT],
     rules: {
-      'no-restricted-syntax': [
-        ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport]),
-        ...NO_TAURI_SYNTAX,
-        ...NO_PLATFORM_CHECK,
-      ],
-    },
-  },
-  {
-    files: ['packages/shell/src/**/*.{ts,tsx,mts,cts}'],
-    ignores: nodeOnly,
-    rules: {
-      'no-restricted-syntax': [
-        ...dynamicImports([noNodeModules, noNodeSupport, ...noTauriImport, noShellAdaptersImport]),
-        ...NO_TAURI_SYNTAX,
-        ...NO_PLATFORM_CHECK,
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...[...forbidden.shell, shellAdapters, platformValues].map((entry) =>
+              restriction('packages/shell', entry),
+            ),
+            noNodeModules,
+            noNodeSupport,
+          ],
+        },
       ],
     },
   },
