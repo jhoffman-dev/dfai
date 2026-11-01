@@ -44,4 +44,4 @@ jobs:
         env:
           DFAI_TEST_VAULT_TOKEN: ${{ secrets.DFAI_TEST_VAULT_TOKEN }}
           DFAI_TEST_VAULT_REPO: ${{ vars.DFAI_TEST_VAULT_REPO }}
-        run: pnpm exec vitest run packages/adapters/src/github/github-vault.real.test.ts
+        run: pnpm exec vitest run --config vitest.real.config.ts

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 import { startTemporaryFolderPerRun } from './tools/temp-folder-per-run.ts';
 
@@ -97,6 +97,9 @@ export default defineConfig({
       'apps/*/src/**/*.test.{ts,tsx}',
       'tools/**/*.test.ts',
     ],
+    // A test against real GitHub (#664) runs only from vitest.real.config.ts, in its
+    // hand-started workflow: nothing else here leaves the machine.
+    exclude: [...configDefaults.exclude, '**/*.real.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'html', 'lcov'],

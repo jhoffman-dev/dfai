@@ -7,11 +7,12 @@ import { gitHubVaultFs } from './github-vault-fs.ts';
 
 /**
  * #664: the GitHub vault against real GitHub, on a throwaway private
- * repository. It runs only in the `github-vault-real` workflow, started by
- * hand, where the secret DFAI_TEST_VAULT_TOKEN (a fine-grained token with
- * Contents read and write on that one repository) and the variable
- * DFAI_TEST_VAULT_REPO (`owner/repo`) are set. Everywhere else, the gate
- * and agents included, it is skipped and nothing leaves the machine.
+ * repository. The root config leaves it out; it runs only from
+ * vitest.real.config.ts, in the hand-started `github-vault-real` workflow,
+ * where the secret DFAI_TEST_VAULT_TOKEN (a fine-grained token with Contents
+ * read and write on that one repository) and the variable
+ * DFAI_TEST_VAULT_REPO (`owner/repo`) are set. Without them it skips, and
+ * nothing leaves the machine.
  */
 const token = process.env.DFAI_TEST_VAULT_TOKEN ?? '';
 const [owner = '', repo = ''] = (process.env.DFAI_TEST_VAULT_REPO ?? '').split('/');
