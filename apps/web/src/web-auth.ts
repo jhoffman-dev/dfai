@@ -37,8 +37,10 @@ export function composeWebAuth(page: Window = window): AuthPort {
     pending: sessionStoragePendingSignIn(page.sessionStorage),
     random: webCryptoRandom(page.crypto),
     sha256: webCryptoSha256(page.crypto.subtle),
-    // The page's monotonic clock: a wall clock set back would keep a token past its expiry.
-    clock: { now: () => page.performance.timeOrigin + page.performance.now() },
+    // The wall clock: Safari stops performance.now() while the device sleeps, which would keep
+    // a token past its expiry. A wall clock set back is caught where a token is refused (one
+    // refresh, then signed out) and a pending sign-in that seems to start in the future is stale.
+    clock: { now: () => Date.now() },
     broadcast: broadcastChannelAuth(
       typeof BroadcastChannel === 'function' ? (name) => new BroadcastChannel(name) : undefined,
     ),

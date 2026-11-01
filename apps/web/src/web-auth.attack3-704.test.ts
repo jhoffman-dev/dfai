@@ -37,8 +37,12 @@ interface Tab {
   navigatedTo: string | null;
 }
 
+/** Real time is the wall clock (Date.now), faked; each tab's performance.now() is its own. */
+const moveRealTime = (ms: number) => vi.setSystemTime(Date.now() + ms);
+
 /** A Safari tab loaded at `loadedAt` real time, sharing `session` with the tab before it. */
 function safariTab(loadedAt: number, session: Storage): Tab {
+  vi.setSystemTime(loadedAt);
   let monotonic = 0;
   let tokens = 0;
   const tab: Tab = {
@@ -46,8 +50,9 @@ function safariTab(loadedAt: number, session: Storage): Tab {
     navigatedTo: null,
     awake: (ms) => {
       monotonic += ms;
+      moveRealTime(ms);
     },
-    sleep: () => {},
+    sleep: moveRealTime,
     page: {} as Window,
   };
   const fetchFake = async (input: RequestInfo | URL) => {
@@ -76,14 +81,16 @@ function safariTab(loadedAt: number, session: Storage): Tab {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
   vi.stubGlobal('BroadcastChannel', undefined);
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 describe('the web clock after an iPad sleeps (Safari pauses performance.now)', () => {
-  it.fails('does not hand out an 8-hour token as fresh after a 9-hour sleep', async () => {
+  it('does not hand out an 8-hour token as fresh after a 9-hour sleep', async () => {
     const tab = safariTab(T0, memoryStorage());
     const auth = composeWebAuth(tab.page);
     await auth.restore('');
@@ -99,29 +106,26 @@ describe('the web clock after an iPad sleeps (Safari pauses performance.now)', (
     expect(tab.posts).toEqual(['/api/auth/refresh', '/api/auth/refresh']);
   });
 
-  it.fails(
-    'redeems a callback that came back within a minute, after the tab had slept before Sign in was pressed',
-    async () => {
-      const session = memoryStorage();
-      // Signed-out screen loaded in the evening; the iPad sleeps overnight; Sign in in the morning.
-      const evening = safariTab(T0, session);
-      evening.awake(60_000);
-      evening.sleep(10 * HOUR);
-      const morningAt = T0 + 60_000 + 10 * HOUR;
-      await composeWebAuth(evening.page).signIn();
-      const state = new URL(evening.navigatedTo ?? '', 'https://dfai.example.com').searchParams.get(
-        'state',
-      );
-      expect(state).toBeTruthy();
+  it('redeems a callback that came back within a minute, after the tab had slept before Sign in was pressed', async () => {
+    const session = memoryStorage();
+    // Signed-out screen loaded in the evening; the iPad sleeps overnight; Sign in in the morning.
+    const evening = safariTab(T0, session);
+    evening.awake(60_000);
+    evening.sleep(10 * HOUR);
+    const morningAt = T0 + 60_000 + 10 * HOUR;
+    await composeWebAuth(evening.page).signIn();
+    const state = new URL(evening.navigatedTo ?? '', 'https://dfai.example.com').searchParams.get(
+      'state',
+    );
+    expect(state).toBeTruthy();
 
-      // GitHub sends the person back 30 s later, to a freshly loaded page.
-      const callback = safariTab(morningAt + 30_000, session);
-      const auth = composeWebAuth(callback.page);
-      await auth.restore(`?code=abc123&state=${state}`);
+    // GitHub sends the person back 30 s later, to a freshly loaded page.
+    const callback = safariTab(morningAt + 30_000, session);
+    const auth = composeWebAuth(callback.page);
+    await auth.restore(`?code=abc123&state=${state}`);
 
-      // Observed: the pending sign-in's startedAt is 10 h behind real time, so the callback is 'stale'.
-      expect(callback.posts[0]).toBe('/api/auth/token');
-      expect(auth.state()).toEqual({ status: 'signed-in' });
-    },
-  );
+    // Observed: the pending sign-in's startedAt is 10 h behind real time, so the callback is 'stale'.
+    expect(callback.posts[0]).toBe('/api/auth/token');
+    expect(auth.state()).toEqual({ status: 'signed-in' });
+  });
 });
