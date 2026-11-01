@@ -67,11 +67,30 @@ async function wheelTo(page: Page, target: Locator, deltaY: number) {
   const box = await scroller(page).boundingBox();
   if (box === null) throw new Error('the sidebar scroller is not on screen');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // One wheel at a time, each settled before the target is looked for: a wheel
+  // sent while the last one still animates adds to it, and the row seen
+  // passing by is carried out of view once they all land (#710).
   await expect(async () => {
+    const from = await scroller(page).evaluate((element) => element.scrollTop);
     await page.mouse.wheel(0, deltaY);
+    await expect.poll(() => wheelLanded(page, from, deltaY)).toBe(true);
+    await scrolledStill(page);
+    // The scroll has settled, so this is a look, not a wait (0 would wait forever).
     await expect(target).toBeInViewport({ timeout: 100 });
-  }).toPass({ timeout: 10_000 });
-  await scrolledStill(page);
+    // Each pass waits on the scroll itself, so the next wheel needs no back-off.
+  }).toPass({ intervals: [0], timeout: 10_000 });
+}
+
+/** The wheel has moved the sidebar, or it was already at the end it scrolls toward. */
+function wheelLanded(page: Page, from: number, deltaY: number) {
+  return scroller(page).evaluate(
+    (element, [start, delta]) => {
+      if (element.scrollTop !== start) return true;
+      const end = delta < 0 ? 0 : element.scrollHeight - element.clientHeight;
+      return Math.abs(element.scrollTop - end) < 1;
+    },
+    [from, deltaY] as const,
+  );
 }
 
 /**
