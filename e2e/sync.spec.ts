@@ -39,6 +39,8 @@ async function openSyncSettings(page: Page) {
 /** Light or dark, through the sidebar's switch, as a person would. */
 async function useTheme(page: Page, theme: 'light' | 'dark') {
   const current = () => page.evaluate(() => document.documentElement.dataset['theme']);
+  // Written after the button renders (#695): wait for it before deciding to click.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', /^(light|dark)$/);
   if ((await current()) === theme) return;
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: `Switch to ${theme} theme`, exact: true }).click();
