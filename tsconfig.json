@@ -24,12 +24,17 @@
       "@dfai/domain": ["./packages/domain/src/index.ts"],
       "@dfai/application": ["./packages/application/src/index.ts"],
       "@dfai/application/testing/sqlite": ["./packages/application/src/testing/sqlite.ts"],
+      "@dfai/application/testing/vault-fs-contract": [
+        "./packages/application/src/testing/vault-fs-contract.ts"
+      ],
       "@dfai/adapters": ["./packages/adapters/src/index.ts"],
       "@dfai/adapters/pdf": ["./packages/adapters/src/pdf/index.ts"],
       "@dfai/adapters/epub": ["./packages/adapters/src/epub/index.ts"],
+      "@dfai/adapters/tauri": ["./packages/adapters/src/tauri/index.ts"],
       "@dfai/ui": ["./packages/ui/src/index.ts"],
       "@dfai/ui/graph": ["./packages/ui/src/graph/index.ts"],
-      "@dfai/ui/testing/settles": ["./packages/ui/src/testing/settles.ts"]
+      "@dfai/ui/testing/settles": ["./packages/ui/src/testing/settles.ts"],
+      "@dfai/shell": ["./packages/shell/src/index.ts"]
     }
   },
   "include": [
