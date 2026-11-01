@@ -314,6 +314,30 @@ export function useNote({
     });
   }, []);
 
+  /**
+   * Hands work the pane could not write to the keeper, or, when the keeper
+   * fails, holds it here: the next read of the note in this pane puts it back
+   * on screen, unsaved, waiting on Overwrite or Discard. Every hand-off goes
+   * through it, and it never throws: called from an effect's cleanup, a throw
+   * would lose the work and stop the cleanup.
+   */
+  const keepOrHold = useCallback((stranding: Stranding) => {
+    try {
+      announceStranded.current?.(stranding);
+    } catch (notKept: unknown) {
+      // The newest work on the note, so it takes the place of anything held for
+      // it: what was held was put back on screen, and typed on, before this.
+      const { vault: inVault, path: at, doc: work, reason } = stranding;
+      unkept.current.set(noteKey(inVault, at), {
+        path: at,
+        doc: work,
+        reason: `${reason}; ${message(notKept)}`,
+        modified: null,
+        keptAt: 0,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (path === null) {
       loadedNote.current = null;
@@ -378,12 +402,14 @@ export function useNote({
         // work was kept, saving it now is an ordinary save. If the file has
         // been written since — which, across a quit, can be days of someone
         // else's edits — the pane says so and waits to be told.
-        const rescued = recover.current?.(path) ?? null;
-        recovered.current = rescued !== null && vault !== null ? { vault, path } : null;
         // Work this pane could not hand back. The file's time it was refused
-        // against is unknown, so it waits to be told, as outdated work does.
-        const stillHere = rescued === null ? (unkept.current.get(opening) ?? null) : null;
-        unkept.current.delete(opening);
+        // against is unknown, so it waits to be told, as outdated work does. It
+        // is the pane's newest on the note: anything the keeper holds for it is
+        // older, and is left waiting there, to be handed back after this.
+        const stillHere = unkept.current.get(opening) ?? null;
+        if (stillHere !== null) unkept.current.delete(opening);
+        const rescued = stillHere === null ? (recover.current?.(path) ?? null) : null;
+        recovered.current = rescued !== null && vault !== null ? { vault, path } : null;
         setOutdated(
           stillHere ??
             (rescued !== null && changedSinceStranded({ edit: rescued, modified: opened.modified })
@@ -634,7 +660,7 @@ export function useNote({
       // file time it was kept at, so the next pane to open the note asks the
       // same question rather than taking the silence as an answer.
       if (held !== null) {
-        announceStranded.current?.({ ...held, doc: unwritten, vault });
+        keepOrHold({ ...held, doc: unwritten, vault });
         return;
       }
       // Behind any write of the pane's still in flight, and from what it
@@ -682,26 +708,13 @@ export function useNote({
             vaultNow.current === vault
               ? await noteModified({ fs: ports.fs, path: leaving.path })
               : leaving.modified;
-          const reason = message(cause);
-          try {
-            announceStranded.current?.({
-              path: leaving.path,
-              doc: unwritten,
-              reason,
-              modified,
-              vault,
-            });
-          } catch (notKept: unknown) {
-            // Neither written nor handed back: the pane keeps it, and coming
-            // back to the note puts it on screen, unsaved, waiting to be told.
-            unkept.current.set(noteKey(vault, leaving.path), {
-              path: leaving.path,
-              doc: unwritten,
-              reason: `${reason}; ${message(notKept)}`,
-              modified: null,
-              keptAt: 0,
-            });
-          }
+          keepOrHold({
+            path: leaving.path,
+            doc: unwritten,
+            reason: message(cause),
+            modified,
+            vault,
+          });
         },
       );
       holdReadsBehind(noteKey(vault, leaving.path), handled);
@@ -709,7 +722,7 @@ export function useNote({
       // to be shown in, and must still be heard rather than lost.
       void handled.then(() => undefined);
     };
-  }, [ports.fs, ports.markdown, vault, path, startFrom, holdReadsBehind]);
+  }, [ports.fs, ports.markdown, vault, path, startFrom, holdReadsBehind, keepOrHold]);
 
   // A property is written as soon as it is changed, through the same save as the
   // body, so an edit in progress is never lost to a property change.

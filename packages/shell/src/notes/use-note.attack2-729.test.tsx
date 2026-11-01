@@ -149,66 +149,60 @@ async function leaveAndBeRefused(
 }
 
 describe('second attack on PR #729: work the pane keeps when the keeper throws', () => {
-  it.fails(
-    'a later refusal that cannot be kept is not shadowed by earlier work the keeper still holds',
-    async () => {
-      const vault = heldVault();
-      const kept = new Map<VaultPath, StrandedEdit>();
-      // Kept the first time, refused by the keeper the second (a store filling up).
-      const keep = failingKeeper(kept, [2]);
-      const view = pane(vault, keep, kept);
-      await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
-      act(() => view.result.current.changeDoc(docOf('First typing.\n')));
-      await leaveAndBeRefused(vault, view, '# Note\n\nOutside one.\n');
-      expect(kept.has(NOTE)).toBe(true);
+  it('a later refusal that cannot be kept is not shadowed by earlier work the keeper still holds', async () => {
+    const vault = heldVault();
+    const kept = new Map<VaultPath, StrandedEdit>();
+    // Kept the first time, refused by the keeper the second (a store filling up).
+    const keep = failingKeeper(kept, [2]);
+    const view = pane(vault, keep, kept);
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('First typing.\n')));
+    await leaveAndBeRefused(vault, view, '# Note\n\nOutside one.\n');
+    expect(kept.has(NOTE)).toBe(true);
 
-      view.rerender({ path: NOTE });
-      await settle();
-      await settle();
-      expect(typed(view, 'First typing.\n')).toBe(true);
-      act(() => view.result.current.changeDoc(docOf('First typing.\n\nSecond typing.\n')));
-      await leaveAndBeRefused(vault, view, '# Note\n\nOutside two.\n');
+    view.rerender({ path: NOTE });
+    await settle();
+    await settle();
+    expect(typed(view, 'First typing.\n')).toBe(true);
+    act(() => view.result.current.changeDoc(docOf('First typing.\n\nSecond typing.\n')));
+    await leaveAndBeRefused(vault, view, '# Note\n\nOutside two.\n');
 
-      view.rerender({ path: NOTE });
-      await settle();
-      await settle();
-      // The second typing is the newest work and exists nowhere but this pane.
-      expect(typed(view, 'First typing.\n\nSecond typing.\n')).toBe(true);
-    },
-  );
+    view.rerender({ path: NOTE });
+    await settle();
+    await settle();
+    // The second typing is the newest work and exists nowhere but this pane.
+    expect(typed(view, 'First typing.\n\nSecond typing.\n')).toBe(true);
+  });
 
-  it.fails(
-    'work put back on screen as outdated is not lost when the keeper fails again on the way out',
-    async () => {
-      const vault = heldVault();
-      const kept = new Map<VaultPath, StrandedEdit>();
-      // The keeper is broken for good (storage full): every hand-back throws.
-      const keep = failingKeeper(kept, [1, 2, 3, 4]);
-      const view = pane(vault, keep, kept);
-      await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
-      act(() => view.result.current.changeDoc(docOf('Only copy.\n')));
-      await leaveAndBeRefused(vault, view, '# Note\n\nOutside.\n');
+  it('work put back on screen as outdated is not lost when the keeper fails again on the way out', async () => {
+    const vault = heldVault();
+    const kept = new Map<VaultPath, StrandedEdit>();
+    // The keeper is broken for good (storage full): every hand-back throws.
+    const keep = failingKeeper(kept, [1, 2, 3, 4]);
+    const view = pane(vault, keep, kept);
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Only copy.\n')));
+    await leaveAndBeRefused(vault, view, '# Note\n\nOutside.\n');
 
-      view.rerender({ path: NOTE });
-      await settle();
-      await settle();
-      // The fix under attack: the pane put the work back, outdated.
-      expect(typed(view, 'Only copy.\n')).toBe(true);
+    view.rerender({ path: NOTE });
+    await settle();
+    await settle();
+    // The fix under attack: the pane put the work back, outdated.
+    expect(typed(view, 'Only copy.\n')).toBe(true);
 
-      // Leaving again: outdated work takes the `held` branch, which hands it
-      // back with no fallback when the keeper throws.
-      // The keeper's throw escapes the effect cleanup (and the rerender); caught
-      // so the test asserts on where the work went, not on how it was lost.
-      try {
-        view.rerender({ path: OTHER });
-        await settle();
-      } catch {
-        // Expected under the bug: asserted on below through the work itself.
-      }
-      view.rerender({ path: NOTE });
+    // Leaving again: outdated work takes the `held` branch, which hands it
+    // back with no fallback when the keeper throws.
+    // The keeper's throw escapes the effect cleanup (and the rerender); caught
+    // so the test asserts on where the work went, not on how it was lost.
+    try {
+      view.rerender({ path: OTHER });
       await settle();
-      await settle();
-      expect(vault.contents()?.includes('Only copy.') || typed(view, 'Only copy.\n')).toBe(true);
-    },
-  );
+    } catch {
+      // Expected under the bug: asserted on below through the work itself.
+    }
+    view.rerender({ path: NOTE });
+    await settle();
+    await settle();
+    expect(vault.contents()?.includes('Only copy.') || typed(view, 'Only copy.\n')).toBe(true);
+  });
 });
