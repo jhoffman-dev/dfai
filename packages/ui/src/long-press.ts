@@ -1,8 +1,8 @@
 import {
   useEffect,
   useRef,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type SyntheticEvent,
 } from 'react';
 import { holdRemaining, judgePress, type PressPoint } from '@dfai/domain';
 
