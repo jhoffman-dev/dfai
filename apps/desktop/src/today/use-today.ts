@@ -49,6 +49,13 @@ export interface TodayOptions extends Omit<ReviewWritesOptions, 'ports' | 'clock
   /** Changes when the index does, so the page shows what it now holds. */
   readonly indexKey: string;
   /**
+   * The index's key as it stands the moment it is asked. `indexKey` is its
+   * news, which reaches the page a little after the index moves (#698): a
+   * read begun on the news of a refresh that ran before a write is still of
+   * the vault from before it. Left out, `indexKey` stands for it.
+   */
+  readonly indexKeyNow?: () => string;
+  /**
    * Whether the index is ready to be asked; while it is not, nothing is read.
    * What was last read of this vault stays on the page meanwhile: the index
    * is refreshed after every change to a file, the page's own included, and
@@ -117,18 +124,35 @@ export function useToday(options: TodayOptions) {
   const vaultNow = useRef({ index: ports.index, vaultKey });
   vaultNow.current = { index: ports.index, vaultKey };
   keyNow.current = indexKey;
+  const keyAsAskedNow = useRef(options.indexKeyNow);
+  keyAsAskedNow.current = options.indexKeyNow;
+  /** The index's key now, not as its news last reached the page. */
+  const keyAsAsked = useCallback(() => keyAsAskedNow.current?.() ?? keyNow.current, []);
   const day = useDayOf(clock, open);
   // The types the sidebar's Inbox count is read with, so the page's Inbox link counts the same.
   const startInInbox = tasksStartInInbox(types);
   // Whether tasks can be chosen for today (#108): worked out once, from the vault's Task type.
   const choosing = choosesForToday(types);
+  // When a write landed, taken as its refresh is asked: any sync that moves
+  // the index after that one runs after the write, so a read begun once the
+  // index has moved since is of the vault with the write in it (#698).
+  const landedAt = useRef<Landed | null>(null);
+  const refreshAsked = useCallback(() => {
+    onSettled();
+    landedAt.current = { since: readsBegun.begun, askedAt: keyAsAsked() };
+  }, [onSettled, readsBegun, keyAsAsked]);
   const { busy, problem, setProblem, actOn } = useReviewWrites({
     ports,
     editors,
     clock,
-    onSettled,
+    onSettled: refreshAsked,
     activity,
   });
+  /** When the write just made landed; one whose refresh was never asked landed now. */
+  const landedOrNow = useCallback(
+    () => landedAt.current ?? { since: readsBegun.begun, askedAt: keyAsAsked() },
+    [readsBegun, keyAsAsked],
+  );
 
   // The parts of the ports the read is made through: the window hands new
   // ports each time it lists the tree again, which is no reason to read (#325).
@@ -138,6 +162,7 @@ export function useToday(options: TodayOptions) {
     let cancelled = false;
     readsBegun.begun += 1;
     const begun = readsBegun.begun;
+    const key = keyAsAsked();
     const land = (landed: Pick<ReadFrom, 'report' | 'error'>) => {
       if (cancelled) return;
       // A task that reads the same keeps its object, so its row is not drawn again (#217).
@@ -147,7 +172,7 @@ export function useToday(options: TodayOptions) {
           landed.report === null ? null : keptTodayReport(shown?.report ?? null, landed.report);
         return { index, vaultKey, error: landed.error, report };
       });
-      setSettling((rows) => withoutSettledBy(rows, { begun, key: indexKey }));
+      setSettling((rows) => withoutSettledBy(rows, { begun, key }));
     };
     readToday({ index, fs, markdown, clock, tasksStartInInbox: startInInbox, choosing })
       .then((report) => land({ report, error: null }))
@@ -210,7 +235,7 @@ export function useToday(options: TodayOptions) {
       if (held.store.getState().last !== change) return false;
       if (!sameVault(change, vaultNow.current)) return false;
       const { path } = change;
-      const askedAt = keyNow.current;
+      landedAt.current = null;
       const undone = await actOn(path, (put) => put(change.undo));
       // An undo that could not be written is offered again, in a toast of its own, to be tried again.
       if (!undone) {
@@ -220,16 +245,16 @@ export function useToday(options: TodayOptions) {
       setLast((was) => (was === change ? null : was));
       // The task is back as it was, so its row can be acted on again — as what the
       // file held before the change, which the page's own read may be behind.
-      const since = readsBegun.begun;
+      const landed = landedOrNow();
       setSettling((was) => ({
         ...was,
         rows: new Map([...was.rows].filter(([row]) => row !== path)),
         changes: new Map([...was.changes].filter(([row]) => row !== path)),
-        known: new Map([...was.known, [path, { task: change.was, since, askedAt }]]),
+        known: new Map([...was.known, [path, { task: change.was, ...landed }]]),
       }));
       return true;
     },
-    [held, actOn],
+    [held, actOn, landedOrNow],
   );
   // Said in the window's toasts as the change lands, in its commit, not in an effect after it.
   const offerAgain = useRef<(change: LastChange) => void>(() => undefined);
@@ -255,12 +280,12 @@ export function useToday(options: TodayOptions) {
   const change = useCallback(
     async ({ path, title, action, values }: Change) => {
       if (settlingHere.has(path)) return;
-      const askedAt = keyNow.current;
       const { fs, markdown, index } = ports;
       const row = knownHere.get(path) ?? rows.get(path);
       const guarded = row === undefined ? values : whileAsRead({ values, row });
       // Shown at once, in the same commit as the action: the row moves before the write lands.
       setSettling((was) => withPending(ofVault(was, { index, vaultKey }), { path, values }));
+      landedAt.current = null;
       let made: UndoableChange | null = null;
       await actOn(path, async (put) => {
         made = await changeUndoably({
@@ -283,10 +308,10 @@ export function useToday(options: TodayOptions) {
           : { index, vaultKey, path, title, action, undo: takeBack, was: before };
       setLast(changed);
       if (changed !== null) announce(changed);
-      const since = readsBegun.begun;
-      setSettling((was) => withLanded(was, { path, values, landed: { since, askedAt } }));
+      const landed = landedOrNow();
+      setSettling((was) => withLanded(was, { path, values, landed }));
     },
-    [actOn, ports, vaultKey, rows, knownHere, settlingHere, announce],
+    [actOn, ports, vaultKey, rows, knownHere, settlingHere, announce, landedOrNow],
   );
 
   const done = useCallback(
@@ -411,9 +436,10 @@ function rowsAsRead(report: TodayReport | null): ReadonlyMap<VaultPath, TaskAsRe
 
 /**
  * When a write landed, as a read can tell it: `since` is the count of reads
- * begun by then, and `askedAt` the index's key as the write began. A read
- * catches up with the write when it began after it (#217) and its key has
- * moved since (#239): an index still at `askedAt` is of the vault from before.
+ * begun by then, and `askedAt` the index's key as the refresh it asked for
+ * was asked. A read catches up with the write when it began after it (#217)
+ * and the index's key, as the read began, has moved since (#239, #698): an
+ * index still at `askedAt` is of the vault from before.
  */
 interface Landed {
   readonly since: number;
