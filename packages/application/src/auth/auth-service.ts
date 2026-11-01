@@ -22,6 +22,8 @@ class AuthService implements AuthPort {
   /** Counts the sessions ended, so an answer for an ended one is known for stale. */
   private generation = 0;
   private signingOut = false;
+  /** A token granted to a restore or refresh that landed during a sign-out: the one to revoke. */
+  private lateToken: string | null = null;
   private refreshing: Promise<AuthSession> | null = null;
   private restoring: Promise<unknown> | null = null;
   private readonly listeners = new Set<() => void>();
@@ -50,25 +52,28 @@ class AuthService implements AuthPort {
   signIn = (): Promise<void> => startSignIn(this.deps);
 
   /**
-   * Refuses any new refresh, waits out a restore or refresh in flight (so
-   * its token is the one revoked), ends the session here, then asks the
-   * function to forget this browser — under the refresh lock, so another
-   * tab's refresh cannot land after it — and tells the other tabs. When the
-   * function cannot be reached, the cookie may outlive this page: the screen
-   * says so.
+   * Refuses any new refresh, ends the session here and tells the other tabs
+   * at once, then waits out a restore or refresh in flight (so its token is
+   * the one revoked) and asks the function to forget this browser — under
+   * the refresh lock, so another tab's refresh cannot land after it. When
+   * the function cannot be reached, the cookie may outlive this page: the
+   * screen says so.
    */
   signOut = async (): Promise<void> => {
     this.signingOut = true;
+    this.lateToken = null;
     try {
-      // Their outcome no longer matters, only that they have landed: the session ends either way.
+      const accessToken = this.session?.accessToken ?? null;
+      this.end(null);
+      this.deps.broadcast?.announceSignOut();
+      // Their outcome no longer matters, only that they have landed: the session has ended.
       await Promise.all(
         [this.restoring, this.refreshing].map((call) => call?.catch(() => undefined)),
       );
-      const accessToken = this.session?.accessToken ?? null;
-      this.end(null);
-      await this.forget(accessToken);
+      await this.forget(this.lateToken ?? accessToken);
     } finally {
       this.signingOut = false;
+      this.lateToken = null;
     }
   };
 
@@ -106,7 +111,7 @@ class AuthService implements AuthPort {
     const generation = this.generation;
     const outcome = await restoreSession(this.deps, query);
     // A sign-out waiting on this restore revokes what it granted, without a moment signed in.
-    if (this.signingOut && 'session' in outcome) this.session = outcome.session;
+    if (this.signingOut && 'session' in outcome) this.lateToken = outcome.session.accessToken;
     if (generation !== this.generation || this.signingOut) return this.current;
     if ('session' in outcome) this.begin(outcome.session);
     else this.end(outcome.failure);
@@ -119,9 +124,7 @@ class AuthService implements AuthPort {
     } catch (error) {
       if (!(error instanceof AuthError)) throw error;
       this.end('network');
-      return;
     }
-    this.deps.broadcast?.announceSignOut();
   }
 
   private refreshOnce(): Promise<AuthSession> {
@@ -136,6 +139,7 @@ class AuthService implements AuthPort {
   private async refreshNow(): Promise<AuthSession> {
     const generation = this.generation;
     const outcome = await redeemGrant(this.deps, () => this.deps.gateway.refresh());
+    if (this.signingOut && 'session' in outcome) this.lateToken = outcome.session.accessToken;
     if (generation !== this.generation) throw new AuthError('no-session', 'the session ended');
     if ('failure' in outcome) {
       const kind = outcome.failure ?? 'no-session';

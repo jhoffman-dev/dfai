@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   functionAuthGateway,
   REFRESH_LOCK,
+  REQUEST_TIMEOUT_MS,
   REVOKED_RETRY_MS,
   type CrossTabLock,
 } from './function-auth-gateway.ts';
@@ -171,6 +172,35 @@ describe('the sign-in function, from the browser', () => {
   ])('refuses a 200 with %s as malformed', async (_what, body) => {
     const { gateway } = gatewayAnswering(() => json(200, body));
     expect(await failure(gateway.refresh())).toBe('malformed');
+  });
+
+  it('gives up a call that hangs as unreachable once its timeout runs out', async () => {
+    const timeouts: number[] = [];
+    let runOut = () => {};
+    const gateway = functionAuthGateway({
+      // Never answers; only an abort ends it, as a fetch on a dropped network.
+      fetch: (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('', 'AbortError')));
+        }),
+      navigate: () => undefined,
+      lock: (_name, task) => task(),
+      timeout: (ms) => {
+        timeouts.push(ms);
+        return new Promise<void>((resolve) => {
+          runOut = resolve;
+        });
+      },
+    });
+    let settled = false;
+    const refresh = failure(gateway.refresh()).finally(() => {
+      settled = true;
+    });
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(timeouts).toEqual([REQUEST_TIMEOUT_MS]);
+    runOut();
+    expect(await refresh).toBe('network');
   });
 
   it('refuses a 200 that is not JSON as malformed', async () => {

@@ -24,35 +24,32 @@ const settle = async () => {
 };
 
 describe('sign-out while a refresh hangs', () => {
-  it.fails(
-    'ends the session in this tab at once, without waiting for the hung refresh',
-    async () => {
-      let now = START;
-      const gateway = fakeAuthGateway();
-      const pending = memoryPendingSignIn();
-      const auth = createAuthService({
-        gateway,
-        pending,
-        random: countingRandom(),
-        sha256: fakeSha256,
-        clock: { now: () => now },
-      });
-      await auth.signIn();
-      gateway.codes.add('good-code');
-      await auth.restore(`?code=good-code&state=${pending.held?.state ?? ''}`);
-      expect(auth.state().status).toBe('signed-in');
+  it('ends the session in this tab at once, without waiting for the hung refresh', async () => {
+    let now = START;
+    const gateway = fakeAuthGateway();
+    const pending = memoryPendingSignIn();
+    const auth = createAuthService({
+      gateway,
+      pending,
+      random: countingRandom(),
+      sha256: fakeSha256,
+      clock: { now: () => now },
+    });
+    await auth.signIn();
+    gateway.codes.add('good-code');
+    await auth.restore(`?code=good-code&state=${pending.held?.state ?? ''}`);
+    expect(auth.state().status).toBe('signed-in');
 
-      // Into the refresh margin; the refresh's fetch never comes back.
-      now += 8 * HOUR - REFRESH_MARGIN_MS + 1;
-      gateway.holdRefreshes = true;
-      void auth.tokenForRequest().catch(() => undefined);
-      await settle();
+    // Into the refresh margin; the refresh's fetch never comes back.
+    now += 8 * HOUR - REFRESH_MARGIN_MS + 1;
+    gateway.holdRefreshes = true;
+    void auth.tokenForRequest().catch(() => undefined);
+    await settle();
 
-      void auth.signOut();
-      await settle();
+    void auth.signOut();
+    await settle();
 
-      // Observed: still 'signed-in' until the hung fetch lands, however long that is.
-      expect(auth.state().status).toBe('signed-out');
-    },
-  );
+    // Observed: still 'signed-in' until the hung fetch lands, however long that is.
+    expect(auth.state().status).toBe('signed-out');
+  });
 });

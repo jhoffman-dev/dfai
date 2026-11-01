@@ -320,7 +320,8 @@ describe('other tabs', () => {
     expect(a.auth.state()).toEqual({ status: 'signed-out', reason: null });
   });
 
-  it('are not told when the sign-out could not reach the function', async () => {
+  // Told before the function is asked: a sign-out on a shared device ends every tab, reached or not.
+  it('are told even when the sign-out could not reach the function', async () => {
     const channel = memoryAuthChannel();
     const a = world(channel.tab());
     const b = world(channel.tab());
@@ -329,7 +330,8 @@ describe('other tabs', () => {
     await b.auth.restore('');
     a.gateway.failWith = 'network';
     await a.auth.signOut();
-    expect(b.auth.state()).toEqual({ status: 'signed-in' });
+    expect(a.auth.state()).toEqual({ status: 'signed-out', reason: 'network' });
+    expect(b.auth.state()).toEqual({ status: 'signed-out', reason: null });
   });
 
   it('stays signed out when told again', async () => {
@@ -357,17 +359,18 @@ describe('signing out', () => {
     await expect(auth.tokenForRequest()).rejects.toMatchObject({ kind: 'no-session' });
   });
 
-  it('waits for a refresh in flight, revokes its new token, and drops nothing back in', async () => {
+  it('ends at once, then waits for a refresh in flight, revokes its new token, and drops it', async () => {
     const { auth, signInWith, advance, gateway } = world();
     await signInWith();
     advance(8 * HOUR);
     gateway.holdRefreshes = true;
     const token = auth.tokenForRequest();
     const out = auth.signOut();
+    expect(auth.state()).toEqual({ status: 'signed-out', reason: null });
     await Promise.resolve();
     gateway.release();
     await out;
-    expect(await token).toBe('ghu_token2');
+    await expect(token).rejects.toMatchObject({ kind: 'no-session' });
     expect(gateway.calls.at(-1)).toEqual({ kind: 'sign-out', accessToken: 'ghu_token2' });
     expect(gateway.hasCookie).toBe(false);
     expect(auth.state()).toEqual({ status: 'signed-out', reason: null });

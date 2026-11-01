@@ -24,6 +24,8 @@ export interface FunctionAuthGatewayDeps {
   readonly lock: CrossTabLock;
   /** Waits `ms` before a refresh refused as revoked is tried once more. setTimeout by default. */
   readonly delay?: (ms: number) => Promise<void>;
+  /** Resolves once a request has run `ms`, when it is given up. setTimeout by default. */
+  readonly timeout?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -32,6 +34,13 @@ export interface FunctionAuthGatewayDeps {
  * before, to land and put its replacement in the cookie.
  */
 export const REVOKED_RETRY_MS = 300;
+
+/**
+ * How long a call to the function may run before it is given up as
+ * unreachable: a fetch on a captive or dropped network may otherwise hang
+ * for minutes, holding the refresh lock and a sign-out behind it.
+ */
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -45,7 +54,8 @@ const FAILURES: Readonly<Record<string, AuthFailureKind>> = {
 };
 
 export function functionAuthGateway(deps: FunctionAuthGatewayDeps): AuthGateway {
-  const post = (path: string, body: unknown) => postJson(deps.fetch, path, body);
+  const post = (path: string, body: unknown) =>
+    postJson({ fetch: deps.fetch, timeout: deps.timeout ?? wait }, path, body);
   return {
     start: ({ state, codeChallenge }) => {
       const query = new URLSearchParams({ state, code_challenge: codeChallenge });
@@ -86,10 +96,13 @@ async function refreshOnceMore(
 
 /** A POST to the function, its answer's JSON when it says yes, else an {@link AuthError}. */
 async function postJson(
-  fetch: typeof globalThis.fetch,
+  { fetch, timeout }: Pick<Required<FunctionAuthGatewayDeps>, 'fetch' | 'timeout'>,
   path: string,
   body: unknown,
 ): Promise<unknown> {
+  const controller = new AbortController();
+  // Aborting a request that has already answered does nothing.
+  void timeout(REQUEST_TIMEOUT_MS).then(() => controller.abort());
   let response: Response;
   try {
     response = await fetch(`${AUTH_API}${path}`, {
@@ -98,6 +111,7 @@ async function postJson(
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch (error) {
     throw new AuthError('network', `the sign-in service could not be reached: ${String(error)}`);
