@@ -47,8 +47,11 @@ export interface ReviewTask {
    * or not a note goes by one yet. Absent when the read did not say.
    */
   readonly projectLinks?: readonly string[];
-  /** When its file last changed, in milliseconds since the epoch. */
-  readonly modified: number;
+  /**
+   * When its file last changed, in milliseconds since the epoch; null when the
+   * vault cannot tell (ADR-0053), which is never stale and never waiting long.
+   */
+  readonly modified: number | null;
 }
 
 /** A project as the weekly review reads it. */
@@ -190,7 +193,7 @@ export function promisesItsDay(task: ReviewTask): boolean {
 
 /** More than `days` whole days since the file last changed. */
 function untouchedFor(task: ReviewTask, days: number, at: ReviewMoment): boolean {
-  return at.now - task.modified > days * DAY_MS;
+  return task.modified !== null && at.now - task.modified > days * DAY_MS;
 }
 
 /** Due before today, on a status that promises its day. */
@@ -200,7 +203,13 @@ export function isOverdue(task: ReviewTask, today: string): boolean {
 
 /** Longest untouched first: what has waited longest is asked about first. */
 function oldestFirst(tasks: ReviewTask[]): ReviewTask[] {
-  return tasks.sort((left, right) => left.modified - right.modified || byTitle(left, right));
+  return tasks.sort(byOldestChange);
+}
+
+/** The task whose file changed longest ago first; one whose time is unknown after those, then by title. */
+export function byOldestChange(left: ReviewTask, right: ReviewTask): number {
+  const unknown = Number(left.modified === null) - Number(right.modified === null);
+  return unknown || (left.modified ?? 0) - (right.modified ?? 0) || byTitle(left, right);
 }
 
 function byDueThenTitle(left: ReviewTask, right: ReviewTask): number {
