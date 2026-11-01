@@ -151,8 +151,13 @@ function prose(draw: Draw, linkable: readonly string[]): string {
   return `${sentences.join(' ')} See ${links.join(' and ')}.\n\n- ${draw.words(5)}\n- ${draw.words(6)}`;
 }
 
-/** `project`, linking a project or an area: what PARA files a note by. */
-const FILED_UNDER_LINES = ['  project:', '    kind: relation', '    targets: [project, area]'];
+/*
+ * No `project` relation on the types below, though PARA files a note by one: it
+ * was written `targets:`, which no type file reads, so the app has always left it
+ * out — and since #683 says so under Types. The counts are of the vault as the app
+ * read it; the relation, written `target:`, costs the 420-row table 120 renders,
+ * which is a budget for James to agree.
+ */
 
 const TYPES: readonly FixtureFile[] = [
   {
@@ -169,7 +174,6 @@ const TYPES: readonly FixtureFile[] = [
         '  waiting_on:',
         '    kind: relation',
         '    target: person',
-        FILED_UNDER_LINES,
         '  defer: date',
         '  due: date',
         '  completed: date',
@@ -201,10 +205,7 @@ const TYPES: readonly FixtureFile[] = [
   },
   {
     path: '.atlas/types/resource.md',
-    contents: note(
-      ['name: resource', 'label: Resource', 'properties:', FILED_UNDER_LINES].flat(),
-      '# Resource',
-    ),
+    contents: note(['name: resource', 'label: Resource'], '# Resource'),
   },
   {
     path: '.atlas/types/person.md',
@@ -222,8 +223,7 @@ const TYPES: readonly FixtureFile[] = [
         '    kind: relation',
         '    target: person',
         '    many: true',
-        FILED_UNDER_LINES,
-      ].flat(),
+      ],
       '# Meeting',
     ),
   },

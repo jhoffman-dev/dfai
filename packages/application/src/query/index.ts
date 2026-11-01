@@ -12,6 +12,7 @@ export {
   propertyChange,
   setNoteProperties,
   setNoteProperty,
+  UnclosedFrontmatterError,
   writeFrontmatterChanges,
 } from './set-property.ts';
 export type { CompletionRule, PropertyChanges } from './set-property.ts';

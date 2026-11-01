@@ -1,5 +1,5 @@
 import { humanizeKey } from '../page/property-label.ts';
-import type { ObjectType, PropertyDef } from './property-def.ts';
+import { readsAsProperty, type ObjectType, type PropertyDef } from './property-def.ts';
 
 /**
  * A property as it is written in a type file: the shorthand `due: date` when
@@ -141,8 +141,11 @@ function writtenProperties({
       ? (asWritten.get(property.key) ?? property.key)
       : property.key;
   // Properties that were read before and still are fill the places those held,
-  // in their new order; the ones the parser skipped are never moved.
-  const kept = after.properties.filter((property) => asWritten.has(oldKey(property)));
+  // in their new order; the ones the parser skipped are never moved. A key the
+  // file holds for a skipped one is not a property read before (#683).
+  const kept = after.properties.filter(
+    (property) => beforeByKey.has(oldKey(property)) && asWritten.has(oldKey(property)),
+  );
   const keptOldKeys = new Set(kept.map(oldKey));
   const entries: [string, unknown][] = [];
   let next = 0;
@@ -157,19 +160,38 @@ function writtenProperties({
   for (const property of after.properties) {
     if (!keptOldKeys.has(oldKey(property))) entries.push([property.key, spec(property)]);
   }
+  refuseWritingOver(entries);
   return Object.fromEntries(entries);
+}
+
+/**
+ * Refuses a map that holds one key twice, as YAML spells it: the later would
+ * write over the earlier, and so over what the file says of a property. Keys
+ * that only trim alike — `" author"` and `author` — are two to YAML, and were
+ * both in the file. The editor keeps clear of the file's keys (#683); this is
+ * what holds if it ever does not.
+ */
+function refuseWritingOver(entries: readonly (readonly [string, unknown])[]): void {
+  const seen = new Set<string>();
+  for (const [key] of entries) {
+    if (seen.has(key)) {
+      throw new Error(`The type file already holds "${key}", so it is not written over`);
+    }
+    seen.add(key);
+  }
 }
 
 /**
  * Each key the parser reads out of a written `properties` map, to the key as
  * the file spells it: the parser trims a key, so `" title"` is the property
- * `title`. Where two spellings trim alike, the first is the one read.
+ * `title`. Where two spellings trim alike, the one read is the first the
+ * parser takes as a property — never one it skips (#683).
  */
 function writtenKeys(written: Readonly<Record<string, unknown>>): Map<string, string> {
   const keys = new Map<string, string>();
-  for (const key of Object.keys(written)) {
+  for (const [key, raw] of Object.entries(written)) {
     const read = key.trim();
-    if (read !== '' && !keys.has(read)) keys.set(read, key);
+    if (readsAsProperty(key, raw) && !keys.has(read)) keys.set(read, key);
   }
   return keys;
 }

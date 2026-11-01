@@ -1,4 +1,5 @@
 export {
+  objectTypeProblems,
   parseObjectType,
   InvalidTypeError,
   PROPERTY_KINDS,

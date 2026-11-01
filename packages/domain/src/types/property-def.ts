@@ -79,6 +79,13 @@ export interface ObjectType {
    * when it says; blank when it says they have no home (#214).
    */
   readonly folder?: string;
+  /**
+   * The keys of the properties the file holds and the type leaves out, as
+   * the file spells them — `" author"` beside a read `author` is its own key
+   * to YAML: still the file's, so an edit must not give one to a property of
+   * its own (#683). Absent when there are none.
+   */
+  readonly unreadKeys?: readonly string[];
 }
 
 export class InvalidTypeError extends Error {
@@ -103,16 +110,20 @@ const asStrings = (value: unknown): string[] =>
  * line should cost you that property, not the ability to open your notes.
  */
 export function parseObjectType(frontmatter: Record<string, unknown>): ObjectType {
+  // A list or a map is no name: as text it would be "a,b" or "[object Object]".
+  if (isNotText(frontmatter['name'])) throw new InvalidTypeError('a type’s name must be text');
   const name = String(frontmatter['name'] ?? '').trim();
   if (name === '') throw new InvalidTypeError('a type needs a name');
 
   const declared = frontmatter['properties'];
   const properties: PropertyDef[] = [];
+  const unreadKeys: string[] = [];
 
   if (isRecord(declared)) {
     for (const [key, raw] of Object.entries(declared)) {
       const property = parseProperty(key, raw);
       if (property !== null) properties.push(property);
+      else if (key.trim() !== '') unreadKeys.push(key);
     }
   }
 
@@ -124,8 +135,11 @@ export function parseObjectType(frontmatter: Record<string, unknown>): ObjectTyp
     properties,
     ...(icon !== undefined && { icon }),
     ...(folder !== null && { folder }),
+    ...(unreadKeys.length > 0 && { unreadKeys }),
   };
 }
+
+const isNotText = (value: unknown): boolean => typeof value === 'object' && value !== null;
 
 /**
  * The type's `folder:` as text: a key written with nothing in it is blank —
@@ -139,19 +153,88 @@ function parseFolder(frontmatter: Record<string, unknown>): string | null {
   return typeof folder === 'string' ? folder.trim() : null;
 }
 
-function parseProperty(key: string, raw: unknown): PropertyDef | null {
-  const trimmed = key.trim();
-  if (trimmed === '') return null;
+/** The keys only a type file writes: frontmatter with none of them is no type. */
+const TYPE_KEYS: readonly string[] = ['name', 'label', 'properties', 'icon', 'folder'];
 
+/** The type keys written with capitals, `Name`, where the lowercase key is not written too. */
+function miscasedTypeKeys(frontmatter: Record<string, unknown>): string[] {
+  return Object.keys(frontmatter).filter((key) => {
+    const lower = key.toLowerCase();
+    return key !== lower && TYPE_KEYS.includes(lower) && !Object.hasOwn(frontmatter, lower);
+  });
+}
+
+/**
+ * What keeps a type file's frontmatter from reading whole, in words, each
+ * for the person to mend (#683): no name, so no type at all, or a property
+ * `parseObjectType` leaves out. Empty when it reads as written, and for
+ * frontmatter that holds none of a type's keys — that is no type.
+ */
+export function objectTypeProblems(frontmatter: Record<string, unknown>): readonly string[] {
+  const miscased = miscasedTypeKeys(frontmatter);
+  const isType = TYPE_KEYS.some((key) => Object.hasOwn(frontmatter, key)) || miscased.length > 0;
+  if (!isType) return [];
+  const problems: string[] = [];
+  if (miscased.length > 0) {
+    const fixes = miscased.map((key) => `${key} → ${key.toLowerCase()}`).join(', ');
+    problems.push(`Its keys must be lowercase: ${fixes}.`);
+  }
+  if (isNotText(frontmatter['name'])) {
+    problems.push('Its name must be text, not a list or a map.');
+  } else if (
+    String(frontmatter['name'] ?? '').trim() === '' &&
+    !miscased.some((key) => key.toLowerCase() === 'name')
+  ) {
+    problems.push('It has no name, and a type needs one.');
+  }
+  const declared = frontmatter['properties'];
+  if (isRecord(declared)) {
+    for (const [key, raw] of Object.entries(declared)) {
+      const refused = propertyRefusal(key.trim(), raw);
+      if (refused !== null) problems.push(refused);
+    }
+  } else if (declared !== undefined && declared !== null) {
+    problems.push('Its properties are not written as key: kind.');
+  }
+  return problems;
+}
+
+/** A property's spec, its kind and what it points at, as written. */
+function specOf(raw: unknown) {
   // `status: select` is shorthand for `status: { kind: select }`.
   const spec = isRecord(raw) ? raw : { kind: raw };
   const kind = String(spec['kind'] ?? 'text') as PropertyKind;
-  if (!PROPERTY_KINDS.includes(kind)) return null;
+  return { spec, kind, targets: parseTargets(spec['target']) };
+}
 
-  const targets = parseTargets(spec['target']);
-  const target = targets[0] ?? null;
+/** Why a property is left out of its type, or null when it is kept. A blank key is left out without one. */
+function propertyRefusal(key: string, raw: unknown): string | null {
+  if (key === '') return null;
+  const { kind, targets } = specOf(raw);
+  if (!PROPERTY_KINDS.includes(kind)) {
+    return `Its property “${key}” has a kind DFAI does not know: “${kind}”.`;
+  }
   // A relation with nothing to point at cannot offer anything, so it is not one.
-  if (kind === 'relation' && target === null) return null;
+  if (kind === 'relation' && targets.length === 0) {
+    // `targets` is what the type holds, so it is the likeliest slip for the key.
+    const slip = isRecord(raw) && Object.hasOwn(raw, 'targets');
+    return `Its property “${key}” is a relation that names no type to point at${slip ? ': write target:, not targets:' : ''}.`;
+  }
+  return null;
+}
+
+/** Whether a `properties` entry reads as a property; a blank key, or one refused, does not. */
+export function readsAsProperty(key: string, raw: unknown): boolean {
+  const trimmed = key.trim();
+  return trimmed !== '' && propertyRefusal(trimmed, raw) === null;
+}
+
+function parseProperty(key: string, raw: unknown): PropertyDef | null {
+  if (!readsAsProperty(key, raw)) return null;
+  const trimmed = key.trim();
+
+  const { spec, kind, targets } = specOf(raw);
+  const target = targets[0] ?? null;
 
   const options = asStrings(spec['options']);
   const colors = parseColors(spec['colors'], options);

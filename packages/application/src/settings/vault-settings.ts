@@ -1,6 +1,7 @@
 import {
   ATLAS_DIRECTORY,
   createVaultPath,
+  opensUnclosedFrontmatter,
   splitFrontmatter,
   VAULT_ROOT,
   VAULT_SETTINGS_PATH,
@@ -45,11 +46,20 @@ export async function readVaultSettings({
   return settingsOfText(markdown, file.text);
 }
 
-/** What a settings note's text says; refused as unreadable when its frontmatter does not parse. */
+/**
+ * What a settings note's text says; refused as unreadable when its frontmatter
+ * does not parse, or opens and never closes — read as none, every setting would
+ * quietly be its default (#683).
+ */
 export function settingsOfText(
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'frontmatterProblem'>,
   text: string,
 ): Readonly<Record<string, unknown>> {
+  if (opensUnclosedFrontmatter(text)) {
+    throw new UnreadableSettingsError(
+      `${VAULT_SETTINGS_PATH} can't be read, so its settings are left as they are until it is fixed: its frontmatter has no closing ---`,
+    );
+  }
   const { frontmatter } = splitFrontmatter(text);
   refuseUnreadable(markdown, frontmatter);
   return markdown.frontmatterProperties(frontmatter);

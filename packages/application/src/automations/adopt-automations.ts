@@ -1,4 +1,9 @@
-import { lastScheduleMark, splitFrontmatter, type LocalTime } from '@dfai/domain';
+import {
+  lastScheduleMark,
+  opensUnclosedFrontmatter,
+  splitFrontmatter,
+  type LocalTime,
+} from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
@@ -52,6 +57,10 @@ export async function adoptAutomations({
   const { unstamped, unmarked } = adoptionsOf(listing, now);
   for (const { rule } of unstamped) {
     const { text, modified } = await fs.readTextFile(rule.path);
+    // Unclosed since it was listed: a block on top would hold only the id (#683).
+    // Left unstamped, which is safe: the next listing shows it as broken, and
+    // once it is mended it is stamped then.
+    if (opensUnclosedFrontmatter(text)) continue;
     const document = splitFrontmatter(text);
     const frontmatter = markdown.updateFrontmatter(document.frontmatter, { id: rule.id });
     await fs.writeTextFile({

@@ -73,4 +73,33 @@ describe('useTypes', () => {
     await act(async () => reads[3]?.reject(new Error('the folder is gone')));
     expect(await failing).toBeNull();
   });
+
+  it('hands over the type files that cannot be read, beside the types (#683)', async () => {
+    const files: NoteFile[] = [
+      typeFile('Task'),
+      {
+        path: '.atlas/types/Recipe.md',
+        text: '---\nname: recipe\nproperties: [x\n---\n',
+        modified: 1,
+        size: 1,
+      },
+    ];
+    const fs = fakeVaultFs({
+      listDirectory: async () =>
+        files.map(({ path }) => ({
+          kind: 'file' as const,
+          name: path.split('/').at(-1) ?? '',
+          path: createVaultPath(path),
+        })),
+      readNotes: async (paths) => files.filter(({ path }) => paths.includes(createVaultPath(path))),
+    });
+    const { wrapper } = queryWrapper();
+    const hook = renderHook(() => useTypes({ fs, markdown: remarkMarkdown, vaultKey: '/vault' }), {
+      wrapper,
+    });
+    await waitFor(() => expect(hook.result.current.types).toHaveLength(1));
+    expect(hook.result.current.broken.map(({ path }) => path)).toEqual(['.atlas/types/Recipe.md']);
+    // A reload still settles with the types alone.
+    expect((await hook.result.current.reload())?.map((type) => type.label)).toEqual(['Task']);
+  });
 });
