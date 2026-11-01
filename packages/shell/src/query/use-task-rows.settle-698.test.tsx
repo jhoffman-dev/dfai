@@ -91,7 +91,8 @@ describe('useTaskRows — settling on news that comes late (#698)', () => {
     index.key = 'ready:3';
     run('someday');
     expect(status()).toBe('someday');
-    expect(hook.result.current.controls?.of(hook.result.current.rows[0]!).waits).toBe(false);
+    const settled = hook.result.current.rows[0] ?? expect.fail('no row');
+    expect(hook.result.current.controls?.of(settled)?.waits).toBe(false);
   });
 
   it('control: a run of an index that moved after the write landed reads the row back', async () => {

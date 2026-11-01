@@ -63,3 +63,23 @@ describe('useAtlasQuery while the text is typed', () => {
     expect(limits.at(-1)).toBe(7);
   });
 });
+
+describe('useAtlasQuery, as its runs are stamped (#698)', () => {
+  it('stamps a run with the index’s own key as it begins, not with the news it ran on', async () => {
+    const index = fakeIndexPort({
+      query: async () => ({ columns: ['path', 'title', 'type'], rows: [], truncated: false }),
+    });
+    const hook = renderHook(() =>
+      useAtlasQuery({
+        initialText: 'FROM task',
+        index,
+        types: TYPES,
+        notePaths: NO_NOTES,
+        indexKey: 'ready:4',
+        indexKeyNow: () => 'ready:5',
+      }),
+    );
+    await act(async () => {});
+    expect(hook.result.current.read).toEqual({ at: 1, indexKey: 'ready:5' });
+  });
+});

@@ -65,10 +65,11 @@ function setUp() {
     markdown: remarkMarkdown,
   };
   const activity = recordingActivity();
+  type Props = { indexKey: string; fs?: typeof ports.fs };
   const hook = renderHook(
-    ({ indexKey }: { indexKey: string }) =>
+    ({ indexKey, fs = ports.fs }: Props) =>
       useToday({
-        ports,
+        ports: fs === ports.fs ? ports : { ...ports, fs },
         editors: noPane,
         activity,
         clock: CLOCK,
@@ -82,14 +83,16 @@ function setUp() {
         // The refresh each write asks for: it runs when the test says.
         onSettled: () => {},
       }),
-    { initialProps: { indexKey: 'ready:1' } },
+    { initialProps: { indexKey: 'ready:1' } as Props },
   );
+  /** New ports over the same vault, as the window hands on a re-render: read again, on no news. */
+  const portsAgain = () => fakeVaultFs(memory.fs);
   const listed = () =>
     hook.result.current.page.today?.sections
       .flatMap((section) => section.groups)
       .flatMap((group) => group.tasks)
       .some((task) => task.path === PATH) ?? false;
-  return { ...hook, index, listed };
+  return { ...hook, index, listed, portsAgain };
 }
 
 describe('useToday — settling on news that comes late (#698)', () => {
@@ -117,6 +120,21 @@ describe('useToday — settling on news that comes late (#698)', () => {
     rerender({ indexKey: 'ready:3' });
     await waitFor(() => expect(result.current.page.settling.has(PATH)).toBe(false));
     expect(listed()).toBe(false);
+  });
+
+  it('keeps a row off the page through a read begun on no news, while the index is where the write landed', async () => {
+    const { result, rerender, index, listed, portsAgain } = setUp();
+    await waitFor(() => expect(listed()).toBe(true));
+    index.key = 'ready:2';
+    await act(async () => result.current.page.onSetStatus({ ...ROW, status: 'someday' }));
+
+    // Read again for new ports, its news still the old key: of the index from before the write.
+    const readsBefore = index.reads;
+    rerender({ indexKey: 'ready:1', fs: portsAgain() });
+    await waitFor(() => expect(index.reads).toBe(readsBefore + 1));
+    await act(async () => {});
+    expect(listed()).toBe(false);
+    expect(result.current.page.settling.has(PATH)).toBe(true);
   });
 
   it('control: settles on the first read of an index that moved after the write landed', async () => {
