@@ -249,10 +249,9 @@ export function useNote({
    * told by `step`, which counts each landing and each read begun, rather
    * than by the time. `landedIn` is the vault it landed in: a note of the
    * same name in the next vault is another note. `pending` is, by note, the
-   * queue as it stood once the pane's write on the way out of that note was
-   * put on it: a read of the note waits on that, and on no other note's.
-   * A save still out when the pane leaves is always followed by one, as the
-   * note is still unsaved until it lands.
+   * last of the pane's writes of it that a read must wait out: the write on
+   * the way out of it, and "Keep mine". A save still out when the pane leaves
+   * is always followed by one, as the note is still unsaved until it lands.
    */
   const writes = useRef<{
     queue: Promise<unknown>;
@@ -295,6 +294,19 @@ export function useNote({
       },
     [],
   );
+
+  /**
+   * Holds reads of the note under `key` until `settles` is over, and lets go
+   * of the note then, unless a later write of it has taken its place.
+   */
+  const holdReadsBehind = useCallback((key: string, settles: Promise<unknown>) => {
+    // A read only has to know it is over; how it went is the write's own to report.
+    const over = settles.catch(() => undefined);
+    writes.current.pending.set(key, over);
+    void over.then(() => {
+      if (writes.current.pending.get(key) === over) writes.current.pending.delete(key);
+    });
+  }, []);
 
   useEffect(() => {
     if (path === null) {
@@ -496,19 +508,32 @@ export function useNote({
     if (path === null || doc === null) return;
     const written = doc;
     setOutdated(null);
-    track(
-      written,
-      // Read again first: the refusal means someone else wrote this file, and
-      // keeping their frontmatter costs one read and saves the star, the
-      // status or the due date they had just set.
-      // What it leaves is the pane's newest write, which the next starts from.
-      openNote({ fs: ports.fs, markdown: ports.markdown, path })
-        .then((fresh) =>
-          saveNote({ fs: ports.fs, markdown: ports.markdown, note: fresh, doc: written }),
-        )
-        .then(recordLanded(vault)),
-    ).catch(shownInPane(path));
-  }, [ports.fs, ports.markdown, vault, path, doc, track, shownInPane, recordLanded]);
+    // Read again first: the refusal means someone else wrote this file, and
+    // keeping their frontmatter costs one read and saves the star, the
+    // status or the due date they had just set.
+    const run = () =>
+      openNote({ fs: ports.fs, markdown: ports.markdown, path }).then((fresh) =>
+        saveNote({ fs: ports.fs, markdown: ports.markdown, note: fresh, doc: written }),
+      );
+    const writing = writes.current.queue.then(run, run).then(recordLanded(vault));
+    // Reported through `track` below; the queue only has to know it is over.
+    writes.current.queue = writing.catch(() => undefined);
+    // What it leaves is the pane's newest write, which the next starts from.
+    // On the queue, so the write on the way out of the note starts from it,
+    // and waited on by a read of the note on the way back (#729).
+    holdReadsBehind(noteKey(vault, path), writing);
+    track(written, writing).catch(shownInPane(path));
+  }, [
+    ports.fs,
+    ports.markdown,
+    vault,
+    path,
+    doc,
+    track,
+    shownInPane,
+    recordLanded,
+    holdReadsBehind,
+  ]);
 
   const discard = useCallback(() => {
     // Thrown away, so let go of — before the read below, which would otherwise
@@ -613,8 +638,9 @@ export function useNote({
       const leavingWrite = writes.current.queue.then(run, run);
       // Handled just below; the queue only has to know it is over.
       writes.current.queue = leavingWrite.catch(() => undefined);
-      writes.current.pending.set(noteKey(vault, leaving.path), writes.current.queue);
-      void leavingWrite.then(
+      // A read on the way back waits for the work to be kept, not only refused:
+      // begun before it is, the read finds nothing to hand back (#729).
+      const handled = leavingWrite.then(
         // Landed: the work handed back, if any, is on disk now, and a pane
         // still showing the note is behind the file until it re-reads it.
         () => {
@@ -643,8 +669,9 @@ export function useNote({
           });
         },
       );
+      holdReadsBehind(noteKey(vault, leaving.path), handled);
     };
-  }, [ports.fs, ports.markdown, vault, path, startFrom]);
+  }, [ports.fs, ports.markdown, vault, path, startFrom, holdReadsBehind]);
 
   // A property is written as soon as it is changed, through the same save as the
   // body, so an edit in progress is never lost to a property change.
