@@ -298,9 +298,13 @@ export function apiFixture({
     trashEntry: async () => {
       throw new Error('the API never deletes');
     },
-    writeTextFile: async ({ path, contents, expectedModified, vault }) => {
+    writeTextFile: async ({ path, contents, expectedModified, expectedText, vault }) => {
       refuseOtherVault(vault);
       if (expectedModified !== null && read(path).modified !== expectedModified) {
+        throw new VaultAccessError(HOST_CHANGED_ON_DISK);
+      }
+      // As the host does (#245): the text held to as well, for a same-second edit.
+      if (expectedText !== undefined && read(path).text !== expectedText) {
         throw new VaultAccessError(HOST_CHANGED_ON_DISK);
       }
       const modified = (clock += 1);

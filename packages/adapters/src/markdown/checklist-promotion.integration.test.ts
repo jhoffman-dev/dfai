@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createVaultPath, parseObjectType, TASK_TYPE_FILE } from '@dfai/domain';
 import {
+  EntryChangedError,
   fakeVaultFs,
   promoteChecklistLine,
   LineAlreadyPromotedError,
@@ -41,10 +42,16 @@ const PLAN = [
 ].join('\n');
 
 const source = createVaultPath('plans/Plan the launch.md');
+/** Where promoting "Order chairs" makes its task: the Task type's home folder (#214). */
+const TASK = 'Tasks/2026/10/Order chairs.md';
 const today = '2026-10-08';
 const closed: PromotionPanes = { state: () => 'closed', reload: vi.fn() };
 
-/** A vault in memory whose writes are checked against the version read, as the host checks them. */
+/**
+ * A vault in memory whose writes and trashes are checked against the version
+ * read, as the host checks them: a write by its time and `expectedText`, a
+ * trash by each file it is told to hold (#235, #245).
+ */
 function vault(initial: Record<string, string> = { [source]: PLAN }) {
   let clock = 100;
   const files = new Map(
@@ -57,8 +64,11 @@ function vault(initial: Record<string, string> = { [source]: PLAN }) {
       if (file === undefined) throw new Error(`no such file: ${path}`);
       return { ...file };
     },
-    writeTextFile: async ({ path, contents, expectedModified }) => {
+    writeTextFile: async ({ path, contents, expectedModified, expectedText }) => {
       if (expectedModified !== null && files.get(path)?.modified !== expectedModified) {
+        throw new Error('the note changed on disk since it was opened');
+      }
+      if (expectedText !== undefined && files.get(path)?.text !== expectedText) {
         throw new Error('the note changed on disk since it was opened');
       }
       const modified = (clock += 1);
@@ -73,7 +83,13 @@ function vault(initial: Record<string, string> = { [source]: PLAN }) {
       writes.push(path);
       return modified;
     },
-    trashEntry: async ({ path }) => {
+    trashEntry: async ({ path, unchanged = [] }) => {
+      for (const held of unchanged) {
+        const file = files.get(held.path);
+        if (file?.text !== held.text || file.modified !== held.modified) {
+          throw new EntryChangedError(`${held.path} changed`);
+        }
+      }
       if (!files.delete(path)) throw new Error(`no such entry: ${path}`);
     },
   });
@@ -304,14 +320,59 @@ describe('promoting refuses, and changes nothing', () => {
     const racing: VaultFsPort = {
       ...fs,
       createNote: async (note) => {
-        await fs.createNote(note);
+        const made = await fs.createNote(note);
         fixture.files.set(source, { text: edited, modified: 999 });
-        return 0;
+        return made;
       },
     };
     await expect(promote(racing)).rejects.toThrow('changed while the line was being promoted');
-    expect(text('plans/Order chairs.md')).toBeUndefined();
+    expect(text(TASK)).toBeUndefined();
     expect(text(source)).toBe(edited);
+  });
+
+  it('when the note changes and the new task is typed in meanwhile: the task is kept (#694)', async () => {
+    const { fs, fixture, text } = vault();
+    let task = '';
+    const racing: VaultFsPort = {
+      ...fs,
+      createNote: async (note) => {
+        const made = await fs.createNote(note);
+        task = note.path;
+        fixture.files.set(note.path, { text: `${note.contents}Typed.\n`, modified: made });
+        fixture.files.set(source, { text: `${PLAN}Edited elsewhere.\n`, modified: 999 });
+        return made;
+      },
+    };
+    await expect(promote(racing)).rejects.toThrow('could not be taken back');
+    expect(text(task)).toMatch(/Typed\.\n$/);
+  });
+
+  it('when the note changes and the new task is typed in just before its trash: the task is kept (#694)', async () => {
+    const { fs, fixture, text } = vault();
+    let task = '';
+    const racing: VaultFsPort = {
+      ...fs,
+      createNote: async (note) => {
+        const made = await fs.createNote(note);
+        task = note.path;
+        fixture.files.set(source, { text: `${PLAN}Edited elsewhere.\n`, modified: 999 });
+        return made;
+      },
+      // Typing lands between the take-back's check and its trash; the Trash holds, as the host's does.
+      trashEntry: async (args) => {
+        const now = fixture.files.get(args.path)!;
+        fixture.files.set(args.path, { text: `${now.text}Typed.\n`, modified: now.modified + 1 });
+        for (const held of args.unchanged ?? []) {
+          const file = fixture.files.get(held.path);
+          if (file?.text !== held.text || file.modified !== held.modified) {
+            throw new EntryChangedError(`${held.path} changed`);
+          }
+        }
+        await fs.trashEntry(args);
+      },
+    };
+    await expect(promote(racing)).rejects.toThrow('could not be taken back');
+    expect(text(task)).toMatch(/Typed\.\n$/);
   });
 
   it('when typing begins in a pane while the task is being made: the task is taken back', async () => {
@@ -322,7 +383,7 @@ describe('promoting refuses, and changes nothing', () => {
       reload: vi.fn(),
     };
     await expect(promote(fs, {}, typing)).rejects.toThrow(UnsavedTypingError);
-    expect(text('plans/Order chairs.md')).toBeUndefined();
+    expect(text(TASK)).toBeUndefined();
     expect(text(source)).toBe(PLAN);
   });
 });

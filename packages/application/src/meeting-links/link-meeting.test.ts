@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { VaultPath } from '@dfai/domain';
 import { acceptProposalNote } from '../proposals/accept-proposal.ts';
 import { listProposals } from '../proposals/list-proposals.ts';
+import { editedBeforeTrash } from '../testing/edited-before-trash.ts';
 import { MEETING_BODY } from '../testing/meeting-files.ts';
 import {
   jsonLinesMarkdown,
@@ -408,6 +409,24 @@ describe('undoMeetingLink', () => {
     ]);
     expect(setup.propertiesOf(MEETING)?.['companies']).toBeUndefined();
     expect(undone.left.map(({ path }) => path)).toEqual([MEETING, person]);
+  });
+
+  it('keeps a proposal edited between its check and the Trash, and takes the rest (#693)', async () => {
+    const { setup, ports } = vault({ [MEETING]: meeting([MARA, ADA]) });
+    const run = await link(ports);
+    const [edited, ...others] = run.proposed;
+    expect(others.length).toBeGreaterThan(0);
+    const typed = `${setup.fixture.files.get(edited!)?.text}Typed meanwhile.\n`;
+    const fs = editedBeforeTrash(ports.fs, () =>
+      ports.fs.writeTextFile({ path: edited!, contents: typed, expectedModified: null }),
+    );
+    const undone = await undoMeetingLink({ ports: { ...ports, fs }, run, today: TODAY });
+    expect(undone.left).toEqual([
+      { path: edited, reason: 'It was changed since, so it was left as it is.' },
+    ]);
+    expect(setup.fixture.files.get(edited!)?.text).toBe(typed);
+    expect(undone.withdrawn).toEqual(others);
+    for (const path of others) expect(setup.paths()).not.toContain(path);
   });
 
   it('leaves a proposal with unsaved typing, or gone since, and says why', async () => {

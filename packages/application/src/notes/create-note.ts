@@ -7,7 +7,7 @@ import {
 } from '@dfai/domain';
 import { ensureFolder } from '../vault/create-folder.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
-import type { VaultFsPort } from '../vault/ports.ts';
+import type { AsRead, VaultFsPort } from '../vault/ports.ts';
 import { guardTemplateEdit } from '../vault/template-guard.ts';
 import { newNoteTaskRules } from '../gtd/task-rules.ts';
 import { homeFolderFor } from './home-folder.ts';
@@ -65,23 +65,34 @@ interface NewNote {
  * (ADR-0029) are held here: one made already in Archive is dated today, and
  * a new task Waiting with nobody to wait on is made as it is (#202).
  */
-export async function createNote({
-  markdown,
-  today,
-  contents,
-  ...note
-}: NewNote & {
+export async function createNote(note: RuledNewNote): Promise<VaultPath> {
+  return (await createNoteAsWritten(note)).path;
+}
+
+type RuledNewNote = NewNote & {
   /** What a new note's frontmatter is read and dated through. */
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'updateFrontmatter'>;
   /** `YYYY-MM-DD`: the day a task made already finished is dated. */
   today: string;
-}): Promise<VaultPath> {
+};
+
+/**
+ * {@link createNote}, answering the note as it was written — the text after
+ * the task rules, and the time the host reported for the create — for a
+ * caller that will later hold the note to that version (#694).
+ */
+export async function createNoteAsWritten({
+  markdown,
+  today,
+  contents,
+  ...note
+}: RuledNewNote): Promise<AsRead> {
   const properties = note.properties ?? startingProperties(markdown, contents);
   const home =
     note.folder === undefined
       ? await homeFolderFor({ fs: note.fs, markdown, properties, today })
       : null;
-  return createNoteFile({
+  return createNoteFileAsWritten({
     ...note,
     properties,
     home,
@@ -104,7 +115,12 @@ function startingProperties(
  * {@link createNote} without the task rules: for a note whose text DFAI
  * writes whole and which is never a task — a chat's transcript.
  */
-export async function createNoteFile({
+export async function createNoteFile(note: NewNote): Promise<VaultPath> {
+  return (await createNoteFileAsWritten(note)).path;
+}
+
+/** {@link createNoteFile}, answering the note as it was written. */
+async function createNoteFileAsWritten({
   fs,
   name,
   beside,
@@ -113,7 +129,7 @@ export async function createNoteFile({
   notePaths,
   contents,
   properties = {},
-}: NewNote): Promise<VaultPath> {
+}: NewNote): Promise<AsRead> {
   const chosen = named ?? newNoteFolder({ beside, properties, home });
   // A home folder is made when it is not there yet, and named as the disk spells it.
   const folder =
@@ -124,8 +140,9 @@ export async function createNoteFile({
     const path = nextAvailableNotePath({ folder, name, taken: new Set<string>(taken) });
     guardTemplateEdit([path]);
     try {
-      await fs.createNote({ path, contents: contents ?? NEW_NOTE_CONTENTS });
-      return path;
+      const text = contents ?? NEW_NOTE_CONTENTS;
+      const modified = await fs.createNote({ path, contents: text });
+      return { path, text, modified };
     } catch (error) {
       taken = await listVaultNotes({ fs });
       // Refused for some reason other than the name being taken: trying again is pointless.
