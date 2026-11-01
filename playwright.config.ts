@@ -30,6 +30,9 @@ function portFor(checkout: string): number {
 const PORT = portFor(process.cwd());
 const BASE_URL = `http://localhost:${PORT}`;
 
+/** The specs the `ipad` project runs, and only it. */
+const IPAD_SPECS = /\.ipad\.spec\.ts$/;
+
 /**
  * The core loop, driven in WebKit — the same engine the Tauri window uses on macOS.
  * Tauri's own WebDriver support does not cover macOS, so these tests run the real
@@ -52,7 +55,18 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'webkit', use: { ...devices['Desktop Safari'] } }],
+  projects: [
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: IPAD_SPECS },
+    {
+      // An iPad on its side (#661): WebKit with a touch screen, which is what
+      // makes it answer `(pointer: coarse)`. Not `isMobile`: that starts a
+      // worker of its own and changes what the viewport means (#659). It runs
+      // only the `.ipad.spec.ts` smoke, so the gate's shards grow by one test.
+      name: 'ipad',
+      use: { ...devices['Desktop Safari'], viewport: { width: 1180, height: 820 }, hasTouch: true },
+      testMatch: IPAD_SPECS,
+    },
+  ],
   webServer: {
     // A plain Node server rather than `vite preview` behind a package-manager
     // wrapper: the wrapper's child outlives Playwright's teardown, and the CI

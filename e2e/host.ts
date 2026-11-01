@@ -2794,3 +2794,21 @@ function holdIn(
     else refuse(new Error(outcome.fail));
   };
 }
+
+/**
+ * Opens `vault` as a finger would on an iPad (#661): the host stood in, the
+ * folder chosen by a tap rather than a click, and the index read. `now` fixes
+ * the page's date before it loads, for pages that read the day.
+ */
+export async function openVaultByTouch(
+  page: Page,
+  vault: FakeVault,
+  { now }: { now?: Date } = {},
+): Promise<FakeHost> {
+  const host = await installHost(page, vault);
+  if (now !== undefined) await page.clock.setFixedTime(now);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).tap();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+  return host;
+}
