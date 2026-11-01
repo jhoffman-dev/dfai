@@ -1,6 +1,7 @@
 import type { AuthFailureKind, PendingSignIn, TokenGrant } from '@dfai/domain';
 import {
   AuthError,
+  type AuthBroadcast,
   type AuthGateway,
   type PendingSignInStore,
   type SecureRandom,
@@ -117,3 +118,27 @@ export function countingRandom(): SecureRandom {
 export const fakeSha256: Sha256 = {
   digest: async (text) => new TextEncoder().encode(`sha256(${text})`),
 };
+
+/**
+ * A browser's tabs in memory, as BroadcastChannel joins them: a tab's
+ * announcement reaches every other tab, never itself.
+ */
+export function memoryAuthChannel(): { tab(): AuthBroadcast } {
+  const tabs = new Set<Set<() => void>>();
+  return {
+    tab: () => {
+      const listeners = new Set<() => void>();
+      tabs.add(listeners);
+      return {
+        announceSignOut: () => {
+          for (const other of tabs)
+            if (other !== listeners) for (const listener of [...other]) listener();
+        },
+        onSignOut: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+    },
+  };
+}

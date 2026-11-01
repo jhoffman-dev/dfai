@@ -1,4 +1,4 @@
-import type { PendingSignInStore, SecureRandom, Sha256 } from '@dfai/application';
+import type { AuthBroadcast, PendingSignInStore, SecureRandom, Sha256 } from '@dfai/application';
 import { isWellFormedSignInSecret, type PendingSignIn } from '@dfai/domain';
 import type { CrossTabLock } from './function-auth-gateway.ts';
 
@@ -59,11 +59,35 @@ export function webCryptoSha256(subtle: SubtleCrypto): Sha256 {
 }
 
 /**
- * The Web Locks API's exclusive lock, or no lock where a browser lacks it
- * (Safari before 15.4): then two tabs refreshing at the same moment may sign
- * one of them out, which a sign-in puts right.
+ * The Web Locks API's exclusive lock; where a browser lacks it (Safari
+ * before 15.4), `fallback` (storageLock), or none at all when not given.
  */
-export function webLocks(locks: LockManager | undefined): CrossTabLock {
-  if (!locks) return (_name, task) => task();
-  return (name, task) => locks.request(name, task);
+export function webLocks(locks: LockManager | undefined, fallback?: CrossTabLock): CrossTabLock {
+  if (locks) return (name, task) => locks.request(name, task);
+  return fallback ?? ((_name, task) => task());
+}
+
+/** The channel the web build's tabs tell each other of a sign-out on. */
+export const AUTH_CHANNEL = 'dfai-auth';
+const SIGNED_OUT = 'signed-out';
+
+/**
+ * The browser's other tabs, over a BroadcastChannel. A browser without one
+ * tells nobody: its other tabs keep their sessions until their next refresh
+ * finds the cookie gone.
+ */
+export function broadcastChannelAuth(
+  open: ((name: string) => BroadcastChannel) | undefined,
+): AuthBroadcast {
+  const channel = open?.(AUTH_CHANNEL);
+  return {
+    announceSignOut: () => channel?.postMessage(SIGNED_OUT),
+    onSignOut: (listener) => {
+      const onMessage = (event: MessageEvent) => {
+        if (event.data === SIGNED_OUT) listener();
+      };
+      channel?.addEventListener('message', onMessage);
+      return () => channel?.removeEventListener('message', onMessage);
+    },
+  };
 }

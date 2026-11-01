@@ -9,7 +9,7 @@ import {
 import { SIGN_IN_MESSAGES } from '@dfai/ui';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startWeb } from './start-web.tsx';
 
 /**
@@ -94,14 +94,31 @@ describe('the web build’s start', () => {
     expect(screen.getByText('The app')).toBeDefined();
   });
 
-  it('reads a code on any other page as no callback', async () => {
+  it('reads a code on any other page as no callback, and takes it off the address bar', async () => {
     const { gateway, pending, auth, start } = setUp();
     await auth.signIn();
-    const query = `?code=c0de&state=${pending.held?.state}`;
-    window.history.replaceState(null, '', `/notes${query}`);
+    gateway.codes.add('c0de');
+    window.history.replaceState(
+      null,
+      '',
+      `/notes?view=board&code=c0de&state=${pending.held?.state}#top`,
+    );
     await start();
     expect(gateway.calls.some((call) => call.kind === 'exchange')).toBe(false);
-    expect(window.location.search).toBe(query);
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      '/notes?view=board#top',
+    );
+  });
+
+  it('leaves an ordinary query where it is', async () => {
+    const { start } = setUp();
+    window.history.replaceState(null, '', '/notes?view=board');
+    const replaced = vi.spyOn(window.history, 'replaceState');
+    await start();
+    expect(window.location.search).toBe('?view=board');
+    // Untouched, not rewritten to the same: history is left as the person made it.
+    expect(replaced).not.toHaveBeenCalled();
+    replaced.mockRestore();
   });
 
   it('takes the app down and shows the sign-in again on signing out', async () => {
@@ -120,7 +137,8 @@ describe('the web build’s start', () => {
     const { gateway, auth, start, app } = setUp();
     gateway.hasCookie = true;
     await start();
-    act(() => auth.rejected('ghu_token1'));
+    gateway.revoked = true;
+    await act(() => auth.rejected('ghu_token1'));
     expect((await screen.findByRole('alert')).textContent).toBe(SIGN_IN_MESSAGES.revoked);
     expect(app.teardowns).toBe(1);
   });

@@ -17,14 +17,20 @@ function setUp() {
     config: { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, origin: ORIGIN },
     github: githubOAuth({ fetch: github.fetch, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET }),
   });
-  const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
-    handle(
+  /** A POST from the site's page; a header given as null is left out altogether. */
+  const post = (path: string, body: unknown, headers: Record<string, string | null> = {}) => {
+    const sent = new Headers({ Origin: ORIGIN, 'Content-Type': 'application/json' });
+    for (const [name, value] of Object.entries(headers))
+      if (value === null) sent.delete(name);
+      else sent.set(name, value);
+    return handle(
       new Request(`${ORIGIN}${path}`, {
         method: 'POST',
-        headers: { Origin: ORIGIN, 'Content-Type': 'application/json', ...headers },
+        headers: sent,
         body: typeof body === 'string' ? body : JSON.stringify(body),
       }),
     );
+  };
   const code = () => github.issueCode({ challenge: CHALLENGE, redirectUri: REDIRECT });
   return { github, handle, post, code };
 }
@@ -139,13 +145,14 @@ describe('refreshing', () => {
     expect(rotated).not.toBe(refreshToken);
   });
 
-  it('is revoked, clearing the cookie, for a spent refresh token or a removed App', async () => {
+  it('is revoked, leaving the cookie, for a spent refresh token or a removed App', async () => {
     const { post, refreshToken, github } = await signedIn();
     const cookie = { Cookie: `__session=${refreshToken}` };
     await post('/api/auth/refresh', {}, cookie);
     const spent = await post('/api/auth/refresh', {}, cookie);
     expect([spent.status, await errorOf(spent)]).toEqual([401, 'revoked']);
-    expect(cookieOf(spent)).toMatch(/^__session=; Max-Age=0; Path=\/api\/auth; HttpOnly/);
+    // Left: another tab, with no lock to stop it, may have rotated it a moment ago.
+    expect(spent.headers.getSetCookie()).toEqual([]);
     github.revokeAll();
     const removed = await post('/api/auth/refresh', {}, cookie);
     expect(await errorOf(removed)).toBe('revoked');
@@ -219,7 +226,13 @@ describe('every POST', () => {
   it.each([
     ['from another origin', { Origin: 'https://evil.example.com' }],
     ['from the default site', { Origin: 'https://dailyflowai-app.web.app' }],
-    ['with no origin', { Origin: '' }],
+    ['with an empty origin', { Origin: '' }],
+    ['with no Origin header at all', { Origin: null }],
+    ['over http', { Origin: 'http://dailyflowai-web.web.app' }],
+    ['with the port spelled out', { Origin: `${ORIGIN}:443` }],
+    ['from a host that only starts with the site’s', { Origin: `${ORIGIN}.evil.com` }],
+    ['from a host the site’s name ends', { Origin: 'https://evil-dailyflowai-web.web.app' }],
+    ['with a path after it', { Origin: `${ORIGIN}/` }],
   ])('is refused %s, without asking GitHub (CSRF)', async (_what, headers) => {
     const { post, github, code } = setUp();
     for (const path of ['/api/auth/token', '/api/auth/refresh', '/api/auth/signout']) {

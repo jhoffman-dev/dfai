@@ -1,6 +1,7 @@
 export { createAuthService } from './auth-service.ts';
 export { AuthError } from './ports.ts';
 export type {
+  AuthBroadcast,
   AuthGateway,
   AuthPort,
   AuthState,

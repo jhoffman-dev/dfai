@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CLIENT_ID, CLIENT_SECRET, fakeGitHub, s256 } from './fake-github.test-support.ts';
-import { GITHUB_TOKEN, githubOAuth, githubRevoke, readTokenAnswer } from './github-oauth.ts';
+import {
+  GITHUB_TOKEN,
+  githubOAuth,
+  githubRevoke,
+  MAX_ANSWER_BYTES,
+  readTokenAnswer,
+} from './github-oauth.ts';
 
 /** #663, ADR-0052: the function's calls to GitHub, against a fake of its token endpoint. */
 
@@ -132,6 +138,32 @@ describe('when GitHub is unwell', () => {
     expect(await oauth.refresh('ghr_x')).toEqual({ ok: false, failure: 'upstream' });
   });
 
+  it('reads no more of an answer than a grant could be', async () => {
+    const { github, oauth } = setUp();
+    let pulled = 0;
+    github.override = () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            pulled += 1;
+            // Finite, so a missing cap fails on the count rather than hanging.
+            if (pulled > 64) controller.close();
+            else controller.enqueue(new TextEncoder().encode(' '.repeat(4096)));
+          },
+        }),
+        { status: 200 },
+      );
+    expect(await oauth.refresh('ghr_x')).toEqual({ ok: false, failure: 'upstream' });
+    expect(pulled).toBeLessThanOrEqual(Math.ceil(MAX_ANSWER_BYTES / 4096) + 2);
+  });
+
+  it('reads an answer up to the cap', async () => {
+    const { github, oauth } = setUp();
+    const body = JSON.stringify({ error: 'bad_refresh_token' });
+    github.override = () => new Response(body.padEnd(MAX_ANSWER_BYTES, ' '), { status: 200 });
+    expect(await oauth.refresh('ghr_x')).toEqual({ ok: false, failure: 'revoked' });
+  });
+
   it('gives up on a slow answer after its timeout', async () => {
     const { oauth } = {
       oauth: githubOAuth({
@@ -181,6 +213,13 @@ describe('a token answer', () => {
       });
     expect(readTokenAnswer(null)).toEqual({ ok: false, failure: 'upstream' });
   });
+
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf'])(
+    'reads an error named %s as upstream, never as an inherited name',
+    (error) => {
+      expect(readTokenAnswer({ error })).toEqual({ ok: false, failure: 'upstream' });
+    },
+  );
 
   it('is refused without a refresh token a cookie can hold, whatever the lifetimes say', () => {
     const lifetimes = { access_token: 'ghu_a', expires_in: 28800, refresh_token_expires_in: 9 };

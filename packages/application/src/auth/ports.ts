@@ -53,6 +53,13 @@ export interface Sha256 {
   digest(text: string): Promise<Uint8Array>;
 }
 
+/** The browser's other tabs, told of a sign-out so they end their sessions too. */
+export interface AuthBroadcast {
+  announceSignOut(): void;
+  /** Calls `listener` when another tab signed out; returns the unsubscribe. */
+  onSignOut(listener: () => void): () => void;
+}
+
 /** Where the web build's sign-in stands. */
 export type AuthState =
   | { readonly status: 'checking' }
@@ -76,9 +83,10 @@ export interface AuthPort {
   /** An access token fit to send now, refreshed first when it is close to expiring. */
   tokenForRequest(): Promise<string>;
   /**
-   * GitHub answered a request sent with `accessToken` 401: that token, and
-   * the session, are no longer good. A token already replaced by a refresh
-   * ends nothing, so a slow answer to an old request cannot sign anyone out.
+   * GitHub answered a request sent with `accessToken` 401. One refresh is
+   * tried; when it is refused, the session ends. A token already replaced by
+   * a refresh ends nothing, so a slow answer to an old request cannot sign
+   * anyone out.
    */
-  rejected(accessToken: string): void;
+  rejected(accessToken: string): Promise<void>;
 }

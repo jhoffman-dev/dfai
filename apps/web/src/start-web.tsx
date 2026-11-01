@@ -29,16 +29,27 @@ export async function startWeb({ auth, mountApp, page = window }: StartWebDeps) 
   };
 }
 
+/** The parameters a sign-in callback carries. */
+const CALLBACK_PARAMS = ['code', 'state', 'error', 'error_description', 'error_uri'];
+
 /**
  * GitHub's callback query, taken off the address bar and out of history
- * before it is redeemed, so the code is never left behind. Any other page's
- * query is no callback, whatever it holds.
+ * before it is redeemed, so the code is never left behind. On any other
+ * page the same parameters are taken off too but redeem nothing: only the
+ * callback's query is a callback.
  */
 function callbackQuery(page: Window): string {
-  if (page.location.pathname !== CALLBACK_PATH) return '';
-  const query = page.location.search;
-  page.history.replaceState(null, '', '/');
-  return query;
+  const { pathname, search, hash } = page.location;
+  if (pathname === CALLBACK_PATH) {
+    page.history.replaceState(null, '', '/');
+    return search;
+  }
+  const params = new URLSearchParams(search);
+  if (!CALLBACK_PARAMS.some((name) => params.has(name))) return '';
+  for (const name of CALLBACK_PARAMS) params.delete(name);
+  const rest = params.toString();
+  page.history.replaceState(null, '', `${pathname}${rest ? `?${rest}` : ''}${hash}`);
+  return '';
 }
 
 function webView({ auth, mountApp, page }: Required<StartWebDeps>) {

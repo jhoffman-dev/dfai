@@ -4,8 +4,10 @@ import {
   countingRandom,
   fakeAuthGateway,
   fakeSha256,
+  memoryAuthChannel,
   memoryPendingSignIn,
 } from '../testing/fake-auth.ts';
+import type { AuthBroadcast } from './ports.ts';
 import { createAuthService } from './auth-service.ts';
 import { AuthError } from './ports.ts';
 
@@ -14,7 +16,7 @@ import { AuthError } from './ports.ts';
 const START = Date.UTC(2026, 9, 31, 9, 0, 0);
 const HOUR = 60 * 60_000;
 
-function world() {
+function world(broadcast?: AuthBroadcast) {
   let now = START;
   const gateway = fakeAuthGateway();
   const pending = memoryPendingSignIn();
@@ -24,6 +26,7 @@ function world() {
     random: countingRandom(),
     sha256: fakeSha256,
     clock: { now: () => now },
+    ...(broadcast ? { broadcast } : {}),
   });
   const advance = (ms: number) => {
     now += ms;
@@ -267,20 +270,79 @@ describe('a token for a request', () => {
 });
 
 describe('a token GitHub rejects', () => {
-  it('signs out, saying the access was removed', async () => {
-    const { auth, signInWith } = world();
+  it('signs out, saying the access was removed, when the refresh is refused too', async () => {
+    const { auth, signInWith, gateway } = world();
     await signInWith();
-    auth.rejected('ghu_token1');
+    gateway.revoked = true;
+    await auth.rejected('ghu_token1');
     expect(auth.state()).toEqual({ status: 'signed-out', reason: 'revoked' });
   });
 
+  it('is refreshed once and kept when the refresh works (a clock that ran slow)', async () => {
+    const { auth, signInWith } = world();
+    await signInWith();
+    await auth.rejected('ghu_token1');
+    expect(auth.state()).toEqual({ status: 'signed-in' });
+    expect(await auth.tokenForRequest()).toBe('ghu_token2');
+  });
+
+  it('signs out, saying the service is unreachable, when the refresh cannot be made', async () => {
+    const { auth, signInWith, gateway } = world();
+    await signInWith();
+    gateway.failWith = 'network';
+    await auth.rejected('ghu_token1');
+    expect(auth.state()).toEqual({ status: 'signed-out', reason: 'network' });
+  });
+
   it('ends nothing when it is a token a refresh already replaced', async () => {
-    const { auth, signInWith, advance } = world();
+    const { auth, signInWith, advance, gateway } = world();
     await signInWith();
     advance(8 * HOUR);
     await auth.tokenForRequest();
-    auth.rejected('ghu_token1');
+    await auth.rejected('ghu_token1');
     expect(auth.state()).toEqual({ status: 'signed-in' });
+    expect(gateway.calls.filter((call) => call.kind === 'refresh')).toHaveLength(1);
+  });
+});
+
+describe('other tabs', () => {
+  it('end their sessions when one tab signs out, without a sign-out call of their own', async () => {
+    const channel = memoryAuthChannel();
+    const a = world(channel.tab());
+    const b = world(channel.tab());
+    await a.signInWith();
+    b.gateway.hasCookie = true;
+    await b.auth.restore('');
+    await a.auth.signOut();
+    expect(b.auth.state()).toEqual({ status: 'signed-out', reason: null });
+    await expect(b.auth.tokenForRequest()).rejects.toMatchObject({ kind: 'no-session' });
+    expect(b.gateway.calls.some((call) => call.kind === 'sign-out')).toBe(false);
+    expect(a.auth.state()).toEqual({ status: 'signed-out', reason: null });
+  });
+
+  it('are not told when the sign-out could not reach the function', async () => {
+    const channel = memoryAuthChannel();
+    const a = world(channel.tab());
+    const b = world(channel.tab());
+    await a.signInWith();
+    b.gateway.hasCookie = true;
+    await b.auth.restore('');
+    a.gateway.failWith = 'network';
+    await a.auth.signOut();
+    expect(b.auth.state()).toEqual({ status: 'signed-in' });
+  });
+
+  it('stays signed out when told again', async () => {
+    const channel = memoryAuthChannel();
+    const a = world(channel.tab());
+    const b = world(channel.tab());
+    await b.auth.restore('');
+    const seen: unknown[] = [];
+    b.auth.subscribe(() => seen.push(b.auth.state()));
+    a.gateway.hasCookie = true;
+    await a.auth.restore('');
+    await a.auth.signOut();
+    expect(seen).toEqual([]);
   });
 });
 
@@ -312,17 +374,64 @@ describe('signing out', () => {
     await expect(auth.tokenForRequest()).rejects.toMatchObject({ kind: 'no-session' });
   });
 
-  it('drops a refresh that lands after the session was revoked', async () => {
-    const { auth, signInWith, advance, gateway } = world();
+  it('drops a refresh that lands after another tab signed out', async () => {
+    const channel = memoryAuthChannel();
+    const other = channel.tab();
+    const { auth, signInWith, advance, gateway } = world(channel.tab());
     await signInWith();
     advance(8 * HOUR - 60_000);
     gateway.holdRefreshes = true;
     const token = auth.tokenForRequest();
     await Promise.resolve();
-    auth.rejected('ghu_token1');
+    other.announceSignOut();
     gateway.release();
     await expect(token).rejects.toMatchObject({ kind: 'no-session' });
-    expect(auth.state()).toEqual({ status: 'signed-out', reason: 'revoked' });
+    expect(auth.state()).toEqual({ status: 'signed-out', reason: null });
+  });
+
+  it('starts no refresh once it has begun, even while it waits on one in flight', async () => {
+    const { auth, gateway } = world();
+    gateway.hasCookie = true;
+    gateway.holdRefreshes = true;
+    const restoring = auth.restore('');
+    await Promise.resolve();
+    const out = auth.signOut();
+    await expect(auth.tokenForRequest()).rejects.toMatchObject({ kind: 'no-session' });
+    gateway.release();
+    await Promise.all([restoring, out]);
+    expect(gateway.calls.map((call) => call.kind)).toEqual(['refresh', 'sign-out']);
+  });
+
+  it('starts no refresh for a due token while it waits on a restore in flight', async () => {
+    const { auth, signInWith, advance, gateway } = world();
+    await signInWith();
+    gateway.holdRefreshes = true;
+    const restoring = auth.restore('');
+    await Promise.resolve();
+    const out = auth.signOut();
+    advance(8 * HOUR - 60_000);
+    const token = auth.tokenForRequest();
+    gateway.release();
+    await Promise.all([restoring, out, token.catch(() => undefined)]);
+    // The restore's refresh alone: none started after the sign-out began to land after it.
+    expect(gateway.calls.filter((call) => call.kind === 'refresh')).toHaveLength(1);
+    expect(gateway.calls.at(-1)?.kind).toBe('sign-out');
+    expect(gateway.hasCookie).toBe(false);
+  });
+
+  it('revokes the token a restore in flight was granted, never showing it signed in', async () => {
+    const { auth, gateway } = world();
+    gateway.hasCookie = true;
+    gateway.holdRefreshes = true;
+    const seen: string[] = [];
+    auth.subscribe(() => seen.push(auth.state().status));
+    const restoring = auth.restore('');
+    await Promise.resolve();
+    const out = auth.signOut();
+    gateway.release();
+    await Promise.all([restoring, out]);
+    expect(gateway.calls.at(-1)).toEqual({ kind: 'sign-out', accessToken: 'ghu_token1' });
+    expect(seen).not.toContain('signed-in');
   });
 
   it('says so when the function cannot be reached to forget this browser', async () => {

@@ -60,7 +60,12 @@ const positive = (value: unknown): value is number =>
 export function readTokenAnswer(answer: unknown): GitHubResult {
   const body = (answer ?? {}) as Record<string, unknown>;
   if (typeof body.error === 'string')
-    return { ok: false, failure: GITHUB_ERRORS[body.error] ?? 'upstream' };
+    return {
+      ok: false,
+      failure: Object.hasOwn(GITHUB_ERRORS, body.error)
+        ? (GITHUB_ERRORS[body.error] ?? 'upstream')
+        : 'upstream',
+    };
   const { access_token, expires_in, refresh_token, refresh_token_expires_in } = body;
   if (typeof access_token !== 'string' || !TOKEN.test(access_token))
     return { ok: false, failure: 'upstream' };
@@ -76,6 +81,26 @@ export function readTokenAnswer(answer: unknown): GitHubResult {
       refreshExpiresIn: refresh_token_expires_in,
     },
   };
+}
+
+/** The most of GitHub's answer read: a token grant is a few hundred bytes. */
+export const MAX_ANSWER_BYTES = 16 * 1024;
+
+/** The answer's text, refused once it runs past {@link MAX_ANSWER_BYTES} rather than read on. */
+async function cappedText(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    length += read.value.length;
+    if (length > MAX_ANSWER_BYTES) {
+      await reader.cancel();
+      throw new Error('GitHub answered more than a token grant');
+    }
+    chunks.push(read.value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
 export interface GitHubOAuthDeps {
@@ -99,7 +124,7 @@ export function githubOAuth(deps: GitHubOAuthDeps): GitHubOAuth {
         signal: signal(),
       });
       if (!response.ok) return { ok: false, failure: 'upstream' };
-      return readTokenAnswer(await response.json());
+      return readTokenAnswer(JSON.parse(await cappedText(response)));
     } catch {
       // Unreachable, timed out, or not JSON: all the same to the browser, which may try again.
       return { ok: false, failure: 'upstream' };

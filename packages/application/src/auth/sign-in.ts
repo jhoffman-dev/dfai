@@ -11,6 +11,7 @@ import {
 import type { Clock } from '../ports.ts';
 import {
   AuthError,
+  type AuthBroadcast,
   type AuthGateway,
   type PendingSignInStore,
   type SecureRandom,
@@ -24,6 +25,8 @@ export interface AuthDeps {
   readonly random: SecureRandom;
   readonly sha256: Sha256;
   readonly clock: Pick<Clock, 'now'>;
+  /** The other tabs; absent where there are none to tell. */
+  readonly broadcast?: AuthBroadcast;
 }
 
 /** A session, or why there is none (null: none was ever asked for). */

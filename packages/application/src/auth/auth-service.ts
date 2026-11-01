@@ -6,10 +6,11 @@ import { redeemGrant, restoreSession, startSignIn, type AuthDeps } from './sign-
  * The web build's sign-in (#663, ADR-0052): the session in memory, never
  * stored, and the refresh before it expires.
  *
- * Two rules keep a refresh token, which GitHub rotates on every use, from
+ * Three rules keep a refresh token, which GitHub rotates on every use, from
  * being spent twice or outliving a sign-out: refreshes run one at a time
- * (callers share the one in flight), and an answer that lands after the
- * session ended, by sign-out or revocation, is dropped.
+ * (callers share the one in flight), none starts once a sign-out has begun,
+ * and an answer that lands after the session ended is dropped. A sign-out
+ * is told to the browser's other tabs, which end theirs too.
  */
 export function createAuthService(deps: AuthDeps): AuthPort {
   return new AuthService(deps);
@@ -20,11 +21,16 @@ class AuthService implements AuthPort {
   private session: AuthSession | null = null;
   /** Counts the sessions ended, so an answer for an ended one is known for stale. */
   private generation = 0;
+  private signingOut = false;
   private refreshing: Promise<AuthSession> | null = null;
   private restoring: Promise<unknown> | null = null;
   private readonly listeners = new Set<() => void>();
 
-  constructor(private readonly deps: AuthDeps) {}
+  constructor(private readonly deps: AuthDeps) {
+    deps.broadcast?.onSignOut(() => {
+      if (this.current.status !== 'signed-out') this.end(null);
+    });
+  }
 
   state = (): AuthState => this.current;
 
@@ -33,39 +39,36 @@ class AuthService implements AuthPort {
     return () => this.listeners.delete(listener);
   };
 
-  restore = async (query: string): Promise<AuthState> => {
-    const generation = this.generation;
-    const restoring = restoreSession(this.deps, query);
-    this.restoring = restoring;
-    const outcome = await restoring.finally(() => {
-      this.restoring = null;
+  restore = (query: string): Promise<AuthState> => {
+    const run = this.restoreNow(query);
+    this.restoring = run;
+    return run.finally(() => {
+      if (this.restoring === run) this.restoring = null;
     });
-    if (generation !== this.generation) return this.current;
-    if ('session' in outcome) this.begin(outcome.session);
-    else this.end(outcome.failure);
-    return this.current;
   };
 
   signIn = (): Promise<void> => startSignIn(this.deps);
 
   /**
-   * Waits out a restore or refresh in flight, so its new token is the one
-   * revoked and its cookie is the one cleared, then ends the session here before asking
-   * the function to forget it. When the function cannot be reached, the
-   * cookie may outlive this page: the screen says so.
+   * Refuses any new refresh, waits out a restore or refresh in flight (so
+   * its token is the one revoked), ends the session here, then asks the
+   * function to forget this browser — under the refresh lock, so another
+   * tab's refresh cannot land after it — and tells the other tabs. When the
+   * function cannot be reached, the cookie may outlive this page: the screen
+   * says so.
    */
   signOut = async (): Promise<void> => {
-    // Its outcome no longer matters, only that it has landed: the session ends either way.
-    await Promise.all(
-      [this.restoring, this.refreshing].map((call) => call?.catch(() => undefined)),
-    );
-    const accessToken = this.session?.accessToken ?? null;
-    this.end(null);
+    this.signingOut = true;
     try {
-      await this.deps.gateway.signOut({ accessToken });
-    } catch (error) {
-      if (!(error instanceof AuthError)) throw error;
-      this.end('network');
+      // Their outcome no longer matters, only that they have landed: the session ends either way.
+      await Promise.all(
+        [this.restoring, this.refreshing].map((call) => call?.catch(() => undefined)),
+      );
+      const accessToken = this.session?.accessToken ?? null;
+      this.end(null);
+      await this.forget(accessToken);
+    } finally {
+      this.signingOut = false;
     }
   };
 
@@ -84,11 +87,45 @@ class AuthService implements AuthPort {
     }
   };
 
-  rejected = (accessToken: string): void => {
-    if (this.session?.accessToken === accessToken) this.end('revoked');
+  /**
+   * One refresh first, since a 401 may only mean this clock ran slow and the
+   * token expired early; a refused refresh ends the session as any does,
+   * and one that cannot be reached ends it too, the token being no good.
+   */
+  rejected = async (accessToken: string): Promise<void> => {
+    if (this.session?.accessToken !== accessToken) return;
+    try {
+      await this.refreshOnce();
+    } catch (error) {
+      if (!(error instanceof AuthError)) throw error;
+      if (this.session?.accessToken === accessToken) this.end(error.kind);
+    }
   };
 
+  private async restoreNow(query: string): Promise<AuthState> {
+    const generation = this.generation;
+    const outcome = await restoreSession(this.deps, query);
+    // A sign-out waiting on this restore revokes what it granted, without a moment signed in.
+    if (this.signingOut && 'session' in outcome) this.session = outcome.session;
+    if (generation !== this.generation || this.signingOut) return this.current;
+    if ('session' in outcome) this.begin(outcome.session);
+    else this.end(outcome.failure);
+    return this.current;
+  }
+
+  private async forget(accessToken: string | null): Promise<void> {
+    try {
+      await this.deps.gateway.signOut({ accessToken });
+    } catch (error) {
+      if (!(error instanceof AuthError)) throw error;
+      this.end('network');
+      return;
+    }
+    this.deps.broadcast?.announceSignOut();
+  }
+
   private refreshOnce(): Promise<AuthSession> {
+    if (this.signingOut) return Promise.reject(new AuthError('no-session', 'signing out'));
     this.refreshing ??= this.refreshNow().finally(() => {
       this.refreshing = null;
     });

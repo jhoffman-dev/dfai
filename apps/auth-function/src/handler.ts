@@ -141,7 +141,9 @@ const refresh: PostRoute = async (_body, request, { github }) => {
   if (!refreshToken) return refusal(401, 'no-session', clearRefreshCookie());
   const result = await github.refresh(refreshToken);
   if (result.ok) return granted(result.grant);
-  if (result.failure === 'revoked') return refusal(401, 'revoked', clearRefreshCookie());
+  // The cookie is left as it is: without Web Locks another tab may have spent this token a
+  // moment ago and set the cookie to its replacement, which clearing here would throw away.
+  if (result.failure === 'revoked') return refusal(401, 'revoked');
   // The cookie is kept: GitHub did not say the token is bad, and the browser may try again.
   return refusal(result.failure === 'misconfigured' ? 500 : 502, 'unavailable');
 };

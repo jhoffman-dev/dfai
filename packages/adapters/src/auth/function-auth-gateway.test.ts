@@ -1,6 +1,11 @@
 import { AuthError } from '@dfai/application';
 import { describe, expect, it } from 'vitest';
-import { functionAuthGateway, REFRESH_LOCK, type CrossTabLock } from './function-auth-gateway.ts';
+import {
+  functionAuthGateway,
+  REFRESH_LOCK,
+  REVOKED_RETRY_MS,
+  type CrossTabLock,
+} from './function-auth-gateway.ts';
 
 /**
  * #663, ADR-0052: the browser's side of the sign-in function, against a fake
@@ -76,6 +81,49 @@ describe('the sign-in function, from the browser', () => {
     expect(locked).toEqual([REFRESH_LOCK]);
     expect(sent[0]?.url).toBe('/api/auth/refresh');
     expect(JSON.parse(String(sent[0]?.init?.body))).toEqual({});
+  });
+
+  it('tries a refresh refused as revoked once more after a wait, and takes its grant', async () => {
+    const answers = [json(401, { error: 'revoked' }), grant()];
+    const waited: number[] = [];
+    const sent: string[] = [];
+    const gateway = functionAuthGateway({
+      fetch: async (url) => {
+        sent.push(String(url));
+        return answers.shift() ?? json(500, {});
+      },
+      navigate: () => {},
+      lock: (_name, task) => task(),
+      delay: async (ms) => void waited.push(ms),
+    });
+    expect(await gateway.refresh()).toEqual({ accessToken: 'ghu_one', expiresInSeconds: 28800 });
+    expect(sent).toEqual(['/api/auth/refresh', '/api/auth/refresh']);
+    expect(waited).toEqual([REVOKED_RETRY_MS]);
+  });
+
+  it('is revoked when the retry is refused too, and retries nothing else', async () => {
+    let calls = 0;
+    const answering = (body: unknown, status: number) =>
+      functionAuthGateway({
+        fetch: async () => {
+          calls += 1;
+          return json(status, body);
+        },
+        navigate: () => {},
+        lock: (_name, task) => task(),
+        delay: async () => {},
+      });
+    expect(await failure(answering({ error: 'revoked' }, 401).refresh())).toBe('revoked');
+    expect(calls).toBe(2);
+    calls = 0;
+    expect(await failure(answering({ error: 'no-session' }, 401).refresh())).toBe('no-session');
+    expect(calls).toBe(1);
+  });
+
+  it('signs out under the refresh lock, so no refresh lands after it', async () => {
+    const { gateway, locked } = gatewayAnswering(() => new Response(null, { status: 204 }));
+    await gateway.signOut({ accessToken: 'ghu_one' });
+    expect(locked).toEqual([REFRESH_LOCK]);
   });
 
   it('signs out with the token to revoke, and takes a 204', async () => {

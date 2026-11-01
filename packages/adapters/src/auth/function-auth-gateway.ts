@@ -22,7 +22,18 @@ export interface FunctionAuthGatewayDeps {
   /** Leaves the page for `url` (location.assign). */
   readonly navigate: (url: string) => void;
   readonly lock: CrossTabLock;
+  /** Waits `ms` before a refresh refused as revoked is tried once more. setTimeout by default. */
+  readonly delay?: (ms: number) => Promise<void>;
 }
+
+/**
+ * How long a refresh refused as revoked waits before its one retry: long
+ * enough for another tab's refresh, which spent the same token a moment
+ * before, to land and put its replacement in the cookie.
+ */
+export const REVOKED_RETRY_MS = 300;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** The function's error codes, as the app names them; anything else is a refusal. */
 const FAILURES: Readonly<Record<string, AuthFailureKind>> = {
@@ -42,11 +53,35 @@ export function functionAuthGateway(deps: FunctionAuthGatewayDeps): AuthGateway 
     },
     exchange: async ({ code, verifier }) =>
       readGrant(await post('/token', { code, codeVerifier: verifier })),
-    refresh: () => deps.lock(REFRESH_LOCK, async () => readGrant(await post('/refresh', {}))),
-    signOut: async ({ accessToken }) => {
-      await post('/signout', { accessToken });
-    },
+    refresh: () =>
+      deps.lock(REFRESH_LOCK, () =>
+        refreshOnceMore(() => post('/refresh', {}), deps.delay ?? wait),
+      ),
+    // Under the refresh's lock, so no tab's refresh lands after it and sets the cookie again.
+    signOut: ({ accessToken }) =>
+      deps.lock(REFRESH_LOCK, async () => {
+        await post('/signout', { accessToken });
+      }),
   };
+}
+
+/**
+ * A refresh, tried once more after a short wait when it is refused as
+ * revoked: another tab may have spent the cookie's token a moment before
+ * (where there is no lock to stop it) and the cookie now holds the token
+ * that replaced it. Revoked twice is revoked.
+ */
+async function refreshOnceMore(
+  refresh: () => Promise<unknown>,
+  delay: (ms: number) => Promise<void>,
+): Promise<TokenGrant> {
+  try {
+    return readGrant(await refresh());
+  } catch (error) {
+    if (!(error instanceof AuthError) || error.kind !== 'revoked') throw error;
+    await delay(REVOKED_RETRY_MS);
+    return readGrant(await refresh());
+  }
 }
 
 /** A POST to the function, its answer's JSON when it says yes, else an {@link AuthError}. */

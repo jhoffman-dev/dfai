@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { authListener } from './compose.ts';
-import { ENV, readConfig } from './config.ts';
+import { CALLBACK_PATH, ENV, readConfig } from './config.ts';
 
 /** #663: what the function is told about where it runs, and that it deploys on its own. */
 
@@ -56,6 +56,19 @@ describe('the function’s config', () => {
   it('composes a listener only when configured', () => {
     expect(() => authListener({})).toThrow(/not configured/);
     expect(authListener(GOOD, async () => new Response())).toBeTypeOf('function');
+  });
+});
+
+describe('the callback path', () => {
+  it('is the one the web build reads, and the one its dev server sends back to', () => {
+    const repo = join(import.meta.dirname, '..', '..', '..');
+    const declared = (path: string) =>
+      /CALLBACK_PATH = '([^']+)'/.exec(readFileSync(join(repo, path), 'utf8'))?.[1];
+    expect(CALLBACK_PATH).toBe('/auth/callback');
+    expect(declared('apps/web/src/start-web.tsx')).toBe(CALLBACK_PATH);
+    expect(readFileSync(join(repo, 'tools/vite/dev-sign-in.ts'), 'utf8')).toContain(
+      `\`${CALLBACK_PATH}?`,
+    );
   });
 });
 

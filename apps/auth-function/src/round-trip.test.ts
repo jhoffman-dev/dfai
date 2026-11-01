@@ -69,6 +69,7 @@ async function setUp() {
       fetch: browser.fetch,
       navigate: browser.navigate,
       lock: webLocks(undefined),
+      delay: async () => {},
     }),
     pending: sessionStoragePendingSignIn(memoryStorage()),
     random: webCryptoRandom(webcrypto as Crypto),
@@ -129,7 +130,10 @@ describe('signing in with GitHub, through the function', () => {
     advance(8 * HOUR);
     await expect(auth.tokenForRequest()).rejects.toMatchObject({ kind: 'revoked' });
     expect(auth.state()).toEqual({ status: 'signed-out', reason: 'revoked' });
-    expect(browser.jar.has('__session')).toBe(false);
+    // Refused twice, the retry in case another tab had rotated it finding the same.
+    expect(github.requests.filter((request) => request.fields.grant_type)).toHaveLength(2);
+    // The spent token stays in the cookie, harmless: it refreshes nothing, and a sign-in replaces it.
+    expect(browser.jar.has('__session')).toBe(true);
   });
 
   it('is denied when the person says no, and redeems nothing', async () => {

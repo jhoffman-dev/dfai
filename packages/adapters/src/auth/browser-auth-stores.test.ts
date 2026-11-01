@@ -1,6 +1,7 @@
 import { webcrypto } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  broadcastChannelAuth,
   PENDING_KEY,
   sessionStoragePendingSignIn,
   webCryptoRandom,
@@ -108,5 +109,42 @@ describe('the cross-tab lock', () => {
 
   it('runs the task as it is where the browser has no locks', async () => {
     expect(await webLocks(undefined)('the-lock', async () => 'ran')).toBe('ran');
+  });
+
+  it('takes the fallback where the browser has no locks, and only there', async () => {
+    const used: string[] = [];
+    const fallback = <T>(name: string, task: () => Promise<T>) => {
+      used.push(name);
+      return task();
+    };
+    await webLocks(undefined, fallback)('the-lock', async () => 'ran');
+    const locks = { request: (_n: string, task: () => Promise<unknown>) => task() };
+    await webLocks(locks as unknown as LockManager, fallback)('other', async () => 'ran');
+    expect(used).toEqual(['the-lock']);
+  });
+});
+
+describe('telling the other tabs', () => {
+  it('reaches another tab on the channel, which hears only a sign-out', async () => {
+    const open = (name: string) => new BroadcastChannel(name);
+    const a = broadcastChannelAuth(open);
+    const b = broadcastChannelAuth(open);
+    let heard = 0;
+    const stop = b.onSignOut(() => (heard += 1));
+    const stranger = new BroadcastChannel('dfai-auth');
+    stranger.postMessage('something else');
+    a.announceSignOut();
+    await vi.waitFor(() => expect(heard).toBe(1));
+    stop();
+    a.announceSignOut();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(heard).toBe(1);
+    stranger.close();
+  });
+
+  it('tells nobody, and fails nothing, where there is no BroadcastChannel', () => {
+    const none = broadcastChannelAuth(undefined);
+    expect(() => none.announceSignOut()).not.toThrow();
+    expect(none.onSignOut(() => {})).toBeTypeOf('function');
   });
 });

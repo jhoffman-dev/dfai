@@ -6,6 +6,7 @@ import {
   sessionStoragePendingSignIn,
   webCryptoRandom,
   webCryptoSha256,
+  storageLock,
   webLocks,
   type CrossTabLock,
 } from '@dfai/adapters';
@@ -58,6 +59,8 @@ function holdingGitHub() {
     github,
     fetch,
     hold: () => void (holding = true),
+    /** Lets every answer from here on through at once. */
+    unhold: () => void (holding = false),
     /** Resolves once `count` answers are being held. */
     whenHeld: (count: number) => {
       wantHeld = count;
@@ -149,6 +152,8 @@ function tab(page: ReturnType<typeof browser>, lock: CrossTabLock, navigated: st
       fetch: page.fetch,
       navigate: (url) => void navigated.push(url),
       lock,
+      // The retry after a revoked refresh, without waiting on the real clock.
+      delay: async () => {},
     }),
     pending: sessionStoragePendingSignIn(memoryStorage()),
     random: webCryptoRandom(webcrypto as Crypto),
@@ -175,91 +180,92 @@ async function signIn(
 }
 
 describe('two tabs and the rotated refresh cookie', () => {
-  it.fails(
-    'a sign-out in one tab is not undone by another tab’s refresh landing after it',
-    async () => {
-      const gh = holdingGitHub();
-      const base = await serve(gh.fetch);
-      const page = browser(base);
-      const { lock, someoneWaits } = sharedLock();
-      const a = tab(page, lock);
-      const b = tab(page, lock);
-      await signIn(base, a, gh.github);
-      expect(await b.auth.restore('')).toEqual({ status: 'signed-in' });
+  it('a sign-out in one tab is not undone by another tab’s refresh landing after it', async () => {
+    const gh = holdingGitHub();
+    const base = await serve(gh.fetch);
+    const page = browser(base);
+    const { lock, someoneWaits } = sharedLock();
+    const a = tab(page, lock);
+    const b = tab(page, lock);
+    await signIn(base, a, gh.github);
+    expect(await b.auth.restore('')).toEqual({ status: 'signed-in' });
 
-      // Tab B's token is due: its refresh holds the lock while GitHub answers.
-      gh.hold();
-      const held = gh.whenHeld(1);
-      b.advance(8 * HOUR - 4 * 60_000);
-      const refreshing = b.auth.tokenForRequest();
-      await held;
+    // Tab B's token is due: its refresh holds the lock while GitHub answers.
+    gh.hold();
+    const held = gh.whenHeld(1);
+    b.advance(8 * HOUR - 4 * 60_000);
+    const refreshing = b.auth.tokenForRequest();
+    await held;
 
-      // Tab A signs out meanwhile. Either it waits for the lock (right), or it goes through.
-      const signingOut = a.auth.signOut();
-      await Promise.race([signingOut, someoneWaits()]);
-      gh.release(0);
-      await Promise.all([refreshing, signingOut]);
+    // Tab A signs out meanwhile. Either it waits for the lock (right), or it goes through.
+    const signingOut = a.auth.signOut();
+    await Promise.race([signingOut, someoneWaits()]);
+    gh.release(0);
+    await Promise.all([refreshing, signingOut]);
 
-      expect(a.auth.state()).toEqual({ status: 'signed-out', reason: null });
-      // The person signed out of this browser: a reload must not sign them back in.
-      expect(page.jar.has('__session')).toBe(false);
-    },
-  );
+    expect(a.auth.state()).toEqual({ status: 'signed-out', reason: null });
+    // The person signed out of this browser: a reload must not sign them back in.
+    expect(page.jar.has('__session')).toBe(false);
+  });
 
-  it.fails(
-    'without Web Locks, two tabs loading at once leave one of them a working session',
-    async () => {
-      const gh = holdingGitHub();
-      const base = await serve(gh.fetch);
-      const page = browser(base);
-      const noLocks = webLocks(undefined);
-      const first = tab(page, noLocks);
-      await signIn(base, first, gh.github);
+  it('without Web Locks, two tabs loading at once both end with a working session', async () => {
+    const gh = holdingGitHub();
+    const base = await serve(gh.fetch);
+    const page = browser(base);
+    const noLocks = webLocks(undefined);
+    const first = tab(page, noLocks);
+    await signIn(base, first, gh.github);
 
-      // Two tabs opened together (Safari restoring them): each restores by one refresh.
-      const a = tab(page, noLocks);
-      const b = tab(page, noLocks);
-      gh.hold();
-      const held = gh.whenHeld(2);
-      const restoringA = a.auth.restore('');
-      const restoringB = b.auth.restore('');
-      await held;
-      // GitHub rotated for the first to arrive and refused the second; answers land in that order.
-      gh.release(0);
-      await Promise.race([restoringA, restoringB]);
-      gh.release(1);
-      await Promise.all([restoringA, restoringB]);
+    // Two tabs opened together (Safari restoring them): each restores by one refresh.
+    const a = tab(page, noLocks);
+    const b = tab(page, noLocks);
+    gh.hold();
+    const held = gh.whenHeld(2);
+    const restoringA = a.auth.restore('');
+    const restoringB = b.auth.restore('');
+    await held;
+    // GitHub rotated for the first to arrive and refused the second; answers land in that order.
+    gh.release(0);
+    await Promise.race([restoringA, restoringB]);
+    // The loser's retry, with the cookie the winner set, goes straight through.
+    gh.unhold();
+    gh.release(1);
+    await Promise.all([restoringA, restoringB]);
 
-      const signedIn = [a, b].filter((t) => t.auth.state().status === 'signed-in');
-      expect(signedIn).toHaveLength(1);
-      // ADR-0052: "one tab may be signed out". The winner must still be able to refresh.
-      expect(page.jar.has('__session')).toBe(true);
-    },
-  );
+    // The loser's refusal left the winner's cookie alone, and its retry used it.
+    expect([a, b].map((t) => t.auth.state())).toEqual([
+      { status: 'signed-in' },
+      { status: 'signed-in' },
+    ]);
+    expect(page.jar.has('__session')).toBe(true);
+    // And the session goes on: the next refresh, in either tab, works.
+    a.advance(8 * HOUR);
+    expect(await a.auth.tokenForRequest()).toMatch(/^ghu_/);
+  });
 
-  it.fails(
-    'without Web Locks, the tab that lost the race is not told GitHub revoked DFAI',
-    async () => {
-      const gh = holdingGitHub();
-      const base = await serve(gh.fetch);
-      const page = browser(base);
-      const noLocks = webLocks(undefined);
-      await signIn(base, tab(page, noLocks), gh.github);
-      const a = tab(page, noLocks);
-      const b = tab(page, noLocks);
-      gh.hold();
-      const held = gh.whenHeld(2);
-      const states = Promise.all([a.auth.restore(''), b.auth.restore('')]);
-      await held;
-      gh.release(0);
-      gh.release(1);
-      const reasons = (await states).map((state) =>
-        state.status === 'signed-out' ? state.reason : null,
-      );
-      // Nobody removed the App: "GitHub no longer lets DFAI reach your vault" is untrue.
-      expect(reasons).not.toContain('revoked');
-    },
-  );
+  it('without Web Locks, the tab that lost the race is not told GitHub revoked DFAI', async () => {
+    const gh = holdingGitHub();
+    const base = await serve(gh.fetch);
+    const page = browser(base);
+    const noLocks = webLocks(undefined);
+    await signIn(base, tab(page, noLocks), gh.github);
+    const a = tab(page, noLocks);
+    const b = tab(page, noLocks);
+    gh.hold();
+    const held = gh.whenHeld(2);
+    const restoring = [a.auth.restore(''), b.auth.restore('')];
+    const states = Promise.all(restoring);
+    await held;
+    gh.release(0);
+    await Promise.race(restoring);
+    gh.unhold();
+    gh.release(1);
+    const reasons = (await states).map((state) =>
+      state.status === 'signed-out' ? state.reason : null,
+    );
+    // Nobody removed the App: "GitHub no longer lets DFAI reach your vault" is untrue.
+    expect(reasons).not.toContain('revoked');
+  });
 
   it('with Web Locks, two tabs loading at once both stay signed in', async () => {
     const gh = holdingGitHub();
@@ -272,6 +278,31 @@ describe('two tabs and the rotated refresh cookie', () => {
     const states = await Promise.all([a.auth.restore(''), b.auth.restore('')]);
     expect(states).toEqual([{ status: 'signed-in' }, { status: 'signed-in' }]);
     expect(page.jar.has('__session')).toBe(true);
+  });
+
+  it('with the localStorage lock instead, two tabs loading at once refresh in turn', async () => {
+    const gh = holdingGitHub();
+    const base = await serve(gh.fetch);
+    const page = browser(base);
+    const shared = memoryStorage();
+    let clock = T0;
+    let holders = 0;
+    const fallback = () =>
+      storageLock({
+        storage: shared,
+        now: () => (clock += 1),
+        holderId: () => `holder-${(holders += 1)}`,
+        wait: () => new Promise((resolve) => setTimeout(resolve, 1)),
+      });
+    await signIn(base, tab(page, webLocks(undefined, fallback())), gh.github);
+    const a = tab(page, webLocks(undefined, fallback()));
+    const b = tab(page, webLocks(undefined, fallback()));
+    const states = await Promise.all([a.auth.restore(''), b.auth.restore('')]);
+    expect(states).toEqual([{ status: 'signed-in' }, { status: 'signed-in' }]);
+    // In turn: neither was refused, so nothing needed the retry.
+    const refreshes = gh.github.requests.filter((r) => r.fields.grant_type === 'refresh_token');
+    expect(refreshes).toHaveLength(2);
+    expect(new Set(refreshes.map((r) => r.fields.refresh_token)).size).toBe(2);
   });
 
   it('a 401 for a token a refresh replaced does not end the new session', async () => {
@@ -483,7 +514,8 @@ describe('what leaves the function', () => {
     }
   });
 
-  it('a revoked refresh clears the cookie with the same attributes it was set with', async () => {
+  it('a revoked refresh leaves the cookie, which another tab may just have rotated', async () => {
+    // Changed after this attack: clearing here threw away the winner's cookie (two tabs, no locks).
     const base = await serve(fakeGitHub().fetch);
     const res = await raw(base, {
       path: '/api/auth/refresh',
@@ -491,9 +523,8 @@ describe('what leaves the function', () => {
       body: '{}',
     });
     expect(res.status).toBe(401);
-    expect(res.headers['set-cookie']).toEqual([
-      '__session=; Max-Age=0; Path=/api/auth; HttpOnly; Secure; SameSite=Strict',
-    ]);
+    expect(JSON.parse(res.body)).toEqual({ error: 'revoked' });
+    expect(res.headers['set-cookie']).toBeUndefined();
   });
 
   it('does not put a refresh token with cookie syntax in its Set-Cookie', async () => {
@@ -547,15 +578,12 @@ describe('GitHub misbehaving behind the function', () => {
     expect(res.headers['set-cookie']).toBeUndefined();
   });
 
-  it.fails(
-    'an error name GitHub sends is never taken for one of its own failures (`__proto__`)',
-    () => {
-      const failures = ['bad-code', 'revoked', 'misconfigured', 'upstream'];
-      for (const error of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
-        const result = readTokenAnswer({ error });
-        expect(result.ok).toBe(false);
-        if (!result.ok) expect(failures).toContain(result.failure);
-      }
-    },
-  );
+  it('an error name GitHub sends is never taken for one of its own failures (`__proto__`)', () => {
+    const failures = ['bad-code', 'revoked', 'misconfigured', 'upstream'];
+    for (const error of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      const result = readTokenAnswer({ error });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(failures).toContain(result.failure);
+    }
+  });
 });
