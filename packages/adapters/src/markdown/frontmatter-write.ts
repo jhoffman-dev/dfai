@@ -191,12 +191,12 @@ export function checkedBody({
     // Written as before first, so that writing is the same whatever follows.
     const whole = write(null);
     // A map's entries kept as found (#697), when that reads back right and
-    // holds every comment the writing as before does: the rest of the
-    // writing places comments with the rules of the map written whole.
+    // keeps its comments: the rest of the writing places comments with the
+    // rules of the map written whole.
     const byEntry = found === null ? null : write(found);
     if (
       byEntry !== null &&
-      sameComments(byEntry, whole) &&
+      keepsComments({ written: byEntry, whole, source: textOf(before) }) &&
       readsBack(byEntry, wanted, was, edit.keys)
     ) {
       return byEntry;
@@ -246,6 +246,41 @@ function composed({
   }
   return write().text;
 }
+
+/**
+ * Whether `written` holds every comment `whole` does, and none more often
+ * than `whole` or the `source` block does: it may keep one the library would
+ * drop with a key taken away, but never loses or repeats one.
+ */
+function keepsComments({
+  written,
+  whole,
+  source,
+}: {
+  written: string;
+  whole: string;
+  source: string;
+}): boolean {
+  const counted = (text: string) => {
+    const counts = new Map<string, number>();
+    for (const comment of commentsOf(text)) counts.set(comment, (counts.get(comment) ?? 0) + 1);
+    return counts;
+  };
+  const [has, wholeHas, sourceHas] = [counted(written), counted(whole), counted(source)];
+  const at = (counts: Map<string, number>, comment: string) => counts.get(comment) ?? 0;
+  return (
+    [...wholeHas].every(([comment, count]) => at(has, comment) >= count) &&
+    [...has].every(
+      ([comment, count]) => count <= Math.max(at(wholeHas, comment), at(sourceHas, comment)),
+    )
+  );
+}
+
+/** The block a {@link Segments} was cut from; empty when there was none. */
+const textOf = (before: Segments | null) =>
+  before === null
+    ? ''
+    : `${before.head}${before.keys.map((key) => key.text).join('')}${before.tail}`;
 
 /** The block as the library writes it, without the newline it ends with. */
 function rendered(document: Document, lists: ReturnType<typeof listIndent>): string {
@@ -771,6 +806,7 @@ function renamedPair<Item extends { key: unknown; value: unknown }>(
   const at = gone.findIndex(
     (pair) =>
       isScalar(pair.key) &&
+      // A key another refers to by its anchor would change what that one reads.
       pair.key.anchor === undefined &&
       sameValue(document, pair.value, wanted),
   );
@@ -1032,14 +1068,27 @@ function valueKept({
   // its last item's own — so it is the library's only once the ones below
   // it were taken off; an inline comment has no line left to stand on, and
   // a line below that its last block of text would read as its own stays
-  // with the library.
+  // with the library. A comment line the new value ends with that was not
+  // under the old one — one under an entry moved to the end of a map — is
+  // the value's own, and stays above those.
   const joins = now.joins === null ? null : now.joins + indent;
   if ((!was.block && was.inline) || !cleared || readAsText(was.below, joins)) return null;
+  const own = shifted(commentLinesNotIn(now.below, was.below), indent);
   const value = withColumnsOf(
     withoutTrailingSpace(shifted(`${now.lines}${now.rest}`, indent)),
     was.lines,
   );
-  return `${original.above}${value}${was.below}`;
+  return `${original.above}${value}${own}${was.below}`;
+}
+
+/** The comment lines of `text` saying what none of `other`'s comments do. */
+function commentLinesNotIn(text: string, other: string): string {
+  const said = new Set(commentsOf(other));
+  return text
+    .split('\n')
+    .filter((line) => /^ *#/.test(line) && !said.has(commentsOf(line)[0] ?? ''))
+    .map((line) => `${line}\n`)
+    .join('');
 }
 
 /** An empty item the library writes as `- ` (or `- &anchor `) without the space it leaves after it. */
@@ -1126,9 +1175,8 @@ function withEntriesKept({
     if (!edit.touched.has(segment.id) || edit.asWritten.has(segment.id)) return segment.text;
     if (render === undefined || found === undefined) return segment.text;
     // The library writes keys at column 0; keepUntouched moves the text to the block's.
-    const source = rebased(found, before.indent.length);
-    const kept = source === null ? null : entryKept(entryOf(segment), render, source, 'line');
-    return kept !== null && sameComments(kept, segment.text) ? kept : segment.text;
+    const kept = entryKept(entryOf(segment), render, rebased(found, before.indent.length), 'line');
+    return kept ?? segment.text;
   });
   return `${after.head}${keys.join('')}${after.tail}`.replace(/\n$/, '');
 }
@@ -1151,12 +1199,12 @@ const entryOf = (segment: Segments['keys'][number]): Entry => ({
   holdsBlanks: segment.value === null || segment.value.joins === 0,
 });
 
-/** `entry` moved left `by` columns; null when that would lose a space it could not give back. */
-function rebased(entry: Entry, by: number): Entry | null {
-  const text = shifted(entry.text, -by);
-  if (shifted(text, by) !== entry.text) return null;
-  return { ...entry, text, above: shifted(entry.above, -by) };
-}
+/** `entry` moved left `by` columns. */
+const rebased = (entry: Entry, by: number): Entry => ({
+  ...entry,
+  text: shifted(entry.text, -by),
+  above: shifted(entry.above, -by),
+});
 
 /**
  * A changed entry whose value is a block map, its head and each entry under
@@ -1178,7 +1226,9 @@ function entryKept(
   const found = headAndBody(source);
   if (now === null || then === null || found === null) return null;
   const by = keyColumnOf(source.text) - keyColumnOf(written.text);
-  const line = then.line === now.line ? found.line : null;
+  // A key line holding an anchor or tag is written by the library with those
+  // under it, so only one holding neither is the same line in the source.
+  const line = then.line === now.line && !holdsProperties(found.line) ? found.line : null;
   const lead = sharedLead({ now, then, found, keyLineKept: line !== null });
   const body = mapKept(
     lead?.bodies ?? { written: now.body, render: then.body, source: found.body },
@@ -1247,15 +1297,12 @@ function leadOf(body: string): string {
   return /^(?:[ \t]*(?:#.*)?\n)*[ \t]*#.*\n/.exec(body)?.[0] ?? '';
 }
 
-/** Text without its blank lines, for comparing what the library writes where it moves only blank lines. */
-const withoutBlanks = (text: string) => text.replace(/^[ \t]*\n/gm, '');
-
 /**
  * A map's lines before or after its entries, or the comments above one: the
  * source's when the library writes the same there before and after the
- * change but for blank lines — which it moves with the key under them, and
- * never writes deeper than the line is — and the source's hold the same
- * comments. Otherwise the library's, at the source's columns.
+ * change, and they are only comments and blank lines — an anchor or tag the
+ * library writes on a line of its own is never the source's to drop.
+ * Otherwise the library's, at the source's columns.
  */
 function partKept({
   now,
@@ -1268,15 +1315,8 @@ function partKept({
   found: string;
   by: number;
 }) {
-  if (withoutBlanks(now) === withoutBlanks(then) && sameComments(now, found)) return found;
-  return writtenAt(now, by);
+  return now === then && /^(?:[ \t]*(?:#.*)?\n)*$/.test(now) ? found : shifted(now, by);
 }
-
-/** Text the library wrote, moved `by` columns, its blank lines left empty: the library indents some. */
-const writtenAt = (text: string, by: number) => {
-  const blanks = leadingBlanks(text);
-  return `${blanks.replace(/[ \t]+\n/g, '\n')}${shifted(text.slice(blanks.length), by)}`;
-};
 
 /**
  * A block map's lines, `written` by the library after the change, with each
@@ -1303,17 +1343,17 @@ function mapKept({
   const entryText = (entry: Entry) => {
     const render = rendered.get(entry.id);
     const source = original.get(entry.id);
-    if (render === undefined || source === undefined) return writtenAt(entry.text, by);
+    if (render === undefined || source === undefined) return shifted(entry.text, by);
     // The blank lines above it are where the library put them; the source's go with it.
     if (withoutLeadingBlanks(render.text) === withoutLeadingBlanks(entry.text)) return source.text;
-    return entryKept(entry, render, source, 'head') ?? writtenAt(entry.text, by);
+    return entryKept(entry, render, source, 'head') ?? shifted(entry.text, by);
   };
   const entries = now.entries.map((entry, at) => {
     const text = entryText(entry);
     // Blank lines under text that keeps its trailing lines (`|+`) would be
     // read as that text: the library's, none, stand there.
     if (now.entries[at - 1]?.holdsBlanks !== true) return text;
-    return `${writtenAt(leadingBlanks(entry.text), 0)}${withoutLeadingBlanks(text)}`;
+    return `${leadingBlanks(entry.text)}${withoutLeadingBlanks(text)}`;
   });
   const head = partKept({ now: now.head, then: then.head, found: found.head, by });
   const tail = partKept({ now: now.tail, then: then.tail, found: found.tail, by });
@@ -1360,6 +1400,10 @@ function entriesOf(
 function sameComments(left: string, right: string): boolean {
   return JSON.stringify(commentsOf(left).sort()) === JSON.stringify(commentsOf(right).sort());
 }
+
+/** Whether a line gives a node an anchor or a tag. */
+const holdsProperties = (line: string) =>
+  [...new Lexer().lex(line)].some((token) => token.startsWith('&') || token.startsWith('!'));
 
 /** The comments a text holds, as YAML reads them: never a `#` inside quotes. */
 const commentsOf = (text: string) =>

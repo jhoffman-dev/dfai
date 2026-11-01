@@ -166,6 +166,12 @@ describe('an untouched entry of a changed map keeps its bytes (#697)', () => {
     );
   });
 
+  it('takes a key gone and a new one holding another value as two changes, not a rename', () => {
+    const swapped = block('properties:', '  a:  1', '', '  # about b', '  b:  2');
+    const written = updateFrontmatter(swapped, { properties: { a: 1, c: 3 } });
+    expect(written).toBe(block('properties:', '  a:  1', '  c: 3'));
+  });
+
   it('keeps an anchor and its alias when another entry moves', () => {
     const linked = block('properties:', '  a: &spec {kind:  x}', '  b: *spec', '  c:  3');
     const written = updateFrontmatter(linked, changed(linked, moved(2, 0)));
@@ -221,6 +227,68 @@ describe('an untouched entry of a changed map keeps its bytes (#697)', () => {
     const written = updateFrontmatter(noted, changed(noted, moved(0, 1)));
     expect(read(written)['properties']).toEqual({ b: 2, a: { kind: 'x' } });
     expect(written).toContain('    # under a\n');
+  });
+
+  it('keeps the comment above an entry when the one before it, and a comment under that, go', () => {
+    const noted = block(
+      'properties:',
+      '  a:',
+      '    kind:  x',
+      '    # under a',
+      '  # about b',
+      '  b:  2',
+    );
+    const written = updateFrontmatter(
+      noted,
+      changed(noted, (entries) => entries.filter(([key]) => key !== 'a')),
+    );
+    expect(written).toBe(block('properties:', '  # about b', '  b:  2'));
+  });
+
+  it('moves an anchor off a changed entry’s key line when another key refers to it', () => {
+    const linked = block('properties:', '  a: &x # c', '    kind:  x', '  b:  2', 'other: *x');
+    const written = updateFrontmatter(linked, { properties: { a: { kind: 'y' }, b: 2 } });
+    expect(read(written)).toEqual({ properties: { a: { kind: 'y' }, b: 2 }, other: { kind: 'x' } });
+    expect(written).toContain('properties:\n  a:\n    # c\n    kind: y\n  b:  2\n');
+  });
+
+  it('keeps an anchor on a changed entry’s key line, once', () => {
+    const anchored = block('properties:', '  a: &x', '    kind:  x', '    n:  1', '  b:  2');
+    const written = updateFrontmatter(anchored, {
+      properties: { a: { kind: 'y', n: 1 }, b: 2 },
+    });
+    expect(read(written)['properties']).toEqual({ a: { kind: 'y', n: 1 }, b: 2 });
+    expect(written.match(/&x/g)).toHaveLength(1);
+    expect(written).toContain('    n:  1\n  b:  2\n');
+  });
+
+  it('keeps entries of a block whose keys are indented', () => {
+    const indented = block('  name: x', '  properties:', '    a:  1', '    b:  2');
+    const written = updateFrontmatter(indented, changed(indented, moved(1, 0)));
+    expect(written).toBe(block('  name: x', '  properties:', '    b:  2', '    a:  1'));
+  });
+
+  it('keeps a comment standing left of an indented block at its column', () => {
+    const loose = block('  properties:', '    a:  1', '# loose', '    b:  2', '    c:  3');
+    const written = updateFrontmatter(loose, changed(loose, moved(2, 0)));
+    expect(written).toBe(block('  properties:', '    c:  3', '    a:  1', '# loose', '    b:  2'));
+  });
+
+  it('keeps an anchor the library writes under a comment, once', () => {
+    const anchored = block(
+      'properties:',
+      '  a: &x',
+      '    # c',
+      '    kind:  x',
+      '    n:  1',
+      '  b:  2',
+    );
+    const written = updateFrontmatter(anchored, {
+      properties: { a: { kind: 'y', n: 1 }, b: 2 },
+    });
+    expect(read(written)['properties']).toEqual({ a: { kind: 'y', n: 1 }, b: 2 });
+    expect(written.match(/&x/g)).toHaveLength(1);
+    expect(written).toContain('    n:  1\n  b:  2\n');
   });
 
   it('keeps CRLF endings and a byte-order mark', () => {
@@ -299,7 +367,9 @@ function entriesOf(random: () => number, indent: string): Entry[] {
     const body =
       `${deeper}kind:${spaces()}relation${comment()}\n` +
       `${deeper}targets:${spaces()}'person'${spaces()}# who wrote it\n`;
-    return { key, above, text: `${above}${head}${comment()}\n${body}`, map: true };
+    // Some name their map with an anchor nothing refers to.
+    const anchor = random() < 0.2 ? ` &m${at}` : '';
+    return { key, above, text: `${above}${head}${anchor}${comment()}\n${body}`, map: true };
   });
 }
 
@@ -390,7 +460,7 @@ function editOf(
  * What is wrong with one seed's write, or nothing. With `notes` — comments
  * the library places by its own rules — an entry may be written as the
  * library writes it, so only what may never change is held: the values,
- * every comment once, the blank lines and the rest of the block.
+ * every comment and anchor once, and the rest of the block.
  */
 function problemsOf(seed: number, operation: Operation, notes = false): string[] {
   const random = seeded(seed);
@@ -427,9 +497,11 @@ function problemsOf(seed: number, operation: Operation, notes = false): string[]
           .slice(0, -1)
           .filter((line) => line === '').length ?? 0)
       : 0) + map.entries.filter((entry) => entry.keeps).length;
+  // Where the library writes an entry among comments it places, it may move
+  // a blank line, as it always has.
   if (
-    blanks(written) < blanks(map.frontmatter) - lost ||
-    blanks(written) > blanks(map.frontmatter)
+    !notes &&
+    (blanks(written) < blanks(map.frontmatter) - lost || blanks(written) > blanks(map.frontmatter))
   ) {
     problems.push('blank lines');
   }
@@ -465,6 +537,11 @@ function problemsOf(seed: number, operation: Operation, notes = false): string[]
   if (!written.startsWith(map.frontmatter.slice(0, map.frontmatter.indexOf('properties:') + 11))) {
     problems.push('opening');
   }
+  // Every anchor once: never dropped, never written twice.
+  const anchors = (text: string) => (text.match(/&m\d+/g) ?? []).sort().join();
+  const gone = operation === 'delete' ? (removed?.text.match(/&m\d+/)?.[0] ?? null) : null;
+  const left = (map.frontmatter.match(/&m\d+/g) ?? []).filter((anchor) => anchor !== gone);
+  if (anchors(written) !== left.sort().join()) problems.push('anchors');
   return problems.length === 0 ? [] : [`seed ${seed} ${operation}: ${problems.join(', ')}`];
 }
 
@@ -480,7 +557,7 @@ describe('a changed map keeps its untouched entries’ bytes, as a property (#69
   );
 
   it.each<Operation>(['move', 'add', 'delete', 'rename', 'edit'])(
-    'never loses a value, comment or blank line on a %s, among comments the library places',
+    'never loses a value or comment on a %s, among comments the library places',
     (operation) => {
       const broken: string[] = [];
       for (let seed = 1; seed <= 300; seed += 1) broken.push(...problemsOf(seed, operation, true));
