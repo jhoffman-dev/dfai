@@ -352,3 +352,5 @@ export type { ResearchListState } from './research/research-filters.tsx';
 export { blockEmbedTransfer } from './editor/embed-transfer.ts';
 export type { EmbedTransfer } from './editor/embed-transfer.ts';
 export * from './reader/index.ts';
+export { SIGN_IN_MESSAGES, SignInScreen, SignOutButton } from './auth/sign-in-screen.tsx';
+export type { SignInScreenProps } from './auth/sign-in-screen.tsx';

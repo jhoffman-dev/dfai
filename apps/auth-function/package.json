@@ -1,0 +1,15 @@
+{
+  "name": "@dfai/auth-function",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "The web build's sign-in with GitHub: the code-for-token exchange and refresh, as a Firebase Function. Stores nothing.",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --packages=external --outfile=lib/index.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
