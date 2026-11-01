@@ -105,8 +105,8 @@ function paneKeepingStranded(vault: ReturnType<typeof heldWritesVault>) {
         ports: { fs: vault.fs, markdown: remarkMarkdown },
         vault: THIS_VAULT,
         path,
-        onStranded: ({ vault: _vault, ...edit }: Stranding) =>
-          void kept.set(edit.path, { ...edit, keptAt: 1 }),
+        onStranded: ({ path: at, doc, reason, modified }: Stranding) =>
+          void kept.set(at, { path: at, doc, reason, modified, keptAt: 1 }),
         recoverStranded: (at) => kept.get(at) ?? null,
         settleStranded: ({ path: at }) => void kept.delete(at),
       }),
