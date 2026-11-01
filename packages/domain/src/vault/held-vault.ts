@@ -66,13 +66,20 @@ export function isHeld<File>(vault: HeldVault<File>, path: string): boolean {
 }
 
 /**
- * What is at a name that only differs from `path` in case, if anything. Names
+ * A name as the Mac's disk compares it: one Unicode normal form, one case.
+ * It keeps one of `Café.md` spelled with a composed é and with e and an
+ * accent, as it keeps one of `a.md` and `A.md`.
+ */
+const macNameKey = (name: string) => name.normalize('NFC').toLowerCase();
+
+/**
+ * What is at a name that only differs from `path` in case or Unicode normal form, if anything. Names
  * differ by more than case, as the Mac's disk sees one name, because a vault
  * synced between a Mac and GitHub breaks on two siblings like that.
  */
 export function heldNameLike<File>(vault: HeldVault<File>, path: string): string | null {
-  const folded = path.toLowerCase();
-  const matches = (name: string) => name.toLowerCase() === folded;
+  const folded = macNameKey(path);
+  const matches = (name: string) => macNameKey(name) === folded;
   for (const name of [...vault.files.keys(), ...vault.folders]) if (matches(name)) return name;
   for (const file of vault.files.keys()) {
     const segments = file.split('/').slice(0, -1);
@@ -155,15 +162,26 @@ export function heldMove<File>(
   if (isHeldFolder(vault, from) && within(landing, from))
     return { refused: HELD_REFUSAL.intoItself };
   const refusal =
-    from.toLowerCase() === to.toLowerCase()
-      ? isHeldFolder(vault, landing)
-        ? null
-        : HELD_REFUSAL.noFolder
+    macNameKey(from) === macNameKey(to)
+      ? ownRenameRefusal(vault, { to, landing })
       : heldPlaceRefusal(vault, { path: to, taken: HELD_REFUSAL.nameTaken });
   if (refusal !== null) return { refused: refusal };
   const { files, folders } = heldUnder(vault, from);
   const renamed = (path: string) => [path, `${to}${path.slice(from.length)}`] as const;
   return { renames: [...files, ...folders].map(renamed) };
+}
+
+/**
+ * Why an entry may not take its own name in another case or form. A vault
+ * made on GitHub or Linux can hold both spellings as two entries; the
+ * rename would land on the other one and overwrite it.
+ */
+function ownRenameRefusal<File>(
+  vault: HeldVault<File>,
+  { to, landing }: { to: string; landing: string },
+): string | null {
+  if (!isHeldFolder(vault, landing)) return HELD_REFUSAL.noFolder;
+  return isHeld(vault, to) ? HELD_REFUSAL.nameTaken : null;
 }
 
 /** How bytes go into a file: created at 0, appended at exactly its length, replaced whole from 0. */

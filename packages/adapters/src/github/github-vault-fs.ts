@@ -80,6 +80,8 @@ interface Snapshot extends HeldVault<GitFile> {
   readonly blobs: ReadonlyMap<string, GitFile>;
   /** Every name taken, by a file, a placeholder or a link: what a new entry may not land on. */
   readonly taken: HeldVault<GitFile>;
+  /** Blobs whose names are no vault path (a backslash, say): never listed, never trashed unseen. */
+  readonly unshown: readonly string[];
 }
 
 /** A plain file, executable or not: what is listed, read and written. A link (120000) is neither. */
@@ -107,15 +109,40 @@ function snapshotOf(head: string, tree: string, entries: readonly GitTreeEntry[]
   const files = new Map<string, GitFile>();
   const folders = new Set<string>();
   const blobs = new Map<string, GitFile>();
+  const unshown: string[] = [];
   for (const entry of entries) {
-    if (entry.type === 'tree') folders.add(entry.path);
+    const shown = isVaultPath(entry.path);
+    if (entry.type === 'tree' && shown) folders.add(entry.path);
     // A submodule is another repository, not part of this vault.
     if (entry.type !== 'blob') continue;
     const file = { sha: entry.sha, size: entry.size ?? 0, mode: entry.mode };
     blobs.set(entry.path, file);
-    if (!isPlaceholder(entry.path) && FILE_MODES.has(entry.mode)) files.set(entry.path, file);
+    if (!shown) unshown.push(entry.path);
+    else if (!isPlaceholder(entry.path) && FILE_MODES.has(entry.mode)) files.set(entry.path, file);
   }
-  return { head, tree, files, folders, blobs, taken: { files: blobs, folders } };
+  return { head, tree, files, folders, blobs, taken: { files: blobs, folders }, unshown };
+}
+
+/**
+ * Whether git's name is a path the app can hold. A repository made on Linux
+ * or on GitHub can name a file `a\b.md`, which no vault path may be; such a
+ * file is left out of every listing rather than hiding all the rest.
+ */
+function isVaultPath(path: string): boolean {
+  try {
+    return createVaultPath(path) === path;
+  } catch {
+    // Not a vault path: the caller leaves it unlisted and keeps it as it is.
+    return false;
+  }
+}
+
+/** A trash would take files nobody could see in the app: refused, so none is lost unseen. */
+function unshownRefusal(snapshot: Snapshot, path: string): string | null {
+  const hidden = snapshot.unshown.find((blob) => within(blob, path));
+  return hidden === undefined
+    ? null
+    : `that folder holds ${hidden}, which DFAI cannot show; rename or remove it on GitHub first`;
 }
 
 /** Refuses a placeholder's name as an entry to write, create or move, wherever it is. */
@@ -320,6 +347,7 @@ function writing({ branch, at }: Through) {
       refuseIf(heldEntryPathRefusal(path));
       const snapshot = await at();
       unlessRefused(heldTrash(snapshot, path));
+      refuseIf(unshownRefusal(snapshot, path));
       for (const file of unchanged) if (!(await isAsRead(snapshot, file))) throw changedTrash();
       const changes = [...snapshot.blobs]
         .filter(([blob]) => within(blob, path))
