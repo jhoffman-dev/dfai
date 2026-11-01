@@ -131,6 +131,8 @@ export default defineConfig({
         'packages/application/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'packages/adapters/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'apps/auth-function/src/**': { lines: 90, functions: 90, branches: 85 },
+        // The vault as a GitHub repository (#664): every save a commit, refused when its blob or head moved.
+        'packages/adapters/src/github/**': { lines: 90, functions: 90, branches: 85 },
         // Renaming a tag rewrites every note that uses it.
         'packages/application/src/tags/**': { lines: 90, functions: 90, branches: 85 },
         // Saving an artifact writes a folder of files into the vault.
