@@ -6,6 +6,7 @@ import {
   guardedVault as memoryVault,
   jsonFrontmatterNote as note,
 } from '../testing/guarded-vault.ts';
+import { editedBeforeTrash } from '../testing/edited-before-trash.ts';
 import { sqliteIndexPort } from '../testing/sqlite-index.ts';
 import {
   applyPeopleMerge,
@@ -436,6 +437,33 @@ describe('finding every link before a merge (#467)', () => {
     expect(report.notTrashed).toEqual([SHORT]);
     expect(report.failures[0]).toMatchObject({ path: SHORT, step: 'trash' });
     expect(vault.text(SHORT)).toBe('Changed meanwhile.\n');
+  });
+
+  it('leaves a merged person in place when their note changes between its check and the Trash (#693)', async () => {
+    const { vault, preview, ports } = await setUp();
+    const shown = await preview();
+    const editing = editedBeforeTrash(vault.fs, () => vault.edit(SHORT, 'Changed meanwhile.\n'));
+    const report = await applyPeopleMerge({ ports: { ...ports, fs: editing }, preview: shown });
+    expect(report.trashed).toEqual([TYPO]);
+    expect(report.notTrashed).toEqual([SHORT]);
+    expect(report.failures).toEqual([
+      {
+        path: SHORT,
+        step: 'trash',
+        reason:
+          'It changed while the merge was being written, so it was left where it is. Merge it again to take in the change.',
+      },
+    ]);
+    expect(vault.text(SHORT)).toBe('Changed meanwhile.\n');
+  });
+
+  it('trashes every merged person left as checked, through the same hold (#693)', async () => {
+    const { vault, preview, ports } = await setUp();
+    const shown = await preview();
+    const holding = editedBeforeTrash(vault.fs, () => undefined);
+    const report = await applyPeopleMerge({ ports: { ...ports, fs: holding }, preview: shown });
+    expect(report.trashed).toEqual([SHORT, TYPO]);
+    expect(report.failures).toEqual([]);
   });
 });
 

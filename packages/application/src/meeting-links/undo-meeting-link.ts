@@ -9,6 +9,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { changeProperties, type PropertyChange } from '../automations/apply-changes.ts';
+import { EntryChangedError } from '../vault/ports.ts';
 import type { MeetingLinkPorts, MeetingLinkRun } from './link-meeting.ts';
 
 /** What undoing a meeting's linking did: each relation put back, each proposal taken away, and what was left. */
@@ -19,6 +20,7 @@ export interface MeetingLinkUndone {
 }
 
 const ANSWERED = 'It was answered since, so it was left as it is.';
+const CHANGED = 'It was changed since, so it was left as it is.';
 
 /**
  * Undoes linking a meeting, as an automation's run is undone: each relation
@@ -60,7 +62,7 @@ async function withdraw(ports: MeetingLinkPorts, path: VaultPath): Promise<strin
   if (ports.editors.state(path) === 'dirty')
     return 'It has unsaved typing, so it was left as it is.';
   try {
-    const { text } = await ports.fs.readTextFile(path);
+    const { text, modified } = await ports.fs.readTextFile(path);
     const properties = ports.markdown.frontmatterProperties(splitFrontmatter(text).frontmatter);
     const reading = readProposal({ path, properties });
     if (
@@ -70,9 +72,11 @@ async function withdraw(ports: MeetingLinkPorts, path: VaultPath): Promise<strin
     ) {
       return ANSWERED;
     }
-    await ports.fs.trashEntry({ path });
+    // Held to the version just checked, so an edit landing before the Trash keeps it (#693).
+    await ports.fs.trashEntry({ path, unchanged: [{ path, modified, text }] });
     return null;
   } catch (cause) {
+    if (cause instanceof EntryChangedError) return CHANGED;
     // Gone — answered and archived, or deleted by hand: there is nothing left to take away.
     return messageWithoutPaths(cause);
   }

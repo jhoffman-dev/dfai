@@ -3,6 +3,7 @@ import { createVaultPath, deleteThroughLinkRefusal } from '@dfai/domain';
 import { apiFixture } from '../testing/api-fixture.ts';
 import { VaultAccessError } from '../vault/ports.ts';
 import { blockMarkdown } from '../testing/block-markdown.ts';
+import { editedBeforeTrash } from '../testing/edited-before-trash.ts';
 import {
   acceptProposal,
   ProposalRefused,
@@ -223,6 +224,52 @@ describe('proposeNote and accepting it', () => {
       refusal,
     );
     expect(fixture.files.has('Idea.md')).toBe(true);
+  });
+
+  it('keeps a created note edited between its check and the Trash, and says so (#693)', async () => {
+    const { fs, markdown, fixture } = vault({});
+    const trashing = {
+      ...fs,
+      trashEntry: async ({ path: gone }: { path: string }) => void fixture.files.delete(gone),
+    };
+    const made = proposeNote({
+      today: '2026-10-08',
+      markdown,
+      input: { title: 'Idea' },
+      id: 'n1',
+      notePaths: [],
+    });
+    const applied = await acceptProposal({ fs: trashing, openNotes: closed, proposal: made });
+    const idea = createVaultPath('Idea.md');
+    const editing = editedBeforeTrash(trashing, () =>
+      fs.writeTextFile({ path: idea, contents: 'Typed meanwhile.\n', expectedModified: null }),
+    );
+
+    await expect(undoProposal({ fs: editing, openNotes: closed, applied })).rejects.toThrow(
+      new ProposalRefused('Idea changed since this was proposed; nothing was written.'),
+    );
+    expect(fixture.files.get('Idea.md')?.text).toBe('Typed meanwhile.\n');
+  });
+
+  it('trashes a created note left as made, through the same hold (#693)', async () => {
+    const { fs, markdown, fixture } = vault({});
+    const trashing = editedBeforeTrash(
+      {
+        ...fs,
+        trashEntry: async ({ path: gone }: { path: string }) => void fixture.files.delete(gone),
+      },
+      () => undefined,
+    );
+    const made = proposeNote({
+      today: '2026-10-08',
+      markdown,
+      input: { title: 'Idea' },
+      id: 'n1',
+      notePaths: [],
+    });
+    const applied = await acceptProposal({ fs: trashing, openNotes: closed, proposal: made });
+    await undoProposal({ fs: trashing, openNotes: closed, applied });
+    expect(fixture.files.has('Idea.md')).toBe(false);
   });
 
   it.each([

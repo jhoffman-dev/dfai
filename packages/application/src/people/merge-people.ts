@@ -24,7 +24,12 @@ import {
 import type { IndexPort } from '../index/ports.ts';
 import { forgetNotes, notesLinkingTo } from '../index/refresh-index.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
-import type { NoteFile, OpenEditorsPort, VaultFsPort } from '../vault/ports.ts';
+import {
+  EntryChangedError,
+  type NoteFile,
+  type OpenEditorsPort,
+  type VaultFsPort,
+} from '../vault/ports.ts';
 import { markdownPathsIn } from '../types/templates.ts';
 import { filesAmong, type LinkUpdatePanes } from '../vault/update-links.ts';
 
@@ -505,19 +510,20 @@ async function trashMerged({
   failures: MergeFailure[];
 }): Promise<VaultPath[]> {
   const trashed: VaultPath[] = [];
-  const read = new Map(
-    (await ports.fs.readNotes(preview.merge)).map((file) => [file.path, file.text]),
-  );
+  const read = new Map((await ports.fs.readNotes(preview.merge)).map((file) => [file.path, file]));
   for (const { path, text } of preview.merged) {
-    if (read.get(path) !== text) {
+    const file = read.get(path);
+    if (file?.text !== text) {
       failures.push({ path, step: 'trash', reason: CHANGED_BEFORE_TRASH });
       continue;
     }
     try {
-      await ports.fs.trashEntry({ path });
+      // Held to the version just checked, so an edit landing before the Trash keeps the note (#693).
+      await ports.fs.trashEntry({ path, unchanged: [{ path, modified: file.modified, text }] });
       trashed.push(path);
     } catch (cause) {
-      failures.push({ path, step: 'trash', reason: reasonOf(cause) });
+      const reason = cause instanceof EntryChangedError ? CHANGED_BEFORE_TRASH : reasonOf(cause);
+      failures.push({ path, step: 'trash', reason });
     }
   }
   ports.editors.abandon(trashed);
