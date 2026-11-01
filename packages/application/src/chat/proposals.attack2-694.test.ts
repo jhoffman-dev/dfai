@@ -40,19 +40,34 @@ function draftAppend(at: ReturnType<typeof vaultWithPlan>) {
 }
 
 describe('accepting an edit proposal (attack 2 on #694)', () => {
-  it.fails(
-    'never writes over an edit made in the same second after the proposal was drafted',
-    async () => {
-      const at = vaultWithPlan();
-      const proposal = await draftAppend(at);
-      editSameSecond(at.fixture, PLAN_PATH, `${PLAN}Typed in the same second.\n`);
+  it('never writes over an edit made in the same second after the proposal was drafted', async () => {
+    const at = vaultWithPlan();
+    const proposal = await draftAppend(at);
+    editSameSecond(at.fixture, PLAN_PATH, `${PLAN}Typed in the same second.\n`);
 
-      await acceptProposal({ fs: at.fs, openNotes: closed, proposal }).catch(() => undefined);
+    await acceptProposal({ fs: at.fs, openNotes: closed, proposal }).catch(() => undefined);
 
-      // Observed: the note is the proposal's contents; the typed line is gone.
-      expect(at.fixture.files.get(PLAN_PATH)?.text).toContain('Typed in the same second.');
-    },
-  );
+    // Observed: the note is the proposal's contents; the typed line is gone.
+    expect(at.fixture.files.get(PLAN_PATH)?.text).toContain('Typed in the same second.');
+  });
+
+  it('refuses, writing nothing, when typing lands in the same second between the check and the write', async () => {
+    const at = vaultWithPlan();
+    const proposal = await draftAppend(at);
+    const typed = `${PLAN}Typed in the same second.\n`;
+    const typingFirst = {
+      ...at.fs,
+      writeTextFile: async (args: Parameters<typeof at.fs.writeTextFile>[0]) => {
+        editSameSecond(at.fixture, PLAN_PATH, typed);
+        return at.fs.writeTextFile(args);
+      },
+    };
+
+    await expect(acceptProposal({ fs: typingFirst, openNotes: closed, proposal })).rejects.toThrow(
+      'Plan changed since this was proposed; nothing was written.',
+    );
+    expect(at.fixture.files.get(PLAN_PATH)?.text).toBe(typed);
+  });
 
   it('probe: an accepted edit on a CRLF + BOM note undoes byte for byte', async () => {
     const crlf = String.fromCharCode(0xfeff) + '---\r\nstatus: open\r\n---\r\nIntro.\r\n';

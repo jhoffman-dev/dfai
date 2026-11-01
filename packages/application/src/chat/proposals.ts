@@ -55,6 +55,11 @@ export interface EditProposal {
   readonly title: string;
   /** The note's modified time when proposed: accepting after it changed is refused. */
   readonly baseModified: number;
+  /**
+   * The note's whole text when proposed: held to as well, since a disk that
+   * keeps the time to the second leaves it unchanged by a same-second edit (#245, #694).
+   */
+  readonly baseText: string;
   readonly afterBody: string;
   /** The whole file Accept writes: the frontmatter, changed by `properties`, then `afterBody`. */
   readonly contents: string;
@@ -167,6 +172,7 @@ export async function proposeEdit({
     path,
     title: noteTitle(path),
     baseModified: note.modified,
+    baseText: note.onDisk,
     afterBody,
     contents: joinFrontmatter(
       properties === null
@@ -257,9 +263,16 @@ export async function acceptProposal({
   const { path } = proposal;
   const pane = refuseUnsaved(openNotes, path);
   const previous = await readPrevious({ fs, path });
-  if (previous.modified !== proposal.baseModified) throw changedSince(path);
+  if (previous.modified !== proposal.baseModified || previous.text !== proposal.baseText) {
+    throw changedSince(path);
+  }
   const modified = await guarded({ fs, path, expected: previous.modified }, () =>
-    fs.writeTextFile({ path, contents: proposal.contents, expectedModified: previous.modified }),
+    fs.writeTextFile({
+      path,
+      contents: proposal.contents,
+      expectedModified: previous.modified,
+      expectedText: previous.text,
+    }),
   );
   if (pane === 'clean') openNotes.reload(path);
   return { kind: 'edited', path, previous: previous.text, modified, text: proposal.contents };

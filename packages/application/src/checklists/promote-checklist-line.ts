@@ -28,7 +28,7 @@ import {
 } from '@dfai/domain';
 import type { OpenNotes } from '../api/ports.ts';
 import type { Rng } from '../ports.ts';
-import { createNote } from '../notes/create-note.ts';
+import { createNoteAsWritten } from '../notes/create-note.ts';
 import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { noteModified } from '../notes/note-modified.ts';
 import { openNote, type OpenNote } from '../notes/open-note.ts';
@@ -151,31 +151,25 @@ export async function promoteChecklistLine({
     blockId,
     project: inheritedProject({ properties: note.properties, linkToSource }),
   });
-  const taskText = joinFrontmatter(
-    markdown.updateFrontmatter(null, properties),
-    keptInTask({ markdown, content }),
-  );
-  const task = await createNote({
+  // As written: the task rules may add to the text asked for (a ticked line is dated `completed`).
+  const made = await createNoteAsWritten({
     fs,
     markdown,
     today,
     name,
     beside: source,
     notePaths,
-    contents: taskText,
+    contents: joinFrontmatter(
+      markdown.updateFrontmatter(null, properties),
+      keptInTask({ markdown, content }),
+    ),
     properties,
   });
+  const task = made.path;
 
   const linkToTask = wikiLinkTargetFor(task, [...notePaths, task]);
   const doc = withPromotedLine(note.doc, { at: line.at, blockId, linkToTask });
-  const saved = await savedOrTakenBack({
-    fs,
-    markdown,
-    openNotes,
-    note,
-    doc,
-    made: { task, taskText },
-  });
+  const saved = await savedOrTakenBack({ fs, markdown, openNotes, note, doc, made });
   if (openNotes.state(source) === 'clean') openNotes.reload(source);
   return {
     source,
@@ -184,8 +178,8 @@ export async function promoteChecklistLine({
     previous: (note.frontmatter ?? '') + note.originalBody,
     sourceModified: saved.modified,
     sourceText: saved.onDisk,
-    taskModified: (await noteModified({ fs, path: task })) ?? 0,
-    taskText,
+    taskModified: made.modified,
+    taskText: made.text,
   };
 }
 
@@ -277,8 +271,8 @@ async function savedOrTakenBack({
   openNotes: PromotionPanes;
   note: OpenNote;
   doc: EditorDocument | null;
-  /** The task just made, and the text it was made with. */
-  made: { task: VaultPath; taskText: string };
+  /** The task just made, as the create wrote it. */
+  made: AsRead;
 }): Promise<OpenNote> {
   try {
     if (doc === null) throw new PromotionRefused('That line is no longer a checklist line.');
@@ -314,22 +308,21 @@ async function movedOn({
 }
 
 /**
- * Trashes the task a refused promotion made, held to the text it was made
- * with, so one already typed in is kept (#694); if that fails too, says both.
+ * Trashes the task a refused promotion made, held to the version the create
+ * wrote, so one already typed in is kept (#694); if that fails too, says both.
  */
 async function takeBack({
   fs,
-  made: { task, taskText },
+  made,
   cause,
 }: {
   fs: VaultFsPort;
-  made: { task: VaultPath; taskText: string };
+  made: AsRead;
   cause: unknown;
 }): Promise<void> {
+  const task = made.path;
   try {
-    const { text, modified } = await fs.readTextFile(task);
-    if (text !== taskText) throw changedSince(task);
-    await fs.trashEntry({ path: task, unchanged: [{ path: task, modified, text }] });
+    await fs.trashEntry({ path: task, unchanged: [made] });
   } catch (trashError) {
     throw new AggregateError(
       [cause, trashError],
@@ -357,7 +350,7 @@ export async function undoPromotion({
   refuseUnsaved(openNotes, source);
   refuseUnsaved(openNotes, task);
   const asPromoted = { path: task, modified: promotion.taskModified, text: promotion.taskText };
-  await refuseChanged({ fs, read: asPromoted });
+  await refuseChanged({ fs, read: asPromoted, gone: taskGone });
   await refuseChanged({
     fs,
     read: { path: source, modified: promotion.sourceModified, text: promotion.sourceText },
@@ -407,16 +400,34 @@ async function sourceNotPutBack({
   );
 }
 
-/** Refuses unless the note still has the time and the text the promotion left it with. */
-async function refuseChanged({ fs, read }: { fs: VaultFsPort; read: AsRead }): Promise<void> {
+/**
+ * Refuses unless the note still has the time and the text the promotion left
+ * it with. One that cannot be read is refused with `gone`, when given.
+ */
+async function refuseChanged({
+  fs,
+  read,
+  gone = changedSince,
+}: {
+  fs: VaultFsPort;
+  read: AsRead;
+  gone?: (path: VaultPath) => PromotionRefused;
+}): Promise<void> {
   let now: { text: string; modified: number };
   try {
     now = await fs.readTextFile(read.path);
   } catch {
     // Gone or unreadable: either way it is not as the promotion left it.
-    throw changedSince(read.path);
+    throw gone(read.path);
   }
   if (now.modified !== read.modified || now.text !== read.text) throw changedSince(read.path);
+}
+
+/** The task is not there: an earlier undo may have put it in the Trash before its line failed. */
+function taskGone(path: VaultPath): PromotionRefused {
+  return new PromotionRefused(
+    `${noteTitle(path)} is not where the line was promoted to; if it is in the Trash, put it back first, then undo again. Nothing was undone.`,
+  );
 }
 
 function changedSince(path: VaultPath): PromotionRefused {

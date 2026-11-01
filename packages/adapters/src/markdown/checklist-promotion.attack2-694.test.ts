@@ -83,15 +83,15 @@ function promoteTicked(fs: VaultFsPort, choice: Partial<ChecklistLineChoice> = {
 }
 
 describe('a ticked line promoted (createNote dates it completed) — attack 2 on #694', () => {
-  it('probe: the task on disk is not the taskText the Promotion holds', async () => {
-    const { fs, text } = hostLikeVault();
+  it('holds the task to the text on disk, dated by the task rules', async () => {
+    const { fs, files, text } = hostLikeVault();
     const promotion = await promoteTicked(fs);
     expect(text(promotion.task)).toContain(`completed: ${today}\n`);
-    expect(promotion.taskText).not.toContain('completed:');
-    expect(text(promotion.task)).not.toBe(promotion.taskText);
+    expect(promotion.taskText).toBe(text(promotion.task));
+    expect(promotion.taskModified).toBe(files.get(promotion.task)?.modified);
   });
 
-  it.fails('can be undone when nothing has changed since', async () => {
+  it('can be undone when nothing has changed since', async () => {
     const { fs, text } = hostLikeVault();
     const promotion = await promoteTicked(fs);
     // Observed: PromotionRefused "Book the hall changed since the line was promoted".
@@ -100,30 +100,27 @@ describe('a ticked line promoted (createNote dates it completed) — attack 2 on
     expect(text(promotion.task)).toBeUndefined();
   });
 
-  it.fails(
-    'a refused promotion takes its untouched task back rather than orphaning it',
-    async () => {
-      const vault = hostLikeVault();
-      let made = '';
-      const racing: VaultFsPort = {
-        ...vault.fs,
-        createNote: async (note) => {
-          const modified = await vault.fs.createNote(note);
-          made = note.path;
-          // The source moves on while the task is being made, so the save is refused.
-          vault.files.set(source, { text: `${PLAN}Edited elsewhere.\n`, modified: 999 });
-          return modified;
-        },
-      };
-      // Observed: AggregateError "... could not be taken back", task left in the vault
-      // although nobody touched it: takeBack compares against the pre-rules text.
-      await expect(promoteTicked(racing)).rejects.toThrow(
-        'changed while the line was being promoted',
-      );
-      expect(made).not.toBe('');
-      expect(vault.text(made)).toBeUndefined();
-    },
-  );
+  it('a refused promotion takes its untouched task back rather than orphaning it', async () => {
+    const vault = hostLikeVault();
+    let made = '';
+    const racing: VaultFsPort = {
+      ...vault.fs,
+      createNote: async (note) => {
+        const modified = await vault.fs.createNote(note);
+        made = note.path;
+        // The source moves on while the task is being made, so the save is refused.
+        vault.files.set(source, { text: `${PLAN}Edited elsewhere.\n`, modified: 999 });
+        return modified;
+      },
+    };
+    // Observed: AggregateError "... could not be taken back", task left in the vault
+    // although nobody touched it: takeBack compares against the pre-rules text.
+    await expect(promoteTicked(racing)).rejects.toThrow(
+      'changed while the line was being promoted',
+    );
+    expect(made).not.toBe('');
+    expect(vault.text(made)).toBeUndefined();
+  });
 });
 
 function promoteOpen(fs: VaultFsPort) {
@@ -151,7 +148,7 @@ describe('undoing an open line’s promotion under races — attack 2 on #694 (p
     expect(vault.text(promotion.task)).toBeUndefined();
 
     await expect(undoPromotion({ fs: vault.fs, openNotes: closed, promotion })).rejects.toThrow(
-      /changed since/,
+      /if it is in the Trash, put it back first, then undo again/,
     );
     expect(vault.text(source)).toBe(edited);
   });

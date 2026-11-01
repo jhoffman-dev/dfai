@@ -42,10 +42,16 @@ const PLAN = [
 ].join('\n');
 
 const source = createVaultPath('plans/Plan the launch.md');
+/** Where promoting "Order chairs" makes its task: the Task type's home folder (#214). */
+const TASK = 'Tasks/2026/10/Order chairs.md';
 const today = '2026-10-08';
 const closed: PromotionPanes = { state: () => 'closed', reload: vi.fn() };
 
-/** A vault in memory whose writes are checked against the version read, as the host checks them. */
+/**
+ * A vault in memory whose writes and trashes are checked against the version
+ * read, as the host checks them: a write by its time and `expectedText`, a
+ * trash by each file it is told to hold (#235, #245).
+ */
 function vault(initial: Record<string, string> = { [source]: PLAN }) {
   let clock = 100;
   const files = new Map(
@@ -58,8 +64,11 @@ function vault(initial: Record<string, string> = { [source]: PLAN }) {
       if (file === undefined) throw new Error(`no such file: ${path}`);
       return { ...file };
     },
-    writeTextFile: async ({ path, contents, expectedModified }) => {
+    writeTextFile: async ({ path, contents, expectedModified, expectedText }) => {
       if (expectedModified !== null && files.get(path)?.modified !== expectedModified) {
+        throw new Error('the note changed on disk since it was opened');
+      }
+      if (expectedText !== undefined && files.get(path)?.text !== expectedText) {
         throw new Error('the note changed on disk since it was opened');
       }
       const modified = (clock += 1);
@@ -74,7 +83,13 @@ function vault(initial: Record<string, string> = { [source]: PLAN }) {
       writes.push(path);
       return modified;
     },
-    trashEntry: async ({ path }) => {
+    trashEntry: async ({ path, unchanged = [] }) => {
+      for (const held of unchanged) {
+        const file = files.get(held.path);
+        if (file?.text !== held.text || file.modified !== held.modified) {
+          throw new EntryChangedError(`${held.path} changed`);
+        }
+      }
       if (!files.delete(path)) throw new Error(`no such entry: ${path}`);
     },
   });
@@ -305,13 +320,13 @@ describe('promoting refuses, and changes nothing', () => {
     const racing: VaultFsPort = {
       ...fs,
       createNote: async (note) => {
-        await fs.createNote(note);
+        const made = await fs.createNote(note);
         fixture.files.set(source, { text: edited, modified: 999 });
-        return 0;
+        return made;
       },
     };
     await expect(promote(racing)).rejects.toThrow('changed while the line was being promoted');
-    expect(text('plans/Order chairs.md')).toBeUndefined();
+    expect(text(TASK)).toBeUndefined();
     expect(text(source)).toBe(edited);
   });
 
@@ -368,7 +383,7 @@ describe('promoting refuses, and changes nothing', () => {
       reload: vi.fn(),
     };
     await expect(promote(fs, {}, typing)).rejects.toThrow(UnsavedTypingError);
-    expect(text('plans/Order chairs.md')).toBeUndefined();
+    expect(text(TASK)).toBeUndefined();
     expect(text(source)).toBe(PLAN);
   });
 });
