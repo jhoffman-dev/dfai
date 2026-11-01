@@ -11,6 +11,7 @@ import type { VaultFsPort } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { useNote } from './use-note.ts';
 import type { Stranding } from './stranded-edits.ts';
+import { thrownFromMicrotasks } from './testing/thrown-from-microtasks.ts';
 
 /** Attack on PR #729 (fix for issue #727): leaving a note and coming back while its write is out. */
 
@@ -151,6 +152,12 @@ describe('attack on PR #729: the way back to a note whose write on the way out i
     // the choice to overwrite or discard rather than an autosave over the file.
     expect(typingOnScreen && errorShown).toBe(true);
     expect(view.result.current.state).toMatchObject({ kind: 'ready', dirty: true });
+    // Closing the pane with the keeper still failing: the work goes with it, loudly.
+    const thrown = await thrownFromMicrotasks(async () => {
+      view.unmount();
+      await settle();
+    });
+    expect(thrown).toHaveLength(1);
   });
 
   const ready = (view: ReturnType<typeof pane>) =>

@@ -87,6 +87,18 @@ const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
+ * Work the pane held because the keeper failed, and that goes with the pane.
+ * The shell has no channel for it, so it is thrown where nothing catches it,
+ * as an unhandled error, the way a failed save on the way out was heard before
+ * the pane held such work: dropped silently, it would be typing gone unseen.
+ */
+function reportLost(edit: StrandedEdit): void {
+  queueMicrotask(() => {
+    throw new Error(`Unsaved work on ${edit.path} was lost with its pane: ${edit.reason}`);
+  });
+}
+
+/**
  * Why a pane will not save work it was handed back: the file was written after
  * the work was kept, and saving would write over that without anyone deciding.
  */
@@ -163,6 +175,8 @@ export function useNote({
    * either, by note: the next read of it in this pane puts it back on screen.
    */
   const unkept = useRef(new Map<string, StrandedEdit>());
+  /** Set once the pane has closed for good: nothing held from then on can be shown. */
+  const gone = useRef(false);
 
   /** Read when a save lands, so the callback need not be stable to be current. */
   const announceSaved = useRef(onSaved);
@@ -328,13 +342,17 @@ export function useNote({
       // The newest work on the note, so it takes the place of anything held for
       // it: what was held was put back on screen, and typed on, before this.
       const { vault: inVault, path: at, doc: work, reason } = stranding;
-      unkept.current.set(noteKey(inVault, at), {
+      const why = message(notKept);
+      const held: StrandedEdit = {
         path: at,
         doc: work,
-        reason: `${reason}; ${message(notKept)}`,
+        // Held again after coming back, it already says why.
+        reason: reason.endsWith(why) ? reason : `${reason}; ${why}`,
         modified: null,
         keptAt: 0,
-      });
+      };
+      if (gone.current) reportLost(held);
+      else unkept.current.set(noteKey(inVault, at), held);
     }
   }, []);
 
@@ -723,6 +741,19 @@ export function useNote({
       void handled.then(() => undefined);
     };
   }, [ports.fs, ports.markdown, vault, path, startFrom, holdReadsBehind, keepOrHold]);
+
+  // Declared after the effect above, so on closing its cleanup runs once that
+  // one has handed off what was on screen: whatever the pane holds then, and
+  // whatever a write refused later would have it hold, is lost with it.
+  useEffect(() => {
+    gone.current = false;
+    const held = unkept.current;
+    return () => {
+      gone.current = true;
+      for (const edit of held.values()) reportLost(edit);
+      held.clear();
+    };
+  }, []);
 
   // A property is written as soon as it is changed, through the same save as the
   // body, so an edit in progress is never lost to a property change.

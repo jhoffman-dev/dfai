@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import {
   createVaultPath,
@@ -11,6 +11,7 @@ import type { VaultFsPort } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { useNote } from './use-note.ts';
 import type { Stranding } from './stranded-edits.ts';
+import { thrownFromMicrotasks } from './testing/thrown-from-microtasks.ts';
 
 /** Second attack on PR #729: the pane keeping work it could not hand back (`unkept`). */
 
@@ -204,28 +205,13 @@ describe('second attack on PR #729: work the pane keeps when the keeper throws',
     await settle();
     await settle();
     expect(vault.contents()?.includes('Only copy.') || typed(view, 'Only copy.\n')).toBe(true);
+    // Closing the pane with the keeper still failing: the work goes with it, loudly.
+    const thrown = await thrownFromMicrotasks(async () => {
+      view.unmount();
+      await settle();
+    });
+    expect(thrown).toHaveLength(1);
   });
-
-  /** Runs `act` while catching what is thrown from microtasks, where the pane reports work it lost. */
-  async function thrownFromMicrotasks(during: () => Promise<void>): Promise<unknown[]> {
-    const thrown: unknown[] = [];
-    const original = globalThis.queueMicrotask;
-    const spy = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((task) =>
-      original(() => {
-        try {
-          task();
-        } catch (cause) {
-          thrown.push(cause);
-        }
-      }),
-    );
-    try {
-      await during();
-    } finally {
-      spy.mockRestore();
-    }
-    return thrown;
-  }
 
   it('reports work held in a pane that closes for good, with its path and why, rather than dropping it', async () => {
     const vault = heldVault();
