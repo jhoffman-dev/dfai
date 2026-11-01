@@ -686,9 +686,10 @@ function TypeRow({
   on: boolean;
   onOpen: (name: string) => void;
   onKeyDown: (type: SidebarType, event: KeyboardEvent<HTMLButtonElement>) => void;
-  onMenu: (type: SidebarType, anchor: TypeMenuAnchor) => void;
+  /** Null where the sidebar has no menu to offer: then a hold is only a slow tap, and a right-click is the browser's. */
+  onMenu: ((type: SidebarType, anchor: TypeMenuAnchor) => void) | null;
 }) {
-  const hold = useLongPress((at) => onMenu(type, at));
+  const hold = useLongPress((at) => onMenu?.(type, at));
   return (
     <li className={on ? 'sidebar__item sidebar__item--on' : 'sidebar__item'}>
       <button
@@ -697,13 +698,17 @@ function TypeRow({
         aria-label={`${type.label}, ${type.count === 1 ? '1 note' : `${type.count} notes`}`}
         title={type.label}
         aria-current={on ? 'page' : undefined}
-        {...hold}
+        {...(onMenu === null ? {} : hold)}
         onClick={() => onOpen(type.name)}
         onKeyDown={(event) => onKeyDown(type, event)}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onMenu(type, { x: event.clientX, y: event.clientY });
-        }}
+        onContextMenu={
+          onMenu === null
+            ? undefined
+            : (event) => {
+                event.preventDefault();
+                onMenu(type, { x: event.clientX, y: event.clientY });
+              }
+        }
       >
         <Icon name={sidebarGlyph(type.icon)} className="sidebar__icon" />
         <span className="sidebar__name">{type.label}</span>
@@ -761,7 +766,7 @@ const TypeList = memo(function TypeList({
             on={type.name === openTypeName}
             onOpen={onOpenType}
             onKeyDown={onKeyDown}
-            onMenu={openMenu}
+            onMenu={onEditType === undefined ? null : openMenu}
           />
         ))}
       </ul>
