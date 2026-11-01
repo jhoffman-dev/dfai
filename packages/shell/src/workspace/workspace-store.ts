@@ -158,6 +158,27 @@ export function useCanSplit(store: WorkspaceStore): boolean {
 const roomToSplit = (state: WorkspaceState): boolean =>
   !isWorkspaceSplit(state.workspace) && state.panesFit > 1;
 
+/**
+ * Whether a split pane may be closed from its bar: only while both panes are
+ * on screen. Where one fits, the other is hidden, and closing from a pane you
+ * cannot see is a surprise; it comes back whole when the window is wide.
+ */
+export function useCanClosePane(store: WorkspaceStore): boolean {
+  return useStore(store, (state) => isWorkspaceSplit(state.workspace) && state.panesFit > 1);
+}
+
+/**
+ * Whether `pane` is the first one on screen, where the way back to a hidden
+ * sidebar sits: the first pane, or the focused one while fewer panes fit than
+ * the workspace holds, since the first may then be the hidden one (#658).
+ */
+export function useIsFirstShownPane(store: WorkspaceStore, pane: number): boolean {
+  return useStore(store, (state) => firstShownPane(state) === pane);
+}
+
+const firstShownPane = (state: WorkspaceState): number =>
+  state.workspace.panes.length > state.panesFit ? state.workspace.focused : 0;
+
 /** What the focused pane shows: what the sidebar marks as where you are. */
 export function useFocusedPlace(store: WorkspaceStore): NavigationPlace | null {
   return useStore(store, (state) => activePlace(state.workspace));

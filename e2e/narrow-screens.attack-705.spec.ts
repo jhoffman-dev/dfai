@@ -37,7 +37,7 @@ async function openVault(page: Page): Promise<FakeVault> {
   return vault;
 }
 
-const drawer = (page: Page) => page.getByRole('dialog', { name: 'Vault' });
+const drawer = (page: Page) => page.getByRole('dialog', { name: 'Sidebar' });
 const sidebarNav = (page: Page) => page.getByRole('navigation', { name: 'Vault' });
 const showSidebar = (page: Page) => page.getByRole('button', { name: 'Show sidebar' });
 const pane = (page: Page, which: 1 | 2) => page.getByRole('region', { name: `Pane ${which}` });
@@ -74,19 +74,19 @@ async function focusAThenNarrow(page: Page): Promise<void> {
 }
 
 test.describe('a split folded to one pane', () => {
-  test.fail(
-    'the way to the sidebar is on screen when the pane left showing is the second one',
-    async ({ page }) => {
-      // Finding: `onShowSidebar` is handed to pane 0 only (note-pane-container.tsx:405,
-      // page-tab.tsx:72). With pane 2 focused, pane 1 is the hidden one, and the
-      // only "Show sidebar" button is inside it: a touch screen has no way in.
-      await splitWithTypingInB(page);
-      await page.setViewportSize(IPAD_PORTRAIT);
-      await expect(pane(page, 2)).toBeVisible();
-      await expect(pane(page, 1)).toBeHidden();
-      await expect(showSidebar(page)).toBeVisible();
-    },
-  );
+  test('the way to the sidebar is on screen when the pane left showing is the second one', async ({
+    page,
+  }) => {
+    // Was a finding: the button sat in pane 1 only, hidden with it. It now sits
+    // in the first pane on screen: the focused one, while fewer panes fit.
+    await splitWithTypingInB(page);
+    await page.setViewportSize(IPAD_PORTRAIT);
+    await expect(pane(page, 2)).toBeVisible();
+    await expect(pane(page, 1)).toBeHidden();
+    await expect(showSidebar(page)).toBeVisible();
+    await showSidebar(page).click();
+    await expect(drawer(page)).toBeVisible();
+  });
 
   test("the hidden pane's typing reaches the file while it is hidden", async ({ page }) => {
     const vault = await splitWithTypingInB(page);
@@ -162,13 +162,12 @@ test.describe('flapping across 944px', () => {
     );
   });
 
-  test.fail(
-    'a drawer left open on a narrow window does not reopen over typing after a trip wide',
-    async ({ page }) => {
-      // Finding: `drawerOpen` is not reset when the window goes wide (app.tsx
-      // ~1005). Open the drawer, widen, type in the editor, narrow again: the
-      // drawer comes back unasked, modal over the note being typed in. (In
-      // this run the keystrokes that followed still reached the note.)
+  test('a drawer left open on a narrow window does not reopen over typing after a trip wide', async ({
+    page,
+  }) => {
+    // Was a finding: the drawer's open state outlived the trip wide and came
+    // back unasked, modal over the note. It is reset as the window widens.
+    {
       await page.setViewportSize(IPAD_PORTRAIT);
       const vault = await openVault(page);
       await showSidebar(page).click();
@@ -188,8 +187,8 @@ test.describe('flapping across 944px', () => {
       await expectFile(vault, 'Notes/today.md').toContain(
         'First paragraph with [[Another Note]]. wide narrow',
       );
-    },
-  );
+    }
+  });
 });
 
 test.describe('the drawer', () => {
@@ -246,10 +245,9 @@ test.describe('the drawer', () => {
 test.describe('one pane only', () => {
   test.use({ viewport: IPAD_PORTRAIT });
 
-  test.fail('the peek does not offer "Open in split" where no split can show', async ({ page }) => {
-    // Finding: peek-container.tsx:114 always passes onOpenInSplit; on a narrow
-    // window openPlace turns it into a new tab, so the button says one thing
-    // and does another.
+  test('the peek does not offer "Open in split" where no split can show', async ({ page }) => {
+    // Was a finding: the peek offered a split that opened as a new tab. The
+    // button and its ⌘⇧↵ hint go with the room for a second pane.
     await openVault(page);
     await showSidebar(page).click();
     await sidebarSection(page, 'userSpace').getByRole('treeitem', { name: 'Notes' }).click();

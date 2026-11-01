@@ -34,7 +34,6 @@ import {
   type TagSuggestion,
   type QueryViewSummary,
   type SavedViewSummary,
-  isWorkspaceSplit,
   tabPlace,
   type NavigationPlace,
   type NoteNames,
@@ -104,7 +103,9 @@ import {
   openInPane,
   openPlace,
   splitPane,
+  useCanClosePane,
   useCanSplit,
+  useIsFirstShownPane,
   type WorkspaceStore,
 } from '../workspace/workspace-store.ts';
 import { sameWiringParts, type WorkspaceWiring } from '../workspace/workspace-wiring.tsx';
@@ -350,8 +351,9 @@ function useNoteTab({ wiring, names, chat, pane, tab, hidden }: NoteTabProps) {
   const overlay = useStore(overlays, (state) =>
     hidden ? null : paneOverlayOf(state.overlay, pane),
   );
-  const split = useStore(store, (state) => isWorkspaceSplit(state.workspace));
   const canSplit = useCanSplit(store);
+  const canClose = useCanClosePane(store);
+  const firstShown = useIsFirstShownPane(store, pane);
   const menu = pageMenuOverlay(pane);
   const drawn = useNotePane({
     tabId: tab.id,
@@ -397,12 +399,12 @@ function useNoteTab({ wiring, names, chat, pane, tab, hidden }: NoteTabProps) {
     arrangement: {
       // Which of these a pane offers is the domain's rule; the bar draws a
       // button and a menu item for each it is given. Split only while the
-      // window has room for another pane (#658).
+      // window has room for another pane, Close only while both are on screen (#658).
       ...(canSplit && { onSplit: () => splitPane(store, pane) }),
-      ...(split && { onClose: () => closePane(store, pane) }),
-      // The way back to a hidden sidebar sits where it went: the first
-      // pane's top-left corner.
-      ...(pane === 0 && onShowSidebar !== null && { onShowSidebar }),
+      ...(canClose && { onClose: () => closePane(store, pane) }),
+      // The way back to a hidden sidebar sits where it went: the top-left
+      // corner of the first pane on screen.
+      ...(firstShown && onShowSidebar !== null && { onShowSidebar }),
       history,
       menuOpen: overlay === menu,
       onMenuOpenChange: (open) =>

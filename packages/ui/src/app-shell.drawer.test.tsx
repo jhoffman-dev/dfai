@@ -47,9 +47,9 @@ describe('AppShell sidebar drawer', () => {
     expect(onShowSidebar).toHaveBeenCalledTimes(1);
   });
 
-  it('is a dialog named Vault holding the sidebar, which takes the focus when it opens', async () => {
+  it('is a dialog named Sidebar holding the Vault navigation, which takes the focus when it opens', async () => {
     shell({ open: true });
-    const drawer = screen.getByRole('dialog', { name: 'Vault' });
+    const drawer = screen.getByRole('dialog', { name: 'Sidebar' });
     expect(drawer.className).toContain('shell__drawer');
     expect(screen.getByRole('navigation', { name: 'Vault' })).toBeDefined();
     await waitFor(() => expect(drawer.contains(document.activeElement)).toBe(true));
@@ -59,7 +59,7 @@ describe('AppShell sidebar drawer', () => {
     // Tabbing round the trap itself is held in WebKit (e2e/narrow-screens.spec.ts):
     // jsdom does not keep the focus out of an inert subtree.
     shell({ open: true });
-    const drawer = screen.getByRole('dialog', { name: 'Vault' });
+    const drawer = screen.getByRole('dialog', { name: 'Sidebar' });
     await waitFor(() => expect(drawer.contains(document.activeElement)).toBe(true));
     expect(screen.queryByRole('button', { name: 'In the note' })).toBeNull();
     const behind = screen.getByRole('button', { name: 'In the note', hidden: true });
@@ -71,7 +71,7 @@ describe('AppShell sidebar drawer', () => {
   it('asks to close on Escape', async () => {
     const { onOpenChange } = shell({ open: true });
     await waitFor(() =>
-      expect(screen.getByRole('dialog', { name: 'Vault' }).contains(document.activeElement)).toBe(
+      expect(screen.getByRole('dialog', { name: 'Sidebar' }).contains(document.activeElement)).toBe(
         true,
       ),
     );
@@ -91,7 +91,7 @@ describe('AppShell sidebar drawer', () => {
       />,
     );
     await waitFor(() =>
-      expect(screen.getByRole('dialog', { name: 'Vault' }).contains(document.activeElement)).toBe(
+      expect(screen.getByRole('dialog', { name: 'Sidebar' }).contains(document.activeElement)).toBe(
         true,
       ),
     );

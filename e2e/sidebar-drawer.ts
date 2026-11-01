@@ -19,5 +19,5 @@ export const SIDEBAR_BESIDE_FROM = 944;
 export async function revealSidebar(page: Page): Promise<void> {
   if (await page.getByRole('navigation', { name: 'Vault' }).isVisible()) return;
   await page.getByRole('button', { name: 'Show sidebar' }).first().click();
-  await expect(page.getByRole('dialog', { name: 'Vault' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Sidebar' })).toBeVisible();
 }

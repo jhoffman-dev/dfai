@@ -467,7 +467,7 @@ test('at the window’s 720px minimum ⌘\\ opens the sidebar as a 224px drawer 
   await openVault(page);
   await expect(nav(page)).toHaveCount(0);
   await page.keyboard.press('Meta+Backslash');
-  const drawer = page.getByRole('dialog', { name: 'Vault' });
+  const drawer = page.getByRole('dialog', { name: 'Sidebar' });
   await expect(drawer).toBeVisible();
   await expect(nav(page)).toBeVisible();
   expect(await nav(page).evaluate((element) => element.getBoundingClientRect().width)).toBe(224);

@@ -4,12 +4,15 @@ import { renderHook } from '@testing-library/react';
 import { createVaultPath, MAX_PANES, type NavigationPlace, type Workspace } from '@dfai/domain';
 import {
   createWorkspaceStore,
+  focusPane,
   loadVault,
   openPlace,
   setPanesFit,
   splitPane,
   toggleSplit,
+  useCanClosePane,
   useCanSplit,
+  useIsFirstShownPane,
   usePaneKeys,
   usePanesFit,
   workspaceNow,
@@ -98,6 +101,41 @@ describe('how many panes fit', () => {
     expect(workspaceNow(store)).toBe(before);
     toggleSplit(store);
     expect(workspaceNow(store).panes).toHaveLength(1);
+  });
+
+  it('offers Close pane only while both panes are on screen', () => {
+    const { store } = openOn();
+    const canClose = renderHook(() => useCanClosePane(store));
+    expect(canClose.result.current).toBe(false);
+    toggleSplit(store);
+    canClose.rerender();
+    expect(canClose.result.current).toBe(true);
+    setPanesFit(store, 1);
+    canClose.rerender();
+    expect(canClose.result.current).toBe(false);
+    setPanesFit(store, MAX_PANES);
+    canClose.rerender();
+    expect(canClose.result.current).toBe(true);
+  });
+
+  it('puts the way back to the sidebar in the first pane on screen: the focused one while only it shows', () => {
+    const { store } = openOn();
+    toggleSplit(store);
+    const first = renderHook(() => useIsFirstShownPane(store, 0));
+    const second = renderHook(() => useIsFirstShownPane(store, 1));
+    // Both on screen: the first pane, whichever is focused (the split focused the second).
+    expect(workspaceNow(store).focused).toBe(1);
+    expect([first.result.current, second.result.current]).toEqual([true, false]);
+
+    setPanesFit(store, 1);
+    first.rerender();
+    second.rerender();
+    expect([first.result.current, second.result.current]).toEqual([false, true]);
+
+    focusPane(store, 0);
+    first.rerender();
+    second.rerender();
+    expect([first.result.current, second.result.current]).toEqual([true, false]);
   });
 
   it('tells the panes how many fit and the bar whether it may offer a split', () => {

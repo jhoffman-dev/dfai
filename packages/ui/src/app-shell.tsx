@@ -167,7 +167,7 @@ function DrawerPopup({
 }) {
   const finalFocus = useReturnFocus(returnFocus, { unheld: isPaneFrame });
   return (
-    <Dialog.Popup className="shell__drawer" aria-label="Vault" finalFocus={finalFocus}>
+    <Dialog.Popup className="shell__drawer" aria-label="Sidebar" finalFocus={finalFocus}>
       <nav className="shell__sidebar" aria-label="Vault">
         {children}
       </nav>

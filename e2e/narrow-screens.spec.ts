@@ -1,5 +1,12 @@
 import { expect, test, type Page } from './fixtures.ts';
-import { createVault, installHost, sidebarSection, splitWindow, type FakeVault } from './host.ts';
+import {
+  createVault,
+  expectFile,
+  installHost,
+  sidebarSection,
+  splitWindow,
+  type FakeVault,
+} from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
 
 /**
@@ -29,7 +36,7 @@ async function openVault(page: Page): Promise<FakeVault> {
   return vault;
 }
 
-const drawer = (page: Page) => page.getByRole('dialog', { name: 'Vault' });
+const drawer = (page: Page) => page.getByRole('dialog', { name: 'Sidebar' });
 const sidebarNav = (page: Page) => page.getByRole('navigation', { name: 'Vault' });
 const showSidebar = (page: Page) => page.getByRole('button', { name: 'Show sidebar' });
 const pane = (page: Page, which: 1 | 2) => page.getByRole('region', { name: `Pane ${which}` });
@@ -160,7 +167,7 @@ test('a split made on a wide window folds to the focused pane and comes back who
   page,
 }) => {
   await page.setViewportSize(DESKTOP);
-  await openVault(page);
+  const vault = await openVault(page);
   await sidebarSection(page, 'userSpace').getByRole('treeitem', { name: 'Notes' }).click();
   await sidebarSection(page, 'userSpace')
     .getByRole('treeitem', { name: 'today', exact: true })
@@ -183,9 +190,18 @@ test('a split made on a wide window folds to the focused pane and comes back who
   await page.setViewportSize(IPAD_PORTRAIT);
   await expect(pane(page, 1)).toBeVisible();
   await expect(pane(page, 2)).toBeHidden();
-  // Hidden, not gone: the pane is still in the page with its note.
+  // Hidden, not gone: the pane is still in the page with its note, and its
+  // typing still reaches the file.
   await expect(page.locator('section.pane[hidden]')).toHaveCount(1);
+  await expectFile(vault, 'Notes/Another Note.md').toContain('The target. Kept while narrow.');
   await expect(sidebarNav(page)).toHaveCount(0);
+  // A split that cannot be seen whole offers neither a split nor a close.
+  await expect(page.getByRole('button', { name: /^Split right/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Close pane/ })).toHaveCount(0);
+  await pane(page, 1).getByRole('button', { name: 'More' }).click();
+  await expect(page.getByRole('menuitem', { name: /^Save now/ })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /^Close pane/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expectNoSidewaysScroll(page);
 
   await page.setViewportSize(DESKTOP);
@@ -193,6 +209,13 @@ test('a split made on a wide window folds to the focused pane and comes back who
   await expect(pane(page, 2).getByText('The target. Kept while narrow.')).toBeVisible();
   await expect(sidebarNav(page)).toBeVisible();
   await expect(drawer(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Close pane/ }).first()).toBeVisible();
+  // The hidden pane's editor kept its history: ⌘Z takes the typing back.
+  await pane(page, 2).getByText('The target. Kept while narrow.').click();
+  await page.keyboard.press('Meta+z');
+  await expect(pane(page, 2).getByText('The target. Kept while narrow.')).toHaveCount(0);
+  await expect(pane(page, 2).getByText('The target.', { exact: true })).toBeVisible();
+  await expectFile(vault, 'Notes/Another Note.md').not.toContain('Kept while narrow.');
 });
 
 test('an iPad on its side keeps the sidebar beside the work and may split', async ({ page }) => {

@@ -358,7 +358,7 @@ test.describe('a narrow window, asked for the aside twice (#387 verification)', 
     await openNote(page, 'Ship it');
     await expect(leftSidebar(page)).toHaveCount(0);
     await page.keyboard.press('Meta+Shift+KeyJ');
-    await expect(page.getByRole('dialog', { name: 'Vault' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Sidebar' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Show sidebar' }).first()).toBeVisible();
     await expect(chat(page)).toHaveCount(0);
   });

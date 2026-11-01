@@ -1003,6 +1003,14 @@ function AppWindow({
   const layout = useShellLayout();
   const compact = layout.sidebar === 'drawer';
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // A drawer left open when the window went wide is not waiting to come back:
+  // it would open unasked, modal, over whatever is being typed. Reset as the
+  // layout flips, in the render that sees it, so no frame draws it open.
+  const [drawerLayout, setDrawerLayout] = useState(compact);
+  if (drawerLayout !== compact) {
+    setDrawerLayout(compact);
+    if (drawerOpen) setDrawerOpen(false);
+  }
   const sidebarBeside = sidebarOpen && !compact;
   const toggleSidebar = useCallback(
     () => (compact ? setDrawerOpen((was) => !was) : setSidebarOpen((was) => !was)),
