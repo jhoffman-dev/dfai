@@ -67,10 +67,10 @@ describe('useLongPress', () => {
     expect(onLongPress).toHaveBeenCalledExactlyOnceWith({ x: 40, y: 300 });
 
     fireEvent.pointerUp(row, finger(40, 300));
-    fireEvent.click(row);
+    fireEvent.click(row, { detail: 1 });
     expect(onClick).not.toHaveBeenCalled();
     // The next tap is a tap again.
-    fireEvent.click(row);
+    fireEvent.click(row, { detail: 1 });
     expect(onClick).toHaveBeenCalledOnce();
   });
 
@@ -81,7 +81,7 @@ describe('useLongPress', () => {
     fireEvent.pointerDown(row, finger(40, 300));
     clock.advance(LONG_PRESS.holdMs - 50);
     fireEvent.pointerUp(row, finger(40, 300));
-    fireEvent.click(row);
+    fireEvent.click(row, { detail: 1 });
     clock.advance(LONG_PRESS.holdMs);
     expect(onLongPress).not.toHaveBeenCalled();
     expect(onClick).toHaveBeenCalledOnce();
@@ -116,8 +116,41 @@ describe('useLongPress', () => {
     fireEvent.pointerDown(row, { ...finger(40, 300), pointerType: 'mouse' });
     clock.advance(LONG_PRESS.holdMs * 2);
     fireEvent.pointerUp(row, { ...finger(40, 300), pointerType: 'mouse' });
-    fireEvent.click(row);
+    fireEvent.click(row, { detail: 1 });
     expect(onLongPress).not.toHaveBeenCalled();
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  // A hold does not always end in a click: the system's own long press can
+  // cancel the touch, or a contextmenu comes in the click's place. What the
+  // hold left behind must not swallow a later, unrelated click.
+  it('swallows nothing of the mouse after a hold that raised no click', () => {
+    const clock = fixedClock();
+    const { row, onLongPress, onClick } = show(clock.now);
+
+    fireEvent.pointerDown(row, finger(40, 300));
+    clock.advance(LONG_PRESS.holdMs);
+    expect(onLongPress).toHaveBeenCalledOnce();
+    fireEvent.pointerCancel(row);
+
+    const mouse = { ...finger(40, 300), pointerType: 'mouse' };
+    fireEvent.pointerDown(row, mouse);
+    fireEvent.pointerUp(row, mouse);
+    fireEvent.click(row, { detail: 1 });
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('swallows no keyboard click after a hold that raised no click', () => {
+    const clock = fixedClock();
+    const { row, onLongPress, onClick } = show(clock.now);
+
+    fireEvent.pointerDown(row, finger(40, 300));
+    clock.advance(LONG_PRESS.holdMs);
+    expect(onLongPress).toHaveBeenCalledOnce();
+    fireEvent.pointerUp(row, finger(40, 300));
+
+    // Enter or Space on the focused row: a click with no press counted.
+    fireEvent.click(row, { detail: 0 });
     expect(onClick).toHaveBeenCalledOnce();
   });
 
