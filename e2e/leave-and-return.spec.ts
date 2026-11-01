@@ -22,10 +22,15 @@ test('typing, switching away and back before the save lands, and typing on loses
   await expect(page.getByText('Unsaved')).toBeVisible();
 
   // The save on the way out is held, so the way back is begun before it lands.
+  const writesBefore = host.writesTo('one.md');
   const release = host.holdWrites('one.md');
   await page.getByRole('treeitem', { name: 'two', exact: true }).click();
   await expect(page.getByRole('article', { name: 'two' })).toBeVisible();
   await page.getByRole('treeitem', { name: 'one', exact: true }).click();
+  // The write on the way out has reached the host and is held, and the pane
+  // is waiting on it rather than showing the note as it was before it.
+  await expect.poll(() => host.writesTo('one.md')).toBe(writesBefore + 1);
+  await expect(page.getByText('Reading the note…')).toBeVisible();
   release();
   await expectFile(vault, 'one.md').toBe('# One\n\nFirst note. Edited.\n');
 
