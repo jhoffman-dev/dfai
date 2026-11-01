@@ -7,6 +7,7 @@ import {
   heldNameLike,
   heldPathRefusal,
   heldPlaceRefusal,
+  heldTrash,
   heldWalk,
   type HeldVault,
 } from './held-vault.ts';
@@ -102,5 +103,22 @@ describe('a vault held as a map, by the host’s rules', () => {
     expect(heldWalk(seeded, { skipDirectories: [], maxDepth: 1 })).toEqual(['Welcome.md']);
     expect(heldWalk(seeded, { skipDirectories: ['Old'], maxDepth: 9 })).toEqual(['Welcome.md']);
     expect(heldWalk(seeded, { skipDirectories: ['Projects/Old'], maxDepth: 9 })).toHaveLength(2);
+  });
+});
+
+describe('the vault itself is never the entry a write is of (Rust: "a note needs a name")', () => {
+  it('refuses the root as a new entry, a move’s either end, a trash, or bytes', () => {
+    expect(heldPlaceRefusal(seeded, { path: '', taken: 'taken' })).toBe(HELD_REFUSAL.noName);
+    expect(heldMove(seeded, { from: '', to: 'Elsewhere' })).toEqual({
+      refused: HELD_REFUSAL.noName,
+    });
+    expect(heldMove(seeded, { from: 'Welcome.md', to: '' })).toEqual({
+      refused: HELD_REFUSAL.noName,
+    });
+    expect(heldTrash(seeded, '')).toEqual({ refused: HELD_REFUSAL.noName });
+    expect(heldTrash(seeded, 'Gone.md')).toEqual({ refused: HELD_REFUSAL.noEntry });
+    expect(heldTrash(seeded, 'Projects')).toEqual({ files: ['Projects/Old/Plan.md'], folders: [] });
+    const bytesAt = { path: '', length: 1, offset: 0, replace: true, sizeThere: null };
+    expect(heldBinaryWrite(seeded, bytesAt)).toEqual({ refused: HELD_REFUSAL.noName });
   });
 });

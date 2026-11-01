@@ -46,6 +46,8 @@ interface Interception {
 export interface FakeGitHubOptions {
   readonly files: Readonly<Record<string, string | Uint8Array>>;
   readonly where?: GitHubVaultRepository;
+  /** Symbolic links, by path, to the target each names: blobs of mode 120000. */
+  readonly links?: Readonly<Record<string, string>>;
   /** The repositories the App's one installation reaches; the vault's alone by default. */
   readonly reached?: readonly GitHubVaultRepository[];
 }
@@ -79,10 +81,10 @@ export class FakeGitHub {
   private made = 0;
   private readonly ready: Promise<void>;
 
-  constructor({ files, where = FAKE_VAULT, reached = [where] }: FakeGitHubOptions) {
+  constructor({ files, links = {}, where = FAKE_VAULT, reached = [where] }: FakeGitHubOptions) {
     this.where = where;
     this.reached = reached;
-    this.ready = this.seed(files);
+    this.ready = this.seed(files, links);
   }
 
   /** `fetch`, as the vault is given it. */
@@ -187,10 +189,12 @@ export class FakeGitHub {
     return this.received.map(({ method, path }) => `${method} ${path.replace(prefix, '')}`);
   }
 
-  private async seed(files: FakeGitHubOptions['files']) {
+  private async seed(files: FakeGitHubOptions['files'], links: Readonly<Record<string, string>>) {
     const entries = new Map<string, { mode: string; sha: string }>();
     for (const [path, content] of Object.entries(files))
       entries.set(path, { mode: '100644', sha: await this.store(content) });
+    for (const [path, target] of Object.entries(links))
+      entries.set(path, { mode: '120000', sha: await this.store(target) });
     this.head = await this.commit(await this.putTree(entries), [], 'Seed');
   }
 

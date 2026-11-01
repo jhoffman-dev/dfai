@@ -434,3 +434,68 @@ describe('the GitHub vault refuses an answer it cannot trust', () => {
     expect(github.received).toEqual([]);
   });
 });
+
+describe('the GitHub vault keeps git’s own placeholders and links out of the way', () => {
+  it('refuses any write, create or move onto a `.gitkeep`, so nothing vanishes from the listing', async () => {
+    const { github, fs, vault } = seeded();
+    await fs.createFolder({ vault, path: p('Inbox') });
+    await fs.createNote({ vault, path: p('Inbox/x.md'), contents: 'kept' });
+    const head = await github.headSha();
+    const kept = p('Inbox/.gitkeep');
+    const fresh = p('Projects/.gitkeep');
+    await expect(fs.moveEntry({ vault, from: p('Inbox/x.md'), to: kept })).rejects.toThrow(
+      '.gitkeep',
+    );
+    await expect(
+      fs.writeBinaryFile({
+        vault,
+        path: kept,
+        bytes: new Uint8Array([1]),
+        offset: 0,
+        replace: true,
+      }),
+    ).rejects.toThrow('.gitkeep');
+    await expect(fs.createNote({ vault, path: fresh, contents: 'x' })).rejects.toThrow('.gitkeep');
+    await expect(fs.createFolder({ vault, path: fresh })).rejects.toThrow('.gitkeep');
+    await expect(
+      fs.writeBinaryFile({ vault, path: fresh, bytes: new Uint8Array([1]), offset: 0 }),
+    ).rejects.toThrow('.gitkeep');
+    await expect(fs.moveEntry({ vault, from: kept, to: p('Inbox/y.md') })).rejects.toThrow(
+      '.gitkeep',
+    );
+    expect(await github.headSha()).toBe(head);
+    expect((await fs.listDirectory(p('Inbox'))).map((entry) => entry.name)).toEqual(['x.md']);
+  });
+
+  it('neither lists a link as a note nor writes over one, and carries it with its folder', async () => {
+    const github = new FakeGitHub({ files: SEED, links: { 'Projects/Alias.md': '../Welcome.md' } });
+    const { fs, vault } = vaultOver(github);
+    const notes = (await fs.listNotes({ skipDirectories: [], maxDepth: 5 })).map(
+      (note) => note.path,
+    );
+    expect(notes.sort()).toEqual(['Projects/Larkspur.md', 'Welcome.md']);
+    expect((await fs.listDirectory(p('Projects'))).map((entry) => entry.name)).toEqual([
+      'Larkspur.md',
+    ]);
+    const head = await github.headSha();
+    const alias = p('Projects/Alias.md');
+    await expect(
+      fs.writeTextFile({ vault, path: alias, contents: 'through', expectedModified: null }),
+    ).rejects.toThrow(VaultAccessError);
+    await expect(fs.createNote({ vault, path: alias, contents: 'over' })).rejects.toThrow(
+      'already exists',
+    );
+    await expect(
+      fs.writeBinaryFile({
+        vault,
+        path: alias,
+        bytes: new Uint8Array([1]),
+        offset: 0,
+        replace: true,
+      }),
+    ).rejects.toThrow(VaultAccessError);
+    expect(await github.headSha()).toBe(head);
+    await fs.moveEntry({ vault, from: p('Projects'), to: p('Areas') });
+    expect(await github.textAt('Areas/Alias.md')).toBe('../Welcome.md');
+  });
+});
