@@ -3,9 +3,12 @@ import {
   EntryChangedError,
   HOST_CHANGED_ON_DISK,
   isChangedOnDiskRefusal,
+  toIndexedNote,
   VaultAccessError,
+  writtenAt,
 } from '@dfai/application';
 import { describe, expect, it } from 'vitest';
+import { remarkMarkdown } from '../markdown/markdown-port.ts';
 import { GitHubRefusedError } from './github-api.ts';
 import { FakeGitHub, type Received } from './fake-github.test-support.ts';
 import { vaultOver } from './github-vault.test-support.ts';
@@ -59,6 +62,7 @@ describe('the GitHub vault: round trips, one commit each', () => {
     expect(await fs.readTextFile(p('Welcome.md'))).toEqual({
       text: '# Welcome back\n',
       modified: after,
+      modifiedAt: null,
     });
     expect(after).not.toBe(modified);
   });
@@ -97,6 +101,7 @@ describe('the GitHub vault: round trips, one commit each', () => {
       name: 'Welcome.md',
       path: 'Welcome.md',
       modified: read.modified,
+      modifiedAt: null,
       size: 10,
     });
   });
@@ -497,5 +502,32 @@ describe('the GitHub vault keeps git’s own placeholders and links out of the w
     expect(await github.headSha()).toBe(head);
     await fs.moveEntry({ vault, from: p('Projects'), to: p('Areas') });
     expect(await github.textAt('Areas/Alias.md')).toBe('../Welcome.md');
+  });
+});
+
+describe('the GitHub vault: no file times (#720, ADR-0053)', () => {
+  it('reports a version as `modified`, and its time as unknown, on every read', async () => {
+    const { fs } = seeded();
+    const contents = await fs.readTextFile(p('Welcome.md'));
+    const [file] = await fs.readNotes(['Welcome.md']);
+    const listed = (await fs.listNotes({ skipDirectories: [], maxDepth: 8 })).find(
+      (note) => note.path === 'Welcome.md',
+    );
+    for (const read of [contents, file!, listed!]) {
+      expect(read.modified).toBe(contents.modified);
+      expect(writtenAt(read)).toBeNull();
+    }
+  });
+
+  it('hands the index the unknown time beside the version, for its queries to read', async () => {
+    const { fs } = seeded();
+    const [file] = await fs.readNotes(['Welcome.md']);
+    const note = toIndexedNote({
+      file: file!,
+      notePaths: [p('Welcome.md')],
+      markdown: remarkMarkdown,
+    });
+    expect(note.modified).toBe(file!.modified);
+    expect(writtenAt(note)).toBeNull();
   });
 });
