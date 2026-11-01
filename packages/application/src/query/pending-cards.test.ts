@@ -172,7 +172,7 @@ describe('rowsAsPending', () => {
 });
 
 describe('resultAsPending (#300)', () => {
-  const READ = { at: 1, indexKey: 'a' };
+  const READ = { at: 1, indexKey: 'ready:1' };
   const result = {
     columns: ['path', 'title', 'status', 'phase'],
     rows: [
@@ -202,8 +202,8 @@ describe('resultAsPending (#300)', () => {
   });
 
   it('lets a cell go once a read stands for its write', () => {
-    const landed = { at: 1, indexKey: 'a' };
-    const later = { at: 2, indexKey: 'b' };
+    const landed = { at: 1, indexKey: 'ready:1' };
+    const later = { at: 2, indexKey: 'ready:2' };
     const shown = resultAsPending({
       result,
       pending: [edited({ status: 'done' }, landed)],
