@@ -70,36 +70,65 @@ function heldWritesVault() {
 }
 
 describe('a pane back on a note before the write it made on the way out has landed (#727)', () => {
-  it(
-    'saves its next edit without the host refusing the bytes the pane itself wrote',
-    async () => {
-      const vault = heldWritesVault();
-      const view = renderHook(
-        ({ path }: { path: VaultPath }) =>
-          useNote({ ports: { fs: vault.fs, markdown: remarkMarkdown }, vault: THIS_VAULT, path }),
-        { initialProps: { path: NOTE as VaultPath } },
-      );
-      await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
-      act(() => view.result.current.changeDoc(docOf('Typed before leaving.\n')));
+  it('saves its next edit without the host refusing the bytes the pane itself wrote', async () => {
+    const vault = heldWritesVault();
+    const view = renderHook(
+      ({ path }: { path: VaultPath }) =>
+        useNote({ ports: { fs: vault.fs, markdown: remarkMarkdown }, vault: THIS_VAULT, path }),
+      { initialProps: { path: NOTE as VaultPath } },
+    );
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Typed before leaving.\n')));
 
-      vault.hold();
-      view.rerender({ path: OTHER });
-      await settle();
-      view.rerender({ path: NOTE });
-      await settle();
-      vault.release();
-      await settle();
-      await settle();
-      expect(vault.contents()).toContain('Typed before leaving.');
-      // Back on the note, the pane shows the typing it left with, not the text from before it.
-      expect(view.result.current.state).toMatchObject({ kind: 'ready', doc: docOf('Typed before leaving.\n') });
+    vault.hold();
+    view.rerender({ path: OTHER });
+    await settle();
+    view.rerender({ path: NOTE });
+    await settle();
+    vault.release();
+    await settle();
+    await settle();
+    expect(vault.contents()).toContain('Typed before leaving.');
+    // Back on the note, the pane shows the typing it left with, not the text from before it.
+    expect(view.result.current.state).toMatchObject({
+      kind: 'ready',
+      doc: docOf('Typed before leaving.\n'),
+    });
 
-      act(() => view.result.current.changeDoc(docOf('Typed before leaving.\n\nAnd more.\n')));
-      act(() => view.result.current.save());
-      await settle();
+    act(() => view.result.current.changeDoc(docOf('Typed before leaving.\n\nAnd more.\n')));
+    act(() => view.result.current.save());
+    await settle();
 
-      expect(view.result.current.state).toMatchObject({ kind: 'ready', saveError: null });
-      expect(vault.contents()).toContain('And more.');
-    },
-  );
+    expect(view.result.current.state).toMatchObject({ kind: 'ready', saveError: null });
+    expect(vault.contents()).toContain('And more.');
+  });
+
+  it('shows a save still landing, not the text from before it, on the way back', async () => {
+    const vault = heldWritesVault();
+    const view = renderHook(
+      ({ path }: { path: VaultPath }) =>
+        useNote({ ports: { fs: vault.fs, markdown: remarkMarkdown }, vault: THIS_VAULT, path }),
+      { initialProps: { path: NOTE as VaultPath } },
+    );
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Saved before leaving.\n')));
+
+    vault.hold();
+    act(() => view.result.current.save());
+    await settle();
+    view.rerender({ path: OTHER });
+    await settle();
+    view.rerender({ path: NOTE });
+    await settle();
+    vault.release();
+    await settle();
+    await settle();
+
+    expect(vault.contents()).toContain('Saved before leaving.');
+    expect(view.result.current.state).toMatchObject({
+      kind: 'ready',
+      saveError: null,
+      doc: docOf('Saved before leaving.\n'),
+    });
+  });
 });
