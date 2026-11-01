@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import {
   createVaultPath,
@@ -204,5 +204,64 @@ describe('second attack on PR #729: work the pane keeps when the keeper throws',
     await settle();
     await settle();
     expect(vault.contents()?.includes('Only copy.') || typed(view, 'Only copy.\n')).toBe(true);
+  });
+
+  /** Runs `act` while catching what is thrown from microtasks, where the pane reports work it lost. */
+  async function thrownFromMicrotasks(during: () => Promise<void>): Promise<unknown[]> {
+    const thrown: unknown[] = [];
+    const original = globalThis.queueMicrotask;
+    const spy = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((task) =>
+      original(() => {
+        try {
+          task();
+        } catch (cause) {
+          thrown.push(cause);
+        }
+      }),
+    );
+    try {
+      await during();
+    } finally {
+      spy.mockRestore();
+    }
+    return thrown;
+  }
+
+  it('reports work held in a pane that closes for good, with its path and why, rather than dropping it', async () => {
+    const vault = heldVault();
+    const kept = new Map<VaultPath, StrandedEdit>();
+    const view = pane(vault, failingKeeper(kept, [1, 2, 3, 4]), kept);
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Only copy.\n')));
+    await leaveAndBeRefused(vault, view, '# Note\n\nOutside.\n');
+    expect(kept.size).toBe(0);
+
+    const thrown = await thrownFromMicrotasks(async () => {
+      view.unmount();
+      await settle();
+    });
+    expect(thrown).toHaveLength(1);
+    expect(String(thrown[0])).toMatch(/note\.md/);
+    expect(String(thrown[0])).toMatch(/could not keep the work/);
+  });
+
+  it('reports work refused after its pane closed, when the keeper cannot keep it either', async () => {
+    const vault = heldVault();
+    const kept = new Map<VaultPath, StrandedEdit>();
+    const view = pane(vault, failingKeeper(kept, [1, 2, 3, 4]), kept);
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('Only copy.\n')));
+    vault.hold();
+
+    const thrown = await thrownFromMicrotasks(async () => {
+      view.unmount();
+      await settle();
+      vault.writeOutside('# Note\n\nOutside.\n');
+      vault.release();
+      await settle();
+      await settle();
+    });
+    expect(thrown).toHaveLength(1);
+    expect(String(thrown[0])).toMatch(/note\.md/);
   });
 });
