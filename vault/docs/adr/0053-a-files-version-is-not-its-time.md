@@ -33,7 +33,9 @@ The readers that take `modified` as a time:
   This writes too.
 - **The fresh-pull gate's arrival** (`arrivedAt`): a file must be older than
   the last completed pull. The gate only reads times in a vault that syncs by
-  git, which is desktop-only (`syncByGit`), but it guards writes.
+  git, which is desktop-only (`syncByGit`), but it guards writes. The
+  meetings-waiting count dates each waiting meeting against that pull the
+  same way (`readWaitingMeetings` → `pulledAfterArrival`).
 - **Staleness and order** on Today and in the weekly review (`ReviewTask`
   rows from the index): waiting days, "untouched for more than N days",
   oldest first.
@@ -42,8 +44,11 @@ The readers that take `modified` as a time:
   dates, the assistant's waiting days, link hints, done this week. None of
   these writes.
 - **Ordering only**, of things read straight from the vault: mention
-  suggestions, proposals, chat sessions, and `use-note`'s pick between the
-  write it landed and a later read.
+  suggestions, proposals, chat sessions.
+- **`use-note`'s pick** between the write it landed and the note it holds
+  compared the two `modified`s with `>=`. That orders versions, and in the
+  GitHub vault a queued save would often start from the older read and be
+  refused.
 
 ADR-0051's map holds none of the writing readers to the desktop: automations
 without a Claude step run on the web (`ruleHeldByPlatform` holds only Claude
@@ -81,7 +86,11 @@ for an unknown time: **it is never "changed since" anything.** So:
 
 - the catch-up finds nothing missed (as when the rule's file cannot be read);
 - `ruleSince` is null, so every meeting is a backfill: proposals only;
-- the fresh-pull gate stays shut on an arrival it cannot date;
+- the fresh-pull gate stays shut on an arrival it cannot date, and a waiting
+  meeting that cannot be dated is left for the next pull;
+- `use-note` decides by the pane's own order, never by `modified`: a held
+  `landed` is always the newer, since a read begun after it lets it go and a
+  read begun before it is not shown. The desktop's choices are the same;
 - a task with an unknown time is never stale, has no waiting days, and sorts
   after the tasks whose time is known.
 
@@ -99,8 +108,6 @@ every write in the app and the Rust host, for no change in behaviour.
   its weekly review lists no stale tasks.
 - **Ordering by time** of things read from the vault (mentions, proposals,
   chat sessions) follows the version: stable, but not by recency.
-- `use-note` may start a save from the older of two reads. The save is then
-  refused, never laid over a change, since refusals compare versions exactly.
 
 ## Consequences
 
@@ -108,8 +115,16 @@ every write in the app and the Rust host, for no change in behaviour.
   manifest, for change detection. Its time column, which every query reads
   as `files.modified`, holds `writtenAt(note)`, which is NULL for the GitHub
   vault. `reviewTask` already reads NULL as unknown. Before #666 ships, the
-  other row readers need the same care: `inboxKeyOf` (`Number(null)` is 0),
-  and the library's and `research-text`'s dates (unknown, not 1970).
+  other row readers need the same care:
+  - `inboxKeyOf` (`Number(null)` is 0);
+  - the library's and `research-text`'s dates (unknown, not 1970);
+  - `daysWaited(row.modified)` in `assistant-items.ts` (a NULL date there
+    must read as no wait, not as a day);
+  - `MAX(files.modified)` in the link hints (NULL rows rank last, not first);
+  - the done query's range in `review-query.ts` (`f.modified >= ? AND
+f.modified < ?`): NULL falls outside it, so a task done on the web is
+    never "done this week" until the index can date it.
+    The session sample vault already reports `modifiedAt: null`.
 - Wiring the GitHub vault into `composeWeb` is no longer blocked by this.
 - A new reader of a file's time must use `writtenAt` and say what an unknown
   time means for it. Anything that writes must treat it as "nothing changed".

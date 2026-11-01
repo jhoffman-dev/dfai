@@ -233,7 +233,15 @@ function reads(session: SessionFiles) {
         const text = held === undefined ? null : textOf(held);
         return held === undefined || text === null
           ? []
-          : [{ path, text, modified: held.modified, modifiedAt: null, size: bytesOf(held).byteLength }];
+          : [
+              {
+                path,
+                text,
+                modified: held.modified,
+                modifiedAt: null,
+                size: bytesOf(held).byteLength,
+              },
+            ];
       }),
     readTextFile: async (path: VaultPath) => readText(path),
     readBinaryFile: async (path: VaultPath) => bytesOf(session.held(path)).slice().buffer,

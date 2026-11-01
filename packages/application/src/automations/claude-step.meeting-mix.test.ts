@@ -170,7 +170,9 @@ function setUp({ ruleTimeUnknown = false }: { ruleTimeUnknown?: boolean } = {}) 
     ...vault.ports.fs,
     readTextFile: async (path) => {
       const read = await vault.ports.fs.readTextFile(path);
-      return ruleTimeUnknown && path === RULE_FILE ? { ...read, modified: 5, modifiedAt: null } : read;
+      return ruleTimeUnknown && path === RULE_FILE
+        ? { ...read, modified: 5, modifiedAt: null }
+        : read;
     },
   };
   const run = () =>
