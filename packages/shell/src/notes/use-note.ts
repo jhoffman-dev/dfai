@@ -421,21 +421,18 @@ export function useNote({
   );
 
   /**
-   * What a write of `held` starts from: what the last write left, unless the
-   * note was read since at a later time. A tie goes to the write, as a read
-   * begun after it has already let it go: on a disk that keeps the time to
-   * the second, a write within the second leaves the time as it was, and
-   * starting from the older read would have the save refused for the bytes
-   * the pane itself wrote (#245).
+   * What a write of `held` starts from: what the last write left, while the
+   * pane holds it. That is decided by the pane's own order, never by
+   * comparing `modified`, which is a version and only ever equal or not
+   * (ADR-0053): a read begun after the write lets it go, and a read begun
+   * before it is not shown, so a held `landed` is always the newer. On a
+   * disk that keeps whole seconds a write can leave the time as it was
+   * (#245), and in the GitHub vault a later version can be smaller (#720);
+   * neither changes which came last.
    */
   const startFrom = useCallback((held: OpenNote, inVault: string | null): OpenNote => {
     const { landed, landedIn } = writes.current;
-    return landed !== null &&
-      landedIn === inVault &&
-      landed.path === held.path &&
-      landed.modified >= held.modified
-      ? landed
-      : held;
+    return landed !== null && landedIn === inVault && landed.path === held.path ? landed : held;
   }, []);
 
   const write = useCallback(

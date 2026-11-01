@@ -1,7 +1,18 @@
 import {
   createVaultPath,
-  parentVaultPath,
+  HELD_REFUSAL,
+  heldBinaryWrite,
+  heldChildren,
+  heldFileRefusal,
+  heldFilesWithExtension,
+  heldMove,
+  heldPlaceRefusal,
+  heldTrash,
+  heldWalk,
+  isHeldNote,
   vaultPathName,
+  type HeldVault,
+  type Refused,
   type VaultEntry,
   type VaultPath,
 } from '@dfai/domain';
@@ -36,18 +47,25 @@ import {
  * - A walk skips an entry, file or folder, by its own name at any level;
  *   notes are `.md` in any case, and a file listing is sorted.
  *
- * Nothing outlives a reload until the GitHub vault takes its place.
+ * The rules themselves are the domain's (`held-vault.ts`), shared with the
+ * GitHub vault; this holds the files. Nothing outlives a reload until the
+ * GitHub vault takes its place.
  */
 
 /** A file's text or bytes, and its version, which stands in for a time on disk. */
 type Held = { readonly content: string | Uint8Array; readonly modified: number };
 
-/** The host's ceiling on a file written as bytes (`MAX_BINARY_BYTES` in vault.rs). */
-export const MAX_BINARY_BYTES = 32 * 1024 * 1024;
-
 const refuse = (message: string): never => {
   throw new VaultAccessError(message);
 };
+/** Throws the host's refusal, when there is one. */
+const refuseIf = (refusal: string | null) => {
+  if (refusal !== null) refuse(refusal);
+};
+function unlessRefused<T extends object>(answer: Refused | T): T {
+  if ('refused' in answer) return refuse(answer.refused);
+  return answer;
+}
 const encoder = new TextEncoder();
 const bytesOf = ({ content }: Held) =>
   typeof content === 'string' ? encoder.encode(content) : content;
@@ -55,32 +73,15 @@ const bytesOf = ({ content }: Held) =>
 function textOf({ content }: Held): string | null {
   if (typeof content === 'string') return content;
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(content);
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(content);
   } catch {
     // Not UTF-8: the host refuses it as text too, and the caller says so.
     return null;
   }
 }
-const isUnder = (path: string, folder: string) => folder === '' || path.startsWith(`${folder}/`);
-/** A note, as the host's walk knows one: `.md` in any case. */
-const isNoteName = (path: string) => path.toLowerCase().endsWith('.md');
-
-/** The path checks every call makes first, as `resolve` in vault.rs does. */
-function checked(path: string): string {
-  if (path.includes('\0')) refuse('path contains a null byte');
-  const segments = path.split('/');
-  if (
-    path !== '' &&
-    segments.some((segment) => segment === '' || segment === '.' || segment === '..')
-  )
-    refuse(`path segment in ${JSON.stringify(path)} is not allowed`);
-  if (segments.some((segment) => segment.toLowerCase() === '.git'))
-    refuse("git's own folder is not part of the vault");
-  return path;
-}
 
 /** The files and folders of one session, and the counter their versions come from. */
-class SessionFiles {
+class SessionFiles implements HeldVault<Held> {
   readonly files = new Map<string, Held>();
   readonly folders = new Set<string>();
   private version = 0;
@@ -95,52 +96,10 @@ class SessionFiles {
     return modified;
   }
 
-  isFolder(path: string): boolean {
-    if (path === '' || this.folders.has(path)) return true;
-    return [...this.files.keys()].some((file) => isUnder(file, path));
-  }
-
-  has(path: string): boolean {
-    return this.files.has(path) || this.isFolder(path);
-  }
-
-  /** What is at a name that only differs from `path` in case, if anything: the Mac's disk sees one name. */
-  sameNameAs(path: string): string | null {
-    const folded = path.toLowerCase();
-    const names = [...this.files.keys(), ...this.folders, ...this.impliedFolders()];
-    return names.find((name) => name.toLowerCase() === folded) ?? null;
-  }
-
   held(path: string): Held {
-    const held = this.files.get(checked(path));
-    if (held === undefined)
-      return refuse(this.isFolder(path) ? 'that is a directory' : 'no such entry');
-    return held;
+    refuseIf(heldFileRefusal(this, path));
+    return this.files.get(path)!;
   }
-
-  /** Every file and folder at `path` or under it, which a move or a trash takes with it. */
-  under(path: string): { files: string[]; folders: string[] } {
-    const within = (other: string) => other === path || isUnder(other, path);
-    return {
-      files: [...this.files.keys()].filter(within),
-      folders: [...this.folders].filter(within),
-    };
-  }
-
-  private impliedFolders(): string[] {
-    return [...this.files.keys()].flatMap((file) => {
-      const segments = file.split('/').slice(0, -1);
-      return segments.map((_, index) => segments.slice(0, index + 1).join('/'));
-    });
-  }
-}
-
-/** Where a new entry may go: its folder there, and no name there that differs only in case. */
-function placeFor(session: SessionFiles, path: string, taken: string): string {
-  checked(path);
-  if (!session.isFolder(parentVaultPath(path as VaultPath))) refuse('that folder does not exist');
-  if (session.sameNameAs(path) !== null) refuse(taken);
-  return path;
 }
 
 const directory = (path: string): VaultEntry => ({
@@ -158,36 +117,9 @@ const fileEntry = (path: string, held: Held): VaultEntry => ({
 
 /** The folders' and files' names directly inside `folder`, by name, as the host lists them. */
 function listDirectory(session: SessionFiles, folder: VaultPath): VaultEntry[] {
-  checked(folder);
-  if (!session.isFolder(folder))
-    refuse(session.files.has(folder) ? 'that is not a folder' : 'no such entry');
-  const childOf = (path: string) => {
-    const first = (folder === '' ? path : path.slice(folder.length + 1)).split('/')[0]!;
-    return folder === '' ? first : `${folder}/${first}`;
-  };
-  const entries = new Map<string, VaultEntry>();
-  for (const [path, held] of session.files) {
-    if (!isUnder(path, folder)) continue;
-    const child = childOf(path);
-    entries.set(child, child === path ? fileEntry(path, held) : directory(child));
-  }
-  for (const path of session.folders) {
-    if (path !== folder && isUnder(path, folder) && !entries.has(childOf(path)))
-      entries.set(childOf(path), directory(childOf(path)));
-  }
-  return [...entries.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-}
-
-/** The files a walk reaches: in folders at most `maxDepth` down, past no entry it was told to skip. */
-function walked(
-  session: SessionFiles,
-  { skipDirectories, maxDepth }: { skipDirectories: readonly string[]; maxDepth: number },
-): [string, Held][] {
-  const skip = new Set(skipDirectories);
-  return [...session.files].filter(([path]) => {
-    const segments = path.split('/');
-    return segments.length - 1 <= maxDepth && !segments.some((name) => skip.has(name));
-  });
+  return unlessRefused(heldChildren(session, folder)).children.map(({ kind, path }) =>
+    kind === 'file' ? fileEntry(path, session.files.get(path)!) : directory(path),
+  );
 }
 
 type TextWrite = Parameters<HostVaultFsPort['writeTextFile']>[0];
@@ -208,54 +140,33 @@ function writeText(
 
 /** Bytes written as vault_files.rs writes them: created at 0, appended at the length, replaced from 0. */
 function writeBinary(session: SessionFiles, { path, bytes, offset, replace = false }: BinaryWrite) {
-  checked(path);
-  if (offset + bytes.byteLength > MAX_BINARY_BYTES) refuse('a file is at most 32 MB');
-  if (replace) return replaceBinary(session, path, bytes, offset);
-  if (offset === 0) {
-    placeFor(session, path, 'that file already exists');
+  const there = session.files.get(path);
+  const sizeThere = there === undefined ? null : bytesOf(there).byteLength;
+  const asked = { path, length: bytes.byteLength, offset, replace, sizeThere };
+  const { how } = unlessRefused(heldBinaryWrite(session, asked));
+  if (how !== 'append') {
     session.put(path, bytes.slice());
     return bytes.byteLength;
   }
-  const held = bytesOf(session.held(path));
-  if (held.byteLength !== offset) refuse('the file is not the length the write expected');
   const joined = new Uint8Array(offset + bytes.byteLength);
-  joined.set(held);
+  joined.set(bytesOf(there!));
   joined.set(bytes, offset);
   session.put(path, joined);
   return joined.byteLength;
 }
 
-function replaceBinary(session: SessionFiles, path: string, bytes: Uint8Array, offset: number) {
-  if (offset !== 0) refuse('a file is replaced whole, from offset 0');
-  if (session.isFolder(path)) refuse('that is a directory');
-  if (!session.files.has(path)) placeFor(session, path, 'that file already exists');
-  session.put(path, bytes.slice());
-  return bytes.byteLength;
-}
-
 /** Moves a file or a folder with everything in it, as `move_entry_at` in vault_entries.rs. */
 function move(session: SessionFiles, { from, to }: { from: VaultPath; to: VaultPath }): void {
-  if (!session.has(checked(from))) refuse('no such entry');
-  checked(to);
-  if (from === to) return;
-  if (
-    session.isFolder(from) &&
-    (parentVaultPath(to) === from || isUnder(parentVaultPath(to), from))
-  )
-    refuse('a folder cannot be moved into itself');
-  const renamesItself = from.toLowerCase() === to.toLowerCase();
-  if (!renamesItself) placeFor(session, to, 'something with that name is already there');
-  else if (!session.isFolder(parentVaultPath(to))) refuse('that folder does not exist');
-  const moved = session.under(from);
-  const renamed = (path: string) => `${to}${path.slice(from.length)}`;
-  for (const path of moved.files) {
-    const held = session.files.get(path)!;
-    session.files.delete(path);
-    session.files.set(renamed(path), held);
-  }
-  for (const path of moved.folders) {
-    session.folders.delete(path);
-    session.folders.add(renamed(path));
+  const { renames } = unlessRefused(heldMove(session, { from, to }));
+  for (const [was, now] of renames) {
+    const held = session.files.get(was);
+    if (held === undefined) {
+      session.folders.delete(was);
+      session.folders.add(now);
+    } else {
+      session.files.delete(was);
+      session.files.set(now, held);
+    }
   }
 }
 
@@ -264,7 +175,7 @@ function trash(
   session: SessionFiles,
   { path, unchanged = [] }: { path: VaultPath; unchanged?: readonly AsRead[] },
 ) {
-  if (!session.has(checked(path))) refuse('no such entry');
+  const gone = unlessRefused(heldTrash(session, path));
   for (const file of unchanged) {
     const held = session.files.get(file.path);
     if (held?.modified !== file.modified || textOf(held) !== file.text)
@@ -272,7 +183,6 @@ function trash(
         'a file changed on disk since it was read, so nothing was moved to the Trash',
       );
   }
-  const gone = session.under(path);
   for (const file of gone.files) session.files.delete(file);
   for (const folder of gone.folders) session.folders.delete(folder);
 }
@@ -288,38 +198,50 @@ function forTheOpenVault<Args extends { vault: string }, Result>(
   };
 }
 
-/** The reads the shell makes of the session's notes and files. */
+/**
+ * The reads the shell makes of the session's notes and files. Its `modified`
+ * is a count of writes, a version and no time, so each read says the time is
+ * unknown (ADR-0053).
+ */
 function reads(session: SessionFiles) {
   const readText = (path: string) => {
     const held = session.held(path);
     const text = textOf(held);
     if (text === null) return refuse('not a text file');
-    return { text, modified: held.modified };
+    return { text, modified: held.modified, modifiedAt: null };
   };
   return {
     listDirectory: async (folder: VaultPath) => listDirectory(session, folder),
     listNotes: async (walk: { skipDirectories: readonly string[]; maxDepth: number }) =>
-      walked(session, walk)
-        .filter(([path]) => isNoteName(path))
-        .map(([path, held]) => ({
-          name: vaultPathName(createVaultPath(path)),
-          path: createVaultPath(path),
-          modified: held.modified,
-          size: bytesOf(held).byteLength,
-        })),
-    listFiles: async ({ extension, ...walk }: Parameters<HostVaultFsPort['listFiles']>[0]) =>
-      walked(session, walk)
-        .map(([path]) => path)
-        .filter((path) => path.toLowerCase().endsWith(`.${extension.toLowerCase()}`))
-        .sort()
-        .map(createVaultPath),
+      heldWalk(session, walk)
+        .filter(isHeldNote)
+        .map((path) => {
+          const held = session.files.get(path)!;
+          return {
+            name: vaultPathName(createVaultPath(path)),
+            path: createVaultPath(path),
+            modified: held.modified,
+            modifiedAt: null,
+            size: bytesOf(held).byteLength,
+          };
+        }),
+    listFiles: async (walk: Parameters<HostVaultFsPort['listFiles']>[0]) =>
+      heldFilesWithExtension(session, walk).map(createVaultPath),
     readNotes: async (paths: readonly string[]) =>
       paths.flatMap((path) => {
         const held = session.files.get(path);
         const text = held === undefined ? null : textOf(held);
         return held === undefined || text === null
           ? []
-          : [{ path, text, modified: held.modified, size: bytesOf(held).byteLength }];
+          : [
+              {
+                path,
+                text,
+                modified: held.modified,
+                modifiedAt: null,
+                size: bytesOf(held).byteLength,
+              },
+            ];
       }),
     readTextFile: async (path: VaultPath) => readText(path),
     readBinaryFile: async (path: VaultPath) => bytesOf(session.held(path)).slice().buffer,
@@ -337,11 +259,12 @@ export function sessionVaultFs(
   return {
     ...reads(session),
     createNote: forTheOpenVault(vault, ({ path, contents }) => {
-      placeFor(session, path, 'a note with that name already exists');
+      refuseIf(heldPlaceRefusal(session, { path, taken: HELD_REFUSAL.noteTaken }));
       return session.put(path, contents);
     }),
     createFolder: forTheOpenVault(vault, ({ path }) => {
-      session.folders.add(placeFor(session, path, 'something with that name is already there'));
+      refuseIf(heldPlaceRefusal(session, { path, taken: HELD_REFUSAL.nameTaken }));
+      session.folders.add(path);
     }),
     moveEntry: forTheOpenVault(vault, (args) => move(session, args)),
     trashEntry: forTheOpenVault(vault, (args) => trash(session, args)),

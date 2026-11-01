@@ -25,6 +25,7 @@ import { heldEntries } from '../index/refresh-index.ts';
 import type { IndexEntry, IndexPort } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
+import { writtenAt } from '../vault/written-at.ts';
 import type { RuleLog } from './automation-log.ts';
 import { withHandledKeys } from './handled-keys.ts';
 import { matchedPaths, planMatched, planRun, type RuleQueryPorts } from './plan-run.ts';
@@ -217,13 +218,15 @@ export async function arrivalsMissed({
   trigger: NoteTrigger;
   handled: HandledVersions;
 }): Promise<NoteVersionRef[]> {
-  let since: number;
+  let since: number | null;
   try {
-    since = (await fs.readTextFile(rule.path)).modified;
+    since = writtenAt(await fs.readTextFile(rule.path));
   } catch {
     // Safe to go without: nothing is caught up with, and a run by hand takes what was missed.
     return [];
   }
+  // A vault that cannot tell when the rule was saved cannot tell what arrived since (ADR-0053).
+  if (since === null) return [];
   const notes = [...held.values()].map((entry) => ({
     ...entry,
     path: createVaultPath(entry.path),
