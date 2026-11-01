@@ -17,3 +17,7 @@ playwright-report/
 !.claude/agents/
 design/out/
 *.orig
+
+# The Firebase CLI's deploy cache and logs (#662).
+.firebase/
+firebase-debug*.log

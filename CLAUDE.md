@@ -291,6 +291,38 @@ only in `apps/desktop/src-tauri/src/index_schema.sql`: the host `include_str!`s 
 test indexes read it (`testing/index-schema.ts`), and `index-schema.test.ts` fails
 if an inline copy in a test drifts from it.
 
+**The web build is hosted on Firebase (#662)**, in the project `dailyflowai-app`,
+on its own site `dailyflowai-web` (dailyflowai-web.web.app) through the hosting
+target `web` (`.firebaserc`). The project's default site, `dailyflowai-app`,
+serves something else: never deploy to it, and never touch the projects
+`gcal-timeblocking` or `student-games-be188`. `firebase.json` holds the upload's
+`ignore` (dotfiles _and_ dot-folders: `**/.*` alone ships `.vite/`), the SPA
+rewrite (every path but `/assets/**`, so a missing chunk 404s rather than caching
+the page for a year), cache headers (`/assets/**` immutable, everything else
+`no-cache`; the assets rule comes last so it wins) and security headers, whose
+CSP is `apps/web/index.html`'s plus `frame-ancestors 'none'`: change the two
+together. `.github/workflows/web-hosting.yml` builds and deploys it, apart from
+`gate`, when a path the web build, its config or these checks read changed: a
+7-day preview channel on a pull request (job `preview`), live on a push to `main`
+from the `web-live` environment (job `live`). Both skip green until the secret
+`FIREBASE_SERVICE_ACCOUNT_DAILYFLOWAI_APP` exists, and both run
+`tools/ci/web-hosting.test.ts` on the config and the built files before they
+deploy. That test fails on a config that could reach another site or project, a
+dotfile or symlink in the upload, or an `ignore` other than the one checked
+against firebase-tools. The workflow is held to an **allowlist**, not searched
+for bad patterns: `tools/ci/web-hosting-workflow.ts` describes it job for job and
+step for step (parsed, anchors resolved), the key may appear only in the deploy
+action's input and the is-it-set check, every workflow may use only the
+SHA-pinned actions listed there (a new action in any workflow adds its pin
+there), and no other workflow or package script may touch Firebase. Changing
+web-hosting.yml means changing that file too. None of it stops a pull request
+that edits the workflow and the checks together: its preview deploy runs that
+branch's copy of both. A Hosting Admin key is project-wide, so it can reach the
+default site too; IAM does not protect that site. Review, the `web-live`
+environment's rules and these checks do. Deploy by hand only with
+`firebase deploy --only hosting:web`. A later functions codebase (#663) widens
+the checks on purpose.
+
 **Rust reads files, watches them, and runs SQL. It decides nothing** — see
 `vault/docs/adr/0005-the-index-decides-nothing.md`, and
 `0014-the-host-walks-the-vault-and-is-told-what-to-skip.md` for the one nuance:

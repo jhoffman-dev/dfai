@@ -8,7 +8,8 @@ import { workspaceAliases } from '../../tools/vite/workspace-aliases.ts';
 const nodeBuiltins = nodeBuiltinsReport(fileURLToPath(new URL('../../', import.meta.url)));
 
 /** index.html's policy as it ships. */
-const WEB_CSP = "script-src 'self'; connect-src 'self'; frame-src 'none'";
+const WEB_CSP =
+  "script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'";
 
 /**
  * `pnpm dev` only: Vite's client runs an inline preamble for React's refresh
@@ -21,7 +22,7 @@ function devCsp(): Plugin {
     transformIndexHtml: (html) =>
       html.replace(
         WEB_CSP,
-        "script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; frame-src 'none'",
+        "script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; frame-src 'none'; object-src 'none'; base-uri 'none'",
       ),
   };
 }

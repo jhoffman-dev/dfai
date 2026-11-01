@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "dailyflowai-app"
+  },
+  "targets": {
+    "dailyflowai-app": {
+      "hosting": {
+        "web": ["dailyflowai-web"]
+      }
+    }
+  }
+}
