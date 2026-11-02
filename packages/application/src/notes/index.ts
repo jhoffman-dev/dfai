@@ -7,7 +7,7 @@ export type { MarkdownPort, WritingRead } from './ports.ts';
 export { createNote, NoteNameTakenError } from './create-note.ts';
 export { noteModified } from './note-modified.ts';
 export { dailyNotePath, ensureDailyNote } from './daily-note.ts';
-export { NoteChangedError } from './note-changed-error.ts';
+export { isStaleWriteRefusal, NoteChangedError } from './note-changed-error.ts';
 export { FrontmatterRefusedError } from './frontmatter-refused-error.ts';
 export { NoteStillOpeningError } from './note-still-opening-error.ts';
 export { PREVIEW_BATCH, readNotePreviews } from './read-note-previews.ts';

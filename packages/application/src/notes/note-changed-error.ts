@@ -1,3 +1,5 @@
+import { isChangedOnDiskRefusal } from '../vault/ports.ts';
+
 /**
  * A write refused because the note is no longer the one the caller read.
  *
@@ -9,4 +11,14 @@ export class NoteChangedError extends Error {
     super(`${path} changed since it was read`);
     this.name = 'NoteChangedError';
   }
+}
+
+/**
+ * Whether a write was refused because the note moved on since it was read —
+ * the one failure a conflict copy is the answer to (#665). Any other, a
+ * server's error or a dropped connection, is a save to try again, and a copy
+ * of it would be a second file for nothing.
+ */
+export function isStaleWriteRefusal(error: unknown): boolean {
+  return error instanceof NoteChangedError || isChangedOnDiskRefusal(error);
 }

@@ -607,7 +607,13 @@ function SaveConflict({
         {state.saveError}
       </span>
       {onKeepAsCopy !== undefined && (
-        <button className="viewer__resolve" type="button" onClick={onKeepAsCopy}>
+        <button
+          className="viewer__resolve"
+          type="button"
+          onClick={onKeepAsCopy}
+          // A keep under way: a second click would make a second copy.
+          disabled={state.saving}
+        >
           Keep mine as a copy
         </button>
       )}

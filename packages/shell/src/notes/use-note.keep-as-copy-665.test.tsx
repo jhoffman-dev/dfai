@@ -175,7 +175,6 @@ describe('keeping a refused save as a conflict copy (#665)', () => {
     await settle();
     const { state } = view.result.current;
     expect(state.kind === 'ready' && state.saving).toBe(true);
-    expect(view.result.current.keepAsCopy).toBeNull();
     release();
     await settle();
     await settle();
