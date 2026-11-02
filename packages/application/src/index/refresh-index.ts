@@ -20,6 +20,7 @@ import { listVaultNoteFiles } from '../vault/read-vault.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { inThreadNoteDeriver, type NoteDeriver, type UnreadNote } from './note-deriver.ts';
 import type { IndexedNote, IndexEntry, IndexPort, IndexWriteScope } from './ports.ts';
+import { diffManifest } from './manifest-diff.ts';
 
 /**
  * Notes are read, derived and written a batch at a time. A batch crosses to
@@ -132,23 +133,11 @@ export async function refreshIndex({
   );
   const known = await heldEntries(index);
 
-  const named = new Set(recheck);
-  const stale = [...current.values()].filter((note) => {
-    const entry = known.get(note.path);
-    return (
-      entry === undefined ||
-      entry.modified !== note.modified ||
-      entry.size !== note.size ||
-      named.has(note.path)
-    );
-  });
-
-  const removed = [...known.keys()].filter((path) => !current.has(path));
+  const { stale, removed, added } = diffManifest({ listed: notes, held: known, recheck });
   if (removed.length > 0) await index.remove(removed.map(createVaultPath), scope);
 
   // A note made or gone can change which note an unchanged note's link means,
   // in a property or in the body (#431).
-  const added = [...current.keys()].filter((path) => !known.has(path));
   const staleByLink = await linkHolders(index, { made: added, gone: removed });
   const stalePaths = new Set(stale.map((note) => note.path as string));
   for (const path of staleByLink) {

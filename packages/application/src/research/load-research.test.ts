@@ -516,3 +516,23 @@ function pagedIndex(
     },
   };
 }
+
+describe('loadLibrary, over notes the index cannot date (ADR-0053)', () => {
+  it('reads an undated source as unknown, not as the epoch', async () => {
+    const index: Pick<IndexPort, 'query'> = {
+      query: async () => ({
+        columns: [],
+        rows: [
+          ['Library/Undated.md', 'Undated', null, null, 'pdf', null, 1, '', ''],
+          ['Library/Dated.md', 'Dated', 1_700_000_000_000, null, 'pdf', null, 1, '', ''],
+        ],
+        truncated: false,
+      }),
+    };
+    const entries = await loadLibrary({ index });
+    expect(entries.map((entry) => [entry.path, entry.modified])).toEqual([
+      ['Library/Undated.md', null],
+      ['Library/Dated.md', 1_700_000_000_000],
+    ]);
+  });
+});

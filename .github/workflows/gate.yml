@@ -436,7 +436,7 @@ jobs:
             runs: 1
             first-run: 1
           - part: latency, and the other fixtures
-            fixtures: research,long-note,code-note
+            fixtures: research,long-note,code-note,web
             passes: counted,timed
             runs: 2
             first-run: 1

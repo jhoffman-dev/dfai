@@ -104,8 +104,10 @@ export function withToggled<Value>(values: readonly Value[], value: Value): Valu
 /**
  * The day a note last changed, as a list says it: "Tue, Sep 22, 2026". Read
  * in UTC, as every date the domain shows, so it never depends on the zone.
+ * Empty when the index cannot date the note (ADR-0053): unknown, not 1970.
  */
-export function changedOn(modified: number): string {
+export function changedOn(modified: number | null): string {
+  if (modified === null) return '';
   const day = new Date(Number.isFinite(modified) ? modified : 0).toISOString().slice(0, 10);
   return formatPropertyDate(day) ?? day;
 }

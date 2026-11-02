@@ -137,7 +137,10 @@ export const INBOX_QUERY_COLUMNS = [
  * position — so filing or editing notes between pages skips and repeats none.
  */
 export interface InboxKey {
-  /** When the note last changed, in milliseconds, as the index holds it. */
+  /**
+   * When the note last changed, in milliseconds, as the index holds it;
+   * {@link UNDATED_INBOX_KEY} when the index cannot date it (ADR-0053).
+   */
   readonly modified: number;
   readonly path: VaultPath;
 }
@@ -303,7 +306,7 @@ export function compileInboxQuery({
       `  ${holds('files.path', IMPORT_CONTRACT_KEY)} AS "importDeclared"`,
       ...WAITING_FILES,
       ...bounds,
-      `ORDER BY files.modified DESC, files.path`,
+      `ORDER BY ${INBOX_TIME} DESC, files.path`,
       `LIMIT ?`,
     ].join('\n'),
     parameters: [
@@ -314,16 +317,27 @@ export function compileInboxQuery({
   };
 }
 
+/**
+ * Stands for a note the index cannot date (ADR-0053: the GitHub vault's): older
+ * than any time, so undated notes list after the dated ones, by path. A NULL
+ * compared with a key is no answer, and paging past one would list nothing.
+ */
+export const UNDATED_INBOX_KEY = -1;
+
+/** A note's place in time as the Inbox orders and pages it. */
+const INBOX_TIME = `coalesce(files.modified, ${UNDATED_INBOX_KEY})`;
+
 /** Notes after a key, in the Inbox's order: older, or as old and later by path. */
-const AFTER_KEY = `  AND (files.modified < ? OR (files.modified = ? AND files.path > ?))`;
+const AFTER_KEY = `  AND (${INBOX_TIME} < ? OR (${INBOX_TIME} = ? AND files.path > ?))`;
 /** Notes up to a key, in the Inbox's order: newer, or as old and not later by path. */
-const THROUGH_KEY = `  AND (files.modified > ? OR (files.modified = ? AND files.path <= ?))`;
+const THROUGH_KEY = `  AND (${INBOX_TIME} > ? OR (${INBOX_TIME} = ? AND files.path <= ?))`;
 
 const keyParameters = ({ modified, path }: InboxKey) => [modified, modified, path];
 
 /** Where a row of {@link compileInboxQuery} stands in the Inbox's order. */
 export function inboxKeyOf(row: { path: VaultPath; modified?: unknown }): InboxKey {
-  return { modified: Number(row.modified ?? 0), path: row.path };
+  const undated = row.modified === null || row.modified === undefined;
+  return { modified: undated ? UNDATED_INBOX_KEY : Number(row.modified), path: row.path };
 }
 
 /** How many notes wait in the Inbox, as {@link compileInboxQuery} would list them all (#167). */

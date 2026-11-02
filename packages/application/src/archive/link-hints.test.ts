@@ -44,6 +44,12 @@ describe('readLinkHints', () => {
     expect(read.hints.uses.get('People/Tobias Fenn.md')).toEqual({ count: 3, last: 1700 });
   });
 
+  it('reads a use whose notes the index cannot date as undated, not as the epoch (ADR-0053)', async () => {
+    const { index } = answering([['use', 'People/Tobias Fenn.md', null, 2, null]]);
+    const read = await readLinkHints({ index });
+    expect(read.hints.uses.get('People/Tobias Fenn.md')).toEqual({ count: 2, last: null });
+  });
+
   it('reads on, a page at a time, until a page comes back short: none past the first page is lost', async () => {
     const notes = Array.from({ length: LINK_HINTS_PAGE_SIZE + 2 }, (_, at) => [
       'note',

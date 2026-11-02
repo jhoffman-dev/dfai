@@ -42,6 +42,7 @@ import {
 import type { FixtureFile } from './fixture-vault.ts';
 import { installProbe, measure, waitForQuiet } from './probe.ts';
 import { RESEARCH_SOURCES, HIGHLIGHTS_PER_SOURCE, researchVault } from './research-vault.ts';
+import { runWebIndexActions } from './web-index-work.ts';
 import { EVERY_NOTE_INDEXED, writeFixtureVault, writeVault } from './session.ts';
 import { longFixturePdf } from '../pdf/fixture-pdf.ts';
 import { LONG_BOOK_PHRASE, longFixtureEpub } from '../epub/fixture-epub.ts';
@@ -218,16 +219,24 @@ test('the app does no more work than its budget', async ({ browser }) => {
     if (FIRST_RUN === 1)
       for (const action of actions) holdToBudget(action, budgets.actions[action]);
     const names = [...new Set([...counted.values()].flatMap((work) => Object.keys(work.renders)))];
-    expect(
-      looksMinified(names),
-      'the components have no names: build without minifying (pnpm perf:budgets does)',
-    ).toBe(false);
+    // A part of only the browser's index draws nothing, so has no names to tell by (#666).
+    const drew = PART.fixtures.some((fixture) => fixture !== 'web');
+    if (drew)
+      expect(
+        looksMinified(names),
+        'the components have no names: build without minifying (pnpm perf:budgets does)',
+      ).toBe(false);
   }
 
   try {
     if (PART.passes.includes('timed')) {
       await test.step('timed, against the wall clock (reported, not gated)', async () => {
         for (const fixture of PART.fixtures) {
+          if (fixture === 'web') {
+            for (const [action, times] of (await runWebIndexActions()).times)
+              timed.set(action, times);
+            continue;
+          }
           const pass = await timedPass(browser, FIXTURES[fixture].fixture);
           await FIXTURES[fixture].doEvery(pass);
           await pass.page.close();
@@ -247,6 +256,11 @@ async function countEvery(
 ): Promise<Map<string, Work>> {
   const into = new Map<string, Work>();
   for (const fixture of fixtures) {
+    // The browser's index has no page to drive: its actions are done in Node (#666).
+    if (fixture === 'web') {
+      for (const [action, work] of (await runWebIndexActions()).work) into.set(action, work);
+      continue;
+    }
     const pass = await countedPass(browser, into, FIXTURES[fixture].fixture);
     await FIXTURES[fixture].doEvery(pass);
     await pass.page.close();
@@ -362,7 +376,7 @@ const CODE_NOTE: PassFixture = {
 /** Each fixture's pass: the vault it opens, and every action done on it, in order. */
 const FIXTURES: Readonly<
   Record<
-    BudgetFixture,
+    Exclude<BudgetFixture, 'web'>,
     { readonly fixture: PassFixture; readonly doEvery: (pass: Pass) => Promise<void> }
   >
 > = {

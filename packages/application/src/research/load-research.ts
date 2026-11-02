@@ -94,7 +94,8 @@ function libraryEntryOf(row: Row): LibraryEntry {
     author: textOrNull(author),
     kind: SOURCE_KINDS.find((known) => known === kindName) ?? null,
     highlights: Number(highlights ?? 0),
-    modified: Number(modified ?? 0),
+    // NULL when the vault cannot date the note (ADR-0053): unknown, not the epoch.
+    modified: modified === null || modified === undefined ? null : Number(modified),
     tags: listOf(tags),
     projects: projectsOf(projects),
     cover: libraryCover(textOrNull(cover)),

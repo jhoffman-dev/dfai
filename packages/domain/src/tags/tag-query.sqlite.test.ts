@@ -12,7 +12,7 @@ function index() {
   const database = new DatabaseSync(':memory:');
   database.exec(`
     CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                        modified INTEGER NOT NULL, size INTEGER NOT NULL);
+                        modified INTEGER, size INTEGER NOT NULL);
     CREATE TABLE tags (path TEXT NOT NULL, idx INTEGER NOT NULL, tag TEXT NOT NULL,
                        name TEXT NOT NULL);`);
   const file = database.prepare(

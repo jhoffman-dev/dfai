@@ -93,3 +93,9 @@ describe('usesTag and withParentTags', () => {
     expect(withParentTags([])).toEqual([]);
   });
 });
+
+describe('changedOn, for a note the index cannot date (ADR-0053)', () => {
+  it('says nothing, never the epoch', () => {
+    expect(changedOn(null)).toBe('');
+  });
+});

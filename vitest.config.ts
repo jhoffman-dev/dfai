@@ -49,6 +49,13 @@ export default defineConfig({
           new URL('./packages/application/src/testing/vault-fs-contract.ts', import.meta.url),
         ),
       },
+      // The index contract every index runs (#666): it imports vitest, so it is kept out of the barrel.
+      {
+        find: '@dfai/application/testing/index-contract',
+        replacement: fileURLToPath(
+          new URL('./packages/application/src/testing/index-contract.ts', import.meta.url),
+        ),
+      },
       // Test support (work counted rather than timed), kept out of the domain's barrel.
       {
         find: '@dfai/domain/testing',
@@ -70,6 +77,13 @@ export default defineConfig({
         find: '@dfai/adapters/epub',
         replacement: fileURLToPath(
           new URL('./packages/adapters/src/epub/index.ts', import.meta.url),
+        ),
+      },
+      // The browser's index, an entry of its own so SQLite's WebAssembly stays out of the desktop (#666).
+      {
+        find: '@dfai/adapters/web-index',
+        replacement: fileURLToPath(
+          new URL('./packages/adapters/src/web-index/index.ts', import.meta.url),
         ),
       },
       // The adapters that speak to the Tauri host, for the desktop alone (#656).
@@ -134,6 +148,15 @@ export default defineConfig({
         'packages/application/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'packages/adapters/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'apps/auth-function/src/**': { lines: 90, functions: 90, branches: 85 },
+        // The browser's index (#666): what every query on the web reads, and the manifest that
+        // decides which notes a re-open reads again. The worker and OPFS glue run only in a browser.
+        'packages/application/src/index/manifest-diff.ts': {
+          lines: 90,
+          functions: 90,
+          branches: 85,
+        },
+        'packages/adapters/src/web-index/{wasm-index-*,index-channel,web-index-port,web-index-shape,memory-index-files,opfs-index-files}.ts':
+          { lines: 90, functions: 90, branches: 85 },
         // The vault as a GitHub repository (#664): every save a commit, refused when its blob or head moved.
         'packages/adapters/src/github/**': { lines: 90, functions: 90, branches: 85 },
         // Renaming a tag rewrites every note that uses it.

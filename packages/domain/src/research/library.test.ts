@@ -307,3 +307,24 @@ describe('LIBRARY_KIND_HUES', () => {
     expect(LIBRARY_KIND_HUES).toEqual({ pdf: 'red', epub: 'green', kindle: 'orange' });
   });
 });
+
+describe('sortLibrary, with notes the index cannot date (ADR-0053)', () => {
+  const sources = [
+    entry('Undated', { modified: null }),
+    entry('Old', { modified: 1 }),
+    entry('New', { modified: 9 }),
+  ];
+
+  it('lists them after every dated note, whichever way the dates run', () => {
+    expect(titles(sortLibrary(sources, { key: 'modified', descending: true }))).toEqual([
+      'New',
+      'Old',
+      'Undated',
+    ]);
+    expect(titles(sortLibrary(sources, { key: 'modified', descending: false }))).toEqual([
+      'Old',
+      'New',
+      'Undated',
+    ]);
+  });
+});

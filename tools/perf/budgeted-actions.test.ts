@@ -29,7 +29,7 @@ describe('the part of the work budgets one run does', () => {
   it('does everything when nothing is named', () => {
     const whole = budgetsPart({});
     expect(whole).toEqual({
-      fixtures: ['main', 'research', 'long-note', 'code-note'],
+      fixtures: ['main', 'research', 'long-note', 'code-note', 'web'],
       passes: ['counted', 'timed'],
     });
     expect(budgetsPart({ fixtures: ' ', passes: '' })).toEqual(whole);
@@ -44,7 +44,7 @@ describe('the part of the work budgets one run does', () => {
 
   it('refuses a fixture or a pass it does not know', () => {
     expect(() => budgetsPart({ fixtures: 'main,mian' })).toThrow(
-      'PERF_BUDGETS_FIXTURES names mian; it takes main, research, long-note, code-note',
+      'PERF_BUDGETS_FIXTURES names mian; it takes main, research, long-note, code-note, web',
     );
     expect(() => budgetsPart({ passes: 'counted,clocked' })).toThrow(
       /PERF_BUDGETS_PASSES names clocked/,
