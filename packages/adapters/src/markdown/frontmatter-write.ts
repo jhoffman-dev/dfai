@@ -1207,12 +1207,14 @@ const entryOf = (segment: Segments['keys'][number]): Entry => ({
 });
 
 /**
- * Whether text whose value's end cannot be told — block text with an
- * explicit indent (`|2`) — may keep its trailing lines: only a `+` header
- * keeps them (#709). Any `|+`-like run counts, inside quotes too, so a
- * doubtful one still holds its blank lines.
+ * Whether text whose value's end cannot be told may keep its trailing lines.
+ * Only block text with an explicit indent (`|2`), lines of text under it and
+ * no `+` anywhere is known not to (#709); anything else — the library's empty text
+ * (`>`) holds the blank line it writes under it — is taken to, as before.
  */
-const mayKeepLines = (text: string) => /[|>](?:[1-9]?\+|\+)/.test(text);
+const mayKeepLines = (text: string) =>
+  /[|>](?:[1-9]?\+|\+)/.test(text) ||
+  !/^[^#\n]*:[ \t]+[|>](?:[1-9]-?|-[1-9])[ \t]*(?:#.*)?\n[ \t]*\S/m.test(text);
 
 /** `entry` moved left `by` columns. */
 const rebased = (entry: Entry, by: number): Entry => ({
@@ -1394,7 +1396,11 @@ function mapKept({
     return `${leadingBlanks(entry.text)}${withoutLeadingBlanks(text)}`;
   });
   const head = partKept({ now: now.head, then: then.head, found: found.head, by });
-  const tail = partKept({ now: now.tail, then: then.tail, found: found.tail, by });
+  const kept = partKept({ now: now.tail, then: then.tail, found: found.tail, by });
+  // Nor under the last entry: a blank line the map ends in would be its text.
+  const last = now.entries.length - 1;
+  const ending = last >= 0 && holdsBlanks(now.entries[last] as Entry, texts[last] as string);
+  const tail = ending ? withoutLeadingBlanks(kept) : kept;
   // Each part ends in a newline; the last one's is the one the text was cut without.
   const text = `${head}${entries.join('')}${tail}`.replace(/\n$/, '');
   return `${text}${written.endsWith('\n') ? '\n' : ''}`;

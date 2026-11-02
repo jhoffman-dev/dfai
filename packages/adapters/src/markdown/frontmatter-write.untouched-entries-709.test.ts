@@ -115,6 +115,12 @@ describe('block text next to the entry a change reaches (#709)', () => {
     );
   });
 
+  it('keeps the blank line `+` text ends in, beside text with an explicit indent', () => {
+    const lines = ['  a:', '    x: |2', '        lead', '    y: |+', '      kept', ''];
+    const both = block('properties:', ...lines, '  b: 1', '  c:   2');
+    expect(written(both, deleted('b'))).toBe(block('properties:', ...lines, '  c:   2'));
+  });
+
   // A last line of spaces deeper than the text is the text's own, not a blank line of the map's.
   const spaced = (header: string) =>
     block('properties:', `  a: ${header}`, '     x', '       ', '  b: 1', '  c: 2');
