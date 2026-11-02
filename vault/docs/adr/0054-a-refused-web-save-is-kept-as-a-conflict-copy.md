@@ -49,12 +49,35 @@ Discard (losing the web's).
    commit authored `DFAI web` gives `(conflict from DFAI web)`, so a copy made
    on either side carries the same name. The port gains `remoteAuthor`.
 
+6. **A note deleted elsewhere is put back.** A save refused because nothing
+   is at the note's path any more (the host's `no such entry`, for a note the
+   pane opened) is a stale refusal too, and keeping it puts the refused text
+   back at the note's own path rather than a copy beside nothing — as the
+   desktop's sync keeps the version that exists when one side changed a file
+   the other deleted. An edit never loses to a delete.
+7. **Only a refusal a copy answers offers one.** `isStaleWriteRefusal`
+   (application) is a changed or gone note; a server's error or a dropped
+   connection is a save to try again, and offers no copy. The editor makes
+   the copy of what was on screen at the click, and lets the edits go only if
+   the pane still shows exactly that, on the same note: typing since stays
+   unsaved, with the choice offered again. While a keep is out, the pane
+   shows it as saving and the button is held.
+8. **A push to another note is no conflict.** When the ref update is refused
+   and the head has moved with the save's file still the blob it was read as,
+   the GitHub vault commits the save once more on the new head, never forced.
+   Only a save does this; a create, move or trash was decided against the
+   whole tree.
+
 ## Consequences
 
 - Neither ordering loses text: the two-Macs harness's web writer
   (`web-writer.test-support.ts`) commits through the GitHub API stand-in into the
   very bare repository the Macs sync with, and its tests hold every typed
   version to be the whole of some file on both Macs and on the branch.
+- The desktop names a web edit's copy from the remote branch's last commit;
+  a Mac's sync commit on top of a web commit names the copy for that Mac.
+  Nothing is lost; naming each file by its own last commit is left for a
+  follow-up.
 - Overwrite is still offered on the web, as on the desktop. Wiring the GitHub
   vault into the web build (#666/#667) should decide whether to drop it there.
 - A save racing a desktop push can make the desktop's push be refused as not
