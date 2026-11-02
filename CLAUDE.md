@@ -292,7 +292,7 @@ test indexes read it (`testing/index-schema.ts`), and `index-schema.test.ts` fai
 if an inline copy in a test drifts from it.
 
 **The web build is hosted on Firebase (#662)**, in the project `dailyflowai-app`,
-on its own site `dailyflowai-web` (dailyflowai-web.web.app) through the hosting
+on its own site `dailyflowai-web` (served at app.dailyflowai.com; sign-in answers that origin alone, so not at dailyflowai-web.web.app) through the hosting
 target `web` (`.firebaserc`). The project's default site, `dailyflowai-app`,
 serves something else: never deploy to it, and never touch the projects
 `gcal-timeblocking` or `student-games-be188`. `firebase.json` holds the upload's

@@ -9,7 +9,7 @@ export interface AuthFunctionConfig {
   readonly clientId: string;
   /** The GitHub App's client secret. Never logged, never sent anywhere but GitHub. */
   readonly clientSecret: string;
-  /** The web build's origin, e.g. https://dailyflowai-web.web.app: the only one it answers. */
+  /** The web build's origin, https://app.dailyflowai.com in production: the only one it answers. */
   readonly origin: string;
 }
 
