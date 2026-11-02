@@ -46,6 +46,11 @@
   --text-card: var(--text-emphasis);
   --text-subtitle: var(--text-section);
 
+  /* What an iPad's on-screen keyboard covers while it is up: the editor sets
+     it on the document (useCaretInView, #660), and a note's bottom padding
+     grows by it. Nothing on a desktop. */
+  --keyboard-inset: 0px;
+
   /* Space */
   --space-1: 4px;
   --space-2: 8px;

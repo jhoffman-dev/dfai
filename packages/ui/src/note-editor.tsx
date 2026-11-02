@@ -37,6 +37,7 @@ import type { LinkedNoteMaker, WikiSuggestionView } from './editor/wiki-link-sug
 import { IMAGE_REQUEST, LINK_REQUEST, type SlashCommandView } from './editor/slash-commands.ts';
 import { addImages, type EmbedImage } from './editor/image-uploads.ts';
 import { SuggestionPopup } from './editor/suggestion-popup.tsx';
+import { useCaretInView } from './editor/caret-in-view.ts';
 import type { TagSuggestionView } from './editor/tag-suggestion.ts';
 import { TagSuggestionPopup } from './editor/tag-suggestion-popup.tsx';
 import type { MentionSuggestionView } from './editor/mention-suggestion.ts';
@@ -392,6 +393,7 @@ export function NoteEditor({
   };
 
   useReveal(editor, reveal);
+  useCaretInView(editor);
 
   // A link drawn as a role="link" with a tab stop — a shown highlight's chip,
   // "Open in PDF", an embed's name — follows on Enter as a link does, with the

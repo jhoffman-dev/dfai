@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import type { SettingsSectionLink } from './settings-section-links.ts';
+import { scrollerOf } from './scroller-of.ts';
 
 /**
  * One part of Settings — Connections, Index — as a hairline group under a
@@ -31,15 +32,6 @@ export function SettingsSection({
  * one's first, rather than past it into the next section (review of PR #631).
  */
 const DRAWN_BEFORE_REACHED = '400px 0px';
-
-/** The nearest element `element` scrolls in, or null for the window. */
-function scrollerOf(element: HTMLElement): HTMLElement | null {
-  for (let at = element.parentElement; at !== null; at = at.parentElement) {
-    const { overflowY } = getComputedStyle(at);
-    if (overflowY === 'auto' || overflowY === 'scroll') return at;
-  }
-  return null;
-}
 
 /**
  * A part of Settings whose body is drawn only once it is shown — scrolled
