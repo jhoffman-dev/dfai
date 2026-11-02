@@ -9,12 +9,19 @@ import { webIndexPort } from './web-index-port.ts';
  */
 export function webIndex({ openVault }: { openVault: () => string | null }): IndexPort {
   let host: IndexHostCalls | null = null;
-  const started = () =>
-    (host ??= indexHostOver(
-      new Worker(new URL('./web-index.worker.ts', import.meta.url), {
-        type: 'module',
-        name: 'dfai-index',
-      }),
-    ));
+  const started = () => {
+    if (host !== null) return host;
+    const worker = new Worker(new URL('./web-index.worker.ts', import.meta.url), {
+      type: 'module',
+      name: 'dfai-index',
+    });
+    // The calls waiting are refused by the channel; the next call starts a worker afresh.
+    worker.addEventListener('error', () => {
+      worker.terminate();
+      host = null;
+    });
+    host = indexHostOver(worker);
+    return host;
+  };
   return webIndexPort({ host: started, openVault });
 }

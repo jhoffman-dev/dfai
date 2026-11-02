@@ -11,12 +11,20 @@ import { cellOf } from './wasm-index-reads.ts';
 /** The host's MAX_QUERY_ROWS: a result past it is cut short and says so. */
 export const MAX_QUERY_ROWS = 5_000;
 /** The host's MAX_QUERY_BYTES: the most text a result may carry before it is refused. */
-const MAX_QUERY_BYTES = 16 * 1024 * 1024;
+export const MAX_QUERY_BYTES = 16 * 1024 * 1024;
+/**
+ * The host's QUERY_STEP_BUDGET: how many steps of SQLite's virtual machine a
+ * query may take before it is stopped. A budget rather than a clock, so a
+ * runaway query stops alike on every machine, and the worker is free again.
+ */
+export const QUERY_STEP_BUDGET = 5_000_000;
+/** What a query stopped at the budget is refused with: the host's word for it. */
+const INTERRUPTED = 'interrupted';
 const QUERY_TOO_LARGE = 'the result is larger than DFAI will read';
 const NOT_A_READ = 'only a statement that reads the index can run here';
 
 /** Pragmas that take an argument and only report: what describing a table needs. */
-const DESCRIBING_PRAGMAS = new Set([
+export const DESCRIBING_PRAGMAS: ReadonlySet<string> = new Set([
   'table_info',
   'table_xinfo',
   'index_list',
@@ -25,7 +33,23 @@ const DESCRIBING_PRAGMAS = new Set([
   'foreign_key_list',
 ]);
 /** The pragma that names the file behind each database, which says where things sit. */
-const LOCATING_PRAGMA = 'database_list';
+export const LOCATING_PRAGMA = 'database_list';
+
+/**
+ * Tables the WebAssembly build has and the desktop's does not, which read
+ * SQLite's own insides rather than the index: `sqlite_dbpage` hands out raw
+ * pages, free ones holding a deleted note's text among them; `dbstat` the
+ * pages' make-up; `bytecode`, `tables_used` and `sqlite_stmt` the statements.
+ * The build's other modules (fts5, fts5vocab, rtree) need a table made first,
+ * which a read-only statement cannot do.
+ */
+const INTERNAL_TABLES: ReadonlySet<string> = new Set([
+  'sqlite_dbpage',
+  'dbstat',
+  'bytecode',
+  'tables_used',
+  'sqlite_stmt',
+]);
 
 /**
  * What SQLite may do while preparing someone's query: the host's `reads_only`.
@@ -45,7 +69,9 @@ function readsOnly(capi: Sqlite3Static['capi']) {
         if (name === LOCATING_PRAGMA) return capi.SQLITE_DENY;
         return second !== 0 && !DESCRIBING_PRAGMAS.has(name) ? capi.SQLITE_DENY : capi.SQLITE_OK;
       case capi.SQLITE_READ:
-        return name === `pragma_${LOCATING_PRAGMA}` ? capi.SQLITE_DENY : capi.SQLITE_OK;
+        return name === `pragma_${LOCATING_PRAGMA}` || INTERNAL_TABLES.has(name)
+          ? capi.SQLITE_DENY
+          : capi.SQLITE_OK;
       default:
         return capi.SQLITE_OK;
     }
@@ -88,7 +114,10 @@ export function runQuery(
   database: Database,
   { sql, parameters }: { sql: string; parameters: readonly (string | number | null)[] },
 ): QueryResult {
+  const { capi } = sqlite3;
   const statement = prepareRead(sqlite3, database, sql);
+  // Returning non-zero stops the statement: so one past the budget is interrupted.
+  capi.sqlite3_progress_handler(database, QUERY_STEP_BUDGET, () => 1, 0);
   try {
     if (parameters.length > 0) statement.bind([...parameters]);
     const columns = statement.getColumnNames();
@@ -106,9 +135,20 @@ export function runQuery(
       rows.push(row);
     }
     return { columns, rows, truncated };
+  } catch (error) {
+    if (resultCodeOf(error) === capi.SQLITE_INTERRUPT)
+      throw new Error(INTERRUPTED, { cause: error });
+    throw error;
   } finally {
+    capi.sqlite3_progress_handler(database, 0, 0, 0);
     statement.finalize();
   }
+}
+
+/** SQLite's result code on an error the WebAssembly build threw; null on any other. */
+export function resultCodeOf(error: unknown): number | null {
+  const code = (error as { resultCode?: unknown } | null)?.resultCode;
+  return typeof code === 'number' ? code : null;
 }
 
 const encoder = new TextEncoder();

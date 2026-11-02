@@ -12,7 +12,7 @@ import type {
 import type { WebIndexShape } from './web-index-shape.ts';
 import { putNotes, removeNotes } from './wasm-index-writes.ts';
 import { backlinksOf, manifestOf, notesOfType, searchIndex, statsOf } from './wasm-index-reads.ts';
-import { rebuildViews, runQuery } from './wasm-index-query.ts';
+import { rebuildViews, resultCodeOf, runQuery } from './wasm-index-query.ts';
 
 /**
  * Where each vault's index file lives: the origin's private file system in
@@ -78,7 +78,7 @@ export function createWasmIndexHost({
     if (held !== null) files.close(held.vault, held.database);
     held = null;
     if (discarding) files.discard(vault);
-    const opened = openIndex(files, vault, shape);
+    const opened = openIndex({ files, vault, shape, notADatabase: sqlite3.capi.SQLITE_NOTADB });
     held = { vault, database: opened.database };
     return { fresh: opened.fresh };
   };
@@ -106,12 +106,19 @@ export function createWasmIndexHost({
  * thrown away and made again: the index is derived, so it is rebuilt, never
  * migrated.
  */
-function openIndex(
-  files: IndexFiles,
-  vault: string,
-  shape: WebIndexShape,
-): { database: Database; fresh: boolean } {
-  let database = openOrDiscard(files, vault);
+function openIndex({
+  files,
+  vault,
+  shape,
+  notADatabase,
+}: {
+  files: IndexFiles;
+  vault: string;
+  shape: WebIndexShape;
+  /** SQLite's SQLITE_NOTADB: the one failure that means the file is no index to keep. */
+  notADatabase: number;
+}): { database: Database; fresh: boolean } {
+  let database = openOrDiscard(files, vault, notADatabase);
   const fresh = storedVersion(database) !== shape.version;
   if (fresh) {
     files.close(vault, database);
@@ -123,16 +130,22 @@ function openIndex(
   return { database, fresh };
 }
 
-function openOrDiscard(files: IndexFiles, vault: string): Database {
+/**
+ * The vault's index file, open. One that is not a database (cut short,
+ * overwritten) is a cache to rebuild, as the host's `stored_version` reads
+ * it; any other failure — busy, an I/O error — says nothing against the file,
+ * which is kept, and the failure is passed on.
+ */
+function openOrDiscard(files: IndexFiles, vault: string, notADatabase: number): Database {
   let database: Database | null = null;
   try {
     database = files.open(vault);
     // Read now: a file that is not a database opens, and fails on the first read.
     storedVersion(database);
     return database;
-  } catch {
-    // A broken cache is one to rebuild, not an error to stop on, as the host's `stored_version` reads it.
+  } catch (error) {
     if (database !== null) files.close(vault, database);
+    if (resultCodeOf(error) !== notADatabase) throw error;
     files.discard(vault);
     return files.open(vault);
   }

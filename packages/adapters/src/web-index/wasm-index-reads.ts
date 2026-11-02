@@ -11,7 +11,7 @@ import type { IndexEntry, IndexStats, SearchHit, SearchScope } from '@dfai/appli
  * How much a word found in each column of `fts` counts — path, title, body
  * — when hits are ranked: the host's SEARCH_WEIGHTS (#211).
  */
-const SEARCH_WEIGHTS = 'bm25(fts, 5.0, 10.0, 1.0)';
+export const SEARCH_WEIGHTS = 'bm25(fts, 5.0, 10.0, 1.0)';
 
 const NOTE_SEARCH = `SELECT files.path, fts.title, snippet(fts, 2, '<<', '>>', '…', 12)
   FROM fts JOIN files ON files.rowid = fts.rowid
