@@ -15,6 +15,8 @@ import { inMemoryWebIndex, type InMemoryWebIndex } from './in-memory-web-index.t
 indexContract("the desktop's index", {
   make: async () => sqliteIndexPort(),
   markdown: remarkMarkdown,
+  // node:sqlite has no progress handler on the Node CI runs (22), so cannot stop one.
+  stopsRunawayQueries: false,
 });
 
 let opened: InMemoryWebIndex[] = [];

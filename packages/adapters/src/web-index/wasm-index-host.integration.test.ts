@@ -224,3 +224,67 @@ describe('the index host, views (#666)', () => {
     );
   });
 });
+
+describe('the index host, what the desktop cannot read (#666)', () => {
+  beforeEach(() => void host.open(VAULT));
+
+  // The WebAssembly build has these tables the desktop's does not; the raw pages hold deleted text.
+  it.each([
+    ['raw pages', 'SELECT data FROM sqlite_dbpage'],
+    ['page statistics', 'SELECT name, pgsize FROM dbstat'],
+    ['a statement’s bytecode', "SELECT opcode FROM bytecode('SELECT 1')"],
+    ['the tables a statement uses', "SELECT name FROM tables_used('SELECT 1')"],
+    ['the statements open', 'SELECT sql FROM sqlite_stmt'],
+  ])('refuses %s', (_, sql) => {
+    expect(() => host.query(sql, [])).toThrow();
+  });
+});
+
+describe('the index host, opening a file it cannot read (#666)', () => {
+  /** Files whose next open fails with SQLite's `code`. */
+  function failingOnce(code: number) {
+    const discarded: string[] = [];
+    let fail = true;
+    const failing: MemoryIndexFiles = {
+      ...files,
+      open: (vault) => {
+        if (fail) {
+          fail = false;
+          throw Object.assign(new Error(`result code ${code}`), { resultCode: code });
+        }
+        return files.open(vault);
+      },
+      discard: (vault) => {
+        discarded.push(vault);
+        files.discard(vault);
+      },
+    };
+    return { failing, discarded };
+  }
+
+  it('keeps an index it could not open for a passing reason, and says why', async () => {
+    host.open(VAULT);
+    host.put(VAULT, [note('A.md')]);
+    files.keep();
+    const { failing, discarded } = failingOnce(10); // SQLITE_IOERR
+    const again = createWasmIndexHost({
+      sqlite3: await sqliteWasm(),
+      files: failing,
+      shape: WEB_INDEX,
+    });
+    expect(() => again.open(VAULT)).toThrow('result code 10');
+    expect(discarded).toEqual([]);
+    expect(again.open(VAULT)).toEqual({ fresh: false });
+  });
+
+  it('throws away a file that is not a database, and makes it again', async () => {
+    const { failing, discarded } = failingOnce(26); // SQLITE_NOTADB
+    const again = createWasmIndexHost({
+      sqlite3: await sqliteWasm(),
+      files: failing,
+      shape: WEB_INDEX,
+    });
+    expect(again.open(VAULT)).toEqual({ fresh: true });
+    expect(discarded.length).toBeGreaterThan(0);
+  });
+});

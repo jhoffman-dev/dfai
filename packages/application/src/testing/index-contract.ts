@@ -31,6 +31,13 @@ export interface IndexUnderTest {
   /** A fresh index, opened and empty. */
   readonly make: () => Promise<IndexPort>;
   readonly markdown: MarkdownPort;
+  /**
+   * Whether the index can stop a runaway query at the host's step budget
+   * (`QUERY_STEP_BUDGET`). False only for an engine with no progress handler
+   * to stop one with — node:sqlite on Node 22 — whose host is tested for it
+   * in Rust instead (`index.rs`'s query-budget tests).
+   */
+  readonly stopsRunawayQueries?: boolean;
 }
 
 const DAY = 86_400_000;
@@ -119,6 +126,7 @@ export function indexContract(name: string, under: IndexUnderTest): void {
     });
 
     queriesContract(() => index, ask);
+    if (under.stopsRunawayQueries !== false) budgetContract(() => index);
     hostCallsContract(() => index, under.markdown);
   });
 }
@@ -197,6 +205,18 @@ function queriesContract(index: () => IndexPort, ask: Ask) {
       await index().query('SELECT ? AS "text", ? AS "number", ? AS "nothing"', ['a"b', 7, null]),
     );
     expect(rows).toEqual([{ text: 'a"b', number: 7, nothing: null }]);
+  });
+}
+
+/** A query that would never end: every row of an endless count. */
+const RUNAWAY =
+  'WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) SELECT count(*) FROM n';
+
+function budgetContract(index: () => IndexPort) {
+  it('stops a runaway query at the step budget, as the host does, and answers the next', async () => {
+    await expect(index().query(RUNAWAY, [])).rejects.toThrow(/^interrupted$/);
+    expect((await index().stats()).notes).toBe(PATHS.length);
+    expect(records(await index().query('SELECT 1 AS one', []))).toEqual([{ one: 1 }]);
   });
 }
 

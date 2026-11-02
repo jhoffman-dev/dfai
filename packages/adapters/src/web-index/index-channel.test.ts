@@ -77,3 +77,43 @@ describe('the index channel (#666)', () => {
     expect(opened).toEqual(['github:example/garden']);
   });
 });
+
+describe('the index channel when the host or the worker fails (#666)', () => {
+  it('makes the host again on the next call when making it failed: a second tab can retry', async () => {
+    const channel = new MessageChannel();
+    channels.push(channel);
+    let attempts = 0;
+    serveIndexHost(channel.port1 as IndexEndpoint, async () => {
+      attempts++;
+      if (attempts === 1) throw new Error('the pool is held by another tab');
+      return { stats: () => ({ notes: 3, properties: 0, links: 0 }) } as unknown as WasmIndexHost;
+    });
+    channel.port1.start();
+    channel.port2.start();
+    const calls = indexHostOver(channel.port2 as IndexEndpoint);
+    await expect(calls.stats()).rejects.toThrow('the pool is held by another tab');
+    expect(await calls.stats()).toEqual({ notes: 3, properties: 0, links: 0 });
+    expect(attempts).toBe(2);
+  });
+
+  it('refuses every waiting call, and every later one, when the worker fails to load', async () => {
+    const worker = new EventTarget() as EventTarget & IndexEndpoint;
+    const posted: unknown[] = [];
+    worker.postMessage = (message) => void posted.push(message);
+    const calls = indexHostOver(worker);
+    const waiting = [calls.stats(), calls.manifest()];
+    worker.dispatchEvent(new Event('error'));
+    for (const call of waiting) await expect(call).rejects.toThrow(/the index worker failed/);
+    await expect(calls.stats()).rejects.toThrow(/the index worker failed/);
+    expect(posted).toHaveLength(2);
+  });
+
+  it('refuses the waiting calls when an answer cannot be read', async () => {
+    const worker = new EventTarget() as EventTarget & IndexEndpoint;
+    worker.postMessage = () => undefined;
+    const calls = indexHostOver(worker);
+    const waiting = calls.stats();
+    worker.dispatchEvent(new Event('messageerror'));
+    await expect(waiting).rejects.toThrow(/could not be read/);
+  });
+});
