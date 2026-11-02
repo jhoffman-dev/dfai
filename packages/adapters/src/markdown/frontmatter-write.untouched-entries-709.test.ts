@@ -55,6 +55,12 @@ describe('a comment line under a key with no value (#709)', () => {
     );
   });
 
+  it('keeps the ones the library reads as the key’s own when the entry under it is deleted', () => {
+    const two = block('properties:', '  a:', '  # one', '  # two', '  b: 1', '  c: 2');
+    // The library reads `# one` as a's and `# two` as b's: that one goes with b.
+    expect(written(two, deleted('b'))).toBe(block('properties:', '  a:', '  # one', '  c: 2'));
+  });
+
   it('stays under a key with only a comment, before a quoted key holding a list', () => {
     const commented = block(
       'properties:',
@@ -107,5 +113,21 @@ describe('block text next to the entry a change reaches (#709)', () => {
     expect(written(folded, renamed('b'))).toBe(
       block('properties:', '  k:   >2-', '     text', '    more', '  renamed: 1'),
     );
+  });
+
+  // A last line of spaces deeper than the text is the text's own, not a blank line of the map's.
+  const spaced = (header: string) =>
+    block('properties:', `  a: ${header}`, '     x', '       ', '  b: 1', '  c: 2');
+
+  it.each([
+    ['|2-', deleted('b')],
+    ['|2', deleted('b')],
+    ['>2', deleted('b')],
+    ['|2', added],
+    ['|2', renamed('b')],
+  ] as const)('keeps `%s` text ending in a line of spaces', (header, change) => {
+    const text = written(spaced(header), change);
+    expect(text).toContain(`\n  a: ${header}\n     x\n       \n`);
+    expect(text).toContain('\n  c: 2\n');
   });
 });

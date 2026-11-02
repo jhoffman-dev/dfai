@@ -447,7 +447,9 @@ function drawn709({
   const by = Number(/\d/.exec(header)?.[0] ?? 2);
   const at = indent + ' '.repeat(by);
   // An explicit indent lets the first line stand deeper than the rest.
-  const lines = `${at}${/\d/.test(header) ? '  ' : ''}lead\n${at}x${header.endsWith('+') ? '\n\n' : '\n'}`;
+  // Some end in a line of spaces deeper than the text, which is the text's own.
+  const spacesUnder = random() < 0.25 ? `${at}  \n` : '';
+  const lines = `${at}${/\d/.test(header) ? '  ' : ''}lead\n${at}x\n${spacesUnder}${header.endsWith('+') ? '\n' : ''}`;
   const comment = random() < 0.3 ? `${spaces()}# c` : '';
   return {
     key,
