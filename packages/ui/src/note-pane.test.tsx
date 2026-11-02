@@ -148,6 +148,16 @@ describe('NotePane: the bar', () => {
     expect(screen.queryByRole('button', { name: 'Keep mine as a copy' })).toBeNull();
   });
 
+  it('holds the copy button while a keep is under way, so one click makes one copy', () => {
+    show({
+      state: ready({ dirty: true, saving: true, saveError: 'The file changed on disk.' }),
+      onKeepAsCopy: vi.fn(),
+    });
+    expect(
+      (screen.getByRole('button', { name: 'Keep mine as a copy' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it('stars the page by its title', async () => {
     const { onToggleFavorite } = show();
     await userEvent.click(screen.getByRole('button', { name: 'Add A15-03 to favorites' }));
