@@ -1,5 +1,6 @@
 import type { Database, Sqlite3Static } from '@sqlite.org/sqlite-wasm';
 import type {
+  Clock,
   IndexedNote,
   IndexEntry,
   IndexOpening,
@@ -57,9 +58,12 @@ export function createWasmIndexHost({
   sqlite3,
   files,
   shape,
+  clock,
 }: {
   sqlite3: Sqlite3Static;
   files: IndexFiles;
+  /** What a query's deadline is kept by (`QUERY_DEADLINE_MS`). */
+  clock: Pick<Clock, 'now'>;
   /** The tables to make, from the host's schema file (`WEB_INDEX` in the app). */
   shape: WebIndexShape;
 }): WasmIndexHost {
@@ -95,7 +99,8 @@ export function createWasmIndexHost({
     notesOfType: (type) => notesOfType(database(), type),
     backlinks: (path) => backlinksOf(database(), path),
     rebuildViews: (types) => rebuildViews(database(), types),
-    query: (sql, parameters) => runQuery(sqlite3, database(), { sql, parameters }),
+    query: (sql, parameters) =>
+      runQuery({ sqlite3, database: database(), clock }, { sql, parameters }),
     stats: () => statsOf(database()),
   };
 }

@@ -14,6 +14,8 @@ import { cellOf } from './wasm-index-reads.ts';
  */
 
 const VAULT = 'github:example/garden';
+/** A clock that stands still: no query here runs out of time. */
+const STILL = { now: () => 0 };
 
 function note(path: string, more: Partial<IndexedNote> = {}): IndexedNote {
   return {
@@ -52,7 +54,12 @@ let files: MemoryIndexFiles;
 let host: WasmIndexHost;
 beforeEach(async () => {
   files = memoryIndexFiles(await sqliteWasm());
-  host = createWasmIndexHost({ sqlite3: await sqliteWasm(), files, shape: WEB_INDEX });
+  host = createWasmIndexHost({
+    clock: STILL,
+    sqlite3: await sqliteWasm(),
+    files,
+    shape: WEB_INDEX,
+  });
 });
 
 describe('the index host, opening (#666)', () => {
@@ -72,6 +79,7 @@ describe('the index host, opening (#666)', () => {
     host.open(VAULT);
     host.put(VAULT, [note('A.md')]);
     const other = createWasmIndexHost({
+      clock: STILL,
       sqlite3: await sqliteWasm(),
       files,
       shape: { schema: WEB_INDEX.schema, version: WEB_INDEX.version + 1 },
@@ -268,6 +276,7 @@ describe('the index host, opening a file it cannot read (#666)', () => {
     files.keep();
     const { failing, discarded } = failingOnce(10); // SQLITE_IOERR
     const again = createWasmIndexHost({
+      clock: STILL,
       sqlite3: await sqliteWasm(),
       files: failing,
       shape: WEB_INDEX,
@@ -280,6 +289,7 @@ describe('the index host, opening a file it cannot read (#666)', () => {
   it('throws away a file that is not a database, and makes it again', async () => {
     const { failing, discarded } = failingOnce(26); // SQLITE_NOTADB
     const again = createWasmIndexHost({
+      clock: STILL,
       sqlite3: await sqliteWasm(),
       files: failing,
       shape: WEB_INDEX,

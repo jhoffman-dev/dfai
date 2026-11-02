@@ -21,31 +21,30 @@ let sqlite3: Sqlite3Static;
 let host: WasmIndexHost;
 beforeEach(async () => {
   sqlite3 = await sqliteWasm();
-  host = createWasmIndexHost({ sqlite3, files: memoryIndexFiles(sqlite3), shape: WEB_INDEX });
+  host = createWasmIndexHost({
+    sqlite3,
+    files: memoryIndexFiles(sqlite3),
+    shape: WEB_INDEX,
+    clock: { now: () => 0 },
+  });
   host.open(VAULT);
 });
 
 describe('the result cap holds for what a query builds, not only what it returns (attack #747)', () => {
-  it.fails(
-    'refuses a query that builds a text value past the cap and returns only its length',
-    () => {
-      expect(() => host.query(`SELECT length(printf('%.*c', ${PAST_THE_CAP}, 'x'))`, [])).toThrow();
-    },
-  );
+  it('refuses a query that builds a text value past the cap and returns only its length', () => {
+    expect(() => host.query(`SELECT length(printf('%.*c', ${PAST_THE_CAP}, 'x'))`, [])).toThrow();
+  });
 
-  it.fails('refuses a query that builds a blob past the cap', () => {
+  it('refuses a query that builds a blob past the cap', () => {
     expect(() => host.query(`SELECT length(randomblob(${PAST_THE_CAP}))`, [])).toThrow();
   });
 
-  it.fails(
-    "keeps the worker's heap within a few caps after a query that builds huge values",
-    () => {
-      try {
-        host.query("SELECT printf('%.*c', 400000000, 'x') = printf('%.*c', 400000000, 'y')", []);
-      } catch {
-        // Refusing the query is the wanted outcome; the heap is what this test checks.
-      }
-      expect(sqlite3.wasm.heap8u().length).toBeLessThan(8 * MAX_QUERY_BYTES);
-    },
-  );
+  it("keeps the worker's heap within a few caps after a query that builds huge values", () => {
+    try {
+      host.query("SELECT printf('%.*c', 400000000, 'x') = printf('%.*c', 400000000, 'y')", []);
+    } catch {
+      // Refusing the query is the wanted outcome; the heap is what this test checks.
+    }
+    expect(sqlite3.wasm.heap8u().length).toBeLessThan(8 * MAX_QUERY_BYTES);
+  });
 });

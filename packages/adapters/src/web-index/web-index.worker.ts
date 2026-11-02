@@ -19,5 +19,7 @@ serveIndexHost(self as unknown as IndexEndpoint, async () => {
     directory: '/dfai-index',
   });
   await pool.reserveMinimumCapacity(POOL_CAPACITY);
-  return createWasmIndexHost({ sqlite3, files: opfsIndexFiles(pool), shape: WEB_INDEX });
+  // The worker is where the browser's clock is read: a query's deadline is kept by it.
+  const clock = { now: () => performance.now() };
+  return createWasmIndexHost({ sqlite3, files: opfsIndexFiles(pool), shape: WEB_INDEX, clock });
 });

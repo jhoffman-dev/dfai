@@ -1,5 +1,5 @@
-import type { Database, PreparedStatement, Sqlite3Static } from '@sqlite.org/sqlite-wasm';
-import type { QueryResult, ViewTypeSpec } from '@dfai/application';
+import type { Database, PreparedStatement, Sqlite3Static, SqlValue } from '@sqlite.org/sqlite-wasm';
+import type { Clock, QueryResult, ViewTypeSpec } from '@dfai/application';
 import { cellOf } from './wasm-index-reads.ts';
 
 /**
@@ -18,6 +18,16 @@ export const MAX_QUERY_BYTES = 16 * 1024 * 1024;
  * runaway query stops alike on every machine, and the worker is free again.
  */
 export const QUERY_STEP_BUDGET = 5_000_000;
+/**
+ * How long a query may run, on the injected clock. The desktop has no clock
+ * on a query, only its step budget, which natively runs out in about a
+ * second; a query that steps little but slowly (a long value built per row)
+ * can take a minute within it. Five seconds keeps the worker from being held
+ * past what the desktop's budget allows in practice, by a margin.
+ */
+export const QUERY_DEADLINE_MS = 5_000;
+/** How often the deadline and the steps are checked: the budget is a whole number of these. */
+const PROGRESS_STEPS = 10_000;
 /** What a query stopped at the budget is refused with: the host's word for it. */
 const INTERRUPTED = 'interrupted';
 const QUERY_TOO_LARGE = 'the result is larger than DFAI will read';
@@ -110,39 +120,78 @@ const isBlank = (text: string) =>
 
 /** Runs a query that only reads, its rows cut at the host's limits. */
 export function runQuery(
-  sqlite3: Sqlite3Static,
-  database: Database,
+  { sqlite3, database, clock }: QueryEngine,
   { sql, parameters }: { sql: string; parameters: readonly (string | number | null)[] },
 ): QueryResult {
-  const { capi } = sqlite3;
-  const statement = prepareRead(sqlite3, database, sql);
-  // Returning non-zero stops the statement: so one past the budget is interrupted.
-  capi.sqlite3_progress_handler(database, QUERY_STEP_BUDGET, () => 1, 0);
-  try {
-    if (parameters.length > 0) statement.bind([...parameters]);
-    const columns = statement.getColumnNames();
-    const rows: (string | number | null)[][] = [];
-    let bytes = 0;
-    let truncated = false;
-    while (statement.step()) {
-      if (rows.length >= MAX_QUERY_ROWS) {
-        truncated = true;
-        break;
-      }
-      const row = columns.map((_, at) => cellOf(statement.get(at)));
-      for (const cell of row) if (typeof cell === 'string') bytes += utf8Length(cell);
-      if (bytes > MAX_QUERY_BYTES) throw new Error(QUERY_TOO_LARGE);
-      rows.push(row);
+  return guarded({ sqlite3, database, clock }, () => {
+    const statement = prepareRead(sqlite3, database, sql);
+    try {
+      if (parameters.length > 0) statement.bind([...parameters]);
+      return readRows(statement);
+    } finally {
+      statement.finalize();
     }
-    return { columns, rows, truncated };
+  });
+}
+
+/** What a query runs on: SQLite, the index's database, and the clock its deadline is kept by. */
+export interface QueryEngine {
+  readonly sqlite3: Sqlite3Static;
+  readonly database: Database;
+  readonly clock: Pick<Clock, 'now'>;
+}
+
+/**
+ * Runs `query` held to the host's limits, each set only while it runs, so the
+ * index's own writes are not bound by them: no value it builds may be longer
+ * than the result cap, and it is stopped past its steps or its deadline.
+ * Either stop is refused as the host refuses one, "interrupted"; a value too
+ * long as a result too large.
+ */
+function guarded<Result>({ sqlite3, database, clock }: QueryEngine, query: () => Result): Result {
+  const { capi } = sqlite3;
+  const length = capi.sqlite3_limit(database, capi.SQLITE_LIMIT_LENGTH, MAX_QUERY_BYTES);
+  const started = clock.now();
+  let steps = 0;
+  // Asked every PROGRESS_STEPS steps; returning non-zero stops the statement.
+  const stop = () => {
+    steps += PROGRESS_STEPS;
+    return steps >= QUERY_STEP_BUDGET || clock.now() - started > QUERY_DEADLINE_MS ? 1 : 0;
+  };
+  capi.sqlite3_progress_handler(database, PROGRESS_STEPS, stop, 0);
+  try {
+    return query();
   } catch (error) {
-    if (resultCodeOf(error) === capi.SQLITE_INTERRUPT)
-      throw new Error(INTERRUPTED, { cause: error });
+    const code = resultCodeOf(error);
+    if (code === capi.SQLITE_INTERRUPT) throw new Error(INTERRUPTED, { cause: error });
+    if (code === capi.SQLITE_TOOBIG) throw new Error(QUERY_TOO_LARGE, { cause: error });
     throw error;
   } finally {
     capi.sqlite3_progress_handler(database, 0, 0, 0);
-    statement.finalize();
+    capi.sqlite3_limit(database, capi.SQLITE_LIMIT_LENGTH, length);
   }
+}
+
+/** Every row, cut at the row cap; text and blobs together held to the byte cap. */
+function readRows(statement: PreparedStatement): QueryResult {
+  const columns = statement.getColumnNames();
+  const rows: (string | number | null)[][] = [];
+  let bytes = 0;
+  while (statement.step()) {
+    if (rows.length >= MAX_QUERY_ROWS) return { columns, rows, truncated: true };
+    const values = columns.map((_, at) => statement.get(at));
+    for (const value of values) bytes += byteLength(value);
+    if (bytes > MAX_QUERY_BYTES) throw new Error(QUERY_TOO_LARGE);
+    rows.push(values.map(cellOf));
+  }
+  return { columns, rows, truncated: false };
+}
+
+/** How much of the result cap a cell takes: its text's UTF-8, or its blob's bytes. */
+function byteLength(value: SqlValue): number {
+  if (typeof value === 'string') return utf8Length(value);
+  if (value instanceof Uint8Array || value instanceof Int8Array) return value.byteLength;
+  return value instanceof ArrayBuffer ? value.byteLength : 0;
 }
 
 /** SQLite's result code on an error the WebAssembly build threw; null on any other. */

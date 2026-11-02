@@ -1,5 +1,5 @@
 import sqlite3InitModule, { type Sqlite3Static } from '@sqlite.org/sqlite-wasm';
-import type { IndexPort } from '@dfai/application';
+import type { Clock, IndexPort } from '@dfai/application';
 import { indexHostOver, serveIndexHost, type IndexEndpoint } from './index-channel.ts';
 import { memoryIndexFiles, type MemoryIndexFiles } from './memory-index-files.ts';
 import { createWasmIndexHost, type WasmIndexHost } from './wasm-index-host.ts';
@@ -29,10 +29,13 @@ export async function inMemoryWebIndex({
   openVault,
   files,
   shape,
+  clock = { now: () => 0 },
 }: {
   openVault: () => string | null;
   /** The tables, from the host's schema file: `WEB_INDEX` where Vite reads it, read from disk where not. */
   shape: WebIndexShape;
+  /** What a query's deadline is kept by; one that stands still, so only steps stop a query, when left out. */
+  clock?: Pick<Clock, 'now'>;
   /** The files of an index made before, to open again; new ones when left out. */
   files?: MemoryIndexFiles;
 }): Promise<InMemoryWebIndex> {
@@ -41,7 +44,7 @@ export async function inMemoryWebIndex({
   const calls = new Map<string, number>();
   const channel = new MessageChannel();
   serveIndexHost(channel.port1 as IndexEndpoint, async () =>
-    countedHost(createWasmIndexHost({ sqlite3, files: held, shape }), calls),
+    countedHost(createWasmIndexHost({ sqlite3, files: held, shape, clock }), calls),
   );
   channel.port1.start();
   channel.port2.start();
