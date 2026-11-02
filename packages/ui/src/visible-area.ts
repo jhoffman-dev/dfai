@@ -31,8 +31,14 @@ export function onVisibleAreaChange(listen: () => void): () => void {
   }
   viewport.addEventListener('resize', listen);
   viewport.addEventListener('scroll', listen);
+
   return () => {
     viewport.removeEventListener('resize', listen);
     viewport.removeEventListener('scroll', listen);
   };
+}
+
+/** Whether the pointer is a finger, as `(pointer: coarse)` says; false where the browser cannot say. */
+export function hasCoarsePointer(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 }

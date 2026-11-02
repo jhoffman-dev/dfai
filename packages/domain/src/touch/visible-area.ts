@@ -99,3 +99,44 @@ export function caretScrollBy({
   if (caret.top - margin < visible.top) return caret.top - margin - visible.top;
   return 0;
 }
+
+/** What a change of the visible area says about the on-screen keyboard. */
+export type KeyboardChange = 'rose' | 'fell' | 'none';
+
+/**
+ * Whether a change of the visible area is the on-screen keyboard rising or
+ * going: the height changed and the width did not, on a touch screen. A
+ * window resized by a mouse, or a pinch-zoom, changes the width too — and
+ * a desktop has no on-screen keyboard at all, so there the answer is never
+ * a keyboard, and nothing of its own moves (review of PR #744).
+ */
+export function keyboardChange({
+  before,
+  after,
+  coarsePointer,
+}: {
+  before: Area;
+  after: Area;
+  /** Whether the pointer is a finger: `(pointer: coarse)`. */
+  coarsePointer: boolean;
+}): KeyboardChange {
+  if (!coarsePointer || after.width !== before.width || after.height === before.height)
+    return 'none';
+  return after.height < before.height ? 'rose' : 'fell';
+}
+
+/**
+ * How much of the window the keyboard covers, in CSS pixels: the part below
+ * the visible area. A note is given this much more room under its last line,
+ * or the caret there could not be scrolled above the keyboard (review of
+ * PR #744: below the last line there is only the note's own padding).
+ */
+export function keyboardInset({
+  windowHeight,
+  visible,
+}: {
+  windowHeight: number;
+  visible: Area;
+}): number {
+  return Math.max(0, windowHeight - (visible.top + visible.height));
+}
