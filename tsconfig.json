@@ -35,6 +35,7 @@
       "@dfai/adapters/epub": ["./packages/adapters/src/epub/index.ts"],
       "@dfai/adapters/tauri": ["./packages/adapters/src/tauri/index.ts"],
       "@dfai/adapters/web-index": ["./packages/adapters/src/web-index/index.ts"],
+      "@dfai/adapters/testing/github": ["./packages/adapters/src/testing/github.ts"],
       "@dfai/ui": ["./packages/ui/src/index.ts"],
       "@dfai/ui/graph": ["./packages/ui/src/graph/index.ts"],
       "@dfai/ui/testing/settles": ["./packages/ui/src/testing/settles.ts"],

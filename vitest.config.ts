@@ -93,6 +93,13 @@ export default defineConfig({
           new URL('./packages/adapters/src/tauri/index.ts', import.meta.url),
         ),
       },
+      // The GitHub API stand-in, for the two-Macs harness's web writer (#665): test code.
+      {
+        find: '@dfai/adapters/testing/github',
+        replacement: fileURLToPath(
+          new URL('./packages/adapters/src/testing/github.ts', import.meta.url),
+        ),
+      },
       { find: '@dfai/adapters', replacement: pkg('adapters') },
       { find: '@dfai/ui', replacement: pkg('ui') },
       // The app shell (#656). Exact, so its stylesheet export resolves through its package.json.

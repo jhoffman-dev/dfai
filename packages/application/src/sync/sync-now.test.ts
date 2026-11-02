@@ -255,6 +255,22 @@ describe('syncNow', () => {
     });
   });
 
+  it('names the copy of a web edit for the web, as the web names its own (#665)', async () => {
+    const sides = { 'Projects/Ideas.md': { ours: 'mine\n', theirs: 'from the web\n' } };
+    const { run, files } = setUp({
+      script: {
+        ...conflicted([{ path: 'Projects/Ideas.md', code: 'UU' }], { sides }),
+        remoteSubject: said('Save Projects/Ideas.md\n'),
+        remoteAuthor: said('DFAI web\n'),
+      },
+      files: { 'Projects/Ideas.md': MARKED },
+      sides,
+    });
+    await run();
+    expect(files.get('Projects/Ideas.md')).toBe('mine\n');
+    expect(files.get('Projects/Ideas (conflict from DFAI web).md')).toBe('from the web\n');
+  });
+
   it('copies an attachment both Macs changed the same way, bytes as git wrote them', async () => {
     const sides = { 'Attachments/photo.png': { ours: 'PNG-mine', theirs: 'PNG-theirs' } };
     const { run, files, activity } = setUp({

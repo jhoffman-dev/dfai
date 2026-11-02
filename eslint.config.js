@@ -415,6 +415,8 @@ const nodeSupport = [
   'packages/shell/src/styles.test-support.ts',
   // Two simulated Macs syncing through the real git, over the real disk (U-29).
   'packages/shell/src/sync/two-macs.harness.ts',
+  // A web writer committing through the GitHub stand-in to the Macs' own remote (#665).
+  'packages/shell/src/sync/web-writer.test-support.ts',
   // Judges a rewrite with node:util's deep equality.
   'packages/adapters/src/markdown/frontmatter-write-cases.attack-454.ts',
   // Sets the process's time zone, which is how Node takes one.

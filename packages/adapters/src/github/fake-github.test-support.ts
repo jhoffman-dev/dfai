@@ -16,16 +16,42 @@ import type { GitHubVaultRepository } from './git-branch.ts';
  *   `Update is not a fast forward`;
  * - a token not issued is a 401 `Bad credentials`.
  *
- * Trees and commits are named by a hash of their contents rather than git's
- * exact encoding: the vault treats those names as opaque, and only blob
- * names are ever computed on its side.
+ * Its objects and its branch are held by a {@link GitObjects}: in memory by
+ * default, where trees and commits are named by a hash of their contents
+ * rather than git's exact encoding (the vault treats those names as opaque,
+ * and only blob names are ever computed on its side); or a real repository,
+ * so the web writes the very branch the desktops sync with (#665).
  */
 
-type Entries = ReadonlyMap<string, { readonly mode: string; readonly sha: string }>;
-interface Commit {
+/** A tree's files, flattened, by path. */
+export type Entries = ReadonlyMap<string, { readonly mode: string; readonly sha: string }>;
+
+/** Who a commit is by, as the API takes it. */
+export interface CommitAuthor {
+  readonly name: string;
+  readonly email: string;
+}
+
+export interface Commit {
   readonly tree: string;
   readonly parents: readonly string[];
   readonly message: string;
+  /** Absent when the request named none; GitHub then records the signed-in person. */
+  readonly author?: CommitAuthor;
+}
+
+/** Where the stand-in keeps its blobs, trees, commits and the branch's head. */
+export interface GitObjects {
+  head(): Promise<string>;
+  /** Moves the head from `from` to `to`, only if it is still at `from`. */
+  moveHead(args: { from: string; to: string }): Promise<boolean>;
+  putBlob(bytes: Uint8Array): Promise<string>;
+  blob(sha: string): Promise<Uint8Array | undefined>;
+  putTree(entries: Entries): Promise<string>;
+  /** A tree's files, or undefined when `sha` names no tree. */
+  tree(sha: string): Promise<Entries | undefined>;
+  putCommit(commit: Commit): Promise<string>;
+  commit(sha: string): Promise<Commit | undefined>;
 }
 
 /** A request as the stand-in received it. */
@@ -44,12 +70,14 @@ interface Interception {
 }
 
 export interface FakeGitHubOptions {
-  readonly files: Readonly<Record<string, string | Uint8Array>>;
+  readonly files?: Readonly<Record<string, string | Uint8Array>>;
   readonly where?: GitHubVaultRepository;
   /** Symbolic links, by path, to the target each names: blobs of mode 120000. */
   readonly links?: Readonly<Record<string, string>>;
   /** The repositories the App's one installation reaches; the vault's alone by default. */
   readonly reached?: readonly GitHubVaultRepository[];
+  /** A store already holding the branch, in place of one seeded with `files` in memory. */
+  readonly objects?: GitObjects;
 }
 
 export const FAKE_TOKEN = 'ghu_fake-token-one';
@@ -68,23 +96,62 @@ async function shaOfText(text: string): Promise<string> {
   return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** The stand-in's own store, in memory. */
+export function memoryGitObjects(): GitObjects {
+  const blobs = new Map<string, Uint8Array>();
+  const trees = new Map<string, Entries>();
+  const commits = new Map<string, Commit>();
+  let head = '';
+  let made = 0;
+  return {
+    head: async () => head,
+    moveHead: async ({ from, to }) => {
+      if (head !== from) return false;
+      head = to;
+      return true;
+    },
+    putBlob: async (bytes) => {
+      const sha = await gitBlobSha(bytes);
+      blobs.set(sha, bytes.slice());
+      return sha;
+    },
+    blob: async (sha) => blobs.get(sha),
+    putTree: async (entries) => {
+      const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : 1));
+      const sha = await shaOfText(`tree ${JSON.stringify(sorted)}`);
+      trees.set(sha, new Map(sorted));
+      return sha;
+    },
+    tree: async (sha) => trees.get(sha),
+    putCommit: async (commit) => {
+      const sha = await shaOfText(`commit ${++made} ${JSON.stringify(commit)}`);
+      commits.set(sha, commit);
+      return sha;
+    },
+    commit: async (sha) => commits.get(sha),
+  };
+}
+
 export class FakeGitHub {
   readonly where: GitHubVaultRepository;
   readonly received: Received[] = [];
   readonly tokens = new Set([FAKE_TOKEN]);
-  private readonly blobs = new Map<string, Uint8Array>();
-  private readonly trees = new Map<string, Entries>();
-  private readonly commits = new Map<string, Commit>();
+  readonly objects: GitObjects;
   private readonly interceptions: Interception[] = [];
   private readonly reached: readonly GitHubVaultRepository[];
-  private head = '';
-  private made = 0;
   private readonly ready: Promise<void>;
 
-  constructor({ files, links = {}, where = FAKE_VAULT, reached = [where] }: FakeGitHubOptions) {
+  constructor({
+    files,
+    links = {},
+    where = FAKE_VAULT,
+    reached = [where],
+    objects,
+  }: FakeGitHubOptions) {
     this.where = where;
     this.reached = reached;
-    this.ready = this.seed(files, links);
+    this.objects = objects ?? memoryGitObjects();
+    this.ready = objects === undefined ? this.seed(files, links) : Promise.resolve();
   }
 
   /** `fetch`, as the vault is given it. */
@@ -136,20 +203,23 @@ export class FakeGitHub {
     changes: Readonly<Record<string, string | Uint8Array | null>>,
   ): Promise<string> {
     await this.ready;
-    const entries = new Map(this.entriesAt(this.head));
+    const from = await this.objects.head();
+    const entries = new Map(await this.entriesAt(from));
     for (const [path, content] of Object.entries(changes)) {
       if (content === null) entries.delete(path);
       else entries.set(path, { mode: '100644', sha: await this.store(content) });
     }
-    this.head = await this.commit(await this.putTree(entries), [this.head], 'Outside');
-    return this.head;
+    const tree = await this.objects.putTree(entries);
+    const to = await this.objects.putCommit({ tree, parents: [from], message: 'Outside' });
+    await this.objects.moveHead({ from, to });
+    return to;
   }
 
   /** The bytes at `path` on the branch now, or undefined. */
   async bytesAt(path: string): Promise<Uint8Array | undefined> {
     await this.ready;
-    const entry = this.entriesAt(this.head).get(path);
-    return entry === undefined ? undefined : this.blobs.get(entry.sha);
+    const entry = (await this.entriesAt(await this.objects.head())).get(path);
+    return entry === undefined ? undefined : this.objects.blob(entry.sha);
   }
 
   async textAt(path: string): Promise<string | undefined> {
@@ -162,25 +232,30 @@ export class FakeGitHub {
   /** Every path on the branch now, sorted. */
   async paths(): Promise<string[]> {
     await this.ready;
-    return [...this.entriesAt(this.head).keys()].sort();
+    return [...(await this.entriesAt(await this.objects.head())).keys()].sort();
+  }
+
+  /** The branch's commits along first parents, newest first. */
+  async commits(): Promise<Commit[]> {
+    await this.ready;
+    const found: Commit[] = [];
+    for (let at: string | undefined = await this.objects.head(); at !== undefined;) {
+      const commit = await this.objects.commit(at);
+      if (commit === undefined) break;
+      found.push(commit);
+      at = commit.parents[0];
+    }
+    return found;
   }
 
   /** The messages of the branch's commits, newest first. */
   async history(): Promise<string[]> {
-    await this.ready;
-    const messages: string[] = [];
-    for (
-      let at: string | undefined = this.head;
-      at !== undefined;
-      at = this.commits.get(at)?.parents[0]
-    )
-      messages.push(this.commits.get(at)!.message);
-    return messages;
+    return (await this.commits()).map(({ message }) => message);
   }
 
   async headSha(): Promise<string> {
     await this.ready;
-    return this.head;
+    return this.objects.head();
   }
 
   /** Requests sent, as `METHOD path` without the repository prefix. */
@@ -189,47 +264,35 @@ export class FakeGitHub {
     return this.received.map(({ method, path }) => `${method} ${path.replace(prefix, '')}`);
   }
 
-  private async seed(files: FakeGitHubOptions['files'], links: Readonly<Record<string, string>>) {
+  private async seed(
+    files: FakeGitHubOptions['files'] = {},
+    links: Readonly<Record<string, string>>,
+  ) {
     const entries = new Map<string, { mode: string; sha: string }>();
     for (const [path, content] of Object.entries(files))
       entries.set(path, { mode: '100644', sha: await this.store(content) });
     for (const [path, target] of Object.entries(links))
       entries.set(path, { mode: '120000', sha: await this.store(target) });
-    this.head = await this.commit(await this.putTree(entries), [], 'Seed');
+    const tree = await this.objects.putTree(entries);
+    const to = await this.objects.putCommit({ tree, parents: [], message: 'Seed' });
+    await this.objects.moveHead({ from: '', to });
   }
 
-  private async store(content: string | Uint8Array): Promise<string> {
-    const bytes = typeof content === 'string' ? utf8(content) : content;
-    const sha = await gitBlobSha(bytes);
-    this.blobs.set(sha, bytes.slice());
-    return sha;
+  private store(content: string | Uint8Array): Promise<string> {
+    return this.objects.putBlob(typeof content === 'string' ? utf8(content) : content);
   }
 
-  private async putTree(entries: Entries): Promise<string> {
-    const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : 1));
-    const sha = await shaOfText(`tree ${JSON.stringify(sorted)}`);
-    this.trees.set(sha, new Map(sorted));
-    return sha;
-  }
-
-  private async commit(tree: string, parents: readonly string[], message: string): Promise<string> {
-    const sha = await shaOfText(
-      `commit ${++this.made} ${JSON.stringify({ tree, parents, message })}`,
-    );
-    this.commits.set(sha, { tree, parents, message });
-    return sha;
-  }
-
-  private entriesAt(commitOrTree: string): Entries {
-    return this.trees.get(this.commits.get(commitOrTree)?.tree ?? commitOrTree) ?? new Map();
+  /** A tree's files, named by the tree or by a commit of it; none for a name of neither. */
+  private async entriesAt(commitOrTree: string): Promise<Entries> {
+    const tree = (await this.objects.commit(commitOrTree))?.tree ?? commitOrTree;
+    return (await this.objects.tree(tree)) ?? new Map();
   }
 
   private route(request: Received): Answer {
     const repo = `/repos/${this.where.owner}/${this.where.repo}/git`;
     const branchRef = `heads/${this.where.branch}`;
     const { method, path } = request;
-    if (method === 'GET' && path === `${repo}/ref/${branchRef}`)
-      return json(200, { ref: `refs/${branchRef}`, object: { type: 'commit', sha: this.head } });
+    if (method === 'GET' && path === `${repo}/ref/${branchRef}`) return this.readRef(branchRef);
     const tree = new RegExp(`^${repo}/trees/([0-9a-f]+)\\?recursive=1$`).exec(path);
     if (method === 'GET' && tree) return this.listTree(tree[1]!);
     const blob = new RegExp(`^${repo}/blobs/([0-9a-f]+)$`).exec(path);
@@ -257,30 +320,38 @@ export class FakeGitHub {
     return refusal(404, 'Not Found');
   }
 
-  private listTree(sha: string): Response {
-    const treeSha = this.commits.get(sha)?.tree ?? sha;
-    const entries = this.trees.get(treeSha);
+  private async readRef(branchRef: string): Promise<Response> {
+    const sha = await this.objects.head();
+    return json(200, { ref: `refs/${branchRef}`, object: { type: 'commit', sha } });
+  }
+
+  private async listTree(sha: string): Promise<Response> {
+    const treeSha = (await this.objects.commit(sha))?.tree ?? sha;
+    const entries = await this.objects.tree(treeSha);
     if (entries === undefined) return refusal(404, 'Not Found');
     const folders = new Set<string>();
     for (const path of entries.keys()) {
       const segments = path.split('/').slice(0, -1);
       segments.forEach((_, end) => folders.add(segments.slice(0, end + 1).join('/')));
     }
-    const listed = [
-      ...[...folders].map((path) => ({ path, mode: '040000', type: 'tree', sha: treeSha })),
-      ...[...entries].map(([path, { mode, sha: blob }]) => ({
+    const files = await Promise.all(
+      [...entries].map(async ([path, { mode, sha: blob }]) => ({
         path,
         mode,
         type: 'blob',
         sha: blob,
-        size: this.blobs.get(blob)!.byteLength,
+        size: (await this.objects.blob(blob))!.byteLength,
       })),
+    );
+    const listed = [
+      ...[...folders].map((path) => ({ path, mode: '040000', type: 'tree', sha: treeSha })),
+      ...files,
     ].sort((a, b) => (a.path < b.path ? -1 : 1));
     return json(200, { sha: treeSha, tree: listed, truncated: false });
   }
 
-  private readBlob(sha: string): Response {
-    const bytes = this.blobs.get(sha);
+  private async readBlob(sha: string): Promise<Response> {
+    const bytes = await this.objects.blob(sha);
     if (bytes === undefined) return refusal(404, 'Not Found');
     const content = (bytesToBase64(bytes).match(/.{1,60}/g) ?? []).join('\n');
     return json(200, { sha, size: bytes.byteLength, content: `${content}\n`, encoding: 'base64' });
@@ -297,48 +368,61 @@ export class FakeGitHub {
 
   private async createTree(body: unknown): Promise<Response> {
     const { base_tree: base, tree } = body as { base_tree?: string; tree?: unknown };
-    if (base === undefined || !this.trees.has(base) || !Array.isArray(tree))
-      return refusal(422, 'Invalid tree info');
-    const entries = new Map(this.trees.get(base)!);
+    const based = base === undefined ? undefined : await this.objects.tree(base);
+    if (based === undefined || !Array.isArray(tree)) return refusal(422, 'Invalid tree info');
+    const entries = new Map(based);
     for (const raw of tree as { path: string; mode: string; type: string; sha: string | null }[]) {
       if (raw.type !== 'blob') return refusal(422, 'Invalid tree info');
       if (raw.sha === null) {
         if (!entries.delete(raw.path)) return refusal(422, `${raw.path} is not in the tree`);
-      } else if (!this.blobs.has(raw.sha)) return refusal(422, 'Invalid tree info');
+      } else if ((await this.objects.blob(raw.sha)) === undefined)
+        return refusal(422, 'Invalid tree info');
       else entries.set(raw.path, { mode: raw.mode, sha: raw.sha });
     }
     const paths = [...entries.keys()];
     if (paths.some((path) => paths.some((other) => other.startsWith(`${path}/`))))
       return refusal(422, 'A path is both a file and a folder');
-    return json(201, { sha: await this.putTree(entries) });
+    return json(201, { sha: await this.objects.putTree(entries) });
   }
 
   private async createCommit(body: unknown): Promise<Response> {
-    const { message, tree, parents } = body as {
+    const { message, tree, parents, author } = body as {
       message?: string;
       tree?: string;
       parents?: string[];
+      author?: CommitAuthor;
     };
-    if (typeof message !== 'string' || tree === undefined || !this.trees.has(tree))
-      return refusal(422, 'Invalid commit');
-    if (!Array.isArray(parents) || parents.some((parent) => !this.commits.has(parent)))
-      return refusal(422, 'Invalid parent');
-    return json(201, { sha: await this.commit(tree, parents, message) });
+    if (typeof message !== 'string' || tree === undefined) return refusal(422, 'Invalid commit');
+    if ((await this.objects.tree(tree)) === undefined) return refusal(422, 'Invalid commit');
+    if (
+      author !== undefined &&
+      (typeof author.name !== 'string' || typeof author.email !== 'string')
+    )
+      return refusal(422, 'Invalid author');
+    if (!Array.isArray(parents)) return refusal(422, 'Invalid parent');
+    for (const parent of parents)
+      if ((await this.objects.commit(parent)) === undefined) return refusal(422, 'Invalid parent');
+    const commit: Commit = { tree, parents, message, ...(author !== undefined && { author }) };
+    return json(201, { sha: await this.objects.putCommit(commit) });
   }
 
-  private updateRef(body: unknown): Response {
+  private async updateRef(body: unknown): Promise<Response> {
     const { sha, force } = body as { sha?: string; force?: boolean };
-    if (sha === undefined || !this.commits.has(sha)) return refusal(422, 'Object does not exist');
-    if (force !== true && !this.descends(sha, this.head))
+    if (sha === undefined || (await this.objects.commit(sha)) === undefined)
+      return refusal(422, 'Object does not exist');
+    const head = await this.objects.head();
+    if (force !== true && !(await this.descends(sha, head)))
       return refusal(422, 'Update is not a fast forward');
-    this.head = sha;
+    // The head is moved only from where it was checked, as GitHub's ref update is atomic.
+    if (!(await this.objects.moveHead({ from: head, to: sha })))
+      return refusal(422, 'Update is not a fast forward');
     return json(200, { ref: `refs/heads/${this.where.branch}`, object: { type: 'commit', sha } });
   }
 
-  private descends(commit: string, ancestor: string): boolean {
+  private async descends(commit: string, ancestor: string): Promise<boolean> {
     if (commit === ancestor) return true;
-    return (this.commits.get(commit)?.parents ?? []).some((parent) =>
-      this.descends(parent, ancestor),
-    );
+    for (const parent of (await this.objects.commit(commit))?.parents ?? [])
+      if (await this.descends(parent, ancestor)) return true;
+    return false;
   }
 }

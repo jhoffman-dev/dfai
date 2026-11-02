@@ -10,7 +10,8 @@
     "./pdf": "./src/pdf/index.ts",
     "./epub": "./src/epub/index.ts",
     "./tauri": "./src/tauri/index.ts",
-    "./web-index": "./src/web-index/index.ts"
+    "./web-index": "./src/web-index/index.ts",
+    "./testing/github": "./src/testing/github.ts"
   },
   "dependencies": {
     "@dfai/application": "workspace:*",

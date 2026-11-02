@@ -48,6 +48,8 @@ export {
   settingsFileOfCopy,
 } from './conflict-copy.ts';
 export type { ConflictStep } from './conflict-copy.ts';
+export { copyOfRefusedWrite, deviceOfCommit, WEB_COMMIT_AUTHOR, WEB_DEVICE } from './web-device.ts';
+export type { KeptCopy } from './web-device.ts';
 export {
   extrasDfaiWrote,
   jsonHasDuplicateKeys,

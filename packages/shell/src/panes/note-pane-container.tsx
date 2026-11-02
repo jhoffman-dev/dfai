@@ -1036,6 +1036,7 @@ export function useNotePane({
         template === null && { onShowInGraph: () => onShowInGraph(path) })}
       onOverwrite={note.overwrite}
       onDiscard={note.discard}
+      {...(note.keepAsCopy !== null && { onKeepAsCopy: note.keepAsCopy })}
       favorite={note.open !== null && isFavorite(note.open.properties)}
       onToggleFavorite={() => {
         if (path !== null) onToggleFavorite(path);

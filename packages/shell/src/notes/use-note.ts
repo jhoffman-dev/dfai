@@ -10,6 +10,8 @@ import {
   NoteChangedError,
   noteModified,
   NoteStillOpeningError,
+  isStaleWriteRefusal,
+  keepRefusedAsCopy,
   openNote,
   saveNote,
   type PropertyChanges,
@@ -25,6 +27,11 @@ import type { Stranding } from './stranded-edits.ts';
 export interface NotePorts {
   fs: VaultFsPort;
   markdown: MarkdownPort;
+  /**
+   * The device this editor writes from, as a conflict copy is named for it —
+   * the web's, say (#665). Named, a refused save can be kept as a copy.
+   */
+  device?: string;
 }
 
 export interface NoteView {
@@ -62,6 +69,12 @@ export interface NoteView {
   overwrite: () => void;
   /** Throws away the unsaved edits and takes the file as it stands. */
   discard: () => void;
+  /**
+   * The way out of a refused save that loses neither version (#665): what is
+   * on screen is kept whole as a conflict copy beside the note, and the note
+   * is then taken as it stands. Null where no device is named to name it for.
+   */
+  keepAsCopy: (() => void) | null;
   /**
    * Writes any unsaved edits now, settling once the write has landed or been
    * refused. For leaving the vault: after that, this note's path means a note
@@ -161,6 +174,11 @@ export function useNote({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** Whether the save error is a refusal because the note moved on: only then is a copy offered. */
+  const [staleRefusal, setStaleRefusal] = useState(false);
+  /** A keep-as-copy under way: a second click waits for it rather than making a second copy. */
+  const [keepingCopy, setKeepingCopy] = useState(false);
+  const keeping = useRef(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   /** Bumped to re-read the note that is already open. */
@@ -473,6 +491,7 @@ export function useNote({
     (written: EditorDocument, writing: Promise<SavedNote>) => {
       setSaving(true);
       setSaveError(null);
+      setStaleRefusal(false);
       // Taken now: what is on screen holds the handed-back work, so once this
       // lands the work is on disk, even if the pane has moved on by then.
       const holdingRecovered = recovered.current;
@@ -499,6 +518,7 @@ export function useNote({
         })
         .catch((cause: unknown) => {
           setSaveError(message(cause));
+          setStaleRefusal(isStaleWriteRefusal(cause));
           // Passed on as well as shown: a caller writing through this pane — a
           // board drag, the local API — must not report a write that never landed.
           throw cause;
@@ -602,6 +622,48 @@ export function useNote({
     // afresh whether anything handed back is outdated.
     setRevision((was) => was + 1);
   }, []);
+
+  const keepCopy = useCallback(() => {
+    const { device } = ports;
+    const written = onScreen.current;
+    if (device === undefined || note === null || written === null || keeping.current) return;
+    // What the copy is made of, and of which note. Anything typed or opened
+    // while it is out is newer than the copy, and must not go with it.
+    const heldThen = holding.current;
+    const kept = { fs: ports.fs, markdown: ports.markdown, note, doc: written, device };
+    const run = () => keepRefusedAsCopy(kept);
+    const copying = writes.current.queue.then(run, run);
+    // Reported below; the queue only has to know it is over.
+    writes.current.queue = copying.catch(() => undefined);
+    keeping.current = true;
+    setKeepingCopy(true);
+    const unchanged = () => holding.current === heldThen && onScreen.current === written;
+    copying
+      .then(
+        () => {
+          // Only what was copied is let go of. Typing since stays on screen,
+          // unsaved, still refused, with the choice offered again; another
+          // note the pane moved to is left alone.
+          if (unchanged()) discard();
+        },
+        (error: unknown) => {
+          // Refused, the edits stay on screen, unsaved, with the reason.
+          if (holding.current === heldThen) {
+            setSaveError(message(error));
+            setStaleRefusal(isStaleWriteRefusal(error));
+          }
+          shownInPane(path)(error);
+        },
+      )
+      .finally(() => {
+        keeping.current = false;
+        setKeepingCopy(false);
+      });
+  }, [ports, note, path, discard, shownInPane]);
+  const refusedAsStale = outdated !== null || (saveError !== null && staleRefusal);
+  // Still offered while a keep is under way — the pane shows it held, as it
+  // is saving — and a second click is a no-op until the first is over.
+  const keepAsCopy = ports.device !== undefined && refusedAsStale ? keepCopy : null;
 
   /**
    * The latest note and document, for saving on the way out.
@@ -794,7 +856,7 @@ export function useNote({
               title: noteTitle(path),
               doc,
               dirty,
-              saving,
+              saving: saving || keepingCopy,
               // Shown as a refused save is, because it is one waiting to happen,
               // and the same two buttons are the way out of it.
               saveError: saveError ?? (outdated !== null ? CHANGED_SINCE_KEPT : null),
@@ -811,6 +873,7 @@ export function useNote({
     reload,
     overwrite,
     discard,
+    keepAsCopy,
     flush,
     repoint,
     abandon,

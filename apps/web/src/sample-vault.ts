@@ -1,3 +1,4 @@
+import { WEB_DEVICE } from '@dfai/domain';
 import type { VaultLocation } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import type { IndexPorts, NotePorts, OnHost, VaultPorts } from '@dfai/shell';
@@ -32,7 +33,8 @@ export function sampleVault(): {
       // Nothing but the page writes the session's vault, so there is nothing to watch for.
       watch: { start: async () => {}, onChange: async () => () => {} },
     },
-    notes: { fs, markdown: remarkMarkdown },
+    // The web names its conflict copies for itself, as the desktop's are named for a Mac (#665).
+    notes: { fs, markdown: remarkMarkdown, device: WEB_DEVICE },
     // On the window's thread: a sample this small needs no worker, and the browser's index brings its own (#666).
     index: { fs, index: sessionIndex(), markdown: remarkMarkdown },
   };
