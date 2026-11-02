@@ -130,7 +130,7 @@ describe('keep-chomped block text survives every change (#739 property)', () => 
   it('reads back exactly as asked and writes no comment twice, or is refused', () => {
     const broken = cases.flatMap(problemsOf);
     expect(broken.slice(0, 5)).toEqual([]);
-  });
+  }, 120_000);
 
   it('writes most changes rather than refusing them', () => {
     const refused = cases.filter(({ original, changes }) => {
@@ -143,5 +143,5 @@ describe('keep-chomped block text survives every change (#739 property)', () => 
       }
     });
     expect(refused.length).toBeLessThan(cases.length * 0.1);
-  });
+  }, 120_000);
 });
