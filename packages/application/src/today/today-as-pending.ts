@@ -35,7 +35,7 @@ export function todayAsPending({
     section.groups.flatMap((group) => group.tasks),
   );
   if (!tasks.some((task) => pending.has(task.path))) return report;
-  const newest = tasks.reduce((latest, task) => Math.max(latest, task.modified), 0);
+  const newest = tasks.reduce((latest, task) => Math.max(latest, task.modified ?? 0), 0);
   const changed = new Map(
     tasks.flatMap((task) => {
       const values = pending.get(task.path);

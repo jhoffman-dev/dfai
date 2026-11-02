@@ -30,6 +30,7 @@ import type { ActivityLog } from '../activity/ports.ts';
 import type { Clock } from '../ports.ts';
 import { AtlasQueryError } from '../query/run-atlas-query.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
+import { writtenAt } from '../vault/written-at.ts';
 import { changeProperties, type PropertyOutcome } from './apply-changes.ts';
 import { withHandledKeys } from './handled-keys.ts';
 import {
@@ -664,7 +665,8 @@ function ranEmpty({
  */
 async function savedAt(fs: AutomationPorts['fs'], path: VaultPath): Promise<number | null> {
   try {
-    return (await fs.readTextFile(path)).modified;
+    // Unknown in a vault with no file times (ADR-0053): a backfill too, so only proposals.
+    return writtenAt(await fs.readTextFile(path));
   } catch {
     // Safe to go without: every meeting is then taken for a backfill, which makes only proposals.
     return null;

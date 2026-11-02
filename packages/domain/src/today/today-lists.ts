@@ -1,5 +1,6 @@
 import { FINISHED_TASK_STATUS, GTD_STATUSES, type GtdStatus } from '../gtd/gtd-status.ts';
 import {
+  byOldestChange,
   byTitle,
   DAY_MS,
   isDeferred,
@@ -160,7 +161,9 @@ const asListed =
   (task: ReviewTask): TodayTask => ({
     ...task,
     waitingDays:
-      task.status === 'waiting' ? Math.max(0, Math.floor((at.now - task.modified) / DAY_MS)) : null,
+      task.status === 'waiting' && task.modified !== null
+        ? Math.max(0, Math.floor((at.now - task.modified) / DAY_MS))
+        : null,
     laterChoice: laterChoiceOf({ ...task, today: at.today, choosing }),
   });
 
@@ -226,7 +229,7 @@ function byPerson(tasks: TodayTask[]): TodayGroup[] {
       label: first.waitingOn === '' ? null : first.waitingOn,
       project: null,
     }),
-    order: (left, right) => left.modified - right.modified || byTitle(left, right),
+    order: byOldestChange,
   });
 }
 

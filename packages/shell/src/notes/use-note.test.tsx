@@ -58,14 +58,19 @@ function gate() {
 
 /**
  * `coarse`: a disk whose clock keeps whole seconds, so every write lands in
- * the one tick and leaves the time as it was (#245).
+ * the one tick and leaves the time as it was (#245). `hashed`: a vault whose
+ * `modified` is a version, as the GitHub vault's blob bits are, so a later
+ * write can carry a smaller one (#720).
  */
-function fakeVault(text: string = ORIGINAL, { coarse = false }: { coarse?: boolean } = {}) {
+function fakeVault(
+  text: string = ORIGINAL,
+  { coarse = false, hashed = false }: { coarse?: boolean; hashed?: boolean } = {},
+) {
+  let clock = hashed ? 1_000 : 1;
   const files = new Map<string, { text: string; modified: number }>([
-    [NOTE, { text, modified: 1 }],
+    [NOTE, { text, modified: clock }],
   ]);
-  let clock = 1;
-  const tick = () => (coarse ? clock : (clock += 1));
+  const tick = () => (coarse ? clock : hashed ? (clock -= 1) : (clock += 1));
   const reads = gate();
   const writes = gate();
   /** Holds a read's answer once its bytes are taken: what it hands back is the file as it was then. */
@@ -439,6 +444,23 @@ describe('properties written through a pane', () => {
     expect(vault.contents()).toContain(
       'tasks:\n  - "[[Write report]]"\n  - "[[Book flights]]"\npages: 412\n',
     );
+    expect(view.result.current.state).toMatchObject({ kind: 'ready', saveError: null });
+  });
+
+  it('lands a change queued behind another where each version is smaller than the last (#720)', async () => {
+    // Versions are not ordered: the queued write must start from what the
+    // first left, though its version is below the one the pane read.
+    const vault = fakeVault(ORIGINAL, { hashed: true });
+    const view = await readyPane(vault);
+    vault.writes.hold();
+    act(() => view.result.current.setProperty('tasks', ['[[Write report]]']));
+    act(() => view.result.current.setProperty('pages', 412));
+    vault.writes.release();
+    await settle();
+    await settle();
+
+    expect(vault.modified()).toBeLessThan(1_000);
+    expect(vault.contents()).toContain('tasks:\n  - "[[Write report]]"\npages: 412\n');
     expect(view.result.current.state).toMatchObject({ kind: 'ready', saveError: null });
   });
 

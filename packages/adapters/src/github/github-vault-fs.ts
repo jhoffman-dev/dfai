@@ -220,12 +220,18 @@ const fileEntry = (path: string, file: GitFile): VaultEntry => ({
   size: file.size,
 });
 
+/**
+ * A file's version, and that its time is unknown: a tree has no per-file time,
+ * and the version is not one, so nothing may read it as when the file changed (ADR-0053).
+ */
+const asWritten = (file: GitFile) => ({ modified: versionOfBlob(file.sha), modifiedAt: null });
+
 function reads({ branch, at }: Through) {
   /** The text of a file in this snapshot, or null when its bytes are not UTF-8. */
   const textAt = async (snapshot: Snapshot, path: string) => {
     const file = snapshot.files.get(path)!;
     const text = textOfBytes(await branch.blob(file.sha));
-    return text === null ? null : { text, modified: versionOfBlob(file.sha), size: file.size };
+    return text === null ? null : { text, ...asWritten(file), size: file.size };
   };
   const fileAt = async (path: string) => {
     refuseIf(heldPathRefusal(path));
@@ -249,7 +255,7 @@ function reads({ branch, at }: Through) {
           const file = snapshot.files.get(path)!;
           const notePath = createVaultPath(path);
           const name = vaultPathName(notePath);
-          return { name, path: notePath, modified: versionOfBlob(file.sha), size: file.size };
+          return { name, path: notePath, ...asWritten(file), size: file.size };
         });
     },
     listFiles: async (walk: Parameters<HostVaultFsPort['listFiles']>[0]) =>
@@ -269,7 +275,7 @@ function reads({ branch, at }: Through) {
     readTextFile: async (path: VaultPath) => {
       const note = await textAt(await fileAt(path), path);
       if (note === null) return refuse('not a text file');
-      return { text: note.text, modified: note.modified };
+      return { text: note.text, modified: note.modified, modifiedAt: note.modifiedAt };
     },
     readBinaryFile: async (path: VaultPath) => {
       const snapshot = await fileAt(path);

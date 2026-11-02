@@ -29,8 +29,8 @@ export interface ApiReviewTask {
   readonly project: string | null;
   /** That note's title, or null. */
   readonly projectTitle: string | null;
-  /** When its file last changed, in milliseconds since the epoch. */
-  readonly modified: number;
+  /** When its file last changed, in milliseconds since the epoch; null where the vault cannot tell (ADR-0053). */
+  readonly modified: number | null;
 }
 
 /** A project as the weekly review lists it. */

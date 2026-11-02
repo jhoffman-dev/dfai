@@ -155,7 +155,8 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     projectTitle: project === null ? null : (textOrNull(row['projectTitle']) ?? project),
     // Absent when the row did not carry it, which is not knowing it: see ReviewTask.
     ...(Object.hasOwn(row, 'projectLinks') && { projectLinks: itemsOf(row['projectLinks']) }),
-    modified: Number(row['modified']) || 0,
+    // NULL where the vault cannot tell when a file changed (ADR-0053).
+    modified: row['modified'] === null ? null : Number(row['modified']) || 0,
   };
 }
 

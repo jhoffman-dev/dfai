@@ -25,6 +25,7 @@ import {
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { noteTypeName } from '../types/load-types.ts';
+import type { WrittenAt } from '../vault/ports.ts';
 import type { IndexedNote } from './ports.ts';
 
 /** Everything the index should know about one note. */
@@ -34,7 +35,7 @@ export function toIndexedNote({
   markdown,
   resolveLink = createWikiLinkResolver(notePaths),
 }: {
-  file: { path: string; text: string; modified: number; size: number };
+  file: WrittenAt & { path: string; text: string; modified: number; size: number };
   notePaths: readonly VaultPath[];
   markdown: MarkdownPort;
   /** How a link finds its note among `notePaths` — built once when many notes are read. */
@@ -51,6 +52,7 @@ export function toIndexedNote({
     path: file.path,
     title: pageTitle({ fileTitle: noteTitle(path), properties: frontmatter }).text,
     modified: file.modified,
+    ...(file.modifiedAt !== undefined && { modifiedAt: file.modifiedAt }),
     size: file.size,
     type: noteTypeName(frontmatter),
     digest: digestOf(file.text),
