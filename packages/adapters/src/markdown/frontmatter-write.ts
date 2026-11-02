@@ -1203,8 +1203,16 @@ const entryOf = (segment: Segments['keys'][number]): Entry => ({
   text: segment.text,
   above: segment.above,
   map: segment.map,
-  holdsBlanks: segment.value === null || segment.value.joins === 0,
+  holdsBlanks: segment.value === null ? mayKeepLines(segment.text) : segment.value.joins === 0,
 });
+
+/**
+ * Whether text whose value's end cannot be told — block text with an
+ * explicit indent (`|2`) — may keep its trailing lines: only a `+` header
+ * keeps them (#709). Any `|+`-like run counts, inside quotes too, so a
+ * doubtful one still holds its blank lines.
+ */
+const mayKeepLines = (text: string) => /[|>](?:[1-9]?\+|\+)/.test(text);
 
 /** `entry` moved left `by` columns. */
 const rebased = (entry: Entry, by: number): Entry => ({
@@ -1354,7 +1362,11 @@ function mapKept({
   const found = entriesOf(source);
   if (now === null || then === null || found === null) return null;
   const rendered = new Map(then.entries.map((entry) => [entry.id, entry]));
-  const original = new Map(found.entries.map((entry) => [entry.id, entry]));
+  const original = new Map(
+    withCommentsLeft(found.entries, rendered, new Set(now.entries.map((entry) => entry.id))).map(
+      (entry) => [entry.id, entry],
+    ),
+  );
   const by = found.indent - now.indent;
   const entryText = (entry: Entry) => {
     const render = rendered.get(entry.id);
@@ -1379,6 +1391,37 @@ function mapKept({
   // Each part ends in a newline; the last one's is the one the text was cut without.
   const text = `${head}${entries.join('')}${tail}`.replace(/\n$/, '');
   return `${text}${written.endsWith('\n') ? '\n' : ''}`;
+}
+
+/**
+ * `source`'s entries with the comment lines above each one the change takes
+ * away given to the entry before it, when the library reads them as that
+ * entry's own — under a key with no value (#709): they stay where they were
+ * found rather than go with the entry under them. An entry that stays keeps
+ * its comments above it.
+ */
+function withCommentsLeft(
+  source: readonly Entry[],
+  rendered: ReadonlyMap<string, Entry>,
+  staying: ReadonlySet<string>,
+): Entry[] {
+  const entries = [...source];
+  for (let at = 1; at < entries.length; at += 1) {
+    const previous = entries[at - 1] as Entry;
+    const entry = entries[at] as Entry;
+    const blanks = leadingBlanks(entry.above);
+    const comments = entry.above.slice(blanks.length);
+    const library = rendered.get(previous.id)?.text;
+    if (comments === '' || staying.has(entry.id) || library === undefined) continue;
+    if (!sameComments(library, `${previous.text}${comments}`)) continue;
+    entries[at - 1] = { ...previous, text: `${previous.text}${comments}` };
+    entries[at] = {
+      ...entry,
+      text: `${blanks}${entry.text.slice(entry.above.length)}`,
+      above: blanks,
+    };
+  }
+  return entries;
 }
 
 const withoutLeadingBlanks = (text: string) => text.replace(/^(?:[ \t]*\n)+/, '');
