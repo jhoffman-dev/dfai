@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 import { startTemporaryFolderPerRun } from './tools/temp-folder-per-run.ts';
 
@@ -97,6 +97,9 @@ export default defineConfig({
       'apps/*/src/**/*.test.{ts,tsx}',
       'tools/**/*.test.ts',
     ],
+    // A test against real GitHub (#664) runs only from vitest.real.config.ts, in its
+    // hand-started workflow: nothing else here leaves the machine.
+    exclude: [...configDefaults.exclude, '**/*.real.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'html', 'lcov'],
@@ -131,6 +134,8 @@ export default defineConfig({
         'packages/application/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'packages/adapters/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'apps/auth-function/src/**': { lines: 90, functions: 90, branches: 85 },
+        // The vault as a GitHub repository (#664): every save a commit, refused when its blob or head moved.
+        'packages/adapters/src/github/**': { lines: 90, functions: 90, branches: 85 },
         // Renaming a tag rewrites every note that uses it.
         'packages/application/src/tags/**': { lines: 90, functions: 90, branches: 85 },
         // Saving an artifact writes a folder of files into the vault.

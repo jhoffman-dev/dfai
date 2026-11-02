@@ -77,3 +77,31 @@ export { writeUndo } from './write-undo.ts';
 export type { WriteRecord, WriteUndo } from './write-undo.ts';
 export { newVaultId, vaultIdOf, VAULT_ID_KEY } from './vault-id.ts';
 export type { VaultIdReading } from './vault-id.ts';
+export {
+  HELD_REFUSAL,
+  heldBinaryWrite,
+  heldChildren,
+  heldEntryPathRefusal,
+  heldFileRefusal,
+  heldFilesWithExtension,
+  heldMove,
+  heldNameLike,
+  heldPathRefusal,
+  heldPlaceRefusal,
+  heldTrash,
+  heldUnder,
+  heldWalk,
+  isHeld,
+  isHeldFolder,
+  isHeldNote,
+  MAX_HELD_BINARY_BYTES,
+} from './held-vault.ts';
+export type {
+  BinaryWriteAsked,
+  HeldBinaryWrite,
+  HeldChild,
+  HeldEntries,
+  HeldMove,
+  HeldVault,
+  Refused,
+} from './held-vault.ts';
