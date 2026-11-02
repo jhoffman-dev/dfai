@@ -241,10 +241,7 @@ export function checkedBody({
     ) {
       return byEntry;
     }
-    if (
-      repeatsNoComment(whole, most) &&
-      readsBack(whole, wanted, was, edit.keys, strict)
-    ) {
+    if (repeatsNoComment(whole, most) && readsBack(whole, wanted, was, edit.keys, strict)) {
       return whole;
     }
     for (const putBack of edit.cleared.values()) putBack();
@@ -352,18 +349,20 @@ const textOf = (before: Segments | null) =>
 
 /** The block as the library writes it, without the newline it ends with. */
 function rendered(document: Document, lists: ReturnType<typeof listIndent>): string {
-  return document
-    .toString({
-      // Never wrap: a long value must not gain a line break it did not have.
-      lineWidth: 0,
-      // `[one, two]` rather than `[ one, two ]`, so an untouched inline list is
-      // written back exactly as it was found.
-      flowCollectionPadding: false,
-      ...lists,
-    })
-    // A blank line it ends with is `|+` text's own: the reader drops the
-    // newline before the closing line, so the block keeps one more (#739).
-    .replace(/([^\n])\n$/, '$1');
+  return (
+    document
+      .toString({
+        // Never wrap: a long value must not gain a line break it did not have.
+        lineWidth: 0,
+        // `[one, two]` rather than `[ one, two ]`, so an untouched inline list is
+        // written back exactly as it was found.
+        flowCollectionPadding: false,
+        ...lists,
+      })
+      // A blank line it ends with is `|+` text's own: the reader drops the
+      // newline before the closing line, so the block keeps one more (#739).
+      .replace(/([^\n])\n$/, '$1')
+  );
 }
 
 /** Whether a change reaches a key whose value is a map written in block style. */

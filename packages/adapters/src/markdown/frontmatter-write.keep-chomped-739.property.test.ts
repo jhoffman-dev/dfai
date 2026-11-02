@@ -70,7 +70,9 @@ function generated(random: Random): Case {
     delete: { [someKey]: null },
     move: { properties: Object.fromEntries(Object.entries(properties).reverse()) },
     'delete-entry': {
-      properties: Object.fromEntries(Object.entries(properties).filter(([key]) => key !== someEntry)),
+      properties: Object.fromEntries(
+        Object.entries(properties).filter(([key]) => key !== someEntry),
+      ),
     },
   }[operation];
   return { original, changes, operation };
