@@ -288,7 +288,7 @@
   /* Room to type near the bottom of a long note — and, while an iPad's
      on-screen keyboard is up, the room it covers too, or the last line could
      not be scrolled above it (#660). The editor sets the inset. */
-  padding: 34px 32px calc(30vh + var(--keyboard-inset, 0px));
+  padding: 34px 32px calc(30vh + var(--keyboard-inset));
   width: calc(720px + 64px);
 }
 
