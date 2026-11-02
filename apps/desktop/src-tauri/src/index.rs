@@ -2917,6 +2917,18 @@ mod tests {
     }
 
     #[test]
+    fn a_query_cannot_build_a_value_past_the_result_cap() {
+        // #747: one cheap statement could build a gigabyte before a row was counted.
+        let dir = tempfile::tempdir().unwrap();
+        open_database(dir.path()).unwrap();
+        let reader = open_for_queries(dir.path()).unwrap();
+        let sql = format!("SELECT length(printf('%.*c', {}, 'x'))", MAX_QUERY_BYTES + 1);
+        assert_eq!(run_query(&reader, &sql, &[]).unwrap_err(), QUERY_TOO_LARGE);
+        let fits = run_query(&reader, "SELECT length(printf('%.*c', 1000, 'x'))", &[]).unwrap();
+        assert_eq!(fits.rows, vec![vec![serde_json::json!(1000)]]);
+    }
+
+    #[test]
     fn a_query_cannot_attach_another_database_or_create_its_file() {
         let (dir, index) = index_on_disk();
         let other = dir.path().join("other.db");

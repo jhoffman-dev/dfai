@@ -42,6 +42,13 @@ describe("the browser index holds the desktop host's limits (#666)", () => {
     expect(QUERY_STEP_BUDGET).toBe(rustNumber(rustConst('QUERY_STEP_BUDGET')));
   });
 
+  it('holds every value a query builds to the result cap, as the host’s query connection does', () => {
+    const reader = /fn open_for_queries[\s\S]*?\n\}/.exec(INDEX_RS)?.[0] ?? '';
+    expect(reader).toMatch(
+      /set_limit\(\s*Limit::SQLITE_LIMIT_LENGTH,\s*MAX_QUERY_BYTES as i32\s*\)/,
+    );
+  });
+
   it('ranks a search by the same weights', () => {
     expect(JSON.stringify(SEARCH_WEIGHTS)).toBe(rustConst('SEARCH_WEIGHTS'));
   });
