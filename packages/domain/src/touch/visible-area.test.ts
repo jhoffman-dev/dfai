@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { CARET_MARGIN, caretScrollBy, placePopup, POPUP_GAP, type Area } from './visible-area.ts';
+import {
+  CARET_MARGIN,
+  caretScrollBy,
+  keyboardChange,
+  keyboardInset,
+  placePopup,
+  POPUP_GAP,
+  type Area,
+} from './visible-area.ts';
 
 /** An iPad on its side, before the keyboard: 1180 by 820. */
 const WINDOW: Area = { top: 0, left: 0, width: 1180, height: 820 };
@@ -108,5 +116,55 @@ describe('caretScrollBy', () => {
   it('keeps the margin it is handed', () => {
     expect(caretScrollBy({ caret: caretAt(400), visible: ABOVE_KEYBOARD, margin: 0 })).toBe(0);
     expect(caretScrollBy({ caret: caretAt(400), visible: ABOVE_KEYBOARD, margin: 30 })).toBe(30);
+  });
+});
+
+describe('keyboardChange', () => {
+  const coarse = { coarsePointer: true };
+
+  it('is the keyboard rising when the height shrinks and the width does not, on a touch screen', () => {
+    expect(keyboardChange({ before: WINDOW, after: ABOVE_KEYBOARD, ...coarse })).toBe('rose');
+  });
+
+  it('is the keyboard going when the height grows back with the width unchanged', () => {
+    expect(keyboardChange({ before: ABOVE_KEYBOARD, after: WINDOW, ...coarse })).toBe('fell');
+  });
+
+  it('is not a keyboard on a desktop, whatever its window does (review of PR #744)', () => {
+    const fine = { coarsePointer: false };
+    expect(keyboardChange({ before: WINDOW, after: ABOVE_KEYBOARD, ...fine })).toBe('none');
+    expect(keyboardChange({ before: ABOVE_KEYBOARD, after: WINDOW, ...fine })).toBe('none');
+  });
+
+  it('is not a keyboard when the width changes too: a window resized, a pinch-zoom', () => {
+    const zoomed: Area = { top: 0, left: 0, width: 590, height: 410 };
+    expect(keyboardChange({ before: WINDOW, after: zoomed, ...coarse })).toBe('none');
+    expect(keyboardChange({ before: zoomed, after: WINDOW, ...coarse })).toBe('none');
+  });
+
+  it('is nothing when only the place changed: a pan, or the same size again', () => {
+    const panned: Area = { ...ABOVE_KEYBOARD, top: 300 };
+    expect(keyboardChange({ before: ABOVE_KEYBOARD, after: panned, ...coarse })).toBe('none');
+    expect(keyboardChange({ before: WINDOW, after: { ...WINDOW }, ...coarse })).toBe('none');
+  });
+});
+
+describe('keyboardInset', () => {
+  it('is the part of the window below the visible area: what the keyboard covers', () => {
+    expect(keyboardInset({ windowHeight: 820, visible: ABOVE_KEYBOARD })).toBe(400);
+  });
+
+  it('is nothing when the visible area reaches the bottom of the window', () => {
+    expect(keyboardInset({ windowHeight: 820, visible: WINDOW })).toBe(0);
+  });
+
+  it('counts a visible area scrolled down within the window from where it ends', () => {
+    const panned: Area = { top: 100, left: 0, width: 1180, height: 420 };
+    expect(keyboardInset({ windowHeight: 820, visible: panned })).toBe(300);
+  });
+
+  it('is never negative', () => {
+    const taller: Area = { top: 0, left: 0, width: 1180, height: 900 };
+    expect(keyboardInset({ windowHeight: 820, visible: taller })).toBe(0);
   });
 });

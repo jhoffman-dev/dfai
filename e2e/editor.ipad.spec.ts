@@ -114,39 +114,66 @@ test('on an iPad, a finger types, links with [[, inserts with /, and moves a blo
   });
 });
 
+/** What the test does to the stand-in visual viewport, from outside the page. */
+interface FakeViewport {
+  /** Raises (or, at 0, lowers) the keyboard: the height shrinks, the width does not. */
+  keyboard(height: number): Promise<void>;
+  /** Pinch-zooms by `scale`: both sides shrink, and the browser says `resize`. */
+  zoom(scale: number): Promise<void>;
+  /** Pans the zoomed view down the page by `offsetTop`: a `scroll`, with the size unchanged. */
+  pan(offsetTop: number): Promise<void>;
+}
+
 /**
- * Stands in for an iPad's on-screen keyboard: a `window.visualViewport` whose
- * height the test takes the keyboard's from, with the window's own size left
- * alone, which is exactly what iPadOS does. Playwright cannot shrink WebKit's
- * real visual viewport on its own.
+ * Stands in for `window.visualViewport`, which Playwright cannot shrink or
+ * move in WebKit on its own: an iPad's on-screen keyboard takes its height
+ * and leaves the window's size alone, and a pinch-zoom shrinks both sides and
+ * pans. `pageTop` is kept apart from `offsetTop` by the page's own scroll, so
+ * reading the wrong one would place things 1000px off (review of PR #744).
  */
-async function withFakeKeyboard(page: Page): Promise<(height: number) => Promise<void>> {
+async function withFakeViewport(page: Page): Promise<FakeViewport> {
   await page.addInitScript(() => {
-    const state = { keyboard: 0 };
-    const viewport = Object.assign(new EventTarget(), {
-      offsetTop: 0,
-      offsetLeft: 0,
-      pageTop: 0,
-      pageLeft: 0,
-      scale: 1,
-    });
+    const state = { keyboard: 0, offsetTop: 0, scale: 1 };
+    const viewport = new EventTarget();
     // Defined, not assigned: `Object.assign` would copy a getter's value once.
     Object.defineProperties(viewport, {
-      width: { get: () => window.innerWidth },
-      height: { get: () => window.innerHeight - state.keyboard },
+      offsetTop: { get: () => state.offsetTop },
+      offsetLeft: { get: () => 0 },
+      pageTop: { get: () => state.offsetTop + 1000 },
+      pageLeft: { get: () => 0 },
+      scale: { get: () => state.scale },
+      width: { get: () => window.innerWidth / state.scale },
+      height: { get: () => (window.innerHeight - state.keyboard) / state.scale },
     });
     Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true });
-    Object.defineProperty(window, '__keyboard', {
-      value: (height: number) => {
-        state.keyboard = height;
-        viewport.dispatchEvent(new Event('resize'));
+    Object.defineProperty(window, '__viewport', {
+      value: {
+        keyboard: (height: number) => {
+          state.keyboard = height;
+          viewport.dispatchEvent(new Event('resize'));
+        },
+        zoom: (scale: number) => {
+          state.scale = scale;
+          viewport.dispatchEvent(new Event('resize'));
+        },
+        pan: (offsetTop: number) => {
+          state.offsetTop = offsetTop;
+          viewport.dispatchEvent(new Event('scroll'));
+        },
       },
     });
   });
-  return (height) =>
-    page.evaluate((raised) => {
-      (window as unknown as { __keyboard: (height: number) => void }).__keyboard(raised);
-    }, height);
+  type Controls = { __viewport: { [K in keyof FakeViewport]: (value: number) => void } };
+  const drive = (control: keyof FakeViewport, value: number) =>
+    page.evaluate(([name, given]) => (window as unknown as Controls).__viewport[name](given), [
+      control,
+      value,
+    ] as const);
+  return {
+    keyboard: (height) => drive('keyboard', height),
+    zoom: (scale) => drive('zoom', scale),
+    pan: (offsetTop) => drive('pan', offsetTop),
+  };
 }
 
 /** An iPad's keyboard, on its side: about half of the 820px. */
@@ -169,7 +196,7 @@ async function lineBetween(editor: Locator, from: number, to: number): Promise<L
 }
 
 test('the caret and the open picker stay above the on-screen keyboard', async ({ page }) => {
-  const raiseKeyboard = await withFakeKeyboard(page);
+  const viewport = await withFakeViewport(page);
   const { vault, editor } = await openGardenVault(page);
   const visibleBottom = 820 - KEYBOARD_HEIGHT;
 
@@ -177,7 +204,19 @@ test('the caret and the open picker stay above the on-screen keyboard', async ({
     // A line the keyboard will cover: in the lower part of the page, in view now.
     const covered = await lineBetween(editor, visibleBottom + 100, 780);
     await tapLineEnd(covered);
-    await raiseKeyboard(KEYBOARD_HEIGHT);
+    await viewport.keyboard(KEYBOARD_HEIGHT);
+    // What the page itself sees, so a miss names its cause: the stand-in not
+    // taking, or the tap not leaving the editor focused (CI of PR #744).
+    const seen = await page.evaluate(() => ({
+      visibleHeight: window.visualViewport?.height,
+      standIn: '__viewport' in window,
+      editorFocused: document.activeElement?.classList.contains('ProseMirror') ?? false,
+    }));
+    expect(seen, `the page's view of the keyboard: ${JSON.stringify(seen)}`).toEqual({
+      visibleHeight: 820 - KEYBOARD_HEIGHT,
+      standIn: true,
+      editorFocused: true,
+    });
     await expect
       .poll(async () => (await covered.boundingBox())?.y ?? Number.NaN)
       .toBeLessThan(visibleBottom);
@@ -205,12 +244,51 @@ test('the caret and the open picker stay above the on-screen keyboard', async ({
   });
 
   await test.step('with the keyboard gone, the picker hangs under the caret again', async () => {
-    await raiseKeyboard(0);
+    await viewport.keyboard(0);
     // The `/` Escape left behind is removed, so the new one is at the line's start again.
     await page.keyboard.press('Backspace');
     await page.keyboard.type('/');
     const popup = page.getByRole('listbox', { name: 'Insert block' });
     await expect(popup).toBeVisible();
     await expect(popup).toHaveAttribute('data-flipped', 'false');
+    await page.keyboard.press('Escape');
+  });
+
+  await test.step('the last line of a long note is typed into above the keyboard too (review of PR #744)', async () => {
+    // Below the last line there is only the note's bottom padding, less than a
+    // keyboard is tall: the note must be given more room to scroll into.
+    const last = lineOf(editor, LINES);
+    await tapLineEnd(last);
+    await viewport.keyboard(KEYBOARD_HEIGHT);
+    await expect
+      .poll(async () => {
+        const box = await last.boundingBox();
+        return box === null ? Number.NaN : box.y + box.height;
+      })
+      .toBeLessThanOrEqual(visibleBottom);
+    await page.keyboard.type(' Last.');
+    await expectFile(vault, 'Garden plan.md').toContain(`Line ${LINES} of the plan. Last.`);
+    await viewport.keyboard(0);
+  });
+
+  await test.step('a picker follows a pinch-zoomed view as it pans: within offsetTop and the height', async () => {
+    const PAN = 300;
+    const SCALE = 2;
+    // A line near the top of the page, which the pan will leave above the visible area.
+    const high = await lineBetween(editor, 0, 220);
+    await tapLineEnd(high);
+    await viewport.zoom(SCALE);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('/');
+    const popup = page.getByRole('listbox', { name: 'Insert block' });
+    await expect(popup).toBeVisible();
+    await viewport.pan(PAN);
+    const visibleHeight = 820 / SCALE;
+    await expect
+      .poll(async () => (await popup.boundingBox())?.y ?? Number.NaN)
+      .toBeGreaterThanOrEqual(PAN);
+    const popupBox = await popup.boundingBox();
+    if (popupBox === null) throw new Error('The list is not drawn.');
+    expect(popupBox.y + popupBox.height).toBeLessThanOrEqual(PAN + visibleHeight);
   });
 });
