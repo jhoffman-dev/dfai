@@ -131,7 +131,17 @@ function updated(frontmatter: string | null, changes: Readonly<Record<string, un
   const blank = source.trim() === '' ? content.replace(/\r\n/g, '\n') : '';
   // A block the reader reads (no key written twice) must still be one after the change.
   const strict = parseDocument(source).errors.length === 0;
-  const written = checkedBody({ document, before, edit, was, blank, lists, found, strict });
+  const written = checkedBody({
+    document,
+    before,
+    edit,
+    was,
+    blank,
+    lists,
+    found,
+    strict,
+    source,
+  });
   const ended = withOriginalEndings({ original: content, edited: `${written}\n`, fallback: eol });
   return `${opening}${ended}${closing}`;
 }
@@ -196,6 +206,7 @@ export function checkedBody({
   found = null,
   strict = true,
   compose = composed,
+  source = textOf(before),
 }: {
   document: Document;
   before: Segments | null;
@@ -209,6 +220,8 @@ export function checkedBody({
   strict?: boolean;
   /** How the block is written under each set of rules; its test gives one that writes it wrong. */
   compose?: typeof composed;
+  /** The block as found, whose comments bound how often each may be written. */
+  source?: string;
 }): string {
   const wanted = valuesOf(document);
   for (const rules of ['kept', 'main'] as const) {
@@ -220,14 +233,20 @@ export function checkedBody({
     // keeps its comments: the rest of the writing places comments with the
     // rules of the map written whole.
     const byEntry = found === null ? null : write(found);
+    const most = mostComments([source, ...edit.asWritten.values()], rendered(document, lists));
     if (
       byEntry !== null &&
-      keepsComments({ written: byEntry, whole, source: textOf(before) }) &&
+      keepsComments({ written: byEntry, whole, most }) &&
       readsBack(byEntry, wanted, was, edit.keys, strict)
     ) {
       return byEntry;
     }
-    if (readsBack(whole, wanted, was, edit.keys, strict)) return whole;
+    if (
+      repeatsNoComment(whole, most) &&
+      readsBack(whole, wanted, was, edit.keys, strict)
+    ) {
+      return whole;
+    }
     for (const putBack of edit.cleared.values()) putBack();
     edit.cleared.clear();
   }
@@ -274,32 +293,55 @@ function composed({
 }
 
 /**
+ * How often each comment may be written: as often as the block and the
+ * keys given as written held it, or the library writes it — it writes a
+ * comment once for each place an alias puts its anchor's node, and joins
+ * two into one it did not hold.
+ */
+function mostComments(sources: readonly string[], library: string): Map<string, number> {
+  const most = counted(sources.join('\n'));
+  for (const [comment, count] of counted(library)) {
+    most.set(comment, Math.max(count, most.get(comment) ?? 0));
+  }
+  return most;
+}
+
+/**
  * Whether `written` holds every comment `whole` does, and none more often
- * than `whole` or the `source` block does: it may keep one the library would
- * drop with a key taken away, but never loses or repeats one.
+ * than `most` allows: it may keep one the library would drop with a key
+ * taken away, but never loses or repeats one.
  */
 function keepsComments({
   written,
   whole,
-  source,
+  most,
 }: {
   written: string;
   whole: string;
-  source: string;
+  most: ReadonlyMap<string, number>;
 }): boolean {
-  const counted = (text: string) => {
-    const counts = new Map<string, number>();
-    for (const comment of commentsOf(text)) counts.set(comment, (counts.get(comment) ?? 0) + 1);
-    return counts;
-  };
-  const [has, wholeHas, sourceHas] = [counted(written), counted(whole), counted(source)];
-  const at = (counts: Map<string, number>, comment: string) => counts.get(comment) ?? 0;
+  const has = counted(written);
   return (
-    [...wholeHas].every(([comment, count]) => at(has, comment) >= count) &&
-    [...has].every(
-      ([comment, count]) => count <= Math.max(at(wholeHas, comment), at(sourceHas, comment)),
-    )
+    [...counted(whole)].every(
+      ([comment, count]) => (has.get(comment) ?? 0) >= Math.min(count, most.get(comment) ?? 0),
+    ) && repeatsNoComment(written, most)
   );
+}
+
+/**
+ * Whether `written` holds no comment more often than `most` allows. The
+ * splice can put back below a value a comment the library moved onto it
+ * (#739), so even the block written whole is held to this.
+ */
+function repeatsNoComment(written: string, most: ReadonlyMap<string, number>): boolean {
+  return [...counted(written)].every(([comment, count]) => count <= (most.get(comment) ?? 0));
+}
+
+/** How often a text holds each comment. */
+function counted(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const comment of commentsOf(text)) counts.set(comment, (counts.get(comment) ?? 0) + 1);
+  return counts;
 }
 
 /** The block a {@link Segments} was cut from; empty when there was none. */
@@ -319,7 +361,9 @@ function rendered(document: Document, lists: ReturnType<typeof listIndent>): str
       flowCollectionPadding: false,
       ...lists,
     })
-    .replace(/\n$/, '');
+    // A blank line it ends with is `|+` text's own: the reader drops the
+    // newline before the closing line, so the block keeps one more (#739).
+    .replace(/([^\n])\n$/, '$1');
 }
 
 /** Whether a change reaches a key whose value is a map written in block style. */
@@ -1008,8 +1052,8 @@ function keepsLastLine(text: string, after: Segments): boolean {
  * The comment lines under the block's last key, when the library wrote that
  * key's text: they go after every key, as the block's tail does, where the
  * last key written would not read them as its text, and the library did
- * not write them itself or a key added after it stands between. Empty
- * otherwise.
+ * not write them itself — inline, as it does with a key added after it, or
+ * below (#739: put back as well, they were written twice). Empty otherwise.
  */
 function carriedBelow(
   original: Segments['keys'][number],
@@ -1019,10 +1063,8 @@ function carriedBelow(
 ): string {
   const below = original.value?.below ?? '';
   const comments = below.split('\n').filter((line) => /^ *#/.test(line));
-  // A key added after it ends the value, and so where the library put them.
-  const added = after.keys.at(-1)?.id !== original.id;
   if (comments.length === 0) return '';
-  if (!added && comments.some((line) => text.includes(line.trim()))) return '';
+  if (comments.some((line) => text.includes(line.trim()))) return '';
   const joins = after.keys.at(-1)?.value?.joins ?? null;
   return readAsText(below, joins === null ? null : joins + indent) ? '' : below;
 }
