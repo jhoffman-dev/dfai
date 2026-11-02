@@ -9,8 +9,8 @@
 export class FrontmatterRefusedError extends Error {
   readonly key: string;
 
-  constructor({ key, message }: { key: string; message: string }) {
-    super(message);
+  constructor({ key, message, cause }: { key: string; message: string; cause?: unknown }) {
+    super(message, cause === undefined ? undefined : { cause });
     this.name = 'FrontmatterRefusedError';
     this.key = key;
   }

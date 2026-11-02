@@ -65,6 +65,27 @@ export function updateFrontmatter(
   frontmatter: string | null,
   changes: Readonly<Record<string, unknown>>,
 ): string {
+  try {
+    return updated(frontmatter, changes);
+  } catch (error) {
+    // An alias with no anchor above it — as found, or left so by the change —
+    // fails in the library wherever the block is read or written; nothing has
+    // been written yet, so the change is refused like any unreadable block.
+    if (!isUnresolvedAlias(error)) throw error;
+    throw new FrontmatterRefusedError({
+      key: Object.keys(changes)[0] ?? '',
+      message: `This note's properties cannot be read (${error.message}); fix them in the source before changing them.`,
+      cause: error,
+    });
+  }
+}
+
+/** The YAML library's error for an alias whose anchor is not set before it. */
+function isUnresolvedAlias(error: unknown): error is Error {
+  return error instanceof Error && error.message.startsWith('Unresolved alias');
+}
+
+function updated(frontmatter: string | null, changes: Readonly<Record<string, unknown>>): string {
   const { opening, body, closing, content } = split(frontmatter);
   const eol = opening.endsWith('\r\n') ? '\r\n' : '\n';
   const source = body.replace(/\r\n/g, '\n');
@@ -669,9 +690,10 @@ function releaseAnchors(document: Document, key: string, removing: boolean): str
       // A list or map used as a key through an alias is named `*k` by the
       // reader; written out in its place it would be named by its items.
       if (keyOf(pair.key, document) !== was) {
-        throw new Error(
-          `Cannot change "${key}": the key "${was}" is an alias of it, and would be renamed`,
-        );
+        throw new FrontmatterRefusedError({
+          key,
+          message: `Cannot change "${key}": the key "${was}" is an alias of it, and would be renamed`,
+        });
       }
       return true;
     });
