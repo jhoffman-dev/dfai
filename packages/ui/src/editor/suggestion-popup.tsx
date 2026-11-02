@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { placePopup, POPUP_GAP } from '@dfai/domain';
 import { Key } from '../key-hints.tsx';
+import { onVisibleAreaChange, visibleArea } from '../visible-area.ts';
 
 export interface PopupItem {
   readonly id: string;
@@ -57,6 +59,31 @@ export function SuggestionPopup({
       row.scrollIntoView({ block: 'nearest' });
   }, [selected, items]);
 
+  // Placed against the visible area, not the window: on an iPad the on-screen
+  // keyboard covers the lower half without the window knowing, so the list
+  // flips above the caret when there is no room under it (#660). Measured and
+  // moved before the paint, and again whenever the visible area changes.
+  // Where it fits is the domain's (`placePopup`); this reads and writes the DOM.
+  useLayoutEffect(() => {
+    const element = list.current;
+    if (element === null) return;
+    const place = () => {
+      // Its own height, not the one the last placement held it to.
+      element.style.maxHeight = '';
+      const placed = placePopup({
+        anchor: { top: rect?.top ?? 0, left: rect?.left ?? 0, width: 0, height: rect?.height ?? 0 },
+        size: { width: element.offsetWidth, height: element.offsetHeight },
+        visible: visibleArea(),
+      });
+      element.style.top = `${placed.top}px`;
+      element.style.left = `${placed.left}px`;
+      element.style.maxHeight = placed.maxHeight === null ? '' : `${placed.maxHeight}px`;
+      element.dataset.flipped = placed.flipped ? 'true' : 'false';
+    };
+    place();
+    return onVisibleAreaChange(place);
+  }, [rect, items]);
+
   if (items.length === 0) return null;
 
   return (
@@ -65,7 +92,7 @@ export function SuggestionPopup({
       className={variant === 'blocks' ? 'suggestions suggestions--blocks' : 'suggestions'}
       role="listbox"
       aria-label={label}
-      style={{ top: (rect?.bottom ?? 0) + 6, left: rect?.left ?? 0 }}
+      style={{ top: (rect?.bottom ?? 0) + POPUP_GAP, left: rect?.left ?? 0 }}
     >
       {items.map((item, index) => (
         <li key={item.id}>

@@ -293,6 +293,13 @@ describe('the tab shortcuts (tab-model.md)', () => {
     expect(runsOnMac('Win32')).toBe(false);
     expect(runsOnMac('Linux x86_64')).toBe(false);
   });
+
+  it("counts an iPad as a Mac, by either string it reports, so a hardware keyboard's ⌘ works (#660)", () => {
+    // iPadOS 13 and later say "MacIntel", with a touch screen; earlier ones said "iPad".
+    expect(runsOnMac('iPad')).toBe(true);
+    expect(runsOnMac('iPhone')).toBe(true);
+    expect(runsOnMac('MacIntel')).toBe(true);
+  });
 });
 
 describe('Alt+Cmd+\\, the right sidebar (UI v2 slice 8b)', () => {
