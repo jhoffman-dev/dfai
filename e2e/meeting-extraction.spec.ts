@@ -137,15 +137,17 @@ test('a meeting arrives, the extraction rule proposes mine, a waiting-for and a 
   const mine = proposalFor('Write the rollout note');
   await expectFile(vault, mine).toContain(`source: "[[${TITLE}#^t0003]]"`);
   expect(await vault.read(mine)).toMatch(/kind: task\n[\s\S]*status: inbox/);
-  const waiting = await vault.read(proposalFor('Flag the new cache'));
-  expect(waiting).toContain(`source: "[[${TITLE}#^t0002]]"`);
+  // The proposals are written one after another: wait for each before reading it (#719).
+  const waitingPath = proposalFor('Flag the new cache');
+  await expectFile(vault, waitingPath).toContain(`source: "[[${TITLE}#^t0002]]"`);
+  const waiting = await vault.read(waitingPath);
   expect(waiting).toContain('status: waiting');
   expect(waiting).toContain('waiting_on: "[[Tobias Fenn]]"');
-  const decision = await vault.read(proposalFor('Ship the cache behind a flag'));
-  expect(decision).toContain('kind: decision');
-  expect(decision).toContain('property: decisions');
+  const decisionPath = proposalFor('Ship the cache behind a flag');
+  await expectFile(vault, decisionPath).toContain('kind: decision');
+  expect(await vault.read(decisionPath)).toContain('property: decisions');
   // Nobody named: low confidence, whatever the model claimed.
-  expect(await vault.read(proposalFor('Tell the platform channel'))).toContain('confidence: low');
+  await expectFile(vault, proposalFor('Tell the platform channel')).toContain('confidence: low');
 
   // The item citing a turn the meeting does not have was left out, and the log says so.
   await expectFile(vault, LOG).toContain(
