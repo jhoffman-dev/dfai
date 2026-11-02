@@ -7,6 +7,7 @@
  * columns. Seeded (mulberry32), so every run draws the same maps and edits.
  */
 import { describe, expect, it } from 'vitest';
+import { FrontmatterRefusedError } from '@dfai/application';
 import { parse, parseDocument } from 'yaml';
 import { checkedBody, updateFrontmatter, type Edit } from './frontmatter-write.ts';
 
@@ -708,6 +709,7 @@ describe('the map written entry by entry, checked against it written whole (#697
       blank: '',
       lists: {},
       found: 'm:\n  a: 1',
+      source: 'm:\n  a: 1 # n',
       compose: ({ rules, found }) => {
         tried.push(`${rules} ${found === null ? 'whole' : 'by entry'}`);
         return found === null ? bodies.whole : bodies.byEntry;
@@ -740,5 +742,16 @@ describe('the map written entry by entry, checked against it written whole (#697
   it('takes it whole when entry by entry writes a comment twice', () => {
     const { body } = check({ byEntry: 'm: # n\n  a: 2 # n', whole: 'm:\n  a: 2 # n' });
     expect(body).toBe('m:\n  a: 2 # n');
+  });
+
+  it('takes it entry by entry when the map written whole writes a comment twice (#739)', () => {
+    const { body } = check({ byEntry: 'm:\n  a: 2 # n', whole: 'm:\n  a: 2 # n\n# n' });
+    expect(body).toBe('m:\n  a: 2 # n');
+  });
+
+  it('refuses when both ways write a comment more often than the block held it (#739)', () => {
+    expect(() => check({ byEntry: 'm: # n\n  a: 2 # n', whole: 'm: # n\n  a: 2 # n' })).toThrow(
+      FrontmatterRefusedError,
+    );
   });
 });
