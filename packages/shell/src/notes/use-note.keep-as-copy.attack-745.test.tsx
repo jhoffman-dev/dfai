@@ -131,27 +131,24 @@ describe('attack #745: keep-as-copy never loses a typed version', () => {
     expect(stranded.map((s) => JSON.stringify(s.doc)).join()).toContain('Mine.');
   });
 
-  it.fails(
-    'a note deleted elsewhere: the refused typing can still be kept, not only discarded',
-    async () => {
-      const held = vault();
-      const view = pane(held);
-      await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
-      act(() => view.result.current.changeDoc(docOf('# Plan\n\nMine.\n')));
-      held.removeOutside();
-      act(() => view.result.current.save());
-      await settle();
-      const { state } = view.result.current;
-      expect(state.kind === 'ready' && state.saveError).toBeTruthy();
+  it('a note deleted elsewhere: the refused typing can still be kept, not only discarded', async () => {
+    const held = vault();
+    const view = pane(held);
+    await waitFor(() => expect(view.result.current.state.kind).toBe('ready'));
+    act(() => view.result.current.changeDoc(docOf('# Plan\n\nMine.\n')));
+    held.removeOutside();
+    act(() => view.result.current.save());
+    await settle();
+    const { state } = view.result.current;
+    expect(state.kind === 'ready' && state.saveError).toBeTruthy();
 
-      // Observed: null. "no such entry" is not a stale refusal, so the only
-      // ways out are Overwrite — which re-reads the gone note and fails — and
-      // Discard, which throws the typing away.
-      expect(view.result.current.keepAsCopy).not.toBeNull();
-      act(() => view.result.current.keepAsCopy?.());
-      await settle();
-      await settle();
-      expect(held.texts()).toContain('# Plan\n\nMine.\n');
-    },
-  );
+    // Observed: null. "no such entry" is not a stale refusal, so the only
+    // ways out are Overwrite — which re-reads the gone note and fails — and
+    // Discard, which throws the typing away.
+    expect(view.result.current.keepAsCopy).not.toBeNull();
+    act(() => view.result.current.keepAsCopy?.());
+    await settle();
+    await settle();
+    expect(held.texts()).toContain('# Plan\n\nMine.\n');
+  });
 });

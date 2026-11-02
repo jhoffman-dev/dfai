@@ -15,7 +15,9 @@ export { listVaultDirectory, listVaultNotes, readVaultFile } from './read-vault.
 export {
   EntryChangedError,
   HOST_CHANGED_ON_DISK,
+  HOST_NO_SUCH_ENTRY,
   isChangedOnDiskRefusal,
+  isNoSuchEntry,
   VaultAccessError,
 } from './ports.ts';
 export { createFolder, ensureFolder, listVaultFolders } from './create-folder.ts';

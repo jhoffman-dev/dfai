@@ -70,7 +70,7 @@ describe('attack #745: the web writer against deletes and a three-way edit', () 
     TIMEOUT,
   );
 
-  it.fails(
+  it(
     'desktop delete vs web edit: the web’s typing survives somewhere, the delete does not silently win',
     async () => {
       const { studio, laptop, web } = await world();

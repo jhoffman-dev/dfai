@@ -8,6 +8,7 @@ import {
   type VaultEntry,
 } from '@dfai/domain';
 import { fakeVaultFs } from '../testing/fake-ports.ts';
+import { VaultAccessError } from '../vault/ports.ts';
 import type { MarkdownPort } from './ports.ts';
 import { openNote } from './open-note.ts';
 import { keepRefusedAsCopy } from './keep-refused-as-copy.ts';
@@ -43,7 +44,7 @@ function memoryVault(files: Record<string, string>) {
   const fs = fakeVaultFs({
     readTextFile: async (path) => {
       const text = held.get(path);
-      if (text === undefined) throw new Error(`no ${path}`);
+      if (text === undefined) throw new VaultAccessError('no such entry');
       return { text, modified: 2 };
     },
     listDirectory: async (folder) =>
@@ -126,6 +127,32 @@ describe('keepRefusedAsCopy', () => {
     expect(copy).toBe('Sync conflicts/atlas/types/Book (conflict from DFAI web).md');
     expect([...vault.folders]).toContain('Sync conflicts/atlas/types');
     expect(vault.held.get(copy!)).toBe('mine');
+  });
+
+  it('puts mine back at the note’s own path, folder and all, when the note was deleted', async () => {
+    const vault = memoryVault({ 'Projects/Plan.md': 'base' });
+    const { note, doc } = await refusedEdit(vault, 'mine');
+    vault.held.delete('Projects/Plan.md');
+
+    const kept = await keepRefusedAsCopy({ fs: vault.fs, markdown, note, doc, device: WEB_DEVICE });
+
+    expect(kept).toBe('Projects/Plan.md');
+    expect(vault.held.get('Projects/Plan.md')).toBe('mine');
+    expect([...vault.held.keys()]).toEqual(['Projects/Plan.md']);
+    expect([...vault.folders]).toContain('Projects');
+  });
+
+  it('fails, writing nothing, when the note cannot be read for another reason', async () => {
+    const vault = memoryVault({ 'Projects/Plan.md': 'base' });
+    const { note, doc } = await refusedEdit(vault, 'mine');
+    vault.fs.readTextFile = async () => {
+      throw new VaultAccessError('GitHub answered 502');
+    };
+
+    await expect(
+      keepRefusedAsCopy({ fs: vault.fs, markdown, note, doc, device: WEB_DEVICE }),
+    ).rejects.toThrow(/502/);
+    expect([...vault.held.keys()]).toEqual(['Projects/Plan.md']);
   });
 
   it('fails without writing when the copy’s name is taken meanwhile, so the edits stay held', async () => {

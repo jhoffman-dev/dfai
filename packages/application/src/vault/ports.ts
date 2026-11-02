@@ -232,6 +232,18 @@ export class EntryChangedError extends VaultAccessError {
  */
 export const HOST_CHANGED_ON_DISK = 'the note changed on disk since it was opened';
 
+/**
+ * How every host refuses a path where nothing is: the Rust host's
+ * `no such entry: <io error>`, the GitHub vault's `no such entry`, the vault
+ * contract's word for it (`testing/vault-fs-contract.ts`).
+ */
+export const HOST_NO_SUCH_ENTRY = 'no such entry';
+
+/** Whether `error` is the host saying nothing is at the path it was asked about. */
+export function isNoSuchEntry(error: unknown): boolean {
+  return error instanceof VaultAccessError && error.message.startsWith(HOST_NO_SUCH_ENTRY);
+}
+
 /** Whether `error` is the host refusing a write over a file changed since it was read. */
 export function isChangedOnDiskRefusal(error: unknown): boolean {
   return error instanceof VaultAccessError && error.message === HOST_CHANGED_ON_DISK;

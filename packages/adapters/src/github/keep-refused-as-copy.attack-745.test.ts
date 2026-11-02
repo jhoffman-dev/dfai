@@ -38,7 +38,7 @@ async function keep(fs: ReturnType<typeof seeded>['fs'], note: OpenNote, body: s
 }
 
 describe('attack #745: keepRefusedAsCopy over the GitHub API', () => {
-  it.fails('the newer version deleted on the remote: mine is still kept on the branch', async () => {
+  it('the newer version deleted on the remote: mine is still kept on the branch', async () => {
     const { github, fs } = seeded({ [NOTE]: BASE, 'Projects/Other.md': 'other\n' });
     const note = await openNote({ fs, markdown, path: createVaultPath(NOTE) });
     await github.commitOutside({ [NOTE]: null });

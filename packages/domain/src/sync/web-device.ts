@@ -38,7 +38,11 @@ export interface KeptCopy {
  * neither version is lost: the newer version stays in place, untouched, and
  * the refused one is kept whole beside it, named by the desktop's own rule
  * for its conflict copies (U-29) with `device` as the Mac. Nothing is kept
- * when the refused version is already what the note holds.
+ * when the refused version is already what the note holds. A note deleted
+ * elsewhere has no newer version to sit beside: the refused one is put back
+ * at its own path, so an edit is never lost to a delete — the same as the
+ * desktop's sync, which keeps the version that exists when one side
+ * changed a file and the other deleted it.
  */
 export function copyOfRefusedWrite({
   path,
@@ -57,5 +61,6 @@ export function copyOfRefusedWrite({
   taken: ReadonlySet<string>;
 }): KeptCopy | null {
   if (mine === newer) return null;
+  if (newer === null) return { path, contents: mine };
   return { path: conflictCopyPath({ path, mac: device, taken }), contents: mine };
 }

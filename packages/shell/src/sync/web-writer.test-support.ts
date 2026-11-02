@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { createVaultPath, WEB_DEVICE, type VaultPath } from '@dfai/domain';
 import {
   inVault,
-  isChangedOnDiskRefusal,
+  isStaleWriteRefusal,
   keepRefusedAsCopy,
   openNote,
   saveNote,
@@ -232,7 +232,7 @@ export function webWriter({
         await saveNote({ fs, markdown, note: opened, doc });
         return { kind: 'saved' };
       } catch (error) {
-        if (!isChangedOnDiskRefusal(error)) throw error;
+        if (!isStaleWriteRefusal(error)) throw error;
         const copy = await keepRefusedAsCopy({
           fs,
           markdown,

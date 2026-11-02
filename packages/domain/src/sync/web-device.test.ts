@@ -43,7 +43,7 @@ describe('copyOfRefusedWrite', () => {
     ).toBeNull();
   });
 
-  it('keeps the refused version when the newer one is gone', () => {
+  it('puts the refused version back at its own path when the note is gone', () => {
     expect(
       copyOfRefusedWrite({
         path: 'Ideas.md',
@@ -52,7 +52,7 @@ describe('copyOfRefusedWrite', () => {
         newer: null,
         taken: none,
       }),
-    ).toEqual({ path: 'Ideas (conflict from DFAI web).md', contents: 'mine' });
+    ).toEqual({ path: 'Ideas.md', contents: 'mine' });
   });
 
   it('names web commits for the web, as the desktop names its own for the Mac', () => {

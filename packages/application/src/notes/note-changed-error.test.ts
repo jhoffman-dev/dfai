@@ -8,6 +8,15 @@ describe('isStaleWriteRefusal', () => {
     expect(isStaleWriteRefusal(new NoteChangedError('Plan.md'))).toBe(true);
   });
 
+  it('is a save of a note that was opened and is gone now, as each host says so', () => {
+    expect(isStaleWriteRefusal(new VaultAccessError('no such entry'))).toBe(true);
+    expect(
+      isStaleWriteRefusal(new VaultAccessError('no such entry: No such file (os error 2)')),
+    ).toBe(true);
+    // Only the host's refusal, not any error that happens to say so.
+    expect(isStaleWriteRefusal(new Error('no such entry'))).toBe(false);
+  });
+
   it('is not any other failure, which a conflict copy would not answer', () => {
     expect(isStaleWriteRefusal(new VaultAccessError('GitHub answered 502'))).toBe(false);
     expect(isStaleWriteRefusal(new TypeError('Failed to fetch'))).toBe(false);
