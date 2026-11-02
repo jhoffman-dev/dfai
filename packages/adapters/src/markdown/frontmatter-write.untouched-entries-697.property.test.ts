@@ -369,8 +369,12 @@ interface Entry {
   readonly keeps?: boolean;
 }
 
-/** A map's entries drawn with hand-typed spacing: scalars, block text, flow and block maps and lists, comments, blank lines. */
-function entriesOf(random: () => number, indent: string): Entry[] {
+/**
+ * A map's entries drawn with hand-typed spacing: scalars, block text, flow
+ * and block maps and lists, comments, blank lines. With `more`, also #709's:
+ * keys with no value and block text with an explicit indent or chomping.
+ */
+function entriesOf(random: () => number, indent: string, more = false): Entry[] {
   const pick = <T>(items: readonly T[]) => items[Math.floor(random() * items.length)] as T;
   const spaces = () => ' '.repeat(1 + Math.floor(random() * 3));
   const comment = () => (random() < 0.3 ? `${spaces()}# c${Math.floor(random() * 100)}` : '');
@@ -380,6 +384,7 @@ function entriesOf(random: () => number, indent: string): Entry[] {
     const above = pick(['', '', '\n', `${indent}# about ${key}\n`, `\n${indent}# about ${key}\n`]);
     const roll = random();
     const head = `${indent}${key}:`;
+    if (more && roll < 0.4) return drawn709({ random, key, above, head, indent });
     if (roll < 0.3) {
       const value = pick(['number', "'quoted'", '"double"', 'two  words', '42']);
       return { key, above, text: `${above}${head}${spaces()}${value}${comment()}\n`, map: false };
@@ -418,6 +423,41 @@ function entriesOf(random: () => number, indent: string): Entry[] {
   });
 }
 
+/** #709's shapes: a key with no value, or block text with a header the library writes its own way. */
+function drawn709({
+  random,
+  key,
+  above,
+  head,
+  indent,
+}: {
+  random: () => number;
+  key: string;
+  above: string;
+  head: string;
+  indent: string;
+}): Entry {
+  const pick = <T>(items: readonly T[]) => items[Math.floor(random() * items.length)] as T;
+  const spaces = () => ' '.repeat(1 + Math.floor(random() * 3));
+  if (random() < 0.4) {
+    const comment = pick(['', `${spaces()}# empty`]);
+    return { key, above, text: `${above}${head}${comment}\n`, map: false };
+  }
+  const header = pick(['|1', '|2', '>2-', '|', '>-', '|2+']);
+  const by = Number(/\d/.exec(header)?.[0] ?? 2);
+  const at = indent + ' '.repeat(by);
+  // An explicit indent lets the first line stand deeper than the rest.
+  const lines = `${at}${/\d/.test(header) ? '  ' : ''}lead\n${at}x${header.endsWith('+') ? '\n\n' : '\n'}`;
+  const comment = random() < 0.3 ? `${spaces()}# c` : '';
+  return {
+    key,
+    above,
+    text: `${above}${head}${spaces()}${header}${comment}\n${lines}`,
+    map: false,
+    keeps: header.endsWith('+'),
+  };
+}
+
 type Operation = 'move' | 'add' | 'delete' | 'rename' | 'replace' | 'edit';
 
 interface Drawn {
@@ -429,9 +469,9 @@ interface Drawn {
   readonly opener: string;
 }
 
-function drawn(random: () => number, notes: boolean): Drawn {
+function drawn(random: () => number, notes: boolean, more: boolean): Drawn {
   const indent = ' '.repeat(2 + Math.floor(random() * 3));
-  const entries = entriesOf(random, indent);
+  const entries = entriesOf(random, indent, more);
   const eol = random() < 0.3 ? '\r\n' : '\n';
   const bom = random() < 0.2 ? '\uFEFF' : '';
   const opener = random() < 0.3 ? 'properties:   # specs\n' : 'properties:\n';
@@ -439,7 +479,7 @@ function drawn(random: () => number, notes: boolean): Drawn {
   // under an entry (never under block text, which would read it as text),
   // one closing the map.
   const note = (entry: Entry) =>
-    notes && !/: *\|/.test(entry.text) && random() < 0.2
+    notes && !/: *[|>]/.test(entry.text) && random() < 0.2
       ? `${indent}    # deep under ${entry.key}\n`
       : '';
   const closing = notes && random() < 0.3 ? `${indent}# end of the specs\n` : '';
@@ -512,9 +552,9 @@ function editOf(
  * library writes it, so only what may never change is held: the values,
  * every comment and anchor once, and the rest of the block.
  */
-function problemsOf(seed: number, operation: Operation, notes = false): string[] {
+function problemsOf(seed: number, operation: Operation, notes = false, more = false): string[] {
   const random = seeded(seed);
-  const map = drawn(random, notes);
+  const map = drawn(random, notes, more);
   const edit = editOf(random, map, operation);
   if (edit === null) return [];
   const written = updateFrontmatter(map.frontmatter, { properties: edit.properties });
@@ -616,6 +656,30 @@ describe('a changed map keeps its untouched entries’ bytes, as a property (#69
     (operation) => {
       const broken: string[] = [];
       for (let seed = 1; seed <= 300; seed += 1) broken.push(...problemsOf(seed, operation, true));
+      expect(broken.slice(0, 5)).toEqual([]);
+    },
+    60_000,
+  );
+});
+
+describe('a changed map keeps its untouched entries’ bytes after keys with no value and block text (#709)', () => {
+  it.each<Operation>(['move', 'add', 'delete', 'rename', 'replace', 'edit'])(
+    'on a %s of another entry',
+    (operation) => {
+      const broken: string[] = [];
+      for (let seed = 1; seed <= 500; seed += 1)
+        broken.push(...problemsOf(seed, operation, false, true));
+      expect(broken.slice(0, 5)).toEqual([]);
+    },
+    60_000,
+  );
+
+  it.each<Operation>(['move', 'add', 'delete', 'rename', 'replace', 'edit'])(
+    'never loses a value or comment on a %s, among comments the library places',
+    (operation) => {
+      const broken: string[] = [];
+      for (let seed = 1; seed <= 300; seed += 1)
+        broken.push(...problemsOf(seed, operation, true, true));
       expect(broken.slice(0, 5)).toEqual([]);
     },
     60_000,
