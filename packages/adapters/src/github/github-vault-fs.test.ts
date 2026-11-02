@@ -67,6 +67,23 @@ describe('the GitHub vault: round trips, one commit each', () => {
     expect(after).not.toBe(modified);
   });
 
+  it('authors every commit it makes `DFAI web`, so the history says where an edit came from', async () => {
+    const { github, fs, vault } = seeded();
+    const { modified } = await fs.readTextFile(p('Welcome.md'));
+    await fs.writeTextFile({
+      vault,
+      path: p('Welcome.md'),
+      contents: 'x',
+      expectedModified: modified,
+    });
+    await fs.createNote({ vault, path: p('Ideas.md'), contents: 'idea' });
+    const [created, saved, seed] = await github.commits();
+    expect(created?.author).toEqual({ name: 'DFAI web', email: 'dfai@web.local' });
+    expect(saved?.author).toEqual({ name: 'DFAI web', email: 'dfai@web.local' });
+    // The stand-in's own seed, which no web write made.
+    expect(seed?.author).toBeUndefined();
+  });
+
   it('creates, moves and trashes, each one commit, and the tree is as asked', async () => {
     const { github, fs, vault } = seeded();
     await fs.createNote({ vault, path: p('Ideas.md'), contents: 'idea' });

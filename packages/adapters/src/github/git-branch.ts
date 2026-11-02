@@ -1,4 +1,5 @@
 import { VaultAccessError } from '@dfai/application';
+import { WEB_COMMIT_AUTHOR } from '@dfai/domain';
 import { base64ToBytes, bytesToBase64, gitBlobSha } from './git-bytes.ts';
 import {
   readBlobBase64,
@@ -117,7 +118,8 @@ async function commit(
     await api.send({
       method: 'POST',
       path: `${repo}/git/commits`,
-      body: { message: asked.message, tree, parents: [asked.head] },
+      // Authored by the web, not the signed-in person alone, so the history says where it came from.
+      body: { message: asked.message, tree, parents: [asked.head], author: WEB_COMMIT_AUTHOR },
     }),
   );
   try {

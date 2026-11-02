@@ -69,6 +69,7 @@ const GIT_COMMANDS = {
   head: 0,
   mergeInProgress: 0,
   remoteSubject: 0,
+  remoteAuthor: 0,
   remoteBranchExists: 0,
   checkout: 0,
   config: 0,

@@ -11,6 +11,19 @@ export interface SavedNote {
   readonly text: string;
 }
 
+/** The note's body as the edited document has it, untouched blocks in their original bytes. */
+export function editedBody({
+  markdown,
+  note,
+  doc,
+}: {
+  markdown: MarkdownPort;
+  note: OpenNote;
+  doc: EditorDocument;
+}): string {
+  return markdown.serializeBody({ originalBody: note.originalBody, parsed: note.parsed, doc });
+}
+
 /**
  * Writes the edited document back to the note.
  *
@@ -51,11 +64,7 @@ export async function saveNote({
           // no properties, and the rules must judge what the write will change.
           taskRuleProperties(markdown, note.frontmatter),
         );
-  const body = markdown.serializeBody({
-    originalBody: note.originalBody,
-    parsed: note.parsed,
-    doc,
-  });
+  const body = editedBody({ markdown, note, doc });
   const frontmatter =
     ruled === undefined || Object.keys(ruled).length === 0
       ? note.frontmatter

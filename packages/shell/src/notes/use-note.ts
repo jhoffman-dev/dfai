@@ -10,6 +10,7 @@ import {
   NoteChangedError,
   noteModified,
   NoteStillOpeningError,
+  keepRefusedAsCopy,
   openNote,
   saveNote,
   type PropertyChanges,
@@ -25,6 +26,11 @@ import type { Stranding } from './stranded-edits.ts';
 export interface NotePorts {
   fs: VaultFsPort;
   markdown: MarkdownPort;
+  /**
+   * The device this editor writes from, as a conflict copy is named for it —
+   * the web's, say (#665). Named, a refused save can be kept as a copy.
+   */
+  device?: string;
 }
 
 export interface NoteView {
@@ -62,6 +68,12 @@ export interface NoteView {
   overwrite: () => void;
   /** Throws away the unsaved edits and takes the file as it stands. */
   discard: () => void;
+  /**
+   * The way out of a refused save that loses neither version (#665): what is
+   * on screen is kept whole as a conflict copy beside the note, and the note
+   * is then taken as it stands. Null where no device is named to name it for.
+   */
+  keepAsCopy: (() => void) | null;
   /**
    * Writes any unsaved edits now, settling once the write has landed or been
    * refused. For leaving the vault: after that, this note's path means a note
@@ -603,6 +615,23 @@ export function useNote({
     setRevision((was) => was + 1);
   }, []);
 
+  const keepCopy = useCallback(() => {
+    const { device } = ports;
+    if (device === undefined || note === null || doc === null) return;
+    const kept = { fs: ports.fs, markdown: ports.markdown, note, doc, device };
+    const run = () => keepRefusedAsCopy(kept);
+    const keeping = writes.current.queue.then(run, run);
+    // Reported below; the queue only has to know it is over.
+    writes.current.queue = keeping.catch(() => undefined);
+    // Only once the copy is written are the edits let go of; refused, they stay
+    // on screen, unsaved, with the reason.
+    keeping.then(discard, (error: unknown) => {
+      setSaveError(message(error));
+      shownInPane(path)(error);
+    });
+  }, [ports, note, doc, path, discard, shownInPane]);
+  const keepAsCopy = ports.device === undefined ? null : keepCopy;
+
   /**
    * The latest note and document, for saving on the way out.
    *
@@ -811,6 +840,7 @@ export function useNote({
     reload,
     overwrite,
     discard,
+    keepAsCopy,
     flush,
     repoint,
     abandon,

@@ -185,6 +185,8 @@ export interface NotePaneProps {
   onRename: (name: string) => void;
   /** Writes what is on screen over the file the save was refused against. */
   onOverwrite: () => void;
+  /** Keeps what is on screen as a conflict copy beside the newer file (#665); absent where it cannot. */
+  onKeepAsCopy?: () => void;
   /** Gives up the unsaved edits and takes the file instead. */
   onDiscard: () => void;
   favorite: boolean;
@@ -317,7 +319,12 @@ function ReadyPage(props: NotePaneProps & { state: ReadyState; heading: PageHead
           {...barOverlay(arrangement)}
         />
       )}
-      <SaveConflict state={state} onOverwrite={props.onOverwrite} onDiscard={props.onDiscard} />
+      <SaveConflict
+        state={state}
+        onOverwrite={props.onOverwrite}
+        onDiscard={props.onDiscard}
+        {...(props.onKeepAsCopy !== undefined && { onKeepAsCopy: props.onKeepAsCopy })}
+      />
       {props.template !== undefined && <TemplateBanner {...props.template} />}
       {props.corrections !== undefined && <MeetingCorrectionsBand {...props.corrections} />}
       <PromotionBanner notice={props.promotion?.notice ?? null} />
@@ -586,10 +593,12 @@ function SaveConflict({
   state,
   onOverwrite,
   onDiscard,
+  onKeepAsCopy,
 }: {
   state: ReadyState;
   onOverwrite: () => void;
   onDiscard: () => void;
+  onKeepAsCopy?: () => void;
 }) {
   if (state.saveError === null) return null;
   return (
@@ -597,6 +606,11 @@ function SaveConflict({
       <span className="page-conflict__message" role="alert">
         {state.saveError}
       </span>
+      {onKeepAsCopy !== undefined && (
+        <button className="viewer__resolve" type="button" onClick={onKeepAsCopy}>
+          Keep mine as a copy
+        </button>
+      )}
       <button className="viewer__resolve" type="button" onClick={onOverwrite}>
         Overwrite the file
       </button>

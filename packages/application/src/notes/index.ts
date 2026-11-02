@@ -1,6 +1,7 @@
 export { openNote } from './open-note.ts';
 export type { OpenNote } from './open-note.ts';
 export { saveNote } from './save-note.ts';
+export { keepRefusedAsCopy } from './keep-refused-as-copy.ts';
 export type { SavedNote } from './save-note.ts';
 export type { MarkdownPort, WritingRead } from './ports.ts';
 export { createNote, NoteNameTakenError } from './create-note.ts';

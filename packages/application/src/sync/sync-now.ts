@@ -3,7 +3,7 @@ import {
   excludesText,
   LARGE_FILE_BYTES,
   leftOutWarnings,
-  macOfCommit,
+  deviceOfCommit,
   parseOmittedObjects,
   syncActivityMessage,
   syncCommitMessage,
@@ -33,7 +33,7 @@ import {
 } from './git-steps.ts';
 import { clearSettledCopies } from './clear-settled-copies.ts';
 import { leaveOut } from './leave-out.ts';
-import type { GitPort, SyncFilesPort, UnsavedWorkPort } from './ports.ts';
+import type { GitPort, GitResult, SyncFilesPort, UnsavedWorkPort } from './ports.ts';
 import { clearJournal, readJournal } from './journal.ts';
 import { mergeHeadOf, recordMerge, settleConflicts } from './settle-conflicts.ts';
 
@@ -271,12 +271,17 @@ async function leaveOutOfUnpushedHistory(step: SyncStep): Promise<readonly strin
 const settingsOf = ({ fs, markdown }: SyncStep) => ({ vault: fs, markdown });
 
 /**
- * The Mac the other side of a merge came from, which a conflict copy is named
- * for: read from its last commit, or "another Mac" when DFAI did not make it.
+ * The device the other side of a merge came from, which a conflict copy is
+ * named for: read from its last commit — a Mac, or the web — or "another Mac"
+ * when DFAI did not make it.
  */
 async function otherMac(git: GitPort, branch: string): Promise<string> {
-  const subject = await git.remoteSubject(branch);
-  return (subject.code === 0 ? macOfCommit(subject.stdout) : null) ?? 'another Mac';
+  const [subject, author] = await Promise.all([
+    git.remoteSubject(branch),
+    git.remoteAuthor(branch),
+  ]);
+  const said = (result: GitResult) => (result.code === 0 ? result.stdout : '');
+  return deviceOfCommit({ subject: said(subject), author: said(author) }) ?? 'another Mac';
 }
 
 function warn(activity: ActivityRecorder, warnings: readonly string[]): void {

@@ -273,6 +273,7 @@ export function scriptedGit({
     mergeInProgress: async () => answer('mergeInProgress', null, failed('', 1)),
     remoteSubject: async (branch) =>
       answer('remoteSubject', branch, said('DFAI sync from Laptop 2026-09-28 13:00\n')),
+    remoteAuthor: async (branch) => answer('remoteAuthor', branch, said('DFAI on Laptop\n')),
     remoteBranchExists: async (branch) => answer('remoteBranchExists', branch, OK),
     // As the host does, writes only over the file the sync saw (#246).
     checkout: async (args) => {
