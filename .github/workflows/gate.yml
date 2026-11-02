@@ -368,8 +368,13 @@ jobs:
       # No `--trace=retain-on-failure`: tracing every test took the four shards
       # from 1114 s to 1479 s between them when it was measured (#113). A failed
       # shard uploads the HTML report and each failure's error context instead.
+      #
+      # Both projects, named: `ipad` is the core loop by touch on an iPad's
+      # screen (#661), one test that lands on whichever shard it is dealt.
       - name: End-to-end, an eighth of the suite
-        run: pnpm e2e --shard=${{ matrix.shard }}/8 --workers=2 --reporter=list,html
+        run: >-
+          pnpm e2e --project=webkit --project=ipad --shard=${{ matrix.shard }}/8
+          --workers=2 --reporter=list,html
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
