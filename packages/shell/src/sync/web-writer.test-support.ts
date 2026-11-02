@@ -50,12 +50,20 @@ function git(
   { env, input }: { env: Env; input?: Uint8Array | string },
 ): Promise<Ran> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd: bare, env, stdio: ['pipe', 'pipe', 'ignore'] });
+    // A stdin only for the commands fed one: git that never reads it exits
+    // first, and writing to it then is EPIPE (on Linux, in CI).
+    const stdin = input === undefined ? 'ignore' : 'pipe';
+    const child = spawn('git', args, { cwd: bare, env, stdio: [stdin, 'pipe', 'ignore'] });
     const out: Buffer[] = [];
-    child.stdout.on('data', (chunk: Buffer) => out.push(chunk));
+    child.stdout?.on('data', (chunk: Buffer) => out.push(chunk));
     child.on('error', reject);
     child.on('close', (code) => resolve({ code: code ?? 1, stdout: Buffer.concat(out) }));
-    child.stdin.end(input ?? '');
+    if (child.stdin !== null) {
+      // Safe to ignore: git stopping before it read all of its input is
+      // reported by its exit code, which the caller checks.
+      child.stdin.on('error', () => undefined);
+      child.stdin.end(input);
+    }
   });
 }
 
