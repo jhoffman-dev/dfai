@@ -27,7 +27,7 @@ import {
   type NoteFile,
 } from '@dfai/application';
 import { gitBlobSha, textOfBytes, utf8, versionOfBlob } from './git-bytes.ts';
-import type { GitBranch, TreeChange } from './git-branch.ts';
+import type { CommitAsked, GitBranch, TreeChange } from './git-branch.ts';
 import type { GitTreeEntry } from './github-answers.ts';
 
 /**
@@ -309,8 +309,17 @@ function writing({ branch, at }: Through) {
       changes,
       message,
       moved = changedOnDisk,
-    }: { changes: TreeChange[]; message: string; moved?: () => Error },
-  ) => branch.commit({ head: snapshot.head, tree: snapshot.tree, changes, message, moved });
+      unchanged,
+    }: Pick<CommitAsked, 'message' | 'unchanged'> & { changes: TreeChange[]; moved?: () => Error },
+  ) =>
+    branch.commit({
+      head: snapshot.head,
+      tree: snapshot.tree,
+      changes,
+      message,
+      moved,
+      ...(unchanged !== undefined && { unchanged }),
+    });
 
   /** A new file of these bytes where nothing is, in a folder that is there. */
   const create: Create = async (snapshot, { path, bytes, taken }) => {
@@ -371,7 +380,10 @@ type Create = (
 
 type CommitOn = (
   snapshot: Snapshot,
-  asked: { changes: TreeChange[]; message: string; moved?: () => Error },
+  asked: Pick<CommitAsked, 'message' | 'unchanged'> & {
+    changes: TreeChange[];
+    moved?: () => Error;
+  },
 ) => Promise<string>;
 
 /** Whether the file is still the blob it was read as: its version, and its text's git name. */
@@ -398,7 +410,11 @@ async function saveText(
   // The bytes already there: nothing to commit, and the note is not rewritten (ADR-0003).
   if ((await gitBlobSha(bytes)) === file.sha) return versionOfBlob(file.sha);
   const sha = await branch.upload(bytes);
-  await commitOn(snapshot, { changes: [put(path, sha, file.mode)], message: `Save ${path}` });
+  await commitOn(snapshot, {
+    changes: [put(path, sha, file.mode)],
+    message: `Save ${path}`,
+    unchanged: { path, sha: file.sha, mode: file.mode },
+  });
   return versionOfBlob(sha);
 }
 

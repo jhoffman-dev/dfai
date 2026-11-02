@@ -67,6 +67,23 @@ describe('the GitHub vault: round trips, one commit each', () => {
     expect(after).not.toBe(modified);
   });
 
+  it('authors every commit it makes `DFAI web`, so the history says where an edit came from', async () => {
+    const { github, fs, vault } = seeded();
+    const { modified } = await fs.readTextFile(p('Welcome.md'));
+    await fs.writeTextFile({
+      vault,
+      path: p('Welcome.md'),
+      contents: 'x',
+      expectedModified: modified,
+    });
+    await fs.createNote({ vault, path: p('Ideas.md'), contents: 'idea' });
+    const [created, saved, seed] = await github.commits();
+    expect(created?.author).toEqual({ name: 'DFAI web', email: 'dfai@web.local' });
+    expect(saved?.author).toEqual({ name: 'DFAI web', email: 'dfai@web.local' });
+    // The stand-in's own seed, which no web write made.
+    expect(seed?.author).toBeUndefined();
+  });
+
   it('creates, moves and trashes, each one commit, and the tree is as asked', async () => {
     const { github, fs, vault } = seeded();
     await fs.createNote({ vault, path: p('Ideas.md'), contents: 'idea' });
@@ -249,11 +266,35 @@ describe('the GitHub vault refuses a write over anything that moved', () => {
     expect(await github.textAt('Welcome.md')).toBe('# From the Mac\n');
   });
 
-  it('refuses a save when the branch head moves between its check and its commit, and never forces', async () => {
+  it('lands a save on a head another device moved meanwhile, when that push left this note alone', async () => {
     const { github, fs, vault } = seeded();
     const read = await fs.readTextFile(p('Welcome.md'));
     github.intercept(isCall('POST', '/git/commits'), async (request) => {
       await github.commitOutside({ 'Other.md': 'from the Mac' });
+      return github.respond(request);
+    });
+    await fs.writeTextFile({
+      vault,
+      path: p('Welcome.md'),
+      contents: 'mine',
+      expectedModified: read.modified,
+    });
+    expect(await github.textAt('Welcome.md')).toBe('mine');
+    // The other device's push is kept: the save went on top of it.
+    expect(await github.textAt('Other.md')).toBe('from the Mac');
+    expect(await github.history()).toEqual(['Save Welcome.md', 'Outside', 'Seed']);
+    const updates = github.received.filter(isRefUpdate);
+    expect(updates.map(({ body }) => body)).toEqual([
+      { sha: expect.any(String), force: false },
+      { sha: expect.any(String), force: false },
+    ]);
+  });
+
+  it('refuses a save when the head moves between its check and its commit with this note changed, and never forces', async () => {
+    const { github, fs, vault } = seeded();
+    const read = await fs.readTextFile(p('Welcome.md'));
+    github.intercept(isCall('POST', '/git/commits'), async (request) => {
+      await github.commitOutside({ 'Welcome.md': '# From the Mac\n' });
       return github.respond(request);
     });
     const error = await refusal(
@@ -265,10 +306,30 @@ describe('the GitHub vault refuses a write over anything that moved', () => {
       }),
     );
     expect(isChangedOnDiskRefusal(error)).toBe(true);
-    expect(await github.textAt('Welcome.md')).toBe('# Welcome\n');
-    expect(await github.textAt('Other.md')).toBe('from the Mac');
+    expect(await github.textAt('Welcome.md')).toBe('# From the Mac\n');
     const updates = github.received.filter(isRefUpdate);
     expect(updates.map(({ body }) => body)).toEqual([{ sha: expect.any(String), force: false }]);
+  });
+
+  it('tries a save on a moved head once only: moved again, it is refused', async () => {
+    const { github, fs, vault } = seeded();
+    const read = await fs.readTextFile(p('Welcome.md'));
+    for (const n of [1, 2])
+      github.intercept(isCall('POST', '/git/commits'), async (request) => {
+        await github.commitOutside({ [`Other ${n}.md`]: 'from the Mac' });
+        return github.respond(request);
+      });
+    const error = await refusal(
+      fs.writeTextFile({
+        vault,
+        path: p('Welcome.md'),
+        contents: 'mine',
+        expectedModified: read.modified,
+      }),
+    );
+    expect(isChangedOnDiskRefusal(error)).toBe(true);
+    expect(await github.textAt('Welcome.md')).toBe('# Welcome\n');
+    expect(github.received.filter(isRefUpdate)).toHaveLength(2);
   });
 
   for (const status of [422, 409]) {

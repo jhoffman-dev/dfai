@@ -57,6 +57,7 @@ export function gitCommands(git: RunGit): Omit<GitPort, 'createGitHubRepository'
     head: () => git('log', '-1', '--format=%H%x00%ct'),
     mergeInProgress: () => git('rev-parse', '--verify', '--quiet', 'MERGE_HEAD'),
     remoteSubject: (branch) => git('log', '-1', '--format=%s', remoteBranch(branch), '--'),
+    remoteAuthor: (branch) => git('log', '-1', '--format=%an', remoteBranch(branch), '--'),
     remoteBranchExists: (branch) => git('rev-parse', '--verify', '--quiet', remoteBranch(branch)),
     // Drops `seen`: the guard lives in the host, and only `tauriGit`, which overrides this, runs in production.
     checkout: ({ side, path }) => git(...checkoutArgs(side, path)),

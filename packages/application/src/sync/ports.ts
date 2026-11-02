@@ -47,6 +47,8 @@ export interface GitPort {
   mergeInProgress(): Promise<GitResult>;
   /** `log -1 --format=%s origin/<branch> --`: what the other Macs' last commit is called. */
   remoteSubject(branch: string): Promise<GitResult>;
+  /** `log -1 --format=%an origin/<branch> --`: who made that commit — the web, say (#665). */
+  remoteAuthor(branch: string): Promise<GitResult>;
   /** Whether `origin/<branch>` exists yet. */
   remoteBranchExists(branch: string): Promise<GitResult>;
   /**

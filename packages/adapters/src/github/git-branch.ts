@@ -1,4 +1,5 @@
 import { VaultAccessError } from '@dfai/application';
+import { WEB_COMMIT_AUTHOR } from '@dfai/domain';
 import { base64ToBytes, bytesToBase64, gitBlobSha } from './git-bytes.ts';
 import {
   readBlobBase64,
@@ -40,6 +41,14 @@ export interface CommitAsked {
   readonly message: string;
   /** What the write is refused with when the branch has moved past `head`. */
   readonly moved: () => Error;
+  /**
+   * A save's one file, its blob and mode as they were at `head`. Given, a branch that moved meanwhile
+   * with this file still that blob is not a refusal: the change is made again,
+   * once, on the new head — another device's push to another note is no
+   * conflict. Only a save gives it: a create, a move or a trash was decided
+   * against the whole tree, which the other push may have changed.
+   */
+  readonly unchanged?: { readonly path: string; readonly sha: string; readonly mode: string };
 }
 
 export interface GitBranch {
@@ -61,18 +70,19 @@ export function gitBranch(api: GitHubApi, where: GitHubVaultRepository): GitBran
   return {
     head: () => headOf(api, `${repo}/git/ref/${ref}`),
     listing: async (commit) => {
-      const listing = readTree(
-        await api.send({ method: 'GET', path: `${repo}/git/trees/${commit}?recursive=1` }),
-      );
+      const listing = await treeAt(api, repo, commit);
       if (listing.truncated)
         throw new VaultAccessError('the vault holds more files than GitHub lists in one answer');
       return listing;
     },
     blob: (sha) => blobOf(api, `${repo}/git/blobs/${sha}`, sha),
     upload: (bytes) => upload(api, `${repo}/git/blobs`, bytes),
-    commit: (asked) => commit(api, { repo, ref }, asked),
+    commit: (asked) => commitOnMovedHead(api, { repo, ref }, asked),
   };
 }
+
+const treeAt = async (api: GitHubApi, repo: string, commit: string) =>
+  readTree(await api.send({ method: 'GET', path: `${repo}/git/trees/${commit}?recursive=1` }));
 
 async function headOf(api: GitHubApi, path: string): Promise<string> {
   try {
@@ -101,11 +111,49 @@ async function upload(api: GitHubApi, path: string, bytes: Uint8Array): Promise<
   return sha;
 }
 
+interface Ref {
+  readonly repo: string;
+  readonly ref: string;
+}
+
+/** A commit, made again once on a moved head where the save's file is as it was. */
+async function commitOnMovedHead(api: GitHubApi, where: Ref, asked: CommitAsked): Promise<string> {
+  const made = await commit(api, where, asked);
+  if (made !== null) return made;
+  const again = asked.unchanged === undefined ? null : await movedPast(api, where, asked);
+  const retried = again === null ? null : await commit(api, where, { ...asked, ...again });
+  if (retried === null) throw asked.moved();
+  return retried;
+}
+
+/** The head the branch moved to, and its tree, when the save's file is there unchanged. */
+async function movedPast(
+  api: GitHubApi,
+  { repo, ref }: Ref,
+  asked: CommitAsked,
+): Promise<{ head: string; tree: string } | null> {
+  const head = await headOf(api, `${repo}/git/ref/${ref}`);
+  // Not moved: GitHub refused the update for its own reason, and trying again
+  // would only be refused again.
+  if (head === asked.head) return null;
+  const listing = await treeAt(api, repo, head);
+  if (listing.truncated) return null;
+  const file = listing.entries.find((entry) => entry.path === asked.unchanged?.path);
+  // The same bytes under another mode — made executable, or a link to the
+  // same text — is a change too, which the save would write over.
+  const same =
+    file?.type === 'blob' &&
+    file.sha === asked.unchanged?.sha &&
+    file.mode === asked.unchanged.mode;
+  return same ? { head, tree: listing.sha } : null;
+}
+
+/** Commits the changes on `head` and moves the branch to it; null when it moved meanwhile. */
 async function commit(
   api: GitHubApi,
-  { repo, ref }: { repo: string; ref: string },
+  { repo, ref }: Ref,
   asked: CommitAsked,
-): Promise<string> {
+): Promise<string | null> {
   const tree = readCreatedSha(
     await api.send({
       method: 'POST',
@@ -117,7 +165,8 @@ async function commit(
     await api.send({
       method: 'POST',
       path: `${repo}/git/commits`,
-      body: { message: asked.message, tree, parents: [asked.head] },
+      // Authored by the web, not the signed-in person alone, so the history says where it came from.
+      body: { message: asked.message, tree, parents: [asked.head], author: WEB_COMMIT_AUTHOR },
     }),
   );
   try {
@@ -130,7 +179,7 @@ async function commit(
     // Not a fast-forward (422), or the ref changed under the update (409): another
     // device's commit is there. Never forced; the write is refused as stale.
     if (error instanceof GitHubRefusedError && (error.status === 422 || error.status === 409))
-      throw asked.moved();
+      return null;
     throw error;
   }
   return made;

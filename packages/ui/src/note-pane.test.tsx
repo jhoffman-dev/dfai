@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   createVaultPath,
@@ -134,6 +134,28 @@ describe('NotePane: the bar', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Discard my changes' }));
     expect(onOverwrite).toHaveBeenCalled();
     expect(onDiscard).toHaveBeenCalled();
+  });
+
+  it('offers to keep mine as a copy where the pane can, and not where it cannot', async () => {
+    const onKeepAsCopy = vi.fn();
+    const refused = ready({ dirty: true, saveError: 'The file changed on disk.' });
+    show({ state: refused, onKeepAsCopy });
+    await userEvent.click(screen.getByRole('button', { name: 'Keep mine as a copy' }));
+    expect(onKeepAsCopy).toHaveBeenCalledTimes(1);
+    cleanup();
+    show({ state: refused });
+    expect(screen.getByRole('button', { name: 'Overwrite the file' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Keep mine as a copy' })).toBeNull();
+  });
+
+  it('holds the copy button while a keep is under way, so one click makes one copy', () => {
+    show({
+      state: ready({ dirty: true, saving: true, saveError: 'The file changed on disk.' }),
+      onKeepAsCopy: vi.fn(),
+    });
+    expect(
+      (screen.getByRole('button', { name: 'Keep mine as a copy' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it('stars the page by its title', async () => {
