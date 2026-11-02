@@ -1203,8 +1203,18 @@ const entryOf = (segment: Segments['keys'][number]): Entry => ({
   text: segment.text,
   above: segment.above,
   map: segment.map,
-  holdsBlanks: segment.value === null || segment.value.joins === 0,
+  holdsBlanks: segment.value === null ? mayKeepLines(segment.text) : segment.value.joins === 0,
 });
+
+/**
+ * Whether text whose value's end cannot be told may keep its trailing lines.
+ * Only block text with an explicit indent (`|2`), lines of text under it and
+ * no `+` anywhere is known not to (#709); anything else — the library's empty text
+ * (`>`) holds the blank line it writes under it — is taken to, as before.
+ */
+const mayKeepLines = (text: string) =>
+  /[|>](?:[1-9]?\+|\+)/.test(text) ||
+  !/^[^#\n]*:[ \t]+[|>](?:[1-9]-?|-[1-9])[ \t]*(?:#.*)?\n[ \t]*\S/m.test(text);
 
 /** `entry` moved left `by` columns. */
 const rebased = (entry: Entry, by: number): Entry => ({
@@ -1354,7 +1364,11 @@ function mapKept({
   const found = entriesOf(source);
   if (now === null || then === null || found === null) return null;
   const rendered = new Map(then.entries.map((entry) => [entry.id, entry]));
-  const original = new Map(found.entries.map((entry) => [entry.id, entry]));
+  const original = new Map(
+    withCommentsLeft(found.entries, rendered, new Set(now.entries.map((entry) => entry.id))).map(
+      (entry) => [entry.id, entry],
+    ),
+  );
   const by = found.indent - now.indent;
   const entryText = (entry: Entry) => {
     const render = rendered.get(entry.id);
@@ -1367,18 +1381,69 @@ function mapKept({
     if (withoutLeadingBlanks(render.text) === withoutLeadingBlanks(entry.text)) return source.text;
     return entryKept(entry, render, source, 'head') ?? writtenAt(entry.text, by);
   };
+  const texts = now.entries.map(entryText);
+  // An entry written as found holds blank lines as found, not as the library writes it (#709).
+  const holdsBlanks = (entry: Entry, text: string) => {
+    const source = original.get(entry.id);
+    return source !== undefined && source.text === text ? source.holdsBlanks : entry.holdsBlanks;
+  };
   const entries = now.entries.map((entry, at) => {
-    const text = entryText(entry);
+    const text = texts[at] as string;
+    const previous = now.entries[at - 1];
     // Blank lines under text that keeps its trailing lines (`|+`) would be
     // read as that text: the library's, none, stand there.
-    if (now.entries[at - 1]?.holdsBlanks !== true) return text;
+    if (previous === undefined || !holdsBlanks(previous, texts[at - 1] as string)) return text;
     return `${leadingBlanks(entry.text)}${withoutLeadingBlanks(text)}`;
   });
   const head = partKept({ now: now.head, then: then.head, found: found.head, by });
-  const tail = partKept({ now: now.tail, then: then.tail, found: found.tail, by });
+  const kept = partKept({ now: now.tail, then: then.tail, found: found.tail, by });
+  // Nor under the last entry: a blank line the map ends in would be its text.
+  const last = now.entries.length - 1;
+  const ending = last >= 0 && holdsBlanks(now.entries[last] as Entry, texts[last] as string);
+  const tail = ending ? withoutLeadingBlanks(kept) : kept;
   // Each part ends in a newline; the last one's is the one the text was cut without.
   const text = `${head}${entries.join('')}${tail}`.replace(/\n$/, '');
   return `${text}${written.endsWith('\n') ? '\n' : ''}`;
+}
+
+/**
+ * `source`'s entries with the comment lines above each one the change takes
+ * away given to the entry before it, when the library reads them as that
+ * entry's own — under a key with no value (#709): they stay where they were
+ * found rather than go with the entry under them. An entry that stays keeps
+ * its comments above it.
+ */
+function withCommentsLeft(
+  source: readonly Entry[],
+  rendered: ReadonlyMap<string, Entry>,
+  staying: ReadonlySet<string>,
+): Entry[] {
+  const entries = [...source];
+  for (let at = 1; at < entries.length; at += 1) {
+    const previous = entries[at - 1] as Entry;
+    const entry = entries[at] as Entry;
+    const blanks = leadingBlanks(entry.above);
+    const lines = entry.above.slice(blanks.length).match(/.*\n/g) ?? [];
+    const library = rendered.get(previous.id)?.text;
+    if (lines.length === 0 || staying.has(entry.id) || library === undefined) continue;
+    // The library may read only the first of them as the key's (#709): those
+    // stay, the rest go. Those above the key may be the one before it's.
+    const own = previous.text.slice(previous.above.length);
+    const given = [...lines.keys()]
+      .map((count) => lines.slice(0, lines.length - count).join(''))
+      .find((comments) =>
+        [previous.text, own].some((text) => sameComments(library, `${text}${comments}`)),
+      );
+    if (given === undefined || given === '') continue;
+    const rest = lines.slice(given.match(/\n/g)?.length ?? 0).join('');
+    entries[at - 1] = { ...previous, text: `${previous.text}${given}` };
+    entries[at] = {
+      ...entry,
+      text: `${blanks}${rest}${entry.text.slice(entry.above.length)}`,
+      above: `${blanks}${rest}`,
+    };
+  }
+  return entries;
 }
 
 const withoutLeadingBlanks = (text: string) => text.replace(/^(?:[ \t]*\n)+/, '');
@@ -1405,7 +1470,11 @@ function entriesOf(
   let carried = ownBlanks;
   const entries = cut.keys.map((segment) => {
     const entry = entryOf(segment);
-    const blanks = entry.holdsBlanks ? null : /\n((?:[ \t]*\n)+)$/.exec(entry.text);
+    // A line of spaces deeper than the key, or one holding a tab, may be
+    // block text's own (#709): only lines no deeper than the key are blank.
+    const column = keyColumnOf(entry.text.slice(entry.above.length));
+    const blank = new RegExp(`\\n((?: {0,${column}}\\n)+)$`);
+    const blanks = entry.holdsBlanks ? null : blank.exec(entry.text);
     const own = blanks === null ? entry.text : entry.text.slice(0, blanks.index + 1);
     const moved = { ...entry, text: `${carried}${own}`, above: `${carried}${entry.above}` };
     carried = blanks?.[1] ?? '';
@@ -1483,7 +1552,8 @@ function lastKeyEnd(source: string, last: Pair, indent: number): number {
   for (let at = end; at < source.length;) {
     const next = source.indexOf('\n', at) + 1 || source.length;
     const line = source.slice(at, next).replace(/\n$/, '');
-    if (/^ *#/.test(line) && columnOfText(line) > indent) end = next;
+    // A line of spaces deeper than the keys may be block text's own (#709).
+    if (/^ *(?:#|$)/.test(line) && columnOfText(line) > indent) end = next;
     else if (line.trim() !== '') break;
     at = next;
   }
