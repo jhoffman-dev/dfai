@@ -54,7 +54,13 @@ Discard (losing the web's).
    pane opened) is a stale refusal too, and keeping it puts the refused text
    back at the note's own path rather than a copy beside nothing — as the
    desktop's sync keeps the version that exists when one side changed a file
-   the other deleted. An edit never loses to a delete.
+   the other deleted. An edit never loses to a delete. Where the path cannot
+   take it back — a folder is there now, or a name that differs only by case
+   or Unicode form — it is kept as the conflict copy beside instead, and
+   what is there is left alone (the domain rule decides, from the folder's
+   names). A note moved elsewhere rather than deleted is put back at the old
+   path while the moved one keeps the older text: a duplicate, accepted,
+   since both versions survive and a person can see both.
 7. **Only a refusal a copy answers offers one.** `isStaleWriteRefusal`
    (application) is a changed or gone note; a server's error or a dropped
    connection is a save to try again, and offers no copy. The editor makes
@@ -65,6 +71,8 @@ Discard (losing the web's).
 8. **A push to another note is no conflict.** When the ref update is refused
    and the head has moved with the save's file still the blob it was read as,
    the GitHub vault commits the save once more on the new head, never forced.
+   The file's mode must be unchanged too: the same bytes made executable, or
+   turned into a link, is a change the save would write over, and is refused.
    Only a save does this; a create, move or trash was decided against the
    whole tree.
 

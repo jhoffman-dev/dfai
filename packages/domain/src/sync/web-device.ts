@@ -1,3 +1,4 @@
+import { foldedPath } from './case-names.ts';
 import { conflictCopyPath } from './conflict-copy.ts';
 import { macOfCommit } from './sync-rules.ts';
 
@@ -42,7 +43,10 @@ export interface KeptCopy {
  * elsewhere has no newer version to sit beside: the refused one is put back
  * at its own path, so an edit is never lost to a delete — the same as the
  * desktop's sync, which keeps the version that exists when one side
- * changed a file and the other deleted it.
+ * changed a file and the other deleted it. Where that path cannot take it
+ * back — a folder is there now, or a name that differs only by case or
+ * Unicode form — it is kept as the conflict copy beside, and what is there
+ * is left alone.
  */
 export function copyOfRefusedWrite({
   path,
@@ -57,10 +61,14 @@ export function copyOfRefusedWrite({
   mine: string;
   /** The note's text now, or null when it is gone. */
   newer: string | null;
-  /** Every path in the copy's folder now, so the copy lands on none of them. */
+  /**
+   * Every path in the copy's folder now, files and folders, so the copy lands
+   * on none of them and a gone note is put back only where nothing is.
+   */
   taken: ReadonlySet<string>;
 }): KeptCopy | null {
   if (mine === newer) return null;
-  if (newer === null) return { path, contents: mine };
+  const occupied = [...taken].some((there) => foldedPath(there) === foldedPath(path));
+  if (newer === null && !occupied) return { path, contents: mine };
   return { path: conflictCopyPath({ path, mac: device, taken }), contents: mine };
 }

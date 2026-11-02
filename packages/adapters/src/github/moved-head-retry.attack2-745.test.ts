@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, WEB_DEVICE } from '@dfai/domain';
-import { inVault, keepRefusedAsCopy, openNote, type OpenNote } from '@dfai/application';
+import {
+  inVault,
+  isChangedOnDiskRefusal,
+  keepRefusedAsCopy,
+  openNote,
+  type OpenNote,
+} from '@dfai/application';
 import { remarkMarkdown as markdown } from '../markdown/markdown-port.ts';
 import { FakeGitHub, type Received } from './fake-github.test-support.ts';
 import { vaultOver } from './github-vault.test-support.ts';
@@ -34,19 +40,27 @@ async function pushModeOfNote(github: FakeGitHub, mode: string): Promise<void> {
   await github.objects.moveHead({ from, to });
 }
 
-/** Saves MINE over the note, with `outside` pushed between the save's read and its commit. */
+/**
+ * Saves MINE over the note, with `outside` pushed between the save's read and
+ * its commit; resolves to the save's refusal, or null when it landed.
+ */
 async function saveWithPushBetween(s: Seeded, outside: () => Promise<unknown>) {
   const read = await s.fs.readTextFile(createVaultPath(NOTE));
   s.github.intercept(isCall('POST', '/git/commits'), async (request) => {
     await outside();
     return s.github.respond(request);
   });
-  await s.fs.writeTextFile({
-    vault: s.vault,
-    path: createVaultPath(NOTE),
-    contents: MINE,
-    expectedModified: read.modified,
-  });
+  return s.fs
+    .writeTextFile({
+      vault: s.vault,
+      path: createVaultPath(NOTE),
+      contents: MINE,
+      expectedModified: read.modified,
+    })
+    .then(
+      () => null,
+      (error: unknown) => error,
+    );
 }
 
 async function modeOnBranch(github: FakeGitHub, path: string) {
@@ -71,18 +85,27 @@ async function textsOnBranch(github: FakeGitHub) {
 describe('attack2 #745: the save made again on a moved head', () => {
   // Observed: the retry checks only the blob sha, then puts the save's file
   // back with the mode read before the other push: 100755 becomes 100644.
-  it.fails('keeps a mode the other push gave the note (executable bit)', async () => {
+  it('keeps a mode the other push gave the note (executable bit)', async () => {
     const s = seeded({ [NOTE]: BASE });
-    await saveWithPushBetween(s, () => pushModeOfNote(s.github, '100755'));
+    // Refused as any change to the note is: the person decides, not the retry.
+    expect(
+      isChangedOnDiskRefusal(
+        await saveWithPushBetween(s, () => pushModeOfNote(s.github, '100755')),
+      ),
+    ).toBe(true);
     expect(await modeOnBranch(s.github, NOTE)).toBe('100755');
   });
 
   // Observed: the other device turned the note into a symlink whose target
   // bytes are the old text (same blob); the retry silently replaces the link
   // with a regular file of MINE instead of refusing.
-  it.fails('never turns a symlink the other push made back into a file', async () => {
+  it('never turns a symlink the other push made back into a file', async () => {
     const s = seeded({ [NOTE]: BASE });
-    await saveWithPushBetween(s, () => pushModeOfNote(s.github, '120000'));
+    expect(
+      isChangedOnDiskRefusal(
+        await saveWithPushBetween(s, () => pushModeOfNote(s.github, '120000')),
+      ),
+    ).toBe(true);
     expect(await modeOnBranch(s.github, NOTE)).toBe('120000');
   });
 });
@@ -90,7 +113,7 @@ describe('attack2 #745: the save made again on a moved head', () => {
 describe('attack2 #745: a deleted note put back', () => {
   // Observed: keep throws "a note with that name already exists" every time,
   // so the refused text can never reach the branch: the edit loses to the delete.
-  it.fails('deleted, with a case twin now at its path: the edit is kept somewhere, the twin untouched', async () => {
+  it('deleted, with a case twin now at its path: the edit is kept somewhere, the twin untouched', async () => {
     const s = seeded({ [NOTE]: BASE });
     const note = await openNote({ fs: s.app, markdown, path: createVaultPath(NOTE) });
     await s.github.commitOutside({ [NOTE]: null, 'Projects/plan.md': 'twin\n' });
@@ -102,7 +125,7 @@ describe('attack2 #745: a deleted note put back', () => {
   });
 
   // Observed: keep throws "that is a directory" from reading the note's path.
-  it.fails('deleted, with a folder now at its path: the edit is kept somewhere, the folder untouched', async () => {
+  it('deleted, with a folder now at its path: the edit is kept somewhere, the folder untouched', async () => {
     const s = seeded({ [NOTE]: BASE });
     const note = await openNote({ fs: s.app, markdown, path: createVaultPath(NOTE) });
     await s.github.commitOutside({ [NOTE]: null, [`${NOTE}/Inner.md`]: 'inner\n' });

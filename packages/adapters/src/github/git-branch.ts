@@ -42,13 +42,13 @@ export interface CommitAsked {
   /** What the write is refused with when the branch has moved past `head`. */
   readonly moved: () => Error;
   /**
-   * A save's one file, as it was at `head`. Given, a branch that moved meanwhile
+   * A save's one file, its blob and mode as they were at `head`. Given, a branch that moved meanwhile
    * with this file still that blob is not a refusal: the change is made again,
    * once, on the new head — another device's push to another note is no
    * conflict. Only a save gives it: a create, a move or a trash was decided
    * against the whole tree, which the other push may have changed.
    */
-  readonly unchanged?: { readonly path: string; readonly sha: string };
+  readonly unchanged?: { readonly path: string; readonly sha: string; readonly mode: string };
 }
 
 export interface GitBranch {
@@ -139,9 +139,13 @@ async function movedPast(
   const listing = await treeAt(api, repo, head);
   if (listing.truncated) return null;
   const file = listing.entries.find((entry) => entry.path === asked.unchanged?.path);
-  return file?.type === 'blob' && file.sha === asked.unchanged?.sha
-    ? { head, tree: listing.sha }
-    : null;
+  // The same bytes under another mode — made executable, or a link to the
+  // same text — is a change too, which the save would write over.
+  const same =
+    file?.type === 'blob' &&
+    file.sha === asked.unchanged?.sha &&
+    file.mode === asked.unchanged.mode;
+  return same ? { head, tree: listing.sha } : null;
 }
 
 /** Commits the changes on `head` and moves the branch to it; null when it moved meanwhile. */

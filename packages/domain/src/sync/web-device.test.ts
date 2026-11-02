@@ -55,6 +55,19 @@ describe('copyOfRefusedWrite', () => {
     ).toEqual({ path: 'Ideas.md', contents: 'mine' });
   });
 
+  it('keeps a gone note as a copy beside whatever now holds its name, folded as macOS folds it', () => {
+    for (const there of ['plan.md', 'Plan.md', 'PLAN.MD'])
+      expect(
+        copyOfRefusedWrite({
+          path: 'Plan.md',
+          device: WEB_DEVICE,
+          mine: 'mine',
+          newer: null,
+          taken: new Set([there]),
+        }),
+      ).toEqual({ path: 'Plan (conflict from DFAI web).md', contents: 'mine' });
+  });
+
   it('names web commits for the web, as the desktop names its own for the Mac', () => {
     expect(WEB_COMMIT_AUTHOR.name).toBe('DFAI web');
     expect(WEB_COMMIT_AUTHOR.email).toMatch(/^dfai@[a-z]+\.local$/);

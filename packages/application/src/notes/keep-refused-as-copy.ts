@@ -1,11 +1,10 @@
 import {
-  CONFLICTS_FOLDER,
   copyOfRefusedWrite,
   createVaultPath,
   joinFrontmatter,
   parentVaultPath,
   type EditorDocument,
-  type KeptCopy,
+  type VaultEntry,
   type VaultPath,
 } from '@dfai/domain';
 import { ensureFolderOf } from '../sync/ensure-folder.ts';
@@ -40,19 +39,40 @@ export async function keepRefusedAsCopy({
   device: string;
 }): Promise<VaultPath | null> {
   const mine = joinFrontmatter(note.frontmatter, editedBody({ markdown, note, doc }));
-  const newer = await textNow(fs, note.path);
-  const first = copyOfRefusedWrite({ path: note.path, device, mine, newer, taken: new Set() });
+  const folder = parentVaultPath(note.path);
+  const beside = await entriesIn(fs, folder);
+  // Only a note still at its path has a newer version; a folder or a twin
+  // there now is something else, which the rule keeps the copy beside.
+  const noteThere = beside.some((entry) => entry.kind === 'file' && entry.path === note.path);
+  const newer = noteThere ? await textNow(fs, note.path) : null;
+  const versions = { path: note.path, device, mine, newer };
+  const first = copyOfRefusedWrite({ ...versions, taken: pathsOf(beside) });
   if (first === null) return null;
+  const copyFolder = parentVaultPath(createVaultPath(first.path));
   // Put back where it was, or a setting's copy: a folder that may not be there.
-  const putBack = first.path === note.path;
-  if (putBack || first.path.startsWith(`${CONFLICTS_FOLDER}/`))
-    await ensureFolderOf(fs, first.path);
-  const copy = putBack
-    ? first
-    : await namedBesideWhatIsThere(fs, { first, note, device, mine, newer });
+  if (first.path === note.path || copyFolder !== folder) await ensureFolderOf(fs, first.path);
+  const copy =
+    copyFolder === folder
+      ? first
+      : // A setting's copy goes to its own folder, named past what is there.
+        (copyOfRefusedWrite({ ...versions, taken: pathsOf(await entriesIn(fs, copyFolder)) }) ??
+        first);
   const path = createVaultPath(copy.path);
   await fs.createNote({ path, contents: copy.contents });
   return path;
+}
+
+const pathsOf = (entries: readonly VaultEntry[]): ReadonlySet<string> =>
+  new Set(entries.map((entry) => entry.path));
+
+/** What a folder holds now; nothing, when the folder itself is gone. */
+async function entriesIn(fs: Fs, folder: VaultPath): Promise<readonly VaultEntry[]> {
+  try {
+    return await fs.listDirectory(folder);
+  } catch (error) {
+    if (isNoSuchEntry(error)) return [];
+    throw error;
+  }
 }
 
 /** The note's text now, or null when nothing is at its path any more. */
@@ -63,21 +83,4 @@ async function textNow(fs: Fs, path: VaultPath): Promise<string | null> {
     if (isNoSuchEntry(error)) return null;
     throw error;
   }
-}
-
-/** The copy, named past every name in its folder now. */
-async function namedBesideWhatIsThere(
-  fs: Fs,
-  {
-    first,
-    note,
-    device,
-    mine,
-    newer,
-  }: { first: KeptCopy; note: OpenNote; device: string; mine: string; newer: string | null },
-): Promise<KeptCopy> {
-  const folder = parentVaultPath(createVaultPath(first.path));
-  const taken = new Set((await fs.listDirectory(folder)).map((entry) => entry.path));
-  // The same two versions as before, so never null: only the name can differ.
-  return copyOfRefusedWrite({ path: note.path, device, mine, newer, taken }) ?? first;
 }

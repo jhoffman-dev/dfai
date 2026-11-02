@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { createVaultPath, WEB_DEVICE, type VaultPath } from '@dfai/domain';
+import { createVaultPath, WEB_DEVICE, type VaultEntry, type VaultPath } from '@dfai/domain';
 import { fakeVaultFs, VaultAccessError } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { useNote, type NotePorts } from './use-note.ts';
@@ -25,6 +25,13 @@ function vault() {
   let holdCreate: Promise<void> | null = null;
   let created = 0;
   const fs = fakeVaultFs({
+    // Every note is at the vault's root here.
+    listDirectory: async () =>
+      [...files.keys()].map((path): VaultEntry => ({
+        kind: 'file',
+        name: path,
+        path: createVaultPath(path),
+      })),
     readTextFile: async (path) => {
       const file = files.get(path);
       if (file === undefined) throw new Error(`no ${path}`);

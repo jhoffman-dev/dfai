@@ -413,7 +413,7 @@ async function saveText(
   await commitOn(snapshot, {
     changes: [put(path, sha, file.mode)],
     message: `Save ${path}`,
-    unchanged: { path, sha: file.sha },
+    unchanged: { path, sha: file.sha, mode: file.mode },
   });
   return versionOfBlob(sha);
 }
