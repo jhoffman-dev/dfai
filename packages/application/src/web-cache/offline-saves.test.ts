@@ -568,4 +568,78 @@ describe('offlineSaves: review #753', () => {
     await save(saves, 'one', 1);
     expect(saves.unkept()).toBe(0);
   });
+
+  /** A queue whose confirmed login, presumed login and re-check a test sets. */
+  function unconfirmed(notes: Record<string, string> = { 'Plan.md': 'v1', 'Shed.md': 's1' }) {
+    const remote = github(notes);
+    const store = memorySaveQueueStore();
+    const connection = switchableConnection(true);
+    const who = { confirmed: null as string | null, presumed: ACCOUNT as string | null };
+    let holder = ACCOUNT;
+    const saves = offlineSaves({
+      fs: remote.fs,
+      store,
+      connection,
+      device: DEVICE,
+      report: vi.fn(),
+      lock: memoryQueueLock(),
+      changes: sharedQueueChanges()(),
+      account: () => who.confirmed,
+      vault: () => VAULT,
+      presumed: () => who.presumed,
+      confirm: async () => (holder === who.confirmed ? holder : null),
+    });
+    return { remote, store, saves, who, handTo: (login: string) => (holder = login) };
+  }
+
+  it('keeps a restored session’s save on the device, as its login’s, and sends it only once confirmed', async () => {
+    const { saves, remote, store, who } = unconfirmed();
+    expect(await save(saves, 'typed before GitHub answered', 1)).toBeLessThan(0);
+    expect(saves.pending.stateOf(VAULT, 'Plan.md')).toEqual({ kind: 'waiting' });
+    expect((await saves.fs.readTextFile(p('Plan.md'))).text).toBe('typed before GitHub answered');
+    await saves.send(ACCOUNT);
+    expect(remote.sent).toEqual([]);
+    who.confirmed = ACCOUNT;
+    await saves.send(ACCOUNT);
+    expect(remote.sent).toEqual(['Plan.md: typed before GitHub answered']);
+    expect(unsentIn(store)).toEqual([]);
+  });
+
+  it('never sends a save made while unconfirmed under another login GitHub confirms', async () => {
+    const { saves, remote, who, handTo } = unconfirmed();
+    await save(saves, 'hers', 1);
+    who.confirmed = 'tobias-fenn';
+    who.presumed = null;
+    handTo('tobias-fenn');
+    await saves.send('tobias-fenn');
+    expect(remote.sent).toEqual([]);
+    expect(await saves.unsent((account) => account !== 'tobias-fenn')).toBe(1);
+  });
+
+  it('a fresh sign-in whose login is not known sees and adds to nobody’s waiting saves', async () => {
+    const { saves, store, who } = unconfirmed();
+    await save(saves, 'hers', 1);
+    who.presumed = null;
+    expect(saves.pending.stateOf(VAULT, 'Plan.md')).toBeNull();
+    expect((await saves.fs.readTextFile(p('Plan.md'))).text).toBe('v1');
+    await expect(save(saves, 'whose?', -1)).rejects.toThrow(SAVES_WAIT_FOR_ACCOUNT);
+    expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['hers']);
+  });
+
+  it('asks again before each save it sends, and stops at the first the token no longer matches', async () => {
+    const { saves, remote, who, handTo } = unconfirmed();
+    who.confirmed = ACCOUNT;
+    remote.cutOff(true);
+    await save(saves, 'plan', 1);
+    await save(saves, 'shed', 1, 'Shed.md');
+    remote.cutOff(false);
+    const writes = remote.fs.writeTextFile;
+    remote.fs.writeTextFile = async (args) => {
+      const landed = await writes(args);
+      handTo('tobias-fenn');
+      return landed;
+    };
+    await saves.send(ACCOUNT);
+    expect(remote.sent).toEqual(['Plan.md: plan']);
+  });
 });

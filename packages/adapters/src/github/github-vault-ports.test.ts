@@ -62,6 +62,21 @@ describe('gitHubVaultPorts', () => {
     expect(signedIn()).toBeNull();
   });
 
+  it('tells of each confirmation, on every check that makes one', async () => {
+    const github = new FakeGitHub({ files: { 'Plan.md': '# Plan\n' } });
+    const { api } = vaultOver(github);
+    const confirmations: string[] = [];
+    const { store } = gitHubVaultPorts({
+      api,
+      remembered: rememberedGitHubVault(memoryStorage()),
+      beforeOpen: async () => {},
+      onConfirmed: async (login) => void confirmations.push(login),
+    });
+    await store.read();
+    await store.read();
+    expect(confirmations).toEqual(['mara-quill', 'mara-quill']);
+  });
+
   it('knows who is signed in only once GitHub said so and the vault opened', async () => {
     const { store, signedIn } = ports();
     expect(signedIn()).toBeNull();

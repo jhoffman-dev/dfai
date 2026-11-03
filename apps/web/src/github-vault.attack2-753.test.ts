@@ -80,7 +80,8 @@ function onDevice() {
       github.logins.set(token, login);
       return token;
     },
-    tab: () => gitHubWebVault({ auth, device: { ...device, queueChanges: changes() } }),
+    tab: (freshSignIn = false) =>
+      gitHubWebVault({ auth, device: { ...device, queueChanges: changes() }, freshSignIn }),
   };
 }
 
@@ -112,40 +113,39 @@ const failureOf = (attempt: Promise<unknown>) =>
   );
 
 describe('the web build’s save queue: second attack on #753', () => {
-  it.fails(
-    'takes saves again once GitHub confirms the login after the app opened unconfirmed over a closed mark',
-    async () => {
-      const { connection, device, tab, setUserReachable } = onDevice();
-      // Set up the way a sign-out leaves it when the tab closes after `closeForSignOut` and
-      // before `auth.signOut` and forgetting finish: the closed mark is stored, the remembered
-      // vault and the token are still there.
-      const first = tab();
-      await openNote(first);
-      first.stop();
-      await device.saveQueue.setClosed(true);
-      // The iPad opens offline: /user cannot be asked, so the vault read does not reopen.
-      setUserReachable(false);
-      const session = tab();
-      const { where, read } = await openNote(session);
-      // Back online: the session's own check confirms the login, but not through the vault
-      // read that reopens, so the closed mark is never cleared.
-      setUserReachable(true);
-      connection.set(false);
-      connection.set(true);
-      let failure: string | null = null;
-      await vi.waitFor(async () => {
-        failure = await failureOf(
-          write(session, { where, contents: 'typed once online', expectedModified: read.modified }),
-        );
-        expect(failure ?? '').not.toContain('GitHub says who is signed in');
-      });
-      // Observed: 'signing out: nothing more is saved on this device' for every save, online
-      // and confirmed, for the whole session.
+  it('takes saves again once GitHub confirms the login after the app opened unconfirmed over a closed mark', async () => {
+    const { connection, device, tab, setUserReachable } = onDevice();
+    // Set up the way a sign-out leaves it when the tab closes after `closeForSignOut` and
+    // before `auth.signOut` and forgetting finish: the closed mark is stored, the remembered
+    // vault and the token are still there.
+    const first = tab();
+    await openNote(first);
+    first.stop();
+    await device.saveQueue.setClosed(true);
+    // The iPad opens offline: /user cannot be asked, so the vault read does not reopen.
+    setUserReachable(false);
+    const session = tab();
+    const { where, read } = await openNote(session);
+    // Back online: the session's own check confirms the login, but not through the vault
+    // read that reopens, so the closed mark is never cleared.
+    setUserReachable(true);
+    connection.set(false);
+    connection.set(true);
+    let failure: string | null = null;
+    await vi.waitFor(async () => {
+      failure = await failureOf(
+        write(session, { where, contents: 'typed once online', expectedModified: read.modified }),
+      );
+      // Fixed (#753): until GitHub confirms, the closed mark refuses ('signing out'); once it
+      // does, on whichever check, the queue reopens and the save is taken.
       expect(failure).toBeNull();
-    },
-  );
+    });
+    // Observed: 'signing out: nothing more is saved on this device' for every save, online
+    // and confirmed, for the whole session.
+    expect(failure).toBeNull();
+  });
 
-  it.fails('keeps an edit typed while the login is unconfirmed past the tab closing', async () => {
+  it('keeps an edit typed while the login is unconfirmed past the tab closing', async () => {
     const { device, tab, setUserReachable } = onDevice();
     const first = tab();
     await openNote(first);
@@ -161,7 +161,9 @@ describe('the web build’s save queue: second attack on #753', () => {
         expectedModified: read.modified,
       }),
     );
-    expect(failure).toContain('GitHub says who is signed in');
+    // Fixed (#753): a session restored for the remembered account keeps the save on the device,
+    // as that account's, sent only once GitHub confirms it.
+    expect(failure).toBeNull();
     // The tab closes: on the web nothing runs the closing tasks and no pane unmounts, so the
     // stranded-work keeper is never handed the typing. Whatever survives is on the device.
     unconfirmed.stop();
@@ -177,52 +179,97 @@ describe('the web build’s save queue: second attack on #753', () => {
     });
   });
 
-  it.fails(
-    'sends no further waiting save once another login holds the token mid-queue',
-    async () => {
-      const { github, connection, tab, signInElsewhereAs } = onDevice();
-      const session = tab();
-      const garden = await openNote(session, GARDEN);
-      const shed = await openNote(session, SHED);
-      connection.set(false);
-      await write(session, {
-        where: garden.where,
-        contents: 'garden, offline',
-        expectedModified: garden.read.modified,
-      });
-      await write(session, {
-        where: shed.where,
-        path: SHED,
-        contents: 'shed, offline',
-        expectedModified: shed.read.modified,
-      });
-      let switched = false;
-      let tobias = '';
-      // As soon as the first save's commit is in, someone else signs in in another tab.
-      github.intercept(
-        (request) => request.method === 'PATCH' && request.path.includes('/git/refs/'),
-        async (request) => {
-          const answer = await github.respond(request);
-          tobias = signInElsewhereAs('tobias-fenn');
-          switched = true;
-          return answer;
-        },
-      );
-      connection.set(true);
-      await vi.waitFor(async () => {
-        expect(switched).toBe(true);
-        const askedAsTobias = github.received.some(
-          (request) =>
-            request.path === '/user' && request.headers.get('Authorization') === `Bearer ${tobias}`,
-        );
-        expect(askedAsTobias || (await github.textAt(SHED)) === 'shed, offline').toBe(true);
-      });
-      const writtenAsTobias = github.received.filter(
+  it('sends no further waiting save once another login holds the token mid-queue', async () => {
+    const { github, connection, tab, signInElsewhereAs } = onDevice();
+    const session = tab();
+    const garden = await openNote(session, GARDEN);
+    const shed = await openNote(session, SHED);
+    connection.set(false);
+    await write(session, {
+      where: garden.where,
+      contents: 'garden, offline',
+      expectedModified: garden.read.modified,
+    });
+    await write(session, {
+      where: shed.where,
+      path: SHED,
+      contents: 'shed, offline',
+      expectedModified: shed.read.modified,
+    });
+    let switched = false;
+    let tobias = '';
+    // As soon as the first save's commit is in, someone else signs in in another tab.
+    github.intercept(
+      (request) => request.method === 'PATCH' && request.path.includes('/git/refs/'),
+      async (request) => {
+        const answer = await github.respond(request);
+        tobias = signInElsewhereAs('tobias-fenn');
+        switched = true;
+        return answer;
+      },
+    );
+    connection.set(true);
+    await vi.waitFor(async () => {
+      expect(switched).toBe(true);
+      const askedAsTobias = github.received.some(
         (request) =>
-          request.method !== 'GET' && request.headers.get('Authorization') === `Bearer ${tobias}`,
+          request.path === '/user' && request.headers.get('Authorization') === `Bearer ${tobias}`,
       );
-      // Observed: the Shed save is committed with Tobias's token; `confirmAgain` ran once, before the queue.
-      expect(writtenAsTobias).toEqual([]);
-    },
-  );
+      expect(askedAsTobias || (await github.textAt(SHED)) === 'shed, offline').toBe(true);
+    });
+    const writtenAsTobias = github.received.filter(
+      (request) =>
+        request.method !== 'GET' && request.headers.get('Authorization') === `Bearer ${tobias}`,
+    );
+    // Observed: the Shed save is committed with Tobias's token; `confirmAgain` ran once, before the queue.
+    expect(writtenAsTobias).toEqual([]);
+  });
+
+  it('never sends an unconfirmed save under the other login GitHub then confirms', async () => {
+    const { github, device, tab, setUserReachable, signInElsewhereAs } = onDevice();
+    const first = tab();
+    await openNote(first);
+    first.stop();
+    setUserReachable(false);
+    const restored = tab();
+    const { where, read } = await openNote(restored);
+    await write(restored, {
+      where,
+      contents: 'hers, unconfirmed',
+      expectedModified: read.modified,
+    });
+    // The token turns out to be someone else's, and GitHub says so once it can be asked.
+    const tobias = signInElsewhereAs('tobias-fenn');
+    setUserReachable(true);
+    await expect(restored.ports.vault.store.read()).rejects.toThrow(/mara-quill/);
+    const writtenAsTobias = github.received.filter(
+      (request) =>
+        request.method !== 'GET' && request.headers.get('Authorization') === `Bearer ${tobias}`,
+    );
+    expect(writtenAsTobias).toEqual([]);
+    expect((await device.saveQueue.all()).map((save) => save.contents)).toEqual([
+      'hers, unconfirmed',
+    ]);
+  });
+
+  it('a fresh sign-in with its login not yet known sees and adds to none of the last account’s saves', async () => {
+    const { device, tab, setUserReachable, connection } = onDevice();
+    const first = tab();
+    const opened = await openNote(first);
+    connection.set(false);
+    await write(first, {
+      where: opened.where,
+      contents: 'hers, waiting',
+      expectedModified: opened.read.modified,
+    });
+    first.stop();
+    setUserReachable(false);
+    const fresh = tab(true);
+    const { where } = await openNote(fresh);
+    expect(fresh.ports.notes.pendingSaves?.stateOf(where, GARDEN)).toBeNull();
+    await expect(write(fresh, { where, contents: 'his', expectedModified: -1 })).rejects.toThrow(
+      'GitHub says who is signed in',
+    );
+    expect((await device.saveQueue.all()).map((save) => save.contents)).toEqual(['hers, waiting']);
+  });
 });

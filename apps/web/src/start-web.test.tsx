@@ -189,6 +189,19 @@ describe('the web build’s start', () => {
     expect(await screen.findByRole('button', { name: 'Sign in with GitHub' })).toBeDefined();
   });
 
+  it('tells the app whether this tab signed in just now through the callback, or restored', async () => {
+    const { gateway, auth } = setUp();
+    const told: boolean[] = [];
+    const mountApp = (how: { freshSignIn: boolean }) => {
+      told.push(how.freshSignIn);
+      return () => {};
+    };
+    gateway.hasCookie = true;
+    stop = await act(() => startWeb({ auth, mountApp }));
+    act(() => stop?.());
+    expect(told).toEqual([false]);
+  });
+
   it('says so clearly when GitHub no longer lets DFAI in', async () => {
     const { gateway, auth, start, app } = setUp();
     gateway.hasCookie = true;

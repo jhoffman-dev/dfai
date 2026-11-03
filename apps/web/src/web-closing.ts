@@ -20,3 +20,25 @@ export function webClosing(): WindowClosingPort & { close(): Promise<readonly un
       ),
   };
 }
+
+/**
+ * Has the panes write what waits in their autosave into the queue whenever
+ * the page is hidden or put away (#667): an iPad closes a tab, or Safari
+ * drops it, without running anything else. Returns the way to stop.
+ */
+export function writeWhenHidden(
+  page: Pick<Window, 'addEventListener' | 'removeEventListener' | 'document' | 'reportError'>,
+  closing: { close(): Promise<readonly unknown[]> },
+): () => void {
+  const write = () =>
+    void closing.close().then((failed) => failed.forEach((error) => page.reportError(error)));
+  const hidden = () => {
+    if (page.document.visibilityState === 'hidden') write();
+  };
+  page.addEventListener('pagehide', write);
+  page.document.addEventListener('visibilitychange', hidden);
+  return () => {
+    page.removeEventListener('pagehide', write);
+    page.document.removeEventListener('visibilitychange', hidden);
+  };
+}

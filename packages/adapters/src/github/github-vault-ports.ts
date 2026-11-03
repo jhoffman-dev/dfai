@@ -80,11 +80,14 @@ export function gitHubVaultPorts({
   api,
   remembered,
   beforeOpen,
+  onConfirmed = async () => {},
 }: {
   api: GitHubApi;
   remembered: RememberedGitHubVault;
   /** Called before another login opens anything, with the account the device's data is for. */
   beforeOpen: (previous: RememberedVault, login: string) => Promise<void>;
+  /** Called each time GitHub confirms the login, whichever check it was: the one place it becomes confirmed. */
+  onConfirmed?: (login: string) => Promise<void>;
 }): {
   fs: HostVaultFsPort;
   picker: VaultPickerPort;
@@ -134,6 +137,7 @@ export function gitHubVaultPorts({
     const still = remembered.read();
     const location =
       still !== null && still.login === login ? locationOf(still) : await found(login);
+    await onConfirmed(login);
     confirmed = login;
     return location;
   };

@@ -94,7 +94,20 @@ const accountOf = (remembered: WebDevice['remembered']) => {
  * cache, and the browser's index (#666). The answer's `stop` ends the
  * session's keeping, before what it kept is forgotten at sign-out.
  */
-export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDevice }) {
+export function gitHubWebVault({
+  auth,
+  device,
+  freshSignIn = false,
+}: {
+  auth: AuthPort;
+  device: WebDevice;
+  /**
+   * Signed in just now in this tab, through GitHub's callback, rather than a
+   * session restored for the remembered account: until GitHub says who it
+   * is, it never sees or adds to the remembered account's waiting saves.
+   */
+  freshSignIn?: boolean;
+}) {
   const { page, connection } = device;
   const token = offlineAwareToken(auth);
   // The wall clock at the edge: what was used when, and when GitHub's rate limit lifts.
@@ -115,6 +128,8 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
         confirmLosing: askToLoseSaves(page),
       });
     },
+    // Whichever check confirms the login, the queue a sign-out may have closed takes saves again.
+    onConfirmed: () => saves.reopen(),
   });
   const kept = keptReads({
     store: device.cache,
@@ -134,6 +149,10 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
     // Only the login GitHub confirmed: never the remembered one, whoever holds the token now.
     account: () => github.signedIn(),
     vault: () => openVaultOf(device.remembered),
+    // A restored session's typing waits as the remembered login's until GitHub confirms it.
+    presumed: () => (freshSignIn ? null : (device.remembered.read()?.login ?? null)),
+    // Asked before each queued save goes, as the token may change hands between them.
+    confirm: () => github.confirmAgain(),
   });
   const { fs } = saves;
   let refused = false;
@@ -162,8 +181,7 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
   const caughtUp = () => {
     signedIn()
       .then(async (login) => {
-        // Asked again before anything is sent as them: a cheap call, and the token may have changed hands.
-        if (login === null || (await github.confirmAgain()) !== login) return;
+        if (login === null) return;
         await saves.send(login);
         await revalidateKeptNotes({ fs: github.fs, kept, connection });
       })
@@ -181,15 +199,7 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
     vault: {
       fs,
       picker: github.picker,
-      store: {
-        // Confirmed by GitHub, a new session takes saves again after the last one's sign-out closed the queue.
-        read: async () => {
-          const location = await github.store.read();
-          if (github.signedIn() !== null) await saves.reopen();
-          return location;
-        },
-        write: (location) => github.store.write(location),
-      },
+      store: github.store,
       // The web has no watcher (ADR-0051, fileWatching); a change elsewhere is met at the next save.
       watch: { start: async () => {}, onChange: async () => () => {} },
     },

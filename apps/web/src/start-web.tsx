@@ -7,8 +7,12 @@ export const CALLBACK_PATH = '/auth/callback';
 
 export interface StartWebDeps {
   readonly auth: AuthPort;
-  /** Mounts the app in #root and returns its teardown (mountShell). */
-  readonly mountApp: () => () => void;
+  /**
+   * Mounts the app in #root and returns its teardown (mountShell). Told
+   * whether this tab signed in just now, through GitHub's callback, rather
+   * than restoring the session it had (#667).
+   */
+  readonly mountApp: (how: { freshSignIn: boolean }) => () => void;
   /** What the sign-out button does: the session's sign-out, and forgetting what the device kept (#667). */
   readonly signOut?: () => Promise<void>;
   /** Whether this device keeps a vault, which then opens when only the network keeps the session away (#667). */
@@ -29,7 +33,14 @@ export async function startWeb({
   vaultOnDevice = () => false,
   page = window,
 }: StartWebDeps) {
-  const view = webView({ auth, mountApp, signOut, vaultOnDevice, page });
+  const query = callbackQuery(page);
+  const view = webView({
+    auth,
+    mountApp: () => mountApp({ freshSignIn: query !== '' }),
+    signOut,
+    vaultOnDevice,
+    page,
+  });
   const stop = auth.subscribe(() => view.show(auth.state()));
   // Back online, a session the network alone kept away is tried again: the app opened offline signs in under it.
   const retry = () => {
@@ -37,7 +48,7 @@ export async function startWeb({
   };
   page.addEventListener('online', retry);
   view.show(auth.state());
-  await auth.restore(callbackQuery(page));
+  await auth.restore(query);
   return () => {
     stop();
     page.removeEventListener('online', retry);
@@ -68,7 +79,13 @@ function callbackQuery(page: Window): string {
   return '';
 }
 
-function webView({ auth, mountApp, signOut, vaultOnDevice, page }: Required<StartWebDeps>) {
+function webView({
+  auth,
+  mountApp,
+  signOut,
+  vaultOnDevice,
+  page,
+}: Required<Omit<StartWebDeps, 'mountApp'>> & { mountApp: () => () => void }) {
   const element = page.document.getElementById('root');
   if (!element) throw new Error('index.html is missing #root');
   const reported = (error: unknown) => page.reportError(error);

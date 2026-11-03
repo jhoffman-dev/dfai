@@ -260,7 +260,10 @@ describe('the web build’s GitHub vault', () => {
     // Online, but the session is not back yet: GitHub has not said who this is, so nothing is
     // sent and the save is not shown as anyone's; it is still stored.
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(after.ports.notes.pendingSaves?.stateOf(where, 'Garden plan.md')).toBeNull();
+    // Restored for the remembered account, the save shows as that account's, waiting.
+    expect(after.ports.notes.pendingSaves?.stateOf(where, 'Garden plan.md')).toEqual({
+      kind: 'waiting',
+    });
     expect(await unsentSaves(device)).toBe(1);
     expect(await github.textAt('Garden plan.md')).toBe('# Garden plan\n');
     online();

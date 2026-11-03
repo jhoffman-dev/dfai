@@ -52,9 +52,21 @@ export interface OfflineSavesDeps {
   readonly account: () => string | null;
   /** The vault open now, whose saves a read is answered from. */
   readonly vault: () => string | null;
+  /**
+   * Whose saves wait while GitHub has not confirmed anyone: the remembered
+   * login, in a session restored for it; null in a fresh sign-in, whose login
+   * is not known until GitHub says. Saves made then wait as that login's and
+   * are sent only once GitHub confirms that same login.
+   */
+  readonly presumed?: () => string | null;
+  /**
+   * Asks GitHub again who holds the token, before each queued save is sent:
+   * the confirmed login, or null when it is someone else or cannot be asked.
+   */
+  readonly confirm?: () => Promise<string | null>;
 }
 
-type Outcome = 'landed' | 'refused' | 'kept' | 'unreachable';
+type Outcome = 'landed' | 'refused' | 'kept' | 'unreachable' | 'unconfirmed';
 
 /**
  * Saving on the web with no network (#667). A note saved offline, or while
@@ -103,6 +115,13 @@ export function offlineSaves(deps: OfflineSavesDeps) {
     return true;
   };
   const isOpen = async () => !closed && !(await store.isClosed());
+  /** Whose saves are queued and shown now: the confirmed login, or the presumed one until then. */
+  const whose = () => deps.account() ?? deps.presumed?.() ?? null;
+  const confirm = deps.confirm ?? (async () => deps.account());
+
+  /** Sends `save`, once GitHub says again that its own login holds the token. */
+  const sentAsItsOwn = async (save: QueuedSave): Promise<Outcome> =>
+    (await confirm()) === save.account ? sent(save) : 'unconfirmed';
 
   const queued = async (args: Parameters<HostVaultFsPort['writeTextFile']>[0], account: string) => {
     const record = (await store.get(queuedSaveKey(args.vault, args.path))) ?? undefined;
@@ -164,26 +183,29 @@ export function offlineSaves(deps: OfflineSavesDeps) {
         const next = await nextToSend(account, tried);
         if (next === undefined) return 'done';
         tried.add(next.key);
-        return sent(next);
+        return sentAsItsOwn(next);
       });
-      if (outcome === 'done' || outcome === 'unreachable') return;
+      // The network gone, or the token no longer the account's: nothing more is sent.
+      if (outcome === 'done' || outcome === 'unreachable' || outcome === 'unconfirmed') return;
     }
   };
 
   const writeTextFile: HostVaultFsPort['writeTextFile'] = (args) =>
     deps.lock(async () => {
       if (!(await isOpen())) throw new VaultAccessError(SAVES_CLOSED);
-      const account = deps.account();
+      const account = whose();
       if (account === null) throw new VaultUnreachableError(SAVES_WAIT_FOR_ACCOUNT);
+      // Not confirmed by GitHub: the save waits on the device, and nothing goes to GitHub.
+      const confirmed = deps.account() === account;
       const key = queuedSaveKey(args.vault, args.path);
       let record = (await store.get(key)) ?? undefined;
-      if (record?.state.kind === 'waiting' && record.account === account && connection.online()) {
-        // What waits for this note goes first, in this same turn.
-        await sent(record);
+      const online = () => confirmed && connection.online();
+      if (record?.state.kind === 'waiting' && record.account === account && online()) {
+        // What waits for this note goes first, in this same turn, as its own login only.
+        if ((await sentAsItsOwn(record)) === 'unconfirmed') return queued(args, account);
         record = (await store.get(key)) ?? undefined;
       }
-      if ((record !== undefined && isUnsent(record)) || !connection.online())
-        return queued(args, account);
+      if ((record !== undefined && isUnsent(record)) || !online()) return queued(args, account);
       try {
         const modified = await fs.writeTextFile({
           ...args,
@@ -198,7 +220,7 @@ export function offlineSaves(deps: OfflineSavesDeps) {
     });
 
   const readTextFile: HostVaultFsPort['readTextFile'] = async (path) => {
-    const account = deps.account();
+    const account = whose();
     const vault = deps.vault();
     const waiting =
       account === null || vault === null
@@ -222,7 +244,7 @@ export function offlineSaves(deps: OfflineSavesDeps) {
   ) =>
     deps.lock(async () => {
       const save = await store.get(queuedSaveKey(vault, path));
-      if (save === null || save.state.kind !== 'refused' || save.account !== deps.account()) return;
+      if (save === null || save.state.kind !== 'refused' || save.account !== whose()) return;
       await settle(save);
       await replace(save, { ...save, contents: '', state: { kind: 'settled' } });
       await changed();
@@ -231,7 +253,7 @@ export function offlineSaves(deps: OfflineSavesDeps) {
   const pending: PendingSavesPort = {
     stateOf: (vault, path) => {
       const save = seen.get(queuedSaveKey(vault, path));
-      const account = deps.account();
+      const account = whose();
       if (save === undefined || account === null || save.account !== account) return null;
       if (save.state.kind === 'waiting') return { kind: 'waiting' };
       return save.state.kind === 'refused' ? { kind: 'refused', reason: save.state.reason } : null;

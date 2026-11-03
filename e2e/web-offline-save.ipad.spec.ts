@@ -32,7 +32,9 @@ test('on the web, a save made offline says Not saved yet, and is committed once 
   await test.step('offline, the edit waits on the device', async () => {
     await context.setOffline(true);
     await typeAtTheEnd(page, ' Offline.');
-    await expect(status(page)).toHaveText('Not saved yet', { timeout: 10_000 });
+    await expect(status(page)).toHaveText('Not saved yet: waiting to reach GitHub', {
+      timeout: 10_000,
+    });
     expect(await github.textAt('Garden plan.md')).toBe(PLAN);
   });
 
@@ -56,7 +58,9 @@ test('on the web, a save waiting on the device outlives a reload, and is committ
   // Reads get through, commits do not: the save waits, and GitHub can still say who is signed in.
   unreachable('writes');
   await typeAtTheEnd(page, ' Waited.');
-  await expect(status(page)).toHaveText('Not saved yet', { timeout: 10_000 });
+  await expect(status(page)).toHaveText('Not saved yet: waiting to reach GitHub', {
+    timeout: 10_000,
+  });
 
   await page.reload();
   await page.getByRole('button', { name: 'Sign out' }).waitFor();
@@ -64,7 +68,7 @@ test('on the web, a save waiting on the device outlives a reload, and is committ
   await expect(
     page.getByLabel('Note', { exact: true }).getByText('First line. Waited.'),
   ).toBeVisible();
-  await expect(status(page)).toHaveText('Not saved yet');
+  await expect(status(page)).toHaveText('Not saved yet: waiting to reach GitHub');
   expect(await github.textAt('Garden plan.md')).toBe(PLAN);
 
   unreachable(false);
@@ -84,7 +88,9 @@ test('on the web, a save made offline and refused because a Mac moved the note g
   await expect(page.getByLabel('Note', { exact: true }).getByText('First line.')).toBeVisible();
   await context.setOffline(true);
   await typeAtTheEnd(page, ' Mine.');
-  await expect(status(page)).toHaveText('Not saved yet', { timeout: 10_000 });
+  await expect(status(page)).toHaveText('Not saved yet: waiting to reach GitHub', {
+    timeout: 10_000,
+  });
   await github.commitOutside({ 'Garden plan.md': '# Garden plan\n\nThe Mac’s line.\n' });
 
   await context.setOffline(false);
@@ -123,8 +129,49 @@ test('on the web, signing out with typing not yet saved asks first, and keeps it
   await page.getByRole('button', { name: 'Sign out' }).tap();
   await expect.poll(() => asked).toContain('A save has not reached GitHub yet');
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
-  await expect(status(page)).toHaveText('Not saved yet');
+  await expect(status(page)).toHaveText('Not saved yet: waiting to reach GitHub');
 
   await context.setOffline(false);
   await expect.poll(() => github.textAt('Garden plan.md')).toContain('First line. Just typed.');
+});
+
+test('on the web, an edit typed with GitHub out of reach survives reloads, and commits once it is back', async ({
+  page,
+  context,
+}) => {
+  const { github, unreachable } = await webVaultOnGitHub(page, { 'Garden plan.md': PLAN });
+  await signInOnTheWeb(page);
+  const plan = page.getByRole('treeitem', { name: 'Garden plan', exact: true });
+  await plan.tap();
+  await expect(page.getByLabel('Note', { exact: true }).getByText('First line.')).toBeVisible();
+
+  await test.step('the iPad opens with GitHub out of reach: it cannot say who is signed in', async () => {
+    unreachable(true);
+    await page.reload();
+    await page.getByRole('button', { name: 'Sign out' }).waitFor();
+    await plan.tap();
+    await expect(page.getByLabel('Note', { exact: true }).getByText('First line.')).toBeVisible();
+    await typeAtTheEnd(page, ' Unconfirmed.');
+    await expect(status(page)).toHaveText('Not saved yet: waiting to reach GitHub', {
+      timeout: 10_000,
+    });
+  });
+
+  await test.step('reloaded again, still out of reach, the text is still there', async () => {
+    await page.reload();
+    await page.getByRole('button', { name: 'Sign out' }).waitFor();
+    await plan.tap();
+    await expect(
+      page.getByLabel('Note', { exact: true }).getByText('First line. Unconfirmed.'),
+    ).toBeVisible();
+    expect(await github.textAt('Garden plan.md')).toBe(PLAN);
+  });
+
+  await test.step('GitHub back, the login is confirmed and the edit committed', async () => {
+    unreachable(false);
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await expect.poll(() => github.textAt('Garden plan.md')).toContain('First line. Unconfirmed.');
+    await expect(status(page)).toHaveText('Saved');
+  });
 });
