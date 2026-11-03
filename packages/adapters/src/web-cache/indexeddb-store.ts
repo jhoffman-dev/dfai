@@ -7,10 +7,13 @@ export function indexedDbObjectStore({
   factory,
   database: name,
   store: storeName,
+  durability,
 }: {
   factory: IDBFactory;
   database: string;
   store: string;
+  /** 'strict' where a write must be on disk before it is reported done; the browser's default otherwise. */
+  durability?: IDBTransactionDurability;
 }) {
   let database: Promise<IDBDatabase> | null = null;
   return async <T>(
@@ -21,7 +24,10 @@ export function indexedDbObjectStore({
       database = null;
       throw error;
     });
-    const transaction = (await database).transaction(storeName, mode);
+    const transaction =
+      durability === undefined
+        ? (await database).transaction(storeName, mode)
+        : (await database).transaction(storeName, mode, { durability });
     const request = act(transaction.objectStore(storeName));
     // Resolved once the transaction is done, so a write is on disk before its caller goes on.
     const [result] = await Promise.all([

@@ -102,3 +102,28 @@ test('on the web, a save made offline and refused because a Mac moved the note g
   expect(await github.textAt('Garden plan.md')).toContain('The Mac’s line.');
   await expect(page.getByLabel('Note', { exact: true }).getByText('The Mac’s line.')).toBeVisible();
 });
+
+test('on the web, signing out with typing not yet saved asks first, and keeps it on a no', async ({
+  page,
+  context,
+}) => {
+  const { github } = await webVaultOnGitHub(page, { 'Garden plan.md': PLAN });
+  await signInOnTheWeb(page);
+  await page.getByRole('treeitem', { name: 'Garden plan', exact: true }).tap();
+  await expect(page.getByLabel('Note', { exact: true }).getByText('First line.')).toBeVisible();
+  await context.setOffline(true);
+  await typeAtTheEnd(page, ' Just typed.');
+  // At once, inside the autosave's wait: the sign-out writes it into the queue before it counts.
+  let asked = '';
+  page.once('dialog', (dialog) => {
+    asked = dialog.message();
+    void dialog.dismiss();
+  });
+  await page.getByRole('button', { name: 'Sign out' }).tap();
+  await expect.poll(() => asked).toContain('A save has not reached GitHub yet');
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(status(page)).toHaveText('Not saved yet');
+
+  await context.setOffline(false);
+  await expect.poll(() => github.textAt('Garden plan.md')).toContain('First line. Just typed.');
+});

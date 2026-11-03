@@ -15,10 +15,12 @@ export type {
   PendingSaveState,
   PendingSavesPort,
   ReadCacheStore,
+  SaveQueueChanges,
+  SaveQueueLock,
   SaveQueueStore,
 } from './ports.ts';
 export { AccountSwitchRefusedError, adoptAccount } from './account-switch.ts';
 export { opensApp, waitsForNetwork } from './offline-session.ts';
-export { offlineSaves } from './offline-saves.ts';
+export { offlineSaves, SAVES_CLOSED } from './offline-saves.ts';
 export type { OfflineSaves, OfflineSavesDeps } from './offline-saves.ts';
 export { signOutAndForget } from './sign-out.ts';

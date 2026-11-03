@@ -49,6 +49,13 @@ describe('gitHubVaultPorts', () => {
     expect((await fs.readTextFile(p('Plan.md'))).text).toBe('# Plan\n');
   });
 
+  it('knows who is signed in only once GitHub said so and the vault opened', async () => {
+    const { store, signedIn } = ports();
+    expect(signedIn()).toBeNull();
+    await store.read();
+    expect(signedIn()).toBe('mara-quill');
+  });
+
   it('answers the remembered vault without asking GitHub', async () => {
     const storage = memoryStorage();
     storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify({ ...FAKE_VAULT, login: 'mara-quill' }));

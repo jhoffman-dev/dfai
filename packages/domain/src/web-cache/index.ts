@@ -13,10 +13,12 @@ export {
 } from './read-cache-policy.ts';
 export type { CachedReadFacts, CachedReadKind } from './read-cache-policy.ts';
 export {
+  carriesOnAt,
   isProvisionalVersion,
+  isUnsent,
   nextInQueue,
   queuedSaveKey,
   queueSave,
   savesToSend,
 } from './save-queue.ts';
-export type { QueueDecision, QueuedSave, SaveAsked } from './save-queue.ts';
+export type { QueueDecision, QueuedSave, QueuedSaveState, SaveAsked } from './save-queue.ts';

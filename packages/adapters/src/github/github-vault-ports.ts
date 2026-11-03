@@ -91,6 +91,8 @@ export function gitHubVaultPorts({
   store: VaultLocationStore;
   /** Settles once the store has first said which vault is open, after the account check. */
   opened: Promise<void>;
+  /** The login GitHub said is signed in, once the account check let it open; null until then. */
+  signedIn: () => string | null;
 } {
   const found = async (login: string) => {
     const where = await findGitHubVault(api);
@@ -117,18 +119,23 @@ export function gitHubVaultPorts({
   ) as unknown as HostVaultFsPort;
   let settleOpened: () => void = () => {};
   const opened = new Promise<void>((resolve) => (settleOpened = resolve));
+  let confirmed: string | null = null;
   const read = async (): Promise<VaultLocation | null> => {
     const kept = remembered.read();
     const login = await signedInAs(api, kept);
     if (login === null) return kept === null ? null : locationOf(kept);
     if (kept !== null && kept.login !== login) await beforeOpen(kept, login);
     const still = remembered.read();
-    return still !== null && still.login === login ? locationOf(still) : found(login);
+    const location =
+      still !== null && still.login === login ? locationOf(still) : await found(login);
+    confirmed = login;
+    return location;
   };
   return {
     fs,
     picker,
     opened,
+    signedIn: () => confirmed,
     store: {
       read: () => read().finally(settleOpened),
       // The picker remembered the repository it found; the location is only its name.

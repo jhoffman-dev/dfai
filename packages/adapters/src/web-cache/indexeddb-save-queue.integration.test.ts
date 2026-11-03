@@ -1,6 +1,7 @@
 import { queueSave, type QueuedSave } from '@dfai/domain';
 import { IDBDatabase, IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
+import { broadcastQueueChanges } from './broadcast-queue-changes.ts';
 import { indexedDbReadCache } from './indexeddb-read-cache.ts';
 import { indexedDbSaveQueue } from './indexeddb-save-queue.ts';
 
@@ -67,5 +68,29 @@ describe('indexedDbSaveQueue', () => {
     expect(transaction.mock.calls.length).toBeGreaterThan(0);
     expect(transaction.mock.calls.every((call) => call[2] === undefined)).toBe(true);
     transaction.mockRestore();
+  });
+});
+
+describe('broadcastQueueChanges', () => {
+  it('tells another tab, never itself, and stops when asked', async () => {
+    const one = broadcastQueueChanges((name) => new BroadcastChannel(name));
+    const two = broadcastQueueChanges((name) => new BroadcastChannel(name));
+    const heardByTwo = vi.fn();
+    const heardByOne = vi.fn();
+    const stop = two.listen(heardByTwo);
+    one.listen(heardByOne);
+    one.announce();
+    await vi.waitFor(() => expect(heardByTwo).toHaveBeenCalledTimes(1));
+    expect(heardByOne).not.toHaveBeenCalled();
+    stop();
+    one.announce();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(heardByTwo).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells nobody where the browser has no channel', () => {
+    const none = broadcastQueueChanges(undefined);
+    expect(() => none.announce()).not.toThrow();
+    expect(none.listen(() => {})).toBeTypeOf('function');
   });
 });

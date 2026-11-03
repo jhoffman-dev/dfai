@@ -14,7 +14,7 @@ import {
   VaultUnreachableError,
   type HostVaultFsPort,
 } from '../vault/ports.ts';
-import { offlineSaves } from './offline-saves.ts';
+import { offlineSaves, SAVES_CLOSED } from './offline-saves.ts';
 
 const VAULT = 'github:mara-quill/larkspur-vault#main';
 const DEVICE = 'DFAI web';
@@ -463,7 +463,65 @@ describe('offlineSaves: review #753', () => {
     connection.set(false);
     await save(saves, 'one', 1);
     await saves.clear();
-    await expect(save(saves, 'typed while signing out', -1)).rejects.toThrow();
+    await expect(save(saves, 'typed while signing out', 1)).rejects.toThrow(SAVES_CLOSED);
     expect(store.held.size).toBe(0);
+  });
+
+  it('where tabs cannot take turns, a send never writes over a save another tab folded in meanwhile', async () => {
+    const remote = github({ 'Plan.md': 'v1' });
+    const store = memorySaveQueueStore();
+    const connection = switchableConnection(false);
+    const channel = sharedQueueChanges();
+    const open = () =>
+      offlineSaves({
+        fs: remote.fs,
+        store,
+        connection,
+        device: DEVICE,
+        report: vi.fn(),
+        // No Web Locks and no storage to fall back on: every turn runs at once.
+        lock: (task) => task(),
+        changes: channel(),
+        account: () => ACCOUNT,
+      });
+    const one = open();
+    const two = open();
+    const first = await save(one, 'one', 1);
+    const writes = remote.fs.writeTextFile;
+    remote.fs.writeTextFile = async (args) => {
+      const landed = await writes(args);
+      connection.set(false);
+      await save(two, 'one two', first);
+      return landed;
+    };
+    connection.set(true);
+    await one.send(ACCOUNT);
+    expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['one two']);
+  });
+
+  it('a tab that was never told of another tab’s save still never writes over it', async () => {
+    const remote = github({ 'Plan.md': 'v1' });
+    const store = memorySaveQueueStore();
+    const connection = switchableConnection(false);
+    const lock = memoryQueueLock();
+    // No BroadcastChannel: neither tab hears the other.
+    const deaf = () => ({ announce: () => {}, listen: () => () => {} });
+    const open = () =>
+      offlineSaves({
+        fs: remote.fs,
+        store,
+        connection,
+        device: DEVICE,
+        report: vi.fn(),
+        lock,
+        changes: deaf(),
+        account: () => ACCOUNT,
+      });
+    const one = open();
+    const two = open();
+    await two.unsent();
+    await save(one, 'first tab', 1);
+    await expect(save(two, 'second tab', 1)).rejects.toThrow(HOST_CHANGED_ON_DISK);
+    expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['first tab']);
   });
 });

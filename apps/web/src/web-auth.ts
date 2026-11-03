@@ -6,6 +6,7 @@ import {
   webCryptoRandom,
   webCryptoSha256,
   webLocks,
+  type CrossTabLock,
 } from '@dfai/adapters';
 import { createAuthService, type AuthPort } from '@dfai/application';
 import { base64url } from '@dfai/domain';
@@ -19,19 +20,11 @@ import { base64url } from '@dfai/domain';
  */
 export function composeWebAuth(page: Window = window): AuthPort {
   const wait = (ms: number) => new Promise<void>((resolve) => page.setTimeout(resolve, ms));
-  const fallback = storageLock({
-    storage: page.localStorage,
-    events: page,
-    now: () => Date.now(),
-    // Not randomUUID: the browsers that need this lock (Safari before 15.4) lack it.
-    holderId: () => base64url(page.crypto.getRandomValues(new Uint8Array(16))),
-    wait,
-  });
   return createAuthService({
     gateway: functionAuthGateway({
       fetch: (input, init) => page.fetch(input, init),
       navigate: (url) => page.location.assign(url),
-      lock: webLocks(page.navigator.locks, fallback),
+      lock: crossTabLock(page),
       delay: wait,
     }),
     pending: sessionStoragePendingSignIn(page.sessionStorage),
@@ -45,4 +38,20 @@ export function composeWebAuth(page: Window = window): AuthPort {
       typeof BroadcastChannel === 'function' ? (name) => new BroadcastChannel(name) : undefined,
     ),
   });
+}
+
+/**
+ * A lock across the origin's tabs: Web Locks, or a localStorage lock where
+ * there are none. The sign-in's refresh and the save queue (#667) hold it.
+ */
+export function crossTabLock(page: Window): CrossTabLock {
+  const fallback = storageLock({
+    storage: page.localStorage,
+    events: page,
+    now: () => Date.now(),
+    // Not randomUUID: the browsers that need this lock (Safari before 15.4) lack it.
+    holderId: () => base64url(page.crypto.getRandomValues(new Uint8Array(16))),
+    wait: (ms) => new Promise<void>((resolve) => page.setTimeout(resolve, ms)),
+  });
+  return webLocks(page.navigator.locks, fallback);
 }

@@ -7,15 +7,30 @@
  *
  * The editor is handed a provisional version for a queued save, below zero
  * where no blob version is (`versionOfBlob` is never negative), so its next
- * save is known as the same edit going on.
+ * save is known as the same edit going on. A note's record outlives its
+ * save: once sent it says where the save landed, so an edit carrying on
+ * from it starts there, and no provisional version is ever handed out twice.
  */
+
+/** Where a note's queued save stands. */
+export type QueuedSaveState =
+  /** Waiting to be sent. */
+  | { readonly kind: 'waiting' }
+  /** Sent, and refused by GitHub: waiting for the person to keep it as a copy or discard it. */
+  | { readonly kind: 'refused'; readonly reason: string }
+  /** Sent, and landed at this version. */
+  | { readonly kind: 'landed'; readonly at: number }
+  /** Refused, then kept as a copy or discarded by the person. */
+  | { readonly kind: 'settled' };
 
 export interface QueuedSave {
   /** The note's vault and path, which a save is queued by. */
   readonly key: string;
+  /** The GitHub login the save was made as: it is only ever sent as them. */
+  readonly account: string;
   readonly vault: string;
   readonly path: string;
-  /** The newest text saved. */
+  /** The newest text saved; nothing, once it is sent or settled. */
   readonly contents: string;
   /** The version the edit started from, as GitHub had it: what the save is held to when sent. */
   readonly expectedModified: number | null;
@@ -24,12 +39,12 @@ export interface QueuedSave {
   readonly order: number;
   /** The version the editor was handed for it. */
   readonly provisional: number;
-  /** Why GitHub refused it once sent; null while it waits to be sent. */
-  readonly refused: string | null;
+  readonly state: QueuedSaveState;
 }
 
-/** A save asked for, as the vault is asked it. */
+/** A save asked for, as the vault is asked it, by the account signed in. */
 export interface SaveAsked {
+  readonly account: string;
   readonly vault: string;
   readonly path: string;
   readonly contents: string;
@@ -47,55 +62,77 @@ export const queuedSaveKey = (vault: string, path: string): string => `${vault}\
 export const isProvisionalVersion = (version: number | null): boolean =>
   version !== null && version < 0;
 
+/** Whether the save has not reached GitHub: waiting, or refused and not yet settled. */
+export const isUnsent = (save: QueuedSave): boolean =>
+  save.state.kind === 'waiting' || save.state.kind === 'refused';
+
+/**
+ * Where an edit naming `expected` stands on GitHub: at the version a sent
+ * save landed at when it carries on from that save, otherwise as it says.
+ */
+export function carriesOnAt(
+  record: QueuedSave | undefined,
+  expected: number | null,
+): number | null {
+  if (record?.state.kind === 'landed' && expected === record.provisional) return record.state.at;
+  return expected;
+}
+
 /**
  * Where a save goes in the queue. A save that carries on from the one
- * queued for its note (it names that save's provisional version) takes its
- * place, keeping the version it started from and its turn; a refused one
- * stays refused. Any other save of a note with one queued started from
- * something older, and is stale. A save naming a provisional version with
- * nothing queued is stale too: what it carried on from was discarded.
+ * waiting or refused for its note (it names that save's provisional
+ * version) takes its place, keeping the version it started from and its
+ * turn. Any other save of a note with one unsent started from something
+ * older, and is stale; so is one by another account. A save carrying on
+ * from one that was sent starts afresh where that landed; one carrying on
+ * from a save the person discarded, or from one not there at all, is stale.
  */
 export function queueSave(
-  queued: QueuedSave | undefined,
+  record: QueuedSave | undefined,
   asked: SaveAsked,
   next: { order: number; provisional: number },
 ): QueueDecision {
-  if (queued !== undefined) {
-    if (asked.expectedModified !== queued.provisional) return { kind: 'stale' };
+  if (record !== undefined && isUnsent(record)) {
+    if (asked.account !== record.account || asked.expectedModified !== record.provisional)
+      return { kind: 'stale' };
     return {
       kind: 'queued',
-      save: { ...queued, contents: asked.contents, provisional: next.provisional },
+      save: { ...record, contents: asked.contents, provisional: next.provisional },
     };
   }
-  if (isProvisionalVersion(asked.expectedModified)) return { kind: 'stale' };
+  const from = carriesOnAt(record, asked.expectedModified);
+  if (isProvisionalVersion(from)) return { kind: 'stale' };
+  const carried = from !== asked.expectedModified;
   return {
     kind: 'queued',
     save: {
       key: queuedSaveKey(asked.vault, asked.path),
+      account: asked.account,
       vault: asked.vault,
       path: asked.path,
       contents: asked.contents,
-      expectedModified: asked.expectedModified,
-      ...(asked.expectedText !== undefined && { expectedText: asked.expectedText }),
+      expectedModified: from,
+      // What was read is not what the landed save left: the version alone holds it then.
+      ...(asked.expectedText !== undefined && !carried && { expectedText: asked.expectedText }),
       order: next.order,
       provisional: next.provisional,
-      refused: null,
+      state: { kind: 'waiting' },
     },
   };
 }
 
-/** The saves still to send, in the order they were first queued. Refused ones wait for the person. */
-export function savesToSend(queued: Iterable<QueuedSave>): readonly QueuedSave[] {
-  return [...queued]
-    .filter((save) => save.refused === null)
+/** The account's saves still to send, in the order they were first queued. Refused ones wait for the person. */
+export function savesToSend(records: Iterable<QueuedSave>, account: string): readonly QueuedSave[] {
+  return [...records]
+    .filter((save) => save.state.kind === 'waiting' && save.account === account)
     .sort((a, b) => a.order - b.order || (a.key < b.key ? -1 : 1));
 }
 
-/** The turn and provisional version the next new save takes, past every one queued. */
-export function nextInQueue(queued: Iterable<QueuedSave>): { order: number; provisional: number } {
+/** The turn and provisional version the next new save takes, past every one ever queued and kept. */
+export function nextInQueue(records: Iterable<QueuedSave>): { order: number; provisional: number } {
   let order = 0;
   let provisional = -1;
-  for (const save of queued) {
+  for (const save of records) {
     order = Math.max(order, save.order + 1);
     provisional = Math.min(provisional, save.provisional - 1);
   }

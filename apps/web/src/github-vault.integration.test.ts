@@ -7,7 +7,9 @@ import {
 } from '@dfai/adapters';
 import type { WebIndex } from '@dfai/adapters/web-index';
 import {
+  memoryQueueLock,
   NOTE_NEEDS_CONNECTION,
+  sharedQueueChanges,
   signOutAndForget,
   type AuthPort,
   type AuthState,
@@ -50,6 +52,8 @@ function signedIn() {
   const device: WebDevice = {
     cache: indexedDbReadCache(disk),
     saveQueue: indexedDbSaveQueue(disk),
+    queueLock: memoryQueueLock(),
+    queueChanges: sharedQueueChanges()(),
     index: { forget: async (vault: string) => void forgotten.push(vault) } as WebIndex,
     connection,
     remembered: rememberedGitHubVault(memoryStorage()),

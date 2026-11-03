@@ -39,9 +39,25 @@ export interface ConnectionPort {
  */
 export interface SaveQueueStore {
   all(): Promise<readonly QueuedSave[]>;
+  /** The note's record, by its key; null when there is none. */
+  get(key: string): Promise<QueuedSave | null>;
   put(save: QueuedSave): Promise<void>;
   remove(key: string): Promise<void>;
   clear(): Promise<void>;
+}
+
+/**
+ * Runs `task` while no other tab of the origin runs one (#667): Web Locks
+ * in the browser. Every turn of the save queue runs under it, so two tabs
+ * never decide on the same note at once.
+ */
+export type SaveQueueLock = <T>(task: () => Promise<T>) => Promise<T>;
+
+/** The page's other tabs, told the save queue changed so they read it again. */
+export interface SaveQueueChanges {
+  announce(): void;
+  /** Calls `listener` when another tab announces; the answer stops it. */
+  listen(listener: () => void): () => void;
 }
 
 /** A note's save waiting on the device: to be sent, or refused once sent and why. */

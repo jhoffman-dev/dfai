@@ -16,9 +16,17 @@ export function indexedDbSaveQueue(
   factory: IDBFactory,
   name: string = SAVE_QUEUE_DATABASE,
 ): SaveQueueStore {
-  const inStore = indexedDbObjectStore({ factory, database: name, store: SAVES });
+  // Strict: Safari may otherwise report a write done before it is on disk, and a save is only waiting once it is.
+  const inStore = indexedDbObjectStore({
+    factory,
+    database: name,
+    store: SAVES,
+    durability: 'strict',
+  });
   return {
     all: async () => ((await inStore('readonly', (store) => store.getAll())) ?? []) as QueuedSave[],
+    get: async (key) =>
+      ((await inStore('readonly', (store) => store.get(key))) as QueuedSave | undefined) ?? null,
     put: async (save) => void (await inStore('readwrite', (store) => store.put(save))),
     remove: async (key) => void (await inStore('readwrite', (store) => store.delete(key))),
     clear: async () => void (await inStore('readwrite', (store) => store.clear())),
