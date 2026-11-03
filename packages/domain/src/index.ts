@@ -62,3 +62,4 @@ export * from './related/index.ts';
 export * from './platform/index.ts';
 export * from './auth/index.ts';
 export * from './touch/index.ts';
+export * from './web-cache/index.ts';

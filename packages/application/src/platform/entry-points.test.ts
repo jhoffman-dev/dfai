@@ -52,7 +52,7 @@ const HIDES: Readonly<Record<PlatformCapability, readonly EntryPoint[]>> = {
   ],
   saveAsCommit: [],
   fileWatching: [],
-  localFolderVault: ['chooseVaultFolder', 'openVaultFromGitHub'],
+  localFolderVault: ['chooseVaultFolder', 'openVaultFromGitHub', 'overwriteConflict'],
   repoCreation: ['newSyncRepository'],
   localModels: ['meaningSearch'],
   claudeCodeChat: ['claudeSettings', 'claudeChat', 'skillDraft', 'claudeAutomations'],

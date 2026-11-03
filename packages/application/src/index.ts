@@ -57,4 +57,5 @@ export * from './today/index.ts';
 export * from './transclusion/index.ts';
 export * from './types/index.ts';
 export * from './vault/index.ts';
+export * from './web-cache/index.ts';
 export * from './testing/index.ts';

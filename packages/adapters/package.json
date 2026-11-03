@@ -35,6 +35,7 @@
     "@types/unist": "^3.0.3",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
+    "fake-indexeddb": "6.2.6",
     "mdast-util-from-markdown": "^2.0.3",
     "micromark-util-types": "^2.0.2"
   }

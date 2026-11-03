@@ -19,6 +19,7 @@ export {
   isChangedOnDiskRefusal,
   isNoSuchEntry,
   VaultAccessError,
+  VaultUnreachableError,
 } from './ports.ts';
 export { createFolder, ensureFolder, listVaultFolders } from './create-folder.ts';
 export { guardTemplateEdit, TemplateEditRefusedError } from './template-guard.ts';

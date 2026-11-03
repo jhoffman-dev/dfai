@@ -39,6 +39,8 @@ export interface IndexFiles {
 export interface WasmIndexHost {
   open(vault: string): IndexOpening;
   clear(): void;
+  /** Throws the vault's index file away, closing it first when it is the one open (#667's sign-out). */
+  forget(vault: string): void;
   manifest(): IndexEntry[];
   /** `vault` is the vault the notes were read from, when the caller says: refused once another's is open. */
   put(vault: string | null, notes: readonly IndexedNote[]): void;
@@ -91,6 +93,13 @@ export function createWasmIndexHost({
     clear: () => {
       if (held === null) throw new Error(NOT_OPEN);
       replace(held.vault, true);
+    },
+    forget: (vault) => {
+      if (held?.vault === vault) {
+        files.close(vault, held.database);
+        held = null;
+      }
+      files.discard(vault);
     },
     manifest: () => manifestOf(database()),
     put: (vault, notes) => putNotes(meantFor(vault), notes),

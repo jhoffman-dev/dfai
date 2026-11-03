@@ -226,6 +226,19 @@ export class EntryChangedError extends VaultAccessError {
 }
 
 /**
+ * The vault's server could not be reached, or did not answer in time (#667):
+ * the network, not a refusal. A read may then be answered from what this
+ * device kept; a write may or may not have landed, and is held to the same
+ * version rules when it is sent again.
+ */
+export class VaultUnreachableError extends VaultAccessError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VaultUnreachableError';
+  }
+}
+
+/**
  * The host's refusal of a write held to `expectedModified` or `expectedText`
  * when the file changed since it was read: `CHANGED_ON_DISK` in
  * `src-tauri/src/vault.rs`, sent as this exact message and no code.

@@ -183,8 +183,8 @@ export interface NotePaneProps {
   /** Adds a property to the note or its type; resolves with the key it is stored under. */
   onAddProperty: (property: NewProperty) => Promise<string>;
   onRename: (name: string) => void;
-  /** Writes what is on screen over the file the save was refused against. */
-  onOverwrite: () => void;
+  /** Writes what is on screen over the file the save was refused against; absent where the platform does not offer it (#667). */
+  onOverwrite?: () => void;
   /** Keeps what is on screen as a conflict copy beside the newer file (#665); absent where it cannot. */
   onKeepAsCopy?: () => void;
   /** Gives up the unsaved edits and takes the file instead. */
@@ -321,7 +321,7 @@ function ReadyPage(props: NotePaneProps & { state: ReadyState; heading: PageHead
       )}
       <SaveConflict
         state={state}
-        onOverwrite={props.onOverwrite}
+        {...(props.onOverwrite !== undefined && { onOverwrite: props.onOverwrite })}
         onDiscard={props.onDiscard}
         {...(props.onKeepAsCopy !== undefined && { onKeepAsCopy: props.onKeepAsCopy })}
       />
@@ -596,7 +596,7 @@ function SaveConflict({
   onKeepAsCopy,
 }: {
   state: ReadyState;
-  onOverwrite: () => void;
+  onOverwrite?: () => void;
   onDiscard: () => void;
   onKeepAsCopy?: () => void;
 }) {
@@ -617,9 +617,11 @@ function SaveConflict({
           Keep mine as a copy
         </button>
       )}
-      <button className="viewer__resolve" type="button" onClick={onOverwrite}>
-        Overwrite the file
-      </button>
+      {onOverwrite !== undefined && (
+        <button className="viewer__resolve" type="button" onClick={onOverwrite}>
+          Overwrite the file
+        </button>
+      )}
       <button className="viewer__resolve" type="button" onClick={onDiscard}>
         Discard my changes
       </button>

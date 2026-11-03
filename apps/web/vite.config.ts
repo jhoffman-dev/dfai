@@ -10,7 +10,7 @@ const nodeBuiltins = nodeBuiltinsReport(fileURLToPath(new URL('../../', import.m
 
 /** index.html's policy as it ships. */
 const WEB_CSP =
-  "script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'";
+  "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://api.github.com; frame-src 'none'; object-src 'none'; base-uri 'none'";
 
 /**
  * `pnpm dev` only: Vite's client runs an inline preamble for React's refresh
@@ -23,7 +23,7 @@ function devCsp(): Plugin {
     transformIndexHtml: (html) =>
       html.replace(
         WEB_CSP,
-        "script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; frame-src 'none'; object-src 'none'; base-uri 'none'",
+        "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.github.com ws: wss:; frame-src 'none'; object-src 'none'; base-uri 'none'",
       ),
   };
 }
@@ -36,7 +36,10 @@ function devCsp(): Plugin {
 export default defineConfig({
   // `pnpm dev` answers the sign-in function's routes itself (#663); a build has none of it.
   plugins: [react(), devCsp(), devSignIn(), nodeBuiltins.window],
-  worker: { plugins: () => [nodeBuiltins.worker] },
+  // The index worker is a module (#666/#667): SQLite's WebAssembly build loads as one, and Vite's
+  // dependency prebundling would move its .wasm away from the script that fetches it.
+  worker: { format: 'es', plugins: () => [nodeBuiltins.worker] },
+  optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
   resolve: { alias: workspaceAliases() },
   build: {
     outDir: 'dist',

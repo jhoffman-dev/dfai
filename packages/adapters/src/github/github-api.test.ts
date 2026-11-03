@@ -1,4 +1,5 @@
 import { createVaultPath as p } from '@dfai/domain';
+import { VaultUnreachableError } from '@dfai/application';
 import { describe, expect, it } from 'vitest';
 import {
   GITHUB_REQUEST_TIMEOUT_MS,
@@ -179,6 +180,8 @@ describe('a request that hangs, fails or answers oddly', () => {
       fetch: () => Promise.reject(new TypeError('Load failed')),
     });
     await expect(fs.readTextFile(p('Welcome.md'))).rejects.toThrow('could not be reached');
+    // Told apart from a refusal (#667): a read is then answered from what the device kept.
+    await expect(fs.readTextFile(p('Welcome.md'))).rejects.toBeInstanceOf(VaultUnreachableError);
   });
 
   it('refuses a yes that is not JSON, and keeps the status of a no that is not', async () => {

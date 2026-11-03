@@ -10,6 +10,7 @@ import {
   type AppPorts,
   type ShellComposition,
 } from '@dfai/shell';
+import type { WebVaultPorts } from './github-vault.ts';
 import { sampleVault } from './sample-vault.ts';
 import { sessionActivityStore, sessionSyncFiles } from './session-stores.ts';
 import {
@@ -26,9 +27,13 @@ import {
   notYet,
 } from './not-yet-ports.ts';
 
-/** The web build as the shell is handed it: its ports, and what a browser can do (#657). */
-export function composeWebShell(): ShellComposition {
-  return { ports: composeWeb(), capabilities: WEB_CAPABILITIES };
+/**
+ * The web build as the shell is handed it: its ports, and what a browser can
+ * do (#657). Signed in, the vault is the GitHub one (#667); left out, the
+ * sample, for a preview with no session.
+ */
+export function composeWebShell(vault: WebVaultPorts = sampleVault()): ShellComposition {
+  return { ports: composeWeb(vault), capabilities: WEB_CAPABILITIES };
 }
 
 /**
@@ -38,10 +43,10 @@ export function composeWebShell(): ShellComposition {
  * anything is connected. No Tauri reaches here, and none of the application's
  * test fakes (ESLint holds both); each web adapter replaces one port (#663–#667).
  */
-export function composeWeb(): AppPorts {
+export function composeWeb(vault: WebVaultPorts = sampleVault()): AppPorts {
   return {
     appInfo: staticAppInfo({ name: 'DFAI', version: webPackage.version, build: null }),
-    ...sampleVault(),
+    ...vault,
     sources: NO_SOURCES,
     links: { open: notYet },
     snapshot: { capture: notYet },

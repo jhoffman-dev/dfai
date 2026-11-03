@@ -1034,7 +1034,7 @@ export function useNotePane({
       {...(onShowInGraph !== undefined &&
         path !== null &&
         template === null && { onShowInGraph: () => onShowInGraph(path) })}
-      onOverwrite={note.overwrite}
+      {...(context.offered.overwriteConflict && { onOverwrite: note.overwrite })}
       onDiscard={note.discard}
       {...(note.keepAsCopy !== null && { onKeepAsCopy: note.keepAsCopy })}
       favorite={note.open !== null && isFavorite(note.open.properties)}

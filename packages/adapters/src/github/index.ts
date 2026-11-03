@@ -15,3 +15,9 @@ export type { GitBranch, GitHubVaultRepository } from './git-branch.ts';
 export { FOLDER_PLACEHOLDER, gitHubVaultFs } from './github-vault-fs.ts';
 export type { GitHubVaultFsDeps } from './github-vault-fs.ts';
 export { findGitHubVault, gitHubVaultKey } from './github-vault-repository.ts';
+export {
+  gitHubVaultPorts,
+  REMEMBERED_VAULT_KEY,
+  rememberedGitHubVault,
+} from './github-vault-ports.ts';
+export type { RememberedGitHubVault } from './github-vault-ports.ts';

@@ -81,6 +81,12 @@ const NEEDS = {
   sqliteSourceRefresh: ['sqliteSources'],
   /** An artifact's Regenerate, and the queue picturing its first screen for its card. */
   regenerateThumbnail: ['pageThumbnails'],
+  /**
+   * A refused save's Overwrite the file: only where the vault is a folder on
+   * this device. On the web (#667) it would replace, unseen, what a Mac
+   * committed; keeping this text as a copy, or discarding it, loses nothing.
+   */
+  overwriteConflict: ['localFolderVault'],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
 export type EntryPoint = keyof typeof NEEDS;

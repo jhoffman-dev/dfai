@@ -99,6 +99,25 @@ describe('the index host, opening (#666)', () => {
     expect(host.stats().notes).toBe(1);
   });
 
+  it('forgets a vault’s file whole on sign-out, the open one included, and keeps no handle on it', () => {
+    host.open(VAULT);
+    host.put(VAULT, [note('A.md')]);
+    host.forget(VAULT);
+    expect(() => host.stats()).toThrow('the index is not open');
+    expect(host.open(VAULT)).toEqual({ fresh: true });
+    expect(host.stats().notes).toBe(0);
+  });
+
+  it('forgets a vault not open, leaving the open one as it was', () => {
+    host.open('github:example/other');
+    host.put(null, [note('Gone.md')]);
+    host.open(VAULT);
+    host.put(VAULT, [note('A.md')]);
+    host.forget('github:example/other');
+    expect(host.stats().notes).toBe(1);
+    expect(host.open('github:example/other')).toEqual({ fresh: true });
+  });
+
   it('refuses a write meant for a vault that is no longer the one open', () => {
     host.open(VAULT);
     expect(() => host.put('github:example/other', [note('A.md')])).toThrow(

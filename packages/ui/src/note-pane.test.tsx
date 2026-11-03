@@ -136,6 +136,14 @@ describe('NotePane: the bar', () => {
     expect(onDiscard).toHaveBeenCalled();
   });
 
+  it('offers no Overwrite where the pane is not given one, keeping Discard', () => {
+    const props: NotePaneProps = baseProps();
+    delete props.onOverwrite;
+    render(<NotePane {...props} state={ready({ dirty: true, saveError: 'Changed elsewhere.' })} />);
+    expect(screen.queryByRole('button', { name: 'Overwrite the file' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Discard my changes' })).toBeTruthy();
+  });
+
   it('offers to keep mine as a copy where the pane can, and not where it cannot', async () => {
     const onKeepAsCopy = vi.fn();
     const refused = ready({ dirty: true, saveError: 'The file changed on disk.' });

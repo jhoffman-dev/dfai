@@ -9,11 +9,11 @@ const policy = () =>
   /http-equiv="Content-Security-Policy"\s+content="([^"]*)"/.exec(PAGE)?.[1] ?? null;
 
 describe("the web page's policy (#656)", () => {
-  it('runs only its own scripts, talks only to its own origin, and frames nothing live', () => {
+  it('runs only its own scripts and WebAssembly, talks only to its origin and GitHub’s API, and frames nothing live', () => {
     const directives = (policy() ?? '').split(';').map((directive) => directive.trim());
     expect(directives).toEqual([
-      "script-src 'self'",
-      "connect-src 'self'",
+      "script-src 'self' 'wasm-unsafe-eval'",
+      "connect-src 'self' https://api.github.com",
       "frame-src 'none'",
       "object-src 'none'",
       "base-uri 'none'",
