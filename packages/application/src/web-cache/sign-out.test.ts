@@ -30,4 +30,46 @@ describe('signOutAndForget', () => {
     await expect(signingOut).rejects.toBeInstanceOf(AggregateError);
     expect(index).toHaveBeenCalled();
   });
+
+  it('signs nothing out while saves wait, unless the person agrees to lose them', async () => {
+    const signOut = vi.fn(async () => {});
+    const forget = vi.fn(async () => {});
+    const asked: number[] = [];
+    const refusing = await signOutAndForget({
+      signOut,
+      forget: [forget],
+      unsent: async () => 2,
+      confirmLosing: async (count) => {
+        asked.push(count);
+        return false;
+      },
+    });
+    expect(refusing).toBe('kept');
+    expect(signOut).not.toHaveBeenCalled();
+    expect(forget).not.toHaveBeenCalled();
+    expect(await signOutAndForget({ signOut, forget: [forget], unsent: async () => 2 })).toBe(
+      'kept',
+    );
+    const agreeing = await signOutAndForget({
+      signOut,
+      forget: [forget],
+      unsent: async () => 2,
+      confirmLosing: async () => true,
+    });
+    expect(agreeing).toBe('signed-out');
+    expect(asked).toEqual([2]);
+    expect(forget).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks nothing when no save waits', async () => {
+    const confirmLosing = vi.fn(async () => false);
+    const outcome = await signOutAndForget({
+      signOut: async () => {},
+      forget: [],
+      unsent: async () => 0,
+      confirmLosing,
+    });
+    expect(outcome).toBe('signed-out');
+    expect(confirmLosing).not.toHaveBeenCalled();
+  });
 });

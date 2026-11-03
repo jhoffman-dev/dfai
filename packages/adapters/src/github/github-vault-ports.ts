@@ -80,17 +80,28 @@ export function gitHubVaultPorts({
   api,
   remembered,
   beforeOpen,
+  onConfirmed = async () => {},
 }: {
   api: GitHubApi;
   remembered: RememberedGitHubVault;
   /** Called before another login opens anything, with the account the device's data is for. */
   beforeOpen: (previous: RememberedVault, login: string) => Promise<void>;
+  /** Called each time GitHub confirms the login, whichever check it was: the one place it becomes confirmed. */
+  onConfirmed?: (login: string) => Promise<void>;
 }): {
   fs: HostVaultFsPort;
   picker: VaultPickerPort;
   store: VaultLocationStore;
   /** Settles once the store has first said which vault is open, after the account check. */
   opened: Promise<void>;
+  /** The login GitHub said is signed in, once the account check let it open; null until then. */
+  signedIn: () => string | null;
+  /**
+   * Asks GitHub again who is signed in, before work done as them: the login
+   * when it is still the one confirmed; null, and unconfirmed until the store
+   * checks again, when it is someone else or GitHub cannot be asked.
+   */
+  confirmAgain: () => Promise<string | null>;
 } {
   const found = async (login: string) => {
     const where = await findGitHubVault(api);
@@ -117,18 +128,30 @@ export function gitHubVaultPorts({
   ) as unknown as HostVaultFsPort;
   let settleOpened: () => void = () => {};
   const opened = new Promise<void>((resolve) => (settleOpened = resolve));
+  let confirmed: string | null = null;
   const read = async (): Promise<VaultLocation | null> => {
     const kept = remembered.read();
     const login = await signedInAs(api, kept);
     if (login === null) return kept === null ? null : locationOf(kept);
     if (kept !== null && kept.login !== login) await beforeOpen(kept, login);
     const still = remembered.read();
-    return still !== null && still.login === login ? locationOf(still) : found(login);
+    const location =
+      still !== null && still.login === login ? locationOf(still) : await found(login);
+    await onConfirmed(login);
+    confirmed = login;
+    return location;
   };
   return {
     fs,
     picker,
     opened,
+    signedIn: () => confirmed,
+    confirmAgain: async () => {
+      if (confirmed === null) return null;
+      const login = await gitHubLogin(api).catch(() => null);
+      if (login !== confirmed) confirmed = null;
+      return confirmed;
+    },
     store: {
       read: () => read().finally(settleOpened),
       // The picker remembered the repository it found; the location is only its name.

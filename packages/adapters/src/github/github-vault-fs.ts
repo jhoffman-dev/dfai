@@ -402,13 +402,15 @@ async function saveText(
   const snapshot = await at();
   refuseIf(fileRefusal(snapshot, path));
   const file = snapshot.files.get(path)!;
+  const bytes = utf8(contents);
+  // The bytes already there: nothing to commit, and the note is not rewritten (ADR-0003). Asked
+  // before the version is checked: a save whose commit landed but whose answer was lost is sent
+  // again held to the version before it, and is already there, so it lands rather than conflicts.
+  if ((await gitBlobSha(bytes)) === file.sha) return versionOfBlob(file.sha);
   const stale =
     (expectedModified !== null && versionOfBlob(file.sha) !== expectedModified) ||
     (expectedText !== undefined && (await gitBlobSha(utf8(expectedText))) !== file.sha);
   if (stale) refuse(HOST_CHANGED_ON_DISK);
-  const bytes = utf8(contents);
-  // The bytes already there: nothing to commit, and the note is not rewritten (ADR-0003).
-  if ((await gitBlobSha(bytes)) === file.sha) return versionOfBlob(file.sha);
   const sha = await branch.upload(bytes);
   await commitOn(snapshot, {
     changes: [put(path, sha, file.mode)],

@@ -35,7 +35,7 @@ test('on the web, a note opened once opens again offline; another says it needs 
 test('on the web, a save refused because a Mac moved the note offers a copy or discard, never Overwrite', async ({
   page,
 }) => {
-  const github = await webVaultOnGitHub(page, {
+  const { github } = await webVaultOnGitHub(page, {
     'Garden plan.md': '# Garden plan\n\nFirst line.\n',
   });
   await signInOnTheWeb(page);

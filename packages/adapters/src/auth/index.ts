@@ -15,5 +15,5 @@ export {
   webCryptoSha256,
   webLocks,
 } from './browser-auth-stores.ts';
-export { HOLD_MS, POLL_MS, SETTLE_MS, storageLock } from './storage-lock.ts';
+export { HOLD_MS, LockUnavailableError, POLL_MS, SETTLE_MS, storageLock } from './storage-lock.ts';
 export type { StorageLockDeps } from './storage-lock.ts';

@@ -1,5 +1,6 @@
 import webPackage from '../package.json' with { type: 'json' };
 import { staticAppInfo } from '@dfai/adapters';
+import type { WindowClosingPort } from '@dfai/application';
 import { WEB_CAPABILITIES } from '@dfai/domain';
 import {
   browserClipboard,
@@ -32,9 +33,15 @@ import {
  * do (#657). Signed in, the vault is the GitHub one (#667); left out, the
  * sample, for a preview with no session.
  */
-export function composeWebShell(vault: WebVaultPorts = sampleVault()): ShellComposition {
-  return { ports: composeWeb(vault), capabilities: WEB_CAPABILITIES };
+export function composeWebShell(
+  vault: WebVaultPorts = sampleVault(),
+  closing: WindowClosingPort = NO_CLOSE,
+): ShellComposition {
+  return { ports: composeWeb(vault, closing), capabilities: WEB_CAPABILITIES };
 }
+
+/** A window nothing closes, as a preview's is: its panes write as they go. */
+const NO_CLOSE: WindowClosingPort = { beforeClose: async () => () => {} };
 
 /**
  * The web's composition root, as a stub (#656): the shared shell on the
@@ -43,7 +50,10 @@ export function composeWebShell(vault: WebVaultPorts = sampleVault()): ShellComp
  * anything is connected. No Tauri reaches here, and none of the application's
  * test fakes (ESLint holds both); each web adapter replaces one port (#663–#667).
  */
-export function composeWeb(vault: WebVaultPorts = sampleVault()): AppPorts {
+export function composeWeb(
+  vault: WebVaultPorts = sampleVault(),
+  closing: WindowClosingPort = NO_CLOSE,
+): AppPorts {
   return {
     appInfo: staticAppInfo({ name: 'DFAI', version: webPackage.version, build: null }),
     ...vault,
@@ -52,7 +62,7 @@ export function composeWeb(vault: WebVaultPorts = sampleVault()): AppPorts {
     snapshot: { capture: notYet },
     api: { ...NO_LOCAL_API, clipboard: browserClipboard, mcpEntry: null },
     chat: NO_CLAUDE,
-    activity: { store: sessionActivityStore(), closing: { beforeClose: async () => () => {} } },
+    activity: { store: sessionActivityStore(), closing },
     sync: {
       git: () => NO_GIT,
       folders: NO_GIT_FOLDERS,

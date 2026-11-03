@@ -49,6 +49,41 @@ describe('gitHubVaultPorts', () => {
     expect((await fs.readTextFile(p('Plan.md'))).text).toBe('# Plan\n');
   });
 
+  it('unconfirms the login when GitHub, asked again, says someone else or cannot be asked', async () => {
+    const { store, signedIn, confirmAgain, github } = ports();
+    expect(await confirmAgain()).toBeNull();
+    await store.read();
+    expect(await confirmAgain()).toBe('mara-quill');
+    github.intercept(
+      (request) => request.path === '/user',
+      () => Promise.reject(new TypeError('Failed to fetch')),
+    );
+    expect(await confirmAgain()).toBeNull();
+    expect(signedIn()).toBeNull();
+  });
+
+  it('tells of each confirmation, on every check that makes one', async () => {
+    const github = new FakeGitHub({ files: { 'Plan.md': '# Plan\n' } });
+    const { api } = vaultOver(github);
+    const confirmations: string[] = [];
+    const { store } = gitHubVaultPorts({
+      api,
+      remembered: rememberedGitHubVault(memoryStorage()),
+      beforeOpen: async () => {},
+      onConfirmed: async (login) => void confirmations.push(login),
+    });
+    await store.read();
+    await store.read();
+    expect(confirmations).toEqual(['mara-quill', 'mara-quill']);
+  });
+
+  it('knows who is signed in only once GitHub said so and the vault opened', async () => {
+    const { store, signedIn } = ports();
+    expect(signedIn()).toBeNull();
+    await store.read();
+    expect(signedIn()).toBe('mara-quill');
+  });
+
   it('answers the remembered vault without asking GitHub', async () => {
     const storage = memoryStorage();
     storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify({ ...FAKE_VAULT, login: 'mara-quill' }));

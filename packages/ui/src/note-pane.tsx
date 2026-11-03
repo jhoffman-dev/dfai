@@ -58,6 +58,8 @@ export type NotePaneState =
       readonly dirty: boolean;
       readonly saving: boolean;
       readonly saveError: string | null;
+      /** Saved on the device, waiting for a connection to reach GitHub (#667). */
+      readonly waitingToSend?: boolean;
     }
   | { readonly kind: 'failed'; readonly message: string };
 
@@ -575,13 +577,18 @@ function NoteBody({
   );
 }
 
+/** A save kept on the device, waiting for the network or for GitHub to say who is signed in (#667). */
+export const NOT_SAVED_YET = 'Not saved yet: waiting to reach GitHub';
+
 /**
  * The save state as a quiet word, where the Save button used to be: in a
  * page's bar, or the peek's header. Nothing before the note is read.
  */
 export function SaveStatus({ state }: { state: NotePaneState }) {
   if (state.kind !== 'ready') return null;
-  return <>{state.saving ? 'Saving…' : state.dirty ? 'Unsaved' : 'Saved'}</>;
+  if (state.saving) return <>Saving…</>;
+  if (state.dirty) return <>Unsaved</>;
+  return <>{state.waitingToSend === true ? NOT_SAVED_YET : 'Saved'}</>;
 }
 
 /**
