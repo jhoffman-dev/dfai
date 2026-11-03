@@ -1,7 +1,12 @@
-import { createVaultPath as p, type QueuedSave } from '@dfai/domain';
+import { createVaultPath as p, isUnsent, type QueuedSave } from '@dfai/domain';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeHostVaultFs } from '../testing/fake-ports.ts';
-import { memorySaveQueueStore, switchableConnection } from '../testing/memory-read-cache.ts';
+import {
+  memoryQueueLock,
+  memorySaveQueueStore,
+  sharedQueueChanges,
+  switchableConnection,
+} from '../testing/memory-read-cache.ts';
 import {
   HOST_CHANGED_ON_DISK,
   HOST_NO_SUCH_ENTRY,
@@ -63,14 +68,45 @@ function github(notes: Record<string, string>) {
   };
 }
 
+const ACCOUNT = 'mara-quill';
+
 function device(notes: Record<string, string> = { 'Plan.md': 'v1' }) {
   const remote = github(notes);
   const store = memorySaveQueueStore();
   const connection = switchableConnection(true);
   const report = vi.fn();
-  const open = () => offlineSaves({ fs: remote.fs, store, connection, device: DEVICE, report });
-  return { remote, store, connection, report, saves: open(), reload: open };
+  const lock = memoryQueueLock();
+  const channel = sharedQueueChanges();
+  let account: string | null = ACCOUNT;
+  /** A tab of the page, or the page after a reload: a queue of its own over the one store. */
+  const open = () =>
+    offlineSaves({
+      fs: remote.fs,
+      store,
+      connection,
+      device: DEVICE,
+      report,
+      lock,
+      changes: channel(),
+      account: () => account,
+    });
+  const saves = open();
+  return {
+    remote,
+    store,
+    connection,
+    report,
+    saves,
+    reload: open,
+    tab: open,
+    send: () => saves.send(ACCOUNT),
+    signedInAs: (next: string | null) => (account = next),
+  };
 }
+
+/** What the store holds that has not reached GitHub. */
+const unsentIn = (store: { held: Map<string, QueuedSave> }) =>
+  [...store.held.values()].filter(isUnsent);
 
 const save = (
   saves: ReturnType<typeof offlineSaves>,
@@ -88,7 +124,7 @@ describe('offlineSaves: a save made offline', () => {
     expect(saves.pending.stateOf(VAULT, 'Plan.md')).toEqual({ kind: 'waiting' });
     expect(remote.held.get('Plan.md')?.text).toBe('v1');
     connection.set(true);
-    await saves.send();
+    await saves.send(ACCOUNT);
     expect(remote.held.get('Plan.md')?.text).toBe('offline edit');
     expect(saves.pending.stateOf(VAULT, 'Plan.md')).toBeNull();
   });
@@ -97,15 +133,13 @@ describe('offlineSaves: a save made offline', () => {
     const { saves, store, connection, reload, remote } = device();
     connection.set(false);
     await save(saves, 'before the reload', 1);
-    expect([...store.held.values()].map((queued) => queued.contents)).toEqual([
-      'before the reload',
-    ]);
+    expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['before the reload']);
     const after = reload();
     expect(await after.unsent()).toBe(1);
     connection.set(true);
-    await after.send();
+    await after.send(ACCOUNT);
     expect(remote.held.get('Plan.md')?.text).toBe('before the reload');
-    expect(store.held.size).toBe(0);
+    expect(unsentIn(store).length).toBe(0);
   });
 
   it('fails the save, keeping nothing as waiting, when the device cannot store it', async () => {
@@ -124,7 +158,7 @@ describe('offlineSaves: a save made offline', () => {
     await save(saves, 'one two three', second);
     expect(await saves.unsent()).toBe(1);
     connection.set(true);
-    await saves.send();
+    await saves.send(ACCOUNT);
     expect(remote.sent).toEqual(['Plan.md: one two three']);
   });
 
@@ -136,7 +170,7 @@ describe('offlineSaves: a save made offline', () => {
     await save(saves, 'b2', b, 'B.md');
     await save(saves, 'c1', 1, 'C.md');
     connection.set(true);
-    await saves.send();
+    await saves.send(ACCOUNT);
     expect(remote.sent).toEqual(['B.md: b2', 'A.md: a1', 'C.md: c1']);
   });
 
@@ -145,7 +179,7 @@ describe('offlineSaves: a save made offline', () => {
     remote.cutOff(true);
     expect(await save(saves, 'edit', 1)).toBeLessThan(0);
     remote.cutOff(false);
-    await saves.send();
+    await saves.send(ACCOUNT);
     expect(remote.held.get('Plan.md')?.text).toBe('edit');
   });
 
@@ -156,10 +190,10 @@ describe('offlineSaves: a save made offline', () => {
     await save(saves, 'b1', 1, 'B.md');
     connection.set(true);
     remote.cutOff(true);
-    await saves.send();
-    expect(store.held.size).toBe(2);
+    await saves.send(ACCOUNT);
+    expect(unsentIn(store).length).toBe(2);
     remote.cutOff(false);
-    await saves.send();
+    await saves.send(ACCOUNT);
     expect(remote.sent).toEqual(['A.md: a1', 'B.md: b1']);
   });
 });
@@ -170,7 +204,7 @@ describe('offlineSaves: back online', () => {
     connection.set(false);
     const provisional = await save(saves, 'offline', 1);
     connection.set(true);
-    await saves.send();
+    await saves.send(ACCOUNT);
     const real = await save(saves, 'online after', provisional);
     expect(real).toBeGreaterThan(0);
     expect(remote.held.get('Plan.md')?.text).toBe('online after');
@@ -209,7 +243,7 @@ describe('offlineSaves: refused when the note moved', () => {
     const provisional = await save(setUp.saves, 'mine, offline', 1);
     setUp.remote.elsewhere('Plan.md', 'the Mac’s');
     setUp.connection.set(true);
-    await setUp.saves.send();
+    await setUp.saves.send(ACCOUNT);
     return { ...setUp, provisional };
   }
 
@@ -220,8 +254,8 @@ describe('offlineSaves: refused when the note moved', () => {
       kind: 'refused',
       reason: HOST_CHANGED_ON_DISK,
     });
-    expect([...store.held.values()][0]?.contents).toBe('mine, offline');
-    await saves.send();
+    expect(unsentIn(store)[0]?.contents).toBe('mine, offline');
+    await saves.send(ACCOUNT);
     expect(remote.held.get('Plan.md')?.text).toBe('the Mac’s');
   });
 
@@ -231,7 +265,7 @@ describe('offlineSaves: refused when the note moved', () => {
     await save(saves, 'mine', 1);
     remote.held.delete('Plan.md');
     connection.set(true);
-    await saves.send();
+    await saves.send(ACCOUNT);
     expect(saves.pending.stateOf(VAULT, 'Plan.md')?.kind).toBe('refused');
     expect(remote.held.has('Plan.md')).toBe(false);
   });
@@ -239,9 +273,9 @@ describe('offlineSaves: refused when the note moved', () => {
   it('keeps later typing in the refused save, still refused', async () => {
     const { saves, provisional, store } = await refusedAfterMacSaved();
     await save(saves, 'mine, and more', provisional);
-    expect([...store.held.values()][0]).toMatchObject({
+    expect(unsentIn(store)[0]).toMatchObject({
       contents: 'mine, and more',
-      refused: HOST_CHANGED_ON_DISK,
+      state: { kind: 'refused', reason: HOST_CHANGED_ON_DISK },
     });
   });
 
@@ -257,20 +291,20 @@ describe('offlineSaves: refused when the note moved', () => {
     expect(copy).toBeDefined();
     expect(remote.held.get(copy!)?.text).toBe('mine, offline');
     expect(remote.held.get('Plan.md')?.text).toBe('the Mac’s');
-    expect(store.held.size).toBe(0);
+    expect(unsentIn(store).length).toBe(0);
   });
 
   it('keeps the refused save waiting when its copy cannot be made', async () => {
     const { saves, remote, store } = await refusedAfterMacSaved();
     remote.fs.createNote = async () => Promise.reject(new VaultUnreachableError('offline'));
     await expect(saves.pending.keepAsCopy(VAULT, 'Plan.md')).rejects.toThrow('offline');
-    expect(store.held.size).toBe(1);
+    expect(unsentIn(store).length).toBe(1);
   });
 
   it('discards the refused save only when asked, leaving the Mac’s text', async () => {
     const { saves, remote, store } = await refusedAfterMacSaved();
     await saves.pending.discard(VAULT, 'Plan.md');
-    expect(store.held.size).toBe(0);
+    expect(unsentIn(store).length).toBe(0);
     expect(remote.held.get('Plan.md')?.text).toBe('the Mac’s');
   });
 
@@ -280,7 +314,7 @@ describe('offlineSaves: refused when the note moved', () => {
     await save(saves, 'waiting', 1);
     await saves.pending.discard(VAULT, 'Plan.md');
     await saves.pending.keepAsCopy(VAULT, 'Plan.md');
-    expect(store.held.size).toBe(1);
+    expect(unsentIn(store).length).toBe(1);
   });
 });
 
@@ -294,9 +328,9 @@ describe('offlineSaves: what else can go wrong', () => {
     remote.fs.writeTextFile = async (args) =>
       args.path === 'A.md' ? Promise.reject(new VaultAccessError('rate limited')) : writes(args);
     connection.set(true);
-    await saves.send();
+    await saves.send(ACCOUNT);
     expect(report).toHaveBeenCalledWith(new VaultAccessError('rate limited'));
-    expect([...store.held.values()].map((queued: QueuedSave) => queued.path)).toEqual(['A.md']);
+    expect(unsentIn(store).map((queued: QueuedSave) => queued.path)).toEqual(['A.md']);
     expect(saves.pending.stateOf(VAULT, 'A.md')).toEqual({ kind: 'waiting' });
   });
 
@@ -304,7 +338,7 @@ describe('offlineSaves: what else can go wrong', () => {
     const { saves, remote, store } = device();
     remote.elsewhere('Plan.md', 'the Mac’s');
     await expect(save(saves, 'stale', 1)).rejects.toThrow(HOST_CHANGED_ON_DISK);
-    expect(store.held.size).toBe(0);
+    expect(unsentIn(store).length).toBe(0);
   });
 
   it('tells each listener of every change until stopped', async () => {
@@ -319,5 +353,117 @@ describe('offlineSaves: what else can go wrong', () => {
     await saves.clear();
     expect(heard).toHaveBeenCalledTimes(times);
     expect(await saves.unsent()).toBe(0);
+  });
+});
+
+describe('offlineSaves: review #753', () => {
+  it('never hands out a provisional version twice: offline, sent, offline again, then more typing', async () => {
+    const { saves, connection, remote } = device();
+    connection.set(false);
+    const first = await save(saves, 'one', 1);
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    connection.set(false);
+    const second = await save(saves, 'one two', first);
+    expect(second).not.toBe(first);
+    const third = await save(saves, 'one two three', second);
+    expect(third).toBeLessThan(0);
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(remote.sent).toEqual(['Plan.md: one', 'Plan.md: one two three']);
+  });
+
+  it('carries on after a reload from a save sent before it, with no false conflict', async () => {
+    const { saves, connection, remote, reload } = device();
+    connection.set(false);
+    const first = await save(saves, 'one', 1);
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    const after = reload();
+    connection.set(false);
+    await save(after, 'one two', first);
+    connection.set(true);
+    await after.send(ACCOUNT);
+    expect(remote.held.get('Plan.md')?.text).toBe('one two');
+  });
+
+  it('a second tab never writes over the first tab’s waiting save', async () => {
+    const { saves, tab, connection, store } = device();
+    const other = tab();
+    connection.set(false);
+    await other.unsent();
+    await save(saves, 'first tab', 1);
+    await expect(save(other, 'second tab', 1)).rejects.toThrow(HOST_CHANGED_ON_DISK);
+    expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['first tab']);
+  });
+
+  it('a tab sending never deletes what another tab folded in meanwhile', async () => {
+    const { saves, tab, connection, remote, store } = device();
+    const other = tab();
+    connection.set(false);
+    const first = await save(saves, 'one', 1);
+    // The other tab's pane reads the waiting text, and carries on from it.
+    const read = await other.fs.readTextFile(p('Plan.md'));
+    expect(read).toEqual({ text: 'one', modified: first });
+    const writes = remote.fs.writeTextFile;
+    let folded: Promise<number> | null = null;
+    remote.fs.writeTextFile = async (args) => {
+      folded = save(other, 'one two', read.modified);
+      return writes(args);
+    };
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    remote.fs.writeTextFile = writes;
+    connection.set(false);
+    await folded;
+    connection.set(true);
+    await other.send(ACCOUNT);
+    expect(remote.held.get('Plan.md')?.text).toBe('one two');
+    expect(unsentIn(store)).toEqual([]);
+  });
+
+  it('two tabs sending at once send each save once, with no false refusal', async () => {
+    const { saves, tab, connection, remote, store } = device();
+    const other = tab();
+    connection.set(false);
+    await save(saves, 'one', 1);
+    connection.set(true);
+    await Promise.all([saves.send(ACCOUNT), other.send(ACCOUNT)]);
+    expect(remote.sent).toEqual(['Plan.md: one']);
+    expect(unsentIn(store)).toEqual([]);
+  });
+
+  it('tells another tab when a save starts or stops waiting', async () => {
+    const { saves, tab, connection } = device();
+    const other = tab();
+    const heard = vi.fn();
+    other.pending.subscribe(heard);
+    connection.set(false);
+    await save(saves, 'one', 1);
+    await vi.waitFor(() =>
+      expect(other.pending.stateOf(VAULT, 'Plan.md')).toEqual({ kind: 'waiting' }),
+    );
+    expect(heard).toHaveBeenCalled();
+  });
+
+  it('never sends one account’s saves under another, nor shows them', async () => {
+    const { saves, connection, remote, signedInAs } = device();
+    connection.set(false);
+    await save(saves, 'hers', 1);
+    connection.set(true);
+    await saves.send('tobias-fenn');
+    expect(remote.sent).toEqual([]);
+    signedInAs('tobias-fenn');
+    expect(saves.pending.stateOf(VAULT, 'Plan.md')).toBeNull();
+    expect(await saves.unsent((account) => account !== 'tobias-fenn')).toBe(1);
+  });
+
+  it('queues nothing once cleared at sign-out, so nothing is left behind', async () => {
+    const { saves, connection, store } = device();
+    connection.set(false);
+    await save(saves, 'one', 1);
+    await saves.clear();
+    await expect(save(saves, 'typed while signing out', -1)).rejects.toThrow();
+    expect(store.held.size).toBe(0);
   });
 });

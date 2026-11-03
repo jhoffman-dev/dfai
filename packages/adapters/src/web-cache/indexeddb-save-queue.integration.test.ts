@@ -1,12 +1,19 @@
 import { queueSave, type QueuedSave } from '@dfai/domain';
-import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { IDBDatabase, IDBFactory } from 'fake-indexeddb';
+import { describe, expect, it, vi } from 'vitest';
+import { indexedDbReadCache } from './indexeddb-read-cache.ts';
 import { indexedDbSaveQueue } from './indexeddb-save-queue.ts';
 
 function save(path: string, contents: string): QueuedSave {
   const decision = queueSave(
     undefined,
-    { vault: 'github:mara-quill/larkspur-vault#main', path, contents, expectedModified: 4 },
+    {
+      account: 'mara-quill',
+      vault: 'github:mara-quill/larkspur-vault#main',
+      path,
+      contents,
+      expectedModified: 4,
+    },
     { order: 0, provisional: -1 },
   );
   if (decision.kind !== 'queued') throw new Error('not queued');
@@ -41,5 +48,24 @@ describe('indexedDbSaveQueue', () => {
     } as unknown as IDBFactory;
     await expect(indexedDbSaveQueue(refusing).put(save('A.md', 'a'))).rejects.toThrow('quota');
     expect(await indexedDbSaveQueue(factory).all()).toEqual([]);
+  });
+
+  it('reads one note’s save back by its key, and nothing for one not there', async () => {
+    const queue = indexedDbSaveQueue(new IDBFactory());
+    await queue.put(save('A.md', 'one'));
+    expect(await queue.get(save('A.md', '').key)).toEqual(save('A.md', 'one'));
+    expect(await queue.get(save('B.md', '').key)).toBeNull();
+  });
+
+  it('asks for strict durability for the queue alone, so a save told waiting is on disk', async () => {
+    const transaction = vi.spyOn(IDBDatabase.prototype, 'transaction');
+    const factory = new IDBFactory();
+    await indexedDbSaveQueue(factory).put(save('A.md', 'one'));
+    expect(transaction).toHaveBeenCalledWith('saves', 'readwrite', { durability: 'strict' });
+    transaction.mockClear();
+    await indexedDbReadCache(factory).put({ key: 'k', value: 1, bytes: 2, usedAt: 3 });
+    expect(transaction.mock.calls.length).toBeGreaterThan(0);
+    expect(transaction.mock.calls.every((call) => call[2] === undefined)).toBe(true);
+    transaction.mockRestore();
   });
 });

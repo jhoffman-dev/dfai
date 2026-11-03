@@ -56,6 +56,10 @@ export function memorySaveQueueStore(): SaveQueueStore & {
   return {
     held,
     all: async () => [...held.values()].map((save) => structuredClone(save)),
+    get: async (key) => {
+      const save = held.get(key);
+      return save === undefined ? null : structuredClone(save);
+    },
     put: async (save) => {
       held.set(save.key, structuredClone(save));
     },
@@ -63,5 +67,36 @@ export function memorySaveQueueStore(): SaveQueueStore & {
       held.delete(key);
     },
     clear: async () => held.clear(),
+  };
+}
+
+/** One lock the tabs of a test share, as Web Locks is one per origin: each task after the last. */
+export function memoryQueueLock(): <T>(task: () => Promise<T>) => Promise<T> {
+  let last: Promise<unknown> = Promise.resolve();
+  return (task) => {
+    const run = last.then(task, task);
+    last = run.catch(() => undefined);
+    return run;
+  };
+}
+
+/** The tabs of a test telling each other the queue changed, as a BroadcastChannel would, never to the teller. */
+export function sharedQueueChanges() {
+  const listeners = new Set<() => void>();
+  return () => {
+    const mine = new Set<() => void>();
+    return {
+      announce: () => {
+        for (const listener of listeners) if (!mine.has(listener)) listener();
+      },
+      listen: (listener: () => void) => {
+        mine.add(listener);
+        listeners.add(listener);
+        return () => {
+          mine.delete(listener);
+          listeners.delete(listener);
+        };
+      },
+    };
   };
 }

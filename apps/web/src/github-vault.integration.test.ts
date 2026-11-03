@@ -20,6 +20,7 @@ import {
   askToLoseSaves,
   forgettingDevice,
   gitHubWebVault,
+  signOutOfDevice,
   unsentSaves,
   type WebDevice,
 } from './github-vault.ts';
@@ -43,6 +44,8 @@ function signedIn() {
   const github = new FakeGitHub({ files: { 'Garden plan.md': '# Garden plan\n' } });
   const connection = switchableConnection(true);
   const forgotten: string[] = [];
+  const asked: string[] = [];
+  let agree = false;
   const disk = new IDBFactory();
   const device: WebDevice = {
     cache: indexedDbReadCache(disk),
@@ -50,7 +53,11 @@ function signedIn() {
     index: { forget: async (vault: string) => void forgotten.push(vault) } as WebIndex,
     connection,
     remembered: rememberedGitHubVault(memoryStorage()),
-    page: { fetch: github.fetch, reportError: vi.fn() } as unknown as Window,
+    page: {
+      fetch: github.fetch,
+      reportError: vi.fn(),
+      confirm: (text: string) => (asked.push(text), agree),
+    } as unknown as Window,
   };
   let state: AuthState = { status: 'signed-in' };
   const listeners = new Set<() => void>();
@@ -72,6 +79,10 @@ function signedIn() {
     device,
     vault,
     forgotten,
+    asked,
+    /** What the person answers when asked to lose saves. */
+    answers: (yes: boolean) => (agree = yes),
+    auth,
     /** Another person signs in on this device: their own token, their own login. */
     sessionAs: (login: string) => {
       const token = `ghu_${login}`;
@@ -89,6 +100,92 @@ function signedIn() {
     reloaded: () => gitHubWebVault({ auth, device }),
   };
 }
+
+describe('the web build’s GitHub vault: review #753', () => {
+  async function offlineSaveOf(
+    vault: ReturnType<typeof signedIn>['vault'],
+    connection: ReturnType<typeof signedIn>['connection'],
+  ) {
+    const { fs, store } = vault.ports.vault;
+    const where = (await store.read())!.absolutePath;
+    const read = await fs.readTextFile(p('Garden plan.md'));
+    connection.set(false);
+    await fs.writeTextFile({
+      vault: where,
+      path: p('Garden plan.md'),
+      contents: 'hers, offline',
+      expectedModified: read.modified,
+    });
+    return where;
+  }
+
+  it('never sends one account’s waiting saves under the next, and opens nothing on a no', async () => {
+    const { vault, connection, github, device, sessionAs, asked } = signedIn();
+    await offlineSaveOf(vault, connection);
+    vault.stop();
+    connection.set(true);
+    const other = sessionAs('tobias-fenn');
+    await expect(other.ports.vault.store.read()).rejects.toThrow(/mara-quill/);
+    expect(asked).toEqual([expect.stringContaining('A save has not reached GitHub yet')]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await github.textAt('Garden plan.md')).toBe('# Garden plan\n');
+    expect(await unsentSaves(device)).toBe(1);
+  });
+
+  it('lets the last account’s saves go only when the next person agrees', async () => {
+    const { vault, connection, github, device, sessionAs, answers } = signedIn();
+    await offlineSaveOf(vault, connection);
+    vault.stop();
+    connection.set(true);
+    answers(true);
+    const other = sessionAs('tobias-fenn');
+    await other.ports.vault.store.read();
+    expect(await unsentSaves(device)).toBe(0);
+    expect(await github.textAt('Garden plan.md')).toBe('# Garden plan\n');
+  });
+
+  it('writes typing still waiting in a pane into the queue before counting at sign-out', async () => {
+    const { vault, connection, device, auth, asked } = signedIn();
+    const { fs, store } = vault.ports.vault;
+    const where = (await store.read())!.absolutePath;
+    const read = await fs.readTextFile(p('Garden plan.md'));
+    connection.set(false);
+    // A pane with typing in its autosave's wait writes it as the window closes.
+    await vault.closing.beforeClose(async () => {
+      await fs.writeTextFile({
+        vault: where,
+        path: p('Garden plan.md'),
+        contents: 'typed',
+        expectedModified: read.modified,
+      });
+    });
+    expect(await signOutOfDevice({ auth, device, session: vault })).toBe('kept');
+    expect(asked).toEqual([expect.stringContaining('A save has not reached GitHub yet')]);
+    expect(await unsentSaves(device)).toBe(1);
+  });
+
+  it('queues nothing once a sign-out has cleared the saves', async () => {
+    const { vault, connection, device, auth, answers } = signedIn();
+    const where = await offlineSaveOf(vault, connection);
+    answers(true);
+    expect(
+      await signOutOfDevice({
+        auth: { ...auth, signOut: async () => {} } as never,
+        device,
+        session: vault,
+      }),
+    ).toBe('signed-out');
+    const late = vault.ports.vault.fs.writeTextFile({
+      vault: where,
+      path: p('Garden plan.md'),
+      contents: 'late',
+      expectedModified: -1,
+    });
+    await expect(late).rejects.toThrow();
+    expect(await unsentSaves(device)).toBe(0);
+    expect(await device.saveQueue.all()).toEqual([]);
+  });
+});
 
 describe('the web build’s GitHub vault', () => {
   it('forgets the last account’s notes before another account opens, and never shows them', async () => {
@@ -200,13 +297,14 @@ describe('the web build’s GitHub vault', () => {
     const { device } = signedIn();
     await device.saveQueue.put({
       key: 'k',
+      account: 'mara-quill',
       vault: 'v',
       path: 'Garden plan.md',
       contents: 'waiting',
       expectedModified: 1,
       order: 0,
       provisional: -1,
-      refused: null,
+      state: { kind: 'waiting' },
     });
     const asked: string[] = [];
     const confirm = (text: string) => (asked.push(text), false);
