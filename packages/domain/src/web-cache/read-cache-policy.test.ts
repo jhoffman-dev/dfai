@@ -16,13 +16,20 @@ const entry = (key: string, bytes: number, usedAt: number): CachedReadFacts => (
 });
 
 describe('the read cache keys', () => {
-  it('round-trips the kind and what was asked, a path with any character in it', () => {
-    const key = cachedReadKey('note', 'Garden/Plan: beans.md');
-    expect(cachedReadOf(key)).toEqual({ kind: 'note', asked: 'Garden/Plan: beans.md' });
+  it('round-trips the account, the kind and what was asked, a path with any character in it', () => {
+    const key = cachedReadKey('mara-quill|github:a/b#main', 'note', 'Garden/Plan: beans.md');
+    expect(cachedReadOf(key)).toEqual({
+      scope: 'mara-quill|github:a/b#main',
+      kind: 'note',
+      asked: 'Garden/Plan: beans.md',
+    });
   });
 
-  it('never gives a note and a listing of the same name the same key', () => {
-    expect(cachedReadKey('note', 'Garden')).not.toBe(cachedReadKey('directory', 'Garden'));
+  it('never gives a note and a listing, or two accounts’ notes, the same key', () => {
+    expect(cachedReadKey('a', 'note', 'Garden')).not.toBe(
+      cachedReadKey('a', 'directory', 'Garden'),
+    );
+    expect(cachedReadKey('a', 'note', 'Garden')).not.toBe(cachedReadKey('b', 'note', 'Garden'));
   });
 });
 
