@@ -1,6 +1,9 @@
 import { mountShell } from '@dfai/shell';
 import { composeWebShell } from './composition.ts';
 import { gitHubWebVault, signOutOfDevice, webDevice, type WebSession } from './github-vault.ts';
+import { registerShellWorker } from './pwa/register.ts';
+import { reloadForUpdate } from './pwa/reload-for-update.ts';
+import { showUpdateReady } from './pwa/show-update-ready.tsx';
 import { startWeb } from './start-web.tsx';
 import { writeWhenHidden } from './web-closing.ts';
 import { composeWebAuth } from './web-auth.ts';
@@ -34,3 +37,21 @@ startWeb({
   signOut,
   vaultOnDevice: () => device.remembered.read() !== null,
 }).catch(reportError);
+
+// Installed to the Home Screen (#668): the shell is kept for opening offline, and a deploy is offered.
+// Only a build writes the worker; a browser without one leaves the app as it is.
+if (__DFAI_WEB_BUILD__ && 'serviceWorker' in navigator) {
+  registerShellWorker({
+    workers: navigator.serviceWorker,
+    reloadPage: () => window.location.reload(),
+    onUpdateReady: ({ reload }) =>
+      showUpdateReady(window, () =>
+        reloadForUpdate({
+          writeAutosave: () => session?.closing.close() ?? Promise.resolve([]),
+          lock: device.queueLock,
+          takeOver: reload,
+          report: reportError,
+        }).catch(reportError),
+      ),
+  }).catch(reportError);
+}
