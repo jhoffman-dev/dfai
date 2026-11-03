@@ -1,5 +1,5 @@
 import { VaultAccessError } from '@dfai/application';
-import { readInstallationIds, readRepositories } from './github-answers.ts';
+import { readInstallationIds, readLogin, readRepositories } from './github-answers.ts';
 import type { GitHubApi } from './github-api.ts';
 import type { GitHubVaultRepository } from './git-branch.ts';
 
@@ -35,3 +35,8 @@ export async function findGitHubVault(api: GitHubApi): Promise<GitHubVaultReposi
 /** The key every write to this vault names (R14-01). */
 export const gitHubVaultKey = ({ owner, repo, branch }: GitHubVaultRepository): string =>
   `github:${owner}/${repo}#${branch}`;
+
+/** The login the session signs in as (#667): whose this device's kept vault is. */
+export async function gitHubLogin(api: GitHubApi): Promise<string> {
+  return readLogin(await api.send({ method: 'GET', path: '/user' }));
+}

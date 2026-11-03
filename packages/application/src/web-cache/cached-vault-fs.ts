@@ -86,9 +86,10 @@ function keptOrNetwork({ kept, connection }: Omit<CachedVaultFsDeps, 'fs'>) {
       );
     };
     if (!connection.online()) return fromDevice();
+    const ticket = kept.ticket();
     try {
       const value = await asked.read();
-      void kept.keep(asked.kind, asked.asked, value);
+      void kept.keep(asked.kind, asked.asked, value, ticket);
       return value;
     } catch (error) {
       if (error instanceof VaultUnreachableError) return fromDevice(error);
@@ -130,15 +131,17 @@ function keptWrites({ fs, kept, connection }: CachedVaultFsDeps) {
   return {
     writeTextFile: async (args: Parameters<HostVaultFsPort['writeTextFile']>[0]) => {
       online();
+      const ticket = kept.ticket();
       const modified = await fs.writeTextFile(args);
-      void kept.keep('note', args.path, { text: args.contents, modified });
+      void kept.keep('note', args.path, { text: args.contents, modified }, ticket);
       return modified;
     },
     createNote: async (args: Parameters<HostVaultFsPort['createNote']>[0]) => {
       online();
+      const ticket = kept.ticket();
       const modified = await fs.createNote(args);
       void changedTree([]);
-      void kept.keep('note', args.path, { text: args.contents, modified });
+      void kept.keep('note', args.path, { text: args.contents, modified }, ticket);
       return modified;
     },
     createFolder: async (args: Parameters<HostVaultFsPort['createFolder']>[0]) => {
@@ -183,8 +186,9 @@ export async function revalidateKeptNotes({
     const note = (await kept.kept('note', path, { peek: true })) as NoteContents | undefined;
     if (note === undefined || !isCachedNoteStale(note.modified, versions.get(path))) continue;
     if (versions.has(path)) {
+      const ticket = kept.ticket();
       const fresh = await fs.readTextFile(path as VaultPath);
-      void kept.keep('note', path, fresh);
+      void kept.keep('note', path, fresh, ticket);
     } else void kept.forget((kind, asked) => kind === 'note' && asked === path);
   }
 }

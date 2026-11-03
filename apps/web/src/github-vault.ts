@@ -11,6 +11,7 @@ import {
 } from '@dfai/adapters';
 import { webIndex, type WebIndex } from '@dfai/adapters/web-index';
 import {
+  adoptAccount,
   cachedVaultFs,
   keptReads,
   revalidateKeptNotes,
@@ -60,6 +61,12 @@ const openVaultOf = (remembered: WebDevice['remembered']) => {
   return where === null ? null : gitHubVaultKey(where);
 };
 
+/** Whose kept reads are answered: the remembered account and its vault, or no one's. */
+const accountOf = (remembered: WebDevice['remembered']) => {
+  const where = remembered.read();
+  return where === null ? null : `${where.login}\u0001${gitHubVaultKey(where)}`;
+};
+
 /**
  * The signed-in vault (#667): the GitHub repository (#664) through the read
  * cache, and the browser's index (#666). The answer's `stop` ends the
@@ -72,12 +79,34 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
   const clock = { now: () => Date.now() };
   const report = (error: unknown) => page.reportError(error);
   const api = gitHubApi({ fetch: (input, init) => page.fetch(input, init), token, clock });
-  const github = gitHubVaultPorts({ api, remembered: device.remembered });
-  const kept = keptReads({ store: device.cache, clock, capBytes: READ_CACHE_CAP_BYTES, report });
+  const github = gitHubVaultPorts({
+    api,
+    remembered: device.remembered,
+    // Another login than the one the device's data is for: that data goes before anything opens.
+    beforeOpen: async (previous, login) => {
+      await adoptAccount({
+        previous: previous.login,
+        signedInAs: login,
+        forgetPrevious: () => forgetEverything(device),
+      });
+    },
+  });
+  const kept = keptReads({
+    store: device.cache,
+    clock,
+    capBytes: READ_CACHE_CAP_BYTES,
+    report,
+    scope: () => accountOf(device.remembered),
+  });
   const fs = cachedVaultFs({ fs: github.fs, kept, connection });
+  // Only once the store has checked who is signed in: never on the previous account's vault.
   const revalidate = () => {
-    if (device.remembered.read() === null) return;
-    revalidateKeptNotes({ fs: github.fs, kept, connection }).catch(report);
+    github.opened
+      .then(() => {
+        if (device.remembered.read() === null) return;
+        return revalidateKeptNotes({ fs: github.fs, kept, connection });
+      })
+      .catch(report);
   };
   const stopListening = connection.onChange((online) => {
     if (online) revalidate();
@@ -116,6 +145,13 @@ function offlineAwareToken(auth: AuthPort): GitHubToken {
         : auth.tokenForRequest(),
     rejected: (accessToken) => auth.rejected(accessToken),
   };
+}
+
+/** Forgets everything the device kept, and fails if any of it is left. */
+async function forgetEverything(device: WebDevice): Promise<void> {
+  const settled = await Promise.allSettled(forgettingDevice(device).map((step) => step()));
+  const failed = settled.find((result) => result.status === 'rejected');
+  if (failed !== undefined) throw (failed as PromiseRejectedResult).reason;
 }
 
 /** Everything the device kept of the vault, each forgotten in its own step at sign-out. */

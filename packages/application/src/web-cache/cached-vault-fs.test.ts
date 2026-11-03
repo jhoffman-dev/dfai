@@ -1,4 +1,4 @@
-import { cachedReadKey, createVaultPath as p, type VaultEntry } from '@dfai/domain';
+import { cachedReadKey, cachedReadOf, createVaultPath as p, type VaultEntry } from '@dfai/domain';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeHostVaultFs } from '../testing/fake-ports.ts';
 import { memoryReadCacheStore, switchableConnection } from '../testing/memory-read-cache.ts';
@@ -231,7 +231,7 @@ describe('cachedVaultFs: the rest of the tree and writes online', () => {
     const listingsKept = async () => {
       await fs.listDirectory(p('Garden'));
       await kept.settled();
-      return [...store.held.keys()].some((key) => key.startsWith('directory'));
+      return [...store.held.keys()].some((key) => cachedReadOf(key).kind === 'directory');
     };
     expect(await listingsKept()).toBe(true);
     await fs.createNote({ vault: VAULT, path: p('New.md'), contents: '# New\n' });
@@ -248,7 +248,9 @@ describe('cachedVaultFs: the rest of the tree and writes online', () => {
       expect(await listingsKept()).toBe(true);
       await write();
       await kept.settled();
-      expect([...store.held.keys()].some((key) => key.startsWith('directory'))).toBe(false);
+      expect([...store.held.keys()].some((key) => cachedReadOf(key).kind === 'directory')).toBe(
+        false,
+      );
     }
     connection.set(false);
     await expect(fs.readTextFile(p('New.md'))).rejects.toThrow(NOTE_NEEDS_CONNECTION);

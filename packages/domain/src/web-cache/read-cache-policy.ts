@@ -24,15 +24,24 @@ export type CachedReadKind = 'note' | 'directory' | 'notes' | 'files';
 
 const SEPARATOR = '\u0000';
 
-/** The key a read is kept under: its kind and what it asked for, which never collide. */
-export function cachedReadKey(kind: CachedReadKind, asked: string): string {
-  return `${kind}${SEPARATOR}${asked}`;
+/**
+ * The key a read is kept under: whose it is (the account and vault, so one
+ * person's notes are never answered to another), its kind and what it asked
+ * for, which never collide.
+ */
+export function cachedReadKey(scope: string, kind: CachedReadKind, asked: string): string {
+  return `${scope}${SEPARATOR}${kind}${SEPARATOR}${asked}`;
 }
 
-/** The kind a key was made for, and the path or arguments it names. */
-export function cachedReadOf(key: string): { kind: CachedReadKind; asked: string } {
-  const at = key.indexOf(SEPARATOR);
-  return { kind: key.slice(0, at) as CachedReadKind, asked: key.slice(at + 1) };
+/** Whose a key is, the kind it was made for, and the path or arguments it names. */
+export function cachedReadOf(key: string): { scope: string; kind: CachedReadKind; asked: string } {
+  const first = key.indexOf(SEPARATOR);
+  const second = key.indexOf(SEPARATOR, first + 1);
+  return {
+    scope: key.slice(0, first),
+    kind: key.slice(first + 1, second) as CachedReadKind,
+    asked: key.slice(second + 1),
+  };
 }
 
 /** The bytes a value costs to keep: its JSON, two bytes a character. */

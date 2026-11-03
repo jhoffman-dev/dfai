@@ -10,5 +10,6 @@ export type { CachedVaultFsDeps } from './cached-vault-fs.ts';
 export { keptReads } from './kept-reads.ts';
 export type { KeptReads, KeptReadsDeps } from './kept-reads.ts';
 export type { CachedRead, ConnectionPort, ReadCacheStore } from './ports.ts';
+export { AccountSwitchRefusedError, adoptAccount } from './account-switch.ts';
 export { opensApp, waitsForNetwork } from './offline-session.ts';
 export { signOutAndForget } from './sign-out.ts';
