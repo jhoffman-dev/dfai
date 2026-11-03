@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import e2e from './playwright.config.ts';
+import e2e, { DESKTOP_SERVER } from './playwright.config.ts';
 
 /**
  * The app's response times on the 2,000-note fixture vault (#217), with the
@@ -20,6 +20,8 @@ import e2e from './playwright.config.ts';
  */
 export default defineConfig({
   ...e2e,
+  // The desktop build's server alone: the perf jobs build only it, and the web build's (#667) is the e2e's.
+  webServer: DESKTOP_SERVER,
   testDir: './tools/perf',
   fullyParallel: false,
   workers: 1,
