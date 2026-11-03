@@ -1,4 +1,4 @@
-import type { AuthPort, AuthState } from '@dfai/application';
+import { opensApp, waitsForNetwork, type AuthPort, type AuthState } from '@dfai/application';
 import { SignInScreen, SignOutButton } from '@dfai/ui';
 import { createRoot, type Root } from 'react-dom/client';
 
@@ -9,6 +9,10 @@ export interface StartWebDeps {
   readonly auth: AuthPort;
   /** Mounts the app in #root and returns its teardown (mountShell). */
   readonly mountApp: () => () => void;
+  /** What the sign-out button does: the session's sign-out, and forgetting what the device kept (#667). */
+  readonly signOut?: () => Promise<void>;
+  /** Whether this device keeps a vault, which then opens when only the network keeps the session away (#667). */
+  readonly vaultOnDevice?: () => boolean;
   readonly page?: Window;
 }
 
@@ -18,13 +22,25 @@ export interface StartWebDeps {
  * out here, or its access revoked on GitHub. Which one shows is the
  * session's to say; this only draws it.
  */
-export async function startWeb({ auth, mountApp, page = window }: StartWebDeps) {
-  const view = webView({ auth, mountApp, page });
+export async function startWeb({
+  auth,
+  mountApp,
+  signOut = () => auth.signOut(),
+  vaultOnDevice = () => false,
+  page = window,
+}: StartWebDeps) {
+  const view = webView({ auth, mountApp, signOut, vaultOnDevice, page });
   const stop = auth.subscribe(() => view.show(auth.state()));
+  // Back online, a session the network alone kept away is tried again: the app opened offline signs in under it.
+  const retry = () => {
+    if (waitsForNetwork(auth.state())) auth.restore('').catch((error) => page.reportError(error));
+  };
+  page.addEventListener('online', retry);
   view.show(auth.state());
   await auth.restore(callbackQuery(page));
   return () => {
     stop();
+    page.removeEventListener('online', retry);
     view.close();
   };
 }
@@ -52,7 +68,7 @@ function callbackQuery(page: Window): string {
   return '';
 }
 
-function webView({ auth, mountApp, page }: Required<StartWebDeps>) {
+function webView({ auth, mountApp, signOut, vaultOnDevice, page }: Required<StartWebDeps>) {
   const element = page.document.getElementById('root');
   if (!element) throw new Error('index.html is missing #root');
   const reported = (error: unknown) => page.reportError(error);
@@ -64,7 +80,12 @@ function webView({ auth, mountApp, page }: Required<StartWebDeps>) {
     screen?.unmount();
     screen = null;
     app ??= mountApp();
-    removeSignOut ??= showSignOut(page, () => auth.signOut().catch(reported));
+    // Shown again once the sign-out settles: what the device kept is gone by then, so offline is the sign-in.
+    removeSignOut ??= showSignOut(page, () =>
+      signOut()
+        .catch(reported)
+        .finally(() => show(auth.state())),
+    );
   };
 
   const signedOut = (state: Exclude<AuthState, { status: 'signed-in' }>) => {
@@ -82,8 +103,14 @@ function webView({ auth, mountApp, page }: Required<StartWebDeps>) {
     );
   };
 
+  const show = (state: AuthState) => {
+    if (state.status === 'signed-in' || opensApp(state, { vaultOnDevice: vaultOnDevice() }))
+      signedIn();
+    else signedOut(state);
+  };
+
   return {
-    show: (state: AuthState) => (state.status === 'signed-in' ? signedIn() : signedOut(state)),
+    show,
     close: () => {
       signedOut({ status: 'checking' });
       screen?.unmount();

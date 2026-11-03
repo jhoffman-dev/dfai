@@ -3,8 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <!--
-      The page runs only its own scripts and talks only to its own origin:
-      no inline script, nothing fetched from anywhere else. As the desktop's
+      The page runs only its own scripts and talks only to its own origin
+      and GitHub's API, where the vault is (#667): no inline script, nothing
+      fetched from anywhere else. 'wasm-unsafe-eval' lets the index compile
+      SQLite's WebAssembly (#666), and nothing else; no string becomes code. As the desktop's
       index.html, frame-src 'none' keeps a saved artifact's srcdoc frame from
       loading a live remote page in its place; srcdoc and about:blank are
       never subject to it. `pnpm dev` loosens this for Vite's own client
@@ -12,7 +14,7 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'"
+      content="script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://api.github.com; frame-src 'none'; object-src 'none'; base-uri 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DFAI</title>

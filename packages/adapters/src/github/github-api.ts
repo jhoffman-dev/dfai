@@ -1,4 +1,9 @@
-import { VaultAccessError, type AuthPort, type Clock } from '@dfai/application';
+import {
+  VaultAccessError,
+  VaultUnreachableError,
+  type AuthPort,
+  type Clock,
+} from '@dfai/application';
 
 /**
  * GitHub's REST API, as the GitHub vault speaks it (#664): one request at a
@@ -127,8 +132,9 @@ function sending({
       const text = await response.text();
       return { status: response.status, headers: response.headers, ...parsed(text) };
     } catch (error) {
-      if (controller.signal.aborted) throw new VaultAccessError('GitHub did not answer in time');
-      throw new VaultAccessError(`GitHub could not be reached: ${String(error)}`);
+      if (controller.signal.aborted)
+        throw new VaultUnreachableError('GitHub did not answer in time');
+      throw new VaultUnreachableError(`GitHub could not be reached: ${String(error)}`);
     }
   };
 }

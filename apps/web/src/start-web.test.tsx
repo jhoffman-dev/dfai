@@ -50,8 +50,15 @@ function setUp() {
       document.getElementById('root')?.replaceChildren();
     };
   };
-  const start = async () => {
-    stop = await act(() => startWeb({ auth, mountApp }));
+  const start = async (signOut?: () => Promise<void>, vaultOnDevice?: () => boolean) => {
+    stop = await act(() =>
+      startWeb({
+        auth,
+        mountApp,
+        ...(signOut && { signOut }),
+        ...(vaultOnDevice && { vaultOnDevice }),
+      }),
+    );
   };
   return { gateway, pending, auth, app, start };
 }
@@ -131,6 +138,55 @@ describe('the web build’s start', () => {
     expect(screen.queryByText('The app')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
     expect(gateway.hasCookie).toBe(false);
+  });
+
+  it('signs out through what it was given, which forgets the device after the app is down', async () => {
+    const { gateway, start, app, auth } = setUp();
+    gateway.hasCookie = true;
+    const order: string[] = [];
+    await start(async () => {
+      await auth.signOut();
+      order.push(`forgot, the app down ${app.teardowns} time`);
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(order).toEqual(['forgot, the app down 1 time']));
+  });
+
+  it('opens the vault kept on the device when only the network keeps the session away, and signs in once back', async () => {
+    const { gateway, start, app, auth } = setUp();
+    gateway.hasCookie = true;
+    gateway.failWith = 'network';
+    await start(undefined, () => true);
+    expect(screen.getByText('The app')).toBeDefined();
+    gateway.failWith = null;
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+    });
+    await waitFor(() => expect(auth.state().status).toBe('signed-in'));
+    expect(app.mounts).toBe(1);
+  });
+
+  it('shows the sign-in offline when the device keeps no vault', async () => {
+    const { gateway, start } = setUp();
+    gateway.failWith = 'network';
+    await start(undefined, () => false);
+    expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).toBeDefined();
+  });
+
+  it('shows the sign-in once a sign-out has forgotten the vault, offline or not', async () => {
+    const { gateway, start, auth } = setUp();
+    gateway.hasCookie = true;
+    let kept = true;
+    await start(
+      async () => {
+        gateway.failWith = 'network';
+        await auth.signOut().catch(() => undefined);
+        kept = false;
+      },
+      () => kept,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('button', { name: 'Sign in with GitHub' })).toBeDefined();
   });
 
   it('says so clearly when GitHub no longer lets DFAI in', async () => {

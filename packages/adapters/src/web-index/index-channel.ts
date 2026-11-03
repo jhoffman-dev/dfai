@@ -35,6 +35,7 @@ type Answer =
 const CALLS: readonly HostCall[] = [
   'open',
   'clear',
+  'forget',
   'manifest',
   'put',
   'remove',

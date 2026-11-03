@@ -29,9 +29,29 @@ function portFor(checkout: string): number {
 // checkout's root when the suite runs, so the port is keyed on the same thing.
 const PORT = portFor(process.cwd());
 const BASE_URL = `http://localhost:${PORT}`;
+/** The web build's own server (#667), next to the desktop's: its pages live at its origin's root. */
+const WEB_PORT = PORT + 1;
+process.env.DFAI_WEB_E2E_URL = `http://localhost:${WEB_PORT}`;
 
 /** The specs the `ipad` project runs, and only it. */
 const IPAD_SPECS = /\.ipad\.spec\.ts$/;
+
+/** The desktop build's server, which every spec but the web build's runs against. */
+export const DESKTOP_SERVER = {
+  // A plain Node server rather than `vite preview` behind a package-manager
+  // wrapper: the wrapper's child outlives Playwright's teardown, and the CI
+  // step then hangs after every test has already passed.
+  command: 'node tools/serve-dist.mjs',
+  url: BASE_URL,
+  env: { PORT: String(PORT) },
+  // Never reuse a server already on this port. Agents work in git worktrees
+  // that share it, and a reused server serves *that* worktree's `dist` — so a
+  // run silently tests someone else's build and fails in ways the code cannot
+  // explain. This has cost hours. Refusing to start is the loud failure; the
+  // server takes well under a second, so there is little to reuse.
+  reuseExistingServer: false,
+  timeout: 60_000,
+};
 
 /**
  * The core loop, driven in WebKit — the same engine the Tauri window uses on macOS.
@@ -67,19 +87,15 @@ export default defineConfig({
       testMatch: IPAD_SPECS,
     },
   ],
-  webServer: {
-    // A plain Node server rather than `vite preview` behind a package-manager
-    // wrapper: the wrapper's child outlives Playwright's teardown, and the CI
-    // step then hangs after every test has already passed.
-    command: 'node tools/serve-dist.mjs',
-    url: BASE_URL,
-    env: { PORT: String(PORT) },
-    // Never reuse a server already on this port. Agents work in git worktrees
-    // that share it, and a reused server serves *that* worktree's `dist` — so a
-    // run silently tests someone else's build and fails in ways the code cannot
-    // explain. This has cost hours. Refusing to start is the loud failure; the
-    // server takes well under a second, so there is little to reuse.
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  webServer: [
+    DESKTOP_SERVER,
+    {
+      // The web build, for the `.ipad.spec.ts` specs that run it (#667); as above in every way.
+      command: 'node tools/serve-dist.mjs',
+      url: `http://localhost:${WEB_PORT}`,
+      env: { PORT: String(WEB_PORT), DIST_APP: 'web' },
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+  ],
 });

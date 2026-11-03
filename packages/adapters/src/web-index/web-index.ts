@@ -7,7 +7,7 @@ import { webIndexPort } from './web-index-port.ts';
  * OPFS, made on the first call so a page that never asks the index never
  * loads SQLite.
  */
-export function webIndex({ openVault }: { openVault: () => string | null }): IndexPort {
+export function webIndex({ openVault }: { openVault: () => string | null }): WebIndex {
   let host: IndexHostCalls | null = null;
   const started = () => {
     if (host !== null) return host;
@@ -23,5 +23,11 @@ export function webIndex({ openVault }: { openVault: () => string | null }): Ind
     host = indexHostOver(worker);
     return host;
   };
-  return webIndexPort({ host: started, openVault });
+  return {
+    ...webIndexPort({ host: started, openVault }),
+    forget: (vault) => started().forget(vault),
+  };
 }
+
+/** The index, and how a vault's file is thrown away when the person signs out (#667). */
+export type WebIndex = IndexPort & { forget(vault: string): Promise<void> };

@@ -124,6 +124,13 @@ describe('the web build hosting config, as committed', () => {
     );
   });
 
+  it('lets the vault reach GitHub’s API and the index compile its WebAssembly, and no more (#667)', () => {
+    const served = header('**', 'Content-Security-Policy') ?? '';
+    expect(served).toContain("connect-src 'self' https://api.github.com;");
+    expect(served).toContain("script-src 'self' 'wasm-unsafe-eval';");
+    expect(served).not.toMatch(/'unsafe-eval'|'unsafe-inline'/);
+  });
+
   it('revalidates the page and keeps hashed assets for good, the assets rule last so it wins', () => {
     expect(header('**', 'Cache-Control')).toBe('no-cache');
     expect(header('/assets/**', 'Cache-Control')).toMatch(/immutable/);

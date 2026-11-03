@@ -1,0 +1,43 @@
+import type { CachedRead, ConnectionPort, ReadCacheStore } from '../web-cache/ports.ts';
+
+/** The read cache's store in memory, for tests: what IndexedDB holds in the browser. */
+export function memoryReadCacheStore(): ReadCacheStore & {
+  readonly held: Map<string, CachedRead>;
+} {
+  const held = new Map<string, CachedRead>();
+  return {
+    held,
+    get: async (key) => held.get(key) ?? null,
+    put: async (entry) => {
+      held.set(entry.key, structuredClone(entry));
+    },
+    touch: async (key, usedAt) => {
+      const entry = held.get(key);
+      if (entry !== undefined) held.set(key, { ...entry, usedAt });
+    },
+    remove: async (keys) => {
+      for (const key of keys) held.delete(key);
+    },
+    facts: async () => [...held.values()].map(({ key, bytes, usedAt }) => ({ key, bytes, usedAt })),
+    clear: async () => held.clear(),
+  };
+}
+
+/** A connection a test turns on and off, telling each listener as the browser would. */
+export function switchableConnection(
+  online = true,
+): ConnectionPort & { set(online: boolean): void } {
+  let now = online;
+  const listeners = new Set<(online: boolean) => void>();
+  return {
+    online: () => now,
+    onChange: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    set: (next) => {
+      now = next;
+      for (const listener of listeners) listener(next);
+    },
+  };
+}

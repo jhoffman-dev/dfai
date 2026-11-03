@@ -5,5 +5,6 @@
  * (`web-index.worker.ts`), on the index's first call.
  */
 export { webIndex } from './web-index.ts';
+export type { WebIndex } from './web-index.ts';
 export { webIndexPort } from './web-index-port.ts';
 export type { IndexEndpoint, IndexHostCalls } from './index-channel.ts';
