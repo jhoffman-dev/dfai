@@ -89,25 +89,30 @@ test('a caret beside a card, not in any line, is a miss to retry, never an error
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await page.getByRole('treeitem', { name: 'cards', exact: true }).click();
   await expect(page.getByRole('group', { name: 'Bookmark: Rome' })).toBeVisible();
-  // After every key, the card is selected: the editor's caret then sits
-  // between top-level blocks, where there is no block to be in (depth 0).
-  await page.getByLabel('Note', { exact: true }).evaluate((editor) => {
-    const { commands, state } = (
-      editor as unknown as {
-        editor: {
-          commands: { setNodeSelection(pos: number): boolean };
-          state: {
-            doc: { forEach(visit: (node: { isTextblock: boolean }, at: number) => void): void };
-          };
+  // Whenever the selection moves, the card is selected again: the editor's
+  // caret then sits between top-level blocks, where there is no block to be in
+  // (depth 0). Held on every selection change, not set once on keyup: the
+  // editor can read the page's selection after the key's keyup has run, and
+  // that read put the caret back in the line, so the helper found it there
+  // and the test read no miss at all (#751).
+  await page.getByLabel('Note', { exact: true }).evaluate((element) => {
+    const { editor } = element as unknown as {
+      editor: {
+        on(event: 'selectionUpdate', listener: () => void): void;
+        commands: { setNodeSelection(pos: number): boolean };
+        state: {
+          doc: { forEach(visit: (node: { isTextblock: boolean }, at: number) => void): void };
         };
-      }
-    ).editor;
+      };
+    };
     let card = -1;
-    state.doc.forEach((node, at) => {
+    editor.state.doc.forEach((node, at) => {
       if (card === -1 && !node.isTextblock) card = at;
     });
     if (card === -1) throw new Error('the note has no card');
-    editor.addEventListener('keyup', () => commands.setNodeSelection(card));
+    // `commands` is read at each call: it carries a transaction made from the
+    // state it was read in.
+    editor.on('selectionUpdate', () => editor.commands.setNodeSelection(card));
   });
 
   const missed = await caretAtLineStart(page.getByText('Packing list.')).then(
