@@ -51,4 +51,16 @@ describe('adoptAccount', () => {
     });
     await expect(switching).rejects.toThrow('blocked');
   });
+
+  it('by default keeps saves it was not told it may lose', async () => {
+    const forgetPrevious = vi.fn(async () => {});
+    const switching = adoptAccount({
+      previous: 'mara-quill',
+      signedInAs: 'tobias-fenn',
+      forgetPrevious,
+      unsent: async () => 1,
+    });
+    await expect(switching).rejects.toThrow(/Sign in as mara-quill to send them/);
+    expect(forgetPrevious).not.toHaveBeenCalled();
+  });
 });
