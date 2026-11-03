@@ -53,7 +53,8 @@ test('on the web, a save waiting on the device outlives a reload, and is committ
   await plan.tap();
   await expect(page.getByLabel('Note', { exact: true }).getByText('First line.')).toBeVisible();
 
-  unreachable(true);
+  // Reads get through, commits do not: the save waits, and GitHub can still say who is signed in.
+  unreachable('writes');
   await typeAtTheEnd(page, ' Waited.');
   await expect(status(page)).toHaveText('Not saved yet', { timeout: 10_000 });
 

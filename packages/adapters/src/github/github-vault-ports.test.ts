@@ -49,6 +49,19 @@ describe('gitHubVaultPorts', () => {
     expect((await fs.readTextFile(p('Plan.md'))).text).toBe('# Plan\n');
   });
 
+  it('unconfirms the login when GitHub, asked again, says someone else or cannot be asked', async () => {
+    const { store, signedIn, confirmAgain, github } = ports();
+    expect(await confirmAgain()).toBeNull();
+    await store.read();
+    expect(await confirmAgain()).toBe('mara-quill');
+    github.intercept(
+      (request) => request.path === '/user',
+      () => Promise.reject(new TypeError('Failed to fetch')),
+    );
+    expect(await confirmAgain()).toBeNull();
+    expect(signedIn()).toBeNull();
+  });
+
   it('knows who is signed in only once GitHub said so and the vault opened', async () => {
     const { store, signedIn } = ports();
     expect(signedIn()).toBeNull();

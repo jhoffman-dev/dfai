@@ -42,10 +42,15 @@ export function composeWebAuth(page: Window = window): AuthPort {
 
 /**
  * A lock across the origin's tabs: Web Locks, or a localStorage lock where
- * there are none. The sign-in's refresh and the save queue (#667) hold it.
+ * there are none. The sign-in's refresh and the save queue (#667) hold it;
+ * the queue's refuses to run unlocked when storage will not hold the lock.
  */
-export function crossTabLock(page: Window): CrossTabLock {
+export function crossTabLock(
+  page: Window,
+  { refuseUnlocked = false }: { refuseUnlocked?: boolean } = {},
+): CrossTabLock {
   const fallback = storageLock({
+    refuseUnlocked,
     storage: page.localStorage,
     events: page,
     now: () => Date.now(),

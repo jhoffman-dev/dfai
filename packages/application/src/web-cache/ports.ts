@@ -43,7 +43,11 @@ export interface SaveQueueStore {
   get(key: string): Promise<QueuedSave | null>;
   put(save: QueuedSave): Promise<void>;
   remove(key: string): Promise<void>;
+  /** Forgets every save; the closed mark stays as it is. */
   clear(): Promise<void>;
+  /** Whether a sign-out has closed the queue: no save is taken on this device until it reopens. */
+  isClosed(): Promise<boolean>;
+  setClosed(closed: boolean): Promise<void>;
 }
 
 /**

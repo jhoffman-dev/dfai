@@ -93,6 +93,12 @@ export function gitHubVaultPorts({
   opened: Promise<void>;
   /** The login GitHub said is signed in, once the account check let it open; null until then. */
   signedIn: () => string | null;
+  /**
+   * Asks GitHub again who is signed in, before work done as them: the login
+   * when it is still the one confirmed; null, and unconfirmed until the store
+   * checks again, when it is someone else or GitHub cannot be asked.
+   */
+  confirmAgain: () => Promise<string | null>;
 } {
   const found = async (login: string) => {
     const where = await findGitHubVault(api);
@@ -136,6 +142,12 @@ export function gitHubVaultPorts({
     picker,
     opened,
     signedIn: () => confirmed,
+    confirmAgain: async () => {
+      if (confirmed === null) return null;
+      const login = await gitHubLogin(api).catch(() => null);
+      if (login !== confirmed) confirmed = null;
+      return confirmed;
+    },
     store: {
       read: () => read().finally(settleOpened),
       // The picker remembered the repository it found; the location is only its name.

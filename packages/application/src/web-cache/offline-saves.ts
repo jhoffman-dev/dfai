@@ -27,6 +27,9 @@ import type {
 
 /** What a save says once the sign-out has let every waiting save go. */
 export const SAVES_CLOSED = 'signing out: nothing more is saved on this device';
+/** What a save says while GitHub has not said who is signed in: the vault is read-only until then. */
+export const SAVES_WAIT_FOR_ACCOUNT =
+  'saving waits until GitHub says who is signed in; your edit stays here until then';
 
 export interface OfflineSavesDeps {
   /** The vault the saves are sent to: the cached GitHub vault. */
@@ -41,8 +44,14 @@ export interface OfflineSavesDeps {
   readonly lock: SaveQueueLock;
   /** The other tabs, told of each change and telling this one of theirs. */
   readonly changes: SaveQueueChanges;
-  /** The login saves are made as now; null while none is known, when nothing is queued. */
+  /**
+   * The login GitHub confirmed is signed in; null until it has, when nothing
+   * is queued, sent or shown as waiting: the remembered login is never taken
+   * for whoever holds the token now.
+   */
   readonly account: () => string | null;
+  /** The vault open now, whose saves a read is answered from. */
+  readonly vault: () => string | null;
 }
 
 type Outcome = 'landed' | 'refused' | 'kept' | 'unreachable';
@@ -66,6 +75,8 @@ export function offlineSaves(deps: OfflineSavesDeps) {
   const { fs, store, connection } = deps;
   let seen = new Map<string, QueuedSave>();
   let closed = false;
+  /** The notes whose last save failed to be stored: typing only the pane still holds. */
+  const unkept = new Set<string>();
   const listeners = new Set<() => void>();
   const reread = async () => {
     seen = new Map((await store.all()).map((record) => [record.key, record]));
@@ -78,20 +89,33 @@ export function offlineSaves(deps: OfflineSavesDeps) {
   const stopListening = deps.changes.listen(() => void reread().catch(deps.report));
   void deps.lock(reread).catch(deps.report);
 
-  /** Writes `next` over the note's record only if it is still `was`; says whether it did. */
+  /**
+   * Writes `next` over the note's record only if it is still `was`, in its
+   * version and its state; says whether it did. A turn that outlived the
+   * lock (a hold lapsed while GitHub was slow) never writes over what a
+   * later turn landed or carried on from.
+   */
   const replace = async (was: QueuedSave, next: QueuedSave): Promise<boolean> => {
     const now = await store.get(was.key);
     if (now === null || now.provisional !== was.provisional) return false;
+    if (now.state.kind !== was.state.kind) return false;
     await store.put(next);
     return true;
   };
+  const isOpen = async () => !closed && !(await store.isClosed());
 
   const queued = async (args: Parameters<HostVaultFsPort['writeTextFile']>[0], account: string) => {
     const record = (await store.get(queuedSaveKey(args.vault, args.path))) ?? undefined;
     const decision = queueSave(record, { ...args, account }, nextInQueue(await store.all()));
     if (decision.kind === 'stale') throw new VaultAccessError(HOST_CHANGED_ON_DISK);
     // Stored first: the save is not waiting until it would outlive a reload.
-    await store.put(decision.save);
+    try {
+      await store.put(decision.save);
+    } catch (error) {
+      unkept.add(decision.save.key);
+      throw error;
+    }
+    unkept.delete(decision.save.key);
     await changed();
     return decision.save.provisional;
   };
@@ -123,36 +147,50 @@ export function offlineSaves(deps: OfflineSavesDeps) {
     return 'landed';
   };
 
-  /** Sends the account's waiting saves, in order, as the store has them; stops at the network. */
-  const sendWaiting = async (account: string): Promise<void> => {
+  /** The account's next save to send, unless the queue is closed or the device offline. */
+  const nextToSend = async (account: string, tried: ReadonlySet<string>) => {
+    if (!connection.online() || !(await isOpen())) return undefined;
+    return savesToSend(await store.all(), account).find((save) => !tried.has(save.key));
+  };
+
+  /**
+   * Sends the account's waiting saves in order, each in a turn of its own —
+   * a hold is never stretched over many requests — and stops at the network.
+   */
+  const send = async (account: string): Promise<void> => {
     const tried = new Set<string>();
     for (;;) {
-      if (!connection.online()) return;
-      const next = savesToSend(await store.all(), account).find((save) => !tried.has(save.key));
-      if (next === undefined) return;
-      tried.add(next.key);
-      if ((await sent(next)) === 'unreachable') return;
+      const outcome = await deps.lock(async () => {
+        const next = await nextToSend(account, tried);
+        if (next === undefined) return 'done';
+        tried.add(next.key);
+        return sent(next);
+      });
+      if (outcome === 'done' || outcome === 'unreachable') return;
     }
   };
 
   const writeTextFile: HostVaultFsPort['writeTextFile'] = (args) =>
     deps.lock(async () => {
-      if (closed) throw new VaultAccessError(SAVES_CLOSED);
+      if (!(await isOpen())) throw new VaultAccessError(SAVES_CLOSED);
       const account = deps.account();
-      if (account === null) return fs.writeTextFile(args);
+      if (account === null) throw new VaultUnreachableError(SAVES_WAIT_FOR_ACCOUNT);
       const key = queuedSaveKey(args.vault, args.path);
       let record = (await store.get(key)) ?? undefined;
-      if (record?.state.kind === 'waiting' && connection.online()) {
-        await sendWaiting(account);
+      if (record?.state.kind === 'waiting' && record.account === account && connection.online()) {
+        // What waits for this note goes first, in this same turn.
+        await sent(record);
         record = (await store.get(key)) ?? undefined;
       }
       if ((record !== undefined && isUnsent(record)) || !connection.online())
         return queued(args, account);
       try {
-        return await fs.writeTextFile({
+        const modified = await fs.writeTextFile({
           ...args,
           expectedModified: carriesOnAt(record, args.expectedModified),
         });
+        unkept.delete(key);
+        return modified;
       } catch (error) {
         if (error instanceof VaultUnreachableError) return queued(args, account);
         throw error;
@@ -161,11 +199,16 @@ export function offlineSaves(deps: OfflineSavesDeps) {
 
   const readTextFile: HostVaultFsPort['readTextFile'] = async (path) => {
     const account = deps.account();
-    const waiting = await deps.lock(async () =>
-      (await store.all()).find(
-        (record) => record.path === path && record.account === account && isUnsent(record),
-      ),
-    );
+    const vault = deps.vault();
+    const waiting =
+      account === null || vault === null
+        ? undefined
+        : await deps.lock(async () => {
+            const record = await store.get(queuedSaveKey(vault, path));
+            return record !== null && record.account === account && isUnsent(record)
+              ? record
+              : undefined;
+          });
     // What waits is the newest text there is of the note, at the version the editor carries on from.
     return waiting === undefined
       ? fs.readTextFile(path)
@@ -188,7 +231,8 @@ export function offlineSaves(deps: OfflineSavesDeps) {
   const pending: PendingSavesPort = {
     stateOf: (vault, path) => {
       const save = seen.get(queuedSaveKey(vault, path));
-      if (save === undefined || save.account !== deps.account()) return null;
+      const account = deps.account();
+      if (save === undefined || account === null || save.account !== account) return null;
       if (save.state.kind === 'waiting') return { kind: 'waiting' };
       return save.state.kind === 'refused' ? { kind: 'refused', reason: save.state.reason } : null;
     },
@@ -212,19 +256,44 @@ export function offlineSaves(deps: OfflineSavesDeps) {
     fs: { ...fs, writeTextFile, readTextFile } satisfies HostVaultFsPort,
     pending,
     /** Sends what `account` left waiting, when online: only ever as the account that made it. */
-    send: (account: string) => deps.lock(() => sendWaiting(account)),
+    send,
     /** How many saves have not reached GitHub, of the accounts `whose` picks (all by default). */
     unsent: (whose: (account: string) => boolean = () => true) =>
       deps.lock(
         async () =>
           (await store.all()).filter((save) => isUnsent(save) && whose(save.account)).length,
       ),
+    /** How many notes hold typing whose save failed to be stored: only their panes have it. */
+    unkept: () => unkept.size,
+    /**
+     * The sign-out's one turn across every tab: what has not reached GitHub
+     * is counted, the person is asked when anything has, and on a yes the
+     * queue is marked closed — so no tab is told a save is stored after it
+     * is counted — and every save is let go. On a no, nothing changes.
+     */
+    closeForSignOut: (ask: (unsent: number) => Promise<boolean>) =>
+      deps.lock(async (): Promise<'closed' | 'kept'> => {
+        const waiting = (await store.all()).filter(isUnsent).length;
+        if (waiting > 0 && !(await ask(waiting))) return 'kept';
+        closed = true;
+        await store.setClosed(true);
+        await store.clear();
+        await changed();
+        return 'closed';
+      }),
+    /** Takes saves again: a new session that GitHub confirmed is signed in. */
+    reopen: () =>
+      deps.lock(async () => {
+        closed = false;
+        if (await store.isClosed()) await store.setClosed(false);
+      }),
     /** Stops hearing the other tabs: the session is over. */
     stop: stopListening,
-    /** Lets every save go, after the person agreed at sign-out; nothing is saved here after. */
+    /** Lets every save go and takes none after, without asking: what the sign-out does once agreed. */
     clear: () =>
       deps.lock(async () => {
         closed = true;
+        await store.setClosed(true);
         await store.clear();
         await changed();
       }),

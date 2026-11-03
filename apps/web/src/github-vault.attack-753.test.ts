@@ -101,57 +101,51 @@ const write = (session: Session, where: string, contents: string, expectedModifi
   });
 
 describe('the web build’s save queue: attack on #753', () => {
-  it.fails(
-    'sends no account’s waiting save under another login GitHub has not confirmed',
-    async () => {
-      const { github, connection, tab, tokenOf } = onDevice();
-      const hers = tab();
-      const { where, read } = await openNote(hers);
-      connection.set(false);
-      await write(hers, where, 'hers, offline', read.modified);
-      hers.stop();
-      connection.set(true);
-      // Tobias signs in on her iPad; GitHub cannot be asked who he is as the app opens.
-      const tobias = tokenOf('tobias-fenn');
-      for (let i = 0; i < 5; i += 1)
-        github.intercept(
-          (request) => request.path === '/user',
-          () => Promise.reject(new TypeError('Failed to fetch')),
-        );
-      const his = tab(tobias);
-      const opened = await openNote(his);
-      await write(his, where, 'his typing', opened.read.modified).catch(() => undefined);
-      const writtenAsTobias = github.received.filter(
-        (request) =>
-          request.method !== 'GET' && request.headers.get('Authorization') === `Bearer ${tobias}`,
+  it('sends no account’s waiting save under another login GitHub has not confirmed', async () => {
+    const { github, connection, tab, tokenOf } = onDevice();
+    const hers = tab();
+    const { where, read } = await openNote(hers);
+    connection.set(false);
+    await write(hers, where, 'hers, offline', read.modified);
+    hers.stop();
+    connection.set(true);
+    // Tobias signs in on her iPad; GitHub cannot be asked who he is as the app opens.
+    const tobias = tokenOf('tobias-fenn');
+    for (let i = 0; i < 5; i += 1)
+      github.intercept(
+        (request) => request.path === '/user',
+        () => Promise.reject(new TypeError('Failed to fetch')),
       );
-      // Observed: her queued save ('hers, offline'), then his typing, are committed to her vault
-      // with his token (blob, tree, commit, ref, twice), before /user ever answered.
-      expect(writtenAsTobias).toEqual([]);
-    },
-  );
+    const his = tab(tobias);
+    const opened = await openNote(his);
+    await write(his, where, 'his typing', opened.read.modified).catch(() => undefined);
+    const writtenAsTobias = github.received.filter(
+      (request) =>
+        request.method !== 'GET' && request.headers.get('Authorization') === `Bearer ${tobias}`,
+    );
+    // Observed: her queued save ('hers, offline'), then his typing, are committed to her vault
+    // with his token (blob, tree, commit, ref, twice), before /user ever answered.
+    expect(writtenAsTobias).toEqual([]);
+  });
 
-  it.fails(
-    'never signs out without asking when a closing write failed to reach the queue',
-    async () => {
-      const { connection, device, asked, tab, failPuts } = onDevice();
-      const session = tab();
-      const { where, read } = await openNote(session);
-      connection.set(false);
-      failPuts();
-      // The pane's typing, still in its autosave wait, is written as the sign-out begins; it fails.
-      await session.closing.beforeClose(() => write(session, where, 'typed', read.modified).then());
-      const outcome = await signOutOfDevice({
-        auth: { signOut: async () => {} },
-        device,
-        session,
-      });
-      // Observed: 'signed-out', nobody asked, and the typing is gone.
-      expect({ outcome, asked: asked.length }).not.toEqual({ outcome: 'signed-out', asked: 0 });
-    },
-  );
+  it('never signs out without asking when a closing write failed to reach the queue', async () => {
+    const { connection, device, asked, tab, failPuts } = onDevice();
+    const session = tab();
+    const { where, read } = await openNote(session);
+    connection.set(false);
+    failPuts();
+    // The pane's typing, still in its autosave wait, is written as the sign-out begins; it fails.
+    await session.closing.beforeClose(() => write(session, where, 'typed', read.modified).then());
+    const outcome = await signOutOfDevice({
+      auth: { signOut: async () => {} },
+      device,
+      session,
+    });
+    // Observed: 'signed-out', nobody asked, and the typing is gone.
+    expect({ outcome, asked: asked.length }).not.toEqual({ outcome: 'signed-out', asked: 0 });
+  });
 
-  it.fails('never deletes, unasked, a save another tab was told is stored', async () => {
+  it('never deletes, unasked, a save another tab was told is stored', async () => {
     const { connection, device, asked, tab } = onDevice();
     const leaving = tab();
     const typing = tab();
@@ -159,13 +153,14 @@ describe('the web build’s save queue: attack on #753', () => {
     const { where, read } = await openNote(typing);
     connection.set(false);
     let acknowledged = false;
+    let failure = '';
     // Nothing waits when the sign-out counts; the other tab's save is stored while it signs out.
     const outcome = await signOutOfDevice({
       auth: {
         signOut: async () => {
           await write(typing, where, 'typed in the other tab', read.modified).then(
             () => (acknowledged = true),
-            () => undefined,
+            (error: Error) => (failure = error.message),
           );
         },
       },
@@ -173,11 +168,30 @@ describe('the web build’s save queue: attack on #753', () => {
       session: leaving,
     });
     expect(outcome).toBe('signed-out');
-    expect(acknowledged).toBe(true);
-    // Observed: stored, then deleted by the sign-out's forget step; nobody was asked.
-    expect({ unsent: await unsentSaves(device), asked: asked.length }).not.toEqual({
-      unsent: 0,
-      asked: 0,
-    });
+    // Fixed (#753): once the sign-out has counted, the queue is closed across tabs, so the other
+    // tab's save fails loudly instead of being told it is stored. Told stored, it would have to
+    // survive or have been asked about.
+    if (acknowledged)
+      expect({ unsent: await unsentSaves(device), asked: asked.length }).not.toEqual({
+        unsent: 0,
+        asked: 0,
+      });
+    else expect(failure).toContain('signing out');
+  });
+
+  it('asks GitHub again before sending, and sends nothing once the token is someone else’s', async () => {
+    const { github, connection, tab } = onDevice();
+    const session = tab();
+    const { where, read } = await openNote(session);
+    connection.set(false);
+    await write(session, where, 'hers, offline', read.modified);
+    // The same token now signs in as someone else (it changed hands); GitHub says so when asked.
+    github.logins.set([...github.tokens][0]!, 'tobias-fenn');
+    const before = github.received.length;
+    connection.set(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const sent = github.received.slice(before).filter((request) => request.method !== 'GET');
+    expect(sent).toEqual([]);
+    expect(await github.textAt('Garden plan.md')).toBe('# Garden plan\n');
   });
 });

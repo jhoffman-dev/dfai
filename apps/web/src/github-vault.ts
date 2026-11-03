@@ -66,7 +66,8 @@ export function webDevice(page: Window): WebDevice {
   return {
     cache: indexedDbReadCache(page.indexedDB),
     saveQueue: indexedDbSaveQueue(page.indexedDB),
-    queueLock: (task) => crossTabLock(page)('dfai-save-queue', task),
+    // Never unlocked: two tabs deciding on one note at once is how a save is lost.
+    queueLock: (task) => crossTabLock(page, { refuseUnlocked: true })('dfai-save-queue', task),
     queueChanges: broadcastQueueChanges(
       typeof BroadcastChannel === 'function' ? (name) => new BroadcastChannel(name) : undefined,
     ),
@@ -130,7 +131,9 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
     report,
     lock: device.queueLock,
     changes: device.queueChanges,
-    account: () => device.remembered.read()?.login ?? null,
+    // Only the login GitHub confirmed: never the remembered one, whoever holds the token now.
+    account: () => github.signedIn(),
+    vault: () => openVaultOf(device.remembered),
   });
   const { fs } = saves;
   let refused = false;
@@ -159,7 +162,8 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
   const caughtUp = () => {
     signedIn()
       .then(async (login) => {
-        if (login === null) return;
+        // Asked again before anything is sent as them: a cheap call, and the token may have changed hands.
+        if (login === null || (await github.confirmAgain()) !== login) return;
         await saves.send(login);
         await revalidateKeptNotes({ fs: github.fs, kept, connection });
       })
@@ -177,7 +181,15 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
     vault: {
       fs,
       picker: github.picker,
-      store: github.store,
+      store: {
+        // Confirmed by GitHub, a new session takes saves again after the last one's sign-out closed the queue.
+        read: async () => {
+          const location = await github.store.read();
+          if (github.signedIn() !== null) await saves.reopen();
+          return location;
+        },
+        write: (location) => github.store.write(location),
+      },
       // The web has no watcher (ADR-0051, fileWatching); a change elsewhere is met at the next save.
       watch: { start: async () => {}, onChange: async () => () => {} },
     },
@@ -201,12 +213,15 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
 export type WebSession = ReturnType<typeof gitHubWebVault>;
 
 /**
- * Signing out of the web build (#667): the panes write what still waits in
- * their autosave into the queue first, so every unsent save is counted; on
- * a no, nothing changes. Then the queue takes no more saves, the session
- * stops, and the device forgets everything it kept.
+ * Signing out of the web build (#667). The panes write what still waits in
+ * their autosave into the queue first; typing that could not be kept there
+ * is asked about, never dropped quietly. Then, in one turn across every tab,
+ * what has not reached GitHub is counted, asked about, and on a yes the
+ * queue is closed and emptied, so no tab is told a save is stored after the
+ * count. On any no, nothing changes. Then the session stops and the device
+ * forgets everything it kept.
  */
-export function signOutOfDevice({
+export async function signOutOfDevice({
   auth,
   device,
   session,
@@ -215,18 +230,21 @@ export function signOutOfDevice({
   device: WebDevice;
   session: WebSession;
 }): Promise<'signed-out' | 'kept'> {
-  return session.closing.close().then(() =>
-    signOutAndForget({
-      unsent: () => unsentSaves(device),
-      confirmLosing: askToLoseSaves(device.page),
-      signOut: async () => {
-        await session.saves.clear();
-        session.stop();
-        await auth.signOut();
-      },
-      forget: forgettingDevice(device),
-    }),
-  );
+  const failed = await session.closing.close();
+  failed.forEach((error) => device.page.reportError(error));
+  const lostTyping = failed.length + session.saves.unkept();
+  const ask = askToLoseSaves(device.page);
+  // A save the device failed to keep is asked about even with nothing waiting: only the pane has it.
+  if (lostTyping > 0 && !(await ask(0, lostTyping))) return 'kept';
+  const closed = await session.saves.closeForSignOut((unsent) => ask(unsent, 0));
+  if (closed === 'kept') return 'kept';
+  return signOutAndForget({
+    signOut: async () => {
+      session.stop();
+      await auth.signOut();
+    },
+    forget: forgettingDevice(device),
+  });
 }
 
 /**
@@ -251,12 +269,18 @@ function offlineAwareToken(auth: AuthPort): GitHubToken {
 export const unsentSaves = async (device: WebDevice): Promise<number> =>
   (await device.saveQueue.all()).filter(isUnsent).length;
 
-/** What a sign-out asks while saves wait; no keeps the person signed in, with them. */
+/**
+ * What a sign-out asks while saves wait, or while typing could not be kept
+ * on the device at all; no keeps the person signed in, with them.
+ */
 export function askToLoseSaves(page: Pick<Window, 'confirm'>) {
-  return async (count: number): Promise<boolean> =>
+  return async (count: number, lostTyping = 0): Promise<boolean> =>
     page.confirm(
-      `${count === 1 ? 'A save has' : `${count} saves have`} not reached GitHub yet. ` +
-        `Signing out deletes ${count === 1 ? 'it' : 'them'} from this device for good. Sign out anyway?`,
+      lostTyping > 0
+        ? 'Typing in a note could not be saved on this device (its storage refused it). ' +
+            'Signing out loses it for good. Sign out anyway?'
+        : `${count === 1 ? 'A save has' : `${count} saves have`} not reached GitHub yet. ` +
+            `Signing out deletes ${count === 1 ? 'it' : 'them'} from this device for good. Sign out anyway?`,
     );
 }
 

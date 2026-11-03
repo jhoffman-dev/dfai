@@ -71,6 +71,22 @@ describe('indexedDbSaveQueue', () => {
   });
 });
 
+describe('indexedDbSaveQueue: closed by a sign-out', () => {
+  it('keeps the closed mark across a clear and a reopen of the database, and lists it as no save', async () => {
+    const factory = new IDBFactory();
+    const queue = indexedDbSaveQueue(factory);
+    expect(await queue.isClosed()).toBe(false);
+    await queue.put(save('A.md', 'a'));
+    await queue.setClosed(true);
+    await queue.clear();
+    const reopened = indexedDbSaveQueue(factory);
+    expect(await reopened.isClosed()).toBe(true);
+    expect(await reopened.all()).toEqual([]);
+    await reopened.setClosed(false);
+    expect(await reopened.isClosed()).toBe(false);
+  });
+});
+
 describe('broadcastQueueChanges', () => {
   it('tells another tab, never itself, and stops when asked', async () => {
     const one = broadcastQueueChanges((name) => new BroadcastChannel(name));

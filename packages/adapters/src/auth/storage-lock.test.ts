@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { HOLD_MS, POLL_MS, SETTLE_MS, storageLock, type StorageLockDeps } from './storage-lock.ts';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  HOLD_MS,
+  LockUnavailableError,
+  POLL_MS,
+  SETTLE_MS,
+  storageLock,
+  type StorageLockDeps,
+} from './storage-lock.ts';
 
 /**
  * #663, PR #704's attack: the localStorage lock for browsers without Web
@@ -159,5 +166,20 @@ describe('the localStorage lock', () => {
       },
     };
     expect(await storageLock(deps({ storage: full }))('refresh', async () => 'ran')).toBe('ran');
+  });
+
+  it('refuses, and runs nothing, when told never to run unlocked (#667, the save queue)', async () => {
+    const { deps, storage } = browser();
+    const full = {
+      ...storage,
+      getItem: storage.getItem,
+      setItem: () => {
+        throw new DOMException('full', 'QuotaExceededError');
+      },
+    };
+    const task = vi.fn(async () => 'ran');
+    const locked = storageLock(deps({ storage: full, refuseUnlocked: true }));
+    await expect(locked('dfai-save-queue', task)).rejects.toBeInstanceOf(LockUnavailableError);
+    expect(task).not.toHaveBeenCalled();
   });
 });

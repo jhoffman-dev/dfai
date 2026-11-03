@@ -29,6 +29,22 @@ export interface StorageLockDeps {
   readonly holderId: () => string;
   /** Waits `ms`. setTimeout in the browser. */
   readonly wait: (ms: number) => Promise<void>;
+  /**
+   * Refuses the task, with {@link LockUnavailableError}, when storage will not
+   * hold the lock, instead of running it unlocked: for work two tabs must
+   * never do at once (the save queue, #667). The sign-in's refresh runs.
+   */
+  readonly refuseUnlocked?: boolean;
+}
+
+/** The lock could not be taken, and the task was not run. */
+export class LockUnavailableError extends Error {
+  constructor() {
+    super(
+      'this browser cannot take turns between its tabs here (its storage refused), so saves wait',
+    );
+    this.name = 'LockUnavailableError';
+  }
 }
 
 interface Hold {
@@ -56,6 +72,7 @@ export function storageLock(deps: StorageLockDeps): CrossTabLock {
     try {
       await acquire(deps, key, holder);
     } catch {
+      if (deps.refuseUnlocked === true) throw new LockUnavailableError();
       // Storage refused the write (full, or private browsing): run unlocked, as with no lock at all.
       return task();
     }

@@ -53,8 +53,13 @@ export function memorySaveQueueStore(): SaveQueueStore & {
   readonly held: Map<string, QueuedSave>;
 } {
   const held = new Map<string, QueuedSave>();
+  let closed = false;
   return {
     held,
+    isClosed: async () => closed,
+    setClosed: async (next) => {
+      closed = next;
+    },
     all: async () => [...held.values()].map((save) => structuredClone(save)),
     get: async (key) => {
       const save = held.get(key);

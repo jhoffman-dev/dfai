@@ -62,58 +62,56 @@ function slowFirstWriteGitHub() {
 }
 
 describe('the save queue under the localStorage lock, when a hold lapses mid-send', () => {
-  it.fails(
-    'never marks a save refused that a later turn already landed and carried on from',
-    async () => {
-      let now = 1_000;
-      let ids = 0;
-      const lock = storageLock({
-        storage: memoryStorage(),
-        now: () => now,
-        holderId: () => `tab-${(ids += 1)}`,
-        // Waiting moves the fixed clock on: no real time passes.
-        wait: async (ms) => void (now += ms),
+  it('never marks a save refused that a later turn already landed and carried on from', async () => {
+    let now = 1_000;
+    let ids = 0;
+    const lock = storageLock({
+      storage: memoryStorage(),
+      now: () => now,
+      holderId: () => `tab-${(ids += 1)}`,
+      // Waiting moves the fixed clock on: no real time passes.
+      wait: async (ms) => void (now += ms),
+    });
+    const github = slowFirstWriteGitHub();
+    const store = memorySaveQueueStore();
+    const connection = switchableConnection(false);
+    const channel = sharedQueueChanges();
+    const tab = () =>
+      offlineSaves({
+        fs: github.fs,
+        store,
+        connection,
+        device: 'DFAI web',
+        report: () => {},
+        lock: (task) => lock('dfai-save-queue', task),
+        changes: channel(),
+        account: () => ACCOUNT,
+        vault: () => VAULT,
       });
-      const github = slowFirstWriteGitHub();
-      const store = memorySaveQueueStore();
-      const connection = switchableConnection(false);
-      const channel = sharedQueueChanges();
-      const tab = () =>
-        offlineSaves({
-          fs: github.fs,
-          store,
-          connection,
-          device: 'DFAI web',
-          report: () => {},
-          lock: (task) => lock('dfai-save-queue', task),
-          changes: channel(),
-          account: () => ACCOUNT,
-        });
-      const first = tab();
-      const second = tab();
-      const provisional = await first.fs.writeTextFile({
-        vault: VAULT,
-        path: p('Plan.md'),
-        contents: 'offline',
-        expectedModified: 1,
-      });
-      connection.set(true);
-      const firstSending = first.send(ACCOUNT);
-      await github.firstStarted;
-      // The second tab waits out HOLD_MS, then sends the same save and carries on typing.
-      const carriedOn = await second.fs.writeTextFile({
-        vault: VAULT,
-        path: p('Plan.md'),
-        contents: 'offline, then more',
-        expectedModified: provisional,
-      });
-      expect(now).toBeGreaterThan(1_000 + HOLD_MS);
-      expect(github.note).toEqual({ text: 'offline, then more', modified: carriedOn });
-      github.release();
-      await firstSending;
-      // Observed: the first tab's late refusal overwrites the landed record (same provisional), so
-      // her note shows as refused and her next save from `carriedOn` is refused as stale.
-      expect(store.held.get(queuedSaveKey(VAULT, 'Plan.md'))?.state.kind).not.toBe('refused');
-    },
-  );
+    const first = tab();
+    const second = tab();
+    const provisional = await first.fs.writeTextFile({
+      vault: VAULT,
+      path: p('Plan.md'),
+      contents: 'offline',
+      expectedModified: 1,
+    });
+    connection.set(true);
+    const firstSending = first.send(ACCOUNT);
+    await github.firstStarted;
+    // The second tab waits out HOLD_MS, then sends the same save and carries on typing.
+    const carriedOn = await second.fs.writeTextFile({
+      vault: VAULT,
+      path: p('Plan.md'),
+      contents: 'offline, then more',
+      expectedModified: provisional,
+    });
+    expect(now).toBeGreaterThan(1_000 + HOLD_MS);
+    expect(github.note).toEqual({ text: 'offline, then more', modified: carriedOn });
+    github.release();
+    await firstSending;
+    // Observed: the first tab's late refusal overwrites the landed record (same provisional), so
+    // her note shows as refused and her next save from `carriedOn` is refused as stale.
+    expect(store.held.get(queuedSaveKey(VAULT, 'Plan.md'))?.state.kind).not.toBe('refused');
+  });
 });

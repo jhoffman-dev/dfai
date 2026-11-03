@@ -241,7 +241,7 @@ describe('the web build’s GitHub vault', () => {
   });
 
   it('keeps a save made offline on disk through a reload, and commits it once signed in again', async () => {
-    const { vault, connection, github, reloaded, offline, online } = signedIn();
+    const { vault, connection, github, reloaded, offline, online, device } = signedIn();
     const { fs, store } = vault.ports.vault;
     const where = (await store.read())!.absolutePath;
     const read = await fs.readTextFile(p('Garden plan.md'));
@@ -257,12 +257,11 @@ describe('the web build’s GitHub vault', () => {
     // The shell opens the remembered vault as it starts.
     await after.ports.vault.store.read();
     connection.set(true);
-    // Online, but the session is not back yet: nothing is sent, nothing is lost.
-    await vi.waitFor(() =>
-      expect(after.ports.notes.pendingSaves?.stateOf(where, 'Garden plan.md')).toEqual({
-        kind: 'waiting',
-      }),
-    );
+    // Online, but the session is not back yet: GitHub has not said who this is, so nothing is
+    // sent and the save is not shown as anyone's; it is still stored.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(after.ports.notes.pendingSaves?.stateOf(where, 'Garden plan.md')).toBeNull();
+    expect(await unsentSaves(device)).toBe(1);
     expect(await github.textAt('Garden plan.md')).toBe('# Garden plan\n');
     online();
     await vi.waitFor(async () =>

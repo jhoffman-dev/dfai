@@ -14,15 +14,17 @@ const DEV_TOKEN = 'dev-only-token';
 export async function webVaultOnGitHub(
   page: Page,
   files: Readonly<Record<string, string>>,
-): Promise<{ github: FakeGitHub; unreachable: (cut: boolean) => void }> {
+): Promise<{ github: FakeGitHub; unreachable: (cut: boolean | 'writes') => void }> {
   const github = new FakeGitHub({ files });
   github.tokens.add(DEV_TOKEN);
-  let cut = false;
+  let cut: boolean | 'writes' = false;
   await answerSignIn(page.context());
   await page.context().route('https://api.github.com/**', async (route) => {
     // GitHub out of reach while the browser still says online: a captive Wi-Fi, say.
-    if (cut) return route.abort('internetdisconnected');
     const asked = route.request();
+    // 'writes': GitHub answers who is signed in and what is there, but no commit gets through.
+    if (cut === true || (cut === 'writes' && asked.method() !== 'GET'))
+      return route.abort('internetdisconnected');
     const body = asked.postData();
     const answer = await github.fetch(asked.url(), {
       method: asked.method(),

@@ -14,7 +14,7 @@ import {
   VaultUnreachableError,
   type HostVaultFsPort,
 } from '../vault/ports.ts';
-import { offlineSaves, SAVES_CLOSED } from './offline-saves.ts';
+import { offlineSaves, SAVES_CLOSED, SAVES_WAIT_FOR_ACCOUNT } from './offline-saves.ts';
 
 const VAULT = 'github:mara-quill/larkspur-vault#main';
 const DEVICE = 'DFAI web';
@@ -89,6 +89,7 @@ function device(notes: Record<string, string> = { 'Plan.md': 'v1' }) {
       lock,
       changes: channel(),
       account: () => account,
+      vault: () => VAULT,
     });
   const saves = open();
   return {
@@ -408,6 +409,8 @@ describe('offlineSaves: review #753', () => {
     const writes = remote.fs.writeTextFile;
     let folded: Promise<number> | null = null;
     remote.fs.writeTextFile = async (args) => {
+      // Once: the other tab's fold, made while this tab's send is with GitHub.
+      remote.fs.writeTextFile = writes;
       folded = save(other, 'one two', read.modified);
       return writes(args);
     };
@@ -483,6 +486,7 @@ describe('offlineSaves: review #753', () => {
         lock: (task) => task(),
         changes: channel(),
         account: () => ACCOUNT,
+        vault: () => VAULT,
       });
     const one = open();
     const two = open();
@@ -516,6 +520,7 @@ describe('offlineSaves: review #753', () => {
         lock,
         changes: deaf(),
         account: () => ACCOUNT,
+        vault: () => VAULT,
       });
     const one = open();
     const two = open();
@@ -523,5 +528,44 @@ describe('offlineSaves: review #753', () => {
     await save(one, 'first tab', 1);
     await expect(save(two, 'second tab', 1)).rejects.toThrow(HOST_CHANGED_ON_DISK);
     expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['first tab']);
+  });
+
+  it('takes no save, and shows none waiting, while GitHub has not said who is signed in', async () => {
+    const { saves, connection, store, remote, signedInAs } = device();
+    connection.set(false);
+    await save(saves, 'hers', 1);
+    signedInAs(null);
+    await expect(save(saves, 'whose?', 1)).rejects.toThrow(SAVES_WAIT_FOR_ACCOUNT);
+    expect(saves.pending.stateOf(VAULT, 'Plan.md')).toBeNull();
+    expect((await saves.fs.readTextFile(p('Plan.md'))).text).toBe('v1');
+    expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['hers']);
+    expect(remote.sent).toEqual([]);
+  });
+
+  it('asks before letting saves go at sign-out, in one turn, and keeps them all on a no', async () => {
+    const { saves, connection, store } = device();
+    connection.set(false);
+    await save(saves, 'one', 1);
+    const asked: number[] = [];
+    expect(await saves.closeForSignOut(async (count) => (asked.push(count), false))).toBe('kept');
+    expect(unsentIn(store)).toHaveLength(1);
+    expect(await saves.closeForSignOut(async () => true)).toBe('closed');
+    expect(asked).toEqual([1]);
+    expect(store.held.size).toBe(0);
+    await expect(save(saves, 'after', 1)).rejects.toThrow(SAVES_CLOSED);
+    await saves.reopen();
+    expect(await save(saves, 'next session', 1)).toBeLessThan(0);
+  });
+
+  it('counts typing whose save the device could not store, until a later save of it is', async () => {
+    const { saves, connection, store } = device();
+    connection.set(false);
+    const put = store.put;
+    store.put = async () => Promise.reject(new Error('QuotaExceededError'));
+    await expect(save(saves, 'one', 1)).rejects.toThrow('QuotaExceededError');
+    expect(saves.unkept()).toBe(1);
+    store.put = put;
+    await save(saves, 'one', 1);
+    expect(saves.unkept()).toBe(0);
   });
 });
