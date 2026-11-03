@@ -83,7 +83,16 @@ export default defineConfig({
       // worker of its own and changes what the viewport means (#659). It runs
       // only the `.ipad.spec.ts` smoke, so the gate's shards grow by one test.
       name: 'ipad',
-      use: { ...devices['Desktop Safari'], viewport: { width: 1180, height: 820 }, hasTouch: true },
+      use: {
+        ...devices['Desktop Safari'],
+        viewport: { width: 1180, height: 820 },
+        hasTouch: true,
+        // The web specs answer GitHub and the sign-in function with routes, and WebKit's
+        // routes never reach a page the web build's service worker (#668) controls: its
+        // requests leave through the worker. So no worker here, except where a spec allows
+        // one to test the worker itself (web-install.ipad.spec.ts).
+        serviceWorkers: 'block',
+      },
       testMatch: IPAD_SPECS,
     },
   ],

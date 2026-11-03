@@ -26,6 +26,8 @@ const TYPES = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm',
   '.json': 'application/json; charset=utf-8',
+  // The web app manifest (#668), served as Firebase Hosting serves it.
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.woff2': 'font/woff2',
@@ -51,4 +53,7 @@ createServer(async (request, response) => {
       response.writeHead(404).end('not found');
     }
   }
-}).listen(PORT, () => console.log(`serving ${ROOT} on http://localhost:${PORT}`));
+}).listen(PORT, function () {
+  // The port it got, not the one asked for: `PORT=0` asks for any free one (web-install.ipad.spec.ts).
+  console.log(`serving ${ROOT} on http://localhost:${this.address().port}`);
+});
