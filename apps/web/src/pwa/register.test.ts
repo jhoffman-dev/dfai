@@ -3,6 +3,7 @@ import {
   registerShellWorker,
   WORKER_PATH,
   type InstallingWorker,
+  type UpdateReady,
   type WorkerContainer,
   type WorkerRegistration,
 } from './register.ts';
@@ -44,39 +45,68 @@ function fakeContainer({ controlled }: { controlled: boolean }) {
     registered,
     takeOver: () => controller.forEach((listener) => listener()),
   };
+  /** A newer build's worker found and installing. */
   const update = (worker: InstallingWorker) => {
     registration.installing = worker;
     updates.forEach((listener) => listener());
   };
-  return { workers, registration, update };
+  /** The installing worker done: waiting behind the one in control. */
+  const installed = (worker: ReturnType<typeof fakeWorker>) => {
+    registration.installing = null;
+    registration.waiting = worker;
+    worker.becomes('installed');
+  };
+  /** The waiting worker took over, as it does once told to skip waiting (by this tab or another). */
+  const activated = (worker: ReturnType<typeof fakeWorker>) => {
+    registration.waiting = null;
+    worker.becomes('activating');
+    worker.becomes('activated');
+    workers.takeOver();
+  };
+  return { workers, registration, update, installed, activated };
 }
+
+/** Whether a promise has settled by now: checked after a turn of the microtask queue. */
+async function settled(promise: Promise<unknown>): Promise<boolean> {
+  let done = false;
+  void promise.then(() => (done = true));
+  await Promise.resolve();
+  await Promise.resolve();
+  return done;
+}
+
+const offered = (onUpdateReady: ReturnType<typeof vi.fn>): UpdateReady => {
+  const [offer] = onUpdateReady.mock.calls[0] as [UpdateReady];
+  return offer;
+};
 
 describe('registering the shell worker (#668)', () => {
   it('registers the worker at the site root, so its scope is the whole site', async () => {
     const { workers } = fakeContainer({ controlled: false });
-    await registerShellWorker({ workers, onUpdateReady: vi.fn(), reloadPage: vi.fn() });
+    await registerShellWorker({ workers, onUpdateReady: vi.fn() });
     expect(workers.registered).toEqual([WORKER_PATH]);
     expect(WORKER_PATH).toBe('/sw.js');
   });
 
   it('says Update ready once a newer worker has installed behind the controlling one', async () => {
-    const { workers, update } = fakeContainer({ controlled: true });
+    const { workers, update, installed } = fakeContainer({ controlled: true });
     const onUpdateReady = vi.fn();
-    await registerShellWorker({ workers, onUpdateReady, reloadPage: vi.fn() });
+    await registerShellWorker({ workers, onUpdateReady });
     const next = fakeWorker();
     update(next);
     expect(onUpdateReady).not.toHaveBeenCalled();
-    next.becomes('installed');
+    installed(next);
     expect(onUpdateReady).toHaveBeenCalledTimes(1);
   });
 
   it('says nothing on the first visit, when the first worker installs with no controller', async () => {
-    const { workers, update } = fakeContainer({ controlled: false });
+    const { workers, update, installed, activated } = fakeContainer({ controlled: false });
     const onUpdateReady = vi.fn();
-    await registerShellWorker({ workers, onUpdateReady, reloadPage: vi.fn() });
+    await registerShellWorker({ workers, onUpdateReady });
     const first = fakeWorker();
     update(first);
-    first.becomes('installed');
+    installed(first);
+    activated(first);
     expect(onUpdateReady).not.toHaveBeenCalled();
   });
 
@@ -84,36 +114,60 @@ describe('registering the shell worker (#668)', () => {
     const { workers, registration } = fakeContainer({ controlled: true });
     registration.waiting = fakeWorker('installed');
     const onUpdateReady = vi.fn();
-    await registerShellWorker({ workers, onUpdateReady, reloadPage: vi.fn() });
+    await registerShellWorker({ workers, onUpdateReady });
     expect(onUpdateReady).toHaveBeenCalledTimes(1);
   });
 
-  it('on Reload, tells the waiting worker to take over, and reloads the page once it has', async () => {
-    const { workers, update } = fakeContainer({ controlled: true });
-    const reloadPage = vi.fn();
+  it('on Reload, tells the waiting worker to take over, and is done once it controls the page', async () => {
+    const { workers, update, installed, activated } = fakeContainer({ controlled: true });
     const onUpdateReady = vi.fn();
-    await registerShellWorker({ workers, onUpdateReady, reloadPage });
+    await registerShellWorker({ workers, onUpdateReady });
     const next = fakeWorker();
     update(next);
-    next.becomes('installed');
-    const [offer] = onUpdateReady.mock.calls[0] as [{ reload: () => void }];
-    offer.reload();
+    installed(next);
+    const taking = offered(onUpdateReady).takeOver();
     expect(next.messages).toEqual([SKIP_WAITING]);
-    expect(reloadPage).not.toHaveBeenCalled();
-    workers.takeOver();
-    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(await settled(taking)).toBe(false);
+    activated(next);
+    expect(await settled(taking)).toBe(true);
   });
 
-  it('does not reload when the first worker claims the page as it activates', async () => {
-    const { workers, update } = fakeContainer({ controlled: false });
-    const reloadPage = vi.fn();
-    await registerShellWorker({ workers, onUpdateReady: vi.fn(), reloadPage });
-    const first = fakeWorker();
-    update(first);
-    first.becomes('installed');
-    first.becomes('activated');
-    workers.takeOver();
-    expect(reloadPage).not.toHaveBeenCalled();
+  it('on Reload after another tab already had the worker take over, is done at once: the page is already its', async () => {
+    const { workers, update, installed, activated } = fakeContainer({ controlled: true });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    const next = fakeWorker();
+    update(next);
+    installed(next);
+    // The other tab's Reload: this tab is told of the change, but did not ask for it.
+    activated(next);
+    const taking = offered(onUpdateReady).takeOver();
+    expect(next.messages).toEqual([]);
+    expect(await settled(taking)).toBe(true);
+  });
+
+  it('keeps the one bar through a takeover it did not ask for, so this tab can still reload safely', async () => {
+    const { workers, update, installed, activated } = fakeContainer({ controlled: true });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    const next = fakeWorker();
+    update(next);
+    installed(next);
+    activated(next);
+    // Still the one offer: the bar is up, not doubled, not taken down.
+    expect(onUpdateReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the bar on a takeover it was never offered: the shell under it is no longer the one it loaded', async () => {
+    const { workers, update, activated } = fakeContainer({ controlled: true });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    // Another tab's Reload went through before this tab saw the worker installed.
+    const next = fakeWorker('activating');
+    update(next);
+    activated(next);
+    expect(onUpdateReady).toHaveBeenCalledTimes(1);
+    expect(await settled(offered(onUpdateReady).takeOver())).toBe(true);
   });
 
   it('hands registration failing to the caller, who leaves the app as it was', async () => {
@@ -122,8 +176,8 @@ describe('registering the shell worker (#668)', () => {
       register: () => Promise.reject(new Error('SecurityError: not allowed here')),
       addEventListener: vi.fn(),
     };
-    await expect(
-      registerShellWorker({ workers, onUpdateReady: vi.fn(), reloadPage: vi.fn() }),
-    ).rejects.toThrow('not allowed here');
+    await expect(registerShellWorker({ workers, onUpdateReady: vi.fn() })).rejects.toThrow(
+      'not allowed here',
+    );
   });
 });

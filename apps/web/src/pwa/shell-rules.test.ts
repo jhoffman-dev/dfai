@@ -95,6 +95,18 @@ describe('the shell caches (#668)', () => {
       '/index.html',
     ]);
   });
+
+  it('precaches a file whose name needs encoding as the browser asks for it, so the two match', () => {
+    const list = precacheList(['assets/my file-abc.js', 'assets/ünïcode-def.css']);
+    expect(list).toEqual([
+      '/assets/my%20file-abc.js',
+      '/assets/%C3%BCn%C3%AFcode-def.css',
+      '/index.html',
+    ]);
+    const precached = new Set(list);
+    const asked = { url: `${ORIGIN}/assets/my%20file-abc.js`, method: 'GET', mode: 'cors' };
+    expect(fetchPlan(asked, { origin: ORIGIN, precached })).toBe('shell');
+  });
 });
 
 describe('when the app says Update ready (#668)', () => {
