@@ -121,7 +121,12 @@ test('on the web, a newer build is offered as Update ready, and Reload opens und
   try {
     await page.reload();
     await expect(offer).toBeVisible();
-    await offer.getByRole('button', { name: 'Reload' }).tap();
+    // The reload comes once the panes have written and the worker has taken over, so the page
+    // is waited for as a whole: a read of the caches in between lands in the page going away.
+    await Promise.all([
+      page.waitForEvent('load'),
+      offer.getByRole('button', { name: 'Reload' }).tap(),
+    ]);
 
     await expect(page.getByRole('button', { name: 'Sign in with GitHub' })).toBeVisible();
     await expect.poll(() => shellCaches(page)).toEqual(['dfai-shell-ffffffffffffffff']);
