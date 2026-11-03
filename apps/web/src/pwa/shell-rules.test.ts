@@ -99,8 +99,8 @@ describe('the shell caches (#668)', () => {
   it('precaches a file whose name needs encoding as the browser asks for it, so the two match', () => {
     const list = precacheList(['assets/my file-abc.js', 'assets/ünïcode-def.css']);
     expect(list).toEqual([
-      '/assets/my%20file-abc.js',
       '/assets/%C3%BCn%C3%AFcode-def.css',
+      '/assets/my%20file-abc.js',
       '/index.html',
     ]);
     const precached = new Set(list);

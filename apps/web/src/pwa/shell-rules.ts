@@ -63,11 +63,14 @@ export function fetchPlan(
  * icons, which the browser asks for only to install.
  */
 export function precacheList(builtFiles: readonly string[]): string[] {
-  return builtFiles
-    .filter((file) => file.startsWith('assets/'))
-    .map((file) => `/${file}`)
-    .concat(SHELL_PAGE)
-    .sort();
+  return (
+    builtFiles
+      .filter((file) => file.startsWith('assets/'))
+      // As the browser asks for it: a space or a letter past ASCII in a name reaches `fetchPlan` percent-encoded.
+      .map((file) => new URL(`/${file}`, 'http://precache.invalid').pathname)
+      .concat(SHELL_PAGE)
+      .sort()
+  );
 }
 
 /**

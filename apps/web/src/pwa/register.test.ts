@@ -146,6 +146,21 @@ describe('registering the shell worker (#668)', () => {
     expect(await settled(taking)).toBe(true);
   });
 
+  it('on Reload while the worker another tab asked for is still activating, is done at once, asking nothing more', async () => {
+    const { workers, registration, update, installed } = fakeContainer({ controlled: true });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    const next = fakeWorker();
+    update(next);
+    installed(next);
+    // The other tab's Reload is under way: the worker is activating, not yet in control here.
+    next.becomes('activating');
+    expect(registration.waiting).toBe(next);
+    const taking = offered(onUpdateReady).takeOver();
+    expect(next.messages).toEqual([]);
+    expect(await settled(taking)).toBe(true);
+  });
+
   it('keeps the one bar through a takeover it did not ask for, so this tab can still reload safely', async () => {
     const { workers, update, installed, activated } = fakeContainer({ controlled: true });
     const onUpdateReady = vi.fn();

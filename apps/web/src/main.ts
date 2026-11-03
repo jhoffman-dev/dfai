@@ -43,13 +43,14 @@ startWeb({
 if (__DFAI_WEB_BUILD__ && 'serviceWorker' in navigator) {
   registerShellWorker({
     workers: navigator.serviceWorker,
-    reloadPage: () => window.location.reload(),
-    onUpdateReady: ({ reload }) =>
+    onUpdateReady: ({ takeOver }) =>
       showUpdateReady(window, () =>
         reloadForUpdate({
           writeAutosave: () => session?.closing.close() ?? Promise.resolve([]),
           lock: device.queueLock,
-          takeOver: reload,
+          takeOver,
+          reloadPage: () => window.location.reload(),
+          wait: (ms) => new Promise((done) => window.setTimeout(done, ms)),
           report: reportError,
         }).catch(reportError),
       ),

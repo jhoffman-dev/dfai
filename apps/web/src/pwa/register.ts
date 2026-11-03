@@ -30,52 +30,69 @@ export interface InstallingWorker {
 
 export interface UpdateReady {
   /**
-   * Has the waiting worker take over, then reloads the page under it. The
-   * caller writes what the panes hold first, so nothing typed is lost; the
-   * save queue is on disk and outlives the reload (#667).
+   * Has the newest worker take over, and is done once it controls this
+   * page — at once when it already does, as after another tab's Reload.
+   * The caller then reloads under it; it writes what the panes hold first,
+   * and the save queue is on disk and outlives the reload (#667).
    */
-  readonly reload: () => void;
+  readonly takeOver: () => Promise<void>;
 }
 
 /**
- * Registers the worker and calls `onUpdateReady` once a newer build's
- * worker is installed behind the one running this page — on the first
- * visit, never: nothing is running to update from. Registration failing
- * (an old browser, a private window) leaves the app as it was.
+ * Registers the worker and calls `onUpdateReady`, once, when a newer
+ * build's worker is installed behind the one running this page — on the
+ * first visit, never: nothing is running to update from. A takeover this
+ * tab did not ask for (another tab's Reload) is offered too, since the
+ * shell under the page is no longer the one it loaded, and its old chunks
+ * are gone. Registration failing (an old browser, a private window) leaves
+ * the app as it was.
  */
 export async function registerShellWorker({
   workers,
   onUpdateReady,
-  reloadPage,
 }: {
   workers: WorkerContainer;
   onUpdateReady: (update: UpdateReady) => void;
-  reloadPage: () => void;
 }): Promise<void> {
   const registration = await workers.register(WORKER_PATH);
-  // Only after Reload: the first worker claims the page too, as it activates, and a reload
-  // then would restart the page mid-sign-in and leave the worker's activation waiting on it.
-  let reloadAsked = false;
-  workers.addEventListener('controllerchange', () => {
-    if (reloadAsked) reloadPage();
-  });
-  const offer = (worker: InstallingWorker) => {
-    if (
-      offersUpdate({
-        controlled: workers.controller !== null,
-        waiting: worker.state === 'installed',
-      })
-    )
-      onUpdateReady({
-        reload: () => {
-          reloadAsked = true;
-          worker.postMessage(SKIP_WAITING);
-        },
-      });
+  const takeovers = new Set<() => void>();
+  let offered = false;
+  // The first worker claims the page as it activates: a change of controller, but no update.
+  let wasControlled = workers.controller !== null;
+
+  const takeOver = (): Promise<void> => {
+    const waiting = registration.waiting;
+    // Nothing waiting, or already on its way in (another tab asked): this page is its already.
+    if (waiting === null || waiting.state !== 'installed') return Promise.resolve();
+    return new Promise((done) => {
+      takeovers.add(done);
+      waiting.postMessage(SKIP_WAITING);
+    });
   };
+  const offer = () => {
+    if (offered) return;
+    offered = true;
+    onUpdateReady({ takeOver });
+  };
+
+  workers.addEventListener('controllerchange', () => {
+    takeovers.forEach((done) => done());
+    takeovers.clear();
+    // Not this tab's doing: the bar stays, or goes up, so it can reload safely in its own time.
+    if (wasControlled) offer();
+    wasControlled = true;
+  });
   const watch = (worker: InstallingWorker) =>
-    worker.addEventListener('statechange', () => offer(worker));
-  if (registration.waiting !== null) offer(registration.waiting);
+    worker.addEventListener('statechange', () => {
+      if (
+        offersUpdate({
+          controlled: workers.controller !== null,
+          waiting: worker.state === 'installed',
+        })
+      )
+        offer();
+    });
+  if (registration.waiting !== null && workers.controller !== null) offer();
   if (registration.installing !== null) watch(registration.installing);
   registration.addEventListener('updatefound', () => {
     if (registration.installing !== null) watch(registration.installing);

@@ -90,6 +90,18 @@ test('on the web, the page is installable: a manifest, and a worker that opens t
     await expect(page.getByRole('button', { name: 'Sign in with GitHub' })).toBeVisible();
     expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
   });
+
+  await test.step("but nothing of the sign-in function's: a session's answer is never kept", async () => {
+    // The worker leaves /api/* to the network, so with the server gone it fails as it should —
+    // the data a person's session passes through is never served from the shell cache.
+    const answer = await page.evaluate(() =>
+      fetch('/api/auth/start').then(
+        () => 'answered',
+        () => 'failed',
+      ),
+    );
+    expect(answer).toBe('failed');
+  });
 });
 
 test('on the web, a newer build is offered as Update ready, and Reload opens under it', async ({
