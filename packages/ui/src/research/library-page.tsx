@@ -214,7 +214,9 @@ const LibraryRow = memo(function LibraryRow({
         </span>
       )}
       <span className="research__count">{count}</span>
-      <span className="research__date">{changedOn(entry.modified)}</span>
+      {entry.modified !== null && (
+        <span className="research__date">{changedOn(entry.modified)}</span>
+      )}
     </li>
   );
 });

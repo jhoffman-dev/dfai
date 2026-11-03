@@ -366,6 +366,42 @@
       "calls": {
         "read_text_file": 3
       }
+    },
+    "Open a 2,000-note vault in the browser": {
+      "commits": 0,
+      "renders": 0,
+      "calls": {
+        "index_manifest": 3,
+        "index_open": 3,
+        "index_put": 46,
+        "index_query": 13,
+        "index_stats": 3,
+        "notes_read": 2207,
+        "sql_statements": 62683
+      }
+    },
+    "Open it again in the browser, 3 notes changed": {
+      "commits": 0,
+      "renders": 0,
+      "calls": {
+        "index_manifest": 4,
+        "index_open": 3,
+        "index_put": 3,
+        "index_query": 6,
+        "index_stats": 3,
+        "notes_read": 5,
+        "sql_statements": 143
+      }
+    },
+    "Read Today and the Inbox in the browser": {
+      "commits": 0,
+      "renders": 0,
+      "calls": {
+        "index_open": 3,
+        "index_query": 6,
+        "notes_read": 0,
+        "sql_statements": 36
+      }
     }
   }
 }

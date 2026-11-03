@@ -1,6 +1,12 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { compileInboxCountQuery, compileInboxQuery, type InboxKey } from './inbox.ts';
+import {
+  compileInboxCountQuery,
+  compileInboxQuery,
+  inboxKeyOf,
+  UNDATED_INBOX_KEY,
+  type InboxKey,
+} from './inbox.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
 
 /**
@@ -10,7 +16,8 @@ import { createVaultPath } from '../vault/vault-path.ts';
 interface IndexedNote {
   readonly path: string;
   readonly title: string;
-  readonly modified: number;
+  /** Null when the vault cannot date the note (ADR-0053). */
+  readonly modified: number | null;
   readonly type?: string;
   /** More properties, as `[key, value]`; a null value is a key with nothing in it. */
   readonly props?: readonly (readonly [string, string | null])[];
@@ -23,7 +30,7 @@ interface IndexedNote {
 function inboxIndex(notes: readonly IndexedNote[]) {
   const database = new DatabaseSync(':memory:');
   database.exec(`
-    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, modified INTEGER NOT NULL);
+    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, modified INTEGER);
     CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
       value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
     CREATE TABLE relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
@@ -336,5 +343,44 @@ describe('compileInboxQuery — meetings by their import state (#214)', () => {
   it('says which of them declare the import’s contract, so a waiting one reads as pending', () => {
     const arriving = meetings().find((row) => row['title'] === 'Arriving');
     expect(arriving).toMatchObject({ importStamped: 0, importDeclared: 1 });
+  });
+});
+
+describe('compileInboxQuery — notes the index cannot date (ADR-0053)', () => {
+  const undated = inboxIndex([
+    { path: 'Inbox/Dated.md', title: 'Dated', modified: 4 },
+    { path: 'Inbox/B undated.md', title: 'B undated', modified: null },
+    { path: 'Inbox/A undated.md', title: 'A undated', modified: null },
+    { path: 'Inbox/C undated.md', title: 'C undated', modified: null },
+  ]);
+  const paths = (rows: readonly Record<string, unknown>[]) => rows.map((row) => row['path']);
+
+  it('lists them after every dated note, by path', () => {
+    expect(paths(undated())).toEqual([
+      'Inbox/Dated.md',
+      'Inbox/A undated.md',
+      'Inbox/B undated.md',
+      'Inbox/C undated.md',
+    ]);
+  });
+
+  it('keys one as undated, never as the epoch, so a page reads on past it', () => {
+    const last = inboxKeyOf({ path: createVaultPath('Inbox/A undated.md'), modified: null });
+    expect(last.modified).toBe(UNDATED_INBOX_KEY);
+    expect(paths(undated.page(10, { after: last }))).toEqual([
+      'Inbox/B undated.md',
+      'Inbox/C undated.md',
+    ]);
+    expect(
+      paths(undated.page(10, { after: { modified: 4, path: createVaultPath('Inbox/Dated.md') } })),
+    ).toHaveLength(3);
+    expect(paths(undated.page(10, { through: last }))).toEqual([
+      'Inbox/Dated.md',
+      'Inbox/A undated.md',
+    ]);
+  });
+
+  it('keys a dated row by its time', () => {
+    expect(inboxKeyOf({ path: createVaultPath('Inbox/Dated.md'), modified: 4 }).modified).toBe(4);
   });
 });

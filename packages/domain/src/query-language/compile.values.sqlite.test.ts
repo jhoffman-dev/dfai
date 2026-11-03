@@ -35,7 +35,7 @@ const NOTES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
 const database = new DatabaseSync(':memory:');
 database.exec(`
   CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                      modified INTEGER NOT NULL, size INTEGER NOT NULL);
+                      modified INTEGER, size INTEGER NOT NULL);
   CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
                       value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
   CREATE TABLE relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL,
@@ -171,7 +171,7 @@ describe("a type's view reads a nested list in written order", () => {
     const nested = new DatabaseSync(':memory:');
     nested.exec(`
       CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                          modified INTEGER NOT NULL, size INTEGER NOT NULL, progress INTEGER);
+                          modified INTEGER, size INTEGER NOT NULL, progress INTEGER);
       CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
                           value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);`);
     nested.prepare("INSERT INTO files VALUES ('tasks/Nested.md', 'Nested', '', 0, 1, NULL)").run();

@@ -7,7 +7,8 @@ import { compileReviewDoneQuery, reviewSource } from './review-query.ts';
 
 interface Fixture {
   readonly frontmatter: Readonly<Record<string, unknown>>;
-  readonly modified?: number;
+  /** Null for a note the index cannot date (ADR-0053); 1 when left out. */
+  readonly modified?: number | null;
   /** Each relation the note holds: key, the target as written, and the note it resolved to. */
   readonly relations?: readonly { key: string; name: string; dst: string | null }[];
 }
@@ -16,7 +17,7 @@ function indexOf(notes: Readonly<Record<string, Fixture>>) {
   const database = new DatabaseSync(':memory:');
   database.exec(`
     CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                        modified INTEGER NOT NULL, size INTEGER NOT NULL);
+                        modified INTEGER, size INTEGER NOT NULL);
     CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
                         value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
     CREATE TABLE relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL,
@@ -25,7 +26,7 @@ function indexOf(notes: Readonly<Record<string, Fixture>>) {
     const title = path.replace(/^.*\//, '').replace(/\.md$/, '');
     database
       .prepare('INSERT INTO files VALUES (?, ?, ?, ?, 0)')
-      .run(path, title, '', note.modified ?? 1);
+      .run(path, title, '', note.modified === undefined ? 1 : note.modified);
     for (const row of indexablePropertiesOf(note.frontmatter)) {
       database
         .prepare('INSERT INTO props VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -77,6 +78,25 @@ describe('the Friday review’s wins', () => {
       .prepare(sql)
       .all(...parameters) as Record<string, unknown>[];
     expect(rows.map(reviewSource).map(({ path }) => path)).toEqual(['Tasks/No day.md']);
+  });
+
+  it('counts an undated task only by its completed day: unknown is never "changed this week" (ADR-0053)', () => {
+    const { sql, parameters } = compileReviewDoneQuery(NOW - 7 * DAY);
+    const rows = indexOf({
+      'Tasks/Undated, no day.md': {
+        frontmatter: { type: 'task', status: 'archive' },
+        modified: null,
+      },
+      'Tasks/Undated, done Thursday.md': {
+        frontmatter: { type: 'task', status: 'archive', completed: '2026-10-22' },
+        modified: null,
+      },
+    })
+      .prepare(sql)
+      .all(...parameters) as Record<string, unknown>[];
+    expect(rows.map(reviewSource).map(({ path }) => path)).toEqual([
+      'Tasks/Undated, done Thursday.md',
+    ]);
   });
 
   it('stops at the end of the week it is asked for, so no win is counted in two reviews', () => {

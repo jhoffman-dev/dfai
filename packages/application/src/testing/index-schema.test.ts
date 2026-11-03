@@ -42,6 +42,23 @@ describe('the index schema has one source', () => {
     );
   });
 
+  it("is the file the browser's index makes its tables from, imported, never copied (#666)", () => {
+    const web = read('packages/adapters/src/web-index/web-index-schema.ts');
+    expect(web).toContain(
+      "import INDEX_SCHEMA from '../../../../apps/desktop/src-tauri/src/index_schema.sql?raw';",
+    );
+    expect(web).toContain('webIndexShape(INDEX_SCHEMA)');
+    const shape = read('packages/adapters/src/web-index/web-index-shape.ts');
+    expect(shape).toContain('const schema = `${hostSchema}\\n${MANIFEST_TABLE}`;');
+    // Its one table of its own, the manifest, is not one the host has, so no copy of the host's.
+    expect(shape).toContain('CREATE TABLE IF NOT EXISTS manifest');
+    expect(CANONICAL.tables.has('manifest')).toBe(false);
+    const copies = sources('packages/adapters/src/web-index').flatMap((path) =>
+      inlineCopies(readFileSync(path, 'utf8')),
+    );
+    expect(copies).toEqual([]);
+  });
+
   it('holds every inline copy in the tests to it: no column of another type, and no index of another shape', () => {
     const copies = ['packages', 'apps/desktop/src', 'apps/mcp/src', 'e2e'].flatMap((folder) =>
       sources(folder).flatMap((path) =>

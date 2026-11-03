@@ -31,8 +31,12 @@ export interface LinkCandidate {
 /** How often, and how lately, notes link a note through a relation. */
 export interface LinkUse {
   readonly count: number;
-  /** When the latest note linking it last changed, as the index stores it: larger is later. */
-  readonly last: number;
+  /**
+   * When the latest note linking it last changed, as the index stores it:
+   * larger is later. Null when the index can date none of them (ADR-0053),
+   * which ranks after every dated use.
+   */
+  readonly last: number | null;
 }
 
 /** What a ranking knows beyond titles, by note path: the note's aliases, and its use. */

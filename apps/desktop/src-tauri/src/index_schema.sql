@@ -3,12 +3,17 @@
 -- tests read it too, so no copy can drift: `index-schema.test.ts` fails if one does.
 -- A change of shape here also bumps SCHEMA_VERSION in index.rs, so an index of
 -- the old shape is thrown away and rebuilt rather than read wrong.
+--
+-- `files.modified` is when the file was written (`writtenAt`, ADR-0053), NULL
+-- when its vault cannot tell: the browser's index (#666) over the GitHub vault.
+-- The desktop always knows, so its index of the NOT NULL shape answers the
+-- same and is kept: that change needed no new SCHEMA_VERSION.
 
             CREATE TABLE IF NOT EXISTS files (
                 path     TEXT PRIMARY KEY,
                 title    TEXT NOT NULL,
                 summary  TEXT NOT NULL DEFAULT '',
-                modified INTEGER NOT NULL,
+                modified INTEGER,
                 size     INTEGER NOT NULL,
                 digest   TEXT NOT NULL DEFAULT '',
                 note_type TEXT,

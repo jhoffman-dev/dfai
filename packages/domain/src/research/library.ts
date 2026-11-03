@@ -25,8 +25,11 @@ export interface LibraryEntry {
   /** Null for a kind this build does not know, which is still listed. */
   readonly kind: SourceKind | null;
   readonly highlights: number;
-  /** When the note last changed: the latest a highlight was taken or a comment written. */
-  readonly modified: number;
+  /**
+   * When the note last changed: the latest a highlight was taken or a comment
+   * written. Null when the index cannot date it (ADR-0053).
+   */
+  readonly modified: number | null;
   /** Its tags, by key, each once. */
   readonly tags: readonly string[];
   readonly projects: readonly LibraryProject[];
@@ -104,12 +107,15 @@ export function sortLibrary(entries: readonly LibraryEntry[], sort: LibrarySort)
   const byTitle = (left: LibraryEntry, right: LibraryEntry) =>
     byName(left.title, right.title) || byName(left.path, right.path);
   /** A time the note never had (NaN) is the epoch, so the order stays a total one. */
-  const timeOf = (entry: LibraryEntry) => (Number.isFinite(entry.modified) ? entry.modified : 0);
+  const timeOf = ({ modified }: LibraryEntry) =>
+    modified !== null && Number.isFinite(modified) ? modified : 0;
   return [...entries].sort((left, right) => {
     if (sort.key === 'author') {
       if ((left.author === null) !== (right.author === null)) return left.author === null ? 1 : -1;
       return sign * byName(left.author ?? '', right.author ?? '') || byTitle(left, right);
     }
+    // Unknown is no time at all: after every dated note, whichever way the sort runs.
+    if (sort.key === 'modified' && isDated(left) !== isDated(right)) return isDated(left) ? -1 : 1;
     const order =
       sort.key === 'title'
         ? byTitle(left, right)
@@ -119,6 +125,9 @@ export function sortLibrary(entries: readonly LibraryEntry[], sort: LibrarySort)
     return sign * order || byTitle(left, right);
   });
 }
+
+/** Whether the index could date the note (ADR-0053). */
+const isDated = (entry: LibraryEntry) => entry.modified !== null;
 
 /** The Library as shown: filtered, then sorted. */
 export function libraryShown(

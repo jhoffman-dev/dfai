@@ -43,7 +43,7 @@ const { remarkMarkdown } = await import('../markdown/markdown-port.ts');
 
 const FILES_TABLE = `
   CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, title TEXT NOT NULL,
-    summary TEXT NOT NULL DEFAULT '', modified INTEGER NOT NULL, size INTEGER NOT NULL,
+    summary TEXT NOT NULL DEFAULT '', modified INTEGER, size INTEGER NOT NULL,
     digest TEXT NOT NULL DEFAULT '', note_type TEXT);
   CREATE TABLE IF NOT EXISTS relations (src TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL,
     target TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', dst TEXT);

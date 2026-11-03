@@ -42,6 +42,8 @@ export function workspaceAliases(): Record<string, string> {
     '@dfai/adapters/pdf': source('adapters/src/pdf/index.ts'),
     // The same for foliate-js: it stays in the EPUB reader's chunk, loaded the first time a book opens.
     '@dfai/adapters/epub': source('adapters/src/epub/index.ts'),
+    // Only the web's composition root imports it: SQLite's WebAssembly stays out of the desktop (#666).
+    '@dfai/adapters/web-index': source('adapters/src/web-index/index.ts'),
     // Only the desktop's composition root imports it (#656).
     '@dfai/adapters/tauri': source('adapters/src/tauri/index.ts'),
     '@dfai/adapters': pkg('adapters'),

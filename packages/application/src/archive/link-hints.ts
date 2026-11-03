@@ -60,7 +60,7 @@ export async function readLinkHints({
     const count = row[at.uses];
     const last = row[at.last];
     if (typeof count === 'number')
-      uses.set(path, { count, last: typeof last === 'number' ? last : 0 });
+      uses.set(path, { count, last: typeof last === 'number' ? last : null });
   }
   return { notes, hints: { aliases, uses } };
 }

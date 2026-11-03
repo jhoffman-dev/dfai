@@ -10,8 +10,11 @@ export interface HighlightEntry {
   readonly path: VaultPath;
   /** That note's title. */
   readonly source: string;
-  /** When that note last changed: a highlight keeps no day of its own (ADR-0043). */
-  readonly modified: number;
+  /**
+   * When that note last changed: a highlight keeps no day of its own
+   * (ADR-0043). Null when the index cannot date it (ADR-0053).
+   */
+  readonly modified: number | null;
   /** Its place among its note's highlights, from 0: what tells it from another with the same id. */
   readonly index: number;
   /** Its block id, `^id`, which a link or an embed names it by. */
@@ -39,8 +42,9 @@ export interface SourceHighlights {
 /** Paths in the index's order: by code unit, as SQLite's `ORDER BY path` sorts them. */
 const inPathOrder = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
 
-/** A time the note never had (NaN) is the epoch, so the order stays a total one. */
-const timeOf = (source: LibraryEntry) => (Number.isFinite(source.modified) ? source.modified : 0);
+/** A time the note never had (NaN), or one the index cannot tell, is the epoch: the order stays a total one. */
+const timeOf = ({ modified }: LibraryEntry) =>
+  modified !== null && Number.isFinite(modified) ? modified : 0;
 
 /**
  * `groups` as All highlights lists them: the most recently changed sources
@@ -131,7 +135,8 @@ export function filterHighlights(
       (filter.colors.length === 0 || filter.colors.includes(highlightColor(entry.color))) &&
       (filter.tag === null || usesTag(entry.tags, filter.tag)) &&
       (filter.comment === 'any' || hasComment(entry) === (filter.comment === 'with')) &&
-      (since === null || entry.modified >= since),
+      // A note that cannot be dated was never changed since anything (ADR-0053).
+      (since === null || (entry.modified !== null && entry.modified >= since)),
   );
 }
 

@@ -18,7 +18,7 @@ const hints = ({
   uses = {},
 }: {
   aliases?: Record<string, readonly string[]>;
-  uses?: Record<string, { count: number; last: number }>;
+  uses?: Record<string, { count: number; last: number | null }>;
 }): LinkHints => ({
   aliases: new Map(Object.entries(aliases)),
   uses: new Map(Object.entries(uses)),
@@ -112,6 +112,17 @@ describe('rankLinkChoices', () => {
       },
     });
     expect(titles('a', choices, given)).toEqual(['Apex', 'Atlas', 'Alpha']);
+  });
+
+  it('ranks a use the index cannot date after every dated one, never first (ADR-0053)', () => {
+    const choices = [note('Alpha'), note('Apex'), note('Atlas')];
+    const given = hints({
+      uses: {
+        'projects/Alpha.md': { count: 50, last: null },
+        'projects/Apex.md': { count: 1, last: 100 },
+      },
+    });
+    expect(titles('a', choices, given)).toEqual(['Apex', 'Alpha', 'Atlas']);
   });
 
   it('never lets use outrank a better match', () => {

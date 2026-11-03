@@ -11,6 +11,8 @@ import {
   followUpRowsOf,
   sourcesOf,
 } from './assistant-queries.ts';
+import { followUpTask } from './assistant-items.ts';
+import { linkingAmong } from './citation.ts';
 
 /**
  * The assistant's statements run for real against SQLite, over the index's
@@ -20,7 +22,8 @@ import {
 interface Note {
   readonly path: string;
   /** When its file last changed, in milliseconds. */
-  readonly modified?: number;
+  /** Null for a note the index cannot date (ADR-0053); 1 when left out. */
+  readonly modified?: number | null;
   /** Ids of its blocks. */
   readonly blocks?: readonly string[];
   readonly props?: Record<string, string>;
@@ -34,7 +37,7 @@ interface Note {
 function assistantIndex(notes: readonly Note[]) {
   const database = new DatabaseSync(':memory:');
   database.exec(`
-    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, modified INTEGER NOT NULL);
+    CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, modified INTEGER);
     CREATE TABLE blocks (path TEXT NOT NULL, idx INTEGER NOT NULL, id TEXT NOT NULL, text TEXT NOT NULL);
     CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
       value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
@@ -46,7 +49,11 @@ function assistantIndex(notes: readonly Note[]) {
   for (const note of notes) {
     database
       .prepare('INSERT INTO files VALUES (?, ?, ?)')
-      .run(note.path, note.path.replace(/^.*\//, '').replace(/\.md$/, ''), note.modified ?? 1);
+      .run(
+        note.path,
+        note.path.replace(/^.*\//, '').replace(/\.md$/, ''),
+        note.modified === undefined ? 1 : note.modified,
+      );
     for (const [at, id] of (note.blocks ?? []).entries()) {
       database.prepare('INSERT INTO blocks VALUES (?, ?, ?, ?)').run(note.path, at, id, 'text');
     }
@@ -252,6 +259,26 @@ describe('compileFollowUpsQuery', () => {
       status: 'waiting',
       waitingOn: 'Tobias at the bank',
     });
+  });
+
+  it('gives a waiting follow-up the index cannot date no waiting days, never a day count (ADR-0053)', () => {
+    const tobias = 'Tasks/Tobias to send it.md';
+    const undated = assistantIndex(
+      withBodyLink.map((note) => (note.path === tobias ? { ...note, modified: null } : note)),
+    );
+    const [row] = followUpRowsOf(undated(compile({ entity: TOBIAS })) ?? []).filter(
+      (each) => each.path === tobias,
+    );
+    expect(row?.modified).toBeNull();
+    const context = {
+      ...linkingAmong([createVaultPath(tobias)]),
+      sources: new Map<string, string>(),
+      hasBlock: () => false,
+      day: '2026-10-12',
+    };
+    expect(row && followUpTask(row, context).waitingDays).toBeNull();
+    const dated = rows({ entity: TOBIAS }).find((each) => each.path === tobias);
+    expect(dated && followUpTask(dated, context).waitingDays).toBeGreaterThan(0);
   });
 
   it('keeps a finished one when the Task type has no finished status', () => {

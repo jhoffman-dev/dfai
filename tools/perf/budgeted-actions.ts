@@ -1,5 +1,12 @@
 import type { RunTolerance } from './work-budgets.ts';
 
+/** The browser index's actions (#666), done in Node with no page: `web-index-work.ts`. */
+export const WEB_INDEX_ACTIONS = [
+  'Open a 2,000-note vault in the browser',
+  'Open it again in the browser, 3 notes changed',
+  'Read Today and the Inbox in the browser',
+] as const;
+
 /**
  * Every action the work budgets measure, in the order `budgets.spec.ts` does
  * them: each starts from where the one before left the app.
@@ -53,6 +60,9 @@ export const BUDGETED_ACTIONS = [
   'Open a note with code in 5 languages',
   // Last on the main fixture: once on, the cache of meanings follows every later write (P32-02).
   '⌘K by meaning + 5 keys',
+  // The browser's index (#666), on the 2,000-note fixture as the GitHub vault lists it: SQLite's
+  // WebAssembly build, counted in notes read, index calls and SQL statements (web-index-work.ts).
+  ...WEB_INDEX_ACTIONS,
 ] as const;
 
 export type BudgetedAction = (typeof BUDGETED_ACTIONS)[number];
@@ -72,7 +82,7 @@ export const RUN_TOLERANCE: Partial<Record<BudgetedAction, RunTolerance>> = {
  * The vaults the actions are done on, in the order a run does them: each a
  * pass on a fresh page (`budgets.spec.ts`).
  */
-export const BUDGET_FIXTURES = ['main', 'research', 'long-note', 'code-note'] as const;
+export const BUDGET_FIXTURES = ['main', 'research', 'long-note', 'code-note', 'web'] as const;
 
 export type BudgetFixture = (typeof BUDGET_FIXTURES)[number];
 
@@ -81,6 +91,7 @@ const OFF_MAIN: Readonly<Record<Exclude<BudgetFixture, 'main'>, readonly Budgete
   research: ['Open the Library (2,000 sources)', 'Open All highlights (20,000)'],
   'long-note': ['Open a 500-highlight literature note', 'Save a comment in a 500-highlight note'],
   'code-note': ['Open a note with code in 5 languages'],
+  web: WEB_INDEX_ACTIONS,
 };
 
 /** The actions done on `fixtures`, in `BUDGETED_ACTIONS`' order. */

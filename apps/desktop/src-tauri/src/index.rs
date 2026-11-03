@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+use rusqlite::limits::Limit;
 use rusqlite::{params, Connection, OpenFlags, Statement};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -352,6 +353,11 @@ fn open_for_queries(root: &Path) -> Result<Connection, String> {
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|error| format!("cannot open the index for reading: {error}"))?;
+    // One cheap statement can build a value of a gigabyte before a row is ever
+    // counted (#747); SQLite refuses to make one longer than the result cap instead.
+    connection
+        .set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_QUERY_BYTES as i32)
+        .map_err(|error| format!("cannot limit the query: {error}"))?;
     // Returning true aborts, so this stops any query that exceeds the budget.
     // A failure to install it is not worth refusing to query over: the row cap
     // and the read-only connection are the guarantees that matter.
@@ -1156,6 +1162,19 @@ fn prepare_read<'c>(connection: &'c Connection, sql: &str) -> Result<Statement<'
     Ok(statement)
 }
 
+/// A value past the length limit is a result too large, said as the row cap's
+/// own refusal says it; any other failure as SQLite says it.
+fn too_large_or_text(error: rusqlite::Error) -> String {
+    match &error {
+        rusqlite::Error::SqliteFailure(failure, _)
+            if failure.code == rusqlite::ErrorCode::TooBig =>
+        {
+            QUERY_TOO_LARGE.into()
+        }
+        _ => error.to_string(),
+    }
+}
+
 pub(crate) fn run_query(
     connection: &Connection,
     sql: &str,
@@ -1196,12 +1215,12 @@ pub(crate) fn run_query(
         .query(rusqlite::params_from_iter(
             bound.iter().map(|value| value.as_ref()),
         ))
-        .map_err(|error| error.to_string())?;
+        .map_err(too_large_or_text)?;
 
     let mut out = Vec::new();
     let mut truncated = false;
     let mut bytes: usize = 0;
-    while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+    while let Some(row) = rows.next().map_err(too_large_or_text)? {
         if out.len() >= MAX_QUERY_ROWS {
             truncated = true;
             break;
@@ -2914,6 +2933,21 @@ mod tests {
         connection
             .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
             .unwrap()
+    }
+
+    #[test]
+    fn a_query_cannot_build_a_value_past_the_result_cap() {
+        // #747: one cheap statement could build a gigabyte before a row was counted.
+        let dir = tempfile::tempdir().unwrap();
+        open_database(dir.path()).unwrap();
+        let reader = open_for_queries(dir.path()).unwrap();
+        let sql = format!(
+            "SELECT length(printf('%.*c', {}, 'x'))",
+            MAX_QUERY_BYTES + 1
+        );
+        assert_eq!(run_query(&reader, &sql, &[]).unwrap_err(), QUERY_TOO_LARGE);
+        let fits = run_query(&reader, "SELECT length(printf('%.*c', 1000, 'x'))", &[]).unwrap();
+        assert_eq!(fits.rows, vec![vec![serde_json::json!(1000)]]);
     }
 
     #[test]

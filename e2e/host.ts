@@ -192,7 +192,7 @@ function filesAndProps(notes: Iterable<StoredNote>): DatabaseSync {
   const database = new DatabaseSync(':memory:');
   database.exec(`
     CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                        modified INTEGER NOT NULL, size INTEGER NOT NULL, progress INTEGER);
+                        modified INTEGER, size INTEGER NOT NULL, progress INTEGER);
     CREATE TABLE props (path TEXT NOT NULL, key TEXT NOT NULL, idx INTEGER NOT NULL DEFAULT 0,
                         value_text TEXT, value_num REAL, value_date TEXT, value_json TEXT);
     -- As index.rs indexes them: a note's own rows are sought, not scanned.
@@ -415,7 +415,7 @@ function runTagQuery(
   const database = new DatabaseSync(':memory:');
   database.exec(`
     CREATE TABLE files (path TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
-                        modified INTEGER NOT NULL, size INTEGER NOT NULL);
+                        modified INTEGER, size INTEGER NOT NULL);
     CREATE TABLE tags (path TEXT NOT NULL, idx INTEGER NOT NULL, tag TEXT NOT NULL,
                        name TEXT NOT NULL);`);
   const file = database.prepare('INSERT INTO files VALUES (?, ?, ?, ?, ?)');

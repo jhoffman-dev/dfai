@@ -106,6 +106,14 @@ describe('filterHighlights', () => {
     ]);
   });
 
+  it('leaves out a highlight whose note cannot be dated from any span: never changed since (ADR-0053)', () => {
+    const undated = [highlight('dated'), highlight('undated', { modified: null })];
+    expect(
+      ids(filterHighlights(undated, { ...NO_HIGHLIGHT_FILTER, changed: 'week' }, NOW)),
+    ).toEqual(['dated']);
+    expect(ids(filterHighlights(undated, NO_HIGHLIGHT_FILTER, NOW))).toEqual(['dated', 'undated']);
+  });
+
   it('holds every filter at once', () => {
     expect(
       shown({ source: ART, colors: ['yellow'], tag: 'strategy', comment: 'with', changed: 'week' }),

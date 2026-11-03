@@ -10,11 +10,13 @@
     "./pdf": "./src/pdf/index.ts",
     "./epub": "./src/epub/index.ts",
     "./tauri": "./src/tauri/index.ts",
+    "./web-index": "./src/web-index/index.ts",
     "./testing/github": "./src/testing/github.ts"
   },
   "dependencies": {
     "@dfai/application": "workspace:*",
     "@dfai/domain": "workspace:*",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "@tauri-apps/api": "^2.11.1",
     "foliate-js": "1.0.1",
     "mdast-util-gfm": "^3.1.0",
