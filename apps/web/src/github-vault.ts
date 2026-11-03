@@ -12,6 +12,7 @@ import {
 } from '@dfai/adapters';
 import { webIndex, type WebIndex } from '@dfai/adapters/web-index';
 import {
+  adoptAccount,
   cachedVaultFs,
   keptReads,
   offlineSaves,
@@ -66,6 +67,12 @@ const openVaultOf = (remembered: WebDevice['remembered']) => {
   return where === null ? null : gitHubVaultKey(where);
 };
 
+/** Whose kept reads are answered: the remembered account and its vault, or no one's. */
+const accountOf = (remembered: WebDevice['remembered']) => {
+  const where = remembered.read();
+  return where === null ? null : `${where.login}\u0001${gitHubVaultKey(where)}`;
+};
+
 /**
  * The signed-in vault (#667): the GitHub repository (#664) through the read
  * cache, and the browser's index (#666). The answer's `stop` ends the
@@ -78,8 +85,25 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
   const clock = { now: () => Date.now() };
   const report = (error: unknown) => page.reportError(error);
   const api = gitHubApi({ fetch: (input, init) => page.fetch(input, init), token, clock });
-  const github = gitHubVaultPorts({ api, remembered: device.remembered });
-  const kept = keptReads({ store: device.cache, clock, capBytes: READ_CACHE_CAP_BYTES, report });
+  const github = gitHubVaultPorts({
+    api,
+    remembered: device.remembered,
+    // Another login than the one the device's data is for: that data goes before anything opens.
+    beforeOpen: async (previous, login) => {
+      await adoptAccount({
+        previous: previous.login,
+        signedInAs: login,
+        forgetPrevious: () => forgetEverything(device),
+      });
+    },
+  });
+  const kept = keptReads({
+    store: device.cache,
+    clock,
+    capBytes: READ_CACHE_CAP_BYTES,
+    report,
+    scope: () => accountOf(device.remembered),
+  });
   const saves = offlineSaves({
     fs: cachedVaultFs({ fs: github.fs, kept, connection }),
     store: device.saveQueue,
@@ -88,12 +112,15 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
     report,
   });
   const { fs } = saves;
-  // Back online, or signed in again after opening offline: what waits is sent, then kept notes caught up.
+  // Back online, or signed in again after opening offline: what waits is sent, then kept notes
+  // caught up — only once the store has checked who is signed in, never on the previous account's vault.
   const caughtUp = () => {
-    if (device.remembered.read() === null) return;
-    saves
-      .send()
-      .then(() => revalidateKeptNotes({ fs: github.fs, kept, connection }))
+    github.opened
+      .then(async () => {
+        if (device.remembered.read() === null) return;
+        await saves.send();
+        await revalidateKeptNotes({ fs: github.fs, kept, connection });
+      })
       .catch(report);
   };
   const stopListening = connection.onChange((online) => {
@@ -153,6 +180,13 @@ export function askToLoseSaves(page: Pick<Window, 'confirm'>) {
       `${count === 1 ? 'A save has' : `${count} saves have`} not reached GitHub yet. ` +
         `Signing out deletes ${count === 1 ? 'it' : 'them'} from this device for good. Sign out anyway?`,
     );
+}
+
+/** Forgets everything the device kept, and fails if any of it is left. */
+async function forgetEverything(device: WebDevice): Promise<void> {
+  const settled = await Promise.allSettled(forgettingDevice(device).map((step) => step()));
+  const failed = settled.find((result) => result.status === 'rejected');
+  if (failed !== undefined) throw (failed as PromiseRejectedResult).reason;
 }
 
 /** Everything the device kept of the vault, each forgotten in its own step at sign-out. */

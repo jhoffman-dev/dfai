@@ -136,6 +136,8 @@ export class FakeGitHub {
   readonly where: GitHubVaultRepository;
   readonly received: Received[] = [];
   readonly tokens = new Set([FAKE_TOKEN]);
+  /** Who each token signs in as, for `GET /user`; the vault's owner when not named. */
+  readonly logins = new Map<string, string>();
   readonly objects: GitObjects;
   private readonly interceptions: Interception[] = [];
   private readonly reached: readonly GitHubVaultRepository[];
@@ -305,7 +307,11 @@ export class FakeGitHub {
     return this.routeUser(request);
   }
 
-  private routeUser({ method, path }: Received): Answer {
+  private routeUser({ method, path, headers }: Received): Answer {
+    if (method === 'GET' && path === '/user') {
+      const token = headers.get('Authorization')?.replace(/^Bearer /, '') ?? '';
+      return json(200, { login: this.logins.get(token) ?? this.where.owner });
+    }
     if (method === 'GET' && path === '/user/installations')
       return json(200, { total_count: 1, installations: [{ id: 7 }] });
     if (method === 'GET' && /^\/user\/installations\/7\/repositories(\?|$)/.test(path))

@@ -54,15 +54,17 @@ function signedIn() {
   };
   let state: AuthState = { status: 'signed-in' };
   const listeners = new Set<() => void>();
-  const auth = {
-    state: () => state,
-    subscribe: (listener: () => void) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    tokenForRequest: async () => [...github.tokens][0]!,
-    rejected: async () => {},
-  } as unknown as AuthPort;
+  const authAs = (token: string) =>
+    ({
+      state: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      tokenForRequest: async () => token,
+      rejected: async () => {},
+    }) as unknown as AuthPort;
+  const auth = authAs([...github.tokens][0]!);
   const vault = gitHubWebVault({ auth, device });
   return {
     github,
@@ -70,6 +72,13 @@ function signedIn() {
     device,
     vault,
     forgotten,
+    /** Another person signs in on this device: their own token, their own login. */
+    sessionAs: (login: string) => {
+      const token = `ghu_${login}`;
+      github.tokens.add(token);
+      github.logins.set(token, login);
+      return gitHubWebVault({ auth: authAs(token), device });
+    },
     offline: () => (state = { status: 'signed-out', reason: 'network' }),
     /** Signed in again, as the session is once back online. */
     online: () => {
@@ -82,6 +91,24 @@ function signedIn() {
 }
 
 describe('the web build’s GitHub vault', () => {
+  it('forgets the last account’s notes before another account opens, and never shows them', async () => {
+    const { vault, device, connection, forgotten, sessionAs } = signedIn();
+    await vault.ports.vault.store.read();
+    await vault.ports.vault.fs.readTextFile(p('Garden plan.md'));
+    await vi.waitFor(async () => expect(await device.cache.facts()).not.toEqual([]));
+    // Her session ended on GitHub, so no sign-out ran here; someone else signs in.
+    vault.stop();
+    const other = sessionAs('tobias-fenn');
+    await other.ports.vault.store.read();
+    expect(await device.cache.facts()).toEqual([]);
+    expect(forgotten).toEqual([gitHubVaultKey(FAKE_VAULT)]);
+    expect(device.remembered.read()?.login).toBe('tobias-fenn');
+    connection.set(false);
+    await expect(other.ports.vault.fs.readTextFile(p('Garden plan.md'))).rejects.toThrow(
+      NOTE_NEEDS_CONNECTION,
+    );
+  });
+
   it('opens the vault found at sign-in, and a note read before with no network', async () => {
     const { vault, connection } = signedIn();
     const { fs, store } = vault.ports.vault;
@@ -126,6 +153,8 @@ describe('the web build’s GitHub vault', () => {
     vault.stop();
     offline();
     const after = reloaded();
+    // The shell opens the remembered vault as it starts.
+    await after.ports.vault.store.read();
     connection.set(true);
     // Online, but the session is not back yet: nothing is sent, nothing is lost.
     await vi.waitFor(() =>

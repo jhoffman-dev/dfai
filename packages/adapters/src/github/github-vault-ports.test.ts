@@ -18,11 +18,24 @@ function memoryStorage(): Storage {
   } as Storage;
 }
 
-function ports(storage = memoryStorage()) {
-  const github = new FakeGitHub({ files: { 'Plan.md': '# Plan\n' } });
+function ports(
+  storage = memoryStorage(),
+  github = new FakeGitHub({ files: { 'Plan.md': '# Plan\n' } }),
+) {
   const { api } = vaultOver(github);
   const remembered = rememberedGitHubVault(storage);
-  return { github, storage, remembered, ...gitHubVaultPorts({ api, remembered }) };
+  const switches: string[] = [];
+  const beforeOpen = async (previous: { login: string }, login: string) => {
+    switches.push(`${previous.login} -> ${login}`);
+    remembered.forget();
+  };
+  return {
+    github,
+    storage,
+    remembered,
+    switches,
+    ...gitHubVaultPorts({ api, remembered, beforeOpen }),
+  };
 }
 
 describe('gitHubVaultPorts', () => {
@@ -32,16 +45,57 @@ describe('gitHubVaultPorts', () => {
       absolutePath: gitHubVaultKey(FAKE_VAULT),
       name: FAKE_VAULT.repo,
     });
-    expect(remembered.read()).toEqual(FAKE_VAULT);
+    expect(remembered.read()).toEqual({ ...FAKE_VAULT, login: 'mara-quill' });
     expect((await fs.readTextFile(p('Plan.md'))).text).toBe('# Plan\n');
   });
 
   it('answers the remembered vault without asking GitHub', async () => {
     const storage = memoryStorage();
-    storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify(FAKE_VAULT));
-    const { store, github } = ports(storage);
+    storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify({ ...FAKE_VAULT, login: 'mara-quill' }));
+    const { store, github, switches } = ports(storage);
     expect((await store.read())?.absolutePath).toBe(gitHubVaultKey(FAKE_VAULT));
-    expect(github.received).toEqual([]);
+    // Only who is signed in is asked: the vault is the one remembered.
+    expect(github.received.map((call) => call.path)).toEqual(['/user']);
+    expect(switches).toEqual([]);
+  });
+
+  it('lets the previous account go before another account opens the vault', async () => {
+    const storage = memoryStorage();
+    storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify({ ...FAKE_VAULT, login: 'tobias-fenn' }));
+    const { store, switches, remembered } = ports(storage);
+    await store.read();
+    expect(switches).toEqual(['tobias-fenn -> mara-quill']);
+    expect(remembered.read()?.login).toBe('mara-quill');
+  });
+
+  it('opens nothing when the switch is refused', async () => {
+    const storage = memoryStorage();
+    storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify({ ...FAKE_VAULT, login: 'tobias-fenn' }));
+    const github = new FakeGitHub({ files: { 'Plan.md': '# Plan\n' } });
+    const { api } = vaultOver(github);
+    const remembered = rememberedGitHubVault(storage);
+    const { store } = gitHubVaultPorts({
+      api,
+      remembered,
+      beforeOpen: async () => Promise.reject(new Error('saves wait')),
+    });
+    await expect(store.read()).rejects.toThrow('saves wait');
+    expect(remembered.read()?.login).toBe('tobias-fenn');
+  });
+
+  it('opens the remembered vault when who is signed in cannot be asked, offline', async () => {
+    const storage = memoryStorage();
+    storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify({ ...FAKE_VAULT, login: 'mara-quill' }));
+    const github = new FakeGitHub({ files: {} });
+    const { api } = vaultOver(github, {
+      fetch: () => Promise.reject(new TypeError('Load failed')),
+    });
+    const { store } = gitHubVaultPorts({
+      api,
+      remembered: rememberedGitHubVault(storage),
+      beforeOpen: async () => {},
+    });
+    expect((await store.read())?.absolutePath).toBe(gitHubVaultKey(FAKE_VAULT));
   });
 
   it('refuses every read once the vault is forgotten', async () => {
@@ -57,6 +111,9 @@ describe('gitHubVaultPorts', () => {
     storage.setItem(REMEMBERED_VAULT_KEY, '{not json');
     expect(remembered.read()).toBeNull();
     storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify({ owner: 'a', repo: 1 }));
+    expect(remembered.read()).toBeNull();
+    // Remembered before accounts were: whose it was is unknown, so it is not this one's.
+    storage.setItem(REMEMBERED_VAULT_KEY, JSON.stringify(FAKE_VAULT));
     expect(remembered.read()).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { cachedReadKey, createVaultPath as p, type VaultEntry } from '@dfai/domain';
+import { cachedReadKey, cachedReadOf, createVaultPath as p, type VaultEntry } from '@dfai/domain';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeHostVaultFs } from '../testing/fake-ports.ts';
 import { memoryReadCacheStore, switchableConnection } from '../testing/memory-read-cache.ts';
@@ -21,7 +21,8 @@ function remote(notes: Record<string, { text: string; modified: number }>) {
   const unreachable = () => {
     if (!reachable) throw new VaultUnreachableError('GitHub could not be reached: Load failed');
   };
-  const fs: HostVaultFsPort = fakeHostVaultFs({
+  // Writable, so a test can hold one read back.
+  const fs: { -readonly [Call in keyof HostVaultFsPort]: HostVaultFsPort[Call] } = fakeHostVaultFs({
     readTextFile: vi.fn(async (path) => {
       unreachable();
       const note = notes[path];
@@ -62,7 +63,14 @@ function cached(notes: Record<string, { text: string; modified: number }>, capBy
   const connection = switchableConnection(true);
   const report = vi.fn();
   let now = NOW;
-  const kept = keptReads({ store, clock: { now: () => now }, capBytes, report });
+  let account: string | null = 'mara-quill|' + VAULT;
+  const kept = keptReads({
+    store,
+    clock: { now: () => now },
+    capBytes,
+    report,
+    scope: () => account,
+  });
   const server = remote(notes);
   const fs = cachedVaultFs({ fs: server.fs, kept, connection });
   return {
@@ -73,6 +81,8 @@ function cached(notes: Record<string, { text: string; modified: number }>, capBy
     server,
     report,
     later: (ms: number) => (now += ms),
+    /** Another account's session, or none signed in. */
+    signedInAs: (next: string | null) => (account = next),
     revalidate: () => revalidateKeptNotes({ fs: server.fs, kept, connection }),
   };
 }
@@ -221,12 +231,14 @@ describe('cachedVaultFs: the rest of the tree and writes online', () => {
     const listingsKept = async () => {
       await fs.listDirectory(p('Garden'));
       await kept.settled();
-      return [...store.held.keys()].some((key) => key.startsWith('directory'));
+      return [...store.held.keys()].some((key) => cachedReadOf(key).kind === 'directory');
     };
     expect(await listingsKept()).toBe(true);
     await fs.createNote({ vault: VAULT, path: p('New.md'), contents: '# New\n' });
     await kept.settled();
-    expect([...store.held.keys()]).toEqual([cachedReadKey('note', 'New.md')]);
+    expect([...store.held.keys()]).toEqual([
+      cachedReadKey('mara-quill|' + VAULT, 'note', 'New.md'),
+    ]);
     for (const write of [
       () => fs.createFolder({ vault: VAULT, path: p('Beds') }),
       () => fs.trashEntry({ vault: VAULT, path: p('New.md') }),
@@ -236,10 +248,55 @@ describe('cachedVaultFs: the rest of the tree and writes online', () => {
       expect(await listingsKept()).toBe(true);
       await write();
       await kept.settled();
-      expect([...store.held.keys()].some((key) => key.startsWith('directory'))).toBe(false);
+      expect([...store.held.keys()].some((key) => cachedReadOf(key).kind === 'directory')).toBe(
+        false,
+      );
     }
     connection.set(false);
     await expect(fs.readTextFile(p('New.md'))).rejects.toThrow(NOTE_NEEDS_CONNECTION);
+  });
+});
+
+describe('keptReads: whose reads, and which is newest', () => {
+  it('never answers one account with what another account’s session kept', async () => {
+    const { fs, kept, connection, signedInAs } = cached({ 'Plan.md': PLAN });
+    await fs.readTextFile(p('Plan.md'));
+    await kept.settled();
+    signedInAs('tobias-fenn|' + VAULT);
+    connection.set(false);
+    await expect(fs.readTextFile(p('Plan.md'))).rejects.toThrow(NOTE_NEEDS_CONNECTION);
+    signedInAs('mara-quill|' + VAULT);
+    expect(await fs.readTextFile(p('Plan.md'))).toEqual(PLAN);
+  });
+
+  it('keeps nothing and answers nothing while no account is known', async () => {
+    const { fs, kept, store, connection, signedInAs } = cached({ 'Plan.md': PLAN });
+    signedInAs(null);
+    await fs.readTextFile(p('Plan.md'));
+    await kept.settled();
+    expect(store.held.size).toBe(0);
+    connection.set(false);
+    await expect(fs.readTextFile(p('Plan.md'))).rejects.toThrow(NOTE_NEEDS_CONNECTION);
+  });
+
+  it('never lets a read begun before a save land its older text over the save’s', async () => {
+    const { fs, kept, connection, server } = cached({ 'Plan.md': PLAN });
+    let answer: (value: { text: string; modified: number }) => void = () => {};
+    const reads = server.fs.readTextFile;
+    server.fs.readTextFile = () => new Promise((resolve) => (answer = resolve));
+    const slowRead = fs.readTextFile(p('Plan.md'));
+    server.fs.readTextFile = reads;
+    await fs.writeTextFile({
+      vault: VAULT,
+      path: p('Plan.md'),
+      contents: 'saved',
+      expectedModified: 4,
+    });
+    answer(PLAN);
+    await slowRead;
+    await kept.settled();
+    connection.set(false);
+    expect(await fs.readTextFile(p('Plan.md'))).toEqual({ text: 'saved', modified: 5 });
   });
 });
 
@@ -257,7 +314,10 @@ describe('keptReads: the cap', () => {
     await fs.readTextFile(p('C.md'));
     await kept.settled();
     expect([...store.held.keys()].sort()).toEqual(
-      [cachedReadKey('note', 'A.md'), cachedReadKey('note', 'C.md')].sort(),
+      [
+        cachedReadKey('mara-quill|' + VAULT, 'note', 'A.md'),
+        cachedReadKey('mara-quill|' + VAULT, 'note', 'C.md'),
+      ].sort(),
     );
   });
 

@@ -17,6 +17,7 @@ export type {
   ReadCacheStore,
   SaveQueueStore,
 } from './ports.ts';
+export { AccountSwitchRefusedError, adoptAccount } from './account-switch.ts';
 export { opensApp, waitsForNetwork } from './offline-session.ts';
 export { offlineSaves } from './offline-saves.ts';
 export type { OfflineSaves, OfflineSavesDeps } from './offline-saves.ts';

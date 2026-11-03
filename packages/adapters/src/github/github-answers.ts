@@ -76,6 +76,11 @@ export function readBlobBase64(answer: unknown): string {
   return field(answer, 'content', isString);
 }
 
+/** Who the token signs in as: their GitHub login. */
+export function readLogin(answer: unknown): string {
+  return field(answer, 'login', isString);
+}
+
 /** The ids of the App's installations the signed-in person can reach. */
 export function readInstallationIds(answer: unknown): number[] {
   return field(answer, 'installations', isArray).map((raw) => field(raw, 'id', isSize));
