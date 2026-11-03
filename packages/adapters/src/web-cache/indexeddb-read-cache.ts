@@ -1,27 +1,9 @@
 import type { CachedRead, ReadCacheStore } from '@dfai/application';
+import { indexedDbObjectStore } from './indexeddb-store.ts';
 
 /** The browser's database the read cache lives in, one per origin. */
 export const READ_CACHE_DATABASE = 'dfai-read-cache';
 const READS = 'reads';
-
-const answered = <T>(request: IDBRequest<T>): Promise<T> =>
-  new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB refused the request'));
-  });
-
-const finished = (transaction: IDBTransaction): Promise<void> =>
-  new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB aborted'));
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB failed'));
-  });
-
-function opened(factory: IDBFactory, name: string): Promise<IDBDatabase> {
-  const request = factory.open(name, 1);
-  request.onupgradeneeded = () => request.result.createObjectStore(READS, { keyPath: 'key' });
-  return answered(request);
-}
 
 /**
  * The read cache's store in IndexedDB (#667): each kept read one record,
@@ -32,23 +14,7 @@ export function indexedDbReadCache(
   factory: IDBFactory,
   name: string = READ_CACHE_DATABASE,
 ): ReadCacheStore {
-  let database: Promise<IDBDatabase> | null = null;
-  const inStore = async <T>(
-    mode: IDBTransactionMode,
-    act: (store: IDBObjectStore) => IDBRequest<T> | void,
-  ): Promise<T | undefined> => {
-    database ??= opened(factory, name).catch((error: unknown) => {
-      database = null;
-      throw error;
-    });
-    const transaction = (await database).transaction(READS, mode);
-    const request = act(transaction.objectStore(READS));
-    const [result] = await Promise.all([
-      request ? answered(request) : undefined,
-      finished(transaction),
-    ]);
-    return result;
-  };
+  const inStore = indexedDbObjectStore({ factory, database: name, store: READS });
   return {
     get: async (key) =>
       ((await inStore('readonly', (store) => store.get(key))) as CachedRead) ?? null,

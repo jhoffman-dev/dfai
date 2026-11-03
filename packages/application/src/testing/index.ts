@@ -6,7 +6,11 @@
 
 export { fakeHostVaultFs, fakeIndexPort, fakeMarkdown, fakeVaultFs } from './fake-ports.ts';
 export { memoryIndexPort } from './memory-index.ts';
-export { memoryReadCacheStore, switchableConnection } from './memory-read-cache.ts';
+export {
+  memoryReadCacheStore,
+  memorySaveQueueStore,
+  switchableConnection,
+} from './memory-read-cache.ts';
 export { memoryActivityStore, recordingActivity } from './fake-activity.ts';
 export { apiFixture, bodyOf, codeOf, encoded } from './api-fixture.ts';
 export {

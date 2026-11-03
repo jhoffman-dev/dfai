@@ -12,3 +12,11 @@ export {
   READ_CACHE_CAP_BYTES,
 } from './read-cache-policy.ts';
 export type { CachedReadFacts, CachedReadKind } from './read-cache-policy.ts';
+export {
+  isProvisionalVersion,
+  nextInQueue,
+  queuedSaveKey,
+  queueSave,
+  savesToSend,
+} from './save-queue.ts';
+export type { QueueDecision, QueuedSave, SaveAsked } from './save-queue.ts';

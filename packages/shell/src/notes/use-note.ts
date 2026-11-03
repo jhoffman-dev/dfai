@@ -17,12 +17,14 @@ import {
   type PropertyChanges,
   type MarkdownPort,
   type OpenNote,
+  type PendingSavesPort,
   type SavedNote,
   type VaultFsPort,
 } from '@dfai/application';
 import type { NotePaneState } from '@dfai/ui';
 import { localToday } from '../today.ts';
 import type { Stranding } from './stranded-edits.ts';
+import { usePendingSave } from './use-pending-save.ts';
 
 export interface NotePorts {
   fs: VaultFsPort;
@@ -32,6 +34,8 @@ export interface NotePorts {
    * the web's, say (#665). Named, a refused save can be kept as a copy.
    */
   device?: string;
+  /** The saves waiting on the device to be sent (#667); only the web has them. */
+  pendingSaves?: PendingSavesPort;
 }
 
 export interface NoteView {
@@ -664,6 +668,17 @@ export function useNote({
   // Still offered while a keep is under way — the pane shows it held, as it
   // is saving — and a second click is a no-op until the first is over.
   const keepAsCopy = ports.device !== undefined && refusedAsStale ? keepCopy : null;
+  const queued = usePendingSave(ports.pendingSaves, vault, path);
+  const queuedWayOut = useQueuedRefusalWayOut({
+    pending: ports.pendingSaves,
+    vault,
+    path,
+    refused: queued?.kind === 'refused',
+    // Typing not yet written folds into the refused save first, so the copy is all of it.
+    writeFirst: () => (unsaved.current ? write().then(() => undefined) : Promise.resolve()),
+    discard,
+    shown: shownInPane(path),
+  });
 
   /**
    * The latest note and document, for saving on the way out.
@@ -859,7 +874,14 @@ export function useNote({
               saving: saving || keepingCopy,
               // Shown as a refused save is, because it is one waiting to happen,
               // and the same two buttons are the way out of it.
-              saveError: saveError ?? (outdated !== null ? CHANGED_SINCE_KEPT : null),
+              saveError:
+                saveError ??
+                (outdated !== null
+                  ? CHANGED_SINCE_KEPT
+                  : queued?.kind === 'refused'
+                    ? queued.reason
+                    : null),
+              waitingToSend: queued?.kind === 'waiting',
             };
 
   return {
@@ -872,8 +894,8 @@ export function useNote({
     setProperties,
     reload,
     overwrite,
-    discard,
-    keepAsCopy,
+    discard: queuedWayOut?.discard ?? discard,
+    keepAsCopy: queuedWayOut?.keepAsCopy ?? keepAsCopy,
     flush,
     repoint,
     abandon,
@@ -888,3 +910,35 @@ export interface RecoveredNote {
 
 /** Which note a pane holds: a path means nothing without its vault. */
 const noteKey = (vault: string | null, path: VaultPath): string => `${vault ?? ''}\u0000${path}`;
+
+/**
+ * The way out of a save that waited offline and was refused once sent
+ * (#667): the queue keeps its text as a copy, or lets it go, and then the
+ * pane reads the note as GitHub has it. Null while no queued save is refused.
+ */
+function useQueuedRefusalWayOut({
+  pending,
+  vault,
+  path,
+  refused,
+  writeFirst,
+  discard,
+  shown,
+}: {
+  pending: PendingSavesPort | undefined;
+  vault: string | null;
+  path: VaultPath | null;
+  refused: boolean;
+  writeFirst: () => Promise<void>;
+  discard: () => void;
+  shown: (error: unknown) => void;
+}): { keepAsCopy: () => void; discard: () => void } | null {
+  if (!refused || pending === undefined || vault === null || path === null) return null;
+  return {
+    keepAsCopy: () =>
+      void writeFirst()
+        .then(() => pending.keepAsCopy(vault, path))
+        .then(discard, shown),
+    discard: () => void pending.discard(vault, path).then(discard, shown),
+  };
+}

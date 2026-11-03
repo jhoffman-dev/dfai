@@ -105,6 +105,9 @@ describe('NotePane: the bar', () => {
     [{ dirty: false, saving: false }, 'Saved'],
     [{ dirty: true, saving: false }, 'Unsaved'],
     [{ dirty: true, saving: true }, 'Saving…'],
+    // Saved on the device, waiting for a connection (#667).
+    [{ dirty: false, saving: false, waitingToSend: true }, 'Not saved yet'],
+    [{ dirty: true, saving: false, waitingToSend: true }, 'Unsaved'],
   ])('reads %j as %s, in place of a Save button', (state, text) => {
     show({ state: ready(state) });
     // A live region, so a change from Unsaved to Saved is announced.

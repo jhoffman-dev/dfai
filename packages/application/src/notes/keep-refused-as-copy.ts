@@ -39,27 +39,46 @@ export async function keepRefusedAsCopy({
   device: string;
 }): Promise<VaultPath | null> {
   const mine = joinFrontmatter(note.frontmatter, editedBody({ markdown, note, doc }));
-  const folder = parentVaultPath(note.path);
+  return keepTextAsCopy({ fs, path: note.path, mine, device });
+}
+
+/**
+ * `mine`, a refused write's whole text, kept beside the note at `path` by
+ * the same rule: the way out for a save that waited offline and was refused
+ * once sent (#667), which has the text and no editor.
+ */
+export async function keepTextAsCopy({
+  fs,
+  path,
+  mine,
+  device,
+}: {
+  fs: Fs;
+  path: VaultPath;
+  mine: string;
+  device: string;
+}): Promise<VaultPath | null> {
+  const folder = parentVaultPath(path);
   const beside = await entriesIn(fs, folder);
   // Only a note still at its path has a newer version; a folder or a twin
   // there now is something else, which the rule keeps the copy beside.
-  const noteThere = beside.some((entry) => entry.kind === 'file' && entry.path === note.path);
-  const newer = noteThere ? await textNow(fs, note.path) : null;
-  const versions = { path: note.path, device, mine, newer };
+  const noteThere = beside.some((entry) => entry.kind === 'file' && entry.path === path);
+  const newer = noteThere ? await textNow(fs, path) : null;
+  const versions = { path, device, mine, newer };
   const first = copyOfRefusedWrite({ ...versions, taken: pathsOf(beside) });
   if (first === null) return null;
   const copyFolder = parentVaultPath(createVaultPath(first.path));
   // Put back where it was, or a setting's copy: a folder that may not be there.
-  if (first.path === note.path || copyFolder !== folder) await ensureFolderOf(fs, first.path);
+  if (first.path === path || copyFolder !== folder) await ensureFolderOf(fs, first.path);
   const copy =
     copyFolder === folder
       ? first
       : // A setting's copy goes to its own folder, named past what is there.
         (copyOfRefusedWrite({ ...versions, taken: pathsOf(await entriesIn(fs, copyFolder)) }) ??
         first);
-  const path = createVaultPath(copy.path);
-  await fs.createNote({ path, contents: copy.contents });
-  return path;
+  const kept = createVaultPath(copy.path);
+  await fs.createNote({ path: kept, contents: copy.contents });
+  return kept;
 }
 
 const pathsOf = (entries: readonly VaultEntry[]): ReadonlySet<string> =>

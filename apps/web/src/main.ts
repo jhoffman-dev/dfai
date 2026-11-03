@@ -1,7 +1,13 @@
 import { signOutAndForget } from '@dfai/application';
 import { mountShell } from '@dfai/shell';
 import { composeWebShell } from './composition.ts';
-import { forgettingDevice, gitHubWebVault, webDevice } from './github-vault.ts';
+import {
+  askToLoseSaves,
+  forgettingDevice,
+  gitHubWebVault,
+  unsentSaves,
+  webDevice,
+} from './github-vault.ts';
 import { startWeb } from './start-web.tsx';
 import { composeWebAuth } from './web-auth.ts';
 
@@ -20,10 +26,21 @@ function mountApp(): () => void {
   };
 }
 
-/** The session stops keeping before anything is forgotten, so nothing it read lands after. */
+/**
+ * Asks first while saves wait (#667), and stays signed in, with them, on a
+ * no. The session stops keeping before anything is forgotten, so nothing it
+ * read lands after.
+ */
 async function signOut(): Promise<void> {
-  session?.stop();
-  await signOutAndForget({ signOut: () => auth.signOut(), forget: forgettingDevice(device) });
+  await signOutAndForget({
+    unsent: () => unsentSaves(device),
+    confirmLosing: askToLoseSaves(window),
+    signOut: async () => {
+      session?.stop();
+      await auth.signOut();
+    },
+    forget: forgettingDevice(device),
+  });
 }
 
 startWeb({

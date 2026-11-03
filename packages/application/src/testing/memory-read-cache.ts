@@ -1,4 +1,10 @@
-import type { CachedRead, ConnectionPort, ReadCacheStore } from '../web-cache/ports.ts';
+import type { QueuedSave } from '@dfai/domain';
+import type {
+  CachedRead,
+  ConnectionPort,
+  ReadCacheStore,
+  SaveQueueStore,
+} from '../web-cache/ports.ts';
 
 /** The read cache's store in memory, for tests: what IndexedDB holds in the browser. */
 export function memoryReadCacheStore(): ReadCacheStore & {
@@ -39,5 +45,23 @@ export function switchableConnection(
       now = next;
       for (const listener of listeners) listener(next);
     },
+  };
+}
+
+/** The offline save queue's store in memory, for tests: a reload is a new queue over the same store. */
+export function memorySaveQueueStore(): SaveQueueStore & {
+  readonly held: Map<string, QueuedSave>;
+} {
+  const held = new Map<string, QueuedSave>();
+  return {
+    held,
+    all: async () => [...held.values()].map((save) => structuredClone(save)),
+    put: async (save) => {
+      held.set(save.key, structuredClone(save));
+    },
+    remove: async (key) => {
+      held.delete(key);
+    },
+    clear: async () => held.clear(),
   };
 }

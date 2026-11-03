@@ -58,6 +58,8 @@ export type NotePaneState =
       readonly dirty: boolean;
       readonly saving: boolean;
       readonly saveError: string | null;
+      /** Saved on the device, waiting for a connection to reach GitHub (#667). */
+      readonly waitingToSend?: boolean;
     }
   | { readonly kind: 'failed'; readonly message: string };
 
@@ -581,7 +583,9 @@ function NoteBody({
  */
 export function SaveStatus({ state }: { state: NotePaneState }) {
   if (state.kind !== 'ready') return null;
-  return <>{state.saving ? 'Saving…' : state.dirty ? 'Unsaved' : 'Saved'}</>;
+  if (state.saving) return <>Saving…</>;
+  if (state.dirty) return <>Unsaved</>;
+  return <>{state.waitingToSend === true ? 'Not saved yet' : 'Saved'}</>;
 }
 
 /**

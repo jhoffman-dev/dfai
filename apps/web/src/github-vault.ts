@@ -4,6 +4,7 @@ import {
   gitHubVaultKey,
   gitHubVaultPorts,
   indexedDbReadCache,
+  indexedDbSaveQueue,
   rememberedGitHubVault,
   remarkMarkdown,
   webWorkerNoteDeriver,
@@ -13,12 +14,14 @@ import { webIndex, type WebIndex } from '@dfai/adapters/web-index';
 import {
   cachedVaultFs,
   keptReads,
+  offlineSaves,
   revalidateKeptNotes,
   VaultUnreachableError,
   waitsForNetwork,
   type AuthPort,
   type ConnectionPort,
   type ReadCacheStore,
+  type SaveQueueStore,
 } from '@dfai/application';
 import { READ_CACHE_CAP_BYTES, WEB_DEVICE } from '@dfai/domain';
 import type { IndexPorts, NotePorts, OnHost, VaultPorts } from '@dfai/shell';
@@ -38,6 +41,8 @@ export interface WebVaultPorts {
  */
 export interface WebDevice {
   readonly cache: ReadCacheStore;
+  /** Saves made offline, waiting to be sent: on disk, so they outlive a reload. */
+  readonly saveQueue: SaveQueueStore;
   readonly index: WebIndex;
   readonly connection: ConnectionPort;
   readonly remembered: ReturnType<typeof rememberedGitHubVault>;
@@ -48,6 +53,7 @@ export function webDevice(page: Window): WebDevice {
   const remembered = rememberedGitHubVault(page.localStorage);
   return {
     cache: indexedDbReadCache(page.indexedDB),
+    saveQueue: indexedDbSaveQueue(page.indexedDB),
     index: webIndex({ openVault: () => openVaultOf(remembered) }),
     connection: browserConnection(page),
     remembered,
@@ -74,15 +80,29 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
   const api = gitHubApi({ fetch: (input, init) => page.fetch(input, init), token, clock });
   const github = gitHubVaultPorts({ api, remembered: device.remembered });
   const kept = keptReads({ store: device.cache, clock, capBytes: READ_CACHE_CAP_BYTES, report });
-  const fs = cachedVaultFs({ fs: github.fs, kept, connection });
-  const revalidate = () => {
+  const saves = offlineSaves({
+    fs: cachedVaultFs({ fs: github.fs, kept, connection }),
+    store: device.saveQueue,
+    connection,
+    device: WEB_DEVICE,
+    report,
+  });
+  const { fs } = saves;
+  // Back online, or signed in again after opening offline: what waits is sent, then kept notes caught up.
+  const caughtUp = () => {
     if (device.remembered.read() === null) return;
-    revalidateKeptNotes({ fs: github.fs, kept, connection }).catch(report);
+    saves
+      .send()
+      .then(() => revalidateKeptNotes({ fs: github.fs, kept, connection }))
+      .catch(report);
   };
   const stopListening = connection.onChange((online) => {
-    if (online) revalidate();
+    if (online) caughtUp();
   });
-  revalidate();
+  const stopAuth = auth.subscribe(() => {
+    if (auth.state().status === 'signed-in') caughtUp();
+  });
+  caughtUp();
   const ports: WebVaultPorts = {
     vault: {
       fs,
@@ -91,13 +111,14 @@ export function gitHubWebVault({ auth, device }: { auth: AuthPort; device: WebDe
       // The web has no watcher (ADR-0051, fileWatching); a change elsewhere is met at the next save.
       watch: { start: async () => {}, onChange: async () => () => {} },
     },
-    notes: { fs, markdown: remarkMarkdown, device: WEB_DEVICE },
+    notes: { fs, markdown: remarkMarkdown, device: WEB_DEVICE, pendingSaves: saves.pending },
     index: { fs, index: device.index, markdown: remarkMarkdown, deriver: webWorkerNoteDeriver },
   };
   return {
     ports,
     stop: () => {
       stopListening();
+      stopAuth();
       kept.stop();
     },
   };
@@ -118,10 +139,27 @@ function offlineAwareToken(auth: AuthPort): GitHubToken {
   };
 }
 
+/**
+ * How many saves wait on the device, read from where they are stored: the
+ * count a sign-out asks about, whatever the session in memory holds.
+ */
+export const unsentSaves = async (device: WebDevice): Promise<number> =>
+  (await device.saveQueue.all()).length;
+
+/** What a sign-out asks while saves wait; no keeps the person signed in, with them. */
+export function askToLoseSaves(page: Pick<Window, 'confirm'>) {
+  return async (count: number): Promise<boolean> =>
+    page.confirm(
+      `${count === 1 ? 'A save has' : `${count} saves have`} not reached GitHub yet. ` +
+        `Signing out deletes ${count === 1 ? 'it' : 'them'} from this device for good. Sign out anyway?`,
+    );
+}
+
 /** Everything the device kept of the vault, each forgotten in its own step at sign-out. */
 export function forgettingDevice(device: WebDevice): readonly (() => Promise<void>)[] {
   return [
     () => device.cache.clear(),
+    () => device.saveQueue.clear(),
     async () => {
       const vault = openVaultOf(device.remembered);
       if (vault !== null) await device.index.forget(vault);
