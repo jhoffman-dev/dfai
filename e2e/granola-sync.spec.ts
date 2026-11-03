@@ -49,6 +49,8 @@ const ONE_ON_ONE = note('not_e2eOneOnOne002', 'Tobias one on one', '2026-10-13T1
 /** A pulled meeting arrives in its month's folder (#214). */
 const RENEWAL_FILE = 'Meetings/2026/10/2026-10-06 Larkspur Payroll renewal.md';
 const ONE_ON_ONE_FILE = 'Meetings/2026/10/2026-10-06 Tobias one on one.md';
+/** What the meeting links propose for the meetings' one attendee. */
+const PERSON_PROPOSAL = 'Inbox/Proposals/Tobias Fenn — Larkspur Payroll renewal.md';
 
 const ok = (body: unknown) => ({ status: 200, body: JSON.stringify(body) });
 
@@ -113,8 +115,14 @@ test('a key is set, the meetings Granola holds are pulled in, and Sync now bring
   await expectFile(vault, RENEWAL_FILE).toContain(`external_id: '${RENEWAL.id}'`);
   await expect(card(page).getByTestId('granola-pull')).toContainText('1 new, 0 already in DFAI');
 
-  // The meeting written is in the index as soon as the pull has ended, as it would be from Sync.
-  await expect(indexed).toHaveText(`${before + 1} notes indexed`);
+  // The meeting's attendee is proposed as a person, from the meeting as the index holds it.
+  await expectFile(vault, PERSON_PROPOSAL).toContain(
+    'proposal_id: meeting links:person:email:tobias.fenn@example.com',
+  );
+  // The meeting and that proposal are both in the index, as they would be from Sync. The count
+  // is read at rest: one more than before holds only between the two refreshes, and a slow
+  // runner can look after both (#748).
+  await expect(indexed).toHaveText(`${before + 2} notes indexed`);
 
   serveNotes(host, [RENEWAL, ONE_ON_ONE]);
   await card(page).getByRole('button', { name: 'Sync now' }).click();
