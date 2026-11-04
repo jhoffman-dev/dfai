@@ -18,7 +18,15 @@ import { caretAtLineEnd } from './caret.ts';
  * A reload stands in for the quit — it is the closest a browser test gets. The
  * work is stranded the way it is in use: a pane's save is refused because the
  * file moved on, the pane is closed, and its save on the way out is refused too.
+ *
+ * Each test starts the app two or three times and waits out an autosave in
+ * between, so it spends most of the default 30 s when a runner stalls: one did
+ * for ~20 s across both tests that opened shard 7, and the autosave the last
+ * check was correctly waiting on had not yet run when the test's time ran out
+ * (#754). The checks already wait on the state; the test needs the time.
  */
+
+test.slow();
 
 const NOTE = '# Note\n\nOriginal paragraph.\n';
 const OTHER = '# Other\n\nSomething else.\n';
