@@ -11,9 +11,14 @@
 
 .shell {
   background: var(--surface);
+  box-sizing: border-box;
   display: flex;
   height: 100vh;
   overflow: hidden;
+  /* Full screen from the Home Screen (#668): the status bar and the home
+     indicator overlay the page, so the shell's top and bottom stay clear of them. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 .shell__sidebar {
@@ -89,7 +94,7 @@
 /* Where a hidden sidebar comes back from: the first panel's top-left corner,
    inside its header strip. */
 .shell__show {
-  left: 12px;
+  left: calc(12px + env(safe-area-inset-left, 0px));
   position: absolute;
   top: 10px;
   z-index: 2;

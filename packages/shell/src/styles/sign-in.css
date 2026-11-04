@@ -41,8 +41,25 @@
 }
 
 .sign-out {
-  bottom: var(--space-3);
-  left: var(--space-3);
+  bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  left: calc(var(--space-3) + env(safe-area-inset-left, 0px));
+  position: fixed;
+  z-index: 10;
+}
+
+/* A newer build waiting (#668): a raised line above the sign-out, with its
+   Reload; it stays until the reload, which is the person's to choose. */
+.update-ready {
+  align-items: center;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  bottom: calc(var(--space-3) + 40px + env(safe-area-inset-bottom, 0px));
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  gap: var(--space-3);
+  left: calc(var(--space-3) + env(safe-area-inset-left, 0px));
+  padding: var(--space-2) var(--space-3);
   position: fixed;
   z-index: 10;
 }
