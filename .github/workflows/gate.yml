@@ -384,10 +384,27 @@ jobs:
       # Every project, named: `ipad` is the core loop by touch on an iPad's
       # screen (#661), and `phone` the web build on a phone's (#672); each a
       # few tests that land on whichever shard they are dealt.
+      #
+      # The spec files are dealt by how long each took on CI
+      # (tools/ci/e2e-shard-reporter.ts, e2e-durations.json), not by
+      # Playwright's equal test counts in file order: those left one shard
+      # six and a half minutes against three and a half (#716).
       - name: End-to-end, an eighth of the suite
+        env:
+          E2E_DURATIONS_OUT: e2e-durations.json
         run: >-
           pnpm e2e --project=webkit --project=ipad --project=phone --shard=${{ matrix.shard }}/8
-          --workers=2 --reporter=list,html
+          --workers=2 --reporter=list,html,./tools/ci/e2e-shard-reporter.ts
+
+      # What this shard's files took, for refreshing tools/ci/e2e-durations.json
+      # with tools/ci/e2e-durations.mjs when the shards drift apart.
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-durations-${{ matrix.shard }}
+          path: e2e-durations.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
