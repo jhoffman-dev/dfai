@@ -5,9 +5,10 @@ import { signInOnTheWeb, webVaultOnGitHub } from './web-github.ts';
  * #672: the web build on a phone, by thumb. This spec runs only in the `phone`
  * project (playwright.config.ts): WebKit at 390×844 with a touch screen. The
  * bar along the bottom edge offers the day's three jobs — quick add, Today,
- * Notes; here quick add, which writes a note into the Inbox on GitHub. (Made
- * offline it is refused for now: the save queue (#667) takes edits, not new
- * notes — a follow-up of its own.) Which screens the bar holds, and at what
+ * Notes; here quick add, which writes a note into the Inbox on GitHub. Made
+ * offline it is refused for now — the save queue (#667) takes edits, not new
+ * notes, a follow-up of its own — and the palette keeps the text and says
+ * why, so nothing typed is lost. Which screens the bar holds, and at what
  * width, is the domain's (`shellLayoutFor`, held by its own test).
  *
  * Today and Notes read the vault's index, and the web's index lives in OPFS,
@@ -75,4 +76,29 @@ test('on a phone, quick add writes a note into the Inbox on GitHub, and stays up
   await expect(capture(page)).toHaveCount(0);
   // The capture is open under where the palette was, to add to.
   await expect(page.getByRole('article', { name: 'Call Tobias Fenn' })).toBeVisible();
+});
+
+test('on a phone, a quick add refused offline keeps its text and says why; back online, Enter commits it', async ({
+  page,
+  context,
+}) => {
+  const { github } = await webVaultOnGitHub(page, FILES);
+  await signInOnTheWeb(page);
+  await expect(quickAdd(page)).toBeVisible();
+  await context.setOffline(true);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
+
+  await quickAdd(page).tap();
+  await captureField(page).fill('Buy seed');
+  await page.keyboard.press('Enter');
+  const refusal = capture(page).getByRole('alert');
+  await expect(refusal).toHaveText(/needs a connection/);
+  await expect(captureField(page)).toHaveValue('Buy seed');
+  expect(await github.paths()).not.toContain('Inbox/Buy seed.md');
+
+  await context.setOffline(false);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => github.paths()).toContain('Inbox/Buy seed.md');
+  await expect(captureField(page)).toHaveValue('');
+  await expect(refusal).toHaveCount(0);
 });
