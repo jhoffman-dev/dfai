@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_NAME_BYTES, utf8Bytes } from './file-name-bytes.ts';
 import { createVaultPath, VAULT_ROOT } from './vault-path.ts';
 import {
   isUnnamed,
@@ -205,4 +206,37 @@ describe('noteFileName (adversarial)', () => {
       expect(noteFileName(typed).startsWith('.')).toBe(false);
     },
   );
+});
+
+describe('noteFileName, from text pasted rather than typed (#672)', () => {
+  it('names the note by the first line that holds a name, not the whole paragraph', () => {
+    expect(noteFileName('Call Tobias Fenn\nabout the seed order\nand the fence')).toBe(
+      'Call Tobias Fenn.md',
+    );
+    expect(noteFileName('\n  \n...\nSecond line is the name\nthird')).toBe(
+      'Second line is the name.md',
+    );
+  });
+
+  it('cuts a name too long for a disk so that it, numbered, still fits', () => {
+    const long = 'Garden '.repeat(60).trim();
+    expect(utf8Bytes(long)).toBeGreaterThan(MAX_NAME_BYTES);
+    const fileName = noteFileName(long);
+    expect(fileName.endsWith('.md')).toBe(true);
+    expect(utf8Bytes(fileName)).toBeLessThanOrEqual(MAX_NAME_BYTES - utf8Bytes(' 9999'));
+    expect(long.startsWith(fileName.slice(0, -3))).toBe(true);
+    const numbered = nextAvailableNotePath({
+      folder: VAULT_ROOT,
+      name: long,
+      taken: new Set([fileName]),
+    });
+    expect(numbered).toBe(`${fileName.slice(0, -3)} 2.md`);
+    expect(utf8Bytes(numbered)).toBeLessThanOrEqual(MAX_NAME_BYTES);
+  });
+
+  it('cuts by whole characters, never half an emoji', () => {
+    const fileName = noteFileName('🌱'.repeat(100));
+    expect(fileName.slice(0, -3)).toMatch(/^(?:🌱)+$/u);
+    expect(utf8Bytes(fileName)).toBeLessThanOrEqual(MAX_NAME_BYTES);
+  });
 });

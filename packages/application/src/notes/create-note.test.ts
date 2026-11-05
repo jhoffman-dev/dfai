@@ -345,3 +345,23 @@ describe('createNote — a type’s home folder', () => {
     expect(path).toBe('Clients/Call Sam.md');
   });
 });
+
+describe('createNote, given a name too long for a disk (#672)', () => {
+  it('creates the note under a name cut to fit, rather than refusing', async () => {
+    const { fs, created } = fakeFs();
+    const pasted = 'A line pasted into quick add '.repeat(20).trim();
+    expect(new TextEncoder().encode(pasted).length).toBeGreaterThan(255);
+    const path = await createNote({
+      markdown: fakeMarkdown(),
+      today: '2026-10-08',
+      fs,
+      name: pasted,
+      beside: null,
+      notePaths: [],
+    });
+    expect(created[0]?.path).toBe(path);
+    expect(new TextEncoder().encode(path).length).toBeLessThanOrEqual(255);
+    expect(path.startsWith('A line pasted into quick add ')).toBe(true);
+    expect(path.endsWith('.md')).toBe(true);
+  });
+});

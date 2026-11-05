@@ -4,9 +4,12 @@ import {
   NOTE_MEASURE,
   PHONE_BELOW,
   PHONE_SCREENS,
+  phoneScreenShowing,
+  phoneScreenTarget,
   SIDEBAR_WIDTH,
   shellLayoutFor,
 } from './shell-layout.ts';
+import { createVaultPath } from '../vault/vault-path.ts';
 import { MAX_PANES } from './workspace.ts';
 
 const WIDE = { sidebar: 'beside', panes: MAX_PANES, screens: null };
@@ -67,5 +70,53 @@ describe('shellLayoutFor', () => {
     expect(Object.isFrozen(shellLayoutFor(390))).toBe(true);
     expect(Object.isFrozen(shellLayoutFor(820))).toBe(true);
     expect(Object.isFrozen(shellLayoutFor(1440))).toBe(true);
+  });
+});
+
+describe('phoneScreenTarget', () => {
+  it('opens quick add as the capture palette and Notes as the search, whatever the vault holds', () => {
+    for (const tasksShown of [true, false]) {
+      expect(phoneScreenTarget('quick-add', { tasksShown })).toEqual({ open: 'capture' });
+      expect(phoneScreenTarget('notes', { tasksShown })).toEqual({ open: 'search' });
+    }
+  });
+
+  it('opens Today as the Today page once the vault has tasks', () => {
+    expect(phoneScreenTarget('today', { tasksShown: true })).toEqual({ open: 'today-page' });
+  });
+
+  it("opens Today as today's note until then: the one thing of today's every vault has", () => {
+    expect(phoneScreenTarget('today', { tasksShown: false })).toEqual({ open: 'daily-note' });
+  });
+});
+
+describe('phoneScreenShowing', () => {
+  const dailyNote = createVaultPath('2026-10-13.md');
+  const other = createVaultPath('Garden plan.md');
+
+  it('is Today while the pane shows the Today page, in a vault with tasks', () => {
+    expect(phoneScreenShowing({ kind: 'today' }, { tasksShown: true, dailyNote })).toBe('today');
+    expect(phoneScreenShowing({ kind: 'inbox' }, { tasksShown: true, dailyNote })).toBeNull();
+    expect(
+      phoneScreenShowing({ kind: 'note', path: dailyNote }, { tasksShown: true, dailyNote }),
+    ).toBeNull();
+  });
+
+  it("is Today while the pane shows today's note, in a vault without tasks", () => {
+    expect(
+      phoneScreenShowing({ kind: 'note', path: dailyNote }, { tasksShown: false, dailyNote }),
+    ).toBe('today');
+    expect(
+      phoneScreenShowing({ kind: 'note', path: other }, { tasksShown: false, dailyNote }),
+    ).toBeNull();
+    expect(phoneScreenShowing({ kind: 'today' }, { tasksShown: false, dailyNote })).toBeNull();
+  });
+
+  it("is nothing while today's note is not known yet, or no pane shows anything", () => {
+    expect(
+      phoneScreenShowing({ kind: 'note', path: dailyNote }, { tasksShown: false, dailyNote: null }),
+    ).toBeNull();
+    expect(phoneScreenShowing(null, { tasksShown: false, dailyNote })).toBeNull();
+    expect(phoneScreenShowing(null, { tasksShown: true, dailyNote: null })).toBeNull();
   });
 });
