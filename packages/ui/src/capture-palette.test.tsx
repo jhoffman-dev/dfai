@@ -187,6 +187,26 @@ describe('CapturePalette', () => {
     expect(field).toHaveProperty('value', 'Call Sam');
   });
 
+  it('captures a second task whose Enter came while the first was on its way, and clears once both land', async () => {
+    const settles: ((outcome: CaptureOutcome) => void)[] = [];
+    const onCapture = vi.fn(
+      () =>
+        new Promise<CaptureOutcome>((resolve) => {
+          settles.push(resolve);
+        }),
+    );
+    render(<CapturePalette {...props} onCapture={onCapture} />);
+    const field = screen.getByRole('textbox');
+    await userEvent.type(field, 'Call Sam{Enter}');
+    await userEvent.clear(field);
+    await userEvent.type(field, 'Buy milk{Enter}');
+    expect(onCapture.mock.calls.map(([name]) => name)).toEqual(['Call Sam', 'Buy milk']);
+    expect(screen.getByRole('status').textContent).toBe('Saving…');
+    for (const settle of settles) settle(CAPTURED);
+    await waitFor(() => expect(field).toHaveProperty('value', ''));
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
   it('closes on an empty Enter rather than making a nameless note', async () => {
     const onCapture = captures();
     const onClose = vi.fn();
