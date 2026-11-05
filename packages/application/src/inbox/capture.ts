@@ -1,6 +1,7 @@
 import {
   capturedTaskStatus,
   createVaultPath,
+  firstNamedLine,
   INBOX_DIRECTORY,
   splitFrontmatter,
   TASK_KEYS,
@@ -45,7 +46,8 @@ export async function captureToInbox({
     fs,
     markdown,
     today,
-    name,
+    // Pasted rather than typed, a paragraph is named by its first line (#672).
+    name: firstNamedLine(name),
     beside: null,
     folder,
     notePaths,

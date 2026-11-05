@@ -12,22 +12,34 @@ const MARKDOWN = /\.(md|markdown)$/i;
  *
  * Path separators would silently put the note somewhere else, and a name that is
  * only dots or spaces is not a name at all, so both fall back to the default.
- * The extension is added unless one is already there. Text pasted rather than
- * typed — a paragraph into quick capture (#672) — names the note by its first
- * line that holds a name, and a name longer than a disk takes is cut by whole
- * characters until it fits; one that fits is left whole, and is cut only as
- * far as numbering it past names taken needs (`nextAvailableNotePath`).
+ * The extension is added unless one is already there. A name longer than a
+ * disk takes (#672) is cut by whole characters until it fits; one that fits is
+ * left whole, and is cut only as far as numbering it past names taken needs
+ * (`nextAvailableNotePath`). A first character longer than a whole name — a
+ * letter under two hundred combining accents — leaves nothing to cut to, and
+ * the note takes the default name rather than a hidden `.md`.
  */
 export function noteFileName(name: string): string {
-  const cleaned = cleanEntryName(firstNamedLine(name));
+  const cleaned = cleanEntryName(name);
   if (cleaned === '') return `${DEFAULT_NOTE_NAME}.md`;
   const extension = MARKDOWN.exec(cleaned)?.[0] ?? '.md';
   const stem = MARKDOWN.test(cleaned) ? cleaned.slice(0, -extension.length) : cleaned;
-  return `${fitFileNameStem(stem, extension)}${extension}`;
+  return `${fittedStemOrDefault(stem, extension)}${extension}`;
 }
 
-/** The first line of `text` that cleans to a name; empty when none does. */
-function firstNamedLine(text: string): string {
+/** `stem` cut to leave room for `ending`; the default name when nothing of it fits. */
+function fittedStemOrDefault(stem: string, ending: string): string {
+  const fitted = fitFileNameStem(stem, ending);
+  return fitted === '' ? DEFAULT_NOTE_NAME : fitted;
+}
+
+/**
+ * The first line of `text` that holds a name, for text pasted rather than
+ * typed — a paragraph into quick capture (#672), which is named by its first
+ * line. Empty when no line holds a name. Nothing else that names a note reads
+ * this, so a two-line title still names its note with both lines, as before.
+ */
+export function firstNamedLine(text: string): string {
   return text.split(/\r?\n/).find((line) => cleanEntryName(line) !== '') ?? '';
 }
 
@@ -115,7 +127,8 @@ export function nextAvailableNotePath({
   for (let attempt = 1; ; attempt += 1) {
     // A number on a name that just fit the disk would not: the name gives way to it.
     const numbering = ` ${attempt}${extension}`;
-    const candidate = attempt === 1 ? fileName : `${fitFileNameStem(base, numbering)}${numbering}`;
+    const candidate =
+      attempt === 1 ? fileName : `${fittedStemOrDefault(base, numbering)}${numbering}`;
     const path =
       folder === VAULT_ROOT
         ? joinVaultPath(VAULT_ROOT, candidate)

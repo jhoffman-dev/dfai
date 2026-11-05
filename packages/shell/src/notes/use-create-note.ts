@@ -101,6 +101,8 @@ export function useCreateNote({
           notePaths,
           ...(contents === undefined ? {} : { contents }),
         });
+        // A capture written is the vault writing again: a notice from before goes.
+        setError(null);
         onCreated(path);
         return { captured: true, path };
       } catch (cause) {

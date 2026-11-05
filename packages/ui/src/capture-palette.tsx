@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Icon } from './icon.tsx';
 import { isImeKey } from './ime.ts';
@@ -45,20 +45,49 @@ export function CapturePalette({
 }) {
   const finalFocus = useReturnFocus(fallbackFocus);
   const [name, setName] = useState('');
-  const [refusal, setRefusal] = useState<string | null>(null);
-  // One capture at a time: a second Enter while one is on its way would make the note twice.
-  const pending = useRef(false);
+  // Keyed, so the same reason refused twice is a new alert each time and is read again.
+  const [refusal, setRefusal] = useState<{ readonly text: string; readonly key: number } | null>(
+    null,
+  );
+  // The captures on their way, by text: a repeat of one of them is not sent again, while
+  // another task typed meanwhile goes as its own. The count draws "Saving…".
+  const pending = useRef(new Set<string>());
+  const [saving, setSaving] = useState(0);
+  // What the field holds as a capture comes back, for a refusal to read after its await.
+  const fieldNow = useRef(name);
+  useEffect(() => {
+    fieldNow.current = name;
+  }, [name]);
+
+  const refuse = (typed: string, reason: string) => {
+    // The text stays to retry: back in the field when it is empty, left where it is when it
+    // still holds it. Newer text typed meanwhile is not written over, so the alert names
+    // the task that was not added instead.
+    const held = fieldNow.current.trim();
+    const kept = held === '' || held === typed;
+    if (held === '') setName(typed);
+    setRefusal((was) => ({
+      text: kept ? reason : `${reason} (“${typed}” was not added.)`,
+      key: (was?.key ?? 0) + 1,
+    }));
+  };
 
   const capture = async (typed: string) => {
-    pending.current = true;
+    pending.current.add(typed);
+    setSaving((count) => count + 1);
     try {
       const outcome = await onCapture(typed);
       if (outcome.captured) {
-        setName('');
+        // Cleared only while the field still holds what was captured: typing that came
+        // after Enter is the next task, not something to wipe.
+        setName((now) => (now.trim() === typed ? '' : now));
         setRefusal(null);
-      } else setRefusal(outcome.reason);
+      } else refuse(typed, outcome.reason);
+    } catch (cause) {
+      refuse(typed, cause instanceof Error ? cause.message : String(cause));
     } finally {
-      pending.current = false;
+      pending.current.delete(typed);
+      setSaving((count) => count - 1);
     }
   };
 
@@ -84,21 +113,27 @@ export function CapturePalette({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key !== 'Enter' || isImeKey(event) || pending.current) return;
-                  if (name.trim() === '') {
+                  if (event.key !== 'Enter' || isImeKey(event)) return;
+                  const typed = name.trim();
+                  if (typed === '') {
                     onClose();
                     return;
                   }
-                  void capture(name.trim());
+                  if (!pending.current.has(typed)) void capture(typed);
                 }}
               />
             </div>
             <p className="palette__hint">
               Each one becomes <span className="palette__destination">{destination}</span>.
             </p>
+            {saving > 0 && (
+              <p className="palette__saving" role="status">
+                Saving…
+              </p>
+            )}
             {refusal !== null && (
-              <p className="palette__refusal" role="alert">
-                {refusal}
+              <p key={refusal.key} className="palette__refusal" role="alert">
+                {refusal.text}
               </p>
             )}
             {children}

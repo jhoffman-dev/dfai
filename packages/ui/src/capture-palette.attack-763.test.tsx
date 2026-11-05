@@ -7,7 +7,7 @@ import { CapturePalette, type CaptureOutcome } from './capture-palette.tsx';
 /** A capture the test answers by hand, so typing can happen while it is on its way. */
 function heldCapture() {
   let answer: (outcome: CaptureOutcome) => void = () => {};
-  const onCapture = vi.fn(
+  const onCapture = vi.fn<(name: string) => Promise<CaptureOutcome>>(
     () =>
       new Promise<CaptureOutcome>((resolve) => {
         answer = resolve;
@@ -19,7 +19,7 @@ function heldCapture() {
 const field = () => screen.getByRole('textbox', { name: 'What needs doing' }) as HTMLInputElement;
 
 describe('CapturePalette while a capture is on its way (#672 attack)', () => {
-  it.fails('keeps what was typed after Enter when the earlier capture lands', async () => {
+  it('keeps what was typed after Enter when the earlier capture lands', async () => {
     const user = userEvent.setup();
     const held = heldCapture();
     render(<CapturePalette destination="a Task" onCapture={held.onCapture} onClose={() => {}} />);
@@ -32,7 +32,7 @@ describe('CapturePalette while a capture is on its way (#672 attack)', () => {
     expect(field().value).toBe('Buy milk');
   });
 
-  it.fails('does not lose a second task whose Enter came while the first was pending', async () => {
+  it('does not lose a second task whose Enter came while the first was pending', async () => {
     const user = userEvent.setup();
     const held = heldCapture();
     render(<CapturePalette destination="a Task" onCapture={held.onCapture} onClose={() => {}} />);
@@ -48,7 +48,7 @@ describe('CapturePalette while a capture is on its way (#672 attack)', () => {
     expect(kept || captured).toBe(true);
   });
 
-  it.fails('says why when the capture itself throws, rather than failing silently', async () => {
+  it('says why when the capture itself throws, rather than failing silently', async () => {
     const user = userEvent.setup();
     const onCapture = vi.fn(async (): Promise<CaptureOutcome> => {
       throw new Error('disk full');

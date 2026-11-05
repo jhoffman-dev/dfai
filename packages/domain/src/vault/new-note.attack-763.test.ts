@@ -8,14 +8,14 @@ import { nextAvailableNotePath, noteFileName } from './new-note.ts';
 const ONE_HUGE_GRAPHEME = `e${'́'.repeat(200)}`;
 
 describe('noteFileName on a paste whose first character is longer than a name (#672 attack)', () => {
-  it.fails('never names the note with nothing before the extension (a hidden ".md")', () => {
+  it('never names the note with nothing before the extension (a hidden ".md")', () => {
     const name = noteFileName(`${ONE_HUGE_GRAPHEME} rest of the line`);
     expect(name).not.toBe('.md');
     expect(name.startsWith('.')).toBe(false);
     expect(utf8Bytes(name)).toBeLessThanOrEqual(MAX_NAME_BYTES);
   });
 
-  it.fails('numbers such a note with a name, not a bare " 2.md"', () => {
+  it('numbers such a note with a name, not a bare " 2.md"', () => {
     const first = nextAvailableNotePath({
       folder: VAULT_ROOT,
       name: ONE_HUGE_GRAPHEME,

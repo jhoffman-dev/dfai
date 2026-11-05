@@ -27,6 +27,26 @@ function hook(fs: ReturnType<typeof fakeVaultFs>) {
 }
 
 describe('useCreateNote captureNote', () => {
+  it('clears a notice from before once a capture is written', async () => {
+    let refuse = true;
+    const fs = fakeVaultFs({
+      createNote: async () => {
+        if (refuse) throw new Error('The disk is full.');
+        return 0;
+      },
+    });
+    const { result } = hook(fs);
+    await act(async () => {
+      await result.current.createNewNote();
+    });
+    expect(result.current.error).toBe('The disk is full.');
+    refuse = false;
+    await act(async () => {
+      await result.current.captureNote('Call Tobias Fenn', null);
+    });
+    expect(result.current.error).toBeNull();
+  });
+
   it('answers the path once the note is written, and opens it', async () => {
     const fs = fakeVaultFs({ createNote: async () => 0 });
     const { result, onCreated } = hook(fs);

@@ -104,7 +104,7 @@ describe('CapturePalette', () => {
     expect(onCapture).toHaveBeenCalledTimes(2);
   });
 
-  it('takes one capture at a time: a second Enter while one is on its way does nothing', async () => {
+  it('does not send the same task twice: a repeated Enter on it while it is on its way does nothing', async () => {
     const settle: { current: ((outcome: CaptureOutcome) => void) | null } = { current: null };
     const onCapture = vi.fn(
       () =>
@@ -118,6 +118,73 @@ describe('CapturePalette', () => {
     expect(onCapture).toHaveBeenCalledTimes(1);
     settle.current?.(CAPTURED);
     await waitFor(() => expect(field).toHaveProperty('value', ''));
+  });
+
+  it('says Saving… while a capture is on its way, and not after', async () => {
+    let settle: (outcome: CaptureOutcome) => void = () => {};
+    const onCapture = vi.fn(
+      () =>
+        new Promise<CaptureOutcome>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(<CapturePalette {...props} onCapture={onCapture} />);
+    expect(screen.queryByRole('status')).toBeNull();
+    await userEvent.type(screen.getByRole('textbox'), 'Buy milk{Enter}');
+    expect(screen.getByRole('status').textContent).toBe('Saving…');
+    settle(CAPTURED);
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
+  it('says the same refusal again when it happens again, as a new alert', async () => {
+    const onCapture = vi.fn(async (): Promise<CaptureOutcome> => ({
+      captured: false,
+      reason: 'Offline.',
+    }));
+    render(<CapturePalette {...props} onCapture={onCapture} />);
+    const field = screen.getByRole('textbox');
+    await userEvent.type(field, 'Buy milk{Enter}');
+    const first = await screen.findByRole('alert');
+    await userEvent.type(field, '{Enter}');
+    await waitFor(() => expect(onCapture).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('alert')).not.toBe(first));
+    expect(screen.getByRole('alert').textContent).toBe('Offline.');
+  });
+
+  it('names the task a refusal was for when the field has moved on to the next, and keeps the next', async () => {
+    let settle: (outcome: CaptureOutcome) => void = () => {};
+    const onCapture = vi.fn(
+      () =>
+        new Promise<CaptureOutcome>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(<CapturePalette {...props} onCapture={onCapture} />);
+    const field = screen.getByRole('textbox');
+    await userEvent.type(field, 'Call Sam{Enter}');
+    await userEvent.clear(field);
+    await userEvent.type(field, 'Buy milk');
+    settle({ captured: false, reason: 'The disk is full.' });
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('The disk is full. (“Call Sam” was not added.)');
+    expect(field).toHaveProperty('value', 'Buy milk');
+  });
+
+  it('puts a refused task back when the field was cleared meanwhile', async () => {
+    let settle: (outcome: CaptureOutcome) => void = () => {};
+    const onCapture = vi.fn(
+      () =>
+        new Promise<CaptureOutcome>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(<CapturePalette {...props} onCapture={onCapture} />);
+    const field = screen.getByRole('textbox');
+    await userEvent.type(field, 'Call Sam{Enter}');
+    await userEvent.clear(field);
+    settle({ captured: false, reason: 'Offline.' });
+    await screen.findByRole('alert');
+    expect(field).toHaveProperty('value', 'Call Sam');
   });
 
   it('closes on an empty Enter rather than making a nameless note', async () => {

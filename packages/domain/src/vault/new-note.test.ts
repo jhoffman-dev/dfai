@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_NAME_BYTES, utf8Bytes } from './file-name-bytes.ts';
 import { createVaultPath, VAULT_ROOT } from './vault-path.ts';
 import {
+  firstNamedLine,
   isUnnamed,
   linkableEntryName,
   NEW_NOTE_CONTENTS,
@@ -208,16 +209,23 @@ describe('noteFileName (adversarial)', () => {
   );
 });
 
-describe('noteFileName, from text pasted rather than typed (#672)', () => {
-  it('names the note by the first line that holds a name, not the whole paragraph', () => {
-    expect(noteFileName('Call Tobias Fenn\nabout the seed order\nand the fence')).toBe(
-      'Call Tobias Fenn.md',
+describe('firstNamedLine, for text pasted into quick capture (#672)', () => {
+  it('takes the first line that holds a name, not the whole paragraph', () => {
+    expect(firstNamedLine('Call Tobias Fenn\nabout the seed order\nand the fence')).toBe(
+      'Call Tobias Fenn',
     );
-    expect(noteFileName('\n  \n...\nSecond line is the name\nthird')).toBe(
-      'Second line is the name.md',
+    expect(firstNamedLine('\n  \n...\nSecond line is the name\nthird')).toBe(
+      'Second line is the name',
     );
+    expect(firstNamedLine('...\n   ')).toBe('');
   });
 
+  it('is only for capture: a two-line title names its note as it always did', () => {
+    expect(noteFileName('Q3 plan\nDraft for Sam')).toBe('Q3 plan Draft for Sam.md');
+  });
+});
+
+describe('noteFileName, from text too long for a disk (#672)', () => {
   it('cuts a name too long for a disk until it fits, by whole words of what was typed', () => {
     const long = 'Garden '.repeat(60).trim();
     expect(utf8Bytes(long)).toBeGreaterThan(MAX_NAME_BYTES);
