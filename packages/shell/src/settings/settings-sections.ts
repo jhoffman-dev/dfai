@@ -42,18 +42,21 @@ export type AppSettingsSection =
   | 'kindle'
   | 'claude'
   | 'sync'
+  | 'notHere'
   | 'about';
 
 /**
  * The app's sections in the order they are drawn and listed; `withVault`
- * ones only once a vault is open, and one with an `entry` only where it is
- * offered (#657). The one table both the list on the left and the sections
+ * ones only once a vault is open, one with an `entry` only where it is
+ * offered (#657), and a `whenLimited` one only where the platform lacks
+ * something (#670). The one table both the list on the left and the sections
  * themselves are drawn from, so the two cannot disagree.
  */
 const ORDER: readonly {
   readonly key: AppSettingsSection;
   readonly withVault: boolean;
   readonly entry?: EntryPoint;
+  readonly whenLimited?: true;
 }[] = [
   { key: 'profile', withVault: true },
   { key: 'index', withVault: false },
@@ -67,6 +70,7 @@ const ORDER: readonly {
   { key: 'kindle', withVault: true, entry: 'kindleSettings' },
   { key: 'claude', withVault: false, entry: 'claudeSettings' },
   { key: 'sync', withVault: true, entry: 'syncSettings' },
+  { key: 'notHere', withVault: false, whenLimited: true },
   { key: 'about', withVault: false },
 ];
 
@@ -81,30 +85,45 @@ interface SectionLists {
   readonly withoutVault: SettingsSectionsShown;
 }
 
+/** One platform's lists, as it lacks something or not. */
+interface ListsByLimit {
+  readonly limited: SectionLists;
+  readonly complete: SectionLists;
+}
+
 /** Each platform's lists, made once: the window is handed one `offered` for its life. */
-const listsFor = new WeakMap<EntryPointsOffered, SectionLists>();
+const listsFor = new WeakMap<EntryPointsOffered, ListsByLimit>();
 
 function shownOf(keys: readonly AppSettingsSection[]): SettingsSectionsShown {
   return { keys, links: keys.map((key) => SETTINGS_SECTIONS[key]) };
 }
 
-function sectionLists(offered: EntryPointsOffered): SectionLists {
-  const made = listsFor.get(offered);
-  if (made !== undefined) return made;
-  const shown = ORDER.filter((entry) => entry.entry === undefined || offered[entry.entry]);
-  const lists = {
+function listsOf(offered: EntryPointsOffered, limited: boolean): SectionLists {
+  const shown = ORDER.filter(
+    (entry) =>
+      (entry.entry === undefined || offered[entry.entry]) && (limited || !entry.whenLimited),
+  );
+  return {
     withVault: shownOf(shown.map((entry) => entry.key)),
     withoutVault: shownOf(shown.filter((entry) => !entry.withVault).map((entry) => entry.key)),
   };
-  listsFor.set(offered, lists);
-  return lists;
+}
+
+function sectionLists(offered: EntryPointsOffered, limited: boolean): SectionLists {
+  let made = listsFor.get(offered);
+  if (made === undefined) {
+    made = { limited: listsOf(offered, true), complete: listsOf(offered, false) };
+    listsFor.set(offered, made);
+  }
+  return limited ? made.limited : made.complete;
 }
 
 /**
  * The app's sections: which to draw, in order, and their links for the
  * dialog's list on the left. Some are only drawn with a vault open: they want
  * its settings note, its Keychain entries or its repository, and some only
- * where the platform offers them. Kept here rather than gathered from the
+ * where the platform offers them; Not available here only where it lacks
+ * something. Kept here rather than gathered from the
  * sections as they mount, so that opening Settings costs no extra commit;
  * e2e/settings-sections.spec.ts holds the list in step with what is drawn.
  * The same object each time for the same `offered`, so the dialog's list can
@@ -113,10 +132,13 @@ function sectionLists(offered: EntryPointsOffered): SectionLists {
 export function settingsSectionsShown({
   vaultOpen,
   offered,
+  limited = false,
 }: {
   vaultOpen: boolean;
   offered: EntryPointsOffered;
+  /** Whether the platform lacks anything the person would miss (#670). */
+  limited?: boolean;
 }): SettingsSectionsShown {
-  const lists = sectionLists(offered);
+  const lists = sectionLists(offered, limited);
   return vaultOpen ? lists.withVault : lists.withoutVault;
 }

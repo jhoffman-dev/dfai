@@ -21,6 +21,7 @@ export { GlobalCaptureSettings } from './global-capture-settings.tsx';
 export type { GlobalCaptureView } from './global-capture-settings.tsx';
 export type { IndexSummary } from './index-status.tsx';
 export { AboutSettings, type AppInfoState } from './about-settings.tsx';
+export { NotHereSettings } from './not-here-settings.tsx';
 export { VaultTree } from './vault-tree.tsx';
 export type { TreeEditing } from './vault-tree.tsx';
 export { Sidebar } from './sidebar.tsx';

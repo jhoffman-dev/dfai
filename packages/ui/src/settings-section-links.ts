@@ -31,5 +31,6 @@ export const SETTINGS_SECTIONS = {
   kindle: { id: 'settings-kindle', title: 'Kindle', icon: 'doc' },
   claude: { id: 'settings-claude', title: 'Claude', icon: 'spark' },
   sync: { id: 'settings-sync', title: 'Sync', icon: 'cloud' },
+  notHere: { id: 'settings-not-here', title: 'Not available here', icon: 'status' },
   about: { id: 'settings-about', title: 'About', icon: 'id' },
 } as const satisfies Record<string, SettingsSectionLink>;

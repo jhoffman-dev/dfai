@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { mountShell, type AppPorts } from '@dfai/shell';
+import { ENTRY_POINTS, entryPointsOffered, platformLimits } from '@dfai/application';
+import { WEB_CAPABILITIES } from '@dfai/domain';
+import { composedForApp, mountShell, type AppPorts } from '@dfai/shell';
 import { composeWeb, composeWebShell } from './composition.ts';
 
 /*
@@ -70,6 +72,12 @@ function watchEvery<Port extends object>(tell: () => void, port: Port): Port {
 const SLACK_LINK = 'https://larkspur.slack.com/archives/C0123ABCD/p1793136000000100';
 
 describe('the web build (#656)', () => {
+  it('wires a port for everything the web can do, so nothing it claims is turned off unseen (#670)', () => {
+    const { offered } = composedForApp(composeWebShell());
+    const claimed = entryPointsOffered(WEB_CAPABILITIES);
+    expect(ENTRY_POINTS.filter((entry) => claimed[entry] && !offered[entry])).toEqual([]);
+  });
+
   it('draws the shell on the sample vault, listing its notes', { timeout: 20_000 }, async () => {
     startedAsMainStartsIt();
     expect(
@@ -99,8 +107,24 @@ describe('the web build (#656)', () => {
         within(sections)
           .getAllByRole('button')
           .map((link) => link.textContent),
-      ).toEqual(['Appearance', 'Profile', 'Index', 'Images', 'Quick add', 'About']);
+      ).toEqual([
+        'Appearance',
+        'Profile',
+        'Index',
+        'Images',
+        'Quick add',
+        'Not available here',
+        'About',
+      ]);
       expect(screen.queryByRole('switch', { name: 'Local API' })).toBeNull();
+      // What it lacks is said, from the capability map, as the guide says it (#670).
+      const notHere = screen.getByRole('region', { name: 'Not available here' });
+      expect(
+        within(within(notHere).getByRole('list'))
+          .getAllByRole('listitem')
+          .map((item) => item.firstChild?.textContent),
+      ).toEqual(platformLimits(WEB_CAPABILITIES).map((limit) => limit.what));
+      expect(within(notHere).getByText('The local API and the MCP server')).toBeDefined();
     },
   );
 

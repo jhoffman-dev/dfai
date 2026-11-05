@@ -1,6 +1,11 @@
 import { StrictMode, type ComponentProps } from 'react';
 import { createRoot } from 'react-dom/client';
-import { entryPointsOffered, type EntryPointsOffered } from '@dfai/application';
+import {
+  entryPointsOffered,
+  platformLimits,
+  type EntryPointsOffered,
+  type PlatformLimit,
+} from '@dfai/application';
 import type { PlatformCapabilities } from '@dfai/domain';
 import { App } from './app.tsx';
 import { guardStrayFileDrops } from './file-drop-guard.ts';
@@ -9,7 +14,7 @@ import { PreloadAfterStart } from './preload-after-start.tsx';
 import './styles/index.css';
 
 /** Every port the shell runs on, as a platform's composition root builds them. */
-export type AppPorts = Omit<ComponentProps<typeof App>, 'offered'>;
+export type AppPorts = Omit<ComponentProps<typeof App>, 'offered' | 'limits'>;
 
 /**
  * What a platform's composition root hands the shell (#656): its adapters
@@ -26,11 +31,14 @@ export type ShellComposition = {
  * (#657). A capability whose adapter the composition left out is off, so the
  * app never has a feature on and its port missing; and a port for a
  * capability that is off is not handed on, so nothing reaches it. The answer
- * is made once: the app keeps one `offered` for its life.
+ * is made once: the app keeps one `offered` for its life. What the platform
+ * lacks is told from its own capabilities, not from ports left out: those
+ * are a composition's choice, not something the platform cannot do (#670).
  */
 export function composedForApp({ ports, capabilities }: ShellComposition): {
   readonly ports: AppPorts;
   readonly offered: EntryPointsOffered;
+  readonly limits: readonly PlatformLimit[];
 } {
   const has = {
     ...capabilities,
@@ -49,6 +57,7 @@ export function composedForApp({ ports, capabilities }: ShellComposition): {
       ...(has.googleCalendar && blocks !== undefined && { blocks }),
     },
     offered: withCalendarPorts(entryPointsOffered(has), { meetings, blocks }),
+    limits: platformLimits(capabilities),
   };
 }
 
@@ -79,7 +88,7 @@ const holding = new WeakSet<Window>();
 
 /** Draws the app into the page's `#root`, as every platform starts it; the answer takes it down again. */
 export function mountShell(composition: ShellComposition, page: Window = window): () => void {
-  const { ports, offered } = composedForApp(composition);
+  const { ports, offered, limits } = composedForApp(composition);
   const element = page.document.getElementById('root');
   if (!element) throw new Error('index.html is missing #root');
   if (holding.has(page)) throw new Error('this page already holds the app: take it down first');
@@ -88,7 +97,7 @@ export function mountShell(composition: ShellComposition, page: Window = window)
   const root = createRoot(element);
   root.render(
     <StrictMode>
-      <App {...ports} offered={offered} />
+      <App {...ports} offered={offered} limits={limits} />
       {/* What start-up does not draw loads once it has committed, so pages open with no fallback. */}
       <PreloadAfterStart preload={preloadPages} />
     </StrictMode>,
