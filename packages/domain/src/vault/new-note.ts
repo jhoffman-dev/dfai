@@ -23,7 +23,7 @@ export function noteFileName(name: string): string {
   if (cleaned === '') return `${DEFAULT_NOTE_NAME}.md`;
   const extension = MARKDOWN.exec(cleaned)?.[0] ?? '.md';
   const stem = MARKDOWN.test(cleaned) ? cleaned.slice(0, -extension.length) : cleaned;
-  return `${stem}${extension}`;
+  return `${fitFileNameStem(stem, extension)}${extension}`;
 }
 
 /** The first line of `text` that cleans to a name; empty when none does. */
