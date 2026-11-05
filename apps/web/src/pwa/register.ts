@@ -54,11 +54,14 @@ export async function registerShellWorker({
   workers: WorkerContainer;
   onUpdateReady: (update: UpdateReady) => void;
 }): Promise<void> {
+  // Read before registering, and changed only as each `controllerchange` is heard: the browser
+  // sets `controller` in parallel and queues the event, so the first worker's claim can show in
+  // `controller` before its event, or before its own `installed` reaches the page (#762). Read
+  // live, that claim looks like an update to a page that was never controlled.
+  let wasControlled = workers.controller !== null;
   const registration = await workers.register(WORKER_PATH);
   const takeovers = new Set<() => void>();
   let offered = false;
-  // The first worker claims the page as it activates: a change of controller, but no update.
-  let wasControlled = workers.controller !== null;
 
   const takeOver = (): Promise<void> => {
     const waiting = registration.waiting;
@@ -86,13 +89,13 @@ export async function registerShellWorker({
     worker.addEventListener('statechange', () => {
       if (
         offersUpdate({
-          controlled: workers.controller !== null,
+          controlled: wasControlled,
           waiting: worker.state === 'installed',
         })
       )
         offer();
     });
-  if (registration.waiting !== null && workers.controller !== null) offer();
+  if (registration.waiting !== null && wasControlled) offer();
   if (registration.installing !== null) watch(registration.installing);
   registration.addEventListener('updatefound', () => {
     if (registration.installing !== null) watch(registration.installing);

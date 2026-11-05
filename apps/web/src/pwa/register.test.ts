@@ -169,6 +169,19 @@ describe('registering the shell worker (#668)', () => {
     expect(onUpdateReady).not.toHaveBeenCalled();
   });
 
+  it('says nothing to a page that opened uncontrolled, though a claim and a waiting worker show by the time it registers (#762)', async () => {
+    const { workers, registration } = fakeContainer({
+      controlled: false,
+      whileRegistering: () => {
+        workers.claimed();
+        registration.waiting = fakeWorker('installed');
+      },
+    });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    expect(onUpdateReady).not.toHaveBeenCalled();
+  });
+
   it('still offers a newer build to a tab that its first worker claimed (#762)', async () => {
     const { workers, update, installed } = fakeContainer({ controlled: false });
     const onUpdateReady = vi.fn();
