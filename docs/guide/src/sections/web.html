@@ -1,0 +1,35 @@
+<!-- contents: DFAI on the web and iPad -->
+    <section id="web">
+      <h2>DFAI on the web and iPad</h2>
+      <p class="sub">DFAI also runs in a browser, at <b>app.dailyflowai.com</b>, so an iPad can work in the same vault as a Mac. It reads and writes the vault's GitHub repository itself: no server in between keeps your notes, and the Mac and the iPad meet in that repository.</p>
+      <h3>Start</h3>
+      <ol class="steps">
+        <li>On the Mac, sync the vault with a GitHub repository first — see <a href="#sync">Sync between Macs</a>. The iPad works in that repository, so it needs one.</li>
+        <li>Install the DFAI GitHub App on that repository alone, then press <b>Sign in with GitHub</b> — see <a href="#web-sign-in">Signing in on the web</a>. DFAI opens the repository you gave it; there is nothing else to pick.</li>
+        <li>The first time, DFAI builds its search index in the browser, which takes a moment on a big vault. After that it reads again only the notes that changed.</li>
+      </ol>
+      <h3>Put it on the Home Screen</h3>
+      <ol class="steps">
+        <li>Open <b>app.dailyflowai.com</b> in Safari on the iPad, press <b>Share</b>, then <b>Add to Home Screen</b>.</li>
+        <li>DFAI now opens from its icon, full screen like an app, and it opens even with no connection.</li>
+        <li>When a newer DFAI is out, a bar says <b>Update ready</b>. Press <b>Reload</b> when you are ready to use it.</li>
+      </ol>
+      <h3>With no connection</h3>
+      <ul>
+        <li><b>Notes you have opened before open again.</b> The browser keeps the notes you use, up to about 50 MB, letting the longest-unused go first. A note you have never opened says <i>“This note is not on this device yet; it needs a connection”</i>.</li>
+        <li><b>Typing still saves.</b> A save that cannot reach GitHub waits on the iPad, and the note says <b>Not saved yet</b>. When the connection is back, the waiting saves go to GitHub in the order you made them, and the words go away.</li>
+        <li><b>Signing out asks first</b> while any save is still waiting, because signing out deletes waiting saves from the iPad for good.</li>
+      </ul>
+      <h3>When the Mac changed the same note</h3>
+      <ul>
+        <li>On the web every save is a commit to GitHub. If the note changed there since you opened it — Mara's Mac synced an edit to <i>Plan</i>, say — GitHub refuses the save, and DFAI never writes over the other version.</li>
+        <li>The note shows a bar with two choices. <b>Keep mine as a copy</b> saves your text beside the note as <code>Plan (conflict from DFAI web).md</code> and leaves the newer version as it is. <b>Discard my changes</b> lets your edit go and shows the newer version.</li>
+        <li>There is no <b>Overwrite</b> on the web: it would replace, unseen, what the Mac wrote. Keeping a copy loses nothing — read both, keep what you want, and delete the copy.</li>
+        <li>The Mac names the copies it makes of an iPad edit the same way, so a copy from either side says <i>conflict from DFAI web</i>. A note deleted elsewhere while you were editing it is put back, since an edit never loses to a delete.</li>
+      </ul>
+      <h3>What the web can't do</h3>
+      <p>These need the desktop app. Everything else works on the web, in the same vault. Settings → <b>Not available here</b> shows the same list, and this one is made from the same place when the guide is built, so the two agree.</p>
+      <ul>
+        <!-- guide:web-limits -->
+      </ul>
+    </section>

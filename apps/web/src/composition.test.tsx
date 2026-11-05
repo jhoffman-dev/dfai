@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { platformLimits } from '@dfai/application';
+import { WEB_CAPABILITIES } from '@dfai/domain';
 import { mountShell, type AppPorts } from '@dfai/shell';
 import { composeWeb, composeWebShell } from './composition.ts';
 
@@ -99,8 +101,24 @@ describe('the web build (#656)', () => {
         within(sections)
           .getAllByRole('button')
           .map((link) => link.textContent),
-      ).toEqual(['Appearance', 'Profile', 'Index', 'Images', 'Quick add', 'About']);
+      ).toEqual([
+        'Appearance',
+        'Profile',
+        'Index',
+        'Images',
+        'Quick add',
+        'Not available here',
+        'About',
+      ]);
       expect(screen.queryByRole('switch', { name: 'Local API' })).toBeNull();
+      // What it lacks is said, from the capability map, as the guide says it (#670).
+      const notHere = screen.getByRole('region', { name: 'Not available here' });
+      expect(
+        within(within(notHere).getByRole('list'))
+          .getAllByRole('listitem')
+          .map((item) => item.firstChild?.textContent),
+      ).toEqual(platformLimits(WEB_CAPABILITIES).map((limit) => limit.what));
+      expect(within(notHere).getByText('The local API and the MCP server')).toBeDefined();
     },
   );
 

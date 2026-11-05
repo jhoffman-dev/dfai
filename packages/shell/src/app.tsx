@@ -84,6 +84,7 @@ import {
   exportFormatsOffered,
   presetsOffered,
   type EntryPointsOffered,
+  type PlatformLimit,
 } from '@dfai/application';
 import {
   AppShell,
@@ -100,6 +101,7 @@ import {
   TemplateToNoteDialog,
   MovePicker,
   AboutSettings,
+  NotHereSettings,
   IndexSettings,
   indexStatusText,
   SidebarFooter,
@@ -428,6 +430,9 @@ export { localToday };
 
 /** A shortcut whose feature this platform lacks: the key does nothing. */
 const DO_NOTHING = () => {};
+/** Where the shell is not told what its platform lacks: nothing, as on the desktop. */
+const NOTHING_MISSING: readonly PlatformLimit[] = Object.freeze([]);
+
 /** A paste read where no Slack is offered: never taken as a link to save. */
 const OFFER_NOTHING = () => false;
 
@@ -508,6 +513,7 @@ function AppWindow({
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
   offered,
+  limits = NOTHING_MISSING,
 }: {
   appInfo: AppInfoPort;
   vault: OnHost<VaultPorts>;
@@ -555,6 +561,11 @@ function AppWindow({
    * window's life. A port for one that is off is not handed in at all.
    */
   offered: EntryPointsOffered;
+  /**
+   * What the platform cannot do, and why, for Settings → Not available here
+   * (#670): decided from its capabilities as the shell mounts. Left out, nothing is missing.
+   */
+  limits?: readonly PlatformLimit[];
 }) {
   const [app, setApp] = useState<AppInfoState>({ kind: 'loading' });
   const exportOffered = offered.exportNotes;
@@ -2405,7 +2416,11 @@ function AppWindow({
       showOverlay,
     ],
   );
-  const settingsShown = settingsSectionsShown({ vaultOpen: location !== null, offered });
+  const settingsShown = settingsSectionsShown({
+    vaultOpen: location !== null,
+    offered,
+    limited: limits.length > 0,
+  });
   /** One section of Settings, as `settingsShown` names it; the vault's ones only with a vault open. */
   const settingsSection = (key: AppSettingsSection): ReactNode => {
     switch (key) {
@@ -2461,6 +2476,8 @@ function AppWindow({
             </SyncSettingsSlot>
           )
         );
+      case 'notHere':
+        return <NotHereSettings limits={limits} />;
       case 'about':
         return <AboutSettings app={app} />;
     }

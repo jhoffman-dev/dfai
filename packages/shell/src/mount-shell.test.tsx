@@ -1,20 +1,34 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { EVERY_ENTRY_POINT, type EntryPointsOffered } from '@dfai/application';
+import {
+  EVERY_ENTRY_POINT,
+  platformLimits,
+  type EntryPointsOffered,
+  type PlatformLimit,
+} from '@dfai/application';
 import { DESKTOP_CAPABILITIES, WEB_CAPABILITIES } from '@dfai/domain';
 import { composedForApp, mountShell, type AppPorts } from './mount-shell.tsx';
 
-/** What the stand-in app was last handed: what it offers, and which ports. */
+/** What the stand-in app was last handed: what it offers, what it lacks, and which ports. */
 const handed = vi.hoisted(() => ({
   offered: null as EntryPointsOffered | null,
+  limits: null as readonly PlatformLimit[] | null,
   ports: [] as string[],
 }));
 
 // mountShell's own work, without the window it draws: the app and its later pages stand in.
 vi.mock('./app.tsx', () => ({
-  App: ({ offered, ...ports }: { offered: EntryPointsOffered }) => {
+  App: ({
+    offered,
+    limits,
+    ...ports
+  }: {
+    offered: EntryPointsOffered;
+    limits: readonly PlatformLimit[];
+  }) => {
     handed.offered = offered;
+    handed.limits = limits;
     handed.ports = Object.keys(ports).sort();
     return <p>the app</p>;
   },
@@ -101,6 +115,7 @@ describe('mountShell (#656)', () => {
     mounted();
     await screen.findByText('the app');
     expect(handed.offered).toEqual(EVERY_ENTRY_POINT);
+    expect(handed.limits).toEqual([]);
   });
 
   it('hands the app what the platform offers, and none of the ports it lacks (#657)', async () => {
@@ -111,6 +126,23 @@ describe('mountShell (#656)', () => {
     expect(handed.offered?.syncSettings).toBe(false);
     expect(handed.offered?.exportNotes).toBe(true);
     expect(handed.ports).toEqual(['appInfo', 'exporting']);
+  });
+
+  it('hands the app what the platform lacks, from its capabilities alone (#670)', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    unmount = mountShell({ ports, capabilities: WEB_CAPABILITIES });
+    await screen.findByText('the app');
+    expect(handed.limits).toEqual(platformLimits(WEB_CAPABILITIES));
+    expect(handed.limits?.map((limit) => limit.what)).toContain('Syncing by git');
+  });
+
+  it('tells nothing as lacking on the desktop when only a port is left out (#670)', () => {
+    const { offered, limits } = composedForApp({
+      ports: { ...ports, kindle: undefined } as unknown as AppPorts,
+      capabilities: DESKTOP_CAPABILITIES,
+    });
+    expect(offered.kindleSettings).toBe(false);
+    expect(limits).toEqual([]);
   });
 });
 
