@@ -19,9 +19,14 @@
 
 /* The work above, the bar below. The shell's own safe-area padding at the
    bottom moves into the bar, so the bar's ground colour runs under the home
-   indicator rather than the surface showing through. */
+   indicator rather than the surface showing through. In a Safari tab `100vh`
+   is the viewport at its tallest, with the toolbar gone, so the bar would sit
+   under the toolbar; `100dvh` follows the toolbar as it comes and goes. The
+   static height stands first, for a browser without `dvh`. */
 .shell--phone {
   flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
   padding-bottom: 0;
 }
 

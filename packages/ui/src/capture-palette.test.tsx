@@ -105,18 +105,18 @@ describe('CapturePalette', () => {
   });
 
   it('takes one capture at a time: a second Enter while one is on its way does nothing', async () => {
-    let settle: ((outcome: CaptureOutcome) => void) | null = null;
+    const settle: { current: ((outcome: CaptureOutcome) => void) | null } = { current: null };
     const onCapture = vi.fn(
       () =>
         new Promise<CaptureOutcome>((resolve) => {
-          settle = resolve;
+          settle.current = resolve;
         }),
     );
     render(<CapturePalette {...props} onCapture={onCapture} />);
     const field = screen.getByRole('textbox', { name: 'What needs doing' });
     await userEvent.type(field, 'Buy milk{Enter}{Enter}');
     expect(onCapture).toHaveBeenCalledTimes(1);
-    settle?.(CAPTURED);
+    settle.current?.(CAPTURED);
     await waitFor(() => expect(field).toHaveProperty('value', ''));
   });
 

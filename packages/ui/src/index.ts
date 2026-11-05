@@ -121,7 +121,7 @@ export type { FeedBodies } from './feed-view.tsx';
 export type { CoverSource } from './card-cover.tsx';
 export type { DoneTicks } from './done-checkbox.tsx';
 export { LayoutMenu } from './layout-menu.tsx';
-export { CapturePalette } from './capture-palette.tsx';
+export { CapturePalette, type CaptureOutcome } from './capture-palette.tsx';
 export { CalendarView } from './calendar-view.tsx';
 export type { CalendarWrite } from './calendar-view.tsx';
 export type { PlanDrop, Planner } from './schedule-tray.tsx';

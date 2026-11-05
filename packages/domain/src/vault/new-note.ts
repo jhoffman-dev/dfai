@@ -1,5 +1,6 @@
 import { joinVaultPath, VAULT_ROOT, type VaultPath } from './vault-path.ts';
 import { foldedVaultPath } from './vault-spelling.ts';
+import { fitFileNameStem } from './file-name-bytes.ts';
 
 /** What a note is called before it is given a name. */
 export const DEFAULT_NOTE_NAME = 'Untitled';
@@ -11,12 +12,22 @@ const MARKDOWN = /\.(md|markdown)$/i;
  *
  * Path separators would silently put the note somewhere else, and a name that is
  * only dots or spaces is not a name at all, so both fall back to the default.
- * The extension is added unless one is already there.
+ * The extension is added unless one is already there. Text pasted rather than
+ * typed — a paragraph into quick capture (#672) — names the note by its first
+ * line that holds a name, and a name longer than a disk takes is cut by whole
+ * characters so that it, numbered past names taken, still fits.
  */
 export function noteFileName(name: string): string {
-  const cleaned = cleanEntryName(name);
+  const cleaned = cleanEntryName(firstNamedLine(name));
   if (cleaned === '') return `${DEFAULT_NOTE_NAME}.md`;
-  return MARKDOWN.test(cleaned) ? cleaned : `${cleaned}.md`;
+  const extension = MARKDOWN.exec(cleaned)?.[0] ?? '.md';
+  const stem = MARKDOWN.test(cleaned) ? cleaned.slice(0, -extension.length) : cleaned;
+  return `${fitFileNameStem(stem, ` 9999${extension}`)}${extension}`;
+}
+
+/** The first line of `text` that cleans to a name; empty when none does. */
+function firstNamedLine(text: string): string {
+  return text.split(/\r?\n/).find((line) => cleanEntryName(line) !== '') ?? '';
 }
 
 /** Whether what was typed cleans away to nothing, so the note gets the default name. */

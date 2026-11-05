@@ -56,7 +56,9 @@ export {
   NOTE_MEASURE,
   PHONE_BELOW,
   PHONE_SCREENS,
+  phoneScreenShowing,
+  phoneScreenTarget,
   SIDEBAR_WIDTH,
   shellLayoutFor,
 } from './shell-layout.ts';
-export type { PhoneScreen, ShellLayout } from './shell-layout.ts';
+export type { PhoneScreen, PhoneScreenTarget, PhoneVault, ShellLayout } from './shell-layout.ts';

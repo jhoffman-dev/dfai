@@ -1,3 +1,5 @@
+import type { VaultPath } from '../vault/vault-path.ts';
+import type { NavigationPlace } from './navigation-history.ts';
 import { MAX_PANES } from './workspace.ts';
 
 /**
@@ -33,6 +35,48 @@ export const PHONE_BELOW = 600;
 /** The screens a phone's bar offers, in the order they stand, left to right. */
 export const PHONE_SCREENS = ['quick-add', 'today', 'notes'] as const;
 export type PhoneScreen = (typeof PHONE_SCREENS)[number];
+
+/** What a screen of the phone's bar opens. */
+export type PhoneScreenTarget =
+  | { readonly open: 'capture' }
+  | { readonly open: 'search' }
+  | { readonly open: 'today-page' }
+  | { readonly open: 'daily-note' };
+
+/** What the vault holds that the bar's screens turn on. */
+export interface PhoneVault {
+  /** Whether the vault has a task type: the Today page shows once it does. */
+  readonly tasksShown: boolean;
+}
+
+/**
+ * Where a screen of the bar goes: quick add to the capture palette, Notes to
+ * the search, and Today to the Today page once the vault has tasks — until
+ * then to today's note, the one thing of today's every vault has.
+ */
+export function phoneScreenTarget(screen: PhoneScreen, vault: PhoneVault): PhoneScreenTarget {
+  if (screen === 'quick-add') return { open: 'capture' };
+  if (screen === 'notes') return { open: 'search' };
+  return vault.tasksShown ? { open: 'today-page' } : { open: 'daily-note' };
+}
+
+/**
+ * The screen the focused pane is showing, for the bar to mark as where you
+ * are: Today while the pane shows what Today opens here — the Today page, or
+ * today's note once it is known. The palettes are not places, so quick add
+ * and Notes are never showing.
+ */
+export function phoneScreenShowing(
+  place: NavigationPlace | null,
+  vault: PhoneVault & { readonly dailyNote: VaultPath | null },
+): PhoneScreen | null {
+  if (place === null) return null;
+  const today = phoneScreenTarget('today', vault);
+  if (today.open === 'today-page') return place.kind === 'today' ? 'today' : null;
+  const atDailyNote =
+    vault.dailyNote !== null && place.kind === 'note' && place.path === vault.dailyNote;
+  return atDailyNote ? 'today' : null;
+}
 
 export interface ShellLayout {
   /** Beside the work, in the flow — or a drawer over it, opened on demand. */

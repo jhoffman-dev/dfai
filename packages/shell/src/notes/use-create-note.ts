@@ -11,6 +11,11 @@ import {
 } from '@dfai/application';
 import { localToday } from '../today.ts';
 
+/** What came of a capture: the note's path, or the reason it was refused. */
+export type CaptureOutcome =
+  | { readonly captured: true; readonly path: VaultPath }
+  | { readonly captured: false; readonly reason: string };
+
 /**
  * Adds a note to the vault and opens it.
  *
@@ -40,8 +45,12 @@ export function useCreateNote({
   /** A blank note in a folder of the person's choosing: "New note here". */
   createNoteIn: (folder: VaultPath) => Promise<void>;
   createFromTemplate: (templatePath: string) => Promise<void>;
-  /** Captures a note with a given name into the Inbox, from a template when there is one. */
-  captureNote: (name: string, template: NoteTemplate | null) => Promise<VaultPath | null>;
+  /**
+   * Captures a note with a given name into the Inbox, from a template when there
+   * is one. Refused, it answers the reason for the palette to show beside the
+   * text it keeps (#672), rather than a notice in the window.
+   */
+  captureNote: (name: string, template: NoteTemplate | null) => Promise<CaptureOutcome>;
   /** Today's note, found or made at the root; `today` is `YYYY-MM-DD`. */
   openDailyNote: (today: string) => Promise<VaultPath | null>;
   error: string | null;
@@ -81,7 +90,7 @@ export function useCreateNote({
   );
 
   const captureNote = useCallback(
-    async (name: string, template: NoteTemplate | null): Promise<VaultPath | null> => {
+    async (name: string, template: NoteTemplate | null): Promise<CaptureOutcome> => {
       try {
         const contents = template === null ? undefined : await contentsOf(template);
         const path = await captureToInbox({
@@ -92,12 +101,10 @@ export function useCreateNote({
           notePaths,
           ...(contents === undefined ? {} : { contents }),
         });
-        setError(null);
         onCreated(path);
-        return path;
+        return { captured: true, path };
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-        return null;
+        return { captured: false, reason: cause instanceof Error ? cause.message : String(cause) };
       }
     },
     [fs, markdown, notePaths, contentsOf, onCreated],
