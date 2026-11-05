@@ -46,8 +46,8 @@ describe('the web build', () => {
     expect(WEB_CAPABILITIES.syncByGit).toBe(false);
   });
 
-  it('keeps Markdown export, as a download', () => {
-    expect(WEB_CAPABILITIES.markdownExport).toBe(true);
+  it('has no Markdown export until its download adapter is wired in (PR #760 review)', () => {
+    expect(WEB_CAPABILITIES.markdownExport).toBe(false);
   });
 });
 

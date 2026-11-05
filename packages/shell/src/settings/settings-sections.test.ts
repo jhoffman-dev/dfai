@@ -91,3 +91,32 @@ describe('settingsSectionsShown', () => {
     );
   });
 });
+
+describe('settingsSectionsShown: Not available here (#670)', () => {
+  const web = entryPointsOffered(WEB_CAPABILITIES);
+
+  it('lists it before About where the platform lacks something, with a vault open or not', () => {
+    for (const vaultOpen of [true, false]) {
+      const shown = settingsSectionsShown({ vaultOpen, offered: web, limited: true });
+      expect(shown.links.map((section) => section.title).slice(-2)).toEqual([
+        'Not available here',
+        'About',
+      ]);
+      expect(shown.keys.slice(-2)).toEqual(['notHere', 'about']);
+    }
+  });
+
+  it('leaves it out where nothing is lacking', () => {
+    const shown = settingsSectionsShown({ vaultOpen: true, offered: EVERY_ENTRY_POINT });
+    expect(shown.keys).not.toContain('notHere');
+    expect(
+      settingsSectionsShown({ vaultOpen: true, offered: EVERY_ENTRY_POINT, limited: false }),
+    ).toBe(shown);
+  });
+
+  it('hands back the same lists each time for the same platform, limited or not', () => {
+    const limited = settingsSectionsShown({ vaultOpen: true, offered: web, limited: true });
+    expect(settingsSectionsShown({ vaultOpen: true, offered: web, limited: true })).toBe(limited);
+    expect(settingsSectionsShown({ vaultOpen: true, offered: web })).not.toBe(limited);
+  });
+});

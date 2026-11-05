@@ -10,3 +10,5 @@ export {
   sourceRefreshOffered,
 } from './entry-points.ts';
 export type { EntryPoint, EntryPointsOffered } from './entry-points.ts';
+export { platformLimits } from './platform-limits.ts';
+export type { PlatformLimit } from './platform-limits.ts';

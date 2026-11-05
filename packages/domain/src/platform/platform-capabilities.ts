@@ -77,7 +77,8 @@ export const DESKTOP_CAPABILITIES: PlatformCapabilities = capabilitiesWithout(['
 /**
  * The web build (the iPad PWA): a GitHub repository read and written through
  * the GitHub API, notes cached as they are used, and no host to keep a secret,
- * run a process or reach the system (ADR-0051).
+ * run a process or reach the system (ADR-0051). Markdown export is off until
+ * the web has its download adapter: it hands the shell no export port yet.
  */
 export const WEB_CAPABILITIES: PlatformCapabilities = capabilitiesWithout([
   'syncByGit',
@@ -95,6 +96,7 @@ export const WEB_CAPABILITIES: PlatformCapabilities = capabilitiesWithout([
   'globalCapture',
   'localApi',
   'sqliteSources',
+  'markdownExport',
   'googleDriveExport',
   'pdfExport',
   'pageThumbnails',
