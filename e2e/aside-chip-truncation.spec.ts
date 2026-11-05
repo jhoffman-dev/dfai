@@ -35,7 +35,8 @@ const MEETING_TYPE = [
 ].join('\n');
 
 const LONG_TASK = 'Larkspur Payroll renewal follow-up with the integrations team';
-const LONG_TITLE = 'Quarterly review of the Larkspur Payroll integration roadmap with Mara and Tobias';
+const LONG_TITLE =
+  'Quarterly review of the Larkspur Payroll integration roadmap with Mara and Tobias';
 
 const MEETING = [
   '---',
@@ -161,7 +162,14 @@ test('a value’s problem and a long text stay inside the panel', async ({ page 
   // Wrapped, not cut: every word of it is laid out inside its own box.
   expect(await problem.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
 
+  // A text value is a one-line field: it ends in an ellipsis until it is focused to edit.
   const title = properties.getByRole('textbox', { name: 'Title' });
   await expect(title).toHaveValue(LONG_TITLE);
   expect(rightEdge(await box(title))).toBeLessThanOrEqual(rightEdge(asideBox));
+  expect(
+    await title.evaluate((el) => ({
+      clipped: el.scrollWidth > el.clientWidth,
+      textOverflow: getComputedStyle(el).textOverflow,
+    })),
+  ).toEqual({ clipped: true, textOverflow: 'ellipsis' });
 });
