@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { platformLimits } from '@dfai/application';
+import { ENTRY_POINTS, entryPointsOffered, platformLimits } from '@dfai/application';
 import { WEB_CAPABILITIES } from '@dfai/domain';
-import { mountShell, type AppPorts } from '@dfai/shell';
+import { composedForApp, mountShell, type AppPorts } from '@dfai/shell';
 import { composeWeb, composeWebShell } from './composition.ts';
 
 /*
@@ -72,6 +72,12 @@ function watchEvery<Port extends object>(tell: () => void, port: Port): Port {
 const SLACK_LINK = 'https://larkspur.slack.com/archives/C0123ABCD/p1793136000000100';
 
 describe('the web build (#656)', () => {
+  it('wires a port for everything the web can do, so nothing it claims is turned off unseen (#670)', () => {
+    const { offered } = composedForApp(composeWebShell());
+    const claimed = entryPointsOffered(WEB_CAPABILITIES);
+    expect(ENTRY_POINTS.filter((entry) => claimed[entry] && !offered[entry])).toEqual([]);
+  });
+
   it('draws the shell on the sample vault, listing its notes', { timeout: 20_000 }, async () => {
     startedAsMainStartsIt();
     expect(
