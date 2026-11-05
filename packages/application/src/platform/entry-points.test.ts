@@ -85,9 +85,9 @@ describe('entryPointsOffered', () => {
     expect(entryPointsOffered(EVERYTHING)).toEqual(EVERY_ENTRY_POINT);
   });
 
-  it('hides on the web what its missing capabilities need, keeping export as Markdown', () => {
+  it('hides on the web what its missing capabilities need: everything, until export has its download (PR #760)', () => {
     const offered = entryPointsOffered(WEB_CAPABILITIES);
-    expect(ENTRY_POINTS.filter((entry) => offered[entry])).toEqual(['exportNotes']);
+    expect(ENTRY_POINTS.filter((entry) => offered[entry])).toEqual([]);
   });
 
   it('hides every entry point when no capability is on', () => {
@@ -108,11 +108,16 @@ describe('exportFormatsOffered', () => {
     ]);
   });
 
-  it('offers only Markdown on the web', () => {
-    expect(exportFormatsOffered(entryPointsOffered(WEB_CAPABILITIES))).toEqual([
+  it('offers only Markdown where neither PDF nor Google Drive is', () => {
+    const markdownOnly = { ...EVERYTHING, pdfExport: false, googleDriveExport: false };
+    expect(exportFormatsOffered(entryPointsOffered(markdownOnly))).toEqual([
       'markdown',
       'standalone',
     ]);
+  });
+
+  it('offers nothing on the web, which has no export yet (PR #760)', () => {
+    expect(exportFormatsOffered(entryPointsOffered(WEB_CAPABILITIES))).toEqual([]);
   });
 
   it('drops the PDF and the Doc each with its own capability', () => {

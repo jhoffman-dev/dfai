@@ -2,7 +2,12 @@
 // no platform in it. Each app (`apps/desktop`, `apps/web`) composes it with its
 // own adapters through what is exported here, and nothing else of it.
 
-export { mountShell, type AppPorts, type ShellComposition } from './mount-shell.tsx';
+export {
+  composedForApp,
+  mountShell,
+  type AppPorts,
+  type ShellComposition,
+} from './mount-shell.tsx';
 
 // The ports the shell's parts are built on, as a composition root fills them in.
 export type { VaultPorts } from './vault/use-vault.ts';

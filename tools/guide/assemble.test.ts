@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { assembleGuide } from './assemble.ts';
-import { GUIDE_PAGE, readGuideSources } from './sources.ts';
+import { buildGuide } from './build-guide.ts';
+import { GUIDE_PAGE } from './sources.ts';
 
 const section = (id: string, label: string, text = 'Some words.') =>
   `<!-- contents: ${label} -->\n    <section id="${id}">\n      <p>${text}</p>\n    </section>\n`;
@@ -25,7 +26,7 @@ const sources = (sections: Record<string, string>, page = PAGE) => ({
 describe('the field guide, assembled from its section files (#134)', () => {
   it('is the page committed as docs/guide/index.html — run `pnpm guide:build` if not', async () => {
     const committed = await readFile(GUIDE_PAGE, 'utf8');
-    expect(assembleGuide(await readGuideSources())).toBe(committed);
+    expect(await buildGuide()).toBe(committed);
   });
 
   it('fills the contents from the sections, in the order the page lists them', () => {

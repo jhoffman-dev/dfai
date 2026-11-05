@@ -246,9 +246,9 @@ fate, and why.
 | `sqlite_source_query`       | sqliteSources  | absent  | same    | Another program's database, outside the vault, on the device: a browser can reach neither. Read-only `immutable` opening is the same on Windows.                                                                      |
 | `pick_sqlite_file`          | sqliteSources  | absent  | port    | As `sqlite_source_query`. The grants it remembers are saved by renaming over the old file (W4).                                                                                                                       |
 | `snapshot_page`             | pageThumbnails | absent  | port    | A stranger's page pictured in a webview of its own with no app origin. A browser cannot picture one safely, and the card keeps its placeholder. On Windows it is `WKWebView` code; WebView2 capture is the port.      |
-| `export_choose_destination` | markdownExport | browser | same    | No folder to choose: the export becomes a download (a `.md` file, or a zip of a note and its files).                                                                                                                  |
-| `export_write_file`         | markdownExport | browser | same    | As `export_choose_destination`: each file goes into the download.                                                                                                                                                     |
-| `export_finish`             | markdownExport | browser | same    | As `export_choose_destination`: the download is handed over, or dropped on failure.                                                                                                                                   |
+| `export_choose_destination` | markdownExport | absent  | same    | Planned as a download (a `.md` file, or a zip of a note and its files), `browser` once that adapter lands; until then absent and `markdownExport` off on the web (PR #760).                                           |
+| `export_write_file`         | markdownExport | absent  | same    | As `export_choose_destination`: each file will go into the download.                                                                                                                                                  |
+| `export_finish`             | markdownExport | absent  | same    | As `export_choose_destination`: the download will be handed over, or dropped on failure.                                                                                                                              |
 | `export_render_pdf`         | pdfExport      | absent  | port    | Made with the system's WebKit and PDFKit. In v1 the web has no PDF export; the iPad's own print sheet can still save a page. On Windows WebView2's `PrintToPdfAsync` is the port.                                     |
 
 ### The local API
@@ -274,8 +274,10 @@ These were chosen as the recommended answers and are open until James says:
   a person's key, so it is a decision of its own.
 - **A delete on the web is a commit, not a Trash.** The repository's history
   is how it is recovered.
-- **Markdown export on the web is a download; PDF export is absent**, short of
-  the iPad's own print sheet.
+- **Markdown export on the web is to be a download; PDF export is absent**,
+  short of the iPad's own print sheet. Until the download adapter lands the
+  web has no export at all, and `markdownExport` is off in `WEB_CAPABILITIES`
+  so the screen hides it and Settings says so (PR #760).
 - **The device names itself on the web.** The person types the iPad's name
   once; it names that device's conflict copies.
 
