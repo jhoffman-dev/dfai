@@ -3,6 +3,7 @@ import {
   createVaultPath,
   digestOf,
   indexInWindowReport,
+  indexNotKeptReport,
   notesNotIndexedReport,
   type NoteChange,
 } from '@dfai/domain';
@@ -615,6 +616,53 @@ describe('createIndexSyncer, attacked (#135)', () => {
     await syncer.sync({ vault: LARKSPUR, fromScratch: false });
 
     expect(activity.reports).toEqual([indexInWindowReport('The worker could not be started.')]);
+  });
+
+  it('says once, in Activity and to the person, that the index is not kept here (#761)', async () => {
+    const vault = vaultWithIndex({ 'Idea.md': 'a spark' });
+    const activity = recordingActivity();
+    const told: string[] = [];
+    const syncer = createIndexSyncer({
+      fs: vault.fs,
+      index: {
+        ...vault.index,
+        open: async () => ({ ...(await vault.index.open()), kept: false }),
+      },
+      markdown: fakeMarkdown(),
+      activity,
+      changes: createNoteChanges({ onError: () => {} }),
+      openVault: () => LARKSPUR,
+      onNotKept: (message) => told.push(message),
+    });
+
+    await syncer.sync({ vault: LARKSPUR, fromScratch: false });
+    vault.write('Plan.md', 'first');
+    await syncer.sync({ vault: LARKSPUR, fromScratch: true });
+
+    expect(vault.held.has('Idea.md')).toBe(true);
+    expect(activity.reports).toEqual([indexNotKeptReport(), expect.anything()]);
+    expect(told).toEqual([
+      'Search and lists are rebuilt each visit here, because this browser won’t store them.',
+    ]);
+  });
+
+  it('says nothing of keeping when the index is kept', async () => {
+    const vault = vaultWithIndex({ 'Idea.md': 'a spark' });
+    const activity = recordingActivity();
+    const told: string[] = [];
+    const syncer = createIndexSyncer({
+      fs: vault.fs,
+      index: { ...vault.index, open: async () => ({ fresh: true, kept: true }) },
+      markdown: fakeMarkdown(),
+      activity,
+      changes: createNoteChanges({ onError: () => {} }),
+      openVault: () => LARKSPUR,
+      onNotKept: (message) => told.push(message),
+    });
+
+    await syncer.sync({ vault: LARKSPUR, fromScratch: false });
+
+    expect([activity.reports, told]).toEqual([[], []]);
   });
 });
 
