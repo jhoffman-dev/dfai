@@ -62,11 +62,11 @@
   outline: none;
 }
 
-/* The glyph sits on a pill of its own, so the screen showing can be said with
+/* The glyph sits on a chip of its own, so the screen showing can be said with
    the muted pastel the chrome uses for "on", never a filled blue. */
 .shell__bar-glyph {
   align-items: center;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-button);
   display: inline-flex;
   height: 26px;
   justify-content: center;
