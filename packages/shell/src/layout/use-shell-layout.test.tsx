@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { COMPACT_BELOW, MAX_PANES } from '@dfai/domain';
+import { COMPACT_BELOW, MAX_PANES, PHONE_BELOW, PHONE_SCREENS } from '@dfai/domain';
 import { useShellLayout } from './use-shell-layout.ts';
 
 const originalWidth = window.innerWidth;
@@ -23,17 +23,27 @@ describe('useShellLayout', () => {
   it('reads the window as it is on the first draw', () => {
     setWidth(820);
     const { result } = renderHook(() => useShellLayout());
-    expect(result.current).toEqual({ sidebar: 'drawer', panes: 1 });
+    expect(result.current).toEqual({ sidebar: 'drawer', panes: 1, screens: null });
+  });
+
+  it('reads a phone as one: the bar of screens, from the first draw (#672)', () => {
+    setWidth(390);
+    const { result } = renderHook(() => useShellLayout());
+    expect(result.current).toEqual({ sidebar: 'drawer', panes: 1, screens: PHONE_SCREENS });
+    resizeTo(PHONE_BELOW);
+    expect(result.current.screens).toBeNull();
+    resizeTo(PHONE_BELOW - 1);
+    expect(result.current.screens).toBe(PHONE_SCREENS);
   });
 
   it('follows the window across the breakpoint, in both directions', () => {
     setWidth(1180);
     const { result } = renderHook(() => useShellLayout());
-    expect(result.current).toEqual({ sidebar: 'beside', panes: MAX_PANES });
+    expect(result.current).toEqual({ sidebar: 'beside', panes: MAX_PANES, screens: null });
     resizeTo(COMPACT_BELOW - 1);
-    expect(result.current).toEqual({ sidebar: 'drawer', panes: 1 });
+    expect(result.current).toEqual({ sidebar: 'drawer', panes: 1, screens: null });
     resizeTo(COMPACT_BELOW);
-    expect(result.current).toEqual({ sidebar: 'beside', panes: MAX_PANES });
+    expect(result.current).toEqual({ sidebar: 'beside', panes: MAX_PANES, screens: null });
   });
 
   it('hands back the same object while the width stays on one side, so nothing draws again', () => {

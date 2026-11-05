@@ -41,6 +41,8 @@ import {
   type GraphScope,
   type NavigationPlace,
   type PagePlace,
+  type PhoneScreen,
+  phoneScreenTarget,
   type VaultEntry,
   type VaultPath,
   typeShownAt,
@@ -190,6 +192,7 @@ import {
   workspaceNow,
 } from './workspace/workspace-store.ts';
 import { useShellLayout } from './layout/use-shell-layout.ts';
+import { PhoneBarSlot } from './layout/phone-bar-slot.tsx';
 import {
   WorkspaceStoresProvider,
   WorkspaceWiringProvider,
@@ -1894,9 +1897,10 @@ function AppWindow({
   });
   const captureTask = useCallback(
     async (name: string) => {
-      const path = await captureNote(name, captureTemplate);
+      const outcome = await captureNote(name, captureTemplate);
       // Over the peek, a capture lands without moving the page hidden under it.
-      if (path !== null && peekNow(overlays) === null) openNote(path);
+      if (outcome.captured && peekNow(overlays) === null) openNote(outcome.path);
+      return outcome;
     },
     [captureNote, captureTemplate, openNote, overlays],
   );
@@ -1938,6 +1942,26 @@ function AppWindow({
     const path = await openOrMakeDailyNote(localToday());
     if (path !== null) openNote(path);
   }, [openOrMakeDailyNote, openNote]);
+
+  // A phone's bar (#672): where each screen goes is the rule's
+  // (`phoneScreenTarget`). Today's note, once opened from the bar, is what
+  // the bar marks as Today until the vault has tasks.
+  const [phoneDailyNote, setPhoneDailyNote] = useState<VaultPath | null>(null);
+  const openScreen = useCallback(
+    (screen: PhoneScreen) => {
+      const target = phoneScreenTarget(screen, { tasksShown });
+      if (target.open === 'capture') askForCapture();
+      else if (target.open === 'search') showOverlay('search');
+      else if (target.open === 'today-page') openPage({ kind: 'today' });
+      else
+        void openOrMakeDailyNote(localToday()).then((path) => {
+          if (path === null) return;
+          setPhoneDailyNote(path);
+          openNote(path);
+        });
+    },
+    [askForCapture, showOverlay, tasksShown, openPage, openOrMakeDailyNote, openNote],
+  );
 
   const [linkError, setLinkError] = useState<string | null>(null);
 
@@ -2540,6 +2564,18 @@ function AppWindow({
         <AppShell
           sidebarOpen={sidebarBeside}
           drawer={drawer}
+          bar={
+            // No vault, no screens: quick add needs an Inbox, and the empty state is its own way in.
+            layout.screens !== null && location !== null ? (
+              <PhoneBarSlot
+                screens={layout.screens}
+                workspace={workspace}
+                tasksShown={tasksShown}
+                dailyNote={phoneDailyNote}
+                onOpen={openScreen}
+              />
+            ) : null
+          }
           asideOpen={asideShown}
           // Every page carries its own way back in its bar; only the empty
           // state, which has no page, needs the shell's.
@@ -2926,7 +2962,7 @@ function AppWindow({
                 destination={
                   captureTemplate === null ? 'a blank note' : `a ${captureTemplate.name}`
                 }
-                onCapture={(name) => void captureTask(name)}
+                onCapture={captureTask}
                 onClose={() => hideOverlay('capture')}
                 fallbackFocus={focusFallback}
               >

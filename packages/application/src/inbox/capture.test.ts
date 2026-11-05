@@ -24,6 +24,27 @@ describe('captureToInbox', () => {
     expect(v.files.get('Inbox/Renew the passport.md')).toBe('---\ntype: task\n---\n');
   });
 
+  it('names a pasted paragraph by its first line, and cuts a line too long for a disk (#672)', async () => {
+    const v = vault({});
+    const path = await captureToInbox({
+      markdown: fakeMarkdown(),
+      today: '2026-10-08',
+      fs: v.fs,
+      name: 'Call Tobias Fenn\nabout the seed order\nand the fence',
+      notePaths: [],
+    });
+    expect(path).toBe('Inbox/Call Tobias Fenn.md');
+    const long = await captureToInbox({
+      markdown: fakeMarkdown(),
+      today: '2026-10-08',
+      fs: v.fs,
+      name: 'Seed '.repeat(80).trim(),
+      notePaths: [createVaultPath(path)],
+    });
+    expect(new TextEncoder().encode(long.slice('Inbox/'.length)).length).toBeLessThanOrEqual(255);
+    expect(long.startsWith('Inbox/Seed Seed ')).toBe(true);
+  });
+
   it('uses the Inbox as the disk spells it, and numbers a name already waiting there', async () => {
     const v = vault({ 'inbox/Call.md': 'first\n' });
     const path = await captureToInbox({

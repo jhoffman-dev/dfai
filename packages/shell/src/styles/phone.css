@@ -1,0 +1,99 @@
+/* A phone (#672).
+   One of the section files styles/index.css imports in cascade order; the
+   section-to-file table is in docs/design/ui-v2-plan.md under slice 0b. */
+
+/* ---- A phone ---------------------------------------------------------------
+   Under 600px — a phone held upright — the day's three jobs stand in a bar
+   along the bottom edge, under the thumb: quick add, Today, Notes. The width
+   is not written here: the shell is given `shell--phone` by the one rule that
+   knows it (`shellLayoutFor`, packages/domain/src/panes/shell-layout.ts), and
+   the bar draws the screens that rule names, so there is no number for this
+   file to drift from. The drawer and the one pane (responsive.css) stand as
+   they are; the bar is added under them.
+   -------------------------------------------------------------------------- */
+
+:root {
+  /* The bar's own height, before the home indicator's safe area under it. */
+  --phone-bar-height: 56px;
+}
+
+/* The work above, the bar below. The shell's own safe-area padding at the
+   bottom moves into the bar, so the bar's ground colour runs under the home
+   indicator rather than the surface showing through. In a Safari tab `100vh`
+   is the viewport at its tallest, with the toolbar gone, so the bar would sit
+   under the toolbar; `100dvh` follows the toolbar as it comes and goes. The
+   static height stands first, for a browser without `dvh`. */
+.shell--phone {
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  padding-bottom: 0;
+}
+
+.shell__bar {
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex: none;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Each screen takes a third of the width and the whole 56px, well over the
+   44px a finger needs: the glyph above its word, as a phone's bars are read. */
+.shell__bar-button {
+  align-items: center;
+  appearance: none;
+  background: none;
+  border: 0;
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  gap: 2px;
+  justify-content: center;
+  min-height: var(--phone-bar-height);
+  min-width: 0;
+  padding: 0;
+}
+
+.shell__bar-button:focus-visible {
+  box-shadow: var(--ring);
+  outline: none;
+}
+
+/* The glyph sits on a chip of its own, so the screen showing can be said with
+   the muted pastel the chrome uses for "on", never a filled blue. */
+.shell__bar-glyph {
+  align-items: center;
+  border-radius: var(--radius-button);
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  transition: background 120ms ease;
+  width: 44px;
+}
+
+.shell__bar-button[aria-current='page'] {
+  color: var(--ink);
+}
+
+.shell__bar-button[aria-current='page'] .shell__bar-glyph {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* The web build's sign-out, and its update line, float at the bottom-left
+   corner (sign-in.css); with the bar there they stand above it instead. */
+:root:has(.shell__bar) .sign-out {
+  bottom: calc(var(--space-3) + var(--phone-bar-height) + env(safe-area-inset-bottom, 0px));
+}
+
+:root:has(.shell__bar) .update-ready {
+  bottom: calc(var(--space-3) + 40px + var(--phone-bar-height) + env(safe-area-inset-bottom, 0px));
+}

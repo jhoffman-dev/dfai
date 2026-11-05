@@ -34,6 +34,7 @@ export function AppShell({
   aside = null,
   asideOpen = true,
   drawer = null,
+  bar = null,
 }: {
   sidebar: ReactNode;
   /**
@@ -77,6 +78,12 @@ export function AppShell({
    * is the wide window, drawn exactly as before.
    */
   drawer?: SidebarDrawer | null;
+  /**
+   * Given on a phone (#672): the bar of screens along the bottom edge, under
+   * the work, drawn by the app from what the layout rule names. Null, the
+   * default, is every other screen, drawn exactly as before.
+   */
+  bar?: ReactNode;
 }) {
   const work =
     main === null ? (
@@ -95,6 +102,7 @@ export function AppShell({
     'shell',
     sidebarBeside ? null : 'shell--narrow',
     drawer === null ? null : 'shell--compact',
+    bar === null ? null : 'shell--phone',
     asideShown ? 'shell--aside' : null,
   ]
     .filter((name) => name !== null)
@@ -124,6 +132,7 @@ export function AppShell({
         )}
         {floating}
       </main>
+      {bar}
       {asideShown && <div className="shell__aside">{aside}</div>}
       <div className="visually-hidden" role="status">
         {status}
