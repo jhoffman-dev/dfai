@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { fakeVaultFs } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
-import { useCreateNote } from './use-create-note.ts';
+import { useCreateNote, type CaptureOutcome } from './use-create-note.ts';
 
 /**
  * Quick capture (#672): what the palette is told when a capture cannot be
@@ -44,7 +44,11 @@ describe('useCreateNote captureNote', () => {
       },
     });
     const { result, onCreated } = hook(fs);
-    const outcome = await result.current.captureNote('Call Tobias Fenn', null);
+    let outcome: CaptureOutcome | null = null;
+    // Inside act, so a state the hook set on the way is drawn before it is read.
+    await act(async () => {
+      outcome = await result.current.captureNote('Call Tobias Fenn', null);
+    });
     expect(outcome).toEqual({
       captured: false,
       reason: 'Saving needs a connection; your edit stays here until you are back online',
