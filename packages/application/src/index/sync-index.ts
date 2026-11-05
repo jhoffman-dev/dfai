@@ -1,6 +1,7 @@
 import {
   indexFailedReport,
   indexInWindowReport,
+  indexNotKeptReport,
   indexRebuiltReport,
   messageWithoutPaths,
   notesNotIndexedReport,
@@ -39,6 +40,8 @@ export interface IndexSync {
   readonly notRead: readonly string[];
   /** Why the notes were read on the window's thread, when they had to be. */
   readonly inWindow: string | null;
+  /** False when the host keeps the index only while the page is open (`IndexOpening.kept`). */
+  readonly kept: boolean;
 }
 
 /**
@@ -101,6 +104,7 @@ export async function syncIndex({
       failed: refresh.failed,
       notRead: refresh.notRead,
       inWindow: refresh.inWindow,
+      kept: opening.kept !== false,
     };
   } catch (cause) {
     if (cause instanceof IndexSyncAbandoned) throw cause;
@@ -180,6 +184,7 @@ export function createIndexSyncer({
   changes,
   openVault,
   ownWrites,
+  onNotKept,
   ...ports
 }: Omit<RefreshOptions, 'onProgress' | 'previous' | 'stillWanted' | 'abandoned' | 'vault'> & {
   activity: ActivityLog;
@@ -192,6 +197,8 @@ export function createIndexSyncer({
   ownWrites?: Pick<OwnWrites, 'lastWrite' | 'refreshed'>;
   /** The vault open now, which the host's ports answer for; null when none is. */
   openVault: () => string | null;
+  /** Told once, with what to say, when the host keeps the index only while the page is open (#761). */
+  onNotKept?: (message: string) => void;
 }): IndexSyncer {
   let queue: Promise<unknown> = Promise.resolve();
   let remembered: { vault: string; versions: SyncBaseline } | null = null;
@@ -199,6 +206,7 @@ export function createIndexSyncer({
   /** The sync under way, and the way to tell it that it is no longer wanted. */
   let running: { vault: string; abandon: AbortController } | null = null;
   let saidInWindow = false;
+  let saidNotKept = false;
 
   const syncOnce: IndexSyncer['sync'] = async ({ vault, fromScratch, onProgress, recheck }) => {
     if (openVault() !== vault) return null;
@@ -234,6 +242,12 @@ export function createIndexSyncer({
     if (synced.inWindow !== null && !saidInWindow) {
       saidInWindow = true;
       ports.activity.inOpenVault().record(indexInWindowReport(synced.inWindow));
+    }
+    if (!synced.kept && !saidNotKept) {
+      saidNotKept = true;
+      const report = indexNotKeptReport();
+      ports.activity.inOpenVault().record(report);
+      onNotKept?.(report.message);
     }
     remembered = { vault, versions: synced.versions };
     unread = { vault, key: unreadKey(synced.failed) };

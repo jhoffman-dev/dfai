@@ -727,6 +727,8 @@ function AppWindow({
     activity: activityLog,
     changes: noteChanges,
     ownWrites,
+    // Said once, out of the way: the app works, only the index is not kept between visits.
+    onNotKept: (message) => toasts.show({ message, tone: 'warning' }),
   });
   useVaultReads({ reads, changes: noteChanges, index: indexStore, vaultKey });
   const indexReady = useIndexReady(indexStore, vaultKey);

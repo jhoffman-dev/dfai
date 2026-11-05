@@ -99,6 +99,7 @@ export function useIndex({
   activity,
   changes,
   ownWrites,
+  onNotKept,
 }: {
   ports: IndexPorts;
   vaultKey: string | null;
@@ -108,6 +109,8 @@ export function useIndex({
   changes: NoteChanges;
   /** Told of every sync that finished, so the echo of a write it took in is not refreshed for again (#254). */
   ownWrites?: Pick<OwnWrites, 'lastWrite' | 'refreshed'>;
+  /** Told once, with what to say, when this browser keeps the index only while the page is open (#761). */
+  onNotKept?: (message: string) => void;
 }): {
   /** The open vault's status. What only needs part of it reads `store` through a selector. */
   status: IndexStatus;
@@ -138,6 +141,9 @@ export function useIndex({
   // closed drops what is still queued on it instead of reading the new vault.
   const open = useRef(vaultKey);
   open.current = vaultKey;
+  // Read when told, so a new callback each render does not make a new syncer.
+  const notKept = useRef(onNotKept);
+  notKept.current = onNotKept;
   const counted = useMemo(() => countingPublishes(changes), [changes]);
   const syncer = useMemo(
     () =>
@@ -149,6 +155,7 @@ export function useIndex({
         activity,
         changes: counted,
         openVault: () => open.current,
+        onNotKept: (message) => notKept.current?.(message),
         ...(ownWrites !== undefined && { ownWrites }),
       }),
     [ports.fs, ports.index, ports.markdown, ports.deriver, activity, counted, ownWrites],

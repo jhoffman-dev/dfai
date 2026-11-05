@@ -454,6 +454,19 @@ export function indexInWindowReport(reason: string): ActivityReport {
   };
 }
 
+/**
+ * The index is kept only while the page is open, because the browser refuses
+ * it storage (#761): said once, as the app's state rather than a failure.
+ */
+export function indexNotKeptReport(): ActivityReport {
+  return {
+    level: 'warning',
+    kind: 'index',
+    message: 'Search and lists are rebuilt each visit here, because this browser won’t store them.',
+    subject: null,
+  };
+}
+
 /** A note the index could not take, and why. */
 export interface NoteNotIndexed {
   readonly path: string;
