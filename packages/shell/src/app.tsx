@@ -41,6 +41,7 @@ import {
   type GraphScope,
   type NavigationPlace,
   type PagePlace,
+  type PhoneScreen,
   type VaultEntry,
   type VaultPath,
   typeShownAt,
@@ -188,6 +189,7 @@ import {
   workspaceNow,
 } from './workspace/workspace-store.ts';
 import { useShellLayout } from './layout/use-shell-layout.ts';
+import { PhoneBarSlot } from './layout/phone-bar-slot.tsx';
 import {
   WorkspaceStoresProvider,
   WorkspaceWiringProvider,
@@ -1928,6 +1930,19 @@ function AppWindow({
     if (path !== null) openNote(path);
   }, [openOrMakeDailyNote, openNote]);
 
+  // A phone's bar (#672): each screen opens what the sidebar's row of that
+  // name opens. Today's row shows once the vault has tasks; until then the
+  // phone's Today is today's note, the one thing of today's a vault always has.
+  const openScreen = useCallback(
+    (screen: PhoneScreen) => {
+      if (screen === 'quick-add') askForCapture();
+      else if (screen === 'notes') showOverlay('search');
+      else if (tasksShown) openPage({ kind: 'today' });
+      else void openDailyNote();
+    },
+    [askForCapture, showOverlay, tasksShown, openPage, openDailyNote],
+  );
+
   const [linkError, setLinkError] = useState<string | null>(null);
 
   const peoplePorts = useMemo(
@@ -2523,6 +2538,12 @@ function AppWindow({
         <AppShell
           sidebarOpen={sidebarBeside}
           drawer={drawer}
+          bar={
+            // No vault, no screens: quick add needs an Inbox, and the empty state is its own way in.
+            layout.screens !== null && location !== null ? (
+              <PhoneBarSlot screens={layout.screens} workspace={workspace} onOpen={openScreen} />
+            ) : null
+          }
           asideOpen={asideShown}
           // Every page carries its own way back in its bar; only the empty
           // state, which has no page, needs the shell's.

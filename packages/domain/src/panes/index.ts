@@ -51,5 +51,12 @@ export {
 export type { RememberedWorkspace } from './remember-workspace.ts';
 export { HIDDEN_EDITOR_LIMIT, keepMounted } from './mounted-tabs.ts';
 export { ASK_PLACE, askShortcut } from './ask-shortcut.ts';
-export { COMPACT_BELOW, NOTE_MEASURE, SIDEBAR_WIDTH, shellLayoutFor } from './shell-layout.ts';
-export type { ShellLayout } from './shell-layout.ts';
+export {
+  COMPACT_BELOW,
+  NOTE_MEASURE,
+  PHONE_BELOW,
+  PHONE_SCREENS,
+  SIDEBAR_WIDTH,
+  shellLayoutFor,
+} from './shell-layout.ts';
+export type { PhoneScreen, ShellLayout } from './shell-layout.ts';

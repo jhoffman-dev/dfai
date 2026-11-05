@@ -175,6 +175,7 @@ Conventions for every slice: one PR, opened as a draft, mergeable on its own aga
   | `swimlanes.css`         | board swimlanes (issue #6)                                                                                                                                             |
   | `proposals.css`         | Proposals (P29-02)                                                                                                                                                     |
   | `responsive.css`        | Narrow screens: the sidebar as a drawer, one pane (#658)                                                                                                               |
+  | `phone.css`             | A phone: the bar of screens along the bottom edge (#672)                                                                                                               |
 
 ### Slice 1 — Tokens and theme, light and dark (M) — done
 
