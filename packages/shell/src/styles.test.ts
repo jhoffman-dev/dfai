@@ -486,3 +486,17 @@ describe('the v2 rules', () => {
     expect(sorted(today.heavy)).toEqual(sorted(HEAVY_EXCEPTIONS));
   });
 });
+
+describe('a phone (#672)', () => {
+  it('measures the phone shell by the dynamic viewport, with the static one as the fallback first', () => {
+    const phone = rules.filter((rule) => rule.selector === '.shell--phone');
+    expect(phone.length).toBeGreaterThan(0);
+    const heights = phone
+      .flatMap((rule) => rule.body.split(';'))
+      .map((declaration) => declaration.trim())
+      .filter((declaration) => declaration.startsWith('height:'));
+    // In a Safari tab `100vh` is the tallest the viewport gets, so the bar sits under
+    // Safari's toolbar; `100dvh` follows the toolbar. A browser without `dvh` keeps `100vh`.
+    expect(heights).toEqual(['height: 100vh', 'height: 100dvh']);
+  });
+});

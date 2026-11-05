@@ -1,5 +1,6 @@
 import { joinVaultPath, VAULT_ROOT, type VaultPath } from './vault-path.ts';
 import { foldedVaultPath } from './vault-spelling.ts';
+import { fitFileNameStem } from './file-name-bytes.ts';
 
 /** What a note is called before it is given a name. */
 export const DEFAULT_NOTE_NAME = 'Untitled';
@@ -11,12 +12,35 @@ const MARKDOWN = /\.(md|markdown)$/i;
  *
  * Path separators would silently put the note somewhere else, and a name that is
  * only dots or spaces is not a name at all, so both fall back to the default.
- * The extension is added unless one is already there.
+ * The extension is added unless one is already there. A name longer than a
+ * disk takes (#672) is cut by whole characters until it fits; one that fits is
+ * left whole, and is cut only as far as numbering it past names taken needs
+ * (`nextAvailableNotePath`). A first character longer than a whole name — a
+ * letter under two hundred combining accents — leaves nothing to cut to, and
+ * the note takes the default name rather than a hidden `.md`.
  */
 export function noteFileName(name: string): string {
   const cleaned = cleanEntryName(name);
   if (cleaned === '') return `${DEFAULT_NOTE_NAME}.md`;
-  return MARKDOWN.test(cleaned) ? cleaned : `${cleaned}.md`;
+  const extension = MARKDOWN.exec(cleaned)?.[0] ?? '.md';
+  const stem = MARKDOWN.test(cleaned) ? cleaned.slice(0, -extension.length) : cleaned;
+  return `${fittedStemOrDefault(stem, extension)}${extension}`;
+}
+
+/** `stem` cut to leave room for `ending`; the default name when nothing of it fits. */
+function fittedStemOrDefault(stem: string, ending: string): string {
+  const fitted = fitFileNameStem(stem, ending);
+  return fitted === '' ? DEFAULT_NOTE_NAME : fitted;
+}
+
+/**
+ * The first line of `text` that holds a name, for text pasted rather than
+ * typed — a paragraph into quick capture (#672), which is named by its first
+ * line. Empty when no line holds a name. Nothing else that names a note reads
+ * this, so a two-line title still names its note with both lines, as before.
+ */
+export function firstNamedLine(text: string): string {
+  return text.split(/\r?\n/).find((line) => cleanEntryName(line) !== '') ?? '';
 }
 
 /** Whether what was typed cleans away to nothing, so the note gets the default name. */
@@ -101,7 +125,10 @@ export function nextAvailableNotePath({
   const takenInAnyCase = taken instanceof TakenNotePaths ? taken : new TakenNotePaths(taken);
 
   for (let attempt = 1; ; attempt += 1) {
-    const candidate = attempt === 1 ? fileName : `${base} ${attempt}${extension}`;
+    // A number on a name that just fit the disk would not: the name gives way to it.
+    const numbering = ` ${attempt}${extension}`;
+    const candidate =
+      attempt === 1 ? fileName : `${fittedStemOrDefault(base, numbering)}${numbering}`;
     const path =
       folder === VAULT_ROOT
         ? joinVaultPath(VAULT_ROOT, candidate)

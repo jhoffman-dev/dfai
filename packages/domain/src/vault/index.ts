@@ -41,6 +41,7 @@ export {
   cleanEntryName,
   DEFAULT_FOLDER_NAME,
   DEFAULT_NOTE_NAME,
+  firstNamedLine,
   nextAvailableFolderPath,
   isUnnamed,
   NEW_NOTE_CONTENTS,

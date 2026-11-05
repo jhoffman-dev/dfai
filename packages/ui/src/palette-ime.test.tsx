@@ -21,7 +21,7 @@ const hits = [{ path: 'b.md', title: 'Recipes', snippet: 'sourdough' }];
 
 describe('CapturePalette, while an IME is composing', () => {
   it('does not capture on the Enter that commits a composition', () => {
-    const onCapture = vi.fn();
+    const onCapture = vi.fn(async () => ({ captured: true as const }));
     const onClose = vi.fn();
     render(<CapturePalette destination="a Task" onCapture={onCapture} onClose={onClose} />);
     const field = screen.getByRole('textbox', { name: 'What needs doing' });
@@ -35,7 +35,7 @@ describe('CapturePalette, while an IME is composing', () => {
   });
 
   it('does not capture on the WebKit commit Enter (keyCode 229)', () => {
-    const onCapture = vi.fn();
+    const onCapture = vi.fn(async () => ({ captured: true as const }));
     render(<CapturePalette destination="a Task" onCapture={onCapture} onClose={() => {}} />);
     const field = screen.getByRole('textbox', { name: 'What needs doing' });
 
@@ -48,7 +48,7 @@ describe('CapturePalette, while an IME is composing', () => {
   });
 
   it('still captures on a plain Enter (control)', () => {
-    const onCapture = vi.fn();
+    const onCapture = vi.fn(async () => ({ captured: true as const }));
     render(<CapturePalette destination="a Task" onCapture={onCapture} onClose={() => {}} />);
     const field = screen.getByRole('textbox', { name: 'What needs doing' });
 

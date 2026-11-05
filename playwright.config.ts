@@ -35,6 +35,8 @@ process.env.DFAI_WEB_E2E_URL = `http://localhost:${WEB_PORT}`;
 
 /** The specs the `ipad` project runs, and only it. */
 const IPAD_SPECS = /\.ipad\.spec\.ts$/;
+/** The specs the `phone` project runs, and only it (#672). */
+const PHONE_SPECS = /\.phone\.spec\.ts$/;
 
 /** The desktop build's server, which every spec but the web build's runs against. */
 export const DESKTOP_SERVER = {
@@ -76,7 +78,11 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [
-    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: IPAD_SPECS },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+      testIgnore: [IPAD_SPECS, PHONE_SPECS],
+    },
     {
       // An iPad on its side (#661): WebKit with a touch screen, which is what
       // makes it answer `(pointer: coarse)`. Not `isMobile`: that starts a
@@ -95,11 +101,25 @@ export default defineConfig({
       },
       testMatch: IPAD_SPECS,
     },
+    {
+      // A phone held upright (#672): WebKit at an iPhone's 390×844 with a touch
+      // screen, as the `ipad` project above and for the same reasons — a coarse
+      // pointer from `hasTouch`, no `isMobile`, no service worker. It runs only
+      // the `.phone.spec.ts` specs, on the web build.
+      name: 'phone',
+      use: {
+        ...devices['Desktop Safari'],
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        serviceWorkers: 'block',
+      },
+      testMatch: PHONE_SPECS,
+    },
   ],
   webServer: [
     DESKTOP_SERVER,
     {
-      // The web build, for the `.ipad.spec.ts` specs that run it (#667); as above in every way.
+      // The web build, for the `.ipad.spec.ts` and `.phone.spec.ts` specs that run it (#667, #672); as above in every way.
       command: 'node tools/serve-dist.mjs',
       url: `http://localhost:${WEB_PORT}`,
       env: { PORT: String(WEB_PORT), DIST_APP: 'web' },

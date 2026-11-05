@@ -221,6 +221,22 @@
   flex: none;
 }
 
+/* A capture on its way (#672): said under the field while the next one is typed. */
+.palette__saving {
+  color: var(--ink-3);
+  font-size: var(--text-ui);
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+/* Why a capture was refused, under the field that still holds its text (#672). */
+.palette__refusal {
+  color: var(--danger);
+  font-size: var(--text-ui);
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-3);
+}
+
 .palette__hint {
   color: var(--ink-3);
   font-size: var(--text-meta);
