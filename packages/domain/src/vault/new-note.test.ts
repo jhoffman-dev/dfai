@@ -218,20 +218,36 @@ describe('noteFileName, from text pasted rather than typed (#672)', () => {
     );
   });
 
-  it('cuts a name too long for a disk so that it, numbered, still fits', () => {
+  it('cuts a name too long for a disk until it fits, by whole words of what was typed', () => {
     const long = 'Garden '.repeat(60).trim();
     expect(utf8Bytes(long)).toBeGreaterThan(MAX_NAME_BYTES);
     const fileName = noteFileName(long);
     expect(fileName.endsWith('.md')).toBe(true);
-    expect(utf8Bytes(fileName)).toBeLessThanOrEqual(MAX_NAME_BYTES - utf8Bytes(' 9999'));
+    // Cut by whole characters and trimmed, so it may end a few bytes short of the limit.
+    expect(utf8Bytes(fileName)).toBeLessThanOrEqual(MAX_NAME_BYTES);
+    expect(utf8Bytes(fileName)).toBeGreaterThan(MAX_NAME_BYTES - 'Garden '.length);
     expect(long.startsWith(fileName.slice(0, -3))).toBe(true);
+  });
+
+  it('leaves a name that fits whole, and gives way only as far as a number needs', () => {
+    const justFits = 'y'.repeat(MAX_NAME_BYTES - '.md'.length);
+    expect(noteFileName(justFits)).toBe(`${justFits}.md`);
     const numbered = nextAvailableNotePath({
       folder: VAULT_ROOT,
-      name: long,
-      taken: new Set([fileName]),
+      name: justFits,
+      taken: new Set([`${justFits}.md`]),
     });
-    expect(numbered).toBe(`${fileName.slice(0, -3)} 2.md`);
-    expect(utf8Bytes(numbered)).toBeLessThanOrEqual(MAX_NAME_BYTES);
+    expect(numbered).toBe(`${'y'.repeat(MAX_NAME_BYTES - ' 2.md'.length)} 2.md`);
+    expect(utf8Bytes(numbered)).toBe(MAX_NAME_BYTES);
+    const tenth = nextAvailableNotePath({
+      folder: VAULT_ROOT,
+      name: justFits,
+      taken: new Set([
+        `${justFits}.md`,
+        ...[2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${'y'.repeat(250)} ${n}.md`),
+      ]),
+    });
+    expect(tenth).toBe(`${'y'.repeat(MAX_NAME_BYTES - ' 10.md'.length)} 10.md`);
   });
 
   it('cuts by whole characters, never half an emoji', () => {
