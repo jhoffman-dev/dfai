@@ -189,7 +189,7 @@ describe('CapturePalette', () => {
 
   it('captures a second task whose Enter came while the first was on its way, and clears once both land', async () => {
     const settles: ((outcome: CaptureOutcome) => void)[] = [];
-    const onCapture = vi.fn(
+    const onCapture = vi.fn<(name: string) => Promise<CaptureOutcome>>(
       () =>
         new Promise<CaptureOutcome>((resolve) => {
           settles.push(resolve);
