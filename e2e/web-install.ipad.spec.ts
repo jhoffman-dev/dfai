@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test, type Page } from './fixtures.ts';
 import { WEB_URL } from './web-github.ts';
+import { ownWebServer } from './web-server.ts';
 
 /**
  * #668: the web build installs to an iPad's Home Screen. The page links a
@@ -19,34 +19,6 @@ test.describe.configure({ mode: 'serial' });
 
 /** The built worker the web server serves; the update test serves another version in its place. */
 const BUILT_WORKER = 'apps/web/dist/sw.js';
-
-/**
- * A web server of the test's own, on a free port, that the test can stop:
- * WebKit's offline emulation (`setOffline`) fails every load before any
- * worker sees it, so "offline" here is the server gone — which is what the
- * worker meets on an iPad with no connection.
- */
-async function ownWebServer(): Promise<{ url: string; stop: () => Promise<void> }> {
-  const server = spawn('node', ['tools/serve-dist.mjs'], {
-    env: { ...process.env, PORT: '0', DIST_APP: 'web' },
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
-  const url = await new Promise<string>((resolve, reject) => {
-    server.stdout.on('data', (chunk: Buffer) => {
-      const port = /http:\/\/localhost:(\d+)/.exec(chunk.toString())?.[1];
-      if (port !== undefined) resolve(`http://localhost:${port}`);
-    });
-    server.on('exit', (code) => reject(new Error(`The web server exited with ${String(code)}.`)));
-  });
-  return {
-    url,
-    stop: () =>
-      new Promise((resolve) => {
-        server.once('exit', () => resolve());
-        server.kill();
-      }),
-  };
-}
 
 /** The shell caches the worker holds, by name. */
 const shellCaches = (page: Page) =>
