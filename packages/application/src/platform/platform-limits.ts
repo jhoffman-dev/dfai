@@ -82,7 +82,7 @@ const LIMITS: Readonly<Record<PlatformCapability, PlatformLimit | null>> = {
   },
   markdownExport: {
     what: 'Exporting a note',
-    why: 'This version of DFAI cannot write files for you.',
+    why: 'The desktop app writes exports as files; here there is no way to hand one over yet.',
   },
   googleDriveExport: {
     what: 'Exporting a note as a Google Doc',

@@ -124,8 +124,8 @@ describe('mountShell (#656)', () => {
     await screen.findByText('the app');
     expect(handed.offered?.kindleSettings).toBe(false);
     expect(handed.offered?.syncSettings).toBe(false);
-    expect(handed.offered?.exportNotes).toBe(true);
-    expect(handed.ports).toEqual(['appInfo', 'exporting']);
+    expect(handed.offered?.exportNotes).toBe(false);
+    expect(handed.ports).toEqual(['appInfo']);
   });
 
   it('hands the app what the platform lacks, from its capabilities alone (#670)', async () => {
