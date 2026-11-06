@@ -71,6 +71,21 @@ describe('export file names (#501)', () => {
     ]);
   });
 
+  it('makes a dash of what no file system takes in a picture name, so it copies anywhere (#779)', () => {
+    const names = attachmentFileNames([
+      'a/back\\slash.png',
+      'b/tab\tand\u0001bell.png',
+      'c/colon:star*.png',
+      'd/back\\slash.png',
+    ] as VaultPath[]);
+    expect([...names.values()]).toEqual([
+      'back-slash.png',
+      'tab-and-bell.png',
+      'colon-star-.png',
+      'back-slash 2.png',
+    ]);
+  });
+
   it('writes a relative path as a link that a space or bracket cannot end', () => {
     expect(markdownHref('Kickoff attachments/chart (1).png')).toBe(
       'Kickoff%20attachments/chart%20%281%29.png',

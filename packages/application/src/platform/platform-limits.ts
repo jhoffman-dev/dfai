@@ -11,7 +11,8 @@ export interface PlatformLimit {
 /**
  * What each capability's absence means to the person. `null` for saving as a
  * commit: it is one of two ways to save, and a platform lacking it saves the
- * other way (by git), so there is nothing the person misses.
+ * other way (by git), so there is nothing the person misses. `null` too for
+ * Markdown export, which every platform has: as files, or a download (#774).
  *
  * Settings → Not available here and the Field Guide's section on the web are
  * both drawn from this one table, so they say the same thing. Listed in the
@@ -80,10 +81,7 @@ const LIMITS: Readonly<Record<PlatformCapability, PlatformLimit | null>> = {
     what: 'Sources read from another program’s SQLite file',
     why: 'A web page cannot read another program’s files.',
   },
-  markdownExport: {
-    what: 'Exporting a note',
-    why: 'The desktop app writes exports as files; here there is no way to hand one over yet.',
-  },
+  markdownExport: null,
   googleDriveExport: {
     what: 'Exporting a note as a Google Doc',
     why: 'It goes through the Google sign-in the desktop app keeps.',

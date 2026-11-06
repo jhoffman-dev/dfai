@@ -1,5 +1,11 @@
 import webPackage from '../package.json' with { type: 'json' };
-import { staticAppInfo } from '@dfai/adapters';
+import {
+  browserDownload,
+  browserExportFiles,
+  browserExternalLinks,
+  loadZipFiles,
+  staticAppInfo,
+} from '@dfai/adapters';
 import type { WindowClosingPort } from '@dfai/application';
 import { WEB_CAPABILITIES } from '@dfai/domain';
 import {
@@ -58,7 +64,7 @@ export function composeWeb(
     appInfo: staticAppInfo({ name: 'DFAI', version: webPackage.version, build: null }),
     ...vault,
     sources: NO_SOURCES,
-    links: { open: notYet },
+    links: browserExternalLinks(),
     snapshot: { capture: notYet },
     api: { ...NO_LOCAL_API, clipboard: browserClipboard, mcpEntry: null },
     chat: NO_CLAUDE,
@@ -76,6 +82,10 @@ export function composeWeb(
     granola: { port: NO_GRANOLA, records: browserGranolaPullRecords },
     slack: NO_SLACK,
     globalCapture: { port: NO_GLOBAL_CAPTURE, store: browserGlobalCaptureStore },
+    // Markdown as a download (#774); a PDF and a Google Doc need the desktop, so neither port is here.
+    exporting: {
+      files: browserExportFiles({ download: browserDownload(), loadZip: loadZipFiles }),
+    },
   };
 }
 
