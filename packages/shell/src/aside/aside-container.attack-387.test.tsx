@@ -150,11 +150,11 @@ describe('the aside’s focused row (attack #387)', () => {
     for (const typed of ['T', 'To', 'Tob', 'Tobi', 'Tobia', 'Tobias']) {
       fireEvent.change(owner, { target: { value: typed } });
     }
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
 
-    expect(disk.textOf(ALDER)).toContain('owner: Tobias');
+    // Waited on the file, not the wall clock: a fixed wait raced the read and
+    // write ticks, which outlast it on a loaded run (#775). Only the whole
+    // value can satisfy this; a write per keystroke leaves `owner: T` on disk.
+    await waitFor(() => expect(disk.textOf(ALDER)).toContain('owner: Tobias'));
   });
 
   it('a newly focused row never shows the previous row’s values under its own title', async () => {
@@ -180,10 +180,9 @@ describe('the aside’s focused row (attack #387)', () => {
     const stores = openOn({ kind: 'type', name: 'person' });
     focusRow(stores.aside, { tab: stores.tab, path: ALDER, within: 'type:person' });
     show(stores, rowPortsOver(disk.fs));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(screen.queryByText('Reading…')).toBeNull();
+    expect(screen.getByText('Reading…')).toBeDefined();
+    // Waited on the page, not the wall clock (#775): the read fails a tick later.
+    await waitFor(() => expect(screen.queryByText('Reading…')).toBeNull());
   });
 });
 
