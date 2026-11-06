@@ -96,6 +96,12 @@ async function expandAll(page: Page) {
     await expect(deep).toHaveAccessibleName('Deep');
     await page.keyboard.press('ArrowRight');
     await expect(deep).toHaveAttribute('aria-expanded', 'true');
+    // Deep too is marked open before it is listed; until its notes are in, the
+    // tree is short by them (#782).
+    const deepAt = Number(await deep.getAttribute('data-row'));
+    await expect(pages(page).locator(`[data-row="${deepAt + 1}"]`)).toHaveAccessibleName(
+      `Deep ${pad(area)}-01`,
+    );
     await expectPlaced(page, `after opening Area ${area}'s Deep`);
   }
 }
@@ -181,12 +187,10 @@ test('the tree is exactly as tall as its rows at a 29px pitch', async ({ page })
   const size = await pages(page)
     .getByRole('tree')
     .evaluate((tree) => ({ height: tree.getBoundingClientRect().height }));
-  // 10 areas, each with Deep plus its notes and Deep's notes, then Loose (and
-  // nothing else at the vault's root). If aria-rowcount is not exposed, count
-  // what the model holds instead.
-  const expected = Number.isNaN(rows) ? AREAS * (1 + 1 + EACH + DEEP) + 1 : rows;
+  // If aria-rowcount is not exposed, count what the model holds instead.
+  const expected = Number.isNaN(rows) ? ALL_ROWS : rows;
   expect(size.height).toBeGreaterThanOrEqual(expected * PITCH - 1);
-  expect(size.height).toBeLessThanOrEqual(expected * PITCH + PITCH);
+  expect(size.height).toBeLessThanOrEqual(expected * PITCH);
 });
 
 test('the tree is as tall as its rows when the last folder opened is slow to list (#782)', async ({
