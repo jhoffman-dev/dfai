@@ -3,7 +3,6 @@ import {
   createVaultPath,
   digestOf,
   indexInWindowReport,
-  indexNotKeptReport,
   notesNotIndexedReport,
   type NoteChange,
 } from '@dfai/domain';
@@ -626,7 +625,11 @@ describe('createIndexSyncer, attacked (#135)', () => {
       fs: vault.fs,
       index: {
         ...vault.index,
-        open: async () => ({ ...(await vault.index.open()), kept: false }),
+        open: async () => ({
+          ...(await vault.index.open()),
+          kept: false,
+          notKeptBecause: 'UnknownError: The disk could not be read.',
+        }),
       },
       markdown: fakeMarkdown(),
       activity,
@@ -640,7 +643,17 @@ describe('createIndexSyncer, attacked (#135)', () => {
     await syncer.sync({ vault: LARKSPUR, fromScratch: true });
 
     expect(vault.held.has('Idea.md')).toBe(true);
-    expect(activity.reports).toEqual([indexNotKeptReport(), expect.anything()]);
+    // The cause is kept in Activity: WebKit's UnknownError is a refusal or a real fault.
+    expect(activity.reports).toEqual([
+      {
+        level: 'warning',
+        kind: 'index',
+        message:
+          'Search and lists are rebuilt each visit here, because this browser won’t store them. (UnknownError: The disk could not be read.)',
+        subject: null,
+      },
+      expect.anything(),
+    ]);
     expect(told).toEqual([
       'Search and lists are rebuilt each visit here, because this browser won’t store them.',
     ]);

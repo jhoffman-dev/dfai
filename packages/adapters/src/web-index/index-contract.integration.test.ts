@@ -63,7 +63,11 @@ indexContract("the browser's index in memory, where OPFS is refused (#761)", {
     channel.port2.start();
     const host = indexHostOver(channel.port2 as IndexEndpoint);
     const index = webIndexPort({ host: () => host, openVault: () => 'github:example/garden' });
-    expect(await index.open()).toEqual({ fresh: true, kept: false });
+    expect(await index.open()).toEqual({
+      fresh: true,
+      kept: false,
+      notKeptBecause: 'SecurityError: The request is not allowed.',
+    });
     return index;
   },
   markdown: remarkMarkdown,

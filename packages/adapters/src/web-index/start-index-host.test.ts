@@ -50,7 +50,11 @@ describe('starting the index worker’s host (#761)', () => {
       clock: STILL,
     });
 
-    expect(host.open(VAULT)).toEqual({ fresh: true, kept: false });
+    expect(host.open(VAULT)).toEqual({
+      fresh: true,
+      kept: false,
+      notKeptBecause: 'UnknownError: The operation failed for an unknown transient reason.',
+    });
     host.put(VAULT, [note('Moss.md', 'a garden of moss and fern')]);
     expect(host.search('fern', 10, {}).map((hit) => hit.path)).toEqual(['Moss.md']);
     expect(host.manifest().map((entry) => entry.path)).toEqual(['Moss.md']);
@@ -68,7 +72,11 @@ describe('starting the index worker’s host (#761)', () => {
       clock: STILL,
     });
 
-    expect(host.open(VAULT)).toEqual({ fresh: true, kept: false });
+    expect(host.open(VAULT)).toEqual({
+      fresh: true,
+      kept: false,
+      notKeptBecause: 'SecurityError: The request is not allowed.',
+    });
   });
 
   it('starts every open afresh: nothing of the last is kept in memory', async () => {
@@ -81,7 +89,7 @@ describe('starting the index worker’s host (#761)', () => {
     host.open(VAULT);
     host.put(VAULT, [note('Moss.md', 'moss')]);
 
-    expect(host.open(VAULT)).toEqual({ fresh: true, kept: false });
+    expect(host.open(VAULT)).toMatchObject({ fresh: true, kept: false });
     expect(host.manifest()).toEqual([]);
   });
 
