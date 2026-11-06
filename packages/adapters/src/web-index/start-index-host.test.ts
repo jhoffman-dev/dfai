@@ -79,7 +79,10 @@ describe('starting the index worker’s host (#761)', () => {
     });
   });
 
-  it('starts every open afresh: nothing of the last is kept in memory', async () => {
+  it('keeps the index, views and all, for the page: opened again, it holds what it held, as OPFS would', async () => {
+    // The app opens the index again after any failed call, and builds the
+    // types' views only when they change: a re-open that lost them left
+    // Today empty on CI (#761).
     const host = await startIndexHost({
       sqlite3: await sqliteWasm(),
       installPool: refusing(transient()),
@@ -88,6 +91,27 @@ describe('starting the index worker’s host (#761)', () => {
     });
     host.open(VAULT);
     host.put(VAULT, [note('Moss.md', 'moss')]);
+    host.rebuildViews([{ name: 'task', select: 'SELECT path FROM files' }]);
+
+    expect(host.open(VAULT)).toMatchObject({ fresh: false, kept: false });
+    expect(host.manifest().map((entry) => entry.path)).toEqual(['Moss.md']);
+    expect(host.query('SELECT path FROM v_task', []).rows).toEqual([['Moss.md']]);
+  });
+
+  it('lets the vault’s index go when it is forgotten, and a clear starts it empty', async () => {
+    const host = await startIndexHost({
+      sqlite3: await sqliteWasm(),
+      installPool: refusing(transient()),
+      shape: WEB_INDEX,
+      clock: STILL,
+    });
+    host.open(VAULT);
+    host.put(VAULT, [note('Moss.md', 'moss')]);
+    host.clear();
+    expect(host.manifest()).toEqual([]);
+    host.put(VAULT, [note('Fern.md', 'fern')]);
+
+    host.forget(VAULT);
 
     expect(host.open(VAULT)).toMatchObject({ fresh: true, kept: false });
     expect(host.manifest()).toEqual([]);
