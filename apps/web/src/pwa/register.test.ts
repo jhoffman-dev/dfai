@@ -26,7 +26,14 @@ function fakeWorker(state = 'installing') {
 }
 
 /** `navigator.serviceWorker` as the test drives it: a registration whose workers the test installs. */
-function fakeContainer({ controlled }: { controlled: boolean }) {
+function fakeContainer({
+  controlled,
+  whileRegistering = () => {},
+}: {
+  controlled: boolean;
+  /** Runs before `register` resolves: the browser may get far with the worker in that time. */
+  whileRegistering?: () => void;
+}) {
   const updates = new Set<() => void>();
   const controller = new Set<() => void>();
   const registration = {
@@ -35,15 +42,27 @@ function fakeContainer({ controlled }: { controlled: boolean }) {
     addEventListener: (_type: 'updatefound', listener: () => void) => updates.add(listener),
   } satisfies WorkerRegistration;
   const registered: string[] = [];
-  const workers: WorkerContainer & { registered: string[]; takeOver: () => void } = {
+  const workers: WorkerContainer & {
+    controller: Pick<ServiceWorker, 'state'> | null;
+    registered: string[];
+    claimed: () => void;
+    takeOver: () => void;
+  } = {
     controller: controlled ? { state: 'activated' } : null,
     register: async (path) => {
       registered.push(path);
+      whileRegistering();
       return registration;
     },
     addEventListener: (_type, listener) => controller.add(listener),
     registered,
-    takeOver: () => controller.forEach((listener) => listener()),
+    // The browser sets the controller in parallel and only queues `controllerchange`, so the
+    // page can read the new controller before the event that announces it (#762).
+    claimed: () => (workers.controller = { state: 'activated' }),
+    takeOver: () => {
+      workers.claimed();
+      controller.forEach((listener) => listener());
+    },
   };
   /** A newer build's worker found and installing. */
   const update = (worker: InstallingWorker) => {
@@ -108,6 +127,70 @@ describe('registering the shell worker (#668)', () => {
     installed(first);
     activated(first);
     expect(onUpdateReady).not.toHaveBeenCalled();
+  });
+
+  it('says nothing on the first visit when the first worker claims the page while it registers (#762)', async () => {
+    const { workers } = fakeContainer({
+      controlled: false,
+      whileRegistering: () => workers.claimed(),
+    });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    // The claim's queued `controllerchange` reaches the page only now.
+    workers.takeOver();
+    expect(onUpdateReady).not.toHaveBeenCalled();
+  });
+
+  it('says nothing on the first visit when the claim lands before the page hears the worker installed (#762)', async () => {
+    const { workers, registration } = fakeContainer({ controlled: false });
+    const onUpdateReady = vi.fn();
+    const first = fakeWorker();
+    registration.installing = first;
+    await registerShellWorker({ workers, onUpdateReady });
+    // The worker raced through activation and claimed; its queued `installed` is dispatched after.
+    workers.claimed();
+    first.becomes('installed');
+    first.becomes('activating');
+    first.becomes('activated');
+    workers.takeOver();
+    expect(onUpdateReady).not.toHaveBeenCalled();
+  });
+
+  it('says nothing on the first visit when updatefound reaches the page after the claim (#762)', async () => {
+    const { workers, update } = fakeContainer({ controlled: false });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    const first = fakeWorker();
+    workers.claimed();
+    update(first);
+    first.becomes('installed');
+    first.becomes('activated');
+    workers.takeOver();
+    expect(onUpdateReady).not.toHaveBeenCalled();
+  });
+
+  it('says nothing to a page that opened uncontrolled, though a claim and a waiting worker show by the time it registers (#762)', async () => {
+    const { workers, registration } = fakeContainer({
+      controlled: false,
+      whileRegistering: () => {
+        workers.claimed();
+        registration.waiting = fakeWorker('installed');
+      },
+    });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    expect(onUpdateReady).not.toHaveBeenCalled();
+  });
+
+  it('still offers a newer build to a tab that its first worker claimed (#762)', async () => {
+    const { workers, update, installed } = fakeContainer({ controlled: false });
+    const onUpdateReady = vi.fn();
+    await registerShellWorker({ workers, onUpdateReady });
+    workers.takeOver();
+    const next = fakeWorker();
+    update(next);
+    installed(next);
+    expect(onUpdateReady).toHaveBeenCalledTimes(1);
   });
 
   it('offers a worker already waiting when the page opens, as after a deploy seen by another tab', async () => {
