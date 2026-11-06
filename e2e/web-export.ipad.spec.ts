@@ -29,19 +29,41 @@ async function exportDialogFor(page: Page, name: string) {
   return page.getByRole('dialog', { name: `Export ${name}` });
 }
 
-/** The bytes of the download the dialog's Export… starts. */
+/**
+ * The name each download link the page clicks gives its file. WebKit on
+ * Linux hands Playwright that name with its spaces made underscores
+ * ("Garden_plan.md"), so what the page asked for is read from the link.
+ */
+const recordDownloadNames = (page: Page) =>
+  page.addInitScript(() => {
+    const named: string[] = [];
+    Object.assign(window, { dfaiDownloadNames: named });
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      if (this.download !== '') named.push(this.download);
+      click.call(this);
+    };
+  });
+
+/** The name the page gave the download, and its bytes, for the dialog's Export…. */
 async function downloadFrom(page: Page, dialog: ReturnType<Page['getByRole']>) {
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     dialog.getByRole('button', { name: 'Export…' }).tap(),
   ]);
   const path = await download.path();
-  return { name: download.suggestedFilename(), bytes: await readFile(path) };
+  const names = await page.evaluate(
+    () => (window as unknown as { dfaiDownloadNames: string[] }).dfaiDownloadNames,
+  );
+  // The browser's own name for it, spaces aside, is the same.
+  expect(download.suggestedFilename().replaceAll('_', ' ')).toBe(names.at(-1));
+  return { name: names.at(-1), bytes: await readFile(path) };
 }
 
 test('on the web, Export downloads a note as its .md file, or a zip with its pictures', async ({
   page,
 }) => {
+  await recordDownloadNames(page);
   await webVaultOnGitHub(page, VAULT);
   await signInOnTheWeb(page);
 
