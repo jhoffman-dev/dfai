@@ -5,8 +5,10 @@ import {
   isUnsent,
   nextInQueue,
   queuedSaveKey,
+  queueCreate,
   queueSave,
   savesToSend,
+  unsentCreatesIn,
   type QueuedSave,
 } from './save-queue.ts';
 
@@ -179,5 +181,104 @@ describe('the order of the queue', () => {
     expect(isProvisionalVersion(-1)).toBe(true);
     expect(isProvisionalVersion(0)).toBe(false);
     expect(isProvisionalVersion(null)).toBe(false);
+  });
+});
+
+describe('queueCreate (#773): a new note made offline', () => {
+  const create = (path = 'Inbox/Buy seed.md', contents = '# Buy seed\n') => ({
+    account: ACCOUNT,
+    vault: VAULT,
+    path,
+    contents,
+  });
+  const made = (path?: string, provisional = -1): QueuedSave => {
+    const decision = queueCreate(undefined, create(path), { order: 0, provisional });
+    if (decision.kind !== 'queued') throw new Error('not queued');
+    return decision.save;
+  };
+
+  it('waits as a create of its own, held to nothing being there, at a provisional version', () => {
+    expect(queueCreate(undefined, create(), { order: 4, provisional: -6 })).toEqual({
+      kind: 'queued',
+      save: {
+        key: queuedSaveKey(VAULT, 'Inbox/Buy seed.md'),
+        account: ACCOUNT,
+        vault: VAULT,
+        path: 'Inbox/Buy seed.md',
+        contents: '# Buy seed\n',
+        creates: true,
+        expectedModified: null,
+        order: 4,
+        provisional: -6,
+        state: { kind: 'waiting' },
+      },
+    });
+  });
+
+  it('refuses the name while a note waits or is refused there, whoever made it: never replacing its text', () => {
+    const waiting = made();
+    expect(queueCreate(waiting, create(), { order: 1, provisional: -2 })).toEqual({
+      kind: 'taken',
+    });
+    const refused: QueuedSave = { ...waiting, state: { kind: 'refused', reason: 'gone' } };
+    expect(queueCreate(refused, create(), { order: 1, provisional: -2 }).kind).toBe('taken');
+    const theirs = { ...waiting, account: 'tobias-fenn' };
+    expect(queueCreate(theirs, create(), { order: 1, provisional: -2 }).kind).toBe('taken');
+    const edit = queued('typing', 3, -1);
+    expect(queueCreate(edit, create('Plan.md'), { order: 1, provisional: -2 }).kind).toBe('taken');
+  });
+
+  it('starts afresh over a record whose save was sent or settled, at the next provisional version', () => {
+    const sent = landed(made(), 9);
+    const again = queueCreate(sent, create(), { order: 1, provisional: -2 });
+    expect(again.kind === 'queued' && again.save).toMatchObject({
+      creates: true,
+      provisional: -2,
+      order: 1,
+      state: { kind: 'waiting' },
+    });
+    const settled: QueuedSave = { ...made(), state: { kind: 'settled' } };
+    expect(queueCreate(settled, create(), { order: 1, provisional: -2 }).kind).toBe('queued');
+  });
+
+  it('folds typing carrying on from the new note into it, still a create held to nothing', () => {
+    const first = made(undefined, -1);
+    const typed = queueSave(
+      first,
+      { account: ACCOUNT, vault: VAULT, path: first.path, contents: 'more', expectedModified: -1 },
+      { order: 1, provisional: -2 },
+    );
+    expect(typed).toEqual({
+      kind: 'queued',
+      save: { ...first, contents: 'more', provisional: -2 },
+    });
+  });
+
+  it('refuses as stale typing that carries on from a note created under another name, so it never lands on whatever took its name', () => {
+    const numbered: QueuedSave = {
+      ...made(undefined, -1),
+      contents: '',
+      state: { kind: 'landed', at: 9, as: 'Inbox/Buy seed 2.md' },
+    };
+    expect(carriesOnAt(numbered, -1)).toBe(-1);
+    const typed = queueSave(
+      numbered,
+      { account: ACCOUNT, vault: VAULT, path: numbered.path, contents: 'x', expectedModified: -1 },
+      { order: 1, provisional: -2 },
+    );
+    expect(typed.kind).toBe('stale');
+  });
+
+  it('lists the account’s creates not yet sent in the open vault, and nothing else', () => {
+    const mine = made('Inbox/A.md', -1);
+    const refused: QueuedSave = { ...made('B.md', -2), state: { kind: 'refused', reason: 'x' } };
+    const sent = landed(made('C.md', -3), 4);
+    const theirs = { ...made('D.md', -4), account: 'tobias-fenn' };
+    const elsewhere = { ...made('E.md', -5), vault: 'github:mara-quill/other#main' };
+    const edit = queued('typing', 3, -6);
+    const records = [mine, refused, sent, theirs, elsewhere, edit];
+    expect(unsentCreatesIn(records, { account: ACCOUNT, vault: VAULT }).map((s) => s.path)).toEqual(
+      ['Inbox/A.md', 'B.md'],
+    );
   });
 });
