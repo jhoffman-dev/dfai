@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { relative } from 'node:path';
+import { dirname, relative } from 'node:path';
 import type {
   FullConfig,
   Reporter,
@@ -34,6 +34,15 @@ function recordedDurations(): Durations {
   return files;
 }
 
+/**
+ * Where the durations' paths start: the config file's folder, the
+ * repository's root. Not `config.rootDir`, which is the test folder (`e2e`):
+ * keyed from there, no file matched its record and every file cost the same.
+ */
+function repositoryRoot(config: FullConfig): string {
+  return config.configFile === undefined ? process.cwd() : dirname(config.configFile);
+}
+
 export default class E2eShardReporter implements Reporter {
   private root = process.cwd();
   private readonly times: TestTime[] = [];
@@ -47,7 +56,7 @@ export default class E2eShardReporter implements Reporter {
     suite: Suite;
     testRun: TestRun;
   }): Promise<void> {
-    this.root = config.rootDir;
+    this.root = repositoryRoot(config);
     if (config.shard === null) return Promise.resolve();
     testRun.skipSharding();
     const fileSuites = suite.suites.flatMap((project) => project.suites);

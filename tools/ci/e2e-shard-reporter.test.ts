@@ -6,10 +6,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import E2eShardReporter from './e2e-shard-reporter.ts';
 
 const ROOT = '/repo';
+/** As Playwright resolves it: `rootDir` is the test folder, not the repository's root. */
+const CONFIG = { rootDir: `${ROOT}/e2e`, configFile: `${ROOT}/playwright.config.ts` };
 /** Files with and without a recorded duration (e2e-durations.json), and one in a second project. */
 const FILES = [
+  'e2e/f-early.spec.ts',
+  'e2e/page-heads.attack-335.spec.ts',
   'e2e/inbox.attack-247.spec.ts',
-  'e2e/meetings-waiting.spec.ts',
+  'e2e/today.attack-247.spec.ts',
+  'e2e/theme-contrast.attack-273.spec.ts',
+  'e2e/table-rows.attack-334.spec.ts',
+  'e2e/shell.attack-332.spec.ts',
+  'e2e/tabs-edits.attack-346.spec.ts',
+  'e2e/sidebar-geometry.attack-332.spec.ts',
   'e2e/kindle-sync.spec.ts',
   'e2e/a-new-one.spec.ts',
   'e2e/another-new-one.spec.ts',
@@ -37,7 +46,7 @@ async function deal(shard: FullConfig['shard']): Promise<{ kept: string[]; took:
       took = true;
     },
   } as unknown as TestRun;
-  const config = { rootDir: ROOT, shard } as FullConfig;
+  const config = { ...CONFIG, shard } as FullConfig;
   await new E2eShardReporter().preprocess({ config, suite, testRun });
   const kept = fileSuites
     .filter((file) => !excluded.has(file))
@@ -58,14 +67,16 @@ describe('dealing the e2e spec files over the CI shards by duration', () => {
     }
   });
 
-  it('keeps the slowest recorded files on different shards', async () => {
-    const slowest = ['e2e/inbox.attack-247.spec.ts', 'e2e/meetings-waiting.spec.ts'];
+  it('deals the eight slowest recorded files one to each of eight shards', async () => {
+    // Read by their paths from the repository's root: keyed from anywhere else,
+    // no file matches its record, all cost alike, and the deal goes by name.
+    const slowest = FILES.slice(1, 9);
     const shardsOf = await Promise.all(
       [1, 2, 3, 4, 5, 6, 7, 8].map((current) => deal({ current, total: 8 })),
     );
     const holding = slowest.map((file) => shardsOf.findIndex(({ kept }) => kept.includes(file)));
     expect(holding.every((at) => at >= 0)).toBe(true);
-    expect(new Set(holding).size).toBe(slowest.length);
+    expect(new Set(holding).size).toBe(8);
   });
 
   it('leaves a run with no --shard alone: every file, and Playwright keeps the sharding', async () => {
@@ -90,7 +101,7 @@ describe("writing what a shard's files took", () => {
       skipSharding: () => undefined,
     } as unknown as TestRun;
     await reporter.preprocess({
-      config: { rootDir: ROOT, shard: null } as FullConfig,
+      config: { ...CONFIG, shard: null } as FullConfig,
       suite,
       testRun,
     });
