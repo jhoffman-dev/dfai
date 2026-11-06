@@ -8,6 +8,7 @@ import {
   saveNow,
   saveStatus,
   splitWindow,
+  type FakeHost,
   type FakeVault,
 } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
@@ -21,11 +22,11 @@ import { LINE_END } from './platform.ts';
 const TICK_SECONDS = 1_700_000_000;
 const NOTE = '# Note\n\nShip on zap\n';
 
-async function openOnACoarseDisk(page: Page): Promise<FakeVault> {
+async function openOnACoarseDisk(page: Page): Promise<{ vault: FakeVault; host: FakeHost }> {
   const vault = await createVault();
   await vault.write('note.md', NOTE);
   await utimes(join(vault.root, 'note.md'), TICK_SECONDS, TICK_SECONDS);
-  await installHost(page, vault, {
+  const host = await installHost(page, vault, {
     echoWrites: true,
     coarseTickSeconds: TICK_SECONDS,
   });
@@ -34,7 +35,7 @@ async function openOnACoarseDisk(page: Page): Promise<FakeVault> {
   await expect(page.getByText(/^1 notes? indexed/)).toBeVisible();
   await page.getByRole('treeitem', { name: 'note', exact: true }).click();
   await expect(page.getByRole('article', { name: 'note' })).toBeVisible();
-  return vault;
+  return { vault, host };
 }
 
 /**
@@ -78,7 +79,7 @@ async function findsInSearch(page: Page, word: string) {
 test('attack #281: the app’s own same-length save within the tick is found by its new words', async ({
   page,
 }) => {
-  const vault = await openOnACoarseDisk(page);
+  const { vault } = await openOnACoarseDisk(page);
   await replaceLastCharacter(page, 'Ship on zap', 'g');
   await saveNow(page);
   await expectFile(vault, 'note.md').toBe('# Note\n\nShip on zag\n');
@@ -90,7 +91,12 @@ test('attack #281: the app’s own same-length save within the tick is found by 
 test('attack #281: after a refused save is discarded in the same tick, the next save lands', async ({
   page,
 }) => {
-  const vault = await openOnACoarseDisk(page);
+  const { vault, host } = await openOnACoarseDisk(page);
+  // The watcher is slower than this test, and held so (#776). Its report of
+  // the save below, sent 400 ms after it, would have the app re-read the note
+  // and take the other program's write into the clean pane; typed after that,
+  // the save is an ordinary one, with nothing to refuse.
+  await host.holdEchoes();
   await replaceLastCharacter(page, 'Ship on zap', 'g');
   await saveNow(page);
   await expectFile(vault, 'note.md').toBe('# Note\n\nShip on zag\n');
@@ -123,7 +129,7 @@ const pane = (page: Page, which: 1 | 2) => page.getByRole('region', { name: `Pan
 test('attack #281: two panes on one note, saving in turn within one tick, are never refused', async ({
   page,
 }) => {
-  const vault = await openOnACoarseDisk(page);
+  const { vault } = await openOnACoarseDisk(page);
   await splitWindow(page);
   await expect(pane(page, 2).getByRole('article', { name: 'note' })).toBeVisible();
 
