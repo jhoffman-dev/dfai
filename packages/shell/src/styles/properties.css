@@ -79,6 +79,8 @@
   margin-left: -6px;
   max-width: 420px;
   padding: 4px 6px;
+  /* A value longer than its row ends in an ellipsis until it is focused to edit. */
+  text-overflow: ellipsis;
   width: 100%;
 }
 
@@ -433,6 +435,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  /* Shrinks to the row's measure, so a chip's `max-width: 100%` has something to fit. */
+  min-width: 0;
   padding: 4px 0;
 }
 
@@ -448,7 +452,18 @@
   font-size: var(--text-ui);
   font-weight: 700;
   gap: 6px;
+  /* One line, never wider than its row: a long name is cut, whole chips wrap. */
+  max-width: 100%;
+  min-width: 0;
   padding: 0 4px 0 29px;
+}
+
+/* The name is what gives; the icon and the remove keep their size. */
+.props__link .props__link-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A linked note's chip in its hue (#413). */
@@ -471,6 +486,7 @@
   color: var(--ink-3);
   cursor: pointer;
   display: inline-flex;
+  flex: none;
   height: 20px;
   justify-content: center;
   padding: 0;

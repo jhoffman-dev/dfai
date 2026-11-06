@@ -276,9 +276,11 @@ function LinkChips({
             }
           >
             {name === undefined ? (
-              <span className="props__link-title">{link}</span>
+              <span className="props__link-title" title={link}>
+                {link}
+              </span>
             ) : (
-              <LinkedNote name={name} className="props__link-title" onOpen={onOpenNote} />
+              <LinkedNote name={name} className="props__link-title" hint onOpen={onOpenNote} />
             )}
             <button
               type="button"

@@ -444,11 +444,14 @@ function RelationEditor({
               >
                 <Icon name="task" size={15} className="props__chip-icon" />
                 {name === undefined ? (
-                  <span className="props__link-title">{link}</span>
+                  <span className="props__link-title" title={link}>
+                    {link}
+                  </span>
                 ) : (
                   <LinkedNote
                     name={name}
                     className="props__link-title"
+                    hint
                     {...(onOpenNote !== undefined && { onOpen: onOpenNote })}
                   />
                 )}

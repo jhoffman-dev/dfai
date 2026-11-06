@@ -208,6 +208,16 @@
   display: none;
 }
 
+/* In 300px a value's problem has no room beside it: it wraps under the value
+   rather than running off the panel's edge mid-word. */
+.aside-props .props__value {
+  flex-wrap: wrap;
+}
+
+.aside-props .props__error {
+  flex-basis: 100%;
+}
+
 .aside-props .props__add {
   margin: 0;
 }

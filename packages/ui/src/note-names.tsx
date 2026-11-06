@@ -31,6 +31,7 @@ export function LinkedNote({
   className,
   hue,
   onOpen,
+  hint,
 }: {
   name: LinkedName;
   className: string;
@@ -38,9 +39,12 @@ export function LinkedNote({
   hue?: PillHue;
   /** Left out where the note cannot be opened from here. */
   onOpen?: (path: VaultPath) => void;
+  /** Shows the whole name on hover where the chip may cut it short. */
+  hint?: boolean;
 }) {
   const { path } = name;
   const tint = hue === undefined || name.missing ? {} : { 'data-hue': hue };
+  const hover = hint === true ? { title: name.text } : {};
   if (path !== null && onOpen !== undefined) {
     return (
       <button
@@ -48,6 +52,7 @@ export function LinkedNote({
         className={className}
         data-link-path={path}
         {...tint}
+        {...hover}
         aria-label={`Open ${name.text}`}
         onClick={(event) => {
           // A link inside something clickable opens its note, not the thing.
@@ -65,6 +70,7 @@ export function LinkedNote({
       data-missing={name.missing}
       {...(path !== null && { 'data-link-path': path })}
       {...tint}
+      {...hover}
     >
       {name.text}
     </span>
