@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { DestinationRequest, ExportFilesPort } from '@dfai/application';
+import {
+  ExportError,
+  MAX_DOWNLOAD_EXPORT_BYTES,
+  type DestinationRequest,
+  type ExportFilesPort,
+} from '@dfai/application';
 import { browserExportFiles, type ZipFiles } from './browser-export-files.ts';
 import type { DownloadFile } from './browser-download.ts';
 
@@ -140,16 +145,57 @@ describe('a browser export (#774)', () => {
     ).rejects.toThrow('written twice');
   });
 
-  it.each(['/etc/passwd', '../outside.md', 'attachments/../../x.png', 'a\\..\\b', './a.md'])(
-    'refuses a path that is not inside the export: %s',
-    async (path) => {
-      const { port } = setUp();
-      const destination = await chosen(port, { kind: 'folder', folderName: 'Out' });
-      await expect(port.write({ destination, path, bytes: bytes('x') })).rejects.toThrow(
-        'not a path inside the export',
-      );
-    },
-  );
+  it.each([
+    '/etc/passwd',
+    '../outside.md',
+    'attachments/../../x.png',
+    'a\\..\\b',
+    './a.md',
+    '\\server\\share.md',
+    'C:\\Users\\x.md',
+    'c:x.md',
+    'attachments/a\u0000.png',
+    'attachments/a\u001f.png',
+    'a\u007f.md',
+  ])('refuses a path that is not inside the export: %s', async (path) => {
+    const { port } = setUp();
+    const destination = await chosen(port, { kind: 'folder', folderName: 'Out' });
+    await expect(port.write({ destination, path, bytes: bytes('x') })).rejects.toThrow(
+      'not a path inside the export',
+    );
+  });
+
+  it('refuses, before holding any more, an export larger than a download may be (#779)', async () => {
+    const downloads: DownloadFile[] = [];
+    const port = browserExportFiles({
+      download: (file) => {
+        downloads.push(file);
+        return Promise.resolve();
+      },
+      loadZip: () => Promise.reject(new Error('never zipped')),
+      maxBytes: 4,
+    });
+    const destination = await chosen(port, { kind: 'folder', folderName: 'Out' });
+    await port.write({ destination, path: 'A.md', bytes: bytes('ab') });
+    await port.write({ destination, path: 'B.md', bytes: bytes('cd') });
+    const refused = port.write({ destination, path: 'C.md', bytes: bytes('e') });
+    await expect(refused).rejects.toBeInstanceOf(ExportError);
+    await expect(refused).rejects.toMatchObject({ kind: 'too-large' });
+    await port.finish(destination, { discard: true });
+    expect(downloads).toEqual([]);
+  });
+
+  it('holds a download to the web’s limit when none is given (#779)', async () => {
+    const port = browserExportFiles({
+      download: () => Promise.resolve(),
+      loadZip: () => Promise.reject(new Error('never zipped')),
+    });
+    const destination = await chosen(port, { kind: 'folder', folderName: 'Out' });
+    const over = { byteLength: MAX_DOWNLOAD_EXPORT_BYTES + 1 } as Uint8Array;
+    await expect(port.write({ destination, path: 'A.md', bytes: over })).rejects.toMatchObject({
+      kind: 'too-large',
+    });
+  });
 
   it('fails, downloading nothing, when a lone file was never written', async () => {
     const { port, downloads } = setUp();

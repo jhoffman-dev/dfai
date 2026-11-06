@@ -15,6 +15,9 @@ describe('opening a link on the web (#774)', () => {
     ['https://docs.google.com/document/d/abc', 'https://docs.google.com/document/d/abc'],
     ['http://localhost:3000/x', 'http://localhost:3000/x'],
     [' https://example.com/a b ', 'https://example.com/a%20b'],
+    // A URL's parser drops a tab or a newline anywhere in it, as a browser does (#779).
+    ['https://exam\tple.com/a\nb', 'https://example.com/ab'],
+    ['\n\thttps://example.com/', 'https://example.com/'],
   ])('opens %s in a new tab with no way back to this page', async (url, expected) => {
     const { links, opened } = setUp();
     await links.open(url);
@@ -28,6 +31,10 @@ describe('opening a link on the web (#774)', () => {
     'data:text/html,<p>hi</p>',
     'mailto:mara@example.com',
     'blob:https://app.example.com/1',
+    'java\tscript:alert(1)',
+    'java\nscript:alert(1)',
+    '\n\tjavascript:alert(1)',
+    'javascript\r:alert(1)',
   ])('refuses %s, opening nothing', async (url) => {
     const { links, opened } = setUp();
     await expect(links.open(url)).rejects.toThrow('Only web links can be opened');
