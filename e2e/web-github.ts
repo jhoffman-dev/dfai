@@ -47,6 +47,17 @@ export async function webVaultOnGitHub(
 }
 
 /**
+ * The host a request goes to. A `blob:` URL is the page's own bytes, named
+ * under the page's origin (an export's download, #774), so its host is that origin's.
+ */
+const hostOf = (url: URL) =>
+  url.protocol !== 'blob:'
+    ? url.hostname
+    : URL.canParse(url.pathname)
+      ? new URL(url.pathname).hostname
+      : '';
+
+/**
  * Any request for a host past this machine, other than GitHub's API (which
  * the fake answers), is a bug in the test's set-up or the app: it is refused
  * and recorded, so the test fails (fixtures.ts) rather than reaching out.
@@ -54,7 +65,7 @@ export async function webVaultOnGitHub(
  */
 async function refuseLeavingTheMachine(context: BrowserContext) {
   await context.route(
-    (url) => !LOOPBACK.has(url.hostname),
+    (url) => !LOOPBACK.has(hostOf(url)),
     async (route) => {
       recordStubBug(new Error(`a request left the machine: ${route.request().url()}`));
       await route.abort('blockedbyclient');

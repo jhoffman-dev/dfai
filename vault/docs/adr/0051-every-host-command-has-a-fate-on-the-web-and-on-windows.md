@@ -242,13 +242,13 @@ fate, and why.
 | --------------------------- | -------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `global_capture_status`     | globalCapture  | absent  | port    | A system-wide shortcut belongs to the system (ADR-0033); a page gets keys only while it has focus. On Windows the window must be brought forward without AppKit, and the shortcuts the system keeps are Windows' own. |
 | `global_capture_set`        | globalCapture  | absent  | port    | As `global_capture_status`: the vetting backstop names macOS's reserved keys and ⌘.                                                                                                                                   |
-| `open_url`                  | —              | browser | same    | `window.open` with `noopener`. `opener.rs` already has a Windows branch.                                                                                                                                              |
+| `open_url`                  | —              | browser | same    | `window.open` in a new tab with `noopener,noreferrer`, http and https alone, as `opener.rs` allows (#774). `opener.rs` already has a Windows branch.                                                                  |
 | `sqlite_source_query`       | sqliteSources  | absent  | same    | Another program's database, outside the vault, on the device: a browser can reach neither. Read-only `immutable` opening is the same on Windows.                                                                      |
 | `pick_sqlite_file`          | sqliteSources  | absent  | port    | As `sqlite_source_query`. The grants it remembers are saved by renaming over the old file (W4).                                                                                                                       |
 | `snapshot_page`             | pageThumbnails | absent  | port    | A stranger's page pictured in a webview of its own with no app origin. A browser cannot picture one safely, and the card keeps its placeholder. On Windows it is `WKWebView` code; WebView2 capture is the port.      |
-| `export_choose_destination` | markdownExport | absent  | same    | Planned as a download (a `.md` file, or a zip of a note and its files), `browser` once that adapter lands; until then absent and `markdownExport` off on the web (PR #760).                                           |
-| `export_write_file`         | markdownExport | absent  | same    | As `export_choose_destination`: each file will go into the download.                                                                                                                                                  |
-| `export_finish`             | markdownExport | absent  | same    | As `export_choose_destination`: the download will be handed over, or dropped on failure.                                                                                                                              |
+| `export_choose_destination` | markdownExport | browser | same    | A download (#774): no place is asked for, and the download is named at once — the note's `.md` file alone, or a `.zip` once it brings pictures or there are several notes, the pictures in `attachments/`.            |
+| `export_write_file`         | markdownExport | browser | same    | As `export_choose_destination`: each file is held in the page until the download is made.                                                                                                                             |
+| `export_finish`             | markdownExport | browser | same    | As `export_choose_destination`: the download is handed over through a link that says `download`, or nothing is downloaded when the export failed.                                                                     |
 | `export_render_pdf`         | pdfExport      | absent  | port    | Made with the system's WebKit and PDFKit. In v1 the web has no PDF export; the iPad's own print sheet can still save a page. On Windows WebView2's `PrintToPdfAsync` is the port.                                     |
 
 ### The local API
@@ -274,10 +274,11 @@ These were chosen as the recommended answers and are open until James says:
   a person's key, so it is a decision of its own.
 - **A delete on the web is a commit, not a Trash.** The repository's history
   is how it is recovered.
-- **Markdown export on the web is to be a download; PDF export is absent**,
-  short of the iPad's own print sheet. Until the download adapter lands the
-  web has no export at all, and `markdownExport` is off in `WEB_CAPABILITIES`
-  so the screen hides it and Settings says so (PR #760).
+- **Markdown export on the web is a download; PDF export is absent**,
+  short of the iPad's own print sheet. One note with no pictures downloads
+  as its `.md` file; a note with pictures, or several notes, as a `.zip` with
+  the pictures in `attachments/` (#774). Until that adapter landed,
+  `markdownExport` was off in `WEB_CAPABILITIES` (PR #760).
 - **The device names itself on the web.** The person types the iPad's name
   once; it names that device's conflict copies.
 

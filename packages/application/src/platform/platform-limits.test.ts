@@ -12,6 +12,9 @@ const EVERYTHING = Object.fromEntries(
   PLATFORM_CAPABILITIES.map((name) => [name, true]),
 ) as PlatformCapabilities;
 
+/** What no platform says it lacks: saving as a commit has another way, and every platform exports Markdown. */
+const NO_LIMIT: readonly string[] = ['saveAsCommit', 'markdownExport'];
+
 describe('what a platform cannot do, in the person’s words (#670)', () => {
   it('names nothing on the desktop, whose one lack is a way of saving it has another of', () => {
     expect(capabilitiesLacking(DESKTOP_CAPABILITIES)).toEqual(['saveAsCommit']);
@@ -31,7 +34,11 @@ describe('what a platform cannot do, in the person’s words (#670)', () => {
     expect(limits.at(-1)?.what).toBe('Pictures of an artifact’s first screen on its card');
   });
 
-  it.each(PLATFORM_CAPABILITIES.filter((name) => name !== 'saveAsCommit'))(
+  it('names nothing for Markdown export, which every platform has (#779)', () => {
+    expect(platformLimits({ ...EVERYTHING, markdownExport: false })).toEqual([]);
+  });
+
+  it.each(PLATFORM_CAPABILITIES.filter((name) => !NO_LIMIT.includes(name)))(
     'says what is missing, and why, when %s is off',
     (name) => {
       const [limit, ...more] = platformLimits({ ...EVERYTHING, [name]: false });
@@ -55,7 +62,7 @@ describe('what a platform cannot do, in the person’s words (#670)', () => {
       PLATFORM_CAPABILITIES.map((name) => [name, false]),
     ) as PlatformCapabilities;
     const names = platformLimits(none).map((limit) => limit.what);
-    expect(names).toHaveLength(PLATFORM_CAPABILITIES.length - 1);
+    expect(names).toHaveLength(PLATFORM_CAPABILITIES.length - NO_LIMIT.length);
     expect(new Set(names).size).toBe(names.length);
   });
 });

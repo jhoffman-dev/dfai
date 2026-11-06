@@ -43,7 +43,7 @@ const ports = {
   appInfo: {},
   kindle: {},
   semantic: {},
-  exporting: {},
+  exporting: { files: {}, pdf: {}, drive: {}, renderer: {} },
   meetings: {},
   blocks: {},
 } as unknown as AppPorts;
@@ -124,8 +124,11 @@ describe('mountShell (#656)', () => {
     await screen.findByText('the app');
     expect(handed.offered?.kindleSettings).toBe(false);
     expect(handed.offered?.syncSettings).toBe(false);
-    expect(handed.offered?.exportNotes).toBe(false);
-    expect(handed.ports).toEqual(['appInfo']);
+    // Markdown goes as a download on the web (#774); a PDF and a Google Doc need the desktop.
+    expect(handed.offered?.exportNotes).toBe(true);
+    expect(handed.offered?.pdfExport).toBe(false);
+    expect(handed.offered?.googleDocExport).toBe(false);
+    expect(handed.ports).toEqual(['appInfo', 'exporting']);
   });
 
   it('hands the app what the platform lacks, from its capabilities alone (#670)', async () => {
@@ -197,6 +200,46 @@ describe('composedForApp (#657)', () => {
       });
       for (const entry of entries) expect(composed.offered[entry]).toBe(false);
       expect(optional(composed.ports)).not.toContain(port);
+    },
+  );
+
+  it.each([
+    ['pdf', ['pdfExport']],
+    ['drive', ['googleDocExport']],
+    ['renderer', ['pdfExport', 'googleDocExport']],
+  ] as const)(
+    'offers Markdown but not what needs the export port %s, where it is left out (#774)',
+    (left, gone) => {
+      const exporting = Object.fromEntries(
+        Object.entries(ports.exporting!).filter(([name]) => name !== left),
+      );
+      const { offered } = composedForApp({
+        ports: { ...ports, exporting } as unknown as AppPorts,
+        capabilities: DESKTOP_CAPABILITIES,
+      });
+      expect(offered.exportNotes).toBe(true);
+      for (const entry of gone) expect(offered[entry]).toBe(false);
+      const kept = (['pdfExport', 'googleDocExport'] as const).filter(
+        (e) => !(gone as readonly string[]).includes(e),
+      );
+      for (const entry of kept) expect(offered[entry]).toBe(true);
+    },
+  );
+
+  it.each([
+    ['pdfExport', 'pdf'],
+    ['googleDriveExport', 'drive'],
+  ] as const)(
+    'hands on no %s port once it is off, keeping the rest of export (#774)',
+    (off, port) => {
+      const { ports: handedPorts, offered } = composedForApp({
+        ports,
+        capabilities: { ...DESKTOP_CAPABILITIES, [off]: false },
+      });
+      expect(offered.exportNotes).toBe(true);
+      expect(Object.keys(handedPorts.exporting ?? {}).sort()).toEqual(
+        ['drive', 'files', 'pdf', 'renderer'].filter((name) => name !== port),
+      );
     },
   );
 
