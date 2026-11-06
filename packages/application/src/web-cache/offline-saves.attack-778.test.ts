@@ -246,6 +246,63 @@ describe('attack #778: the tried record', () => {
   });
 });
 
+describe('re-review #778: an attempt not seen on GitHub yet', () => {
+  it.fails(
+    'is never let go: a create that times out and lands after the next look is found, with no second note',
+    async () => {
+      const { saves, remote, connection, store } = device();
+      connection.set(false);
+      await make(saves, 'X.md', 'A');
+      const creates = remote.fs.createNote;
+      let late: (() => Promise<number>) | undefined;
+      // The request times out, but GitHub applies it moments later.
+      remote.fs.createNote = async (args) => {
+        late = () => creates(args);
+        throw new VaultUnreachableError('GitHub did not answer in time');
+      };
+      connection.set(true);
+      await saves.send(ACCOUNT);
+      // The next send looks before the first lands; it lands before the next create is made.
+      remote.fs.createNote = async (args) => {
+        remote.fs.createNote = creates;
+        await late!();
+        return creates(args);
+      };
+      await saves.send(ACCOUNT);
+      await saves.send(ACCOUNT);
+      expect([...remote.held.keys()]).toEqual(['X.md']);
+      expect(remote.held.get('X.md')?.text).toBe('A');
+      expect(unsentIn(store)).toEqual([]);
+      expect(saves.pending.stateOf(VAULT, 'X.md')).toBeNull();
+    },
+  );
+
+  it.fails('that landed late is read as its own, never refused as made elsewhere', async () => {
+    const { saves, remote, connection } = device();
+    connection.set(false);
+    await make(saves, 'X.md', 'A');
+    const creates = remote.fs.createNote;
+    let late: (() => Promise<number>) | undefined;
+    remote.fs.createNote = async (args) => {
+      late = () => creates(args);
+      throw new VaultUnreachableError('GitHub did not answer in time');
+    };
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    // The next send looks, finds nothing yet, and its own create is lost to the network too.
+    remote.fs.createNote = async () => {
+      remote.fs.createNote = creates;
+      throw new VaultUnreachableError('gone again');
+    };
+    await saves.send(ACCOUNT);
+    // Then the first lands.
+    await late!();
+    await saves.fs.readTextFile(p('X.md'));
+    expect(saves.pending.stateOf(VAULT, 'X.md')).toEqual({ kind: 'waiting' });
+    expect([...remote.held.keys()]).toEqual(['X.md']);
+  });
+});
+
 describe('attack #778: a read of a waiting create', () => {
   it('whose look at GitHub fails is told, and reads as the waiting text, still waiting', async () => {
     const { saves, remote, connection, report } = device();
