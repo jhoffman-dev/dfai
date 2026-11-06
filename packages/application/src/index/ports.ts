@@ -147,6 +147,8 @@ export interface IndexOpening {
    * every open. Left out, the index is kept.
    */
   readonly kept?: boolean;
+  /** What the host caught that left the index not kept, as it was said: kept in Activity. */
+  readonly notKeptBecause?: string;
 }
 
 /**

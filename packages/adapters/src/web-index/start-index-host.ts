@@ -2,7 +2,7 @@ import type { SAHPoolUtil, Sqlite3Static } from '@sqlite.org/sqlite-wasm';
 import type { Clock } from '@dfai/application';
 import { opfsIndexFiles } from './opfs-index-files.ts';
 import { sessionIndexFiles } from './session-index-files.ts';
-import { isStorageRefusal } from './storage-refusal.ts';
+import { describeRefusal, isStorageRefusal } from './storage-refusal.ts';
 import { createWasmIndexHost, type IndexFiles, type WasmIndexHost } from './wasm-index-host.ts';
 import type { WebIndexShape } from './web-index-shape.ts';
 
@@ -29,11 +29,11 @@ export async function startIndexHost({
 }): Promise<WasmIndexHost> {
   const kept = await poolFiles(installPool).catch((error: unknown) => {
     if (!isStorageRefusal(error)) throw error;
-    return null;
+    return describeRefusal(error);
   });
-  if (kept !== null) return createWasmIndexHost({ sqlite3, files: kept, shape, clock });
+  if (typeof kept !== 'string') return createWasmIndexHost({ sqlite3, files: kept, shape, clock });
   const host = createWasmIndexHost({ sqlite3, files: sessionIndexFiles(sqlite3), shape, clock });
-  return { ...host, open: (vault) => ({ ...host.open(vault), kept: false }) };
+  return { ...host, open: (vault) => ({ ...host.open(vault), kept: false, notKeptBecause: kept }) };
 }
 
 async function poolFiles(installPool: () => Promise<SAHPoolUtil>): Promise<IndexFiles> {

@@ -454,17 +454,18 @@ export function indexInWindowReport(reason: string): ActivityReport {
   };
 }
 
+/** What the person is told when the index is kept only while the page is open (#761). */
+export const INDEX_NOT_KEPT =
+  'Search and lists are rebuilt each visit here, because this browser won’t store them.';
+
 /**
  * The index is kept only while the page is open, because the browser refuses
- * it storage (#761): said once, as the app's state rather than a failure.
+ * it storage (#761): said once, as the app's state rather than a failure,
+ * with what the host caught, since a refusal and a real fault can look alike.
  */
-export function indexNotKeptReport(): ActivityReport {
-  return {
-    level: 'warning',
-    kind: 'index',
-    message: 'Search and lists are rebuilt each visit here, because this browser won’t store them.',
-    subject: null,
-  };
+export function indexNotKeptReport(cause: string | null): ActivityReport {
+  const message = cause === null ? INDEX_NOT_KEPT : `${INDEX_NOT_KEPT} (${cause})`;
+  return { level: 'warning', kind: 'index', message, subject: null };
 }
 
 /** A note the index could not take, and why. */

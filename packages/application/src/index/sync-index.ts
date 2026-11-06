@@ -1,6 +1,7 @@
 import {
   indexFailedReport,
   indexInWindowReport,
+  INDEX_NOT_KEPT,
   indexNotKeptReport,
   indexRebuiltReport,
   messageWithoutPaths,
@@ -42,6 +43,8 @@ export interface IndexSync {
   readonly inWindow: string | null;
   /** False when the host keeps the index only while the page is open (`IndexOpening.kept`). */
   readonly kept: boolean;
+  /** What the host said left it not kept (`IndexOpening.notKeptBecause`); null when kept or unsaid. */
+  readonly notKeptBecause: string | null;
 }
 
 /**
@@ -105,6 +108,7 @@ export async function syncIndex({
       notRead: refresh.notRead,
       inWindow: refresh.inWindow,
       kept: opening.kept !== false,
+      notKeptBecause: opening.notKeptBecause ?? null,
     };
   } catch (cause) {
     if (cause instanceof IndexSyncAbandoned) throw cause;
@@ -245,9 +249,8 @@ export function createIndexSyncer({
     }
     if (!synced.kept && !saidNotKept) {
       saidNotKept = true;
-      const report = indexNotKeptReport();
-      ports.activity.inOpenVault().record(report);
-      onNotKept?.(report.message);
+      ports.activity.inOpenVault().record(indexNotKeptReport(synced.notKeptBecause));
+      onNotKept?.(INDEX_NOT_KEPT);
     }
     remembered = { vault, versions: synced.versions };
     unread = { vault, key: unreadKey(synced.failed) };
