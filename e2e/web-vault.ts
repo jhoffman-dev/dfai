@@ -53,28 +53,49 @@ export const saveStatus = (page: Page) =>
   page.getByRole('status').filter({ hasText: /Sav|Not saved/ });
 
 /**
- * How many reads of GitHub the device keeps for offline (#667), in the read
- * cache's IndexedDB database (`READ_CACHE_DATABASE` in the adapters). Never
- * opened when absent: opening would make it, empty, under the app's feet.
+ * The keys of the reads of GitHub the device keeps for offline (#667), in
+ * the read cache's IndexedDB database (`READ_CACHE_DATABASE` in the
+ * adapters). Never opened when absent: opening would make it, empty, under
+ * the app's feet.
  */
-export function readsKeptOnTheDevice(page: Page): Promise<number> {
+function keysKeptOnTheDevice(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
     const name = 'dfai-read-cache';
-    if (!(await indexedDB.databases()).some((database) => database.name === name)) return 0;
+    if (!(await indexedDB.databases()).some((database) => database.name === name)) return [];
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const opening = indexedDB.open(name);
       opening.onsuccess = () => resolve(opening.result);
       opening.onerror = () => reject(opening.error ?? new Error(`${name} did not open`));
     });
     try {
-      if (!database.objectStoreNames.contains('reads')) return 0;
-      const counting = database.transaction('reads').objectStore('reads').count();
-      return await new Promise<number>((resolve, reject) => {
-        counting.onsuccess = () => resolve(counting.result);
-        counting.onerror = () => reject(counting.error ?? new Error('the reads did not count'));
+      if (!database.objectStoreNames.contains('reads')) return [];
+      const listing = database.transaction('reads').objectStore('reads').getAllKeys();
+      return await new Promise<string[]>((resolve, reject) => {
+        listing.onsuccess = () => resolve(listing.result.map(String));
+        listing.onerror = () => reject(listing.error ?? new Error('the reads did not list'));
       });
     } finally {
       database.close();
     }
   });
+}
+
+/** How many reads of GitHub the device keeps for offline (#667). */
+export async function readsKeptOnTheDevice(page: Page): Promise<number> {
+  return (await keysKeptOnTheDevice(page)).length;
+}
+
+/**
+ * Whether the device keeps the read of a note (`note`) or of a folder's
+ * listing (`directory`, the root as ''), whoever it is kept for. A keep is
+ * written after the read answers, so a spec that reloads to read it offline
+ * waits for this first: the note on screen is a moment, this is the state.
+ */
+export async function readKeptOnTheDevice(
+  page: Page,
+  kind: 'note' | 'directory',
+  asked: string,
+): Promise<boolean> {
+  const ending = `\u0000${kind}\u0000${asked}`;
+  return (await keysKeptOnTheDevice(page)).some((key) => key.endsWith(ending));
 }

@@ -6,6 +6,7 @@ import { VaultAccessError, VaultUnreachableError, type HostVaultFsPort } from '.
 import {
   cachedVaultFs,
   FOLDER_NEEDS_CONNECTION,
+  NEW_FOLDER_NEEDS_CONNECTION,
   NOTE_NEEDS_CONNECTION,
   revalidateKeptNotes,
   WRITE_NEEDS_CONNECTION,
@@ -193,12 +194,20 @@ describe('cachedVaultFs: writing', () => {
     connection.set(false);
     const writes = [
       fs.createNote({ vault: VAULT, path: p('New.md'), contents: '' }),
-      fs.createFolder({ vault: VAULT, path: p('New') }),
       fs.moveEntry({ vault: VAULT, from: p('A.md'), to: p('B.md') }),
       fs.trashEntry({ vault: VAULT, path: p('A.md') }),
       fs.writeBinaryFile({ vault: VAULT, path: p('a.png'), bytes: new Uint8Array(1), offset: 0 }),
     ];
     for (const write of writes) await expect(write).rejects.toThrow(WRITE_NEEDS_CONNECTION);
+  });
+
+  it('refuses a new folder offline saying folders, unlike notes, do not wait (#773)', async () => {
+    const { fs, connection, server } = cached({});
+    connection.set(false);
+    const making = fs.createFolder({ vault: VAULT, path: p('New') });
+    await expect(making).rejects.toThrow(NEW_FOLDER_NEEDS_CONNECTION);
+    await expect(making).rejects.toBeInstanceOf(VaultUnreachableError);
+    expect(server.notes).toEqual({});
   });
 });
 

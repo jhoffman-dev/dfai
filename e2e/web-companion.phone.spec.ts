@@ -1,14 +1,16 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { signInOnTheWeb, webVaultOnGitHub } from './web-github.ts';
+import { readKeptOnTheDevice } from './web-vault.ts';
 
 /**
  * #672: the web build on a phone, by thumb. This spec runs only in the `phone`
  * project (playwright.config.ts): WebKit at 390×844 with a touch screen. The
  * bar along the bottom edge offers the day's three jobs — quick add, Today,
  * Notes; here quick add, which writes a note into the Inbox on GitHub. Made
- * offline it is refused for now — the save queue (#667) takes edits, not new
- * notes, a follow-up of its own — and the palette keeps the text and says
- * why, so nothing typed is lost. Which screens the bar holds, and at what
+ * offline, a new note waits in the save queue (#773, web-offline-create.ipad
+ * .spec.ts); a new folder does not, so in a vault with no Inbox yet the
+ * capture is refused, and the palette keeps the text and says why, so
+ * nothing typed is lost. Which screens the bar holds, and at what
  * width, is the domain's (`shellLayoutFor`, held by its own test).
  *
  * Today and Notes read the vault's index, and the web's index lives in OPFS,
@@ -78,13 +80,15 @@ test('on a phone, quick add writes a note into the Inbox on GitHub, and stays up
   await expect(page.getByRole('article', { name: 'Call Tobias Fenn' })).toBeVisible();
 });
 
-test('on a phone, a quick add refused offline keeps its text and says why; back online, Enter commits it', async ({
+test('on a phone, a quick add that needs a new Inbox offline keeps its text and says why; back online, Enter commits it', async ({
   page,
   context,
 }) => {
   const { github } = await webVaultOnGitHub(page, FILES);
   await signInOnTheWeb(page);
   await expect(quickAdd(page)).toBeVisible();
+  // The vault's top folder kept on the device first: offline, it shows there is no Inbox yet.
+  await expect.poll(() => readKeptOnTheDevice(page, 'directory', '')).toBe(true);
   await context.setOffline(true);
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
 
@@ -92,7 +96,7 @@ test('on a phone, a quick add refused offline keeps its text and says why; back 
   await captureField(page).fill('Buy seed');
   await page.keyboard.press('Enter');
   const refusal = capture(page).getByRole('alert');
-  await expect(refusal).toHaveText(/needs a connection/);
+  await expect(refusal).toHaveText(/Making a folder needs a connection/);
   await expect(captureField(page)).toHaveValue('Buy seed');
   expect(await github.paths()).not.toContain('Inbox/Buy seed.md');
 

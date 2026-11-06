@@ -1,6 +1,7 @@
 import {
   VaultAccessError,
   VaultUnreachableError,
+  type CreateMarksPort,
   type HostVaultFsPort,
   type VaultLocation,
   type VaultLocationStore,
@@ -90,6 +91,8 @@ export function gitHubVaultPorts({
   onConfirmed?: (login: string) => Promise<void>;
 }): {
   fs: HostVaultFsPort;
+  /** The marks the open vault's creates carry, read from its branch's commits. */
+  marks: CreateMarksPort;
   picker: VaultPickerPort;
   store: VaultLocationStore;
   /** Settles once the store has first said which vault is open, after the account check. */
@@ -109,8 +112,8 @@ export function gitHubVaultPorts({
     return locationOf(where);
   };
   const picker: VaultPickerPort = { pickDirectory: async () => found(await gitHubLogin(api)) };
-  let open: { key: string; fs: HostVaultFsPort } | null = null;
-  const fsNow = (): HostVaultFsPort => {
+  let open: { key: string; fs: ReturnType<typeof gitHubVaultFs> } | null = null;
+  const fsNow = () => {
     const where = remembered.read();
     if (where === null) throw new VaultAccessError('no vault is open');
     const key = gitHubVaultKey(where);
@@ -141,8 +144,13 @@ export function gitHubVaultPorts({
     confirmed = login;
     return location;
   };
+  // Read from the vault remembered at the time, as each call of `fs` is.
+  const marks: CreateMarksPort = {
+    markAt: (path) => Promise.resolve().then(() => fsNow().markAt(path)),
+  };
   return {
     fs,
+    marks,
     picker,
     opened,
     signedIn: () => confirmed,

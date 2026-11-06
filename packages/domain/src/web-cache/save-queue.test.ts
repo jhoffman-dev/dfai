@@ -5,8 +5,19 @@ import {
   isUnsent,
   nextInQueue,
   queuedSaveKey,
+  CREATE_TAKEN_ELSEWHERE,
+  attemptsThatCannotLand,
+  isOwnCreate,
+  isStillTheRecord,
+  queueCreate,
   queueSave,
+  takenElsewhere,
+  TRIED_CREATES_KEPT,
+  triedCreate,
+  untriedCreate,
+  withTextLetGo,
   savesToSend,
+  unsentCreatesIn,
   type QueuedSave,
 } from './save-queue.ts';
 
@@ -179,5 +190,217 @@ describe('the order of the queue', () => {
     expect(isProvisionalVersion(-1)).toBe(true);
     expect(isProvisionalVersion(0)).toBe(false);
     expect(isProvisionalVersion(null)).toBe(false);
+  });
+});
+
+describe('queueCreate (#773): a new note made offline', () => {
+  const create = (path = 'Inbox/Buy seed.md', contents = '# Buy seed\n') => ({
+    account: ACCOUNT,
+    vault: VAULT,
+    path,
+    contents,
+  });
+  const made = (path?: string, provisional = -1): QueuedSave => {
+    const decision = queueCreate(undefined, create(path), { order: 0, provisional });
+    if (decision.kind !== 'queued') throw new Error('not queued');
+    return decision.save;
+  };
+
+  it('waits as a create of its own, held to nothing being there, at a provisional version', () => {
+    expect(queueCreate(undefined, create(), { order: 4, provisional: -6 })).toEqual({
+      kind: 'queued',
+      save: {
+        key: queuedSaveKey(VAULT, 'Inbox/Buy seed.md'),
+        account: ACCOUNT,
+        vault: VAULT,
+        path: 'Inbox/Buy seed.md',
+        contents: '# Buy seed\n',
+        creates: true,
+        expectedModified: null,
+        order: 4,
+        provisional: -6,
+        state: { kind: 'waiting' },
+      },
+    });
+  });
+
+  it('refuses the name while a note waits or is refused there, whoever made it: never replacing its text', () => {
+    const waiting = made();
+    expect(queueCreate(waiting, create(), { order: 1, provisional: -2 })).toEqual({
+      kind: 'taken',
+    });
+    const refused: QueuedSave = { ...waiting, state: { kind: 'refused', reason: 'gone' } };
+    expect(queueCreate(refused, create(), { order: 1, provisional: -2 }).kind).toBe('taken');
+    const theirs = { ...waiting, account: 'tobias-fenn' };
+    expect(queueCreate(theirs, create(), { order: 1, provisional: -2 }).kind).toBe('taken');
+    const edit = queued('typing', 3, -1);
+    expect(queueCreate(edit, create('Plan.md'), { order: 1, provisional: -2 }).kind).toBe('taken');
+  });
+
+  it('starts afresh over a record whose save was sent or settled, at the next provisional version', () => {
+    const sent = landed(made(), 9);
+    const again = queueCreate(sent, create(), { order: 1, provisional: -2 });
+    expect(again.kind === 'queued' && again.save).toMatchObject({
+      creates: true,
+      provisional: -2,
+      order: 1,
+      state: { kind: 'waiting' },
+    });
+    const settled: QueuedSave = { ...made(), state: { kind: 'settled' } };
+    expect(queueCreate(settled, create(), { order: 1, provisional: -2 }).kind).toBe('queued');
+  });
+
+  it('folds typing carrying on from the new note into it, still a create held to nothing', () => {
+    const first = made(undefined, -1);
+    const typed = queueSave(
+      first,
+      { account: ACCOUNT, vault: VAULT, path: first.path, contents: 'more', expectedModified: -1 },
+      { order: 1, provisional: -2 },
+    );
+    expect(typed).toEqual({
+      kind: 'queued',
+      save: { ...first, contents: 'more', provisional: -2 },
+    });
+  });
+
+  it('refuses as stale typing that carries on from a note created under another name, so it never lands on whatever took its name', () => {
+    const numbered: QueuedSave = {
+      ...made(undefined, -1),
+      contents: '',
+      state: { kind: 'landed', at: 9, as: 'Inbox/Buy seed 2.md' },
+    };
+    expect(carriesOnAt(numbered, -1)).toBe(-1);
+    const typed = queueSave(
+      numbered,
+      { account: ACCOUNT, vault: VAULT, path: numbered.path, contents: 'x', expectedModified: -1 },
+      { order: 1, provisional: -2 },
+    );
+    expect(typed.kind).toBe('stale');
+  });
+
+  it('lists the account’s creates not yet sent in the open vault, and nothing else', () => {
+    const mine = made('Inbox/A.md', -1);
+    const refused: QueuedSave = { ...made('B.md', -2), state: { kind: 'refused', reason: 'x' } };
+    const sent = landed(made('C.md', -3), 4);
+    const theirs = { ...made('D.md', -4), account: 'tobias-fenn' };
+    const elsewhere = { ...made('E.md', -5), vault: 'github:mara-quill/other#main' };
+    const edit = queued('typing', 3, -6);
+    const records = [mine, refused, sent, theirs, elsewhere, edit];
+    expect(unsentCreatesIn(records, { account: ACCOUNT, vault: VAULT }).map((s) => s.path)).toEqual(
+      ['Inbox/A.md', 'B.md'],
+    );
+  });
+});
+
+describe('the creates a new note has tried (review #778)', () => {
+  const made = (): QueuedSave => {
+    const decision = queueCreate(
+      undefined,
+      { account: ACCOUNT, vault: VAULT, path: 'X.md', contents: 'A' },
+      { order: 0, provisional: -1 },
+    );
+    if (decision.kind !== 'queued') throw new Error('not queued');
+    return decision.save;
+  };
+
+  const first = { path: 'X.md', text: 'A', mark: 'mark-1' };
+  const second = { path: 'X 2.md', text: 'A', mark: 'mark-2' };
+
+  it('knows a note as its own only where the newest change carries a create it tried, with that text', () => {
+    const fresh = made();
+    expect(isOwnCreate(fresh, { path: 'X.md', text: 'A', mark: 'mark-1' })).toBe(false);
+    const tried = triedCreate(fresh, first);
+    expect(isOwnCreate(tried, { path: 'X.md', text: 'A', mark: 'mark-1' })).toBe(true);
+    expect(isOwnCreate(tried, { path: 'X.md', text: 'A B', mark: 'mark-1' })).toBe(false);
+    expect(isOwnCreate(tried, { path: 'X 2.md', text: 'A', mark: 'mark-1' })).toBe(false);
+  });
+
+  it('never knows another device’s note of the same name and text as its own (attack #778)', () => {
+    const tried = triedCreate(made(), first);
+    expect(isOwnCreate(tried, { path: 'X.md', text: 'A', mark: null })).toBe(false);
+    expect(isOwnCreate(tried, { path: 'X.md', text: 'A', mark: 'mark-9' })).toBe(false);
+  });
+
+  it('keeps every attempt once, and the rest of the record as it was', () => {
+    const once = triedCreate(made(), first);
+    const twice = triedCreate(triedCreate(once, first), second);
+    expect(twice).toEqual({ ...made(), tried: [first, second] });
+  });
+
+  it('lets go of the attempts it is told cannot land as the next is recorded, and of no other (attack #778)', () => {
+    const both = triedCreate(triedCreate(made(), first), second);
+    const third = { path: 'X 3.md', text: 'A', mark: 'mark-3' };
+    expect(triedCreate(both, third, [first]).tried).toEqual([second, third]);
+    expect(triedCreate(both, third, [first, second]).tried).toEqual([third]);
+    expect(triedCreate(both, second, [first]).tried).toEqual([second]);
+  });
+
+  it('keeps only the newest attempts, past the cap (re-review #778)', () => {
+    let save = made();
+    const attempts = Array.from({ length: TRIED_CREATES_KEPT + 2 }, (_, at) => ({
+      path: 'X.md',
+      text: `v${at}`,
+      mark: `mark-${at}`,
+    }));
+    for (const attempt of attempts) save = triedCreate(save, attempt);
+    expect(save.tried).toEqual(attempts.slice(2));
+  });
+
+  it('counts as unable to land only an attempt whose path another’s note holds (re-review #778)', () => {
+    const both = triedCreate(triedCreate(made(), first), second);
+    // Nothing found at a path: an attempt there may still land, so it is kept.
+    expect(attemptsThatCannotLand(both, [])).toEqual([]);
+    // Another device's note, with no mark or another's, holds X.md: what was tried there cannot land.
+    expect(attemptsThatCannotLand(both, [{ path: 'X.md', text: 'A', mark: null }])).toEqual([
+      first,
+    ]);
+    expect(attemptsThatCannotLand(both, [{ path: 'X 2.md', text: 'B', mark: 'mark-9' }])).toEqual([
+      second,
+    ]);
+    // Its own mark there is its own note, never one that cannot land.
+    expect(attemptsThatCannotLand(both, [{ path: 'X.md', text: 'A', mark: 'mark-1' }])).toEqual([]);
+  });
+
+  it('takes back an attempt refused as taken, and nothing else', () => {
+    const tried = triedCreate(triedCreate(made(), first), second);
+    expect(untriedCreate(tried, second).tried).toEqual([first]);
+    expect(untriedCreate(tried, { path: 'X 2.md', text: 'A', mark: 'mark-7' })).toBe(tried);
+  });
+
+  it('carries the attempts on as typing folds into the create', () => {
+    const tried = triedCreate(made(), first);
+    const typed = queueSave(
+      tried,
+      { account: ACCOUNT, vault: VAULT, path: 'X.md', contents: 'A B', expectedModified: -1 },
+      { order: 1, provisional: -2 },
+    );
+    expect(typed.kind === 'queued' && typed.save.tried).toEqual([first]);
+  });
+
+  it('keeps no typing once the text is on GitHub or let go, its attempts’ included (attack #778)', () => {
+    const tried = triedCreate(made(), first);
+    const landedNow = withTextLetGo(tried, { kind: 'landed', at: 4 });
+    expect(landedNow).toEqual({ ...made(), contents: '', state: { kind: 'landed', at: 4 } });
+    expect('tried' in landedNow).toBe(false);
+    expect(withTextLetGo(tried, { kind: 'settled' }).state).toEqual({ kind: 'settled' });
+  });
+
+  it('knows the record a turn began from only while it is the same account’s, vault, version and state (attack #778)', () => {
+    const was = made();
+    expect(isStillTheRecord({ ...was }, was)).toBe(true);
+    expect(isStillTheRecord({ ...was, account: 'tobias-fenn' }, was)).toBe(false);
+    expect(isStillTheRecord({ ...was, vault: 'github:mara-quill/other#main' }, was)).toBe(false);
+    expect(isStillTheRecord({ ...was, provisional: -2 }, was)).toBe(false);
+    expect(isStillTheRecord(landed(was, 3), was)).toBe(false);
+  });
+
+  it('refuses a waiting create whose name another device took, keeping its text for a copy', () => {
+    const taken = takenElsewhere(made());
+    expect(taken.state).toEqual({ kind: 'refused', reason: CREATE_TAKEN_ELSEWHERE });
+    expect(taken.contents).toBe('A');
+    const sent = landed(made(), 3);
+    expect(takenElsewhere(sent)).toBe(sent);
+    const edit = queued('typing', 3, -1);
+    expect(takenElsewhere(edit)).toBe(edit);
   });
 });

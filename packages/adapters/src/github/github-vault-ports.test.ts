@@ -133,6 +133,16 @@ describe('gitHubVaultPorts', () => {
     expect((await store.read())?.absolutePath).toBe(gitHubVaultKey(FAKE_VAULT));
   });
 
+  it('reads a create’s mark from the open vault, and none once it is forgotten (attack #778)', async () => {
+    const { store, fs, marks, remembered } = ports();
+    await store.read();
+    const vault = gitHubVaultKey(FAKE_VAULT);
+    await fs.createNote({ vault, path: p('X.md'), contents: 'A', mark: 'mark-1' });
+    expect(await marks.markAt(p('X.md'))).toBe('mark-1');
+    remembered.forget();
+    await expect(marks.markAt(p('X.md'))).rejects.toThrow('no vault is open');
+  });
+
   it('refuses every read once the vault is forgotten', async () => {
     const { store, fs, remembered } = ports();
     await store.read();

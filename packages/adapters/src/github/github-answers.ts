@@ -16,6 +16,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isSha = (value: unknown): value is string =>
   typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
 
+const isString = (value: unknown): value is string => typeof value === 'string';
+const isArray = (value: unknown): value is unknown[] => Array.isArray(value);
+
 function field<T>(value: unknown, key: string, is: (field: unknown) => field is T): T {
   if (!isRecord(value)) return malformed();
   const found = value[key];
@@ -26,6 +29,13 @@ function field<T>(value: unknown, key: string, is: (field: unknown) => field is 
 export const readCreatedSha = (answer: unknown): string => field(answer, 'sha', isSha);
 export const readRefSha = (answer: unknown): string =>
   readCreatedSha(field(answer, 'object', isRecord));
+
+/** The message of the first commit a commit listing holds; null when it holds none. */
+export function readNewestCommitMessage(answer: unknown): string | null {
+  if (!isArray(answer)) return malformed();
+  if (answer.length === 0) return null;
+  return field(field(answer[0], 'commit', isRecord), 'message', isString);
+}
 
 /** One entry of a recursive tree listing. */
 export interface GitTreeEntry {
@@ -43,9 +53,7 @@ export interface GitTreeListing {
   readonly entries: readonly GitTreeEntry[];
 }
 
-const isString = (value: unknown): value is string => typeof value === 'string';
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
-const isArray = (value: unknown): value is unknown[] => Array.isArray(value);
 const isType = (value: unknown): value is GitTreeEntry['type'] =>
   value === 'blob' || value === 'tree' || value === 'commit';
 const isSize = (value: unknown): value is number =>

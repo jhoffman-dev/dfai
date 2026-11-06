@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { signInOnTheWeb, webVaultOnGitHub } from './web-github.ts';
+import { readKeptOnTheDevice } from './web-vault.ts';
 
 /**
  * #667: a save made on the web with no network waits on the iPad, says
@@ -144,6 +145,9 @@ test('on the web, an edit typed with GitHub out of reach survives reloads, and c
   const plan = page.getByRole('treeitem', { name: 'Garden plan', exact: true });
   await plan.tap();
   await expect(page.getByLabel('Note', { exact: true }).getByText('First line.')).toBeVisible();
+  // Kept after the read answers: reloaded before the device holds it, the note is not there offline.
+  await expect.poll(() => readKeptOnTheDevice(page, 'note', 'Garden plan.md')).toBe(true);
+  await expect.poll(() => readKeptOnTheDevice(page, 'directory', '')).toBe(true);
 
   await test.step('the iPad opens with GitHub out of reach: it cannot say who is signed in', async () => {
     unreachable(true);
