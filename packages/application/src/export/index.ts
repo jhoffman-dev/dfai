@@ -1,4 +1,5 @@
 export { MAX_PAGE_PICTURE_BYTES } from './export-attachments.ts';
+export { MAX_DOWNLOAD_EXPORT_BYTES, refuseOversizedDownload } from './download-limit.ts';
 export { exportGoogleDocs } from './export-google-docs.ts';
 export type { ExportedDocs, GoogleDocsPorts } from './export-google-docs.ts';
 export type { ExportReadPorts } from './export-reading.ts';

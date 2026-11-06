@@ -1,4 +1,10 @@
-import type { DestinationRequest, ExportDestination, ExportFilesPort } from '@dfai/application';
+import {
+  MAX_DOWNLOAD_EXPORT_BYTES,
+  refuseOversizedDownload,
+  type DestinationRequest,
+  type ExportDestination,
+  type ExportFilesPort,
+} from '@dfai/application';
 import { SHARED_ATTACHMENTS_FOLDER } from '@dfai/domain';
 import type { BrowserDownload } from './browser-download.ts';
 
@@ -9,6 +15,8 @@ export interface BrowserExportFilesDeps {
   readonly download: BrowserDownload;
   /** Loaded on the first export that needs a zip, so the library is not in the page until then. */
   readonly loadZip: () => Promise<ZipFiles>;
+  /** The most one download may hold; the web's limit unless a test sets a smaller one. */
+  readonly maxBytes?: number;
 }
 
 /** One destination, held until it is finished: what it was asked as, and each file written to it. */
@@ -16,6 +24,8 @@ interface Pending {
   readonly request: DestinationRequest;
   readonly destination: ExportDestination;
   readonly files: Map<string, Uint8Array>;
+  /** What the files written so far come to. */
+  bytes: number;
 }
 
 const MARKDOWN = 'text/markdown;charset=utf-8';
@@ -28,21 +38,29 @@ const ZIP = 'application/zip';
  * anything with pictures or several notes as a `.zip`, its pictures in
  * `attachments/`. A discarded export downloads nothing.
  */
-export function browserExportFiles({ download, loadZip }: BrowserExportFilesDeps): ExportFilesPort {
+export function browserExportFiles({
+  download,
+  loadZip,
+  maxBytes = MAX_DOWNLOAD_EXPORT_BYTES,
+}: BrowserExportFilesDeps): ExportFilesPort {
   const pending = new Map<string, Pending>();
   let made = 0;
   return {
     choose(request) {
       made += 1;
       const destination = destinationFor(request, `download-${made}`);
-      pending.set(destination.id, { request, destination, files: new Map() });
+      pending.set(destination.id, { request, destination, files: new Map(), bytes: 0 });
       return Promise.resolve(destination);
     },
     async write({ destination, path, bytes }) {
       const held = pending.get(destination.id);
       if (held === undefined) throw new Error('This export is already finished.');
       if (held.files.has(path)) throw new Error(`“${path}” was written twice.`);
-      held.files.set(checkedPath(path), bytes.slice());
+      // Refused before it is held, so an export too large for the tab never fills it.
+      refuseOversizedDownload(held.bytes + bytes.byteLength, maxBytes);
+      // Held as given, not copied: the export makes each file's bytes afresh for its write.
+      held.files.set(checkedPath(path), bytes);
+      held.bytes += bytes.byteLength;
     },
     async finish({ id }, { discard }) {
       const held = pending.get(id);
@@ -96,13 +114,20 @@ function mainFileName(request: DestinationRequest): string {
   throw new Error('A folder export names every file it writes.');
 }
 
+/** A drive letter ("C:") or a root ("/", "\\"): where a path that is not relative starts. */
+const ROOTED = /^([A-Za-z]:|[\\/])/;
+// eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
 /**
  * A path inside the download, as the export names it: relative, with no
- * part that climbs out — so the zip unpacks only into its own folder.
+ * part that climbs out and no control character — so the zip unpacks only
+ * into its own folder, under names every system can show.
  */
 function checkedPath(path: string): string {
   const parts = path.split(/[\\/]/);
-  if (path.startsWith('/') || parts.some((part) => part === '..' || part === '.')) {
+  const climbs = parts.some((part) => part === '..' || part === '.');
+  if (ROOTED.test(path) || CONTROL.test(path) || climbs) {
     throw new Error(`“${path}” is not a path inside the export.`);
   }
   return path;

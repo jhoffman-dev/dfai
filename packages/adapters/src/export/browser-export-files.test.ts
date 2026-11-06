@@ -126,16 +126,6 @@ describe('a browser export (#774)', () => {
     expect(downloads.map((file) => new TextDecoder().decode(file.bytes))).toEqual(['one', 'two']);
   });
 
-  it('holds the bytes as they were written, not as the caller changes them after', async () => {
-    const { port, downloads } = setUp();
-    const destination = await chosen(port, oneFile());
-    const written = bytes('abc');
-    await port.write({ destination, path: '', bytes: written });
-    written[0] = 0x7a;
-    await port.finish(destination, { discard: false });
-    expect(new TextDecoder().decode(downloads[0]!.bytes)).toBe('abc');
-  });
-
   it('refuses a file written twice', async () => {
     const { port } = setUp();
     const destination = await chosen(port, oneFile(' attachments'));
