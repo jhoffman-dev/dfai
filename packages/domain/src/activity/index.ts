@@ -49,6 +49,8 @@ export {
   dryRunReport,
   indexFailedReport,
   indexInWindowReport,
+  INDEX_NOT_KEPT,
+  indexNotKeptReport,
   indexRebuiltReport,
   leavesFileUnsettled,
   meetingImportReport,
