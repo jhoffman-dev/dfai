@@ -46,8 +46,10 @@ describe('the web build', () => {
     expect(WEB_CAPABILITIES.syncByGit).toBe(false);
   });
 
-  it('has no Markdown export until its download adapter is wired in (PR #760 review)', () => {
-    expect(WEB_CAPABILITIES.markdownExport).toBe(false);
+  it('exports Markdown as a download, but no PDF or Google Doc (#774)', () => {
+    expect(WEB_CAPABILITIES.markdownExport).toBe(true);
+    expect(WEB_CAPABILITIES.pdfExport).toBe(false);
+    expect(WEB_CAPABILITIES.googleDriveExport).toBe(false);
   });
 });
 

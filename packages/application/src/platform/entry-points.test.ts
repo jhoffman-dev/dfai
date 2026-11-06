@@ -85,9 +85,9 @@ describe('entryPointsOffered', () => {
     expect(entryPointsOffered(EVERYTHING)).toEqual(EVERY_ENTRY_POINT);
   });
 
-  it('hides on the web what its missing capabilities need: everything, until export has its download (PR #760)', () => {
+  it('hides on the web what its missing capabilities need: everything but Markdown export (#774)', () => {
     const offered = entryPointsOffered(WEB_CAPABILITIES);
-    expect(ENTRY_POINTS.filter((entry) => offered[entry])).toEqual([]);
+    expect(ENTRY_POINTS.filter((entry) => offered[entry])).toEqual(['exportNotes']);
   });
 
   it('hides every entry point when no capability is on', () => {
@@ -116,8 +116,11 @@ describe('exportFormatsOffered', () => {
     ]);
   });
 
-  it('offers nothing on the web, which has no export yet (PR #760)', () => {
-    expect(exportFormatsOffered(entryPointsOffered(WEB_CAPABILITIES))).toEqual([]);
+  it('offers only the Markdown formats on the web, as a download (#774)', () => {
+    expect(exportFormatsOffered(entryPointsOffered(WEB_CAPABILITIES))).toEqual([
+      'markdown',
+      'standalone',
+    ]);
   });
 
   it('drops the PDF and the Doc each with its own capability', () => {

@@ -45,6 +45,9 @@ export function composedForApp({ ports, capabilities }: ShellComposition): {
     kindle: capabilities.kindle && ports.kindle !== undefined,
     localModels: capabilities.localModels && ports.semantic !== undefined,
     markdownExport: capabilities.markdownExport && ports.exporting !== undefined,
+    // A PDF and a Google Doc are drawn first, so each needs the renderer as well as its own port.
+    pdfExport: capabilities.pdfExport && drawn(ports.exporting, 'pdf'),
+    googleDriveExport: capabilities.googleDriveExport && drawn(ports.exporting, 'drive'),
   };
   const { kindle, semantic, exporting, meetings, blocks, ...always } = ports;
   return {
@@ -52,12 +55,32 @@ export function composedForApp({ ports, capabilities }: ShellComposition): {
       ...always,
       ...(has.kindle && kindle !== undefined && { kindle }),
       ...(has.localModels && semantic !== undefined && { semantic }),
-      ...(has.markdownExport && exporting !== undefined && { exporting }),
+      ...(has.markdownExport &&
+        exporting !== undefined && {
+          exporting: exportPortsOffered(exporting, has),
+        }),
       ...(has.googleCalendar && meetings !== undefined && { meetings }),
       ...(has.googleCalendar && blocks !== undefined && { blocks }),
     },
     offered: withCalendarPorts(entryPointsOffered(has), { meetings, blocks }),
     limits: platformLimits(capabilities),
+  };
+}
+
+/** Whether the export ports carry `port`, and the renderer the page is drawn with. */
+function drawn(exporting: AppPorts['exporting'], port: 'pdf' | 'drive'): boolean {
+  return exporting?.[port] !== undefined && exporting.renderer !== undefined;
+}
+
+/** The export ports, less the PDF's and Drive's where those formats are off: nothing reaches them then. */
+function exportPortsOffered(
+  { pdf, drive, ...exporting }: NonNullable<AppPorts['exporting']>,
+  has: { readonly pdfExport: boolean; readonly googleDriveExport: boolean },
+): NonNullable<AppPorts['exporting']> {
+  return {
+    ...exporting,
+    ...(has.pdfExport && { pdf }),
+    ...(has.googleDriveExport && { drive }),
   };
 }
 

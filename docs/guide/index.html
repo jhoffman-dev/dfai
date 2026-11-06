@@ -395,6 +395,12 @@ pnpm tauri:dev</pre>
         <li>Cancel the save dialog and nothing is written; the export dialog stays open to try again.</li>
       </ol>
       <p>Afterwards a notice says where it went — for one Google Doc, with <b>Open in Google Docs</b>. <a href="#activity">Activity</a> records it under <b>Exports</b>.</p>
+      <h3>On the web and iPad</h3>
+      <ul>
+        <li>On the <a href="#web">web</a>, Export offers the two Markdown formats; a PDF and a Google Doc are made on the Mac.</li>
+        <li>There is no save dialog: the export downloads straight away, to Safari's Downloads. One note with no pictures downloads as its own file, <i>Kickoff.md</i>.</li>
+        <li>A note with pictures downloads as <i>Kickoff.zip</i>: the note and its pictures in <code>attachments/</code>. Several notes download as <i>Exported notes 2026-10-21.zip</i>, the notes side by side and their pictures shared in <code>attachments/</code>. Open the zip in the Files app to unpack it.</li>
+      </ul>
       <h3>Google Docs</h3>
       <p>DFAI uses the <a href="#google-calendar">Google Calendar</a> sign-in from Settings → <b>Google Calendar</b>. The first time, your browser asks once to allow one more permission: making and changing only the files DFAI creates (<code>drive.file</code>) — never anything else in your Drive. The sign-in stays in your Mac's Keychain. If Google isn't connected yet, DFAI says to connect in Settings → <b>Google Calendar</b> first.</p>
       <h3>When it can't</h3>
@@ -2494,6 +2500,11 @@ pnpm tauri:dev</pre>
         <li>There is no <b>Overwrite</b> on the web: it would replace, unseen, what the Mac wrote. Keeping a copy loses nothing — read both, keep what you want, and delete the copy.</li>
         <li>The Mac names the copies it makes of an iPad edit the same way, so a copy from either side says <i>conflict from DFAI web</i>. A note deleted elsewhere while you were editing it is put back, since an edit never loses to a delete.</li>
       </ul>
+      <h3>Export and links</h3>
+      <ul>
+        <li><b>Export…</b> downloads the note as Markdown: its <code>.md</code> file, or a <code>.zip</code> when it has pictures or you chose several notes — see <a href="#export">Exporting notes</a>.</li>
+        <li>A web link in a note opens in a new tab.</li>
+      </ul>
       <h3>What the web can't do</h3>
       <p>These need the desktop app. Everything else works on the web, in the same vault. Settings → <b>Not available here</b> shows the same list, and this one is made from the same place when the guide is built, so the two agree.</p>
       <ul>
@@ -2512,7 +2523,6 @@ pnpm tauri:dev</pre>
         <li><b>Quick capture from anywhere.</b> A web page cannot set a shortcut that works in every other app.</li>
         <li><b>The local API and the MCP server.</b> They answer other programs on the same computer; a web page cannot run a server.</li>
         <li><b>Sources read from another program’s SQLite file.</b> A web page cannot read another program’s files.</li>
-        <li><b>Exporting a note.</b> The desktop app writes exports as files; here there is no way to hand one over yet.</li>
         <li><b>Exporting a note as a Google Doc.</b> It goes through the Google sign-in the desktop app keeps.</li>
         <li><b>Exporting a note as a PDF.</b> The PDF is made by the desktop app.</li>
         <li><b>Pictures of an artifact’s first screen on its card.</b> They are taken by the desktop app.</li>
