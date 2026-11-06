@@ -541,6 +541,12 @@ export interface FakeHost {
     relativePath: string,
     options?: { readonly except?: string; readonly alone?: boolean },
   ): () => void;
+  /**
+   * Answers each listing of this folder only after `ms`, as a slow disk
+   * would: the folder is marked open well before its contents arrive, which
+   * a test that measures the tree must wait out rather than race (#782).
+   */
+  slowListing(relativePath: string, ms: number): void;
   /** What the app has put in the Trash, by vault path, in order. */
   trashed(): readonly string[];
   /** Every link the app asked the host to open in the browser, in order. */
@@ -835,6 +841,8 @@ export async function installHost(
   const held = new Map<string, Promise<void>>();
   const heldMoves = new Map<string, Promise<void>>();
   const moves = new Map<string, number>();
+  /** Folders whose listings are answered late, and how late. */
+  const slowListings = new Map<string, number>();
   /** Files whose reads wait, and what lets them go. */
   const heldReads = new Map<
     string,
@@ -1820,6 +1828,8 @@ export async function installHost(
         return { base64: bytes.toString('base64') };
       }
       case 'list_directory': {
+        const late = slowListings.get(path);
+        if (late !== undefined) await new Promise((answered) => setTimeout(answered, late));
         const directory = containedPath(openRoot(), path);
         const names = await readdir(directory);
         const entries = await Promise.all(
@@ -2469,6 +2479,9 @@ export async function installHost(
     holdWrites: (relativePath) => holdIn(held, relativePath),
     holdMoves: (relativePath) => holdIn(heldMoves, relativePath),
     movesFrom: (relativePath) => moves.get(relativePath) ?? 0,
+    slowListing(relativePath, ms) {
+      slowListings.set(relativePath, ms);
+    },
     holdReads(relativePath, options) {
       let release: () => void = () => {};
       const until = new Promise<void>((resolve) => (release = resolve));

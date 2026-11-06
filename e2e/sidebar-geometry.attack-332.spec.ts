@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
-import { createVault, installHost, sidebarSection, type FakeVault } from './host.ts';
+import { createVault, installHost, sidebarSection, type FakeHost, type FakeVault } from './host.ts';
 
 // Attack on #332 (UI v2 slice 3a, #294): the sidebar's new geometry — 28px
 // rows at a 29px pitch in the virtualised Pages tree, 26px sticky headings
@@ -11,9 +11,15 @@ const EACH = 25;
 const DEEP = 5;
 const PITCH = 29;
 const ROW = 28;
+/** Every row once all is open: each area, its Deep, their notes, then `.atlas` and Loose at the root. */
+const ALL_ROWS = AREAS * (1 + 1 + EACH + DEEP) + 2;
 const pad = (at: number) => String(at).padStart(2, '0');
 
-async function openVault(page: Page, extra?: (vault: FakeVault) => Promise<void>) {
+async function openVault(
+  page: Page,
+  extra?: (vault: FakeVault) => Promise<void>,
+  hosted?: (host: FakeHost) => void,
+) {
   const vault = await createVault();
   for (const folder of ['.atlas/types', '.atlas/views', '.atlas/dashboards']) {
     await vault.mkdir(folder);
@@ -52,7 +58,8 @@ async function openVault(page: Page, extra?: (vault: FakeVault) => Promise<void>
   }
   await vault.write('Loose.md', '# Loose\n');
   await extra?.(vault);
-  await installHost(page, vault);
+  const host = await installHost(page, vault);
+  hosted?.(host);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
@@ -180,6 +187,19 @@ test('the tree is exactly as tall as its rows at a 29px pitch', async ({ page })
   const expected = Number.isNaN(rows) ? AREAS * (1 + 1 + EACH + DEEP) + 1 : rows;
   expect(size.height).toBeGreaterThanOrEqual(expected * PITCH - 1);
   expect(size.height).toBeLessThanOrEqual(expected * PITCH + PITCH);
+});
+
+test('the tree is as tall as its rows when the last folder opened is slow to list (#782)', async ({
+  page,
+}) => {
+  // The last folder expandAll opens. Marked open before its notes arrive, a
+  // tree measured then is short by them.
+  await openVault(page, undefined, (host) => host.slowListing('Area 01/Deep', 500));
+  await expandAll(page);
+  const size = await pages(page)
+    .getByRole('tree')
+    .evaluate((tree) => ({ height: tree.getBoundingClientRect().height }));
+  expect(size.height).toBe(ALL_ROWS * PITCH);
 });
 
 test('rows keep their 29px pitch after folders are collapsed and expanded again', async ({

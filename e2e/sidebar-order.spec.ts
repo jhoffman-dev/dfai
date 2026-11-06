@@ -176,3 +176,42 @@ test('a tall section dragged past either end of the list lands at that end', asy
   });
   await expect(headings(page)).toHaveText(DEFAULT);
 });
+
+test('a section dragged again while the last move still slides it into place lands where it is sent (#781)', async ({
+  page,
+}) => {
+  // The slide after a move, made long: a test on a loaded runner reaches for
+  // the grip at a place the slide has already carried it from.
+  await page.addInitScript(() => {
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function slowly(keyframes, options) {
+      const timing = typeof options === 'number' ? { duration: options } : (options ?? {});
+      return animate.call(this, keyframes, { ...timing, duration: 1_000 });
+    };
+  });
+  const vault = await createVault();
+  for (let at = 1; at <= 16; at += 1) await vault.write(`Note ${at}.md`, `# Note ${at}\n`);
+  await installHost(page, vault);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+
+  const list = page.getByRole('navigation', { name: 'Vault' }).locator('.sidebar__sections');
+  const box = await list.boundingBox();
+  if (box === null) throw new Error('the section list is not on screen');
+  await dragWithPointer(page, {
+    from: grip(page, 'Pages'),
+    to: { x: box.x + box.width / 2, y: box.y - 12 },
+    overText: 'over droppable area favorites',
+  });
+  await expect(headings(page)).toHaveText(['Pages', 'Favorites', 'Types', 'Views', 'Dashboards']);
+  // Straight after the drop, as the slide has only begun.
+  const viewport = page.viewportSize();
+  if (viewport === null) throw new Error('the page has no viewport');
+  await dragWithPointer(page, {
+    from: grip(page, 'Pages'),
+    to: { x: box.x + box.width / 2, y: Math.min(box.y + box.height + 12, viewport.height - 1) },
+    overText: 'over droppable area dashboards',
+  });
+  await expect(headings(page)).toHaveText(DEFAULT);
+});
