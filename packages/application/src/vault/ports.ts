@@ -1,4 +1,4 @@
-import type { EntryMove, VaultEntry, VaultPath } from '@dfai/domain';
+import { HELD_REFUSAL, type EntryMove, type VaultEntry, type VaultPath } from '@dfai/domain';
 
 /** Where the vault sits on the real filesystem. The UI never sees absolute paths. */
 export interface VaultLocation {
@@ -255,6 +255,15 @@ export const HOST_NO_SUCH_ENTRY = 'no such entry';
 /** Whether `error` is the host saying nothing is at the path it was asked about. */
 export function isNoSuchEntry(error: unknown): boolean {
   return error instanceof VaultAccessError && error.message.startsWith(HOST_NO_SUCH_ENTRY);
+}
+
+/** Whether `error` is the host refusing a new note or folder because something has its name. */
+export function isNameTakenRefusal(error: unknown): boolean {
+  return (
+    error instanceof VaultAccessError &&
+    (error.message.startsWith(HELD_REFUSAL.noteTaken) ||
+      error.message.startsWith(HELD_REFUSAL.nameTaken))
+  );
 }
 
 /** Whether `error` is the host refusing a write over a file changed since it was read. */

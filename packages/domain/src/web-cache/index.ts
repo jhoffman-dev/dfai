@@ -18,7 +18,15 @@ export {
   isUnsent,
   nextInQueue,
   queuedSaveKey,
+  queueCreate,
   queueSave,
   savesToSend,
+  unsentCreatesIn,
 } from './save-queue.ts';
-export type { QueueDecision, QueuedSave, QueuedSaveState, SaveAsked } from './save-queue.ts';
+export type {
+  CreateAsked,
+  QueueDecision,
+  QueuedSave,
+  QueuedSaveState,
+  SaveAsked,
+} from './save-queue.ts';

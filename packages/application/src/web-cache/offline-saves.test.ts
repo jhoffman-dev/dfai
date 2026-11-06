@@ -1,4 +1,11 @@
-import { createVaultPath as p, HELD_REFUSAL, isUnsent, VAULT_ROOT, type QueuedSave } from '@dfai/domain';
+import {
+  createVaultPath as p,
+  HELD_REFUSAL,
+  isUnsent,
+  parentVaultPath,
+  VAULT_ROOT,
+  type QueuedSave,
+} from '@dfai/domain';
 import { createNoteFile } from '../notes/create-note.ts';
 import { inVault } from '../vault/in-vault.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -40,8 +47,11 @@ function github(notes: Record<string, string>) {
       if (note === undefined) throw new VaultAccessError(`${HOST_NO_SUCH_ENTRY}: ${path}`);
       return note;
     },
-    listDirectory: async () =>
-      [...held.keys()].map((path) => ({ name: path, path: p(path), kind: 'file' }) as never),
+    // The folder's notes only: enough for a conflict copy, and for a listing of one folder.
+    listDirectory: async (folder) =>
+      [...held.keys()]
+        .filter((path) => parentVaultPath(p(path)) === folder)
+        .map((path) => ({ name: path, path: p(path), kind: 'file' }) as never),
     writeTextFile: async ({ path, contents, expectedModified }) => {
       unreachable();
       const note = held.get(path);
@@ -731,6 +741,43 @@ describe('offlineSaves: a new note made offline (#773)', () => {
     expect(saves.pending.stateOf(VAULT, 'Buy seed.md')).toBeNull();
   });
 
+  it('keeps waiting, its text kept, a create whose name a folder holds on GitHub', async () => {
+    const { saves, remote, connection, report } = device({});
+    connection.set(false);
+    await make(saves, 'Shed.md', 'tools');
+    const creates = remote.fs.createNote;
+    remote.fs.createNote = async (args) =>
+      args.path === 'Shed.md'
+        ? Promise.reject(new VaultAccessError(HELD_REFUSAL.nameTaken))
+        : creates(args);
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(report).toHaveBeenCalled();
+    expect(saves.pending.stateOf(VAULT, 'Shed.md')).toEqual({ kind: 'waiting' });
+    expect((await saves.fs.readTextFile(p('Shed.md'))).text).toBe('tools');
+  });
+
+  it('stays waiting when GitHub goes out of reach while the taken name is looked at', async () => {
+    const { saves, remote, connection } = device();
+    connection.set(false);
+    await make(saves, 'Plan.md', 'mine');
+    const creates = remote.fs.createNote;
+    remote.fs.createNote = async (args) => {
+      remote.cutOff(true);
+      return creates(args).catch(() =>
+        Promise.reject(new VaultAccessError(HELD_REFUSAL.noteTaken)),
+      );
+    };
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(saves.pending.stateOf(VAULT, 'Plan.md')).toEqual({ kind: 'waiting' });
+    remote.fs.createNote = creates;
+    remote.cutOff(false);
+    await saves.send(ACCOUNT);
+    expect(remote.held.get('Plan 2.md')?.text).toBe('mine');
+    expect(remote.held.get('Plan.md')?.text).toBe('v1');
+  });
+
   it('queues a new note GitHub could not be reached for, while the browser said online', async () => {
     const { saves, remote, store } = device();
     remote.cutOff(true);
@@ -774,9 +821,13 @@ describe('offlineSaves: a new note made offline (#773)', () => {
     await make(saves, 'Plan 2.md', 'p2');
     connection.set(true);
     const notes = await saves.fs.listNotes({ skipDirectories: [], maxDepth: 4 });
-    expect(notes.map((note) => note.path).sort()).toEqual(['Inbox/Buy seed.md', 'Plan 2.md', 'Plan.md']);
+    expect(notes.map((note) => note.path).sort()).toEqual([
+      'Inbox/Buy seed.md',
+      'Plan 2.md',
+      'Plan.md',
+    ]);
     expect(notes.find((note) => note.path === 'Inbox/Buy seed.md')).toMatchObject({
-      name: 'Buy seed',
+      name: 'Buy seed.md',
       size: 'Buy seed'.length,
     });
     const root = await saves.fs.listDirectory(VAULT_ROOT);

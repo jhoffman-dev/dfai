@@ -10,6 +10,10 @@
  * save is known as the same edit going on. A note's record outlives its
  * save: once sent it says where the save landed, so an edit carrying on
  * from it starts there, and no provisional version is ever handed out twice.
+ *
+ * A new note made offline (#773) waits the same way, as a create: held to
+ * nothing being at its path, so it never lands over a note, and numbered
+ * when it is sent if its name was taken by then.
  */
 
 /** Where a note's queued save stands. */
@@ -18,8 +22,11 @@ export type QueuedSaveState =
   | { readonly kind: 'waiting' }
   /** Sent, and refused by GitHub: waiting for the person to keep it as a copy or discard it. */
   | { readonly kind: 'refused'; readonly reason: string }
-  /** Sent, and landed at this version. */
-  | { readonly kind: 'landed'; readonly at: number }
+  /**
+   * Sent, and landed at this version; `as` is the path a create landed at
+   * instead of its own, its name having been taken by then.
+   */
+  | { readonly kind: 'landed'; readonly at: number; readonly as?: string }
   /** Refused, then kept as a copy or discarded by the person. */
   | { readonly kind: 'settled' };
 
@@ -32,6 +39,8 @@ export interface QueuedSave {
   readonly path: string;
   /** The newest text saved; nothing, once it is sent or settled. */
   readonly contents: string;
+  /** A new note made offline: sent as a create, never as a save over what is there. */
+  readonly creates?: true;
   /** The version the edit started from, as GitHub had it: what the save is held to when sent. */
   readonly expectedModified: number | null;
   readonly expectedText?: string;
@@ -52,6 +61,14 @@ export interface SaveAsked {
   readonly expectedText?: string;
 }
 
+/** A new note asked for, as the vault is asked it, by the account signed in. */
+export interface CreateAsked {
+  readonly account: string;
+  readonly vault: string;
+  readonly path: string;
+  readonly contents: string;
+}
+
 export type QueueDecision =
   | { readonly kind: 'queued'; readonly save: QueuedSave }
   /** The edit did not start from what is queued or on GitHub: refused as stale, as the host refuses it. */
@@ -69,13 +86,16 @@ export const isUnsent = (save: QueuedSave): boolean =>
 /**
  * Where an edit naming `expected` stands on GitHub: at the version a sent
  * save landed at when it carries on from that save, otherwise as it says.
+ * A note created under another name than its own is not at this path: the
+ * edit stays at its provisional version, refused as stale, so it is never
+ * written over whatever took the name.
  */
 export function carriesOnAt(
   record: QueuedSave | undefined,
   expected: number | null,
 ): number | null {
-  if (record?.state.kind === 'landed' && expected === record.provisional) return record.state.at;
-  return expected;
+  if (record?.state.kind !== 'landed' || expected !== record.provisional) return expected;
+  return record.state.as === undefined ? record.state.at : expected;
 }
 
 /**
@@ -119,6 +139,46 @@ export function queueSave(
       state: { kind: 'waiting' },
     },
   };
+}
+
+/**
+ * Where a new note goes in the queue. The name is taken while a save of
+ * that path has not reached GitHub, whoever made it: the create is refused
+ * as the host refuses a name in use, so its maker numbers it, and what
+ * waits there is never replaced. Otherwise it waits as a create of its own.
+ */
+export function queueCreate(
+  record: QueuedSave | undefined,
+  asked: CreateAsked,
+  next: { order: number; provisional: number },
+): { readonly kind: 'queued'; readonly save: QueuedSave } | { readonly kind: 'taken' } {
+  if (record !== undefined && isUnsent(record)) return { kind: 'taken' };
+  return {
+    kind: 'queued',
+    save: {
+      key: queuedSaveKey(asked.vault, asked.path),
+      account: asked.account,
+      vault: asked.vault,
+      path: asked.path,
+      contents: asked.contents,
+      creates: true,
+      expectedModified: null,
+      order: next.order,
+      provisional: next.provisional,
+      state: { kind: 'waiting' },
+    },
+  };
+}
+
+/** The account's new notes in `vault` that have not reached GitHub: what its listings show besides GitHub's. */
+export function unsentCreatesIn(
+  records: Iterable<QueuedSave>,
+  { account, vault }: { account: string; vault: string },
+): readonly QueuedSave[] {
+  return [...records].filter(
+    (save) =>
+      save.creates === true && isUnsent(save) && save.account === account && save.vault === vault,
+  );
 }
 
 /** The account's saves still to send, in the order they were first queued. Refused ones wait for the person. */
