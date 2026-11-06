@@ -149,6 +149,9 @@ export function gitHubWebVault({
     // Only the login GitHub confirmed: never the remembered one, whoever holds the token now.
     account: () => github.signedIn(),
     vault: () => openVaultOf(device.remembered),
+    marks: github.marks,
+    // The browser's random ids, at the edge: what tells this device's creates from another's.
+    newMark: () => page.crypto.randomUUID(),
     // A restored session's typing waits as the remembered login's until GitHub confirms it.
     presumed: () => (freshSignIn ? null : (device.remembered.read()?.login ?? null)),
     // Asked before each queued save goes, as the token may change hands between them.

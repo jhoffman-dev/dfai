@@ -14,9 +14,11 @@
  * A new note made offline (#773) waits the same way, as a create: held to
  * nothing being at its path, so it never lands over a note, and numbered
  * when it is sent if its name was taken by then. Each create it tries is
- * recorded before it goes, so a note found at its name later is known as
- * its own only when a create it tried put exactly that text there: a lost
- * answer is never sent twice, and another device's note is never its own.
+ * recorded before it goes, with a mark no other create carries, which its
+ * commit carries too. A note found at its name later is known as its own
+ * only when the newest change there carries the mark of a create it tried,
+ * with exactly that text: a lost answer is never sent twice, and another
+ * device's note is never its own, even one of the very same text.
  */
 
 /** Where a note's queued save stands. */
@@ -33,10 +35,19 @@ export type QueuedSaveState =
   /** Refused, then kept as a copy or discarded by the person. */
   | { readonly kind: 'settled' };
 
-/** A create sent for a new note: the path it was tried at, and the text it carried. */
+/** A create sent for a new note: the path it was tried at, the text it carried, and its mark. */
 export interface CreateAttempt {
   readonly path: string;
   readonly text: string;
+  /** Unique to this attempt, and carried by its commit: what tells its note from another of the same text. */
+  readonly mark: string;
+}
+
+/** A note found on GitHub: its path, its text, and the mark the newest change to it carries, if any. */
+export interface FoundNote {
+  readonly path: string;
+  readonly text: string;
+  readonly mark: string | null;
 }
 
 export interface QueuedSave {
@@ -196,13 +207,26 @@ export function unsentCreatesIn(
 export const CREATE_TAKEN_ELSEWHERE =
   'a note of this name was made elsewhere; keep yours as a copy beside it, or discard it';
 
-const sameAttempt = (a: CreateAttempt, b: CreateAttempt) => a.path === b.path && a.text === b.text;
+const sameAttempt = (a: CreateAttempt, b: CreateAttempt) => a.mark === b.mark;
 
-/** The record with `attempt` among its tried creates: recorded before the create is sent. */
-export function triedCreate(save: QueuedSave, attempt: CreateAttempt): QueuedSave {
-  const tried = save.tried ?? [];
-  if (tried.some((made) => sameAttempt(made, attempt))) return save;
-  return { ...save, tried: [...tried, { path: attempt.path, text: attempt.text }] };
+/**
+ * The record with `attempt` among its tried creates, recorded before the
+ * create is sent, and without the attempts in `notThere`: ones a look at
+ * GitHub just found none of, so `tried` never grows past what may be there.
+ */
+export function triedCreate(
+  save: QueuedSave,
+  attempt: CreateAttempt,
+  notThere: readonly CreateAttempt[] = [],
+): QueuedSave {
+  const kept = (save.tried ?? []).filter(
+    (made) => !notThere.some((gone) => sameAttempt(made, gone)),
+  );
+  if (kept.some((made) => sameAttempt(made, attempt))) return { ...save, tried: kept };
+  return {
+    ...save,
+    tried: [...kept, { path: attempt.path, text: attempt.text, mark: attempt.mark }],
+  };
 }
 
 /** The record without `attempt`: one GitHub refused as taken made nothing there. */
@@ -213,13 +237,44 @@ export function untriedCreate(save: QueuedSave, attempt: CreateAttempt): QueuedS
 }
 
 /**
- * Whether the note found at `found.path` is the new note's own: a create
- * it tried put exactly that text there (GitHub versions a note by its
- * text). With no create tried there, a note of that name is someone else's.
+ * Whether the note found is the new note's own: the newest change at its
+ * path carries the mark of a create it tried there, with exactly that text.
+ * The text alone cannot tell (GitHub versions a note by its text): another
+ * device's note of the same name and text, made where an attempt of this
+ * one never arrived, carries no mark of this one's.
  */
-export function isOwnCreate(save: QueuedSave, found: CreateAttempt): boolean {
-  return (save.tried ?? []).some((made) => sameAttempt(made, found));
+export function isOwnCreate(save: QueuedSave, found: FoundNote): boolean {
+  return (save.tried ?? []).some(
+    (made) => made.mark === found.mark && made.path === found.path && made.text === found.text,
+  );
 }
+
+/**
+ * The record once its text is on GitHub, or let go by the person: no typing
+ * is kept on the device, that of its tried creates included.
+ */
+export function withTextLetGo(save: QueuedSave, state: QueuedSaveState): QueuedSave {
+  const next: { -readonly [Field in keyof QueuedSave]: QueuedSave[Field] } = {
+    ...save,
+    contents: '',
+    state,
+  };
+  delete next.tried;
+  return next;
+}
+
+/**
+ * Whether the record stored now is still the one a turn began from: the
+ * same account's, in the same vault, at the same version and state. A turn
+ * that outlived its hold never changes a record a later turn made — nor one
+ * another account queued after a sign-out let the first go, which numbers
+ * its versions from the start again.
+ */
+export const isStillTheRecord = (now: QueuedSave, was: QueuedSave): boolean =>
+  now.account === was.account &&
+  now.vault === was.vault &&
+  now.provisional === was.provisional &&
+  now.state.kind === was.state.kind;
 
 /**
  * A waiting new note whose name another device took meanwhile: refused,

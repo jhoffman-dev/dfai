@@ -33,7 +33,10 @@ const DEVICE = 'DFAI web';
  * version it names and refused with the host's words when the note moved.
  */
 function github(notes: Record<string, string>) {
-  const held = new Map(Object.entries(notes).map(([path, text]) => [path, { text, modified: 1 }]));
+  const held = new Map<string, { text: string; modified: number; mark?: string }>(
+    Object.entries(notes).map(([path, text]) => [path, { text, modified: 1 }]),
+  );
+  let marked = 0;
   let reachable = true;
   const sent: string[] = [];
   const unreachable = () => {
@@ -45,7 +48,7 @@ function github(notes: Record<string, string>) {
       unreachable();
       const note = held.get(path);
       if (note === undefined) throw new VaultAccessError(`${HOST_NO_SUCH_ENTRY}: ${path}`);
-      return note;
+      return { text: note.text, modified: note.modified };
     },
     // The folder's notes only: enough for a conflict copy, and for a listing of one folder.
     listDirectory: async (folder) =>
@@ -73,10 +76,11 @@ function github(notes: Record<string, string>) {
         size: note.text.length,
       }));
     },
-    createNote: async ({ path, contents }) => {
+    createNote: async ({ path, contents, mark }) => {
       unreachable();
       if (held.has(path)) throw new VaultAccessError(HELD_REFUSAL.noteTaken);
-      held.set(path, { text: contents, modified: 1 });
+      // The mark stays on the note until another change replaces it, as on its newest commit.
+      held.set(path, { text: contents, modified: 1, ...(mark !== undefined && { mark }) });
       sent.push(`created ${path}: ${contents}`);
       return 1;
     },
@@ -85,6 +89,13 @@ function github(notes: Record<string, string>) {
     fs,
     held,
     sent,
+    marks: {
+      markAt: async (path: string) => {
+        unreachable();
+        return held.get(path)?.mark ?? null;
+      },
+    },
+    newMark: () => `mark-${(marked += 1)}`,
     cutOff: (off: boolean) => (reachable = !off),
     /** Another device saves the note: its version moves on. */
     elsewhere: (path: string, text: string) =>
@@ -114,6 +125,8 @@ function device(notes: Record<string, string> = { 'Plan.md': 'v1' }) {
       changes: channel(),
       account: () => account,
       vault: () => VAULT,
+      marks: remote.marks,
+      newMark: remote.newMark,
     });
   const saves = open();
   return {
@@ -398,6 +411,8 @@ function unconfirmed(notes: Record<string, string> = { 'Plan.md': 'v1', 'Shed.md
     changes: sharedQueueChanges()(),
     account: () => who.confirmed,
     vault: () => VAULT,
+    marks: remote.marks,
+    newMark: remote.newMark,
     presumed: () => who.presumed,
     confirm: async () => (holder === who.confirmed ? holder : null),
   });
@@ -534,6 +549,8 @@ describe('offlineSaves: review #753', () => {
         changes: channel(),
         account: () => ACCOUNT,
         vault: () => VAULT,
+        marks: remote.marks,
+        newMark: remote.newMark,
       });
     const one = open();
     const two = open();
@@ -567,6 +584,8 @@ describe('offlineSaves: review #753', () => {
         changes: channel(),
         account: () => ACCOUNT,
         vault: () => VAULT,
+        marks: remote.marks,
+        newMark: remote.newMark,
       });
     const one = open();
     const two = open();
@@ -605,6 +624,8 @@ describe('offlineSaves: review #753', () => {
         changes: channel(),
         account: () => ACCOUNT,
         vault: () => VAULT,
+        marks: remote.marks,
+        newMark: remote.newMark,
       });
     return { remote, store, connection, one: open(), two: open() };
   }
@@ -666,6 +687,8 @@ describe('offlineSaves: review #753', () => {
         changes: deaf(),
         account: () => ACCOUNT,
         vault: () => VAULT,
+        marks: remote.marks,
+        newMark: remote.newMark,
       });
     const one = open();
     const two = open();

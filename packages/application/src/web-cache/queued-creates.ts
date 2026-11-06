@@ -17,8 +17,8 @@ import { inVault } from '../vault/in-vault.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
 import {
   isNameTakenRefusal,
+  isNoSuchEntry,
   VaultAccessError,
-  VaultUnreachableError,
   type HostVaultFsPort,
   type NoteContents,
   type NoteListing,
@@ -38,35 +38,48 @@ export interface CreateSending {
   readonly save: QueuedSave;
   /** The paths this device's other new notes waiting in the vault hold. */
   readonly held: () => Promise<readonly string[]>;
-  /** Records the attempt before it is sent: the record as stored after, or null when another turn changed it. */
-  readonly remember: (attempt: CreateAttempt) => Promise<QueuedSave | null>;
+  /** The mark on the newest change at a path on GitHub, which tells a create of this device's apart. */
+  readonly markAt: (path: VaultPath) => Promise<string | null>;
+  /** A mark no create has carried before. */
+  readonly newMark: () => string;
+  /**
+   * Records the attempt before it is sent, letting go of `notThere`, which
+   * a look at GitHub found none of: the record as stored after, or null
+   * when another turn changed it.
+   */
+  readonly remember: (
+    attempt: CreateAttempt,
+    notThere: readonly CreateAttempt[],
+  ) => Promise<QueuedSave | null>;
   /** Takes back an attempt GitHub refused as taken, which made nothing there: the record after, or null as `remember`. */
   readonly forget: (attempt: CreateAttempt) => Promise<QueuedSave | null>;
 }
 
 /**
  * Sends a new note made offline (#773) as a create, which never lands over
- * a note. Each attempt is recorded before it goes, so a note found later
- * where one was tried, with exactly the text it carried, is its own — a
- * lost answer, or a lapsed hold's other turn — and newer typing is saved
- * onto it rather than numbered into a second note. Any other note at its
- * name is someone else's: it is numbered past that, and past this
- * device's own waiting notes. Null: another turn has the record now.
+ * a note. Each attempt is recorded before it goes, with a mark its commit
+ * carries, so a note found later where one was tried, whose newest change
+ * carries that mark, is its own — a lost answer, or a lapsed hold's other
+ * turn — and newer typing is saved onto it rather than numbered into a
+ * second note. Any other note at its name is someone else's: it is
+ * numbered past that, and past this device's own waiting notes. Null:
+ * another turn has the record now.
  */
 export async function sendCreate(sending: CreateSending): Promise<CreateLanded | null> {
   const vault = inVault({ fs: sending.fs, vault: sending.save.vault });
   let save = sending.save;
   for (let attempt = 1; ; attempt += 1) {
-    const own = await ownNote(vault, save);
+    const own = await ownNote(vault, sending, save);
     if (own !== null) return carriedOn(vault, save, own);
     const untried = attempt === 1 && (save.tried ?? []).length === 0;
     const path = untried ? createVaultPath(save.path) : await freeName(vault, sending, save);
-    const tried = { path, text: save.contents };
-    const remembered = await sending.remember(tried);
+    const tried = { path, text: save.contents, mark: sending.newMark() };
+    // None of the attempts so far is on GitHub: they go as this one is recorded.
+    const remembered = await sending.remember(tried, save.tried ?? []);
     if (remembered === null) return null;
     save = remembered;
     try {
-      const at = await vault.createNote({ path, contents: save.contents });
+      const at = await vault.createNote({ path, contents: save.contents, mark: tried.mark });
       return path === save.path ? { at } : { at, as: path };
     } catch (error) {
       if (!isNameTakenRefusal(error)) throw error;
@@ -81,13 +94,16 @@ export async function sendCreate(sending: CreateSending): Promise<CreateLanded |
 /** The note a create tried put there, as it is now; null when none of them is. */
 async function ownNote(
   vault: VaultFsPort,
+  sending: CreateSending,
   save: QueuedSave,
 ): Promise<(NoteContents & { path: VaultPath }) | null> {
   const paths = [...new Set((save.tried ?? []).map((made) => made.path))].reverse();
   for (const at of paths) {
     const path = createVaultPath(at);
     const there = await noteAt(vault, path);
-    if (there !== null && isOwnCreate(save, { path, text: there.text })) return { ...there, path };
+    if (there === null) continue;
+    const found = { path, text: there.text, mark: await sending.markAt(path) };
+    if (isOwnCreate(save, found)) return { ...there, path };
   }
   return null;
 }
@@ -124,16 +140,23 @@ async function freeName(
   });
 }
 
-/** The note at `path` on GitHub; null when there is none to read there. */
+/**
+ * The note at `path` on GitHub; null only when GitHub says no note is
+ * there. Any other failure (the network, GitHub failing) is thrown: a note
+ * that could not be read is never taken for none, or a second is made.
+ */
 export async function noteAt(vault: VaultFsPort, path: VaultPath): Promise<NoteContents | null> {
   try {
     return await vault.readTextFile(path);
   } catch (error) {
-    if (error instanceof VaultUnreachableError) throw error;
-    // Nothing there, or not a note (a folder of that name): no note of anyone's to find.
-    return null;
+    // Nothing there, or a folder of that name: GitHub's answer that no note is at the path.
+    if (isNoSuchEntry(error) || isFolderRefusal(error)) return null;
+    throw error;
   }
 }
+
+const isFolderRefusal = (error: unknown) =>
+  error instanceof VaultAccessError && error.message === HELD_REFUSAL.isDirectory;
 
 /**
  * Whether GitHub refused a create for good: its folder is gone, or the note

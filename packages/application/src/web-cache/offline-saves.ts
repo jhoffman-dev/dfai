@@ -5,6 +5,7 @@ import {
   HELD_REFUSAL,
   isOwnCreate,
   isProvisionalVersion,
+  isStillTheRecord,
   nextInQueue,
   queueCreate,
   queuedSaveKey,
@@ -14,6 +15,7 @@ import {
   triedCreate,
   unsentCreatesIn,
   untriedCreate,
+  withTextLetGo,
   type QueuedSave,
   type VaultPath,
 } from '@dfai/domain';
@@ -29,6 +31,7 @@ import {
 } from '../vault/ports.ts';
 import type {
   ConnectionPort,
+  CreateMarksPort,
   PendingSavesPort,
   SaveQueueChanges,
   SaveQueueLock,
@@ -71,6 +74,10 @@ export interface OfflineSavesDeps {
   readonly account: () => string | null;
   /** The vault open now, whose saves a read is answered from. */
   readonly vault: () => string | null;
+  /** The marks a new note's creates carry on GitHub, read to tell its own note from another's. */
+  readonly marks: CreateMarksPort;
+  /** A mark no create has carried before: the platform's random ids, a counter in a test. */
+  readonly newMark: () => string;
   /**
    * Whose saves wait while GitHub has not confirmed anyone: the remembered
    * login, in a session restored for it; null in a fresh sign-in, whose login
@@ -127,14 +134,14 @@ export function offlineSaves(deps: OfflineSavesDeps) {
 
   /**
    * Writes `next` over the note's record only if it is still `was`, in its
-   * version and its state; says whether it did. A turn that outlived the
-   * lock (a hold lapsed while GitHub was slow) never writes over what a
-   * later turn landed or carried on from.
+   * account, vault, version and state; says whether it did. A turn that
+   * outlived the lock (a hold lapsed while GitHub was slow) never writes
+   * over what a later turn landed or carried on from, nor over what another
+   * account queued after a sign-out.
    */
   const replace = async (was: QueuedSave, next: QueuedSave): Promise<boolean> => {
     const now = await store.get(was.key);
-    if (now === null || now.provisional !== was.provisional) return false;
-    if (now.state.kind !== was.state.kind) return false;
+    if (now === null || !isStillTheRecord(now, was)) return false;
     await store.put(next);
     return true;
   };
@@ -188,8 +195,7 @@ export function offlineSaves(deps: OfflineSavesDeps) {
    */
   const amend = async (was: QueuedSave, change: (now: QueuedSave) => QueuedSave) => {
     const now = await store.get(was.key);
-    if (now === null || now.provisional !== was.provisional) return null;
-    if (now.state.kind !== was.state.kind) return null;
+    if (now === null || !isStillTheRecord(now, was)) return null;
     const next = change(now);
     if (next !== now) await store.put(next);
     return next;
@@ -203,7 +209,9 @@ export function offlineSaves(deps: OfflineSavesDeps) {
       unsentCreatesIn(await store.all(), save)
         .filter((other) => other.key !== save.key)
         .map((other) => other.path),
-    remember: (attempt) => amend(save, (now) => triedCreate(now, attempt)),
+    markAt: (path) => deps.marks.markAt(path),
+    newMark: deps.newMark,
+    remember: (attempt, notThere) => amend(save, (now) => triedCreate(now, attempt, notThere)),
     forget: (attempt) => amend(save, (now) => untriedCreate(now, attempt)),
   });
 
@@ -230,7 +238,7 @@ export function offlineSaves(deps: OfflineSavesDeps) {
       at: landed.at,
       ...(landed.as !== undefined && { as: landed.as }),
     } as const;
-    await replace(save, { ...save, contents: '', state });
+    await replace(save, withTextLetGo(save, state));
     await changed();
     return 'landed';
   };
@@ -307,10 +315,13 @@ export function offlineSaves(deps: OfflineSavesDeps) {
       const decision = queueCreate(record, { ...args, account }, nextInQueue(await store.all()));
       if (decision.kind === 'taken') throw new VaultAccessError(HELD_REFUSAL.noteTaken);
       if (deps.account() !== account || !connection.online()) return kept(decision.save);
+      // Marked before it goes, as a queued create is: a lost answer then knows its note as its own.
+      const attempt = { path: args.path, text: args.contents, mark: deps.newMark() };
       try {
-        return await fs.createNote(args);
+        return await fs.createNote({ ...args, mark: attempt.mark });
       } catch (error) {
-        if (error instanceof VaultUnreachableError) return kept(decision.save);
+        if (error instanceof VaultUnreachableError)
+          return kept(triedCreate(decision.save, attempt));
         throw error;
       }
     });
@@ -358,19 +369,26 @@ export function offlineSaves(deps: OfflineSavesDeps) {
    * beside it or discards it, and neither is hidden.
    */
   const madeElsewhere = async (waiting: QueuedSave, path: VaultPath) => {
-    let there: NoteContents | null;
+    let found: { there: NoteContents; mark: string | null } | null;
     try {
-      there = await noteAt(inVault({ fs, vault: waiting.vault }), path);
+      const there = await noteAt(inVault({ fs, vault: waiting.vault }), path);
+      found = there === null ? null : { there, mark: await deps.marks.markAt(path) };
     } catch (error) {
-      if (!(error instanceof VaultUnreachableError)) throw error;
-      // GitHub out of reach: nothing is known to be there, and the waiting text is the note.
+      // Not known what is there: the waiting text is the note, and it is checked again when sent.
+      if (!(error instanceof VaultUnreachableError)) deps.report(error);
       return null;
     }
-    if (there === null || isOwnCreate(waiting, { path, text: there.text })) return null;
-    await deps.lock(async () => {
+    if (found === null) return null;
+    const note = { path, text: found.there.text, mark: found.mark };
+    if (isOwnCreate(waiting, note)) return null;
+    const theirs = await deps.lock(async () => {
+      // Looked at again under the lock: another tab's send may have tried it there since the read.
+      const now = await store.get(waiting.key);
+      if (now !== null && isOwnCreate(now, note)) return false;
       if ((await amend(waiting, takenElsewhere)) !== null) await changed();
+      return true;
     });
-    return there;
+    return theirs ? found.there : null;
   };
 
   /** Settles a refused save once `settle` has done with it; a save still waiting is not the person's to let go. */
@@ -382,7 +400,7 @@ export function offlineSaves(deps: OfflineSavesDeps) {
       const save = await store.get(queuedSaveKey(vault, path));
       if (save === null || save.state.kind !== 'refused' || save.account !== whose()) return;
       await settle(save);
-      await replace(save, { ...save, contents: '', state: { kind: 'settled' } });
+      await replace(save, withTextLetGo(save, { kind: 'settled' }));
       await changed();
     });
 

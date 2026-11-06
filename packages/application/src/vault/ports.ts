@@ -85,8 +85,12 @@ export interface VaultFsPort {
   /**
    * Creates a note and reports its modification time, as `writeTextFile` does
    * a save's. Fails rather than overwriting one that already exists.
+   *
+   * `mark` is a queued create's own (#773): a host that commits (GitHub)
+   * records it on the commit, so the create can be known again when its
+   * answer is lost. A host that does not, ignores it.
    */
-  createNote: (args: { path: VaultPath; contents: string }) => Promise<number>;
+  createNote: (args: { path: VaultPath; contents: string; mark?: string }) => Promise<number>;
   /** Creates an empty folder. Fails if anything already has the name. */
   createFolder: (args: { path: VaultPath }) => Promise<void>;
   /**

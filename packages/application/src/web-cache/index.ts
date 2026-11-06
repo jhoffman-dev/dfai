@@ -13,6 +13,7 @@ export type { KeptReads, KeptReadsDeps } from './kept-reads.ts';
 export type {
   CachedRead,
   ConnectionPort,
+  CreateMarksPort,
   PendingSaveState,
   PendingSavesPort,
   ReadCacheStore,
