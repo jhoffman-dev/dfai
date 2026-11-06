@@ -28,17 +28,23 @@ export function durationsOf(times: readonly TestTime[]): Durations {
 }
 
 /**
- * The shards' durations as one record. Each shard ran different files, so
- * they do not overlap; were a file in two, the longer time is kept.
+ * The shards' durations as one record. One run's shards ran different files;
+ * a file recorded more than once, from the shards of several runs, costs its
+ * mean, since one run's time for a file swings by a fifth with what ran beside it.
  */
 export function mergeDurations(parts: readonly Durations[]): Durations {
-  const merged = new Map<string, number>();
+  const times = new Map<string, number[]>();
   for (const part of parts) {
     for (const [file, seconds] of Object.entries(part)) {
-      merged.set(file, Math.max(seconds, merged.get(file) ?? 0));
+      times.set(file, [...(times.get(file) ?? []), seconds]);
     }
   }
-  return byPath([...merged]);
+  return byPath(
+    [...times].map(([file, all]) => {
+      const mean = all.reduce((sum, seconds) => sum + seconds, 0) / all.length;
+      return [file, Math.round(mean * 10) / 10] as const;
+    }),
+  );
 }
 
 /** The rows of a second or more, sorted by path so a new record changes only the lines that moved. */

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Puts the e2e shards' durations together, for when the shards drift apart:
-//   gh run download <main run id> -p 'e2e-durations-*' -D e2e-durations
-//   node tools/ci/e2e-durations.mjs tools/ci/e2e-durations.json e2e-durations/*/e2e-durations.json
+//   gh run download <gate run id> -p 'e2e-durations-*' -D e2e-durations/<gate run id>
+//   node tools/ci/e2e-durations.mjs tools/ci/e2e-durations.json e2e-durations/*/*/e2e-durations.json
 // Each shard's e2e-shard-reporter.ts wrote what its files took; together
-// they are the record the next deal is made from.
+// they are the record the next deal is made from. Download two or three
+// runs: a file's time swings with what ran beside it, and each costs its mean.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { mergeDurations } from './e2e-shards.ts';
 
@@ -16,7 +17,8 @@ const files = mergeDurations(parts.map((part) => JSON.parse(readFileSync(part, '
 const $comment =
   "Seconds each e2e spec file's tests took on CI, between them, for dealing the files out " +
   'over the shards (tools/ci/e2e-shard-reporter.ts). Files under a second are left out. ' +
-  'Written by tools/ci/e2e-durations.mjs from the e2e-durations-* artifacts of a gate run; ' +
+  'Written by tools/ci/e2e-durations.mjs from the e2e-durations-* artifacts of gate runs, ' +
+  'each file at its mean; ' +
   'a stale entry only skews the balance.';
 writeFileSync(out, `${JSON.stringify({ $comment, files }, null, 2)}\n`);
-console.log(`${Object.keys(files).length} durations from ${parts.length} shards written to ${out}`);
+console.log(`${Object.keys(files).length} durations from ${parts.length} shard records written to ${out}`);

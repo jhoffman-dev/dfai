@@ -41,12 +41,17 @@ describe('recording what the e2e spec files took', () => {
     ]);
   });
 
-  it('keeps the longer time of a file two shards both recorded', () => {
-    expect(mergeDurations([{ 'e2e/a.spec.ts': 3 }, { 'e2e/a.spec.ts': 9 }])).toEqual({
-      'e2e/a.spec.ts': 9,
-    });
-    expect(mergeDurations([{ 'e2e/a.spec.ts': 9 }, { 'e2e/a.spec.ts': 3 }])).toEqual({
-      'e2e/a.spec.ts': 9,
-    });
+  it('costs a file recorded by several runs its mean, to a tenth', () => {
+    expect(
+      mergeDurations([
+        { 'e2e/a.spec.ts': 212, 'e2e/b.spec.ts': 4 },
+        { 'e2e/a.spec.ts': 284 },
+        { 'e2e/a.spec.ts': 294.1 },
+      ]),
+    ).toEqual({ 'e2e/a.spec.ts': 263.4, 'e2e/b.spec.ts': 4 });
+  });
+
+  it('leaves out a file whose mean is under a second', () => {
+    expect(mergeDurations([{ 'e2e/a.spec.ts': 1.4 }, { 'e2e/a.spec.ts': 0.4 }])).toEqual({});
   });
 });
