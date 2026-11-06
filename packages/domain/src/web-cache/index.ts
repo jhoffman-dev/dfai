@@ -14,6 +14,11 @@ export {
 export type { CachedReadFacts, CachedReadKind } from './read-cache-policy.ts';
 export {
   carriesOnAt,
+  CREATE_TAKEN_ELSEWHERE,
+  isOwnCreate,
+  takenElsewhere,
+  triedCreate,
+  untriedCreate,
   isProvisionalVersion,
   isUnsent,
   nextInQueue,
@@ -25,6 +30,7 @@ export {
 } from './save-queue.ts';
 export type {
   CreateAsked,
+  CreateAttempt,
   QueueDecision,
   QueuedSave,
   QueuedSaveState,

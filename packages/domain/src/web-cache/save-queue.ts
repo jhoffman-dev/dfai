@@ -13,7 +13,10 @@
  *
  * A new note made offline (#773) waits the same way, as a create: held to
  * nothing being at its path, so it never lands over a note, and numbered
- * when it is sent if its name was taken by then.
+ * when it is sent if its name was taken by then. Each create it tries is
+ * recorded before it goes, so a note found at its name later is known as
+ * its own only when a create it tried put exactly that text there: a lost
+ * answer is never sent twice, and another device's note is never its own.
  */
 
 /** Where a note's queued save stands. */
@@ -30,6 +33,12 @@ export type QueuedSaveState =
   /** Refused, then kept as a copy or discarded by the person. */
   | { readonly kind: 'settled' };
 
+/** A create sent for a new note: the path it was tried at, and the text it carried. */
+export interface CreateAttempt {
+  readonly path: string;
+  readonly text: string;
+}
+
 export interface QueuedSave {
   /** The note's vault and path, which a save is queued by. */
   readonly key: string;
@@ -41,6 +50,8 @@ export interface QueuedSave {
   readonly contents: string;
   /** A new note made offline: sent as a create, never as a save over what is there. */
   readonly creates?: true;
+  /** The creates tried for it, each recorded before it was sent. */
+  readonly tried?: readonly CreateAttempt[];
   /** The version the edit started from, as GitHub had it: what the save is held to when sent. */
   readonly expectedModified: number | null;
   readonly expectedText?: string;
@@ -179,6 +190,45 @@ export function unsentCreatesIn(
     (save) =>
       save.creates === true && isUnsent(save) && save.account === account && save.vault === vault,
   );
+}
+
+/** What a waiting new note says once another device made a note of its name. */
+export const CREATE_TAKEN_ELSEWHERE =
+  'a note of this name was made elsewhere; keep yours as a copy beside it, or discard it';
+
+const sameAttempt = (a: CreateAttempt, b: CreateAttempt) => a.path === b.path && a.text === b.text;
+
+/** The record with `attempt` among its tried creates: recorded before the create is sent. */
+export function triedCreate(save: QueuedSave, attempt: CreateAttempt): QueuedSave {
+  const tried = save.tried ?? [];
+  if (tried.some((made) => sameAttempt(made, attempt))) return save;
+  return { ...save, tried: [...tried, { path: attempt.path, text: attempt.text }] };
+}
+
+/** The record without `attempt`: one GitHub refused as taken made nothing there. */
+export function untriedCreate(save: QueuedSave, attempt: CreateAttempt): QueuedSave {
+  const tried = save.tried ?? [];
+  if (!tried.some((made) => sameAttempt(made, attempt))) return save;
+  return { ...save, tried: tried.filter((made) => !sameAttempt(made, attempt)) };
+}
+
+/**
+ * Whether the note found at `found.path` is the new note's own: a create
+ * it tried put exactly that text there (GitHub versions a note by its
+ * text). With no create tried there, a note of that name is someone else's.
+ */
+export function isOwnCreate(save: QueuedSave, found: CreateAttempt): boolean {
+  return (save.tried ?? []).some((made) => sameAttempt(made, found));
+}
+
+/**
+ * A waiting new note whose name another device took meanwhile: refused,
+ * so the person sees that note and keeps theirs as a copy or discards it.
+ * Anything but a waiting create is left as it is.
+ */
+export function takenElsewhere(save: QueuedSave): QueuedSave {
+  if (save.creates !== true || save.state.kind !== 'waiting') return save;
+  return { ...save, state: { kind: 'refused', reason: CREATE_TAKEN_ELSEWHERE } };
 }
 
 /** The account's saves still to send, in the order they were first queued. Refused ones wait for the person. */

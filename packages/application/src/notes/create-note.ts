@@ -120,7 +120,7 @@ export async function createNoteFile(note: NewNote): Promise<VaultPath> {
 }
 
 /** {@link createNoteFile}, answering the note as it was written. */
-export async function createNoteFileAsWritten({
+async function createNoteFileAsWritten({
   fs,
   name,
   beside,

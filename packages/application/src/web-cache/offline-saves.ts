@@ -3,13 +3,19 @@ import {
   createVaultPath,
   isUnsent,
   HELD_REFUSAL,
+  isOwnCreate,
+  isProvisionalVersion,
   nextInQueue,
   queueCreate,
   queuedSaveKey,
   queueSave,
   savesToSend,
+  takenElsewhere,
+  triedCreate,
   unsentCreatesIn,
+  untriedCreate,
   type QueuedSave,
+  type VaultPath,
 } from '@dfai/domain';
 import { isStaleWriteRefusal } from '../notes/note-changed-error.ts';
 import { keepTextAsCopy } from '../notes/keep-refused-as-copy.ts';
@@ -19,6 +25,7 @@ import {
   VaultAccessError,
   VaultUnreachableError,
   type HostVaultFsPort,
+  type NoteContents,
 } from '../vault/ports.ts';
 import type {
   ConnectionPort,
@@ -29,10 +36,12 @@ import type {
 } from './ports.ts';
 import {
   isCreateRefusal,
+  noteAt,
   sendCreate,
   withCreates,
   withCreatesIn,
   type CreateLanded,
+  type CreateSending,
 } from './queued-creates.ts';
 
 /** What a save says once the sign-out has let every waiting save go. */
@@ -160,8 +169,8 @@ export function offlineSaves(deps: OfflineSavesDeps) {
   };
 
   /** Sends the save as GitHub takes it: a new note as a create, any other as a save held to its start. */
-  const delivered = async (save: QueuedSave): Promise<CreateLanded> => {
-    if (save.creates === true) return sendCreate(fs, save);
+  const delivered = async (save: QueuedSave): Promise<CreateLanded | null> => {
+    if (save.creates === true) return sendCreate(creating(save));
     const at = await fs.writeTextFile({
       vault: save.vault,
       path: createVaultPath(save.path),
@@ -172,8 +181,34 @@ export function offlineSaves(deps: OfflineSavesDeps) {
     return { at };
   };
 
+  /**
+   * Changes the record only if it is still `was` in its version and state,
+   * as {@link replace}, built from what is stored now so another turn's
+   * attempts are kept; the record after, or null when it was not changed.
+   */
+  const amend = async (was: QueuedSave, change: (now: QueuedSave) => QueuedSave) => {
+    const now = await store.get(was.key);
+    if (now === null || now.provisional !== was.provisional) return null;
+    if (now.state.kind !== was.state.kind) return null;
+    const next = change(now);
+    if (next !== now) await store.put(next);
+    return next;
+  };
+
+  /** What sending `save` as a create needs: its attempts recorded on it as they go. */
+  const creating = (save: QueuedSave): CreateSending => ({
+    fs,
+    save,
+    held: async () =>
+      unsentCreatesIn(await store.all(), save)
+        .filter((other) => other.key !== save.key)
+        .map((other) => other.path),
+    remember: (attempt) => amend(save, (now) => triedCreate(now, attempt)),
+    forget: (attempt) => amend(save, (now) => untriedCreate(now, attempt)),
+  });
+
   const sent = async (save: QueuedSave): Promise<Outcome> => {
-    let landed: CreateLanded;
+    let landed: CreateLanded | null;
     try {
       landed = await delivered(save);
     } catch (error) {
@@ -188,6 +223,8 @@ export function offlineSaves(deps: OfflineSavesDeps) {
       await changed();
       return 'refused';
     }
+    // Another turn has the record now (a hold lapsed): what it holds is its to send.
+    if (landed === null) return 'kept';
     const state = {
       kind: 'landed',
       at: landed.at,
@@ -244,11 +281,11 @@ export function offlineSaves(deps: OfflineSavesDeps) {
         record = (await store.get(key)) ?? undefined;
       }
       if ((record !== undefined && isUnsent(record)) || !online()) return queued(args, account);
+      const from = carriesOnAt(record, args.expectedModified);
+      // A version only this device handed out: GitHub has nothing it names, so it is refused here.
+      if (isProvisionalVersion(from)) throw new VaultAccessError(HOST_CHANGED_ON_DISK);
       try {
-        const modified = await fs.writeTextFile({
-          ...args,
-          expectedModified: carriesOnAt(record, args.expectedModified),
-        });
+        const modified = await fs.writeTextFile({ ...args, expectedModified: from });
         unkept.delete(key);
         return modified;
       } catch (error) {
@@ -308,10 +345,32 @@ export function offlineSaves(deps: OfflineSavesDeps) {
               ? record
               : undefined;
           });
+    if (waiting === undefined) return fs.readTextFile(path);
+    const theirs = waiting.creates === true ? await madeElsewhere(waiting, path) : null;
     // What waits is the newest text there is of the note, at the version the editor carries on from.
-    return waiting === undefined
-      ? fs.readTextFile(path)
-      : { text: waiting.contents, modified: waiting.provisional };
+    return theirs ?? { text: waiting.contents, modified: waiting.provisional };
+  };
+
+  /**
+   * The note another device made at a waiting new note's name, if GitHub
+   * has one that none of its own creates put there: that note is what is
+   * read, and the waiting one is refused, so the person keeps it as a copy
+   * beside it or discards it, and neither is hidden.
+   */
+  const madeElsewhere = async (waiting: QueuedSave, path: VaultPath) => {
+    let there: NoteContents | null;
+    try {
+      there = await noteAt(inVault({ fs, vault: waiting.vault }), path);
+    } catch (error) {
+      if (!(error instanceof VaultUnreachableError)) throw error;
+      // GitHub out of reach: nothing is known to be there, and the waiting text is the note.
+      return null;
+    }
+    if (there === null || isOwnCreate(waiting, { path, text: there.text })) return null;
+    await deps.lock(async () => {
+      if ((await amend(waiting, takenElsewhere)) !== null) await changed();
+    });
+    return there;
   };
 
   /** Settles a refused save once `settle` has done with it; a save still waiting is not the person's to let go. */

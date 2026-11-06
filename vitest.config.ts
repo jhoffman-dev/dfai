@@ -155,6 +155,12 @@ export default defineConfig({
         'packages/application/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'packages/adapters/src/auth/**': { lines: 90, functions: 90, branches: 85 },
         'apps/auth-function/src/**': { lines: 90, functions: 90, branches: 85 },
+        // The web's offline save queue (#667, #773): typing and new notes that exist only on the device until sent.
+        'packages/application/src/web-cache/{offline-saves,queued-creates,cached-vault-fs}.ts': {
+          lines: 90,
+          functions: 90,
+          branches: 85,
+        },
         // The browser's index (#666): what every query on the web reads, and the manifest that
         // decides which notes a re-open reads again. The worker and OPFS glue run only in a browser.
         'packages/application/src/index/manifest-diff.ts': {
