@@ -19,6 +19,30 @@ async function centreOf(target: Locator): Promise<Point> {
 }
 
 /**
+ * Waits until nothing slides `target`: no finite animation on it or on what
+ * holds it is still playing. A list that has just been reordered slides its
+ * items into place (reorder-transition.ts); a press aimed at where one was
+ * measured mid-slide lands where it has already left, on whatever it uncovered,
+ * and no drag starts (#781). A hand waits for the item to come to rest. A
+ * paused animation moves nothing, so it is not waited for.
+ */
+async function stoppedSliding(target: Locator) {
+  const sliding = () =>
+    target.evaluate((element) => {
+      for (let at: Element | null = element; at !== null; at = at.parentElement) {
+        for (const animation of at.getAnimations()) {
+          const finite = animation.effect?.getComputedTiming().endTime !== Infinity;
+          if (finite && animation.playState === 'running') return true;
+        }
+      }
+      return false;
+    });
+  await expect
+    .poll(sliding, { message: 'the drag source is still sliding into place' })
+    .toBe(false);
+}
+
+/**
  * What the drag last told a screen reader: where it is, in words. Each drag
  * surface has its own live region — Pages' tree has one beside any board — so
  * this is the one that has said something.
@@ -63,6 +87,7 @@ export async function dragWithPointer(
     overText: string | RegExp;
   },
 ) {
+  if (!('x' in from)) await stoppedSliding(from);
   const start = 'x' in from ? from : await centreOf(from);
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
