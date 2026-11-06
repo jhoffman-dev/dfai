@@ -5,8 +5,12 @@ import {
   isUnsent,
   nextInQueue,
   queuedSaveKey,
+  CREATE_TAKEN_ELSEWHERE,
+  isOwnCreate,
   queueCreate,
   queueSave,
+  takenElsewhere,
+  triedCreate,
   savesToSend,
   unsentCreatesIn,
   type QueuedSave,
@@ -280,5 +284,61 @@ describe('queueCreate (#773): a new note made offline', () => {
     expect(unsentCreatesIn(records, { account: ACCOUNT, vault: VAULT }).map((s) => s.path)).toEqual(
       ['Inbox/A.md', 'B.md'],
     );
+  });
+});
+
+describe('the creates a new note has tried (review #778)', () => {
+  const made = (): QueuedSave => {
+    const decision = queueCreate(
+      undefined,
+      { account: ACCOUNT, vault: VAULT, path: 'X.md', contents: 'A' },
+      { order: 0, provisional: -1 },
+    );
+    if (decision.kind !== 'queued') throw new Error('not queued');
+    return decision.save;
+  };
+
+  it('knows a note as its own only where a create it tried put exactly that text', () => {
+    const fresh = made();
+    expect(isOwnCreate(fresh, { path: 'X.md', text: 'A' })).toBe(false);
+    const tried = triedCreate(fresh, { path: 'X.md', text: 'A' });
+    expect(isOwnCreate(tried, { path: 'X.md', text: 'A' })).toBe(true);
+    expect(isOwnCreate(tried, { path: 'X.md', text: 'A B' })).toBe(false);
+    expect(isOwnCreate(tried, { path: 'X 2.md', text: 'A' })).toBe(false);
+  });
+
+  it('keeps every attempt once, and the rest of the record as it was', () => {
+    const once = triedCreate(made(), { path: 'X.md', text: 'A' });
+    const twice = triedCreate(triedCreate(once, { path: 'X.md', text: 'A' }), {
+      path: 'X 2.md',
+      text: 'A',
+    });
+    expect(twice).toEqual({
+      ...made(),
+      tried: [
+        { path: 'X.md', text: 'A' },
+        { path: 'X 2.md', text: 'A' },
+      ],
+    });
+  });
+
+  it('carries the attempts on as typing folds into the create', () => {
+    const tried = triedCreate(made(), { path: 'X.md', text: 'A' });
+    const typed = queueSave(
+      tried,
+      { account: ACCOUNT, vault: VAULT, path: 'X.md', contents: 'A B', expectedModified: -1 },
+      { order: 1, provisional: -2 },
+    );
+    expect(typed.kind === 'queued' && typed.save.tried).toEqual([{ path: 'X.md', text: 'A' }]);
+  });
+
+  it('refuses a waiting create whose name another device took, keeping its text for a copy', () => {
+    const taken = takenElsewhere(made());
+    expect(taken.state).toEqual({ kind: 'refused', reason: CREATE_TAKEN_ELSEWHERE });
+    expect(taken.contents).toBe('A');
+    const sent = landed(made(), 3);
+    expect(takenElsewhere(sent)).toBe(sent);
+    const edit = queued('typing', 3, -1);
+    expect(takenElsewhere(edit)).toBe(edit);
   });
 });

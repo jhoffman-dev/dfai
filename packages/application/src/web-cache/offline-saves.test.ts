@@ -550,6 +550,44 @@ describe('offlineSaves: review #753', () => {
     expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['one two']);
   });
 
+  it('review #778: where tabs cannot take turns, a create another tab typed into meanwhile lands on its own note, once', async () => {
+    const remote = github({});
+    const store = memorySaveQueueStore();
+    const connection = switchableConnection(false);
+    const channel = sharedQueueChanges();
+    const open = () =>
+      offlineSaves({
+        fs: remote.fs,
+        store,
+        connection,
+        device: DEVICE,
+        report: vi.fn(),
+        // No Web Locks and no storage to fall back on: every turn runs at once.
+        lock: (task) => task(),
+        changes: channel(),
+        account: () => ACCOUNT,
+        vault: () => VAULT,
+      });
+    const one = open();
+    const two = open();
+    const made = await make(one, 'X.md', 'A');
+    const creates = remote.fs.createNote;
+    remote.fs.createNote = async (args) => {
+      remote.fs.createNote = creates;
+      const landed = await creates(args);
+      connection.set(false);
+      await save(two, 'A B', made, 'X.md');
+      return landed;
+    };
+    connection.set(true);
+    await one.send(ACCOUNT);
+    connection.set(true);
+    await two.send(ACCOUNT);
+    expect([...remote.held.keys()]).toEqual(['X.md']);
+    expect(remote.held.get('X.md')?.text).toBe('A B');
+    expect(unsentIn(store)).toEqual([]);
+  });
+
   it('a tab that was never told of another tab’s save still never writes over it', async () => {
     const remote = github({ 'Plan.md': 'v1' });
     const store = memorySaveQueueStore();
@@ -729,16 +767,103 @@ describe('offlineSaves: a new note made offline (#773)', () => {
     expect(remote.held.get('Plan.md')?.text).toBe('v1');
   });
 
+  /** GitHub commits the next create, then its answer never comes back. */
+  const loseTheNextAnswer = (remote: ReturnType<typeof github>) => {
+    const creates = remote.fs.createNote;
+    remote.fs.createNote = async (args) => {
+      remote.fs.createNote = creates;
+      await creates(args);
+      throw new VaultUnreachableError('the answer never came back');
+    };
+  };
+
   it('counts as created a create whose answer was lost, with no second copy', async () => {
     const { saves, remote, connection } = device({});
     connection.set(false);
     await make(saves, 'Buy seed.md', 'Buy seed');
-    // GitHub made it, then the answer never came back.
-    remote.held.set('Buy seed.md', { text: 'Buy seed', modified: 1 });
+    loseTheNextAnswer(remote);
     connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(saves.pending.stateOf(VAULT, 'Buy seed.md')).toEqual({ kind: 'waiting' });
     await saves.send(ACCOUNT);
     expect([...remote.held.keys()]).toEqual(['Buy seed.md']);
     expect(saves.pending.stateOf(VAULT, 'Buy seed.md')).toBeNull();
+  });
+
+  it('review #778: a lost answer, then more typing, lands the typing on its own note, with no second copy', async () => {
+    const { saves, remote, connection } = device({});
+    connection.set(false);
+    const made = await make(saves, 'X.md', 'A');
+    loseTheNextAnswer(remote);
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    connection.set(false);
+    const typed = await save(saves, 'A B', made, 'X.md');
+    // Read before it is sent again: its own note, not someone else's.
+    expect((await saves.fs.readTextFile(p('X.md'))).text).toBe('A B');
+    expect(saves.pending.stateOf(VAULT, 'X.md')).toEqual({ kind: 'waiting' });
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect([...remote.held.keys()]).toEqual(['X.md']);
+    expect(remote.held.get('X.md')?.text).toBe('A B');
+    await save(saves, 'A B C', typed, 'X.md');
+    expect(remote.held.get('X.md')?.text).toBe('A B C');
+  });
+
+  it('review #778: a first send never takes another device’s note of the same text for its own', async () => {
+    const { saves, remote, connection } = device({});
+    connection.set(false);
+    const made = await make(saves, 'Untitled.md', '');
+    remote.held.set('Untitled.md', { text: '', modified: 1 });
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(remote.held.get('Untitled 2.md')?.text).toBe('');
+    await expect(save(saves, 'mine', made, 'Untitled.md')).rejects.toThrow(HOST_CHANGED_ON_DISK);
+    expect(remote.held.get('Untitled.md')?.text).toBe('');
+  });
+
+  it('review #778: numbering at send passes over the names this device’s own waiting notes hold', async () => {
+    const { saves, remote, connection } = device({});
+    connection.set(false);
+    await make(saves, 'Untitled.md', 'first');
+    await make(saves, 'Untitled 2.md', 'second');
+    remote.held.set('Untitled.md', { text: 'the Mac’s', modified: 1 });
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(remote.held.get('Untitled.md')?.text).toBe('the Mac’s');
+    expect(remote.held.get('Untitled 2.md')?.text).toBe('second');
+    expect(remote.held.get('Untitled 3.md')?.text).toBe('first');
+  });
+
+  it('review #778: a save carrying on from a note numbered elsewhere is refused here, never asked of GitHub', async () => {
+    const { saves, remote, connection } = device();
+    connection.set(false);
+    const made = await make(saves, 'Plan.md', 'mine');
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(remote.held.get('Plan 2.md')?.text).toBe('mine');
+    const writes = vi.spyOn(remote.fs, 'writeTextFile');
+    await expect(save(saves, 'mine, more', made, 'Plan.md')).rejects.toThrow(HOST_CHANGED_ON_DISK);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it('review #778: a waiting note whose name another device took shows that note, and offers to keep its own as a copy', async () => {
+    const { saves, remote, connection, store } = device({});
+    connection.set(false);
+    await make(saves, 'X.md', 'mine');
+    remote.held.set('X.md', { text: 'the Mac’s', modified: 1 });
+    expect((await saves.fs.readTextFile(p('X.md'))).text).toBe('the Mac’s');
+    expect(saves.pending.stateOf(VAULT, 'X.md')).toMatchObject({ kind: 'refused' });
+    expect(unsentIn(store).map((queued) => queued.contents)).toEqual(['mine']);
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    expect(remote.held.get('X.md')?.text).toBe('the Mac’s');
+    await saves.pending.keepAsCopy(VAULT, 'X.md');
+    expect([...remote.held.values()].map((note) => note.text).sort()).toEqual([
+      'mine',
+      'the Mac’s',
+    ]);
+    expect(unsentIn(store)).toEqual([]);
   });
 
   it('keeps waiting, its text kept, a create whose name a folder holds on GitHub', async () => {
