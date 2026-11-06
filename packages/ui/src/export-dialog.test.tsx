@@ -30,6 +30,15 @@ describe('ExportDialog (#501)', () => {
     expect(screen.queryByRole('radio', { name: /^Google Doc/ })).toBeNull();
   });
 
+  it('says where "as is" puts its pictures in words true on every platform (#779)', () => {
+    draw();
+    const asIs = screen.getByRole('radio', { name: /^Markdown, as is/ }).closest('label');
+    expect(asIs?.textContent).toContain(
+      'The file exactly as it is, with its pictures copied alongside.',
+    );
+    expect(asIs?.textContent).not.toMatch(/folder beside/);
+  });
+
   it('offers the four formats, Markdown as is first, and exports the one chosen', () => {
     const calls = draw();
     expect(screen.getByRole('dialog', { name: 'Export Kickoff' })).toBeTruthy();

@@ -463,7 +463,7 @@ function drawerReturnFocus(): HTMLElement | null {
   );
 }
 
-/** Stands in where the host gave no export ports: never reached, as no export is offered then. */
+/** Stands in for an export port the platform gave none of: never reached, as what needs it is not offered then. */
 const NOT_OFFERED = (): never => {
   throw new Error('Exporting is not offered here.');
 };
@@ -551,12 +551,16 @@ function AppWindow({
   slack: SlackPort;
   /** The shortcut that opens quick capture from any app, registered by the host (#81). */
   globalCapture: { port: GlobalCapturePort; store: GlobalCaptureStore };
-  /** Where exports go, how a PDF is made and how a Doc reaches Drive (#501); left out, nothing is exported. */
+  /**
+   * Where exports go, how a PDF is made and how a Doc reaches Drive (#501);
+   * left out, nothing is exported. Markdown needs only `files`: a platform
+   * that leaves out the rest offers no PDF or Google Doc (#774).
+   */
   exporting?: {
     files: ExportFilesPort;
-    pdf: PdfRendererPort;
-    drive: GoogleDrivePort;
-    renderer: NotePageRenderer;
+    pdf?: PdfRendererPort;
+    drive?: GoogleDrivePort;
+    renderer?: NotePageRenderer;
   };
   /**
    * Which of the entry points a platform may lack are offered here, decided

@@ -18,6 +18,7 @@
     "@dfai/domain": "workspace:*",
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "@tauri-apps/api": "^2.11.1",
+    "fflate": "0.8.3",
     "foliate-js": "1.0.1",
     "mdast-util-gfm": "^3.1.0",
     "mdast-util-to-markdown": "^2.1.2",

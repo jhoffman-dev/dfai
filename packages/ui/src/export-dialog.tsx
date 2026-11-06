@@ -21,7 +21,7 @@ const FORMATS: readonly { value: ExportFormat; label: string; tag: string; hint:
     value: 'markdown',
     label: 'Markdown, as is',
     tag: '.md',
-    hint: 'The file exactly as it is, with its pictures in a folder beside it.',
+    hint: 'The file exactly as it is, with its pictures copied alongside.',
   },
   {
     value: 'standalone',
