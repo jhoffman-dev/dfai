@@ -100,14 +100,15 @@ function splitExtension(name: string): { stem: string; extension: string } {
 
 /**
  * The name each attachment is copied as, by its vault path: its own file
- * name, numbered where two from different folders share one.
+ * name, with what no file system takes made a dash (as `exportFileStem`
+ * does), numbered where two from different folders share one.
  */
 export function attachmentFileNames(paths: readonly VaultPath[]): Map<VaultPath, string> {
   const unique = [...new Set(paths)];
   const taken = new Set<string>();
   const names = new Map<VaultPath, string>();
   for (const path of unique) {
-    const file = (path.split('/').at(-1) ?? path).normalize('NFC');
+    const file = (path.split('/').at(-1) ?? path).normalize('NFC').replace(UNSAFE, '-');
     const split = splitExtension(file);
     const extension = split.extension;
     const stem = cutToBytes(split.stem, MAX_STEM_BYTES);

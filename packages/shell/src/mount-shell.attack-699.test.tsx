@@ -14,7 +14,7 @@ const ALL = {
   appInfo: {},
   kindle: {},
   semantic: {},
-  exporting: {},
+  exporting: { files: {}, pdf: {}, drive: {}, renderer: {} },
   meetings: {},
   blocks: {},
 } as unknown as AppPorts;

@@ -78,6 +78,30 @@ describe('the web build (#656)', () => {
     expect(ENTRY_POINTS.filter((entry) => claimed[entry] && !offered[entry])).toEqual([]);
   });
 
+  it('exports Markdown as a download, and offers no PDF or Google Doc (#774)', () => {
+    const { offered, ports } = composedForApp(composeWebShell());
+    expect([offered.exportNotes, offered.pdfExport, offered.googleDocExport]).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect(Object.keys(ports.exporting ?? {})).toEqual(['files']);
+  });
+
+  it('opens a web link in a new tab, cut off from this page, and refuses any other (#774)', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const { links } = composeWeb();
+    await links.open('https://example.com/garden');
+    expect(open).toHaveBeenCalledWith(
+      'https://example.com/garden',
+      '_blank',
+      'noopener,noreferrer',
+    );
+    await expect(links.open('javascript:alert(1)')).rejects.toThrow('Only web links');
+    expect(open).toHaveBeenCalledTimes(1);
+    open.mockRestore();
+  });
+
   it('draws the shell on the sample vault, listing its notes', { timeout: 20_000 }, async () => {
     startedAsMainStartsIt();
     expect(
