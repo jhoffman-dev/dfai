@@ -616,6 +616,67 @@ describe('createIndexSyncer, attacked (#135)', () => {
 
     expect(activity.reports).toEqual([indexInWindowReport('The worker could not be started.')]);
   });
+
+  it('says once, in Activity and to the person, that the index is not kept here (#761)', async () => {
+    const vault = vaultWithIndex({ 'Idea.md': 'a spark' });
+    const activity = recordingActivity();
+    const told: string[] = [];
+    const syncer = createIndexSyncer({
+      fs: vault.fs,
+      index: {
+        ...vault.index,
+        open: async () => ({
+          ...(await vault.index.open()),
+          kept: false,
+          notKeptBecause: 'UnknownError: The disk could not be read.',
+        }),
+      },
+      markdown: fakeMarkdown(),
+      activity,
+      changes: createNoteChanges({ onError: () => {} }),
+      openVault: () => LARKSPUR,
+      onNotKept: (message) => told.push(message),
+    });
+
+    await syncer.sync({ vault: LARKSPUR, fromScratch: false });
+    vault.write('Plan.md', 'first');
+    await syncer.sync({ vault: LARKSPUR, fromScratch: true });
+
+    expect(vault.held.has('Idea.md')).toBe(true);
+    // The cause is kept in Activity: WebKit's UnknownError is a refusal or a real fault.
+    expect(activity.reports).toEqual([
+      {
+        level: 'warning',
+        kind: 'index',
+        message:
+          'Search and lists are rebuilt each visit here, because this browser won’t store them. (UnknownError: The disk could not be read.)',
+        subject: null,
+      },
+      expect.anything(),
+    ]);
+    expect(told).toEqual([
+      'Search and lists are rebuilt each visit here, because this browser won’t store them.',
+    ]);
+  });
+
+  it('says nothing of keeping when the index is kept', async () => {
+    const vault = vaultWithIndex({ 'Idea.md': 'a spark' });
+    const activity = recordingActivity();
+    const told: string[] = [];
+    const syncer = createIndexSyncer({
+      fs: vault.fs,
+      index: { ...vault.index, open: async () => ({ fresh: true, kept: true }) },
+      markdown: fakeMarkdown(),
+      activity,
+      changes: createNoteChanges({ onError: () => {} }),
+      openVault: () => LARKSPUR,
+      onNotKept: (message) => told.push(message),
+    });
+
+    await syncer.sync({ vault: LARKSPUR, fromScratch: false });
+
+    expect([activity.reports, told]).toEqual([[], []]);
+  });
 });
 
 describe('the index syncer and a note changed in the tick it was read in (#245)', () => {

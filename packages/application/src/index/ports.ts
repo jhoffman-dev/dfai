@@ -141,6 +141,14 @@ export interface IndexOpening {
    * away one of an older shape — so it holds nothing of the vault yet.
    */
   readonly fresh: boolean;
+  /**
+   * False when the host keeps the index only while the page is open, as a
+   * browser that refuses it storage leaves it (#761): it is made afresh on
+   * each visit. Left out, the index is kept.
+   */
+  readonly kept?: boolean;
+  /** What the host caught that left the index not kept, as it was said: kept in Activity. */
+  readonly notKeptBecause?: string;
 }
 
 /**
