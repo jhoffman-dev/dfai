@@ -79,7 +79,15 @@ const treeRow = (page: Page, name: string) =>
  * next key, which would otherwise land on rows the virtualiser is still
  * moving.
  */
-async function expandAll(page: Page) {
+async function expandAll(
+  page: Page,
+  {
+    awaitingListing,
+  }: {
+    /** Told each Deep folder's path as this starts to wait for its notes to be listed. */
+    awaitingListing?: (folder: string) => void;
+  } = {},
+) {
   for (let area = AREAS; area >= 1; area -= 1) {
     const folder = treeRow(page, `Area ${pad(area)}`);
     await folder.focus();
@@ -99,6 +107,7 @@ async function expandAll(page: Page) {
     // Deep too is marked open before it is listed; until its notes are in, the
     // tree is short by them (#782).
     const deepAt = Number(await deep.getAttribute('data-row'));
+    awaitingListing?.(`Area ${pad(area)}/Deep`);
     await expect(pages(page).locator(`[data-row="${deepAt + 1}"]`)).toHaveAccessibleName(
       `Deep ${pad(area)}-01`,
     );
@@ -179,31 +188,40 @@ test('tree rows sit at an exact 29px pitch deep in a long nested list', async ({
   }
 });
 
+/** The tree is as tall as `rows` rows at the pitch, give or take a subpixel. */
+async function expectTreeHeight(page: Page, rows: number) {
+  const height = await pages(page)
+    .getByRole('tree')
+    .evaluate((tree) => tree.getBoundingClientRect().height);
+  expect(height).toBeGreaterThanOrEqual(rows * PITCH - 1);
+  expect(height).toBeLessThanOrEqual(rows * PITCH);
+}
+
 test('the tree is exactly as tall as its rows at a 29px pitch', async ({ page }) => {
   await openVault(page);
   await expandAll(page);
   const count = await pages(page).getByRole('tree').getAttribute('aria-rowcount');
   const rows = count === null ? Number.NaN : Number(count);
-  const size = await pages(page)
-    .getByRole('tree')
-    .evaluate((tree) => ({ height: tree.getBoundingClientRect().height }));
   // If aria-rowcount is not exposed, count what the model holds instead.
-  const expected = Number.isNaN(rows) ? ALL_ROWS : rows;
-  expect(size.height).toBeGreaterThanOrEqual(expected * PITCH - 1);
-  expect(size.height).toBeLessThanOrEqual(expected * PITCH);
+  await expectTreeHeight(page, Number.isNaN(rows) ? ALL_ROWS : rows);
 });
 
 test('the tree is as tall as its rows when the last folder opened is slow to list (#782)', async ({
   page,
 }) => {
-  // The last folder expandAll opens. Marked open before its notes arrive, a
-  // tree measured then is short by them.
-  await openVault(page, undefined, (host) => host.slowListing('Area 01/Deep', 500));
-  await expandAll(page);
-  const size = await pages(page)
-    .getByRole('tree')
-    .evaluate((tree) => ({ height: tree.getBoundingClientRect().height }));
-  expect(size.height).toBe(ALL_ROWS * PITCH);
+  // The last folder expandAll opens, held unlisted until expandAll says it is
+  // waiting for its notes. Marked open before they arrive, a tree measured
+  // without that wait is short by them, every time.
+  let release = () => {};
+  await openVault(page, undefined, (host) => {
+    release = host.holdListing('Area 01/Deep');
+  });
+  await expandAll(page, {
+    awaitingListing: (folder) => {
+      if (folder === 'Area 01/Deep') release();
+    },
+  });
+  await expectTreeHeight(page, ALL_ROWS);
 });
 
 test('rows keep their 29px pitch after folders are collapsed and expanded again', async ({

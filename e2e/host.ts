@@ -542,11 +542,11 @@ export interface FakeHost {
     options?: { readonly except?: string; readonly alone?: boolean },
   ): () => void;
   /**
-   * Answers each listing of this folder only after `ms`, as a slow disk
-   * would: the folder is marked open well before its contents arrive, which
-   * a test that measures the tree must wait out rather than race (#782).
+   * Holds every listing of this folder in flight until the returned function
+   * is called, so a test can make a folder's contents land late without
+   * racing a timer: the folder is marked open well before they arrive (#782).
    */
-  slowListing(relativePath: string, ms: number): void;
+  holdListing(relativePath: string): () => void;
   /** What the app has put in the Trash, by vault path, in order. */
   trashed(): readonly string[];
   /** Every link the app asked the host to open in the browser, in order. */
@@ -841,8 +841,8 @@ export async function installHost(
   const held = new Map<string, Promise<void>>();
   const heldMoves = new Map<string, Promise<void>>();
   const moves = new Map<string, number>();
-  /** Folders whose listings are answered late, and how late. */
-  const slowListings = new Map<string, number>();
+  /** Folders whose listings wait, and what lets them go. */
+  const heldListings = new Map<string, Promise<void>>();
   /** Files whose reads wait, and what lets them go. */
   const heldReads = new Map<
     string,
@@ -1828,8 +1828,7 @@ export async function installHost(
         return { base64: bytes.toString('base64') };
       }
       case 'list_directory': {
-        const late = slowListings.get(path);
-        if (late !== undefined) await new Promise((answered) => setTimeout(answered, late));
+        await heldListings.get(path);
         const directory = containedPath(openRoot(), path);
         const names = await readdir(directory);
         const entries = await Promise.all(
@@ -2479,8 +2478,13 @@ export async function installHost(
     holdWrites: (relativePath) => holdIn(held, relativePath),
     holdMoves: (relativePath) => holdIn(heldMoves, relativePath),
     movesFrom: (relativePath) => moves.get(relativePath) ?? 0,
-    slowListing(relativePath, ms) {
-      slowListings.set(relativePath, ms);
+    holdListing(relativePath) {
+      let release: () => void = () => {};
+      heldListings.set(relativePath, new Promise<void>((resolve) => (release = resolve)));
+      return () => {
+        heldListings.delete(relativePath);
+        release();
+      };
     },
     holdReads(relativePath, options) {
       let release: () => void = () => {};
