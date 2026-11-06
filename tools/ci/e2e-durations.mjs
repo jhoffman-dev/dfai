@@ -21,4 +21,6 @@ const $comment =
   'each file at its mean; ' +
   'a stale entry only skews the balance.';
 writeFileSync(out, `${JSON.stringify({ $comment, files }, null, 2)}\n`);
-console.log(`${Object.keys(files).length} durations from ${parts.length} shard records written to ${out}`);
+console.log(
+  `${Object.keys(files).length} durations from ${parts.length} shard records written to ${out}`,
+);
