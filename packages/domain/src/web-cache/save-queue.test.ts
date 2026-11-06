@@ -11,6 +11,7 @@ import {
   queueSave,
   takenElsewhere,
   triedCreate,
+  untriedCreate,
   savesToSend,
   unsentCreatesIn,
   type QueuedSave,
@@ -320,6 +321,17 @@ describe('the creates a new note has tried (review #778)', () => {
         { path: 'X 2.md', text: 'A' },
       ],
     });
+  });
+
+  it('takes back an attempt refused as taken, and nothing else', () => {
+    const tried = triedCreate(triedCreate(made(), { path: 'X.md', text: 'A' }), {
+      path: 'X 2.md',
+      text: 'A',
+    });
+    expect(untriedCreate(tried, { path: 'X 2.md', text: 'A' }).tried).toEqual([
+      { path: 'X.md', text: 'A' },
+    ]);
+    expect(untriedCreate(tried, { path: 'Y.md', text: 'A' })).toBe(tried);
   });
 
   it('carries the attempts on as typing folds into the create', () => {

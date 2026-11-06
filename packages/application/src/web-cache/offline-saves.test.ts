@@ -588,6 +588,66 @@ describe('offlineSaves: review #753', () => {
     expect(unsentIn(store)).toEqual([]);
   });
 
+  /** Two tabs whose turns cannot exclude each other, over one store, with the Mac's Plan.md on GitHub. */
+  function lapsedTabs() {
+    const remote = github({ 'Plan.md': 'v1' });
+    const store = memorySaveQueueStore();
+    const connection = switchableConnection(false);
+    const channel = sharedQueueChanges();
+    const open = () =>
+      offlineSaves({
+        fs: remote.fs,
+        store,
+        connection,
+        device: DEVICE,
+        report: vi.fn(),
+        lock: (task) => task(),
+        changes: channel(),
+        account: () => ACCOUNT,
+        vault: () => VAULT,
+      });
+    return { remote, store, connection, one: open(), two: open() };
+  }
+
+  it('review #778: a send whose record another tab typed into while it numbered leaves it to that tab, once', async () => {
+    const { remote, store, connection, one, two } = lapsedTabs();
+    const made = await make(one, 'Plan.md', 'A');
+    const lists = remote.fs.listNotes;
+    remote.fs.listNotes = async (walk) => {
+      remote.fs.listNotes = lists;
+      connection.set(false);
+      await save(two, 'A B', made, 'Plan.md');
+      connection.set(true);
+      return lists(walk);
+    };
+    connection.set(true);
+    await one.send(ACCOUNT);
+    expect([...remote.held.keys()]).toEqual(['Plan.md']);
+    await two.send(ACCOUNT);
+    expect(remote.held.get('Plan 2.md')?.text).toBe('A B');
+    expect([...remote.held.keys()].sort()).toEqual(['Plan 2.md', 'Plan.md']);
+    expect(unsentIn(store)).toEqual([]);
+  });
+
+  it('review #778: a send whose record another tab typed into while GitHub refused the name leaves it to that tab, once', async () => {
+    const { remote, store, connection, one, two } = lapsedTabs();
+    const made = await make(one, 'Plan.md', 'A');
+    const creates = remote.fs.createNote;
+    remote.fs.createNote = async (args) => {
+      remote.fs.createNote = creates;
+      connection.set(false);
+      await save(two, 'A B', made, 'Plan.md');
+      connection.set(true);
+      return creates(args);
+    };
+    connection.set(true);
+    await one.send(ACCOUNT);
+    await two.send(ACCOUNT);
+    expect(remote.held.get('Plan 2.md')?.text).toBe('A B');
+    expect([...remote.held.keys()].sort()).toEqual(['Plan 2.md', 'Plan.md']);
+    expect(unsentIn(store)).toEqual([]);
+  });
+
   it('a tab that was never told of another tab’s save still never writes over it', async () => {
     const remote = github({ 'Plan.md': 'v1' });
     const store = memorySaveQueueStore();
@@ -808,6 +868,34 @@ describe('offlineSaves: a new note made offline (#773)', () => {
     expect(remote.held.get('X.md')?.text).toBe('A B');
     await save(saves, 'A B C', typed, 'X.md');
     expect(remote.held.get('X.md')?.text).toBe('A B C');
+  });
+
+  it('review #778: a lost answer on a numbered create is found at its number, with no third note', async () => {
+    const { saves, remote, connection } = device();
+    connection.set(false);
+    await make(saves, 'Plan.md', 'mine');
+    const creates = remote.fs.createNote;
+    remote.fs.createNote = async (args) => {
+      if (args.path !== 'Plan 2.md') return creates(args);
+      remote.fs.createNote = creates;
+      await creates(args);
+      throw new VaultUnreachableError('the answer never came back');
+    };
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    await saves.send(ACCOUNT);
+    expect([...remote.held.keys()].sort()).toEqual(['Plan 2.md', 'Plan.md']);
+    expect(remote.held.get('Plan 2.md')?.text).toBe('mine');
+    expect(saves.pending.stateOf(VAULT, 'Plan.md')).toBeNull();
+  });
+
+  it('review #778: reads a waiting note as its own text while GitHub is out of reach', async () => {
+    const { saves, remote, connection } = device({});
+    connection.set(false);
+    await make(saves, 'X.md', 'mine');
+    remote.cutOff(true);
+    expect((await saves.fs.readTextFile(p('X.md'))).text).toBe('mine');
+    expect(saves.pending.stateOf(VAULT, 'X.md')).toEqual({ kind: 'waiting' });
   });
 
   it('review #778: a first send never takes another device’s note of the same text for its own', async () => {
