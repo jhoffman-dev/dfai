@@ -211,7 +211,7 @@ export function offlineSaves(deps: OfflineSavesDeps) {
         .map((other) => other.path),
     markAt: (path) => deps.marks.markAt(path),
     newMark: deps.newMark,
-    remember: (attempt, notThere) => amend(save, (now) => triedCreate(now, attempt, notThere)),
+    remember: (attempt, cannotLand) => amend(save, (now) => triedCreate(now, attempt, cannotLand)),
     forget: (attempt) => amend(save, (now) => untriedCreate(now, attempt)),
   });
 

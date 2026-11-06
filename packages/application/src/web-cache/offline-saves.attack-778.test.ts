@@ -4,6 +4,7 @@ import {
   isUnsent,
   parentVaultPath,
   queuedSaveKey,
+  TRIED_CREATES_KEPT,
   type QueuedSave,
 } from '@dfai/domain';
 import { describe, expect, it, vi } from 'vitest';
@@ -212,16 +213,19 @@ describe('attack #778: the tried record', () => {
     const { saves, remote, connection, store } = device();
     connection.set(false);
     let version = await make(saves, 'X.md', 'v0');
-    for (let round = 1; round <= 5; round += 1) {
+    // Past the cap: an attempt not seen on GitHub is kept, as it may still land, but only so many.
+    for (let round = 1; round <= TRIED_CREATES_KEPT + 3; round += 1) {
       dropTheNextCreate(remote);
       connection.set(true);
       await saves.send(ACCOUNT);
       connection.set(false);
       version = await save(saves, `v${round}`, version, 'X.md');
     }
-    // Nothing is at X.md: no attempt so far made a note, so none need be kept.
     expect(remote.held.size).toBe(0);
-    expect(store.held.get(queuedSaveKey(VAULT, 'X.md'))?.tried?.length ?? 0).toBeLessThanOrEqual(1);
+    const tried = store.held.get(queuedSaveKey(VAULT, 'X.md'))?.tried ?? [];
+    expect(tried.length).toBe(TRIED_CREATES_KEPT);
+    // The newest are the ones kept: the last attempt carried the last typing.
+    expect(tried.at(-1)?.text).toBe(`v${TRIED_CREATES_KEPT + 2}`);
   });
 
   it('a GitHub failure reading its own note is not taken for "nothing there", so no second note', async () => {
@@ -247,37 +251,34 @@ describe('attack #778: the tried record', () => {
 });
 
 describe('re-review #778: an attempt not seen on GitHub yet', () => {
-  it.fails(
-    'is never let go: a create that times out and lands after the next look is found, with no second note',
-    async () => {
-      const { saves, remote, connection, store } = device();
-      connection.set(false);
-      await make(saves, 'X.md', 'A');
-      const creates = remote.fs.createNote;
-      let late: (() => Promise<number>) | undefined;
-      // The request times out, but GitHub applies it moments later.
-      remote.fs.createNote = async (args) => {
-        late = () => creates(args);
-        throw new VaultUnreachableError('GitHub did not answer in time');
-      };
-      connection.set(true);
-      await saves.send(ACCOUNT);
-      // The next send looks before the first lands; it lands before the next create is made.
-      remote.fs.createNote = async (args) => {
-        remote.fs.createNote = creates;
-        await late!();
-        return creates(args);
-      };
-      await saves.send(ACCOUNT);
-      await saves.send(ACCOUNT);
-      expect([...remote.held.keys()]).toEqual(['X.md']);
-      expect(remote.held.get('X.md')?.text).toBe('A');
-      expect(unsentIn(store)).toEqual([]);
-      expect(saves.pending.stateOf(VAULT, 'X.md')).toBeNull();
-    },
-  );
+  it('is never let go: a create that times out and lands after the next look is found, with no second note', async () => {
+    const { saves, remote, connection, store } = device();
+    connection.set(false);
+    await make(saves, 'X.md', 'A');
+    const creates = remote.fs.createNote;
+    let late: (() => Promise<number>) | undefined;
+    // The request times out, but GitHub applies it moments later.
+    remote.fs.createNote = async (args) => {
+      late = () => creates(args);
+      throw new VaultUnreachableError('GitHub did not answer in time');
+    };
+    connection.set(true);
+    await saves.send(ACCOUNT);
+    // The next send looks before the first lands; it lands before the next create is made.
+    remote.fs.createNote = async (args) => {
+      remote.fs.createNote = creates;
+      await late!();
+      return creates(args);
+    };
+    await saves.send(ACCOUNT);
+    await saves.send(ACCOUNT);
+    expect([...remote.held.keys()]).toEqual(['X.md']);
+    expect(remote.held.get('X.md')?.text).toBe('A');
+    expect(unsentIn(store)).toEqual([]);
+    expect(saves.pending.stateOf(VAULT, 'X.md')).toBeNull();
+  });
 
-  it.fails('that landed late is read as its own, never refused as made elsewhere', async () => {
+  it('that landed late is read as its own, never refused as made elsewhere', async () => {
     const { saves, remote, connection } = device();
     connection.set(false);
     await make(saves, 'X.md', 'A');

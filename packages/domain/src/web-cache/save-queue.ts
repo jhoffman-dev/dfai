@@ -210,23 +210,47 @@ export const CREATE_TAKEN_ELSEWHERE =
 const sameAttempt = (a: CreateAttempt, b: CreateAttempt) => a.mark === b.mark;
 
 /**
+ * How many tried creates a record keeps, the newest. Each send keeps at most
+ * one (an attempt refused as taken is taken back), so this many sends must
+ * go unanswered after an attempt before it is let go unseen: by then its
+ * request has long ended, landed or not. Bounded because each holds its text.
+ */
+export const TRIED_CREATES_KEPT = 20;
+
+/**
  * The record with `attempt` among its tried creates, recorded before the
- * create is sent, and without the attempts in `notThere`: ones a look at
- * GitHub just found none of, so `tried` never grows past what may be there.
+ * create is sent, without the attempts in `cannotLand` (see
+ * {@link attemptsThatCannotLand}), and no more than the newest
+ * {@link TRIED_CREATES_KEPT}.
  */
 export function triedCreate(
   save: QueuedSave,
   attempt: CreateAttempt,
-  notThere: readonly CreateAttempt[] = [],
+  cannotLand: readonly CreateAttempt[] = [],
 ): QueuedSave {
   const kept = (save.tried ?? []).filter(
-    (made) => !notThere.some((gone) => sameAttempt(made, gone)),
+    (made) => !cannotLand.some((gone) => sameAttempt(made, gone)),
   );
-  if (kept.some((made) => sameAttempt(made, attempt))) return { ...save, tried: kept };
-  return {
-    ...save,
-    tried: [...kept, { path: attempt.path, text: attempt.text, mark: attempt.mark }],
-  };
+  const tried = kept.some((made) => sameAttempt(made, attempt))
+    ? kept
+    : [...kept, { path: attempt.path, text: attempt.text, mark: attempt.mark }];
+  return { ...save, tried: tried.slice(-TRIED_CREATES_KEPT) };
+}
+
+/**
+ * The tried creates that can no longer land: their path is held by a note
+ * whose newest change carries another mark, or none, and a create never
+ * lands over a note. An attempt whose path was empty when looked at may
+ * still land (its request timed out, say, and GitHub applied it after),
+ * so it is never among them.
+ */
+export function attemptsThatCannotLand(
+  save: QueuedSave,
+  found: readonly FoundNote[],
+): readonly CreateAttempt[] {
+  return (save.tried ?? []).filter((made) =>
+    found.some((note) => note.path === made.path && note.mark !== made.mark),
+  );
 }
 
 /** The record without `attempt`: one GitHub refused as taken made nothing there. */

@@ -1,4 +1,5 @@
 import {
+  attemptsThatCannotLand,
   createVaultPath,
   HELD_REFUSAL,
   heldWalk,
@@ -7,6 +8,7 @@ import {
   parentVaultPath,
   vaultPathName,
   type CreateAttempt,
+  type FoundNote,
   type QueuedSave,
   type VaultEntry,
   type VaultPath,
@@ -43,13 +45,13 @@ export interface CreateSending {
   /** A mark no create has carried before. */
   readonly newMark: () => string;
   /**
-   * Records the attempt before it is sent, letting go of `notThere`, which
-   * a look at GitHub found none of: the record as stored after, or null
-   * when another turn changed it.
+   * Records the attempt before it is sent, letting go of `cannotLand`,
+   * whose paths a look at GitHub found held by another's note: the record
+   * as stored after, or null when another turn changed it.
    */
   readonly remember: (
     attempt: CreateAttempt,
-    notThere: readonly CreateAttempt[],
+    cannotLand: readonly CreateAttempt[],
   ) => Promise<QueuedSave | null>;
   /** Takes back an attempt GitHub refused as taken, which made nothing there: the record after, or null as `remember`. */
   readonly forget: (attempt: CreateAttempt) => Promise<QueuedSave | null>;
@@ -69,13 +71,13 @@ export async function sendCreate(sending: CreateSending): Promise<CreateLanded |
   const vault = inVault({ fs: sending.fs, vault: sending.save.vault });
   let save = sending.save;
   for (let attempt = 1; ; attempt += 1) {
-    const own = await ownNote(vault, sending, save);
+    const { own, found } = await lookForOwn(vault, sending, save);
     if (own !== null) return carriedOn(vault, save, own);
     const untried = attempt === 1 && (save.tried ?? []).length === 0;
     const path = untried ? createVaultPath(save.path) : await freeName(vault, sending, save);
     const tried = { path, text: save.contents, mark: sending.newMark() };
-    // None of the attempts so far is on GitHub: they go as this one is recorded.
-    const remembered = await sending.remember(tried, save.tried ?? []);
+    // Only attempts whose path another's note holds go: one not seen yet may still land.
+    const remembered = await sending.remember(tried, attemptsThatCannotLand(save, found));
     if (remembered === null) return null;
     save = remembered;
     try {
@@ -91,21 +93,26 @@ export async function sendCreate(sending: CreateSending): Promise<CreateLanded |
   }
 }
 
-/** The note a create tried put there, as it is now; null when none of them is. */
-async function ownNote(
+/**
+ * The note a create tried put there, as it is now (null when none of them
+ * is), and the notes found at the paths tried, which tell what cannot land.
+ */
+async function lookForOwn(
   vault: VaultFsPort,
   sending: CreateSending,
   save: QueuedSave,
-): Promise<(NoteContents & { path: VaultPath }) | null> {
+): Promise<{ own: (NoteContents & { path: VaultPath }) | null; found: readonly FoundNote[] }> {
   const paths = [...new Set((save.tried ?? []).map((made) => made.path))].reverse();
+  const found: FoundNote[] = [];
   for (const at of paths) {
     const path = createVaultPath(at);
     const there = await noteAt(vault, path);
     if (there === null) continue;
-    const found = { path, text: there.text, mark: await sending.markAt(path) };
-    if (isOwnCreate(save, found)) return { ...there, path };
+    const note = { path, text: there.text, mark: await sending.markAt(path) };
+    if (isOwnCreate(save, note)) return { own: { ...there, path }, found };
+    found.push(note);
   }
-  return null;
+  return { own: null, found };
 }
 
 /** Its own note found: newer typing is saved onto it, held to the version a create left there. */

@@ -208,11 +208,19 @@ function createMessage(path: string, mark: string | undefined): string {
   return `Create ${path}\n\n${CREATE_MARK_TRAILER}: ${mark}`;
 }
 
-/** The mark a commit message carries in its last trailer of that name; null when it has none. */
+/**
+ * The mark in a commit message's trailers: its final paragraph, after the
+ * subject, as git reads trailers; the last of that name there when it has
+ * several. A mark written anywhere else in the message is not one. Null
+ * when it has none.
+ */
 function markIn(message: string | null): string | null {
+  const paragraphs = (message ?? '').trimEnd().split(/\n[ \t]*\n/);
+  if (paragraphs.length < 2) return null;
   const prefix = `${CREATE_MARK_TRAILER}: `;
-  const line = message
-    ?.split('\n')
+  const line = paragraphs
+    .at(-1)!
+    .split('\n')
     .findLast((at) => at.startsWith(prefix) && MARK.test(at.slice(prefix.length)));
   return line === undefined ? null : line.slice(prefix.length);
 }

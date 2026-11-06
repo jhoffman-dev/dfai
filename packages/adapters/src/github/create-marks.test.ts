@@ -98,6 +98,20 @@ describe('GitHub vault: create marks', () => {
     expect(await fs.markAt(p('X.md'))).toBe('mark-2');
   });
 
+  it('reads a mark only from the final paragraph’s trailers, never from the subject or the body (re-review #778)', async () => {
+    const { github, fs } = seeded();
+    const answering = (message: string) =>
+      github.intercept(isCommitsCall, async () =>
+        Response.json([{ sha: 'a'.repeat(40), commit: { message } }]),
+      );
+    answering(`Save X.md\n\n${CREATE_MARK_TRAILER}: mark-1\n\nSigned-off-by: Mara Quill`);
+    expect(await fs.markAt(p('X.md'))).toBeNull();
+    answering(`${CREATE_MARK_TRAILER}: mark-1`);
+    expect(await fs.markAt(p('X.md'))).toBeNull();
+    answering(`Create X.md\n\nSome body text\n\n${CREATE_MARK_TRAILER}: mark-2\n`);
+    expect(await fs.markAt(p('X.md'))).toBe('mark-2');
+  });
+
   it('refuses a malformed commit listing rather than reading no mark from it', async () => {
     const { github, fs } = seeded();
     for (const answer of [{}, [{ sha: 'a'.repeat(40) }], [{ commit: { message: 7 } }]]) {

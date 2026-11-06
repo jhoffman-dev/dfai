@@ -15,9 +15,11 @@ export type { CachedReadFacts, CachedReadKind } from './read-cache-policy.ts';
 export {
   carriesOnAt,
   CREATE_TAKEN_ELSEWHERE,
+  attemptsThatCannotLand,
   isOwnCreate,
   isStillTheRecord,
   takenElsewhere,
+  TRIED_CREATES_KEPT,
   triedCreate,
   untriedCreate,
   withTextLetGo,

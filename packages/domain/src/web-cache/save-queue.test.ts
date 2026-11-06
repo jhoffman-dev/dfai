@@ -6,11 +6,13 @@ import {
   nextInQueue,
   queuedSaveKey,
   CREATE_TAKEN_ELSEWHERE,
+  attemptsThatCannotLand,
   isOwnCreate,
   isStillTheRecord,
   queueCreate,
   queueSave,
   takenElsewhere,
+  TRIED_CREATES_KEPT,
   triedCreate,
   untriedCreate,
   withTextLetGo,
@@ -325,12 +327,38 @@ describe('the creates a new note has tried (review #778)', () => {
     expect(twice).toEqual({ ...made(), tried: [first, second] });
   });
 
-  it('lets go of the attempts found not on GitHub as the next is recorded, and of no other (attack #778)', () => {
+  it('lets go of the attempts it is told cannot land as the next is recorded, and of no other (attack #778)', () => {
     const both = triedCreate(triedCreate(made(), first), second);
     const third = { path: 'X 3.md', text: 'A', mark: 'mark-3' };
     expect(triedCreate(both, third, [first]).tried).toEqual([second, third]);
     expect(triedCreate(both, third, [first, second]).tried).toEqual([third]);
     expect(triedCreate(both, second, [first]).tried).toEqual([second]);
+  });
+
+  it('keeps only the newest attempts, past the cap (re-review #778)', () => {
+    let save = made();
+    const attempts = Array.from({ length: TRIED_CREATES_KEPT + 2 }, (_, at) => ({
+      path: 'X.md',
+      text: `v${at}`,
+      mark: `mark-${at}`,
+    }));
+    for (const attempt of attempts) save = triedCreate(save, attempt);
+    expect(save.tried).toEqual(attempts.slice(2));
+  });
+
+  it('counts as unable to land only an attempt whose path another’s note holds (re-review #778)', () => {
+    const both = triedCreate(triedCreate(made(), first), second);
+    // Nothing found at a path: an attempt there may still land, so it is kept.
+    expect(attemptsThatCannotLand(both, [])).toEqual([]);
+    // Another device's note, with no mark or another's, holds X.md: what was tried there cannot land.
+    expect(attemptsThatCannotLand(both, [{ path: 'X.md', text: 'A', mark: null }])).toEqual([
+      first,
+    ]);
+    expect(attemptsThatCannotLand(both, [{ path: 'X 2.md', text: 'B', mark: 'mark-9' }])).toEqual([
+      second,
+    ]);
+    // Its own mark there is its own note, never one that cannot land.
+    expect(attemptsThatCannotLand(both, [{ path: 'X.md', text: 'A', mark: 'mark-1' }])).toEqual([]);
   });
 
   it('takes back an attempt refused as taken, and nothing else', () => {
