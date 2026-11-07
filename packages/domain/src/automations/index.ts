@@ -215,6 +215,7 @@ export {
 } from './meeting-project-choice.ts';
 export type {
   ChoosingMeeting,
+  MeetingProjectTies,
   ProjectChoice,
   ProjectChoiceOutcome,
   ProjectOption,
@@ -348,6 +349,7 @@ export {
   meetingSetupWritesNothing,
   meetingsProcessedOnArrival,
 } from './meeting-setup.ts';
+export { meetingsReadTwice, meetingsReadTwiceWarning } from './meetings-read-twice.ts';
 export type {
   MeetingSetupFacts,
   MeetingSetupLine,

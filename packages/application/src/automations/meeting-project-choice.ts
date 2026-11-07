@@ -6,8 +6,11 @@ import {
   noteTitle,
   projectChoiceOutcome,
   projectOptionsOf,
+  rankProjects,
   splitFrontmatter,
+  type AnsweredNote,
   type DoneAction,
+  type MeetingProjectTies,
   type NewProposal,
   type ProjectChoice,
   type ProjectOption,
@@ -18,6 +21,7 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { changeProperties, type PropertyChange } from './apply-changes.ts';
 import type { ArchivePorts } from '../archive/archive-notes.ts';
+import { loadMeetingEntities, loadProjectTies } from '../meeting-links/link-directory.ts';
 
 /** The open projects and areas a meeting may be filed under, read from the index (#227). */
 export async function loadProjectOptions({
@@ -38,6 +42,31 @@ export async function loadProjectOptions({
       status: text(cell(row, 'status')),
     })),
   );
+}
+
+/**
+ * Each unfiled meeting's open projects tied to its people and companies,
+ * likeliest first, as linking ranks them (#793): what its list of projects
+ * shows before the rest, so the cut never takes the one linking proposes.
+ */
+export async function loadMeetingProjectTies({
+  index,
+  notes,
+}: {
+  index: Pick<IndexPort, 'query'>;
+  notes: readonly AnsweredNote[];
+}): Promise<MeetingProjectTies> {
+  const ties = new Map<string, VaultPath[]>();
+  for (const note of notes) {
+    if (note.meeting === undefined || note.meeting.filed === true) continue;
+    const entities = await loadMeetingEntities({ index, meeting: note.path });
+    const tied = await loadProjectTies({ index, meeting: note.path, entities });
+    ties.set(
+      note.path,
+      rankProjects(tied).map(({ project }) => project),
+    );
+  }
+  return ties;
 }
 
 /** What the run does with the projects Claude chose: meetings to file, and proposals to write. */

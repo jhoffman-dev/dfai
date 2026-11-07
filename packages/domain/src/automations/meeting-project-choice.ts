@@ -36,8 +36,16 @@ import { remoteResourceProblem } from './remote-resources.ts';
 /** The key of the answer that holds the choice, beside its list. */
 export const PROJECT_CHOICE_KEY = 'project';
 
-/** The most projects and areas one ask is shown: a vault's filing, not its archive. */
-export const MAX_PROJECT_CHOICES = 150;
+/**
+ * The most projects and areas one ask is shown (#793). Each line is some
+ * twenty tokens and every part of a long meeting carries the list again, so
+ * forty keeps it near 800 tokens an ask; the ones tied to the meeting's
+ * people and companies come first, so the likely ones are never the cut.
+ */
+export const MAX_PROJECT_CHOICES = 40;
+
+/** Each meeting's open projects tied to its people and companies, likeliest first, by meeting path. */
+export type MeetingProjectTies = ReadonlyMap<string, readonly VaultPath[]>;
 
 /** A project or area a meeting may be filed under, as Claude is shown it. */
 export interface ProjectOption {
@@ -82,7 +90,7 @@ export function compileProjectOptionsQuery(): CompiledQuery {
   };
 }
 
-/** The open projects and areas among the rows ({@link isOpenFiling}), at most {@link MAX_PROJECT_CHOICES}. */
+/** The open projects and areas among the rows ({@link isOpenFiling}), in the order they came. */
 export function projectOptionsOf(
   rows: readonly {
     readonly path: string;
@@ -94,7 +102,6 @@ export function projectOptionsOf(
 ): ProjectOption[] {
   return rows
     .filter((row) => isOpenFiling(row))
-    .slice(0, MAX_PROJECT_CHOICES)
     .map((row) => ({
       path: createVaultPath(row.path),
       title: row.title,
@@ -109,21 +116,45 @@ function unfiledMeeting(notes: readonly AnsweredNote[]): AnsweredNote | null {
   return only.meeting.filed === true ? null : only;
 }
 
+/** What a meeting's choice is worked out from: the vault's open options, and each meeting's ties to them. */
+interface ChoiceInput {
+  readonly notes: readonly AnsweredNote[];
+  readonly options: readonly ProjectOption[];
+  /** Left out, nothing is tied, and the options are shown in their own order. */
+  readonly ties?: MeetingProjectTies;
+}
+
+/**
+ * The options an ask about this meeting shows: those tied to its people and
+ * companies first, likeliest first — so the one linking would propose is
+ * never cut — then the rest in their own order, at most
+ * {@link MAX_PROJECT_CHOICES}. None for an ask that may choose no project.
+ */
+function shownOptions({ notes, options, ties }: ChoiceInput): readonly ProjectOption[] {
+  const meeting = unfiledMeeting(notes);
+  if (meeting === null) return [];
+  const byPath = new Map(options.map((option) => [String(option.path), option]));
+  const tied = (ties?.get(meeting.path) ?? []).flatMap((path) => byPath.get(path) ?? []);
+  return [...new Set([...tied, ...options])].slice(0, MAX_PROJECT_CHOICES);
+}
+
 /** What the model is told beside a meeting with no project: the projects and areas it may choose from. */
-export function projectChoiceData({
-  notes,
-  options,
-}: {
-  notes: readonly AnsweredNote[];
-  options: readonly ProjectOption[];
-}): { readonly about: string; readonly text: string }[] {
-  if (options.length === 0 || unfiledMeeting(notes) === null) return [];
+export function projectChoiceData(
+  input: ChoiceInput,
+): { readonly about: string; readonly text: string }[] {
+  const shown = shownOptions(input);
+  if (shown.length === 0) return [];
+  const lines = shown.map((option) => `- ${option.path} — ${option.title} (${option.para})`);
+  const cut =
+    shown.length < input.options.length
+      ? [
+          `(${shown.length} of the ${input.options.length} open projects and areas are shown: those tied to its people and companies first, then by title. The rest are cut.)`,
+        ]
+      : [];
   return [
     {
       about: 'the projects and areas this meeting may be filed under: choose one, or none',
-      text: options
-        .map((option) => `- ${option.path} — ${option.title} (${option.para})`)
-        .join('\n'),
+      text: [...lines, ...cut].join('\n'),
     },
   ];
 }
@@ -140,15 +171,11 @@ export type ProjectChoiceReading =
  */
 export function readProjectChoice({
   value,
-  notes,
-  options,
-}: {
-  value: unknown;
-  notes: readonly AnsweredNote[];
-  options: readonly ProjectOption[];
-}): ProjectChoiceReading {
+  ...input
+}: ChoiceInput & { value: unknown }): ProjectChoiceReading {
   if (value === undefined || value === null) return { ok: true, value: null };
-  if (projectChoiceData({ notes, options }).length === 0) {
+  const options = shownOptions(input);
+  if (options.length === 0) {
     return { ok: false, problem: 'It chose a project, and was shown none to choose from.' };
   }
   if (typeof value !== 'object' || Array.isArray(value)) {

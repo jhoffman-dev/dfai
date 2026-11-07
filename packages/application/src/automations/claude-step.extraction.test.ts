@@ -475,6 +475,43 @@ describe('an item that cites a turn the meeting does not have', () => {
   });
 });
 
+describe('a run that fails after it asked (#793)', () => {
+  const sync = says(
+    item({ kind: 'task', title: 'Write the rollout note', owner: 'You', source_block: 't0003' }),
+  );
+  const call = says(
+    item({ kind: 'task', title: 'Review the contract', owner: 'You', source_block: 't0003' }),
+  );
+  const unreadable: ModelEvent[] = [{ type: 'text', text: 'Sorry, no.' }];
+
+  it('keeps the answers it read, so its retry asks nothing it already asked', async () => {
+    const { run, asked, proposals } = setUp([sync, unreadable, call]);
+
+    expect(await run(BOTH)).toMatchObject({ kind: 'failed' });
+    expect(asked()).toHaveLength(2);
+    expect(await proposals()).toEqual(new Map());
+
+    expect(await run(BOTH)).toMatchObject({ kind: 'run', claude: { asks: 1 } });
+    expect(asked()).toHaveLength(3);
+    expect(asked()[2]!.system).toContain(`<vault_data note="${CALL}">`);
+    expect([...(await proposals()).keys()].sort()).toEqual([
+      'Review the contract',
+      'Write the rollout note',
+    ]);
+  });
+
+  it('asks again about what it answered when the rule’s prompt was edited since', async () => {
+    const { vault, run, asked } = setUp([sync, unreadable, sync, call]);
+
+    await run(BOTH);
+    const prompt = vault.files.get(MEETING_EXTRACTION_PROMPT)!;
+    vault.files.set(MEETING_EXTRACTION_PROMPT, `${prompt}\nOnly the decisions, please.\n`);
+
+    expect(await run(BOTH)).toMatchObject({ kind: 'run', claude: { asks: 2 } });
+    expect(asked()).toHaveLength(4);
+  });
+});
+
 describe('two meetings in one run', () => {
   it('asks about each alone, and each task links back to the meeting it was taken from', async () => {
     const sync = says(
@@ -568,6 +605,31 @@ describe('a meeting too long for one ask', () => {
       'Close the loop',
       'Write the rollout note',
     ]);
+  });
+
+  it('asks every part with the same prompt up to the note: the fixed data comes first, the part last (#793)', async () => {
+    const terms = Object.fromEntries(
+      Array.from({ length: 40 }, (_, at) => [
+        `Terms/Quillwort ${at}.md`,
+        jsonNote({ type: 'term', kind: 'product' }, ''),
+      ]),
+    );
+    const { run, asked } = setUp([says(), says(), says()], {
+      ...NOTES,
+      ...terms,
+      [SYNC]: longMeeting(105),
+    });
+
+    await run(SYNC_ONLY);
+
+    const prefixes = asked().map(({ system }) =>
+      system.slice(0, system.indexOf('<vault_data note=')),
+    );
+    expect(prefixes).toHaveLength(3);
+    expect(new Set(prefixes).size).toBe(1);
+    expect(prefixes[0]).toContain('<vault_data about="who was in each meeting">');
+    expect(prefixes[0]).toContain('Quillwort 39');
+    expect(prefixes[0]).toContain('Larkspur Pay');
   });
 
   it('reads a long meeting saved with Windows line endings in parts, and keeps what cites its turns', async () => {

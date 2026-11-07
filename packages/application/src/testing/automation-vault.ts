@@ -61,6 +61,7 @@ export function automationVault({
   types = TASK_TYPES,
   claude = fakeClaudeStepPorts(),
   markdown = droppingMarkdown(),
+  links = [],
 }: {
   notes: Record<string, string>;
   today: string;
@@ -72,6 +73,8 @@ export function automationVault({
   claude?: ClaudeStepPorts;
   /** How frontmatter is read and written: JSON unless given — the real YAML port, in an adapters test. */
   markdown?: MarkdownPort;
+  /** Resolved links the index's `relations` hold; none unless given, as the fake reads no wikilinks. */
+  links?: readonly IndexedLink[];
 }) {
   const files = new Map(Object.entries(notes));
   const dirs = new Set<string>();
@@ -169,7 +172,7 @@ export function automationVault({
   };
 
   function answer(sql: string, parameters: readonly (string | number | null)[]): QueryResult {
-    const database = indexOf(files, modified, markdown);
+    const database = indexOf(files, modified, markdown, links);
     const statement = database.prepare(sql);
     const rows = statement.all(...parameters) as Record<string, unknown>[];
     const columns = statement.columns().map((column) => column.name);
@@ -236,11 +239,19 @@ function editorsFor(unsaved: Set<string>, log: string[]): ArchivePorts['editors'
   };
 }
 
+/** One resolved link, as the index's `relations` row has it: from `src`'s `key` to `dst`. */
+export interface IndexedLink {
+  readonly src: string;
+  readonly key: string;
+  readonly dst: string;
+}
+
 /** The index's tables, filled from the vault as it is now. */
 function indexOf(
   files: ReadonlyMap<string, string>,
   modified: ReadonlyMap<string, number>,
   markdown: MarkdownPort,
+  links: readonly IndexedLink[],
 ): DatabaseSync {
   const database = new DatabaseSync(':memory:');
   database.exec(INDEX_SCHEMA);
@@ -256,6 +267,11 @@ function indexOf(
         .run(path, row.key, row.index, row.text, row.number, row.date, row.json);
     }
   }
+  links.forEach(({ src, key, dst }, at) =>
+    database
+      .prepare('INSERT INTO relations (src, key, idx, target, dst) VALUES (?, ?, ?, ?, ?)')
+      .run(src, key, at, dst, dst),
+  );
   return database;
 }
 

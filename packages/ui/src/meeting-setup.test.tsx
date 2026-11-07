@@ -126,4 +126,31 @@ describe('MeetingSetup', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(given.onDismiss).toHaveBeenCalledOnce();
   });
+
+  it('warns in the preview that every meeting would be read twice, and offers to turn the other rule off (#793)', async () => {
+    const onTurnOff = vi.fn();
+    render(
+      <MeetingSetup
+        {...props({
+          open: true,
+          lines: LINES,
+          readTwice: [{ rule: 'Meeting actions', warning: 'Every meeting is read twice: …' }],
+          onTurnOff,
+        })}
+      />,
+    );
+    const note = screen.getByRole('note', { name: 'Every meeting is read twice' });
+    expect(within(note).getByText('Every meeting is read twice: …')).toBeTruthy();
+    expect(onTurnOff).not.toHaveBeenCalled();
+    await userEvent.click(within(note).getByRole('button', { name: 'Turn off “Meeting actions”' }));
+    expect(onTurnOff).toHaveBeenCalledWith('Meeting actions');
+  });
+
+  it('says nothing of reading twice in a preview where nothing would be', () => {
+    render(
+      <MeetingSetup {...props({ open: true, lines: LINES, readTwice: [], onTurnOff: vi.fn() })} />,
+    );
+    expect(screen.getByText('Written')).toBeTruthy();
+    expect(screen.queryByRole('note', { name: 'Every meeting is read twice' })).toBeNull();
+  });
 });

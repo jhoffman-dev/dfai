@@ -53,6 +53,7 @@ const OFFER: MeetingSetupOffer = {
     },
   ],
   ruleOn: false,
+  readTwice: [],
 };
 
 /** Opens the preview and says yes, as the person does, and waits for what the yes said. */
@@ -377,5 +378,31 @@ describe('useMeetingSetup', () => {
     await waitFor(() => expect(hook.result.current?.lines).not.toBeNull());
     act(() => hook.result.current?.onAccept());
     await waitFor(() => expect(hook.result.current?.problem).toContain('locked'));
+  });
+
+  it('says in the preview which rule would read every meeting twice, and turns it off only on a click (#793)', async () => {
+    const name = 'Pull actions and decisions out of a new meeting';
+    preview
+      .mockReset()
+      .mockResolvedValueOnce({ ...OFFER, readTwice: [name] })
+      .mockResolvedValueOnce({ ...OFFER, readTwice: [] });
+    const { hook, automations } = setup('automations');
+    const extraction = { ...AFTER_A_MEETING_PRESET, name, id: 'p', path: 'p.md' } as AutomationRule;
+    const setEnabled = vi.fn(async () => null);
+    publishAutomations(automations, {
+      listing: { automations: [{ rule: extraction, log: [], idWritten: true }], broken: [] },
+      setEnabled,
+    } as unknown as AutomationsController);
+
+    act(() => hook.result.current?.onOpen());
+    await waitFor(() => expect(hook.result.current?.readTwice).toHaveLength(1));
+    expect(hook.result.current?.readTwice?.[0]).toMatchObject({ rule: name });
+    expect(hook.result.current?.readTwice?.[0]?.warning).toContain('Every meeting is read twice');
+    expect(setEnabled).not.toHaveBeenCalled();
+
+    act(() => hook.result.current?.onTurnOff?.(name));
+    await waitFor(() => expect(hook.result.current?.readTwice).toEqual([]));
+    expect(setEnabled).toHaveBeenCalledWith(extraction, false);
+    expect(hook.result.current?.busy).toBe(false);
   });
 });

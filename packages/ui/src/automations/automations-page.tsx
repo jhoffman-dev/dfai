@@ -3,6 +3,7 @@ import { PageAction, PageBar, type PageHistory } from '../page-bar.tsx';
 import { HiddenTitle } from '../page-head.tsx';
 import { Toggle } from '../toggle.tsx';
 import type { AutomationRow } from './automation-views.ts';
+import { ReadTwiceNotice, type ReadTwiceView } from './read-twice-notice.tsx';
 
 export interface AutomationsPageProps {
   /** Null while the rules are being read. */
@@ -24,6 +25,10 @@ export interface AutomationsPageProps {
   readonly busy: boolean;
   /** The offer to set meeting post-processing up in one yes (#191), above the rules. */
   readonly setup?: ReactNode;
+  /** The rules that read every meeting a second time while both meeting presets are on (#793). */
+  readonly readTwice?: readonly ReadTwiceView[];
+  /** Turns one of them off, by name: only on a click. */
+  readonly onTurnOff?: (rule: string) => void;
   readonly onShowSidebar?: () => void;
   readonly history?: PageHistory;
 }
@@ -51,6 +56,14 @@ export function AutomationsPage(props: AutomationsPageProps) {
         <article className="page page--wide automations" aria-label="Automations">
           <HiddenTitle>{name}</HiddenTitle>
           {props.setup}
+          {props.onTurnOff !== undefined && (
+            <ReadTwiceNotice
+              readTwice={props.readTwice ?? []}
+              busy={props.busy}
+              onTurnOff={props.onTurnOff}
+              className="automations__notice automations__read-twice"
+            />
+          )}
           {props.notice !== null && (
             <p className="automations__notice" role="status">
               {props.notice}

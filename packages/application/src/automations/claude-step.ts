@@ -1,6 +1,7 @@
 import {
   answeredMeetingOf,
   askedTurnsDigest,
+  digestOf,
   CITED_ITEMS_INSTRUCTIONS,
   CLAUDE_STEP_QUESTION,
   claudeAskRefusal,
@@ -97,6 +98,7 @@ import { PeriodNoteArrived } from './period-state.ts';
 import type { PropertyChange } from './apply-changes.ts';
 import {
   fileChosenMeetings,
+  loadMeetingProjectTies,
   loadProjectOptions,
   planProjectChoices,
   projectLeftWords,
@@ -853,7 +855,7 @@ type ProposalAsking = Asking & {
   dropped: DroppedItem[];
   /** Gains the items each answer kept with a fault put right. */
   adjusted: DroppedItem[];
-  /** Gains the answers about each meeting the declared step read in full, to be kept if the run fails. */
+  /** Gains the answers about each meeting read in full, to be kept if the run fails (ADR-0036; any proposals step, #793). */
   toStore: StoredAnswerDraft[];
 };
 
@@ -869,7 +871,7 @@ async function planProposalAnswers(asking: ProposalAsking): Promise<AnswerPlanne
   // Read once: what the run is told of the terms waiting there, and what it plans not to propose twice.
   const folder = await readProposalsFolder({ fs: asking.fs });
   const vault = asking.schema.readsVault
-    ? await readVault({ ...asking, folder, withProjects: declared })
+    ? await readVault({ ...asking, folder, withProjects: declared ? asking.read : null })
     : undefined;
   const answered = await readAnswers(asking, vault);
   const decided: readonly MeetingDecided[] = declared
@@ -1030,7 +1032,7 @@ async function readAnswers(
   let at = 0;
   for (const group of asksByNote(asking.asks)) {
     const note = asking.read.find((each) => each.path === group.path);
-    const key = asking.action.apply === 'mine' && note !== undefined ? keyOf(asking, note) : null;
+    const key = note === undefined ? null : keyOf(asking, note);
     const kept = key === null ? null : (asking.storedAnswer?.(key) ?? null);
     const reused = kept === null ? null : rereadKept(asking, group.asks, kept, vault);
     if (reused !== null) {
@@ -1038,7 +1040,7 @@ async function readAnswers(
       continue;
     }
     const answers: string[] = [];
-    const parts = group.asks.map((notes) => askedTurnsDigest(notes));
+    const parts = askedParts(asking, group.asks);
     const proposals: CheckedProposal[] = [];
     const summaries: SummaryReading[] = [];
     let data: readonly PromptData[] = [];
@@ -1109,6 +1111,21 @@ function summaryOf(
   return schema.summarises ? { summary: meetingSummaryOf(parts, reduced) } : {};
 }
 
+/**
+ * What each ask showed, as a kept answer is matched on (`askedTurnsDigest`).
+ * Any other rule's prompt is the person's to edit between a failure and its
+ * retry, so its parts also carry what was asked and of which model: an answer
+ * to another question is never reused (#793). The declared step's are as
+ * ADR-0036 keeps them.
+ */
+function askedParts(
+  { action, model, prompt }: ProposalAsking,
+  asks: readonly (readonly AnsweredNote[])[],
+): string[] {
+  const asked = action.apply === 'mine' ? '' : `:${digestOf(JSON.stringify([model, prompt]))}`;
+  return asks.map((notes) => `${askedTurnsDigest(notes)}${asked}`);
+}
+
 /** The key a meeting's words are known by, as the schema names them; null for a note it names none. */
 function keyOf({ schema }: ProposalAsking, note: AnsweredNote): string | null {
   return schema.handledKeyOf?.(note) ?? null;
@@ -1126,7 +1143,7 @@ function rereadKept(
   kept: Pick<StoredAnswer, 'answers' | 'parts'>,
   vault: AnswerVault | undefined,
 ): Omit<NoteAnswered, 'path'> | null {
-  const parts = asks.map((notes) => askedTurnsDigest(notes));
+  const parts = askedParts(asking, asks);
   const reduceMark = kept.parts.length === asks.length + 1 ? kept.parts.at(-1) : undefined;
   const sameTurns =
     (kept.parts.length === asks.length ||
@@ -1273,12 +1290,14 @@ async function readVault({
 }: Pick<StepArgs, 'ports' | 'index' | 'markdown' | 'notePaths'> & {
   /** The proposals folder, as this run read it once. */
   folder: ProposalsFolder;
-  /** Whether to read the projects a meeting may be filed under: only for the step that files it (#227). */
-  withProjects: boolean;
+  /** The notes whose meetings may be filed, when only the step that files them reads the projects (#227); else null. */
+  withProjects: readonly AnsweredNote[] | null;
 }): Promise<AnswerVault> {
   const { people } = await loadLinkDirectory({ index });
   const { terms, vocabulary } = await loadTerms({ index });
-  const projects = withProjects ? await loadProjectOptions({ index }) : null;
+  const projects = withProjects === null ? null : await loadProjectOptions({ index });
+  const projectTies =
+    withProjects === null ? null : await loadMeetingProjectTies({ index, notes: withProjects });
   return {
     selfName: ports.selfName(),
     selfEmails: ports.selfEmails(),
@@ -1288,6 +1307,7 @@ async function readVault({
     vocabulary,
     pendingTerms: pendingTermsIn(folder, markdown),
     ...(projects !== null && { projects }),
+    ...(projectTies !== null && { projectTies }),
   };
 }
 

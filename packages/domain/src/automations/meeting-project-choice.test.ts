@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { meetingProjectProposalId } from '../meeting-links/meeting-link-plan.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
 import {
+  MAX_PROJECT_CHOICES,
   projectChoiceData,
   projectChoiceOutcome,
   projectOptionsOf,
@@ -84,6 +85,68 @@ describe('projectChoiceData', () => {
     );
     expect(projectChoiceData({ notes: [FILED], options: OPTIONS })).toEqual([]);
     expect(projectChoiceData({ notes: [MEETING], options: [] })).toEqual([]);
+  });
+});
+
+describe('a vault with more open projects and areas than one ask is shown (#793)', () => {
+  /** Projects 000 to 199, in title order, as the options query returns them. */
+  const many: ProjectOption[] = Array.from({ length: 200 }, (_, at) => ({
+    path: createVaultPath(`Projects/Quillwort ${String(at).padStart(3, '0')}.md`),
+    title: `Quillwort ${String(at).padStart(3, '0')}`,
+    para: 'project' as const,
+  }));
+  const lastByTitle = many.at(-1)!.path;
+  const ties = new Map([[MEETING.path, [lastByTitle, many[150]!.path]]]);
+  const shownLines = (text: string) => text.split('\n').filter((line) => line.startsWith('- '));
+
+  it('shows at most the cap, the ones tied to its people and companies first, and says the rest are cut', () => {
+    const [shown] = projectChoiceData({ notes: [MEETING], options: many, ties });
+    const lines = shownLines(shown!.text);
+
+    expect(lines).toHaveLength(MAX_PROJECT_CHOICES);
+    expect(lines[0]).toBe(`- ${lastByTitle} — Quillwort 199 (project)`);
+    expect(lines[1]).toBe('- Projects/Quillwort 150.md — Quillwort 150 (project)');
+    expect(lines[2]).toBe('- Projects/Quillwort 000.md — Quillwort 000 (project)');
+    expect(shown!.text).toContain(
+      `${MAX_PROJECT_CHOICES} of the 200 open projects and areas are shown`,
+    );
+  });
+
+  it('never cuts the project linking would propose: the one most tied to its people', () => {
+    const [shown] = projectChoiceData({ notes: [MEETING], options: many, ties });
+    expect(shownLines(shown!.text)).toContain(`- ${lastByTitle} — Quillwort 199 (project)`);
+    const chosen = readProjectChoice({
+      value: { path: lastByTitle, confidence: 'high', why: 'Its people work on it.' },
+      notes: [MEETING],
+      options: many,
+      ties,
+    });
+    expect(chosen).toMatchObject({ ok: true, value: { project: lastByTitle } });
+  });
+
+  it('refuses a choice it was not shown, though the vault has it open', () => {
+    const cutOff = many[100]!.path;
+    expect(
+      readProjectChoice({
+        value: { path: cutOff, confidence: 'high', why: 'It fits.' },
+        notes: [MEETING],
+        options: many,
+        ties,
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
+  it('shows a tie only once, ignores one that is not open, and says nothing of a cut when all fit', () => {
+    const [shown] = projectChoiceData({
+      notes: [MEETING],
+      options: OPTIONS,
+      ties: new Map([
+        [MEETING.path, [OPTIONS[1]!.path, OPTIONS[1]!.path, createVaultPath('Projects/Done.md')]],
+      ]),
+    });
+    expect(shown?.text).toBe(
+      '- Areas/Operations.md — Operations (area)\n- Projects/Ledger.md — Ledger (project)',
+    );
   });
 });
 

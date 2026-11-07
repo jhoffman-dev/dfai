@@ -1,6 +1,7 @@
 import {
   CHAT_READ_TOOLS,
   createVaultPath,
+  meetingsReadTwice,
   planClockLabel,
   PROPOSAL_SCHEMAS,
   type VaultPath,
@@ -23,6 +24,7 @@ import {
 import { useSkillChoices } from '../skills/use-skill-choices.ts';
 import { localTimeZone } from '../today.ts';
 import { automationRows, logViews } from './automation-rows.ts';
+import { readTwiceViews, turnOffRule } from './read-twice.ts';
 import { useAutomationEditor } from './use-automation-editor.ts';
 import type { useAutomations } from './use-automations.ts';
 
@@ -89,6 +91,9 @@ export function AutomationsScreen({
     listing?.automations.find((loaded) => loaded.rule.path === id) ?? null;
   const open = editor.editing?.kind === 'rule' ? loadedOf(editor.editing.rule.path) : null;
   const openNote = (path: string) => onOpenNote(createVaultPath(path));
+  const readTwice = readTwiceViews(
+    meetingsReadTwice(listing?.automations.map(({ rule }) => rule) ?? []).map(({ name }) => name),
+  );
 
   return (
     <AutomationsPage
@@ -99,6 +104,8 @@ export function AutomationsScreen({
       notice={automations.notice}
       busy={automations.busy}
       setup={setup === null ? null : <MeetingSetup {...setup} />}
+      readTwice={readTwice}
+      onTurnOff={(name) => void turnOffRule(automations, name)}
       onNew={editor.newRule}
       onAddPreset={editor.addPreset}
       onOpen={(id) => {

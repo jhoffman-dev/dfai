@@ -19,6 +19,7 @@ import { automationNameProblem, type AutomationDraft } from './automation-rule.t
 import { isDeclaredStep } from './claude-step-budget.ts';
 import { AFTER_A_MEETING_PROMPT } from './built-in-prompts.ts';
 import { MEETING_DIGEST_OUTPUT } from './meeting-digest.ts';
+import { meetingsReadTwice, runsOnMeetingArrival } from './meetings-read-twice.ts';
 import { AFTER_A_MEETING_PRESET } from './presets.ts';
 
 /** What the setup of meeting post-processing reads of a vault before it offers anything (#191). */
@@ -69,6 +70,12 @@ export interface MeetingSetupPlan<Type extends ObjectType = ObjectType> {
   readonly lines: readonly MeetingSetupLine[];
   /** Whether a rule that post-processes meetings is there and on, before the yes. */
   readonly ruleOn: boolean;
+  /**
+   * The extraction rules that are on and, after the yes, would read every
+   * meeting a second time beside "After a meeting" (#793), by name: the
+   * preview says so and offers to turn them off. None when nothing would.
+   */
+  readonly readTwice: readonly string[];
 }
 
 type RuleFacts = Pick<AutomationDraft, 'enabled' | 'action' | 'when'>;
@@ -78,13 +85,8 @@ type RuleFacts = Pick<AutomationDraft, 'enabled' | 'action' | 'when'>;
  * (`apply: mine`, under whatever name) set off by a meeting being created. One
  * that runs by hand or on a schedule does not, so it is not counted as set up.
  */
-function processesArrivals({ action, when }: RuleFacts): boolean {
-  return (
-    isDeclaredStep(action) &&
-    when.kind === 'note' &&
-    folded(when.type) === MEETING_TYPE &&
-    when.on.includes('created')
-  );
+function processesArrivals(rule: RuleFacts): boolean {
+  return isDeclaredStep(rule.action) && runsOnMeetingArrival(rule);
 }
 
 /** Whether a rule that is on post-processes meetings as they arrive: then nothing is to be offered. */
@@ -132,6 +134,9 @@ export function meetingSetupPlan<Type extends ObjectType>(
     extensions: [meeting.extension, task.extension].flatMap((one) => (one === null ? [] : [one])),
     asksEmails: emails.written,
     ruleOn: meetingsProcessedOnArrival(facts.rules),
+    readTwice: meetingsReadTwice(facts.rules, { declaredComing: rule.draft !== null }).map(
+      ({ name }) => name,
+    ),
     lines: [
       rule.line,
       ...(prompt.line === null ? [] : [prompt.line]),
@@ -325,6 +330,7 @@ export function meetingSetupWithin<Type extends ObjectType>(
     extensions,
     asksEmails: shown.asksEmails && now.asksEmails,
     ruleOn: now.ruleOn,
+    readTwice: now.readTwice,
     lines: now.lines,
     lost: lostSince(shown, now),
   };

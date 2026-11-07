@@ -2,6 +2,7 @@ import { memo, useId } from 'react';
 import { Icon } from './icon.tsx';
 import type { InboxOfferReading } from './inbox-offer.ts';
 import { noticeBarClass } from './notice-bar.ts';
+import { ReadTwiceNotice, type ReadTwiceView } from './automations/read-twice-notice.tsx';
 
 /** One thing the preview lists: what is written, or what is skipped and why. */
 export interface MeetingSetupLineView {
@@ -38,6 +39,10 @@ export interface MeetingSetupProps extends InboxOfferReading {
   readonly onClose: () => void;
   /** Puts away what the yes said. */
   readonly onDismiss: () => void;
+  /** The rules that, after the yes, would read every meeting a second time (#793). */
+  readonly readTwice?: readonly ReadTwiceView[];
+  /** Turns one of them off, by name: only on a click. */
+  readonly onTurnOff?: (rule: string) => void;
 }
 
 /**
@@ -109,6 +114,14 @@ function Preview(props: MeetingSetupProps) {
       <Lines heading="Written" lines={writes.filter((line) => line.kind !== EMAILS)} />
       {asksEmails && <EmailsField {...props} />}
       <Lines heading="Skipped" lines={skips} />
+      {props.onTurnOff !== undefined && (
+        <ReadTwiceNotice
+          readTwice={props.readTwice ?? []}
+          busy={busy}
+          onTurnOff={props.onTurnOff}
+          className="task-migration__lines task-migration__read-twice"
+        />
+      )}
       <div className="task-migration__actions">
         {!nothing && (
           <button

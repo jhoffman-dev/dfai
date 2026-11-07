@@ -123,6 +123,23 @@ describe('meetingSetupPlan', () => {
     expect(meetingSetupPlan(taken).ruleOn).toBe(false);
   });
 
+  it('names the extraction rule that would read every meeting a second time beside it (#793)', () => {
+    const extraction = AUTOMATION_PRESETS.find((preset) => preset.name.startsWith('Pull actions'))!;
+    // Written by the yes, beside an extraction that is on.
+    expect(meetingSetupPlan(facts({ rules: [extraction] })).readTwice).toEqual([extraction.name]);
+    // There and on already.
+    expect(
+      meetingSetupPlan(facts({ rules: [AFTER_A_MEETING_PRESET, extraction] })).readTwice,
+    ).toEqual([extraction.name]);
+    // There and off: the yes does not turn it on, so nothing is read twice.
+    const declaredOff = { ...AFTER_A_MEETING_PRESET, enabled: false };
+    expect(meetingSetupPlan(facts({ rules: [declaredOff, extraction] })).readTwice).toEqual([]);
+    // Nothing read twice when the extraction is off, or not there.
+    const extractionOff = { ...extraction, enabled: false };
+    expect(meetingSetupPlan(facts({ rules: [extractionOff] })).readTwice).toEqual([]);
+    expect(meetingSetupPlan(facts()).readTwice).toEqual([]);
+  });
+
   it('skips a rule already there under any name, and says when it is off', () => {
     const own: AutomationDraft = { ...AFTER_A_MEETING_PRESET, name: 'Digest my meetings' };
     const on = meetingSetupPlan(facts({ rules: [own] }));

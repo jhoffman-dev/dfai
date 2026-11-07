@@ -53,6 +53,7 @@ import {
   PROJECT_CHOICE_KEY,
   readProjectChoice,
   type ProjectChoice,
+  type MeetingProjectTies,
   type ProjectOption,
 } from './meeting-project-choice.ts';
 import { setKeyProblem } from './property-key.ts';
@@ -95,6 +96,11 @@ export interface AnswerVault {
    * only for the step that acts on the choice (#227).
    */
   readonly projects?: readonly ProjectOption[];
+  /**
+   * Each meeting's open projects tied to its people and companies, likeliest
+   * first: shown before the rest, so the cut never takes them (#793).
+   */
+  readonly projectTies?: MeetingProjectTies;
 }
 
 /** A term proposal waiting in the Inbox: its right spelling and what it was heard as. */
@@ -497,6 +503,7 @@ function projectOf(
     value: answer[PROJECT_CHOICE_KEY],
     notes: context.notes,
     options: context.vault?.projects ?? [],
+    ...(context.vault?.projectTies !== undefined && { ties: context.vault.projectTies }),
   });
   if (reading.ok) return { project: reading.value };
   dropped.push({ title: 'its project', reason: reading.problem });

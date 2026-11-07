@@ -538,3 +538,13 @@ with the new prompt and decided by these rules.
 **Cost.** Recall: items the model is unsure of, or that are spoken by an
 unnamed speaker, no longer reach the owner. Decisions are the largest loss;
 see the PR's numbers. Reversing any part is one constant or one branch.
+
+## Amendment: any meeting rule keeps its answers (#793, 2026-11-07)
+
+"The model's answer is kept and reused" now holds for every rule whose
+proposals know a meeting by its words, not only the declared step: the
+extraction rule ("Pull actions and decisions out of a new meeting") keeps the
+answers a failed run read in its own ledger, so a retry asks nothing it already
+asked. Its prompt is the person's to edit, so each part such a rule keeps also
+carries a digest of the model and the prompt it was asked with; an answer to
+another question is never reused. The declared step's parts are unchanged.

@@ -12,6 +12,7 @@ import {
 } from '@dfai/application';
 import type { MeetingSetupProps } from '@dfai/ui';
 import type { AutomationsStore } from '../automations/automations-store.ts';
+import { readTwiceViews, turnOffRule } from '../automations/read-twice.ts';
 import { vaultSettingsWriter } from '../settings/vault-settings-writer.ts';
 import { localClock } from '../today.ts';
 
@@ -108,6 +109,7 @@ export function useMeetingSetup(
       result: state.result,
       problem: state.problem,
       dismissable: where === 'inbox',
+      readTwice: readTwiceViews(offer?.readTwice ?? []),
       ...commands,
     };
   }, [state, needed, where, vault, commands]);
@@ -115,7 +117,7 @@ export function useMeetingSetup(
 
 type SetupCommands = Pick<
   MeetingSetupProps,
-  'onOpen' | 'onEmailsChange' | 'onAccept' | 'onClose' | 'onDismiss'
+  'onOpen' | 'onEmailsChange' | 'onAccept' | 'onClose' | 'onDismiss' | 'onTurnOff'
 >;
 
 function useSetupCommands(wiring: MeetingSetupWiring, vault: string | null): SetupCommands {
@@ -148,16 +150,31 @@ function useSetupCommands(wiring: MeetingSetupWiring, vault: string | null): Set
     change({ busy: true, problem: null });
     void accept(wiring, { offer, emails }).then((said) => settle({ busy: false, ...said }));
   }, [change, settle, store, wiring, vault]);
+  // Only on a click (#793); the preview is read again after, so it says what is on now.
+  const onTurnOff = useCallback(
+    (name: string) => {
+      change({ busy: true, problem: null });
+      void turnOffRule(wiring.automations.getState().automations, name)
+        .then(() => previewMeetingSetup(wiring))
+        .then(
+          (offer) => settle({ busy: false, offer }),
+          (cause: unknown) =>
+            settle({ busy: false, problem: `Could not turn ${name} off: ${messageOf(cause)}` }),
+        );
+    },
+    [change, settle, wiring],
+  );
   return useMemo(
     () => ({
       onOpen,
       onAccept,
+      onTurnOff,
       onEmailsChange: (emails: string) => change({ emails }),
       onClose: () =>
         change(store.getState().open ? { open: false } : { dismissed: true, open: false }),
       onDismiss: () => change({ result: null, problem: null }),
     }),
-    [onOpen, onAccept, change, store],
+    [onOpen, onAccept, onTurnOff, change, store],
   );
 }
 
