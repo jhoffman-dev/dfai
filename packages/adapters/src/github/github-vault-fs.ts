@@ -23,6 +23,7 @@ import {
   HOST_CHANGED_ON_DISK,
   VaultAccessError,
   type AsRead,
+  type CreateMarksPort,
   type HostVaultFsPort,
   type NoteFile,
 } from '@dfai/application';
@@ -63,6 +64,11 @@ import type { GitTreeEntry } from './github-answers.ts';
 
 /** The placeholder that makes a folder made here a folder in git. */
 export const FOLDER_PLACEHOLDER = '.gitkeep';
+/** The trailer a queued create's commit carries its mark in (#773): how its note is known again. */
+export const CREATE_MARK_TRAILER = 'DFAI-Create';
+/** A mark is one token: it can never end the trailer or add a line to the message. */
+const MARK = /^[A-Za-z0-9._-]{1,128}$/;
+const MARK_REFUSAL = 'a create mark is letters, digits, dots, dashes and underscores';
 const FILE_MODE = '100644';
 const CHANGED_TRASH = 'a file changed on disk since it was read, so nothing was moved to the Trash';
 
@@ -164,7 +170,10 @@ export interface GitHubVaultFsDeps {
   readonly vault: string;
 }
 
-export function gitHubVaultFs({ branch, vault }: GitHubVaultFsDeps): HostVaultFsPort {
+export function gitHubVaultFs({
+  branch,
+  vault,
+}: GitHubVaultFsDeps): HostVaultFsPort & CreateMarksPort {
   const at = branchAt(branch);
   const writes = writing({ branch, at });
   let queue: Promise<unknown> = Promise.resolve();
@@ -185,7 +194,35 @@ export function gitHubVaultFs({ branch, vault }: GitHubVaultFsDeps): HostVaultFs
     trashEntry: forTheOpenVault(writes.trashEntry),
     writeTextFile: forTheOpenVault(writes.writeTextFile),
     writeBinaryFile: forTheOpenVault(writes.writeBinaryFile),
+    markAt: async (path: VaultPath) => {
+      refuseIf(heldPathRefusal(path));
+      return markIn(await branch.newestMessageAt(path));
+    },
   };
+}
+
+/** A create's commit message: what it did, and its mark as a trailer when it has one. */
+function createMessage(path: string, mark: string | undefined): string {
+  if (mark === undefined) return `Create ${path}`;
+  if (!MARK.test(mark)) return refuse(MARK_REFUSAL);
+  return `Create ${path}\n\n${CREATE_MARK_TRAILER}: ${mark}`;
+}
+
+/**
+ * The mark in a commit message's trailers: its final paragraph, after the
+ * subject, as git reads trailers; the last of that name there when it has
+ * several. A mark written anywhere else in the message is not one. Null
+ * when it has none.
+ */
+function markIn(message: string | null): string | null {
+  const paragraphs = (message ?? '').trimEnd().split(/\n[ \t]*\n/);
+  if (paragraphs.length < 2) return null;
+  const prefix = `${CREATE_MARK_TRAILER}: `;
+  const line = paragraphs
+    .at(-1)!
+    .split('\n')
+    .findLast((at) => at.startsWith(prefix) && MARK.test(at.slice(prefix.length)));
+  return line === undefined ? null : line.slice(prefix.length);
 }
 
 const notOpen = (named: string) => new VaultAccessError(`${named} is not the open vault`);
@@ -322,18 +359,32 @@ function writing({ branch, at }: Through) {
     });
 
   /** A new file of these bytes where nothing is, in a folder that is there. */
-  const create: Create = async (snapshot, { path, bytes, taken }) => {
+  const create: Create = async (snapshot, { path, bytes, taken, mark }) => {
     refusePlaceholder(path);
     refuseIf(heldPlaceRefusal(snapshot.taken, { path, taken }));
+    const message = createMessage(path, mark);
     const sha = await branch.upload(bytes);
-    await commitOn(snapshot, { changes: [put(path, sha)], message: `Create ${path}` });
+    await commitOn(snapshot, { changes: [put(path, sha)], message });
     return sha;
   };
 
   return {
-    createNote: async ({ path, contents }: { path: VaultPath; contents: string }) =>
+    createNote: async ({
+      path,
+      contents,
+      mark,
+    }: {
+      path: VaultPath;
+      contents: string;
+      mark?: string;
+    }) =>
       versionOfBlob(
-        await create(await at(), { path, bytes: utf8(contents), taken: HELD_REFUSAL.noteTaken }),
+        await create(await at(), {
+          path,
+          bytes: utf8(contents),
+          taken: HELD_REFUSAL.noteTaken,
+          ...(mark !== undefined && { mark }),
+        }),
       ),
     createFolder: async ({ path }: { path: VaultPath }) => {
       refusePlaceholder(path);
@@ -375,7 +426,7 @@ function writing({ branch, at }: Through) {
 
 type Create = (
   snapshot: Snapshot,
-  asked: { path: string; bytes: Uint8Array; taken: string },
+  asked: { path: string; bytes: Uint8Array; taken: string; mark?: string },
 ) => Promise<string>;
 
 type CommitOn = (

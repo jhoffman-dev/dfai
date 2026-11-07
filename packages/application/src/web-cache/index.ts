@@ -2,6 +2,7 @@
 export {
   cachedVaultFs,
   FOLDER_NEEDS_CONNECTION,
+  NEW_FOLDER_NEEDS_CONNECTION,
   NOTE_NEEDS_CONNECTION,
   revalidateKeptNotes,
   WRITE_NEEDS_CONNECTION,
@@ -12,6 +13,7 @@ export type { KeptReads, KeptReadsDeps } from './kept-reads.ts';
 export type {
   CachedRead,
   ConnectionPort,
+  CreateMarksPort,
   PendingSaveState,
   PendingSavesPort,
   ReadCacheStore,

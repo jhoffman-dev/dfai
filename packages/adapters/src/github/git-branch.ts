@@ -4,6 +4,7 @@ import { base64ToBytes, bytesToBase64, gitBlobSha } from './git-bytes.ts';
 import {
   readBlobBase64,
   readCreatedSha,
+  readNewestCommitMessage,
   readRefSha,
   readTree,
   type GitTreeListing,
@@ -59,6 +60,8 @@ export interface GitBranch {
   upload(bytes: Uint8Array): Promise<string>;
   /** Commits the changes on `head` and moves the branch to it, as a fast-forward only. */
   commit(asked: CommitAsked): Promise<string>;
+  /** The message of the newest commit on the branch to change `path`; null when none has. */
+  newestMessageAt(path: string): Promise<string | null>;
 }
 
 /** The refs path segment by segment, so a branch like `notes/main` stays one ref. */
@@ -78,6 +81,11 @@ export function gitBranch(api: GitHubApi, where: GitHubVaultRepository): GitBran
     blob: (sha) => blobOf(api, `${repo}/git/blobs/${sha}`, sha),
     upload: (bytes) => upload(api, `${repo}/git/blobs`, bytes),
     commit: (asked) => commitOnMovedHead(api, { repo, ref }, asked),
+    newestMessageAt: async (path) => {
+      const asked = `sha=${encodeURIComponent(where.branch)}&path=${encodeURIComponent(path)}`;
+      const answer = await api.send({ method: 'GET', path: `${repo}/commits?${asked}&per_page=1` });
+      return readNewestCommitMessage(answer);
+    },
   };
 }
 

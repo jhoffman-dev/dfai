@@ -1,4 +1,4 @@
-import type { EntryMove, VaultEntry, VaultPath } from '@dfai/domain';
+import { HELD_REFUSAL, type EntryMove, type VaultEntry, type VaultPath } from '@dfai/domain';
 
 /** Where the vault sits on the real filesystem. The UI never sees absolute paths. */
 export interface VaultLocation {
@@ -85,8 +85,12 @@ export interface VaultFsPort {
   /**
    * Creates a note and reports its modification time, as `writeTextFile` does
    * a save's. Fails rather than overwriting one that already exists.
+   *
+   * `mark` is a queued create's own (#773): a host that commits (GitHub)
+   * records it on the commit, so the create can be known again when its
+   * answer is lost. A host that does not, ignores it.
    */
-  createNote: (args: { path: VaultPath; contents: string }) => Promise<number>;
+  createNote: (args: { path: VaultPath; contents: string; mark?: string }) => Promise<number>;
   /** Creates an empty folder. Fails if anything already has the name. */
   createFolder: (args: { path: VaultPath }) => Promise<void>;
   /**
@@ -255,6 +259,15 @@ export const HOST_NO_SUCH_ENTRY = 'no such entry';
 /** Whether `error` is the host saying nothing is at the path it was asked about. */
 export function isNoSuchEntry(error: unknown): boolean {
   return error instanceof VaultAccessError && error.message.startsWith(HOST_NO_SUCH_ENTRY);
+}
+
+/** Whether `error` is the host refusing a new note or folder because something has its name. */
+export function isNameTakenRefusal(error: unknown): boolean {
+  return (
+    error instanceof VaultAccessError &&
+    (error.message.startsWith(HELD_REFUSAL.noteTaken) ||
+      error.message.startsWith(HELD_REFUSAL.nameTaken))
+  );
 }
 
 /** Whether `error` is the host refusing a write over a file changed since it was read. */

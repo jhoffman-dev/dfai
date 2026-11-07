@@ -1,4 +1,4 @@
-import type { CachedReadFacts, QueuedSave } from '@dfai/domain';
+import type { CachedReadFacts, QueuedSave, VaultPath } from '@dfai/domain';
 
 /** One read kept on this device (#667): what it answered, and what eviction needs. */
 export interface CachedRead extends CachedReadFacts {
@@ -56,6 +56,19 @@ export interface SaveQueueStore {
  * never decide on the same note at once.
  */
 export type SaveQueueLock = <T>(task: () => Promise<T>) => Promise<T>;
+
+/**
+ * The marks queued creates carry on GitHub (#773): what tells a create this
+ * device sent, whose answer was lost, from another device's note of the
+ * same name and text. The GitHub vault in the browser, a map in a test.
+ */
+export interface CreateMarksPort {
+  /**
+   * The mark on the newest commit of the open vault's branch to change
+   * `path`; null when that commit carries none, or none changed it.
+   */
+  markAt(path: VaultPath): Promise<string | null>;
+}
 
 /** The page's other tabs, told the save queue changed so they read it again. */
 export interface SaveQueueChanges {

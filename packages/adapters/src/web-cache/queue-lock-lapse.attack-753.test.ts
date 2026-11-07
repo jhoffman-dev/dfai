@@ -87,6 +87,9 @@ describe('the save queue under the localStorage lock, when a hold lapses mid-sen
         changes: channel(),
         account: () => ACCOUNT,
         vault: () => VAULT,
+        // Saves only: no create is made here, so no mark is read or handed out.
+        marks: { markAt: async () => null },
+        newMark: () => 'mark-1',
       });
     const first = tab();
     const second = tab();

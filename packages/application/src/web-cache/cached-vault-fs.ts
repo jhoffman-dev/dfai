@@ -17,9 +17,21 @@ import type { ConnectionPort } from './ports.ts';
 export const NOTE_NEEDS_CONNECTION = 'This note is not on this device yet; it needs a connection';
 export const FOLDER_NEEDS_CONNECTION =
   'This folder is not on this device yet; it needs a connection';
-/** What a write says with no network, until saves wait for it (#667's queue). */
+/**
+ * What a write says with no network. A save or a new note waits in the
+ * queue above (#667, #773) and never reaches here offline; a move, a trash
+ * or a file's bytes do.
+ */
 export const WRITE_NEEDS_CONNECTION =
   'Saving needs a connection; your edit stays here until you are back online';
+/**
+ * What a new folder says with no network (#773). It is not queued: it holds
+ * no typing to lose, and on GitHub a folder is only a placeholder file, so
+ * queueing it would mean listing it, numbering it at send and moving every
+ * note queued inside along with it.
+ */
+export const NEW_FOLDER_NEEDS_CONNECTION =
+  'Making a folder needs a connection; new notes wait on this device, folders do not';
 
 export interface CachedVaultFsDeps {
   readonly fs: HostVaultFsPort;
@@ -123,8 +135,8 @@ const within = (path: string, under: string) => path === under || path.startsWit
 const listings = (kind: CachedReadKind) => kind !== 'note';
 
 function keptWrites({ fs, kept, connection }: CachedVaultFsDeps) {
-  const online = () => {
-    if (!connection.online()) throw new VaultUnreachableError(WRITE_NEEDS_CONNECTION);
+  const online = (refusal = WRITE_NEEDS_CONNECTION) => {
+    if (!connection.online()) throw new VaultUnreachableError(refusal);
   };
   const changedTree = (gone: readonly string[]) =>
     kept.forget((kind, asked) => listings(kind) || gone.some((path) => within(asked, path)));
@@ -145,7 +157,7 @@ function keptWrites({ fs, kept, connection }: CachedVaultFsDeps) {
       return modified;
     },
     createFolder: async (args: Parameters<HostVaultFsPort['createFolder']>[0]) => {
-      online();
+      online(NEW_FOLDER_NEEDS_CONNECTION);
       await fs.createFolder(args);
       void changedTree([]);
     },

@@ -4,7 +4,8 @@ import type { GitHubVaultRepository } from './git-branch.ts';
 /**
  * A faithful local stand-in for the parts of GitHub's REST API the GitHub
  * vault uses (#664): the Git Data endpoints (ref, recursive tree, blobs,
- * trees, commits, a ref update) and the installation listing, held in
+ * trees, commits, a ref update), the commits that changed a path (#773),
+ * and the installation listing, held in
  * memory and answered through an injected `fetch`, so no test reaches the
  * network. It keeps GitHub's rules that matter to a write:
  *
@@ -304,7 +305,36 @@ export class FakeGitHub {
     if (method === 'POST' && path === `${repo}/commits`) return this.createCommit(request.body);
     if (method === 'PATCH' && path === `${repo}/refs/${branchRef}`)
       return this.updateRef(request.body);
+    const [route, query = ''] = path.split('?');
+    if (method === 'GET' && route === `/repos/${this.where.owner}/${this.where.repo}/commits`)
+      return this.commitsChanging(new URLSearchParams(query));
     return this.routeUser(request);
+  }
+
+  /**
+   * `GET /commits?sha&path&per_page`: the branch's commits that changed the
+   * path, newest first, as `{ sha, commit: { message } }`. Followed along
+   * first parents, where GitHub simplifies history the same way for a
+   * branch moved only by fast-forwards.
+   */
+  private async commitsChanging(query: URLSearchParams): Promise<Response> {
+    const path = query.get('path');
+    if (query.get('sha') !== this.where.branch || path === null)
+      return refusal(422, 'No commit found for SHA');
+    const limit = Number(query.get('per_page') ?? 30);
+    const found: { sha: string; commit: { message: string } }[] = [];
+    let at: string | undefined = await this.objects.head();
+    while (at !== undefined && found.length < limit) {
+      const commit = await this.objects.commit(at);
+      if (commit === undefined) break;
+      const parent = commit.parents[0];
+      const before = parent === undefined ? undefined : (await this.entriesAt(parent)).get(path);
+      const after = (await this.entriesAt(at)).get(path);
+      if (before?.sha !== after?.sha || before?.mode !== after?.mode)
+        found.push({ sha: at, commit: { message: commit.message } });
+      at = parent;
+    }
+    return json(200, found);
   }
 
   private routeUser({ method, path, headers }: Received): Answer {
