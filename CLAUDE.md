@@ -55,6 +55,34 @@ Each phase of `PLAN.md` is a `coder` task, and **every phase gets a
 Doing a whole phase inline, then reporting it green, is the failure mode this
 section exists to prevent.
 
+### Keep agent runs lean
+
+An agent run costs mostly the context it re-reads on every turn, not the code
+it writes. An audit of 27 days of agent work here (November 2026) found output
+was a tenth of the spend, and context rebuilt after an agent sat waiting was
+nearly two fifths. So:
+
+- **The full gate goes to `tester`.** `coder`, `bug-fixer` and
+  `pr-review-fixer` run the scoped gate (typecheck, lint, format, the tests
+  and e2e specs their change touches) and hand back. The coordinator then
+  spawns `tester` on the branch for `pnpm gate`, in parallel with the
+  `code-reviewer` and `adversarial-tester` passes, and sends any failure back
+  to the author with `SendMessage`. CI runs everything on every push. A pull
+  request is marked ready only when `tester` and CI are both green.
+- **Subagents keep a 1-hour prompt cache** (`subagentPromptCacheTtl` in
+  `.claude/settings.json`), so an agent waiting on a long run doesn't rebuild
+  its context. Agents still wait in one blocking call, not a series of
+  check-ins.
+- **Brief agents with paths, not pasted content**, and keep their hand-backs
+  under about 25 lines. The coordinator lives longest, so every line it reads
+  is re-read the most.
+- **Start a fresh coordinator session for each new batch of work.** The board,
+  the issues and the pull requests carry the state.
+- **Start sessions in this folder** (`cd ~/Projects/atlas && claude`). Claude
+  Code loads `.claude/agents` and `.claude/settings.json` from the folder a
+  session starts in. A session started in a parent folder runs the user-level
+  agents instead.
+
 ### Keep the guide, the API and the MCP in step
 
 The app, its how-to guide, and its local API + MCP server describe one product.

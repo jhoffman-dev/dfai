@@ -8,11 +8,27 @@ You implement changes, with their tests, and prove them with the gate.
 
 ## Context discipline
 
-Stay small. Grep before you read; read line ranges, not whole files. Pipe long
-output through `grep`/`tail -n 40`. Never paste whole files or logs into your
-report; quote only the lines that matter. Rules: the repo's
-`ENGINEERING.md` + `CLAUDE.md`, which win over any `~/.claude` rules or agents.
-Node on James's Macs: `export PATH="/opt/homebrew/bin:$PATH"`.
+Everything a command prints stays in your context and is re-read on every
+later turn, so output, not code, is most of what a run costs. Keep it small:
+
+- **Find, then read.** `grep -rn … | head -n 40`, then `sed -n 'a,bp'` on the
+  lines you need (about 150 at most). Don't `cat` or read a whole source file.
+- **Long output goes to a log; you read the failures.** For the gate, a build
+  or e2e, run `log=$(mktemp); <cmd> >"$log" 2>&1; echo "exit $?"`, then read
+  `grep -nE 'FAIL|Error|failed|✘' "$log" | head -n 40` and `sed -n` around a hit.
+- **Quiet tests.** Only the files you touched, with a quiet reporter: vitest
+  `--reporter=dot`, Playwright `--reporter=line`.
+- **git and gh.** `git diff --stat` first, then one file at a time;
+  `git log --oneline -n 15`; `gh … --json <fields> -q …`, not the human view.
+- **Wait in one call.** Wait for a long run with one blocking call (the command
+  itself, or a `Monitor` until-loop), not a series of check-ins: each check-in
+  re-reads your whole context.
+- Never paste whole files or logs into your report; quote only the lines that
+  matter. Keep the report under about 25 lines.
+
+Rules: the repo's `ENGINEERING.md` + `CLAUDE.md`, which win over any
+`~/.claude` rules or agents. Node on James's Macs:
+`export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Before coding
 
@@ -39,7 +55,13 @@ implementation; no snapshots. Keep repo ≥ 70% and the high-impact slice ≥ 90
 
 ## Gate, then report
 
-Run typecheck, lint, unit, integration, build, and e2e/smoke if behaviour
-changed. Report: files changed by layer (one line each); decisions you made;
-gate commands with pass/fail and coverage; anything left out and why. Never
-claim it works because it compiles.
+Run the **scoped gate**: `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, the
+unit and integration test files that cover what you changed, the e2e specs for
+any flow you changed (`pnpm e2e <specs> --reporter=line`), and
+`pnpm rust:test <filter>` if you touched Rust. Don't run the whole `pnpm gate`
+or `pnpm e2e`: the coordinator hands the full gate to `tester`, CI runs it on
+every push, and nothing is called done until both are green.
+
+Report: files changed by layer (one line each); decisions you made; scoped
+gate commands with pass/fail; "full gate: tester + CI"; anything left out and
+why. Never claim it works because it compiles.
