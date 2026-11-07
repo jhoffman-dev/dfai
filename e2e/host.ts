@@ -2632,7 +2632,10 @@ export async function saveNow(page: Page, scope: Page | Locator = page): Promise
     async () => {
       await scope.getByRole('button', { name: 'More' }).click();
       const item = page.getByRole('menuitem', { name: /^Save now/ });
+      await expect(item).toBeVisible();
       await expect(async () => {
+        // Closed after a pass's 1s wait ran out: done, not a wait on an item that is gone.
+        if (await item.isHidden()) return;
         if (await item.isEnabled()) {
           // Short, so an autosave that disables it meanwhile is looked at again.
           await item.click({ timeout: 1_000 });

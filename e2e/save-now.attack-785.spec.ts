@@ -41,12 +41,19 @@ test('Save now pressed as the autosave begins leaves the menu closed and the not
       const item = (event.target as Element | null)?.closest('[role="menuitem"]');
       if (item?.textContent?.startsWith('Save now') !== true) return;
       window.removeEventListener('pointerdown', startSave, true);
+      document.body.dataset['raced785'] = 'yes';
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true }));
     };
     window.addEventListener('pointerdown', startSave, true);
   });
 
   await saveNow(page);
+  // A slow run whose autosave saved before the press took the Escape branch
+  // and never raced: that run proves nothing, so it fails here.
+  await expect(page.locator('body'), 'the save began under the press').toHaveAttribute(
+    'data-raced785',
+    'yes',
+  );
   await expect(page.getByRole('menu', { name: 'Page' })).toBeHidden({ timeout: 2_000 });
   await expectSaved(page);
   await expectFile(vault, 'Journal.md').toBe('# Journal\n\nToday. Rain.\n');
