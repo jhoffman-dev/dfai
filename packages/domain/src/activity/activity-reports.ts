@@ -18,6 +18,7 @@ import {
 import { planVerb, type AutomationPlan } from '../automations/automation-plan.ts';
 import { readsData } from '../automations/claude-step.ts';
 import { describeNotLinked } from '../automations/relink-plan.ts';
+import { usageWords, type ModelUsage } from '../chat/model-usage.ts';
 import type { ActivityLevel, ActivityReport, ActivitySubject } from './activity-event.ts';
 
 /** An automation's rule, as a line names it and links to it; a draft not yet saved has no path. */
@@ -62,10 +63,15 @@ function heardNotes(entry: Extract<LogEntry, { kind: 'run' }>): VaultPath[] {
   return [...new Set(heard.map((version) => version.path))];
 }
 
-/** Which model a Claude step asked, and for how long: ` Asked claude-opus-5-5, 4.2 s.`; empty for none. */
+/**
+ * Which model a Claude step asked, for how long, and what it spent when that
+ * is known: ` Asked claude-opus-5-5, 4.2 s, 41k in (30k cached), 2.1k out.`;
+ * empty for none.
+ */
 function claudeAsked(claude: ClaudeRunInfo | undefined): string {
   if (claude === undefined) return '';
-  return ` Asked ${claude.model}, ${(claude.ms / 1000).toFixed(1)} s.`;
+  const spent = claude.usage === undefined ? '' : `, ${usageWords(claude.usage)}`;
+  return ` Asked ${claude.model}, ${(claude.ms / 1000).toFixed(1)} s${spent}.`;
 }
 
 /** How many notes set off by a run a line names before it counts the rest. */
@@ -228,6 +234,17 @@ export type ChatHappening =
       readonly problem: string;
     }
   | { readonly kind: 'turnFailed'; readonly reason: ChatFailure }
+  /**
+   * A turn ended — answered, or stopped by the person — and what it spent
+   * (#788). Numbers and the model only: never the question, nor its note.
+   */
+  | {
+      readonly kind: 'answered';
+      readonly rounds: number;
+      readonly usage: ModelUsage | null;
+      readonly model: string;
+      readonly stopped: boolean;
+    }
   /** The chat note could not be written. Said without the error's words: they can name the note, whose name is the question. */
   | { readonly kind: 'notKept' };
 
@@ -270,7 +287,19 @@ export function chatReport(happening: ChatHappening): ActivityReport {
       return chatLine('error', CHAT_FAILURE_WORDS[happening.reason], null);
     case 'notKept':
       return chatLine('error', 'The chat could not be saved to Chats/.', null);
+    case 'answered':
+      return chatLine('info', answeredWords(happening), null);
   }
+}
+
+function answeredWords({
+  rounds,
+  usage,
+  model,
+  stopped,
+}: Extract<ChatHappening, { kind: 'answered' }>): string {
+  const ended = stopped ? 'Chat stopped' : 'Chat answered';
+  return `${ended}: ${rounds} ${rounds === 1 ? 'round' : 'rounds'}, ${usageWords(usage)}, ${model}.`;
 }
 
 function chatLine(level: ActivityLevel, message: string, path: VaultPath | null): ActivityReport {

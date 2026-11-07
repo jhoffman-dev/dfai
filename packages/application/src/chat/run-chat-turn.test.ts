@@ -57,6 +57,8 @@ describe('runChatTurn', () => {
     expect(outcome).toEqual({
       added: [{ role: 'assistant', text: 'Sam is a friend.', toolCalls: [] }],
       stopped: false,
+      rounds: 1,
+      usage: null,
     });
     expect(provider.requests[0]).toMatchObject({
       model: 'claude-opus-5-5',
@@ -139,12 +141,14 @@ describe('runChatTurn', () => {
     expect(outcome).toEqual({
       added: [{ role: 'assistant', text: 'Half an ', toolCalls: [] }],
       stopped: true,
+      rounds: 1,
+      usage: null,
     });
   });
 
   it('adds nothing when Stop comes before any words', async () => {
     const { outcome } = await turn([new ChatCancelled()]);
-    expect(outcome).toEqual({ added: [], stopped: true });
+    expect(outcome).toEqual({ added: [], stopped: true, rounds: 1, usage: null });
   });
 
   it('passes a provider failure on to the panel', async () => {

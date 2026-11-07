@@ -226,10 +226,11 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
       }
       if (skill !== null) turn.activity.push(usedSkillLine(skill.name));
       if (waiting === own) waiting = null;
+      const model = ports.model();
       const outcome = await runChatTurn({
         provider: ports.provider(),
         toolbox,
-        model: ports.model(),
+        model,
         system: chatSystemPrompt({
           today: ports.clock.today(),
           context: state.context,
@@ -242,6 +243,9 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
           if (live()) show(event, turn);
         },
       });
+      // Numbers and the model only (#788): said even for a chat since closed, as the tokens were spent.
+      const { rounds, usage, stopped } = outcome;
+      activity.record(chatReport({ kind: 'answered', rounds, usage, model, stopped }));
       if (!live()) return;
       messages = [...messages, ...outcome.added];
       set({ busy: false });

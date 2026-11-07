@@ -1,5 +1,12 @@
-import { trimTranscript, type ModelMessage, type ToolCall, type ToolResult } from '@dfai/domain';
-import { ChatCancelled, type ModelProvider } from './ports.ts';
+import {
+  sumUsage,
+  trimTranscript,
+  type ModelMessage,
+  type ModelUsage,
+  type ToolCall,
+  type ToolResult,
+} from '@dfai/domain';
+import { ChatCancelled, type ModelEvent, type ModelProvider } from './ports.ts';
 import type { Proposal } from './proposals.ts';
 import type { ChatToolbox } from './toolbox.ts';
 
@@ -22,6 +29,10 @@ export interface ChatTurnOutcome {
   readonly added: readonly ModelMessage[];
   /** True when Stop ended it; what had arrived is kept. */
   readonly stopped: boolean;
+  /** How many times the model was asked. */
+  readonly rounds: number;
+  /** What its rounds spent, summed; null when any round's usage is unknown (#788). */
+  readonly usage: ModelUsage | null;
 }
 
 /**
@@ -49,34 +60,64 @@ export async function runChatTurn({
   onEvent: (event: ChatTurnEvent) => void;
 }): Promise<ChatTurnOutcome> {
   const added: ModelMessage[] = [];
+  const readings: (ModelUsage | null)[] = [];
+  const ended = (stopped: boolean): ChatTurnOutcome => ({
+    added,
+    stopped,
+    rounds: readings.length,
+    usage: sumUsage(readings),
+  });
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const reply = { text: '', calls: [] as ToolCall[], malformed: [] as string[] };
+    const reply: Reply = { text: '', calls: [], malformed: [], usage: null };
     try {
       const messages = trimTranscript([...history, ...added]);
       const request = { model, system, messages, tools: toolbox.specs };
-      for await (const event of provider.stream(request, signal)) {
-        if (event.type === 'text') {
-          reply.text += event.text;
-          onEvent(event);
-        } else if (event.type === 'tool_call') reply.calls.push(event.call);
-        else reply.malformed.push(event.problem);
-      }
+      for await (const event of provider.stream(request, signal)) take(event, reply, onEvent);
     } catch (error) {
       if (!(error instanceof ChatCancelled)) throw error;
+      // A round Stop cut off said nothing of what it spent: the turn's usage is unknown.
+      readings.push(null);
       if (reply.text !== '') added.push({ role: 'assistant', text: reply.text, toolCalls: [] });
-      return { added, stopped: true };
+      return ended(true);
     }
+    readings.push(reply.usage);
     added.push({ role: 'assistant', text: reply.text, toolCalls: reply.calls });
-    if (reply.calls.length === 0 && reply.malformed.length === 0) return { added, stopped: false };
+    if (reply.calls.length === 0 && reply.malformed.length === 0) return ended(false);
 
     const results = await runCalls({ calls: reply.calls, toolbox, onEvent });
     added.push({ role: 'tool', results: [...results, ...reply.malformed.map(malformedResult)] });
-    if (signal.aborted) return { added, stopped: true };
+    if (signal.aborted) return ended(true);
   }
   const gaveUp = `\n\n(I stopped after ${MAX_TOOL_ROUNDS} rounds of looking things up without an answer.)`;
   onEvent({ type: 'text', text: gaveUp });
   added.push({ role: 'assistant', text: gaveUp.trim(), toolCalls: [] });
-  return { added, stopped: false };
+  return ended(false);
+}
+
+/** What one round has said so far. */
+interface Reply {
+  text: string;
+  calls: ToolCall[];
+  malformed: string[];
+  /** Its last reading of what it spent; null until one arrives. */
+  usage: ModelUsage | null;
+}
+
+function take(event: ModelEvent, reply: Reply, onEvent: (event: ChatTurnEvent) => void): void {
+  switch (event.type) {
+    case 'text':
+      reply.text += event.text;
+      onEvent(event);
+      return;
+    case 'tool_call':
+      reply.calls.push(event.call);
+      return;
+    case 'malformed':
+      reply.malformed.push(event.problem);
+      return;
+    case 'usage':
+      reply.usage = event.usage;
+  }
 }
 
 /** Runs each call in the order the model made them, telling the panel as each starts and ends. */

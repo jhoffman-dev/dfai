@@ -13,11 +13,13 @@ describe('readStreamJsonLine', () => {
       kind: 'result',
       isError: true,
       message: 'boom',
+      usage: null,
     });
     expect(readStreamJsonLine('{"type":"result","result":7}')).toEqual({
       kind: 'result',
       isError: false,
       message: '',
+      usage: null,
     });
   });
 

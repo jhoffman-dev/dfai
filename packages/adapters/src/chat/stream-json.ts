@@ -1,3 +1,6 @@
+import type { ModelUsage } from '@dfai/domain';
+import { readApiUsage } from './api-usage.ts';
+
 /**
  * Claude Code's `--output-format stream-json`, one JSON object per line,
  * translated into what the provider needs: words as they stream, and the
@@ -6,7 +9,13 @@
  */
 export type StreamJsonLine =
   | { readonly kind: 'text'; readonly text: string }
-  | { readonly kind: 'result'; readonly isError: boolean; readonly message: string }
+  | {
+      readonly kind: 'result';
+      readonly isError: boolean;
+      readonly message: string;
+      /** What the run spent, from its `usage` and `total_cost_usd`; null when they do not read. */
+      readonly usage: ModelUsage | null;
+    }
   | { readonly kind: 'other' };
 
 const OTHER: StreamJsonLine = { kind: 'other' };
@@ -24,7 +33,8 @@ export function readStreamJsonLine(line: string): StreamJsonLine {
   if (parsed['type'] === 'stream_event') return streamEvent(parsed['event']);
   if (parsed['type'] === 'result') {
     const message = typeof parsed['result'] === 'string' ? parsed['result'] : '';
-    return { kind: 'result', isError: parsed['is_error'] === true, message };
+    const usage = readApiUsage(parsed['usage'], parsed['total_cost_usd']);
+    return { kind: 'result', isError: parsed['is_error'] === true, message, usage };
   }
   return OTHER;
 }
