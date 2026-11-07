@@ -2622,6 +2622,9 @@ export async function pageCommand(
  * then Save now is disabled, rightly: nothing is unsaved. So the item is
  * clicked while it is enabled, and a disabled one is accepted only once
  * every save indicator in `scope` reads Saved. Saving… is waited out.
+ * Done only once the menu has closed: the autosave can disable the item
+ * between the enabled check and the press, and a disabled item ignores the
+ * press, leaving the menu open for the next "More" press to close (#785).
  */
 export async function saveNow(page: Page, scope: Page | Locator = page): Promise<void> {
   await test.step(
@@ -2633,12 +2636,13 @@ export async function saveNow(page: Page, scope: Page | Locator = page): Promise
         if (await item.isEnabled()) {
           // Short, so an autosave that disables it meanwhile is looked at again.
           await item.click({ timeout: 1_000 });
-          return;
+        } else {
+          const shown = await saveStatus(scope).allTextContents();
+          expect(shown.length).toBeGreaterThan(0);
+          expect(shown.every((each) => each === 'Saved')).toBe(true);
+          await page.keyboard.press('Escape');
         }
-        const shown = await saveStatus(scope).allTextContents();
-        expect(shown.length).toBeGreaterThan(0);
-        expect(shown.every((each) => each === 'Saved')).toBe(true);
-        await page.keyboard.press('Escape');
+        await expect(item).toBeHidden({ timeout: 1_000 });
       }).toPass({ timeout: 15_000 });
     },
     { box: true },
