@@ -26,6 +26,11 @@ describe('addUsage', () => {
     expect(sum.costUsd).toBeCloseTo(0.75);
   });
 
+  it('sums costs to the millionth of a dollar, with no float noise (#794)', () => {
+    const sum = addUsage({ ...ROUND_ONE, costUsd: 0.1 }, { ...ROUND_TWO, costUsd: 0.2 });
+    expect(sum.costUsd).toBe(0.3);
+  });
+
   it('leaves the cost out when either does not say one: a part is not the whole', () => {
     expect(addUsage({ ...ROUND_ONE, costUsd: 0.25 }, ROUND_TWO)).not.toHaveProperty('costUsd');
     expect(addUsage(ROUND_ONE, { ...ROUND_TWO, costUsd: 0.5 })).not.toHaveProperty('costUsd');

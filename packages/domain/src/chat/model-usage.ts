@@ -22,8 +22,14 @@ export function addUsage(a: ModelUsage, b: ModelUsage): ModelUsage {
     cacheCreation: a.cacheCreation + b.cacheCreation,
     cacheRead: a.cacheRead + b.cacheRead,
     output: a.output + b.output,
-    ...(a.costUsd !== undefined && b.costUsd !== undefined && { costUsd: a.costUsd + b.costUsd }),
+    ...(a.costUsd !== undefined &&
+      b.costUsd !== undefined && { costUsd: roundCost(a.costUsd + b.costUsd) }),
   };
+}
+
+/** A cost to the millionth of a dollar: what a provider reports, without the noise a float sum adds. */
+export function roundCost(costUsd: number): number {
+  return Math.round(costUsd * 1e6) / 1e6;
 }
 
 /**

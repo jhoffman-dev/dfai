@@ -331,13 +331,13 @@ describe('chatReport', () => {
       usage: SPENT,
       model: 'claude-opus-5-5',
     } as const;
-    expect(chatReport({ ...answered, stopped: false })).toEqual({
+    expect(chatReport({ ...answered, ended: 'answered' })).toEqual({
       level: 'info',
       kind: 'chat',
       message: 'Chat answered: 3 rounds, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
       subject: null,
     });
-    expect(chatReport({ ...answered, rounds: 1, stopped: false }).message).toBe(
+    expect(chatReport({ ...answered, rounds: 1, ended: 'answered' }).message).toBe(
       'Chat answered: 1 round, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
     );
   });
@@ -349,9 +349,25 @@ describe('chatReport', () => {
         rounds: 2,
         usage: null,
         model: 'claude-opus-5-5',
-        stopped: true,
+        ended: 'stopped',
       }).message,
     ).toBe('Chat stopped: 2 rounds, usage unknown, claude-opus-5-5.');
+  });
+
+  it('says what a failed turn had spent, beside the line that says it failed (#794)', () => {
+    const failed = chatReport({
+      kind: 'answered',
+      rounds: 2,
+      usage: SPENT,
+      model: 'claude-opus-5-5',
+      ended: 'failed',
+    });
+    expect(failed).toEqual({
+      level: 'info',
+      kind: 'chat',
+      message: 'Chat failed: 2 rounds, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
+      subject: null,
+    });
   });
 });
 

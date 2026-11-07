@@ -7,7 +7,7 @@
  * - usage in `41200` (cached `30100`, written `2100`) out `2140` cost `0.41` USD
  */
 
-import { inputTokens, type ModelUsage } from '../chat/model-usage.ts';
+import { inputTokens, roundCost, type ModelUsage } from '../chat/model-usage.ts';
 import { code, JSON_SPAN } from './log-spans.ts';
 
 const USAGE_LINE = new RegExp(
@@ -16,7 +16,7 @@ const USAGE_LINE = new RegExp(
 );
 
 export function usageLine(usage: ModelUsage): string {
-  const cost = usage.costUsd === undefined ? '' : ` cost ${code(usage.costUsd)} USD`;
+  const cost = usage.costUsd === undefined ? '' : ` cost ${code(roundCost(usage.costUsd))} USD`;
   return `- usage in ${code(inputTokens(usage))} (cached ${code(usage.cacheRead)}, written ${code(usage.cacheCreation)}) out ${code(usage.output)}${cost}`;
 }
 
@@ -45,11 +45,13 @@ function usageFrom([total, cacheRead, cacheCreation, output, cost]: unknown[]): 
   }
   const input = total - cacheRead - cacheCreation;
   if (input < 0) return null;
-  if (cost !== undefined && !(typeof cost === 'number' && Number.isFinite(cost) && cost >= 0)) {
-    return null;
-  }
+  if (cost !== undefined && !isCost(cost)) return null;
   return { input, cacheCreation, cacheRead, output, ...(cost !== undefined && { costUsd: cost }) };
 }
 
+/** A count read back exactly: past the safe integers, the input taken from the total could be another. */
 const isCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const isCost = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;

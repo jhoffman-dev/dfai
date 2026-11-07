@@ -21,8 +21,9 @@ export function readApiUsage(raw: unknown, costUsd?: unknown): ModelUsage | null
   return { input, cacheCreation, cacheRead, output, ...cost };
 }
 
+/** A count DFAI can add and log exactly: one past the safe integers is unknown. */
 const isCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 const isCost = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;

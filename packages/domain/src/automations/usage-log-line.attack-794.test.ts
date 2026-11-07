@@ -19,12 +19,12 @@ const ran = (claude: ClaudeRunInfo): LogEntry => ({
 });
 
 describe('a usage line with counts past 2^53 (attack #794)', () => {
-  it.fails('never reads back a fresh-input count other than the one written', () => {
+  it('never reads back a fresh-input count other than the one written', () => {
     const usage = { input: 1, cacheCreation: 0, cacheRead: 2 ** 53, output: 1 };
     const entry = ran({ model: 'claude-opus-5-5', ms: 1, asks: 1, usage });
     const back = parseRunLog(newLogText('R', [entry]))[0];
     const read = back?.kind === 'run' ? back.claude?.usage : undefined;
-    // Observed: input reads back as 0 (2^53 + 1 rounds to 2^53 in the total).
+    // Was: input read back as 0 (2^53 + 1 rounds to 2^53 in the total).
     expect(read === undefined || read.input === usage.input).toBe(true);
   });
 });

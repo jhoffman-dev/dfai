@@ -42,7 +42,7 @@ function session(rounds: ScriptedRound[]) {
 }
 
 describe('a chat turn that fails after spending tokens (attack #794)', () => {
-  it.fails('still records what its rounds spent in Activity when round 2 throws', async () => {
+  it('still records what its rounds spent in Activity when round 2 throws', async () => {
     const { chat, activity } = session([
       [
         {
@@ -55,7 +55,27 @@ describe('a chat turn that fails after spending tokens (attack #794)', () => {
     ]);
     await chat.send('What is in my secret plan?');
     const messages = activity.reports.map((report) => report.message);
-    // Observed: only "turnFailed" is recorded; the 41k in / 2.1k out of round 1 vanish.
+    // Was: only "turnFailed" was recorded, and round 1's spend vanished.
     expect(messages.some((message) => /\b\d+ rounds?\b/.test(message))).toBe(true);
+    // Round 2 said nothing of its spend, so the turn's total is unknown, never too low.
+    expect(messages).toEqual([
+      'Chat failed: 2 rounds, usage unknown, claude-opus-5-5.',
+      'Claude could not answer.',
+    ]);
+  });
+
+  it('records its spend exactly once when the chat is closed mid-answer, then fails', async () => {
+    const { chat, activity } = session([
+      async function* () {
+        yield { type: 'text', text: 'Partly' } as const;
+        yield { type: 'usage', usage: USAGE } as const;
+        chat.newChat();
+        throw new ModelProviderError('failed', 'Claude Code could not answer.');
+      },
+    ]);
+    await chat.send('What is in my secret plan?');
+    expect(activity.reports.map((report) => report.message)).toEqual([
+      'Chat stopped: 1 round, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
+    ]);
   });
 });

@@ -78,7 +78,7 @@ function run(rounds: readonly ScriptedRound[]) {
 }
 
 describe('a Claude step whose provider reports usage, then fails (attack #794)', () => {
-  it.fails('keeps the usage the failed ask reported in its log entry', async () => {
+  it('keeps the usage the failed ask reported in its log entry', async () => {
     const { entry, vault } = run([
       async function* (): AsyncGenerator<ModelEvent> {
         yield { type: 'usage', usage: USAGE };
@@ -87,7 +87,7 @@ describe('a Claude step whose provider reports usage, then fails (attack #794)',
     ]);
     const ran = await entry;
     expect(ran).toMatchObject({ kind: 'failed', claude: { asks: 1 } });
-    // Observed: claude.usage is absent; the log has no usage line.
+    // Was: claude.usage was absent, and the log had no usage line.
     expect(ran).toMatchObject({ claude: { usage: USAGE } });
     const logged = parseRunLog(vault.files.get(logPathFor(RULE.id)) ?? '');
     expect(logged.at(-1)).toMatchObject({ claude: { usage: USAGE } });

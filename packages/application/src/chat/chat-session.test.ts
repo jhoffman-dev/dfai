@@ -435,6 +435,12 @@ describe('a chat session in the Activity log', () => {
     await chat.send('What is in my private diary?');
     expect(activity.reports).toEqual([
       {
+        level: 'info',
+        kind: 'chat',
+        message: 'Chat failed: 1 round, usage unknown, claude-opus-5-5.',
+        subject: null,
+      },
+      {
         level: 'error',
         kind: 'chat',
         // Fixed words for the kind (A28-01): the provider's own text never reaches the log.
@@ -453,11 +459,11 @@ describe('a chat session in the Activity log', () => {
       ),
     ]);
     await chat.send('What is in my private diary?');
-    expect(activity.reports).toHaveLength(1);
-    expect(activity.reports[0]?.message).not.toContain('private diary');
+    expect(activity.reports).toHaveLength(2);
+    expect(JSON.stringify(activity.reports)).not.toContain('private diary');
   });
 
-  it('records nothing for a turn the person stopped, even one that ends in an error', async () => {
+  it('records no failure for a turn the person stopped, even one that ends in an error: only what it spent', async () => {
     const { chat, activity } = session([
       async function* () {
         yield { type: 'text', text: 'Partly' } as const;
@@ -469,7 +475,9 @@ describe('a chat session in the Activity log', () => {
     await chat.send('Go');
     expect(chat.state().busy).toBe(false);
     expect(chat.state().error?.message).toBe('The operation was aborted.');
-    expect(activity.reports).toEqual([]);
+    expect(activity.reports.map((report) => report.message)).toEqual([
+      'Chat stopped: 1 round, usage unknown, claude-opus-5-5.',
+    ]);
   });
 
   it('records a chat note that could not be saved', async () => {

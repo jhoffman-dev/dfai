@@ -76,6 +76,7 @@ describe('the Anthropic API’s usage', () => {
     ['a fractional count', { ...USAGE, output_tokens: 2.5 }],
     ['a cache count that is text', { ...USAGE, cache_read_input_tokens: 'many' }],
     ['usage that is a list', [USAGE]],
+    ['a count past the safe integers', { ...USAGE, cache_read_input_tokens: 2 ** 53 }],
   ])('says none for %s, and still answers', async (_, usage) => {
     const events = await eventsOf(answering(200, { content: TEXT, usage }));
     expect(events).toEqual([{ type: 'text', text: 'Tobias runs the vendor calls.' }]);

@@ -235,7 +235,7 @@ export type ChatHappening =
     }
   | { readonly kind: 'turnFailed'; readonly reason: ChatFailure }
   /**
-   * A turn ended — answered, or stopped by the person — and what it spent
+   * A turn ended — answered, stopped by the person, or failed — and what it spent
    * (#788). Numbers and the model only: never the question, nor its note.
    */
   | {
@@ -243,7 +243,7 @@ export type ChatHappening =
       readonly rounds: number;
       readonly usage: ModelUsage | null;
       readonly model: string;
-      readonly stopped: boolean;
+      readonly ended: 'answered' | 'stopped' | 'failed';
     }
   /** The chat note could not be written. Said without the error's words: they can name the note, whose name is the question. */
   | { readonly kind: 'notKept' };
@@ -292,14 +292,19 @@ export function chatReport(happening: ChatHappening): ActivityReport {
   }
 }
 
+const TURN_ENDED_WORDS = {
+  answered: 'Chat answered',
+  stopped: 'Chat stopped',
+  failed: 'Chat failed',
+} as const;
+
 function answeredWords({
   rounds,
   usage,
   model,
-  stopped,
+  ended,
 }: Extract<ChatHappening, { kind: 'answered' }>): string {
-  const ended = stopped ? 'Chat stopped' : 'Chat answered';
-  return `${ended}: ${rounds} ${rounds === 1 ? 'round' : 'rounds'}, ${usageWords(usage)}, ${model}.`;
+  return `${TURN_ENDED_WORDS[ended]}: ${rounds} ${rounds === 1 ? 'round' : 'rounds'}, ${usageWords(usage)}, ${model}.`;
 }
 
 function chatLine(level: ActivityLevel, message: string, path: VaultPath | null): ActivityReport {

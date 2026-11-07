@@ -49,6 +49,24 @@ describe('a Claude step’s usage in its rule’s log', () => {
     expect(roundTrip(costed)).toEqual(costed);
   });
 
+  it('writes a cost to the millionth of a dollar, and reads that back (#794)', () => {
+    const noisy: LogEntry = {
+      ...RAN,
+      claude: { ...RAN.claude!, usage: { ...USAGE, costUsd: 0.1 + 0.2 } },
+    };
+    expect(formatLogEntry(noisy)).toContain('out `2140` cost `0.3` USD\n');
+    expect(roundTrip(noisy)).toMatchObject({ claude: { usage: { costUsd: 0.3 } } });
+  });
+
+  it('leaves out a line whose counts are past the safe integers, never reading a different count', () => {
+    const huge: LogEntry = {
+      ...RAN,
+      claude: { ...RAN.claude!, usage: { ...USAGE, cacheRead: 2 ** 52, cacheCreation: 2 ** 52 } },
+    };
+    expect(roundTrip(huge)).toMatchObject({ claude: { asks: 2 } });
+    expect(roundTrip(huge)).not.toHaveProperty('claude.usage');
+  });
+
   it('reads it back as written, for a run and for a failure', () => {
     expect(roundTrip(RAN)).toEqual(RAN);
     expect(roundTrip(FAILED)).toEqual(FAILED);

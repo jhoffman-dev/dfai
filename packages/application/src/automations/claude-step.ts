@@ -70,7 +70,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { ModelProviderError, type ModelProvider, type ProviderStatus } from '../chat/ports.ts';
-import { runChatTurn, type ChatTurnOutcome } from '../chat/run-chat-turn.ts';
+import { runChatTurn, turnFailureOf, type ChatTurnOutcome } from '../chat/run-chat-turn.ts';
 import type { ChatToolbox, Toolboxes } from '../chat/toolbox.ts';
 import { loadLinkDirectory } from '../meeting-links/link-directory.ts';
 import type { Clock } from '../ports.ts';
@@ -660,9 +660,10 @@ async function askModel({
         // Nobody is watching a rule's run: only its last word counts.
       },
     });
-  } catch (error) {
-    // Said before the run fails, so its record holds this ask: one whose usage is unknown.
-    spent(null);
+  } catch (thrown) {
+    const { cause: error, spend } = turnFailureOf(thrown);
+    // Said before the run fails, so its record holds this ask, with what its rounds reported.
+    spent(spend?.usage ?? null);
     if (error instanceof ToolOutsideRule) return fail(error.message);
     // Claude Code's own words can quote its stderr, paths and all.
     if (error instanceof ModelProviderError) {

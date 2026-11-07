@@ -18,7 +18,7 @@ import { VaultAccessError, type VaultFsPort } from '../vault/ports.ts';
 import { readChat, recordChatEntries, type ChatRecord } from './chat-history.ts';
 import { ModelProviderError, type ModelProvider, type ProviderProblem } from './ports.ts';
 import type { AppliedProposal, Proposal } from './proposals.ts';
-import { runChatTurn, type ChatTurnEvent } from './run-chat-turn.ts';
+import { runChatTurn, turnFailureOf, type ChatTurnEvent, type TurnSpend } from './run-chat-turn.ts';
 import { describeFailedToolCall, describeToolCall } from './tool-labels.ts';
 import type { ChatToolbox } from './toolbox.ts';
 
@@ -213,6 +213,10 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
     const live = () => generation === began;
     set({ busy: true, error: null });
     const turn: Turn = { activity: [], answer: '', tools: new Map() };
+    const model = ports.model();
+    /** The turn's one line of what it spent: numbers and the model only (#788), and said once. */
+    const recordSpend = (spend: TurnSpend, ended: 'answered' | 'stopped' | 'failed') =>
+      activity.record(chatReport({ kind: 'answered', ...spend, model, ended }));
     try {
       const profile = await ports.profile();
       // Stopped before the model was asked: nothing is asked, and nothing kept.
@@ -226,7 +230,6 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
       }
       if (skill !== null) turn.activity.push(usedSkillLine(skill.name));
       if (waiting === own) waiting = null;
-      const model = ports.model();
       const outcome = await runChatTurn({
         provider: ports.provider(),
         toolbox,
@@ -243,14 +246,15 @@ export function createChatSession(ports: ChatSessionPorts): ChatSession {
           if (live()) show(event, turn);
         },
       });
-      // Numbers and the model only (#788): said even for a chat since closed, as the tokens were spent.
-      const { rounds, usage, stopped } = outcome;
-      activity.record(chatReport({ kind: 'answered', rounds, usage, model, stopped }));
+      // Said even for a chat since closed: the tokens were spent.
+      recordSpend(outcome, outcome.stopped ? 'stopped' : 'answered');
       if (!live()) return;
       messages = [...messages, ...outcome.added];
       set({ busy: false });
       if (vault !== null) await keep({ question, turn, vault, live, activity });
-    } catch (error) {
+    } catch (thrown) {
+      const { cause: error, spend } = turnFailureOf(thrown);
+      if (spend !== null) recordSpend(spend, own.signal.aborted ? 'stopped' : 'failed');
       if (!live()) return;
       const problem = error instanceof ModelProviderError ? error.problem : 'failed';
       const message = error instanceof Error ? error.message : String(error);
