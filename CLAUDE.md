@@ -27,25 +27,32 @@ wins and this file is the thing that is wrong.
 The specialised subagents in `.claude/agents/` (committed with the repo) are not
 optional and not a fallback. Claude Code lets a project agent override a
 user-level agent of the same name, so these are the ones that run here, whatever
-`~/.claude/agents/` holds on this machine. **Delegate to the narrow agent rather
-than doing the job ad hoc**, and spawn them wherever they fit — including several
-in parallel when the work divides cleanly.
+`~/.claude/agents/` holds on this machine. They are written for any project:
+what is specific to this repo (the scoped gate, how `tester` runs) lives in this
+file. **Delegate to the narrow agent rather than doing the job ad hoc**, and
+spawn them wherever they fit — including several in parallel when the work
+divides cleanly.
 
-| Want to…                                 | Use                     |
-| ---------------------------------------- | ----------------------- |
-| Build a feature, refactor, phase of work | `coder`                 |
-| Fix a reported bug or a failing test     | `bug-fixer`             |
-| Review a diff, branch or PR              | `code-reviewer`         |
-| Run the gate and report it faithfully    | `tester`                |
-| Try to break what was just built         | `adversarial-tester`    |
-| Raise coverage on an untested module     | `test-writer`           |
-| Make a branch clean before review        | `linter`                |
-| Apply review comments on a PR            | `pr-review-fixer`       |
-| Write up a decision or a status page     | `documenter` (Notion) ¹ |
+| Want to…                                        | Use                     |
+| ----------------------------------------------- | ----------------------- |
+| Build a feature, refactor, phase of work        | `coder`                 |
+| Raise coverage, or clean a branch before review | `coder`                 |
+| Fix a reported bug or a failing test            | `bug-fixer`             |
+| Review a diff, branch or PR                     | `code-reviewer`         |
+| Run the gate and report it faithfully           | `tester`                |
+| Try to break what was just built                | `adversarial-tester`    |
+| Apply review comments on a PR                   | `pr-review-fixer`       |
+| Find where something lives (read-only search)   | `Explore` (built in)    |
+| Write up a decision or a status page            | `documenter` (Notion) ¹ |
 
 ¹ `documenter` is not in this repo: it needs a Notion connector, and only James's
 own `~/.claude/agents/` has it. Where it is absent, write ADRs in
 `vault/docs/adr/` instead.
+
+The built-in `general-purpose` agent is turned off here (`permissions.deny` in
+`.claude/settings.json`). It ran one-off jobs that skipped the agents' rules. A
+job that fits none of the rows above goes to the closest agent with a brief that
+says what is different, or the coordinator does it.
 
 `coder`, `bug-fixer` and `pr-review-fixer` may change code. `code-reviewer`,
 `tester` and `adversarial-tester` never do.
@@ -54,6 +61,44 @@ Each phase of `PLAN.md` is a `coder` task, and **every phase gets a
 `code-reviewer` pass and an `adversarial-tester` pass before it is called done**.
 Doing a whole phase inline, then reporting it green, is the failure mode this
 section exists to prevent.
+
+### Keep agent runs lean
+
+An agent run costs mostly the context it re-reads on every turn, not the code
+it writes. An audit of 27 days of agent work here (November 2026) found output
+was a tenth of the spend, and context rebuilt after an agent sat waiting was
+nearly two fifths. So:
+
+- **The full gate goes to `tester`.** `coder`, `bug-fixer` and
+  `pr-review-fixer` run the **scoped gate** and hand back:
+  `pnpm typecheck`, `pnpm lint` (`pnpm lint:fix` and `pnpm format` for
+  mechanical fixes), `pnpm format:check`, the unit and integration test files
+  that cover the change (`pnpm exec vitest run <files> --reporter=dot`), the
+  e2e specs for any flow that changed (`pnpm e2e <specs> --reporter=line`), and
+  `pnpm rust:test <filter>` and `pnpm rust:lint` if Rust changed. They don't run the whole
+  `pnpm gate` or `pnpm e2e`. The coordinator then spawns `tester` on the branch,
+  in parallel with the `code-reviewer` and `adversarial-tester` passes, and
+  sends any failure back to the author with `SendMessage`. CI runs everything
+  on every push. A pull request is marked ready only when `tester` is green on
+  its head commit, after the last fix, and CI is green on that commit too.
+- **How `tester` runs here:** `pnpm gate` once, in the background (it runs
+  past a foreground command's 10-minute limit), into a log, reported from the
+  log. For e2e, the specs the coordinator names in its brief, at least those the
+  change touches (`pnpm e2e <specs> --reporter=line`); the whole suite only when
+  asked, because CI deals it over eight shards on every push.
+- **Subagents keep a 1-hour prompt cache** (`subagentPromptCacheTtl` in
+  `.claude/settings.json`), so an agent waiting on a long run doesn't rebuild
+  its context. Agents still wait in one blocking call, not a series of
+  check-ins.
+- **Brief agents with paths, not pasted content**, and keep their hand-backs
+  under about 25 lines. The coordinator lives longest, so every line it reads
+  is re-read the most.
+- **Start a fresh coordinator session for each new batch of work.** The board,
+  the issues and the pull requests carry the state.
+- **Start sessions in this folder** (`cd ~/Projects/atlas && claude`). Claude
+  Code loads `.claude/agents` and `.claude/settings.json` from the folder a
+  session starts in. A session started in a parent folder runs the user-level
+  agents instead.
 
 ### Keep the guide, the API and the MCP in step
 

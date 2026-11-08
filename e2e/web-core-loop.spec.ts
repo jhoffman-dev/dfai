@@ -1,7 +1,9 @@
+import { caretAtNoteEndBy } from './caret.ts';
 import { expect, type Locator, type Page } from './fixtures.ts';
 import { webVaultOnGitHub } from './web-github.ts';
 import { webTest as test } from './web-test.ts';
 import { GARDEN_VAULT, PLAN, saveStatus, signedInOnTheWeb } from './web-vault.ts';
+import { focusOn } from './typing.ts';
 
 /**
  * #669: the web build's core loop at a desktop's size, by keyboard, against
@@ -16,11 +18,20 @@ async function enterOn(target: Locator) {
   await target.press('Enter');
 }
 
-/** The caret to the note's end, ⌘↓ as on a Mac (or Ctrl+End where WebKit is Linux's), then `text`. */
+/**
+ * The caret to the note's end, ⌘↓ as on a Mac (or Ctrl+End where WebKit is
+ * Linux's), then `text`. The key pressed within 20 ms of the focus is undone
+ * when ProseMirror has not read it by then (caret.ts), and the typing lands
+ * at the note's start (#797), so the editor's own caret is waited on first:
+ * at the end of “First line.”, which must be the note's last block.
+ */
 async function typeAtTheNoteEnd(page: Page, text: string) {
-  await page.getByLabel('Note', { exact: true }).focus();
-  // eslint-disable-next-line e2e-flake/no-keys-after-focus -- #797 migrates this
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End');
+  const note = page.getByLabel('Note', { exact: true });
+  await note.focus();
+  await expect(note, 'the note takes the focus').toBeFocused({ timeout: 5_000 });
+  await caretAtNoteEndBy(note.getByText('First line.'), () =>
+    page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End'),
+  );
   await page.keyboard.type(text);
 }
 
@@ -30,8 +41,7 @@ const goTo = (page: Page, name: RegExp) =>
 /** Opens Garden plan from the tree by arrow keys: from Tasks, one down, and Enter. */
 async function openThePlanByKeys(page: Page) {
   const tree = page.getByRole('tree');
-  await tree.getByRole('treeitem', { name: 'Tasks', exact: true }).focus();
-  // eslint-disable-next-line e2e-flake/no-keys-after-focus -- #797 migrates this
+  await focusOn(tree.getByRole('treeitem', { name: 'Tasks', exact: true }));
   await page.keyboard.press('ArrowDown');
   await expect(tree.getByRole('treeitem', { name: 'Garden plan', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');

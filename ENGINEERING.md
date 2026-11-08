@@ -91,7 +91,7 @@ Never claim something works because it compiles. Verify the actual behaviour.
 
 The specialised subagents for this repo live in `.claude/agents/` and follow
 these rules without restating them: `coder`, `code-reviewer`, `tester`,
-`adversarial-tester`, `test-writer`, `bug-fixer`, `pr-review-fixer`, `linter`.
+`adversarial-tester`, `bug-fixer`, `pr-review-fixer`.
 A project agent overrides a user-level agent of the same name, so these are the
 ones that run here whatever `~/.claude/agents/` holds.
 

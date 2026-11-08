@@ -12,9 +12,11 @@ test-results/
 playwright-report/
 
 # Local Claude Code state (worktrees, the guide, settings.local.json) stays
-# untracked; the project agents are committed so every machine runs them.
+# untracked; the project agents and shared settings are committed so every
+# machine runs them.
 .claude/*
 !.claude/agents/
+!.claude/settings.json
 design/out/
 *.orig
 

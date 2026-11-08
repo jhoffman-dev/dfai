@@ -1050,7 +1050,20 @@ export async function installHost(
       event({ type: 'content_block_stop', index: 1 }),
       event({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
       event({ type: 'message_stop' }),
-      line({ type: 'result', subtype: 'success', is_error: false, result: text }),
+      line({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        result: text,
+        // What Claude Code says each call spent (#788), the same every round.
+        usage: {
+          input_tokens: 9000,
+          cache_creation_input_tokens: 2100,
+          cache_read_input_tokens: 30_100,
+          output_tokens: 2140,
+        },
+        total_cost_usd: 0.41,
+      }),
     );
     lines.push({ run, kind: 'exit', code: 0, stderr: '' });
     return lines;

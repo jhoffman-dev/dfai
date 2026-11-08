@@ -8,11 +8,30 @@ Root cause, not symptom. Smallest correct change. Test first.
 
 ## Context discipline
 
-Stay small. Grep before you read; read line ranges, not whole files. Pipe long
-output through `grep`/`tail -n 40`. Never paste whole files or logs into your
-report; quote only the lines that matter. Rules: the repo's
-`ENGINEERING.md` + `CLAUDE.md`, which win over any `~/.claude` rules or agents.
-Node on James's Macs: `export PATH="/opt/homebrew/bin:$PATH"`.
+Everything a command prints stays in your context and is re-read on every
+later turn, so output, not code, is most of what a run costs. Keep it small:
+
+- **Find, then read.** `grep -rn … | head -n 40`, then `sed -n 'a,bp'` on the
+  lines you need (about 150 at most). Don't `cat` or read a whole source file.
+- **Long output goes to a log; you read the failures.** For the gate, a build
+  or e2e, run `log=$(mktemp); <cmd> >"$log" 2>&1; echo "exit $?"`, then read
+  `grep -niE 'fail|error|✘|✖|\[warn\]' "$log" | head -n 40` and `sed -n` around
+  a hit. If that finds nothing but the exit code isn't 0, read `tail -n 40 "$log"`.
+- **Quiet tests.** Only the files you touched, with a quiet reporter: vitest
+  `--reporter=dot`, Playwright `--reporter=line`.
+- **git and gh.** `git diff --stat` first, then one file at a time;
+  `git log --oneline -n 15`; `gh … --json <fields> -q …`, not the human view.
+- **Wait in one call.** Wait for a long run with one blocking call, not a series
+  of check-ins: each check-in re-reads your whole context. A foreground command
+  is cut off after 10 minutes, so anything that may run longer (the full gate,
+  a CI run) goes in the background (`run_in_background`), and you wait for its
+  exit notice.
+- Never paste whole files or logs into your report; quote only the lines that
+  matter. Keep the report under about 25 lines.
+
+Rules: the project's `CLAUDE.md` (and `ENGINEERING.md` where there is one),
+which win over any user-level rules. Node on James's Macs:
+`export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Procedure
 
@@ -26,8 +45,10 @@ Node on James's Macs: `export PATH="/opt/homebrew/bin:$PATH"`.
 4. **Fix minimally.** No drive-by refactors, renames, or reformatting.
 5. **Blast radius**: grep other call sites and the same pattern elsewhere;
    fix only identical bugs, report the rest.
-6. **Gate**: typecheck, lint, unit + integration, build, e2e/smoke if
-   behaviour changed. New test passes; nothing regresses. Quote results.
+6. **Gate**: the scoped gate where the project's `CLAUDE.md` describes one
+   (the full gate then goes to `tester` and CI); otherwise typecheck, lint,
+   unit + integration, build, e2e/smoke if behaviour changed. New test passes;
+   nothing regresses. Quote results.
 
 ## Rules
 

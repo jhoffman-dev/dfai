@@ -6,7 +6,7 @@ import {
   type SkillDraft,
 } from '@dfai/domain';
 import { ModelProviderError, type ModelProvider, type ProviderStatus } from '../chat/ports.ts';
-import { runChatTurn } from '../chat/run-chat-turn.ts';
+import { runChatTurn, turnFailureOf } from '../chat/run-chat-turn.ts';
 import type { ChatToolbox } from '../chat/toolbox.ts';
 
 /** What asking Claude for a skill came to. Nothing is written in any case. */
@@ -98,7 +98,9 @@ export async function draftSkill({
     return reading.ok
       ? { kind: 'drafted', draft: reading.draft, ignoredName: reading.ignoredName }
       : { kind: 'refused', problems: reading.problems };
-  } catch (error) {
+  } catch (thrown) {
+    // What a draft spent is not reported: only a chat turn and a rule's run are (#788).
+    const { cause: error } = turnFailureOf(thrown);
     if (signal.aborted) return { kind: 'stopped' };
     if (error instanceof ModelProviderError) return { kind: 'failed', message: error.message };
     throw error;
