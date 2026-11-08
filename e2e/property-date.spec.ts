@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASK_TYPE = [
   '---',
@@ -30,8 +31,7 @@ async function openTask(page: Page) {
 test('Backspace in a date-time field leaves the file as it was', async ({ page }) => {
   const { vault, panel } = await openTask(page);
   const due = panel.getByLabel('Due', { exact: true });
-  await due.focus();
-  await page.keyboard.press('Backspace');
+  await focusThenPress(due, 'Backspace');
   await page.keyboard.press('Backspace');
   await panel.getByLabel('Owner').click();
 

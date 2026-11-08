@@ -2,6 +2,7 @@ import { expect, test, type Page } from './fixtures.ts';
 import { focusedRing, RINGED_PRIMITIVES } from './focus-ring.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
 import { TABLE_GROUP_HEIGHT, TABLE_ROW_HEIGHT, TODAY_ROW_HEIGHT } from './row-heights.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * PR #328 (UI v2 slice 2, primitives) under attack, in WebKit, on the built
@@ -387,8 +388,7 @@ for (const theme of THEMES) {
     await page.addInitScript(installContrast);
     await openVault(page, { templates: 3 });
     await setTheme(page, theme);
-    await page.getByRole('button', { name: 'New note', exact: true }).focus();
-    await page.keyboard.press('Enter');
+    await focusThenPress(page.getByRole('button', { name: 'New note', exact: true }), 'Enter');
     const menu = page.getByRole('menu', { name: 'New note from' });
     await expect(menu).toBeVisible();
     await page.keyboard.press('ArrowDown');
@@ -420,7 +420,7 @@ test('a flat table row with a status pill is drawn at the height the list places
     .filter({ has: page.locator('.status-pill') })
     .first();
   await expect(row).toBeVisible();
-  expect((await row.boundingBox())!.height).toBeCloseTo(TABLE_ROW_HEIGHT, 0);
+  await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(TABLE_ROW_HEIGHT, 0);
 });
 
 test('a status group row of a table is drawn at the height the list places it by', async ({
@@ -433,7 +433,9 @@ test('a status group row of a table is drawn at the height the list places it by
     .filter({ has: page.locator('.status-pill') })
     .first();
   await expect(group).toBeVisible();
-  expect((await group.boundingBox())!.height).toBeCloseTo(TABLE_GROUP_HEIGHT, 0);
+  await expect
+    .poll(async () => (await group.boundingBox())!.height)
+    .toBeCloseTo(TABLE_GROUP_HEIGHT, 0);
 });
 
 test('a Today row that says its status is drawn at the height the list places it by', async ({

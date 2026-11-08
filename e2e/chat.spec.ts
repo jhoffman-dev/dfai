@@ -304,7 +304,7 @@ test('the panel wears a 36px bar and its proposal is decided by two 28px buttons
   ] as const) {
     const button = proposal.getByRole('button', { name });
     await expect(button).toHaveClass(new RegExp(`\\b${kind}\\b`));
-    expect((await button.boundingBox())?.height, name).toBe(28);
+    await expect.poll(async () => (await button.boundingBox())?.height, { message: name }).toBe(28);
   }
 });
 

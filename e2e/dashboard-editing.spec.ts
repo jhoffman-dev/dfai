@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { dragAnnouncement, dragWithPointer, keyboardSensorListening } from './drag.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASK_TYPE = [
   '---',
@@ -250,8 +251,7 @@ test('moves and resizes with the keyboard alone', async ({ page }) => {
   await customize(page);
   const grip = widget(page, 'Open work').getByRole('button', { name: 'Move Open work' });
 
-  await grip.focus();
-  await page.keyboard.press('Space');
+  await focusThenPress(grip, 'Space');
   await expect(dragAnnouncement(page)).toHaveText('Picked up Open work, 3 of 3, 6 columns wide.');
   await keyboardSensorListening(page);
   await page.keyboard.press('ArrowLeft');

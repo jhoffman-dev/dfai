@@ -193,7 +193,7 @@ test('Tab walks on past the rows on screen, each row put in the page and in view
   // The rows placed are read once: an offer landing after that scrolls the list, and places others.
   await everyOfferShown(page);
   const placed = table.locator('tbody tr.table__row');
-  expect(await placed.count()).toBeLessThan(100);
+  await expect.poll(() => placed.count()).toBeLessThan(100);
   // The last of the rows placed from the top down, before the list's gap; its own last row is kept too.
   const indexes = (await placed.evaluateAll((rows) =>
     rows.map((row) => Number(row.getAttribute('aria-rowindex'))),

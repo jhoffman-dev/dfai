@@ -6,6 +6,7 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASKS = 420;
 
@@ -50,7 +51,7 @@ test('Shift-click chooses every row of a 420-row table between the two, drawn or
 }) => {
   await openTaskView(page);
   await expect(page.locator('.table__row')).not.toHaveCount(0);
-  expect(await page.locator('.table__row').count()).toBeLessThan(TASKS);
+  await expect.poll(() => page.locator('.table__row').count()).toBeLessThan(TASKS);
 
   await box(page, 1).click();
   await expect(count(page)).toHaveText('1 selected');
@@ -72,8 +73,7 @@ test('Shift-click chooses every row of a 420-row table between the two, drawn or
 test('Shift+Space on a focused box chooses the run from the row last chosen', async ({ page }) => {
   await openTaskView(page);
   await box(page, 3).click();
-  await box(page, 7).focus();
-  await page.keyboard.press('Shift+Space');
+  await focusThenPress(box(page, 7), 'Shift+Space');
   await expect(count(page)).toHaveText('5 selected');
   for (const at of [3, 4, 5, 6, 7]) await expect(box(page, at)).toBeChecked();
   await expect(box(page, 8)).not.toBeChecked();

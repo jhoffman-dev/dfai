@@ -228,6 +228,7 @@ test('a board grouped by project has a column per project', async ({ page }) => 
 
   // A card added to a project's column is filed under that project.
   await taxes.getByRole('button', { name: 'Add to Taxes' }).click();
+  await expect(page.getByRole('textbox', { name: 'New card in Taxes' })).toBeFocused();
   await page.keyboard.type('File returns');
   await page.keyboard.press('Enter');
   await expectFile(vault, `${TASKS}/File returns.md`).toContain('project: "[[Taxes]]"');

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, saveStatus, sidebarSection } from './host.ts';
 import { lanternFixturePdf } from '../tools/pdf/fixture-pdf.ts';
+import { focusThenPress } from './typing.ts';
 
 /*
  * Regression (#506), end to end in WebKit: the chip from the keyboard,
@@ -201,8 +202,7 @@ for (const keys of ['Meta+Enter', 'Shift+Enter']) {
   test(`${keys} on "Open in PDF" leaves the highlight in its note`, async ({ page }) => {
     const { vault, offer } = await openLiteratureNote(page);
     const before = await vault.read(LITERATURE);
-    await offer.focus();
-    await page.keyboard.press(keys);
+    await focusThenPress(offer, keys);
     await expect(reader(page)).toBeVisible();
     const note = await reopenLiteratureNote(page);
     await expect(note.getByText('The last lamp was lit', { exact: false })).toHaveCount(1);
@@ -213,8 +213,7 @@ for (const keys of ['Meta+Enter', 'Shift+Enter']) {
 
 test('Meta+Enter on "Open in PDF" opens the reader in a new tab', async ({ page }) => {
   const { offer } = await openLiteratureNote(page);
-  await offer.focus();
-  await page.keyboard.press('Meta+Enter');
+  await focusThenPress(offer, 'Meta+Enter');
   await expect(tabs(page)).toHaveCount(2);
   await expect(page.locator('.pdf-reader')).toBeVisible();
 });

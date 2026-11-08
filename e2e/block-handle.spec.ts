@@ -4,6 +4,7 @@ import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { caretAtLineEnd } from './caret.ts';
 import { createVault, expectFile, installHost, saveNow, sidebarSection } from './host.ts';
 import { macOnly } from './platform.ts';
+import { expectFocusIn } from './typing.ts';
 
 /*
  * A block's handle (#569), end to end in WebKit: hovering a block shows ⋮⋮
@@ -145,6 +146,7 @@ test('Add block below puts an empty block under it, with the caret there to type
   const { vault, editor } = await openNote(page, null, 'Garden plan');
   const menu = await menuOf(page, line(editor, 'First line.'));
   await menu.getByRole('menuitem', { name: /Add block below/ }).click();
+  await expectFocusIn(editor);
   await page.keyboard.type('Typed under it.');
   await expect(editor.locator('p')).toHaveText([
     'First line.',

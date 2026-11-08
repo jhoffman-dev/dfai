@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * Adversarial pass on #236 (Performance 1), in WebKit: the `<fieldset>` the
@@ -70,8 +71,7 @@ test('a Move to… menu opened by Enter on its first press puts focus on its fir
 }) => {
   const today = await openToday(page);
   const trigger = today.getByRole('button', { name: 'Move Call the bank to…' });
-  await trigger.focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(trigger, 'Enter');
   const menu = page.getByRole('menu', { name: 'Move Call the bank to' });
   await expect(menu).toBeVisible();
   const items = menu.getByRole('menuitem');

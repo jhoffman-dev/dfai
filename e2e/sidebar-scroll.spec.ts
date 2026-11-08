@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { dragAnnouncement } from './drag.ts';
 import { createVault, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { revealSidebar } from './sidebar-drawer.ts';
+import { focusThenPress } from './typing.ts';
 
 // Issue #17: in a short window every section squeezed into a scrollbar of its
 // own. The sections now share one scroller between the fixed quick rows and
@@ -256,8 +257,7 @@ test('the keyboard brings a tree row into view through the shared scroller', asy
 
   // Pages sits below four full sections, so its last row starts far out of view.
   const first = pages.locator('[data-row="0"]');
-  await first.focus();
-  await page.keyboard.press('End');
+  await focusThenPress(first, 'End');
   await expect(focused).toHaveCount(1);
   await expect(focused).toBeInViewport();
   const lastRow = Number(await focused.getAttribute('data-row'));

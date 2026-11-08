@@ -19,6 +19,7 @@ async function enterOn(target: Locator) {
 /** The caret to the note's end, ⌘↓ as on a Mac (or Ctrl+End where WebKit is Linux's), then `text`. */
 async function typeAtTheNoteEnd(page: Page, text: string) {
   await page.getByLabel('Note', { exact: true }).focus();
+  // eslint-disable-next-line e2e-flake/no-keys-after-focus -- #797 migrates this
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End');
   await page.keyboard.type(text);
 }
@@ -30,6 +31,7 @@ const goTo = (page: Page, name: RegExp) =>
 async function openThePlanByKeys(page: Page) {
   const tree = page.getByRole('tree');
   await tree.getByRole('treeitem', { name: 'Tasks', exact: true }).focus();
+  // eslint-disable-next-line e2e-flake/no-keys-after-focus -- #797 migrates this
   await page.keyboard.press('ArrowDown');
   await expect(tree.getByRole('treeitem', { name: 'Garden plan', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');

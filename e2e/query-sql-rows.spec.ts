@@ -84,6 +84,6 @@ for (const { width, height, panelScrolls } of WINDOWS) {
     await expect(
       sheet(page).getByRole('cell', { name: `Row ${ROWS}`, exact: true }),
     ).toBeInViewport();
-    expect(await drawn(page).count()).toBeLessThanOrEqual(MOST_DRAWN);
+    await expect.poll(() => drawn(page).count()).toBeLessThanOrEqual(MOST_DRAWN);
   });
 }

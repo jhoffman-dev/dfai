@@ -1,22 +1,36 @@
 import { expect, test, type Page } from './fixtures.ts';
-import { createVault, emitVaultChanged, expectSaved, installHost, saveNow } from './host.ts';
+import {
+  createVault,
+  emitVaultChanged,
+  expectSaved,
+  installHost,
+  saveNow,
+  type FakeHost,
+} from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
 
 async function openNote(page: Page) {
   const vault = await createVault();
   await vault.write('note.md', '# Note\n\nOriginal paragraph.\n');
   await vault.write('other.md', '# Other\n');
-  await installHost(page, vault);
+  const host = await installHost(page, vault);
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await page.getByRole('treeitem', { name: 'note', exact: true }).click();
   await expect(page.getByRole('article', { name: 'note' })).toBeVisible();
-  return vault;
+  return { vault, host };
+}
+
+/** Report `other.md` changed, and wait until the app has read it again. */
+async function otherChanged(page: Page, host: FakeHost): Promise<void> {
+  const before = host.callsTo('read_notes');
+  await emitVaultChanged(page, ['other.md']);
+  await expect.poll(() => host.callsTo('read_notes')).toBeGreaterThan(before);
 }
 
 test('an edit still saves after the vault changes underneath', async ({ page }) => {
-  const vault = await openNote(page);
+  const { vault, host } = await openNote(page);
 
   await caretAtLineEnd(page.getByText('Original paragraph.'));
   await page.keyboard.type(' Edited.');
@@ -24,8 +38,7 @@ test('an edit still saves after the vault changes underneath', async ({ page }) 
 
   // Something else touches the vault — another app, a sync client, or the board
   // writing a task file while DFAI is open.
-  await emitVaultChanged(page, ['other.md']);
-  await page.waitForTimeout(300);
+  await otherChanged(page, host);
 
   await saveNow(page);
   await expectSaved(page);
@@ -34,10 +47,9 @@ test('an edit still saves after the vault changes underneath', async ({ page }) 
 });
 
 test('typing after the vault changes underneath still marks the note unsaved', async ({ page }) => {
-  const vault = await openNote(page);
+  const { vault, host } = await openNote(page);
 
-  await emitVaultChanged(page, ['other.md']);
-  await page.waitForTimeout(300);
+  await otherChanged(page, host);
 
   await caretAtLineEnd(page.getByText('Original paragraph.'));
   await page.keyboard.type(' Typed later.');

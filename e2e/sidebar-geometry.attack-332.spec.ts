@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection, type FakeHost, type FakeVault } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 // Attack on #332 (UI v2 slice 3a, #294): the sidebar's new geometry — 28px
 // rows at a 29px pitch in the virtualised Pages tree, 26px sticky headings
@@ -90,8 +91,7 @@ async function expandAll(
 ) {
   for (let area = AREAS; area >= 1; area -= 1) {
     const folder = treeRow(page, `Area ${pad(area)}`);
-    await folder.focus();
-    await page.keyboard.press('ArrowRight');
+    await focusThenPress(folder, 'ArrowRight');
     await expect(folder).toHaveAttribute('aria-expanded', 'true');
     // A folder is marked open before it is listed: until its contents are in,
     // the row after it is whatever follows the folder, where a down arrow
@@ -233,8 +233,7 @@ test('rows keep their 29px pitch after folders are collapsed and expanded again'
   for (const area of [9, 3, 7]) {
     const folder = treeRow(page, `Area ${pad(area)}`);
     await reveal(page, folder);
-    await folder.focus();
-    await page.keyboard.press('ArrowLeft');
+    await focusThenPress(folder, 'ArrowLeft');
     await expect(folder).toHaveAttribute('aria-expanded', 'false');
     await expectPlaced(page, `after shutting Area ${area}`);
     await page.keyboard.press('ArrowRight');
@@ -298,8 +297,7 @@ test('walking up the tree never leaves the focused row under the sticky Pages he
   await expandAll(page);
   const heading = nav(page).locator('#sidebar-userSpace-heading');
   const first = pages(page).locator('[data-row="0"]');
-  await first.focus();
-  await page.keyboard.press('End');
+  await focusThenPress(first, 'End');
   const focused = pages(page).locator('[role="treeitem"]:focus');
   // The last row is rendered, then focused: wait for the focus to land.
   await expect(focused).not.toHaveAttribute('data-row', '0');
@@ -386,8 +384,7 @@ test('Alt+arrows move a section from its grip while the sidebar is scrolled, kee
   await expandAll(page);
   await scrollTo(page, 100_000);
   const grip = nav(page).getByRole('button', { name: 'Move Dashboards' });
-  await grip.focus();
-  await page.keyboard.press('Alt+ArrowDown');
+  await focusThenPress(grip, 'Alt+ArrowDown');
   await expect(grip).toBeFocused();
   await expect(grip).toBeInViewport();
   await page.keyboard.press('Alt+ArrowUp');

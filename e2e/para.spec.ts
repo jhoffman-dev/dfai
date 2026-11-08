@@ -95,8 +95,8 @@ test('a new project is a project, links an area, and archives and restores by it
   const area = properties(page).getByRole('combobox', { name: 'Area' });
   await area.click();
   await expect.poll(() => suggestedTitles(area).allTextContents()).toContain('Garden');
-  expect(await suggestedTitles(area).allTextContents()).not.toContain('DFAI');
-  expect(await suggestedTitles(area).allTextContents()).not.toContain('Manual');
+  await expect.poll(() => suggestedTitles(area).allTextContents()).not.toContain('DFAI');
+  await expect.poll(() => suggestedTitles(area).allTextContents()).not.toContain('Manual');
   await pickSuggestion(area, 'Garden');
   await expectFile(vault, 'Projects/New Project.md').toContain('area: "[[Garden]]"');
   await expect(projectType(page)).toHaveAccessibleName('Project, 4 notes');

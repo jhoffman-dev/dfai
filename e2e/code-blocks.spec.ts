@@ -146,8 +146,8 @@ test('a block is its plain text until the grammar arrives, and nothing moves whe
 
   release();
   await expect(colouredIn(block).first()).toBeAttached();
-  expect(await block.boundingBox()).toEqual(plain);
-  expect(await page.getByText('After the code.').boundingBox()).toEqual(after);
+  await expect.poll(() => block.boundingBox()).toEqual(plain);
+  await expect.poll(() => page.getByText('After the code.').boundingBox()).toEqual(after);
   expect(await block.evaluate((code) => getComputedStyle(code).fontFamily)).toBe(font);
   const fonts = await colouredIn(block).evaluateAll((spans) => [
     ...new Set(spans.map((span) => getComputedStyle(span).fontFamily)),

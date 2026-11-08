@@ -111,7 +111,7 @@ for (const { width, height, panelScrolls } of WINDOWS) {
       const last = query.name === 'grouped' ? /^Row \d{4}$/ : title(ROWS);
       await expect(drawn(page).filter({ hasText: last }).last()).toBeInViewport();
       if (query.name === 'ungrouped') await expect(drawn(page).last()).toHaveText(title(ROWS));
-      expect(await drawn(page).count()).toBeLessThanOrEqual(MOST_DRAWN);
+      await expect.poll(() => drawn(page).count()).toBeLessThanOrEqual(MOST_DRAWN);
     });
   }
 }

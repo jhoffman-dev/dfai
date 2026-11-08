@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection, splitWindow, type FakeVault } from './host.ts';
 import { revealSidebar, SIDEBAR_BESIDE_FROM } from './sidebar-drawer.ts';
+import { focusThenPress } from './typing.ts';
 
 // Attack on #332 (UI v2 slice 3a, #294): truncation in the 224px sidebar, the
 // one theme button, and the 40px nav bar in narrow panes.
@@ -194,8 +195,7 @@ test('the theme button shows its focus ring after a keyboard press', async ({ pa
   await openVault(page);
   const button = themeButton(page);
   await page.keyboard.press('Tab');
-  await button.focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(button, 'Enter');
   await expect(button).toBeFocused();
   const ring = await button.evaluate((element) => getComputedStyle(element).boxShadow);
   expect(ring, 'the focus ring is drawn').not.toBe('none');
@@ -272,8 +272,7 @@ test('Back and Forward are named and reachable once there is somewhere to go', a
   await expect(page.locator('.page-head__title').first()).toHaveText('Plain');
   const forward = page.getByRole('button', { name: 'Forward', exact: true });
   await expect(forward).toBeEnabled();
-  await forward.focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(forward, 'Enter');
   await expect(page.locator('.page-head__title').first()).toHaveText(LONG_NOTE);
 });
 

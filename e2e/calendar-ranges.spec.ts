@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection } from './host.ts';
 import { dragWithKeyboard, dragWithPointer } from './drag.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * The calendar's ranges (U-14): month, week, 3 days, day and agenda, with the
@@ -91,8 +92,7 @@ test('each range has its own title and columns', async ({ page }) => {
   await chooseRange(page, 'Agenda');
   await expect(title(page)).toHaveText('From Sep 22');
 
-  await page.getByRole('region', { name: 'Calendar' }).focus();
-  await page.keyboard.press('w');
+  await focusThenPress(page.getByRole('region', { name: 'Calendar' }), 'w');
   await expect(title(page)).toHaveText('Sep 21 – 27, 2026');
   await page.keyboard.press('ArrowRight');
   await expect(title(page)).toHaveText('Sep 28 – Oct 4, 2026');

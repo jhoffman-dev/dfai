@@ -1,6 +1,8 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
 import { sweep } from './today-sweep.ts';
+import { focusThenPress } from './typing.ts';
+import { scrollThenSettle, scrollToEnd } from './scrolling.ts';
 
 /**
  * Adversarial pass on #247 (Performance B, #238), in WebKit: Today places only
@@ -159,12 +161,7 @@ test('Shift+Tab from the last row reaches every one of 500 rows back to the firs
   const today = await openToday(page);
   // To the end of the page, then focus the last row's tick.
   const scroller = page.locator('.panel__body');
-  for (let tries = 0; tries < 20; tries += 1) {
-    await scroller.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-    });
-    await page.waitForTimeout(50);
-  }
+  await scrollToEnd(scroller);
   const lastTick = today.locator('input.done-check').last();
   await lastTick.focus();
   const start = await focusedNow(page);
@@ -183,10 +180,9 @@ test('a tick on the last row on screen focuses the next row, scrolled into view'
   const today = await openToday(page);
   await page.setViewportSize({ width: 1280, height: 720 });
   const scroller = page.locator('.panel__body');
-  await scroller.evaluate((element) => {
+  await scrollThenSettle(scroller, (element) => {
     element.scrollTop = element.scrollHeight * 0.85;
   });
-  await page.waitForTimeout(200);
   // The last tick wholly on screen whose row has a next row below it.
   const target = await today.evaluate((article) => {
     const port = document.querySelector('.panel__body')!.getBoundingClientRect();
@@ -222,10 +218,9 @@ test('the groups placed cover what the page shows, at the middle of the list in 
   const today = await openToday(page);
   await page.setViewportSize({ width: 560, height: 800 });
   const scroller = page.locator('.panel__body');
-  await scroller.evaluate((element) => {
+  await scrollThenSettle(scroller, (element) => {
     element.scrollTop = element.scrollHeight / 2;
   });
-  await page.waitForTimeout(300);
 
   const blank = await today.evaluate((article) => {
     const port = document.querySelector('.panel__body')!.getBoundingClientRect();
@@ -266,10 +261,9 @@ test('the room between two groups is the same 12px gap main draws, for groups pl
 test('a spacer row stands for exactly the height it is given', async ({ page }) => {
   const today = await openToday(page);
   const scroller = page.locator('.panel__body');
-  await scroller.evaluate((element) => {
+  await scrollThenSettle(scroller, (element) => {
     element.scrollTop = element.scrollHeight - element.clientHeight * 2;
   });
-  await page.waitForTimeout(300);
 
   const spacers = await today.evaluate((article) =>
     [...article.querySelectorAll<HTMLElement>('tr.table__spacer')].map((row) => ({
@@ -287,22 +281,19 @@ test('a Move to… menu open on a row outlasts the page scrolled far from it and
 }) => {
   const today = await openToday(page);
   const trigger = today.getByRole('button', { name: /^Move Task 002/ });
-  await trigger.focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(trigger, 'Enter');
   const menu = page.getByRole('menu', { name: /^Move Task 002/ });
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
 
   // A wheel does not reach the page under the open menu, so the page is moved
   // as a re-read or a scroll from elsewhere would move it.
   const scroller = page.locator('.panel__body');
-  await scroller.evaluate((element) => {
+  await scrollThenSettle(scroller, (element) => {
     element.scrollTop = element.scrollHeight;
   });
-  await page.waitForTimeout(300);
-  await scroller.evaluate((element) => {
+  await scrollThenSettle(scroller, (element) => {
     element.scrollTop = 0;
   });
-  await page.waitForTimeout(300);
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
 
   await page.keyboard.press('Escape');

@@ -2,6 +2,7 @@ import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
 import { suggestion } from './link-suggest.ts';
 import { toastSaying } from './toasts.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * #307 (UI v2 slice 11a): one-key triage on the Inbox — a letter on a
@@ -186,14 +187,12 @@ test('a letter typed in one of the row’s fields is a letter, not a triage key'
   const [first = ''] = await listedTasks(page);
 
   const status = inboxPage(page).getByRole('combobox', { name: `Status of ${first}` });
-  await status.focus();
-  await page.keyboard.press('n');
+  await focusThenPress(status, 'n');
   await page.keyboard.press('d');
   await expect(row(page, first)).toBeVisible();
 
   // The same row, with the row itself focused, is live: so the keys above wrote nothing.
-  await row(page, first).focus();
-  await page.keyboard.press('s');
+  await focusThenPress(row(page, first), 's');
   await expectFile(vault, `Inbox/${first}.md`).toContain('status: someday');
   expect(await vault.read(`Inbox/${first}.md`)).not.toContain('next-action');
   expect(await vault.exists('Archive')).toBe(false);
@@ -205,8 +204,7 @@ test('P opens the project picker; typing narrows it, and Enter files the task wi
   const vault = await triageVault();
   await open(page, vault);
 
-  await row(page, 'Call the bank').focus();
-  await page.keyboard.press('p');
+  await focusThenPress(row(page, 'Call the bank'), 'p');
   const picker = inboxPage(page).getByRole('combobox', { name: 'File Call the bank under' });
   await expect(picker).toBeFocused();
   // Typing only narrows the suggestions (#465): the next test proves it writes nothing.
@@ -224,8 +222,7 @@ test('typing into the P picker files nothing until Enter, and Escape drops what 
   const vault = await triageVault();
   const host = await open(page, vault);
 
-  await row(page, 'Call the bank').focus();
-  await page.keyboard.press('p');
+  await focusThenPress(row(page, 'Call the bank'), 'p');
   const picker = inboxPage(page).getByRole('combobox', { name: 'File Call the bank under' });
   await expect(picker).toBeFocused();
   // Typing on the picker narrows its suggestions; none is a pick.
@@ -363,8 +360,7 @@ test('a key refused on the disk brings its row back saying why, and the rows aft
   const [first = '', second = ''] = await taskRows(page, 5);
   const refuse = host.holdWrites(`Inbox/${first}.md`);
 
-  await row(page, first).focus();
-  await page.keyboard.press('n');
+  await focusThenPress(row(page, first), 'n');
   await expect(row(page, second)).toBeFocused();
   await page.keyboard.press('s');
   // The write has reached the host and is held there, not still on its way.

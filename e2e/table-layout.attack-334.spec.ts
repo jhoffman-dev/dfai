@@ -5,6 +5,7 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 const ROW_HEIGHT = 34;
 const LONG_TEXT = `Collect the seed trays from the north shed and ${'sort them by bed '.repeat(18)}end`;
@@ -136,7 +137,7 @@ test.describe('34px rows hold whatever their cells hold', () => {
       await expect(row).toBeVisible();
       // Proven to match: the row holds the value under test.
       await expect(row).toHaveText(holds);
-      expect((await row.boundingBox())!.height).toBeCloseTo(ROW_HEIGHT, 0);
+      await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(ROW_HEIGHT, 0);
     });
   }
 
@@ -207,9 +208,8 @@ test.describe('the view bar and the save notice', () => {
     const bar = (await page.locator('.view-toolbar').boundingBox())!;
     expect(notice.y + notice.height).toBeLessThanOrEqual(bar.y + 0.5);
 
-    await unsaved(page).getByRole('button', { name: 'Reset' }).focus();
     // Option-Tab: WebKit's plain Tab skips buttons, as macOS does by default.
-    await page.keyboard.press('Alt+Tab');
+    await focusThenPress(unsaved(page).getByRole('button', { name: 'Reset' }), 'Alt+Tab');
     await expect(page.getByRole('button', { name: 'Save as new view…' })).toBeFocused();
     await page.keyboard.press('Alt+Tab');
     await expect(unsaved(page).getByRole('button', { name: 'Save view' })).toBeFocused();
@@ -387,5 +387,5 @@ test('the input a cell edits in shows its whole ring inside the 34px row', async
     return problems;
   });
   expect(fits).toEqual([]);
-  expect((await row.boundingBox())!.height).toBeCloseTo(ROW_HEIGHT, 0);
+  await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(ROW_HEIGHT, 0);
 });

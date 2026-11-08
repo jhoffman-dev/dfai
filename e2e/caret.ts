@@ -1,6 +1,6 @@
 /**
- * Putting the editor's caret at a line's end or start, and waiting until the
- * editor holds it there (#445, #448).
+ * Putting the editor's caret at a line's end or start, or the note's end, and
+ * waiting until the editor holds it there (#445, #448).
  *
  * The click lands at the line's start on purpose: where a click lands is not
  * to be relied on, so the key that follows must move the caret from anywhere
@@ -33,6 +33,14 @@ export async function caretAtLineEnd(line: Locator): Promise<void> {
 /** Click the line `line` is in, and put the caret at that line's start. */
 export async function caretAtLineStart(line: Locator): Promise<void> {
   await caretAt(line, 'start');
+}
+
+/**
+ * Put the caret at the end of the note `editor` shows (the editor, or what
+ * holds it): at the end of its last paragraph, heading or code block.
+ */
+export async function caretAtNoteEnd(editor: Locator): Promise<void> {
+  await caretAt(editor.locator('p, h1, h2, h3, h4, h5, h6, pre').last(), 'end');
 }
 
 async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {

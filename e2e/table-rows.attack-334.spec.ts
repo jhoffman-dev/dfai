@@ -187,7 +187,9 @@ test.describe('2,000 grouped rows', () => {
     const withNew = await hasNewLines(page);
     const kinds = lineKinds({ withNew });
     // Proven to match: the window holds lines.
-    expect(await page.locator('.table__sheet tbody tr[data-index]').count()).toBeGreaterThan(10);
+    await expect
+      .poll(() => page.locator('.table__sheet tbody tr[data-index]').count())
+      .toBeGreaterThan(10);
     for (const fraction of [0.5, 0.9, 1]) {
       await sheet(page).evaluate((element, at) => {
         element.scrollTop = (element.scrollHeight - element.clientHeight) * at;

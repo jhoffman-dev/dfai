@@ -212,7 +212,8 @@ test('content arriving and going above at ten moments of a 2 s wheel scroll neve
   for (let step = 0; step < 20; step++) {
     await page.mouse.wheel(0, 80);
     if (step % 2 === 1) await settings(page, vault, step % 4 === 1);
-    await page.waitForTimeout(100);
+    // Frames, not a time: the wheel's steps are a few frames apart however busy the machine.
+    await settle(page, 6);
   }
   await settle(page, 20);
   const tops = await page.evaluate(() => (window as unknown as { __tops: number[] }).__tops);
@@ -382,7 +383,9 @@ test('"Preview the tidy" opened under the pointer grows downwards, and the rows 
   await tidy(page).getByRole('button', { name: 'Preview the tidy' }).click();
   await expect(tidy(page).getByRole('table', { name: 'Notes that move' })).toBeVisible();
   await settle(page);
-  expect(Math.abs((await tidy(page).boundingBox())!.y - offerAt)).toBeLessThanOrEqual(1);
+  await expect
+    .poll(async () => Math.abs((await tidy(page).boundingBox())!.y - offerAt))
+    .toBeLessThanOrEqual(1);
   const { title } = await rowAtMiddle(page);
   const before = await rowTop(page, title);
   await page.mouse.move(2, 400);

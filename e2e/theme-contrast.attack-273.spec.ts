@@ -625,7 +625,7 @@ test('a Today group name is drawn at the height the list places it by (18px)', a
   await expect(name).toBeVisible();
   // packages/ui/src/today-page.tsx GROUP_NAME_HEIGHT, "as WebKit draws them":
   // a group measured at its estimate does not place the list again.
-  expect((await name.boundingBox())!.height).toBeCloseTo(18, 1);
+  await expect.poll(async () => (await name.boundingBox())!.height).toBeCloseTo(18, 1);
 });
 
 test('each of the eight GTD statuses wears its own label, in its tone, in a table', async ({
