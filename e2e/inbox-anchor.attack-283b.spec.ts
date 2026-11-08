@@ -8,6 +8,7 @@ import {
   type FakeVault,
 } from './host.ts';
 import { toastSaying } from './toasts.ts';
+import { focusOn } from './typing.ts';
 
 /**
  * Second attack on #130 (PR #283), in WebKit: the Inbox's manual scroll
@@ -329,7 +330,7 @@ test('content arriving above during an Option+Tab and Option+Shift+Tab sweep kee
   const vault = await openInbox(page, 600);
   await scrollTo(page, 2000);
   const middle = await rowAtMiddle(page);
-  await inbox(page).getByRole('button', { name: middle.title, exact: true }).focus();
+  await focusOn(inbox(page).getByRole('button', { name: middle.title, exact: true }));
   for (let press = 0; press < 24; press++) {
     // Option: WebKit's Tab alone skips buttons, as Safari does by default.
     await page.keyboard.press(press % 12 < 6 ? 'Alt+Tab' : 'Alt+Shift+Tab');

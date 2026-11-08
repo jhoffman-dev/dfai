@@ -11,9 +11,11 @@
  * caretAtLineEnd, caretAtLineStart or caretAtNoteEnd from caret.ts, which wait
  * for the editor's own caret, then type.
  *
- * Lint rules for e2e/ (tools/eslint/e2e-flake.mjs) point here:
+ * Lint rules for e2e/ (tools/eslint/e2e-flake/) point here:
  * - `e2e-flake/no-keys-after-focus`: a key right after `focus()`, or typing
- *   right after a click. Use focusThenPress, focusThenType or clickThenType.
+ *   or an editing key right after a click or a tap. Use focusThenPress,
+ *   focusThenType or clickThenType; before a loop of keys, focusOn; after a
+ *   click or tap that moves the focus elsewhere, expectFocusIn on where it goes.
  * - `e2e-flake/no-one-shot-read`: `expect(await locator.textContent())` and
  *   the like read once. Use a web-first assertion, which waits
  *   (`await expect(locator).toHaveText(…)`, `toHaveCount`, `toHaveValue`,
@@ -45,25 +47,30 @@ export async function clickThenType(target: Locator, text: string): Promise<void
 }
 
 /**
- * Wait until the focus is on `target`, inside it, or on the element it is
- * inside: a click on a line of text focuses the editor around it.
+ * Wait until the focus is on `target` or inside it. Or, in an editable region
+ * only, on the region around it: a click on a line of text focuses the editor
+ * around the line. Any other focusable ancestor, such as a row with its own
+ * shortcut keys, does not count, as the keys would go to it.
  */
 export async function expectFocusIn(target: Locator): Promise<void> {
   await expect
     .poll(
       () =>
         target.evaluate((element) => {
-          const { activeElement: focused, body } = element.ownerDocument;
-          // The body holds the focus when nothing does, and it holds every element.
-          if (focused === null || focused === body) return false;
-          return focused.contains(element) || element.contains(focused);
+          const focused = element.ownerDocument.activeElement;
+          if (focused === null) return false;
+          if (focused === element || element.contains(focused)) return true;
+          return (
+            focused instanceof HTMLElement && focused.isContentEditable && focused.contains(element)
+          );
         }),
-      { message: 'the focus to be on, in, or around the target' },
+      { message: 'the focus to be on or in the target, or the editor around it' },
     )
     .toBe(true);
 }
 
-async function focusOn(target: Locator): Promise<void> {
+/** Focus `target` and wait until it holds the focus: before a loop of keys. */
+export async function focusOn(target: Locator): Promise<void> {
   await target.focus();
   await expect(target).toBeFocused();
 }

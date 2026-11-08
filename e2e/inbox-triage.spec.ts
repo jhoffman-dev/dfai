@@ -2,7 +2,7 @@ import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
 import { suggestion } from './link-suggest.ts';
 import { toastSaying } from './toasts.ts';
-import { focusThenPress } from './typing.ts';
+import { focusOn, focusThenPress } from './typing.ts';
 
 /**
  * #307 (UI v2 slice 11a): one-key triage on the Inbox — a letter on a
@@ -327,7 +327,7 @@ test('five rows by key alone: each row leaves and the next has the focus before 
   // The first write is held on the disk: the rows after it must not wait for it.
   const release = host.holdWrites(`Inbox/${titles[0]}.md`);
 
-  await row(page, titles[0] ?? '').focus();
+  await focusOn(row(page, titles[0] ?? ''));
   for (const [at, key] of keys.entries()) {
     await page.keyboard.press(key);
     await expect(row(page, titles[at] ?? '')).toHaveCount(0);

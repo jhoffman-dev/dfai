@@ -1,7 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection } from './host.ts';
 import { dragWithKeyboard, dragWithPointer } from './drag.ts';
-import { focusThenPress } from './typing.ts';
+import { focusOn, focusThenPress } from './typing.ts';
 
 /**
  * The calendar's ranges (U-14): month, week, 3 days, day and agenda, with the
@@ -169,7 +169,7 @@ test('a keyboard adds a note at an hour: to the day, down the hours, Enter', asy
   const vault = await openCalendar(page);
   await chooseRange(page, '3 days');
 
-  await page.getByRole('button', { name: 'Add at 09:00 on Wednesday 23 September 2026' }).focus();
+  await focusOn(page.getByRole('button', { name: 'Add at 09:00 on Wednesday 23 September 2026' }));
   for (let hour = 9; hour < 14; hour += 1) await page.keyboard.press('ArrowDown');
   await expect(
     page.getByRole('button', { name: 'Add at 14:00 on Wednesday 23 September 2026' }),

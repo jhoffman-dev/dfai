@@ -28,15 +28,11 @@ describe('expectFocusIn (attack #801)', () => {
 
   // A focusable row or list around a field holds the focus before the click on
   // the field lands: keys typed then go to the row's shortcuts, not the field.
-  it.fails(
-    'does not pass while a focusable ancestor, not the field, holds the focus',
-    async () => {
-      document.body.innerHTML = '<div role="row" tabindex="0"><input aria-label="Project"></div>';
-      const row = document.querySelector<HTMLElement>('[role="row"]')!;
-      const field = document.querySelector('input')!;
-      row.focus();
-      await expect(expectFocusIn(locatorFor(field))).rejects.toThrow();
-    },
-    15_000,
-  );
+  it('does not pass while a focusable ancestor, not the field, holds the focus', async () => {
+    document.body.innerHTML = '<div role="row" tabindex="0"><input aria-label="Project"></div>';
+    const row = document.querySelector<HTMLElement>('[role="row"]')!;
+    const field = document.querySelector('input')!;
+    row.focus();
+    await expect(expectFocusIn(locatorFor(field))).rejects.toThrow();
+  }, 15_000);
 });

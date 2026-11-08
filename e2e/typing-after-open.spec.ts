@@ -13,7 +13,6 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
-import { caretAtLineEnd } from './caret.ts';
 
 const front = (lines: string[], body: string) => ['---', ...lines, '---', '', body, ''].join('\n');
 
@@ -155,7 +154,8 @@ test('what a note reads after it opens lands around the cursor without moving it
 
   // Clicked into and typed in while the linked pages, the backlinks and the
   // index have not answered yet.
-  await caretAtLineEnd(page.getByLabel('Note', { exact: true }).getByText(MARA_BODY));
+  await page.getByLabel('Note', { exact: true }).getByText(MARA_BODY).click();
+  // eslint-disable-next-line e2e-flake/no-keys-after-focus -- this test is the click-then-type race (#140)
   await page.keyboard.type(' One');
   const waiting = await hostCalls(page);
   expect(waiting.held).toBeGreaterThan(waiting.answered);

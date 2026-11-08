@@ -51,32 +51,36 @@ test(
     await openVault(page);
     await openSettings(page);
 
-    const rows = await list(page)
-      .getByRole('button')
-      .evaluateAll((buttons, cut) => {
-        const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
-        return buttons.map((button) => ({
-          text: button.textContent,
-          cut: isCut(button as HTMLElement),
-        }));
-      }, titleCut.toString());
-    expect(rows.length).toBeGreaterThan(4);
-    expect(rows.filter((row) => row.cut)).toEqual([]);
+    await expect(async () => {
+      const rows = await list(page)
+        .getByRole('button')
+        .evaluateAll((buttons, cut) => {
+          const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
+          return buttons.map((button) => ({
+            text: button.textContent,
+            cut: isCut(button as HTMLElement),
+          }));
+        }, titleCut.toString());
+      expect(rows.length).toBeGreaterThan(4);
+      expect(rows.filter((row) => row.cut)).toEqual([]);
+    }).toPass();
 
     // The measure can see a cut title: one far longer than the list is wide.
-    const longCut = await list(page)
-      .getByRole('button')
-      .first()
-      .evaluate((button, cut) => {
-        const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
-        const clone = button.cloneNode(true) as HTMLElement;
-        clone.lastChild!.textContent += ' and a title much too long for the list of sections';
-        button.parentElement!.append(clone);
-        const result = isCut(clone);
-        clone.remove();
-        return result;
-      }, titleCut.toString());
-    expect(longCut).toBe(true);
+    await expect(async () => {
+      const longCut = await list(page)
+        .getByRole('button')
+        .first()
+        .evaluate((button, cut) => {
+          const isCut = new Function(`return (${cut})`)() as (button: HTMLElement) => boolean;
+          const clone = button.cloneNode(true) as HTMLElement;
+          clone.lastChild!.textContent += ' and a title much too long for the list of sections';
+          button.parentElement!.append(clone);
+          const result = isCut(clone);
+          clone.remove();
+          return result;
+        }, titleCut.toString());
+      expect(longCut).toBe(true);
+    }).toPass();
   },
 );
 

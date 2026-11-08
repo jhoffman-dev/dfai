@@ -18,6 +18,8 @@ export const onMac = process.platform === 'darwin';
 
 export const LINE_END = onMac ? 'Meta+ArrowRight' : 'End';
 export const LINE_START = onMac ? 'Meta+ArrowLeft' : 'Home';
+/** The end of the whole text: ⌘↓ on the Mac, Ctrl+End on Linux. */
+export const TEXT_END = onMac ? 'Meta+ArrowDown' : 'Control+End';
 /** Select all in a text field: ⌘A is Cocoa's; WebKit on Linux has Ctrl+A. */
 export const SELECT_ALL = onMac ? 'Meta+a' : 'Control+a';
 

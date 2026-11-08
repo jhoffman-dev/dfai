@@ -190,11 +190,13 @@ test('tree rows sit at an exact 29px pitch deep in a long nested list', async ({
 
 /** The tree is as tall as `rows` rows at the pitch, give or take a subpixel. */
 async function expectTreeHeight(page: Page, rows: number) {
-  const height = await pages(page)
-    .getByRole('tree')
-    .evaluate((tree) => tree.getBoundingClientRect().height);
-  expect(height).toBeGreaterThanOrEqual(rows * PITCH - 1);
-  expect(height).toBeLessThanOrEqual(rows * PITCH);
+  await expect(async () => {
+    const height = await pages(page)
+      .getByRole('tree')
+      .evaluate((tree) => tree.getBoundingClientRect().height);
+    expect(height).toBeGreaterThanOrEqual(rows * PITCH - 1);
+    expect(height).toBeLessThanOrEqual(rows * PITCH);
+  }).toPass();
 }
 
 test('the tree is exactly as tall as its rows at a 29px pitch', async ({ page }) => {
@@ -252,15 +254,17 @@ test('a long page name keeps its row one line tall and ellipsises', async ({ pag
   await openVault(page, (vault) => vault.write(`${LONG}.md`, `# ${LONG}\n`));
   const row = treeRow(page, LONG);
   await row.scrollIntoViewIfNeeded();
-  const box = await row.evaluate((element) => {
-    const name = element.querySelector('.tree__name');
-    return {
-      height: element.getBoundingClientRect().height,
-      clipped: name !== null && name.scrollWidth > name.clientWidth,
-      overflows: element.scrollWidth > element.clientWidth,
-    };
-  });
-  expect(box).toEqual({ height: ROW, clipped: true, overflows: false });
+  await expect(async () => {
+    const box = await row.evaluate((element) => {
+      const name = element.querySelector('.tree__name');
+      return {
+        height: element.getBoundingClientRect().height,
+        clipped: name !== null && name.scrollWidth > name.clientWidth,
+        overflows: element.scrollWidth > element.clientWidth,
+      };
+    });
+    expect(box).toEqual({ height: ROW, clipped: true, overflows: false });
+  }).toPass();
   expect(await misplaced(page)).toEqual([]);
 });
 
@@ -438,17 +442,19 @@ test('every row’s trailing control stays clear of the 17px overlay scrollbar',
 test('the sidebar never scrolls sideways', async ({ page }) => {
   await openVault(page, (vault) => vault.write(`${LONG}.md`, `# ${LONG}\n`));
   await expandAll(page);
-  const sideways = await nav(page).evaluate((root) =>
-    [root, ...root.querySelectorAll('*')]
-      .filter((element) => element.scrollWidth > element.clientWidth + 0.5)
-      .filter((element) => {
-        const style = getComputedStyle(element);
-        // An ellipsised label is clipped on purpose; anything that can scroll is not.
-        return /(auto|scroll)/.test(style.overflowX) || element === root;
-      })
-      .map((element) => `${element.className}: ${element.scrollWidth} > ${element.clientWidth}`),
-  );
-  expect(sideways).toEqual([]);
+  await expect(async () => {
+    const sideways = await nav(page).evaluate((root) =>
+      [root, ...root.querySelectorAll('*')]
+        .filter((element) => element.scrollWidth > element.clientWidth + 0.5)
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          // An ellipsised label is clipped on purpose; anything that can scroll is not.
+          return /(auto|scroll)/.test(style.overflowX) || element === root;
+        })
+        .map((element) => `${element.className}: ${element.scrollWidth} > ${element.clientWidth}`),
+    );
+    expect(sideways).toEqual([]);
+  }).toPass();
 });
 
 /** How far the focus ring (box-shadow spread) of `row` is cut off by its scroller. */
@@ -517,6 +523,7 @@ test('a view row’s star is clear of the sidebar’s scrollbar while it shows',
   await row.hover();
   const star = row.getByRole('button', { name: /favorites$/ });
   await expect(star).toHaveCount(1);
+  // eslint-disable-next-line e2e-flake/no-one-shot-read -- the evaluate scrolls the sidebar by a pixel to show its scrollbar and measures in that frame: retried, it would scroll again
   const missed = await star.evaluate(async (button) => {
     const area = button.closest('.sidebar__scroll')!;
     area.scrollTop += 1;

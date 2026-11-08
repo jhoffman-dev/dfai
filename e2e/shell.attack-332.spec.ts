@@ -108,11 +108,13 @@ test('a long vault name ellipsises inside the 224px sidebar', async ({ page }) =
   const name = nav(page).locator('.vault-header__name');
   await expect(name).toBeVisible();
   const label = name.locator('.vault-header__label, span').last();
-  const clip = await name.evaluate((element) => {
-    const candidates = [element, ...element.querySelectorAll('*')];
-    return candidates.some((one) => one.scrollWidth > one.clientWidth + 0.5);
-  });
-  expect(clip, 'some part of the vault name is clipped to an ellipsis').toBe(true);
+  await expect(async () => {
+    const clip = await name.evaluate((element) => {
+      const candidates = [element, ...element.querySelectorAll('*')];
+      return candidates.some((one) => one.scrollWidth > one.clientWidth + 0.5);
+    });
+    expect(clip, 'some part of the vault name is clipped to an ellipsis').toBe(true);
+  }).toPass();
   expect(await horizontallyInside(name, nav(page))).toBe(true);
   expect(await horizontallyInside(label, nav(page))).toBe(true);
 });
@@ -136,15 +138,17 @@ test('a type count in the thousands stays whole and leaves the label room', asyn
   const row = sidebarSection(page, 'types').locator('.sidebar__item').first();
   const count = row.locator('.sidebar__count');
   await expect(count).toHaveText(String(MANY), { timeout: INDEXING_MANY });
-  const fits = await count.evaluate((element) => {
-    const box = element.getBoundingClientRect();
-    const host = element.closest('.sidebar__item')!.getBoundingClientRect();
-    return {
-      whole: element.scrollWidth <= element.clientWidth + 0.5,
-      inside: box.right <= host.right,
-    };
-  });
-  expect(fits).toEqual({ whole: true, inside: true });
+  await expect(async () => {
+    const fits = await count.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const host = element.closest('.sidebar__item')!.getBoundingClientRect();
+      return {
+        whole: element.scrollWidth <= element.clientWidth + 0.5,
+        inside: box.right <= host.right,
+      };
+    });
+    expect(fits).toEqual({ whole: true, inside: true });
+  }).toPass();
   expect(await clippedLabel(row.locator('.sidebar__name'))).toEqual({ clipped: true, roomy: true });
 });
 
@@ -156,14 +160,16 @@ test('the sidebar has no sideways scroll with long names everywhere', async ({ p
   await expect(
     sidebarSection(page, 'userSpace').getByRole('treeitem', { name: LONG_NOTE, exact: true }),
   ).toBeVisible();
-  const widths = await nav(page).evaluate((root) => {
-    const area = root.querySelector('.sidebar__scroll')!;
-    return {
-      nav: root.scrollWidth - root.clientWidth,
-      scroller: area.scrollWidth - area.clientWidth,
-    };
-  });
-  expect(widths).toEqual({ nav: 0, scroller: 0 });
+  await expect(async () => {
+    const widths = await nav(page).evaluate((root) => {
+      const area = root.querySelector('.sidebar__scroll')!;
+      return {
+        nav: root.scrollWidth - root.clientWidth,
+        scroller: area.scrollWidth - area.clientWidth,
+      };
+    });
+    expect(widths).toEqual({ nav: 0, scroller: 0 });
+  }).toPass();
 });
 
 test('the theme button keeps focus and flips its name when pressed from the keyboard', async ({
@@ -197,8 +203,10 @@ test('the theme button shows its focus ring after a keyboard press', async ({ pa
   await page.keyboard.press('Tab');
   await focusThenPress(button, 'Enter');
   await expect(button).toBeFocused();
-  const ring = await button.evaluate((element) => getComputedStyle(element).boxShadow);
-  expect(ring, 'the focus ring is drawn').not.toBe('none');
+  await expect(async () => {
+    const ring = await button.evaluate((element) => getComputedStyle(element).boxShadow);
+    expect(ring, 'the focus ring is drawn').not.toBe('none');
+  }).toPass();
 });
 
 /** WCAG contrast between two tokens, as they resolve on the root now. */
@@ -459,8 +467,10 @@ test('⌘\\ hides the sidebar and brings it back at 224px', async ({ page }) => 
   await expect(nav(page)).toBeHidden();
   await page.keyboard.press('Meta+Backslash');
   await expect(nav(page)).toBeVisible();
-  const width = await nav(page).evaluate((element) => element.getBoundingClientRect().width);
-  expect(width).toBe(224);
+  await expect(async () => {
+    const width = await nav(page).evaluate((element) => element.getBoundingClientRect().width);
+    expect(width).toBe(224);
+  }).toPass();
 });
 
 test('at the window’s 720px minimum ⌘\\ opens the sidebar as a 224px drawer and closes it (#658)', async ({
@@ -473,7 +483,9 @@ test('at the window’s 720px minimum ⌘\\ opens the sidebar as a 224px drawer 
   const drawer = page.getByRole('dialog', { name: 'Sidebar' });
   await expect(drawer).toBeVisible();
   await expect(nav(page)).toBeVisible();
-  expect(await nav(page).evaluate((element) => element.getBoundingClientRect().width)).toBe(224);
+  await expect
+    .poll(() => nav(page).evaluate((element) => element.getBoundingClientRect().width))
+    .toBe(224);
   await page.keyboard.press('Meta+Backslash');
   await expect(drawer).toHaveCount(0);
 });

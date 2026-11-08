@@ -146,10 +146,12 @@ test.describe('34px rows hold whatever their cells hold', () => {
   }) => {
     await openVault(page);
     await expect(rowOf(page, 'A long note')).toBeVisible();
-    const overflow = await page
-      .locator('.table__sheet')
-      .evaluate((sheet) => sheet.scrollWidth - sheet.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(1);
+    await expect(async () => {
+      const overflow = await page
+        .locator('.table__sheet')
+        .evaluate((sheet) => sheet.scrollWidth - sheet.clientWidth);
+      expect(overflow).toBeLessThanOrEqual(1);
+    }).toPass();
   });
 });
 
@@ -158,21 +160,23 @@ test.describe('the footer and the last row, at the foot of the window', () => {
     page,
   }) => {
     await openVault(page);
-    const covered = await page.locator('.table__footer').evaluate((footer) => {
-      const found: string[] = [];
-      for (const part of footer.children) {
-        const box = part.getBoundingClientRect();
-        for (const x of [box.left + 2, (box.left + box.right) / 2, box.right - 2]) {
-          const hit = document.elementFromPoint(x, (box.top + box.bottom) / 2);
-          if (!hit || !part.contains(hit)) {
-            found.push(`${part.className} at x=${Math.round(x)} is under ${hit?.className}`);
+    await expect(async () => {
+      const covered = await page.locator('.table__footer').evaluate((footer) => {
+        const found: string[] = [];
+        for (const part of footer.children) {
+          const box = part.getBoundingClientRect();
+          for (const x of [box.left + 2, (box.left + box.right) / 2, box.right - 2]) {
+            const hit = document.elementFromPoint(x, (box.top + box.bottom) / 2);
+            if (!hit || !part.contains(hit)) {
+              found.push(`${part.className} at x=${Math.round(x)} is under ${hit?.className}`);
+            }
           }
         }
-      }
-      return { found, parts: footer.children.length };
-    });
-    expect(covered.parts).toBeGreaterThan(2);
-    expect(covered.found).toEqual([]);
+        return { found, parts: footer.children.length };
+      });
+      expect(covered.parts).toBeGreaterThan(2);
+      expect(covered.found).toEqual([]);
+    }).toPass();
   });
 
   test('with the sheet scrolled to its end, the last row’s last cell is under nothing', async ({
@@ -237,23 +241,30 @@ test.describe('the view bar and the save notice', () => {
       await openVault(page, { width });
       await page.getByRole('button', { name: 'Due', exact: true }).click();
       await expect(unsaved(page)).toBeVisible();
-      const outside = await page.locator('.view-toolbar__actions, .view-save').evaluateAll((bars) =>
-        bars.flatMap((bar) =>
-          [...bar.querySelectorAll('button')].flatMap((button) => {
-            const box = button.getBoundingClientRect();
-            const hit = document.elementFromPoint(
-              box.left + box.width / 2,
-              box.top + box.height / 2,
-            );
-            return box.right > window.innerWidth || box.left < 0 || !hit || !button.contains(hit)
-              ? [
-                  `${button.textContent?.trim() || button.getAttribute('aria-label')} at ${Math.round(box.left)}–${Math.round(box.right)}`,
-                ]
-              : [];
-          }),
-        ),
-      );
-      expect(outside).toEqual([]);
+      await expect(async () => {
+        const outside = await page
+          .locator('.view-toolbar__actions, .view-save')
+          .evaluateAll((bars) =>
+            bars.flatMap((bar) =>
+              [...bar.querySelectorAll('button')].flatMap((button) => {
+                const box = button.getBoundingClientRect();
+                const hit = document.elementFromPoint(
+                  box.left + box.width / 2,
+                  box.top + box.height / 2,
+                );
+                return box.right > window.innerWidth ||
+                  box.left < 0 ||
+                  !hit ||
+                  !button.contains(hit)
+                  ? [
+                      `${button.textContent?.trim() || button.getAttribute('aria-label')} at ${Math.round(box.left)}–${Math.round(box.right)}`,
+                    ]
+                  : [];
+              }),
+            ),
+          );
+        expect(outside).toEqual([]);
+      }).toPass();
     });
 
     test(`at ${width}px with the bar wrapped the sticky header still meets the sheet’s top`, async ({
@@ -358,34 +369,37 @@ test('the input a cell edits in shows its whole ring inside the 34px row', async
   await row.locator('[data-cell-stop="notes"]').click();
   const input = row.locator('input.table__input');
   await expect(input).toBeFocused();
-  const fits = await input.evaluate((element) => {
-    const ring =
-      parseFloat(getComputedStyle(element).boxShadow.match(/(\d+(?:\.\d+)?)px\s*$/)?.[1] ?? '0') ||
-      1.5;
-    const box = element.getBoundingClientRect();
-    const problems: string[] = [];
-    for (
-      let at = element.parentElement;
-      at && !at.classList.contains('table__sheet');
-      at = at.parentElement
-    ) {
-      const style = getComputedStyle(at);
-      if (style.overflow === 'visible') continue;
-      const clip = at.getBoundingClientRect();
-      if (
-        box.top - ring < clip.top ||
-        box.bottom + ring > clip.bottom ||
-        box.left - ring < clip.left ||
-        box.right + ring > clip.right
+  await expect(async () => {
+    const fits = await input.evaluate((element) => {
+      const ring =
+        parseFloat(
+          getComputedStyle(element).boxShadow.match(/(\d+(?:\.\d+)?)px\s*$/)?.[1] ?? '0',
+        ) || 1.5;
+      const box = element.getBoundingClientRect();
+      const problems: string[] = [];
+      for (
+        let at = element.parentElement;
+        at && !at.classList.contains('table__sheet');
+        at = at.parentElement
       ) {
-        problems.push(`clipped by ${at.tagName}.${at.className}`);
+        const style = getComputedStyle(at);
+        if (style.overflow === 'visible') continue;
+        const clip = at.getBoundingClientRect();
+        if (
+          box.top - ring < clip.top ||
+          box.bottom + ring > clip.bottom ||
+          box.left - ring < clip.left ||
+          box.right + ring > clip.right
+        ) {
+          problems.push(`clipped by ${at.tagName}.${at.className}`);
+        }
       }
-    }
-    const line = element.closest('tr')!.getBoundingClientRect();
-    if (box.top - ring < line.top || box.bottom + ring > line.bottom)
-      problems.push('ring outside the row');
-    return problems;
-  });
-  expect(fits).toEqual([]);
+      const line = element.closest('tr')!.getBoundingClientRect();
+      if (box.top - ring < line.top || box.bottom + ring > line.bottom)
+        problems.push('ring outside the row');
+      return problems;
+    });
+    expect(fits).toEqual([]);
+  }).toPass();
   await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(ROW_HEIGHT, 0);
 });

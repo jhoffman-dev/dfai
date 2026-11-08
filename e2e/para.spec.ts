@@ -116,10 +116,12 @@ test('a new project is a project, links an area, and archives and restores by it
   const project = properties(page).getByRole('combobox', { name: 'Project' });
   await project.click();
   await expect.poll(() => suggestedTitles(project).allTextContents()).toContain('DFAI');
-  const offered = await suggestedTitles(project).allTextContents();
-  expect(offered).toContain('Garden');
-  expect(offered).not.toContain('New Project');
-  expect(offered).not.toContain('Manual');
+  await expect(async () => {
+    const offered = await suggestedTitles(project).allTextContents();
+    expect(offered).toContain('Garden');
+    expect(offered).not.toContain('New Project');
+    expect(offered).not.toContain('Manual');
+  }).toPass();
   // Each says which it is, so Garden the area is not taken for a project (#213).
   await expect(suggestion(project, 'DFAI')).toHaveAttribute('aria-label', /, Projects,/);
   await expect(suggestion(project, 'Garden')).toHaveAttribute('aria-label', /, Areas,/);

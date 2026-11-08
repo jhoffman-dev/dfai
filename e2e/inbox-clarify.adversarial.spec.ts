@@ -108,11 +108,13 @@ test('a title with no place to break does not push the row’s controls off the 
   expect(box).not.toBeNull();
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(viewport?.width ?? 0);
   // Nothing in the page scrolls sideways to reach a control.
-  const overflow = await inbox.evaluate((article) => {
-    const sheet = article.querySelector('.table__sheet');
-    return sheet === null ? 0 : sheet.scrollWidth - sheet.clientWidth;
-  });
-  expect(overflow).toBeLessThanOrEqual(1);
+  await expect(async () => {
+    const overflow = await inbox.evaluate((article) => {
+      const sheet = article.querySelector('.table__sheet');
+      return sheet === null ? 0 : sheet.scrollWidth - sheet.clientWidth;
+    });
+    expect(overflow).toBeLessThanOrEqual(1);
+  }).toPass();
 });
 
 for (const width of [1024, 720]) {
@@ -130,11 +132,13 @@ for (const width of [1024, 720]) {
     await save.scrollIntoViewIfNeeded();
     const box = await save.boundingBox();
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
-    const overflow = await inbox.evaluate((article) => {
-      const sheet = article.querySelector('.table__sheet');
-      return sheet === null ? 0 : sheet.scrollWidth - sheet.clientWidth;
-    });
-    expect(overflow).toBeLessThanOrEqual(1);
+    await expect(async () => {
+      const overflow = await inbox.evaluate((article) => {
+        const sheet = article.querySelector('.table__sheet');
+        return sheet === null ? 0 : sheet.scrollWidth - sheet.clientWidth;
+      });
+      expect(overflow).toBeLessThanOrEqual(1);
+    }).toPass();
 
     // The keys arrive with the focus: the row they arrive on does not grow or shrink for them.
     const before = (await row.boundingBox())?.height ?? 0;

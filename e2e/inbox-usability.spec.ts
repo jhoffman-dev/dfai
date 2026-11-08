@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeHost, type FakeVault } from './host.ts';
+import { focusOn } from './typing.ts';
 
 /**
  * The Inbox stays usable however much waits in it (#164-#167): the list keeps
@@ -201,7 +202,7 @@ test('Tab walks on past the rows on screen, each row put in the page and in view
   const lastPlaced = indexes.findIndex((index, at) => index !== at + 2) + 1;
   expect(lastPlaced).toBeGreaterThan(2);
 
-  await table.locator(`tr[aria-rowindex="${lastPlaced}"]`).getByRole('combobox').first().focus();
+  await focusOn(table.locator(`tr[aria-rowindex="${lastPlaced}"]`).getByRole('combobox').first());
   const focusedRow = () =>
     page.evaluate(() =>
       Number(document.activeElement?.closest('tr')?.getAttribute('aria-rowindex')),

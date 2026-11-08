@@ -7,7 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
-import { e2eFlake } from './tools/eslint/e2e-flake.mjs';
+import { e2eFlake } from './tools/eslint/e2e-flake/index.mjs';
 
 /**
  * The app's state libraries (#238): stores and queries belong to the app shell

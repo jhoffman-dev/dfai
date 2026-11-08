@@ -85,18 +85,20 @@ test('a toast left up hides no control of the Settings dialog opened over it', a
   await expect(settings).toBeVisible();
   await expect(said).toBeVisible();
 
-  const hidden = await settings.evaluate((dialog) =>
-    [...dialog.querySelectorAll<HTMLElement>('button, input, select, a[href], [role="tab"]')]
-      .filter((control) => {
-        const at = control.getBoundingClientRect();
-        if (at.width === 0 || at.height === 0) return false;
-        const cx = at.left + at.width / 2;
-        const cy = at.top + at.height / 2;
-        if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return false;
-        const hit = document.elementFromPoint(cx, cy);
-        return hit !== null && hit.closest('.toast') !== null;
-      })
-      .map((control) => control.getAttribute('aria-label') ?? control.textContent?.trim() ?? ''),
-  );
-  expect(hidden).toEqual([]);
+  await expect(async () => {
+    const hidden = await settings.evaluate((dialog) =>
+      [...dialog.querySelectorAll<HTMLElement>('button, input, select, a[href], [role="tab"]')]
+        .filter((control) => {
+          const at = control.getBoundingClientRect();
+          if (at.width === 0 || at.height === 0) return false;
+          const cx = at.left + at.width / 2;
+          const cy = at.top + at.height / 2;
+          if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return false;
+          const hit = document.elementFromPoint(cx, cy);
+          return hit !== null && hit.closest('.toast') !== null;
+        })
+        .map((control) => control.getAttribute('aria-label') ?? control.textContent?.trim() ?? ''),
+    );
+    expect(hidden).toEqual([]);
+  }).toPass();
 });

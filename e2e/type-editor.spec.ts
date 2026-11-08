@@ -323,7 +323,9 @@ test('the type editor in the right sidebar writes a change to the type file, eve
   // The editor is the right sidebar's Type tab, 340px wide, beside the type's notes.
   const aside = page.getByRole('complementary', { name: 'Right sidebar' });
   await expect(aside.getByRole('tab', { name: 'Type' })).toHaveAttribute('aria-selected', 'true');
-  expect(await aside.evaluate((element) => element.getBoundingClientRect().width)).toBe(340);
+  await expect
+    .poll(() => aside.evaluate((element) => element.getBoundingClientRect().width))
+    .toBe(340);
   await expect(page.getByRole('article', { name: 'Session' }).getByRole('table')).toBeVisible();
   await expect(aside.getByText('Saved · edits apply to every Session note')).toBeVisible();
 

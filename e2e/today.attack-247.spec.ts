@@ -222,21 +222,23 @@ test('the groups placed cover what the page shows, at the middle of the list in 
     element.scrollTop = element.scrollHeight / 2;
   });
 
-  const blank = await today.evaluate((article) => {
-    const port = document.querySelector('.panel__body')!.getBoundingClientRect();
-    // Any room left for unplaced groups or rows that shows on screen.
-    const spacers = [
-      ...article.querySelectorAll<HTMLElement>(
-        '.today__groups > div[aria-hidden="true"], tr.table__spacer',
-      ),
-    ];
-    return spacers
-      .map((spacer) => spacer.getBoundingClientRect())
-      .map((box) => Math.min(box.bottom, port.bottom) - Math.max(box.top, port.top))
-      .filter((shown) => shown > 1);
-  });
+  await expect(async () => {
+    const blank = await today.evaluate((article) => {
+      const port = document.querySelector('.panel__body')!.getBoundingClientRect();
+      // Any room left for unplaced groups or rows that shows on screen.
+      const spacers = [
+        ...article.querySelectorAll<HTMLElement>(
+          '.today__groups > div[aria-hidden="true"], tr.table__spacer',
+        ),
+      ];
+      return spacers
+        .map((spacer) => spacer.getBoundingClientRect())
+        .map((box) => Math.min(box.bottom, port.bottom) - Math.max(box.top, port.top))
+        .filter((shown) => shown > 1);
+    });
 
-  expect(blank).toEqual([]);
+    expect(blank).toEqual([]);
+  }).toPass();
 });
 
 test('the room between two groups is the same 12px gap main draws, for groups placed together', async ({

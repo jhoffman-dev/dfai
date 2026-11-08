@@ -483,8 +483,10 @@ export interface FakeHost {
   };
   /** How many times the app has asked the host to write this file, creates and refused writes included. */
   writesTo(relativePath: string): number;
-  /** How many times the app has asked the host for this command. */
+  /** How many times the app has asked the host for this command, counted as each call starts. */
   callsTo(command: string): number;
+  /** How many calls of this command the host has answered, failures included. */
+  answeredTo(command: string): number;
   /** The model and embeddings cache (`embedding-host.ts`): every passage the app sent to embed. */
   readonly embeddings: { passages(): readonly string[] };
   /** How many `vault-changed` events `echoWrites` has sent of the app's own writes. */
@@ -2089,6 +2091,8 @@ export async function installHost(
 
   /** Every command the app has asked the host for, by name. */
   const calls = new Map<string, number>();
+  /** Every command the host has answered, by name: a call counted once its answer is sent. */
+  const answeredCalls = new Map<string, number>();
   await page.route('**/__atlas-embedding-load*', (route) => {
     const params = new URL(route.request().url()).searchParams;
     const slice = embeddings.loadSlice(Number(params.get('from')), Number(params.get('to')));
@@ -2097,6 +2101,7 @@ export async function installHost(
   await page.exposeFunction('__atlasInvoke', async (command: string, args: unknown) => {
     calls.set(command, (calls.get(command) ?? 0) + 1);
     const answered = await answer(command, args).catch(rejectionAsTauriSends);
+    answeredCalls.set(command, (answeredCalls.get(command) ?? 0) + 1);
     // Logged only once a secret exists: before that there is nothing to leak,
     // and the replies that carry whole files would only slow every test.
     if (secrets.size > 0) answers.push(JSON.stringify(answered) ?? '');
@@ -2339,6 +2344,7 @@ export async function installHost(
     },
     writesTo: (relativePath) => writes.get(relativePath) ?? 0,
     callsTo: (command) => calls.get(command) ?? 0,
+    answeredTo: (command) => answeredCalls.get(command) ?? 0,
     embeddings: { passages: () => embeddings.passages() },
     echoesSent: () =>
       page.evaluate(

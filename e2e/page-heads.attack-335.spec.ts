@@ -226,7 +226,10 @@ for (const which of Object.keys(PAGES)) {
   test(`${which}: the h1 is the breadcrumb's name`, async ({ page }) => {
     await openVault(page);
     const name = await open(page, which);
-    await expect(main(page).locator('h1')).toHaveText((await name.textContent()) ?? '');
+    await expect(async () => {
+      const breadcrumb = (await name.textContent()) ?? '';
+      await expect(main(page).locator('h1')).toHaveText(breadcrumb, { timeout: 1_000 });
+    }).toPass();
   });
 
   test(`${which}: headings start at h1 and never skip a level`, async ({ page }) => {

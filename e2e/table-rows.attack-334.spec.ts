@@ -7,6 +7,7 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { focusOn } from './typing.ts';
 
 const STATUSES = ['backlog', 'doing', 'done'] as const;
 const TASKS = 2000;
@@ -294,7 +295,7 @@ for (const groupBy of [false, true]) {
 
     test('PageDown and PageUp keep the focus on a row the reader can see', async ({ page }) => {
       await openTable(page, { groupBy });
-      await page.locator('.table__link').first().focus();
+      await focusOn(page.locator('.table__link').first());
       const problems: string[] = [];
       for (const key of ['PageDown', 'PageDown', 'PageDown', 'PageUp']) {
         await page.keyboard.press(key);

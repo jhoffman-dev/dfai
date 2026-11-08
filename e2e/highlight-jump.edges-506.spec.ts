@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, saveStatus, sidebarSection } from './host.ts';
 import { lanternFixturePdf } from '../tools/pdf/fixture-pdf.ts';
-import { focusThenPress } from './typing.ts';
+import { focusOn, focusThenPress } from './typing.ts';
 
 /*
  * Regression (#506), end to end in WebKit: the chip from the keyboard,
@@ -223,7 +223,7 @@ test('keys that edit text, pressed on "Open in PDF", leave the note as it is on 
 }) => {
   const { vault, note, offer } = await openLiteratureNote(page);
   const before = await vault.read(LITERATURE);
-  await offer.focus();
+  await focusOn(offer);
   for (const key of ['x', 'Backspace', 'Delete', 'Space']) await page.keyboard.press(key);
   await expect(offer).toBeFocused();
   await expect(note.getByText('The last lamp was lit', { exact: false })).toHaveCount(1);

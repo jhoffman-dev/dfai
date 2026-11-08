@@ -22,11 +22,15 @@ async function openNote(page: Page) {
   return { vault, host };
 }
 
-/** Report `other.md` changed, and wait until the app has read it again. */
+/**
+ * Report `other.md` changed, and wait until the host has answered the app's
+ * read of it: a call is counted as it starts, so `callsTo` would pass while
+ * the read is still in flight.
+ */
 async function otherChanged(page: Page, host: FakeHost): Promise<void> {
-  const before = host.callsTo('read_notes');
+  const before = host.answeredTo('read_notes');
   await emitVaultChanged(page, ['other.md']);
-  await expect.poll(() => host.callsTo('read_notes')).toBeGreaterThan(before);
+  await expect.poll(() => host.answeredTo('read_notes')).toBeGreaterThan(before);
 }
 
 test('an edit still saves after the vault changes underneath', async ({ page }) => {

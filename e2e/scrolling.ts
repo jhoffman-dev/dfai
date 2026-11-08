@@ -4,7 +4,7 @@
  *
  * A virtualised list measures and places its rows over the frames after a
  * scroll. Waiting a fixed time for that is too short under load and too long
- * otherwise (`e2e-flake/no-wait-for-timeout`, tools/eslint/e2e-flake.mjs), so
+ * otherwise (`e2e-flake/no-wait-for-timeout`, tools/eslint/e2e-flake/), so
  * these wait for the list itself: until neither its rows nor its scroll have
  * changed for a few frames running.
  */
@@ -29,6 +29,9 @@ export async function scrollThenSettle(
  * taller, so it scrolls again until, once drawn, it is still at the end.
  */
 export async function scrollToEnd(scroller: Locator): Promise<void> {
+  // An element that cannot scroll is "at its end" at once: say so, rather than pass having scrolled nothing.
+  const scrolls = await scroller.evaluate((element) => element.scrollHeight > element.clientHeight);
+  if (!scrolls) throw new Error('scrollToEnd: the element has nothing to scroll');
   for (let tries = 0; tries < 50; tries += 1) {
     await scrollThenSettle(scroller, (element) => {
       element.scrollTop = element.scrollHeight;

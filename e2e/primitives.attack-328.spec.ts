@@ -397,16 +397,18 @@ for (const theme of THEMES) {
     // The mark is the focus ring, and the menu moves focus to the row after it
     // marks it highlighted: read before then and there is no ring yet.
     await expect(highlighted).toBeFocused();
-    const best = await highlighted.evaluate((row) => {
-      const { parse, ratio, groundOf, indicatorColours, over } = (
-        globalThis as unknown as { attack328: Contrast }
-      ).attack328;
-      const menuGround = groundOf(row.closest('.menu')!);
-      const fill = over(parse(getComputedStyle(row).backgroundColor), menuGround);
-      const marks = [fill, ...indicatorColours(row).map((colour) => over(colour, menuGround))];
-      return Math.max(...marks.map((mark) => ratio(mark, menuGround)));
-    });
-    expect(best).toBeGreaterThanOrEqual(3);
+    await expect(async () => {
+      const best = await highlighted.evaluate((row) => {
+        const { parse, ratio, groundOf, indicatorColours, over } = (
+          globalThis as unknown as { attack328: Contrast }
+        ).attack328;
+        const menuGround = groundOf(row.closest('.menu')!);
+        const fill = over(parse(getComputedStyle(row).backgroundColor), menuGround);
+        const marks = [fill, ...indicatorColours(row).map((colour) => over(colour, menuGround))];
+        return Math.max(...marks.map((mark) => ratio(mark, menuGround)));
+      });
+      expect(best).toBeGreaterThanOrEqual(3);
+    }).toPass();
   });
 }
 
@@ -445,10 +447,12 @@ test('a Today row that says its status is drawn at the height the list places it
   await page.getByRole('list', { name: 'Go to' }).getByRole('button', { name: 'Today' }).click();
   const pill = page.getByRole('article', { name: 'Today' }).locator('.status-pill').first();
   await expect(pill).toBeVisible();
-  const height = await pill.evaluate((element) => {
-    // The virtualised item: the nearest ancestor the list measures.
-    const item = element.closest('[data-index]') ?? element.closest('li');
-    return item?.getBoundingClientRect().height ?? -1;
-  });
-  expect(height).toBeCloseTo(TODAY_ROW_HEIGHT, 0);
+  await expect(async () => {
+    const height = await pill.evaluate((element) => {
+      // The virtualised item: the nearest ancestor the list measures.
+      const item = element.closest('[data-index]') ?? element.closest('li');
+      return item?.getBoundingClientRect().height ?? -1;
+    });
+    expect(height).toBeCloseTo(TODAY_ROW_HEIGHT, 0);
+  }).toPass();
 });

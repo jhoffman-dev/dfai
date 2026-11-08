@@ -83,14 +83,16 @@ test('every column shows its Add control, however full the column is', async ({ 
     await expect(add).toBeVisible();
     // Visible to Playwright is not the same as on screen: check it is in the box
     // the board occupies, rather than pushed below it by a full column.
-    const inside = await add.evaluate((element) => {
-      const board = document.querySelector('.board');
-      if (board === null) return false;
-      const a = element.getBoundingClientRect();
-      const b = board.getBoundingClientRect();
-      return a.bottom <= b.bottom + 1 && a.top >= b.top - 1;
-    });
-    expect(inside, `Add to ${column} sits outside the board`).toBe(true);
+    await expect(async () => {
+      const inside = await add.evaluate((element) => {
+        const board = document.querySelector('.board');
+        if (board === null) return false;
+        const a = element.getBoundingClientRect();
+        const b = board.getBoundingClientRect();
+        return a.bottom <= b.bottom + 1 && a.top >= b.top - 1;
+      });
+      expect(inside, `Add to ${column} sits outside the board`).toBe(true);
+    }).toPass();
   }
 });
 

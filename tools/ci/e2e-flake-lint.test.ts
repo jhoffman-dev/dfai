@@ -82,10 +82,14 @@ describe('e2e-flake/no-one-shot-read', () => {
     "  await expect.poll(async () => (await field.textContent())?.trim()).toBe('Done');",
     // A retried block reads again on each try.
     '  await expect(async () => expect(await field.count()).toBe(2)).toPass();',
-    // A read kept for later is not an assertion on it.
-    '  const before = await field.count();\n  expect(before).toBeGreaterThan(0);',
-    // Reading a file the host wrote is not a Locator read.
+    // A read kept to compare with a later read: a before and after.
+    "  const before = await field.count();\n  await page.keyboard.press('n');\n  const after = await field.count();\n  expect(after).toBe(before + 1);",
+    // page.evaluate asks the page, not a Locator.
     "  expect(await page.evaluate(() => document.title)).toBe('DFAI');",
+    "  expect(await frame.evaluate(() => document.title)).toBe('DFAI');",
+    // A read kept and used for more than an assertion.
+    "  const name = await field.textContent();\n  await page.getByText(name ?? '').click();",
+    "  await expect(field).toHaveText('Done', { timeout: 5_000 });",
   ])('leaves alone %s', async (line) => {
     expect(await findings('no-one-shot-read', line)).toEqual([]);
   });
@@ -117,35 +121,33 @@ describe('e2e-flake/no-keys-after-focus', () => {
 });
 
 /*
- * Attack on PR #801: flaky shapes the rules let through. Each is `it.fails`
- * (the project's attack idiom) until the rule catches it; drop `.fails` with
- * the fix.
+ * Attack on PR #801: flaky shapes the rules let through. Each was `it.fails`
+ * (the project's attack idiom) until the rule caught it. The one still
+ * `it.fails`, a focus inside a helper function, is out of the rule's sight by
+ * design (no-keys-after-focus.mjs says so).
  */
 describe('e2e-flake/no-keys-after-focus misses (attack #801)', () => {
-  it.fails('refuses keys sent through page.keyboard kept in a variable', async () => {
+  it('refuses keys sent through page.keyboard kept in a variable', async () => {
     const lines =
       "  const { keyboard } = page;\n  await field.focus();\n  await keyboard.press('Enter');";
     expect(await findings('no-keys-after-focus', lines)).toHaveLength(1);
   });
 
-  it.fails('refuses keys pressed in a loop right after focus()', async () => {
+  it('refuses keys pressed in a loop right after focus()', async () => {
     const lines =
       "  await field.focus();\n  for (const key of ['ArrowDown', 'Enter']) await page.keyboard.press(key);";
     expect(await findings('no-keys-after-focus', lines)).toHaveLength(1);
   });
 
-  it.fails('refuses typing right after a double click', async () => {
+  it('refuses typing right after a double click', async () => {
     const lines = "  await field.dblclick();\n  await page.keyboard.type('Done');";
     expect(await findings('no-keys-after-focus', lines)).toHaveLength(1);
   });
 
-  it.fails(
-    'refuses an editing key right after a click, which races the caret as typing does',
-    async () => {
-      const lines = "  await field.click();\n  await page.keyboard.press('Backspace');";
-      expect(await findings('no-keys-after-focus', lines)).toHaveLength(1);
-    },
-  );
+  it('refuses an editing key right after a click, which races the caret as typing does', async () => {
+    const lines = "  await field.click();\n  await page.keyboard.press('Backspace');";
+    expect(await findings('no-keys-after-focus', lines)).toHaveLength(1);
+  });
 
   it.fails('refuses keys right after a helper that only focuses', async () => {
     const lines =
@@ -161,31 +163,75 @@ describe('e2e-flake/no-keys-after-focus misses (attack #801)', () => {
 });
 
 describe('e2e-flake/no-one-shot-read misses (attack #801)', () => {
-  it.fails('refuses a one-shot read given to the matcher rather than to expect()', async () => {
+  it('refuses a one-shot read given to the matcher rather than to expect()', async () => {
     const lines = '  const rows = 2;\n  expect(rows).toBe(await field.count());';
     expect(await findings('no-one-shot-read', lines)).toHaveLength(1);
   });
 
-  it.fails('refuses a one-shot Locator.evaluate read of the page', async () => {
+  it('refuses a one-shot Locator.evaluate read of the page', async () => {
     const line = '  expect(await field.evaluate((element) => element.scrollTop)).toBe(0);';
     expect(await findings('no-one-shot-read', line)).toHaveLength(1);
   });
 
-  it.fails('refuses text read into a variable and asserted on the next line', async () => {
+  it('refuses text read into a variable and asserted on the next line', async () => {
     const lines = "  const text = await field.textContent();\n  expect(text).toBe('Done');";
     expect(await findings('no-one-shot-read', lines)).toHaveLength(1);
   });
 });
 
 describe('e2e-flake/no-wait-for-timeout misses (attack #801)', () => {
-  it.fails('refuses a wait by time built from setTimeout', async () => {
+  it('refuses a wait by time built from setTimeout', async () => {
     const line = '  await new Promise((done) => setTimeout(done, 300));';
     expect(await findings('no-wait-for-timeout', line)).toHaveLength(1);
   });
 
-  it.fails('refuses a wait by time from node:timers/promises', async () => {
+  it('refuses a wait by time from node:timers/promises', async () => {
     const lines =
       "  const { setTimeout: sleep } = await import('node:timers/promises');\n  await sleep(300);";
     expect(await findings('no-wait-for-timeout', lines)).toHaveLength(1);
+  });
+});
+
+describe('e2e-flake rules, tightened after attack #801', () => {
+  it.each([
+    "  await field.tap();\n  await page.keyboard.press('Shift+ArrowLeft');",
+    "  await field.focus();\n  const box = page.getByRole('checkbox');\n  await page.keyboard.press('Space');",
+    "  await field.click();\n  while (field) {\n    await page.keyboard.press('Delete');\n  }",
+    "  const { keyboard: keys } = page;\n  await field.focus();\n  await keys.press('Enter');",
+  ])('no-keys-after-focus refuses %s', async (lines) => {
+    expect(await findings('no-keys-after-focus', lines)).toHaveLength(1);
+  });
+
+  it.each([
+    // A shortcut after a click, in a loop: the key is for the page.
+    "  await field.click();\n  for (const key of ['Escape']) await page.keyboard.press(key);",
+    // The awaited statement nearest the key is the wait, not the focus.
+    "  await field.focus();\n  await expect(field).toBeFocused();\n  const box = page.getByRole('checkbox');\n  await page.keyboard.press('Space');",
+  ])('no-keys-after-focus leaves alone %s', async (lines) => {
+    expect(await findings('no-keys-after-focus', lines)).toEqual([]);
+  });
+
+  it('no-one-shot-read names the variable kept from a single read', async () => {
+    const lines = '  const box = await field.boundingBox();\n  expect(box!.height).toBe(28);';
+    expect(await findings('no-one-shot-read', lines)).toEqual([
+      expect.stringContaining('box keeps one read of locator.boundingBox()'),
+    ]);
+  });
+
+  it('no-one-shot-read refuses a read in a negated matcher', async () => {
+    const lines = '  expect(2).not.toBe(await field.count());';
+    expect(await findings('no-one-shot-read', lines)).toHaveLength(1);
+  });
+
+  it('no-wait-for-timeout leaves timers alone outside specs, where the host stubs play a slow host', async () => {
+    const line = '  await new Promise((done) => setTimeout(done, 300));';
+    expect(await findings('no-wait-for-timeout', line, 'e2e/host.ts')).toEqual([]);
+  });
+
+  it('no-wait-for-timeout refuses a static import of node:timers/promises in a spec', async () => {
+    const code = "import { setTimeout as sleep } from 'node:timers/promises';\nawait sleep(1);\n";
+    const [result] = await eslint.lintText(code, { filePath: `${ROOT}${SPEC}` });
+    const rules = (result?.messages ?? []).map((message) => message.ruleId);
+    expect(rules).toContain('e2e-flake/no-wait-for-timeout');
   });
 });

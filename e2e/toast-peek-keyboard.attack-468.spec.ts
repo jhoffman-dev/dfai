@@ -5,6 +5,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection } from './host.ts';
 import { toastSaying } from './toasts.ts';
+import { focusOn } from './typing.ts';
 
 const TASK_TYPE = [
   '---',
@@ -57,7 +58,7 @@ test('the Undo of a task made in the peek can be reached by Tab while the peek i
   // Held under the pointer, so it cannot time out while the keys go round.
   await said.hover();
   // From the peek's own Close, out of the editor, where Tab would indent.
-  await peek.getByRole('button', { name: 'Close' }).focus();
+  await focusOn(peek.getByRole('button', { name: 'Close' }));
   let reached = false;
   for (let press = 0; press < 40 && !reached; press += 1) {
     await page.keyboard.press('Tab');

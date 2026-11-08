@@ -23,7 +23,7 @@
  * The keys are the platform's own (platform.ts): End and Home on Linux.
  */
 import { expect, type Locator } from '@playwright/test';
-import { LINE_END, LINE_START } from './platform.ts';
+import { LINE_END, LINE_START, TEXT_END } from './platform.ts';
 
 /** Click the line `line` is in, and put the caret at that line's end. */
 export async function caretAtLineEnd(line: Locator): Promise<void> {
@@ -37,19 +37,23 @@ export async function caretAtLineStart(line: Locator): Promise<void> {
 
 /**
  * Put the caret at the end of the note `editor` shows (the editor, or what
- * holds it): at the end of its last paragraph, heading or code block.
+ * holds it): at the end of its last paragraph or heading. ⌘↓ goes to the end
+ * of the whole text, so a last paragraph that wraps is reached too.
  */
 export async function caretAtNoteEnd(editor: Locator): Promise<void> {
-  await caretAt(editor.locator('p, h1, h2, h3, h4, h5, h6, pre').last(), 'end');
+  await caretAt(editor.locator('p, h1, h2, h3, h4, h5, h6').last(), 'end', [TEXT_END]);
 }
 
-async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
+async function caretAt(
+  line: Locator,
+  where: 'start' | 'end',
+  keys = where === 'end' ? [LINE_END] : [LINE_END, LINE_START],
+): Promise<void> {
   // Always pressed, never skipped when the editor already says the caret is
   // there: until ProseMirror reads the click, its selection is the one from
   // before, and the typing goes where the click put the page's caret. ⌘← is
   // pressed from the line's end: at a line's start under a bookmark card, it
   // takes the caret up to the line above.
-  const keys = where === 'end' ? [LINE_END] : [LINE_END, LINE_START];
   await expect(async () => {
     await line.click({ position: { x: 1, y: 5 } });
     for (const key of keys) await line.page().keyboard.press(key);

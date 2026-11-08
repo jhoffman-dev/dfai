@@ -68,8 +68,10 @@ test('the shown tab is scrolled into view when opened, switched to, left after a
   await row(page, NOTES[0]).click();
   for (const name of NOTES.slice(1)) await row(page, name).click({ modifiers: ['Meta'] });
   await expect(strip(page).getByRole('tab')).toHaveCount(NOTES.length);
-  const scrolls = await strip(page).evaluate((list) => list.scrollWidth > list.clientWidth);
-  expect(scrolls, 'fourteen tabs at 1280px overflow the strip').toBe(true);
+  await expect(async () => {
+    const scrolls = await strip(page).evaluate((list) => list.scrollWidth > list.clientWidth);
+    expect(scrolls, 'fourteen tabs at 1280px overflow the strip').toBe(true);
+  }).toPass();
   // Opened: the newest, last, tab.
   await expectShownTabInView(page, NOTES[13]);
 
@@ -98,7 +100,7 @@ test('a shown tab already in view does not scroll the strip', async ({ page }) =
   await expectShownTabInView(page, NOTES[0]);
   await page.keyboard.press('Meta+2');
   await expectShownTabInView(page, NOTES[1]);
-  expect(await strip(page).evaluate((list) => list.scrollLeft)).toBe(0);
+  await expect.poll(() => strip(page).evaluate((list) => list.scrollLeft)).toBe(0);
 });
 
 test('the strip stays where it was scrolled when the other pane takes the focus', async ({
@@ -120,5 +122,5 @@ test('the strip stays where it was scrolled when the other pane takes the focus'
   await pane(page, 2).getByRole('heading', { name: NOTES[13] }).first().click();
   await expect(pane(page, 2)).toHaveClass(/pane--focused/);
   await expect(pane(page, 1)).not.toHaveClass(/pane--focused/);
-  expect(await strip(page).evaluate((list) => list.scrollLeft)).toBe(0);
+  await expect.poll(() => strip(page).evaluate((list) => list.scrollLeft)).toBe(0);
 });

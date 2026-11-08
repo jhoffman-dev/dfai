@@ -98,12 +98,16 @@ for (const { width, height, panelScrolls } of WINDOWS) {
 
       // The sheet is the rows' scroller, as on every other table. The panel
       // around it scrolls only when the window is too short for the page.
-      const panel = await page
-        .locator('.panel__body', { has: article(page) })
-        .evaluate((body) => body.scrollHeight > body.clientHeight + 1);
-      expect(panel, 'the panel around the result scrolls').toBe(panelScrolls);
-      const sheetScrolls = await sheet(page).evaluate((el) => el.scrollHeight > el.clientHeight);
-      expect(sheetScrolls, 'the result sheet scrolls').toBe(true);
+      await expect(async () => {
+        const panel = await page
+          .locator('.panel__body', { has: article(page) })
+          .evaluate((body) => body.scrollHeight > body.clientHeight + 1);
+        expect(panel, 'the panel around the result scrolls').toBe(panelScrolls);
+      }).toPass();
+      await expect(async () => {
+        const sheetScrolls = await sheet(page).evaluate((el) => el.scrollHeight > el.clientHeight);
+        expect(sheetScrolls, 'the result sheet scrolls').toBe(true);
+      }).toPass();
 
       await sheet(page).evaluate((el) => {
         el.scrollTop = el.scrollHeight;

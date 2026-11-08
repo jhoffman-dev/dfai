@@ -6,7 +6,7 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
-import { focusThenPress } from './typing.ts';
+import { focusOn, focusThenPress } from './typing.ts';
 
 const TASKS = 2000;
 const STATUSES = ['backlog', 'doing', 'done'] as const;
@@ -115,7 +115,7 @@ test('End, Home and a fast run of arrows in a 2,000-row grouped table keep the f
 test('a held Down never drops the focus to the body, at any step', async ({ page }) => {
   test.setTimeout(120_000);
   await openGroupedTable(page);
-  await page.locator('.table__group-toggle').first().focus();
+  await focusOn(page.locator('.table__group-toggle').first());
   let lost = 0;
   for (let step = 0; step < 60; step += 1) {
     await page.keyboard.press('ArrowDown');
