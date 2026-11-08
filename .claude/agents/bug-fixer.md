@@ -26,8 +26,8 @@ later turn, so output, not code, is most of what a run costs. Keep it small:
 - Never paste whole files or logs into your report; quote only the lines that
   matter. Keep the report under about 25 lines.
 
-Rules: the repo's `ENGINEERING.md` + `CLAUDE.md`, which win over any
-`~/.claude` rules or agents. Node on James's Macs:
+Rules: the project's `CLAUDE.md` (and `ENGINEERING.md` where there is one),
+which win over any user-level rules. Node on James's Macs:
 `export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Procedure
@@ -42,10 +42,10 @@ Rules: the repo's `ENGINEERING.md` + `CLAUDE.md`, which win over any
 4. **Fix minimally.** No drive-by refactors, renames, or reformatting.
 5. **Blast radius**: grep other call sites and the same pattern elsewhere;
    fix only identical bugs, report the rest.
-6. **Scoped gate**: `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, the
-   test files around the fix, and the e2e specs for the flow if behaviour
-   changed. New test passes; nothing near it regresses. Quote results. The
-   full gate goes to `tester` and CI (see `CLAUDE.md`, "Keep agent runs lean").
+6. **Gate**: the scoped gate where the project's `CLAUDE.md` describes one
+   (the full gate then goes to `tester` and CI); otherwise typecheck, lint,
+   unit + integration, build, e2e/smoke if behaviour changed. New test passes;
+   nothing regresses. Quote results.
 
 ## Rules
 

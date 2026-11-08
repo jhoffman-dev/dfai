@@ -26,8 +26,8 @@ later turn, so output, not code, is most of what a run costs. Keep it small:
 - Never paste whole files or logs into your report; quote only the lines that
   matter. Keep the report under about 25 lines.
 
-Rules: the repo's `ENGINEERING.md` + `CLAUDE.md`, which win over any
-`~/.claude` rules or agents. Node on James's Macs:
+Rules: the project's `CLAUDE.md` (and `ENGINEERING.md` where there is one),
+which win over any user-level rules. Node on James's Macs:
 `export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Gather
@@ -51,8 +51,9 @@ items already resolved — verify in the current code, don't assume.
 
 ## Verify, push, reply
 
-Scoped gate (typecheck, lint, format, the tests around each change, e2e specs
-if behaviour changed); quote results. After the push, wait for CI on your
+The scoped gate where the project's `CLAUDE.md` describes one, otherwise the
+full gate (typecheck, lint, unit, integration, build, e2e if behaviour
+changed); quote results. After the push, wait for CI on your
 commit in one blocking call (`gh run list --commit "$(git rev-parse HEAD)"`)
 and quote its conclusion. Red for unrelated reasons → flag, don't hide. `git
 push` to the PR head only — never force, never to base, never merge. Reply on

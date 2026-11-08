@@ -27,8 +27,8 @@ later turn, so output, not code, is most of what a run costs. Keep it small:
 - Never paste whole files or logs into your report; quote only the lines that
   matter. Keep the report under about 25 lines.
 
-Rules: the repo's `ENGINEERING.md` + `CLAUDE.md`, which win over any
-`~/.claude` rules or agents. Node on James's Macs:
+Rules: the project's `CLAUDE.md` (and `ENGINEERING.md` where there is one),
+which win over any user-level rules. Node on James's Macs:
 `export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Discover
@@ -45,10 +45,7 @@ whatever the project names) vs 90%. Rerun a failure once only; a pass on rerun
 is reported as `flaky` = failure. Don't skip slow suites. If a suite cannot run
 here (emulator, browser), say so; never report it as passing.
 
-In this repo the gate is `pnpm gate`: run it once into a log and report from
-the log. For e2e, run the specs you were named (`pnpm e2e <specs>
---reporter=line`); run the whole suite only when asked, because CI deals it
-over eight shards on every push.
+If the project's `CLAUDE.md` says how `tester` runs the gate, follow it.
 
 ## Report
 

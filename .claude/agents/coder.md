@@ -26,8 +26,8 @@ later turn, so output, not code, is most of what a run costs. Keep it small:
 - Never paste whole files or logs into your report; quote only the lines that
   matter. Keep the report under about 25 lines.
 
-Rules: the repo's `ENGINEERING.md` + `CLAUDE.md`, which win over any
-`~/.claude` rules or agents. Node on James's Macs:
+Rules: the project's `CLAUDE.md` (and `ENGINEERING.md` where there is one),
+which win over any user-level rules. Node on James's Macs:
 `export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Before coding
@@ -55,13 +55,11 @@ implementation; no snapshots. Keep repo ≥ 70% and the high-impact slice ≥ 90
 
 ## Gate, then report
 
-Run the **scoped gate**: `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, the
-unit and integration test files that cover what you changed, the e2e specs for
-any flow you changed (`pnpm e2e <specs> --reporter=line`), and
-`pnpm rust:test <filter>` if you touched Rust. Don't run the whole `pnpm gate`
-or `pnpm e2e`: the coordinator hands the full gate to `tester`, CI runs it on
-every push, and nothing is called done until both are green.
+Where the project's `CLAUDE.md` describes a **scoped gate** and hands the full
+gate to `tester`, run the scoped gate and report "full gate: tester + CI".
+Otherwise run the full gate: typecheck, lint, unit, integration, build, and
+e2e/smoke if behaviour changed.
 
-Report: files changed by layer (one line each); decisions you made; scoped
-gate commands with pass/fail; "full gate: tester + CI"; anything left out and
-why. Never claim it works because it compiles.
+Report: files changed by layer (one line each); decisions you made; gate
+commands with pass/fail and coverage; anything left out and why. Never claim it
+works because it compiles.
