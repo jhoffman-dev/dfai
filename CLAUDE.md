@@ -75,16 +75,17 @@ nearly two fifths. So:
   mechanical fixes), `pnpm format:check`, the unit and integration test files
   that cover the change (`pnpm exec vitest run <files> --reporter=dot`), the
   e2e specs for any flow that changed (`pnpm e2e <specs> --reporter=line`), and
-  `pnpm rust:test <filter>` if Rust changed. They don't run the whole
+  `pnpm rust:test <filter>` and `pnpm rust:lint` if Rust changed. They don't run the whole
   `pnpm gate` or `pnpm e2e`. The coordinator then spawns `tester` on the branch,
   in parallel with the `code-reviewer` and `adversarial-tester` passes, and
   sends any failure back to the author with `SendMessage`. CI runs everything
-  on every push. A pull request is marked ready only when `tester` and CI are
-  both green.
-- **How `tester` runs here:** `pnpm gate` once, into a log, reported from the
-  log. For e2e, the specs it was named (`pnpm e2e <specs> --reporter=line`); the
-  whole suite only when asked, because CI deals it over eight shards on every
-  push.
+  on every push. A pull request is marked ready only when `tester` is green on
+  its head commit, after the last fix, and CI is green on that commit too.
+- **How `tester` runs here:** `pnpm gate` once, in the background (it runs
+  past a foreground command's 10-minute limit), into a log, reported from the
+  log. For e2e, the specs the coordinator names in its brief, at least those the
+  change touches (`pnpm e2e <specs> --reporter=line`); the whole suite only when
+  asked, because CI deals it over eight shards on every push.
 - **Subagents keep a 1-hour prompt cache** (`subagentPromptCacheTtl` in
   `.claude/settings.json`), so an agent waiting on a long run doesn't rebuild
   its context. Agents still wait in one blocking call, not a series of
