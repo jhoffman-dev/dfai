@@ -10,6 +10,9 @@ on:
     # 06:41 UTC, clear of the macOS nightly at 09:17.
     - cron: '41 6 * * *'
   workflow_dispatch:
+  # THROWAWAY (#799 proof): workflow_dispatch needs the file on main first.
+  push:
+    branches: [feat/799-ci-flake-handling]
 
 concurrency:
   group: e2e-flake-hunt-${{ github.ref }}
