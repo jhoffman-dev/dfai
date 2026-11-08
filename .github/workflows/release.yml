@@ -73,8 +73,12 @@ jobs:
 
   gate:
     needs: version
+    # `issues: write` for the gate's `flaky` job, which files an issue for each
+    # test that needed its retry (#799); a called workflow's jobs get no more
+    # than this. Nothing else in the gate writes.
     permissions:
       contents: read
+      issues: write
     uses: ./.github/workflows/gate.yml
 
   build:

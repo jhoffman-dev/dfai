@@ -211,7 +211,24 @@ failed e2e shard uploads its HTML report as `playwright-report-<n>` (no traces:
 tracing every test cost a third more time). To run one shard here as CI deals it:
 `pnpm e2e --shard=2/8 --reporter=list,./tools/ci/e2e-shard-reporter.ts`. When the
 shards drift apart, refresh `tools/ci/e2e-durations.json` from a main run's
-`e2e-durations-*` artifacts with `tools/ci/e2e-durations.mjs`.
+`e2e-durations-*` artifacts with `tools/ci/e2e-durations.mjs`. Flaky e2e tests
+are caught, not hidden (#799; James's exception to "a flaky test is a bug, not a
+retry"): (1) `e2e-new` runs the spec files a pull request adds or changes ten
+times (`--repeat-each=10`, no retry, on four Linux shards), and one failure fails
+`gate`. (2) Under `CI` a failed test is retried once: one that fails twice fails
+`gate`; one that then passes keeps its shard green, but the non-blocking `flaky`
+job goes red listing it, and opens or comments on its issue (label `flaky`, a
+sub-issue of #126, one per test title; never from a fork). (3) Quarantine a
+flaky test while its issue is open with `quarantined(<issue>)` from
+`e2e/quarantine.ts` (`test('…', quarantined(812), async …)`): it tags it
+`@quarantine`, which the gate leaves out, and names the issue. The non-blocking
+`quarantine` job runs those tests alone (`E2E_QUARANTINE=only` here) and lists
+each with its issue; it goes red when one names no issue or a closed one, so
+take the tag off in the fix that closes it. (4) `e2e-flake-hunt.yml` runs the
+whole Linux suite three times nightly on `main` (or by hand, `workflow_dispatch`)
+and files or comments on one issue listing every test that failed, by spec.
+`flaky` and `quarantine` are not required checks. The scripts are in
+`tools/ci/flake-job.ts` and the modules it names.
 
 **Check CI by commit, never by "the latest run".** A run is not registered the
 instant a push returns, so `gh run list --limit 1` will happily hand back the

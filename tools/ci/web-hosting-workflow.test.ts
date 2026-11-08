@@ -106,8 +106,19 @@ describe('any workflow', () => {
       'a reusable workflow from elsewhere',
       'jobs:\n  a:\n    uses: someone/repo/.github/workflows/x.yml@main\n',
     ],
+    [
+      'an unpinned action inside a composite action',
+      'runs:\n  using: composite\n  steps:\n    - uses: actions/cache@v4\n',
+    ],
   ])('refuses %s', (_what, text) => {
     expect(actionProblems(text)).toEqual([expect.stringContaining('is not an allowed')]);
+  });
+
+  it('allows the local e2e set-up action, and pinned actions inside it', () => {
+    const text =
+      'jobs:\n  a:\n    steps:\n      - uses: ./.github/actions/e2e-webkit\n' +
+      'runs:\n  using: composite\n  steps:\n    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n';
+    expect(actionProblems(text)).toEqual([]);
   });
 
   it('allows the pinned actions and the local gate', () => {

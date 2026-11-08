@@ -1,0 +1,90 @@
+name: e2e-webkit
+description: >-
+  Installs the dependencies, Playwright's WebKit and WebKit's system packages
+  on a Linux runner, for every job that runs the end-to-end suite: the gate's
+  e2e shards, its repeated new specs and its quarantine, and the nightly
+  flake hunt (#799). Run after actions/checkout.
+
+inputs:
+  save-caches:
+    description: >-
+      'true' to save WebKit and its packages to the caches on a miss. One job
+      of a matrix saves, so its runners do not race to write one key.
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      with:
+        version: 11
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - shell: bash
+      run: pnpm install --frozen-lockfile
+
+    # WebKit and its apt packages as the `perf` job has them, from the same
+    # caches (#519), so the jobs share one download.
+    - name: Read the Playwright version and the runner image
+      id: playwright
+      shell: bash
+      run: |
+        {
+          echo "version=$(pnpm exec playwright --version | cut -d' ' -f2)"
+          echo "os=${ImageOS}"
+          echo "image=${ImageOS}-${ImageVersion}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Make apt time out and retry
+      shell: bash
+      run: |
+        printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
+          | sudo tee /etc/apt/apt.conf.d/99-ci-519 > /dev/null
+
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # A restore that stalls is given up on after two minutes, not the action's
+      # ten: a miss only means installing (seconds), and a ten-minute stall once
+      # took an e2e shard past its time limit (run 41196967743).
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+      id: webkit
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-webkit-${{ runner.os }}-${{ steps.playwright.outputs.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+    # `timeout` rather than the step's `timeout-minutes`, which a composite
+    # action's steps do not take: the same five and nine minutes as before.
+    - name: Install WebKit
+      if: steps.webkit.outputs.cache-hit != 'true'
+      shell: bash
+      run: timeout 5m pnpm exec playwright install webkit
+
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.webkit.outputs.cache-hit != 'true' && inputs.save-caches == 'true'
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.webkit.outputs.cache-primary-key }}
+
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+      id: webkit-debs
+      with:
+        path: ~/.cache/webkit-debs
+        key: webkit-debs-${{ steps.playwright.outputs.image }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+    - name: Install WebKit's system packages
+      shell: bash
+      env:
+        WEBKIT_DEBS_CACHE_HIT: ${{ steps.webkit-debs.outputs.cache-hit }}
+      run: timeout 9m tools/ci/install-webkit-deps.sh "$HOME/.cache/webkit-debs"
+
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.webkit-debs.outputs.cache-hit != 'true' && inputs.save-caches == 'true'
+      with:
+        path: ~/.cache/webkit-debs
+        key: ${{ steps.webkit-debs.outputs.cache-primary-key }}

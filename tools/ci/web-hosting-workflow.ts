@@ -26,6 +26,7 @@ export const ALLOWED_ACTIONS: ReadonlySet<string> = new Set([
   'dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec',
   'Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0',
   './.github/workflows/gate.yml',
+  './.github/actions/e2e-webkit',
   DEPLOY_ACTION,
 ]);
 
@@ -235,10 +236,14 @@ function secretProblems(root: Json): string[] {
     .map(([path]) => `${path.join('.')} hands a secret to more than the deploy action`);
 }
 
-/** Every action a workflow uses, from its steps and its reusable-workflow jobs. */
+/**
+ * Every action a workflow uses, from its steps and its reusable-workflow jobs,
+ * or a composite action (.github/actions) from its own steps.
+ */
 function usesOf(root: Record<string, Json>): string[] {
   const jobs = isRecord(root.jobs) ? Object.values(root.jobs) : [];
-  return jobs.flatMap((job) => {
+  const composite = isRecord(root.runs) ? [root.runs] : [];
+  return [...jobs, ...composite].flatMap((job) => {
     if (!isRecord(job)) return [];
     const steps = Array.isArray(job.steps) ? job.steps : [];
     return [job.uses, ...steps.map((step) => (isRecord(step) ? step.uses : undefined))].filter(

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { tagFilter } from './tools/ci/e2e-tags.ts';
 
 /**
  * The port this checkout's end-to-end server listens on.
@@ -66,12 +67,20 @@ export default defineConfig({
   // A temp folder of the run's own, removed when it ends (issue #397).
   globalSetup: './tools/temp-folder-per-run.ts',
   fullyParallel: true,
-  // A test tagged `@mac` checks what only macOS WebKit does (its text system,
-  // its editing keys), so it runs only there: on a Mac here, and in CI in the
-  // nightly macOS run (e2e-macos-nightly.yml), not in the gate's Linux shards.
-  ...(process.platform === 'darwin' ? {} : { grepInvert: /@mac\b/ }),
+  // A test tagged `@mac` checks what only macOS WebKit does, so it runs only
+  // there: on a Mac here, and in CI in the nightly macOS run
+  // (e2e-macos-nightly.yml), not in the gate's Linux shards. A test tagged
+  // `@quarantine` (e2e/quarantine.ts) is left out everywhere, unless
+  // `E2E_QUARANTINE=only` asks for the quarantined tests alone (#799).
+  ...tagFilter({
+    platform: process.platform,
+    quarantinedOnly: process.env.E2E_QUARANTINE === 'only',
+  }),
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // Retry to detect, not to hide (#799): in CI a failed test runs once more. A
+  // test that then passes leaves its shard green, but the gate's `flaky` job
+  // goes red and files an issue for it; one that fails twice fails the gate.
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'list' : [['list']],
   use: {
     baseURL: BASE_URL,
