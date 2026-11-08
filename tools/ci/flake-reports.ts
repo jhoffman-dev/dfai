@@ -105,7 +105,7 @@ export function huntFindings(
       `#### \`${file}\``,
       ...tests.map((record) =>
         [
-          `- ${record.title} [${record.project}]: failed ${record.failures} of ${record.tries}`,
+          `- ${record.title} [${record.project}]: failed ${record.failures} of ${repeats}`,
           fenced(record.errorLines),
         ].join('\n'),
       ),

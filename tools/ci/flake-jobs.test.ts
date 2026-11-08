@@ -94,6 +94,17 @@ describe('the nightly flake hunt', () => {
     expect(second.summary).toContain('2 test(s) failed at least once in 3 runs');
   });
 
+  it("lists a test once when its repeats failed on two shards, out of the night's runs", async () => {
+    const result = await reportHunt({
+      records: [record({ tries: 1, passed: false }), record({ tries: 2 })],
+      run: RUN,
+      repeats: 3,
+    });
+    expect(result.summary).toContain('1 test(s) failed at least once in 3 runs');
+    expect(result.summary).toContain('- moves a card [webkit]: failed 2 of 3');
+    expect(result.summary).toContain('No issue filed.');
+  });
+
   it('files nothing on a night nothing failed', async () => {
     const tracker = new FakeTracker();
     const result = await reportHunt({ records: [], run: RUN, repeats: 3, tracker });

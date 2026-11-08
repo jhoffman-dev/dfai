@@ -55,7 +55,8 @@ export function errorLinesOf(errors: readonly { readonly message?: string }[]): 
 /** Neither passed nor failed: skipped, or stopped with the run. */
 const didNotRun = (status: string) => status === 'skipped' || status === 'interrupted';
 
-const keyOf = (test: RanTest) => `${test.project}\u0000${test.file}\u0000${test.title}`;
+const keyOf = (test: { readonly project: string; readonly file: string; readonly title: string }) =>
+  `${test.project}\u0000${test.file}\u0000${test.title}`;
 
 /** One record for each test, its repeats folded in, of those that failed a try. */
 export function flakeRecordsOf(tests: readonly RanTest[]): FlakeRecord[] {
@@ -82,6 +83,29 @@ export function flakeRecordsOf(tests: readonly RanTest[]): FlakeRecord[] {
     });
   }
   return [...records.values()].filter((record) => record.failures > 0);
+}
+
+/**
+ * Records from several shards folded into one per test: Playwright deals a
+ * test's repeats out to different shards, each of which recorded its own.
+ */
+export function foldRecords(records: readonly FlakeRecord[]): FlakeRecord[] {
+  const folded = new Map<string, FlakeRecord>();
+  for (const record of records) {
+    const earlier = folded.get(keyOf(record));
+    folded.set(
+      keyOf(record),
+      earlier === undefined
+        ? record
+        : {
+            ...earlier,
+            tries: earlier.tries + record.tries,
+            failures: earlier.failures + record.failures,
+            passed: earlier.passed || record.passed,
+          },
+    );
+  }
+  return [...folded.values()];
 }
 
 /** Flaky: failed on a try and passed on another. */

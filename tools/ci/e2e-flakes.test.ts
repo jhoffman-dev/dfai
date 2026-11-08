@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { ERROR_LINES, errorLinesOf, flakeRecordsOf, isFlaky, type RanTest } from './e2e-flakes.ts';
+import {
+  ERROR_LINES,
+  errorLinesOf,
+  flakeRecordsOf,
+  foldRecords,
+  isFlaky,
+  type RanTest,
+} from './e2e-flakes.ts';
+
+describe("several shards' records of one test", () => {
+  it('fold into one, the counts added and the first error kept', () => {
+    const [first] = flakeRecordsOf([ran(['failed'])]);
+    const [second] = flakeRecordsOf([ran(['timedOut'])]);
+    const [other] = flakeRecordsOf([ran(['failed'], { title: 'other' })]);
+    const folded = foldRecords([first!, second!, other!]);
+    expect(folded).toHaveLength(2);
+    expect(folded[0]).toMatchObject({ tries: 2, failures: 2, passed: false });
+    expect(folded[0]!.errorLines[0]).toBe('try 1 failed');
+    expect(folded[1]!.title).toBe('other');
+  });
+});
 
 const ESC = String.fromCharCode(27);
 

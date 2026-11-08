@@ -1,4 +1,4 @@
-import { isFlaky, type FlakeRecord } from './e2e-flakes.ts';
+import { foldRecords, isFlaky, type FlakeRecord } from './e2e-flakes.ts';
 import { fileOrUpdate, type Filed, type IssueTracker } from './flake-issues.ts';
 import {
   flakyIssueReport,
@@ -65,7 +65,8 @@ export async function reportHunt({
   readonly tracker?: IssueTracker | undefined;
 }): Promise<JobResult> {
   const heading = '### Nightly e2e flake hunt\n\n';
-  if (records.length === 0) {
+  const failing = foldRecords(records);
+  if (failing.length === 0) {
     return {
       summary: `${heading}No test failed in ${repeats} runs of the suite.\n`,
       failed: false,
@@ -74,11 +75,11 @@ export async function reportHunt({
   const filed =
     tracker === undefined
       ? undefined
-      : await fileOrUpdate(tracker, huntIssueReport(records, run, repeats));
+      : await fileOrUpdate(tracker, huntIssueReport(failing, run, repeats));
   const where =
     filed === undefined ? 'No issue filed.' : `Filed in #${filed.number} (${filed.action}).`;
   return {
-    summary: `${heading}${where}\n\n${huntFindings(records, run, repeats)}\n`,
+    summary: `${heading}${where}\n\n${huntFindings(failing, run, repeats)}\n`,
     failed: false,
   };
 }
