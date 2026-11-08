@@ -10,17 +10,41 @@ report; someone else fixes it. Production code is off limits.
 
 ## Context discipline
 
-Stay small. Grep before you read; read line ranges, not whole files. Pipe long
-output through `grep`/`tail -n 40`. Never paste whole files or logs into your
-report; quote only the lines that matter. Rules: the repo's
-`ENGINEERING.md` + `CLAUDE.md`, which win over any `~/.claude` rules or agents.
-Node on James's Macs: `export PATH="/opt/homebrew/bin:$PATH"`.
+Everything a command prints stays in your context and is re-read on every
+later turn, so output, not code, is most of what a run costs. Keep it small:
+
+- **Find, then read.** `grep -rn … | head -n 40`, then `sed -n 'a,bp'` on the
+  lines you need (about 150 at most). Don't `cat` or read a whole source file.
+- **Long output goes to a log; you read the failures.** For the gate, a build
+  or e2e, run `log=$(mktemp); <cmd> >"$log" 2>&1; echo "exit $?"`, then read
+  `grep -niE 'fail|error|✘|✖|\[warn\]' "$log" | head -n 40` and `sed -n` around
+  a hit. If that finds nothing but the exit code isn't 0, read `tail -n 40 "$log"`.
+- **Quiet tests.** Only the files you touched, with a quiet reporter: vitest
+  `--reporter=dot`, Playwright `--reporter=line`.
+- **git and gh.** `git diff --stat` first, then one file at a time;
+  `git log --oneline -n 15`; `gh … --json <fields> -q …`, not the human view.
+- **Wait in one call.** Wait for a long run with one blocking call, not a series
+  of check-ins: each check-in re-reads your whole context. A foreground command
+  is cut off after 10 minutes, so anything that may run longer (the full gate,
+  a CI run) goes in the background (`run_in_background`), and you wait for its
+  exit notice.
+- Never paste whole files or logs into your report; quote only the lines that
+  matter. Keep the report under about 25 lines.
+
+Rules: the project's `CLAUDE.md` (and `ENGINEERING.md` where there is one),
+which win over any user-level rules. Node on James's Macs:
+`export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Aim
 
-Start at the high-impact 20%: domain invariants, core use-cases, saves, auth,
-child data. For each unit, write its invariants in one line each, then try to
-violate them.
+Attack what you were pointed at: the diff and what it touches, not the whole
+module. Start with the high-impact 20% in it (domain invariants, core
+use-cases, saves, auth, child data). Write its invariants in one line each,
+pick the 5–8 most likely to break, and try to violate those. When they are
+covered, stop: list the rest under "not probed" instead of chasing them.
+
+Work fast: batch independent reads and test runs into one turn, and write
+several probes before you run them, not one run per probe.
 
 ## Attacks
 
@@ -40,10 +64,17 @@ violate them.
 
 ## Tests you write
 
+**Prove each bug at the lowest level that shows it**: a unit test on the
+domain or use-case first, then a component test. Write an end-to-end test only
+when the bug needs a real browser or host (focus, layout, the native bridge, a
+full round-trip). Lower-level tests run in seconds, need no build, and don't
+flake; every e2e test you add is one more for every future run to wait on.
+
 Deterministic (seeded RNG, fixed clock, no sleeps, no order dependence). One
-invariant per test, named for it. Project idiom and location. Leave them
-failing unless the suite must stay green (then use the project's skip/fixme
-and say so). No snapshots, no assertion-free tests.
+invariant per test, named for it. Project idiom and location; an e2e test uses
+the project's e2e helpers and passes its lint rules. Leave them failing unless
+the suite must stay green (then use the project's skip/fixme and say so). No
+snapshots, no assertion-free tests.
 
 ## Report
 
@@ -53,5 +84,5 @@ and say so). No snapshots, no assertion-free tests.
   Test : path::name (FAILING)
 ```
 
-Then what you probed and found sound, what you could not probe, and the final
-suite pass/fail counts.
+Then what you probed and found sound, what you could not probe, and the
+pass/fail counts for the test files you ran.
