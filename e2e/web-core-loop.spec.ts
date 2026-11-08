@@ -1,3 +1,4 @@
+import { caretAtNoteEndBy } from './caret.ts';
 import { expect, type Locator, type Page } from './fixtures.ts';
 import { webVaultOnGitHub } from './web-github.ts';
 import { webTest as test } from './web-test.ts';
@@ -16,10 +17,20 @@ async function enterOn(target: Locator) {
   await target.press('Enter');
 }
 
-/** The caret to the note's end, ⌘↓ as on a Mac (or Ctrl+End where WebKit is Linux's), then `text`. */
+/**
+ * The caret to the note's end, ⌘↓ as on a Mac (or Ctrl+End where WebKit is
+ * Linux's), then `text`. The key pressed within 20 ms of the focus is undone
+ * when ProseMirror has not read it by then (caret.ts), and the typing lands
+ * at the note's start (#797), so the editor's own caret is waited on first:
+ * at the end of “First line.”, which must be the note's last block.
+ */
 async function typeAtTheNoteEnd(page: Page, text: string) {
-  await page.getByLabel('Note', { exact: true }).focus();
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End');
+  const note = page.getByLabel('Note', { exact: true });
+  await note.focus();
+  await expect(note, 'the note takes the focus').toBeFocused({ timeout: 5_000 });
+  await caretAtNoteEndBy(note.getByText('First line.'), () =>
+    page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End'),
+  );
   await page.keyboard.type(text);
 }
 
