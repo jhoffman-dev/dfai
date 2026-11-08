@@ -30,9 +30,9 @@ function testCase(title: string, statuses: string[]): TestCase {
   } as unknown as TestCase;
 }
 
-function run(tests: TestCase[]): void {
+function run(tests: TestCase[], shard: FullConfig['shard'] = null): void {
   const reporter = new E2eFlakeReporter();
-  reporter.onBegin(CONFIG, { allTests: () => tests } as unknown as Suite);
+  reporter.onBegin({ ...CONFIG, shard }, { allTests: () => tests } as unknown as Suite);
   reporter.onEnd();
 }
 
@@ -69,6 +69,19 @@ describe('the e2e flake reporter', () => {
   it('writes an empty list when nothing failed, so every shard hands one on', () => {
     run([testCase('adds a card', ['passed'])]);
     expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual([]);
+  });
+
+  it('writes beside the records which shard of how many it was, one of one without --shard', () => {
+    run([], { current: 3, total: 8 });
+    expect(JSON.parse(readFileSync(join(folder, 'shard.json'), 'utf8'))).toEqual({
+      current: 3,
+      total: 8,
+    });
+    run([]);
+    expect(JSON.parse(readFileSync(join(folder, 'shard.json'), 'utf8'))).toEqual({
+      current: 1,
+      total: 1,
+    });
   });
 
   it('writes nothing without E2E_FLAKES_OUT', () => {

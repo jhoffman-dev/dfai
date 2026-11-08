@@ -74,7 +74,7 @@ jobs:
         env:
           E2E_FLAKES_OUT: e2e-flakes/flakes.json
         run: >-
-          pnpm e2e --shard=${{ matrix.shard }}/4 --workers=1
+          pnpm e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }} --workers=1
           --reporter=list,html,./tools/ci/e2e-flake-reporter.ts
 
       # The quarantined tests, `@mac` ones among them, which only a Mac can run
@@ -131,9 +131,11 @@ jobs:
       - name: List the flaky tests and file their issues
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          FILE_ISSUES: 'true'
+          # Issues only for `main`, as `report` below: a run started on a branch
+          # is someone's trial, not news.
+          FILE_ISSUES: ${{ github.ref == 'refs/heads/main' }}
           RUN_CONTEXT: macOS, ${{ github.ref_name }}
-        run: node tools/ci/flake-job.ts flaky e2e-flakes 4
+        run: node tools/ci/flake-job.ts flaky e2e-flakes
 
   report:
     # One open issue for a red streak: a second failure comments on it. Only

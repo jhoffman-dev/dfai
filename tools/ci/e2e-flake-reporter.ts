@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { FullConfig, Reporter, Suite, TestCase } from '@playwright/test/reporter';
 import { flakeRecordsOf, type RanTest } from './e2e-flakes.ts';
+import { SHARD_FILE } from './flake-job-io.ts';
 import { pathFrom, projectOf, repositoryRoot, titleOf } from './playwright-tests.ts';
 
 /*
@@ -9,15 +10,19 @@ import { pathFrom, projectOf, repositoryRoot, titleOf } from './playwright-tests
  * `E2E_FLAKES_OUT` names, every test that failed on at least one try: the
  * gate's shards, where a failure is retried once, and the nightly flake hunt,
  * where the suite repeats. It writes the file, `[]` when nothing failed, so
- * every shard hands on a result. Without `E2E_FLAKES_OUT` it does nothing.
+ * every shard hands on a result, and beside it `shard.json`, which shard of how
+ * many this was (from `--shard`), so the flake jobs can tell a shard that died
+ * from one that found nothing. Without `E2E_FLAKES_OUT` it does nothing.
  */
 export default class E2eFlakeReporter implements Reporter {
   private root = process.cwd();
   private suite: Suite | undefined;
+  private shard: FullConfig['shard'] = null;
 
   onBegin(config: FullConfig, suite: Suite): void {
     this.root = repositoryRoot(config);
     this.suite = suite;
+    this.shard = config.shard;
   }
 
   onEnd(): void {
@@ -26,6 +31,8 @@ export default class E2eFlakeReporter implements Reporter {
     const records = flakeRecordsOf(this.suite.allTests().map((test) => this.ranTestOf(test)));
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, `${JSON.stringify(records, null, 2)}\n`);
+    const shard = this.shard ?? { current: 1, total: 1 };
+    writeFileSync(join(dirname(out), SHARD_FILE), `${JSON.stringify(shard)}\n`);
   }
 
   printsToStdio(): boolean {

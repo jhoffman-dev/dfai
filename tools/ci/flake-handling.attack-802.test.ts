@@ -183,6 +183,6 @@ describe('PR #802 attack: the quarantine names an issue', () => {
       token: 't',
       timeoutMs: 1_000,
     });
-    expect(await issues.isOpen(9)).not.toBe(true);
+    expect(await issues.findIssue(9)).toBeUndefined();
   });
 });

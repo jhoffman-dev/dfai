@@ -195,9 +195,9 @@ describe('the GitHub issues adapter', () => {
   it('says whether an issue is open, and when there is none', async () => {
     github.issues.push({ number: 7, id: 70, title: 'x', state: 'open', labels: [] });
     github.issues.push({ number: 8, id: 80, title: 'y', state: 'closed', labels: [] });
-    expect(await issues.isOpen(7)).toBe(true);
-    expect(await issues.isOpen(8)).toBe(false);
-    expect(await issues.isOpen(9)).toBeUndefined();
+    expect((await issues.findIssue(7))?.open).toBe(true);
+    expect((await issues.findIssue(8))?.open).toBe(false);
+    expect(await issues.findIssue(9)).toBeUndefined();
   });
 
   it("reads an issue's labels, and takes a pull request for no issue", async () => {
@@ -225,7 +225,7 @@ describe('the GitHub issues adapter', () => {
     await expect(issues.comment(1, 'x')).rejects.toThrow(
       /GitHub POST \/issues\/1\/comments: 403 .*not accessible/,
     );
-    await expect(issues.isOpen(1)).rejects.toThrow('403');
+    await expect(issues.findIssue(1)).rejects.toThrow('403');
   });
 
   it('throws on an answer that is not JSON', async () => {
@@ -235,6 +235,6 @@ describe('the GitHub issues adapter', () => {
 
   it('gives up on a GitHub that does not answer', async () => {
     github.hang = true;
-    await expect(issues.isOpen(1)).rejects.toThrow(/timeout|aborted/i);
+    await expect(issues.findIssue(1)).rejects.toThrow(/timeout|aborted/i);
   });
 });

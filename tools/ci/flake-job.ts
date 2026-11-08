@@ -2,12 +2,12 @@
 /*
  * The flake jobs' entry point (#799), run by `node` in the workflows:
  *
- *   flake-job.ts flaky <artifacts folder> <shards>             gate.yml's and the macOS nightly's `flaky`
- *   flake-job.ts hunt <artifacts folder> <shards> <repeats>    the nightly flake hunt
+ *   flake-job.ts flaky <artifacts folder>             gate.yml's and the macOS nightly's `flaky`
+ *   flake-job.ts hunt <artifacts folder> <repeats>    the nightly flake hunt
  *   flake-job.ts quarantine <listed.json> <ran.json>           gate.yml's `quarantine`
  *
- * <shards> is how many shards must have handed on their flakes: fewer fails
- * the job. Issues are filed only with `FILE_ISSUES=true`, which the workflows
+ * Every shard of the run must have handed on its flakes: the shards say how
+ * many there were (flake-job-io.ts), and one missing fails the job. Issues are filed only with `FILE_ISSUES=true`, which the workflows
  * set only where the token may write: never on a fork's pull request. This
  * reads and prints; flake-jobs.ts decides.
  */
@@ -55,12 +55,12 @@ async function jobResult(
 ): Promise<JobResult> {
   const filer = env.FILE_ISSUES === 'true' ? trackerFrom(env) : undefined;
   if (job === 'flaky') {
-    const records = readShardFlakes(path ?? '', countArgument(counts[0], 'shards'));
+    const records = readShardFlakes(path ?? '');
     return reportFlakyTests({ records, run: runLinkFromEnv(env), tracker: filer });
   }
   if (job === 'hunt') {
-    const records = readShardFlakes(path ?? '', countArgument(counts[0], 'shards'));
-    const repeats = countArgument(counts[1], 'repeats');
+    const records = readShardFlakes(path ?? '');
+    const repeats = countArgument(counts[0], 'repeats');
     return reportHunt({ records, run: runLinkFromEnv(env), repeats, tracker: filer });
   }
   if (job === 'quarantine') {

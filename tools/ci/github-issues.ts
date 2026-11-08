@@ -88,11 +88,6 @@ export class GitHubIssues implements IssueTracker {
     return { open: issue.state === 'open', labels };
   }
 
-  /** Whether `issueNumber` is an open issue; `undefined` for none, or a pull request. */
-  async isOpen(issueNumber: number): Promise<boolean | undefined> {
-    return (await this.findIssue(issueNumber))?.open;
-  }
-
   private async isSubIssue(parentNumber: number, child: TrackedIssue): Promise<boolean> {
     for (let page = 1; page <= MOST_PAGES; page += 1) {
       const query = `per_page=${PAGE}&page=${page}`;

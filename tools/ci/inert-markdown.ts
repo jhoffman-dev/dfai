@@ -9,15 +9,19 @@ const ZERO_WIDTH_SPACE = '\u200b';
 
 /**
  * `text` as plain Markdown that renders as written: Markdown's own characters
- * escaped, and a zero-width space after `@` and `#` before a digit, so GitHub
- * links neither.
+ * escaped, `&` too, as GitHub decodes `&#64;` and `&#35;` before it looks
+ * for mentions; a zero-width space after `@`, and inside `#` or `GH-` before
+ * a digit, so GitHub links none of them; and on one line, so a title cannot
+ * end a table row early.
  */
 export function inert(text: string): string {
   return text
+    .replace(/&/g, '&amp;')
     .replace(/[\\`*_[\]<>|~]/g, '\\$&')
     .replace(/@/g, `@${ZERO_WIDTH_SPACE}`)
     .replace(/#(?=\d)/g, `#${ZERO_WIDTH_SPACE}`)
-    .replace(/\n/g, ' ');
+    .replace(/\b(GH)-(?=\d)/gi, `$1${ZERO_WIDTH_SPACE}-`)
+    .replace(/\r\n|\r|\n/g, ' ');
 }
 
 /** A fenced block of `lines`, its fence longer than any run of backticks in them. */

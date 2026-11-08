@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FLAKES_FILE,
   REPORT_URL_FILE,
+  SHARD_FILE,
   readShardFlakes,
   runLinkFromEnv,
   trackerFromEnv,
@@ -31,37 +32,59 @@ describe("reading the shards' flake artifacts", () => {
 
   afterEach(() => rmSync(folder, { recursive: true, force: true }));
 
-  function shard(name: string, records: unknown, reportUrl?: string): void {
-    mkdirSync(join(folder, name));
-    writeFileSync(join(folder, name, FLAKES_FILE), JSON.stringify(records));
-    if (reportUrl !== undefined)
-      writeFileSync(join(folder, name, REPORT_URL_FILE), `${reportUrl}\n`);
+  /** One shard's artifact, as the flake reporter leaves it: shard `current` of `total`. */
+  function shard(
+    { current, total }: { current: number; total: number },
+    records: unknown,
+    reportUrl?: string,
+  ): void {
+    const dir = join(folder, `e2e-flakes-${current}`);
+    mkdirSync(dir);
+    writeFileSync(join(dir, FLAKES_FILE), JSON.stringify(records));
+    writeFileSync(join(dir, SHARD_FILE), JSON.stringify({ current, total }));
+    if (reportUrl !== undefined) writeFileSync(join(dir, REPORT_URL_FILE), `${reportUrl}\n`);
   }
 
   it("gathers every shard's records in shard order, each with its shard's report link", () => {
-    shard('e2e-flakes-10', [{ ...RECORD, title: 'ten' }]);
-    shard('e2e-flakes-2', [RECORD], 'https://example.test/report-2');
-    shard('e2e-flakes-3', []);
-    expect(readShardFlakes(folder, 3)).toEqual([
+    shard({ current: 10, total: 10 }, [{ ...RECORD, title: 'ten' }]);
+    shard({ current: 2, total: 10 }, [RECORD], 'https://example.test/report-2');
+    for (const current of [1, 3, 4, 5, 6, 7, 8, 9]) shard({ current, total: 10 }, []);
+    expect(readShardFlakes(folder)).toEqual([
       { ...RECORD, reportUrl: 'https://example.test/report-2' },
       { ...RECORD, title: 'ten' },
     ]);
   });
 
   it('throws when no shard handed any on, rather than reading it as no failures', () => {
-    expect(() => readShardFlakes(join(folder, 'never-downloaded'), 8)).toThrow(/missing/);
+    expect(() => readShardFlakes(join(folder, 'never-downloaded'))).toThrow(/missing/);
+    expect(() => readShardFlakes(folder)).toThrow(/no shard's flakes/);
   });
 
-  it('throws, naming those there, when a shard is missing or left no file', () => {
-    shard('e2e-flakes-1', []);
-    mkdirSync(join(folder, 'e2e-flakes-2'));
-    expect(() => readShardFlakes(folder, 3)).toThrow(
-      '1 of 3 shards handed on their flakes (e2e-flakes-1)',
+  it('throws, naming it, when a shard of the run is missing', () => {
+    shard({ current: 1, total: 3 }, []);
+    shard({ current: 3, total: 3 }, []);
+    expect(() => readShardFlakes(folder)).toThrow(
+      '2 of 3 shards handed on their flakes; missing: 2',
     );
   });
 
+  it('throws when the matrix grew and its new shard died: the others count it', () => {
+    for (let current = 1; current <= 8; current += 1) shard({ current, total: 9 }, []);
+    expect(() => readShardFlakes(folder)).toThrow(
+      '8 of 9 shards handed on their flakes; missing: 9',
+    );
+  });
+
+  it('throws when the shards disagree on how many there were, or one does not say', () => {
+    shard({ current: 1, total: 2 }, []);
+    shard({ current: 2, total: 3 }, []);
+    expect(() => readShardFlakes(folder)).toThrow('disagree');
+    rmSync(join(folder, 'e2e-flakes-2', SHARD_FILE));
+    expect(() => readShardFlakes(folder)).toThrow(`no ${SHARD_FILE}`);
+  });
+
   it('throws on a record file that is not JSON, rather than reporting no flakes', () => {
-    mkdirSync(join(folder, 'e2e-flakes-1'));
+    shard({ current: 1, total: 1 }, []);
     writeFileSync(join(folder, 'e2e-flakes-1', FLAKES_FILE), '[{"file":');
     expect(() => readShardFlakes(folder)).toThrow(SyntaxError);
   });

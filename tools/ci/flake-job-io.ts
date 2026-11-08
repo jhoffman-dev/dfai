@@ -13,13 +13,50 @@ import { GitHubIssues } from './github-issues.ts';
 export const FLAKES_FILE = 'flakes.json';
 export const REPORT_URL_FILE = 'report-url.txt';
 
+/** Beside each shard's records: which shard it was, of how many (the flake reporter's `--shard`). */
+export const SHARD_FILE = 'shard.json';
+
+interface ShardOf {
+  readonly current: number;
+  readonly total: number;
+}
+
+function shardOf(folder: string): ShardOf {
+  const file = join(folder, SHARD_FILE);
+  if (!existsSync(file))
+    throw new Error(`${folder} has no ${SHARD_FILE}: which shard it was is unknown`);
+  return JSON.parse(readFileSync(file, 'utf8')) as ShardOf;
+}
+
+/**
+ * Checks the shards that reported are exactly shards 1 to n of one run of n.
+ * The count comes from the shards themselves (`--shard=i/n`, n the matrix's
+ * size), so a grown matrix whose new shard died reads as missing, never as
+ * "no flakes" (PR #802's review).
+ */
+function checkEveryShard(shards: readonly ShardOf[]): void {
+  const totals = new Set(shards.map((shard) => shard.total));
+  if (totals.size !== 1) {
+    throw new Error(`the shards disagree on how many there were: ${[...totals].join(', ')}`);
+  }
+  const total = shards[0]!.total;
+  const seen = new Set(shards.map((shard) => shard.current));
+  const missing = Array.from({ length: total }, (_, at) => at + 1).filter((n) => !seen.has(n));
+  if (missing.length > 0 || shards.length !== total) {
+    throw new Error(
+      `${shards.length} of ${total} shards handed on their flakes; missing: ` +
+        `${missing.join(', ') || 'none'}: the rest died before reporting`,
+    );
+  }
+}
+
 /**
  * Every shard's records, from the folder the shards' artifacts were downloaded
- * into. Each shard's reporter writes its file, `[]` when nothing failed, so a
- * missing folder or a missing shard means a shard died before it reported,
- * not that nothing failed: that throws (PR #802's attack), naming how many.
+ * into. Each shard's reporter writes its records, `[]` when nothing failed, so
+ * a missing folder or shard means a shard died before it reported, not that
+ * nothing failed: that throws (PR #802's attack), naming which.
  */
-export function readShardFlakes(folder: string, expectedShards = 1): FlakeRecord[] {
+export function readShardFlakes(folder: string): FlakeRecord[] {
   if (!existsSync(folder)) {
     throw new Error(
       `no shard handed on its flakes (${folder} is missing): read as unknown, not none`,
@@ -27,15 +64,13 @@ export function readShardFlakes(folder: string, expectedShards = 1): FlakeRecord
   }
   const shards = readdirSync(folder, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && existsSync(join(folder, entry.name, FLAKES_FILE)))
-    .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
-  if (shards.length < expectedShards) {
-    throw new Error(
-      `${shards.length} of ${expectedShards} shards handed on their flakes ` +
-        `(${shards.map((s) => s.name).join(', ') || 'none'}): the rest died before reporting`,
-    );
-  }
-  return shards.flatMap((entry) => {
-    const shard = join(folder, entry.name);
+    .map((entry) => join(folder, entry.name));
+  if (shards.length === 0) throw new Error(`no shard's flakes in ${folder}`);
+  const read = shards
+    .map((shard) => ({ shard, of: shardOf(shard) }))
+    .sort((a, b) => a.of.current - b.of.current);
+  checkEveryShard(read.map(({ of }) => of));
+  return read.flatMap(({ shard }) => {
     const records = JSON.parse(readFileSync(join(shard, FLAKES_FILE), 'utf8')) as FlakeRecord[];
     const urlFile = join(shard, REPORT_URL_FILE);
     const reportUrl = existsSync(urlFile) ? readFileSync(urlFile, 'utf8').trim() : '';

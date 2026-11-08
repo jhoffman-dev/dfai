@@ -337,7 +337,7 @@ jobs:
           E2E_DURATIONS_OUT: e2e-durations.json
           E2E_FLAKES_OUT: e2e-flakes/flakes.json
         run: >-
-          pnpm e2e --project=webkit --project=ipad --project=phone --shard=${{ matrix.shard }}/8
+          pnpm e2e --project=webkit --project=ipad --project=phone --shard=${{ matrix.shard }}/${{ strategy.job-total }}
           --workers=2 --reporter=list,html,./tools/ci/e2e-shard-reporter.ts,./tools/ci/e2e-flake-reporter.ts
 
       # What this shard's files took, for refreshing tools/ci/e2e-durations.json
@@ -413,7 +413,7 @@ jobs:
           # shellcheck disable=SC2016 # the `$` is the regex character sed escapes
           mapfile -t specs < <(printf '%s\n' "$SPECS" | sed -e 's/[][\\.*^$(){}+?|]/\\&/g')
           pnpm e2e --project=webkit --project=ipad --project=phone "${specs[@]}" \
-            --repeat-each=10 --retries=0 --shard=${{ matrix.shard }}/4 --workers=2 \
+            --repeat-each=10 --retries=0 --shard=${{ matrix.shard }}/${{ strategy.job-total }} --workers=2 \
             --pass-with-no-tests --reporter=list,html
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -455,7 +455,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           FILE_ISSUES: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           RUN_CONTEXT: "${{ github.event_name == 'pull_request' && format('pull request #{0}', github.event.pull_request.number) || github.ref_name }}"
-        run: node tools/ci/flake-job.ts flaky e2e-flakes 8
+        run: node tools/ci/flake-job.ts flaky e2e-flakes
 
   quarantine:
     # Not required, and not one of `gate`'s needs: the tests tagged

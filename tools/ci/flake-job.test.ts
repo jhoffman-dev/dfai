@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { countArgument, runFlakeJob } from './flake-job.ts';
-import { FLAKES_FILE } from './flake-job-io.ts';
+import { FLAKES_FILE, SHARD_FILE } from './flake-job-io.ts';
 import { FakeTracker } from './flake-issues.test-support.ts';
 
 const FLAKY = {
@@ -43,6 +43,10 @@ describe('the flake jobs entry point', () => {
     records.forEach((shard, at) => {
       mkdirSync(join(artifacts, `e2e-flakes-${at + 1}`), { recursive: true });
       writeFileSync(join(artifacts, `e2e-flakes-${at + 1}`, FLAKES_FILE), JSON.stringify(shard));
+      writeFileSync(
+        join(artifacts, `e2e-flakes-${at + 1}`, SHARD_FILE),
+        JSON.stringify({ current: at + 1, total: records.length }),
+      );
     });
     return artifacts;
   }
@@ -50,36 +54,38 @@ describe('the flake jobs entry point', () => {
   it('files the flaky tests with FILE_ISSUES=true, and exits 1', async () => {
     const artifacts = shards([FLAKY], []);
     const env = { ...ENV, FILE_ISSUES: 'true' };
-    expect(await runFlakeJob({ args: ['flaky', artifacts, '2'], env, trackerFrom })).toBe(1);
+    expect(await runFlakeJob({ args: ['flaky', artifacts], env, trackerFrom })).toBe(1);
     expect(tracker.issues).toHaveLength(1);
   });
 
   it('files nothing without FILE_ISSUES=true, as on a fork, and still exits 1', async () => {
     const artifacts = shards([FLAKY]);
-    expect(await runFlakeJob({ args: ['flaky', artifacts, '1'], env: ENV, trackerFrom })).toBe(1);
+    expect(await runFlakeJob({ args: ['flaky', artifacts], env: ENV, trackerFrom })).toBe(1);
     expect(tracker.issues).toEqual([]);
   });
 
   it('exits 0 when no test needed its retry, and writes the summary to the job page', async () => {
     const summary = join(folder, 'summary.md');
     const env = { ...ENV, GITHUB_STEP_SUMMARY: summary };
-    expect(await runFlakeJob({ args: ['flaky', shards([]), '1'], env, trackerFrom })).toBe(0);
+    expect(await runFlakeJob({ args: ['flaky', shards([])], env, trackerFrom })).toBe(0);
     expect(readFileSync(summary, 'utf8')).toContain('None: no test needed its retry.');
   });
 
   it('fails when a shard did not hand its flakes on', async () => {
+    const artifacts = shards([], [], []);
+    rmSync(join(artifacts, 'e2e-flakes-2'), { recursive: true });
     await expect(
-      runFlakeJob({ args: ['flaky', shards([]), '8'], env: ENV, trackerFrom }),
-    ).rejects.toThrow('1 of 8 shards');
+      runFlakeJob({ args: ['flaky', artifacts], env: ENV, trackerFrom }),
+    ).rejects.toThrow('2 of 3 shards');
   });
 
   it('files the hunt and exits 0, and refuses repeats that are not a number', async () => {
     const env = { ...ENV, FILE_ISSUES: 'true' };
     const artifacts = shards([{ ...FLAKY, passed: false }]);
-    expect(await runFlakeJob({ args: ['hunt', artifacts, '1', '3'], env, trackerFrom })).toBe(0);
+    expect(await runFlakeJob({ args: ['hunt', artifacts, '3'], env, trackerFrom })).toBe(0);
     expect(tracker.issues).toHaveLength(1);
     await expect(
-      runFlakeJob({ args: ['hunt', artifacts, '1', 'three'], env, trackerFrom }),
+      runFlakeJob({ args: ['hunt', artifacts, 'three'], env, trackerFrom }),
     ).rejects.toThrow('repeats must be a whole number of at least 1, not "three"');
   });
 
