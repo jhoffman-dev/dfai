@@ -1,4 +1,6 @@
+import { caretAtLineEndBy } from './caret.ts';
 import { expect, type Page } from './fixtures.ts';
+import { LINE_END } from './platform.ts';
 import { webVaultOnGitHub } from './web-github.ts';
 import { webTest as test } from './web-test.ts';
 import {
@@ -21,7 +23,14 @@ async function tapAtTheEndOf(page: Page, text: string) {
   const box = await line.boundingBox();
   if (box === null) throw new Error(`“${text}” is not on the page.`);
   // The far right of the line's block, where a tap leaves the caret at its end.
-  await line.tap({ position: { x: box.width - 1, y: box.height / 2 } });
+  // Held by the editor before the typing: ProseMirror can undo a tap read late
+  // after the focus, as it undoes a key (caret.ts, #797). The tap done again
+  // is a double tap, which selects a word: the key to the line's end, from
+  // the iPad's keyboard that then types, collapses it.
+  await caretAtLineEndBy(line, async () => {
+    await line.tap({ position: { x: box.width - 1, y: box.height / 2 } });
+    await page.keyboard.press(LINE_END);
+  });
 }
 
 const goTo = (page: Page, name: RegExp) =>

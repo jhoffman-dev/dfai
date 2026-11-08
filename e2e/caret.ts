@@ -42,9 +42,28 @@ async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
   // pressed from the line's end: at a line's start under a bookmark card, it
   // takes the caret up to the line above.
   const keys = where === 'end' ? [LINE_END] : [LINE_END, LINE_START];
-  await expect(async () => {
+  await caretHeldAt(line, where, async () => {
     await line.click({ position: { x: 1, y: 5 } });
     for (const key of keys) await line.page().keyboard.press(key);
+  });
+}
+
+/**
+ * Puts the caret at the end of the line `line` is in by `move` (a tap, a key
+ * to the note's end), done again until the editor holds it there: the same
+ * reset after focus undoes a tap or a key as it undoes a click (#797).
+ */
+export async function caretAtLineEndBy(line: Locator, move: () => Promise<void>): Promise<void> {
+  await caretHeldAt(line, 'end', move);
+}
+
+async function caretHeldAt(
+  line: Locator,
+  where: 'start' | 'end',
+  move: () => Promise<void>,
+): Promise<void> {
+  await expect(async () => {
+    await move();
     expect(await editorCaret(line)).toEqual({ inLine: true, at: where });
   }).toPass({ timeout: 5_000 });
 }
