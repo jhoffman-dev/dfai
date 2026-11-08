@@ -100,12 +100,3 @@ export function isRetried(node) {
     parent.arguments[0] === node
   );
 }
-
-/** The variable `identifier` names, looked up from its own scope outwards, or null. */
-export function variableOf(sourceCode, identifier) {
-  for (let scope = sourceCode.getScope(identifier); scope !== null; scope = scope.upper) {
-    const found = scope.set.get(identifier.name);
-    if (found !== undefined) return found;
-  }
-  return null;
-}

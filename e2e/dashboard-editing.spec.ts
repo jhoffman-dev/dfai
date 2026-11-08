@@ -225,8 +225,9 @@ test('resizes a bar chart from 8 columns to 6 by its edge', async ({ page }) => 
 
   await expectFile(vault, FILE).toContain(STATUS_WIDGET.replace('span: 8', 'span: 6'));
   await expect(chart).toHaveCSS('--span', '6');
-  const after = await chart.boundingBox();
-  expect(after?.width).toBeLessThan(before.width - column);
+  await expect
+    .poll(async () => (await chart.boundingBox())?.width)
+    .toBeLessThan(before.width - column);
 });
 
 test('removes a widget, and Cmd+Z puts it back', async ({ page }) => {

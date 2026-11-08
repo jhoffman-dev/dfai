@@ -23,12 +23,12 @@ async function openNote(page: Page) {
 }
 
 /**
- * Report `other.md` changed, and wait until the host has answered the app's
- * read of it: a call is counted as it starts, so `callsTo` would pass while
- * the read is still in flight.
+ * Report `other.md` changed, and wait until the app has had its reread of it
+ * answered in the page and has run on from that answer (`answeredTo`):
+ * `callsTo` counts a call as it starts, while the read is still in flight.
  */
 async function otherChanged(page: Page, host: FakeHost): Promise<void> {
-  const before = host.answeredTo('read_notes');
+  const before = await host.answeredTo('read_notes');
   await emitVaultChanged(page, ['other.md']);
   await expect.poll(() => host.answeredTo('read_notes')).toBeGreaterThan(before);
 }

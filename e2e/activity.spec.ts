@@ -105,8 +105,7 @@ test('an automation run, a red notice and the filters, in the Activity log', asy
   await activityPage(page).getByRole('radio', { name: 'Errors only' }).click();
   await expect(lines(page).filter({ hasText: 'Tidy tasks' })).toHaveCount(0);
   await expect(lines(page).filter({ hasText: 'the disk is full' })).not.toHaveCount(0);
-  const errors = await lines(page).count();
-  expect(errors).toBeLessThan(everything);
+  await expect.poll(() => lines(page).count()).toBeLessThan(everything);
   for (const line of await lines(page).all()) await expect(line).toContainText('Error');
 
   // Each kind is a filter of its own: App shows the red notice, as the window showed it.

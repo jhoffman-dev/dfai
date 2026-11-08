@@ -82,8 +82,9 @@ describe('e2e-flake/no-one-shot-read', () => {
     "  await expect.poll(async () => (await field.textContent())?.trim()).toBe('Done');",
     // A retried block reads again on each try.
     '  await expect(async () => expect(await field.count()).toBe(2)).toPass();',
-    // A read kept to compare with a later read: a before and after.
-    "  const before = await field.count();\n  await page.keyboard.press('n');\n  const after = await field.count();\n  expect(after).toBe(before + 1);",
+    // A baseline read before the action, kept as the value the waiting assertion expects.
+    "  const before = await field.count();\n  await page.keyboard.press('n');\n  await expect(field).toHaveCount(before + 1);",
+    "  const before = await field.count();\n  await page.keyboard.press('n');\n  await expect.poll(() => field.count()).toBe(before + 1);",
     // page.evaluate asks the page, not a Locator.
     "  expect(await page.evaluate(() => document.title)).toBe('DFAI');",
     "  expect(await frame.evaluate(() => document.title)).toBe('DFAI');",
@@ -233,5 +234,21 @@ describe('e2e-flake rules, tightened after attack #801', () => {
     const [result] = await eslint.lintText(code, { filePath: `${ROOT}${SPEC}` });
     const rules = (result?.messages ?? []).map((message) => message.ruleId);
     expect(rules).toContain('e2e-flake/no-wait-for-timeout');
+  });
+});
+
+describe('no-one-shot-read: before and after (review #801, round 3)', () => {
+  it('refuses the after read kept and asserted against a baseline: it can land before the action', async () => {
+    const lines =
+      "  const before = await field.count();\n  await page.keyboard.press('n');\n  const after = await field.count();\n  expect(after).toBe(before + 1);";
+    expect(await findings('no-one-shot-read', lines)).toEqual([
+      expect.stringContaining('after keeps one read of locator.count()'),
+    ]);
+  });
+
+  it('refuses the after read inline against a baseline', async () => {
+    const lines =
+      "  const before = await field.count();\n  await page.keyboard.press('n');\n  expect(await field.count()).toBe(before + 1);";
+    expect(await findings('no-one-shot-read', lines)).toHaveLength(1);
   });
 });

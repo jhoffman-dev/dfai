@@ -485,8 +485,13 @@ export interface FakeHost {
   writesTo(relativePath: string): number;
   /** How many times the app has asked the host for this command, counted as each call starts. */
   callsTo(command: string): number;
-  /** How many calls of this command the host has answered, failures included. */
-  answeredTo(command: string): number;
+  /**
+   * How many calls of this command have been answered in the page, failures
+   * included. Each is counted a task after its answer settles there, so the
+   * app's own code that runs straight on from the answer has run by then;
+   * work the app schedules for later may not have.
+   */
+  answeredTo(command: string): Promise<number>;
   /** The model and embeddings cache (`embedding-host.ts`): every passage the app sent to embed. */
   readonly embeddings: { passages(): readonly string[] };
   /** How many `vault-changed` events `echoWrites` has sent of the app's own writes. */
@@ -2091,8 +2096,6 @@ export async function installHost(
 
   /** Every command the app has asked the host for, by name. */
   const calls = new Map<string, number>();
-  /** Every command the host has answered, by name: a call counted once its answer is sent. */
-  const answeredCalls = new Map<string, number>();
   await page.route('**/__atlas-embedding-load*', (route) => {
     const params = new URL(route.request().url()).searchParams;
     const slice = embeddings.loadSlice(Number(params.get('from')), Number(params.get('to')));
@@ -2101,7 +2104,6 @@ export async function installHost(
   await page.exposeFunction('__atlasInvoke', async (command: string, args: unknown) => {
     calls.set(command, (calls.get(command) ?? 0) + 1);
     const answered = await answer(command, args).catch(rejectionAsTauriSends);
-    answeredCalls.set(command, (answeredCalls.get(command) ?? 0) + 1);
     // Logged only once a secret exists: before that there is nothing to leak,
     // and the replies that carry whole files would only slow every test.
     if (secrets.size > 0) answers.push(JSON.stringify(answered) ?? '');
@@ -2134,9 +2136,25 @@ export async function installHost(
       invoke: (command: string, args: unknown, options?: { headers?: Record<string, string> }) => {
         const answered = invokeHost(command, args, options);
         if (echoing) echoOnceWritten(answered, touchedBy(command, args, options));
+        answered.then(countAnswered(command), countAnswered(command));
         return answered;
       },
     };
+
+    /** Every command answered in the page, by name, for `answeredTo`. */
+    const answeredCount: Record<string, number> = {};
+    Object.defineProperty(window, '__atlasAnswered', { get: () => answeredCount });
+    /**
+     * Counts `command` a task after its answer settles: the app's own
+     * continuation of the answer (its `await` on it) runs first.
+     */
+    function countAnswered(command: string) {
+      return () => {
+        setTimeout(() => {
+          answeredCount[command] = (answeredCount[command] ?? 0) + 1;
+        }, 0);
+      };
+    }
 
     /** What the real watcher would report of a write: every path it touched. */
     function touchedBy(
@@ -2344,7 +2362,14 @@ export async function installHost(
     },
     writesTo: (relativePath) => writes.get(relativePath) ?? 0,
     callsTo: (command) => calls.get(command) ?? 0,
-    answeredTo: (command) => answeredCalls.get(command) ?? 0,
+    answeredTo: (command) =>
+      page.evaluate(
+        (named) =>
+          (window as unknown as { __atlasAnswered?: Record<string, number> }).__atlasAnswered?.[
+            named
+          ] ?? 0,
+        command,
+      ),
     embeddings: { passages: () => embeddings.passages() },
     echoesSent: () =>
       page.evaluate(

@@ -4,21 +4,14 @@
  * again until it holds.
  *
  * Refused: a read awaited in `expect(…)` or in its matcher's arguments, and a
- * read kept in a variable whose only use is as what an `expect(…)` is about.
- * Allowed: a read kept to compare with another read (a before and after), and
- * any read inside `expect(async () => …).toPass()`, which runs again on each
- * try. `page.evaluate` is a question to the page, not a Locator read.
+ * read kept in a variable whose only use is as what an `expect(…)` is about,
+ * whatever it is compared with: an "after" read can land before the action
+ * does. Allowed: a baseline read before an action, kept as the value an
+ * assertion expects (`toHaveCount(before + 1)`), and any read inside
+ * `expect(async () => …).toPass()`, which runs again on each try.
+ * `page.evaluate` is a question to the page, not a Locator read.
  */
-import {
-  awaits,
-  findAll,
-  isExpect,
-  isOneShotExpect,
-  isRetried,
-  matcherOf,
-  methodName,
-  variableOf,
-} from './ast.mjs';
+import { findAll, isExpect, isOneShotExpect, isRetried, matcherOf, methodName } from './ast.mjs';
 
 /** A Locator's one-shot reads, each with the assertion that waits instead, or null for none. */
 const WAITING_ASSERTION = {
@@ -112,18 +105,7 @@ export const noOneShotRead = {
     const { sourceCode } = context;
     const retried = (node) => sourceCode.getAncestors(node).some(isRetried);
 
-    /** Whether `matcher`'s arguments use a variable that is itself read with an await: a comparison. */
-    function comparesWithARead(matcher) {
-      const names = matcher.arguments.flatMap((argument) =>
-        findAll(argument, (each) => each.type === 'Identifier'),
-      );
-      return names.some((name) => {
-        const definition = variableOf(sourceCode, name)?.defs[0];
-        return definition?.type === 'Variable' && awaits(definition.node.init);
-      });
-    }
-
-    /** Whether every use of the variable `declarator` names is what a non-comparing `expect` is about. */
+    /** Whether every use of the variable `declarator` names is what an `expect` is about. */
     function onlyAsserted(declarator) {
       const [variable] = sourceCode.getDeclaredVariables(declarator);
       const uses = (variable?.references ?? []).filter((reference) => !reference.init);
@@ -131,7 +113,7 @@ export const noOneShotRead = {
       return uses.every((use) => {
         const assertion = expectAbout(use.identifier);
         const matcher = assertion === null ? null : matcherOf(assertion);
-        return matcher !== null && !comparesWithARead(matcher);
+        return matcher !== null;
       });
     }
 

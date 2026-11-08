@@ -8,7 +8,7 @@
  * these wait for the list itself: until neither its rows nor its scroll have
  * changed for a few frames running.
  */
-import type { Locator } from '@playwright/test';
+import { expect, type Locator } from '@playwright/test';
 
 /** Frames running in which nothing may change for the list to count as drawn. */
 const QUIET_FRAMES = 5;
@@ -29,9 +29,14 @@ export async function scrollThenSettle(
  * taller, so it scrolls again until, once drawn, it is still at the end.
  */
 export async function scrollToEnd(scroller: Locator): Promise<void> {
-  // An element that cannot scroll is "at its end" at once: say so, rather than pass having scrolled nothing.
-  const scrolls = await scroller.evaluate((element) => element.scrollHeight > element.clientHeight);
-  if (!scrolls) throw new Error('scrollToEnd: the element has nothing to scroll');
+  // An element that cannot scroll is "at its end" at once. Its rows may still
+  // be arriving, so wait for it to overflow; one that never does fails here
+  // rather than passing having scrolled nothing.
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight), {
+      message: 'scrollToEnd: the element to have something to scroll',
+    })
+    .toBe(true);
   for (let tries = 0; tries < 50; tries += 1) {
     await scrollThenSettle(scroller, (element) => {
       element.scrollTop = element.scrollHeight;
