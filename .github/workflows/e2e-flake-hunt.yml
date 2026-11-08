@@ -49,7 +49,7 @@ jobs:
           E2E_FLAKES_OUT: e2e-flakes/flakes.json
         run: >-
           pnpm e2e --project=webkit --project=ipad --project=phone
-          --repeat-each=$REPEATS --retries=0 --shard=${{ matrix.shard }}/12 --workers=2
+          --repeat-each="$REPEATS" --retries=0 --shard=${{ matrix.shard }}/12 --workers=2
           --reporter=list,./tools/ci/e2e-flake-reporter.ts
 
       - if: ${{ !cancelled() }}

@@ -406,10 +406,11 @@ jobs:
       - name: The changed specs, ten times
         env:
           SPECS: ${{ needs.changes.outputs.specs }}
-        run: >-
-          pnpm e2e --project=webkit --project=ipad --project=phone $SPECS
-          --repeat-each=10 --retries=0 --shard=${{ matrix.shard }}/4 --workers=2
-          --pass-with-no-tests --reporter=list,html
+        run: |
+          read -ra specs <<< "$SPECS"
+          pnpm e2e --project=webkit --project=ipad --project=phone "${specs[@]}" \
+            --repeat-each=10 --retries=0 --shard=${{ matrix.shard }}/4 --workers=2 \
+            --pass-with-no-tests --reporter=list,html
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
@@ -449,7 +450,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FILE_ISSUES: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          RUN_CONTEXT: ${{ github.event_name == 'pull_request' && format('pull request #{0}', github.event.pull_request.number) || github.ref_name }}
+          RUN_CONTEXT: "${{ github.event_name == 'pull_request' && format('pull request #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: node tools/ci/flake-job.ts flaky e2e-flakes
 
   quarantine:
