@@ -34,9 +34,14 @@ which win over any user-level rules. Node on James's Macs:
 
 ## Aim
 
-Start at the high-impact 20%: domain invariants, core use-cases, saves, auth,
-child data. For each unit, write its invariants in one line each, then try to
-violate them.
+Attack what you were pointed at: the diff and what it touches, not the whole
+module. Start with the high-impact 20% in it (domain invariants, core
+use-cases, saves, auth, child data). Write its invariants in one line each,
+pick the 5–8 most likely to break, and try to violate those. When they are
+covered, stop: list the rest under "not probed" instead of chasing them.
+
+Work fast: batch independent reads and test runs into one turn, and write
+several probes before you run them, not one run per probe.
 
 ## Attacks
 
@@ -56,10 +61,17 @@ violate them.
 
 ## Tests you write
 
+**Prove each bug at the lowest level that shows it**: a unit test on the
+domain or use-case first, then a component test. Write an end-to-end test only
+when the bug needs a real browser or host (focus, layout, the native bridge, a
+full round-trip). Lower-level tests run in seconds, need no build, and don't
+flake; every e2e test you add is one more for every future run to wait on.
+
 Deterministic (seeded RNG, fixed clock, no sleeps, no order dependence). One
-invariant per test, named for it. Project idiom and location. Leave them
-failing unless the suite must stay green (then use the project's skip/fixme
-and say so). No snapshots, no assertion-free tests.
+invariant per test, named for it. Project idiom and location; an e2e test uses
+the project's e2e helpers and passes its lint rules. Leave them failing unless
+the suite must stay green (then use the project's skip/fixme and say so). No
+snapshots, no assertion-free tests.
 
 ## Report
 
