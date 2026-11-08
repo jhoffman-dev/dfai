@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FlakeRecord } from './e2e-flakes.ts';
 import { FakeTracker } from './flake-issues.test-support.ts';
 import { reportFlakyTests, reportHunt, reportQuarantine } from './flake-jobs.ts';
-import { HUNT_TITLE } from './flake-reports.ts';
+import { HUNT_TITLE, flakyIssueTitle } from './flake-reports.ts';
 
 const RUN = { url: 'https://github.com/o/r/actions/runs/9/attempts/1', context: 'main' };
 
@@ -29,9 +29,10 @@ describe("the gate's flaky job", () => {
     });
     expect(result.failed).toBe(true);
     expect(tracker.issues.map((i) => i.title)).toEqual([
-      'Flaky e2e: e2e/board.spec.ts › moves a card',
-      'Flaky e2e: e2e/board.spec.ts › sorts',
+      flakyIssueTitle(record()),
+      flakyIssueTitle(record({ title: 'sorts' })),
     ]);
+    expect(tracker.subIssues).toHaveLength(2);
     expect(result.summary).toContain('#900 (opened)');
     expect(result.summary).toContain('#901 (opened)');
   });
@@ -71,9 +72,11 @@ describe("the gate's flaky job", () => {
       run: RUN,
       tracker,
     });
-    expect(tracker.issues.map((i) => i.title)).toEqual(['Flaky e2e: e2e/board.spec.ts › sorts']);
+    expect(tracker.issues.map((i) => i.title)).toEqual([
+      flakyIssueTitle(record({ title: 'sorts' })),
+    ]);
     expect(result.summary).toContain(
-      '- could not file Flaky e2e: e2e/board.spec.ts › moves a card: 502 Bad Gateway',
+      `- could not file ${flakyIssueTitle(record())}: 502 Bad Gateway`,
     );
   });
 });
@@ -101,7 +104,7 @@ describe('the nightly flake hunt', () => {
       repeats: 3,
     });
     expect(result.summary).toContain('1 test(s) failed at least once in 3 runs');
-    expect(result.summary).toContain('- moves a card [webkit]: failed 2 of 3');
+    expect(result.summary).toContain('- moves a card (project webkit): failed 2 of 3');
     expect(result.summary).toContain('No issue filed.');
   });
 
@@ -135,7 +138,11 @@ describe('the quarantine job', () => {
   it('is green when every quarantined test names an open issue', async () => {
     const tracker = new FakeTracker();
     await tracker.create({ title: 'flaky board', body: '', labels: ['flaky'] });
-    const result = await reportQuarantine({ tests: [{ ...quarantinedTest, issue: 900 }], tracker });
+    const result = await reportQuarantine({
+      listed: [{ ...quarantinedTest, issue: 900 }],
+      ran: [],
+      tracker,
+    });
     expect(result.failed).toBe(false);
     expect(result.summary).toContain('#900 (open)');
   });
@@ -146,12 +153,14 @@ describe('the quarantine job', () => {
     tracker.issues = tracker.issues.map((i) => ({ ...i, open: false }));
     for (const issue of [900, 404, undefined]) {
       const tests = [issue === undefined ? quarantinedTest : { ...quarantinedTest, issue }];
-      expect((await reportQuarantine({ tests, tracker })).failed).toBe(true);
+      expect((await reportQuarantine({ listed: tests, ran: [], tracker })).failed).toBe(true);
     }
   });
 
   it('is green with nothing quarantined', async () => {
-    expect(await reportQuarantine({ tests: [], tracker: new FakeTracker() })).toMatchObject({
+    expect(
+      await reportQuarantine({ listed: [], ran: [], tracker: new FakeTracker() }),
+    ).toMatchObject({
       failed: false,
     });
   });

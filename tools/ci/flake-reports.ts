@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import type { FlakeRecord } from './e2e-flakes.ts';
-import type { Filed, IssueReport } from './flake-issues.ts';
+import { FLAKE_EPIC, type Filed, type IssueReport } from './flake-issues.ts';
+import { fenced, inert } from './inert-markdown.ts';
 
 /*
  * The words the flake jobs write (#799): each flaky test's issue and the gate
@@ -18,10 +20,6 @@ const TITLE_LIMIT = 250;
 const BODY_LIMIT = 60_000;
 export const HUNT_TITLE = 'Nightly e2e flake hunt: tests that failed';
 
-/** Four backticks, so a failure that prints three cannot close the block early. */
-const fenced = (lines: readonly string[]) =>
-  ['````text', ...(lines.length > 0 ? lines : ['(no error message)']), '````'].join('\n');
-
 const clipped = (text: string, limit: number) =>
   text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
 
@@ -30,16 +28,30 @@ const bounded = (body: string) =>
     ? body
     : `${body.slice(0, BODY_LIMIT)}\n\n…cut short: the run's own report has the rest.`;
 
-/** One issue per test: the title is what a later flake of the same test finds it by. */
-export function flakyIssueTitle(record: FlakeRecord): string {
-  return clipped(`Flaky e2e: ${record.file} › ${record.title}`, TITLE_LIMIT);
+/**
+ * A short, stable key for a test: its project, file and whole title hashed.
+ * Two long titles that share their first 250 characters still differ here
+ * (PR #802's attack), so the issue title, which a later flake finds the issue
+ * by, is one per test however the readable part is cut.
+ */
+export function flakeKey(record: FlakeRecord): string {
+  const named = `${record.project}\u0000${record.file}\u0000${record.title}`;
+  return createHash('sha256').update(named).digest('hex').slice(0, 8);
 }
+
+/** One issue per test, found again by its key; the rest is for reading, cut to fit. */
+export function flakyIssueTitle(record: FlakeRecord): string {
+  return clipped(`Flaky e2e [${flakeKey(record)}]: ${record.file} › ${record.title}`, TITLE_LIMIT);
+}
+
+/** Where a test is, inert: no title can mention someone or link an issue. */
+const named = (record: FlakeRecord) =>
+  `${inert(record.title)} in ${inert(record.file)} (project ${inert(record.project)})`;
 
 function sighting(record: FlakeRecord, run: RunLink): string {
   const report = record.reportUrl === undefined ? '' : ` Report and trace: ${record.reportUrl}`;
   return [
-    `Failed, then passed on its retry, in [this run](${run.url}) on ${run.context}` +
-      ` (project \`${record.project}\`).${report}`,
+    `Failed, then passed on its retry, in [this run](${run.url}) on ${run.context}.${report}`,
     '',
     fenced(record.errorLines),
   ].join('\n');
@@ -48,8 +60,8 @@ function sighting(record: FlakeRecord, run: RunLink): string {
 /** The issue for a test that failed and then passed its retry in the gate. */
 export function flakyIssueReport(record: FlakeRecord, run: RunLink): IssueReport {
   const body = [
-    `\`${record.title}\` in \`${record.file}\` is flaky: the gate retried it and it passed,` +
-      ' so it did not block the merge, but it is a bug until it is fixed (#799).',
+    `${named(record)} is flaky: CI retried it and it passed, so it did not block` +
+      ' anything, but it is a bug until it is fixed (#799).',
     '',
     sighting(record, run),
     '',
@@ -63,6 +75,13 @@ export function flakyIssueReport(record: FlakeRecord, run: RunLink): IssueReport
   };
 }
 
+function tracked(issue: Filed | undefined): string {
+  if (issue === undefined) return 'no issue filed';
+  const unlinked =
+    issue.unlinked === undefined ? '' : `; not under #${FLAKE_EPIC} yet: ${inert(issue.unlinked)}`;
+  return `#${issue.number} (${issue.action}${unlinked})`;
+}
+
 /** The gate `flaky` job's summary: each flaky test, its report, and its issue. */
 export function flakySummary(
   records: readonly FlakeRecord[],
@@ -72,8 +91,7 @@ export function flakySummary(
   const lines = records.map((record) => {
     const issue = filed.get(flakyIssueTitle(record));
     const where = record.reportUrl === undefined ? '' : ` ([report](${record.reportUrl}))`;
-    const tracked = issue === undefined ? 'no issue filed' : `#${issue.number} (${issue.action})`;
-    return `- \`${record.file}\` › ${record.title} [${record.project}]${where}: ${tracked}`;
+    return `- ${named(record)}${where}: ${tracked(issue)}`;
   });
   return [
     '### Flaky e2e tests',
@@ -102,10 +120,10 @@ export function huntFindings(
 ): string {
   const sections = [...bySpec(records)].map(([file, tests]) =>
     [
-      `#### \`${file}\``,
+      `#### ${inert(file)}`,
       ...tests.map((record) =>
         [
-          `- ${record.title} [${record.project}]: failed ${record.failures} of ${repeats}`,
+          `- ${inert(record.title)} (project ${inert(record.project)}): failed ${record.failures} of ${repeats}`,
           fenced(record.errorLines),
         ].join('\n'),
       ),

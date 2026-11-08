@@ -82,4 +82,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           FILE_ISSUES: 'true'
           RUN_CONTEXT: ${{ github.ref_name }}
-        run: node tools/ci/flake-job.ts hunt e2e-flakes "$REPEATS"
+        run: node tools/ci/flake-job.ts hunt e2e-flakes 12 "$REPEATS"

@@ -1,4 +1,4 @@
-import type { IssueTracker, TrackedIssue } from './flake-issues.ts';
+import type { IssueFacts, IssueTracker, TrackedIssue } from './flake-issues.ts';
 
 /*
  * The `IssueTracker` port over GitHub's REST API, with the workflow's
@@ -20,6 +20,7 @@ interface IssueJson {
   readonly title: string;
   readonly state: string;
   readonly pull_request?: unknown;
+  readonly labels?: readonly (string | { readonly name?: string })[];
 }
 
 const PAGE = 100;
@@ -69,16 +70,40 @@ export class GitHubIssues implements IssueTracker {
   }
 
   async addSubIssue(parentNumber: number, child: TrackedIssue): Promise<void> {
+    if (await this.isSubIssue(parentNumber, child)) return;
     await this.request('POST', `/issues/${parentNumber}/sub_issues`, {
       body: { sub_issue_id: child.id },
     });
   }
 
-  async isOpen(issueNumber: number): Promise<boolean | undefined> {
+  async findIssue(issueNumber: number): Promise<IssueFacts | undefined> {
     const issue = await this.request<IssueJson | undefined>('GET', `/issues/${issueNumber}`, {
       missingIsUndefined: true,
     });
-    return issue === undefined ? undefined : issue.state === 'open';
+    // GitHub answers GET /issues/{n} for a pull request too: that is no issue (PR #802's attack).
+    if (issue === undefined || issue.pull_request !== undefined) return undefined;
+    const labels = (issue.labels ?? []).map((label) =>
+      typeof label === 'string' ? label : (label.name ?? ''),
+    );
+    return { open: issue.state === 'open', labels };
+  }
+
+  /** Whether `issueNumber` is an open issue; `undefined` for none, or a pull request. */
+  async isOpen(issueNumber: number): Promise<boolean | undefined> {
+    return (await this.findIssue(issueNumber))?.open;
+  }
+
+  private async isSubIssue(parentNumber: number, child: TrackedIssue): Promise<boolean> {
+    for (let page = 1; page <= MOST_PAGES; page += 1) {
+      const query = `per_page=${PAGE}&page=${page}`;
+      const subIssues = await this.request<IssueJson[]>(
+        'GET',
+        `/issues/${parentNumber}/sub_issues?${query}`,
+      );
+      if (subIssues.some((issue) => issue.id === child.id)) return true;
+      if (subIssues.length < PAGE) return false;
+    }
+    return false;
   }
 
   /**

@@ -7,7 +7,8 @@ import { issueOf, outcomeWord, type QuarantinedTest } from './quarantine.ts';
 /*
  * A Playwright reporter for the gate's `quarantine` job (#799): writes every
  * `@quarantine` test the run had, the issue it names and how it did, to the
- * file `E2E_QUARANTINE_OUT` names, for quarantine-report.ts to check and list.
+ * file `E2E_QUARANTINE_OUT` names, for flake-job.ts to check and list. Run
+ * with `--list` and `E2E_QUARANTINE=list`, it writes every platform's.
  */
 export default class QuarantineReporter implements Reporter {
   private root = process.cwd();
@@ -39,6 +40,7 @@ export default class QuarantineReporter implements Reporter {
       project: projectOf(test),
       issue: issueOf(test.annotations),
       outcome: outcomeWord(test.outcome()),
+      ...(test.tags.includes('@mac') ? { macOnly: true } : {}),
     };
   }
 }

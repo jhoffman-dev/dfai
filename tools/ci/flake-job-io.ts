@@ -13,19 +13,34 @@ import { GitHubIssues } from './github-issues.ts';
 export const FLAKES_FILE = 'flakes.json';
 export const REPORT_URL_FILE = 'report-url.txt';
 
-/** Every shard's records, from the folder the shards' artifacts were downloaded into. */
-export function readShardFlakes(folder: string): FlakeRecord[] {
-  if (!existsSync(folder)) return [];
-  return readdirSync(folder, { withFileTypes: true })
+/**
+ * Every shard's records, from the folder the shards' artifacts were downloaded
+ * into. Each shard's reporter writes its file, `[]` when nothing failed, so a
+ * missing folder or a missing shard means a shard died before it reported,
+ * not that nothing failed: that throws (PR #802's attack), naming how many.
+ */
+export function readShardFlakes(folder: string, expectedShards = 1): FlakeRecord[] {
+  if (!existsSync(folder)) {
+    throw new Error(
+      `no shard handed on its flakes (${folder} is missing): read as unknown, not none`,
+    );
+  }
+  const shards = readdirSync(folder, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && existsSync(join(folder, entry.name, FLAKES_FILE)))
-    .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
-    .flatMap((entry) => {
-      const shard = join(folder, entry.name);
-      const records = JSON.parse(readFileSync(join(shard, FLAKES_FILE), 'utf8')) as FlakeRecord[];
-      const urlFile = join(shard, REPORT_URL_FILE);
-      const reportUrl = existsSync(urlFile) ? readFileSync(urlFile, 'utf8').trim() : '';
-      return reportUrl === '' ? records : records.map((record) => ({ ...record, reportUrl }));
-    });
+    .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
+  if (shards.length < expectedShards) {
+    throw new Error(
+      `${shards.length} of ${expectedShards} shards handed on their flakes ` +
+        `(${shards.map((s) => s.name).join(', ') || 'none'}): the rest died before reporting`,
+    );
+  }
+  return shards.flatMap((entry) => {
+    const shard = join(folder, entry.name);
+    const records = JSON.parse(readFileSync(join(shard, FLAKES_FILE), 'utf8')) as FlakeRecord[];
+    const urlFile = join(shard, REPORT_URL_FILE);
+    const reportUrl = existsSync(urlFile) ? readFileSync(urlFile, 'utf8').trim() : '';
+    return reportUrl === '' ? records : records.map((record) => ({ ...record, reportUrl }));
+  });
 }
 
 /** The run being reported on, from the workflow's environment. */

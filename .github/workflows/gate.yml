@@ -56,7 +56,8 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" = pull_request ]; then
-            git diff --name-only --no-renames HEAD^1 HEAD \
+            # `-z`: no quoting of a path outside ASCII, and a space stays in its path.
+            git diff --name-only --no-renames -z HEAD^1 HEAD \
               | node tools/ci/changed-scope.mjs | tee -a "$GITHUB_OUTPUT"
           else
             echo code=true | tee -a "$GITHUB_OUTPUT"
@@ -402,12 +403,15 @@ jobs:
       - uses: ./.github/actions/e2e-webkit
 
       # Playwright's own sharding, by test: ten copies of each test spread
-      # over four runners. A shard dealt nothing passes.
+      # over four runners. A shard dealt nothing passes. The specs come one a
+      # line, so a path with a space stays one argument; Playwright reads each
+      # as a regular expression, so its special characters are escaped.
       - name: The changed specs, ten times
         env:
           SPECS: ${{ needs.changes.outputs.specs }}
         run: |
-          read -ra specs <<< "$SPECS"
+          # shellcheck disable=SC2016 # the `$` is the regex character sed escapes
+          mapfile -t specs < <(printf '%s\n' "$SPECS" | sed -e 's/[][\\.*^$(){}+?|]/\\&/g')
           pnpm e2e --project=webkit --project=ipad --project=phone "${specs[@]}" \
             --repeat-each=10 --retries=0 --shard=${{ matrix.shard }}/4 --workers=2 \
             --pass-with-no-tests --reporter=list,html
@@ -451,14 +455,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           FILE_ISSUES: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           RUN_CONTEXT: "${{ github.event_name == 'pull_request' && format('pull request #{0}', github.event.pull_request.number) || github.ref_name }}"
-        run: node tools/ci/flake-job.ts flaky e2e-flakes
+        run: node tools/ci/flake-job.ts flaky e2e-flakes 8
 
   quarantine:
     # Not required, and not one of `gate`'s needs: the tests tagged
     # `@quarantine` (e2e/quarantine.ts), which the gate's shards leave out, run
     # here alone. The summary lists each with its issue and how it did; the job
-    # goes red when one names no issue, or one that is closed, so none is
-    # forgotten. Its tests failing does not turn it red: their issues say so.
+    # goes red when one names no issue, or one that is not an open issue
+    # labelled `flaky`, so none is forgotten. Its tests failing does not turn
+    # it red: their issues say so. A `@mac` quarantined test cannot run here;
+    # it is listed and its issue checked all the same, and it runs in the
+    # macOS nightly (e2e-macos-nightly.yml).
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -481,10 +488,19 @@ jobs:
           pnpm e2e --project=webkit --project=ipad --project=phone --workers=2
           --pass-with-no-tests --reporter=list,./tools/ci/quarantine-reporter.ts
 
-      - name: List them, each with its open issue
+      # After the run, which built the app some specs read as they load.
+      - name: Every platform's quarantined tests, listed
+        env:
+          E2E_QUARANTINE: list
+          E2E_QUARANTINE_OUT: listed.json
+        run: >-
+          pnpm exec playwright test --list --project=webkit --project=ipad --project=phone
+          --pass-with-no-tests --reporter=./tools/ci/quarantine-reporter.ts
+
+      - name: List them, each with its open flaky issue
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node tools/ci/flake-job.ts quarantine quarantined.json
+        run: node tools/ci/flake-job.ts quarantine listed.json quarantined.json
 
   perf-part:
     needs: changes

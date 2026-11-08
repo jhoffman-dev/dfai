@@ -46,14 +46,20 @@ function record(overrides: Partial<FlakeRecord> = {}): FlakeRecord {
   };
 }
 
-/** The `specs=` the gate's `changes` step writes, split as `read -ra` splits it. */
+/**
+ * The `specs` the gate's `changes` step writes, as GitHub reads its multi-line
+ * output (`specs<<DELIMITER` … `DELIMITER`) and `mapfile -t` then splits it,
+ * one path a line. (The fix moved `specs` from one space-joined line, which
+ * no reader could split back into a path with a space, to this form.)
+ */
 function specsFromScope(stdin: string, cwd: string): string[] {
   const out = execFileSync(process.execPath, [SCOPE], { input: stdin, cwd, encoding: 'utf8' });
-  const line = out.split('\n').find((l) => l.startsWith('specs=')) ?? 'specs=';
-  return line
-    .slice('specs='.length)
-    .split(/\s+/)
-    .filter((s) => s !== '');
+  const lines = out.split('\n');
+  const start = lines.findIndex((l) => l.startsWith('specs<<'));
+  if (start === -1) return [];
+  const delimiter = lines[start]!.slice('specs<<'.length);
+  const end = lines.indexOf(delimiter, start + 1);
+  return lines.slice(start + 1, end).filter((s) => s !== '');
 }
 
 /** Body text outside fences and single-backtick code spans, where GitHub links `@name` and `#n`. */

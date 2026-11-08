@@ -61,7 +61,7 @@ runs:
     - name: Install WebKit
       if: steps.webkit.outputs.cache-hit != 'true'
       shell: bash
-      run: timeout 5m pnpm exec playwright install webkit
+      run: timeout --kill-after=30s 5m pnpm exec playwright install webkit
 
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: steps.webkit.outputs.cache-hit != 'true' && inputs.save-caches == 'true'
@@ -81,7 +81,7 @@ runs:
       shell: bash
       env:
         WEBKIT_DEBS_CACHE_HIT: ${{ steps.webkit-debs.outputs.cache-hit }}
-      run: timeout 9m tools/ci/install-webkit-deps.sh "$HOME/.cache/webkit-debs"
+      run: timeout --kill-after=30s 9m tools/ci/install-webkit-deps.sh "$HOME/.cache/webkit-debs"
 
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: steps.webkit-debs.outputs.cache-hit != 'true' && inputs.save-caches == 'true'

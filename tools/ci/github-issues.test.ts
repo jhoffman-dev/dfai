@@ -30,6 +30,8 @@ const REPO = 'acme/notes';
 
 class StandInGitHub {
   issues: StoredIssue[] = [];
+  /** The ids under each parent issue's number. */
+  readonly subIssues = new Map<number, number[]>();
   readonly calls: Call[] = [];
   /** Answers every call with this status instead, when set. */
   failWith: { status: number; text: string } | undefined;
@@ -79,10 +81,23 @@ class StandInGitHub {
       if (method === 'PATCH') issue.state = String(body.state);
       return [200, issue];
     }
-    if (url.pathname.endsWith('/comments') || url.pathname.endsWith('/sub_issues')) {
-      return [201, { id: 1 }];
-    }
+    const sub = new RegExp(`^${base}/(\\d+)/sub_issues$`).exec(url.pathname);
+    if (sub !== null) return this.subIssue(method, Number(sub[1]), body);
+    if (url.pathname.endsWith('/comments')) return [201, { id: 1 }];
     return [404, { message: 'Not Found' }];
+  }
+
+  /** GitHub refuses a second link to the same parent with a 422. */
+  private subIssue(
+    method: string,
+    parent: number,
+    body: Record<string, unknown>,
+  ): [number, unknown] {
+    const ids = this.subIssues.get(parent) ?? [];
+    if (method === 'GET') return [200, ids.map((id) => ({ id }))];
+    if (ids.includes(Number(body.sub_issue_id))) return [422, { message: 'already a sub-issue' }];
+    this.subIssues.set(parent, [...ids, Number(body.sub_issue_id)]);
+    return [201, { id: body.sub_issue_id }];
   }
 
   private page(params: URLSearchParams): StoredIssue[] {
@@ -127,6 +142,20 @@ describe('the GitHub issues adapter', () => {
       ['POST', `/repos/${REPO}/issues/500/comments`, { body: 'again' }],
     ]);
     expect(github.calls.every((c) => c.authorization === 'Bearer t0ken')).toBe(true);
+    expect(github.subIssues.get(126)).toEqual([3500]);
+  });
+
+  it('links an issue that is not under the epic yet, on a later flake', async () => {
+    github.issues.push({
+      number: 41,
+      id: 4100,
+      title: 'Flaky e2e: x',
+      state: 'open',
+      labels: [{ name: 'flaky' }],
+    });
+    const filed = await fileOrUpdate(issues, { title: 'Flaky e2e: x', body: '', comment: 'c' });
+    expect(filed).toEqual({ number: 41, action: 'commented' });
+    expect(github.subIssues.get(126)).toEqual([4100]);
   });
 
   it('reopens a closed issue for its title', async () => {
@@ -169,6 +198,26 @@ describe('the GitHub issues adapter', () => {
     expect(await issues.isOpen(7)).toBe(true);
     expect(await issues.isOpen(8)).toBe(false);
     expect(await issues.isOpen(9)).toBeUndefined();
+  });
+
+  it("reads an issue's labels, and takes a pull request for no issue", async () => {
+    github.issues.push({
+      number: 7,
+      id: 70,
+      title: 'x',
+      state: 'open',
+      labels: [{ name: 'flaky' }],
+    });
+    github.issues.push({
+      number: 8,
+      id: 80,
+      title: 'y',
+      state: 'open',
+      labels: [],
+      pull_request: {},
+    });
+    expect(await issues.findIssue(7)).toEqual({ open: true, labels: ['flaky'] });
+    expect(await issues.findIssue(8)).toBeUndefined();
   });
 
   it('throws with the status when GitHub refuses, as a token without issues: write is', async () => {

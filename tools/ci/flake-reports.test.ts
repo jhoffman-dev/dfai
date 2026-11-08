@@ -28,7 +28,11 @@ function record(overrides: Partial<FlakeRecord> = {}): FlakeRecord {
 
 describe("a flaky test's issue", () => {
   it('is titled by file and test, so its next flake finds it', () => {
-    expect(flakyIssueTitle(record())).toBe('Flaky e2e: e2e/board.spec.ts › board › moves a card');
+    expect(flakyIssueTitle(record())).toMatch(
+      /^Flaky e2e \[[0-9a-f]{8}\]: e2e\/board\.spec\.ts › board › moves a card$/,
+    );
+    expect(flakyIssueTitle(record())).toBe(flakyIssueTitle(record()));
+    expect(flakyIssueTitle(record({ project: 'ipad' }))).not.toBe(flakyIssueTitle(record()));
   });
 
   it('keeps a long title inside what GitHub takes', () => {
@@ -70,9 +74,21 @@ describe("the flaky job's summary", () => {
       new Map([[flakyIssueTitle(flaky), { number: 901, action: 'opened' as const }]]),
     );
     expect(summary).toContain(
-      '- `e2e/board.spec.ts` › board › moves a card [webkit] ([report](https://example.test/report)): #901 (opened)',
+      '- board › moves a card in e2e/board.spec.ts (project webkit) ([report](https://example.test/report)): #901 (opened)',
     );
-    expect(summary).toContain('- `e2e/x.spec.ts` › y [webkit]: no issue filed');
+    expect(summary).toContain('- y in e2e/x.spec.ts (project webkit): no issue filed');
+  });
+
+  it('says an issue is filed but not under the epic yet, rather than not filed', () => {
+    const flaky = record();
+    const summary = flakySummary(
+      [flaky],
+      new Map([
+        [flakyIssueTitle(flaky), { number: 901, action: 'opened' as const, unlinked: '422' }],
+      ]),
+    );
+    expect(summary).toContain(': #901 (opened; not under #126 yet: 422)');
+    expect(summary).not.toContain('no issue filed');
   });
 
   it('says when no test needed its retry', () => {
@@ -94,12 +110,12 @@ describe("the nightly hunt's issue", () => {
   it('lists every test that failed, grouped under its spec in file order', () => {
     const { body, comment } = huntIssueReport(records, RUN, 3);
     expect(comment).toContain('3 test(s) failed at least once in 3 runs');
-    const board = comment.indexOf('#### `e2e/board.spec.ts`');
-    const table = comment.indexOf('#### `e2e/table.spec.ts`');
+    const board = comment.indexOf('#### e2e/board.spec.ts');
+    const table = comment.indexOf('#### e2e/table.spec.ts');
     expect(board).toBeGreaterThan(-1);
     expect(table).toBeGreaterThan(board);
-    expect(comment).toContain('- moves a card [webkit]: failed 2 of 3');
-    expect(comment).toContain('- adds a card [webkit]: failed 3 of 3');
+    expect(comment).toContain('- moves a card (project webkit): failed 2 of 3');
+    expect(comment).toContain('- adds a card (project webkit): failed 3 of 3');
     expect(comment.indexOf('- sorts')).toBeGreaterThan(table);
     expect(body).toContain(comment);
   });

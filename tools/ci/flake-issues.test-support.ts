@@ -1,4 +1,4 @@
-import type { IssueTracker, TrackedIssue } from './flake-issues.ts';
+import type { IssueFacts, IssueTracker, TrackedIssue } from './flake-issues.ts';
 
 /*
  * An in-memory GitHub for the flake jobs' tests: issues, their comments, and
@@ -39,11 +39,13 @@ export class FakeTracker implements IssueTracker {
   }
 
   addSubIssue(parent: number, child: TrackedIssue): Promise<void> {
-    this.subIssues.push({ parent, child: child.id });
+    const there = this.subIssues.some((link) => link.parent === parent && link.child === child.id);
+    if (!there) this.subIssues.push({ parent, child: child.id });
     return Promise.resolve();
   }
 
-  isOpen(number: number): Promise<boolean | undefined> {
-    return Promise.resolve(this.issues.find((i) => i.number === number)?.open);
+  findIssue(number: number): Promise<IssueFacts | undefined> {
+    const issue = this.issues.find((i) => i.number === number);
+    return Promise.resolve(issue && { open: issue.open, labels: issue.labels });
   }
 }

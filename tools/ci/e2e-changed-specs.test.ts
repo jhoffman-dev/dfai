@@ -37,6 +37,12 @@ describe('the e2e spec files a change adds or changes', () => {
     expect(changedSpecs([], everything)).toEqual([]);
   });
 
+  it('keep a path with a space whole, and leave out one with a newline in it', () => {
+    expect(changedSpecs(['e2e/quick note.spec.ts', 'e2e/a\nb.spec.ts'], everything)).toEqual([
+      'e2e/quick note.spec.ts',
+    ]);
+  });
+
   it('do not take a spec outside e2e/, or a file that only ends like one', () => {
     expect(
       changedSpecs(['apps/e2e/x.spec.ts', 'e2e/notes.spec.tsx', 'e2e/x.spec.ts.orig'], everything),

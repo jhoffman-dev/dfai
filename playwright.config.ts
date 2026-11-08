@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { tagFilter } from './tools/ci/e2e-tags.ts';
+import { quarantineMode, tagFilter } from './tools/ci/e2e-tags.ts';
 
 /**
  * The port this checkout's end-to-end server listens on.
@@ -71,10 +71,11 @@ export default defineConfig({
   // there: on a Mac here, and in CI in the nightly macOS run
   // (e2e-macos-nightly.yml), not in the gate's Linux shards. A test tagged
   // `@quarantine` (e2e/quarantine.ts) is left out everywhere, unless
-  // `E2E_QUARANTINE=only` asks for the quarantined tests alone (#799).
+  // `E2E_QUARANTINE=only` asks for the quarantined tests alone, or
+  // `E2E_QUARANTINE=list` for every platform's, with `--list` (#799).
   ...tagFilter({
     platform: process.platform,
-    quarantinedOnly: process.env.E2E_QUARANTINE === 'only',
+    quarantine: quarantineMode(process.env.E2E_QUARANTINE),
   }),
   forbidOnly: !!process.env.CI,
   // Retry to detect, not to hide (#799): in CI a failed test runs once more. A

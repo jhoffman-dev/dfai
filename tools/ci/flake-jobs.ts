@@ -1,5 +1,5 @@
 import { foldRecords, isFlaky, type FlakeRecord } from './e2e-flakes.ts';
-import { fileOrUpdate, type Filed, type IssueTracker } from './flake-issues.ts';
+import { fileOrUpdate, type Filed, type IssueFacts, type IssueTracker } from './flake-issues.ts';
 import {
   flakyIssueReport,
   flakyIssueTitle,
@@ -8,7 +8,12 @@ import {
   huntIssueReport,
   type RunLink,
 } from './flake-reports.ts';
-import { quarantineProblems, quarantineSummary, type QuarantinedTest } from './quarantine.ts';
+import {
+  quarantineOf,
+  quarantineProblems,
+  quarantineSummary,
+  type QuarantinedTest,
+} from './quarantine.ts';
 
 /*
  * What the three non-blocking flake jobs do with a run's results (#799). Each
@@ -84,19 +89,26 @@ export async function reportHunt({
   };
 }
 
-/** The gate's `quarantine` job: lists every quarantined test, red if one names no open issue. */
+/**
+ * The gate's `quarantine` job: lists every quarantined test, every platform's
+ * from `listed` with how each did from `ran`, red if one names no open
+ * `flaky` issue.
+ */
 export async function reportQuarantine({
-  tests,
+  listed,
+  ran,
   tracker,
 }: {
-  readonly tests: readonly QuarantinedTest[];
+  readonly listed: readonly QuarantinedTest[];
+  readonly ran: readonly QuarantinedTest[];
   readonly tracker: IssueTracker;
 }): Promise<JobResult> {
+  const tests = quarantineOf(listed, ran);
   const issues = [
     ...new Set(tests.flatMap((test) => (test.issue === undefined ? [] : [test.issue]))),
   ];
-  const states = new Map<number, boolean | undefined>();
-  for (const issue of issues) states.set(issue, await tracker.isOpen(issue));
+  const states = new Map<number, IssueFacts | undefined>();
+  for (const issue of issues) states.set(issue, await tracker.findIssue(issue));
   return {
     summary: quarantineSummary(tests, states),
     failed: quarantineProblems(tests, states).length > 0,

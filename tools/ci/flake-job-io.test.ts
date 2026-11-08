@@ -42,16 +42,22 @@ describe("reading the shards' flake artifacts", () => {
     shard('e2e-flakes-10', [{ ...RECORD, title: 'ten' }]);
     shard('e2e-flakes-2', [RECORD], 'https://example.test/report-2');
     shard('e2e-flakes-3', []);
-    expect(readShardFlakes(folder)).toEqual([
+    expect(readShardFlakes(folder, 3)).toEqual([
       { ...RECORD, reportUrl: 'https://example.test/report-2' },
       { ...RECORD, title: 'ten' },
     ]);
   });
 
-  it('finds none when no shard handed any on', () => {
-    expect(readShardFlakes(join(folder, 'never-downloaded'))).toEqual([]);
-    mkdirSync(join(folder, 'e2e-flakes-1'));
-    expect(readShardFlakes(folder)).toEqual([]);
+  it('throws when no shard handed any on, rather than reading it as no failures', () => {
+    expect(() => readShardFlakes(join(folder, 'never-downloaded'), 8)).toThrow(/missing/);
+  });
+
+  it('throws, naming those there, when a shard is missing or left no file', () => {
+    shard('e2e-flakes-1', []);
+    mkdirSync(join(folder, 'e2e-flakes-2'));
+    expect(() => readShardFlakes(folder, 3)).toThrow(
+      '1 of 3 shards handed on their flakes (e2e-flakes-1)',
+    );
   });
 
   it('throws on a record file that is not JSON, rather than reporting no flakes', () => {

@@ -9,7 +9,11 @@
  * (playwright.config.ts), so an `.ipad.spec.ts` repeats on the iPad's screen.
  */
 
+/** `.` matches no newline, so a spec path is one line of the `specs` output. */
 const SPEC = /^e2e\/.+\.spec\.ts$/;
+
+/** Ends the multi-line `specs` output; no spec path can be it, as each starts `e2e/`. */
+export const SPECS_DELIMITER = 'E2E_SPECS_END';
 
 /**
  * The changed paths that are e2e spec files and still exist, in order, once

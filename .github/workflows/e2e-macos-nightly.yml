@@ -65,8 +65,37 @@ jobs:
 
       # One worker: with two, a 3-vCPU Mac missed a five-second wait or two a
       # run (#649). Here time is cheap and a false alarm is not.
+      #
+      # A failed test is retried once here too (playwright.config.ts, #799): one
+      # that then passes is written down for the `flaky` job below, which files
+      # its issue as the gate's does, so a retry never hides a flake.
       - name: End-to-end, a quarter of the suite
-        run: pnpm e2e --shard=${{ matrix.shard }}/4 --workers=1 --reporter=list,html
+        id: e2e
+        env:
+          E2E_FLAKES_OUT: e2e-flakes/flakes.json
+        run: >-
+          pnpm e2e --shard=${{ matrix.shard }}/4 --workers=1
+          --reporter=list,html,./tools/ci/e2e-flake-reporter.ts
+
+      # The quarantined tests, `@mac` ones among them, which only a Mac can run
+      # (the gate's Linux `quarantine` job lists them). Never turns the run red:
+      # their issues track them.
+      - name: The quarantined tests, macOS ones among them
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        continue-on-error: true
+        env:
+          E2E_QUARANTINE: only
+        run: >-
+          pnpm exec playwright test --workers=1 --pass-with-no-tests
+          --reporter=list --output test-results/quarantine
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-flakes-${{ matrix.shard }}
+          path: e2e-flakes/
+          if-no-files-found: warn
+          retention-days: 14
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
@@ -76,6 +105,35 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 14
+
+  flaky:
+    # Each test that failed and then passed its retry gets its issue, as in
+    # the gate (tools/ci/flake-job.ts): one per test, label `flaky`, under #126.
+    needs: e2e
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: e2e-flakes-*
+          path: e2e-flakes
+
+      - name: List the flaky tests and file their issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FILE_ISSUES: 'true'
+          RUN_CONTEXT: macOS, ${{ github.ref_name }}
+        run: node tools/ci/flake-job.ts flaky e2e-flakes 4
 
   report:
     # One open issue for a red streak: a second failure comments on it. Only

@@ -218,13 +218,15 @@ times (`--repeat-each=10`, no retry, on four Linux shards), and one failure fail
 `gate`. (2) Under `CI` a failed test is retried once: one that fails twice fails
 `gate`; one that then passes keeps its shard green, but the non-blocking `flaky`
 job goes red listing it, and opens or comments on its issue (label `flaky`, a
-sub-issue of #126, one per test title; never from a fork). (3) Quarantine a
-flaky test while its issue is open with `quarantined(<issue>)` from
+sub-issue of #126, one per test, keyed by a hash in the title; never from a
+fork). The macOS nightly files its flakes the same way. (3) Quarantine a flaky
+test while its issue is open with `quarantined(<issue>)` from
 `e2e/quarantine.ts` (`test('…', quarantined(812), async …)`): it tags it
-`@quarantine`, which the gate leaves out, and names the issue. The non-blocking
-`quarantine` job runs those tests alone (`E2E_QUARANTINE=only` here) and lists
-each with its issue; it goes red when one names no issue or a closed one, so
-take the tag off in the fix that closes it. (4) `e2e-flake-hunt.yml` runs the
+`@quarantine`, which the gate leaves out, and names the issue, which must be an
+open issue labelled `flaky`. The non-blocking `quarantine` job runs those tests
+alone (`E2E_QUARANTINE=only` here) and lists each with its issue, `@mac` ones
+too (they run in the macOS nightly); it goes red when one names no open `flaky`
+issue, so take the tag off in the fix that closes it. (4) `e2e-flake-hunt.yml` runs the
 whole Linux suite three times nightly on `main` (or by hand, `workflow_dispatch`)
 and files or comments on one issue listing every test that failed, by spec.
 `flaky` and `quarantine` are not required checks. The scripts are in
