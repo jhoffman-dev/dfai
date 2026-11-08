@@ -110,6 +110,8 @@ import { CLAUDE_NOTES_PER_RUN } from './claude-step.ts';
 import type { NoteVersionRef } from './note-trigger.ts';
 import { localTimeMs, type LocalTime } from './schedule.ts';
 import type { OutputPeriod } from './output-period.ts';
+import type { ModelUsage } from '../chat/model-usage.ts';
+import { usageLine, usageOf } from './usage-log-line.ts';
 
 export const MAX_LOG_ENTRIES = 100;
 export const LOG_MARKER_VALUE = 'automation-log';
@@ -211,6 +213,11 @@ export interface ClaudeRunInfo {
    * in the order read. Left out for any other step.
    */
   readonly meetings?: readonly MeetingTally[];
+  /**
+   * The tokens its asks spent, summed (#788); left out when any ask's usage
+   * is unknown — a provider that said none — so a total is never too low.
+   */
+  readonly usage?: ModelUsage;
 }
 
 /** What the declared step made of one meeting's action items. */
@@ -514,9 +521,11 @@ function claudeLines({
   adjusted = [],
   warnings = [],
   meetings = [],
+  usage,
 }: ClaudeRunInfo): string[] {
   return [
     `- claude ${code(model)} in ${code(ms)} ms`,
+    ...(usage === undefined ? [] : [usageLine(usage)]),
     ...meetings.map(
       ({ path, tasks, proposals, listed, summary, leftOut }) =>
         `- meeting ${code(path)}: tasks ${code(tasks)}, proposals ${code(proposals)}${
@@ -885,6 +894,7 @@ function claudeOf(body: readonly string[]): ClaudeRunInfo | null {
         const warnings = body.flatMap((line) => WARNED_LINE.exec(line)?.[1] ?? []);
         const alreadyMade = countOn(body, ALREADY_MADE_LINE);
         const meetings = meetingsOf(body);
+        const usage = usageOf(body);
         return {
           model,
           ms,
@@ -895,6 +905,7 @@ function claudeOf(body: readonly string[]): ClaudeRunInfo | null {
           ...(warnings.length > 0 && { warnings }),
           ...(alreadyMade !== null && { alreadyMade }),
           ...(meetings.length > 0 && { meetings }),
+          ...(usage !== null && { usage }),
         };
       }
     } catch {

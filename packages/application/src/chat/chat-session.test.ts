@@ -308,6 +308,60 @@ describe('a chat session', () => {
   });
 });
 
+describe('what a chat turn spent, in the Activity log (#788)', () => {
+  const USAGE = { input: 9000, cacheCreation: 2100, cacheRead: 30_100, output: 2140 };
+
+  it('records one line of numbers per answered turn: rounds, usage and model', async () => {
+    const { chat, activity } = session([
+      [{ type: 'tool_call', call: { id: 'c1', name: 'atlas_search', input: { q: 'Mara' } } }],
+      [{ type: 'tool_call', call: { id: 'c2', name: 'atlas_search', input: { q: 'Quill' } } }],
+      [
+        { type: 'text', text: 'Mara Quill leads payroll.' },
+        { type: 'usage', usage: USAGE },
+      ],
+    ]);
+    await chat.send('What does Mara Quill do in my secret plan?');
+    expect(activity.reports).toEqual([
+      {
+        level: 'info',
+        kind: 'chat',
+        message: 'Chat answered: 3 rounds, usage unknown, claude-opus-5-5.',
+        subject: null,
+      },
+    ]);
+  });
+
+  it('sums the rounds when every one said what it spent, and never names the question', async () => {
+    const { chat, activity } = session([
+      [
+        { type: 'text', text: 'Mara Quill leads payroll.' },
+        { type: 'usage', usage: USAGE },
+      ],
+    ]);
+    await chat.send('What does Mara Quill do in my secret plan?');
+    expect(activity.reports.map((report) => report.message)).toEqual([
+      'Chat answered: 1 round, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
+    ]);
+    const said = JSON.stringify(activity.reports);
+    expect(said).not.toContain('secret plan');
+    expect(said).not.toContain('Mara');
+  });
+
+  it('records a turn Stop ended as stopped', async () => {
+    const { chat, activity } = session([
+      async function* () {
+        yield { type: 'text', text: 'Partly' } as const;
+        chat.stop();
+        yield { type: 'text', text: ' more' } as const;
+      },
+    ]);
+    await chat.send('Go');
+    expect(activity.reports.map((report) => report.message)).toEqual([
+      'Chat stopped: 1 round, usage unknown, claude-opus-5-5.',
+    ]);
+  });
+});
+
 describe('a chat session in the Activity log', () => {
   const proposing = (): ScriptedRound[] => [
     [{ type: 'tool_call', call: EDIT }],
@@ -321,6 +375,12 @@ describe('a chat session in the Activity log', () => {
     await chat.accept(id);
     await chat.undo(id);
     expect(activity.reports).toEqual([
+      {
+        level: 'info',
+        kind: 'chat',
+        message: 'Chat answered: 2 rounds, usage unknown, claude-opus-5-5.',
+        subject: null,
+      },
       {
         level: 'info',
         kind: 'chat',
@@ -348,9 +408,9 @@ describe('a chat session in the Activity log', () => {
       expectedModified: null,
     });
     await chat.accept(proposalOf(chat.state().items).id);
-    expect(activity.reports).toHaveLength(1);
-    expect(activity.reports[0]).toMatchObject({ level: 'warning', kind: 'chat' });
-    expect(activity.reports[0]?.message).toMatch(/^Could not accept Claude's change to Plan\. /);
+    expect(activity.reports).toHaveLength(2);
+    expect(activity.reports[1]).toMatchObject({ level: 'warning', kind: 'chat' });
+    expect(activity.reports[1]?.message).toMatch(/^Could not accept Claude's change to Plan\. /);
   });
 
   it('records a refused Undo as a warning', async () => {
@@ -375,6 +435,12 @@ describe('a chat session in the Activity log', () => {
     await chat.send('What is in my private diary?');
     expect(activity.reports).toEqual([
       {
+        level: 'info',
+        kind: 'chat',
+        message: 'Chat failed: 1 round, usage unknown, claude-opus-5-5.',
+        subject: null,
+      },
+      {
         level: 'error',
         kind: 'chat',
         // Fixed words for the kind (A28-01): the provider's own text never reaches the log.
@@ -393,11 +459,11 @@ describe('a chat session in the Activity log', () => {
       ),
     ]);
     await chat.send('What is in my private diary?');
-    expect(activity.reports).toHaveLength(1);
-    expect(activity.reports[0]?.message).not.toContain('private diary');
+    expect(activity.reports).toHaveLength(2);
+    expect(JSON.stringify(activity.reports)).not.toContain('private diary');
   });
 
-  it('records nothing for a turn the person stopped, even one that ends in an error', async () => {
+  it('records no failure for a turn the person stopped, even one that ends in an error: only what it spent', async () => {
     const { chat, activity } = session([
       async function* () {
         yield { type: 'text', text: 'Partly' } as const;
@@ -409,7 +475,9 @@ describe('a chat session in the Activity log', () => {
     await chat.send('Go');
     expect(chat.state().busy).toBe(false);
     expect(chat.state().error?.message).toBe('The operation was aborted.');
-    expect(activity.reports).toEqual([]);
+    expect(activity.reports.map((report) => report.message)).toEqual([
+      'Chat stopped: 1 round, usage unknown, claude-opus-5-5.',
+    ]);
   });
 
   it('records a chat note that could not be saved', async () => {
@@ -417,9 +485,9 @@ describe('a chat session in the Activity log', () => {
     fixture.open = null;
     await chat.send('Hello');
     expect(chat.state().notice).not.toBeNull();
-    expect(activity.reports).toHaveLength(1);
-    expect(activity.reports[0]).toMatchObject({ level: 'error', kind: 'chat' });
-    expect(activity.reports[0]?.message).toBe('The chat could not be saved to Chats/.');
+    expect(activity.reports).toHaveLength(2);
+    expect(activity.reports[1]).toMatchObject({ level: 'error', kind: 'chat' });
+    expect(activity.reports[1]?.message).toBe('The chat could not be saved to Chats/.');
   });
 
   it("records an unsaved chat in fixed words, never the error's, which name the note after the question", async () => {
@@ -433,8 +501,9 @@ describe('a chat session in the Activity log', () => {
     await chat.send(question);
     expect(tried).toContain('Tobias Fenn');
     expect(chat.state().notice).toContain('the disk is full');
-    expect(activity.reports).toHaveLength(1);
-    const { message } = activity.reports[0] ?? { message: '' };
+    expect(activity.reports).toHaveLength(2);
+    expect(JSON.stringify(activity.reports[0])).not.toContain('Tobias');
+    const { message } = activity.reports[1] ?? { message: '' };
     expect(message).toBe('The chat could not be saved to Chats/.');
     expect(message).not.toContain('Tobias');
     expect(message).not.toContain(tried);

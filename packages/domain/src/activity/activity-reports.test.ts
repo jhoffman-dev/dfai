@@ -321,6 +321,54 @@ describe('chatReport', () => {
       subject: null,
     });
   });
+
+  const SPENT = { input: 9000, cacheCreation: 2100, cacheRead: 30_100, output: 2140 };
+
+  it('says what an answered turn spent in numbers only, with no subject (#788)', () => {
+    const answered = {
+      kind: 'answered',
+      rounds: 3,
+      usage: SPENT,
+      model: 'claude-opus-5-5',
+    } as const;
+    expect(chatReport({ ...answered, ended: 'answered' })).toEqual({
+      level: 'info',
+      kind: 'chat',
+      message: 'Chat answered: 3 rounds, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
+      subject: null,
+    });
+    expect(chatReport({ ...answered, rounds: 1, ended: 'answered' }).message).toBe(
+      'Chat answered: 1 round, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
+    );
+  });
+
+  it('says a turn Stop ended, and usage nobody reported as unknown', () => {
+    expect(
+      chatReport({
+        kind: 'answered',
+        rounds: 2,
+        usage: null,
+        model: 'claude-opus-5-5',
+        ended: 'stopped',
+      }).message,
+    ).toBe('Chat stopped: 2 rounds, usage unknown, claude-opus-5-5.');
+  });
+
+  it('says what a failed turn had spent, beside the line that says it failed (#794)', () => {
+    const failed = chatReport({
+      kind: 'answered',
+      rounds: 2,
+      usage: SPENT,
+      model: 'claude-opus-5-5',
+      ended: 'failed',
+    });
+    expect(failed).toEqual({
+      level: 'info',
+      kind: 'chat',
+      message: 'Chat failed: 2 rounds, 41k in (30k cached), 2.1k out, claude-opus-5-5.',
+      subject: null,
+    });
+  });
 });
 
 describe('index, save and notice reports', () => {

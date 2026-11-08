@@ -1,4 +1,4 @@
-import type { ModelMessage, ModelToolSpec, ToolCall } from '@dfai/domain';
+import type { ModelMessage, ModelToolSpec, ModelUsage, ToolCall } from '@dfai/domain';
 
 /** Everything one model turn is sent: who it is, what was said, what it may call. */
 export interface ModelRequest {
@@ -13,7 +13,13 @@ export type ModelEvent =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'tool_call'; readonly call: ToolCall }
   /** A tool call written so badly it could not be read; the model is told why. */
-  | { readonly type: 'malformed'; readonly problem: string };
+  | { readonly type: 'malformed'; readonly problem: string }
+  /**
+   * What the call spent, once it is known (#788); a provider that reports
+   * none, or none that reads, sends no such event, and the call's usage is
+   * unknown.
+   */
+  | { readonly type: 'usage'; readonly usage: ModelUsage };
 
 /** Why a provider cannot be used right now. */
 export type ProviderProblem = 'not_installed' | 'not_logged_in' | 'no_key' | 'unavailable';

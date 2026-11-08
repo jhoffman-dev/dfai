@@ -100,6 +100,12 @@ test('Claude opens on the note, reads it, proposes an edit, and writes it only o
   // One step back.
   await proposal.getByRole('button', { name: 'Undo' }).click();
   await expectFile(vault, 'Plan.md').toBe(PLAN);
+
+  // What the turn spent, summed over its three rounds, in numbers only (#788).
+  await expect
+    .poll(() => host.activityLog())
+    .toContain('Chat answered: 3 rounds, 124k in (90k cached), 6.4k out,');
+  expect(host.activityLog()).not.toContain('Tidy this page');
 });
 
 /** A title wider than the sidebar's column, with a word too long for it, as a file name can be. */

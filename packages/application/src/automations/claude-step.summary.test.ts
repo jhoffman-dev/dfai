@@ -496,6 +496,60 @@ describe('a long meeting', () => {
     expect(blockOf(at.body()).text).toContain('> The whole meeting, merged.');
   });
 
+  it('sums what the parts and the reduce spent into its log and its Activity line (#788)', async () => {
+    let turns = 1;
+    while (partsOf(longBody(turns)) < 2) turns += 5;
+    const spent = (output: number): ModelEvent => ({
+      type: 'usage',
+      usage: { input: 3000, cacheCreation: 700, cacheRead: 10_000, output },
+    });
+    const at = setUp(
+      [
+        [...part(1), spent(700)],
+        [...part(2), spent(700)],
+        [...reduced, spent(740)],
+      ],
+      {
+        ...NOTES,
+        [SYNC]: meetingWith(longBody(turns)),
+      },
+    );
+
+    const entry = await at.run();
+
+    expect(entry).toMatchObject({
+      kind: 'run',
+      claude: {
+        asks: 3,
+        usage: { input: 9000, cacheCreation: 2100, cacheRead: 30_000, output: 2140 },
+      },
+    });
+    expect(at.vault.files.get(logPathFor(RULE.id))).toContain(
+      '- usage in `41100` (cached `30000`, written `2100`) out `2140`',
+    );
+    expect(at.entries().at(-1)).toMatchObject({ claude: { usage: { output: 2140 } } });
+    expect(at.activity.reports.at(-1)?.message).toContain(', 41k in (30k cached), 2.1k out.');
+  });
+
+  it('says no usage when one of its asks said none', async () => {
+    let turns = 1;
+    while (partsOf(longBody(turns)) < 2) turns += 5;
+    const spent: ModelEvent = {
+      type: 'usage',
+      usage: { input: 3000, cacheCreation: 700, cacheRead: 10_000, output: 700 },
+    };
+    const at = setUp([[...part(1), spent], part(2), [...reduced, spent]], {
+      ...NOTES,
+      [SYNC]: meetingWith(longBody(turns)),
+    });
+
+    const entry = await at.run();
+
+    expect(entry).toMatchObject({ kind: 'run', claude: { asks: 3 } });
+    expect(entry.kind === 'run' && entry.claude).not.toHaveProperty('usage');
+    expect(at.vault.files.get(logPathFor(RULE.id))).not.toContain('- usage');
+  });
+
   it('is read in at most nine parts and one reduce: ten asks', async () => {
     const body = longBody(1000);
     expect(partsOf(body)).toBeGreaterThan(9);
