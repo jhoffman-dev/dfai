@@ -75,9 +75,11 @@ test('reaches a row the virtualiser is not holding, and holds no more for it', a
 
   // And still only a screenful of rows in the DOM. Focusing a row is not a
   // reason to render the six hundred.
-  const rendered = await page.getByRole('treeitem').count();
-  expect(rendered).toBeGreaterThan(0);
-  expect(rendered).toBeLessThan(100);
+  await expect(async () => {
+    const rendered = await page.getByRole('treeitem').count();
+    expect(rendered).toBeGreaterThan(0);
+    expect(rendered).toBeLessThan(100);
+  }).toPass();
 
   await page.keyboard.press('Enter');
   await expect(page.getByRole('article', { name: 'note-0599' })).toBeVisible();

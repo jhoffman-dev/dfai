@@ -100,7 +100,7 @@ test('a hostile book runs no script and asks for nothing outside the app', async
     await frame.evaluate(() => document.querySelectorAll('script, iframe, object, embed').length),
   ).toBe(0);
   // An opaque origin (ADR-0045): nothing in the frame is of the app's.
-  expect(await page.locator('iframe.epub-frame').getAttribute('sandbox')).toBe('allow-scripts');
+  await expect(page.locator('iframe.epub-frame')).toHaveAttribute('sandbox', 'allow-scripts');
   // The pictures have had their chance to load: the book's own SVG is written in, nothing else was asked for.
   await picturesSettled(frame);
   expect(

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, expectFile, openVaultByTouch } from './host.ts';
+import { expectFocusIn } from './typing.ts';
 
 /**
  * #660: the editor on an iPad, by finger and by a hardware keyboard. This spec
@@ -94,6 +95,7 @@ test('on an iPad, a finger types, links with [[, inserts with /, and moves a blo
       .getByRole('listbox', { name: 'Insert block' })
       .getByRole('option', { name: /Quote/ })
       .tap();
+    await expectFocusIn(editor);
     await page.keyboard.type('Quoted by a finger.');
     await expectFile(vault, 'Garden plan.md').toContain('> Quoted by a finger.');
   });

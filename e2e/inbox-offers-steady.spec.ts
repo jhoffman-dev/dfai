@@ -63,7 +63,9 @@ test('the offers are known as the Inbox opens: they show above the rows, and not
   await expect(row).toBeVisible();
   await expect(tidy(page)).toBeVisible();
   const offer = (await tidy(page).boundingBox())!;
-  expect(offer.y + offer.height).toBeLessThanOrEqual((await row.boundingBox())!.y);
+  await expect(async () =>
+    expect(offer.y + offer.height).toBeLessThanOrEqual((await row.boundingBox())!.y),
+  ).toPass();
   expect(await largestMove(page, 'Item 1', 30)).toBe(0);
   await expect(page.getByRole('button', { name: /New above/ })).toHaveCount(0);
 });
@@ -101,7 +103,9 @@ test('an offer read while the rows are held lands above them before they show (#
   await expect(tidy(page)).toBeVisible();
   // Below the offer whether it came before the rows showed or after; and they stay put.
   const offer = (await tidy(page).boundingBox())!;
-  expect(offer.y + offer.height).toBeLessThanOrEqual((await row.boundingBox())!.y);
+  await expect(async () =>
+    expect(offer.y + offer.height).toBeLessThanOrEqual((await row.boundingBox())!.y),
+  ).toPass();
   expect(await largestMove(page, 'Item 1', 30)).toBe(0);
 });
 
@@ -150,7 +154,9 @@ test('the Inbox waits for the types offer’s read too: held, the rows wait; let
   await expect(row).toBeVisible();
   await expect(typesOffer(page)).toBeVisible();
   const offer = (await typesOffer(page).boundingBox())!;
-  expect(offer.y + offer.height).toBeLessThanOrEqual((await row.boundingBox())!.y);
+  await expect(async () =>
+    expect(offer.y + offer.height).toBeLessThanOrEqual((await row.boundingBox())!.y),
+  ).toPass();
   await page.clock.resume();
   expect(await largestMove(page, 'Item 1', 30)).toBe(0);
   await expect(page.getByRole('button', { name: /New above/ })).toHaveCount(0);

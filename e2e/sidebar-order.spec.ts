@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { dragWithPointer } from './drag.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 // P19-01 and P19-02 (U-17, U-18): the sidebar's sections can be dragged into
 // any order, which the vault keeps in `.atlas/settings.md`. A shut section
@@ -104,8 +105,7 @@ test('a tall section lands on the heading it is dropped on', async ({ page }) =>
 test('a section moves from the keyboard, keeping focus on its grip', async ({ page }) => {
   const vault = await openVault(page);
 
-  await grip(page, 'Pages').focus();
-  await page.keyboard.press('Alt+ArrowUp');
+  await focusThenPress(grip(page, 'Pages'), 'Alt+ArrowUp');
   await expect(headings(page)).toHaveText(['Favorites', 'Types', 'Views', 'Pages', 'Dashboards']);
   await expect(grip(page, 'Pages')).toBeFocused();
 
@@ -121,8 +121,7 @@ test('a shut section keeps its place, and can be moved like an open one', async 
   await expect(headings(page)).toHaveText(DEFAULT);
 
   // From the keyboard, so the heading has focus to keep.
-  await heading(page, 'Types').focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(heading(page, 'Types'), 'Enter');
   await expect(heading(page, 'Types')).toHaveAttribute('aria-expanded', 'false');
   await expect(headings(page)).toHaveText(DEFAULT);
   await expect(heading(page, 'Types')).toBeFocused();
@@ -132,8 +131,7 @@ test('a shut section keeps its place, and can be moved like an open one', async 
   await expect(headings(page)).toHaveText(DEFAULT);
 
   // Shut, it still moves past an open section.
-  await grip(page, 'Types').focus();
-  await page.keyboard.press('Alt+ArrowDown');
+  await focusThenPress(grip(page, 'Types'), 'Alt+ArrowDown');
   await expect(headings(page)).toHaveText(['Favorites', 'Views', 'Types', 'Dashboards', 'Pages']);
   await expect
     .poll(() => savedOrder(vault))

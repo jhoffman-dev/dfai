@@ -9,6 +9,7 @@ import {
 } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
 import { createFromSuggestion, suggestion } from './link-suggest.ts';
+import { clickThenType, focusThenPress } from './typing.ts';
 
 /**
  * #465: a link field suggests notes as you type — here the Inbox's project
@@ -86,8 +87,7 @@ test('in the Inbox, a task’s project is set by typing a few letters and pickin
   const inbox = await openInbox(page, vault);
   const project = inbox.getByRole('combobox', { name: 'File Call the bank under' });
 
-  await project.click();
-  await page.keyboard.type('lark');
+  await clickThenType(project, 'lark');
   // Both Larkspur projects meet "lark"; Atlas does not.
   await expect(suggestion(project, 'Larkspur Payroll migration')).toBeVisible();
   await expect(suggestion(project, 'Larkspur onboarding')).toBeVisible();
@@ -115,11 +115,12 @@ test('the P key opens the project field: three letters and Enter file the task',
 }) => {
   const vault = await vaultWithProjects();
   const inbox = await openInbox(page, vault);
-  await inbox
-    .getByRole('row')
-    .filter({ has: page.getByRole('button', { name: 'Call the bank', exact: true }) })
-    .focus();
-  await page.keyboard.press('p');
+  await focusThenPress(
+    inbox
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: 'Call the bank', exact: true }) }),
+    'p',
+  );
   const project = inbox.getByRole('combobox', { name: 'File Call the bank under' });
   await expect(project).toBeFocused();
   await page.keyboard.type('atl');

@@ -101,13 +101,17 @@ test('a table draws its select and relation cells as coloured pills, one colour 
   expect(larkspurHues[0]).not.toBeNull();
 
   // Painted, not only labelled: the pill's fill is not the page's and not grey's.
-  const fill = await interviews.first().evaluate((node) => getComputedStyle(node).backgroundColor);
-  const grey = await page.evaluate(() =>
-    getComputedStyle(document.documentElement).getPropertyValue('--hue-gray-bg').trim(),
-  );
-  expect(fill).not.toBe('rgba(0, 0, 0, 0)');
-  expect(grey).not.toBe('');
-  expect(fill).not.toBe(hexToRgb(grey));
+  await expect(async () => {
+    const fill = await interviews
+      .first()
+      .evaluate((node) => getComputedStyle(node).backgroundColor);
+    const grey = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--hue-gray-bg').trim(),
+    );
+    expect(fill).not.toBe('rgba(0, 0, 0, 0)');
+    expect(grey).not.toBe('');
+    expect(fill).not.toBe(hexToRgb(grey));
+  }).toPass();
 
   // The same value is the same colour in the note's properties panel.
   await table.getByRole('button', { name: 'kickoff', exact: true }).click();

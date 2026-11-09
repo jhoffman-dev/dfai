@@ -7,6 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
+import { e2eFlake } from './tools/eslint/e2e-flake/index.mjs';
 
 /**
  * The app's state libraries (#238): stores and queries belong to the app shell
@@ -888,6 +889,18 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+  {
+    // The three shapes most flaky e2e tests share (#798): a key before the
+    // focus lands, a value read once, and a wait by time. Helpers that do it
+    // right are in e2e/typing.ts and e2e/caret.ts.
+    files: ['e2e/**/*.ts'],
+    plugins: { 'e2e-flake': e2eFlake },
+    rules: {
+      'e2e-flake/no-wait-for-timeout': 'error',
+      'e2e-flake/no-one-shot-read': 'error',
+      'e2e-flake/no-keys-after-focus': 'error',
     },
   },
   {

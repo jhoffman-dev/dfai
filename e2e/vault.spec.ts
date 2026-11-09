@@ -83,9 +83,11 @@ test('handles a vault with two thousand notes without bogging down', async ({ pa
   await expect(page.getByRole('treeitem', { name: 'note-0000', exact: true })).toBeVisible();
 
   // Virtualised: only a screenful of rows is in the DOM, not two thousand.
-  const rendered = await page.getByRole('treeitem').count();
-  expect(rendered).toBeGreaterThan(0);
-  expect(rendered).toBeLessThan(100);
+  await expect(async () => {
+    const rendered = await page.getByRole('treeitem').count();
+    expect(rendered).toBeGreaterThan(0);
+    expect(rendered).toBeLessThan(100);
+  }).toPass();
 
   // The derived sections read every note's frontmatter to classify it. None of
   // these notes is a view, a dashboard or a favourite, so none of them may turn

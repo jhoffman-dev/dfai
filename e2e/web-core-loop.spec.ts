@@ -3,6 +3,7 @@ import { expect, type Locator, type Page } from './fixtures.ts';
 import { webVaultOnGitHub } from './web-github.ts';
 import { webTest as test } from './web-test.ts';
 import { GARDEN_VAULT, PLAN, saveStatus, signedInOnTheWeb } from './web-vault.ts';
+import { focusOn } from './typing.ts';
 
 /**
  * #669: the web build's core loop at a desktop's size, by keyboard, against
@@ -40,7 +41,7 @@ const goTo = (page: Page, name: RegExp) =>
 /** Opens Garden plan from the tree by arrow keys: from Tasks, one down, and Enter. */
 async function openThePlanByKeys(page: Page) {
   const tree = page.getByRole('tree');
-  await tree.getByRole('treeitem', { name: 'Tasks', exact: true }).focus();
+  await focusOn(tree.getByRole('treeitem', { name: 'Tasks', exact: true }));
   await page.keyboard.press('ArrowDown');
   await expect(tree.getByRole('treeitem', { name: 'Garden plan', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');

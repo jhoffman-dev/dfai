@@ -101,8 +101,10 @@ test('with more tabs than fit, the + stays visible, clear of the tabs, and still
   expect(add.x).toBeGreaterThanOrEqual(list.x + list.width - 1);
   expect(add.x + add.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
   // The list scrolls rather than pushing the + out.
-  const scrolls = await strip(page, 1).evaluate((el) => el.scrollWidth > el.clientWidth);
-  expect(scrolls).toBe(true);
+  await expect(async () => {
+    const scrolls = await strip(page, 1).evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(scrolls).toBe(true);
+  }).toPass();
   await addOf(page, 1).click();
   await expect(tabsOf(page, 1)).toHaveCount(15);
 });

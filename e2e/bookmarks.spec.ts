@@ -82,9 +82,11 @@ test('a link switched to a bookmark shows the page, is saved with its marker, an
   await expect(card).toContainText('Ten days, three cities, one very long lunch.');
   await expect(card).toContainText('Trips');
   await expect(card.locator('img.bookmark__img')).toHaveJSProperty('complete', true);
-  expect(
-    await card.locator('img.bookmark__img').evaluate((img: HTMLImageElement) => img.naturalWidth),
-  ).toBe(32);
+  await expect
+    .poll(() =>
+      card.locator('img.bookmark__img').evaluate((img: HTMLImageElement) => img.naturalWidth),
+    )
+    .toBe(32);
 
   await saveNow(page);
   await expectSaved(page);

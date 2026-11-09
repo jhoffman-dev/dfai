@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
+import { scrollThenSettle, scrollToEnd } from './scrolling.ts';
 
 /**
  * Adversarial pass on #247 (Performance B, #238), in WebKit: the Inbox
@@ -121,12 +122,7 @@ test('Shift+Tab from the last row reaches all 600 rows back to the first, each i
 }) => {
   const { table } = await openInbox(page);
   const scroller = page.locator('.panel__body');
-  for (let tries = 0; tries < 20; tries += 1) {
-    await scroller.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-    });
-    await page.waitForTimeout(50);
-  }
+  await scrollToEnd(scroller);
   const last = table.locator(`tr[aria-rowindex="${WAITING + 1}"]`);
   await expect(last).toBeVisible();
   // Its last control that takes the focus (the File picker is disabled with
@@ -148,10 +144,9 @@ test('every placed row’s aria-rowindex is unique, within aria-rowcount, and na
 }) => {
   const { table } = await openInbox(page);
   const scroller = page.locator('.panel__body');
-  await scroller.evaluate((element) => {
+  await scrollThenSettle(scroller, (element) => {
     element.scrollTop = element.scrollHeight * 0.6;
   });
-  await page.waitForTimeout(300);
 
   const found = await table.evaluate((grid) => {
     const count = Number(grid.getAttribute('aria-rowcount'));

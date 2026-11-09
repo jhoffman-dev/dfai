@@ -1,6 +1,6 @@
 /**
- * Putting the editor's caret at a line's end or start, and waiting until the
- * editor holds it there (#445, #448).
+ * Putting the editor's caret at a line's end or start, or the note's end, and
+ * waiting until the editor holds it there (#445, #448).
  *
  * The click lands at the line's start on purpose: where a click lands is not
  * to be relied on, so the key that follows must move the caret from anywhere
@@ -25,7 +25,7 @@
  * The keys are the platform's own (platform.ts): End and Home on Linux.
  */
 import { expect, type Locator } from '@playwright/test';
-import { LINE_END, LINE_START } from './platform.ts';
+import { LINE_END, LINE_START, TEXT_END } from './platform.ts';
 
 /**
  * How long one try's action may take: well under the retry's own 5 s, so a
@@ -42,6 +42,21 @@ export async function caretAtLineEnd(line: Locator): Promise<void> {
 /** Click the line `line` is in, and put the caret at that line's start. */
 export async function caretAtLineStart(line: Locator): Promise<void> {
   await caretAt(line, 'start');
+}
+
+/**
+ * Put the caret at the end of the note `editor` shows (the editor, or what
+ * holds it): click its last paragraph or heading, and ⌘↓ to the end of the
+ * whole text, so a last paragraph that wraps is reached too. Held as
+ * caretAtNoteEndBy holds it: the editor's caret and the page's agree, at the
+ * end of the note's last block.
+ */
+export async function caretAtNoteEnd(editor: Locator): Promise<void> {
+  const lastLine = editor.locator('p, h1, h2, h3, h4, h5, h6').last();
+  await caretAtNoteEndBy(lastLine, async () => {
+    await lastLine.click({ position: { x: 1, y: 5 }, ...ONE_TRY });
+    await lastLine.page().keyboard.press(TEXT_END);
+  });
 }
 
 async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {

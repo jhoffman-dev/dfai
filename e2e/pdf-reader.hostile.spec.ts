@@ -77,10 +77,12 @@ test('a page 200 inches square is drawn at a canvas WebKit can hold, zoomed in',
   await expect
     .poll(() => canvas.evaluate((element: HTMLCanvasElement) => element.width * element.height))
     .toBeGreaterThan(0);
-  const area = await canvas.evaluate(
-    (element: HTMLCanvasElement) => element.width * element.height,
-  );
-  expect(area).toBeLessThanOrEqual(16384 * 16384);
+  await expect(async () => {
+    const area = await canvas.evaluate(
+      (element: HTMLCanvasElement) => element.width * element.height,
+    );
+    expect(area).toBeLessThanOrEqual(16384 * 16384);
+  }).toPass();
 });
 
 test('closing PDF tabs lets their pdf.js workers go', async ({ page }) => {
