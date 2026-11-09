@@ -113,13 +113,17 @@ test('a narrow donut keeps its legend readable', async ({ page }) => {
     const card = cards.nth(at);
     const legend = card.locator('.count-table__label');
     await expect(legend).toHaveText(['Backlog', 'Doing', 'Done']);
-    const cut = await legend.evaluateAll((labels) =>
-      labels
-        .filter((label) => label.clientWidth === 0 || label.scrollWidth > label.clientWidth)
-        .map((label) => label.textContent),
-    );
-    expect(cut, `span ${span}`).toEqual([]);
-    const spill = await card.evaluate((element) => element.scrollHeight - element.clientHeight);
-    expect(spill, `span ${span} spills out of its card`).toBeLessThanOrEqual(0);
+    await expect(async () => {
+      const cut = await legend.evaluateAll((labels) =>
+        labels
+          .filter((label) => label.clientWidth === 0 || label.scrollWidth > label.clientWidth)
+          .map((label) => label.textContent),
+      );
+      expect(cut, `span ${span}`).toEqual([]);
+    }).toPass();
+    await expect(async () => {
+      const spill = await card.evaluate((element) => element.scrollHeight - element.clientHeight);
+      expect(spill, `span ${span} spills out of its card`).toBeLessThanOrEqual(0);
+    }).toPass();
   }
 });

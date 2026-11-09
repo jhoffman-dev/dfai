@@ -163,7 +163,9 @@ test('the MCP command names the server built beside this app, and copies exactly
   await settings(page).getByRole('button', { name: 'Copy MCP command', exact: true }).click();
 
   await expect(settings(page).getByText('MCP command copied', { exact: true })).toBeVisible();
-  expect(await copiedText(page)).toEqual([await command.textContent()]);
+  await expect(async () =>
+    expect(await copiedText(page)).toEqual([await command.textContent()]),
+  ).toPass();
 });
 
 test('a note created through the API shows up in the sidebar and in a view, unrefreshed', async ({

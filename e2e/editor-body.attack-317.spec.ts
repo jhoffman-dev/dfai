@@ -49,8 +49,10 @@ test('a wide table scrolls inside its card and leaves the measure alone', async 
   // The card is no wider than the text column it sits in…
   expect(card?.width ?? Infinity).toBeLessThanOrEqual((paragraph?.width ?? 0) + 1);
   // …and the table's extra width is scrolled inside it.
-  const overflow = await wrapper.evaluate((at) => at.scrollWidth - at.clientWidth);
-  expect(overflow).toBeGreaterThan(0);
+  await expect(async () => {
+    const overflow = await wrapper.evaluate((at) => at.scrollWidth - at.clientWidth);
+    expect(overflow).toBeGreaterThan(0);
+  }).toPass();
 });
 
 test('a cell selection draws its overlay over each selected cell', async ({ page }) => {
@@ -72,13 +74,19 @@ test('a cell selection draws its overlay over each selected cell', async ({ page
 
   const selected = page.locator('.editor .selectedCell');
   await expect(selected).toHaveCount(4);
-  const overlay = await selected.last().evaluate((cell) => {
-    const after = getComputedStyle(cell, '::after');
-    return { background: after.backgroundColor, position: after.position, content: after.content };
-  });
-  expect(overlay.position).toBe('absolute');
-  expect(overlay.content).not.toBe('none');
-  expect(overlay.background).not.toBe('rgba(0, 0, 0, 0)');
+  await expect(async () => {
+    const overlay = await selected.last().evaluate((cell) => {
+      const after = getComputedStyle(cell, '::after');
+      return {
+        background: after.backgroundColor,
+        position: after.position,
+        content: after.content,
+      };
+    });
+    expect(overlay.position).toBe('absolute');
+    expect(overlay.content).not.toBe('none');
+    expect(overlay.background).not.toBe('rgba(0, 0, 0, 0)');
+  }).toPass();
 });
 
 test('inline code in a heading is not set smaller than most of the heading', async ({ page }) => {
@@ -118,7 +126,9 @@ test('the selected slash command is scrolled into the popup', async ({ page }) =
   const popup = page.getByRole('listbox', { name: 'Insert block' });
   await expect(popup).toBeVisible();
   // More rows than 320px holds, or there is nothing to scroll.
-  expect(await popup.evaluate((at) => at.scrollHeight - at.clientHeight)).toBeGreaterThan(0);
+  await expect
+    .poll(() => popup.evaluate((at) => at.scrollHeight - at.clientHeight))
+    .toBeGreaterThan(0);
 
   // Up from the top wraps to the last command, below the fold.
   await page.keyboard.press('ArrowUp');

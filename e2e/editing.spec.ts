@@ -1,6 +1,7 @@
 import { expect, test } from './fixtures.ts';
 import { createVault, expectFile, expectSaved, installHost, saveNow, saveStatus } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
+import { expectFocusIn } from './typing.ts';
 
 const NOTE = [
   '---',
@@ -82,6 +83,7 @@ test('a note saved without being edited keeps every byte', async ({ page }) => {
 
   // Put the cursor in the document and take it straight out again.
   await page.getByText('First paragraph.').click();
+  await expectFocusIn(page.getByText('First paragraph.'));
   await page.keyboard.press('ArrowRight');
   await page.keyboard.down('Meta');
   await page.keyboard.press('s');

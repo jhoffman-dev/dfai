@@ -9,6 +9,7 @@ import {
   saveNow,
 } from './host.ts';
 import { caretAtLineEnd } from './caret.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * A small web: Hub links to Spoke; Task points at Hub through a `project`
@@ -160,8 +161,7 @@ test('the graph as a list, narrowed by type and orphans', async ({ page }) => {
   ).toHaveCount(1);
 
   // Opened from the list with the keyboard, as the canvas cannot be.
-  await page.getByRole('button', { name: /^Hub/ }).first().focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(page.getByRole('button', { name: /^Hub/ }).first(), 'Enter');
   await expect(page.getByRole('article', { name: 'Hub' })).toBeVisible();
 });
 

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection, type FakeHost, type FakeVault } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 // Attack on #332 (UI v2 slice 3a, #294): the sidebar's new geometry — 28px
 // rows at a 29px pitch in the virtualised Pages tree, 26px sticky headings
@@ -90,8 +91,7 @@ async function expandAll(
 ) {
   for (let area = AREAS; area >= 1; area -= 1) {
     const folder = treeRow(page, `Area ${pad(area)}`);
-    await folder.focus();
-    await page.keyboard.press('ArrowRight');
+    await focusThenPress(folder, 'ArrowRight');
     await expect(folder).toHaveAttribute('aria-expanded', 'true');
     // A folder is marked open before it is listed: until its contents are in,
     // the row after it is whatever follows the folder, where a down arrow
@@ -190,11 +190,13 @@ test('tree rows sit at an exact 29px pitch deep in a long nested list', async ({
 
 /** The tree is as tall as `rows` rows at the pitch, give or take a subpixel. */
 async function expectTreeHeight(page: Page, rows: number) {
-  const height = await pages(page)
-    .getByRole('tree')
-    .evaluate((tree) => tree.getBoundingClientRect().height);
-  expect(height).toBeGreaterThanOrEqual(rows * PITCH - 1);
-  expect(height).toBeLessThanOrEqual(rows * PITCH);
+  await expect(async () => {
+    const height = await pages(page)
+      .getByRole('tree')
+      .evaluate((tree) => tree.getBoundingClientRect().height);
+    expect(height).toBeGreaterThanOrEqual(rows * PITCH - 1);
+    expect(height).toBeLessThanOrEqual(rows * PITCH);
+  }).toPass();
 }
 
 test('the tree is exactly as tall as its rows at a 29px pitch', async ({ page }) => {
@@ -233,8 +235,7 @@ test('rows keep their 29px pitch after folders are collapsed and expanded again'
   for (const area of [9, 3, 7]) {
     const folder = treeRow(page, `Area ${pad(area)}`);
     await reveal(page, folder);
-    await folder.focus();
-    await page.keyboard.press('ArrowLeft');
+    await focusThenPress(folder, 'ArrowLeft');
     await expect(folder).toHaveAttribute('aria-expanded', 'false');
     await expectPlaced(page, `after shutting Area ${area}`);
     await page.keyboard.press('ArrowRight');
@@ -253,15 +254,17 @@ test('a long page name keeps its row one line tall and ellipsises', async ({ pag
   await openVault(page, (vault) => vault.write(`${LONG}.md`, `# ${LONG}\n`));
   const row = treeRow(page, LONG);
   await row.scrollIntoViewIfNeeded();
-  const box = await row.evaluate((element) => {
-    const name = element.querySelector('.tree__name');
-    return {
-      height: element.getBoundingClientRect().height,
-      clipped: name !== null && name.scrollWidth > name.clientWidth,
-      overflows: element.scrollWidth > element.clientWidth,
-    };
-  });
-  expect(box).toEqual({ height: ROW, clipped: true, overflows: false });
+  await expect(async () => {
+    const box = await row.evaluate((element) => {
+      const name = element.querySelector('.tree__name');
+      return {
+        height: element.getBoundingClientRect().height,
+        clipped: name !== null && name.scrollWidth > name.clientWidth,
+        overflows: element.scrollWidth > element.clientWidth,
+      };
+    });
+    expect(box).toEqual({ height: ROW, clipped: true, overflows: false });
+  }).toPass();
   expect(await misplaced(page)).toEqual([]);
 });
 
@@ -298,8 +301,7 @@ test('walking up the tree never leaves the focused row under the sticky Pages he
   await expandAll(page);
   const heading = nav(page).locator('#sidebar-userSpace-heading');
   const first = pages(page).locator('[data-row="0"]');
-  await first.focus();
-  await page.keyboard.press('End');
+  await focusThenPress(first, 'End');
   const focused = pages(page).locator('[role="treeitem"]:focus');
   // The last row is rendered, then focused: wait for the focus to land.
   await expect(focused).not.toHaveAttribute('data-row', '0');
@@ -386,8 +388,7 @@ test('Alt+arrows move a section from its grip while the sidebar is scrolled, kee
   await expandAll(page);
   await scrollTo(page, 100_000);
   const grip = nav(page).getByRole('button', { name: 'Move Dashboards' });
-  await grip.focus();
-  await page.keyboard.press('Alt+ArrowDown');
+  await focusThenPress(grip, 'Alt+ArrowDown');
   await expect(grip).toBeFocused();
   await expect(grip).toBeInViewport();
   await page.keyboard.press('Alt+ArrowUp');
@@ -441,17 +442,19 @@ test('every row’s trailing control stays clear of the 17px overlay scrollbar',
 test('the sidebar never scrolls sideways', async ({ page }) => {
   await openVault(page, (vault) => vault.write(`${LONG}.md`, `# ${LONG}\n`));
   await expandAll(page);
-  const sideways = await nav(page).evaluate((root) =>
-    [root, ...root.querySelectorAll('*')]
-      .filter((element) => element.scrollWidth > element.clientWidth + 0.5)
-      .filter((element) => {
-        const style = getComputedStyle(element);
-        // An ellipsised label is clipped on purpose; anything that can scroll is not.
-        return /(auto|scroll)/.test(style.overflowX) || element === root;
-      })
-      .map((element) => `${element.className}: ${element.scrollWidth} > ${element.clientWidth}`),
-  );
-  expect(sideways).toEqual([]);
+  await expect(async () => {
+    const sideways = await nav(page).evaluate((root) =>
+      [root, ...root.querySelectorAll('*')]
+        .filter((element) => element.scrollWidth > element.clientWidth + 0.5)
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          // An ellipsised label is clipped on purpose; anything that can scroll is not.
+          return /(auto|scroll)/.test(style.overflowX) || element === root;
+        })
+        .map((element) => `${element.className}: ${element.scrollWidth} > ${element.clientWidth}`),
+    );
+    expect(sideways).toEqual([]);
+  }).toPass();
 });
 
 /** How far the focus ring (box-shadow spread) of `row` is cut off by its scroller. */
@@ -520,6 +523,7 @@ test('a view row’s star is clear of the sidebar’s scrollbar while it shows',
   await row.hover();
   const star = row.getByRole('button', { name: /favorites$/ });
   await expect(star).toHaveCount(1);
+  // eslint-disable-next-line e2e-flake/no-one-shot-read -- the evaluate scrolls the sidebar by a pixel to show its scrollbar and measures in that frame: retried, it would scroll again
   const missed = await star.evaluate(async (button) => {
     const area = button.closest('.sidebar__scroll')!;
     area.scrollTop += 1;

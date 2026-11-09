@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, type FakeVault } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * Adversarial: the Proposals section by keyboard and screen reader, now that
@@ -61,8 +62,7 @@ test('adversarial: the bar over chosen proposals is named for proposals, not not
   await openProposals(page);
   // By keyboard: the Inbox's offers are read once it opens and are drawn above
   // the proposals, so a click can land where the box was before they arrived.
-  await page.getByRole('checkbox', { name: 'Select all' }).focus();
-  await page.keyboard.press('Space');
+  await focusThenPress(page.getByRole('checkbox', { name: 'Select all' }), 'Space');
   await expect(page.getByRole('toolbar', { name: /proposals/i })).toBeVisible();
 });
 
@@ -71,8 +71,10 @@ test('adversarial: after Accept by keyboard, focus stays in the list for the nex
 }) => {
   await openProposals(page);
   await expect(cards(page)).toHaveCount(4);
-  await cards(page).first().getByRole('button', { name: 'Accept', exact: true }).focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(
+    cards(page).first().getByRole('button', { name: 'Accept', exact: true }),
+    'Enter',
+  );
   await expect(cards(page)).toHaveCount(3);
   const focusedIn = await page.evaluate(() => {
     const active = document.activeElement;

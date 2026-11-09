@@ -109,16 +109,18 @@ test('every strip figure stays inside its own cell at 800px', async ({ page }) =
   const dashboard = await openDashboard(page, titles.flatMap(numberWidget), FEW_TASKS);
   await page.setViewportSize({ width: 800, height: 800 });
   await expect(dashboard.locator('.kpi')).toHaveCount(titles.length);
-  const spilled = await dashboard.locator('.kpi').evaluateAll((cells) =>
-    cells
-      .filter((cell) => {
-        const box = cell.getBoundingClientRect();
-        const value = cell.querySelector('.kpi__value')?.getBoundingClientRect();
-        return value !== undefined && value.right > box.right + 0.5;
-      })
-      .map((cell) => cell.querySelector('.kpi__label')?.textContent),
-  );
-  expect(spilled).toEqual([]);
+  await expect(async () => {
+    const spilled = await dashboard.locator('.kpi').evaluateAll((cells) =>
+      cells
+        .filter((cell) => {
+          const box = cell.getBoundingClientRect();
+          const value = cell.querySelector('.kpi__value')?.getBoundingClientRect();
+          return value !== undefined && value.right > box.right + 0.5;
+        })
+        .map((cell) => cell.querySelector('.kpi__label')?.textContent),
+    );
+    expect(spilled).toEqual([]);
+  }).toPass();
 });
 
 test('panels at 600px neither spill sideways nor leave the grid wider than the pane', async ({
@@ -200,20 +202,24 @@ test(
     const panel = dashboard.getByRole('region', { name: 'Per phase' });
     await expect(panel.locator('.bars__column')).toHaveCount(50);
 
-    const spill = await panel.evaluate((element) => element.scrollWidth - element.clientWidth);
-    expect(spill, 'the chart spills sideways out of its panel').toBeLessThanOrEqual(0);
+    await expect(async () => {
+      const spill = await panel.evaluate((element) => element.scrollWidth - element.clientWidth);
+      expect(spill, 'the chart spills sideways out of its panel').toBeLessThanOrEqual(0);
+    }).toPass();
 
-    const overprinted = await panel.locator('.bars__value').evaluateAll((values) => {
-      const boxes = values.map((value) => value.getBoundingClientRect());
-      let clashes = 0;
-      for (let at = 1; at < boxes.length; at += 1) {
-        const [before, here] = [boxes[at - 1], boxes[at]];
-        if (before !== undefined && here !== undefined && here.left < before.right - 0.5) {
-          clashes += 1;
+    await expect(async () => {
+      const overprinted = await panel.locator('.bars__value').evaluateAll((values) => {
+        const boxes = values.map((value) => value.getBoundingClientRect());
+        let clashes = 0;
+        for (let at = 1; at < boxes.length; at += 1) {
+          const [before, here] = [boxes[at - 1], boxes[at]];
+          if (before !== undefined && here !== undefined && here.left < before.right - 0.5) {
+            clashes += 1;
+          }
         }
-      }
-      return clashes;
-    });
-    expect(overprinted, 'bar values printed over one another').toBe(0);
+        return clashes;
+      });
+      expect(overprinted, 'bar values printed over one another').toBe(0);
+    }).toPass();
   },
 );

@@ -417,7 +417,7 @@ test('a note that ends in an image keeps an empty line under it to type on (#568
   await expect(line.locator('img')).toHaveCount(0);
   await expect(line).toHaveText('');
 
-  await line.click();
+  await caretAtLineEnd(line);
   await page.keyboard.type('After the photo.');
 
   await saveNow(page);

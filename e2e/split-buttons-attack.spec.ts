@@ -9,6 +9,7 @@ import {
 } from './host.ts';
 import { SIDEBAR_BESIDE_FROM } from './sidebar-drawer.ts';
 import { caretAtLineEnd } from './caret.ts';
+import { focusThenPress } from './typing.ts';
 
 // Adversarial pass on issue #9: the pane bar's Split right and Close pane buttons.
 // Several of these fail on purpose — each is a bug found, left red for the fix:
@@ -164,8 +165,7 @@ test('after closing from the keyboard, focus lands in the remaining pane', async
   await openVault(page);
   await splitOnNote(page);
   const close = pane(page, 2).getByRole('button', { name: 'Close pane' });
-  await close.focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(close, 'Enter');
   await expect(pane(page, 2)).toHaveCount(0);
   const inPane = await page.evaluate(
     () => document.activeElement?.closest('[aria-label="Pane 1"]') !== null,
@@ -178,8 +178,7 @@ test('after splitting from the keyboard, focus is not lost to the body', async (
   await openNote(page, 'note');
   await expect(pane(page, 1).getByRole('article', { name: 'note' })).toBeVisible();
   const split = pane(page, 1).getByRole('button', { name: 'Split right' });
-  await split.focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(split, 'Enter');
   await expect(pane(page, 2)).toBeVisible();
   const tag = await page.evaluate(() => document.activeElement?.tagName);
   expect(tag).not.toBe('BODY');
@@ -324,10 +323,8 @@ test('after closing from the menu with the keyboard, focus lands in the remainin
 }) => {
   await openVault(page);
   await splitOnNote(page);
-  await pane(page, 2).getByRole('button', { name: 'More' }).focus();
-  await page.keyboard.press('Enter');
-  await page.getByRole('menuitem', { name: /^Close pane/ }).focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(pane(page, 2).getByRole('button', { name: 'More' }), 'Enter');
+  await focusThenPress(page.getByRole('menuitem', { name: /^Close pane/ }), 'Enter');
   await expect(pane(page, 2)).toHaveCount(0);
   const inPane = await page.evaluate(
     () => document.activeElement?.closest('[aria-label="Pane 1"]') !== null,

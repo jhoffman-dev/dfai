@@ -82,10 +82,12 @@ test('the view bar’s tabs fit their strip, so no scrollbar can show', async ({
   await expect(strip.locator('.view-tabs__tab')).toHaveText(['Tasks board', 'Tasks']);
   await expect.poll(() => overflowOf(strip)).toEqual({ right: 0, down: 0 });
   // Even when the tabs could not fit, the strip scrolls without a bar.
-  const scrollbars = await strip.evaluate(
-    (el) => getComputedStyle(el).scrollbarWidth || getComputedStyle(el).overflowY,
-  );
-  expect(scrollbars).toMatch(/^(none|hidden)$/);
+  await expect(async () => {
+    const scrollbars = await strip.evaluate(
+      (el) => getComputedStyle(el).scrollbarWidth || getComputedStyle(el).overflowY,
+    );
+    expect(scrollbars).toMatch(/^(none|hidden)$/);
+  }).toPass();
 });
 
 test('a saved query view opens with its query folded to one line, and remembers it unfolded', async ({
@@ -138,12 +140,14 @@ test('a query view’s unsaved-changes notice sits above the query bar, not in i
     page.locator('.aquery__bar').getByRole('group', { name: 'Unsaved view changes' }),
   ).toHaveCount(0);
   // Above: the notice comes before the query panel in the page.
-  const order = await notice.evaluate((el) => {
-    const panel = document.querySelector('.aquery');
-    return (
-      panel !== null &&
-      Boolean(el.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)
-    );
-  });
-  expect(order).toBe(true);
+  await expect(async () => {
+    const order = await notice.evaluate((el) => {
+      const panel = document.querySelector('.aquery');
+      return (
+        panel !== null &&
+        Boolean(el.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+    });
+    expect(order).toBe(true);
+  }).toPass();
 });

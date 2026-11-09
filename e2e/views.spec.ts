@@ -174,8 +174,7 @@ test('a long table keeps its header in view while the rows scroll', async ({ pag
   });
   await expect(last).toBeInViewport();
   await expect(header).toBeInViewport();
-  const after = await header.boundingBox();
-  expect(after?.y).toBe(before?.y);
+  await expect.poll(async () => (await header.boundingBox())?.y).toBe(before?.y);
 });
 
 test('the other views over the type are tabs, and a tab opens its view', async ({ page }) => {

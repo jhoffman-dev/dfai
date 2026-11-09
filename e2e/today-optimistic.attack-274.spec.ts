@@ -2,6 +2,7 @@ import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, emitVaultChanged, expectFile, installHost, type FakeHost } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * Adversarial pass on #260 (PR #274), in WebKit: Today draws a tick before
@@ -109,8 +110,7 @@ test('a tick whose write fails puts the row back with the focus on it, not on th
   const box = section(page, 'In progress').getByRole('checkbox', {
     name: 'Mark Draft the plan done',
   });
-  await box.focus();
-  await page.keyboard.press('Space');
+  await focusThenPress(box, 'Space');
   await expect(itemsIn(page, 'In progress')).toHaveText(['Ship the page']);
   await expect.poll(() => host.writesTo('Tasks/Draft the plan.md')).toBeGreaterThan(0);
 
@@ -164,8 +164,7 @@ test('500 rows: a held tick on the last row, then the first, each leaves at once
   });
 
   // The last row: reached from the keyboard, so the virtual list places it.
-  await next.getByRole('checkbox', { name: 'Mark Task 001 done' }).focus();
-  await page.keyboard.press('End');
+  await focusThenPress(next.getByRole('checkbox', { name: 'Mark Task 001 done' }), 'End');
   const last = next.getByRole('checkbox', { name: `Mark Task ${pad(ROWS)} done` });
   if (!(await last.isVisible())) await last.scrollIntoViewIfNeeded();
   let release = host.holdWrites(`Tasks/Task ${pad(ROWS)}.md`);

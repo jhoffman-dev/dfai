@@ -100,6 +100,12 @@ test('Claude opens on the note, reads it, proposes an edit, and writes it only o
   // One step back.
   await proposal.getByRole('button', { name: 'Undo' }).click();
   await expectFile(vault, 'Plan.md').toBe(PLAN);
+
+  // What the turn spent, summed over its three rounds, in numbers only (#788).
+  await expect
+    .poll(() => host.activityLog())
+    .toContain('Chat answered: 3 rounds, 124k in (90k cached), 6.4k out,');
+  expect(host.activityLog()).not.toContain('Tidy this page');
 });
 
 /** A title wider than the sidebar's column, with a word too long for it, as a file name can be. */
@@ -133,7 +139,9 @@ test('an answer in the sidebar cites its note as a chip that opens the block, an
     (answerBox?.x ?? 0) + (answerBox?.width ?? 0),
   );
   const log = chat(page).getByRole('log', { name: 'Conversation' });
-  expect(await log.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  await expect
+    .poll(() => log.evaluate((el) => el.scrollWidth - el.clientWidth))
+    .toBeLessThanOrEqual(0);
 
   await chip.click();
   await expect(page.getByRole('article', { name: KICKOFF_TITLE })).toBeVisible();
@@ -296,15 +304,17 @@ test('the panel wears a 36px bar and its proposal is decided by two 28px buttons
   const proposal = chat(page).getByRole('region', { name: 'Proposed edit: Plan' });
   await expect(proposal.getByRole('button', { name: 'Accept' })).toBeVisible();
 
-  const bar = await chat(page).locator('.chat__bar').boundingBox();
-  expect(bar?.height).toBe(36);
+  await expect(async () => {
+    const bar = await chat(page).locator('.chat__bar').boundingBox();
+    expect(bar?.height).toBe(36);
+  }).toPass();
   for (const [name, kind] of [
     ['Accept', 'btn--positive'],
     ['Reject', 'btn--destructive'],
   ] as const) {
     const button = proposal.getByRole('button', { name });
     await expect(button).toHaveClass(new RegExp(`\\b${kind}\\b`));
-    expect((await button.boundingBox())?.height, name).toBe(28);
+    await expect.poll(async () => (await button.boundingBox())?.height, { message: name }).toBe(28);
   }
 });
 

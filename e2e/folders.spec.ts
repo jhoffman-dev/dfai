@@ -10,7 +10,8 @@ import {
   type FakeVault,
 } from './host.ts';
 import { dragAnnouncement, dragWithPointer, keyboardSensorListening } from './drag.ts';
-import { caretAtLineEnd } from './caret.ts';
+import { caretAtLineEnd, caretAtNoteEnd } from './caret.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * P17-01: folders, new notes in them, moving and deleting — from Pages and
@@ -72,7 +73,7 @@ test('a folder made from the Pages "+" takes a new note that saves inside it', a
   await expect.poll(() => vault.exists('Projects/Untitled.md')).toBe(true);
   await expectFile(vault, 'Projects/Untitled.md').toBe('');
 
-  await page.getByLabel('Note', { exact: true }).click();
+  await caretAtNoteEnd(page.getByLabel('Note', { exact: true }));
   await page.keyboard.type('Filed where it belongs.');
   await expectFile(vault, 'Projects/Untitled.md').toBe('Filed where it belongs.\n');
   expect(await vault.read('Untitled.md')).toBe('');
@@ -213,8 +214,7 @@ test('a note moves into a folder from the keyboard alone', async ({ page }) => {
   });
 
   // Picked up with Space, carried down past Archive to Projects, dropped with Space.
-  await row(page, 'one').focus();
-  await page.keyboard.press('Space');
+  await focusThenPress(row(page, 'one'), 'Space');
   await expect(dragAnnouncement(page)).toContainText('Picked up one.');
   await keyboardSensorListening(page);
   await page.keyboard.press('ArrowUp');
@@ -227,8 +227,7 @@ test('a note moves into a folder from the keyboard alone', async ({ page }) => {
   // as it is now, inside the folder.
   await expect(row(page, 'one')).toHaveCount(1);
   await expect(row(page, 'one')).toHaveAttribute('aria-level', '2');
-  await row(page, 'one').focus();
-  await page.keyboard.press('Shift+F10');
+  await focusThenPress(row(page, 'one'), 'Shift+F10');
   await page.getByRole('menuitem', { name: /^Move to…/ }).press('Enter');
   const picker = page.getByRole('dialog', { name: 'Move one to…' });
   await expect(picker.getByRole('searchbox', { name: 'Find a folder' })).toBeFocused();

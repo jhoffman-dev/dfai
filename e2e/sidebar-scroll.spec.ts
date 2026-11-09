@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { dragAnnouncement } from './drag.ts';
 import { createVault, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { revealSidebar } from './sidebar-drawer.ts';
+import { focusThenPress } from './typing.ts';
 
 // Issue #17: in a short window every section squeezed into a scrollbar of its
 // own. The sections now share one scroller between the fixed quick rows and
@@ -134,12 +135,18 @@ for (const size of [
       const body = sidebarSection(page, section);
       const rows = body.locator('.sidebar__item');
       await expect(rows).toHaveCount(EACH);
-      const clipped = await body.evaluate((element) => element.scrollHeight - element.clientHeight);
-      expect(clipped, `${section} is clipped`).toBe(0);
-      const heights = await rows.evaluateAll((items) =>
-        items.map((item) => item.getBoundingClientRect().height),
-      );
-      expect(heights, `${section}'s rows`).toEqual(Array.from({ length: EACH }, () => 28));
+      await expect(async () => {
+        const clipped = await body.evaluate(
+          (element) => element.scrollHeight - element.clientHeight,
+        );
+        expect(clipped, `${section} is clipped`).toBe(0);
+      }).toPass();
+      await expect(async () => {
+        const heights = await rows.evaluateAll((items) =>
+          items.map((item) => item.getBoundingClientRect().height),
+        );
+        expect(heights, `${section}'s rows`).toEqual(Array.from({ length: EACH }, () => 28));
+      }).toPass();
     }
 
     // The quick rows and the footer stay put while the sections scroll.
@@ -174,6 +181,7 @@ test('a row’s Options button is clear of the sidebar’s scrollbar while it sh
   const options = row.getByRole('button', { name: 'Options for Note 30', exact: true });
 
   // Every pixel across the button, with the scrollbar just drawn, is the button's.
+  // eslint-disable-next-line e2e-flake/no-one-shot-read -- the evaluate scrolls the sidebar by a pixel to show its scrollbar and measures in that frame: retried, it would scroll again
   const missed = await options.evaluate(async (button) => {
     // A scroll is what shows the scrollbar; the next frame has drawn it.
     const area = button.closest('.sidebar__scroll');
@@ -218,6 +226,7 @@ test('a favourite’s star is clear of the sidebar’s scrollbar while it shows'
   await row.hover();
 
   // Every pixel across the star, with the scrollbar just drawn, is the star's.
+  // eslint-disable-next-line e2e-flake/no-one-shot-read -- the evaluate scrolls the sidebar by a pixel to show its scrollbar and measures in that frame: retried, it would scroll again
   const missed = await star.evaluate(async (button) => {
     const area = button.closest('.sidebar__scroll');
     if (area === null) throw new Error('the row is not in the sidebar scroller');
@@ -256,8 +265,7 @@ test('the keyboard brings a tree row into view through the shared scroller', asy
 
   // Pages sits below four full sections, so its last row starts far out of view.
   const first = pages.locator('[data-row="0"]');
-  await first.focus();
-  await page.keyboard.press('End');
+  await focusThenPress(first, 'End');
   await expect(focused).toHaveCount(1);
   await expect(focused).toBeInViewport();
   const lastRow = Number(await focused.getAttribute('data-row'));
@@ -305,8 +313,10 @@ test('a note dragged to the edge scrolls the sidebar and drops into a folder', a
   const box = await held.boundingBox();
   const area = await scroller(page).boundingBox();
   if (box === null || area === null) throw new Error('nothing to drag');
-  const scrolled = await scroller(page).evaluate((element) => element.scrollTop);
-  expect(scrolled).toBeGreaterThan(0);
+  await expect(async () => {
+    const scrolled = await scroller(page).evaluate((element) => element.scrollTop);
+    expect(scrolled).toBeGreaterThan(0);
+  }).toPass();
 
   // Held at the scroller's top edge, the sidebar scrolls up under the pointer.
   await page.mouse.move(box.x + 40, box.y + box.height / 2);

@@ -7,6 +7,7 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { focusOn } from './typing.ts';
 
 const STATUSES = ['backlog', 'doing', 'done'] as const;
 const TASKS = 2000;
@@ -187,7 +188,9 @@ test.describe('2,000 grouped rows', () => {
     const withNew = await hasNewLines(page);
     const kinds = lineKinds({ withNew });
     // Proven to match: the window holds lines.
-    expect(await page.locator('.table__sheet tbody tr[data-index]').count()).toBeGreaterThan(10);
+    await expect
+      .poll(() => page.locator('.table__sheet tbody tr[data-index]').count())
+      .toBeGreaterThan(10);
     for (const fraction of [0.5, 0.9, 1]) {
       await sheet(page).evaluate((element, at) => {
         element.scrollTop = (element.scrollHeight - element.clientHeight) * at;
@@ -292,7 +295,7 @@ for (const groupBy of [false, true]) {
 
     test('PageDown and PageUp keep the focus on a row the reader can see', async ({ page }) => {
       await openTable(page, { groupBy });
-      await page.locator('.table__link').first().focus();
+      await focusOn(page.locator('.table__link').first());
       const problems: string[] = [];
       for (const key of ['PageDown', 'PageDown', 'PageDown', 'PageUp']) {
         await page.keyboard.press(key);

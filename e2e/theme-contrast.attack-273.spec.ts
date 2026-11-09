@@ -501,30 +501,36 @@ for (const mode of THEMES) {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await setMode(page, mode);
-    const measured = await toggle.evaluate((element) => {
-      const { parse, over, ratio, groundOf, indicatorColours } = (
-        globalThis as unknown as { attackContrast: Contrast }
-      ).attackContrast;
-      const track = groundOf(element)!;
-      const knob = element.firstElementChild!;
-      const colours = [parse(getComputedStyle(knob).backgroundColor), ...indicatorColours(knob)];
-      return Math.max(...colours.map((colour) => ratio(over(colour, track), track)));
-    });
-    expect(measured).toBeGreaterThanOrEqual(3);
+    await expect(async () => {
+      const measured = await toggle.evaluate((element) => {
+        const { parse, over, ratio, groundOf, indicatorColours } = (
+          globalThis as unknown as { attackContrast: Contrast }
+        ).attackContrast;
+        const track = groundOf(element)!;
+        const knob = element.firstElementChild!;
+        const colours = [parse(getComputedStyle(knob).backgroundColor), ...indicatorColours(knob)];
+        return Math.max(...colours.map((colour) => ratio(over(colour, track), track)));
+      });
+      expect(measured).toBeGreaterThanOrEqual(3);
+    }).toPass();
   });
 
   test(`the calendar's today ring is at least 3:1 against the day in ${mode}`, async ({ page }) => {
     await openVault(page);
     await PAGES['calendar']!(page);
     await setMode(page, mode);
-    const measured = await page.locator('.calendar__day--today').evaluate((element) => {
-      const { over, ratio, groundOf, indicatorColours } = (
-        globalThis as unknown as { attackContrast: Contrast }
-      ).attackContrast;
-      const day = groundOf(element)!;
-      return Math.max(...indicatorColours(element).map((colour) => ratio(over(colour, day), day)));
-    });
-    expect(measured).toBeGreaterThanOrEqual(3);
+    await expect(async () => {
+      const measured = await page.locator('.calendar__day--today').evaluate((element) => {
+        const { over, ratio, groundOf, indicatorColours } = (
+          globalThis as unknown as { attackContrast: Contrast }
+        ).attackContrast;
+        const day = groundOf(element)!;
+        return Math.max(
+          ...indicatorColours(element).map((colour) => ratio(over(colour, day), day)),
+        );
+      });
+      expect(measured).toBeGreaterThanOrEqual(3);
+    }).toPass();
   });
 
   test(`the active sidebar row's count clears AA on the selected fill in ${mode}`, async ({
@@ -544,12 +550,14 @@ for (const mode of THEMES) {
         clip: { x: at.x - 6, y: at.y + at.height / 2, width: 1, height: 1 },
       }),
     );
-    const measured = await count.evaluate((element, under) => {
-      const { parse, ratio } = (globalThis as unknown as { attackContrast: Contrast })
-        .attackContrast;
-      return ratio(parse(getComputedStyle(element).color), under);
-    }, fill!);
-    expect(measured, `count on rgb(${fill!.slice(0, 3).join(', ')})`).toBeGreaterThanOrEqual(4.5);
+    await expect(async () => {
+      const measured = await count.evaluate((element, under) => {
+        const { parse, ratio } = (globalThis as unknown as { attackContrast: Contrast })
+          .attackContrast;
+        return ratio(parse(getComputedStyle(element).color), under);
+      }, fill!);
+      expect(measured, `count on rgb(${fill!.slice(0, 3).join(', ')})`).toBeGreaterThanOrEqual(4.5);
+    }).toPass();
   });
 }
 
@@ -625,7 +633,7 @@ test('a Today group name is drawn at the height the list places it by (18px)', a
   await expect(name).toBeVisible();
   // packages/ui/src/today-page.tsx GROUP_NAME_HEIGHT, "as WebKit draws them":
   // a group measured at its estimate does not place the list again.
-  expect((await name.boundingBox())!.height).toBeCloseTo(18, 1);
+  await expect.poll(async () => (await name.boundingBox())!.height).toBeCloseTo(18, 1);
 });
 
 test('each of the eight GTD statuses wears its own label, in its tone, in a table', async ({

@@ -167,18 +167,20 @@ test('a toast sits bottom right, inside the window, over no control of the table
   expect(box.x + box.width).toBeGreaterThan(1280 - 60);
   expect(box.y + box.height).toBeLessThanOrEqual(800);
   expect(box.y, 'in the bottom quarter').toBeGreaterThan(800 - 200);
-  const covered = await said.evaluate((toast) => {
-    const over = toast.getBoundingClientRect();
-    return [...document.querySelectorAll<HTMLElement>('button, input, select, [role="tab"]')]
-      .filter((control) => !toast.contains(control))
-      .filter((control) => {
-        const at = control.getBoundingClientRect();
-        if (at.width === 0 || at.height === 0) return false;
-        const cx = at.left + at.width / 2;
-        const cy = at.top + at.height / 2;
-        return cx >= over.left && cx <= over.right && cy >= over.top && cy <= over.bottom;
-      })
-      .map((control) => control.getAttribute('aria-label') ?? control.textContent?.trim() ?? '');
-  });
-  expect(covered).toEqual([]);
+  await expect(async () => {
+    const covered = await said.evaluate((toast) => {
+      const over = toast.getBoundingClientRect();
+      return [...document.querySelectorAll<HTMLElement>('button, input, select, [role="tab"]')]
+        .filter((control) => !toast.contains(control))
+        .filter((control) => {
+          const at = control.getBoundingClientRect();
+          if (at.width === 0 || at.height === 0) return false;
+          const cx = at.left + at.width / 2;
+          const cy = at.top + at.height / 2;
+          return cx >= over.left && cx <= over.right && cy >= over.top && cy <= over.bottom;
+        })
+        .map((control) => control.getAttribute('aria-label') ?? control.textContent?.trim() ?? '');
+    });
+    expect(covered).toEqual([]);
+  }).toPass();
 });

@@ -128,11 +128,15 @@ test('the sidebar’s grips are there for a finger, 44px square, and a section h
 
   // No hover needed: the grip is drawn, and the heading has grown to make it 44px.
   await expect(grip(page, 'Favorites')).toHaveCSS('opacity', '1');
-  const box = await grip(page, 'Favorites').boundingBox();
-  expect(box?.width).toBeGreaterThanOrEqual(44);
-  expect(box?.height).toBeGreaterThanOrEqual(44);
-  const label = await heading(page, 'Favorites').boundingBox();
-  expect(label?.height).toBeGreaterThanOrEqual(44);
+  await expect(async () => {
+    const box = await grip(page, 'Favorites').boundingBox();
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  }).toPass();
+  await expect(async () => {
+    const label = await heading(page, 'Favorites').boundingBox();
+    expect(label?.height).toBeGreaterThanOrEqual(44);
+  }).toPass();
 
   await dragWithTouch(page, {
     from: grip(page, 'Favorites'),
@@ -152,8 +156,10 @@ test('a page row’s “…” is there for a finger, 44px wide, and a tap on it
   await tree.getByRole('treeitem', { name: 'Notes' }).click();
   const more = tree.getByRole('button', { name: 'Options for Garden plan' });
   await expect(more).toHaveCSS('opacity', '1');
-  const box = await more.boundingBox();
-  expect(box?.width).toBeGreaterThanOrEqual(44);
+  await expect(async () => {
+    const box = await more.boundingBox();
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+  }).toPass();
 
   await more.tap();
   await expect(page.getByRole('menu', { name: 'Page' })).toBeVisible();

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { toastSaying } from './toasts.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * #107: the GTD lists are query views, and their task rows act as Today's
@@ -99,8 +100,7 @@ test('a query view’s rows tick done, roll a repeating task on, and undo byte f
   await expect(box(page, 'Call the printer')).toBeVisible();
 
   // From the keyboard, so the focus is on its box when the row leaves.
-  await box(page, 'Call the printer').focus();
-  await page.keyboard.press('Space');
+  await focusThenPress(box(page, 'Call the printer'), 'Space');
   await expectFile(vault, 'Tasks/Call the printer.md').toBe(
     task([
       'status: archive',
@@ -117,8 +117,7 @@ test('a query view’s rows tick done, roll a repeating task on, and undo byte f
   // A repeating task chosen for today rolls on to its next day, and the choice ends.
   // From the keyboard. Rolled on, it is open work again, so its box is clear the moment
   // it is ticked — and keeps the focus while the tick is written, so the keyboard carries on.
-  await box(page, 'Water the beds').focus();
-  await page.keyboard.press('Space');
+  await focusThenPress(box(page, 'Water the beds'), 'Space');
   await expect(box(page, 'Water the beds')).toBeFocused();
   await expectFile(vault, 'Tasks/Water the beds.md').toBe(
     task([
@@ -150,8 +149,7 @@ test('a query view’s row is chosen for today and taken off again, leaving the 
   // Held until the index reads the choice back, then free to act on again.
   await expect(takeOff).toBeEnabled();
   // From the keyboard: the toggle is a button in the row's own order.
-  await takeOff.focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(takeOff, 'Enter');
   await expectFile(vault, 'Tasks/Book the hall.md').toBe(HALL);
   await expect(page.getByRole('button', { name: 'Choose Book the hall for today' })).toBeVisible();
 });
