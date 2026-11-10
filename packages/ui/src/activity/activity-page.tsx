@@ -4,6 +4,7 @@ import {
   type ActivityLevel,
   type ActivityLevelFilter,
 } from '@dfai/domain';
+import { useRef, type Ref } from 'react';
 import {
   EventDetailsButton,
   EventDetailsHost,
@@ -92,6 +93,8 @@ export const ACTIVITY_KIND_LABELS: Readonly<Record<ActivityKind, string>> = {
  */
 export function ActivityPage(props: ActivityPageProps) {
   const counted = describe(props.total);
+  const page = useRef<HTMLElement>(null);
+  const list = useRef<HTMLOListElement>(null);
   return (
     <>
       <PageBar
@@ -102,12 +105,19 @@ export function ActivityPage(props: ActivityPageProps) {
         {...(props.history !== undefined && { history: props.history })}
       />
       <div className="panel__body">
-        <article className="page page--wide activity" aria-label="Activity">
+        <article
+          ref={page}
+          className="page page--wide activity"
+          aria-label="Activity"
+          tabIndex={-1}
+        >
           <HiddenTitle>All activity</HiddenTitle>
           <Filters {...props} />
-          {/* Above the lines: a line's details stay open as the log regroups and trims under them (#815). */}
-          <EventDetailsHost>
-            <Lines {...props} />
+          {/* Above the lines: a line's details stay open as the log regroups and trims under them
+              (#815). Closed with their line gone, they hand the focus to the list, or to the
+              page where no line is left to list. */}
+          <EventDetailsHost landmark={() => list.current ?? page.current}>
+            <Lines {...props} list={list} />
           </EventDetailsHost>
         </article>
       </div>
@@ -153,7 +163,14 @@ function Filters({ level, kinds, text, onLevel, onToggleKind, onText }: Activity
   );
 }
 
-function Lines({ rows, total, error, onOpenSubject, onCopy }: ActivityPageProps) {
+function Lines({
+  rows,
+  total,
+  error,
+  onOpenSubject,
+  onCopy,
+  list,
+}: ActivityPageProps & { list: Ref<HTMLOListElement> }) {
   const does: LineActions = { onOpenSubject, onCopy };
   if (error !== null) {
     return (
@@ -173,7 +190,7 @@ function Lines({ rows, total, error, onOpenSubject, onCopy }: ActivityPageProps)
   }
   if (rows.length === 0) return <p className="activity__empty">No lines match.</p>;
   return (
-    <ol className="page-list activity__list" aria-label="Activity lines">
+    <ol ref={list} className="page-list activity__list" aria-label="Activity lines" tabIndex={-1}>
       {rows.map((entry) =>
         'group' in entry ? (
           <Meeting key={`meeting:${entry.id}`} meeting={entry} does={does} />

@@ -53,6 +53,13 @@ export function activityEntries(
  * the line keeps it while the log grows at one end and is trimmed at the
  * other (#815) — a place in the list would pass to another line. Lines alike
  * in both are told apart by a count from the oldest of them.
+ *
+ * So twins are the one case where an id moves: when the oldest of them is
+ * trimmed, each twin left takes the id of the one before it — an event
+ * carries nothing else to tell them apart. Details open on a twin keep the
+ * words they opened with (the popup holds its own), and closing them puts the
+ * focus on a line saying the same words at the same moment or, when no line
+ * has the id any more, on the list (`EventDetailsHost`'s landmark).
  */
 function lineIds(events: readonly ActivityEvent[]): string[] {
   const alike = new Map<string, number>();

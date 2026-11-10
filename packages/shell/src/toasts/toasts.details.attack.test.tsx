@@ -15,9 +15,7 @@ const REFUSED = 'The undo was refused.';
 
 const column = () => screen.getByRole('region', { name: 'Notifications', hidden: true });
 const gone = (role: string, name?: string) =>
-  waitFor(() =>
-    expect(screen.queryByRole(role, name === undefined ? {} : { name })).toBeNull(),
-  );
+  waitFor(() => expect(screen.queryByRole(role, name === undefined ? {} : { name })).toBeNull());
 
 /** A dialog as the peek is one, with its place for the window's toasts. */
 function peekDrawn() {

@@ -40,6 +40,12 @@ export const LEVEL_LABELS: Readonly<Record<ActivityLevel, string>> = {
   error: 'Error',
 };
 
+/**
+ * A line's details: as they are, or — where they are dated against today, on
+ * a line that may be left up past midnight — read as the line is pressed.
+ */
+export type EventDetailsSource = EventDetailsView | (() => EventDetailsView);
+
 type Copying = 'idle' | 'copied' | 'refused';
 
 /** How long "Copied" is said before the button offers to copy again. */
@@ -70,12 +76,28 @@ const HostContext = createContext<DetailsHost | null>(null);
  * stays open, on the same words, when its line goes or is drawn again
  * somewhere else — a toast pushed out by newer ones, a notice that cleared
  * itself, a line of the log gathered under its meeting. Closing it puts the
- * focus back on the line if it is still drawn, under the same id.
+ * focus back on the line if it is still drawn, under the same id, and on the
+ * host's `landmark` if it is not: the popup has no trigger of its own to go
+ * back to, and a focus left to the page's body is lost to the keyboard — and,
+ * inside a modal layer, out of its trap.
  *
  * Put one above any lines that can go while they are read; a line with none
  * above it holds its own.
  */
-export function EventDetailsHost({ children }: { children: ReactNode }) {
+export function EventDetailsHost({
+  children,
+  landmark,
+}: {
+  children: ReactNode;
+  /**
+   * Where the focus goes when the line is gone: something focusable that is
+   * drawn whatever the lines do — their list, their region, the dialog they
+   * are in. The focus lands on the first thing in it that Tab stops on, or on
+   * it where there is none. Null only for a line that hosts itself, whose
+   * popup goes with it.
+   */
+  landmark: (() => HTMLElement | null) | null;
+}) {
   const [shown, setShown] = useState<OpenedDetails | null>(null);
   const [open, setOpen] = useState(false);
   const [lines] = useState(() => new Map<string, HTMLElement>());
@@ -100,7 +122,7 @@ export function EventDetailsHost({ children }: { children: ReactNode }) {
             <Dialog.Popup
               className="palette confirm event-details"
               // The line as drawn now, which may not be the element that was pressed.
-              finalFocus={() => (shown === null ? true : (lines.get(shown.line) ?? true))}
+              finalFocus={() => lines.get(shown?.line ?? '') ?? landmark?.() ?? true}
             >
               {/* What was shown stays as the popup leaves, so it never empties on its way out. */}
               {shown !== null && (
@@ -124,7 +146,7 @@ export function EventDetailsHost({ children }: { children: ReactNode }) {
 }
 
 export interface EventDetailsButtonProps {
-  details: EventDetailsView;
+  details: EventDetailsSource;
   /**
    * The line's own, kept wherever it is drawn: what lets the focus find it
    * again once its details close. A line that is never drawn again needs none.
@@ -158,7 +180,7 @@ export function EventDetailsButton(props: EventDetailsButtonProps) {
   const hosted = useContext(HostContext) !== null;
   if (hosted) return <DetailsLine {...props} />;
   return (
-    <EventDetailsHost>
+    <EventDetailsHost landmark={null}>
       <DetailsLine {...props} />
     </EventDetailsHost>
   );
@@ -202,7 +224,12 @@ function DetailsLine({
       aria-expanded={open}
       {...(title !== undefined && { title })}
       onClick={() =>
-        host.show({ line, details, onCopy, ...(onOpenSubject !== undefined && { onOpenSubject }) })
+        host.show({
+          line,
+          details: typeof details === 'function' ? details() : details,
+          onCopy,
+          ...(onOpenSubject !== undefined && { onOpenSubject }),
+        })
       }
     >
       {children}
@@ -210,9 +237,13 @@ function DetailsLine({
   );
 }
 
-/** Tells `onOpenChange` each time the line's popup opens or closes, and not as the line is first drawn. */
+/**
+ * Tells `onOpenChange` each time the line's popup opens or closes. A line
+ * first drawn is told nothing — unless its popup is open already: the same
+ * line drawn again somewhere else, which must know it is still being read.
+ */
 function useOpenChangeTold(open: boolean, onOpenChange?: (open: boolean) => void): void {
-  const told = useRef(open);
+  const told = useRef(false);
   const tell = useRef(onOpenChange);
   useEffect(() => {
     tell.current = onOpenChange;

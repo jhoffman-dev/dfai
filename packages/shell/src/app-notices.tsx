@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { noteTitle, type ActivityLevel, type VaultPath } from '@dfai/domain';
 import type { Clock } from '@dfai/application';
 import { EventDetailsButton, EventDetailsHost } from '@dfai/ui';
@@ -14,6 +14,8 @@ import type { LinkOffer } from './vault/use-vault-entries.ts';
  * details (#815): an error and a warning, in the notice's own words. The
  * details stay open, on the words they opened with, when the notice clears
  * itself or another takes its place: they are held here, above the notices.
+ * Closed with their notice gone, they hand the focus to the notices' region,
+ * which is drawn — empty — while there is nothing to say.
  */
 export function AppNotices({
   messages,
@@ -35,10 +37,13 @@ export function AppNotices({
   clipboard?: ClipboardWriter;
 }) {
   const since = useShownSince([...messages, stranded.notice, keptComments?.notice ?? null], clock);
-  const words = (message: string, level: ActivityLevel) => (
+  const region = useRef<HTMLDivElement>(null);
+  // `id` tells this notice from another saying the same words: the focus goes back to the one pressed.
+  const words = ({ id, message, level }: { id: string; message: string; level: ActivityLevel }) => (
     <EventDetailsButton
-      details={noticeDetails({ message, level, at: since(message) }, clock.today())}
-      id={message}
+      // Dated as it is pressed: a notice left up past midnight is yesterday's.
+      details={() => noticeDetails({ message, level, at: since(message) }, clock.today())}
+      id={id}
       className="notice__details"
       onCopy={(text) => clipboard.write(text)}
     >
@@ -46,38 +51,48 @@ export function AppNotices({
     </EventDetailsButton>
   );
   return (
-    <EventDetailsHost>
-      {keyedByWords(messages).map(({ key, message }) => (
-        <p key={key} className="notice" role="alert">
-          {words(message, 'error')}
-        </p>
-      ))}
-      {links !== null && (
-        <div className="notice">
-          <p role="alert">{links.text}</p>
-          <button className="viewer__resolve" type="button" onClick={links.update}>
-            {links.action}
-          </button>
-          <button className="viewer__resolve" type="button" onClick={links.dismiss}>
-            Leave them
-          </button>
-        </div>
-      )}
-      {/* Drawn only with something to say: an empty notice is no render on every app render. */}
-      {stranded.notice !== null && (
-        <KeptWork
-          kept={stranded}
-          discard="Discard kept changes to"
-          words={words(stranded.notice, 'warning')}
-        />
-      )}
-      {keptComments !== undefined && keptComments.notice !== null && (
-        <KeptWork
-          kept={keptComments}
-          discard="Discard kept comments on"
-          words={words(keptComments.notice, 'warning')}
-        />
-      )}
+    <EventDetailsHost landmark={() => region.current}>
+      <div ref={region} className="notices" role="region" aria-label="Notices" tabIndex={-1}>
+        {keyedByWords(messages).map(({ key, message }) => (
+          <p key={key} className="notice" role="alert">
+            {words({ id: key, message, level: 'error' })}
+          </p>
+        ))}
+        {links !== null && (
+          <div className="notice">
+            <p role="alert">{links.text}</p>
+            <button className="viewer__resolve" type="button" onClick={links.update}>
+              {links.action}
+            </button>
+            <button className="viewer__resolve" type="button" onClick={links.dismiss}>
+              Leave them
+            </button>
+          </div>
+        )}
+        {/* Drawn only with something to say: an empty notice is no render on every app render. */}
+        {stranded.notice !== null && (
+          <KeptWork
+            kept={stranded}
+            discard="Discard kept changes to"
+            words={words({
+              id: `kept-work:${stranded.notice}`,
+              message: stranded.notice,
+              level: 'warning',
+            })}
+          />
+        )}
+        {keptComments !== undefined && keptComments.notice !== null && (
+          <KeptWork
+            kept={keptComments}
+            discard="Discard kept comments on"
+            words={words({
+              id: `kept-comments:${keptComments.notice}`,
+              message: keptComments.notice,
+              level: 'warning',
+            })}
+          />
+        )}
+      </div>
     </EventDetailsHost>
   );
 }

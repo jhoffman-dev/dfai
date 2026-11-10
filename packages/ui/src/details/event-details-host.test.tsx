@@ -34,7 +34,9 @@ const popup = () => screen.getByRole('dialog', { name: 'Error details' });
 describe('EventDetailsHost', () => {
   it('keeps the details open, on the words they opened with, when their line goes', async () => {
     const opens = vi.fn();
-    const { rerender } = render(<EventDetailsHost landmark={() => null}>{line(NOT_SAVED, opens)}</EventDetailsHost>);
+    const { rerender } = render(
+      <EventDetailsHost landmark={() => null}>{line(NOT_SAVED, opens)}</EventDetailsHost>,
+    );
     await userEvent.click(screen.getByRole('button', { name: NOT_SAVED }));
 
     rerender(<EventDetailsHost landmark={() => null}>{line(NOT_MOVED)}</EventDetailsHost>);
@@ -67,7 +69,9 @@ describe('EventDetailsHost', () => {
   });
 
   it('puts the focus back on the line where it is drawn now, not where it was pressed', async () => {
-    const { rerender } = render(<EventDetailsHost landmark={() => null}>{line(NOT_SAVED)}</EventDetailsHost>);
+    const { rerender } = render(
+      <EventDetailsHost landmark={() => null}>{line(NOT_SAVED)}</EventDetailsHost>,
+    );
     const pressed = screen.getByRole('button', { name: NOT_SAVED });
     await userEvent.click(pressed);
 
