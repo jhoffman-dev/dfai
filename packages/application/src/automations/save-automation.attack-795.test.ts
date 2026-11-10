@@ -156,3 +156,64 @@ describe('turning a rule on or off writes only `enabled`, onto the file as it is
     expect(listed.which).toBe('FROM meeting');
   });
 });
+
+describe('an editor’s save after the rule open in it was turned on or off (#793 re-review)', () => {
+  async function openThenToggled() {
+    const vault = automationVault({
+      today: TODAY,
+      notes: { [MEETING_EXTRACTION_PROMPT]: builtInPromptAt(MEETING_EXTRACTION_PROMPT)!.contents },
+    });
+    const { fs, markdown } = vault.ports;
+    await createAutomation({
+      fs,
+      markdown,
+      clock: CLOCK,
+      draft: EXTRACTION,
+      takenPaths: vault.ports.notePaths,
+    });
+    const reread = async () =>
+      (await loadAutomations({ fs, markdown, notePaths: vault.ports.notePaths })).automations[0]!;
+    const open = (await reread()).rule;
+    await setAutomationEnabled({
+      ...vault.ports,
+      clock: CLOCK,
+      rule: open,
+      enabled: !open.enabled,
+    });
+    return { vault, open, reread };
+  }
+
+  it('saves the editor’s change and keeps the rule as the switch left it', async () => {
+    const { vault, open, reread } = await openThenToggled();
+
+    await updateAutomation({
+      ...vault.ports,
+      clock: CLOCK,
+      rule: open,
+      draft: { ...open, name: 'Meeting actions, renamed' },
+    });
+
+    const after = await reread();
+    expect(after.rule.name).toBe('Meeting actions, renamed');
+    expect(after.rule.enabled).toBe(!open.enabled);
+  });
+
+  it('writes the editor’s own on or off when the person changed it there', async () => {
+    const { vault, open, reread } = await openThenToggled();
+    await setAutomationEnabled({
+      ...vault.ports,
+      clock: CLOCK,
+      rule: (await reread()).rule,
+      enabled: open.enabled,
+    });
+
+    await updateAutomation({
+      ...vault.ports,
+      clock: CLOCK,
+      rule: open,
+      draft: { ...open, enabled: !open.enabled },
+    });
+
+    expect((await reread()).rule.enabled).toBe(!open.enabled);
+  });
+});
