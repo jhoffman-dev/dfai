@@ -57,9 +57,14 @@
   min-width: 40px;
 }
 
+/* Over the window's content, not in it: a line in the flow would push
+   everything under it down as the focus came and back as it left. */
 .notices:empty:focus-visible {
   background: var(--line);
-  min-height: 4px;
+  height: 4px;
+  inset: 0 0 auto;
+  position: absolute;
+  z-index: 1;
 }
 
 /* The popup: neutral chrome, the level alone in colour, as a muted pastel chip. */
