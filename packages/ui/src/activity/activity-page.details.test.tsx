@@ -128,4 +128,39 @@ describe('ActivityPage — a line opens to its details', () => {
     page();
     expect(line(REFUSED.message).className.split(' ')).toContain('activity-line__message');
   });
+
+  it('hands the focus to the list’s first line when the details close with their line trimmed away', async () => {
+    const drawn = (rows: ActivityRowView[]) => (
+      <ActivityPage
+        rows={rows}
+        total={rows.length}
+        error={null}
+        level="all"
+        kinds={[]}
+        text=""
+        onLevel={vi.fn()}
+        onToggleKind={vi.fn()}
+        onText={vi.fn()}
+        onOpenSubject={vi.fn()}
+        onCopy={() => Promise.resolve()}
+      />
+    );
+    const { rerender } = render(drawn([FAILED, REFUSED, RAN]));
+    await userEvent.click(line(REFUSED.message));
+
+    rerender(drawn([FAILED, RAN]));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The list, which puts it on the first thing in it that Tab stops on.
+    await waitFor(() => expect(document.activeElement).toBe(line(FAILED.message)));
+
+    // No line left to list: the page, at its first control.
+    await userEvent.click(line(FAILED.message));
+    rerender(drawn([]));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const article = screen.getByRole('article', { name: 'Activity' });
+    await waitFor(() => expect(article.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(document.body);
+  });
 });

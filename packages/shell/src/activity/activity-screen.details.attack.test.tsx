@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { EVERY_ACTIVITY, createVaultPath, type ActivityEvent } from '@dfai/domain';
 import { ActivityScreen } from './activity-screen.tsx';
 
@@ -78,5 +79,28 @@ describe('ActivityScreen — details while the log moves', () => {
     const popup = screen.queryByRole('dialog');
     // Either it is still the error that was opened, or it has closed: never another line's.
     expect(popup === null || within(popup).queryByText(OLDER.message) !== null).toBe(true);
+  });
+
+  it('keeps a twin’s details on its own words, and the focus on a line or the list, when its older twin is trimmed', async () => {
+    // Two lines alike in moment and words, told apart only by what more each says.
+    const first: ActivityEvent = { ...OLDER, detail: 'The disk is full.' };
+    const second: ActivityEvent = { ...OLDER, detail: 'The folder is read-only.' };
+    const { rerender } = render(screenOf([NOT_LINKED, second, first]));
+    const [newer] = screen.getAllByRole('button', { name: OLDER.message });
+    if (newer === undefined) throw new Error('the twins are drawn');
+    await userEvent.click(newer);
+    expect(within(screen.getByRole('dialog')).getByText('The folder is read-only.')).toBeTruthy();
+
+    // The older twin expires: the one left takes its id, and none has the id that was pressed.
+    rerender(screenOf([NOT_LINKED, second]));
+
+    const popup = screen.getByRole('dialog', { name: 'Error details' });
+    expect(within(popup).getByText('The folder is read-only.')).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // No line has the pressed id now, so the list takes the focus: on its first line.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: NOT_LINKED.message })),
+    );
   });
 });

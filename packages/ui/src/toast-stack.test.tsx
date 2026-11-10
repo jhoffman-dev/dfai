@@ -16,9 +16,12 @@ const moved = (id: number, title: string, onUndo = vi.fn()): ToastShown => ({
 });
 
 describe('ToastStack', () => {
-  it('draws nothing while there is nothing to say', () => {
-    const { container } = render(<ToastStack toasts={[]} onDismiss={vi.fn()} />);
-    expect(container.firstChild).toBeNull();
+  it('draws its column, empty, while there is nothing to say: where a lost focus is sent', () => {
+    render(<ToastStack toasts={[]} onDismiss={vi.fn()} />);
+    const column = screen.getByRole('region', { name: 'Notifications' });
+    expect(column.childElementCount).toBe(0);
+    // Tab never stops on it, yet it can be handed the focus.
+    expect(column.tabIndex).toBe(-1);
   });
 
   it('shows several, oldest first, each saying its own words', () => {

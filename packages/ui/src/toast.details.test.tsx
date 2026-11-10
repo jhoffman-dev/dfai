@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { EventDetailsView } from './details/index.ts';
-import { ToastStack } from './toast-stack.tsx';
+import { ToastStack, type ToastShown } from './toast-stack.tsx';
 import { Toast } from './toast.tsx';
 
 /** #815: a warning or an error toast opens, from its words, to its details. */
@@ -89,5 +91,135 @@ describe('ToastStack — its details', () => {
     fireEvent.click(screen.getByRole('button', { name: NOT_SAVED.message }));
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(onCopy).toHaveBeenCalledWith(NOT_SAVED.text);
+  });
+});
+
+/** A queue of one warning that lets it go when told, with somewhere else for the focus to be. */
+function Queue({ onGone }: { onGone?: () => void }) {
+  const [toasts, setToasts] = useState<ToastShown[]>([
+    { id: 7, message: NOT_SAVED.message, tone: 'warning', details: NOT_SAVED },
+  ]);
+  return (
+    <>
+      <button type="button">Elsewhere</button>
+      <ToastStack
+        toasts={toasts}
+        onDismiss={() => {
+          setToasts([]);
+          onGone?.();
+        }}
+        onCopy={copies()}
+      />
+    </>
+  );
+}
+
+function typing() {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+}
+const words = () => screen.getByRole('button', { name: NOT_SAVED.message });
+const column = () => screen.getByRole('region', { name: 'Notifications' });
+const closed = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+describe('Toast — the focus once its details close', () => {
+  it('goes on holding a toast whose details were opened and closed from the keyboard', async () => {
+    const user = typing();
+    const onGone = vi.fn();
+    render(<Queue onGone={onGone} />);
+    await user.tab();
+    await user.tab();
+    expect(document.activeElement).toBe(words());
+
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('dialog', { name: 'Warning details' })).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await closed();
+    await waitFor(() => expect(document.activeElement).toBe(words()));
+
+    // The focus was the person's before the details opened, and is again: the toast waits.
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(onGone).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(words());
+  });
+
+  it('hands the focus to its column when it times out with the focus put back on it', async () => {
+    const user = typing();
+    const onGone = vi.fn();
+    render(<Queue onGone={onGone} />);
+    const pressed = words();
+    await user.click(pressed);
+    // Off it again, so nothing but the focus could hold it.
+    await user.unhover(pressed);
+    await user.keyboard('{Escape}');
+    await closed();
+    await waitFor(() => expect(document.activeElement).toBe(words()));
+
+    // Opened by a pointer from outside it: the focus was put there, and holds nothing.
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(onGone).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(NOT_SAVED.message)).toBeNull();
+    expect(document.activeElement).toBe(column());
+  });
+
+  it('holds a toast clicked open by someone whose focus was already in it', async () => {
+    const user = typing();
+    const onGone = vi.fn();
+    render(<Queue onGone={onGone} />);
+    await user.tab();
+    await user.tab();
+    const pressed = words();
+    await user.click(pressed);
+    // Off it again, so nothing but the focus could hold it.
+    await user.unhover(pressed);
+    await user.keyboard('{Escape}');
+    await closed();
+
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(onGone).not.toHaveBeenCalled();
+  });
+
+  it('holds again once the person Tabs away from the words and back', async () => {
+    const user = typing();
+    const onGone = vi.fn();
+    render(<Queue onGone={onGone} />);
+    const pressed = words();
+    await user.click(pressed);
+    // Off it again, so nothing but the focus could hold it.
+    await user.unhover(pressed);
+    await user.keyboard('{Escape}');
+    await closed();
+    await waitFor(() => expect(document.activeElement).toBe(words()));
+
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Elsewhere' }));
+    await user.tab();
+    expect(document.activeElement).toBe(words());
+
+    // This focus is the person's own.
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(onGone).not.toHaveBeenCalled();
+  });
+
+  it('hands the focus to its column when it is sent away from the keyboard', async () => {
+    const user = typing();
+    render(<Queue />);
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    dismiss.focus();
+    await user.keyboard('{Enter}');
+
+    expect(screen.queryByText(NOT_SAVED.message)).toBeNull();
+    expect(document.activeElement).toBe(column());
+  });
+
+  it('leaves the focus where it is when it goes without it', async () => {
+    typing();
+    render(<Queue />);
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+    elsewhere.focus();
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+
+    expect(screen.queryByText(NOT_SAVED.message)).toBeNull();
+    expect(document.activeElement).toBe(elsewhere);
   });
 });

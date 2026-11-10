@@ -92,4 +92,14 @@ describe('activityRows', () => {
     );
     expect(new Set(ids).size).toBe(3);
   });
+
+  it('hands a trimmed twin’s id to the twin left: the one case where an id moves (#815)', () => {
+    const [newest] = events as [ActivityEvent];
+    const [younger, older] = activityRows([newest, newest], TODAY).map((row) => row.id);
+    expect(younger).not.toBe(older);
+
+    // The older twin is trimmed. Nothing in an event tells the two apart, so the id stays with the words.
+    const [left] = activityRows([newest], TODAY).map((row) => row.id);
+    expect(left).toBe(older);
+  });
 });

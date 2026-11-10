@@ -34,10 +34,10 @@ const popup = () => screen.getByRole('dialog', { name: 'Error details' });
 describe('EventDetailsHost', () => {
   it('keeps the details open, on the words they opened with, when their line goes', async () => {
     const opens = vi.fn();
-    const { rerender } = render(<EventDetailsHost>{line(NOT_SAVED, opens)}</EventDetailsHost>);
+    const { rerender } = render(<EventDetailsHost landmark={() => null}>{line(NOT_SAVED, opens)}</EventDetailsHost>);
     await userEvent.click(screen.getByRole('button', { name: NOT_SAVED }));
 
-    rerender(<EventDetailsHost>{line(NOT_MOVED)}</EventDetailsHost>);
+    rerender(<EventDetailsHost landmark={() => null}>{line(NOT_MOVED)}</EventDetailsHost>);
 
     expect(screen.queryByRole('button', { name: NOT_SAVED })).toBeNull();
     expect(within(popup()).getByText(NOT_SAVED)).toBeTruthy();
@@ -49,7 +49,7 @@ describe('EventDetailsHost', () => {
 
   it('shows one line’s details at a time, and says which line is open', async () => {
     render(
-      <EventDetailsHost>
+      <EventDetailsHost landmark={() => null}>
         {line(NOT_SAVED)}
         {line(NOT_MOVED)}
       </EventDetailsHost>,
@@ -67,13 +67,13 @@ describe('EventDetailsHost', () => {
   });
 
   it('puts the focus back on the line where it is drawn now, not where it was pressed', async () => {
-    const { rerender } = render(<EventDetailsHost>{line(NOT_SAVED)}</EventDetailsHost>);
+    const { rerender } = render(<EventDetailsHost landmark={() => null}>{line(NOT_SAVED)}</EventDetailsHost>);
     const pressed = screen.getByRole('button', { name: NOT_SAVED });
     await userEvent.click(pressed);
 
     // Gathered under something new: the same line, another element.
     rerender(
-      <EventDetailsHost>
+      <EventDetailsHost landmark={() => null}>
         <section>{line(NOT_SAVED)}</section>
       </EventDetailsHost>,
     );
@@ -83,5 +83,90 @@ describe('EventDetailsHost', () => {
     const drawn = screen.getByRole('button', { name: NOT_SAVED });
     expect(drawn).not.toBe(pressed);
     await waitFor(() => expect(document.activeElement).toBe(drawn));
+  });
+
+  it('hands the focus to its landmark, never to the body, when the line is gone as it closes', async () => {
+    const drawn = (lines: boolean) => (
+      <EventDetailsHost landmark={() => screen.getByRole('list', { name: 'Lines', hidden: true })}>
+        <ul aria-label="Lines" tabIndex={-1}>
+          {lines && <li>{line(NOT_SAVED)}</li>}
+        </ul>
+      </EventDetailsHost>
+    );
+    const { rerender } = render(drawn(true));
+    await userEvent.click(screen.getByRole('button', { name: NOT_SAVED }));
+
+    rerender(drawn(false));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('list', { name: 'Lines' })),
+    );
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('puts the focus on the first thing Tab stops on in its landmark, where there is one', async () => {
+    const drawn = (...messages: string[]) => (
+      <EventDetailsHost landmark={() => screen.getByRole('list', { name: 'Lines', hidden: true })}>
+        <ul aria-label="Lines" tabIndex={-1}>
+          {messages.map((message) => (
+            <li key={message}>{line(message)}</li>
+          ))}
+        </ul>
+      </EventDetailsHost>
+    );
+    const { rerender } = render(drawn(NOT_MOVED, NOT_SAVED));
+    await userEvent.click(screen.getByRole('button', { name: NOT_SAVED }));
+
+    rerender(drawn(NOT_MOVED));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: NOT_MOVED })),
+    );
+  });
+
+  it('reads details given as a function when the line is pressed, not when it is drawn', async () => {
+    let said = NOT_SAVED;
+    render(
+      <EventDetailsHost landmark={() => null}>
+        <EventDetailsButton details={() => details(said)} onCopy={() => Promise.resolve()}>
+          A line
+        </EventDetailsButton>
+      </EventDetailsHost>,
+    );
+    said = NOT_MOVED;
+    await userEvent.click(screen.getByRole('button', { name: 'A line' }));
+    expect(within(popup()).getByText(NOT_MOVED)).toBeTruthy();
+  });
+
+  it('tells a line drawn again elsewhere that its details are still open', async () => {
+    const told = vi.fn();
+    const watched = (
+      <EventDetailsButton
+        id="watched"
+        details={details(NOT_SAVED)}
+        onCopy={() => Promise.resolve()}
+        onOpenChange={told}
+      >
+        {NOT_SAVED}
+      </EventDetailsButton>
+    );
+    const { rerender } = render(
+      <EventDetailsHost landmark={() => null}>{watched}</EventDetailsHost>,
+    );
+    expect(told).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: NOT_SAVED }));
+    expect(told.mock.calls).toEqual([[true]]);
+
+    rerender(
+      <EventDetailsHost landmark={() => null}>
+        <section>{watched}</section>
+      </EventDetailsHost>,
+    );
+
+    expect(told.mock.calls).toEqual([[true], [true]]);
   });
 });
