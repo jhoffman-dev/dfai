@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, type ActivityEvent } from '@dfai/domain';
 import { activityRows, shownTime, subjectOf } from './activity-rows.ts';
+import { eventDetails } from './event-details.ts';
 
 // Built from local parts, so the test reads the same in any timezone.
 const local = (day: number, hour: number, minute: number, month = 8, year = 2026) =>
@@ -46,6 +47,8 @@ describe('activityRows', () => {
         kind: 'save',
         message: 'b',
         subject: null,
+        // An error opens to its details (#815); the line of news below does not.
+        details: eventDetails(events[0] as ActivityEvent, TODAY),
       },
       {
         id: '0',

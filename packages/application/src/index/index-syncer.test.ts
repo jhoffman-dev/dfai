@@ -651,6 +651,7 @@ describe('createIndexSyncer, attacked (#135)', () => {
         message:
           'Search and lists are rebuilt each visit here, because this browser won’t store them. (UnknownError: The disk could not be read.)',
         subject: null,
+        detail: 'UnknownError: The disk could not be read.',
       },
       expect.anything(),
     ]);
