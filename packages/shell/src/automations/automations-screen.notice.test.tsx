@@ -35,7 +35,7 @@ const LISTING = {
   automations: [DECLARED, EXTRACTION].map((rule) => ({ rule, log: [], ledger: null })),
   broken: [],
 };
-const PORTS = { index: fakeIndexPort([]), types: [], notePaths: [] } as unknown as Parameters<
+const PORTS = { index: fakeIndexPort(), types: [], notePaths: [] } as unknown as Parameters<
   typeof AutomationsScreen
 >[0]['ports'];
 

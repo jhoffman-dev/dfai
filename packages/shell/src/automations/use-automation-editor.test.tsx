@@ -27,7 +27,7 @@ const RULE = {
   id: 'pull',
   path: '.atlas/automations/Pull actions.md',
 } as AutomationRule;
-const PORTS = { index: fakeIndexPort([]), types: [], notePaths: [] } as unknown as Parameters<
+const PORTS = { index: fakeIndexPort(), types: [], notePaths: [] } as unknown as Parameters<
   typeof useAutomationEditor
 >[0]['ports'];
 
