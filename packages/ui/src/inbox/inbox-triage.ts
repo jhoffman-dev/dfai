@@ -50,6 +50,7 @@ export function clarificationOf(task: InboxTask, draft: InboxDraft): Clarificati
 export type LinkField = 'waitingOn' | 'project';
 
 const LINK_FIELDS: readonly LinkField[] = ['waitingOn', 'project'];
+const FILING_ONLY: readonly LinkField[] = ['project'];
 
 /** What a row's link fields hold typed and not picked, by field. */
 export type TypedLinks = Readonly<Partial<Record<LinkField, string>>>;
@@ -71,16 +72,49 @@ export function withTyped(
 }
 
 /**
- * The first link field holding text typed and not picked, or null. A row is
- * not written over one: the text is not a note, so it is neither written nor
- * dropped behind the person's back.
+ * The link fields a row shows: where it is filed always, who it waits on only
+ * while it asks. What a field not shown holds typed is nobody's to see or clear.
  */
-export function unpickedLink(typed: TypedLinks | undefined): UnpickedLink | null {
-  for (const field of LINK_FIELDS) {
+export function linkFieldsShown(task: InboxTask | null, draft: InboxDraft): readonly LinkField[] {
+  return task !== null && asksWhoItWaitsOn(task, draft) ? LINK_FIELDS : FILING_ONLY;
+}
+
+/** `typed` less the fields the row does not show: who it waits on goes with the status, text and all. */
+export function typedInShown(
+  typed: TypedLinks | undefined,
+  shown: readonly LinkField[],
+): TypedLinks {
+  return Object.fromEntries(
+    Object.entries(typed ?? {}).filter(([field]) => shown.some((each) => each === field)),
+  );
+}
+
+/**
+ * The first link field the row shows holding text typed and not picked, or
+ * null. A row is not written over one: the text is not a note, so it is
+ * neither written nor dropped behind the person's back.
+ */
+export function unpickedLink(
+  typed: TypedLinks | undefined,
+  shown: readonly LinkField[],
+): UnpickedLink | null {
+  for (const field of shown) {
     const text = typed?.[field];
     if (text !== undefined) return { field, text };
   }
   return null;
+}
+
+/**
+ * Whether the refusal over `over` still stands: it answers the text it names,
+ * in a field the row shows. That text changed, or its field gone, it goes, and
+ * the next Save looks again.
+ */
+export function refusalStands(
+  over: UnpickedLink,
+  row: { readonly typed: TypedLinks | undefined; readonly shown: readonly LinkField[] },
+): boolean {
+  return row.shown.includes(over.field) && row.typed?.[over.field] === over.text;
 }
 
 /** What the row says when it is not written over `text`. */

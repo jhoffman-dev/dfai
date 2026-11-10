@@ -266,4 +266,25 @@ describe('a link typed and not picked — a row that is gone', () => {
       { path: TASK, clarification: { status: 'someday' } },
     ]);
   });
+
+  it('forgets what a row held typed once it is written: brought back, its field is empty and Save writes', async () => {
+    let finish = (): void => undefined;
+    const onClarify = vi
+      .fn<InboxPageProps['onClarify']>(async () => true)
+      .mockImplementationOnce(() => new Promise((answer) => (finish = () => answer(true))));
+    const view = page({ onClarify });
+    await userEvent.selectOptions(status(), 'Next Action');
+    await userEvent.click(save());
+    await userEvent.type(under(), 'Zeph');
+    view.rerender({ contents: contentsOf([OTHER]) });
+    await act(async () => finish());
+    // An undo, say, brings the written row back.
+    view.rerender({ contents });
+    expect(under().value).toBe('');
+
+    await userEvent.selectOptions(status(), 'Someday');
+    await userEvent.click(save());
+    expect(refusal()).toBeNull();
+    expect(clarified(onClarify)).toHaveLength(2);
+  });
 });
