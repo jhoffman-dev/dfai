@@ -53,8 +53,32 @@ describe('AppNotices — details while the notices change', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Notices' })),
+      expect(document.activeElement).toBe(screen.getByRole('group', { name: 'Notices' })),
     );
+  });
+
+  it('hands the focus to the notices themselves, not to another notice’s button, when its own is gone', async () => {
+    const { rerender } = render(drawn([NO_FEED, DISK_FULL]));
+    await userEvent.click(screen.getByRole('button', { name: DISK_FULL }));
+
+    rerender(drawn([NO_FEED, null]));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('group', { name: 'Notices' })),
+    );
+  });
+
+  it('is a named group, never a landmark: empty or not, it is no stop on a tour of the page’s regions', () => {
+    const { rerender } = render(drawn([null]));
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Notices' }).childElementCount).toBe(0);
+
+    rerender(drawn([DISK_FULL]));
+    expect(screen.queryByRole('region')).toBeNull();
+    const notices = screen.getByRole('group', { name: 'Notices' });
+    expect(within(notices).getByRole('alert').textContent).toBe(DISK_FULL);
   });
 
   it('tells two notices saying the same words apart: one is open, and the focus goes back to it', async () => {

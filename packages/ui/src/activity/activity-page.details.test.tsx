@@ -145,16 +145,22 @@ describe('ActivityPage — a line opens to its details', () => {
         onCopy={() => Promise.resolve()}
       />
     );
+    const focused = vi.spyOn(HTMLElement.prototype, 'focus');
     const { rerender } = render(drawn([FAILED, REFUSED, RAN]));
     await userEvent.click(line(REFUSED.message));
 
     rerender(drawn([FAILED, RAN]));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    // The list, which puts it on the first thing in it that Tab stops on.
+    // The list's first line, as Tab would find it.
     await waitFor(() => expect(document.activeElement).toBe(line(FAILED.message)));
+    // Scrolled to: a long log's first line may be far off the screen.
+    const options =
+      focused.mock.calls[focused.mock.contexts.lastIndexOf(line(FAILED.message))]?.[0];
+    expect(options?.preventScroll ?? false).toBe(false);
+    focused.mockRestore();
 
-    // No line left to list: the page, at its first control.
+    // No line left to list: the page.
     await userEvent.click(line(FAILED.message));
     rerender(drawn([]));
     await userEvent.keyboard('{Escape}');

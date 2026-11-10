@@ -119,7 +119,7 @@ function typing() {
   return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 }
 const words = () => screen.getByRole('button', { name: NOT_SAVED.message });
-const column = () => screen.getByRole('region', { name: 'Notifications' });
+const column = () => screen.getByRole('group', { name: 'Notifications' });
 const closed = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
 describe('Toast — the focus once its details close', () => {

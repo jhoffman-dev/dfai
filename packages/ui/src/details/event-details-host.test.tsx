@@ -111,7 +111,7 @@ describe('EventDetailsHost', () => {
     expect(document.activeElement).not.toBe(document.body);
   });
 
-  it('puts the focus on the first thing Tab stops on in its landmark, where there is one', async () => {
+  it('puts the focus on its landmark itself, never on another line in it that Tab stops on', async () => {
     const drawn = (...messages: string[]) => (
       <EventDetailsHost landmark={() => screen.getByRole('list', { name: 'Lines', hidden: true })}>
         <ul aria-label="Lines" tabIndex={-1}>
@@ -128,9 +128,32 @@ describe('EventDetailsHost', () => {
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
+    // Not the line left: an Enter meant for the one that went would press it.
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: NOT_MOVED })),
+      expect(document.activeElement).toBe(screen.getByRole('list', { name: 'Lines' })),
     );
+  });
+
+  it('brings its landmark into view, and shows the focus on it when the keyboard closed the popup', async () => {
+    const focused = vi.spyOn(HTMLElement.prototype, 'focus');
+    const drawn = (lines: boolean) => (
+      <EventDetailsHost landmark={() => screen.getByRole('list', { name: 'Lines', hidden: true })}>
+        <ul aria-label="Lines" tabIndex={-1}>
+          {lines && <li>{line(NOT_SAVED)}</li>}
+        </ul>
+      </EventDetailsHost>
+    );
+    const { rerender } = render(drawn(true));
+    await userEvent.click(screen.getByRole('button', { name: NOT_SAVED }));
+    rerender(drawn(false));
+    await userEvent.keyboard('{Escape}');
+    const list = screen.getByRole('list', { name: 'Lines' });
+    await waitFor(() => expect(document.activeElement).toBe(list));
+
+    const options = focused.mock.calls[focused.mock.contexts.lastIndexOf(list)]?.[0];
+    expect(options?.preventScroll ?? false).toBe(false);
+    expect(options).toMatchObject({ focusVisible: true });
+    focused.mockRestore();
   });
 
   it('reads details given as a function when the line is pressed, not when it is drawn', async () => {

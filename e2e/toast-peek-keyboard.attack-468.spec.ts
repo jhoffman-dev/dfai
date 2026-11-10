@@ -115,10 +115,20 @@ test('details opened from a toast in the peek close on Esc alone, and the focus 
 
   // That focus was put there, not brought: with the pointer off it, the warning has its five
   // seconds again and goes — and hands the focus to the toasts' column, still inside the peek.
+  // A fake clock from here, so the five seconds are stepped, not waited for: the toast's
+  // timer starts as the pointer leaves it, after the clock is in.
+  await page.clock.install();
   await peek.locator('.peek__head').hover();
-  await expect(refused).toHaveCount(0, { timeout: 10_000 });
+  await page.clock.runFor(6000);
+  await expect(refused).toHaveCount(0);
   await expect(peek).toBeVisible();
-  await expect(peek.locator('.toast-stack')).toBeFocused();
+  const column = peek.locator('.toast-stack');
+  await expect(column).toBeFocused();
+  // Empty, the column still has a box for the focus ring to show on (WCAG 2.4.7).
+  const box = await column.boundingBox();
+  expect(box?.width ?? 0, 'the focused column is wide enough to see').toBeGreaterThanOrEqual(24);
+  expect(box?.height ?? 0, 'the focused column is tall enough to see').toBeGreaterThanOrEqual(4);
+  await expect(column).toHaveCSS('box-shadow', /rgb/);
 });
 
 test('a toast’s details in the peek open from the keyboard, and Copy and Close leave the peek up', async ({

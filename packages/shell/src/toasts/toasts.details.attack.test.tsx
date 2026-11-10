@@ -13,7 +13,7 @@ const CLOCK = { now: () => SHOWN, today: () => '2026-09-28' };
 const NOT_MOVED = 'Could not move “Sow the beans”.';
 const REFUSED = 'The undo was refused.';
 
-const column = () => screen.getByRole('region', { name: 'Notifications', hidden: true });
+const column = () => screen.getByRole('group', { name: 'Notifications', hidden: true });
 const gone = (role: string, name?: string) =>
   waitFor(() => expect(screen.queryByRole(role, name === undefined ? {} : { name })).toBeNull());
 
@@ -192,7 +192,28 @@ describe('ToastHost — details under attack', () => {
     await waitFor(() => expect(document.activeElement).toBe(column()));
   });
 
-  it('hands the focus to the peek, inside its trap, when the details close with their toast gone', async () => {
+  it('hands the focus to the column itself, not to another toast’s button, when the details close with their toast gone', async () => {
+    const undo = vi.fn();
+    const toasts = host({ write: () => Promise.resolve() });
+    let shown = 0;
+    act(() => {
+      toasts.show({ message: 'Note moved', tone: 'change', onUndo: undo });
+      shown = toasts.show({ message: NOT_MOVED, tone: 'error' });
+    });
+    await userEvent.click(screen.getByRole('button', { name: NOT_MOVED }));
+
+    act(() => toasts.dismiss(shown));
+    await userEvent.keyboard('{Escape}');
+    await gone('dialog');
+
+    await waitFor(() => expect(document.activeElement).toBe(column()));
+    // An Enter meant for the toast that went presses nothing of the one left.
+    await userEvent.keyboard('{Enter}');
+    expect(undo).not.toHaveBeenCalled();
+    expect(screen.getByText('Note moved')).toBeTruthy();
+  });
+
+  it('hands the focus to the toasts’ column in the peek, inside its trap, when the details close with their toast gone', async () => {
     const { peek, place } = peekDrawn();
     const toasts = host({ write: () => Promise.resolve() });
     act(() => toasts.placeIn(place));
@@ -204,7 +225,8 @@ describe('ToastHost — details under attack', () => {
     await userEvent.keyboard('{Escape}');
     await gone('dialog', 'Error details');
 
-    await waitFor(() => expect(document.activeElement).toBe(peek));
+    await waitFor(() => expect(document.activeElement).toBe(column()));
+    expect(peek.contains(document.activeElement)).toBe(true);
   });
 
   it('keeps the details open, and their toast known and held, as the peek comes up under them', async () => {
