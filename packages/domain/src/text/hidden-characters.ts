@@ -11,14 +11,17 @@ export const DIRECTION_MARKS = '\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2
 export const BYTE_ORDER_MARK = '\\uFEFF';
 
 /**
- * Characters drawn as nothing, which split a word without a reader seeing
- * it: the soft hyphen, the grapheme joiner, the Hangul fillers, the Mongolian
- * vowel separator, the zero-width spaces and joiners, the invisible operators,
- * the deprecated format marks, the variation selectors and the tags. Text kept
- * as a note keeps them, since emoji are built of joiners and selectors.
+ * Characters drawn as nothing, which split a word without a reader seeing it:
+ * every format character (`Cf`) and every default-ignorable code point, so the
+ * soft hyphen, the zero-width spaces and joiners, the variation selectors,
+ * the Mongolian and Khmer free variation marks, the hieroglyph and musical
+ * format controls, the tags and the code points kept ignorable for later.
+ * Taken by property, not listed, because a list misses one and a key split by
+ * it is kept. Emoji are built of the zero-width joiner and selector 16, so an
+ * Activity line loses their joins — a family drawn as its people — which is
+ * the price of never keeping a split key. Text kept as a note keeps them.
  */
-export const DRAWN_AS_NOTHING =
-  '\\u00AD\\u034F\\u115F\\u1160\\u180E\\u200B-\\u200D\\u2060-\\u2065\\u206A-\\u206F\\u3164\\uFE00-\\uFE0F\\uFFA0\\u{E0000}-\\u{E007F}';
+export const DRAWN_AS_NOTHING = '\\p{Cf}\\p{Default_Ignorable_Code_Point}';
 
 /** Half of a surrogate pair with no other half: JSON can carry one, UTF-8 cannot write it. */
 export const LONE_SURROGATE =
