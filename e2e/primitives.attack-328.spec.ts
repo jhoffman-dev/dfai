@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { focusedRing, RINGED_PRIMITIVES } from './focus-ring.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { inboxRowsInReach } from './inbox.ts';
 import { TABLE_GROUP_HEIGHT, TABLE_ROW_HEIGHT, TODAY_ROW_HEIGHT } from './row-heights.ts';
 import { focusThenPress } from './typing.ts';
 
@@ -308,6 +309,7 @@ const RING_SURFACES: Record<string, (page: Page) => Promise<void>> = {
       .getByRole('list', { name: 'Go to' })
       .getByRole('button', { name: /^Inbox/ })
       .click();
+    await inboxRowsInReach(page);
     await expect(page.locator('.inbox__row .btn').first()).toBeVisible();
   },
   today: async (page) => {
