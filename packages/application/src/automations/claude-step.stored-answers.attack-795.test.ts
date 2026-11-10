@@ -119,6 +119,28 @@ describe('a retry after a long meeting failed partway (#793 attack)', () => {
     expect(retry.entry.kind).toBe('run');
     expect(retry.asks).toBe(1);
   });
+
+  it.fails(
+    'keeps the parts a failed retry reused, so a third run asks only the part still owed',
+    async () => {
+      const { asksOf } = setUp([NOTHING, NOTHING, UNREADABLE, UNREADABLE, NOTHING, NOTHING], {
+        [meetingAt(1)]: meeting(1, 105),
+      });
+      expect(await asksOf(ruleOf(EXTRACTION))).toMatchObject({
+        entry: { kind: 'failed' },
+        asks: 3,
+      });
+      expect(await asksOf(ruleOf(EXTRACTION))).toMatchObject({
+        entry: { kind: 'failed' },
+        asks: 1,
+      });
+
+      const third = await asksOf(ruleOf(EXTRACTION));
+
+      expect(third.entry.kind).toBe('run');
+      expect(third.asks).toBe(1);
+    },
+  );
 });
 
 describe('the declared step’s kept answers after its prompt or model changed (#793 attack)', () => {

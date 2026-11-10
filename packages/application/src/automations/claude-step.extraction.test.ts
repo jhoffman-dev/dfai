@@ -510,6 +510,30 @@ describe('a run that fails after it asked (#793)', () => {
     expect(await run(BOTH)).toMatchObject({ kind: 'run', claude: { asks: 2 } });
     expect(asked()).toHaveLength(4);
   });
+
+  it('asks again about what it answered when only the rule’s model changed since', async () => {
+    const { run, asked } = setUp([sync, unreadable, sync, call]);
+
+    await run(BOTH);
+    const otherModel: AutomationRule = {
+      ...BOTH,
+      action: { ...BOTH.action, model: 'claude-haiku-5-5' } as AutomationRule['action'],
+    };
+
+    expect(await run(otherModel)).toMatchObject({ kind: 'run', claude: { asks: 2 } });
+    expect(asked()).toHaveLength(4);
+  });
+
+  it('keeps the answers only until the retry finished: then its kept line is gone', async () => {
+    const { run, log } = setUp([sync, unreadable, call]);
+
+    await run(BOTH);
+    expect(log()).toMatch(/^- stored `"meeting:gemini:gemini-7f3a9c21:transcript:/m);
+
+    expect(await run(BOTH)).toMatchObject({ kind: 'run', claude: { asks: 1 } });
+    expect(log()).toContain('## Handled so far');
+    expect(log()).not.toMatch(/^- stored /m);
+  });
 });
 
 describe('two meetings in one run', () => {
