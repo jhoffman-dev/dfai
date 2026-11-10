@@ -162,7 +162,14 @@ export async function carryOut(
     writes,
     link,
     headline,
-  }: { writes: readonly RuledWrite[]; link: LinkNote | null; headline: string },
+    failed,
+  }: {
+    writes: readonly RuledWrite[];
+    link: LinkNote | null;
+    headline: string;
+    /** What went wrong when a later write fails, as the caller words its step: “the task could not be added to its meeting”. */
+    failed: string;
+  },
 ): Promise<AppliedProposal[]> {
   const wrote: AppliedProposal[] = [];
   try {
@@ -175,7 +182,7 @@ export async function carryOut(
     }
   } catch (cause) {
     // A person made but their meeting not linked is half an accept: what was written is taken back.
-    if (wrote.length > 0) throw await takenBack(ports, { wrote, headline, cause });
+    if (wrote.length > 0) throw await takenBack(ports, { wrote, headline, failed, cause });
     throw cause;
   }
   return wrote;
@@ -230,29 +237,48 @@ async function setOnNote(
 }
 
 /**
- * The refusal for an accept whose proposal could not be marked accepted after
- * its notes were written: they are taken back, so an open proposal never sits
- * beside what accepting it made — or, when they cannot be, the refusal says so.
+ * The refusal for a step that failed after notes were written: they are taken
+ * back, so an open proposal never sits beside what accepting it made, nor a
+ * task beside a meeting that does not list it — or, when they cannot be, the
+ * refusal says so. `failed` says, in the caller's words, which step it was;
+ * a fault of the disk adds nothing to it, since its words are not the caller's.
  */
 export async function takenBack(
   ports: NoteWritePorts,
   {
     wrote,
     headline,
+    failed,
     cause,
-  }: { wrote: readonly AppliedProposal[]; headline: string; cause: unknown },
+  }: { wrote: readonly AppliedProposal[]; headline: string; failed: string; cause: unknown },
 ): Promise<Error> {
-  const reason = messageOf(cause);
+  const refused = refusedWords(cause);
   try {
     for (const applied of wrote) {
       await undoProposal({ fs: ports.fs, openNotes: ports.editors, applied });
     }
   } catch (undoing) {
+    const left = refusedWords(undoing) ?? 'the vault would not let DFAI undo what was written.';
+    const why = refused === null ? '' : ` (${refused})`;
     return new ProposalRefused(
-      `“${headline}” was written, but the proposal could not be marked accepted (${reason}), and taking it back failed: ${messageOf(undoing)}`,
+      `“${headline}” was written, but ${failed}${why}, and taking it back failed: ${left}`,
     );
   }
-  return new ProposalRefused(`${reason} Nothing was kept.`);
+  return new ProposalRefused(`${refused ?? `${sentence(failed)}.`} Nothing was kept.`);
+}
+
+/** The words as a sentence's start: their first letter a capital. */
+function sentence(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * A refusal's own words, which its caller can act on; null for a fault of the
+ * disk or the host, whose words (paths, error codes) are not the caller's to
+ * read, and reach the Activity log with the refusal (#814).
+ */
+function refusedWords(error: unknown): string | null {
+  return error instanceof ProposalRefused ? error.message : null;
 }
 
 /**
