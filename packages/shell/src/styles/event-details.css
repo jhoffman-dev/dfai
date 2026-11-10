@@ -1,0 +1,120 @@
+/* A warning or an error that opens to its details (#815). The line's words
+   are a button drawn as the words were: no chrome of its own, only the
+   pointer and a focus ring to say it opens. */
+.event-details-button {
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.event-details-button:hover {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
+
+.event-details-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* An Activity line stays one line: the button is cut short as the span was. */
+.activity-line__message.event-details-button {
+  display: block;
+  font-size: var(--text-body);
+}
+
+/* A toast's and a notice's words wrap as they did. */
+.toast__details,
+.notice__details {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* The popup: neutral chrome, the level alone in colour, as a muted pastel chip. */
+.event-details {
+  width: min(520px, 100%);
+}
+
+.event-details__head {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.event-details__level {
+  background: var(--hue-gray-bg);
+  border-radius: var(--radius-chip);
+  color: var(--hue-gray-ink);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  padding: 2px 8px;
+}
+
+.event-details__level--warning {
+  background: var(--hue-yellow-bg);
+  color: var(--hue-yellow-ink);
+}
+
+.event-details__level--error {
+  background: var(--hue-red-bg);
+  color: var(--hue-red-ink);
+}
+
+.event-details__time {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+}
+
+/* The whole message, however long: it wraps, and a very long one scrolls. */
+.event-details__message {
+  color: var(--ink);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  margin: 0;
+  max-height: 30vh;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.event-details__facts {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  max-height: 24vh;
+  overflow-y: auto;
+  padding-top: var(--space-3);
+}
+
+.event-details__fact {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: 132px minmax(0, 1fr);
+}
+
+.event-details__fact dt {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+}
+
+.event-details__fact dd {
+  color: var(--ink);
+  font-size: var(--text-body);
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.event-details__refused {
+  color: var(--danger);
+  font-size: var(--text-meta);
+  margin-right: auto;
+}

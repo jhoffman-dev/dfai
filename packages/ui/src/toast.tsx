@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { EventDetailsButton, type EventDetailsView } from './details/index.ts';
 import { TOAST_MS, useDismissAfter } from './dismiss-after.ts';
 import { Icon } from './icon.tsx';
 
@@ -26,11 +27,16 @@ export type ToastTone = 'change' | 'warning' | 'error';
  * words a second time is the caller's to mark, with a `key` that changes per
  * showing (use-granola-pull's `toastShown`): to a component, the same props
  * are the same showing.
+ *
+ * A warning or an error given its details opens to them from its words
+ * (#815), and stays while they are read.
  */
 export function Toast({
   message,
   tone,
   action,
+  details,
+  onCopy,
   onUndo,
   onDismiss,
 }: {
@@ -38,17 +44,21 @@ export function Toast({
   /** Drawn as a dot before the words; none for a plain word such as "Task added". */
   tone?: ToastTone;
   action?: { readonly label: string; readonly onClick: () => void };
+  /** What the words open to; drawn only with `onCopy`, which its popup needs. */
+  details?: EventDetailsView;
+  onCopy?: (text: string) => Promise<void>;
   onUndo?: () => void;
   onDismiss: () => void;
 }) {
   // The ref answers a second press in the same tick; the state stops the timer.
   const acted = useRef(false);
   const [done, setDone] = useState(false);
+  const [reading, setReading] = useState(false);
   const hold = useDismissAfter({
     ms: TOAST_MS,
     showing: message,
     onDismiss,
-    stays: done || tone === 'error',
+    stays: done || tone === 'error' || reading,
   });
   const once = (does?: () => void) => () => {
     if (acted.current) return;
@@ -61,7 +71,18 @@ export function Toast({
     <div className="toast" {...hold}>
       {tone !== undefined && <span className={`toast__dot toast__dot--${tone}`} aria-hidden />}
       <span className="toast__message" role="status">
-        {message}
+        {details !== undefined && onCopy !== undefined ? (
+          <EventDetailsButton
+            details={details}
+            className="toast__details"
+            onCopy={onCopy}
+            onOpenChange={setReading}
+          >
+            {message}
+          </EventDetailsButton>
+        ) : (
+          message
+        )}
       </span>
       {onUndo !== undefined && (
         <button type="button" className="toast__action" tabIndex={0} onClick={once(onUndo)}>

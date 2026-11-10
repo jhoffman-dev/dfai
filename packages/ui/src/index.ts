@@ -319,6 +319,7 @@ export * from './automations/index.ts';
 export * from './proposals/index.ts';
 export * from './linked-pages/index.ts';
 export * from './activity/index.ts';
+export * from './details/index.ts';
 export type { Choice } from './choice-select.tsx';
 export { AskPage } from './chat/ask-page.tsx';
 export type { AskPageProps } from './chat/ask-page.tsx';

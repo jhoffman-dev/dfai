@@ -55,6 +55,11 @@ export interface ActivityReport {
    * out for none.
    */
   readonly notes?: readonly VaultPath[];
+  /**
+   * More than the line says, for a reader who opens it (#815): an API
+   * refusal's reason, say. Made safe as the message is; left out for none.
+   */
+  readonly detail?: string;
 }
 
 /** The most notes a line keeps beside its subject: a run's are its few triggering notes. */
@@ -67,6 +72,9 @@ export interface ActivityEvent extends ActivityReport {
 
 /** The longest a line's message may be: one line on the page, not a stack trace. */
 export const MAX_ACTIVITY_MESSAGE = 300;
+
+/** The longest a line's detail may be: a paragraph to open, not a log file. */
+export const MAX_ACTIVITY_DETAIL = 1000;
 
 /**
  * A line, made safe to keep: its message on one line, without absolute paths,
@@ -85,7 +93,18 @@ export function activityEvent(report: ActivityReport & { at: number }): Activity
     ),
     subject: chat === null ? cleanSubject(report.subject) : null,
     ...notesOf(report.notes),
+    ...detailOf(report.detail, chat),
   };
+}
+
+/** The detail kept: cleaned as the message is, and left out when nothing is left of it. */
+function detailOf(detail: string | undefined, chat: ActivitySubject | null): { detail?: string } {
+  if (detail === undefined) return {};
+  const safe = cleanText(
+    chat === null ? detail : withoutChatTitle(detail, chat.path),
+    MAX_ACTIVITY_DETAIL,
+  );
+  return safe === '' ? {} : { detail: safe };
 }
 
 /** The notes kept beside the subject: inside the vault, no chat note, each once, at most {@link MAX_ACTIVITY_NOTES}. */
@@ -99,12 +118,17 @@ function notesOf(notes: readonly string[] | undefined): { notes?: readonly Vault
 }
 
 function cleanMessage(raw: string): string {
+  const safe = cleanText(raw, MAX_ACTIVITY_MESSAGE);
+  return safe === '' ? 'No detail was given.' : safe;
+}
+
+/** Text made safe to keep: one line, no absolute path, chat path or secret, at most `max` long. */
+function cleanText(raw: string, max: number): string {
   const safe = withoutSecrets(withoutChatPaths(messageWithoutPaths(raw)))
     .replace(/\s+/g, ' ')
     .trim();
-  if (safe === '') return 'No detail was given.';
-  if (safe.length <= MAX_ACTIVITY_MESSAGE) return safe;
-  return `${safe.slice(0, MAX_ACTIVITY_MESSAGE - 1).trimEnd()}…`;
+  if (safe.length <= max) return safe;
+  return `${safe.slice(0, max - 1).trimEnd()}…`;
 }
 
 function cleanSubject(subject: ActivitySubject | null): ActivitySubject | null {

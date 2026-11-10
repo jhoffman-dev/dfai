@@ -4,6 +4,7 @@ import {
   type ActivityLevel,
   type ActivityLevelFilter,
 } from '@dfai/domain';
+import { EventDetailsButton, LEVEL_LABELS, type EventDetailsView } from '../details/index.ts';
 import { Icon } from '../icon.tsx';
 import { PageBar, type PageHistory } from '../page-bar.tsx';
 import { HiddenTitle } from '../page-head.tsx';
@@ -21,6 +22,8 @@ export interface ActivityRowView {
   readonly message: string;
   /** What the line is about, named for its link; null when it links nowhere. */
   readonly subject: string | null;
+  /** What the line opens to (#815); absent for a line that opens to nothing. */
+  readonly details?: EventDetailsView;
 }
 
 /** A meeting with its lines under it (#192): its import's, its linking's, and the rules that heard it. */
@@ -51,6 +54,8 @@ export interface ActivityPageProps {
   readonly onText: (text: string) => void;
   /** Opens what a line is about, by the line's id. */
   readonly onOpenSubject: (id: string) => void;
+  /** Puts a line's details on the clipboard; rejects when the clipboard refuses. */
+  readonly onCopy: (text: string) => Promise<void>;
   readonly onShowSidebar?: () => void;
   readonly history?: PageHistory;
 }
@@ -73,12 +78,6 @@ export const ACTIVITY_KIND_LABELS: Readonly<Record<ActivityKind, string>> = {
   export: 'Exports',
   sync: 'Sync',
   app: 'App',
-};
-
-const LEVEL_LABELS: Readonly<Record<ActivityLevel, string>> = {
-  info: 'Info',
-  warning: 'Warning',
-  error: 'Error',
 };
 
 /**
@@ -146,7 +145,8 @@ function Filters({ level, kinds, text, onLevel, onToggleKind, onText }: Activity
   );
 }
 
-function Lines({ rows, total, error, onOpenSubject }: ActivityPageProps) {
+function Lines({ rows, total, error, onOpenSubject, onCopy }: ActivityPageProps) {
+  const does: LineActions = { onOpenSubject, onCopy };
   if (error !== null) {
     return (
       <p className="table__error" role="alert">
@@ -168,22 +168,19 @@ function Lines({ rows, total, error, onOpenSubject }: ActivityPageProps) {
     <ol className="page-list activity__list" aria-label="Activity lines">
       {rows.map((entry) =>
         'group' in entry ? (
-          <Meeting key={`meeting:${entry.id}`} meeting={entry} onOpenSubject={onOpenSubject} />
+          <Meeting key={`meeting:${entry.id}`} meeting={entry} does={does} />
         ) : (
-          <Line key={entry.id} row={entry} onOpenSubject={onOpenSubject} />
+          <Line key={entry.id} row={entry} does={does} />
         ),
       )}
     </ol>
   );
 }
 
-function Meeting({
-  meeting,
-  onOpenSubject,
-}: {
-  meeting: ActivityMeetingView;
-  onOpenSubject: (id: string) => void;
-}) {
+/** What a line can do: open what it is about, and copy its details. */
+type LineActions = Pick<ActivityPageProps, 'onOpenSubject' | 'onCopy'>;
+
+function Meeting({ meeting, does }: { meeting: ActivityMeetingView; does: LineActions }) {
   return (
     <li className="activity-group" aria-label={`Meeting ${meeting.title}`}>
       <div className="activity-group__head">
@@ -193,27 +190,21 @@ function Meeting({
           type="button"
           className="btn btn--ghost btn--sm activity-line__open"
           title={`Open ${meeting.title}`}
-          onClick={() => onOpenSubject(meeting.id)}
+          onClick={() => does.onOpenSubject(meeting.id)}
         >
           <span className="activity-line__open-text">Open {meeting.title}</span>
         </button>
       </div>
       <ol className="page-list activity-group__lines" aria-label={`Lines about ${meeting.title}`}>
         {meeting.rows.map((row) => (
-          <Line key={row.id} row={row} onOpenSubject={onOpenSubject} />
+          <Line key={row.id} row={row} does={does} />
         ))}
       </ol>
     </li>
   );
 }
 
-function Line({
-  row,
-  onOpenSubject,
-}: {
-  row: ActivityRowView;
-  onOpenSubject: (id: string) => void;
-}) {
+function Line({ row, does }: { row: ActivityRowView; does: LineActions }) {
   return (
     <li key={row.id} className={`page-list__row activity-line activity-line--${row.level}`}>
       <time className="page-list__meta activity-line__time" dateTime={row.dateTime}>
@@ -223,20 +214,41 @@ function Line({
         {LEVEL_LABELS[row.level]}
       </span>
       <span className="page-list__meta activity-line__kind">{ACTIVITY_KIND_LABELS[row.kind]}</span>
-      {/* One line per row, so a long message is cut short; its title holds the whole of it. */}
-      <span className="activity-line__message" title={row.message}>
-        {row.message}
-      </span>
+      <Message row={row} does={does} />
       {row.subject !== null && (
         <button
           type="button"
           className="btn btn--ghost btn--sm activity-line__open"
           title={`Open ${row.subject}`}
-          onClick={() => onOpenSubject(row.id)}
+          onClick={() => does.onOpenSubject(row.id)}
         >
           <span className="activity-line__open-text">Open {row.subject}</span>
         </button>
       )}
     </li>
+  );
+}
+
+/**
+ * A line's words. One line per row, so a long message is cut short: its title
+ * holds the whole of it, and a line with details opens to them (#815).
+ */
+function Message({ row, does }: { row: ActivityRowView; does: LineActions }) {
+  if (row.details === undefined) {
+    return (
+      <span className="activity-line__message" title={row.message}>
+        {row.message}
+      </span>
+    );
+  }
+  return (
+    <EventDetailsButton
+      details={row.details}
+      className="activity-line__message"
+      onCopy={does.onCopy}
+      {...(row.subject !== null && { onOpenSubject: () => does.onOpenSubject(row.id) })}
+    >
+      {row.message}
+    </EventDetailsButton>
   );
 }

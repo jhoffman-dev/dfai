@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { EventDetailsView } from './details/index.ts';
 import { Toast, type ToastTone } from './toast.tsx';
 
 /** One toast in the window's queue (#320), as the store that holds them hands it over. */
@@ -10,6 +11,8 @@ export interface ToastShown {
   /** Takes the change back; absent when there is nothing to take back. */
   readonly onUndo?: () => void;
   readonly action?: { readonly label: string; readonly onClick: () => void };
+  /** What a warning or an error opens to from its words (#815). */
+  readonly details?: EventDetailsView;
 }
 
 /**
@@ -22,10 +25,13 @@ export interface ToastShown {
 export function ToastStack({
   toasts,
   onDismiss,
+  onCopy,
   children,
 }: {
   toasts: readonly ToastShown[];
   onDismiss: (id: number) => void;
+  /** Puts a toast's details on the clipboard; without it no toast opens to them. */
+  onCopy?: (text: string) => Promise<void>;
   children?: ReactNode;
 }) {
   const others = children !== undefined && children !== null && children !== false;
@@ -33,13 +39,14 @@ export function ToastStack({
   return (
     <div className="toast-stack">
       {children}
-      {toasts.map(({ id, message, tone, onUndo, action }) => (
+      {toasts.map(({ id, message, tone, onUndo, action, details }) => (
         <Toast
           key={id}
           message={message}
           tone={tone}
           {...(onUndo !== undefined && { onUndo })}
           {...(action !== undefined && { action })}
+          {...(details !== undefined && onCopy !== undefined && { details, onCopy })}
           onDismiss={() => onDismiss(id)}
         />
       ))}
