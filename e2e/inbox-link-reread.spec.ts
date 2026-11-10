@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
 import { suggestion } from './link-suggest.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * #823: a link picked on an Inbox row while the Inbox list re-reads under it
@@ -149,5 +150,14 @@ test('Save refuses a person typed but never picked, and writes nothing (#823)', 
     '“Mar” is typed but not picked. Pick it from the list, or clear it.',
   );
   await expect(who).toHaveValue('Mar');
+  expect(await vault.read(TASK)).toContain('status: inbox');
+
+  // A status key on the row meets the same guard as Save: typed again, the refusal went, and N brings it back.
+  await who.fill('Mara');
+  await expect(row(page, 'Chase the quote').getByRole('alert')).toHaveCount(0);
+  await focusThenPress(row(page, 'Chase the quote'), 'n');
+  await expect(row(page, 'Chase the quote').getByRole('alert')).toHaveText(
+    '“Mara” is typed but not picked. Pick it from the list, or clear it.',
+  );
   expect(await vault.read(TASK)).toContain('status: inbox');
 });
