@@ -88,9 +88,7 @@ export function activityEvent(report: ActivityReport & { at: number }): Activity
     at: report.at,
     level: report.level,
     kind: report.kind,
-    message: cleanMessage(
-      chat === null ? report.message : withoutChatTitle(report.message, chat.path),
-    ),
+    message: cleanMessage(report.message, chat),
     subject: chat === null ? cleanSubject(report.subject) : null,
     ...notesOf(report.notes),
     ...detailOf(report.detail, chat),
@@ -100,10 +98,7 @@ export function activityEvent(report: ActivityReport & { at: number }): Activity
 /** The detail kept: cleaned as the message is, and left out when nothing is left of it. */
 function detailOf(detail: string | undefined, chat: ActivitySubject | null): { detail?: string } {
   if (detail === undefined) return {};
-  const safe = cleanText(
-    chat === null ? detail : withoutChatTitle(detail, chat.path),
-    MAX_ACTIVITY_DETAIL,
-  );
+  const safe = safeActivityText(detail, { max: MAX_ACTIVITY_DETAIL, chatPath: chat?.path ?? null });
   return safe === '' ? {} : { detail: safe };
 }
 
@@ -117,18 +112,55 @@ function notesOf(notes: readonly string[] | undefined): { notes?: readonly Vault
   return kept.size === 0 ? {} : { notes: [...kept].slice(0, MAX_ACTIVITY_NOTES) };
 }
 
-function cleanMessage(raw: string): string {
-  const safe = cleanText(raw, MAX_ACTIVITY_MESSAGE);
+function cleanMessage(raw: string, chat: ActivitySubject | null): string {
+  const safe = safeActivityText(raw, { max: MAX_ACTIVITY_MESSAGE, chatPath: chat?.path ?? null });
   return safe === '' ? 'No detail was given.' : safe;
 }
 
-/** Text made safe to keep: one line, no absolute path, chat path or secret, at most `max` long. */
-function cleanText(raw: string, max: number): string {
-  const safe = withoutSecrets(withoutChatPaths(messageWithoutPaths(raw)))
-    .replace(/\s+/g, ' ')
+/**
+ * Words made safe to keep, as a line's message and detail are: one line of
+ * plain text, without absolute paths, chat notes' names (the title of
+ * `chatPath`, when the words are about one) or secret values, cut to `max`
+ * characters with an ellipsis. Cut only once clean, so a cut never leaves
+ * part of a secret, a path or a title that the whole would have struck.
+ */
+export function safeActivityText(
+  raw: string,
+  { max, chatPath = null }: { max: number; chatPath?: VaultPath | null },
+): string {
+  // Invisible characters go first: one inside a token or a title would hide it from what strikes it.
+  const visible = withoutInvisibles(raw);
+  const unnamed = chatPath === null ? visible : withoutChatTitle(visible, chatPath);
+  const safe = withoutSecrets(withoutChatPaths(messageWithoutPaths(unnamed)))
+    .replace(LINE_BREAKS, ' ')
     .trim();
-  if (safe.length <= max) return safe;
-  return `${safe.slice(0, max - 1).trimEnd()}…`;
+  return cutToLength(safe, max);
+}
+
+/** Terminal escapes (CSI, OSC), then any other control, bidi or zero-width character, and a lone surrogate. */
+// eslint-disable-next-line no-control-regex -- an escape sequence is exactly what is removed
+const ESCAPES = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)?)/g;
+const INVISIBLES =
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what is removed
+  /[\u0000-\u0008\u000E-\u001B\u007F-\u0084\u0086-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** Every run of what a reader may break a line on — `\s`, NEL and the C0 separators — as one space. */
+// eslint-disable-next-line no-control-regex -- the C0 separators are exactly what becomes a space
+const LINE_BREAKS = /[\s\u001C-\u001F\u0085]+/g;
+
+function withoutInvisibles(text: string): string {
+  return text.replace(ESCAPES, '').replace(INVISIBLES, '').replace(LONE_SURROGATE, '\uFFFD');
+}
+
+/** The text cut to `max` characters, counted by code point so an emoji is never split in two. */
+function cutToLength(text: string, max: number): string {
+  const characters = [...text];
+  if (characters.length <= max) return text;
+  return `${characters
+    .slice(0, max - 1)
+    .join('')
+    .trimEnd()}…`;
 }
 
 function cleanSubject(subject: ActivitySubject | null): ActivitySubject | null {

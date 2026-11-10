@@ -242,17 +242,27 @@ export async function takenBack(
     cause,
   }: { wrote: readonly AppliedProposal[]; headline: string; cause: unknown },
 ): Promise<Error> {
-  const reason = messageOf(cause);
+  const reason = refusedWords(cause) ?? 'The proposal could not be marked accepted.';
   try {
     for (const applied of wrote) {
       await undoProposal({ fs: ports.fs, openNotes: ports.editors, applied });
     }
   } catch (undoing) {
+    const left = refusedWords(undoing) ?? 'the vault would not let DFAI undo what was written.';
     return new ProposalRefused(
-      `“${headline}” was written, but the proposal could not be marked accepted (${reason}), and taking it back failed: ${messageOf(undoing)}`,
+      `“${headline}” was written, but the proposal could not be marked accepted (${reason}), and taking it back failed: ${left}`,
     );
   }
   return new ProposalRefused(`${reason} Nothing was kept.`);
+}
+
+/**
+ * A refusal's own words, which its caller can act on; null for a fault of the
+ * disk or the host, whose words (paths, error codes) are not the caller's to
+ * read, and reach the Activity log with the refusal (#814).
+ */
+function refusedWords(error: unknown): string | null {
+  return error instanceof ProposalRefused ? error.message : null;
 }
 
 /**

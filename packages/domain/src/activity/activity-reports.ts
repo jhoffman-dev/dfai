@@ -19,7 +19,13 @@ import { planVerb, type AutomationPlan } from '../automations/automation-plan.ts
 import { readsData } from '../automations/claude-step.ts';
 import { describeNotLinked } from '../automations/relink-plan.ts';
 import { usageWords, type ModelUsage } from '../chat/model-usage.ts';
-import type { ActivityLevel, ActivityReport, ActivitySubject } from './activity-event.ts';
+import { isInChats } from '../chat/chat-note.ts';
+import {
+  safeActivityText,
+  type ActivityLevel,
+  type ActivityReport,
+  type ActivitySubject,
+} from './activity-event.ts';
 
 /** An automation's rule, as a line names it and links to it; a draft not yet saved has no path. */
 export interface RuleNamed {
@@ -191,30 +197,41 @@ export function sourceRefreshReport(sourcePath: VaultPath, outcome: SourceOutcom
   };
 }
 
+/** The longest a refusal's reason is said on its line: the route and the note must fit beside it. */
+export const MAX_REFUSAL_REASON = 160;
+
 /**
  * A write through the local API or MCP: the route as the contract names it,
  * and the note it wrote — never what it wrote. A refused one is a warning:
- * the tool asked for something DFAI would not do.
+ * the tool asked for something DFAI would not do, and the line says why, in
+ * the words its caller was told (#814): cut short on the line, whole in its detail.
  */
 export function apiWriteReport({
   route,
   notePath,
   refusal,
+  reason = '',
 }: {
   route: string;
   notePath: VaultPath | null;
   refusal: string | null;
+  /** What the caller was told: never the body it sent, nor a machine path, though it may name a note in the vault. */
+  reason?: string;
 }): ActivityReport {
   // `PUT v1/notes/{path}/body`: with its leading slash, a route reads as a machine path and is struck out.
   const said = route.replace(/ \//, ' ');
   const target = notePath === null ? '' : ` ${noteTitle(notePath)}`;
   const subject = notePath === null ? null : noteSubject(notePath);
   if (refusal !== null) {
+    const refused = `${said} refused${target === '' ? '' : ` for${target}`} (${refusal})`;
+    const chatPath = notePath !== null && isInChats(notePath) ? notePath : null;
+    const why = safeActivityText(reason, { max: MAX_REFUSAL_REASON, chatPath });
     return {
       level: 'warning',
       kind: 'api',
-      message: `${said} refused${target === '' ? '' : ` for${target}`} (${refusal}).`,
+      message: why === '' ? `${refused}.` : `${refused}: ${why}`,
       subject,
+      ...(why !== '' && { detail: reason }),
     };
   }
   return {

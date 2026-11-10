@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
-import { activityEvent, MAX_ACTIVITY_NOTES, type ActivityEvent } from './activity-event.ts';
+import {
+  activityEvent,
+  MAX_ACTIVITY_DETAIL,
+  MAX_ACTIVITY_NOTES,
+  type ActivityEvent,
+} from './activity-event.ts';
 import {
   ACTIVITY_MAX_AGE_MS,
   ACTIVITY_MAX_BYTES,
@@ -189,5 +194,57 @@ describe('the notes a line is about besides its subject (#192)', () => {
     expect(parseActivityLog(text)[0]?.notes).toEqual([MEETING]);
     const notList = `${JSON.stringify({ at: 1, level: 'info', kind: 'app', message: 'M', subject: null, notes: 'A.md' })}\n`;
     expect(parseActivityLog(notList)[0]).not.toHaveProperty('notes');
+  });
+});
+
+describe('the detail a line carries beyond its message (#814)', () => {
+  const refused = (detail: string | undefined) =>
+    activityEvent({
+      at: 1,
+      level: 'warning',
+      kind: 'api',
+      message: 'POST v1/meetings refused (invalid): title must be a string',
+      subject: null,
+      ...(detail !== undefined && { detail }),
+    });
+
+  it('is kept in the file and read back', () => {
+    const event = refused('title must be a string');
+    expect(event.detail).toBe('title must be a string');
+    expect(parseActivityLog(activityLine(event))).toEqual([event]);
+  });
+
+  it('is left out of a line with none, as lines were before', () => {
+    expect(activityLine(refused(undefined))).not.toContain('detail');
+    expect(refused('  ')).not.toHaveProperty('detail');
+  });
+
+  it('is made safe as the message is: no absolute path, one line, bounded', () => {
+    const pathy = refused('cannot write /Users/sam/Vault/Plan.md');
+    expect(pathy.detail).toMatch(/^cannot write /);
+    expect(pathy.detail).not.toContain('/Users');
+    expect(refused('one\n  line').detail).toBe('one line');
+    expect(refused('x'.repeat(MAX_ACTIVITY_DETAIL)).detail).toHaveLength(MAX_ACTIVITY_DETAIL);
+    const over = refused('x'.repeat(MAX_ACTIVITY_DETAIL + 1)).detail;
+    expect(over).toBe(`${'x'.repeat(MAX_ACTIVITY_DETAIL - 1)}…`);
+  });
+
+  it('never names the chat note it is about, whose title is its question', () => {
+    const chat = createVaultPath('Chats/Should Tobias Fenn chair the garden club.md');
+    const event = activityEvent({
+      at: 1,
+      level: 'warning',
+      kind: 'api',
+      message: 'PUT v1/notes/{path}/body refused (conflict)',
+      subject: { kind: 'note', path: chat },
+      detail: 'Should Tobias Fenn chair the garden club changed since you read it',
+    });
+    expect(event.detail).toBe('a chat note changed since you read it');
+    expect(activityLine(event)).not.toContain('Tobias');
+  });
+
+  it('drops what a hand-edited file holds that is not text', () => {
+    const text = `${JSON.stringify({ at: 1, level: 'info', kind: 'app', message: 'M', subject: null, detail: 3 })}\n`;
+    expect(parseActivityLog(text)[0]).not.toHaveProperty('detail');
   });
 });
