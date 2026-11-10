@@ -561,4 +561,7 @@ answers a failed run read in its own ledger too.
   kept line by its key, so a retry that fails again keeps the parts after the
   one it failed at. The reduce is kept under a mark of its parts and their
   answers: a part asked again on a retry means the reduce is asked again too,
-  never a summary of the old part.
+  never a summary of the old part. The line starts only from the keys this run
+  asks under, its reduce put back as it is kept, so an old key — another
+  prompt or model, an old reduce — is dropped rather than growing the line past
+  what the ledger stores.
