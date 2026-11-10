@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, type ActivityEvent } from '@dfai/domain';
-import { activityEntries, subjectOf } from './activity-rows.ts';
+import { activityEntries, activityRows, subjectOf } from './activity-rows.ts';
 
 const TODAY = '2026-10-06';
 const at = (minute: number) => new Date(2026, 9, 6, 9, minute).getTime();
@@ -34,6 +34,9 @@ const EVENTS: ActivityEvent[] = [
   },
 ];
 
+// Each event's id, as a line alone has it: a line keeps its id under its meeting.
+const IDS = activityRows(EVENTS, TODAY).map((row) => row.id);
+
 describe('activityEntries (#192)', () => {
   it('shows a meeting’s lines under it, with their ids, and the rest as lines', () => {
     const entries = activityEntries(EVENTS, TODAY);
@@ -41,15 +44,16 @@ describe('activityEntries (#192)', () => {
     expect(entries[0]).toMatchObject({
       group: 'meeting',
       title: '2026-10-06 Standup',
-      rows: [{ id: '3' }, { id: '1' }, { id: '0' }],
+      rows: [{ id: IDS[0] }, { id: IDS[2] }, { id: IDS[3] }],
     });
-    expect(entries[1]).toMatchObject({ id: '2', message: 'Pulled.' });
+    expect(entries[1]).toMatchObject({ id: IDS[1], message: 'Pulled.' });
+    expect(new Set(IDS).size).toBe(4);
   });
 
   it('opens the meeting by its newest line about it, not by the rule’s line', () => {
     const [meeting] = activityEntries(EVENTS, TODAY);
     if (meeting === undefined || !('group' in meeting)) throw new Error('a meeting first');
-    expect(meeting.id).toBe('1');
+    expect(meeting.id).toBe(IDS[2]);
     expect(subjectOf(EVENTS, meeting.id)).toEqual({ kind: 'note', path: MEETING });
   });
 

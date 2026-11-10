@@ -159,6 +159,7 @@ td:first-child { white-space: nowrap; }
     <a href="#tags">Tags</a>
     <a href="#automations">Automations</a>
     <a href="#activity">Activity</a>
+    <a href="#event-details">Warning and error details</a>
     <a href="#claude">Claude in DFAI</a>
     <a href="#artifacts">Claude artifacts</a>
     <a href="#sources">Outside data and secrets</a>
@@ -2087,6 +2088,36 @@ do: archive</pre>
       <p>Not recorded: typing, autosaves, reads, note contents, secrets, folder paths, or the “update links?” offer.</p>
       <h3>Where it's kept</h3>
       <p>On this Mac, in DFAI's data folder — one file per vault, never in the vault. About 30 days, and no more than 5 MB; the oldest lines go first. It doesn't <a href="#sync">sync</a>.</p>
+    </section>
+
+    <section id="event-details">
+      <h2>Warning and error details</h2>
+      <p class="sub">A warning or an error is one short line wherever it shows. Click its words to read the whole of it.</p>
+      <h3>Where it opens</h3>
+      <ul>
+        <li>A <b>Warning</b> or <b>Error</b> line on the <a href="#activity">Activity</a> page. An <b>Info</b> line doesn't open: its one line is all there is.</li>
+        <li>A warning or an error in the <a href="#undo">box at the bottom right</a>. The box stays while you read its details. Once you close them it goes after a few seconds, as it would have.</li>
+        <li>A red notice at the top of the window, and the notice about edits kept after a failed save.</li>
+      </ul>
+      <h3>What it shows</h3>
+      <ul>
+        <li>The level, <b>Warning</b> or <b>Error</b>, and when it happened.</li>
+        <li>The whole message, wrapped rather than cut to one line. A box or a notice opens to exactly the words it says, however long.</li>
+        <li><b>About</b>: the note, rule or source it concerns, with <b>Open</b> — the same place the line's own <b>Open</b> goes.</li>
+        <li><b>Detail</b>: anything more the event kept. A rule that could not run keeps its problem here, past where the line cuts it short; on the web, an index the browser won't store keeps what the browser said.</li>
+        <li><b>Notes</b>: the other notes the line is about, such as the meetings a rule's run heard.</li>
+        <li><b>Copy</b> puts all of it on the clipboard as plain text, a fact to a line. The button says <b>Copied</b> for a couple of seconds once it has, and <b>Could not copy.</b> shows beside it if the browser has no clipboard to give.</li>
+      </ul>
+      <h3>Keys</h3>
+      <ul>
+        <li><b>Tab</b> reaches a line that opens; <b>Enter</b> or <b>Space</b> opens it.</li>
+        <li><b>Esc</b>, <b>Close</b> or a click outside closes it, and the focus goes back to the line.</li>
+      </ul>
+      <h3>It stays until you close it</h3>
+      <ul>
+        <li>The details stay open, on the words you opened, when the line they came from goes: a box pushed out by newer ones, a notice that cleared itself, an Activity line gathered under its meeting or trimmed from the log.</li>
+      </ul>
+      <p>An Activity line's details hold what the line holds, under the same rules: no note contents, no secrets, no folder paths, no chat note's name. A box or a notice opens to its own words as it showed them.</p>
     </section>
 
     <section id="claude">
