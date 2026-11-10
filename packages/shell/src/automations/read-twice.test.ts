@@ -5,8 +5,9 @@ import { readTwiceViews, turnOffRule } from './read-twice.ts';
 
 const RULE = { ...AFTER_A_MEETING_PRESET, name: 'Meeting actions', id: 'm', path: 'm.md' };
 
-function controller(rules: readonly AutomationRule[]) {
-  const setEnabled = vi.fn(async () => null);
+/** `answer` is what its runner says: undefined once written, null when refused. */
+function controller(rules: readonly AutomationRule[], answer: null | undefined) {
+  const setEnabled = vi.fn(async () => answer);
   const automations = {
     listing: { automations: rules.map((rule) => ({ rule, log: [] })), broken: [] },
     setEnabled,
@@ -15,24 +16,31 @@ function controller(rules: readonly AutomationRule[]) {
 }
 
 describe('turnOffRule (#793)', () => {
-  it('turns the named rule off, as its toggle does', async () => {
-    const { automations, setEnabled } = controller([RULE as AutomationRule]);
-    expect(await turnOffRule(automations, 'Meeting actions')).toBe(true);
+  it('turns the rule in that file off, as its toggle does', async () => {
+    const { automations, setEnabled } = controller([RULE as AutomationRule], undefined);
+    expect(await turnOffRule(automations, 'm.md')).toBeNull();
     expect(setEnabled).toHaveBeenCalledWith(RULE, false);
   });
 
-  it('turns nothing off when no rule read has the name, or the rules are not read', async () => {
-    const { automations, setEnabled } = controller([RULE as AutomationRule]);
-    expect(await turnOffRule(automations, 'Another')).toBe(false);
-    expect(await turnOffRule(null, 'Meeting actions')).toBe(false);
+  it('says so when its runner refused the write', async () => {
+    const { automations } = controller([RULE as AutomationRule], null);
+    expect(await turnOffRule(automations, 'm.md')).toContain(
+      '“Meeting actions” was not turned off',
+    );
+  });
+
+  it('turns nothing off, and says so, when no rule read is in that file, or the rules are not read', async () => {
+    const { automations, setEnabled } = controller([RULE as AutomationRule], undefined);
+    expect(await turnOffRule(automations, 'Meeting actions')).toContain('nothing was turned off');
+    expect(await turnOffRule(null, 'm.md')).toContain('nothing was turned off');
     expect(setEnabled).not.toHaveBeenCalled();
   });
 });
 
 describe('readTwiceViews', () => {
   it('says of each rule that every meeting is read twice', () => {
-    const [view] = readTwiceViews(['Meeting actions']);
-    expect(view?.rule).toBe('Meeting actions');
-    expect(view?.warning).toContain('“After a meeting” and “Meeting actions”');
+    const [view] = readTwiceViews([{ path: 'm.md', name: 'Meeting actions', declared: 'Digest' }]);
+    expect(view).toMatchObject({ id: 'm.md', rule: 'Meeting actions' });
+    expect(view?.warning).toContain('“Digest” and “Meeting actions”');
   });
 });

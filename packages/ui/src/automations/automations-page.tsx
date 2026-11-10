@@ -27,8 +27,8 @@ export interface AutomationsPageProps {
   readonly setup?: ReactNode;
   /** The rules that read every meeting a second time while both meeting presets are on (#793). */
   readonly readTwice?: readonly ReadTwiceView[];
-  /** Turns one of them off, by name: only on a click. */
-  readonly onTurnOff?: (rule: string) => void;
+  /** Turns one of them off, by its file: only on a click. */
+  readonly onTurnOff?: (id: string) => void;
   readonly onShowSidebar?: () => void;
   readonly history?: PageHistory;
 }

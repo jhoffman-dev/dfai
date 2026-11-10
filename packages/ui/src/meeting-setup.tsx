@@ -41,8 +41,8 @@ export interface MeetingSetupProps extends InboxOfferReading {
   readonly onDismiss: () => void;
   /** The rules that, after the yes, would read every meeting a second time (#793). */
   readonly readTwice?: readonly ReadTwiceView[];
-  /** Turns one of them off, by name: only on a click. */
-  readonly onTurnOff?: (rule: string) => void;
+  /** Turns one of them off, by its file: only on a click. */
+  readonly onTurnOff?: (id: string) => void;
 }
 
 /**

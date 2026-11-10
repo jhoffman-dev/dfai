@@ -152,14 +152,14 @@ function useSetupCommands(wiring: MeetingSetupWiring, vault: string | null): Set
   }, [change, settle, store, wiring, vault]);
   // Only on a click (#793); the preview is read again after, so it says what is on now.
   const onTurnOff = useCallback(
-    (name: string) => {
+    (path: string) => {
       change({ busy: true, problem: null });
-      void turnOffRule(wiring.automations.getState().automations, name)
-        .then(() => previewMeetingSetup(wiring))
+      void turnOffRule(wiring.automations.getState().automations, path)
+        .then(async (problem) => ({ problem, offer: await previewMeetingSetup(wiring) }))
         .then(
-          (offer) => settle({ busy: false, offer }),
+          ({ problem, offer }) => settle({ busy: false, offer, problem }),
           (cause: unknown) =>
-            settle({ busy: false, problem: `Could not turn ${name} off: ${messageOf(cause)}` }),
+            settle({ busy: false, problem: `Could not read the vault: ${messageOf(cause)}` }),
         );
     },
     [change, settle, wiring],

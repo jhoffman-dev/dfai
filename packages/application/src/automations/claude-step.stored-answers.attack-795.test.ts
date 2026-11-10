@@ -1,7 +1,7 @@
 /**
  * Attack on PR #795 (#793): the answers a failed run kept, reused by its
  * retry. Over the fake vault whose index answers with real SQL and a scripted
- * model. Each `it.fails` is a bug found; the fix flips it to `it`.
+ * model. Each test is a bug found, an `it.fails` until it was fixed.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -107,7 +107,7 @@ function setUp(rounds: readonly ScriptedRound[], notes: Record<string, string>) 
 describe('a retry after a long meeting failed partway (#793 attack)', () => {
   // The PR and ADR-0036's amendment say "a retry asks nothing it already asked". Parts are kept only
   // once every part of a meeting read: parts 1 and 2 that read are thrown away with the failure.
-  it.fails('asks only the part that failed, not the parts that already read', async () => {
+  it('asks only the part that failed, not the parts that already read', async () => {
     const { asksOf } = setUp([NOTHING, NOTHING, UNREADABLE, NOTHING, NOTHING, NOTHING], {
       [meetingAt(1)]: meeting(1, 105),
     });
@@ -120,71 +120,56 @@ describe('a retry after a long meeting failed partway (#793 attack)', () => {
     expect(retry.asks).toBe(1);
   });
 
-  it.fails(
-    'keeps the parts a failed retry reused, so a third run asks only the part still owed',
-    async () => {
-      const { asksOf } = setUp([NOTHING, NOTHING, UNREADABLE, UNREADABLE, NOTHING, NOTHING], {
-        [meetingAt(1)]: meeting(1, 105),
-      });
-      expect(await asksOf(ruleOf(EXTRACTION))).toMatchObject({
-        entry: { kind: 'failed' },
-        asks: 3,
-      });
-      expect(await asksOf(ruleOf(EXTRACTION))).toMatchObject({
-        entry: { kind: 'failed' },
-        asks: 1,
-      });
+  it('keeps the parts a failed retry reused, so a third run asks only the part still owed', async () => {
+    const { asksOf } = setUp([NOTHING, NOTHING, UNREADABLE, UNREADABLE, NOTHING, NOTHING], {
+      [meetingAt(1)]: meeting(1, 105),
+    });
+    expect(await asksOf(ruleOf(EXTRACTION))).toMatchObject({ entry: { kind: 'failed' }, asks: 3 });
+    expect(await asksOf(ruleOf(EXTRACTION))).toMatchObject({ entry: { kind: 'failed' }, asks: 1 });
 
-      const third = await asksOf(ruleOf(EXTRACTION));
+    const third = await asksOf(ruleOf(EXTRACTION));
 
-      expect(third.entry.kind).toBe('run');
-      expect(third.asks).toBe(1);
-    },
-  );
+    expect(third.entry.kind).toBe('run');
+    expect(third.asks).toBe(1);
+  });
 });
 
 describe('the declared step’s kept answers after its prompt or model changed (#793 attack)', () => {
   // askedParts (claude-step.ts) leaves the model and prompt digest out for `apply: mine`, but the declared
   // step's prompt is a vault note the person edits (readPrompt) and its model is the rule's `model`.
-  it.fails(
-    'asks again about a meeting it kept an answer for when its prompt was edited since',
-    async () => {
-      const { vault, asksOf } = setUp([NOTHING, UNREADABLE, NOTHING, NOTHING], {
-        [meetingAt(1)]: meeting(1),
-        [meetingAt(2)]: meeting(2),
-      });
-      expect((await asksOf(ruleOf(DECLARED))).entry.kind).toBe('failed');
-      const prompt = vault.files.get(AFTER_A_MEETING_PROMPT)!;
-      vault.files.set(AFTER_A_MEETING_PROMPT, `${prompt}\nNever make a task for Tobias.\n`);
+  it('asks again about a meeting it kept an answer for when its prompt was edited since', async () => {
+    const { vault, asksOf } = setUp([NOTHING, UNREADABLE, NOTHING, NOTHING], {
+      [meetingAt(1)]: meeting(1),
+      [meetingAt(2)]: meeting(2),
+    });
+    expect((await asksOf(ruleOf(DECLARED))).entry.kind).toBe('failed');
+    const prompt = vault.files.get(AFTER_A_MEETING_PROMPT)!;
+    vault.files.set(AFTER_A_MEETING_PROMPT, `${prompt}\nNever make a task for Tobias.\n`);
 
-      const retry = await asksOf(ruleOf(DECLARED));
+    const retry = await asksOf(ruleOf(DECLARED));
 
-      expect(retry.entry.kind).toBe('run');
-      expect(retry.asks).toBe(2);
-    },
-  );
+    expect(retry.entry.kind).toBe('run');
+    expect(retry.asks).toBe(2);
+  });
 
-  it.fails(
-    'asks again about a meeting it kept an answer for when its model changed since',
-    async () => {
-      const { asksOf } = setUp([NOTHING, UNREADABLE, NOTHING, NOTHING], {
-        [meetingAt(1)]: meeting(1),
-        [meetingAt(2)]: meeting(2),
-      });
-      expect((await asksOf(ruleOf(DECLARED))).entry.kind).toBe('failed');
+  it('asks again about a meeting it kept an answer for when its model changed since', async () => {
+    const { asksOf } = setUp([NOTHING, UNREADABLE, NOTHING, NOTHING], {
+      [meetingAt(1)]: meeting(1),
+      [meetingAt(2)]: meeting(2),
+    });
+    expect((await asksOf(ruleOf(DECLARED))).entry.kind).toBe('failed');
 
-      const retry = await asksOf(ruleOf({ ...DECLARED, model: 'claude-haiku-5-5' }));
+    const retry = await asksOf(ruleOf({ ...DECLARED, model: 'claude-haiku-5-5' }));
 
-      expect(retry.entry.kind).toBe('run');
-      expect(retry.asks).toBe(2);
-    },
-  );
+    expect(retry.entry.kind).toBe('run');
+    expect(retry.asks).toBe(2);
+  });
 });
 
 describe('a rule that is not declared, with a summarising schema (#793 attack)', () => {
   // rereadKept owes a reduce on `schema.summarises`, but reduceParts asks one only for `apply: mine`:
   // a long meeting's kept parts never match, so the retry asks every part again.
-  it.fails('reuses a long meeting’s kept parts on the retry', async () => {
+  it('reuses a long meeting’s kept parts on the retry', async () => {
     const digest = {
       ...EXTRACTION,
       output: { kind: 'proposals', schema: 'meeting-digest' },

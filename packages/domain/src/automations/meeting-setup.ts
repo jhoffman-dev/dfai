@@ -19,15 +19,21 @@ import { automationNameProblem, type AutomationDraft } from './automation-rule.t
 import { isDeclaredStep } from './claude-step-budget.ts';
 import { AFTER_A_MEETING_PROMPT } from './built-in-prompts.ts';
 import { MEETING_DIGEST_OUTPUT } from './meeting-digest.ts';
-import { meetingsReadTwice, runsOnMeetingArrival } from './meetings-read-twice.ts';
+import {
+  meetingReadsTwice,
+  runsOnMeetingArrival,
+  type MeetingReadTwice,
+} from './meetings-read-twice.ts';
 import { AFTER_A_MEETING_PRESET } from './presets.ts';
 
 /** What the setup of meeting post-processing reads of a vault before it offers anything (#191). */
 export interface MeetingSetupFacts<Type extends ObjectType = ObjectType> {
   /** The vault's types, as their files define them. */
   readonly types: readonly Type[];
-  /** The vault's rules, as their files say. */
-  readonly rules: readonly Pick<AutomationDraft, 'name' | 'enabled' | 'action' | 'when'>[];
+  /** The vault's rules, as their files say, with the file each is in. */
+  readonly rules: readonly (Pick<AutomationDraft, 'name' | 'enabled' | 'action' | 'when'> & {
+    readonly path?: string;
+  })[];
   /** Every note's path: a rule file already called "After a meeting" is not written over. */
   readonly takenPaths: readonly string[];
   /** Whether a note is at the prompt's path, the person's own or DFAI's. */
@@ -72,10 +78,10 @@ export interface MeetingSetupPlan<Type extends ObjectType = ObjectType> {
   readonly ruleOn: boolean;
   /**
    * The extraction rules that are on and, after the yes, would read every
-   * meeting a second time beside "After a meeting" (#793), by name: the
+   * meeting a second time beside the declared step (#793), by file: the
    * preview says so and offers to turn them off. None when nothing would.
    */
-  readonly readTwice: readonly string[];
+  readonly readTwice: readonly MeetingReadTwice[];
 }
 
 type RuleFacts = Pick<AutomationDraft, 'enabled' | 'action' | 'when'>;
@@ -134,9 +140,7 @@ export function meetingSetupPlan<Type extends ObjectType>(
     extensions: [meeting.extension, task.extension].flatMap((one) => (one === null ? [] : [one])),
     asksEmails: emails.written,
     ruleOn: meetingsProcessedOnArrival(facts.rules),
-    readTwice: meetingsReadTwice(facts.rules, { declaredComing: rule.draft !== null }).map(
-      ({ name }) => name,
-    ),
+    readTwice: meetingReadsTwice(facts.rules, { declaredComing: rule.draft !== null }),
     lines: [
       rule.line,
       ...(prompt.line === null ? [] : [prompt.line]),

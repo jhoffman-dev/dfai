@@ -539,12 +539,21 @@ with the new prompt and decided by these rules.
 unnamed speaker, no longer reach the owner. Decisions are the largest loss;
 see the PR's numbers. Reversing any part is one constant or one branch.
 
-## Amendment: any meeting rule keeps its answers (#793, 2026-11-07)
+## Amendment: any meeting rule keeps its answers, part by part (#793, 2026-11-07)
 
 "The model's answer is kept and reused" now holds for every rule whose
 proposals know a meeting by its words, not only the declared step: the
 extraction rule ("Pull actions and decisions out of a new meeting") keeps the
-answers a failed run read in its own ledger, so a retry asks nothing it already
-asked. Its prompt is the person's to edit, so each part such a rule keeps also
-carries a digest of the model and the prompt it was asked with; an answer to
-another question is never reused. The declared step's parts are unchanged.
+answers a failed run read in its own ledger too.
+
+- **Part by part.** Each part of a long meeting is kept as soon as it reads,
+  so a run that fails on a later part keeps the earlier ones and its retry
+  asks only the parts it had not. Nothing is written from a kept part before
+  every part has read, as before.
+- **Same question only.** Each kept part carries, beside the turns it showed,
+  a digest of the model and the prompt it was asked with — for the declared
+  step too, whose prompt is a note the person edits and whose model is a key
+  of the rule. A part asked of another model or prompt matches nothing and is
+  asked again. A part kept before this amendment has no digest, so it matches
+  nothing either: its meeting is asked once more, never skipped. A forgotten
+  answer only costs an ask.

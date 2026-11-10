@@ -134,7 +134,9 @@ describe('MeetingSetup', () => {
         {...props({
           open: true,
           lines: LINES,
-          readTwice: [{ rule: 'Meeting actions', warning: 'Every meeting is read twice: …' }],
+          readTwice: [
+            { id: 'p.md', rule: 'Meeting actions', warning: 'Every meeting is read twice: …' },
+          ],
           onTurnOff,
         })}
       />,
@@ -143,7 +145,7 @@ describe('MeetingSetup', () => {
     expect(within(note).getByText('Every meeting is read twice: …')).toBeTruthy();
     expect(onTurnOff).not.toHaveBeenCalled();
     await userEvent.click(within(note).getByRole('button', { name: 'Turn off “Meeting actions”' }));
-    expect(onTurnOff).toHaveBeenCalledWith('Meeting actions');
+    expect(onTurnOff).toHaveBeenCalledWith('p.md');
   });
 
   it('says nothing of reading twice in a preview where nothing would be', () => {

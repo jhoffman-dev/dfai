@@ -44,6 +44,7 @@ import {
   truncated,
   withoutSummaryBlock,
   type AnsweredNote,
+  type AnswerContext,
   type AnswerReading,
   type AnswerVault,
   type CheckedProposal,
@@ -330,9 +331,9 @@ interface StepArgs extends ProposalWritePorts {
  * in the domain (`decideMeetingItems`), per meeting; what the owner should
  * still see is one review proposal per meeting, and the rest is left out
  * (#226). The tasks are made first, then the proposals. A run
- * that read a meeting's answers in full and then failed keeps them
- * (`ClaudeStepFailed.stored`), and its retry reuses them rather than asking
- * again; one it made some tasks in names them in `made`, and the retry finds
+ * that failed keeps every part it had read (`ClaudeStepFailed.stored`; any
+ * step a meeting is known to by its words, #793), and its retry reuses them
+ * rather than asking again; one it made some tasks in names them in `made`, and the retry finds
  * them by their `atlas_item` and makes only the rest. It also files a meeting
  * with no project under the project Claude chose for it, when Claude is sure
  * — the step's one edit besides the tasks, which "Undo last run" reverses —
@@ -874,7 +875,7 @@ type ProposalAsking = Asking & {
   dropped: DroppedItem[];
   /** Gains the items each answer kept with a fault put right. */
   adjusted: DroppedItem[];
-  /** Gains the answers about each meeting read in full, to be kept if the run fails (ADR-0036; any proposals step, #793). */
+  /** Gains each part's answer as it reads, to be kept if the run fails (ADR-0036; any proposals step, #793). */
   toStore: StoredAnswerDraft[];
 };
 
@@ -1035,12 +1036,13 @@ function planFilings(
 
 /**
  * Asks each of the run's asks in turn and reads every answer, note by note.
- * The declared step first looks for the answers kept for a meeting's words
- * (`storedAnswer`): when this run would ask about the very turns they
- * answered, they are read again as the domain reads them now and nothing is
- * asked. Kept answers to other turns — the meeting is cut differently now —
- * or that no longer read are asked again. The answers about each meeting it
- * asked are added to `toStore`, with the turns each part showed.
+ * A meeting known by its words (`handledKeyOf`) first looks for the answers
+ * kept for them (`storedAnswer`, ADR-0036): a part this run would ask about
+ * the very turns, with the same model and prompt, is read again as the domain
+ * reads it now and not asked. A part kept for other turns — the meeting is cut
+ * differently now — or that no longer reads, is asked again. Each part is
+ * added to `toStore` as it reads, so a run failing later keeps it and its
+ * retry asks only what it had not (#793). Nothing is written from them here.
  */
 async function readAnswers(
   asking: ProposalAsking,
@@ -1052,41 +1054,34 @@ async function readAnswers(
   for (const group of asksByNote(asking.asks)) {
     const note = asking.read.find((each) => each.path === group.path);
     const key = note === undefined ? null : keyOf(asking, note);
-    const kept = key === null ? null : (asking.storedAnswer?.(key) ?? null);
-    const reused = kept === null ? null : rereadKept(asking, group.asks, kept, vault);
-    if (reused !== null) {
-      answered.push({ path: group.path, ...reused });
-      continue;
-    }
-    const answers: string[] = [];
+    const keeping = keptParts(asking, key);
     const parts = askedParts(asking, group.asks);
     const proposals: CheckedProposal[] = [];
     const summaries: SummaryReading[] = [];
     let data: readonly PromptData[] = [];
     const choices: (ProjectChoice | null)[] = [];
-    for (const notes of group.asks) {
+    for (const [index, notes] of group.asks.entries()) {
       at += 1;
       const context = { notes, ...(vault !== undefined && { vault }) };
       data = asking.schema.dataFor(context);
-      const answer = await askModel({ ...asking, notes, data, counted: asking.counted });
-      const reading = asking.schema.read(answer, context);
-      if (!reading.ok) {
-        const part = total > 1 ? `Ask ${at} of ${total}: ` : '';
-        return asking.fail(unreadWords(`${part}${reading.problem}`));
-      }
-      proposals.push(...keptItems(asking, reading));
-      summaries.push(reading.summary ?? { kind: 'absent' });
-      choices.push(reading.project ?? null);
-      answers.push(answer);
-    }
-    const merged = await reduceParts(asking, summaries, data);
-    if (key !== null) {
-      asking.toStore.push({
-        key,
-        answers: merged === null ? answers : [...answers, merged.answer],
-        parts: merged === null ? parts : [...parts, reducePartMark(parts)],
+      const reading = await readPart(asking, {
+        kept: keeping.answerFor(parts[index]!),
+        ask: () => askModel({ ...asking, notes, data, counted: asking.counted }),
+        context,
+        at: total > 1 ? `Ask ${at} of ${total}: ` : '',
       });
+      keeping.keep(parts[index]!, reading.answer);
+      proposals.push(...keptItems(asking, reading.value));
+      summaries.push(reading.value.summary ?? { kind: 'absent' });
+      choices.push(reading.value.project ?? null);
     }
+    const merged = await reduceParts(
+      asking,
+      summaries,
+      data,
+      keeping.answerFor(reducePartMark(parts)),
+    );
+    if (merged !== null) keeping.keep(reducePartMark(parts), merged.answer);
     answered.push({
       path: group.path,
       proposals,
@@ -1095,6 +1090,67 @@ async function readAnswers(
     });
   }
   return answered;
+}
+
+/** One part's answer and its reading: the kept answer when it still reads, else a new ask's. */
+async function readPart(
+  asking: ProposalAsking,
+  {
+    kept,
+    ask,
+    context,
+    at,
+  }: {
+    kept: string | undefined;
+    ask: () => Promise<string>;
+    context: AnswerContext;
+    /** What a part's failure is prefixed with: which ask it was. */
+    at: string;
+  },
+): Promise<{ answer: string; value: Extract<AnswerReading, { ok: true }> }> {
+  if (kept !== undefined) {
+    const reading = asking.schema.read(kept, context);
+    if (reading.ok) return { answer: kept, value: reading };
+  }
+  const answer = await ask();
+  const reading = asking.schema.read(answer, context);
+  if (!reading.ok) return asking.fail(unreadWords(`${at}${reading.problem}`));
+  return { answer, value: reading };
+}
+
+/**
+ * The answers kept for a meeting's words, found by what each part showed,
+ * and the meeting's line in `toStore`, grown part by part as each reads: it
+ * replaces the line kept before, so it holds every part read, kept or asked.
+ * A meeting known by no key keeps nothing.
+ */
+function keptParts(
+  asking: ProposalAsking,
+  key: string | null,
+): {
+  answerFor: (part: string) => string | undefined;
+  keep: (part: string, answer: string) => void;
+} {
+  const kept = key === null ? null : (asking.storedAnswer?.(key) ?? null);
+  const byPart = new Map<string, string>();
+  kept?.parts.forEach((part, index) => {
+    const answer = kept.answers[index];
+    if (answer !== undefined) byPart.set(part, answer);
+  });
+  const answers: string[] = [];
+  const parts: string[] = [];
+  return {
+    answerFor: (part) => byPart.get(part),
+    keep: (part, answer) => {
+      if (key === null) return;
+      answers.push(answer);
+      parts.push(part);
+      const draft = { key, answers: [...answers], parts: [...parts] };
+      const at = asking.toStore.findIndex((each) => each.key === key);
+      if (at === -1) asking.toStore.push(draft);
+      else asking.toStore[at] = draft;
+    },
+  };
 }
 
 /**
@@ -1107,9 +1163,12 @@ async function reduceParts(
   asking: ProposalAsking,
   summaries: readonly SummaryReading[],
   partData: readonly PromptData[],
+  /** The reduce kept for these very parts: reused rather than asked. */
+  kept: string | undefined,
 ): Promise<{ answer: string; reading: SummaryReading } | null> {
   const parts = summaries.length > 1 ? partSummaries(summaries) : null;
   if (!asking.schema.summarises || asking.action.apply !== 'mine' || parts === null) return null;
+  if (kept !== undefined) return { answer: kept, reading: readDigestReduce(kept) };
   const answer = await askModel({
     ...asking,
     prompt: DIGEST_REDUCE_PROMPT,
@@ -1131,64 +1190,23 @@ function summaryOf(
 }
 
 /**
- * What each ask showed, as a kept answer is matched on (`askedTurnsDigest`).
- * Any other rule's prompt is the person's to edit between a failure and its
- * retry, so its parts also carry what was asked and of which model: an answer
- * to another question is never reused (#793). The declared step's are as
- * ADR-0036 keeps them.
+ * What each ask showed, as a kept answer is matched on (`askedTurnsDigest`),
+ * and what it was asked of which model: a rule's prompt is a note the person
+ * edits and its model a key of the rule, either changed between a failure and
+ * its retry, so an answer to another question is never reused (#793). A part
+ * kept before this, without them, matches none and is asked again.
  */
 function askedParts(
-  { action, model, prompt }: ProposalAsking,
+  { model, prompt }: ProposalAsking,
   asks: readonly (readonly AnsweredNote[])[],
 ): string[] {
-  const asked = action.apply === 'mine' ? '' : `:${digestOf(JSON.stringify([model, prompt]))}`;
-  return asks.map((notes) => `${askedTurnsDigest(notes)}${asked}`);
+  const asked = digestOf(JSON.stringify([model, prompt]));
+  return asks.map((notes) => `${askedTurnsDigest(notes)}:${asked}`);
 }
 
 /** The key a meeting's words are known by, as the schema names them; null for a note it names none. */
 function keyOf({ schema }: ProposalAsking, note: AnsweredNote): string | null {
   return schema.handledKeyOf?.(note) ?? null;
-}
-
-/**
- * A meeting's kept answers read again, each against the part this run would
- * ask it about, with the vault as it is now — only when those parts show the
- * very turns the answers were given about. Null otherwise, or when one no
- * longer reads, so the meeting is asked again rather than read in part.
- */
-function rereadKept(
-  asking: ProposalAsking,
-  asks: readonly (readonly AnsweredNote[])[],
-  kept: Pick<StoredAnswer, 'answers' | 'parts'>,
-  vault: AnswerVault | undefined,
-): Omit<NoteAnswered, 'path'> | null {
-  const parts = askedParts(asking, asks);
-  const reduceMark = kept.parts.length === asks.length + 1 ? kept.parts.at(-1) : undefined;
-  const sameTurns =
-    (kept.parts.length === asks.length ||
-      (asking.schema.summarises && reduceMark === reducePartMark(parts))) &&
-    kept.answers.length === kept.parts.length &&
-    parts.every((digest, at) => digest === kept.parts[at]);
-  if (!sameTurns) return null;
-  const readings = asks.map((notes, at) =>
-    asking.schema.read(kept.answers[at]!, { notes, ...(vault !== undefined && { vault }) }),
-  );
-  if (readings.some((reading) => !reading.ok)) return null;
-  const summaries = readings.map((reading) =>
-    reading.ok && reading.summary !== undefined ? reading.summary : ({ kind: 'absent' } as const),
-  );
-  // A reduce owed and not kept: the parts are asked again, with it.
-  const reduceOwed =
-    asking.schema.summarises && asks.length > 1 && partSummaries(summaries) !== null;
-  if (reduceOwed && reduceMark === undefined) return null;
-  const reduced = reduceMark === undefined ? null : readDigestReduce(kept.answers.at(-1)!);
-  return {
-    proposals: readings.flatMap((reading) => (reading.ok ? keptItems(asking, reading) : [])),
-    project: surestProjectChoice(
-      readings.map((reading) => (reading.ok ? (reading.project ?? null) : null)),
-    ),
-    ...summaryOf(asking, summaries, reduced),
-  };
 }
 
 /** An answer's proposals, with what it left out and put right added to the run's record. */
@@ -1315,11 +1333,14 @@ async function readVault({
   const { people } = await loadLinkDirectory({ index });
   const { terms, vocabulary } = await loadTerms({ index });
   const projects = withProjects === null ? null : await loadProjectOptions({ index });
+  const owner = { people, selfName: ports.selfName(), selfEmails: ports.selfEmails() };
   const projectTies =
-    withProjects === null ? null : await loadMeetingProjectTies({ index, notes: withProjects });
+    withProjects === null
+      ? null
+      : await loadMeetingProjectTies({ index, markdown, notes: withProjects, owner });
   return {
-    selfName: ports.selfName(),
-    selfEmails: ports.selfEmails(),
+    selfName: owner.selfName,
+    selfEmails: owner.selfEmails,
     people,
     notePaths,
     terms: terms.map((term) => term.canonical),

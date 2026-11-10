@@ -39,12 +39,17 @@ export const PROJECT_CHOICE_KEY = 'project';
 /**
  * The most projects and areas one ask is shown (#793). Each line is some
  * twenty tokens and every part of a long meeting carries the list again, so
- * forty keeps it near 800 tokens an ask; the ones tied to the meeting's
- * people and companies come first, so the likely ones are never the cut.
+ * forty keeps it near 800 tokens an ask; the likely ones — its series' or
+ * twin's, then those tied to its people and companies — come first, so they
+ * are never the cut.
  */
 export const MAX_PROJECT_CHOICES = 40;
 
-/** Each meeting's open projects tied to its people and companies, likeliest first, by meeting path. */
+/**
+ * Each meeting's likely projects, by meeting path, as linking would propose
+ * them: what its twin or series is filed under, then those tied to its people
+ * and companies, likeliest first.
+ */
 export type MeetingProjectTies = ReadonlyMap<string, readonly VaultPath[]>;
 
 /** A project or area a meeting may be filed under, as Claude is shown it. */
@@ -125,9 +130,11 @@ interface ChoiceInput {
 }
 
 /**
- * The options an ask about this meeting shows: those tied to its people and
- * companies first, likeliest first — so the one linking would propose is
- * never cut — then the rest in their own order, at most
+ * The options an ask about this meeting shows: its likely ones first, as
+ * {@link MeetingProjectTies} orders them — what its series or twin is filed
+ * under, then its people's and companies' ties, as linking proposes them, so
+ * the one linking would propose is never cut — then the rest in their own
+ * order, at most
  * {@link MAX_PROJECT_CHOICES}. None for an ask that may choose no project.
  */
 function shownOptions({ notes, options, ties }: ChoiceInput): readonly ProjectOption[] {

@@ -384,11 +384,14 @@ describe('useMeetingSetup', () => {
     const name = 'Pull actions and decisions out of a new meeting';
     preview
       .mockReset()
-      .mockResolvedValueOnce({ ...OFFER, readTwice: [name] })
+      .mockResolvedValueOnce({
+        ...OFFER,
+        readTwice: [{ path: 'p.md', name, declared: 'After a meeting' }],
+      })
       .mockResolvedValueOnce({ ...OFFER, readTwice: [] });
     const { hook, automations } = setup('automations');
     const extraction = { ...AFTER_A_MEETING_PRESET, name, id: 'p', path: 'p.md' } as AutomationRule;
-    const setEnabled = vi.fn(async () => null);
+    const setEnabled = vi.fn(async () => undefined);
     publishAutomations(automations, {
       listing: { automations: [{ rule: extraction, log: [], idWritten: true }], broken: [] },
       setEnabled,
@@ -400,9 +403,26 @@ describe('useMeetingSetup', () => {
     expect(hook.result.current?.readTwice?.[0]?.warning).toContain('Every meeting is read twice');
     expect(setEnabled).not.toHaveBeenCalled();
 
-    act(() => hook.result.current?.onTurnOff?.(name));
+    act(() => hook.result.current?.onTurnOff?.('p.md'));
     await waitFor(() => expect(hook.result.current?.readTwice).toEqual([]));
     expect(setEnabled).toHaveBeenCalledWith(extraction, false);
+    expect(hook.result.current?.busy).toBe(false);
+    expect(hook.result.current?.problem).toBeNull();
+  });
+
+  it('says so in the preview when the rule could not be turned off (#793)', async () => {
+    const read = { path: 'p.md', name: 'Meeting actions', declared: 'After a meeting' };
+    preview.mockReset().mockResolvedValue({ ...OFFER, readTwice: [read] });
+    const { hook, automations } = setup('automations');
+    publishAutomations(automations, {
+      listing: { automations: [], broken: [] },
+      setEnabled: vi.fn(),
+    } as unknown as AutomationsController);
+
+    act(() => hook.result.current?.onOpen());
+    await waitFor(() => expect(hook.result.current?.readTwice).toHaveLength(1));
+    act(() => hook.result.current?.onTurnOff?.('p.md'));
+    await waitFor(() => expect(hook.result.current?.problem).toContain('nothing was turned off'));
     expect(hook.result.current?.busy).toBe(false);
   });
 });

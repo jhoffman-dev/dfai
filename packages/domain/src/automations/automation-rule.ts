@@ -268,6 +268,21 @@ export function draftProblem(draft: AutomationDraft): string | null {
 }
 
 /**
+ * Whether two readings of a rule say the same rule: every key its file is
+ * written with, and its id. What a write was planned from is checked against
+ * the file as it is now this way, so a change made on disk since is never
+ * written over (#793).
+ */
+export function sameAutomation(
+  left: Pick<AutomationRule, 'id'> & AutomationDraft,
+  right: Pick<AutomationRule, 'id'> & AutomationDraft,
+): boolean {
+  const said = (rule: Pick<AutomationRule, 'id'> & AutomationDraft) =>
+    JSON.stringify({ ...automationFrontmatter(rule), id: rule.id });
+  return said(left) === said(right);
+}
+
+/**
  * A rule as its file's frontmatter, every key written so the file reads as
  * the rule; `set`, and a Claude step's keys, are null for a rule without
  * them, which takes them out.

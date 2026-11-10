@@ -561,7 +561,9 @@ describe('AutomationEditor', () => {
   it('says every meeting is read twice while both meeting presets are on, and turns one off only on a click (#793)', async () => {
     const onTurnOff = vi.fn();
     page({
-      readTwice: [{ rule: 'Meeting actions', warning: 'Every meeting is read twice: …' }],
+      readTwice: [
+        { id: 'p.md', rule: 'Meeting actions', warning: 'Every meeting is read twice: …' },
+      ],
       onTurnOff,
     });
     const note = screen.getByRole('note', { name: 'Every meeting is read twice' });
@@ -569,7 +571,7 @@ describe('AutomationEditor', () => {
     expect(onTurnOff).not.toHaveBeenCalled();
 
     await userEvent.click(within(note).getByRole('button', { name: 'Turn off “Meeting actions”' }));
-    expect(onTurnOff).toHaveBeenCalledWith('Meeting actions');
+    expect(onTurnOff).toHaveBeenCalledWith('p.md');
   });
 
   it('says nothing of reading twice when nothing is', () => {
