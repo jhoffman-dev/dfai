@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import {
   compileLinkDirectoryQuery,
+  compileMeetingEntitiesQuery,
   compileProjectTiesQuery,
   linkDirectoryOf,
   type LinkDirectoryRow,
@@ -163,6 +164,31 @@ describe('the projects tied to a meeting’s people and companies', () => {
       { project: 'Projects/Ledger.md', title: 'Ledger', entity: MARA },
       { project: 'Projects/Payrun.md', title: 'Payrun', entity: LARKSPUR },
       { project: 'Projects/Payrun.md', title: 'Payrun', entity: MARA },
+    ]);
+  });
+});
+
+describe('the people and companies a meeting links, read from the index (#793)', () => {
+  it('is each resolved link in its people and companies, once, and nothing else it links', () => {
+    const { note, all } = index();
+    const meeting = 'Meetings/Payrun review.md';
+    note(
+      meeting,
+      { type: 'meeting' },
+      {
+        people: ['People/Mara Quill.md', 'People/Tobias Fenn.md', 'People/Mara Quill.md'],
+        companies: 'Companies/Larkspur.md',
+        project: 'Projects/Payrun.md',
+        tasks: 'Tasks/Send the note.md',
+      },
+    );
+    note('Meetings/Other.md', { type: 'meeting' }, { people: 'People/Lena Hart.md' });
+
+    const { sql, parameters } = compileMeetingEntitiesQuery(meeting);
+    expect(all(sql, parameters)).toEqual([
+      { entity: 'Companies/Larkspur.md' },
+      { entity: 'People/Mara Quill.md' },
+      { entity: 'People/Tobias Fenn.md' },
     ]);
   });
 });

@@ -317,9 +317,16 @@ export function summarisedAlready(
 
 /**
  * What the reduce ask is kept as beside the parts' answers (ADR-0036, "The
- * model's answer is kept and reused"): the parts it merged, so it is reused
- * only for the very parts it merged.
+ * model's answer is kept and reused"): the parts it merged and their answers,
+ * so it is reused only over the very answers it merged — a part asked again
+ * on a retry means a new reduce (#793).
  */
-export function reducePartMark(parts: readonly string[]): string {
-  return `reduce:${digestOf(JSON.stringify(parts))}`;
+export function reducePartMark({
+  parts,
+  answers,
+}: {
+  parts: readonly string[];
+  answers: readonly string[];
+}): string {
+  return `reduce:${digestOf(JSON.stringify([parts, answers]))}`;
 }

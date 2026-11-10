@@ -207,3 +207,18 @@ function notesOf(rows: readonly LinkDirectoryRow[]) {
         .filter(Boolean),
   }));
 }
+
+/**
+ * The people and companies a meeting links in its `people` and `companies`,
+ * each once: what its projects are tied by (#793). A link that resolves to no
+ * note is left out. Columns: entity.
+ */
+export function compileMeetingEntitiesQuery(meeting: string): CompiledQuery {
+  const linkKeys = MEETING_LINK_KEYS.map(() => '?').join(', ');
+  return {
+    sql: `/* meeting links: entities */ SELECT DISTINCT relations.dst AS "entity" FROM relations
+ WHERE relations.src = ? AND relations.key IN (${linkKeys}) AND relations.dst IS NOT NULL
+ ORDER BY 1`,
+    parameters: [meeting, ...MEETING_LINK_KEYS],
+  };
+}
