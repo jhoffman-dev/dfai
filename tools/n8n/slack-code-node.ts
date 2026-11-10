@@ -1,4 +1,4 @@
-import { mapCaptureScript, moduleScript } from './code-node.ts';
+import { HIDDEN_CHARACTERS, mapCaptureScript, moduleScript } from './code-node.ts';
 import { DEFAULT_EMOJI, OWNER_PLACEHOLDER, type SlackCaptureSettings } from './slack-request.ts';
 import { SIGNING_SECRET_PLACEHOLDER } from './slack-signature.ts';
 
@@ -90,11 +90,12 @@ const CONTRACT = '../../packages/domain/src/capture/mapping/';
 const SHAPING = '../../packages/domain/src/capture/slack/';
 
 /**
- * The payload's modules: the contract's own rules and limits first, which
- * the fitting reads, then the domain's Slack shaping — the one a pasted link
- * in the app uses too (#105) — and the action's view of it.
+ * The payload's modules: the hidden characters and the contract's own rules
+ * and limits first, which the fitting reads, then the domain's Slack shaping
+ * — the one a pasted link in the app uses too (#105) — and the action's view of it.
  */
 const CAPTURE_MODULES = [
+  HIDDEN_CHARACTERS,
   `${CONTRACT}capture-refusal.ts`,
   `${CONTRACT}capture-text.ts`,
   `${CONTRACT}capture-payload.ts`,
