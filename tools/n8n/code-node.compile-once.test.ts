@@ -1,7 +1,6 @@
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  codeNodeScript,
   mapMeetingScript,
   moduleScript,
   sameMeetingAtOtherPathScript,
@@ -31,8 +30,11 @@ describe('the modules compiled into the Code nodes', () => {
     expect(compiled.filter((name, at) => compiled.indexOf(name) !== at)).toEqual([]);
   });
 
-  it('gives the same script each time it is asked', () => {
-    expect(codeNodeScript('return 1;')).toBe(codeNodeScript('return 1;'));
-    expect(moduleScript('./github-file.ts')).toBe(moduleScript('./github-file.ts'));
+  it('gives back the script it compiled when asked again, without compiling it again', () => {
+    const compile = vi.mocked(ts.transpileModule);
+    const first = moduleScript('./github-file.ts');
+    compile.mockClear();
+    expect(moduleScript('./github-file.ts')).toBe(first);
+    expect(compile).not.toHaveBeenCalled();
   });
 });
