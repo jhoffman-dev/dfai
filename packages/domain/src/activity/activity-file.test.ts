@@ -229,6 +229,20 @@ describe('the detail a line carries beyond its message (#814)', () => {
     expect(over).toBe(`${'x'.repeat(MAX_ACTIVITY_DETAIL - 1)}…`);
   });
 
+  it('never names the chat note it is about, whose title is its question', () => {
+    const chat = createVaultPath('Chats/Should Tobias Fenn chair the garden club.md');
+    const event = activityEvent({
+      at: 1,
+      level: 'warning',
+      kind: 'api',
+      message: 'PUT v1/notes/{path}/body refused (conflict)',
+      subject: { kind: 'note', path: chat },
+      detail: 'Should Tobias Fenn chair the garden club changed since you read it',
+    });
+    expect(event.detail).toBe('a chat note changed since you read it');
+    expect(activityLine(event)).not.toContain('Tobias');
+  });
+
   it('drops what a hand-edited file holds that is not text', () => {
     const text = `${JSON.stringify({ at: 1, level: 'info', kind: 'app', message: 'M', subject: null, detail: 3 })}\n`;
     expect(parseActivityLog(text)[0]).not.toHaveProperty('detail');

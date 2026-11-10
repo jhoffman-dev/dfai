@@ -77,6 +77,18 @@ describe('a refusal reason cut on its line keeps no part of a secret', () => {
   });
 });
 
+describe('a refusal reason cut on its line keeps no part of a chat note’s name', () => {
+  it('strikes the chat’s title the cut would leave the first words of', () => {
+    const title = 'Should Tobias Fenn chair the garden club this spring';
+    const chat = createVaultPath(`Chats/${title}.md`);
+    const reason = `${padTo(MAX_REFUSAL_REASON - 1 - 20)}${title} changed since you read it`;
+    const report = apiWriteReport({ route: ROUTE, notePath: chat, refusal: 'conflict', reason });
+    const { message, detail } = activityEvent({ ...report, at: 0 });
+    expect(detail).toContain('a chat note changed since you read it');
+    expect(message).not.toContain(title.slice(0, 20));
+  });
+});
+
 describe('a refusal reason cut on its line, or in its detail, keeps whole characters', () => {
   it.fails('does not split a surrogate pair at the line cut', () => {
     const reason = `${'a'.repeat(MAX_REFUSAL_REASON - 2)}🌱🌱🌱 and more`;

@@ -246,6 +246,49 @@ describe('POST /v1/proposals/{path}/accept', () => {
     expect(codeOf(await api.send(answer(PROPOSAL, 'accept')))).toBe('no_vault');
     expect(api.files.has(TASK)).toBe(false);
   });
+
+  describe('when the proposal cannot be marked accepted for a fault of the disk (#814)', () => {
+    const FAULT = 'EIO: i/o error, open /Users/sam/Vault/Inbox/Proposals/x.md';
+    const faulty = (trashFails: boolean) => {
+      const api = vault();
+      const { writeTextFile, trashEntry } = api.deps.fs;
+      api.deps = {
+        ...api.deps,
+        fs: {
+          ...api.deps.fs,
+          writeTextFile: async (args) => {
+            if (args.path === PROPOSAL) throw new Error(FAULT);
+            return writeTextFile(args);
+          },
+          trashEntry: async (args) => {
+            if (trashFails) throw new Error(`EACCES: permission denied, rename /Users/sam/Vault/${TASK}`);
+            return trashEntry(args);
+          },
+        },
+      };
+      return api;
+    };
+
+    it('takes the task back and says so, in words that hold nothing of the fault', async () => {
+      const api = faulty(false);
+      const response = await api.send(answer(PROPOSAL, 'accept'));
+      expect(codeOf(response)).toBe('conflict');
+      expect(api.files.has(TASK)).toBe(false);
+      expect(JSON.stringify(response.body)).toContain('Nothing was kept.');
+      expect(JSON.stringify(response.body)).not.toMatch(/EIO|\/Users/);
+      expect(api.activity.reports).toHaveLength(1);
+      expect(JSON.stringify(api.activity.reports)).not.toMatch(/EIO|\/Users|i\/o error/);
+    });
+
+    it('says what was left when taking it back fails too, without the fault either', async () => {
+      const api = faulty(true);
+      const response = await api.send(answer(PROPOSAL, 'accept'));
+      expect(codeOf(response)).toBe('conflict');
+      expect(JSON.stringify(response.body)).toContain('taking it back failed');
+      expect(JSON.stringify(response.body)).not.toMatch(/EIO|EACCES|\/Users/);
+      expect(JSON.stringify(api.activity.reports)).not.toMatch(/EIO|EACCES|\/Users|denied/);
+    });
+  });
 });
 
 describe('POST /v1/proposals/{path}/reject', () => {
