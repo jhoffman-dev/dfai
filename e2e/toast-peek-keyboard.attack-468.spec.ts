@@ -2,7 +2,7 @@
 // pane's bar into the window's toast, and the toast was lifted over the
 // peek so it can be pressed. With the peek's focus trapped, it must still
 // be reachable from the keyboard, as the bar's Undo was.
-import { expect, test, type Page } from './fixtures.ts';
+import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection } from './host.ts';
 import { toastSaying } from './toasts.ts';
 import { expectFocusIn, focusOn } from './typing.ts';
@@ -59,21 +59,26 @@ test('the Undo of a task made in the peek can be reached by Tab while the peek i
   await said.hover();
   // From the peek's own Close, out of the editor, where Tab would indent.
   await focusOn(peek.getByRole('button', { name: 'Close' }));
-  let reached = false;
-  for (let press = 0; press < 40 && !reached; press += 1) {
-    await page.keyboard.press('Tab');
-    reached = await undo.evaluate((button) => button === document.activeElement).catch(() => false);
-  }
+  const reached = await tabTo(page, undo);
   await expect(peek).toBeVisible();
   await expect(said).toBeVisible();
   expect(reached, 'Tab reaches the toast’s Undo').toBe(true);
 });
 
-// #815: a warning's details, opened from a toast drawn in the peek's place.
-// The popup is its own layer above the peek, so its Escape is its own.
-test('details opened from a toast in the peek close on Esc alone, and the focus stays in the peek', async ({
-  page,
-}) => {
+/** Presses Tab until `target` holds the focus; false when forty presses never reach it. */
+async function tabTo(page: Page, target: Locator): Promise<boolean> {
+  for (let press = 0; press < 40; press += 1) {
+    await page.keyboard.press('Tab');
+    const reached = await target
+      .evaluate((element) => element === document.activeElement)
+      .catch(() => false);
+    if (reached) return true;
+  }
+  return false;
+}
+
+/** A warning toast in the peek's place: the Undo of the promoted line, refused. */
+async function refusedInPeek(page: Page) {
   const { vault, peek, said } = await promoteInPeek(page);
   // Another program edits the note after the line was promoted, so the Undo is refused: a warning.
   await vault.write(PATH, `${await vault.read(PATH)}\nRing the hire shop first.\n`);
@@ -84,8 +89,17 @@ test('details opened from a toast in the peek close on Esc alone, and the focus 
   await expect(refused).toHaveCount(1);
   // In the peek's place for toasts, inside its focus trap (#468).
   await expect(peek.locator('.toast')).toHaveCount(1);
+  return { peek, refused, words: refused.locator('.toast__details') };
+}
 
-  await refused.locator('.toast__details').click();
+// #815: a warning's details, opened from a toast drawn in the peek's place.
+// The popup is its own layer above the peek, so its Escape is its own.
+test('details opened from a toast in the peek close on Esc alone, and the focus goes back to the toast’s words', async ({
+  page,
+}) => {
+  const { peek, refused, words } = await refusedInPeek(page);
+
+  await words.click();
   const details = page.getByRole('dialog', { name: 'Warning details' });
   await expect(details).toBeVisible();
   await expect(details.getByText(/changed since/)).toBeVisible();
@@ -95,5 +109,51 @@ test('details opened from a toast in the peek close on Esc alone, and the focus 
 
   await expect(details).toHaveCount(0);
   await expect(peek).toBeVisible();
-  await expectFocusIn(peek);
+  // On the words that were pressed: not just somewhere in the peek, and never on the body.
+  await expect(refused).toHaveCount(1);
+  await expect(words).toBeFocused();
+
+  // That focus was put there, not brought: with the pointer off it, the warning has its five
+  // seconds again and goes — and hands the focus to the toasts' column, still inside the peek.
+  await peek.locator('.peek__head').hover();
+  await expect(refused).toHaveCount(0, { timeout: 10_000 });
+  await expect(peek).toBeVisible();
+  await expect(peek.locator('.toast-stack')).toBeFocused();
+});
+
+test('a toast’s details in the peek open from the keyboard, and Copy and Close leave the peek up', async ({
+  page,
+}) => {
+  const { peek, refused, words } = await refusedInPeek(page);
+  // Held under the pointer, so it cannot time out while the keys go round.
+  await refused.hover();
+  await focusOn(peek.getByRole('button', { name: 'Close' }));
+  expect(await tabTo(page, words), 'Tab reaches the toast’s words').toBe(true);
+
+  await page.keyboard.press('Enter');
+  const details = page.getByRole('dialog', { name: 'Warning details' });
+  await expect(details).toBeVisible();
+  await expect(words).toHaveAttribute('aria-expanded', 'true');
+  await expectFocusIn(details);
+
+  // Copy says how it went, either way, and closes nothing.
+  await details.getByRole('button', { name: 'Copy' }).click();
+  await expect(details.getByText(/^Copied$|^Could not copy\.$/)).toBeVisible();
+  await expect(details).toBeVisible();
+  // By its class: under the open details the peek is hidden from a role's reach, not from the eye.
+  await expect(page.locator('.peek')).toBeVisible();
+
+  await details.getByRole('button', { name: 'Close' }).click();
+  await expect(details).toHaveCount(0);
+  await expect(peek).toBeVisible();
+  await expect(refused).toHaveCount(1);
+  await expect(words).toBeFocused();
+
+  // And again by the keys alone: Enter opens them, Escape closes them and nothing else.
+  await page.keyboard.press('Enter');
+  await expect(details).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(details).toHaveCount(0);
+  await expect(peek).toBeVisible();
+  await expect(words).toBeFocused();
 });
