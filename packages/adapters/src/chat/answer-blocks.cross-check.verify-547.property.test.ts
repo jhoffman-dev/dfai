@@ -66,6 +66,28 @@ function askKinds(answer: string): Map<string, string> {
   return out;
 }
 
+/**
+ * How the editor reads the fences opened inside a list item: `closed` when
+ * one ends at its own closing run inside the item, `carried on` when the item
+ * then says more after it. Ask reads both on a path of its own.
+ */
+function itemFences(answer: string, node: Nodes, inItem = false): string[] {
+  const here = inItem || node.type === 'listItem';
+  const children = 'children' in node ? (node.children as Nodes[]) : [];
+  const found = children.flatMap((child) => itemFences(answer, child, here));
+  if (node.type === 'listItem') {
+    children.forEach((child, at) => {
+      if (child.type !== 'code') return;
+      const source = answer.slice(child.position?.start.offset, child.position?.end.offset);
+      const lines = source.split('\n');
+      if (lines.length < 2 || !/^`{3,}$/.test(lines.at(-1)!.trim())) return;
+      found.push('closed');
+      if (at < children.length - 1) found.push('carried on');
+    });
+  }
+  return found;
+}
+
 /** An answer of these shapes, each `W` its own word. */
 function answerOf(shapes: readonly string[]): string {
   let word = 0;
@@ -94,9 +116,12 @@ function answers(): string[] {
 describe('Ask’s blocks against the editor’s (PR #547)', () => {
   it('judges every word the editor draws as prose, on every short answer and seeded longer ones', () => {
     const escaped: string[] = [];
+    const drawn = new Set<string>();
     for (const answer of answers()) {
       const editor = new Map<string, string>();
-      editorKinds(parseBodyToMdast(answer), 'prose', editor);
+      const tree = parseBodyToMdast(answer);
+      for (const path of itemFences(answer, tree)) drawn.add(path);
+      editorKinds(tree, 'prose', editor);
       const ask = askKinds(answer);
       for (const [token, kind] of editor) {
         const judged = ['paragraph', 'item', 'quote', 'table'].includes(ask.get(token) ?? '');
@@ -105,5 +130,6 @@ describe('Ask’s blocks against the editor’s (PR #547)', () => {
       }
     }
     expect(escaped.slice(0, 5)).toEqual([]);
+    expect([...drawn].sort()).toEqual(['carried on', 'closed']);
   });
 });
