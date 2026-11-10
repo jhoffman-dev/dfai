@@ -181,3 +181,89 @@ describe('a cut never leaves part of what stands in for a path, secret or chat n
     );
   });
 });
+
+describe('a refusal reason keeps no secret any ignorable character splits', () => {
+  // Format and default-ignorable characters outside any hand list: each is drawn as nothing.
+  const SPLITTERS = [0xe0100, 0x180b, 0x17b4, 0xfff9, 0x13430, 0x1d173];
+  const SECRETS = [
+    ['an Anthropic key', 'sk-ant-api03-Qw8eRt6yUi4oPa2sDf0gHjKl', 'Qw8eRt6yUi4oPa2sDf0gHjKl'],
+    [
+      'a GitHub token',
+      'ghp_R2d2C3poL8kW9mQ4vX7nB1zT6yH5jF0sA3eU',
+      'R2d2C3poL8kW9mQ4vX7nB1zT6yH5jF0sA3eU',
+    ],
+    [
+      'a hex key',
+      '9f8e7d6c5b4a39281706f5e4d3c2b1a0ffeeddcc',
+      '9f8e7d6c5b4a39281706f5e4d3c2b1a0ffeeddcc',
+    ],
+    [
+      'a Bearer token',
+      'Bearer Zq8xLm2Vn4Rt6Yp0Wk3Hs5Jd7Fb9Gc1A',
+      'Zq8xLm2Vn4Rt6Yp0Wk3Hs5Jd7Fb9Gc1A',
+    ],
+  ] as const;
+  /** The text with the character put after every sixth one. */
+  const splitEvery6 = (text: string, splitter: string) =>
+    (text.match(/.{1,6}/gsu) ?? []).join(splitter);
+  /** Every six-character piece of the value: any one left in a line is part of the secret kept. */
+  const pieces = (value: string) =>
+    Array.from({ length: value.length - 5 }, (_, at) => value.slice(at, at + 6));
+
+  const cases = SPLITTERS.flatMap((code) =>
+    SECRETS.map(([kind, secret, value]) => [
+      kind,
+      code.toString(16).toUpperCase().padStart(4, '0'),
+      String.fromCodePoint(code),
+      secret,
+      value,
+    ]),
+  );
+
+  it.each(cases)(
+    'strikes %s split by U+%s every 6 characters',
+    (_kind, _name, hidden, secret, value) => {
+      const { message, detail } = keptLine(`the key ${splitEvery6(secret, hidden)} was refused`);
+      for (const text of [message, detail ?? '']) {
+        expect(text).toContain('<secret> was refused');
+        expect(text).not.toContain(hidden);
+        for (const piece of pieces(value)) expect(text).not.toContain(piece);
+      }
+    },
+  );
+});
+
+describe('a value named as a secret is struck even when it starts with the placeholder', () => {
+  // The placeholder guard is for a value already struck, not one that only begins like it.
+  it.each([
+    ['password=<secret>hunter2-correct-horse', 'hunter2'],
+    ['Authorization: <secret>s3cr3tvalue', 's3cr3tvalue'],
+    ['"password": "<secret>hunter2 correct horse"', 'hunter2'],
+  ])('strikes %j', (reason, kept) => {
+    const { message, detail } = keptLine(`refused: ${reason}`);
+    expect(message).not.toContain(kept);
+    expect(detail).not.toContain(kept);
+  });
+
+  it.each([
+    ['password=<secret> was refused', 'password=<secret> was refused'],
+    ['api_key=<secret>&user=tobias', 'api_key=<secret>&user=tobias'],
+    ['"password": "<secret>", then', '"password": "<secret>", then'],
+    ['token=<secret>', 'token=<secret>'],
+  ])('leaves %j as it was', (reason, kept) => {
+    expect(safeActivityText(reason, { max: 200 })).toBe(kept);
+  });
+});
+
+describe('a long run of separators is cleaned in linear time', () => {
+  // A lookbehind tried at every position re-reads the run behind it, so the time grew with its square.
+  it.each([
+    ['spaces', ' '],
+    ['colons', ':'],
+    ['equals signs', '='],
+  ])('cleans 200,000 %s well inside 200 ms', (_name, separator) => {
+    const started = performance.now();
+    safeActivityText(separator.repeat(200_000), { max: 200 });
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+});
