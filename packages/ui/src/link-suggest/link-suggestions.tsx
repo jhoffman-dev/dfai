@@ -326,33 +326,44 @@ const GAP = 4;
  * right by however far an ancestor that holds fixed things (a transformed
  * popover) moved it. Written on the element, not rendered: nothing draws
  * again as the page scrolls under an open list.
+ *
+ * Placed again as the page scrolls, the window resizes, or anything holding
+ * the field changes size: a row above it that grows on a re-read moves the
+ * field with no scroll, and a list left where it was jumps back under the
+ * field at the next render — between a click's press and its release (#823).
  */
 function usePlacedUnder(
   inputRef: RefObject<HTMLInputElement | null>,
   listRef: RefObject<HTMLUListElement | null>,
 ) {
+  // Each render: what the list holds sets how tall it is, and so where it goes.
+  useLayoutEffect(() => placeUnder(inputRef.current, listRef.current));
   useLayoutEffect(() => {
-    const place = () => {
-      const field = inputRef.current;
-      const list = listRef.current;
-      if (field === null || list === null) return;
-      list.style.position = 'fixed';
-      const spot = placeOf(field.getBoundingClientRect(), list);
-      list.style.maxHeight = `${spot.height}px`;
-      list.style.top = `${spot.top}px`;
-      list.style.left = `${spot.left}px`;
-      const landed = list.getBoundingClientRect();
-      list.style.top = `${2 * spot.top - landed.top}px`;
-      list.style.left = `${2 * spot.left - landed.left}px`;
-    };
-    place();
-    window.addEventListener('scroll', place, true);
-    window.addEventListener('resize', place);
+    const again = () => placeUnder(inputRef.current, listRef.current);
+    window.addEventListener('scroll', again, true);
+    window.addEventListener('resize', again);
+    const resized = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(again);
+    for (let holder = inputRef.current?.parentElement; holder; holder = holder.parentElement) {
+      resized?.observe(holder);
+    }
     return () => {
-      window.removeEventListener('scroll', place, true);
-      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', again, true);
+      window.removeEventListener('resize', again);
+      resized?.disconnect();
     };
-  });
+  }, [inputRef, listRef]);
+}
+
+function placeUnder(field: HTMLInputElement | null, list: HTMLUListElement | null) {
+  if (field === null || list === null) return;
+  list.style.position = 'fixed';
+  const spot = placeOf(field.getBoundingClientRect(), list);
+  list.style.maxHeight = `${spot.height}px`;
+  list.style.top = `${spot.top}px`;
+  list.style.left = `${spot.left}px`;
+  const landed = list.getBoundingClientRect();
+  list.style.top = `${2 * spot.top - landed.top}px`;
+  list.style.left = `${2 * spot.left - landed.left}px`;
 }
 
 /** The tallest the list is drawn, as the stylesheet has it. */
