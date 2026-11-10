@@ -1,4 +1,14 @@
-import { useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import type { ActivityLevel } from '@dfai/domain';
 
@@ -9,7 +19,11 @@ export interface EventDetailsView {
   readonly time: string;
   /** The same moment for `<time>`, in ISO form. */
   readonly dateTime: string;
-  /** The message, never cut short here. */
+  /**
+   * The words as the line, the toast or the notice said them, whole: the popup
+   * never cuts them. (A line of the log was cut to its length when it was
+   * kept; what more it had to say is its `Detail`.)
+   */
   readonly message: string;
   /** What it is about, named for its link; null when it links nowhere. */
   readonly subject: string | null;
@@ -28,24 +42,97 @@ export const LEVEL_LABELS: Readonly<Record<ActivityLevel, string>> = {
 
 type Copying = 'idle' | 'copied' | 'refused';
 
+/** How long "Copied" is said before the button offers to copy again. */
+export const COPIED_MS = 2000;
+
+/** The details one line opened: what it showed as it was pressed, and what its popup can do. */
+interface OpenedDetails {
+  /** Whose they are: the line that opened them, by its id. */
+  readonly line: string;
+  readonly details: EventDetailsView;
+  readonly onCopy: (text: string) => Promise<void>;
+  readonly onOpenSubject?: () => void;
+}
+
+interface DetailsHost {
+  /** The line whose details are open; null when none is. */
+  readonly open: string | null;
+  show(opened: OpenedDetails): void;
+  /** Each line drawn now, by its id: where the focus goes back to. */
+  readonly lines: Map<string, HTMLElement>;
+}
+
+const HostContext = createContext<DetailsHost | null>(null);
+
 /**
- * A short line that opens to its details (#815): the words of a warning or an
- * error as a button, and the popup they open — level, time, the whole
- * message, what it is about, and whatever else the event carries, with a
- * button to copy it all. A button, so Tab reaches it and Enter or Space
- * opens it; Esc or a press outside closes it, and the focus goes back to the
- * line. It says `tabindex="0"`: WebKit Tabs to no button that does not (#468).
+ * Where the details of the lines under it open (#815): one popup, held here
+ * and not by the line, showing what the line said as it was pressed. So it
+ * stays open, on the same words, when its line goes or is drawn again
+ * somewhere else — a toast pushed out by newer ones, a notice that cleared
+ * itself, a line of the log gathered under its meeting. Closing it puts the
+ * focus back on the line if it is still drawn, under the same id.
+ *
+ * Put one above any lines that can go while they are read; a line with none
+ * above it holds its own.
  */
-export function EventDetailsButton({
-  details,
-  className,
-  children,
-  onCopy,
-  onOpenSubject,
-  onOpenChange,
-}: {
+export function EventDetailsHost({ children }: { children: ReactNode }) {
+  const [shown, setShown] = useState<OpenedDetails | null>(null);
+  const [open, setOpen] = useState(false);
+  const [lines] = useState(() => new Map<string, HTMLElement>());
+  const host = useMemo<DetailsHost>(
+    () => ({
+      open: open ? (shown?.line ?? null) : null,
+      show: (opened) => {
+        setShown(opened);
+        setOpen(true);
+      },
+      lines,
+    }),
+    [open, shown, lines],
+  );
+  const openSubject = shown?.onOpenSubject;
+  return (
+    <HostContext.Provider value={host}>
+      {children}
+      <Dialog.Root open={open} onOpenChange={setOpen}>
+        <Dialog.Portal>
+          <Dialog.Viewport className="palette__backdrop">
+            <Dialog.Popup
+              className="palette confirm event-details"
+              // The line as drawn now, which may not be the element that was pressed.
+              finalFocus={() => (shown === null ? true : (lines.get(shown.line) ?? true))}
+            >
+              {/* What was shown stays as the popup leaves, so it never empties on its way out. */}
+              {shown !== null && (
+                <Popup
+                  details={shown.details}
+                  onCopy={shown.onCopy}
+                  {...(openSubject !== undefined && {
+                    onOpenSubject: () => {
+                      setOpen(false);
+                      openSubject();
+                    },
+                  })}
+                />
+              )}
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </HostContext.Provider>
+  );
+}
+
+export interface EventDetailsButtonProps {
   details: EventDetailsView;
+  /**
+   * The line's own, kept wherever it is drawn: what lets the focus find it
+   * again once its details close. A line that is never drawn again needs none.
+   */
+  id?: string;
   className?: string;
+  /** The whole of words the line cuts short, for a pointer resting on it. */
+  title?: string;
   /** The line's words. */
   children: ReactNode;
   /** Puts the text on the clipboard; rejects when the clipboard refuses. */
@@ -54,38 +141,87 @@ export function EventDetailsButton({
   onOpenSubject?: () => void;
   /** Told as the popup opens and closes, for a line that must stay while it is read. */
   onOpenChange?: (open: boolean) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const change = (next: boolean) => {
-    setOpen(next);
-    onOpenChange?.(next);
-  };
+}
+
+/**
+ * A short line that opens to its details (#815): the words of a warning or an
+ * error as a button, and the popup they open — level, time, the whole
+ * message, what it is about, and whatever else the event carries, with a
+ * button to copy it all. A button, so Tab reaches it and Enter or Space
+ * opens it; Esc or a press outside closes it, and the focus goes back to the
+ * line. It says `tabindex="0"`: WebKit Tabs to no button that does not (#468).
+ *
+ * The popup belongs to the `EventDetailsHost` above the line, so it outlives
+ * the line; with none above, the line is its own host.
+ */
+export function EventDetailsButton(props: EventDetailsButtonProps) {
+  const hosted = useContext(HostContext) !== null;
+  if (hosted) return <DetailsLine {...props} />;
   return (
-    <Dialog.Root open={open} onOpenChange={change}>
-      <Dialog.Trigger
-        className={`event-details-button${className === undefined ? '' : ` ${className}`}`}
-        tabIndex={0}
-      >
-        {children}
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Viewport className="palette__backdrop">
-          <Dialog.Popup className="palette confirm event-details">
-            <Popup
-              details={details}
-              onCopy={onCopy}
-              {...(onOpenSubject !== undefined && {
-                onOpenSubject: () => {
-                  change(false);
-                  onOpenSubject();
-                },
-              })}
-            />
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <EventDetailsHost>
+      <DetailsLine {...props} />
+    </EventDetailsHost>
   );
+}
+
+function DetailsLine({
+  details,
+  id,
+  className,
+  title,
+  children,
+  onCopy,
+  onOpenSubject,
+  onOpenChange,
+}: EventDetailsButtonProps) {
+  const host = useContext(HostContext);
+  if (host === null) throw new Error('A details line is drawn under an EventDetailsHost.');
+  const own = useId();
+  const line = id ?? own;
+  const open = host.open === line;
+  useOpenChangeTold(open, onOpenChange);
+  const { lines } = host;
+  const drawn = useCallback(
+    (button: HTMLButtonElement | null) => {
+      if (button === null) return;
+      lines.set(line, button);
+      return () => {
+        // Only its own place: the same line drawn again elsewhere has taken it by then.
+        if (lines.get(line) === button) lines.delete(line);
+      };
+    },
+    [lines, line],
+  );
+  return (
+    <button
+      ref={drawn}
+      type="button"
+      className={`event-details-button${className === undefined ? '' : ` ${className}`}`}
+      tabIndex={0}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      {...(title !== undefined && { title })}
+      onClick={() =>
+        host.show({ line, details, onCopy, ...(onOpenSubject !== undefined && { onOpenSubject }) })
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Tells `onOpenChange` each time the line's popup opens or closes, and not as the line is first drawn. */
+function useOpenChangeTold(open: boolean, onOpenChange?: (open: boolean) => void): void {
+  const told = useRef(open);
+  const tell = useRef(onOpenChange);
+  useEffect(() => {
+    tell.current = onOpenChange;
+  });
+  useEffect(() => {
+    if (told.current === open) return;
+    told.current = open;
+    tell.current?.(open);
+  }, [open]);
 }
 
 function Popup({
@@ -98,25 +234,23 @@ function Popup({
   onOpenSubject?: () => void;
 }) {
   const { level, time, dateTime, message } = details;
-  const [copying, setCopying] = useState<Copying>('idle');
-  const copy = () =>
-    void onCopy(details.text).then(
-      () => setCopying('copied'),
-      // Said beside the button: the text is still on screen to select by hand.
-      () => setCopying('refused'),
-    );
+  const [copying, copy] = useCopying(() => onCopy(details.text));
   return (
     <>
       <div className="event-details__head">
         <Dialog.Title className="visually-hidden">{LEVEL_LABELS[level]} details</Dialog.Title>
-        <span className={`event-details__level event-details__level--${level}`}>
+        {/* Hidden from a screen reader: the popup's name has said the level already. */}
+        <span className={`event-details__level event-details__level--${level}`} aria-hidden>
           {LEVEL_LABELS[level]}
         </span>
         <time className="event-details__time" dateTime={dateTime}>
           {time}
         </time>
       </div>
-      <p className="event-details__message">{message}</p>
+      {/* `dir="auto"`: the words may be a file's or a server's, in a right-to-left script. */}
+      <p className="event-details__message" dir="auto">
+        {message}
+      </p>
       <Facts details={details} {...(onOpenSubject !== undefined && { onOpenSubject })} />
       <div className="confirm__actions">
         {copying === 'refused' && (
@@ -133,6 +267,24 @@ function Popup({
       </div>
     </>
   );
+}
+
+/** How a copy went, and the press that makes one; "copied" is said for `COPIED_MS`, then no more. */
+function useCopying(write: () => Promise<void>): [Copying, () => void] {
+  const [copying, setCopying] = useState<Copying>('idle');
+  useEffect(() => {
+    if (copying !== 'copied') return;
+    const timer = window.setTimeout(() => setCopying('idle'), COPIED_MS);
+    return () => window.clearTimeout(timer);
+  }, [copying]);
+  const copy = () =>
+    // Inside a promise, so a clipboard that throws — the web build has none on plain http — refuses too.
+    void new Promise<void>((resolve) => resolve(write())).then(
+      () => setCopying('copied'),
+      // Said beside the button: the text is still on screen to select by hand.
+      () => setCopying('refused'),
+    );
+  return [copying, copy];
 }
 
 /** What the event is about, linked where it can be opened, then each fact it carries. */

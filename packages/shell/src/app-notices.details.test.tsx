@@ -70,6 +70,23 @@ describe('AppNotices — a notice opens to its details', () => {
     expect(within(screen.getByRole('dialog')).getByText('Today, 11:45')).toBeTruthy();
   });
 
+  it('keeps a notice its own button when the one above it clears, and two alike apart', () => {
+    const { drawn } = notices(clockAt([SHOWN]));
+    const { rerender } = render(drawn([DISK_FULL, 'Could not reach the calendar feed']));
+    const feed = screen.getByRole('button', { name: 'Could not reach the calendar feed' });
+    feed.focus();
+
+    const NO_FEED = 'Could not reach the calendar feed';
+    rerender(drawn([null, NO_FEED, NO_FEED]));
+
+    const [first, second] = screen.getAllByRole('button', {
+      name: 'Could not reach the calendar feed',
+    });
+    expect(first).toBe(feed);
+    expect(document.activeElement).toBe(feed);
+    expect(second).not.toBe(feed);
+  });
+
   it('opens from the keyboard, and copies its text', async () => {
     const { drawn, write } = notices(clockAt([SHOWN]));
     write.mockResolvedValue(undefined);

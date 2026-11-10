@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { noteTitle, type ActivityLevel, type VaultPath } from '@dfai/domain';
 import type { Clock } from '@dfai/application';
-import { EventDetailsButton } from '@dfai/ui';
+import { EventDetailsButton, EventDetailsHost } from '@dfai/ui';
 import { noticeDetails } from './activity/event-details.ts';
 import { browserClipboard, type ClipboardWriter } from './settings/clipboard.ts';
 import { localClock } from './today.ts';
@@ -11,7 +11,9 @@ import type { LinkOffer } from './vault/use-vault-entries.ts';
  * What the window has to tell the person, above whatever is open: plain
  * messages, the offer to update links a move left behind, and kept work that
  * could not be saved. A message, and the word of kept work, opens to its
- * details (#815): an error and a warning, as Activity keeps them.
+ * details (#815): an error and a warning, in the notice's own words. The
+ * details stay open, on the words they opened with, when the notice clears
+ * itself or another takes its place: they are held here, above the notices.
  */
 export function AppNotices({
   messages,
@@ -36,6 +38,7 @@ export function AppNotices({
   const words = (message: string, level: ActivityLevel) => (
     <EventDetailsButton
       details={noticeDetails({ message, level, at: since(message) }, clock.today())}
+      id={message}
       className="notice__details"
       onCopy={(text) => clipboard.write(text)}
     >
@@ -43,15 +46,12 @@ export function AppNotices({
     </EventDetailsButton>
   );
   return (
-    <>
-      {messages.map(
-        (message, at) =>
-          message !== null && (
-            <p key={at} className="notice" role="alert">
-              {words(message, 'error')}
-            </p>
-          ),
-      )}
+    <EventDetailsHost>
+      {keyedByWords(messages).map(({ key, message }) => (
+        <p key={key} className="notice" role="alert">
+          {words(message, 'error')}
+        </p>
+      ))}
       {links !== null && (
         <div className="notice">
           <p role="alert">{links.text}</p>
@@ -78,8 +78,23 @@ export function AppNotices({
           words={words(keptComments.notice, 'warning')}
         />
       )}
-    </>
+    </EventDetailsHost>
   );
+}
+
+/**
+ * The messages there are to show, each keyed by its words — and by a count
+ * where two say the same — never by its place: another message in the same
+ * place is another notice, with its own button and its own details.
+ */
+function keyedByWords(messages: readonly (string | null)[]): { key: string; message: string }[] {
+  const said = new Map<string, number>();
+  return messages.flatMap((message) => {
+    if (message === null) return [];
+    const before = said.get(message) ?? 0;
+    said.set(message, before + 1);
+    return [{ key: `${before}:${message}`, message }];
+  });
 }
 
 interface KeptWorkNotice {

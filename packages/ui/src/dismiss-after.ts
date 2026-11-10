@@ -19,18 +19,21 @@ export interface HoldWhileInUse {
  * the same words again are the same `showing`, so a caller that says them
  * again keys its element by a show count (toast.tsx, use-granola-pull's
  * `toastShown`). What `stays` — a failure, which must be read — is never
- * dismissed by time, only by the person.
+ * dismissed by time, only by the person. A focus that was `focusPutBack` —
+ * by a popup closing, not by the person reaching in — holds nothing.
  */
 export function useDismissAfter({
   ms,
   showing,
   onDismiss,
   stays = false,
+  focusPutBack = false,
 }: {
   ms: number;
   showing: unknown;
   onDismiss: () => void;
   stays?: boolean;
+  focusPutBack?: boolean;
 }): HoldWhileInUse {
   const dismiss = useRef(onDismiss);
   useEffect(() => {
@@ -38,7 +41,7 @@ export function useDismissAfter({
   });
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const held = hovered || focused;
+  const held = hovered || (focused && !focusPutBack);
   useEffect(() => {
     if (held || stays) return;
     const timer = window.setTimeout(() => dismiss.current(), ms);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_ACTIVITY_DETAIL, activityEvent } from './activity-event.ts';
 import { activityLine, parseActivityLog } from './activity-file.ts';
 
-/** #815, attacked: a line's `detail` at its edges. Each `it.fails` is a bug. */
+/** #815, attacked: a line's `detail` at its edges. Each was a bug, and is held to here. */
 
 const AT = Date.UTC(2026, 8, 28, 9, 30);
 const line = (detail: string) =>
@@ -16,7 +16,7 @@ const line = (detail: string) =>
   });
 
 describe('a line’s detail at its edges', () => {
-  it.fails('never cuts a detail in the middle of a character', () => {
+  it('never cuts a detail in the middle of a character', () => {
     const detail = `${'a'.repeat(MAX_ACTIVITY_DETAIL - 2)}🌱 and more past the end`;
     // A high surrogate left without its low one is half a character.
     expect(line(detail).detail ?? '').not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
@@ -34,7 +34,8 @@ describe('a line’s detail at its edges', () => {
       const [back] = parseActivityLog(activityLine(first));
       expect(back).toEqual(first);
       expect(back === undefined ? '' : activityLine(back)).toBe(activityLine(first));
-      expect((first.detail ?? '').length).toBeLessThanOrEqual(MAX_ACTIVITY_DETAIL);
+      // Counted in characters, as the cut counts them (#814): an emoji is one, not two.
+      expect([...(first.detail ?? '')].length).toBeLessThanOrEqual(MAX_ACTIVITY_DETAIL);
     }
   });
 

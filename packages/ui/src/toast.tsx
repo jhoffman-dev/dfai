@@ -29,7 +29,9 @@ export type ToastTone = 'change' | 'warning' | 'error';
  * are the same showing.
  *
  * A warning or an error given its details opens to them from its words
- * (#815), and stays while they are read.
+ * (#815), and stays while they are read. Once they close it has its full
+ * time again and then goes, though the focus was put back on its words: only
+ * a focus the person moves into it holds it.
  */
 export function Toast({
   message,
@@ -54,12 +56,19 @@ export function Toast({
   const acted = useRef(false);
   const [done, setDone] = useState(false);
   const [reading, setReading] = useState(false);
+  // True from the details closing until the focus next moves: it is on the words, put there.
+  const [putBack, setPutBack] = useState(false);
   const hold = useDismissAfter({
     ms: TOAST_MS,
     showing: message,
     onDismiss,
     stays: done || tone === 'error' || reading,
+    focusPutBack: putBack,
   });
+  const read = (open: boolean) => {
+    setReading(open);
+    setPutBack(!open);
+  };
   const once = (does?: () => void) => () => {
     if (acted.current) return;
     acted.current = true;
@@ -68,7 +77,14 @@ export function Toast({
     onDismiss();
   };
   return (
-    <div className="toast" {...hold}>
+    <div
+      className="toast"
+      {...hold}
+      onBlur={(event) => {
+        setPutBack(false);
+        hold.onBlur(event);
+      }}
+    >
       {tone !== undefined && <span className={`toast__dot toast__dot--${tone}`} aria-hidden />}
       <span className="toast__message" role="status">
         {details !== undefined && onCopy !== undefined ? (
@@ -76,7 +92,7 @@ export function Toast({
             details={details}
             className="toast__details"
             onCopy={onCopy}
-            onOpenChange={setReading}
+            onOpenChange={read}
           >
             {message}
           </EventDetailsButton>

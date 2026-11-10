@@ -1,9 +1,9 @@
-import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { memo, useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import { noticeReport } from '@dfai/domain';
 import type { ActivityLog, Clock } from '@dfai/application';
-import { ToastStack, type ToastShown } from '@dfai/ui';
+import { EventDetailsHost, ToastStack, type ToastShown } from '@dfai/ui';
 import { noticeDetails } from '../activity/event-details.ts';
 import { browserClipboard, type ClipboardWriter } from '../settings/clipboard.ts';
 import { localClock } from '../today.ts';
@@ -16,7 +16,9 @@ import type { Toasts, ToastsState } from './toasts.ts';
  * pushed out by newer toasts before the next draw is still kept — and one
  * missed while it showed can be found later; a change made is not: the file
  * is its record. A warning or an error opens, from its words, to the
- * details of that line (#815). Another vault opening lets every toast go, since each
+ * details of its own words (#815), which stay open though the toast goes —
+ * pushed out by newer ones, replaced in its slot, let go with its vault: the
+ * popup is held here, above the queue. Another vault opening lets every toast go, since each
  * one's Undo belongs to the vault it was made in. `children` are toasts
  * still drawn by their own hooks, kept in the same column.
  *
@@ -45,14 +47,16 @@ export const ToastHost = memo(function ToastHost({
   const place = useStore(toasts.store, (state) => state.place);
   useWarningsRecorded(toasts, activity);
   useEffect(() => toasts.openVault(vault ?? null), [toasts, vault]);
-  const shown = useMemo(() => withDetails(queue, clock.today()), [queue, clock]);
+  // Dated on every draw: a toast left up past midnight is yesterday's.
+  const shown = withDetails(queue, clock.today());
   const stack = (
     <ToastStack toasts={shown} onDismiss={toasts.dismiss} onCopy={(text) => clipboard.write(text)}>
       {children}
     </ToastStack>
   );
   // In the peek's place while it is up: inside its focus trap, so Tab reaches an Undo (#468).
-  return place === null ? stack : createPortal(stack, place);
+  // The details are held outside that place, so they stay as the peek comes and goes.
+  return <EventDetailsHost>{place === null ? stack : createPortal(stack, place)}</EventDetailsHost>;
 });
 
 /** The toasts, each warning and error with the details its words open to. */

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { AppNotices } from './app-notices.tsx';
 
-/** #815, attacked: a notice's details while the notices change. Each `it.fails` is a bug. */
+/** #815, attacked: a notice's details while the notices change. Each was a bug, and is held to here. */
 
 const SHOWN = new Date(2026, 8, 28, 9, 30).getTime();
 const CLOCK = { now: () => SHOWN, today: () => '2026-09-28' };
@@ -22,7 +22,7 @@ const drawn = (messages: readonly (string | null)[]) => (
 );
 
 describe('AppNotices — details while the notices change', () => {
-  it.fails('keeps the details open when the notice it came from clears itself', () => {
+  it('keeps the details open when the notice it came from clears itself', () => {
     const { rerender } = render(drawn([DISK_FULL]));
     fireEvent.click(screen.getByRole('button', { name: DISK_FULL }));
     expect(screen.getByRole('dialog', { name: 'Error details' })).toBeTruthy();
@@ -32,7 +32,7 @@ describe('AppNotices — details while the notices change', () => {
     expect(screen.queryByRole('dialog', { name: 'Error details' })).not.toBeNull();
   });
 
-  it.fails('never swaps the open details for another notice’s', () => {
+  it('never swaps the open details for another notice’s', () => {
     const { rerender } = render(drawn([DISK_FULL]));
     fireEvent.click(screen.getByRole('button', { name: DISK_FULL }));
 

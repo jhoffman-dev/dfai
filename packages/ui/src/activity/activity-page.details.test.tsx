@@ -120,7 +120,7 @@ describe('ActivityPage — a line opens to its details', () => {
   });
 
   it('keeps the whole message in the title of a line that opens, too', () => {
-    shown();
+    page();
     expect(line(REFUSED.message).getAttribute('title')).toBe(REFUSED.message);
   });
 

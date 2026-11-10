@@ -4,7 +4,12 @@ import {
   type ActivityLevel,
   type ActivityLevelFilter,
 } from '@dfai/domain';
-import { EventDetailsButton, LEVEL_LABELS, type EventDetailsView } from '../details/index.ts';
+import {
+  EventDetailsButton,
+  EventDetailsHost,
+  LEVEL_LABELS,
+  type EventDetailsView,
+} from '../details/index.ts';
 import { Icon } from '../icon.tsx';
 import { PageBar, type PageHistory } from '../page-bar.tsx';
 import { HiddenTitle } from '../page-head.tsx';
@@ -100,7 +105,10 @@ export function ActivityPage(props: ActivityPageProps) {
         <article className="page page--wide activity" aria-label="Activity">
           <HiddenTitle>All activity</HiddenTitle>
           <Filters {...props} />
-          <Lines {...props} />
+          {/* Above the lines: a line's details stay open as the log regroups and trims under them (#815). */}
+          <EventDetailsHost>
+            <Lines {...props} />
+          </EventDetailsHost>
         </article>
       </div>
     </>
@@ -244,7 +252,9 @@ function Message({ row, does }: { row: ActivityRowView; does: LineActions }) {
   return (
     <EventDetailsButton
       details={row.details}
+      id={row.id}
       className="activity-line__message"
+      title={row.message}
       onCopy={does.onCopy}
       {...(row.subject !== null && { onOpenSubject: () => does.onOpenSubject(row.id) })}
     >

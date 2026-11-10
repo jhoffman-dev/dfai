@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { createToasts } from './toasts.ts';
 import { ToastHost } from './toast-host.tsx';
 
-/** #815, attacked: what a toast's details popup does not hold to. Each `it.fails` is a bug. */
+/** #815, attacked: what a toast's details popup does not hold to. Each was a bug, and is held to here. */
 
 // Built from local parts, so the test reads the same in any timezone.
 const SHOWN = new Date(2026, 8, 28, 9, 30).getTime();
@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('ToastHost — details under attack', () => {
-  it.fails('keeps the details open when newer toasts push their toast out of the queue', () => {
+  it('keeps the details open when newer toasts push their toast out of the queue', () => {
     const toasts = host({ write: () => Promise.resolve() });
     act(() => void toasts.show({ message: NOT_MOVED, tone: 'error' }));
     fireEvent.click(screen.getByRole('button', { name: NOT_MOVED }));
@@ -47,7 +47,7 @@ describe('ToastHost — details under attack', () => {
     expect(screen.queryByRole('dialog', { name: 'Error details' })).not.toBeNull();
   });
 
-  it.fails('keeps the details open when a newer toast takes the same slot', () => {
+  it('keeps the details open when a newer toast takes the same slot', () => {
     const toasts = host({ write: () => Promise.resolve() });
     act(() => void toasts.show({ message: NOT_MOVED, tone: 'error', slot: 'move' }));
     fireEvent.click(screen.getByRole('button', { name: NOT_MOVED }));
@@ -79,7 +79,7 @@ describe('ToastHost — details under attack', () => {
     expect(within(popup).getByText(NOT_MOVED)).toBeTruthy();
   });
 
-  it.fails('shows the whole of a long toast, not less than the toast itself says', () => {
+  it('shows the whole of a long toast, not less than the toast itself says', () => {
     const toasts = host({ write: () => Promise.resolve() });
     const long = `Could not import “Orchard walk”: ${'the feed answered with a page of prose. '.repeat(12)}End of it.`;
     expect(long.length).toBeGreaterThan(300);
@@ -90,7 +90,7 @@ describe('ToastHost — details under attack', () => {
     expect(popup.querySelector('.event-details__message')?.textContent).toBe(long);
   });
 
-  it.fails('says “Could not copy.” where the webview has no clipboard at all', () => {
+  it('says “Could not copy.” where the webview has no clipboard at all', async () => {
     // Plain http (the iPad web build on a LAN address) has no `navigator.clipboard`.
     vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
     const thrown: unknown[] = [];
@@ -105,34 +105,33 @@ describe('ToastHost — details under attack', () => {
       fireEvent.click(screen.getByRole('button', { name: NOT_MOVED }));
       const popup = screen.getByRole('dialog', { name: 'Error details' });
       fireEvent.click(within(popup).getByRole('button', { name: 'Copy' }));
-      expect(within(popup).queryByText('Could not copy.')).not.toBeNull();
+      // Said once the write has refused: a moment after the press, as any refusal is.
+      expect(await within(popup).findByText('Could not copy.')).toBeTruthy();
+      expect(thrown).toEqual([]);
     } finally {
       window.removeEventListener('error', swallow);
     }
   });
 
-  it.fails(
-    'lets a warning go by itself once its details were closed from the keyboard',
-    async () => {
-      vi.useFakeTimers({ shouldAdvanceTime: true });
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      const toasts = host({ write: () => Promise.resolve() });
-      act(() => void toasts.show({ message: 'The undo was refused.', tone: 'warning' }));
+  it('lets a warning go by itself once its details were closed from the keyboard', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const toasts = host({ write: () => Promise.resolve() });
+    act(() => void toasts.show({ message: 'The undo was refused.', tone: 'warning' }));
 
-      await user.tab();
-      await user.keyboard('{Enter}');
-      expect(screen.getByRole('dialog', { name: 'Warning details' })).toBeTruthy();
-      await user.keyboard('{Escape}');
-      await act(() => vi.advanceTimersByTimeAsync(500));
-      expect(screen.queryByRole('dialog')).toBeNull();
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('dialog', { name: 'Warning details' })).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(screen.queryByRole('dialog')).toBeNull();
 
-      // Read and closed: the toast has its full time again, and then goes.
-      await act(() => vi.advanceTimersByTimeAsync(60_000));
-      expect(screen.queryByText('The undo was refused.')).toBeNull();
-    },
-  );
+    // Read and closed: the toast has its full time again, and then goes.
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(screen.queryByText('The undo was refused.')).toBeNull();
+  });
 
-  it.fails('dates a toast that stayed past midnight as yesterday’s', () => {
+  it('dates a toast that stayed past midnight as yesterday’s', () => {
     let today = '2026-09-28';
     const clock = { now: () => SHOWN, today: () => today };
     const toasts = createToasts(clock);
