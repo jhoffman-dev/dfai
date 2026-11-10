@@ -11,6 +11,7 @@ import {
   createVaultPath,
   logPathFor,
   parseObjectType,
+  readHandledLedger,
   type AutomationRule,
 } from '@dfai/domain';
 import type { ModelEvent } from '../chat/ports.ts';
@@ -112,7 +113,12 @@ function setUp(rounds: readonly ScriptedRound[]) {
     expect(spoiled).not.toBe(text);
     vault.files.set(log, spoiled);
   };
-  return { vault, run, spoil };
+  /** How many answers each kept line holds: the long meeting's parts and its reduce. */
+  const keptLines = () =>
+    readHandledLedger(vault.files.get(logPathFor(RULE.id)) ?? null)?.stored.map(
+      ({ parts }) => parts.length,
+    );
+  return { vault, run, spoil, keptLines };
 }
 
 describe('a retry that asks a long meeting’s part again (#793 re-review)', () => {
@@ -182,5 +188,53 @@ describe('a retry that fails again partway (#793 re-review)', () => {
     expect(third.asked[1]).toContain(REDUCE_ASK);
     expect(third.asked).toHaveLength(3);
     expect(third.entry.kind).toBe('run');
+  });
+
+  it('keeps the parts and the reduce after the part it failed at, and drops a reduce asked again', async () => {
+    const { run, spoil, keptLines } = setUp([
+      summed('P1'),
+      summed('P2'),
+      summed('P3'),
+      REDUCED,
+      UNREADABLE,
+      UNREADABLE,
+      summed('P2 asked again'),
+      REDUCED,
+      UNREADABLE,
+    ]);
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' } });
+    spoil('P2');
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' }, asked: { length: 1 } });
+    expect(keptLines()).toEqual([4]);
+
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' }, asked: { length: 3 } });
+
+    expect(keptLines()).toEqual([4]);
+  });
+});
+
+describe('a retry after the prompt changed (#793 re-review)', () => {
+  // The kept line grew from every entry kept before: after a prompt change each part's old key stayed
+  // beside its new one, so a long meeting's line doubled toward STORED_ANSWERS_MAX_BYTES.
+  it('keeps only the keys this run asks under', async () => {
+    const { vault, run, keptLines } = setUp([
+      summed('P1'),
+      summed('P2'),
+      summed('P3'),
+      REDUCED,
+      UNREADABLE,
+      summed('P1 again'),
+      summed('P2 again'),
+      summed('P3 again'),
+      REDUCED,
+      UNREADABLE,
+    ]);
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' } });
+    const prompt = vault.files.get(AFTER_A_MEETING_PROMPT)!;
+    vault.files.set(AFTER_A_MEETING_PROMPT, `${prompt}\nNever make a task for Tobias.\n`);
+
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' }, asked: { length: 5 } });
+
+    expect(keptLines()).toEqual([4]);
   });
 });
