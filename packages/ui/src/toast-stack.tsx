@@ -25,6 +25,7 @@ export interface ToastShown {
  * The column is drawn while it is empty too, and can be handed the focus
  * though Tab never stops on it: it is where the focus goes when the toast
  * that held it is gone (#815), which would otherwise leave it on nothing.
+ * A named group, not a landmark: it is there, and mostly empty, all day.
  */
 export function ToastStack({
   toasts,
@@ -42,7 +43,7 @@ export function ToastStack({
   children?: ReactNode;
 }) {
   return (
-    <div ref={ref} className="toast-stack" role="region" aria-label="Notifications" tabIndex={-1}>
+    <div ref={ref} className="toast-stack" role="group" aria-label="Notifications" tabIndex={-1}>
       {children}
       {toasts.map(({ id, message, tone, onUndo, action, details }) => (
         <Toast

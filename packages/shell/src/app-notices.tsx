@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { noteTitle, type ActivityLevel, type VaultPath } from '@dfai/domain';
 import type { Clock } from '@dfai/application';
-import { EventDetailsButton, EventDetailsHost } from '@dfai/ui';
+import { EventDetailsButton, EventDetailsContext, useEventDetailsHost } from '@dfai/ui';
 import { noticeDetails } from './activity/event-details.ts';
 import { browserClipboard, type ClipboardWriter } from './settings/clipboard.ts';
 import { localClock } from './today.ts';
@@ -14,8 +14,9 @@ import type { LinkOffer } from './vault/use-vault-entries.ts';
  * details (#815): an error and a warning, in the notice's own words. The
  * details stay open, on the words they opened with, when the notice clears
  * itself or another takes its place: they are held here, above the notices.
- * Closed with their notice gone, they hand the focus to the notices' region,
- * which is drawn — empty — while there is nothing to say.
+ * Closed with their notice gone, they hand the focus to the notices' group
+ * itself, which is drawn — empty — while there is nothing to say: a named
+ * group, not a landmark, so an empty one is no stop on a tour of the page.
  */
 export function AppNotices({
   messages,
@@ -38,6 +39,8 @@ export function AppNotices({
 }) {
   const since = useShownSince([...messages, stranded.notice, keptComments?.notice ?? null], clock);
   const region = useRef<HTMLDivElement>(null);
+  // The hook, not the host component: this is drawn on every draw of the app (the work budgets).
+  const details = useEventDetailsHost(() => region.current);
   // `id` tells this notice from another saying the same words: the focus goes back to the one pressed.
   const words = ({ id, message, level }: { id: string; message: string; level: ActivityLevel }) => (
     <EventDetailsButton
@@ -51,8 +54,8 @@ export function AppNotices({
     </EventDetailsButton>
   );
   return (
-    <EventDetailsHost landmark={() => region.current}>
-      <div ref={region} className="notices" role="region" aria-label="Notices" tabIndex={-1}>
+    <EventDetailsContext.Provider value={details.host}>
+      <div ref={region} className="notices" role="group" aria-label="Notices" tabIndex={-1}>
         {keyedByWords(messages).map(({ key, message }) => (
           <p key={key} className="notice" role="alert">
             {words({ id: key, message, level: 'error' })}
@@ -93,7 +96,8 @@ export function AppNotices({
           />
         )}
       </div>
-    </EventDetailsHost>
+      {details.popup}
+    </EventDetailsContext.Provider>
   );
 }
 

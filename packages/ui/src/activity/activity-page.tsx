@@ -114,9 +114,9 @@ export function ActivityPage(props: ActivityPageProps) {
           <HiddenTitle>All activity</HiddenTitle>
           <Filters {...props} />
           {/* Above the lines: a line's details stay open as the log regroups and trims under them
-              (#815). Closed with their line gone, they hand the focus to the list, or to the
-              page where no line is left to list. */}
-          <EventDetailsHost landmark={() => list.current ?? page.current}>
+              (#815). Closed with their line gone, they hand the focus to the list's first
+              line — scrolled to, in a long log — or to the page where no line is left. */}
+          <EventDetailsHost landmark={() => firstLineOf(list.current) ?? page.current}>
             <Lines {...props} list={list} />
           </EventDetailsHost>
         </article>
@@ -278,4 +278,9 @@ function Message({ row, does }: { row: ActivityRowView; does: LineActions }) {
       {row.message}
     </EventDetailsButton>
   );
+}
+
+/** The first control in the list — where Tab would first stop in it — or the list with none. */
+function firstLineOf(list: HTMLOListElement | null): HTMLElement | null {
+  return list?.querySelector<HTMLElement>('button:not(:disabled)') ?? list;
 }

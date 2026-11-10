@@ -61,7 +61,7 @@ interface OpenedDetails {
   readonly onOpenSubject?: () => void;
 }
 
-interface DetailsHost {
+export interface DetailsHost {
   /** The line whose details are open; null when none is. */
   readonly open: string | null;
   show(opened: OpenedDetails): void;
@@ -69,7 +69,8 @@ interface DetailsHost {
   readonly lines: Map<string, HTMLElement>;
 }
 
-const HostContext = createContext<DetailsHost | null>(null);
+/** What the lines under a host open their details through; given by an `EventDetailsHost`. */
+export const EventDetailsContext = createContext<DetailsHost | null>(null);
 
 /**
  * Where the details of the lines under it open (#815): one popup, held here
@@ -90,15 +91,38 @@ export function EventDetailsHost({
   landmark,
 }: {
   children: ReactNode;
-  /**
-   * Where the focus goes when the line is gone: something focusable that is
-   * drawn whatever the lines do — their list, their region, the dialog they
-   * are in. The focus lands on the first thing in it that Tab stops on, or on
-   * it where there is none. Null only for a line that hosts itself, whose
-   * popup goes with it.
-   */
-  landmark: (() => HTMLElement | null) | null;
+  landmark: DetailsLandmark;
 }) {
+  const { host, popup } = useEventDetailsHost(landmark);
+  return (
+    <EventDetailsContext.Provider value={host}>
+      {children}
+      {popup}
+    </EventDetailsContext.Provider>
+  );
+}
+
+/**
+ * Where the focus goes when the line is gone: something focusable that is
+ * drawn whatever the lines do — their list, their region. The focus lands on
+ * it, itself, and never on something in it that Tab stops on: that would be
+ * another line's button, and an Enter meant for the line that went would
+ * press it. Null only for a line that hosts itself, whose popup goes with it.
+ */
+type DetailsLandmark = (() => HTMLElement | null) | null;
+
+/**
+ * An `EventDetailsHost` without a component of its own, for a host drawn on
+ * every draw of the app — the window's notices and its toasts: `host` is
+ * given to an `EventDetailsContext.Provider` above the lines, and `popup` is
+ * drawn inside it. Nothing more is drawn until a line first opens — no
+ * dialog, no portal — so a window that never opens any details does no work
+ * for them (the work budgets count every component drawn, `tools/perf`).
+ */
+export function useEventDetailsHost(landmark: DetailsLandmark): {
+  host: DetailsHost;
+  popup: ReactNode;
+} {
   const [shown, setShown] = useState<OpenedDetails | null>(null);
   const [open, setOpen] = useState(false);
   const [lines] = useState(() => new Map<string, HTMLElement>());
@@ -114,37 +138,52 @@ export function EventDetailsHost({
     [open, shown, lines],
   );
   useEscapeTaken(open, setOpen);
-  const openSubject = shown?.onOpenSubject;
-  return (
-    <HostContext.Provider value={host}>
-      {children}
-      <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Portal>
-          <Dialog.Viewport className="palette__backdrop">
-            <Dialog.Popup
-              className="palette confirm event-details"
+  if (shown === null) return { host, popup: null };
+  const openSubject = shown.onOpenSubject;
+  const popup = (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Portal>
+        <Dialog.Viewport className="palette__backdrop">
+          <Dialog.Popup
+            className="palette confirm event-details"
+            finalFocus={(closeType) => {
               // The line as drawn now, which may not be the element that was pressed.
-              finalFocus={() => lines.get(shown?.line ?? '') ?? landmark?.() ?? true}
-            >
-              {/* What was shown stays as the popup leaves, so it never empties on its way out. */}
-              {shown !== null && (
-                <Popup
-                  details={shown.details}
-                  onCopy={shown.onCopy}
-                  {...(openSubject !== undefined && {
-                    onOpenSubject: () => {
-                      setOpen(false);
-                      openSubject();
-                    },
-                  })}
-                />
-              )}
-            </Dialog.Popup>
-          </Dialog.Viewport>
-        </Dialog.Portal>
-      </Dialog.Root>
-    </HostContext.Provider>
+              const line = lines.get(shown.line);
+              if (line !== undefined) return line;
+              const mark = landmark?.() ?? null;
+              if (mark === null) return true;
+              focusLandmark(mark, closeType === 'keyboard');
+              return false;
+            }}
+          >
+            {/* What was shown stays as the popup leaves, so it never empties on its way out. */}
+            <Popup
+              details={shown.details}
+              onCopy={shown.onCopy}
+              {...(openSubject !== undefined && {
+                onOpenSubject: () => {
+                  setOpen(false);
+                  openSubject();
+                },
+              })}
+            />
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
+  return { host, popup };
+}
+
+/**
+ * Puts the focus on the landmark itself. Done here and not left to the
+ * dialog, which would put it on the first thing in the landmark that Tab
+ * stops on, and without scrolling to it: this scrolls it into view, and
+ * shows the focus where the keyboard closed the popup (WCAG 2.4.7). After
+ * this turn, as the dialog's own hand-back is: its focus trap is down by then.
+ */
+function focusLandmark(landmark: HTMLElement, byKeyboard: boolean): void {
+  queueMicrotask(() => landmark.focus({ focusVisible: byKeyboard }));
 }
 
 /**
@@ -201,7 +240,7 @@ export interface EventDetailsButtonProps {
  * the line; with none above, the line is its own host.
  */
 export function EventDetailsButton(props: EventDetailsButtonProps) {
-  const hosted = useContext(HostContext) !== null;
+  const hosted = useContext(EventDetailsContext) !== null;
   if (hosted) return <DetailsLine {...props} />;
   return (
     <EventDetailsHost landmark={null}>
@@ -220,7 +259,7 @@ function DetailsLine({
   onOpenSubject,
   onOpenChange,
 }: EventDetailsButtonProps) {
-  const host = useContext(HostContext);
+  const host = useContext(EventDetailsContext);
   if (host === null) throw new Error('A details line is drawn under an EventDetailsHost.');
   const own = useId();
   const line = id ?? own;

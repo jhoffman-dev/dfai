@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import { noticeReport } from '@dfai/domain';
 import type { ActivityLog, Clock } from '@dfai/application';
-import { EventDetailsHost, ToastStack, type ToastShown } from '@dfai/ui';
+import { EventDetailsContext, ToastStack, useEventDetailsHost, type ToastShown } from '@dfai/ui';
 import { noticeDetails } from '../activity/event-details.ts';
 import { browserClipboard, type ClipboardWriter } from '../settings/clipboard.ts';
 import { localClock } from '../today.ts';
@@ -19,7 +19,9 @@ import type { Toasts, ToastsState } from './toasts.ts';
  * details of its own words (#815), which stay open though the toast goes —
  * pushed out by newer ones, replaced in its slot, let go with its vault: the
  * popup is held here, above the queue. Closed with its toast gone, it hands
- * the focus to the toasts' column, or to the peek while they are drawn in it. Another vault opening lets every toast go, since each
+ * the focus to the toasts' column itself — in the peek while they are drawn
+ * there — and never to another toast's button, which an Enter would press.
+ * Another vault opening lets every toast go, since each
  * one's Undo belongs to the vault it was made in. `children` are toasts
  * still drawn by their own hooks, kept in the same column.
  *
@@ -49,6 +51,7 @@ export const ToastHost = memo(function ToastHost({
   useWarningsRecorded(toasts, activity);
   useEffect(() => toasts.openVault(vault ?? null), [toasts, vault]);
   const column = useRef<HTMLDivElement>(null);
+  const details = useEventDetailsHost(() => column.current);
   const stack = (
     <ToastStack
       ref={column}
@@ -63,16 +66,12 @@ export const ToastHost = memo(function ToastHost({
   // The details are held outside that place, so they stay open as the peek comes and
   // goes: the toasts are drawn anew in the other place, each known by its own id.
   return (
-    <EventDetailsHost landmark={() => dialogAround(place) ?? column.current}>
+    <EventDetailsContext.Provider value={details.host}>
       {place === null ? stack : createPortal(stack, place)}
-    </EventDetailsHost>
+      {details.popup}
+    </EventDetailsContext.Provider>
   );
 });
-
-/** The dialog the toasts' place is in — the peek — which holds the focus while it is up. */
-function dialogAround(place: HTMLElement | null): HTMLElement | null {
-  return place?.closest<HTMLElement>('[role="dialog"]') ?? null;
-}
 
 /**
  * The toasts, each warning and error with the details its words open to.
