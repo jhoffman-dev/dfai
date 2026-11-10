@@ -269,16 +269,17 @@ export function draftProblem(draft: AutomationDraft): string | null {
 
 /**
  * Whether two readings of a rule say the same rule: every key its file is
- * written with, and its id. What a write was planned from is checked against
- * the file as it is now this way, so a change made on disk since is never
- * written over (#793).
+ * written with but `enabled`, and its id. What a write was planned from is
+ * checked against the file as it is now this way, so a change made on disk
+ * since is never written over (#793). On or off is left out: the switch
+ * writes only that key, and an editor open on the rule since must still save.
  */
 export function sameAutomation(
   left: Pick<AutomationRule, 'id'> & AutomationDraft,
   right: Pick<AutomationRule, 'id'> & AutomationDraft,
 ): boolean {
   const said = (rule: Pick<AutomationRule, 'id'> & AutomationDraft) =>
-    JSON.stringify({ ...automationFrontmatter(rule), id: rule.id });
+    JSON.stringify({ ...automationFrontmatter({ ...rule, enabled: false }), id: rule.id });
   return said(left) === said(right);
 }
 
