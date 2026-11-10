@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react';
 import { LoadedLater } from '../page-frame-fallback.tsx';
 import { activityScreen } from '../pages-on-first-use.ts';
+import { browserClipboard } from '../settings/clipboard.ts';
 import { localClock } from '../today.ts';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 
@@ -23,6 +24,7 @@ export function ActivityContainer({ wiring, chrome }: PageContainerProps) {
       <ActivityScreen
         activity={pages.activity.activity}
         clock={localClock}
+        clipboard={browserClipboard}
         onOpenSubject={(subject) =>
           subject.kind === 'rule'
             ? pages.openPage({ kind: 'automations' })

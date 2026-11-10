@@ -1,6 +1,7 @@
 import { withKindToggled, type ActivitySubject } from '@dfai/domain';
 import type { Clock } from '@dfai/application';
 import { ActivityPage, type PageHistory } from '@dfai/ui';
+import type { ClipboardWriter } from '../settings/clipboard.ts';
 import { activityEntries, subjectOf } from './activity-rows.ts';
 import type { useActivity } from './use-activity.ts';
 
@@ -11,12 +12,15 @@ import type { useActivity } from './use-activity.ts';
 export function ActivityScreen({
   activity,
   clock,
+  clipboard,
   onOpenSubject,
   onShowSidebar,
   history,
 }: {
   activity: ReturnType<typeof useActivity>;
   clock: Pick<Clock, 'today'>;
+  /** Where a line's details are copied to (#815). */
+  clipboard: ClipboardWriter;
   /** Opens the note, the rule or the source a line is about. */
   onOpenSubject: (subject: ActivitySubject) => void;
   onShowSidebar?: () => void;
@@ -38,6 +42,7 @@ export function ActivityScreen({
         const subject = shown === null ? null : subjectOf(shown, id);
         if (subject !== null) onOpenSubject(subject);
       }}
+      onCopy={(text) => clipboard.write(text)}
       {...(onShowSidebar !== undefined && { onShowSidebar })}
       {...(history !== undefined && { history })}
     />

@@ -134,6 +134,7 @@ describe('automationFailedReport', () => {
       kind: 'automation',
       message: 'Tidy tasks: Could not run. disk full',
       subject: RULE_SUBJECT,
+      detail: 'disk full',
     });
   });
 

@@ -136,7 +136,7 @@ test('an Undo after the note moved on is refused, said as a warning, and found l
   const refused = toastSaying(page, 'has changed since');
   await expect(refused).toBeVisible();
   await expect(refused.locator('.toast__dot--warning')).toHaveCount(1);
-  await expect(refused.getByRole('button', { name: 'Undo' })).toHaveCount(0);
+  await expect(refused.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
   expect(await vault.read(PATH)).toBe(edited);
 
   await goTo(page)

@@ -108,6 +108,8 @@ export function automationFailedReport({
     kind: 'automation',
     message: `${rule.name}: ${what}. ${problem}`,
     subject: ruleSubject(rule),
+    // The line cuts a long problem short; its detail keeps more of it (#815).
+    detail: problem,
   };
 }
 
@@ -516,7 +518,13 @@ export const INDEX_NOT_KEPT =
  */
 export function indexNotKeptReport(cause: string | null): ActivityReport {
   const message = cause === null ? INDEX_NOT_KEPT : `${INDEX_NOT_KEPT} (${cause})`;
-  return { level: 'warning', kind: 'index', message, subject: null };
+  return {
+    level: 'warning',
+    kind: 'index',
+    message,
+    subject: null,
+    ...(cause !== null && { detail: cause }),
+  };
 }
 
 /** A note the index could not take, and why. */
