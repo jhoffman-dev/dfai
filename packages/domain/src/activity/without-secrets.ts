@@ -7,7 +7,8 @@
  * and each asks for a shape a word of prose does not have.
  */
 
-const REDACTED = '<secret>';
+/** What a secret's value is struck to. */
+export const REDACTED = '<secret>';
 
 /** `Bearer abc…`, `Token: abc…`: an Authorization header's value. */
 const SCHEME = /\b(Bearer|Token)(\s*:\s*|\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
