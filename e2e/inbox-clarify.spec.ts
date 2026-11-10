@@ -113,6 +113,10 @@ const row = (page: Page, title: string) =>
 async function openInbox(page: Page) {
   await sidebarInbox(page).click();
   await expect(inboxPage(page).getByRole('table')).toBeVisible();
+  // As the vault opens, the meeting import stamps the meeting, which makes it
+  // the newest note: the list re-reads and the meeting moves to the top. A test
+  // that reads the order, or picks on a row, before then races it (#818).
+  await expect(row(page, '2026-10-01 Seed swap')).toContainText('Not imported');
 }
 
 test('one Inbox: the folder and every task still at Inbox, counted the same in the sidebar', async ({

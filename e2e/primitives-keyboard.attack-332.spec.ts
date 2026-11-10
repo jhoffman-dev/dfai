@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { focusedRing } from './focus-ring.ts';
 import { createVault, installHost } from './host.ts';
+import { inboxRowsInReach } from './inbox.ts';
 
 // Attack on #332: the rewrite of #328's ring tests focuses each primitive from
 // script. These walk the real keyboard path instead — Option+Tab, which in
@@ -111,6 +112,7 @@ const RING_SURFACES: Record<string, (page: Page) => Promise<void>> = {
       .getByRole('list', { name: 'Go to' })
       .getByRole('button', { name: /^Inbox/ })
       .click();
+    await inboxRowsInReach(page);
     await expect(page.locator('.inbox__row .btn').first()).toBeVisible();
   },
   today: async (page) => {
