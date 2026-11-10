@@ -479,9 +479,59 @@ describe('acceptProposalNote — when the vault moves under it', () => {
     await expect(
       acceptProposalNote({ via: 'app', ports: tangled, path: vaultPath(PROPOSAL), today: TODAY }),
     ).rejects.toThrow(
-      /“Send Mara the payroll file” was written, but the proposal could not be marked accepted .* taking it back failed/,
+      new ProposalRefused(
+        '“Send Mara the payroll file” was written, but the proposal could not be marked accepted (The proposal changed since it was read.), and taking it back failed: Send Mara the payroll file changed since this was proposed; nothing was written.',
+      ),
     );
     expect(setup.paths()).toContain(TASK);
+  });
+
+  it('says once that the stamp failed, in no words of the disk’s, when nothing can be taken back', async () => {
+    const setup = vault();
+    const { fs } = setup.ports;
+    const broken = {
+      ...setup.ports,
+      fs: {
+        ...fs,
+        writeTextFile: async (args: Parameters<typeof fs.writeTextFile>[0]) => {
+          if (args.path === PROPOSAL)
+            throw new Error(`EIO: i/o error, write /Users/tobias/Vault/${PROPOSAL}`);
+          return fs.writeTextFile(args);
+        },
+        trashEntry: async () => {
+          throw new Error(`EACCES: permission denied, rename /Users/tobias/Vault/${TASK}`);
+        },
+      },
+    };
+    await expect(
+      acceptProposalNote({ via: 'app', ports: broken, path: vaultPath(PROPOSAL), today: TODAY }),
+    ).rejects.toThrow(
+      new ProposalRefused(
+        '“Send Mara the payroll file” was written, but the proposal could not be marked accepted, and taking it back failed: the vault would not let DFAI undo what was written.',
+      ),
+    );
+  });
+
+  it('takes the task back when the stamp fails for a reason of the disk, and says so in its own words', async () => {
+    const setup = vault();
+    const { fs } = setup.ports;
+    const broken = {
+      ...setup.ports,
+      fs: {
+        ...fs,
+        writeTextFile: async (args: Parameters<typeof fs.writeTextFile>[0]) => {
+          if (args.path === PROPOSAL)
+            throw new Error(`EIO: i/o error, write /Users/tobias/Vault/${PROPOSAL}`);
+          return fs.writeTextFile(args);
+        },
+      },
+    };
+    await expect(
+      acceptProposalNote({ via: 'app', ports: broken, path: vaultPath(PROPOSAL), today: TODAY }),
+    ).rejects.toThrow(
+      new ProposalRefused('The proposal could not be marked accepted. Nothing was kept.'),
+    );
+    expect(setup.paths()).not.toContain(TASK);
   });
 
   it('accepts all the same when the proposal cannot be archived, and says why', async () => {

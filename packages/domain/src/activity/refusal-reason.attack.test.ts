@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
 import { apiWriteReport, MAX_REFUSAL_REASON } from './activity-reports.ts';
-import { activityEvent, MAX_ACTIVITY_DETAIL } from './activity-event.ts';
+import { activityEvent, MAX_ACTIVITY_DETAIL, safeActivityText } from './activity-event.ts';
 import { activityLine, parseActivityLog } from './activity-file.ts';
 
 const ROUTE = 'POST /v1/meetings/assistant/proposals';
@@ -127,5 +127,57 @@ describe('a refusal detail survives the activity file', () => {
     const [read] = parseActivityLog(activityLine(line));
     expect(parseActivityLog(activityLine(line))).toHaveLength(1);
     expect(read).toEqual(line);
+  });
+});
+
+describe('a refusal reason keeps no secret an invisible character splits', () => {
+  // Each is drawn as nothing, so one inside a key hides it from what strikes secrets.
+  const HIDDEN = [
+    0x00ad, 0x034f, 0x115f, 0x1160, 0x180e, 0x3164, 0xfe00, 0xfe07, 0xfe0f, 0xfeff, 0xe0000,
+    0xe0041, 0xe007f,
+  ];
+  const TAIL = 'Rt6yUi4oPa2sDf0gHjKl';
+
+  it.each(HIDDEN.map((code) => [code.toString(16).toUpperCase().padStart(4, '0'), code]))(
+    'strikes a key split by U+%s, and keeps no part of it',
+    (_name, code) => {
+      const hidden = String.fromCodePoint(code);
+      const { message, detail } = keptLine(`the key sk-ant-api03-Qw8e${hidden}${TAIL} was refused`);
+      for (const text of [message, detail ?? '']) {
+        expect(text).toContain('the key <secret> was refused');
+        expect(text).not.toContain(TAIL);
+        expect(text).not.toContain(hidden);
+      }
+    },
+  );
+
+  it('removes a byte-order mark, rather than reading it as a space', () => {
+    expect(keptLine('ready\uFEFFnow').detail).toBe('readynow');
+  });
+});
+
+describe('a refusal reason is not swallowed by an unterminated terminal title', () => {
+  it('keeps the words after an OSC that never ends', () => {
+    const { message, detail } = keptLine('\u001B]0;title and the real reason');
+    expect(detail).toContain('and the real reason');
+    expect(message).toContain('and the real reason');
+    expect(hasCodePoint(detail ?? '', CONTROLS)).toBe(false);
+  });
+});
+
+describe('a cut never leaves part of what stands in for a path, secret or chat note', () => {
+  it.each([
+    ['Saved to /Users/tobias/Vault/Notes/plan.md today', 12, 'Saved to…'],
+    ['key sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA used', 8, 'key…'],
+    ['Asked Chats/Plan the garden beds.md again', 10, 'Asked…'],
+    ['Asked Chats/Plan the garden beds.md again', 8, 'Asked…'],
+  ])('cuts %j to %i before its placeholder', (raw, max, cut) => {
+    expect(safeActivityText(raw, { max })).toBe(cut);
+  });
+
+  it('keeps a placeholder the cut falls just after', () => {
+    expect(safeActivityText('Saved to /Users/tobias/Vault/Notes/plan.md today', { max: 16 })).toBe(
+      'Saved to <path>…',
+    );
   });
 });
