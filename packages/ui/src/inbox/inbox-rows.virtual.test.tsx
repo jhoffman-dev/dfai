@@ -162,29 +162,27 @@ describe('InboxRows — an Inbox of hundreds (#238)', () => {
     ).toBe('inbox');
   });
 
-  it.fails(
-    'keeps a link typed and not picked on a row that is scrolled out of the page and back, and Save is still refused (#823)',
-    async () => {
-      const items = Array.from({ length: 500 }, (_, at) => task(`Task ${at}`));
-      const props = given(items);
-      render(<InboxPage {...props} />);
-      const under = () =>
-        screen.queryByRole('combobox', { name: 'File Task 2 under' }) as HTMLInputElement | null;
-      fireEvent.change(screen.getByRole('combobox', { name: 'Status of Task 2' }), {
-        target: { value: 'someday' },
-      });
-      await userEvent.type(under()!, 'Zeph');
-      act(() => under()!.blur());
+  it('keeps a link typed and not picked on a row that is scrolled out of the page and back, and Save is still refused (#823)', async () => {
+    const items = Array.from({ length: 500 }, (_, at) => task(`Task ${at}`));
+    const props = given(items);
+    render(<InboxPage {...props} />);
+    const under = () =>
+      screen.queryByRole('combobox', { name: 'File Task 2 under' }) as HTMLInputElement | null;
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status of Task 2' }), {
+      target: { value: 'someday' },
+    });
+    await userEvent.type(under()!, 'Zeph');
+    // The list keeps the row the focus was last in: it goes to another, as it does working down the list.
+    act(() => screen.getByRole('combobox', { name: 'Status of Task 0' }).focus());
 
-      scrollPageTo(200_000);
-      expect(under()).toBeNull();
-      scrollPageTo(0);
+    scrollPageTo(200_000);
+    expect(under()).toBeNull();
+    scrollPageTo(0);
 
-      expect(under()?.value).toBe('Zeph');
-      const row = under()!.closest('tr') as HTMLElement;
-      await userEvent.click(within(row).getByRole('button', { name: 'Save' }));
-      expect(props.onClarify).not.toHaveBeenCalled();
-      expect(within(row).getByRole('alert').textContent).toContain('“Zeph”');
-    },
-  );
+    expect(under()?.value).toBe('Zeph');
+    const row = under()!.closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Save' }));
+    expect(props.onClarify).not.toHaveBeenCalled();
+    expect(within(row).getByRole('alert').textContent).toContain('“Zeph”');
+  });
 });

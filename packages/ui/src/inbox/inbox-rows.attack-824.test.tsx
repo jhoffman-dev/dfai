@@ -82,7 +82,7 @@ afterEach(() => {
 });
 
 describe('#824 attack — a row key commits past a link typed and not picked', () => {
-  it.fails('N on the row does not write it while a project is typed and not picked', async () => {
+  it('N on the row does not write it while a project is typed and not picked', async () => {
     const { onClarify } = page();
     await userEvent.type(control('File Call the bank under'), 'Lark');
     focusRow('Call the bank');
@@ -91,75 +91,74 @@ describe('#824 attack — a row key commits past a link typed and not picked', (
     expect(clarified(onClarify)).toEqual([]);
   });
 
-  it.fails(
-    'W on the row does not write Waiting while who it waits on is typed and not picked',
-    async () => {
-      const { onClarify } = page();
-      await userEvent.selectOptions(control('Status of Call the bank'), 'Waiting');
-      await userEvent.type(control('Who Call the bank waits on'), 'Mar');
-      focusRow('Call the bank');
-      expect(control('Who Call the bank waits on').value).toBe('Mar');
-      await userEvent.keyboard('w');
-      expect(clarified(onClarify)).toEqual([]);
-    },
-  );
+  it('W on the row does not write Waiting while who it waits on is typed and not picked', async () => {
+    const { onClarify } = page();
+    await userEvent.selectOptions(control('Status of Call the bank'), 'Waiting');
+    await userEvent.type(control('Who Call the bank waits on'), 'Mar');
+    focusRow('Call the bank');
+    expect(control('Who Call the bank waits on').value).toBe('Mar');
+    await userEvent.keyboard('w');
+    expect(clarified(onClarify)).toEqual([]);
+  });
 
-  it.fails(
-    '↵ in the picker P opened does not write the held status while its project is typed and not picked',
-    async () => {
-      const { onClarify } = page();
-      await userEvent.selectOptions(control('Status of Call the bank'), 'Next Action');
-      focusRow('Call the bank');
-      await userEvent.keyboard('p');
-      expect(document.activeElement).toBe(control('File Call the bank under'));
-      await userEvent.keyboard('Zephyr{Enter}');
-      expect(clarified(onClarify)).toEqual([]);
-    },
-  );
+  it('↵ in the picker P opened does not write the held status while its project is typed and not picked', async () => {
+    const { onClarify } = page();
+    await userEvent.selectOptions(control('Status of Call the bank'), 'Next Action');
+    focusRow('Call the bank');
+    await userEvent.keyboard('p');
+    expect(document.activeElement).toBe(control('File Call the bank under'));
+    await userEvent.keyboard('Zephyr{Enter}');
+    expect(clarified(onClarify)).toEqual([]);
+  });
 
-  it.fails(
-    '↵ in the picker P opened says why nothing was written when its project is typed and not picked',
-    async () => {
-      page();
-      focusRow('Call the bank');
-      await userEvent.keyboard('p');
-      await userEvent.keyboard('Zephyr{Enter}');
-      expect(within(rowOf('Call the bank')).queryByRole('alert')?.textContent ?? '').toContain(
-        '“Zephyr”',
-      );
-    },
-  );
+  it('↵ in the picker P opened says why nothing was written when its project is typed and not picked', async () => {
+    page();
+    focusRow('Call the bank');
+    await userEvent.keyboard('p');
+    await userEvent.keyboard('Zephyr{Enter}');
+    expect(within(rowOf('Call the bank')).queryByRole('alert')?.textContent ?? '').toContain(
+      '“Zephyr”',
+    );
+  });
 });
 
 describe('#824 attack — a link field shows what Save writes', () => {
-  it.fails(
-    'a project picked, then cleared from its field, is not written by Save behind an empty field',
-    async () => {
-      const { onClarify } = page();
-      const under = control('File Call the bank under');
-      await pickSuggestion(under, 'Garden');
-      await userEvent.clear(under);
-      await userEvent.click(save('Call the bank'));
-      const shownAtSave = under.value;
-      const written = clarified(onClarify)[0]?.clarification.project;
-      expect(written === undefined ? '' : 'Garden').toBe(shownAtSave);
-    },
-  );
+  it('a project picked, then cleared from its field, is not written by Save behind an empty field', async () => {
+    // Read as the row is written: once it is, the row holds no pick, and the field is the task's again.
+    let shownAtSave: string | null = null;
+    const { onClarify } = page({
+      onClarify: vi.fn(async () => {
+        shownAtSave = control('File Call the bank under').value;
+        return true;
+      }),
+    });
+    const under = control('File Call the bank under');
+    await pickSuggestion(under, 'Garden');
+    await userEvent.clear(under);
+    await userEvent.click(save('Call the bank'));
+    const written = clarified(onClarify)[0]?.clarification.project;
+    expect(written).toBe('Areas/Garden.md');
+    expect(shownAtSave).toBe('Garden');
+  });
 
-  it.fails(
-    'a person picked, then typed over with spaces alone, is not written by Save behind a blank field',
-    async () => {
-      const { onClarify } = page();
-      await userEvent.selectOptions(control('Status of Call the bank'), 'Waiting');
-      const who = control('Who Call the bank waits on');
-      await pickSuggestion(who, 'Mara Quill');
-      await userEvent.clear(who);
-      await userEvent.type(who, '  ');
-      await userEvent.click(save('Call the bank'));
-      const written = clarified(onClarify)[0]?.clarification.waitingOn;
-      expect(written === undefined ? '' : 'Mara Quill').toBe(who.value.trim());
-    },
-  );
+  it('a person picked, then typed over with spaces alone, is not written by Save behind a blank field', async () => {
+    let shownAtSave: string | null = null;
+    const { onClarify } = page({
+      onClarify: vi.fn(async () => {
+        shownAtSave = control('Who Call the bank waits on').value;
+        return true;
+      }),
+    });
+    await userEvent.selectOptions(control('Status of Call the bank'), 'Waiting');
+    const who = control('Who Call the bank waits on');
+    await pickSuggestion(who, 'Mara Quill');
+    await userEvent.clear(who);
+    await userEvent.type(who, '  ');
+    await userEvent.click(save('Call the bank'));
+    const written = clarified(onClarify)[0]?.clarification.waitingOn;
+    expect(written).toBe('People/Mara Quill.md');
+    expect(shownAtSave).toBe('Mara Quill');
+  });
 });
 
 describe('#824 attack — probes found sound', () => {

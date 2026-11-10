@@ -78,48 +78,42 @@ const clarified = (onClarify: InboxPageProps['onClarify']) =>
 afterEach(cleanup);
 
 describe('a link typed and not picked — every way a row is written', () => {
-  it.fails(
-    'holds a project picked from the picker P opened while who it waits on is typed, and Save then writes both',
-    async () => {
-      const { onClarify } = page();
-      await userEvent.selectOptions(status(), 'Waiting');
-      await userEvent.type(who(), 'Mar');
-      focusRow();
-      await userEvent.keyboard('p');
-      await userEvent.keyboard('gar{Enter}');
+  it('holds a project picked from the picker P opened while who it waits on is typed, and Save then writes both', async () => {
+    const { onClarify } = page();
+    await userEvent.selectOptions(status(), 'Waiting');
+    await userEvent.type(who(), 'Mar');
+    focusRow();
+    await userEvent.keyboard('p');
+    await userEvent.keyboard('gar{Enter}');
 
-      expect(clarified(onClarify)).toEqual([]);
-      expect(refusal()).toBe('“Mar” is typed but not picked. Pick it from the list, or clear it.');
-      expect(under().value).toBe('Garden');
+    expect(clarified(onClarify)).toEqual([]);
+    expect(refusal()).toBe('“Mar” is typed but not picked. Pick it from the list, or clear it.');
+    expect(under().value).toBe('Garden');
 
-      await pickSuggestion(who(), 'Mara Quill');
-      await userEvent.click(save());
-      expect(clarified(onClarify)).toEqual([
-        {
-          path: TASK,
-          clarification: {
-            status: 'waiting',
-            project: 'Areas/Garden.md',
-            waitingOn: 'People/Mara Quill.md',
-          },
+    await pickSuggestion(who(), 'Mara Quill');
+    await userEvent.click(save());
+    expect(clarified(onClarify)).toEqual([
+      {
+        path: TASK,
+        clarification: {
+          status: 'waiting',
+          project: 'Areas/Garden.md',
+          waitingOn: 'People/Mara Quill.md',
         },
-      ]);
-    },
-  );
+      },
+    ]);
+  });
 
-  it.fails(
-    'says why ↵ wrote nothing in a field nobody armed, with nothing else picked on the row',
-    async () => {
-      const { onClarify } = page();
-      await userEvent.type(under(), 'Zephyr{Enter}');
-      expect(clarified(onClarify)).toEqual([]);
-      expect(refusal()).toContain('“Zephyr”');
-    },
-  );
+  it('says why ↵ wrote nothing in a field nobody armed, with nothing else picked on the row', async () => {
+    const { onClarify } = page();
+    await userEvent.type(under(), 'Zephyr{Enter}');
+    expect(clarified(onClarify)).toEqual([]);
+    expect(refusal()).toContain('“Zephyr”');
+  });
 });
 
 describe('a link typed and not picked — the row’s one refusal', () => {
-  it.fails('says it in the one place the row says the app’s own refusal', async () => {
+  it('says it in the one place the row says the app’s own refusal', async () => {
     page({ refusals: [{ path: TASK, reason: 'The note changed on disk.' }] });
     expect(within(row()).getAllByRole('alert')).toHaveLength(1);
     await userEvent.selectOptions(status(), 'Next Action');
@@ -131,7 +125,7 @@ describe('a link typed and not picked — the row’s one refusal', () => {
     expect(said[0]?.textContent).toContain('“Zeph”');
   });
 
-  it.fails('keeps the refusal over one field while the other is typed in', async () => {
+  it('keeps the refusal over one field while the other is typed in', async () => {
     page();
     await userEvent.selectOptions(status(), 'Waiting');
     await userEvent.type(who(), 'Mar');

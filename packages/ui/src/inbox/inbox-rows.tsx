@@ -148,10 +148,12 @@ export function InboxRows({
     commit,
     fileUnder,
     makeTask,
+    typedIn,
+    typedOf,
   } = triage;
   const actions = useMemo(
-    () => ({ pick, commit, fileUnder, makeTask }),
-    [pick, commit, fileUnder, makeTask],
+    () => ({ pick, commit, fileUnder, makeTask, typedIn, typedOf }),
+    [pick, commit, fileUnder, makeTask, typedIn, typedOf],
   );
   // The app makes its callback anew on many of its renders; the rows' choices stay the same.
   const steadyCreate = useSteadyCallback(onCreateFiling ?? NO_CREATE);
@@ -189,7 +191,12 @@ export function InboxRows({
                 choices={choices}
                 onOpen={open}
                 busy={busy}
-                refusal={refusals.find((each) => each.path === item.path)?.reason ?? null}
+                // One place says either: what stops the row being written now, before what the app last refused.
+                refusal={
+                  triage.unpickedOf(item.path) ??
+                  refusals.find((each) => each.path === item.path)?.reason ??
+                  null
+                }
                 summaryPending={summaryPending?.get(item.path) ?? null}
                 actions={actions}
               />
@@ -264,7 +271,10 @@ function usePlacedRowRefs(
 }
 
 /** What a row can do, the same from one render to the next. */
-type RowActions = Pick<InboxTriage, 'pick' | 'commit' | 'fileUnder' | 'makeTask'>;
+type RowActions = Pick<
+  InboxTriage,
+  'pick' | 'commit' | 'fileUnder' | 'makeTask' | 'typedIn' | 'typedOf'
+>;
 
 interface RowChoices {
   readonly filing: readonly RelationChoice[];
@@ -294,7 +304,7 @@ const InboxRow = memo(function InboxRow({
   choices: RowChoices;
   onOpen: (path: VaultPath) => void;
   busy: boolean;
-  /** Why this row's last clarification was refused, or null. */
+  /** Why this row was not written — a link typed and not picked, or the app's own refusal — or null. */
   refusal: string | null;
   /** Why this meeting's summary still waits; null when it waits for none. */
   summaryPending: string | null;
@@ -426,7 +436,6 @@ function ClarifyTask({
   actions: RowActions;
 }) {
   const pick = (picked: InboxDraft) => actions.pick(item.path, picked);
-  const unpicked = useUnpicked();
   const asksWho = asksWhoItWaitsOn(task, draft);
   const status = draft.status ?? task.status ?? '';
   // What the vault's Task type declares, and what the task says now so the row can show it.
@@ -439,7 +448,6 @@ function ClarifyTask({
       aria-label={`Clarify ${item.title}`}
       onSubmit={(event) => {
         event.preventDefault();
-        if (unpicked.refuses(LINK_FIELDS)) return;
         actions.commit(item, draft);
       }}
     >
@@ -467,7 +475,8 @@ function ClarifyTask({
           choices={choices.people}
           disabled={busy}
           onPick={(waitingOn) => pick({ waitingOn })}
-          onTyped={unpicked.typedIn('waitingOn')}
+          typed={actions.typedOf(item.path, 'waitingOn')}
+          onTyped={(text) => actions.typedIn(item.path, 'waitingOn', text)}
         />
       )}
       <NotePicker
@@ -477,7 +486,8 @@ function ClarifyTask({
         choices={choices.filing}
         disabled={busy || (choices.filing.length === 0 && choices.createFiling === null)}
         onPick={(project) => pick({ project })}
-        onTyped={unpicked.typedIn('project')}
+        typed={actions.typedOf(item.path, 'project')}
+        onTyped={(text) => actions.typedIn(item.path, 'project', text)}
         createFiling={choices.createFiling}
         field="project"
       />
@@ -503,51 +513,8 @@ function ClarifyTask({
       >
         Save
       </button>
-      {unpicked.refusal !== null && (
-        <p className="inbox__refusal" role="alert">
-          {unpicked.refusal}
-        </p>
-      )}
     </form>
   );
-}
-
-type LinkField = 'waitingOn' | 'project';
-const LINK_FIELDS: readonly LinkField[] = ['waitingOn', 'project'];
-
-/**
- * What a row's link fields hold typed and not picked (#823). Save over one is
- * refused, and says why, rather than writing the row without the link: the
- * text is not a note, so it is neither written nor dropped behind the
- * person's back. The refusal answers that Save; any change to what is typed
- * takes it away, and the next Save looks again.
- */
-function useUnpicked() {
-  const [typed, setTyped] = useState<Partial<Record<LinkField, string>>>({});
-  const [refused, setRefused] = useState<string | null>(null);
-  const typedIn = (field: LinkField) => (text: string | null) => {
-    // Unchanged — a pick, or a list closed with nothing typed — the same state is kept, and nothing draws.
-    setTyped((was) => ((was[field] ?? null) === text ? was : withTyped(was, field, text)));
-    setRefused(null);
-  };
-  const refuses = (fields: readonly LinkField[]): boolean => {
-    const text = fields.map((field) => typed[field]).find((each) => each !== undefined);
-    if (text === undefined) return false;
-    setRefused(`“${text}” is typed but not picked. Pick it from the list, or clear it.`);
-    return true;
-  };
-  return { typedIn, refuses, refusal: refused };
-}
-
-function withTyped(
-  was: Partial<Record<LinkField, string>>,
-  field: LinkField,
-  text: string | null,
-): Partial<Record<LinkField, string>> {
-  const now = { ...was };
-  if (text === null) delete now[field];
-  else now[field] = text;
-  return now;
 }
 
 /**
@@ -563,6 +530,7 @@ function NotePicker({
   choices,
   disabled,
   onPick,
+  typed,
   onTyped,
   createFiling = null,
   field,
@@ -573,6 +541,8 @@ function NotePicker({
   choices: readonly RelationChoice[];
   disabled: boolean;
   onPick: (path: VaultPath) => void;
+  /** What the row held typed in it when last drawn: shown again as the row is (#823). */
+  typed?: string | undefined;
   /** What is typed and not picked, as it changes. */
   onTyped?: (typed: string | null) => void;
   /** Makes a project or an area of what was typed, then picks it (#465). */
@@ -590,6 +560,7 @@ function NotePicker({
       choices={choices}
       disabled={disabled}
       onPick={(choice) => onPick(createVaultPath(choice.path))}
+      {...(typed !== undefined && { initialTyped: typed })}
       {...(onTyped !== undefined && { onTyped })}
       {...(createFiling !== null && {
         creates: FILED_UNDER_TYPES,

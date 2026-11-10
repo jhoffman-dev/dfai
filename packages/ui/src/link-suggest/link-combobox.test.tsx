@@ -202,35 +202,29 @@ describe('LinkCombobox — leaving the field', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
-  it.fails(
-    'shows what it holds again when only blanks were typed, for a caller told nothing is typed (#823)',
-    async () => {
-      const onTyped = vi.fn();
-      const { input } = field({ current: 'Garden', onTyped });
-      await userEvent.type(input, '  ');
-      act(() => input.blur());
-      expect(onTyped).toHaveBeenLastCalledWith(null);
-      expect((input as HTMLInputElement).value).toBe('Garden');
-    },
-  );
+  it('shows what it holds again when only blanks were typed, for a caller told nothing is typed (#823)', async () => {
+    const onTyped = vi.fn();
+    const { input } = field({ current: 'Garden', onTyped });
+    await userEvent.type(input, '  ');
+    act(() => input.blur());
+    expect(onTyped).toHaveBeenLastCalledWith(null);
+    expect((input as HTMLInputElement).value).toBe('Garden');
+  });
 
-  it.fails('shows its prompt again, not blanks, when it holds nothing (#823)', async () => {
+  it('shows its prompt again, not blanks, when it holds nothing (#823)', async () => {
     const { input } = field({ onTyped: vi.fn() });
     await userEvent.type(input, '  ');
     act(() => input.blur());
     expect((input as HTMLInputElement).value).toBe('');
   });
 
-  it.fails(
-    'shows what it holds again as ↵ on a cleared field goes to the page (#823)',
-    async () => {
-      const { input, pageKeys } = field({ current: 'Garden', onTyped: vi.fn() });
-      await userEvent.clear(input);
-      await userEvent.keyboard('{Enter}');
-      expect(pageKeys).toContain('Enter');
-      expect((input as HTMLInputElement).value).toBe('Garden');
-    },
-  );
+  it('shows what it holds again as ↵ on a cleared field goes to the page (#823)', async () => {
+    const { input, pageKeys } = field({ current: 'Garden', onTyped: vi.fn() });
+    await userEvent.clear(input);
+    await userEvent.keyboard('{Enter}');
+    expect(pageKeys).toContain('Enter');
+    expect((input as HTMLInputElement).value).toBe('Garden');
+  });
 });
 
 describe('LinkCombobox — where the list goes', () => {

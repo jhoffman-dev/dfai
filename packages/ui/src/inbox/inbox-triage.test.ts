@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, type InboxItem, type InboxTask } from '@dfai/domain';
-import { asksWhoItWaitsOn, clarificationOf, rowAfter, rowAfterLeaving } from './inbox-triage.ts';
+import {
+  asksWhoItWaitsOn,
+  clarificationOf,
+  rowAfter,
+  rowAfterLeaving,
+  unpickedLink,
+  unpickedRefusal,
+  withTyped,
+} from './inbox-triage.ts';
 
 const TASK: InboxTask = {
   status: 'inbox',
@@ -84,5 +92,30 @@ describe('rowAfterLeaving', () => {
     expect(left(listOf('A', 'B'), 'C')).toBe('Inbox/B.md');
     expect(left([], 'B')).toBeNull();
     expect(left(listOf('A', 'B'), 'Gone')).toBeNull();
+  });
+});
+
+describe('a link typed and not picked (#823)', () => {
+  it('holds what each field has typed, and lets go of a field told nothing is', () => {
+    const typed = withTyped(withTyped(undefined, 'project', 'Zeph'), 'waitingOn', 'Mar');
+    expect(typed).toEqual({ project: 'Zeph', waitingOn: 'Mar' });
+    expect(withTyped(typed, 'waitingOn', null)).toEqual({ project: 'Zeph' });
+    expect(withTyped(undefined, 'project', null)).toEqual({});
+  });
+
+  it('names who it waits on before the project, and nothing when neither is typed', () => {
+    expect(unpickedLink({ project: 'Zeph', waitingOn: 'Mar' })).toEqual({
+      field: 'waitingOn',
+      text: 'Mar',
+    });
+    expect(unpickedLink({ project: 'Zeph' })).toEqual({ field: 'project', text: 'Zeph' });
+    expect(unpickedLink({})).toBeNull();
+    expect(unpickedLink(undefined)).toBeNull();
+  });
+
+  it('says what was typed, and the two ways out', () => {
+    expect(unpickedRefusal('Mar')).toBe(
+      '“Mar” is typed but not picked. Pick it from the list, or clear it.',
+    );
   });
 });

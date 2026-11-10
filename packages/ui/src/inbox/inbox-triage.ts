@@ -46,6 +46,48 @@ export function clarificationOf(task: InboxTask, draft: InboxDraft): Clarificati
   return Object.keys(clarification).length === 0 ? null : clarification;
 }
 
+/** A row's fields that link a note: what is typed in one is no link until it is picked (#823). */
+export type LinkField = 'waitingOn' | 'project';
+
+const LINK_FIELDS: readonly LinkField[] = ['waitingOn', 'project'];
+
+/** What a row's link fields hold typed and not picked, by field. */
+export type TypedLinks = Readonly<Partial<Record<LinkField, string>>>;
+
+/** The text a row may not be written over, and the field it is typed in. */
+export interface UnpickedLink {
+  readonly field: LinkField;
+  readonly text: string;
+}
+
+/** `was` with `field` holding `text`; null when the field holds nothing typed any more. */
+export function withTyped(
+  was: TypedLinks | undefined,
+  field: LinkField,
+  text: string | null,
+): TypedLinks {
+  if (text !== null) return { ...was, [field]: text };
+  return Object.fromEntries(Object.entries(was ?? {}).filter(([held]) => held !== field));
+}
+
+/**
+ * The first link field holding text typed and not picked, or null. A row is
+ * not written over one: the text is not a note, so it is neither written nor
+ * dropped behind the person's back.
+ */
+export function unpickedLink(typed: TypedLinks | undefined): UnpickedLink | null {
+  for (const field of LINK_FIELDS) {
+    const text = typed?.[field];
+    if (text !== undefined) return { field, text };
+  }
+  return null;
+}
+
+/** What the row says when it is not written over `text`. */
+export function unpickedRefusal(text: string): string {
+  return `“${text}” is typed but not picked. Pick it from the list, or clear it.`;
+}
+
 /** Whether the row asks who the task waits on: it is, or is being made, Waiting. */
 export function asksWhoItWaitsOn(task: InboxTask, draft: InboxDraft): boolean {
   return (draft.status ?? task.status) === WAITING_STATUS;
