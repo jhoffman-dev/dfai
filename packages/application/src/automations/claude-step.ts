@@ -1060,6 +1060,7 @@ async function readAnswers(
     const summaries: SummaryReading[] = [];
     let data: readonly PromptData[] = [];
     const choices: (ProjectChoice | null)[] = [];
+    const answers: string[] = [];
     for (const [index, notes] of group.asks.entries()) {
       at += 1;
       const context = { notes, ...(vault !== undefined && { vault }) };
@@ -1071,17 +1072,14 @@ async function readAnswers(
         at: total > 1 ? `Ask ${at} of ${total}: ` : '',
       });
       keeping.keep(parts[index]!, reading.answer);
+      answers.push(reading.answer);
       proposals.push(...keptItems(asking, reading.value));
       summaries.push(reading.value.summary ?? { kind: 'absent' });
       choices.push(reading.value.project ?? null);
     }
-    const merged = await reduceParts(
-      asking,
-      summaries,
-      data,
-      keeping.answerFor(reducePartMark(parts)),
-    );
-    if (merged !== null) keeping.keep(reducePartMark(parts), merged.answer);
+    const reduceMark = reducePartMark({ parts, answers });
+    const merged = await reduceParts(asking, summaries, data, keeping.answerFor(reduceMark));
+    if (merged !== null) keeping.keep(reduceMark, merged.answer);
     answered.push({
       path: group.path,
       proposals,
@@ -1163,7 +1161,7 @@ async function reduceParts(
   asking: ProposalAsking,
   summaries: readonly SummaryReading[],
   partData: readonly PromptData[],
-  /** The reduce kept for these very parts: reused rather than asked. */
+  /** The reduce kept for these very parts and answers: reused rather than asked. */
   kept: string | undefined,
 ): Promise<{ answer: string; reading: SummaryReading } | null> {
   const parts = summaries.length > 1 ? partSummaries(summaries) : null;
