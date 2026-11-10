@@ -498,9 +498,10 @@ async function askClaude({
     }
   };
   const spent = await askedThisHour(ports, run.rule, at);
-  // Only the declared step keeps answers and tells a backfill from an arrival (ADR-0036).
+  // Only the declared step tells a backfill from an arrival (ADR-0036); any step making proposals keeps its answers (#793).
   const declared = action.apply === 'mine';
-  const ledger = declared ? (await readRuleLog(ports.fs, run.rule)).ledger : null;
+  const ledger =
+    action.output.kind === 'proposals' ? (await readRuleLog(ports.fs, run.rule)).ledger : null;
   try {
     const { done, left, claude } = await runClaudeStep({
       ports: ports.claude,

@@ -557,4 +557,26 @@ describe('AutomationEditor', () => {
       });
     });
   });
+
+  it('says every meeting is read twice while both meeting presets are on, and turns one off only on a click (#793)', async () => {
+    const onTurnOff = vi.fn();
+    page({
+      readTwice: [
+        { id: 'p.md', rule: 'Meeting actions', warning: 'Every meeting is read twice: …' },
+      ],
+      onTurnOff,
+    });
+    const note = screen.getByRole('note', { name: 'Every meeting is read twice' });
+    expect(within(note).getByText('Every meeting is read twice: …')).toBeTruthy();
+    expect(onTurnOff).not.toHaveBeenCalled();
+
+    await userEvent.click(within(note).getByRole('button', { name: 'Turn off “Meeting actions”' }));
+    expect(onTurnOff).toHaveBeenCalledWith('p.md');
+  });
+
+  it('says nothing of reading twice when nothing is', () => {
+    page({ readTwice: [], onTurnOff: vi.fn() });
+    expect(screen.getByRole('list', { name: 'All automations' })).toBeTruthy();
+    expect(screen.queryByRole('note', { name: 'Every meeting is read twice' })).toBeNull();
+  });
 });
