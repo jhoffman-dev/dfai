@@ -32,7 +32,9 @@ test('on the web, a warning line of Activity opens to its details by tap and by 
     .getByRole('article', { name: 'Activity' })
     .getByRole('list', { name: 'Activity lines' })
     .getByRole('listitem')
-    .filter({ hasText: NOT_KEPT });
+    .filter({ hasText: NOT_KEPT })
+    // The index's own line of it; the toast that said it is a second, under App.
+    .filter({ has: page.locator('.activity-line__kind', { hasText: 'Index' }) });
   await expect(line).toHaveCount(1);
   const words = line.getByRole('button', { name: /^Search and lists are rebuilt each visit/ });
 
