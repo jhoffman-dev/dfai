@@ -38,15 +38,20 @@ describe('the capture mapper compiled into a Code node', () => {
     expect(readFileSync(CAPTURE_MARKDOWN_BUNDLE, 'utf8')).toBe(await bundleCaptureMarkdown());
   }, 60_000);
 
-  it.each(modules)('%s imports nothing but its own modules and the meeting mapper’s', (name) => {
-    const text = readFileSync(new URL(name, mapping), 'utf8');
-    const sources = [...text.matchAll(/^import\s[^;]*?from\s+'([^']+)'/gm)].map((each) => each[1]);
-    for (const source of sources) {
-      expect(source).toMatch(
-        /^\.\/capture-[a-z-]+\.ts$|^\.\.\/\.\.\/meetings\/mapping\/meeting-[a-z-]+\.ts$/,
+  it.each(modules)(
+    '%s imports nothing but its own modules, the meeting mapper’s and the hidden characters',
+    (name) => {
+      const text = readFileSync(new URL(name, mapping), 'utf8');
+      const sources = [...text.matchAll(/^import\s[^;]*?from\s+'([^']+)'/gm)].map(
+        (each) => each[1],
       );
-    }
-  });
+      for (const source of sources) {
+        expect(source).toMatch(
+          /^\.\/capture-[a-z-]+\.ts$|^\.\.\/\.\.\/meetings\/mapping\/meeting-[a-z-]+\.ts$|^\.\.\/\.\.\/text\/hidden-characters\.ts$/,
+        );
+      }
+    },
+  );
 
   it('is every module in the folder, and every meeting module they import, so none is left out', () => {
     const script = mapCaptureScript('Build the capture');
@@ -54,10 +59,11 @@ describe('the capture mapper compiled into a Code node', () => {
     const shared = modules.flatMap((name) =>
       [
         ...readFileSync(new URL(name, mapping), 'utf8').matchAll(
-          /meetings\/mapping\/(meeting-[a-z-]+\.ts)/g,
+          /(?:meetings\/mapping\/(meeting-[a-z-]+\.ts)|text\/(hidden-characters\.ts))'/g,
         ),
-      ].map((each) => each[1]),
+      ].map((each) => each[1] ?? each[2]),
     );
+    expect(shared).toContain('hidden-characters.ts');
     for (const name of shared) expect(script).toContain(`// ${name}\n`);
   });
 
