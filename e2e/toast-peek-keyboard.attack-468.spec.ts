@@ -190,7 +190,9 @@ test('details closed by Esc after their toast was dismissed leave the focus on t
   const column = peek.locator('.toast-stack');
   await expect(column).toBeFocused();
   // Closed by a key, so the focus shows; empty, the column has a box to show it on (WCAG 2.4.7).
-  expect(await column.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+  await expect
+    .poll(() => column.evaluate((element) => element.matches(':focus-visible')))
+    .toBe(true);
   await expect(column).toHaveCSS('box-shadow', /rgb/);
   const box = await column.boundingBox();
   expect(box?.width ?? 0, 'the focused column is wide enough to see').toBeGreaterThanOrEqual(24);

@@ -49,11 +49,13 @@ test('details closed by Esc after their notice cleared leave the focus on the no
   const group = page.locator('.notices');
   await expect(group).toBeFocused();
   // Closed by a key, so the focus shows; empty, the group has a box to show it on (WCAG 2.4.7).
-  expect(await group.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+  await expect
+    .poll(() => group.evaluate((element) => element.matches(':focus-visible')))
+    .toBe(true);
   await expect(group).toHaveCSS('box-shadow', /rgb/);
   const box = await group.boundingBox();
   expect(box?.width ?? 0, 'the focused notices are wide enough to see').toBeGreaterThanOrEqual(24);
   expect(box?.height ?? 0, 'the focused notices are tall enough to see').toBeGreaterThanOrEqual(2);
   // Shown over the window, not in it: nothing under the notices moved to make room.
-  expect(await content.boundingBox()).toEqual(before);
+  await expect.poll(() => content.boundingBox()).toEqual(before);
 });
