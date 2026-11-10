@@ -116,6 +116,8 @@ async function openInbox(page: Page) {
   // As the vault opens, the meeting import stamps the meeting, which makes it
   // the newest note: the list re-reads and the meeting moves to the top. A test
   // that reads the order, or picks on a row, before then races it (#818).
+  // Waiting also steps around #823 (a pick dropped during that re-read), so
+  // these tests do not cover it: #823's own spec does.
   await expect(row(page, '2026-10-01 Seed swap')).toContainText('Not imported');
 }
 
