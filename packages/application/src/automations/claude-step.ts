@@ -1054,8 +1054,8 @@ async function readAnswers(
   for (const group of asksByNote(asking.asks)) {
     const note = asking.read.find((each) => each.path === group.path);
     const key = note === undefined ? null : keyOf(asking, note);
-    const keeping = keptParts(asking, key);
     const parts = askedParts(asking, group.asks);
+    const keeping = keptParts(asking, { key, parts });
     const proposals: CheckedProposal[] = [];
     const summaries: SummaryReading[] = [];
     let data: readonly PromptData[] = [];
@@ -1120,12 +1120,15 @@ async function readPart(
  * The answers kept for a meeting's words, found by what each part showed,
  * and the meeting's line in `toStore`, grown part by part as each reads: the
  * line kept before with each part read put in by its key, so a retry failing
- * at one part still keeps those after it it had not reached (#793). A meeting
- * known by no key keeps nothing.
+ * at one part still keeps those after it it had not reached (#793). The line
+ * starts only from this run's part keys, its reduce put back as it is kept:
+ * an old key (another prompt or model, another cut, a reduce of other
+ * answers) is dropped, or the line would grow past what a ledger stores
+ * (`STORED_ANSWERS_MAX_BYTES`). A meeting known by no key keeps nothing.
  */
 function keptParts(
   asking: ProposalAsking,
-  key: string | null,
+  { key, parts }: { key: string | null; parts: readonly string[] },
 ): {
   answerFor: (part: string) => string | undefined;
   keep: (part: string, answer: string) => void;
@@ -1136,7 +1139,7 @@ function keptParts(
     const answer = kept.answers[index];
     if (answer !== undefined) byPart.set(part, answer);
   });
-  const line = new Map(byPart);
+  const line = new Map([...byPart].filter(([part]) => parts.includes(part)));
   return {
     answerFor: (part) => byPart.get(part),
     keep: (part, answer) => {
