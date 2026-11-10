@@ -217,3 +217,54 @@ describe('an editor’s save after the rule open in it was turned on or off (#79
     expect((await reread()).rule.enabled).toBe(!open.enabled);
   });
 });
+
+describe('the “Turned on” an editor’s save logs (#793 re-review)', () => {
+  async function openWhileOff() {
+    const vault = automationVault({
+      today: TODAY,
+      notes: { [MEETING_EXTRACTION_PROMPT]: builtInPromptAt(MEETING_EXTRACTION_PROMPT)!.contents },
+    });
+    const { fs, markdown } = vault.ports;
+    await createAutomation({
+      fs,
+      markdown,
+      clock: CLOCK,
+      draft: { ...EXTRACTION, enabled: false },
+      takenPaths: vault.ports.notePaths,
+    });
+    const reread = async () =>
+      (await loadAutomations({ fs, markdown, notePaths: vault.ports.notePaths })).automations[0]!;
+    const turnedOn = async () =>
+      (await reread()).log.filter((entry) => entry.kind === 'turnedOn').length;
+    return { vault, open: (await reread()).rule, reread, turnedOn };
+  }
+
+  // The switch logged it; the file is on when the editor saves, so the save turns nothing on.
+  it('logs no second “Turned on” for a rule switched on from the list, then saved from the editor', async () => {
+    const { vault, open, turnedOn } = await openWhileOff();
+    await setAutomationEnabled({ ...vault.ports, clock: CLOCK, rule: open, enabled: true });
+
+    await updateAutomation({
+      ...vault.ports,
+      clock: CLOCK,
+      rule: open,
+      draft: { ...open, name: 'Meeting actions, renamed' },
+    });
+
+    expect(await turnedOn()).toBe(1);
+  });
+
+  it('logs “Turned on” once for a rule the person turns on in the editor while the file is off', async () => {
+    const { vault, open, reread, turnedOn } = await openWhileOff();
+
+    await updateAutomation({
+      ...vault.ports,
+      clock: CLOCK,
+      rule: open,
+      draft: { ...open, enabled: true },
+    });
+
+    expect((await reread()).rule.enabled).toBe(true);
+    expect(await turnedOn()).toBe(1);
+  });
+});
