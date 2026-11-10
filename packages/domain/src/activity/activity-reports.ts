@@ -19,7 +19,13 @@ import { planVerb, type AutomationPlan } from '../automations/automation-plan.ts
 import { readsData } from '../automations/claude-step.ts';
 import { describeNotLinked } from '../automations/relink-plan.ts';
 import { usageWords, type ModelUsage } from '../chat/model-usage.ts';
-import type { ActivityLevel, ActivityReport, ActivitySubject } from './activity-event.ts';
+import { isInChats } from '../chat/chat-note.ts';
+import {
+  safeActivityText,
+  type ActivityLevel,
+  type ActivityReport,
+  type ActivitySubject,
+} from './activity-event.ts';
 
 /** An automation's rule, as a line names it and links to it; a draft not yet saved has no path. */
 export interface RuleNamed {
@@ -207,7 +213,7 @@ export function apiWriteReport({
   route: string;
   notePath: VaultPath | null;
   refusal: string | null;
-  /** What the caller was told: caller-safe, so never the body it sent, nor a path. */
+  /** What the caller was told: never the body it sent, nor a machine path, though it may name a note in the vault. */
   reason?: string;
 }): ActivityReport {
   // `PUT v1/notes/{path}/body`: with its leading slash, a route reads as a machine path and is struck out.
@@ -216,13 +222,14 @@ export function apiWriteReport({
   const subject = notePath === null ? null : noteSubject(notePath);
   if (refusal !== null) {
     const refused = `${said} refused${target === '' ? '' : ` for${target}`} (${refusal})`;
-    const why = reason.replace(/\s+/g, ' ').trim();
+    const chatPath = notePath !== null && isInChats(notePath) ? notePath : null;
+    const why = safeActivityText(reason, { max: MAX_REFUSAL_REASON, chatPath });
     return {
       level: 'warning',
       kind: 'api',
-      message: why === '' ? `${refused}.` : `${refused}: ${clipped(why)}`,
+      message: why === '' ? `${refused}.` : `${refused}: ${why}`,
       subject,
-      ...(why !== '' && { detail: why }),
+      ...(why !== '' && { detail: reason }),
     };
   }
   return {
@@ -231,12 +238,6 @@ export function apiWriteReport({
     message: `${said}${target === '' ? '' : ` —${target}`}`,
     subject,
   };
-}
-
-/** A reason cut to {@link MAX_REFUSAL_REASON} with an ellipsis, for the line; its detail keeps the rest. */
-function clipped(reason: string): string {
-  if (reason.length <= MAX_REFUSAL_REASON) return reason;
-  return `${reason.slice(0, MAX_REFUSAL_REASON - 1).trimEnd()}…`;
 }
 
 /** What happened to one of Claude's proposals, or to a turn of the chat. */

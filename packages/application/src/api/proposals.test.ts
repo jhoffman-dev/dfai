@@ -251,7 +251,7 @@ describe('POST /v1/proposals/{path}/accept', () => {
     const FAULT = 'EIO: i/o error, open /Users/sam/Vault/Inbox/Proposals/x.md';
     const faulty = (trashFails: boolean) => {
       const api = vault();
-      const { writeTextFile, trashEntry } = api.deps.fs;
+      const { writeTextFile } = api.deps.fs;
       api.deps = {
         ...api.deps,
         fs: {
@@ -260,9 +260,11 @@ describe('POST /v1/proposals/{path}/accept', () => {
             if (args.path === PROPOSAL) throw new Error(FAULT);
             return writeTextFile(args);
           },
-          trashEntry: async (args) => {
-            if (trashFails) throw new Error(`EACCES: permission denied, rename /Users/sam/Vault/${TASK}`);
-            return trashEntry(args);
+          // The fixture's Trash refuses everything, as the API never deletes; this one takes the task.
+          trashEntry: async ({ path }) => {
+            if (trashFails)
+              throw new Error(`EACCES: permission denied, rename /Users/sam/Vault/${TASK}`);
+            api.files.delete(path);
           },
         },
       };

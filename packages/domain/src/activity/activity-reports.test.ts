@@ -300,7 +300,10 @@ describe('apiWriteReport', () => {
     });
 
     it('says the reason on one line', () => {
-      expect(refused('  title must\n be a string  ').detail).toBe('title must be a string');
+      // The detail is made one line where every line is made safe, in `activityEvent`.
+      expect(refused('  title must\n be a string  ').message).toBe(
+        'POST v1/meetings refused (invalid): title must be a string',
+      );
     });
 
     it('reads as before when there was no reason to give', () => {

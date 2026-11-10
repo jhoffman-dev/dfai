@@ -1,6 +1,6 @@
 /**
  * Attacks on a refused API write's reason in the Activity log (#814, PR #816).
- * Each `it.fails` proves a bug the PR leaves; it passes once the bug is fixed.
+ * Each proved a bug the PR left, as an `it.fails`, until it was fixed.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -48,7 +48,7 @@ describe('a refusal reason cut on its line keeps no part of a secret', () => {
   // secret straddling the cut is shortened below the length its pattern needs.
   const CUT = MAX_REFUSAL_REASON - 1;
 
-  it.fails('strikes a Bearer token the cut leaves 7 characters of', () => {
+  it('strikes a Bearer token the cut leaves 7 characters of', () => {
     const token = 'Zq8xLm2Vn4Rt6Yp0Wk3Hs5Jd7Fb9Gc1A';
     const reason = `${padTo(CUT - 'Bearer '.length - 7)}Bearer ${token} was refused`;
     const { message, detail } = keptLine(reason);
@@ -56,7 +56,7 @@ describe('a refusal reason cut on its line keeps no part of a secret', () => {
     expect(message).not.toContain(token.slice(0, 7));
   });
 
-  it.fails('strikes a random 40-character token the cut leaves 31 characters of', () => {
+  it('strikes a random 40-character token the cut leaves 31 characters of', () => {
     const token = 'aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5bC7d';
     const reason = `${padTo(CUT - 31)}${token} rejected`;
     const { message, detail } = keptLine(reason);
@@ -64,13 +64,13 @@ describe('a refusal reason cut on its line keeps no part of a secret', () => {
     expect(message).not.toContain(token.slice(0, 20));
   });
 
-  it.fails('strikes a GitHub token the cut leaves its prefix and 15 characters of', () => {
+  it('strikes a GitHub token the cut leaves its prefix and 15 characters of', () => {
     const token = 'ghp_R2d2C3poL8kW9mQ4vX7nB1zT6yH5jF0sA3eU';
     const reason = `${padTo(CUT - 19)}${token} is not allowed`;
     expect(keptLine(reason).message).not.toContain(token.slice(0, 19));
   });
 
-  it.fails('strikes a lower-case hex key the cut leaves 23 characters of', () => {
+  it('strikes a lower-case hex key the cut leaves 23 characters of', () => {
     const key = '9f8e7d6c5b4a39281706f5e4d3c2b1a0ffeeddcc';
     const reason = `${padTo(CUT - 23)}${key} expired`;
     expect(keptLine(reason).message).not.toContain(key.slice(0, 23));
@@ -90,12 +90,12 @@ describe('a refusal reason cut on its line keeps no part of a chat note’s name
 });
 
 describe('a refusal reason cut on its line, or in its detail, keeps whole characters', () => {
-  it.fails('does not split a surrogate pair at the line cut', () => {
+  it('does not split a surrogate pair at the line cut', () => {
     const reason = `${'a'.repeat(MAX_REFUSAL_REASON - 2)}🌱🌱🌱 and more`;
     expect(isLoneSurrogate(keptLine(reason).message)).toBe(false);
   });
 
-  it.fails('does not split a surrogate pair at the detail cut', () => {
+  it('does not split a surrogate pair at the detail cut', () => {
     const reason = `${'a'.repeat(MAX_ACTIVITY_DETAIL - 2)}🌱🌱🌱 and more`;
     expect(isLoneSurrogate(keptLine(reason).detail ?? '')).toBe(false);
   });
@@ -103,14 +103,14 @@ describe('a refusal reason cut on its line, or in its detail, keeps whole charac
 
 describe('a refusal reason is kept on one line, as plain text', () => {
   // `\s` misses NEL and the C0 separators, which other readers break lines on.
-  it.fails('turns NEL, the record separator and other line breaks into spaces', () => {
+  it('turns NEL, the record separator and other line breaks into spaces', () => {
     const reason = 'first part\u0085second\u001Ethird\u001Cfourth';
     const { message, detail } = keptLine(reason);
     expect(hasCodePoint(message, LINE_BREAKS)).toBe(false);
     expect(hasCodePoint(detail ?? '', LINE_BREAKS)).toBe(false);
   });
 
-  it.fails('keeps no control or bidi-override character a caller sent', () => {
+  it('keeps no control or bidi-override character a caller sent', () => {
     // A note path the caller named is echoed raw in `${path} already exists`.
     const reason = 'Notes/\u202Edm.txt\u202C\u001B[31m\u0000 already exists';
     const { message, detail } = keptLine(reason);
