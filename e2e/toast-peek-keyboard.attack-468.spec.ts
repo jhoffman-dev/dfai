@@ -5,7 +5,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection } from './host.ts';
 import { toastSaying } from './toasts.ts';
-import { focusOn } from './typing.ts';
+import { expectFocusIn, focusOn } from './typing.ts';
 
 const TASK_TYPE = [
   '---',
@@ -67,4 +67,33 @@ test('the Undo of a task made in the peek can be reached by Tab while the peek i
   await expect(peek).toBeVisible();
   await expect(said).toBeVisible();
   expect(reached, 'Tab reaches the toast’s Undo').toBe(true);
+});
+
+// #815: a warning's details, opened from a toast drawn in the peek's place.
+// The popup is its own layer above the peek, so its Escape is its own.
+test('details opened from a toast in the peek close on Esc alone, and the focus stays in the peek', async ({
+  page,
+}) => {
+  const { vault, peek, said } = await promoteInPeek(page);
+  // Another program edits the note after the line was promoted, so the Undo is refused: a warning.
+  await vault.write(PATH, `${await vault.read(PATH)}\nRing the hire shop first.\n`);
+  await said.getByRole('button', { name: 'Undo' }).click();
+  const refused = page.locator('.toast-stack .toast').filter({
+    has: page.locator('.toast__dot--warning'),
+  });
+  await expect(refused).toHaveCount(1);
+  // In the peek's place for toasts, inside its focus trap (#468).
+  await expect(peek.locator('.toast')).toHaveCount(1);
+
+  await refused.locator('.toast__details').click();
+  const details = page.getByRole('dialog', { name: 'Warning details' });
+  await expect(details).toBeVisible();
+  await expect(details.getByText(/changed since/)).toBeVisible();
+  await expectFocusIn(details);
+
+  await page.keyboard.press('Escape');
+
+  await expect(details).toHaveCount(0);
+  await expect(peek).toBeVisible();
+  await expectFocusIn(peek);
 });
