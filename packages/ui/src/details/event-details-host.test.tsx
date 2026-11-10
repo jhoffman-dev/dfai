@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { PeekDialog } from '../peek/peek-dialog.tsx';
 import { EventDetailsButton, EventDetailsHost, type EventDetailsView } from './event-details.tsx';
 
 /** #815: the popup is the host's, so it outlives the line that opened it. */
@@ -172,5 +173,40 @@ describe('EventDetailsHost', () => {
     );
 
     expect(told.mock.calls).toEqual([[true], [true]]);
+  });
+
+  it('takes an Escape pressed while the focus is still on its line, so the peek under it stays', async () => {
+    const onClose = vi.fn();
+    render(
+      <EventDetailsHost landmark={() => null}>
+        <PeekDialog
+          title="Plan the harvest"
+          position={null}
+          status="Saved"
+          onStep={vi.fn()}
+          onClose={onClose}
+        >
+          {line(NOT_SAVED)}
+        </PeekDialog>
+      </EventDetailsHost>,
+    );
+    const pressed = screen.getByRole('button', { name: NOT_SAVED });
+    fireEvent.click(pressed);
+    expect(popup()).toBeTruthy();
+
+    // The key comes before the focus has left the line, which is in the peek: the popup's all the same.
+    const leftAlone = fireEvent.keyDown(pressed, { key: 'Escape' });
+
+    expect(leftAlone).toBe(false);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Error details' })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Plan the harvest' })).toBeTruthy();
+  });
+
+  it('leaves an Escape alone while no details are open', () => {
+    render(<EventDetailsHost landmark={() => null}>{line(NOT_SAVED)}</EventDetailsHost>);
+    expect(
+      fireEvent.keyDown(screen.getByRole('button', { name: NOT_SAVED }), { key: 'Escape' }),
+    ).toBe(true);
   });
 });
