@@ -156,6 +156,60 @@ describe('EventDetailsHost', () => {
     focused.mockRestore();
   });
 
+  /** Opens a line's details, takes the line away, closes them with `close`, and answers how the list was focused. */
+  async function focusOptionsAfter(close: () => Promise<void> | void) {
+    const focused = vi.spyOn(HTMLElement.prototype, 'focus');
+    const drawn = (lines: boolean) => (
+      <EventDetailsHost landmark={() => screen.getByRole('list', { name: 'Lines', hidden: true })}>
+        <ul aria-label="Lines" tabIndex={-1}>
+          {lines && <li>{line(NOT_SAVED)}</li>}
+        </ul>
+      </EventDetailsHost>
+    );
+    const { rerender } = render(drawn(true));
+    await userEvent.click(screen.getByRole('button', { name: NOT_SAVED }));
+    rerender(drawn(false));
+    await close();
+    const list = screen.getByRole('list', { name: 'Lines' });
+    await waitFor(() => expect(document.activeElement).toBe(list));
+    const options = focused.mock.calls[focused.mock.contexts.lastIndexOf(list)]?.[0];
+    focused.mockRestore();
+    return options;
+  }
+
+  /** A mouse's press of one of the popup's buttons, said as a mouse's: jsdom's own pointer has no type. */
+  function pressWithPointer(name: string): void {
+    const button = within(popup()).getByRole('button', { name });
+    fireEvent.pointerDown(button, { pointerType: 'mouse' });
+    fireEvent.click(button, { detail: 1 });
+  }
+
+  it('shows the focus on its landmark when the Escape was its own to take, before the dialog heard it', async () => {
+    // On the body: the focus has not reached the popup, so the dialog's own Escape is not in play.
+    const options = await focusOptionsAfter(() => {
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+    });
+    expect(options).toMatchObject({ focusVisible: true });
+  });
+
+  it('shows the focus on its landmark when a key pressed "Open subject"', async () => {
+    const options = await focusOptionsAfter(async () => {
+      within(popup()).getByRole('button', { name: 'Open Greenhouse plan' }).focus();
+      await userEvent.keyboard('{Enter}');
+    });
+    expect(options).toMatchObject({ focusVisible: true });
+  });
+
+  it('shows no focus on its landmark when the pointer closed the popup', async () => {
+    const options = await focusOptionsAfter(() => pressWithPointer('Close'));
+    expect(options).toMatchObject({ focusVisible: false });
+  });
+
+  it('shows no focus on its landmark when the pointer pressed "Open subject"', async () => {
+    const options = await focusOptionsAfter(() => pressWithPointer('Open Greenhouse plan'));
+    expect(options).toMatchObject({ focusVisible: false });
+  });
+
   it('reads details given as a function when the line is pressed, not when it is drawn', async () => {
     let said = NOT_SAVED;
     render(

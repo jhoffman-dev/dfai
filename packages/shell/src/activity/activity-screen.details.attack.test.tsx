@@ -98,9 +98,9 @@ describe('ActivityScreen — details while the log moves', () => {
     expect(within(popup).getByText('The folder is read-only.')).toBeTruthy();
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    // No line has the pressed id now, so the list takes the focus: on its first line.
+    // No line has the pressed id now, so the list takes the focus: itself, never a line left in it.
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: NOT_LINKED.message })),
+      expect(document.activeElement).toBe(screen.getByRole('list', { name: 'Activity lines' })),
     );
   });
 });

@@ -2,7 +2,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ActivityPage, type ActivityRowView } from './activity-page.tsx';
+import {
+  ActivityPage,
+  type ActivityEntryView,
+  type ActivityMeetingView,
+  type ActivityRowView,
+} from './activity-page.tsx';
 
 /** #815: a warning or an error line of the Activity page opens to its details. */
 
@@ -129,34 +134,44 @@ describe('ActivityPage — a line opens to its details', () => {
     expect(line(REFUSED.message).className.split(' ')).toContain('activity-line__message');
   });
 
-  it('hands the focus to the list’s first line when the details close with their line trimmed away', async () => {
-    const drawn = (rows: ActivityRowView[]) => (
-      <ActivityPage
-        rows={rows}
-        total={rows.length}
-        error={null}
-        level="all"
-        kinds={[]}
-        text=""
-        onLevel={vi.fn()}
-        onToggleKind={vi.fn()}
-        onText={vi.fn()}
-        onOpenSubject={vi.fn()}
-        onCopy={() => Promise.resolve()}
-      />
-    );
-    const focused = vi.spyOn(HTMLElement.prototype, 'focus');
-    const { rerender } = render(drawn([FAILED, REFUSED, RAN]));
-    await userEvent.click(line(REFUSED.message));
+  const drawn = (rows: ActivityEntryView[], onOpenSubject = vi.fn()) => (
+    <ActivityPage
+      rows={rows}
+      total={rows.length}
+      error={null}
+      level="all"
+      kinds={[]}
+      text=""
+      onLevel={vi.fn()}
+      onToggleKind={vi.fn()}
+      onText={vi.fn()}
+      onOpenSubject={onOpenSubject}
+      onCopy={() => Promise.resolve()}
+    />
+  );
+  const list = () => screen.getByRole('list', { name: 'Activity lines' });
 
-    rerender(drawn([FAILED, RAN]));
+  /** Opens REFUSED's details from `before`, draws `after` without it, and closes them on Escape. */
+  async function closedWithTheLineGone(
+    before: ActivityEntryView[],
+    after: ActivityEntryView[],
+    onOpenSubject = vi.fn(),
+  ) {
+    const { rerender } = render(drawn(before, onOpenSubject));
+    await userEvent.click(line(REFUSED.message));
+    rerender(drawn(after, onOpenSubject));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    // The list's first line, as Tab would find it.
-    await waitFor(() => expect(document.activeElement).toBe(line(FAILED.message)));
-    // Scrolled to: a long log's first line may be far off the screen.
-    const options =
-      focused.mock.calls[focused.mock.contexts.lastIndexOf(line(FAILED.message))]?.[0];
+    return { rerender };
+  }
+
+  it('hands the focus to the list itself, scrolled to, when the details close with their line trimmed away', async () => {
+    const focused = vi.spyOn(HTMLElement.prototype, 'focus');
+    const { rerender } = await closedWithTheLineGone([FAILED, REFUSED, RAN], [FAILED, RAN]);
+    // The list, never the line left first in it: an Enter meant for the one that went would press it.
+    await waitFor(() => expect(document.activeElement).toBe(list()));
+    // Scrolled to: a long log's list may be far off the screen.
+    const options = focused.mock.calls[focused.mock.contexts.lastIndexOf(list())]?.[0];
     expect(options?.preventScroll ?? false).toBe(false);
     focused.mockRestore();
 
@@ -166,7 +181,33 @@ describe('ActivityPage — a line opens to its details', () => {
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const article = screen.getByRole('article', { name: 'Activity' });
-    await waitFor(() => expect(article.contains(document.activeElement)).toBe(true));
-    expect(document.activeElement).not.toBe(document.body);
+    await waitFor(() => expect(document.activeElement).toBe(article));
+  });
+
+  it('never lands on a meeting’s Open button: Escape then Enter opens nothing', async () => {
+    const opens = vi.fn();
+    const meeting: ActivityMeetingView = {
+      group: 'meeting',
+      id: '9',
+      title: 'Orchard walk',
+      rows: [{ ...RAN, id: '8', subject: null }],
+    };
+    await closedWithTheLineGone([meeting, REFUSED], [meeting], opens);
+    await waitFor(() => expect(document.activeElement).toBe(list()));
+
+    await userEvent.keyboard('{Enter}');
+    expect(opens).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('never lands on a first line’s Open button: Escape then Enter opens nothing', async () => {
+    const opens = vi.fn();
+    // RAN opens to no details: its one button is "Open Tidy tasks".
+    await closedWithTheLineGone([RAN, REFUSED], [RAN], opens);
+    await waitFor(() => expect(document.activeElement).toBe(list()));
+
+    await userEvent.keyboard('{Enter}');
+    expect(opens).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
