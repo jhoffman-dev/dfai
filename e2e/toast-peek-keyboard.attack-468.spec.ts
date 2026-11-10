@@ -105,6 +105,9 @@ test('details opened from a toast in the peek close on Esc alone, and the focus 
   await expect(details.getByText(/changed since/)).toBeVisible();
   await expectFocusIn(details);
 
+  // A fake clock from here, so the warning's five seconds are stepped below, not waited for.
+  // In before the popup closes: the toast is held while it is read, and its timer starts after.
+  await page.clock.install();
   await page.keyboard.press('Escape');
 
   await expect(details).toHaveCount(0);
@@ -115,9 +118,6 @@ test('details opened from a toast in the peek close on Esc alone, and the focus 
 
   // That focus was put there, not brought: with the pointer off it, the warning has its five
   // seconds again and goes — and hands the focus to the toasts' column, still inside the peek.
-  // A fake clock from here, so the five seconds are stepped, not waited for: the toast's
-  // timer starts as the pointer leaves it, after the clock is in.
-  await page.clock.install();
   await peek.locator('.peek__head').hover();
   await page.clock.runFor(6000);
   await expect(refused).toHaveCount(0);
