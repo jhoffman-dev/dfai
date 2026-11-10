@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   CHAT_READ_TOOLS,
   createVaultPath,
@@ -92,8 +91,6 @@ export function AutomationsScreen({
     listing?.automations.find((loaded) => loaded.rule.path === id) ?? null;
   const open = editor.editing?.kind === 'rule' ? loadedOf(editor.editing.rule.path) : null;
   const openNote = (path: string) => onOpenNote(createVaultPath(path));
-  // What the read-twice offer's click could not do (#793): said where the page says what a command did.
-  const [turnOffProblem, setTurnOffProblem] = useState<string | null>(null);
   const readTwice = readTwiceViews(
     meetingReadsTwice(listing?.automations.map(({ rule }) => rule) ?? []),
   );
@@ -104,13 +101,17 @@ export function AutomationsScreen({
       error={automations.error}
       openId={open?.rule.path ?? null}
       presets={presets}
-      notice={turnOffProblem ?? automations.notice}
+      notice={automations.notice}
       busy={automations.busy}
       setup={setup === null ? null : <MeetingSetup {...setup} />}
       readTwice={readTwice}
       onTurnOff={(path) => {
-        setTurnOffProblem(null);
-        void turnOffRule(automations, path).then(setTurnOffProblem);
+        // What its click could not do is the page's notice (#793): the runner's own reason when its
+        // write failed and it said one, else why not; anything said after it takes its place.
+        automations.setNotice(null);
+        void turnOffRule(automations, path).then((problem) => {
+          if (problem !== null) automations.setNotice((said) => said ?? problem);
+        });
       }}
       onNew={editor.newRule}
       onAddPreset={editor.addPreset}
