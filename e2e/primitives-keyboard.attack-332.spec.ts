@@ -2,6 +2,7 @@ import { expect, test, type Page } from './fixtures.ts';
 import { focusedRing } from './focus-ring.ts';
 import { createVault, installHost } from './host.ts';
 import { inboxRowsInReach } from './inbox.ts';
+import { openSettings } from './settings.ts';
 
 // Attack on #332: the rewrite of #328's ring tests focuses each primitive from
 // script. These walk the real keyboard path instead — Option+Tab, which in
@@ -101,10 +102,7 @@ const ringClipping = (page: Page) =>
 /** Surfaces whose primitives sit inside a dialog, a table or a scroller. */
 const RING_SURFACES: Record<string, (page: Page) => Promise<void>> = {
   settings: async (page) => {
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await expect(
-      page.getByRole('dialog', { name: 'Settings' }).locator('.field').first(),
-    ).toBeVisible();
+    await openSettings(page);
   },
   // The rows' own buttons, inside the list's scroller: opening a row would take them away.
   inbox: async (page) => {
