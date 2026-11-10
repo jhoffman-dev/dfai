@@ -8,7 +8,7 @@
  * tall in an 800px window, so the list places its first row and its overscan.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createVaultPath, type InboxItem } from '@dfai/domain';
 import { InboxPage, type InboxPageProps } from '../inbox-page.tsx';
@@ -161,4 +161,30 @@ describe('InboxRows — an Inbox of hundreds (#238)', () => {
       (screen.getByRole('combobox', { name: 'Status of Task 1' }) as HTMLSelectElement).value,
     ).toBe('inbox');
   });
+
+  it.fails(
+    'keeps a link typed and not picked on a row that is scrolled out of the page and back, and Save is still refused (#823)',
+    async () => {
+      const items = Array.from({ length: 500 }, (_, at) => task(`Task ${at}`));
+      const props = given(items);
+      render(<InboxPage {...props} />);
+      const under = () =>
+        screen.queryByRole('combobox', { name: 'File Task 2 under' }) as HTMLInputElement | null;
+      fireEvent.change(screen.getByRole('combobox', { name: 'Status of Task 2' }), {
+        target: { value: 'someday' },
+      });
+      await userEvent.type(under()!, 'Zeph');
+      act(() => under()!.blur());
+
+      scrollPageTo(200_000);
+      expect(under()).toBeNull();
+      scrollPageTo(0);
+
+      expect(under()?.value).toBe('Zeph');
+      const row = under()!.closest('tr') as HTMLElement;
+      await userEvent.click(within(row).getByRole('button', { name: 'Save' }));
+      expect(props.onClarify).not.toHaveBeenCalled();
+      expect(within(row).getByRole('alert').textContent).toContain('“Zeph”');
+    },
+  );
 });

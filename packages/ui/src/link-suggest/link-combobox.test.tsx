@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NO_LINK_HINTS, type LinkHints } from '@dfai/domain';
 import type { RelationChoice } from '../properties-panel.tsx';
@@ -22,12 +22,14 @@ function field({
   onCreate,
   creates,
   current,
+  onTyped,
 }: {
   hints?: LinkHints;
   want?: () => void;
   onCreate?: (request: { target: string; name: string }) => Promise<void>;
   creates?: readonly string[];
   current?: string;
+  onTyped?: (typed: string | null) => void;
 } = {}) {
   const onPick = vi.fn();
   const onOpen = vi.fn();
@@ -46,6 +48,7 @@ function field({
           {...(current !== undefined && { current })}
           {...(creates !== undefined && { creates })}
           {...(onCreate !== undefined && { onCreate })}
+          {...(onTyped !== undefined && { onTyped })}
         />
       </div>
     </LinkHintsProvider>,
@@ -180,8 +183,61 @@ describe('LinkCombobox', () => {
   });
 });
 
+describe('LinkCombobox — leaving the field', () => {
+  it('takes back what was typed when no caller follows it', async () => {
+    const { input } = field({ current: 'Garden' });
+    await userEvent.type(input, 'lark');
+    act(() => input.blur());
+    expect((input as HTMLInputElement).value).toBe('Garden');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('keeps what was typed for a caller that follows it, and closes the list (#823)', async () => {
+    const onTyped = vi.fn();
+    const { input } = field({ current: 'Garden', onTyped });
+    await userEvent.type(input, 'lark');
+    act(() => input.blur());
+    expect((input as HTMLInputElement).value).toBe('lark');
+    expect(onTyped).toHaveBeenLastCalledWith('lark');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it.fails(
+    'shows what it holds again when only blanks were typed, for a caller told nothing is typed (#823)',
+    async () => {
+      const onTyped = vi.fn();
+      const { input } = field({ current: 'Garden', onTyped });
+      await userEvent.type(input, '  ');
+      act(() => input.blur());
+      expect(onTyped).toHaveBeenLastCalledWith(null);
+      expect((input as HTMLInputElement).value).toBe('Garden');
+    },
+  );
+
+  it.fails('shows its prompt again, not blanks, when it holds nothing (#823)', async () => {
+    const { input } = field({ onTyped: vi.fn() });
+    await userEvent.type(input, '  ');
+    act(() => input.blur());
+    expect((input as HTMLInputElement).value).toBe('');
+  });
+
+  it.fails(
+    'shows what it holds again as ↵ on a cleared field goes to the page (#823)',
+    async () => {
+      const { input, pageKeys } = field({ current: 'Garden', onTyped: vi.fn() });
+      await userEvent.clear(input);
+      await userEvent.keyboard('{Enter}');
+      expect(pageKeys).toContain('Enter');
+      expect((input as HTMLInputElement).value).toBe('Garden');
+    },
+  );
+});
+
 describe('LinkCombobox — where the list goes', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it('opens above a field near the window’s foot, no taller than the room there', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 });
@@ -253,7 +309,51 @@ describe('LinkCombobox — where the list goes', () => {
     for (const each of watching) if (page !== null && each.watched.includes(page)) each.resized();
 
     expect(Number.parseFloat(list.style.top)).toBe(218);
-    vi.unstubAllGlobals();
+  });
+
+  /** Stands in for ResizeObserver, counting the ones still watching something. */
+  function countWatchers() {
+    const watchers = new Set<object>();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {
+          watchers.add(this);
+        }
+        unobserve() {}
+        disconnect() {
+          watchers.delete(this);
+        }
+      },
+    );
+    return watchers;
+  }
+
+  it('stops watching what holds its field once the list closes on Esc (#823)', async () => {
+    const watchers = countWatchers();
+    const { input } = field();
+    await userEvent.type(input, 'gar');
+    expect(watchers.size).toBe(1);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(watchers.size).toBe(0);
+  });
+
+  it('stops watching once the field is left, with what was typed kept (#823)', async () => {
+    const watchers = countWatchers();
+    const { input } = field({ onTyped: vi.fn() });
+    await userEvent.type(input, 'gar');
+    expect(watchers.size).toBe(1);
+    act(() => input.blur());
+    expect(watchers.size).toBe(0);
+  });
+
+  it('stops watching once a note is picked (#823)', async () => {
+    const watchers = countWatchers();
+    const { input, onPick } = field();
+    await userEvent.type(input, 'lark{Enter}');
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(watchers.size).toBe(0);
   });
 });
 
