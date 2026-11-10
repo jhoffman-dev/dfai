@@ -1,5 +1,6 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { isImeKey } from '../ime.ts';
+import { useSteadyCallback } from '../steady-callback.ts';
 import type { RelationChoice } from '../properties-panel.tsx';
 import { LinkSuggestions, type CreateLink, type ListKeys } from './link-suggestions.tsx';
 
@@ -15,6 +16,8 @@ import { LinkSuggestions, type CreateLink, type ListKeys } from './link-suggesti
  * list; with nothing typed — or a second Esc — it is the page's as well.
  * Picking hands the note over (`onPick`) — how it is written is the
  * caller's, as it was for the select this replaces — and empties the field.
+ * Leaving the field takes back what was typed, unless the caller follows it
+ * (`onTyped`): then it stays, for the caller to refuse a save over (#823).
  */
 export function LinkCombobox({
   id,
@@ -26,6 +29,7 @@ export function LinkCombobox({
   onPick,
   onCreate,
   onOpen,
+  onTyped,
   disabled = false,
   field,
   className = 'link-combo__input',
@@ -45,6 +49,8 @@ export function LinkCombobox({
   onCreate?: (request: CreateLink) => Promise<void>;
   /** The list is opening: what it offers may be gathered only now. */
   onOpen?: () => void;
+  /** What is typed and not picked, as it changes; null when nothing is. Given, leaving keeps it. */
+  onTyped?: (typed: string | null) => void;
   disabled?: boolean;
   /** Which picker a triage key opens: named so the key finds it. */
   field?: string;
@@ -55,7 +61,14 @@ export function LinkCombobox({
   const keys = useRef<ListKeys | null>(null);
   const [open, setOpen] = useState(false);
   /** What is typed; null while nothing is, and the field shows what it holds. */
-  const [typed, setTyped] = useState<string | null>(null);
+  const [typed, setTypedHere] = useState<string | null>(null);
+  const setTyped = (next: string | null) => {
+    setTypedHere(next);
+    onTyped?.(next === null || next.trim() === '' ? null : next);
+  };
+  // A field taken away — Who, once the status is no longer Waiting — holds nothing typed any more.
+  const leaves = useSteadyCallback(() => onTyped?.(null));
+  useEffect(() => leaves, [leaves]);
 
   const show = () => {
     if (open || disabled) return;
@@ -95,7 +108,10 @@ export function LinkCombobox({
           show();
         }}
         onClick={show}
-        onBlur={close}
+        onBlur={() => {
+          if (onTyped === undefined) close();
+          else setOpen(false);
+        }}
         onChange={(event) => {
           setTyped(event.target.value);
           show();

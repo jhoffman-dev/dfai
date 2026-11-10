@@ -414,6 +414,19 @@ describe('InboxPage — clarifying a task on its row', () => {
     });
   });
 
+  it('forgets a person typed once Who goes with the status, and Save writes the new status (#823)', async () => {
+    const props = page();
+    await userEvent.selectOptions(control('Status of Call the bank'), 'Waiting');
+    await userEvent.type(control('Who Call the bank waits on'), 'Mar');
+    await userEvent.selectOptions(control('Status of Call the bank'), 'Someday');
+    expect(screen.queryByRole('combobox', { name: 'Who Call the bank waits on' })).toBeNull();
+    await userEvent.click(done());
+    expect(props.onClarify).toHaveBeenCalledWith({
+      path: TASK,
+      clarification: { status: 'someday' },
+    });
+  });
+
   it('writes a status alone: a single action needs no project', async () => {
     const props = page();
     await userEvent.selectOptions(control('Status of Call the bank'), 'Someday');

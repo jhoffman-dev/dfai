@@ -426,6 +426,8 @@ function ClarifyTask({
   actions: RowActions;
 }) {
   const pick = (picked: InboxDraft) => actions.pick(item.path, picked);
+  const unpicked = useUnpicked();
+  const asksWho = asksWhoItWaitsOn(task, draft);
   const status = draft.status ?? task.status ?? '';
   // What the vault's Task type declares, and what the task says now so the row can show it.
   const offered = GTD_STATUSES.filter(
@@ -437,6 +439,7 @@ function ClarifyTask({
       aria-label={`Clarify ${item.title}`}
       onSubmit={(event) => {
         event.preventDefault();
+        if (unpicked.refuses(LINK_FIELDS)) return;
         actions.commit(item, draft);
       }}
     >
@@ -456,7 +459,7 @@ function ClarifyTask({
           </option>
         ))}
       </select>
-      {asksWhoItWaitsOn(task, draft) && (
+      {asksWho && (
         <NotePicker
           label={`Who ${item.title} waits on`}
           value={draft.waitingOn ?? task.waitingOn ?? ''}
@@ -464,6 +467,7 @@ function ClarifyTask({
           choices={choices.people}
           disabled={busy}
           onPick={(waitingOn) => pick({ waitingOn })}
+          onTyped={unpicked.typedIn('waitingOn')}
         />
       )}
       <NotePicker
@@ -473,6 +477,7 @@ function ClarifyTask({
         choices={choices.filing}
         disabled={busy || (choices.filing.length === 0 && choices.createFiling === null)}
         onPick={(project) => pick({ project })}
+        onTyped={unpicked.typedIn('project')}
         createFiling={choices.createFiling}
         field="project"
       />
@@ -498,8 +503,51 @@ function ClarifyTask({
       >
         Save
       </button>
+      {unpicked.refusal !== null && (
+        <p className="inbox__refusal" role="alert">
+          {unpicked.refusal}
+        </p>
+      )}
     </form>
   );
+}
+
+type LinkField = 'waitingOn' | 'project';
+const LINK_FIELDS: readonly LinkField[] = ['waitingOn', 'project'];
+
+/**
+ * What a row's link fields hold typed and not picked (#823). Save over one is
+ * refused, and says why, rather than writing the row without the link: the
+ * text is not a note, so it is neither written nor dropped behind the
+ * person's back. The refusal answers that Save; any change to what is typed
+ * takes it away, and the next Save looks again.
+ */
+function useUnpicked() {
+  const [typed, setTyped] = useState<Partial<Record<LinkField, string>>>({});
+  const [refused, setRefused] = useState<string | null>(null);
+  const typedIn = (field: LinkField) => (text: string | null) => {
+    // Unchanged — a pick, or a list closed with nothing typed — the same state is kept, and nothing draws.
+    setTyped((was) => ((was[field] ?? null) === text ? was : withTyped(was, field, text)));
+    setRefused(null);
+  };
+  const refuses = (fields: readonly LinkField[]): boolean => {
+    const text = fields.map((field) => typed[field]).find((each) => each !== undefined);
+    if (text === undefined) return false;
+    setRefused(`“${text}” is typed but not picked. Pick it from the list, or clear it.`);
+    return true;
+  };
+  return { typedIn, refuses, refusal: refused };
+}
+
+function withTyped(
+  was: Partial<Record<LinkField, string>>,
+  field: LinkField,
+  text: string | null,
+): Partial<Record<LinkField, string>> {
+  const now = { ...was };
+  if (text === null) delete now[field];
+  else now[field] = text;
+  return now;
 }
 
 /**
@@ -515,6 +563,7 @@ function NotePicker({
   choices,
   disabled,
   onPick,
+  onTyped,
   createFiling = null,
   field,
 }: {
@@ -524,6 +573,8 @@ function NotePicker({
   choices: readonly RelationChoice[];
   disabled: boolean;
   onPick: (path: VaultPath) => void;
+  /** What is typed and not picked, as it changes. */
+  onTyped?: (typed: string | null) => void;
   /** Makes a project or an area of what was typed, then picks it (#465). */
   createFiling?: CreateFiling | null;
   /** Which picker a triage key opens (P): named so the key finds it. */
@@ -539,6 +590,7 @@ function NotePicker({
       choices={choices}
       disabled={disabled}
       onPick={(choice) => onPick(createVaultPath(choice.path))}
+      {...(onTyped !== undefined && { onTyped })}
       {...(createFiling !== null && {
         creates: FILED_UNDER_TYPES,
         onCreate: (request: CreateLink) => createFiling(request).then(onPick),
