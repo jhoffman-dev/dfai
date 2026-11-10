@@ -1,10 +1,4 @@
-import {
-  activityEvent,
-  noteTitle,
-  noticeReport,
-  type ActivityEvent,
-  type ActivityLevel,
-} from '@dfai/domain';
+import { noteTitle, type ActivityEvent, type ActivityLevel } from '@dfai/domain';
 import { LEVEL_LABELS, type EventDetailsView } from '@dfai/ui';
 import { localIso, shownTime } from './shown-time.ts';
 
@@ -26,15 +20,23 @@ export function eventDetails(event: ActivityEvent, today: string): EventDetailsV
 }
 
 /**
- * What a notice or a toast opens to: the line Activity keeps of it, made the
- * same way, dated when it was shown.
+ * What a notice or a toast opens to: its own words, whole, as it shows them
+ * — not the line Activity keeps of it, which is cut to a line's length and
+ * has its paths struck — dated when it was shown.
  */
 export function noticeDetails(
   notice: { message: string; level: ActivityLevel; at: number },
   today: string,
 ): EventDetailsView {
-  const report = noticeReport(notice.message, notice.level);
-  return eventDetails(activityEvent({ ...report, at: notice.at }), today);
+  const view = {
+    level: notice.level,
+    time: shownTime(notice.at, today),
+    dateTime: localIso(notice.at),
+    message: notice.message,
+    subject: null,
+    details: [],
+  };
+  return { ...view, text: detailsText(view, null) };
 }
 
 /** What the event says beyond its line, as a fact of its own. */
