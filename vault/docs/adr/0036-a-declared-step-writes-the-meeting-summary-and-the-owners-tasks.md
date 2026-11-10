@@ -557,3 +557,8 @@ answers a failed run read in its own ledger too.
   asked again. A part kept before this amendment has no digest, so it matches
   nothing either: its meeting is asked once more, never skipped. A forgotten
   answer only costs an ask.
+- **A retry adds to what was kept.** Each part read is put into the meeting's
+  kept line by its key, so a retry that fails again keeps the parts after the
+  one it failed at. The reduce is kept under a mark of its parts and their
+  answers: a part asked again on a retry means the reduce is asked again too,
+  never a summary of the old part.
