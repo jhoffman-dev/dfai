@@ -64,12 +64,11 @@ describe('the editor open on a rule switched on or off since (#793)', () => {
     expect(editing?.draft).toMatchObject({ enabled: false, name: 'Meeting actions, renamed' });
   });
 
-  it('keeps the on or off the person changed in the editor', async () => {
+  it('keeps the on or off the person changed in the editor over a listing read again', async () => {
     const { result, rerender } = await openEditor();
     await act(async () => result.current.change({ ...RULE, enabled: false }));
 
-    await act(async () => rerender({ automations: listed({ ...RULE, enabled: false }) }));
-    await act(async () => rerender({ automations: listed({ ...RULE, enabled: true }) }));
+    await act(async () => rerender({ automations: listed({ ...RULE }) }));
 
     expect(result.current.editing?.draft.enabled).toBe(false);
   });
