@@ -170,14 +170,16 @@ test('a key Granola refuses is said on the card, and nothing is pulled with it',
   const message = toast.locator('.toast__message');
   await expect(message).toContainText('Create one in Granola');
   await expect(message).toContainText('paste it in Settings → Granola');
-  expect(
-    await message.evaluate((words) => ({
-      fits: words.scrollWidth <= words.clientWidth && words.scrollHeight <= words.clientHeight,
-      lines: Math.round(
-        words.getBoundingClientRect().height / parseFloat(getComputedStyle(words).lineHeight),
-      ),
-    })),
-  ).toEqual({ fits: true, lines: expect.any(Number) });
+  await expect
+    .poll(() =>
+      message.evaluate((words) => ({
+        fits: words.scrollWidth <= words.clientWidth && words.scrollHeight <= words.clientHeight,
+        lines: Math.round(
+          words.getBoundingClientRect().height / parseFloat(getComputedStyle(words).lineHeight),
+        ),
+      })),
+    )
+    .toEqual({ fits: true, lines: expect.any(Number) });
   const [words, whole] = [await message.boundingBox(), await toast.boundingBox()];
   expect(words!.height).toBeGreaterThan(30);
   expect(words!.x + words!.width).toBeLessThanOrEqual(whole!.x + whole!.width);

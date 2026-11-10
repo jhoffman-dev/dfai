@@ -8,6 +8,7 @@ import {
   type ProviderStatus,
   type SecretStorePort,
 } from '@dfai/application';
+import { readApiUsage } from './api-usage.ts';
 
 /** The secret the key is kept under, and the one site it may go to (ADR-0017). */
 export const ANTHROPIC_SECRET = 'anthropic';
@@ -181,6 +182,9 @@ function* eventsOf(answer: { status: number; body: string }): Generator<ModelEve
       };
     }
   }
+  // The API says no cost; usage that does not read is unknown, and no event says it.
+  const usage = readApiUsage((parsed as { usage?: unknown }).usage);
+  if (usage !== null) yield { type: 'usage', usage };
 }
 
 function parse(text: string): unknown {

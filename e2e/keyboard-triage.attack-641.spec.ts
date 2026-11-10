@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * Adversarial pass on PR #641 (#109, keyboard triage): the keys pressed while
@@ -91,8 +92,7 @@ test.describe('Today, while a write is in flight (attack PR #641)', () => {
       'Fix the gate',
     ]);
     const release = host.holdWrites('Tasks/Call the bank.md');
-    await handle(page, 'Call the bank').focus();
-    await page.keyboard.press('x');
+    await focusThenPress(handle(page, 'Call the bank'), 'x');
     await expect.poll(() => host.writesTo('Tasks/Call the bank.md')).toBeGreaterThan(0);
     // The next key needs a row to land on: the page, not the document, has the focus.
     const onARow = await page.evaluate(
@@ -108,8 +108,7 @@ test.describe('Today, while a write is in flight (attack PR #641)', () => {
     const host = await open(page, vault, /^Today/);
     await expect(today(page).locator('.table__title')).toHaveCount(3);
     const release = host.holdWrites('Tasks/Call the bank.md');
-    await handle(page, 'Call the bank').focus();
-    await page.keyboard.press('x');
+    await focusThenPress(handle(page, 'Call the bank'), 'x');
     await expect.poll(() => host.writesTo('Tasks/Call the bank.md')).toBeGreaterThan(0);
     await page.keyboard.press('j');
     await page.keyboard.press('j');
@@ -133,8 +132,7 @@ test.describe('Today, while a write is in flight (attack PR #641)', () => {
     await expect(
       dueToday.getByRole('checkbox', { name: 'Mark Send the figures done' }),
     ).toBeVisible();
-    await handle(page, 'Send the figures').focus();
-    await page.keyboard.press('n');
+    await focusThenPress(handle(page, 'Send the figures'), 'n');
     await expectFile(vault, 'Tasks/Send the figures.md').toContain('status: next-action');
     await expect(today(page).locator('tr[aria-busy]')).toHaveCount(0);
     // Still due today, the row is listed where it was: the next key is for it.

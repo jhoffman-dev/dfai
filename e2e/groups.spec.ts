@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection } from './host.ts';
 import { dragWithKeyboard, dragWithPointer } from './drag.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * Issue #6: groups and sub-groups on a table, Coda-style, and swimlanes on a
@@ -135,8 +136,7 @@ test('a folded group draws nothing of its rows, and stays folded on coming back'
 
   // The keyboard folds too: Up through the lines above — gamma's name,
   // backlog's sub-group, then backlog itself (#248) — and Enter to fold it.
-  await header(page, /^Doing/).focus();
-  await page.keyboard.press('ArrowUp');
+  await focusThenPress(header(page, /^Doing/), 'ArrowUp');
   await expect(page.locator('.table__row .table__link')).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(page.locator('.table__group-toggle[data-depth="1"]')).toBeFocused();

@@ -54,3 +54,12 @@ export type { AnswerBlockKind } from './answer-blocks.ts';
 export { isWebAddress } from './answer-inline.ts';
 export type { AnswerInline } from './answer-inline.ts';
 export { MAX_PROMPT_CHARACTERS } from './prompt-limit.ts';
+export {
+  addUsage,
+  inputTokens,
+  roundCost,
+  shortTokens,
+  sumUsage,
+  usageWords,
+} from './model-usage.ts';
+export type { ModelUsage } from './model-usage.ts';

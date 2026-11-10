@@ -7,6 +7,7 @@
  */
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASKS = 150;
 
@@ -42,13 +43,11 @@ test('a long table draws a screenful, and the keyboard reaches its last row and 
   await openTaskTable(page);
   const rows = page.locator('.table__row');
   await expect(rows.first()).toBeVisible();
-  expect(await rows.count()).toBeLessThan(TASKS);
+  await expect.poll(() => rows.count()).toBeLessThan(TASKS);
 
   const names = page.locator('.table__row .table__link');
   const first = (await names.first().textContent()) ?? '';
-  await names.first().focus();
-
-  await page.keyboard.press('End');
+  await focusThenPress(names.first(), 'End');
   const last = page.locator(`.table__row[data-index="${TASKS - 1}"] .table__link`);
   await expect(last).toBeFocused();
   await expect(last).toBeInViewport();
@@ -134,8 +133,7 @@ test('a long grouped table moves row to row and header to header, across its gro
   const doingHeader = half + 2;
   const lastRow = TASKS + 2;
 
-  await header(/^Backlog/).focus();
-  await page.keyboard.press('ArrowDown');
+  await focusThenPress(header(/^Backlog/), 'ArrowDown');
   await expect(nameAt(1)).toBeFocused();
 
   // The last row is far below the page: End scrolls to it, then focuses it.

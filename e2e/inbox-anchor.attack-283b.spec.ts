@@ -8,6 +8,7 @@ import {
   type FakeVault,
 } from './host.ts';
 import { toastSaying } from './toasts.ts';
+import { focusOn } from './typing.ts';
 
 /**
  * Second attack on #130 (PR #283), in WebKit: the Inbox's manual scroll
@@ -212,7 +213,8 @@ test('content arriving and going above at ten moments of a 2 s wheel scroll neve
   for (let step = 0; step < 20; step++) {
     await page.mouse.wheel(0, 80);
     if (step % 2 === 1) await settings(page, vault, step % 4 === 1);
-    await page.waitForTimeout(100);
+    // Frames, not a time: the wheel's steps are a few frames apart however busy the machine.
+    await settle(page, 6);
   }
   await settle(page, 20);
   const tops = await page.evaluate(() => (window as unknown as { __tops: number[] }).__tops);
@@ -328,7 +330,7 @@ test('content arriving above during an Option+Tab and Option+Shift+Tab sweep kee
   const vault = await openInbox(page, 600);
   await scrollTo(page, 2000);
   const middle = await rowAtMiddle(page);
-  await inbox(page).getByRole('button', { name: middle.title, exact: true }).focus();
+  await focusOn(inbox(page).getByRole('button', { name: middle.title, exact: true }));
   for (let press = 0; press < 24; press++) {
     // Option: WebKit's Tab alone skips buttons, as Safari does by default.
     await page.keyboard.press(press % 12 < 6 ? 'Alt+Tab' : 'Alt+Shift+Tab');
@@ -382,7 +384,9 @@ test('"Preview the tidy" opened under the pointer grows downwards, and the rows 
   await tidy(page).getByRole('button', { name: 'Preview the tidy' }).click();
   await expect(tidy(page).getByRole('table', { name: 'Notes that move' })).toBeVisible();
   await settle(page);
-  expect(Math.abs((await tidy(page).boundingBox())!.y - offerAt)).toBeLessThanOrEqual(1);
+  await expect
+    .poll(async () => Math.abs((await tidy(page).boundingBox())!.y - offerAt))
+    .toBeLessThanOrEqual(1);
   const { title } = await rowAtMiddle(page);
   const before = await rowTop(page, title);
   await page.mouse.move(2, 400);

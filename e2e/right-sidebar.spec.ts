@@ -7,6 +7,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { revealSidebar } from './sidebar-drawer.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASK_TYPE = [
   '---',
@@ -297,8 +298,7 @@ test('Escape in the aside returns the focus to the work', async ({ page }) => {
   await openNote(page, 'Ship it');
   await toggle(page).click();
   const tab = aside(page).getByRole('tab', { name: 'Properties' });
-  await tab.focus();
-  await page.keyboard.press('Escape');
+  await focusThenPress(tab, 'Escape');
   await expect(tab).not.toBeFocused();
   await expect(page.locator('.pane--focused')).toBeFocused();
 });

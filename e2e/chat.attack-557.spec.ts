@@ -142,7 +142,9 @@ test('a long unbreakable word, address and code in an answer stay in the sidebar
   await ask(page, 'Long words?');
   await expect(chat(page).getByRole('region', { name: 'Answer' })).toContainText('larkspur');
   const log = chat(page).getByRole('log', { name: 'Conversation' });
-  expect(await log.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  await expect
+    .poll(() => log.evaluate((el) => el.scrollWidth - el.clientWidth))
+    .toBeLessThanOrEqual(0);
 });
 
 test('a long unbreakable question stays in the sidebar column', async ({ page }) => {
@@ -151,7 +153,9 @@ test('a long unbreakable question stays in the sidebar column', async ({ page })
   await ask(page, 'tobiasfenn'.repeat(40));
   await expect(chat(page).getByRole('region', { name: 'Answer' })).toContainText('Noted.');
   const log = chat(page).getByRole('log', { name: 'Conversation' });
-  expect(await log.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  await expect
+    .poll(() => log.evaluate((el) => el.scrollWidth - el.clientWidth))
+    .toBeLessThanOrEqual(0);
 });
 
 /** The chunk the sidebar chat now lives in (#552). */
@@ -264,5 +268,7 @@ test('many chips in one line stay in the sidebar column in a narrow window', asy
   const answer = chat(page).getByRole('region', { name: 'Answer' });
   await expect(answer.getByRole('button', { name: 'Rollback' })).toHaveCount(30);
   const log = chat(page).getByRole('log', { name: 'Conversation' });
-  expect(await log.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  await expect
+    .poll(() => log.evaluate((el) => el.scrollWidth - el.clientWidth))
+    .toBeLessThanOrEqual(0);
 });

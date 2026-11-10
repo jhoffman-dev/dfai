@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures.ts';
 import { createVault, expectFile, expectSaved, installHost, saveNow } from './host.ts';
+import { caretAtNoteEnd } from './caret.ts';
 
 test('a new note is created, opened and saved to disk', async ({ page }) => {
   const vault = await createVault();
@@ -25,7 +26,7 @@ test('a new note is created, opened and saved to disk', async ({ page }) => {
   await expect(page.getByRole('treeitem', { name: 'existing', exact: true })).toBeVisible();
 
   // Typing into it and saving writes the words through.
-  await page.getByLabel('Note', { exact: true }).click();
+  await caretAtNoteEnd(page.getByLabel('Note', { exact: true }));
   await page.keyboard.type('Something worth keeping.');
   await saveNow(page);
   await expectSaved(page);

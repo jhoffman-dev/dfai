@@ -5,6 +5,7 @@
  */
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASKS = 120;
 
@@ -60,8 +61,7 @@ test('walking up a long table with ArrowUp never leaves the focused row behind t
 }) => {
   await openTaskTable(page);
   const names = page.locator('.table__row .table__link');
-  await names.first().focus();
-  await page.keyboard.press('End');
+  await focusThenPress(names.first(), 'End');
   await expect(page.locator(`.table__row[data-index="${TASKS - 1}"] .table__link`)).toBeFocused();
 
   const hidden: string[] = [];
@@ -84,8 +84,7 @@ test('the column headings stay on top of the sheet after End scrolls it to the l
     .filter({ hasText: /title|name/i })
     .first();
   await expect(heading).toBeVisible();
-  await page.locator('.table__row .table__link').first().focus();
-  await page.keyboard.press('End');
+  await focusThenPress(page.locator('.table__row .table__link').first(), 'End');
   await expect(page.locator(`.table__row[data-index="${TASKS - 1}"] .table__link`)).toBeFocused();
   await expect(heading).toBeInViewport();
   expect(await headingOnTop(page, heading)).toBe(true);

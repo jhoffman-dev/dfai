@@ -15,7 +15,7 @@ import {
 } from '@dfai/application';
 import { createEventQueue } from './event-queue.ts';
 import { ProgramNotFound, type ModelProcessHost, type ProcessExit } from './model-process.ts';
-import { isLoginProblem, readStreamJsonLine } from './stream-json.ts';
+import { isLoginProblem, readStreamJsonLine, type StreamJsonLine } from './stream-json.ts';
 
 /** What fixes each problem, as the panel shows it to copy. */
 export const INSTALL_CLAUDE_CODE = 'curl -fsSL https://claude.ai/install.sh | bash';
@@ -97,7 +97,7 @@ async function* streamReply({
   const deadline = withDeadline(signal, limit);
   const queue = createEventQueue<ModelEvent>();
   const scanner = request.tools.length === 0 ? TEXT_ONLY : createToolCallScanner();
-  let verdict: { isError: boolean; message: string } | null = null;
+  let verdict: Extract<StreamJsonLine, { kind: 'result' }> | null = null;
   const onLine = (line: string) => {
     const read = readStreamJsonLine(line);
     if (read.kind === 'text')
@@ -114,6 +114,8 @@ async function* streamReply({
     .then(
       (exit) => {
         for (const piece of scanner.end()) queue.push(eventOf(piece));
+        // What the call spent is said even when it failed: the tokens were spent all the same.
+        if (verdict?.usage) queue.push({ type: 'usage', usage: verdict.usage });
         queue.close(deadline.expired() ? ranOut(limit) : failureOf({ exit, verdict, signal }));
       },
       (error: unknown) =>

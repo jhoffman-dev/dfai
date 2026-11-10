@@ -13,6 +13,7 @@ import {
   type FakeHost,
   type FakeVault,
 } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASK_TYPE = [
   '---',
@@ -222,8 +223,7 @@ test('Alt+arrow moves the focused tab, for the keyboard', async ({ page }) => {
   const vault = await openVault(page);
   await openType(page, 'Task');
 
-  await tabStrip(page).getByRole('button', { name: 'Board' }).focus();
-  await page.keyboard.press('Alt+ArrowRight');
+  await focusThenPress(tabStrip(page).getByRole('button', { name: 'Board' }), 'Alt+ArrowRight');
 
   await expect(tabTitles(page)).toHaveText(['Everything', 'Board']);
   await expect(tabStrip(page).getByText('Board moved to tab 2 of 2.')).toBeAttached();
@@ -238,8 +238,7 @@ test('Alt+arrow twice on a view just added moves it two places, not one', async 
   await expect(tabTitles(page)).toHaveText(['Board', 'Everything', 'Task list']);
   await expectOpen(page, 'Task list');
 
-  await tabStrip(page).getByRole('button', { name: 'Task list' }).focus();
-  await page.keyboard.press('Alt+ArrowLeft');
+  await focusThenPress(tabStrip(page).getByRole('button', { name: 'Task list' }), 'Alt+ArrowLeft');
   await page.keyboard.press('Alt+ArrowLeft');
 
   await expect(tabTitles(page)).toHaveText(['Task list', 'Board', 'Everything']);

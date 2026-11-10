@@ -39,10 +39,12 @@ test('arrowing through the results keeps the selected one in view (#372)', async
   const searchbox = page.getByRole('searchbox', { name: 'Search the vault' });
 
   // The list must actually overflow, or the test proves nothing.
-  const overflows = await palette
-    .getByRole('listbox', { name: 'Results' })
-    .evaluate((list) => list.scrollHeight > list.clientHeight);
-  expect(overflows).toBe(true);
+  await expect(async () => {
+    const overflows = await palette
+      .getByRole('listbox', { name: 'Results' })
+      .evaluate((list) => list.scrollHeight > list.clientHeight);
+    expect(overflows).toBe(true);
+  }).toPass();
 
   for (let step = 0; step < 19; step += 1) await searchbox.press('ArrowDown');
   await expect(options.nth(19)).toHaveAttribute('aria-selected', 'true');

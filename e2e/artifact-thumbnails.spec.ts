@@ -109,8 +109,10 @@ test('a page saved from the dialog is pictured, and the gallery and the note sho
   await expect(cover).toBeVisible();
   await expect.poll(() => naturalWidth(cover)).toBe(THUMBNAIL_WIDTH);
   await expect(card.locator('.artifact-face')).toHaveCount(0);
-  const ratio = await cover.evaluate((element) => element.clientWidth / element.clientHeight);
-  expect(ratio).toBeCloseTo(16 / 10, 1);
+  await expect(async () => {
+    const ratio = await cover.evaluate((element) => element.clientWidth / element.clientHeight);
+    expect(ratio).toBeCloseTo(16 / 10, 1);
+  }).toPass();
 });
 
 test('"Generate missing thumbnails" pictures copies with no cover, saying so on each card meanwhile', async ({

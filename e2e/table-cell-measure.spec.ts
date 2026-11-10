@@ -63,12 +63,14 @@ test('a long option’s pill stays inside its cell, and the cell says the whole 
   await expect(pill).toBeVisible();
   // Proven to match: the pill holds the long option.
   await expect(pill).toHaveText(/waiting/i);
-  const spill = await pill.evaluate((element) => {
-    const cell = element.closest('td')!.getBoundingClientRect();
-    const box = element.getBoundingClientRect();
-    return Math.max(0, box.right - cell.right);
-  });
-  expect(spill).toBeLessThanOrEqual(0.5);
+  await expect(async () => {
+    const spill = await pill.evaluate((element) => {
+      const cell = element.closest('td')!.getBoundingClientRect();
+      const box = element.getBoundingClientRect();
+      return Math.max(0, box.right - cell.right);
+    });
+    expect(spill).toBeLessThanOrEqual(0.5);
+  }).toPass();
   await expect(row.locator('button.table__cell')).toHaveAttribute('title', LONG_OPTION);
 });
 

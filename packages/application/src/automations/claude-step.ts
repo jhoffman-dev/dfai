@@ -1,5 +1,7 @@
 import {
   answeredMeetingOf,
+  sumUsage,
+  type ModelUsage,
   askedTurnsDigest,
   digestOf,
   CITED_ITEMS_INSTRUCTIONS,
@@ -69,7 +71,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { ModelProviderError, type ModelProvider, type ProviderStatus } from '../chat/ports.ts';
-import { runChatTurn } from '../chat/run-chat-turn.ts';
+import { runChatTurn, turnFailureOf, type ChatTurnOutcome } from '../chat/run-chat-turn.ts';
 import type { ChatToolbox, Toolboxes } from '../chat/toolbox.ts';
 import { loadLinkDirectory } from '../meeting-links/link-directory.ts';
 import type { Clock } from '../ports.ts';
@@ -350,6 +352,7 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
   let alreadyMade = 0;
   const toStore: StoredAnswerDraft[] = [];
   let meetings: readonly MeetingTally[] = [];
+  const readings: (ModelUsage | null)[] = [];
   const claudeRun = (): ClaudeRunInfo => ({
     model,
     ms: Math.max(0, ports.clock.now() - started),
@@ -360,6 +363,7 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
     ...(warnings.length > 0 && { warnings: [...warnings] }),
     ...(alreadyMade > 0 && { alreadyMade }),
     ...(meetings.length > 0 && { meetings }),
+    ...usageOf(readings),
   });
   const fail = (message: string, unavailable: UnavailableFoundBy | null = null): never => {
     throw new ClaudeStepFailed(message, claudeRun(), { stored: toStore, unavailable });
@@ -399,7 +403,8 @@ export async function runClaudeStep(args: StepArgs): Promise<ClaudeStepOutcome> 
   });
   cut = plan.cut;
   const signal = ports.deadline(CLAUDE_RUN_TIMEOUT_MS);
-  const asking = { ...args, provider, model, prompt, output, fail, signal };
+  const spent = (usage: ModelUsage | null) => readings.push(usage);
+  const asking = { ...args, provider, model, prompt, output, fail, signal, spent };
   const counted = () => {
     const refused = claudeAskRefusal(budget, asked, askedThisHour);
     if (refused !== null) fail(refused);
@@ -608,6 +613,8 @@ type Asking = StepArgs & {
   fail: (message: string, unavailable?: UnavailableFoundBy | null) => never;
   /** Aborts when the run's one deadline passes. */
   signal: AbortSignal;
+  /** Told what each ask spent once it ends; null when that is unknown (#788). */
+  spent: (usage: ModelUsage | null) => void;
 };
 
 /** The model's last word, after any tools it called. */
@@ -623,6 +630,7 @@ async function askModel({
   fail,
   signal,
   counted,
+  spent,
 }: Asking & {
   notes: readonly AnsweredNote[];
   /** What the output has DFAI say beside the notes. */
@@ -641,8 +649,9 @@ async function askModel({
   const tooLong = claudeSystemProblem(system);
   if (tooLong !== null) return fail(tooLong);
   counted();
+  let outcome: ChatTurnOutcome;
   try {
-    const outcome = await runChatTurn({
+    outcome = await runChatTurn({
       provider,
       toolbox: onlyRuleTools(ports.toolboxes.reading(action.tools), action.tools),
       model,
@@ -653,10 +662,10 @@ async function askModel({
         // Nobody is watching a rule's run: only its last word counts.
       },
     });
-    if (outcome.stopped) return fail(stoppedWords(signal));
-    const last = outcome.added.findLast((message) => message.role === 'assistant');
-    return last?.role === 'assistant' ? last.text : '';
-  } catch (error) {
+  } catch (thrown) {
+    const { cause: error, spend } = turnFailureOf(thrown);
+    // Said before the run fails, so its record holds this ask, with what its rounds reported.
+    spent(spend?.usage ?? null);
     if (error instanceof ToolOutsideRule) return fail(error.message);
     // Claude Code's own words can quote its stderr, paths and all.
     if (error instanceof ModelProviderError) {
@@ -664,6 +673,16 @@ async function askModel({
     }
     throw error;
   }
+  spent(outcome.usage);
+  if (outcome.stopped) return fail(stoppedWords(signal));
+  const last = outcome.added.findLast((message) => message.role === 'assistant');
+  return last?.role === 'assistant' ? last.text : '';
+}
+
+/** What a run's asks spent, summed, for its record; nothing when none was asked or any is unknown. */
+function usageOf(readings: readonly (ModelUsage | null)[]): { usage?: ModelUsage } {
+  const usage = sumUsage(readings);
+  return usage === null ? {} : { usage };
 }
 
 function stoppedWords(signal: AbortSignal): string {

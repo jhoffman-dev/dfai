@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
 import { suggestion } from './link-suggest.ts';
+import { clickThenType } from './typing.ts';
 
 /**
  * Attacks on PR #469 (#465), in the built app: the Inbox's project field.
@@ -66,8 +67,7 @@ test('↓ past the rows the list shows scrolls the active row into view', async 
   const vault = await vaultWith(many);
   const inbox = await openInbox(page, vault);
   const project = inbox.getByRole('combobox', { name: 'File Call the bank under' });
-  await project.click();
-  await page.keyboard.type('lark');
+  await clickThenType(project, 'lark');
   await expect(suggestion(project, 'Larkspur 20')).toBeAttached();
   for (let step = 0; step < 15; step += 1) await page.keyboard.press('ArrowDown');
   const active = page
@@ -84,8 +84,7 @@ test('a title with a colon, quotes and an emoji is written as a link that reads 
   const vault = await vaultWith([ODD, 'Larkspur onboarding']);
   const inbox = await openInbox(page, vault);
   const project = inbox.getByRole('combobox', { name: 'File Call the bank under' });
-  await project.click();
-  await page.keyboard.type('q3');
+  await clickThenType(project, 'q3');
   await suggestion(project, ODD).click();
   await inbox
     .getByRole('row')

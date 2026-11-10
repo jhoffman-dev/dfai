@@ -125,12 +125,14 @@ test('a long relation name is one line, cut with an ellipsis, its remove in reac
   expect(nameBox.height).toBeLessThan(24);
   expect(within(nameBox, chipBox)).toBe(true);
   expect(rightEdge(chipBox)).toBeLessThanOrEqual(rightEdge(asideBox));
-  const cut = await name.evaluate((el) => ({
-    clipped: el.scrollWidth > el.clientWidth,
-    textOverflow: getComputedStyle(el).textOverflow,
-    hover: el.getAttribute('title'),
-  }));
-  expect(cut).toEqual({ clipped: true, textOverflow: 'ellipsis', hover: LONG_TASK });
+  await expect(async () => {
+    const cut = await name.evaluate((el) => ({
+      clipped: el.scrollWidth > el.clientWidth,
+      textOverflow: getComputedStyle(el).textOverflow,
+      hover: el.getAttribute('title'),
+    }));
+    expect(cut).toEqual({ clipped: true, textOverflow: 'ellipsis', hover: LONG_TASK });
+  }).toPass();
 
   // The remove stays visible, inside the chip, and clickable.
   const remove = chip.getByRole('button', { name: `Remove ${LONG_TASK} from Tasks` });
@@ -148,7 +150,7 @@ test('a long relation name is one line, cut with an ellipsis, its remove in reac
   }
   // The short names are not cut: the ellipsis is only for a name that does not fit.
   const short = properties.getByRole('button', { name: 'Open Mara Quill' });
-  expect(await short.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
+  await expect.poll(() => short.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
 });
 
 test('a value’s problem and a long text stay inside the panel', async ({ page }) => {
@@ -160,16 +162,18 @@ test('a value’s problem and a long text stay inside the panel', async ({ page 
   const problemBox = await box(problem);
   expect(rightEdge(problemBox)).toBeLessThanOrEqual(rightEdge(asideBox));
   // Wrapped, not cut: every word of it is laid out inside its own box.
-  expect(await problem.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
+  await expect.poll(() => problem.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
 
   // A text value is a one-line field: it ends in an ellipsis until it is focused to edit.
   const title = properties.getByRole('textbox', { name: 'Title' });
   await expect(title).toHaveValue(LONG_TITLE);
   expect(rightEdge(await box(title))).toBeLessThanOrEqual(rightEdge(asideBox));
-  expect(
-    await title.evaluate((el) => ({
-      clipped: el.scrollWidth > el.clientWidth,
-      textOverflow: getComputedStyle(el).textOverflow,
-    })),
-  ).toEqual({ clipped: true, textOverflow: 'ellipsis' });
+  await expect
+    .poll(() =>
+      title.evaluate((el) => ({
+        clipped: el.scrollWidth > el.clientWidth,
+        textOverflow: getComputedStyle(el).textOverflow,
+      })),
+    )
+    .toEqual({ clipped: true, textOverflow: 'ellipsis' });
 });

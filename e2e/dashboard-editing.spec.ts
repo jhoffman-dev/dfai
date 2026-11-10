@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 import { dragAnnouncement, dragWithPointer, keyboardSensorListening } from './drag.ts';
+import { focusThenPress } from './typing.ts';
 
 const TASK_TYPE = [
   '---',
@@ -224,8 +225,9 @@ test('resizes a bar chart from 8 columns to 6 by its edge', async ({ page }) => 
 
   await expectFile(vault, FILE).toContain(STATUS_WIDGET.replace('span: 8', 'span: 6'));
   await expect(chart).toHaveCSS('--span', '6');
-  const after = await chart.boundingBox();
-  expect(after?.width).toBeLessThan(before.width - column);
+  await expect
+    .poll(async () => (await chart.boundingBox())?.width)
+    .toBeLessThan(before.width - column);
 });
 
 test('removes a widget, and Cmd+Z puts it back', async ({ page }) => {
@@ -250,8 +252,7 @@ test('moves and resizes with the keyboard alone', async ({ page }) => {
   await customize(page);
   const grip = widget(page, 'Open work').getByRole('button', { name: 'Move Open work' });
 
-  await grip.focus();
-  await page.keyboard.press('Space');
+  await focusThenPress(grip, 'Space');
   await expect(dragAnnouncement(page)).toHaveText('Picked up Open work, 3 of 3, 6 columns wide.');
   await keyboardSensorListening(page);
   await page.keyboard.press('ArrowLeft');

@@ -147,8 +147,10 @@ test('typing / offers blocks to insert', async ({ page }) => {
   // A popover with 36px rows (UI v2 slice 13h).
   await expect(popup).toHaveCSS('border-radius', '8px');
   await expect(popup).not.toHaveCSS('box-shadow', 'none');
-  const row = await popup.getByRole('option', { name: /Quote/ }).boundingBox();
-  expect(row?.height).toBe(36);
+  await expect(async () => {
+    const row = await popup.getByRole('option', { name: /Quote/ }).boundingBox();
+    expect(row?.height).toBe(36);
+  }).toPass();
 
   await page.keyboard.press('Enter');
   await expect(page.locator('.editor blockquote')).toBeVisible();

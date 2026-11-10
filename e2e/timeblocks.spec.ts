@@ -8,6 +8,7 @@ import {
   sidebarSection,
   type FakeVault,
 } from './host.ts';
+import { focusThenPress } from './typing.ts';
 
 /**
  * P31-01: timeblocks are notes of the Block type, written into a vault whose
@@ -393,8 +394,7 @@ test('Escape that lands before a move has been announced is still heard as a can
 test('the keyboard plans a task: choose it, go to the hour, Enter', async ({ page }) => {
   const vault = await openPlanner(page);
 
-  await trayTask(page, 'Invoice Larkspur').getByRole('button').focus();
-  await page.keyboard.press('Enter');
+  await focusThenPress(trayTask(page, 'Invoice Larkspur').getByRole('button'), 'Enter');
   // Today's first hour stop takes focus, and each hour says what Enter will do.
   await expect(
     page.getByRole('button', { name: 'Plan Invoice Larkspur at 09:00 on Monday 12 October 2026' }),

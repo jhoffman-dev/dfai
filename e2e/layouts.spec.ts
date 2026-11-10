@@ -218,7 +218,7 @@ test('list rows are 34px on line-soft, gallery cards hairline and still, feed ro
   await card.hover();
   await expect(card).toHaveCSS('box-shadow', 'none');
   await expect(card).toHaveCSS('transform', 'none');
-  expect(await card.boundingBox()).toEqual(resting);
+  await expect.poll(() => card.boundingBox()).toEqual(resting);
 
   await choose('Feed');
   const feedRow = rowOf(page.getByRole('article', { name: 'First' }));

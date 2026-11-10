@@ -20,7 +20,7 @@ import {
   splitFrontmatter,
   type AutomationRule,
 } from '@dfai/domain';
-import type { ModelEvent } from '../chat/ports.ts';
+import { ModelProviderError, type ModelEvent } from '../chat/ports.ts';
 import { acceptProposalNote } from '../proposals/accept-proposal.ts';
 import { listProposals } from '../proposals/list-proposals.ts';
 import { automationVault, jsonNote } from '../testing/automation-vault.ts';
@@ -686,6 +686,50 @@ describe('a meeting too long for one ask', () => {
       claude: { asks: 2 },
     });
     expect((await proposals()).size).toBe(0);
+  });
+
+  it('keeps what every ask spent when an answer does not read: each was asked, and answered (#788)', async () => {
+    const spent: ModelEvent = {
+      type: 'usage',
+      usage: { input: 4500, cacheCreation: 1050, cacheRead: 15_050, output: 1070 },
+    };
+    const good = says(
+      item({ kind: 'task', title: 'Write the rollout note', owner: 'You', source_block: 't0003' }),
+    );
+    const { run, log } = setUp(
+      [
+        [...good, spent],
+        [{ type: 'text', text: 'Sorry, no.' }, spent],
+      ],
+      { ...NOTES, [SYNC]: longMeeting(105) },
+    );
+
+    const entry = await run(SYNC_ONLY);
+
+    expect(entry).toMatchObject({
+      kind: 'failed',
+      claude: {
+        asks: 2,
+        usage: { input: 9000, cacheCreation: 2100, cacheRead: 30_100, output: 2140 },
+      },
+    });
+    expect(log()).toContain('- usage in `41200` (cached `30100`, written `2100`) out `2140`');
+  });
+
+  it('says no usage when an ask failed before it said what it spent', async () => {
+    const spent: ModelEvent = {
+      type: 'usage',
+      usage: { input: 4500, cacheCreation: 1050, cacheRead: 15_050, output: 1070 },
+    };
+    const { run } = setUp([[...says(), spent], new ModelProviderError('failed', 'Overloaded.')], {
+      ...NOTES,
+      [SYNC]: longMeeting(105),
+    });
+
+    const entry = await run(SYNC_ONLY);
+
+    expect(entry).toMatchObject({ kind: 'failed', claude: { asks: 2 } });
+    expect(entry.kind === 'failed' && entry.claude).not.toHaveProperty('usage');
   });
 
   it('stops at the most asks a run makes, and the log says how much of the meeting was read', async () => {

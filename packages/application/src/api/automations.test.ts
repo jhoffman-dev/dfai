@@ -1001,6 +1001,30 @@ describe('a rule with a Claude step, through the API (P29-03)', () => {
     });
   });
 
+  it('says what a Claude step spent, as its log reads (#788)', async () => {
+    const usage = {
+      input: 9000,
+      cacheCreation: 2100,
+      cacheRead: 30_100,
+      output: 2140,
+      costUsd: 0.41,
+    };
+    const spent: LogEntry = {
+      kind: 'failed',
+      at: '2026-09-21T03:00:04',
+      trigger: 'hand',
+      problem: 'Claude’s answer did not read.',
+      claude: { model: 'claude-opus-5-5', ms: 900, asks: 2, usage },
+    };
+    const api = vault({
+      ...files,
+      '.atlas/automations/log/ask.md': newLogText('Ask about tasks', [spent]),
+    });
+    expect(bodyOf(await logOf(api, 'ask'))).toMatchObject({
+      entries: [{ kind: 'failed', claude: { asks: 2, usage } }],
+    });
+  });
+
   it('says which notes a Claude step read only the start of', async () => {
     const partly: LogEntry = {
       kind: 'run',

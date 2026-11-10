@@ -98,12 +98,16 @@ for (const { width, height, panelScrolls } of WINDOWS) {
 
       // The sheet is the rows' scroller, as on every other table. The panel
       // around it scrolls only when the window is too short for the page.
-      const panel = await page
-        .locator('.panel__body', { has: article(page) })
-        .evaluate((body) => body.scrollHeight > body.clientHeight + 1);
-      expect(panel, 'the panel around the result scrolls').toBe(panelScrolls);
-      const sheetScrolls = await sheet(page).evaluate((el) => el.scrollHeight > el.clientHeight);
-      expect(sheetScrolls, 'the result sheet scrolls').toBe(true);
+      await expect(async () => {
+        const panel = await page
+          .locator('.panel__body', { has: article(page) })
+          .evaluate((body) => body.scrollHeight > body.clientHeight + 1);
+        expect(panel, 'the panel around the result scrolls').toBe(panelScrolls);
+      }).toPass();
+      await expect(async () => {
+        const sheetScrolls = await sheet(page).evaluate((el) => el.scrollHeight > el.clientHeight);
+        expect(sheetScrolls, 'the result sheet scrolls').toBe(true);
+      }).toPass();
 
       await sheet(page).evaluate((el) => {
         el.scrollTop = el.scrollHeight;
@@ -111,7 +115,7 @@ for (const { width, height, panelScrolls } of WINDOWS) {
       const last = query.name === 'grouped' ? /^Row \d{4}$/ : title(ROWS);
       await expect(drawn(page).filter({ hasText: last }).last()).toBeInViewport();
       if (query.name === 'ungrouped') await expect(drawn(page).last()).toHaveText(title(ROWS));
-      expect(await drawn(page).count()).toBeLessThanOrEqual(MOST_DRAWN);
+      await expect.poll(() => drawn(page).count()).toBeLessThanOrEqual(MOST_DRAWN);
     });
   }
 }

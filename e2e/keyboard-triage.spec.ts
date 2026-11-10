@@ -1,6 +1,7 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
 import { toastSaying } from './toasts.ts';
+import { focusThenPress, focusThenType } from './typing.ts';
 
 /**
  * #109: keyboard triage on the Inbox and on Today — a keyboard-only pass over
@@ -100,8 +101,7 @@ test.describe('the Inbox', () => {
     await expect(strip).toContainText('Move');
     await expect(strip).toContainText('Undo');
 
-    await row(page, first).focus();
-    await page.keyboard.press('j');
+    await focusThenPress(row(page, first), 'j');
     await expect(row(page, rest[0] ?? '')).toBeFocused();
     await expect(row(page, rest[0] ?? '')).toHaveClass(/inbox__row--focused/);
     await expect(row(page, first)).not.toHaveClass(/inbox__row--focused/);
@@ -131,8 +131,7 @@ test.describe('the Inbox', () => {
     const vault = await vaultWith({ 'Inbox/Call the bank.md': ['status: inbox'] });
     await open(page, vault, /^Inbox/);
     const picker = inbox(page).getByRole('combobox', { name: 'File Call the bank under' });
-    await picker.focus();
-    await page.keyboard.type('xjnu');
+    await focusThenType(picker, 'xjnu');
     await expect(picker).toHaveValue('xjnu');
     await expect(picker).toBeFocused();
     expect(await vault.read('Inbox/Call the bank.md')).toContain('status: inbox');
@@ -164,8 +163,7 @@ test.describe('Today', () => {
       'Call the bank',
     ]);
 
-    await handle(page, 'Send the figures').focus();
-    await page.keyboard.press('x');
+    await focusThenPress(handle(page, 'Send the figures'), 'x');
     await expectFile(vault, 'Tasks/Send the figures.md').toContain('status: archive');
     await expect(handle(page, 'Draft the plan')).toBeFocused();
 

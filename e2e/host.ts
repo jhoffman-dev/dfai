@@ -483,8 +483,15 @@ export interface FakeHost {
   };
   /** How many times the app has asked the host to write this file, creates and refused writes included. */
   writesTo(relativePath: string): number;
-  /** How many times the app has asked the host for this command. */
+  /** How many times the app has asked the host for this command, counted as each call starts. */
   callsTo(command: string): number;
+  /**
+   * How many calls of this command have been answered in the page, failures
+   * included. Each is counted a task after its answer settles there, so the
+   * app's own code that runs straight on from the answer has run by then;
+   * work the app schedules for later may not have.
+   */
+  answeredTo(command: string): Promise<number>;
   /** The model and embeddings cache (`embedding-host.ts`): every passage the app sent to embed. */
   readonly embeddings: { passages(): readonly string[] };
   /** How many `vault-changed` events `echoWrites` has sent of the app's own writes. */
@@ -1043,7 +1050,20 @@ export async function installHost(
       event({ type: 'content_block_stop', index: 1 }),
       event({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
       event({ type: 'message_stop' }),
-      line({ type: 'result', subtype: 'success', is_error: false, result: text }),
+      line({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        result: text,
+        // What Claude Code says each call spent (#788), the same every round.
+        usage: {
+          input_tokens: 9000,
+          cache_creation_input_tokens: 2100,
+          cache_read_input_tokens: 30_100,
+          output_tokens: 2140,
+        },
+        total_cost_usd: 0.41,
+      }),
     );
     lines.push({ run, kind: 'exit', code: 0, stderr: '' });
     return lines;
@@ -2129,9 +2149,25 @@ export async function installHost(
       invoke: (command: string, args: unknown, options?: { headers?: Record<string, string> }) => {
         const answered = invokeHost(command, args, options);
         if (echoing) echoOnceWritten(answered, touchedBy(command, args, options));
+        answered.then(countAnswered(command), countAnswered(command));
         return answered;
       },
     };
+
+    /** Every command answered in the page, by name, for `answeredTo`. */
+    const answeredCount: Record<string, number> = {};
+    Object.defineProperty(window, '__atlasAnswered', { get: () => answeredCount });
+    /**
+     * Counts `command` a task after its answer settles: the app's own
+     * continuation of the answer (its `await` on it) runs first.
+     */
+    function countAnswered(command: string) {
+      return () => {
+        setTimeout(() => {
+          answeredCount[command] = (answeredCount[command] ?? 0) + 1;
+        }, 0);
+      };
+    }
 
     /** What the real watcher would report of a write: every path it touched. */
     function touchedBy(
@@ -2339,6 +2375,14 @@ export async function installHost(
     },
     writesTo: (relativePath) => writes.get(relativePath) ?? 0,
     callsTo: (command) => calls.get(command) ?? 0,
+    answeredTo: (command) =>
+      page.evaluate(
+        (named) =>
+          (window as unknown as { __atlasAnswered?: Record<string, number> }).__atlasAnswered?.[
+            named
+          ] ?? 0,
+        command,
+      ),
     embeddings: { passages: () => embeddings.passages() },
     echoesSent: () =>
       page.evaluate(

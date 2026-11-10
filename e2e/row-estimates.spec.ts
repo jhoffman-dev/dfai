@@ -96,7 +96,9 @@ test('a Today group name is drawn at the height the list places it by', async ({
   await page.getByRole('list', { name: 'Go to' }).getByRole('button', { name: 'Today' }).click();
   const name = page.locator('.today__group-name').first();
   await expect(name).toBeVisible();
-  expect((await name.boundingBox())!.height).toBeCloseTo(GROUP_NAME_HEIGHT, 1);
+  await expect
+    .poll(async () => (await name.boundingBox())!.height)
+    .toBeCloseTo(GROUP_NAME_HEIGHT, 1);
 });
 
 /**
@@ -173,7 +175,7 @@ test('a Today row is drawn at the height the list places it by', async ({ page }
   await page.getByRole('list', { name: 'Go to' }).getByRole('button', { name: 'Today' }).click();
   const row = page.locator('.today [data-today-row]').first();
   await expect(row).toBeVisible();
-  expect((await row.boundingBox())!.height).toBeCloseTo(TODAY_ROW_HEIGHT, 1);
+  await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(TODAY_ROW_HEIGHT, 1);
 });
 
 test('a standard Inbox row is drawn at the height the list places it by', async ({ page }) => {
@@ -184,7 +186,7 @@ test('a standard Inbox row is drawn at the height the list places it by', async 
     .click();
   const row = page.locator('.inbox__row').first();
   await expect(row).toBeVisible();
-  expect((await row.boundingBox())!.height).toBeCloseTo(INBOX_ROW_HEIGHT, 1);
+  await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(INBOX_ROW_HEIGHT, 1);
 });
 
 test('a table’s rows, group rows, "+ New" and sticky header are drawn at the heights the table places them by', async ({
