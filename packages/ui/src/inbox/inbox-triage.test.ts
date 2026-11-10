@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, type InboxItem, type InboxTask } from '@dfai/domain';
-import { asksWhoItWaitsOn, clarificationOf, rowAfter, rowAfterLeaving } from './inbox-triage.ts';
+import {
+  asksWhoItWaitsOn,
+  clarificationOf,
+  linkFieldsShown,
+  refusalStands,
+  rowAfter,
+  rowAfterLeaving,
+  typedInShown,
+  unpickedLink,
+  unpickedRefusal,
+  withTyped,
+} from './inbox-triage.ts';
 
 const TASK: InboxTask = {
   status: 'inbox',
@@ -84,5 +95,68 @@ describe('rowAfterLeaving', () => {
     expect(left(listOf('A', 'B'), 'C')).toBe('Inbox/B.md');
     expect(left([], 'B')).toBeNull();
     expect(left(listOf('A', 'B'), 'Gone')).toBeNull();
+  });
+});
+
+describe('a link typed and not picked (#823)', () => {
+  it('holds what each field has typed, and lets go of a field told nothing is', () => {
+    const typed = withTyped(withTyped(undefined, 'project', 'Zeph'), 'waitingOn', 'Mar');
+    expect(typed).toEqual({ project: 'Zeph', waitingOn: 'Mar' });
+    expect(withTyped(typed, 'waitingOn', null)).toEqual({ project: 'Zeph' });
+    expect(withTyped(undefined, 'project', null)).toEqual({});
+  });
+
+  it('names who it waits on before the project, and nothing when neither is typed', () => {
+    const both = linkFieldsShown({ ...TASK, status: 'waiting' }, {});
+    expect(unpickedLink({ project: 'Zeph', waitingOn: 'Mar' }, both)).toEqual({
+      field: 'waitingOn',
+      text: 'Mar',
+    });
+    expect(unpickedLink({ project: 'Zeph' }, both)).toEqual({ field: 'project', text: 'Zeph' });
+    expect(unpickedLink({}, both)).toBeNull();
+    expect(unpickedLink(undefined, both)).toBeNull();
+  });
+
+  it('shows who it waits on only while the row asks: a task that is, or is being made, Waiting', () => {
+    expect(linkFieldsShown({ ...TASK, status: 'waiting' }, {})).toEqual(['waitingOn', 'project']);
+    expect(linkFieldsShown(TASK, { status: 'waiting' })).toEqual(['waitingOn', 'project']);
+    expect(linkFieldsShown({ ...TASK, status: 'waiting' }, { status: 'someday' })).toEqual([
+      'project',
+    ]);
+    expect(linkFieldsShown(TASK, {})).toEqual(['project']);
+    expect(linkFieldsShown(null, { status: 'waiting' })).toEqual(['project']);
+  });
+
+  it('passes over text typed in a field the row does not show', () => {
+    const typed = { project: 'Zeph', waitingOn: 'Mar' };
+    expect(unpickedLink(typed, ['project'])).toEqual({ field: 'project', text: 'Zeph' });
+    expect(unpickedLink({ waitingOn: 'Mar' }, ['project'])).toBeNull();
+  });
+
+  it('lets go of what a field not shown holds typed, and keeps the rest', () => {
+    const typed = { project: 'Zeph', waitingOn: 'Mar' };
+    expect(typedInShown(typed, ['project'])).toEqual({ project: 'Zeph' });
+    expect(typedInShown(typed, ['waitingOn', 'project'])).toEqual(typed);
+    expect(typedInShown(undefined, ['project'])).toEqual({});
+  });
+
+  it('keeps a refusal standing while its field is shown and holds the text it names', () => {
+    const over = { field: 'waitingOn', text: 'Mar' } as const;
+    const shown = ['waitingOn', 'project'] as const;
+    expect(refusalStands(over, { typed: { waitingOn: 'Mar' }, shown })).toBe(true);
+    // The other field typed in changes nothing the refusal names.
+    expect(refusalStands(over, { typed: { waitingOn: 'Mar', project: 'Zephyr' }, shown })).toBe(
+      true,
+    );
+    expect(refusalStands(over, { typed: { waitingOn: 'Mara' }, shown })).toBe(false);
+    expect(refusalStands(over, { typed: { project: 'Zeph' }, shown })).toBe(false);
+    expect(refusalStands(over, { typed: undefined, shown })).toBe(false);
+    expect(refusalStands(over, { typed: { waitingOn: 'Mar' }, shown: ['project'] })).toBe(false);
+  });
+
+  it('says what was typed, and the two ways out', () => {
+    expect(unpickedRefusal('Mar')).toBe(
+      '“Mar” is typed but not picked. Pick it from the list, or clear it.',
+    );
   });
 });
