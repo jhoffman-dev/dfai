@@ -78,8 +78,20 @@ function exportedValues(source: ts.SourceFile): string[] {
 /**
  * One module as a block of the script: its code in a scope of its own, so
  * its private names cannot meet another module's, handing out what it exports.
+ * Compiled once per process: every Code node of a workflow carries the same
+ * modules, and the build is a one-shot run, so a file cannot change under it.
  */
 export function moduleScript(name: string): string {
+  const known = compiledModules.get(name);
+  if (known !== undefined) return known;
+  const script = compiledModule(name);
+  compiledModules.set(name, script);
+  return script;
+}
+
+const compiledModules = new Map<string, string>();
+
+function compiledModule(name: string): string {
   const text = readFileSync(new URL(name, import.meta.url), 'utf8');
   const names = exportedValues(ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true));
   const { outputText } = ts.transpileModule(text, {
