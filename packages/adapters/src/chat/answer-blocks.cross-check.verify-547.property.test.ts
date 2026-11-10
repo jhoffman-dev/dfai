@@ -66,16 +66,35 @@ function askKinds(answer: string): Map<string, string> {
   return out;
 }
 
+/** An answer of these shapes, each `W` its own word. */
+function answerOf(shapes: readonly string[]): string {
+  let word = 0;
+  return shapes.map((shape) => shape.replace(/W/g, () => `w${word++}`)).join('\n');
+}
+
+/**
+ * Every answer of one or two lines, so every shape meets every other one
+ * beneath it (a setext rule under a word, a fence opened in a quote), and
+ * 400 seeded answers of three or four lines for what takes a third line to
+ * close. It was 3000 random answers of one to four lines, which left some
+ * pairs undrawn and cost seconds when the gate shared the machine (#820).
+ */
+function answers(): string[] {
+  const random = mulberry32(547);
+  const pick = () => SHAPES[Math.floor(random() * SHAPES.length)] as string;
+  return [
+    ...SHAPES.map((shape) => answerOf([shape])),
+    ...SHAPES.flatMap((first) => SHAPES.map((second) => answerOf([first, second]))),
+    ...Array.from({ length: 400 }, () =>
+      answerOf(Array.from({ length: 3 + Math.floor(random() * 2) }, pick)),
+    ),
+  ];
+}
+
 describe('Ask’s blocks against the editor’s (PR #547)', () => {
-  it('judges every word the editor draws as prose, on small random answers', () => {
-    const random = mulberry32(547);
+  it('judges every word the editor draws as prose, on every short answer and seeded longer ones', () => {
     const escaped: string[] = [];
-    for (let run = 0; run < 3000; run += 1) {
-      let word = 0;
-      const lines = Array.from({ length: 1 + Math.floor(random() * 4) }, () =>
-        (SHAPES[Math.floor(random() * SHAPES.length)] as string).replace(/W/g, () => `w${word++}`),
-      );
-      const answer = lines.join('\n');
+    for (const answer of answers()) {
       const editor = new Map<string, string>();
       editorKinds(parseBodyToMdast(answer), 'prose', editor);
       const ask = askKinds(answer);
