@@ -137,7 +137,7 @@ export function useEventDetailsHost(landmark: DetailsLandmark): {
     }),
     [open, shown, lines],
   );
-  useEscapeTaken(open, setOpen);
+  const closedByKey = useEscapeTaken(open, setOpen);
   if (shown === null) return { host, popup: null };
   const openSubject = shown.onOpenSubject;
   const popup = (
@@ -152,7 +152,9 @@ export function useEventDetailsHost(landmark: DetailsLandmark): {
               if (line !== undefined) return line;
               const mark = landmark?.() ?? null;
               if (mark === null) return true;
-              focusLandmark(mark, closeType === 'keyboard');
+              // The dialog knows only the closes it made itself: not the Escape taken here, nor
+              // a key on "Open subject".
+              focusLandmark(mark, closeType === 'keyboard' || closedByKey());
               return false;
             }}
           >
@@ -193,19 +195,34 @@ function focusLandmark(landmark: HTMLElement, byKeyboard: boolean): void {
  * the key was the peek's, which closed and left the details up. Heard on the
  * window, on the way down, so it is answered before any layer under the popup
  * hears it; an input method's Escape is left to it.
+ *
+ * Answers whether a key was the last thing pressed while the popup was open
+ * — this Escape, or the Enter on one of its buttons — and not the pointer:
+ * what closed it, for the closes the dialog is not told of.
  */
-function useEscapeTaken(open: boolean, setOpen: (open: boolean) => void): void {
+function useEscapeTaken(open: boolean, setOpen: (open: boolean) => void): () => boolean {
+  const keyLast = useRef(false);
   useLayoutEffect(() => {
     if (!open) return;
+    keyLast.current = false;
     const answer = (event: KeyboardEvent) => {
+      keyLast.current = true;
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       setOpen(false);
     };
+    const pointed = () => {
+      keyLast.current = false;
+    };
     window.addEventListener('keydown', answer, true);
-    return () => window.removeEventListener('keydown', answer, true);
+    window.addEventListener('pointerdown', pointed, true);
+    return () => {
+      window.removeEventListener('keydown', answer, true);
+      window.removeEventListener('pointerdown', pointed, true);
+    };
   }, [open, setOpen]);
+  return () => keyLast.current;
 }
 
 export interface EventDetailsButtonProps {

@@ -41,9 +41,11 @@
    are read: the toasts' column and the notices themselves, with the ring the
    buttons show. Either may be empty by then — a box of no size — so, focused
    and empty, each has a box for the ring to show on (WCAG 2.4.7): a short bar
-   at the toasts' corner, a line across the top of the window. */
+   at the toasts' corner, a line across the top of the window. The Activity
+   page's list is handed it the same way, when a line is trimmed away. */
 .toast-stack:focus-visible,
-.notices:focus-visible {
+.notices:focus-visible,
+.activity__list:focus-visible {
   border-radius: var(--radius-chip);
   box-shadow: var(--ring);
   outline: none;
