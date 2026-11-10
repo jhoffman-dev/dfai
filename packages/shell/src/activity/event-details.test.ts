@@ -63,17 +63,18 @@ describe('eventDetails', () => {
 });
 
 describe('noticeDetails', () => {
-  it('shows a notice as the line Activity keeps of it: made safe, dated when shown', () => {
-    const shown = noticeDetails(
-      { message: 'Could not save /Users/mara/Vault/Plan.md', level: 'error', at: AT },
-      TODAY,
-    );
-    expect(shown).toMatchObject({
+  it('shows a notice in its own words, whole, as the toast said them, dated when shown', () => {
+    const message = `Could not save /Users/mara/Vault/Plan.md: ${'the disk said no. '.repeat(30)}End.`;
+    expect(message.length).toBeGreaterThan(300);
+    const shown = noticeDetails({ message, level: 'error', at: AT }, TODAY);
+    expect(shown).toEqual({
       level: 'error',
       time: 'Today, 14:03',
-      message: 'Could not save <path>',
+      dateTime: '2026-09-28T14:03:00',
+      message,
       subject: null,
       details: [],
+      text: `Error · Today, 14:03 (2026-09-28T14:03:00)\n${message}`,
     });
   });
 });

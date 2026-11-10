@@ -119,6 +119,11 @@ describe('ActivityPage — a line opens to its details', () => {
     expect(screen.getByText(RAN.message).getAttribute('title')).toBe(RAN.message);
   });
 
+  it('keeps the whole message in the title of a line that opens, too', () => {
+    shown();
+    expect(line(REFUSED.message).getAttribute('title')).toBe(REFUSED.message);
+  });
+
   it('draws the line that opens as the message was, so it is still cut to one line', () => {
     page();
     expect(line(REFUSED.message).className.split(' ')).toContain('activity-line__message');

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EventDetailsButton, type EventDetailsView } from './event-details.tsx';
 
@@ -26,6 +26,10 @@ function shown(details: EventDetailsView = FAILED, onCopy = vi.fn(() => Promise.
   );
   return handlers;
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const entry = () => screen.getByRole('button', { name: 'Could not run' });
 const popup = () => screen.getByRole('dialog', { name: 'Error details' });
@@ -125,5 +129,54 @@ describe('EventDetailsButton', () => {
     await userEvent.click(within(popup()).getByRole('button', { name: 'Copy' }));
     expect((await within(popup()).findByRole('alert')).textContent).toBe('Could not copy.');
     expect(within(popup()).getByRole('button', { name: 'Copy' })).toBeTruthy();
+  });
+
+  it('says when the clipboard throws instead of refusing', async () => {
+    shown(
+      FAILED,
+      vi.fn((): Promise<void> => {
+        throw new TypeError('no clipboard here');
+      }),
+    );
+    await userEvent.click(entry());
+    await userEvent.click(within(popup()).getByRole('button', { name: 'Copy' }));
+    expect((await within(popup()).findByRole('alert')).textContent).toBe('Could not copy.');
+  });
+
+  it('says Copied for a few seconds, then offers Copy again', async () => {
+    vi.useFakeTimers();
+    shown();
+    fireEvent.click(entry());
+    fireEvent.click(within(popup()).getByRole('button', { name: 'Copy' }));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(within(popup()).getByRole('button', { name: 'Copied' })).toBeTruthy();
+
+    await act(() => vi.advanceTimersByTimeAsync(1900));
+    expect(within(popup()).getByRole('button', { name: 'Copied' })).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    expect(within(popup()).getByRole('button', { name: 'Copy' })).toBeTruthy();
+  });
+
+  it('says the level once to a screen reader: in its name, not again in its badge', async () => {
+    shown({ ...FAILED, level: 'warning' });
+    await userEvent.click(entry());
+    const warning = screen.getByRole('dialog', { name: 'Warning details' });
+    expect(within(warning).getByText('Warning').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('lets the message read in its own direction', async () => {
+    const message = 'לא ניתן לשמור את התוכנית';
+    shown({ ...FAILED, message });
+    await userEvent.click(entry());
+    expect(within(popup()).getByText(message).getAttribute('dir')).toBe('auto');
+  });
+
+  it('carries a title for words its line cuts short', () => {
+    render(
+      <EventDetailsButton details={FAILED} title={FAILED.message} onCopy={vi.fn()}>
+        Could not run
+      </EventDetailsButton>,
+    );
+    expect(entry().title).toBe(FAILED.message);
   });
 });

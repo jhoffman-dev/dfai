@@ -57,6 +57,28 @@ describe('ToastHost — details under attack', () => {
     expect(screen.queryByRole('dialog', { name: 'Error details' })).not.toBeNull();
   });
 
+  it('keeps the details open when another vault opens and every toast goes', () => {
+    const toasts = createToasts(CLOCK);
+    const drawn = (vault: string) => (
+      <ToastHost
+        toasts={toasts}
+        activity={{ record: vi.fn() }}
+        vault={vault}
+        clock={CLOCK}
+        clipboard={{ write: () => Promise.resolve() }}
+      />
+    );
+    const { rerender } = render(drawn('/vaults/orchard'));
+    act(() => void toasts.show({ message: NOT_MOVED, tone: 'error' }));
+    fireEvent.click(screen.getByRole('button', { name: NOT_MOVED }));
+
+    rerender(drawn('/vaults/greenhouse'));
+
+    expect(screen.queryByRole('button', { name: NOT_MOVED })).toBeNull();
+    const popup = screen.getByRole('dialog', { name: 'Error details' });
+    expect(within(popup).getByText(NOT_MOVED)).toBeTruthy();
+  });
+
   it.fails('shows the whole of a long toast, not less than the toast itself says', () => {
     const toasts = host({ write: () => Promise.resolve() });
     const long = `Could not import “Orchard walk”: ${'the feed answered with a page of prose. '.repeat(12)}End of it.`;
