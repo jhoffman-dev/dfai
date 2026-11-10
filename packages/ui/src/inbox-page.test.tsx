@@ -374,6 +374,46 @@ describe('InboxPage — clarifying a task on its row', () => {
     });
   });
 
+  it('refuses Save while a person is typed but not picked, says so, and keeps what was typed (#823)', async () => {
+    const props = page();
+    await userEvent.selectOptions(control('Status of Call the bank'), 'Waiting');
+    const who = control('Who Call the bank waits on');
+    await userEvent.type(who, 'Mar');
+    await userEvent.click(done());
+
+    expect(props.onClarify).not.toHaveBeenCalled();
+    expect(within(rowOf('Call the bank')).getByRole('alert').textContent).toBe(
+      '“Mar” is typed but not picked. Pick it from the list, or clear it.',
+    );
+    expect((who as HTMLInputElement).value).toBe('Mar');
+
+    // Picked, the refusal goes and Save writes both.
+    await pickSuggestion(who, 'Mara Quill');
+    expect(within(rowOf('Call the bank')).queryByRole('alert')).toBeNull();
+    await userEvent.click(done());
+    expect(props.onClarify).toHaveBeenCalledWith({
+      path: TASK,
+      clarification: { status: 'waiting', waitingOn: 'People/Mara Quill.md' },
+    });
+  });
+
+  it('refuses ↵ on a project typed that matches nothing, and writes the status once it is cleared (#823)', async () => {
+    const props = page();
+    await userEvent.selectOptions(control('Status of Call the bank'), 'Next Action');
+    const under = control('File Call the bank under');
+    await userEvent.type(under, 'Zephyr{Enter}');
+
+    expect(props.onClarify).not.toHaveBeenCalled();
+    expect(within(rowOf('Call the bank')).getByRole('alert').textContent).toContain('“Zephyr”');
+
+    await userEvent.clear(under);
+    await userEvent.click(done());
+    expect(props.onClarify).toHaveBeenCalledWith({
+      path: TASK,
+      clarification: { status: 'next-action' },
+    });
+  });
+
   it('writes a status alone: a single action needs no project', async () => {
     const props = page();
     await userEvent.selectOptions(control('Status of Call the bank'), 'Someday');

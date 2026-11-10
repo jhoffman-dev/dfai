@@ -206,6 +206,55 @@ describe('LinkCombobox — where the list goes', () => {
     expect(Number.parseFloat(list.style.maxHeight)).toBe(280);
     expect(Number.parseFloat(list.style.top)).toBeLessThan(360);
   });
+
+  it('follows its field when what is around it grows and moves it, with no scroll (#823)', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+    // jsdom lays nothing out and has no ResizeObserver: both are stood in for.
+    const watching: { resized: () => void; watched: Element[] }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        readonly watched: Element[] = [];
+        constructor(readonly resized: () => void) {
+          watching.push(this);
+        }
+        observe(element: Element) {
+          this.watched.push(element);
+        }
+        unobserve() {}
+        disconnect() {
+          this.watched.length = 0;
+        }
+      },
+    );
+    let fieldTop = 100;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.getAttribute('role') === 'combobox') {
+        return DOMRect.fromRect({ x: 100, y: fieldTop, width: 120, height: 24 });
+      }
+      if (this.getAttribute('role') === 'listbox') {
+        const left = Number.parseFloat(this.style.left || '0');
+        const top = Number.parseFloat(this.style.top || '0');
+        return DOMRect.fromRect({ x: left, y: top, width: 260, height: 120 });
+      }
+      return DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0 });
+    });
+    const { input } = field();
+    await userEvent.type(input, 'gar');
+    const list = screen.getByRole('listbox', { name: 'Suggested notes' });
+    expect(Number.parseFloat(list.style.top)).toBe(128);
+
+    // A row above it grows — a meeting's import lands — and the field moves down 90px.
+    fieldTop = 190;
+    const page = input.closest('div');
+    for (const each of watching) if (page !== null && each.watched.includes(page)) each.resized();
+
+    expect(Number.parseFloat(list.style.top)).toBe(218);
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('LinkCombobox — making a note of what was typed', () => {
