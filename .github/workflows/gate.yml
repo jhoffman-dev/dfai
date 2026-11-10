@@ -37,6 +37,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       code: ${{ steps.scope.outputs.code }}
+      # The e2e spec files the pull request adds or changes, for `e2e-new` (#799).
+      specs: ${{ steps.scope.outputs.specs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,7 +56,8 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" = pull_request ]; then
-            git diff --name-only --no-renames HEAD^1 HEAD \
+            # `-z`: no quoting of a path outside ASCII, and a space stays in its path.
+            git diff --name-only --no-renames -z HEAD^1 HEAD \
               | node tools/ci/changed-scope.mjs | tee -a "$GITHUB_OUTPUT"
           else
             echo code=true | tee -a "$GITHUB_OUTPUT"
@@ -303,75 +306,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # Only the first shard saves the caches, so eight do not race to write one key.
+      - uses: ./.github/actions/e2e-webkit
         with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      # WebKit and its apt packages as the `perf` job has them, from the same
-      # caches (#519), so the two jobs share one download.
-      - name: Read the Playwright version and the runner image
-        id: playwright
-        run: |
-          {
-            echo "version=$(pnpm exec playwright --version | cut -d' ' -f2)"
-            echo "os=${ImageOS}"
-            echo "image=${ImageOS}-${ImageVersion}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Make apt time out and retry
-        run: |
-          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
-            | sudo tee /etc/apt/apt.conf.d/99-ci-519 > /dev/null
-
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        # A restore that stalls is given up on after two minutes, not the action's
-        # ten: a miss only means installing (seconds), and a ten-minute stall once
-        # took an e2e shard past its time limit (run 41196967743).
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
-        id: webkit
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-webkit-${{ runner.os }}-${{ steps.playwright.outputs.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
-
-      - name: Install WebKit
-        if: steps.webkit.outputs.cache-hit != 'true'
-        timeout-minutes: 5
-        run: pnpm exec playwright install webkit
-
-      # Only the first shard saves, so eight do not race to write one key.
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.webkit.outputs.cache-hit != 'true' && matrix.shard == 1
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ steps.webkit.outputs.cache-primary-key }}
-
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
-        id: webkit-debs
-        with:
-          path: ~/.cache/webkit-debs
-          key: webkit-debs-${{ steps.playwright.outputs.image }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
-
-      - name: Install WebKit's system packages
-        timeout-minutes: 9
-        env:
-          WEBKIT_DEBS_CACHE_HIT: ${{ steps.webkit-debs.outputs.cache-hit }}
-        run: tools/ci/install-webkit-deps.sh "$HOME/.cache/webkit-debs"
-
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.webkit-debs.outputs.cache-hit != 'true' && matrix.shard == 1
-        with:
-          path: ~/.cache/webkit-debs
-          key: ${{ steps.webkit-debs.outputs.cache-primary-key }}
+          save-caches: ${{ matrix.shard == 1 }}
 
       # `pnpm e2e` builds first, here on the shard: the build takes seconds, and
       # handing `dist` over from another job would hold every shard back until
@@ -389,12 +327,18 @@ jobs:
       # (tools/ci/e2e-shard-reporter.ts, e2e-durations.json), not by
       # Playwright's equal test counts in file order: those left one shard
       # six and a half minutes against three and a half (#716).
+      #
+      # A failed test is retried once (playwright.config.ts, #799). One that
+      # then passes leaves the shard green; the flake reporter writes it down
+      # for the `flaky` job, which goes red and files an issue for it.
       - name: End-to-end, an eighth of the suite
+        id: e2e
         env:
           E2E_DURATIONS_OUT: e2e-durations.json
+          E2E_FLAKES_OUT: e2e-flakes/flakes.json
         run: >-
-          pnpm e2e --project=webkit --project=ipad --project=phone --shard=${{ matrix.shard }}/8
-          --workers=2 --reporter=list,html,./tools/ci/e2e-shard-reporter.ts
+          pnpm e2e --project=webkit --project=ipad --project=phone --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          --workers=2 --reporter=list,html,./tools/ci/e2e-shard-reporter.ts,./tools/ci/e2e-flake-reporter.ts
 
       # What this shard's files took, for refreshing tools/ci/e2e-durations.json
       # with tools/ci/e2e-durations.mjs when the shards drift apart.
@@ -406,14 +350,157 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Did a test need its retry?
+        id: flakes
+        if: ${{ !cancelled() }}
+        run: |
+          count=$(jq length e2e-flakes/flakes.json 2>/dev/null || echo 0)
+          echo "failed-a-try=$([ "$count" -gt 0 ] && echo true || echo false)" | tee -a "$GITHUB_OUTPUT"
+
+      # On a failure, or a flake: the retry's trace is in test-results/.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+        id: report
+        if: failure() || steps.flakes.outputs.failed-a-try == 'true'
         with:
           name: playwright-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
           retention-days: 7
+
+      # Every shard hands its flake records on, `[]` when none, for the `flaky` job.
+      - name: Name the report the flaky tests' issues link to
+        if: ${{ !cancelled() && steps.report.outputs.artifact-url != '' }}
+        env:
+          REPORT_URL: ${{ steps.report.outputs.artifact-url }}
+        run: mkdir -p e2e-flakes && echo "$REPORT_URL" > e2e-flakes/report-url.txt
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-flakes-${{ matrix.shard }}
+          path: e2e-flakes/
+          if-no-files-found: warn
+          retention-days: 7
+
+  e2e-new:
+    # New tests proven before they merge (#799): the e2e spec files this pull
+    # request adds or changes, ten times over, with no retry, in the projects
+    # each belongs to. One failure in the ten fails the gate, while the test's
+    # author is still on it. Skipped when no spec changed, and on `main`.
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.specs != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: e2e new specs ×10 (${{ matrix.shard }}/4)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/e2e-webkit
+
+      # Playwright's own sharding, by test: ten copies of each test spread
+      # over four runners. A shard dealt nothing passes. The specs come one a
+      # line, so a path with a space stays one argument; Playwright reads each
+      # as a regular expression, so its special characters are escaped.
+      - name: The changed specs, ten times
+        env:
+          SPECS: ${{ needs.changes.outputs.specs }}
+        run: |
+          # shellcheck disable=SC2016 # the `$` is the regex character sed escapes
+          mapfile -t specs < <(printf '%s\n' "$SPECS" | sed -e 's/[][\\.*^$(){}+?|]/\\&/g')
+          pnpm e2e --project=webkit --project=ipad --project=phone "${specs[@]}" \
+            --repeat-each=10 --retries=0 --shard=${{ matrix.shard }}/${{ strategy.job-total }} --workers=2 \
+            --pass-with-no-tests --reporter=list,html
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: playwright-report-new-${{ matrix.shard }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  flaky:
+    # Not required, and not one of `gate`'s needs: red when a test failed and
+    # then passed its retry in an e2e shard, listing each one, so a flake is
+    # seen and not hidden. Each gets an issue labelled `flaky` under #126, one
+    # per test, a later flake commenting on it (tools/ci/flake-job.ts). Never
+    # filed from a fork's pull request, whose token cannot write.
+    needs: [changes, e2e]
+    if: always() && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: e2e-flakes-*
+          path: e2e-flakes
+
+      - name: List the flaky tests and file their issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FILE_ISSUES: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          RUN_CONTEXT: "${{ github.event_name == 'pull_request' && format('pull request #{0}', github.event.pull_request.number) || github.ref_name }}"
+        run: node tools/ci/flake-job.ts flaky e2e-flakes
+
+  quarantine:
+    # Not required, and not one of `gate`'s needs: the tests tagged
+    # `@quarantine` (e2e/quarantine.ts), which the gate's shards leave out, run
+    # here alone. The summary lists each with its issue and how it did; the job
+    # goes red when one names no issue, or one that is not an open issue
+    # labelled `flaky`, so none is forgotten. Its tests failing does not turn
+    # it red: their issues say so. A `@mac` quarantined test cannot run here;
+    # it is listed and its issue checked all the same, and it runs in the
+    # macOS nightly (e2e-macos-nightly.yml).
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/e2e-webkit
+
+      - name: The quarantined tests
+        id: run
+        continue-on-error: true
+        env:
+          E2E_QUARANTINE: only
+          E2E_QUARANTINE_OUT: quarantined.json
+        run: >-
+          pnpm e2e --project=webkit --project=ipad --project=phone --workers=2
+          --pass-with-no-tests --reporter=list,./tools/ci/quarantine-reporter.ts
+
+      # After the run, which built the app some specs read as they load.
+      - name: Every platform's quarantined tests, listed
+        env:
+          E2E_QUARANTINE: list
+          E2E_QUARANTINE_OUT: listed.json
+        run: >-
+          pnpm exec playwright test --list --project=webkit --project=ipad --project=phone
+          --pass-with-no-tests --reporter=./tools/ci/quarantine-reporter.ts
+
+      - name: List them, each with its open flaky issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/ci/flake-job.ts quarantine listed.json quarantined.json
 
   perf-part:
     needs: changes
@@ -622,7 +709,7 @@ jobs:
     # The one check to require. `always()` because a job skipped after a failed
     # dependency counts as passing, which would let a red run through. So a skip
     # is accepted only where `changes` asked for it: a docs-only change.
-    needs: [changes, static, unit, coverage, rust, e2e, perf]
+    needs: [changes, static, unit, coverage, rust, e2e, e2e-new, perf]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -631,12 +718,16 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           CODE: ${{ needs.changes.outputs.code }}
+          SPECS: ${{ needs.changes.outputs.specs }}
         run: |
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
           echo "code changed: ${CODE:-unknown}"
-          jq -e --arg code "$CODE" '
+          echo "specs to repeat: ${SPECS:-none}"
+          jq -e --arg code "$CODE" --arg specs "$SPECS" '
             (if $code == "false" then "skipped" else "success" end) as $slow
+            | (if $code == "true" and $specs != "" then "success" else "skipped" end) as $new
             | .changes.result == "success"
               and .static.result == "success"
               and ([.unit, .coverage, .rust, .e2e, .perf] | all(.result == $slow))
+              and .["e2e-new"].result == $new
           ' <<< "$NEEDS"

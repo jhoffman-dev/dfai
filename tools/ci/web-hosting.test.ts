@@ -46,6 +46,12 @@ const indexHtml = read('apps/web/index.html');
 
 const WORKFLOWS = '.github/workflows';
 const workflowFiles = readdirSync(join(ROOT, WORKFLOWS)).filter((file) => /\.ya?ml$/.test(file));
+/** The workflows and the composite actions they use (.github/actions), each by path. */
+const ACTIONS = '.github/actions';
+const ciFiles = [
+  ...workflowFiles.map((file) => `${WORKFLOWS}/${file}`),
+  ...readdirSync(join(ROOT, ACTIONS)).map((name) => `${ACTIONS}/${name}/action.yml`),
+];
 
 const packageFiles = [
   'package.json',
@@ -84,19 +90,16 @@ describe('the web build hosting config, as committed', () => {
     expect(workflowProblems(read(`${WORKFLOWS}/web-hosting.yml`))).toEqual([]);
   });
 
-  it('uses only pinned, allowed actions in every workflow', () => {
+  it('uses only pinned, allowed actions in every workflow and composite action', () => {
     expect(workflowFiles.length).toBeGreaterThan(1);
-    expect(workflowFiles.flatMap((file) => actionProblems(read(`${WORKFLOWS}/${file}`)))).toEqual(
-      [],
-    );
+    expect(ciFiles.some((path) => path.startsWith(ACTIONS))).toBe(true);
+    expect(ciFiles.flatMap((path) => actionProblems(read(path)))).toEqual([]);
   });
 
-  it('touches Firebase from no other workflow, and from no package script', () => {
-    const others = workflowFiles.filter((file) => file !== 'web-hosting.yml');
+  it('touches Firebase from no other workflow or action, and from no package script', () => {
+    const others = ciFiles.filter((path) => path !== `${WORKFLOWS}/web-hosting.yml`);
     expect(others.length).toBeGreaterThan(0);
-    expect(
-      others.flatMap((file) => otherWorkflowProblems(file, read(`${WORKFLOWS}/${file}`))),
-    ).toEqual([]);
+    expect(others.flatMap((path) => otherWorkflowProblems(path, read(path)))).toEqual([]);
     expect(packageFiles.flatMap((file) => scriptProblems(file, JSON.parse(read(file))))).toEqual(
       [],
     );

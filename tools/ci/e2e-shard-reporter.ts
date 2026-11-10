@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, relative } from 'node:path';
 import type {
   FullConfig,
   Reporter,
@@ -9,6 +8,7 @@ import type {
   TestRun,
 } from '@playwright/test/reporter';
 import { durationsOf, type TestTime } from './e2e-shards.ts';
+import { pathFrom, repositoryRoot } from './playwright-tests.ts';
 import { filesOfShard, type Durations } from './unit-shards.ts';
 
 /*
@@ -32,15 +32,6 @@ const DURATIONS_FILE = new URL('./e2e-durations.json', import.meta.url);
 function recordedDurations(): Durations {
   const { files } = JSON.parse(readFileSync(DURATIONS_FILE, 'utf8')) as { files: Durations };
   return files;
-}
-
-/**
- * Where the durations' paths start: the config file's folder, the
- * repository's root. Not `config.rootDir`, which is the test folder (`e2e`):
- * keyed from there, no file matched its record and every file cost the same.
- */
-function repositoryRoot(config: FullConfig): string {
-  return config.configFile === undefined ? process.cwd() : dirname(config.configFile);
 }
 
 export default class E2eShardReporter implements Reporter {
@@ -88,6 +79,6 @@ export default class E2eShardReporter implements Reporter {
   }
 
   private pathOf(file: string): string {
-    return relative(this.root, file).split('\\').join('/');
+    return pathFrom(this.root, file);
   }
 }
