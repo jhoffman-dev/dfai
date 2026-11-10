@@ -380,7 +380,10 @@ describe('an answer kept for other turns', () => {
     await expect(arrived()).rejects.toThrow('the disk is full');
     // As if the meeting were cut into parts differently now: the turns the kept answer was given about.
     const log = logPathFor(RULE.id);
-    const kept = /(- stored .*: `\[.*\]` `\[")([0-9a-f]+)("\]`)/.exec(vault.files.get(log)!);
+    // A part is its turns' digest and, since #793, the digest of the model and prompt it was asked with.
+    const kept = /(- stored .*: `\[.*\]` `\[")([0-9a-f]+:[0-9a-f]+)("\]`)/.exec(
+      vault.files.get(log)!,
+    );
     expect(kept).not.toBeNull();
     vault.files.set(log, vault.files.get(log)!.replace(kept![0], `${kept![1]}0000${kept![3]}`));
 

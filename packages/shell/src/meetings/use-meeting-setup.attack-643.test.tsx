@@ -52,6 +52,7 @@ const OFFER: MeetingSetupOffer = {
     },
   ],
   ruleOn: false,
+  readTwice: [],
 };
 
 function rulesRead(store: AutomationsStore, rules: readonly AutomationRule[]) {
