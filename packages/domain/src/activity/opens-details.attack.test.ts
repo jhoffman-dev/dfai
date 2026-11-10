@@ -18,7 +18,8 @@ const line = (detail: string) =>
 describe('a line’s detail at its edges', () => {
   it.fails('never cuts a detail in the middle of a character', () => {
     const detail = `${'a'.repeat(MAX_ACTIVITY_DETAIL - 2)}🌱 and more past the end`;
-    expect(line(detail).detail?.isWellFormed()).toBe(true);
+    // A high surrogate left without its low one is half a character.
+    expect(line(detail).detail ?? '').not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
   });
 
   it('keeps a detail the same through save, load and save', () => {

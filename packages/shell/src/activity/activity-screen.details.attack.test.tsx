@@ -34,7 +34,7 @@ const OLDER: ActivityEvent = {
   subject: null,
 };
 
-function screenOf(shown: readonly ActivityEvent[]) {
+function screenOf(shown: ActivityEvent[]) {
   return (
     <ActivityScreen
       activity={{
