@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -112,6 +113,7 @@ export function EventDetailsHost({
     }),
     [open, shown, lines],
   );
+  useEscapeTaken(open, setOpen);
   const openSubject = shown?.onOpenSubject;
   return (
     <HostContext.Provider value={host}>
@@ -143,6 +145,28 @@ export function EventDetailsHost({
       </Dialog.Root>
     </HostContext.Provider>
   );
+}
+
+/**
+ * Closes the open popup on Escape, from the moment it is open and wherever
+ * the focus is, and marks the key as answered. The dialog's own Escape waits
+ * on the focus moving into it: pressed before that, with the line in a peek,
+ * the key was the peek's, which closed and left the details up. Heard on the
+ * window, on the way down, so it is answered before any layer under the popup
+ * hears it; an input method's Escape is left to it.
+ */
+function useEscapeTaken(open: boolean, setOpen: (open: boolean) => void): void {
+  useLayoutEffect(() => {
+    if (!open) return;
+    const answer = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.isComposing || event.keyCode === 229) return;
+      event.preventDefault();
+      setOpen(false);
+    };
+    window.addEventListener('keydown', answer, true);
+    return () => window.removeEventListener('keydown', answer, true);
+  }, [open, setOpen]);
 }
 
 export interface EventDetailsButtonProps {
