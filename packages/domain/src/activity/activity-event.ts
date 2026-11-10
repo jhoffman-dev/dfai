@@ -9,11 +9,17 @@
  * that rule holds for whatever words a caller hands over.
  */
 
-import { isInChats } from '../chat/chat-note.ts';
-import { messageWithoutPaths } from '../errors/message-without-paths.ts';
+import { CHAT_NOTE_LABEL, isInChats } from '../chat/chat-note.ts';
+import { messageWithoutPaths, PATH_PLACEHOLDER } from '../errors/message-without-paths.ts';
+import {
+  BYTE_ORDER_MARK,
+  DIRECTION_MARKS,
+  DRAWN_AS_NOTHING,
+  LONE_SURROGATE,
+} from '../text/hidden-characters.ts';
 import { createVaultPath, VAULT_ROOT, type VaultPath } from '../vault/vault-path.ts';
 import { withoutChatPaths, withoutChatTitle } from './without-chat-names.ts';
-import { withoutSecrets } from './without-secrets.ts';
+import { REDACTED, withoutSecrets } from './without-secrets.ts';
 
 export const ACTIVITY_LEVELS = ['info', 'warning', 'error'] as const;
 export type ActivityLevel = (typeof ACTIVITY_LEVELS)[number];
@@ -137,13 +143,17 @@ export function safeActivityText(
   return cutToLength(safe, max);
 }
 
-/** Terminal escapes (CSI, OSC), then any other control, bidi or zero-width character, and a lone surrogate. */
+/**
+ * Terminal escapes (CSI, OSC), then any other control, direction or invisible
+ * character, and a lone surrogate. An OSC with no end loses only its `ESC ]`,
+ * so the words after it are kept.
+ */
 // eslint-disable-next-line no-control-regex -- an escape sequence is exactly what is removed
-const ESCAPES = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)?)/g;
-const INVISIBLES =
-  // eslint-disable-next-line no-control-regex -- control characters are exactly what is removed
-  /[\u0000-\u0008\u000E-\u001B\u007F-\u0084\u0086-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g;
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+const ESCAPES = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\](?:[^\u0007\u001B]*(?:\u0007|\u001B\\))?)/g;
+const INVISIBLES = new RegExp(
+  `[\\u0000-\\u0008\\u000E-\\u001B\\u007F-\\u0084\\u0086-\\u009F${DIRECTION_MARKS}${BYTE_ORDER_MARK}${DRAWN_AS_NOTHING}]`,
+  'gu',
+);
 
 /** Every run of what a reader may break a line on — `\s`, NEL and the C0 separators — as one space. */
 // eslint-disable-next-line no-control-regex -- the C0 separators are exactly what becomes a space
@@ -153,14 +163,27 @@ function withoutInvisibles(text: string): string {
   return text.replace(ESCAPES, '').replace(INVISIBLES, '').replace(LONE_SURROGATE, '\uFFFD');
 }
 
-/** The text cut to `max` characters, counted by code point so an emoji is never split in two. */
+/** What the cleaning put in place of what it struck: a cut through one would leave `<se…`. */
+const PLACEHOLDERS = [REDACTED, PATH_PLACEHOLDER, CHAT_NOTE_LABEL];
+
+/**
+ * The text cut to `max` characters, counted by code point so an emoji is
+ * never split in two, and before any placeholder the cut would fall inside.
+ */
 function cutToLength(text: string, max: number): string {
   const characters = [...text];
   if (characters.length <= max) return text;
-  return `${characters
-    .slice(0, max - 1)
-    .join('')
-    .trimEnd()}…`;
+  const end = characters.slice(0, max - 1).join('').length;
+  return `${text.slice(0, outsidePlaceholders(text, end)).trimEnd()}…`;
+}
+
+/** The cut `end`, or the start of the placeholder it falls inside. */
+function outsidePlaceholders(text: string, end: number): number {
+  for (const placeholder of PLACEHOLDERS) {
+    const start = text.lastIndexOf(placeholder, end - 1);
+    if (start !== -1 && start + placeholder.length > end) return start;
+  }
+  return end;
 }
 
 function cleanSubject(subject: ActivitySubject | null): ActivitySubject | null {

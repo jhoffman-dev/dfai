@@ -10,6 +10,7 @@ import {
   resolveWikiLinkTarget,
   type MeetingIdentity,
 } from '@dfai/domain';
+import { ProposalRefused } from '../chat/proposals.ts';
 import { MEETING_BODY } from '../testing/meeting-files.ts';
 import {
   jsonLinesNote,
@@ -322,6 +323,55 @@ describe('makeTaskFromMeeting — when a write fails', () => {
     ).rejects.toThrow(/changed just now; nothing was written\. Nothing was kept\./);
     expect(setup.paths()).not.toContain(TASK);
     expect(setup.propertiesOf(MEETING)?.['tasks']).toBeUndefined();
+  });
+});
+
+describe('makeTaskFromMeeting — when the join fails for a reason of the disk', () => {
+  const FAULT = 'EIO: i/o error, write /Users/tobias/Vault/Projects/Ledger/2026-10-06 Standup.md';
+
+  /** The vault, with the meeting's write failing as the disk does, and the Trash too when `trash` fails. */
+  const failing = (setup: ProposalVault, { trash }: { trash: boolean }) => {
+    const { fs } = setup.ports;
+    return {
+      ...setup.ports,
+      fs: {
+        ...fs,
+        writeTextFile: async (args: Parameters<typeof fs.writeTextFile>[0]) => {
+          if (args.path === MEETING) throw new Error(FAULT);
+          return fs.writeTextFile(args);
+        },
+        trashEntry: async (args: Parameters<typeof fs.trashEntry>[0]) => {
+          if (trash)
+            throw new Error(`EACCES: permission denied, rename /Users/tobias/Vault/${TASK}`);
+          return fs.trashEntry(args);
+        },
+      },
+    };
+  };
+  const makeWith = (ports: ProposalVault['ports'], setup: ProposalVault) =>
+    makeTaskFromMeeting({
+      ports,
+      meeting: { path: vaultPath(MEETING), identity: IDENTITY },
+      item: item(),
+      notePaths: setup.paths().map(vaultPath),
+      today: TODAY,
+    });
+
+  it('takes the task back and says the join failed, in words of its own', async () => {
+    const setup = vault();
+    await expect(makeWith(failing(setup, { trash: false }), setup)).rejects.toThrow(
+      new ProposalRefused('The task could not be added to its meeting. Nothing was kept.'),
+    );
+    expect(setup.paths()).not.toContain(TASK);
+  });
+
+  it('says once that the join failed when the task cannot be taken back either', async () => {
+    const setup = vault();
+    await expect(makeWith(failing(setup, { trash: true }), setup)).rejects.toThrow(
+      new ProposalRefused(
+        '“Send Mara the payroll file” was written, but the task could not be added to its meeting, and taking it back failed: the vault would not let DFAI undo what was written.',
+      ),
+    );
   });
 });
 
