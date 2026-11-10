@@ -22,20 +22,25 @@ const CAPTURED: InboxTask = {
 };
 
 const TASK = createVaultPath('Inbox/Call the bank.md');
-const task = (title: string): InboxItem => ({
+const task = (title: string, held: InboxTask = CAPTURED): InboxItem => ({
   path: createVaultPath(`Inbox/${title}.md`),
   title,
   type: 'task',
   arrivedIn: '',
   importOutcome: null,
   importError: null,
-  task: CAPTURED,
+  task: held,
 });
-const contents: InboxContents = {
-  items: ['Call the bank', 'Chase the quote'].map(task),
+const contentsOf = (items: readonly InboxItem[]): InboxContents => ({
+  items,
   truncated: false,
-  total: 2,
-};
+  total: items.length,
+});
+const OTHER = task('Chase the quote');
+const contents = contentsOf([task('Call the bank'), OTHER]);
+/** The list as a re-read finds it, the first task saying `status` on disk. */
+const reread = (status: InboxTask['status']): InboxContents =>
+  contentsOf([task('Call the bank', { ...CAPTURED, status }), OTHER]);
 
 const FILING: readonly RelationChoice[] = [
   { path: 'Projects/Larkspur Payroll.md', title: 'Larkspur Payroll', type: 'project' },
@@ -59,8 +64,11 @@ function page(overrides: Partial<InboxPageProps> = {}) {
     problem: null,
     ...overrides,
   };
-  render(<InboxPage {...props} />);
-  return props;
+  const view = render(<InboxPage {...props} />);
+  return {
+    ...props,
+    rerender: (next: Partial<InboxPageProps>) => view.rerender(<InboxPage {...props} {...next} />),
+  };
 }
 
 const row = () =>
@@ -102,6 +110,17 @@ describe('a link typed and not picked — every way a row is written', () => {
         },
       },
     ]);
+  });
+
+  it('says nothing of the other field when ↵ picks from the list of one nobody armed', async () => {
+    const { onClarify } = page();
+    await userEvent.selectOptions(status(), 'Waiting');
+    await userEvent.type(who(), 'Mar');
+    await userEvent.type(under(), 'Gar{Enter}');
+
+    expect(under().value).toBe('Garden');
+    expect(refusal()).toBeNull();
+    expect(clarified(onClarify)).toEqual([]);
   });
 
   it('says why ↵ wrote nothing in a field nobody armed, with nothing else picked on the row', async () => {
@@ -161,5 +180,90 @@ describe('a link typed and not picked — a field taken away', () => {
 
     await userEvent.click(save());
     expect(clarified(onClarify)).toEqual([{ path: TASK, clarification: { status: 'waiting' } }]);
+  });
+});
+
+describe('a link typed and not picked — a field a re-read takes away', () => {
+  it('refuses nothing over a person typed once a re-read finds the task no longer Waiting: Save writes', async () => {
+    const view = page({ contents: reread('waiting') });
+    await userEvent.type(who(), 'Mar');
+    await pickSuggestion(under(), 'Garden');
+    view.rerender({ contents: reread('next-action') });
+    expect(screen.queryByRole('combobox', { name: 'Who Call the bank waits on' })).toBeNull();
+
+    await userEvent.click(save());
+    expect(refusal()).toBeNull();
+    expect(clarified(view.onClarify)).toEqual([
+      { path: TASK, clarification: { project: 'Areas/Garden.md' } },
+    ]);
+  });
+
+  it('lets a status key write the row a re-read took Who from', async () => {
+    const view = page({ contents: reread('waiting') });
+    await userEvent.type(who(), 'Mar');
+    view.rerender({ contents: reread('next-action') });
+    focusRow();
+    await userEvent.keyboard('s');
+
+    expect(refusal()).toBeNull();
+    expect(clarified(view.onClarify)).toEqual([
+      { path: TASK, clarification: { status: 'someday' } },
+    ]);
+  });
+
+  it('takes the refusal over a person typed away with Who, and brings Who back empty', async () => {
+    const view = page({ contents: reread('waiting') });
+    await userEvent.type(who(), 'Mar');
+    await pickSuggestion(under(), 'Garden');
+    await userEvent.click(save());
+    expect(refusal()).toContain('“Mar”');
+
+    view.rerender({ contents: reread('next-action') });
+    expect(refusal()).toBeNull();
+    view.rerender({ contents: reread('waiting') });
+    expect(who().value).toBe('');
+    expect(refusal()).toBeNull();
+  });
+});
+
+describe('a link typed and not picked — a row that is gone', () => {
+  it('forgets what a row held typed when a re-read takes it off the list: back, its field is empty and Save writes', async () => {
+    const view = page();
+    await userEvent.type(under(), 'Zeph');
+    view.rerender({ contents: contentsOf([OTHER]) });
+    view.rerender({ contents });
+    expect(under().value).toBe('');
+
+    await userEvent.selectOptions(status(), 'Next Action');
+    await userEvent.click(save());
+    expect(refusal()).toBeNull();
+    expect(clarified(view.onClarify)).toEqual([
+      { path: TASK, clarification: { status: 'next-action' } },
+    ]);
+  });
+
+  it('forgets what a row held typed when its write is refused with the row taken away meanwhile', async () => {
+    let refuse = (): void => undefined;
+    const onClarify = vi
+      .fn<InboxPageProps['onClarify']>(async () => true)
+      .mockImplementationOnce(() => new Promise((answer) => (refuse = () => answer(false))));
+    const view = page({ onClarify });
+    await userEvent.selectOptions(status(), 'Next Action');
+    await userEvent.click(save());
+    await userEvent.type(under(), 'Zeph');
+    // The app takes the row off as it writes; refused, it would bring it back, but sync took it meanwhile.
+    view.rerender({ contents: contentsOf([OTHER]) });
+    await act(async () => refuse());
+    view.rerender({ contents });
+    expect(under().value).toBe('');
+    expect(status().value).toBe('inbox');
+
+    await userEvent.selectOptions(status(), 'Someday');
+    await userEvent.click(save());
+    expect(refusal()).toBeNull();
+    expect(clarified(onClarify)).toEqual([
+      { path: TASK, clarification: { status: 'next-action' } },
+      { path: TASK, clarification: { status: 'someday' } },
+    ]);
   });
 });
