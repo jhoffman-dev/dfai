@@ -288,13 +288,15 @@ describe('apiWriteReport', () => {
       );
     });
 
-    it('cuts a long reason short, with an ellipsis, on the line and in its detail', () => {
+    it('cuts a long reason short on the line, with an ellipsis, and keeps it whole in its detail', () => {
       const long = `${'x'.repeat(MAX_REFUSAL_REASON)} the end`;
       const report = refused(long);
-      expect(report.detail).toHaveLength(MAX_REFUSAL_REASON);
-      expect(report.detail).toMatch(/^x+…$/);
-      expect(report.message).toBe(`POST v1/meetings refused (invalid): ${report.detail}`);
-      expect(refused('x'.repeat(MAX_REFUSAL_REASON)).detail).toBe('x'.repeat(MAX_REFUSAL_REASON));
+      const said = report.message.replace('POST v1/meetings refused (invalid): ', '');
+      expect(said).toHaveLength(MAX_REFUSAL_REASON);
+      expect(said).toMatch(/^x+…$/);
+      expect(report.detail).toBe(long);
+      const fits = refused('x'.repeat(MAX_REFUSAL_REASON)).message;
+      expect(fits).toBe(`POST v1/meetings refused (invalid): ${'x'.repeat(MAX_REFUSAL_REASON)}`);
     });
 
     it('says the reason on one line', () => {

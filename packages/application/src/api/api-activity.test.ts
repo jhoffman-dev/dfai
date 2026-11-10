@@ -48,7 +48,7 @@ describe('a write through the API', () => {
     ]);
   });
 
-  it('records a refused write as a warning, with its code and not its body', async () => {
+  it('records a refused write as a warning, with its code and reason and not its body', async () => {
     const api = vault();
     const response = await api.send({
       method: 'POST',
@@ -60,8 +60,10 @@ describe('a write through the API', () => {
       {
         level: 'warning',
         kind: 'api',
-        message: 'POST v1/notes/{path}/append refused for Call (conflict).',
+        message:
+          'POST v1/notes/{path}/append refused for Call (conflict): Tasks/Call.md changed since you read it',
         subject: { kind: 'note', path: 'Tasks/Call.md' },
+        detail: 'Tasks/Call.md changed since you read it',
       },
     ]);
     expect(JSON.stringify(api.activity.reports)).not.toContain(CARRIED);

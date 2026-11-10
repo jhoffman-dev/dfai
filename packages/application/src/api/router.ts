@@ -32,7 +32,7 @@ export async function routeApiRequest(
     return { id: request.id, ...answered };
   } catch (error) {
     const failure = failureOf(error);
-    if (matched !== null) recordWrite({ activity, matched, refusal: failure.body.error.code });
+    if (matched !== null) recordWrite({ activity, matched, refusal: failure.body.error });
     return { id: request.id, ...failure };
   }
 }
@@ -70,13 +70,16 @@ function recordWrite({
   activity: ActivityRecorder;
   matched: ReturnType<typeof matchRoute>;
   answered?: RouteResult;
-  refusal?: string | null;
+  /** What the caller was told: its code, and a message that is `internal`'s generic one for a fault. */
+  refusal?: { code: string; message: string } | null;
 }): void {
   if (!handler.needsVault || handler.wrote === undefined) return;
   if (answered !== undefined && !handler.wrote(answered)) return;
-  if (refusal === 'no_vault') return;
+  if (refusal?.code === 'no_vault') return;
   const notePath = writtenNote({ route, params, answered });
-  activity.record(apiWriteReport({ route, notePath, refusal }));
+  const refused =
+    refusal === null ? { refusal: null } : { refusal: refusal.code, reason: refusal.message };
+  activity.record(apiWriteReport({ route, notePath, ...refused }));
 }
 
 /** The note a write named: the one it made, as its answer says (a note, or a meeting's file), or the one in its URL. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
 import {
   activityEvent,
-  MAX_ACTIVITY_MESSAGE,
+  MAX_ACTIVITY_DETAIL,
   MAX_ACTIVITY_NOTES,
   type ActivityEvent,
 } from './activity-event.ts';
@@ -224,7 +224,9 @@ describe('the detail a line carries beyond its message (#814)', () => {
     expect(pathy.detail).toMatch(/^cannot write /);
     expect(pathy.detail).not.toContain('/Users');
     expect(refused('one\n  line').detail).toBe('one line');
-    expect(refused('x'.repeat(1000)).detail).toHaveLength(MAX_ACTIVITY_MESSAGE);
+    expect(refused('x'.repeat(MAX_ACTIVITY_DETAIL)).detail).toHaveLength(MAX_ACTIVITY_DETAIL);
+    const over = refused('x'.repeat(MAX_ACTIVITY_DETAIL + 1)).detail;
+    expect(over).toBe(`${'x'.repeat(MAX_ACTIVITY_DETAIL - 1)}…`);
   });
 
   it('drops what a hand-edited file holds that is not text', () => {

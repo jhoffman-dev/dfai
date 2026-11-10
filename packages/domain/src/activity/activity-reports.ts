@@ -189,30 +189,40 @@ export function sourceRefreshReport(sourcePath: VaultPath, outcome: SourceOutcom
   };
 }
 
+/** The longest a refusal's reason is said on its line: the route and the note must fit beside it. */
+export const MAX_REFUSAL_REASON = 160;
+
 /**
  * A write through the local API or MCP: the route as the contract names it,
  * and the note it wrote — never what it wrote. A refused one is a warning:
- * the tool asked for something DFAI would not do.
+ * the tool asked for something DFAI would not do, and the line says why, in
+ * the words its caller was told (#814): cut short on the line, whole in its detail.
  */
 export function apiWriteReport({
   route,
   notePath,
   refusal,
+  reason = '',
 }: {
   route: string;
   notePath: VaultPath | null;
   refusal: string | null;
+  /** What the caller was told: caller-safe, so never the body it sent, nor a path. */
+  reason?: string;
 }): ActivityReport {
   // `PUT v1/notes/{path}/body`: with its leading slash, a route reads as a machine path and is struck out.
   const said = route.replace(/ \//, ' ');
   const target = notePath === null ? '' : ` ${noteTitle(notePath)}`;
   const subject = notePath === null ? null : noteSubject(notePath);
   if (refusal !== null) {
+    const refused = `${said} refused${target === '' ? '' : ` for${target}`} (${refusal})`;
+    const why = reason.replace(/\s+/g, ' ').trim();
     return {
       level: 'warning',
       kind: 'api',
-      message: `${said} refused${target === '' ? '' : ` for${target}`} (${refusal}).`,
+      message: why === '' ? `${refused}.` : `${refused}: ${clipped(why)}`,
       subject,
+      ...(why !== '' && { detail: why }),
     };
   }
   return {
@@ -221,6 +231,12 @@ export function apiWriteReport({
     message: `${said}${target === '' ? '' : ` —${target}`}`,
     subject,
   };
+}
+
+/** A reason cut to {@link MAX_REFUSAL_REASON} with an ellipsis, for the line; its detail keeps the rest. */
+function clipped(reason: string): string {
+  if (reason.length <= MAX_REFUSAL_REASON) return reason;
+  return `${reason.slice(0, MAX_REFUSAL_REASON - 1).trimEnd()}…`;
 }
 
 /** What happened to one of Claude's proposals, or to a turn of the chat. */
