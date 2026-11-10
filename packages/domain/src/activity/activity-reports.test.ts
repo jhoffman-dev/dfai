@@ -11,6 +11,7 @@ import {
   indexInWindowReport,
   indexRebuiltReport,
   leavesFileUnsettled,
+  MAX_REFUSAL_REASON,
   meetingImportReport,
   meetingImportStoppedReport,
   noticeReport,
@@ -259,6 +260,57 @@ describe('apiWriteReport', () => {
     expect(
       apiWriteReport({ route: 'POST /v1/archive', notePath: null, refusal: 'bad_request' }).message,
     ).toBe('POST v1/archive refused (bad_request).');
+  });
+
+  describe('a refusal with the reason its caller was told (#814)', () => {
+    const refused = (reason: string) =>
+      apiWriteReport({ route: 'POST /v1/meetings', notePath: null, refusal: 'invalid', reason });
+
+    it('says the reason on the line, and keeps it as the line’s detail', () => {
+      expect(refused('"transcriptMD" is not a field of a meeting')).toEqual({
+        level: 'warning',
+        kind: 'api',
+        message: 'POST v1/meetings refused (invalid): "transcriptMD" is not a field of a meeting',
+        subject: null,
+        detail: '"transcriptMD" is not a field of a meeting',
+      });
+    });
+
+    it('names the note before the reason', () => {
+      const report = apiWriteReport({
+        route: 'PUT /v1/notes/{path}/body',
+        notePath: NOTE,
+        refusal: 'conflict',
+        reason: 'the note changed since it was read',
+      });
+      expect(report.message).toBe(
+        'PUT v1/notes/{path}/body refused for DFAI (conflict): the note changed since it was read',
+      );
+    });
+
+    it('cuts a long reason short on the line, with an ellipsis, and keeps it whole in its detail', () => {
+      const long = `${'x'.repeat(MAX_REFUSAL_REASON)} the end`;
+      const report = refused(long);
+      const said = report.message.replace('POST v1/meetings refused (invalid): ', '');
+      expect(said).toHaveLength(MAX_REFUSAL_REASON);
+      expect(said).toMatch(/^x+…$/);
+      expect(report.detail).toBe(long);
+      const fits = refused('x'.repeat(MAX_REFUSAL_REASON)).message;
+      expect(fits).toBe(`POST v1/meetings refused (invalid): ${'x'.repeat(MAX_REFUSAL_REASON)}`);
+    });
+
+    it('says the reason on one line', () => {
+      // The detail is made one line where every line is made safe, in `activityEvent`.
+      expect(refused('  title must\n be a string  ').message).toBe(
+        'POST v1/meetings refused (invalid): title must be a string',
+      );
+    });
+
+    it('reads as before when there was no reason to give', () => {
+      const report = refused('  ');
+      expect(report.message).toBe('POST v1/meetings refused (invalid).');
+      expect(report).not.toHaveProperty('detail');
+    });
   });
 });
 
