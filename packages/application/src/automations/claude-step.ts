@@ -1118,9 +1118,10 @@ async function readPart(
 
 /**
  * The answers kept for a meeting's words, found by what each part showed,
- * and the meeting's line in `toStore`, grown part by part as each reads: it
- * replaces the line kept before, so it holds every part read, kept or asked.
- * A meeting known by no key keeps nothing.
+ * and the meeting's line in `toStore`, grown part by part as each reads: the
+ * line kept before with each part read put in by its key, so a retry failing
+ * at one part still keeps those after it it had not reached (#793). A meeting
+ * known by no key keeps nothing.
  */
 function keptParts(
   asking: ProposalAsking,
@@ -1135,15 +1136,13 @@ function keptParts(
     const answer = kept.answers[index];
     if (answer !== undefined) byPart.set(part, answer);
   });
-  const answers: string[] = [];
-  const parts: string[] = [];
+  const line = new Map(byPart);
   return {
     answerFor: (part) => byPart.get(part),
     keep: (part, answer) => {
       if (key === null) return;
-      answers.push(answer);
-      parts.push(part);
-      const draft = { key, answers: [...answers], parts: [...parts] };
+      line.set(part, answer);
+      const draft = { key, answers: [...line.values()], parts: [...line.keys()] };
       const at = asking.toStore.findIndex((each) => each.key === key);
       if (at === -1) asking.toStore.push(draft);
       else asking.toStore[at] = draft;
