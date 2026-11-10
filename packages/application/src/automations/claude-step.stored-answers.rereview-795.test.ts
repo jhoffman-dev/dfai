@@ -190,7 +190,9 @@ describe('a retry that fails again partway (#793 re-review)', () => {
     expect(third.entry.kind).toBe('run');
   });
 
-  it('keeps the parts and the reduce after the part it failed at, and drops a reduce asked again', async () => {
+  // The spoiled P2 is not the answer the kept reduce merged, so that reduce is dropped with it; the
+  // part asked again then brings its own reduce, the line holding one, not the old beside the new.
+  it('keeps the parts after the one it failed at, and only the reduce of the answers it has', async () => {
     const { run, spoil, keptLines } = setUp([
       summed('P1'),
       summed('P2'),
@@ -205,11 +207,30 @@ describe('a retry that fails again partway (#793 re-review)', () => {
     expect(await run()).toMatchObject({ entry: { kind: 'failed' } });
     spoil('P2');
     expect(await run()).toMatchObject({ entry: { kind: 'failed' }, asked: { length: 1 } });
-    expect(keptLines()).toEqual([4]);
+    expect(keptLines()).toEqual([3]);
 
     expect(await run()).toMatchObject({ entry: { kind: 'failed' }, asked: { length: 3 } });
 
     expect(keptLines()).toEqual([4]);
+  });
+
+  it('keeps the reduce it reused when it fails at a later meeting', async () => {
+    const { run, keptLines } = setUp([
+      summed('P1'),
+      summed('P2'),
+      summed('P3'),
+      REDUCED,
+      UNREADABLE,
+      UNREADABLE,
+      summed('Short'),
+    ]);
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' } });
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' }, asked: { length: 1 } });
+    expect(keptLines()).toEqual([4]);
+
+    const third = await run();
+
+    expect(third).toMatchObject({ entry: { kind: 'run' }, asked: { length: 1 } });
   });
 });
 
