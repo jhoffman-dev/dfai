@@ -36,5 +36,7 @@ describe('the modules compiled into the Code nodes', () => {
     compile.mockClear();
     expect(moduleScript('./github-file.ts')).toBe(first);
     expect(compile).not.toHaveBeenCalled();
+    // Kept by name: another module is its own script, not the one asked for first.
+    expect(moduleScript('./sha256.ts')).not.toBe(first);
   });
 });
