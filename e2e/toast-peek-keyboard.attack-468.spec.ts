@@ -167,3 +167,32 @@ test('a toast’s details in the peek open from the keyboard, and Copy and Close
   await expect(peek).toBeVisible();
   await expect(words).toBeFocused();
 });
+
+// #815: the toast goes while its details are read, so closing them finds no
+// line to give the focus back to — it goes to the toasts' column, and shows.
+test('details closed by Esc after their toast was dismissed leave the focus on the toasts’ column, with a ring', async ({
+  page,
+}) => {
+  const { peek, refused, words } = await refusedInPeek(page);
+  await words.click();
+  const details = page.getByRole('dialog', { name: 'Warning details' });
+  await expect(details).toBeVisible();
+  await expectFocusIn(details);
+
+  // The popup is over the toast, so no pointer reaches its ×: the press is sent to the button.
+  await refused.locator('.toast__dismiss').dispatchEvent('click');
+  await expect(refused).toHaveCount(0);
+  await expect(details).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(details).toHaveCount(0);
+  await expect(peek).toBeVisible();
+  const column = peek.locator('.toast-stack');
+  await expect(column).toBeFocused();
+  // Closed by a key, so the focus shows; empty, the column has a box to show it on (WCAG 2.4.7).
+  expect(await column.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+  await expect(column).toHaveCSS('box-shadow', /rgb/);
+  const box = await column.boundingBox();
+  expect(box?.width ?? 0, 'the focused column is wide enough to see').toBeGreaterThanOrEqual(24);
+  expect(box?.height ?? 0, 'the focused column is tall enough to see').toBeGreaterThanOrEqual(4);
+});
