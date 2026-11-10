@@ -157,3 +157,30 @@ describe('a retry that asks a long meeting’s part again (#793 re-review)', () 
     expect(retry.asked).toHaveLength(1);
   });
 });
+
+describe('a retry that fails again partway (#793 re-review)', () => {
+  // Kept: P1, P2, P3 and their reduce. The retry finds P2 no longer reads and fails asking it again:
+  // what it keeps must still hold P3, so a third run asks P2, the reduce and the short meeting only.
+  it('keeps the parts after the one it failed at', async () => {
+    const { run, spoil } = setUp([
+      summed('P1'),
+      summed('P2'),
+      summed('P3'),
+      REDUCED,
+      UNREADABLE,
+      UNREADABLE,
+      summed('P2 asked again'),
+      REDUCED,
+      summed('Short'),
+    ]);
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' } });
+    spoil('P2');
+    expect(await run()).toMatchObject({ entry: { kind: 'failed' }, asked: { length: 1 } });
+
+    const third = await run();
+
+    expect(third.asked[1]).toContain(REDUCE_ASK);
+    expect(third.asked).toHaveLength(3);
+    expect(third.entry.kind).toBe('run');
+  });
+});
