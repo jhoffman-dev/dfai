@@ -203,6 +203,8 @@ function seeded(seed: number) {
 }
 
 const KEYS = ['title', 'status', 'tags', 'archived', 'archivedFrom', 'archivedPrior', 'due'];
+/** The keys the archive stamp writes over, and so restores by their text as written. */
+const STAMPED: readonly string[] = ['archived', 'archivedFrom', 'archivedPrior'];
 const VALUES = [
   ' open',
   ' "quoted"',
@@ -249,10 +251,15 @@ function ordinaryBlock(seed: number): { text: string; shapes: string[] } {
     `${count} keys`,
     `${JSON.stringify(last.value)} last, tail ${tail !== ''}`,
     `${last.key} last, ${JSON.stringify(eol)}`,
+    `${last.key}:${JSON.stringify(last.value)} last, tail ${tail !== ''}`,
     ...drawn.flatMap(({ key, comment, value }) => [
       `${JSON.stringify(value)} with ${JSON.stringify(eol)}`,
       `${key} with ${JSON.stringify(eol)}`,
       `${key} commented ${comment !== ''}`,
+      `${key}:${JSON.stringify(value)}`,
+      ...(STAMPED.includes(key)
+        ? [`${key}:${JSON.stringify(value)} with ${JSON.stringify(eol)}`]
+        : []),
     ]),
   ];
   return { text, shapes };
@@ -272,6 +279,20 @@ const EVERY_SHAPE = [
     ]),
   ]),
   ...KEYS.flatMap((key) => [true, false].map((commented) => `${key} commented ${commented}`)),
+  // The stamp restores each key by its text as written, so what matters is
+  // each key with each value — the stamped ones under each line ending — and
+  // each key and value last, with and without what follows it.
+  ...KEYS.flatMap((key) => VALUES.map((value) => `${key}:${JSON.stringify(value)}`)),
+  ...STAMPED.flatMap((key) =>
+    VALUES.flatMap((value) =>
+      ['\n', '\r\n'].map((eol) => `${key}:${JSON.stringify(value)} with ${JSON.stringify(eol)}`),
+    ),
+  ),
+  ...KEYS.flatMap((key) =>
+    VALUES.flatMap((value) =>
+      [true, false].map((tail) => `${key}:${JSON.stringify(value)} last, tail ${tail}`),
+    ),
+  ),
 ];
 
 describe('archive → unarchive gives any ordinary block back byte for byte (property)', () => {
