@@ -34,10 +34,39 @@ const EXTRA = [
   '\t',
 ];
 
-function words(random: () => number, most: number): string {
-  const pieces = [...HOSTILE_PIECES, ...EXTRA];
+const PIECES = [...HOSTILE_PIECES, ...EXTRA];
+const PLACES = ['text', 'inline code', 'code', 'address', 'title'] as const;
+const NODES = [
+  'blockquote',
+  'list',
+  'code',
+  'heading',
+  'paragraph',
+  'strong',
+  'emphasis',
+  'delete',
+  'link',
+  'inlineCode',
+  'wikiLink',
+  'text',
+];
+
+/** What the trees drew: each node type, and each piece in each place a writer escapes it. */
+const drawn = new Set<string>();
+
+function words(random: () => number, most: number, place: (typeof PLACES)[number]): string {
   const count = Math.floor(random() * most);
-  return Array.from({ length: count }, () => pieces[Math.floor(random() * pieces.length)]).join('');
+  return Array.from({ length: count }, () => {
+    const piece = PIECES[Math.floor(random() * PIECES.length)]!;
+    drawn.add(`${JSON.stringify(piece)} in ${place}`);
+    return piece;
+  }).join('');
+}
+
+/** The node, noted as drawn. */
+function node<T extends MdBlock | MdPhrasing>(made: T): T {
+  drawn.add(made.type);
+  return made;
 }
 
 function phrasing(random: () => number, depth: number): MdPhrasing[] {
@@ -45,25 +74,26 @@ function phrasing(random: () => number, depth: number): MdPhrasing[] {
     const roll = random();
     if (depth > 0 && roll < 0.25) {
       const type = (['strong', 'emphasis', 'delete'] as const)[Math.floor(random() * 3)]!;
-      return { type, children: phrasing(random, depth - 1) };
+      return node({ type, children: phrasing(random, depth - 1) });
     }
     if (depth > 0 && roll < 0.4) {
-      const url = `https://example.com/${words(random, 3)}`;
-      const title = random() < 0.5 ? null : words(random, 4);
-      return { type: 'link', url, title, children: phrasing(random, depth - 1) };
+      const url = `https://example.com/${words(random, 3, 'address')}`;
+      const title = random() < 0.5 ? null : words(random, 4, 'title');
+      return node({ type: 'link', url, title, children: phrasing(random, depth - 1) });
     }
-    if (roll < 0.5) return { type: 'inlineCode', value: words(random, 3) };
-    if (roll < 0.55) return { type: 'wikiLink', value: '[[Mara Quill]]' };
-    return { type: 'text', value: words(random, 5) };
+    if (roll < 0.5) return node({ type: 'inlineCode', value: words(random, 3, 'inline code') });
+    if (roll < 0.55) return node({ type: 'wikiLink', value: '[[Mara Quill]]' });
+    return node({ type: 'text', value: words(random, 5, 'text') });
   });
 }
 
 function blocks(random: () => number, depth: number): MdBlock[] {
   return Array.from({ length: 1 + Math.floor(random() * 3) }, (): MdBlock => {
     const roll = random();
-    if (depth > 0 && roll < 0.2) return { type: 'blockquote', children: blocks(random, depth - 1) };
+    if (depth > 0 && roll < 0.2)
+      return node({ type: 'blockquote', children: blocks(random, depth - 1) });
     if (depth > 0 && roll < 0.35)
-      return {
+      return node({
         type: 'list',
         ordered: false,
         start: null,
@@ -74,14 +104,22 @@ function blocks(random: () => number, depth: number): MdBlock[] {
           checked: null,
           children: blocks(random, depth - 1),
         })),
-      };
-    if (roll < 0.45) return { type: 'code', lang: null, meta: null, value: words(random, 6) };
-    if (roll < 0.5) return { type: 'heading', depth: 2, children: phrasing(random, 2) };
-    return { type: 'paragraph', children: phrasing(random, 3) };
+      });
+    if (roll < 0.45)
+      return node({ type: 'code', lang: null, meta: null, value: words(random, 6, 'code') });
+    if (roll < 0.5) return node({ type: 'heading', depth: 2, children: phrasing(random, 2) });
+    return node({ type: 'paragraph', children: phrasing(random, 3) });
   });
 }
 
-const trees: MdRoot[] = Array.from({ length: 500 }, (_, at) => ({
+/**
+ * 160 trees, not 500: the first 140 already draw every node type and every
+ * hostile piece in every place a writer escapes it, as a test below
+ * holds them to. The rest drew more of the same, and the three passes over
+ * them cost seconds when the gate shared the machine (#820).
+ */
+const TREES = 160;
+const trees: MdRoot[] = Array.from({ length: TREES }, (_, at) => ({
   type: 'root',
   children: blocks(seededRandom(at + 615), 3),
 }));
@@ -96,6 +134,8 @@ const inApp = (tree: MdRoot) => {
     return `threw: ${(error as Error).message}`;
   }
 };
+/** The app's writer's bytes for each tree: written once, for the three tests that compare them. */
+const writtenInApp = trees.map(inApp);
 
 describe('the bundled capture writer, against the app’s (third attack on PR #615)', () => {
   it('builds the same bundle twice, and it is the one kept', async () => {
@@ -104,20 +144,27 @@ describe('the bundled capture writer, against the app’s (third attack on PR #6
     expect(readFileSync(CAPTURE_MARKDOWN_BUNDLE, 'utf8')).toBe(first);
   });
 
-  it('writes every one of the 500 trees, none refused, so the comparison is of bytes', () => {
-    expect(trees.map(inApp).filter((written) => written.startsWith('threw: '))).toEqual([]);
+  it('draws every node type, and every hostile piece in every place a writer escapes it', () => {
+    const places = PIECES.flatMap((piece) =>
+      PLACES.map((place) => `${JSON.stringify(piece)} in ${place}`),
+    );
+    expect([...NODES, ...places].filter((shape) => !drawn.has(shape))).toEqual([]);
   });
 
-  it('writes 500 seeded trees in Node byte for byte as the app does', () => {
+  it('writes every one of the trees, none refused, so the comparison is of bytes', () => {
+    expect(writtenInApp.filter((written) => written.startsWith('threw: '))).toEqual([]);
+  });
+
+  it('writes the seeded trees in Node byte for byte as the app does', () => {
     const run = new Function(
       'trees',
       `${WRITE(readFileSync(CAPTURE_MARKDOWN_BUNDLE, 'utf8'))}\nreturn written;`,
     );
-    expect(run(trees)).toEqual(trees.map(inApp));
+    expect(run(trees)).toEqual(writtenInApp);
   });
 
   it.skipIf(!existsSync(JSC))(
-    'writes 500 seeded trees in JavaScriptCore byte for byte as the app does',
+    'writes the seeded trees in JavaScriptCore byte for byte as the app does',
     () => {
       const dir = mkdtempSync(join(tmpdir(), 'dfai-capture-jsc-'));
       try {
@@ -129,7 +176,7 @@ describe('the bundled capture writer, against the app’s (third attack on PR #6
         const written = JSON.parse(
           execFileSync(JSC, [file], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
         ) as string[];
-        expect(written).toEqual(trees.map(inApp));
+        expect(written).toEqual(writtenInApp);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
