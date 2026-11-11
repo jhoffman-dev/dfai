@@ -7,7 +7,8 @@
  * and each asks for a shape a word of prose does not have.
  */
 
-const REDACTED = '<secret>';
+/** What a secret's value is struck to. */
+export const REDACTED = '<secret>';
 
 /** `Bearer abc…`, `Token: abc…`: an Authorization header's value. */
 const SCHEME = /\b(Bearer|Token)(\s*:\s*|\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
@@ -26,7 +27,7 @@ const SECRET_NAME =
 
 /** `"api_key": "correct horse battery staple"`: a quoted value, taken whole. */
 const NAMED_QUOTED = new RegExp(
-  `(?<!\\{\\{\\s*)\\b(${SECRET_NAME})(["']?\\s*[:=]\\s*)(["'])(?!<secret>)(?:(?!\\3)[^\\n])*\\3`,
+  `\\b(?<!\\{\\{\\s*)(${SECRET_NAME})(["']?\\s*[:=]\\s*)(["'])(?!<secret>\\3)(?:(?!\\3)[^\\n])*\\3`,
   'gi',
 );
 
@@ -36,7 +37,7 @@ const NAMED_QUOTED = new RegExp(
  * names a secret without holding it.
  */
 const NAMED = new RegExp(
-  `(?<!\\{\\{\\s*)\\b(${SECRET_NAME})(["']?\\s*[:=]\\s*["']?)(?!<secret>)[^\\s"'&,;]+`,
+  `\\b(?<!\\{\\{\\s*)(${SECRET_NAME})(["']?\\s*[:=]\\s*["']?)(?!<secret>(?:["'\\s&,;]|$))[^\\s"'&,;]+`,
   'gi',
 );
 
@@ -54,7 +55,7 @@ const AWS_SECRET = /(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])/g;
  * A long lower-case hex run: an API key or session id in hex. One the message
  * names as a digest or commit (`sha 3f78…`) is left, as it is not a secret.
  */
-const HEX_TOKEN = /(?<!\b(?:sha(?:1|256|512)?|digest|hash|commit|etag)[\s:=]+)\b[0-9a-f]{24,}\b/gi;
+const HEX_TOKEN = /\b(?<!\b(?:sha(?:1|256|512)?|digest|hash|commit|etag)[\s:=]+)[0-9a-f]{24,}\b/gi;
 
 /** The text with every value that looks like a secret replaced by `<secret>`. */
 export function withoutSecrets(text: string): string {

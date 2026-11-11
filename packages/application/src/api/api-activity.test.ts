@@ -48,7 +48,7 @@ describe('a write through the API', () => {
     ]);
   });
 
-  it('records a refused write as a warning, with its code and not its body', async () => {
+  it('records a refused write as a warning, with its code and reason and not its body', async () => {
     const api = vault();
     const response = await api.send({
       method: 'POST',
@@ -60,11 +60,62 @@ describe('a write through the API', () => {
       {
         level: 'warning',
         kind: 'api',
-        message: 'POST v1/notes/{path}/append refused for Call (conflict).',
+        message:
+          'POST v1/notes/{path}/append refused for Call (conflict): Tasks/Call.md changed since you read it',
         subject: { kind: 'note', path: 'Tasks/Call.md' },
+        detail: 'Tasks/Call.md changed since you read it',
       },
     ]);
     expect(JSON.stringify(api.activity.reports)).not.toContain(CARRIED);
+  });
+
+  describe('a refused meeting, with the reason it was told (#814)', () => {
+    const MEETING = { provider: 'gemini', sourceId: 'fake-0814', title: 'Garden club sync' };
+    const refusedMeeting = async (api: ReturnType<typeof vault>, body: object) => {
+      await api.send({ method: 'POST', path: '/v1/meetings', body });
+      expect(api.activity.reports).toHaveLength(1);
+      return api.activity.reports[0];
+    };
+
+    it('names a field it does not read, and not what the field carried', async () => {
+      const report = await refusedMeeting(vault(), { ...MEETING, transcriptMD: CARRIED });
+      expect(report).toEqual({
+        level: 'warning',
+        kind: 'api',
+        message: 'POST v1/meetings refused (invalid): "transcriptMD" is not a field of a meeting',
+        subject: null,
+        detail: '"transcriptMD" is not a field of a meeting',
+      });
+      expect(JSON.stringify(report)).not.toContain(CARRIED);
+    });
+
+    it('names a field it needs and was not sent', async () => {
+      const { provider, sourceId } = MEETING;
+      const report = await refusedMeeting(vault(), { provider, sourceId, summaryMd: CARRIED });
+      expect(report?.message).toBe('POST v1/meetings refused (invalid): title must be a string');
+      expect(report?.detail).toBe('title must be a string');
+      expect(JSON.stringify(report)).not.toContain(CARRIED);
+    });
+
+    it('says only that DFAI could not answer when the fault was its own', async () => {
+      const api = vault();
+      api.deps = {
+        ...api.deps,
+        fs: {
+          ...api.deps.fs,
+          readNotes: async () => {
+            throw new Error('disk I/O error at /Users/sam/Vault/.atlas/settings.json');
+          },
+        },
+      };
+      const report = await refusedMeeting(api, { ...MEETING, summaryMd: CARRIED });
+      expect(report?.message).toBe(
+        'POST v1/meetings refused (internal): DFAI could not answer this request',
+      );
+      expect(report?.detail).toBe('DFAI could not answer this request');
+      expect(JSON.stringify(report)).not.toMatch(/disk I\/O|\/Users|settings\.json/);
+      expect(JSON.stringify(report)).not.toContain(CARRIED);
+    });
   });
 
   it('records a refusal whose path would not decode, with no link', async () => {
