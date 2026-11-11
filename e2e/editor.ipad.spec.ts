@@ -1,7 +1,6 @@
-import { caretAtLineEndBy } from './caret.ts';
+import { caretAtLineEndByTap } from './caret.ts';
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, expectFile, openVaultByTouch } from './host.ts';
-import { LINE_END } from './platform.ts';
 import { expectFocusIn } from './typing.ts';
 
 /**
@@ -48,23 +47,6 @@ async function openGardenVault(page: Page) {
 const lineOf = (editor: Locator, index: number) =>
   editor.locator('p', { hasText: `Line ${index} of the plan.` });
 
-/**
- * Taps the far right of a line, which leaves the caret at its end, and waits
- * until the editor holds it there. A tap that focuses the editor can be undone
- * by ProseMirror's reset 20 ms after focus, which puts the caret back at the
- * note's start (caret.ts, #797); a keyboard raised then scrolls for that caret,
- * not this one (#821). A tap done again is a double tap, which selects a word:
- * on a retry only, the key to the line's end collapses it.
- */
-async function tapLineEnd(line: Locator): Promise<void> {
-  const box = await line.boundingBox();
-  if (box === null) throw new Error('The line is not on the page.');
-  await caretAtLineEndBy(line, async (attempt) => {
-    await line.tap({ position: { x: box.width - 1, y: box.height / 2 }, timeout: 1_000 });
-    if (attempt > 1) await line.page().keyboard.press(LINE_END);
-  });
-}
-
 test('on an iPad, a finger types, links with [[, inserts with /, and moves a block from its handle', async ({
   page,
 }) => {
@@ -76,7 +58,7 @@ test('on an iPad, a finger types, links with [[, inserts with /, and moves a blo
   });
 
   await test.step('a tap puts the caret where the finger was, and typing lands there', async () => {
-    await tapLineEnd(lineOf(editor, 2));
+    await caretAtLineEndByTap(lineOf(editor, 2));
     await page.keyboard.type(' Tapped.');
     await expectFile(vault, 'Garden plan.md').toContain('Line 2 of the plan. Tapped.');
   });
@@ -90,7 +72,7 @@ test('on an iPad, a finger types, links with [[, inserts with /, and moves a blo
   });
 
   await test.step('[[ offers notes, and a tap on one links it', async () => {
-    await tapLineEnd(lineOf(editor, 3));
+    await caretAtLineEndByTap(lineOf(editor, 3));
     await page.keyboard.type(' [[Sow');
     await page
       .getByRole('listbox', { name: 'Link to note' })
@@ -100,7 +82,7 @@ test('on an iPad, a finger types, links with [[, inserts with /, and moves a blo
   });
 
   await test.step('/ offers blocks, and a tap on one inserts it', async () => {
-    await tapLineEnd(lineOf(editor, 4));
+    await caretAtLineEndByTap(lineOf(editor, 4));
     await page.keyboard.press('Enter');
     await page.keyboard.type('/quo');
     await page
@@ -217,7 +199,7 @@ test('the caret and the open picker stay above the on-screen keyboard', async ({
   await test.step('a caret the keyboard rose over is scrolled back into view', async () => {
     // A line the keyboard will cover: in the lower part of the page, in view now.
     const covered = await lineBetween(editor, visibleBottom + 100, 780);
-    await tapLineEnd(covered);
+    await caretAtLineEndByTap(covered);
     await viewport.keyboard(KEYBOARD_HEIGHT);
     // What the page itself sees, so a miss names its cause: the stand-in not
     // taking, or the tap not leaving the editor focused (CI of PR #744).
@@ -244,7 +226,7 @@ test('the caret and the open picker stay above the on-screen keyboard', async ({
   await test.step('the / picker opens upward when there is no room for it under the caret', async () => {
     // A line in the lower half of what is visible: the list is taller than the room under it.
     const low = await lineBetween(editor, visibleBottom - 120, visibleBottom - 40);
-    await tapLineEnd(low);
+    await caretAtLineEndByTap(low);
     await page.keyboard.press('Enter');
     await page.keyboard.type('/');
     const popup = page.getByRole('listbox', { name: 'Insert block' });
@@ -272,7 +254,7 @@ test('the caret and the open picker stay above the on-screen keyboard', async ({
     // Below the last line there is only the note's bottom padding, less than a
     // keyboard is tall: the note must be given more room to scroll into.
     const last = lineOf(editor, LINES);
-    await tapLineEnd(last);
+    await caretAtLineEndByTap(last);
     await viewport.keyboard(KEYBOARD_HEIGHT);
     await expect
       .poll(async () => {
@@ -290,7 +272,7 @@ test('the caret and the open picker stay above the on-screen keyboard', async ({
     const SCALE = 2;
     // A line near the top of the page, which the pan will leave above the visible area.
     const high = await lineBetween(editor, 0, 220);
-    await tapLineEnd(high);
+    await caretAtLineEndByTap(high);
     await viewport.zoom(SCALE);
     await page.keyboard.press('Enter');
     await page.keyboard.type('/');
