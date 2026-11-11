@@ -1,7 +1,7 @@
+import { caretAtLineEndByTap } from './caret.ts';
 import { expect, test, type Page } from './fixtures.ts';
 import { signInOnTheWeb, webVaultOnGitHub } from './web-github.ts';
 import { readKeptOnTheDevice } from './web-vault.ts';
-import { expectFocusIn } from './typing.ts';
 
 /**
  * #667: a save made on the web with no network waits on the iPad, says
@@ -12,12 +12,7 @@ import { expectFocusIn } from './typing.ts';
 const PLAN = '# Garden plan\n\nFirst line.\n';
 
 async function typeAtTheEnd(page: Page, text: string) {
-  const line = page.getByLabel('Note', { exact: true }).getByText('First line.');
-  const box = await line.boundingBox();
-  if (box === null) throw new Error('The note’s first line is not on the page.');
-  // The far right of the line's block, where a tap leaves the caret at its end.
-  await line.tap({ position: { x: box.width - 1, y: box.height / 2 } });
-  await expectFocusIn(line);
+  await caretAtLineEndByTap(page.getByLabel('Note', { exact: true }).getByText('First line.'));
   await page.keyboard.type(text);
 }
 

@@ -73,22 +73,60 @@ async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
 }
 
 /**
- * Puts the caret at the end of the line `line` is in by `move` (a tap, a
- * key), done again until the editor holds it there: the same reset after
- * focus undoes a tap or a key as it undoes a click (#797). `move` is told
- * which try it is, from 1. Its actions should take `ONE_TRY`'s time or less.
+ * How many taps a line gets when ProseMirror's reset after focus undoes one.
+ * The reset runs once per focus, so the second tap is not undone.
  */
-export async function caretAtLineEndBy(
-  line: Locator,
-  move: (attempt: number) => Promise<void>,
-): Promise<void> {
-  await caretHeldAt(line, { at: 'end' }, move);
+const TAPS_PAST_THE_RESET = 2;
+
+/**
+ * Taps the far right of the line `line` is in, which leaves the caret at its
+ * end, and waits until the editor holds it there (#797, #821). A tap that
+ * focuses the editor can be undone by the reset after focus, which puts the
+ * caret back at the note's start: then, and only then, the line is tapped
+ * again, with no key, so where a tap leaves the caret is what is checked every
+ * time. A tap that leaves the caret anywhere else fails at once, saying where.
+ */
+export async function caretAtLineEndByTap(line: Locator): Promise<void> {
+  const box = await line.boundingBox();
+  if (box === null) throw new Error('The line is not on the page.');
+  for (let tap = 1; ; tap += 1) {
+    const before = JSON.stringify((await caretOf(line)).page);
+    await line.tap({ position: { x: box.width - 1, y: box.height / 2 }, ...ONE_TRY });
+    const landed = await caretSettledAfter(line, before);
+    if (landed.inLine && landed.at === 'end') return;
+    if (!landed.atNoteStart || tap === TAPS_PAST_THE_RESET) {
+      throw new Error(
+        `The tap did not leave the caret at its line's end. ${whereCaretsAre(landed)}`,
+      );
+    }
+  }
 }
 
 /**
- * As `caretAtLineEndBy`, and the line must be the note's last block: for a
- * key to the note's end, which reaches this line's end only if no block
- * follows it.
+ * The caret once the editor has read where a tap left the page's: the two
+ * agree, and the page's has moved from `before` unless it is already at the
+ * line's end. Until then the editor may still hold its caret from before.
+ */
+async function caretSettledAfter(line: Locator, before: string) {
+  let caret = await caretOf(line);
+  await expect(async () => {
+    caret = await caretOf(line);
+    const held = caret.inLine && caret.at === 'end';
+    const moved = JSON.stringify(caret.page) !== before;
+    expect(caret.agrees && (held || moved), whereCaretsAre(caret)).toBe(true);
+  }).toPass({ timeout: 5_000 });
+  return caret;
+}
+
+function whereCaretsAre(caret: { editor: unknown; page: unknown }): string {
+  return `the editor's caret: ${JSON.stringify(caret.editor)}; the page's: ${JSON.stringify(caret.page)}`;
+}
+
+/**
+ * Puts the caret at the end of the note's last block, `lastLine`, by `move`
+ * (a key to the note's end), done again until the editor holds it there: the
+ * same reset after focus undoes a key as it undoes a click (#797). `move` is
+ * told which try it is, from 1. Its actions should take `ONE_TRY`'s time or less.
  */
 export async function caretAtNoteEndBy(
   lastLine: Locator,
@@ -111,16 +149,16 @@ async function caretHeldAt(
     // went, would pass here and then take the typing elsewhere.
     const caret = await caretOf(line);
     // The diff shows only the fields checked; where each caret is goes in the message.
-    const seen = `the editor's caret: ${JSON.stringify(caret.editor)}; the page's: ${JSON.stringify(caret.page)}`;
-    expect(caret, seen).toMatchObject({ inLine: true, agrees: true, ...wanted });
+    expect(caret, whereCaretsAre(caret)).toMatchObject({ inLine: true, agrees: true, ...wanted });
   }).toPass({ timeout: 5_000 });
 }
 
 /**
  * Where the editor that holds `line` has its caret: whether it is in the
  * block `line` is in, at that block's start, end, or neither, and whether
- * that block is the note's last; whether the page's caret is at the same
- * place; and, for a failure to show, each caret's block text and offset.
+ * that block is the note's last; whether it is at the note's start, where
+ * ProseMirror's reset after focus puts it; whether the page's caret is at the
+ * same place; and, for a failure to show, each caret's block text and offset.
  */
 function caretOf(line: Locator) {
   return line.evaluate(
@@ -172,7 +210,15 @@ function caretOf(line: Locator) {
       // Depth 0 is between top-level blocks (a selected card, a gap cursor):
       // no block holds the caret, and before() would throw. A miss to retry.
       if ($head.depth === 0) {
-        return { inLine: false, at: 'neither', lastBlock: false, agrees, editor, page: pageCaret };
+        return {
+          inLine: false,
+          at: 'neither',
+          lastBlock: false,
+          atNoteStart: false,
+          agrees,
+          editor,
+          page: pageCaret,
+        };
       }
       const block = view.nodeDOM($head.before());
       const at = !selection.empty
@@ -183,10 +229,16 @@ function caretOf(line: Locator) {
             ? 'start'
             : 'neither';
       const lastBlock = $head.index(0) === state.doc.childCount - 1;
+      // The first place a caret can be: the start of the first block at every depth.
+      let atNoteStart = selection.empty && $head.parentOffset === 0;
+      for (let depth = 0; depth < $head.depth; depth += 1) {
+        atNoteStart &&= $head.index(depth) === 0;
+      }
       return {
         inLine: block !== null && block.contains(element),
         at,
         lastBlock,
+        atNoteStart,
         agrees,
         editor,
         page: pageCaret,
