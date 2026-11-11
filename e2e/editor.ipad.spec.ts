@@ -1,5 +1,7 @@
+import { caretAtLineEndBy } from './caret.ts';
 import { expect, test, type Locator, type Page } from './fixtures.ts';
 import { createVault, expectFile, openVaultByTouch } from './host.ts';
+import { LINE_END } from './platform.ts';
 import { expectFocusIn } from './typing.ts';
 
 /**
@@ -46,11 +48,21 @@ async function openGardenVault(page: Page) {
 const lineOf = (editor: Locator, index: number) =>
   editor.locator('p', { hasText: `Line ${index} of the plan.` });
 
-/** Taps the far right of a line, which leaves the caret at its end. */
+/**
+ * Taps the far right of a line, which leaves the caret at its end, and waits
+ * until the editor holds it there. A tap that focuses the editor can be undone
+ * by ProseMirror's reset 20 ms after focus, which puts the caret back at the
+ * note's start (caret.ts, #797); a keyboard raised then scrolls for that caret,
+ * not this one (#821). A tap done again is a double tap, which selects a word:
+ * on a retry only, the key to the line's end collapses it.
+ */
 async function tapLineEnd(line: Locator): Promise<void> {
   const box = await line.boundingBox();
   if (box === null) throw new Error('The line is not on the page.');
-  await line.tap({ position: { x: box.width - 1, y: box.height / 2 } });
+  await caretAtLineEndBy(line, async (attempt) => {
+    await line.tap({ position: { x: box.width - 1, y: box.height / 2 }, timeout: 1_000 });
+    if (attempt > 1) await line.page().keyboard.press(LINE_END);
+  });
 }
 
 test('on an iPad, a finger types, links with [[, inserts with /, and moves a block from its handle', async ({
