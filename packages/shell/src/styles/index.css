@@ -47,6 +47,7 @@
 @import './chat.css';
 @import './ask.css';
 @import './activity.css';
+@import './event-details.css';
 @import './sync.css';
 @import './slack.css';
 @import './grouped-tables.css';

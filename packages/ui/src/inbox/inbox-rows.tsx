@@ -148,10 +148,12 @@ export function InboxRows({
     commit,
     fileUnder,
     makeTask,
+    typedIn,
+    typedOf,
   } = triage;
   const actions = useMemo(
-    () => ({ pick, commit, fileUnder, makeTask }),
-    [pick, commit, fileUnder, makeTask],
+    () => ({ pick, commit, fileUnder, makeTask, typedIn, typedOf }),
+    [pick, commit, fileUnder, makeTask, typedIn, typedOf],
   );
   // The app makes its callback anew on many of its renders; the rows' choices stay the same.
   const steadyCreate = useSteadyCallback(onCreateFiling ?? NO_CREATE);
@@ -189,7 +191,12 @@ export function InboxRows({
                 choices={choices}
                 onOpen={open}
                 busy={busy}
-                refusal={refusals.find((each) => each.path === item.path)?.reason ?? null}
+                // One place says either: what stops the row being written now, before what the app last refused.
+                refusal={
+                  triage.unpickedOf(item.path) ??
+                  refusals.find((each) => each.path === item.path)?.reason ??
+                  null
+                }
                 summaryPending={summaryPending?.get(item.path) ?? null}
                 actions={actions}
               />
@@ -264,7 +271,10 @@ function usePlacedRowRefs(
 }
 
 /** What a row can do, the same from one render to the next. */
-type RowActions = Pick<InboxTriage, 'pick' | 'commit' | 'fileUnder' | 'makeTask'>;
+type RowActions = Pick<
+  InboxTriage,
+  'pick' | 'commit' | 'fileUnder' | 'makeTask' | 'typedIn' | 'typedOf'
+>;
 
 interface RowChoices {
   readonly filing: readonly RelationChoice[];
@@ -294,7 +304,7 @@ const InboxRow = memo(function InboxRow({
   choices: RowChoices;
   onOpen: (path: VaultPath) => void;
   busy: boolean;
-  /** Why this row's last clarification was refused, or null. */
+  /** Why this row was not written — a link typed and not picked, or the app's own refusal — or null. */
   refusal: string | null;
   /** Why this meeting's summary still waits; null when it waits for none. */
   summaryPending: string | null;
@@ -426,6 +436,7 @@ function ClarifyTask({
   actions: RowActions;
 }) {
   const pick = (picked: InboxDraft) => actions.pick(item.path, picked);
+  const asksWho = asksWhoItWaitsOn(task, draft);
   const status = draft.status ?? task.status ?? '';
   // What the vault's Task type declares, and what the task says now so the row can show it.
   const offered = GTD_STATUSES.filter(
@@ -456,7 +467,7 @@ function ClarifyTask({
           </option>
         ))}
       </select>
-      {asksWhoItWaitsOn(task, draft) && (
+      {asksWho && (
         <NotePicker
           label={`Who ${item.title} waits on`}
           value={draft.waitingOn ?? task.waitingOn ?? ''}
@@ -464,6 +475,8 @@ function ClarifyTask({
           choices={choices.people}
           disabled={busy}
           onPick={(waitingOn) => pick({ waitingOn })}
+          typed={actions.typedOf(item.path, 'waitingOn')}
+          onTyped={(text) => actions.typedIn(item.path, 'waitingOn', text)}
         />
       )}
       <NotePicker
@@ -473,6 +486,8 @@ function ClarifyTask({
         choices={choices.filing}
         disabled={busy || (choices.filing.length === 0 && choices.createFiling === null)}
         onPick={(project) => pick({ project })}
+        typed={actions.typedOf(item.path, 'project')}
+        onTyped={(text) => actions.typedIn(item.path, 'project', text)}
         createFiling={choices.createFiling}
         field="project"
       />
@@ -515,6 +530,8 @@ function NotePicker({
   choices,
   disabled,
   onPick,
+  typed,
+  onTyped,
   createFiling = null,
   field,
 }: {
@@ -524,6 +541,10 @@ function NotePicker({
   choices: readonly RelationChoice[];
   disabled: boolean;
   onPick: (path: VaultPath) => void;
+  /** What the row held typed in it when last drawn: shown again as the row is (#823). */
+  typed?: string | undefined;
+  /** What is typed and not picked, as it changes. */
+  onTyped?: (typed: string | null) => void;
   /** Makes a project or an area of what was typed, then picks it (#465). */
   createFiling?: CreateFiling | null;
   /** Which picker a triage key opens (P): named so the key finds it. */
@@ -539,6 +560,8 @@ function NotePicker({
       choices={choices}
       disabled={disabled}
       onPick={(choice) => onPick(createVaultPath(choice.path))}
+      {...(typed !== undefined && { initialTyped: typed })}
+      {...(onTyped !== undefined && { onTyped })}
       {...(createFiling !== null && {
         creates: FILED_UNDER_TYPES,
         onCreate: (request: CreateLink) => createFiling(request).then(onPick),

@@ -9,11 +9,17 @@
  * that rule holds for whatever words a caller hands over.
  */
 
-import { isInChats } from '../chat/chat-note.ts';
-import { messageWithoutPaths } from '../errors/message-without-paths.ts';
+import { CHAT_NOTE_LABEL, isInChats } from '../chat/chat-note.ts';
+import { messageWithoutPaths, PATH_PLACEHOLDER } from '../errors/message-without-paths.ts';
+import {
+  BYTE_ORDER_MARK,
+  DIRECTION_MARKS,
+  DRAWN_AS_NOTHING,
+  LONE_SURROGATE,
+} from '../text/hidden-characters.ts';
 import { createVaultPath, VAULT_ROOT, type VaultPath } from '../vault/vault-path.ts';
 import { withoutChatPaths, withoutChatTitle } from './without-chat-names.ts';
-import { withoutSecrets } from './without-secrets.ts';
+import { REDACTED, withoutSecrets } from './without-secrets.ts';
 
 export const ACTIVITY_LEVELS = ['info', 'warning', 'error'] as const;
 export type ActivityLevel = (typeof ACTIVITY_LEVELS)[number];
@@ -55,6 +61,11 @@ export interface ActivityReport {
    * out for none.
    */
   readonly notes?: readonly VaultPath[];
+  /**
+   * More than the line says, for a reader who opens it (#815): an API
+   * refusal's reason, say. Made safe as the message is; left out for none.
+   */
+  readonly detail?: string;
 }
 
 /** The most notes a line keeps beside its subject: a run's are its few triggering notes. */
@@ -68,6 +79,9 @@ export interface ActivityEvent extends ActivityReport {
 /** The longest a line's message may be: one line on the page, not a stack trace. */
 export const MAX_ACTIVITY_MESSAGE = 300;
 
+/** The longest a line's detail may be: a paragraph to open, not a log file. */
+export const MAX_ACTIVITY_DETAIL = 1000;
+
 /**
  * A line, made safe to keep: its message on one line, without absolute paths,
  * chat notes' names or secret values, and no longer than
@@ -80,12 +94,18 @@ export function activityEvent(report: ActivityReport & { at: number }): Activity
     at: report.at,
     level: report.level,
     kind: report.kind,
-    message: cleanMessage(
-      chat === null ? report.message : withoutChatTitle(report.message, chat.path),
-    ),
+    message: cleanMessage(report.message, chat),
     subject: chat === null ? cleanSubject(report.subject) : null,
     ...notesOf(report.notes),
+    ...detailOf(report.detail, chat),
   };
+}
+
+/** The detail kept: cleaned as the message is, and left out when nothing is left of it. */
+function detailOf(detail: string | undefined, chat: ActivitySubject | null): { detail?: string } {
+  if (detail === undefined) return {};
+  const safe = safeActivityText(detail, { max: MAX_ACTIVITY_DETAIL, chatPath: chat?.path ?? null });
+  return safe === '' ? {} : { detail: safe };
 }
 
 /** The notes kept beside the subject: inside the vault, no chat note, each once, at most {@link MAX_ACTIVITY_NOTES}. */
@@ -98,13 +118,72 @@ function notesOf(notes: readonly string[] | undefined): { notes?: readonly Vault
   return kept.size === 0 ? {} : { notes: [...kept].slice(0, MAX_ACTIVITY_NOTES) };
 }
 
-function cleanMessage(raw: string): string {
-  const safe = withoutSecrets(withoutChatPaths(messageWithoutPaths(raw)))
-    .replace(/\s+/g, ' ')
+function cleanMessage(raw: string, chat: ActivitySubject | null): string {
+  const safe = safeActivityText(raw, { max: MAX_ACTIVITY_MESSAGE, chatPath: chat?.path ?? null });
+  return safe === '' ? 'No detail was given.' : safe;
+}
+
+/**
+ * Words made safe to keep, as a line's message and detail are: one line of
+ * plain text, without absolute paths, chat notes' names (the title of
+ * `chatPath`, when the words are about one) or secret values, cut to `max`
+ * characters with an ellipsis. Cut only once clean, so a cut never leaves
+ * part of a secret, a path or a title that the whole would have struck.
+ */
+export function safeActivityText(
+  raw: string,
+  { max, chatPath = null }: { max: number; chatPath?: VaultPath | null },
+): string {
+  // Invisible characters go first: one inside a token or a title would hide it from what strikes it.
+  const visible = withoutInvisibles(raw);
+  const unnamed = chatPath === null ? visible : withoutChatTitle(visible, chatPath);
+  const safe = withoutSecrets(withoutChatPaths(messageWithoutPaths(unnamed)))
+    .replace(LINE_BREAKS, ' ')
     .trim();
-  if (safe === '') return 'No detail was given.';
-  if (safe.length <= MAX_ACTIVITY_MESSAGE) return safe;
-  return `${safe.slice(0, MAX_ACTIVITY_MESSAGE - 1).trimEnd()}…`;
+  return cutToLength(safe, max);
+}
+
+/**
+ * Terminal escapes (CSI, OSC), then any other control, direction or invisible
+ * character, and a lone surrogate. An OSC with no end loses only its `ESC ]`,
+ * so the words after it are kept.
+ */
+// eslint-disable-next-line no-control-regex -- an escape sequence is exactly what is removed
+const ESCAPES = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\](?:[^\u0007\u001B]*(?:\u0007|\u001B\\))?)/g;
+const INVISIBLES = new RegExp(
+  `[\\u0000-\\u0008\\u000E-\\u001B\\u007F-\\u0084\\u0086-\\u009F${DIRECTION_MARKS}${BYTE_ORDER_MARK}${DRAWN_AS_NOTHING}]`,
+  'gu',
+);
+
+/** Every run of what a reader may break a line on — `\s`, NEL and the C0 separators — as one space. */
+// eslint-disable-next-line no-control-regex -- the C0 separators are exactly what becomes a space
+const LINE_BREAKS = /[\s\u001C-\u001F\u0085]+/g;
+
+function withoutInvisibles(text: string): string {
+  return text.replace(ESCAPES, '').replace(INVISIBLES, '').replace(LONE_SURROGATE, '\uFFFD');
+}
+
+/** What the cleaning put in place of what it struck: a cut through one would leave `<se…`. */
+const PLACEHOLDERS = [REDACTED, PATH_PLACEHOLDER, CHAT_NOTE_LABEL];
+
+/**
+ * The text cut to `max` characters, counted by code point so an emoji is
+ * never split in two, and before any placeholder the cut would fall inside.
+ */
+function cutToLength(text: string, max: number): string {
+  const characters = [...text];
+  if (characters.length <= max) return text;
+  const end = characters.slice(0, max - 1).join('').length;
+  return `${text.slice(0, outsidePlaceholders(text, end)).trimEnd()}…`;
+}
+
+/** The cut `end`, or the start of the placeholder it falls inside. */
+function outsidePlaceholders(text: string, end: number): number {
+  for (const placeholder of PLACEHOLDERS) {
+    const start = text.lastIndexOf(placeholder, end - 1);
+    if (start !== -1 && start + placeholder.length > end) return start;
+  }
+  return end;
 }
 
 function cleanSubject(subject: ActivitySubject | null): ActivitySubject | null {

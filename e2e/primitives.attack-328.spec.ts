@@ -1,7 +1,9 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { focusedRing, RINGED_PRIMITIVES } from './focus-ring.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { inboxRowsInReach } from './inbox.ts';
 import { TABLE_GROUP_HEIGHT, TABLE_ROW_HEIGHT, TODAY_ROW_HEIGHT } from './row-heights.ts';
+import { openSettings } from './settings.ts';
 import { focusThenPress } from './typing.ts';
 
 /**
@@ -297,10 +299,7 @@ async function focusEachAndCollectClipping(
 /** Surfaces whose primitives sit inside a dialog, a table or a scroller. */
 const RING_SURFACES: Record<string, (page: Page) => Promise<void>> = {
   settings: async (page) => {
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await expect(
-      page.getByRole('dialog', { name: 'Settings' }).locator('.field').first(),
-    ).toBeVisible();
+    await openSettings(page);
   },
   // The rows' own buttons, inside the list's scroller: opening a row would take them away.
   inbox: async (page) => {
@@ -308,6 +307,7 @@ const RING_SURFACES: Record<string, (page: Page) => Promise<void>> = {
       .getByRole('list', { name: 'Go to' })
       .getByRole('button', { name: /^Inbox/ })
       .click();
+    await inboxRowsInReach(page);
     await expect(page.locator('.inbox__row .btn').first()).toBeVisible();
   },
   today: async (page) => {
@@ -336,8 +336,7 @@ for (const theme of THEMES) {
     await page.addInitScript(installContrast);
     await openVault(page);
     await setTheme(page, theme);
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+    await openSettings(page);
     const weak: string[] = [];
     let seen = 0;
     for (let step = 0; step < 40; step += 1) {

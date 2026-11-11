@@ -4,15 +4,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type Dispatch,
   type FocusEvent,
   type MutableRefObject,
   type KeyboardEvent,
   type PointerEvent,
-  type SetStateAction,
 } from 'react';
 import { useRowHandles } from '../row-handles.ts';
 import { focusIsHome, typesInto, useRowKeys, type UndoLast } from '../row-keys.ts';
+import { isImeKey } from '../ime.ts';
 import { useSteadyCallback } from '../steady-callback.ts';
 import {
   GTD_STATUSES,
@@ -20,10 +19,25 @@ import {
   type Clarification,
   type GtdStatus,
   type InboxItem,
+  type InboxTask,
   type TriageAction,
   type VaultPath,
 } from '@dfai/domain';
-import { clarificationOf, rowAfter, rowAfterLeaving, type InboxDraft } from './inbox-triage.ts';
+import {
+  clarificationOf,
+  linkFieldsShown,
+  refusalStands,
+  rowAfter,
+  rowAfterLeaving,
+  typedInShown,
+  unpickedLink,
+  unpickedRefusal,
+  withTyped,
+  type InboxDraft,
+  type LinkField,
+  type TypedLinks,
+  type UnpickedLink,
+} from './inbox-triage.ts';
 
 /** Clarifies a note; settles true once it is done, false when it was refused. */
 export type ClarifyInboxItem = (args: {
@@ -121,6 +135,32 @@ export function useInboxTriage({
   // picks go with it. Read after the render that follows, when the list is the app's answer.
   const refused = useRef(new Set<VaultPath>());
   const [refusals, setRefusals] = useState(0);
+  // What each row's link fields hold typed and not picked (#823). Kept here, not on the
+  // row, so a row scrolled out of the page keeps it and every way of writing a row meets
+  // the one guard; a ref, so typing draws nothing.
+  const typed = useRef<Record<string, TypedLinks>>({});
+  // The rows not written over such text, and the text: what each row says until it changes.
+  const [unpicked, setUnpicked] = useState<Readonly<Record<string, UnpickedLink>>>({});
+
+  // Each listed row's task, by path: with what the row holds, the link fields it shows.
+  const tasks = useMemo(
+    () => new Map<string, InboxTask | null>(items.map((item) => [item.path, item.task])),
+    [items],
+  );
+  const tasksNow = useRef(tasks);
+  tasksNow.current = tasks;
+  /** The link fields the row at `path` shows now. */
+  const shownAt = useCallback(
+    (path: string): readonly LinkField[] =>
+      linkFieldsShown(tasksNow.current.get(path) ?? null, held.current[path] ?? NOTHING_PICKED),
+    [],
+  );
+
+  /** Forgets what rows that are gone, or written, held typed. */
+  const forgetTyped = useCallback((gone: ReadonlySet<string>) => {
+    for (const path of gone) delete typed.current[path];
+    setUnpicked((was) => withoutRows(was, gone));
+  }, []);
 
   const focusRow = useCallback(
     (path: VaultPath) => {
@@ -140,7 +180,11 @@ export function useInboxTriage({
   useEffect(() => {
     const before = listed.current;
     listed.current = items;
-    forgetPicksOfRowsGone({ before, items, writing: writing.current, setDrafts });
+    const gone = rowsGone({ before, items, writing: writing.current });
+    if (gone.size > 0) {
+      setDrafts((held) => withoutRows(held, gone));
+      forgetTyped(gone);
+    }
     const back = stranded.current;
     if (back !== null && items.some((item) => item.path === back)) {
       // Its write refused, the last row is back: the next key is for it, unless the focus has gone elsewhere.
@@ -157,20 +201,38 @@ export function useInboxTriage({
     const next = rowAfterLeaving(before, items, path);
     if (next !== null) focusRow(next);
     else if (before.some((item) => item.path === path)) stranded.current = path;
-  }, [items, focusRow, stranded]);
+  }, [items, focusRow, stranded, forgetTyped]);
 
   useEffect(() => {
-    const gone = [...refused.current].filter(
-      (path) => !writing.current.has(path) && !listed.current.some((item) => item.path === path),
-    );
-    refused.current.clear();
-    if (gone.length === 0) return;
-    setDrafts((held) =>
-      Object.fromEntries(
-        Object.entries(held).filter(([path]) => !gone.includes(path as VaultPath)),
+    const gone = new Set(
+      [...refused.current].filter(
+        (path) => !writing.current.has(path) && !listed.current.some((item) => item.path === path),
       ),
     );
-  }, [refusals]);
+    refused.current.clear();
+    if (gone.size === 0) return;
+    setDrafts((held) => withoutRows(held, gone));
+    forgetTyped(gone);
+  }, [refusals, forgetTyped]);
+
+  // A field goes by more ways than a pick — a re-read finds the task no longer Waiting —
+  // and what was typed in it goes with it, by whichever: it comes back empty.
+  useEffect(() => {
+    for (const path of Object.keys(typed.current)) {
+      if (tasks.has(path)) typed.current[path] = typedInShown(typed.current[path], shownAt(path));
+    }
+    setUnpicked((was) => {
+      const lapsed = new Set(
+        Object.entries(was)
+          .filter(
+            ([path, over]) =>
+              !refusalStands(over, { typed: typed.current[path], shown: shownAt(path) }),
+          )
+          .map(([path]) => path),
+      );
+      return withoutRows(was, lapsed);
+    });
+  }, [tasks, drafts, shownAt]);
 
   // The last row leaving empties the list, and the page draws no rows at all:
   // what held the focus is kept where the page can give it back.
@@ -182,7 +244,7 @@ export function useInboxTriage({
     [stranded],
   );
 
-  const act = useCallback(
+  const write = useCallback(
     async (path: VaultPath, clarification: Clarification) => {
       const next = rowAfter(listed.current, path);
       writing.current.set(path, (writing.current.get(path) ?? 0) + 1);
@@ -197,27 +259,58 @@ export function useInboxTriage({
         setRefusals((count) => count + 1);
         return;
       }
-      setDrafts((held) => Object.fromEntries(Object.entries(held).filter(([at]) => at !== path)));
+      const written = new Set([path]);
+      setDrafts((held) => withoutRows(held, written));
+      forgetTyped(written);
       // Focus that has gone elsewhere since — another note opened, say — is left there.
       const at = document.activeElement;
       const onPage = at === document.body && focusedRow.current === path && rowHasFocus.current;
       const stillHere = onPage || elementOf(path)?.contains(at) === true;
       if (next !== null && stillHere) focusRow(next);
     },
-    [clarify, focusRow, elementOf],
+    [clarify, focusRow, elementOf, forgetTyped],
   );
 
-  /** Writes what a picker opened by P or T picked, at once; nothing when it changes nothing. */
+  /**
+   * Whether the row holds a link typed and not picked (#823), saying so on the
+   * row when it does. Nothing is written over one, by whichever way.
+   */
+  const refusesUnpicked = useCallback(
+    (path: VaultPath): boolean => {
+      const over = unpickedLink(typed.current[path], shownAt(path));
+      if (over === null) return false;
+      setUnpicked((was) => ({ ...was, [path]: over }));
+      return true;
+    },
+    [shownAt],
+  );
+
+  /**
+   * Writes a row: the one way in for Save, Enter, the status keys and a
+   * picker's pick, so each meets the guard. False when the row is refused.
+   */
+  const act = useCallback(
+    (path: VaultPath, clarification: Clarification): boolean => {
+      if (refusesUnpicked(path)) return false;
+      void write(path, clarification);
+      return true;
+    },
+    [refusesUnpicked, write],
+  );
+
+  /**
+   * Writes what a picker opened by P or T picked, at once; nothing when it
+   * changes nothing. False when the row is refused, and the pick not written.
+   */
   const writePick = useCallback(
-    (path: VaultPath, picked: InboxDraft) => {
+    (path: VaultPath, picked: InboxDraft): boolean => {
       const item = listed.current.find((each) => each.path === path);
-      if (item === undefined) return;
+      if (item === undefined) return true;
       if (item.task === null) {
-        if (picked.project !== undefined) void act(path, { project: picked.project });
-        return;
+        return picked.project === undefined || act(path, { project: picked.project });
       }
       const clarification = clarificationOf(item.task, picked);
-      if (clarification !== null) void act(path, clarification);
+      return clarification === null || act(path, clarification);
     },
     [act],
   );
@@ -234,7 +327,7 @@ export function useInboxTriage({
           ...held.current[path],
           status: action.status,
         });
-        void act(path, withHeld ?? { status: action.status });
+        act(path, withHeld ?? { status: action.status });
         return;
       }
       const picker = elementOf(path)?.querySelector<PickerElement>(
@@ -269,16 +362,18 @@ export function useInboxTriage({
     (arm: ArmedPicker) => {
       const item = listed.current.find((each) => each.path === arm.path);
       const draft = held.current[arm.path];
+      // Said even with nothing else to write: Enter over text that is no link never passes in silence.
+      if (refusesUnpicked(arm.path)) return;
       armed.current = null;
       if (item === undefined || draft === undefined) return;
       if (item.task !== null) {
         const clarification = clarificationOf(item.task, draft);
-        if (clarification !== null) void act(arm.path, clarification);
+        if (clarification !== null) act(arm.path, clarification);
       } else if (draft.project !== undefined) {
-        void act(arm.path, { project: draft.project });
+        act(arm.path, { project: draft.project });
       }
     },
-    [act],
+    [act, refusesUnpicked],
   );
 
   const rowKey = useRowKeys({
@@ -312,8 +407,13 @@ export function useInboxTriage({
         }
         return;
       }
-      if (typesInto(event.target)) return;
       const path = focusedRow.current;
+      if (typesInto(event.target)) {
+        // Enter the field's list did not take — it picked nothing — over text that is no link: the row says why.
+        const passed = event.key === 'Enter' && !event.defaultPrevented && !isImeKey(event);
+        if (passed && path !== null) refusesUnpicked(path);
+        return;
+      }
       if (path === null || rowKey(event, path)) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const action = triageActionOf(event.key, declared.current);
@@ -323,7 +423,7 @@ export function useInboxTriage({
       if (event.repeat || !idle.current) return;
       keyAction(path, action);
     },
-    [keyAction, elementOf, disarm, focusRow, commitArmed, rowKey],
+    [keyAction, elementOf, disarm, focusRow, commitArmed, rowKey, refusesUnpicked],
   );
 
   /** The pointer opening the armed picker's list: the pick it makes next is its own. */
@@ -373,7 +473,10 @@ export function useInboxTriage({
       if (fromArmed) {
         armed.current = null;
         pointed.current = false;
-        writePick(path, { ...held.current[path], ...picked });
+        // Refused over another field's text, the pick is held on the row, as any is, for Save.
+        if (!writePick(path, { ...held.current[path], ...picked })) {
+          setDrafts((was) => ({ ...was, [path]: { ...was[path], ...picked } }));
+        }
         return;
       }
       writeNow();
@@ -398,19 +501,45 @@ export function useInboxTriage({
     /** A row to focus that the list has yet to draw: it places it. */
     wanted: handles.wanted,
     draftOf: (path: VaultPath): InboxDraft => drafts[path] ?? NOTHING_PICKED,
+    /** Why the row was not written over a link typed and not picked, while that text stands; else null. */
+    unpickedOf: (path: VaultPath): string | null => {
+      const over = unpicked[path];
+      const row = { typed: typed.current[path], shown: shownAt(path) };
+      return over !== undefined && refusalStands(over, row) ? unpickedRefusal(over.text) : null;
+    },
+    /** What a row's link field holds typed and not picked, as it changes; null when nothing. */
+    typedIn: useCallback(
+      (path: VaultPath, field: LinkField, text: string | null) => {
+        const now = withTyped(typed.current[path], field, text);
+        typed.current[path] = now;
+        setUnpicked((was) => {
+          const over = was[path];
+          const stands =
+            over === undefined || refusalStands(over, { typed: now, shown: shownAt(path) });
+          return stands ? was : withoutRows(was, new Set([path]));
+        });
+      },
+      [shownAt],
+    ),
+    /** What a link field held typed when its row was last drawn: a row scrolled back shows it again. */
+    typedOf: useCallback(
+      (path: VaultPath, field: LinkField): string | undefined => typed.current[path]?.[field],
+      [],
+    ),
     /** Holds a pick on a task's row until Done — or Enter, on a picker a key opened. */
     pick: useCallback(
-      (path: VaultPath, picked: InboxDraft) =>
+      (path: VaultPath, picked: InboxDraft) => {
         route(path, picked, () =>
           setDrafts((was) => ({ ...was, [path]: { ...was[path], ...picked } })),
-        ),
+        );
+      },
       [route],
     ),
     /** Done: writes everything the task's row holds — `draft` — in one save. */
     commit: useCallback(
       (item: InboxItem, draft: InboxDraft) => {
         const clarification = item.task === null ? null : clarificationOf(item.task, draft);
-        if (clarification !== null) void act(item.path, clarification);
+        if (clarification !== null) act(item.path, clarification);
       },
       [act],
     ),
@@ -433,32 +562,34 @@ export function useInboxTriage({
 }
 
 /**
- * Forgets what was picked on rows that left the list while not being written —
- * taken away by sync, say — so a note that lands at the same path later is a
- * row of its own, picked nothing. A row scrolled out of the page is still on
- * the list, so it keeps its picks (#238).
+ * The rows that left the list while not being written — taken away by sync,
+ * say. What they held, picked or typed, is forgotten, so a note that lands at
+ * the same path later is a row of its own. A row scrolled out of the page is
+ * still on the list, so it keeps what it holds (#238).
  */
-function forgetPicksOfRowsGone({
+function rowsGone({
   before,
   items,
   writing,
-  setDrafts,
 }: {
   before: readonly InboxItem[];
   items: readonly InboxItem[];
   writing: ReadonlyMap<VaultPath, number>;
-  setDrafts: Dispatch<SetStateAction<Readonly<Record<string, InboxDraft>>>>;
-}): void {
+}): ReadonlySet<string> {
   const listed = new Set(items.map((item) => item.path));
-  const gone = new Set(
+  return new Set(
     before.map((item) => item.path).filter((path) => !listed.has(path) && !writing.has(path)),
   );
-  if (gone.size === 0) return;
-  setDrafts((held) =>
-    Object.keys(held).some((path) => gone.has(path as VaultPath))
-      ? Object.fromEntries(Object.entries(held).filter(([path]) => !gone.has(path as VaultPath)))
-      : held,
-  );
+}
+
+/** `held` without the rows `gone`: the same object when it held none of them, so nothing draws. */
+function withoutRows<Held>(
+  held: Readonly<Record<string, Held>>,
+  gone: ReadonlySet<string>,
+): Readonly<Record<string, Held>> {
+  return Object.keys(held).some((path) => gone.has(path))
+    ? Object.fromEntries(Object.entries(held).filter(([path]) => !gone.has(path)))
+    : held;
 }
 
 /** Whether the focus went with a row that left the DOM: it falls back to the page then. */

@@ -1,20 +1,24 @@
 import {
-  addDays,
   groupActivity,
   noteTitle,
+  opensDetails,
   type ActivityEvent,
   type ActivitySubject,
 } from '@dfai/domain';
 import type { ActivityEntryView, ActivityRowView } from '@dfai/ui';
+import { eventDetails } from './event-details.ts';
+import { localIso, shownTime } from './shown-time.ts';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export { shownTime } from './shown-time.ts';
 
 /**
  * The log's lines as the page shows them, newest first as given. Each line's
- * id counts from the oldest, so a line keeps its id as newer ones arrive.
+ * id is its own (`lineIds`), so it keeps it as newer ones arrive and the
+ * oldest go.
  */
 export function activityRows(events: readonly ActivityEvent[], today: string): ActivityRowView[] {
-  return events.map((event, index) => rowOf(event, idOf(events, index), today));
+  const ids = lineIds(events);
+  return events.map((event, index) => rowOf(event, ids[index] ?? '', today));
 }
 
 /**
@@ -26,26 +30,58 @@ export function activityEntries(
   events: readonly ActivityEvent[],
   today: string,
 ): ActivityEntryView[] {
+  const ids = lineIds(events);
   return groupActivity(events).flatMap((item): ActivityEntryView | ActivityEntryView[] => {
     const lines = (item.kind === 'line' ? [item.line] : item.lines).flatMap((line) => {
       const event = events[line];
       return event === undefined ? [] : [{ event, line }];
     });
-    const rows = lines.map(({ event, line }) => rowOf(event, idOf(events, line), today));
+    const rows = lines.map(({ event, line }) => rowOf(event, ids[line] ?? '', today));
     if (item.kind === 'line') return rows[0] ?? [];
     const opens = lines.find(({ event }) => event.subject?.path === item.meeting) ?? lines[0];
     return {
       group: 'meeting' as const,
-      id: idOf(events, opens?.line ?? 0),
+      id: ids[opens?.line ?? 0] ?? '',
       title: noteTitle(item.meeting),
       rows,
     };
   });
 }
 
-/** A line's id counts from the oldest, so it keeps it as newer ones arrive. */
-function idOf(events: readonly ActivityEvent[], index: number): string {
-  return String(events.length - 1 - index);
+/**
+ * Each line's id, in the order given: when it happened and what it said, so
+ * the line keeps it while the log grows at one end and is trimmed at the
+ * other (#815) — a place in the list would pass to another line. Lines alike
+ * in both are told apart by a count from the oldest of them.
+ *
+ * So twins are the one case where an id moves: when the oldest of them is
+ * trimmed, each twin left takes the id of the one before it — an event
+ * carries nothing else to tell them apart. Details open on a twin keep the
+ * words they opened with (the popup holds its own), and closing them puts the
+ * focus on a line saying the same words at the same moment or, when no line
+ * has the id any more, on the list (`EventDetailsHost`'s landmark).
+ */
+function lineIds(events: readonly ActivityEvent[]): string[] {
+  const alike = new Map<string, number>();
+  const ids = new Array<string>(events.length);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event === undefined) continue;
+    const said = `${event.at}-${wordsMark(`${event.level} ${event.kind} ${event.message}`)}`;
+    const before = alike.get(said) ?? 0;
+    alike.set(said, before + 1);
+    ids[index] = before === 0 ? said : `${said}-${before}`;
+  }
+  return ids;
+}
+
+/** A short mark of some words (FNV-1a), to tell lines of one moment apart: not a secret, not a checksum. */
+function wordsMark(words: string): string {
+  let mark = 0x811c9dc5;
+  for (let at = 0; at < words.length; at += 1) {
+    mark = Math.imul(mark ^ words.charCodeAt(at), 0x01000193);
+  }
+  return (mark >>> 0).toString(36);
 }
 
 function rowOf(event: ActivityEvent, id: string, today: string): ActivityRowView {
@@ -57,32 +93,12 @@ function rowOf(event: ActivityEvent, id: string, today: string): ActivityRowView
     kind: event.kind,
     message: event.message,
     subject: event.subject === null ? null : noteTitle(event.subject.path),
+    ...(opensDetails(event.level) && { details: eventDetails(event, today) }),
   };
 }
 
 /** What a row's link opens, by the row's id. */
 export function subjectOf(events: readonly ActivityEvent[], id: string): ActivitySubject | null {
-  const index = events.length - 1 - Number(id);
+  const index = lineIds(events).indexOf(id);
   return events[index]?.subject ?? null;
-}
-
-/** "Today, 14:03", "Yesterday, 09:12", or "27 Sep, 03:00" — the year only when it is not this one. */
-export function shownTime(at: number, today: string): string {
-  const date = new Date(at);
-  const day = localIso(at).slice(0, 10);
-  const clock = localIso(at).slice(11, 16);
-  if (day === today) return `Today, ${clock}`;
-  if (day === addDays(today, -1)) return `Yesterday, ${clock}`;
-  const year = day.slice(0, 4) === today.slice(0, 4) ? '' : ` ${day.slice(0, 4)}`;
-  return `${date.getDate()} ${MONTHS[date.getMonth()]}${year}, ${clock}`;
-}
-
-/** The moment on this Mac's wall clock, as `YYYY-MM-DDTHH:MM:SS`. */
-function localIso(at: number): string {
-  const date = new Date(at);
-  const two = (value: number) => String(value).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}` +
-    `T${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`
-  );
 }

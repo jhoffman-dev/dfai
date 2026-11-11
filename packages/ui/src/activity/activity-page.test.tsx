@@ -40,6 +40,7 @@ function page(props: Partial<ActivityPageProps> = {}) {
     onToggleKind: vi.fn(),
     onText: vi.fn(),
     onOpenSubject: vi.fn(),
+    onCopy: vi.fn(() => Promise.resolve()),
   };
   render(
     <ActivityPage
