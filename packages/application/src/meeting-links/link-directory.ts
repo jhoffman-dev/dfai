@@ -1,5 +1,6 @@
 import {
   compileLinkDirectoryQuery,
+  compileMeetingEntitiesQuery,
   compileProjectTiesQuery,
   createVaultPath,
   LINK_DIRECTORY_PAGE_SIZE,
@@ -60,6 +61,20 @@ export async function loadProjectTies({
     title: String(cell(row, 'title') ?? ''),
     entity: createVaultPath(String(cell(row, 'entity'))),
   }));
+}
+
+/** The people and companies a meeting links in its `people` and `companies`, as the index resolved them. */
+export async function loadMeetingEntities({
+  index,
+  meeting,
+}: {
+  index: Pick<IndexPort, 'query'>;
+  meeting: VaultPath;
+}): Promise<VaultPath[]> {
+  const { sql, parameters } = compileMeetingEntitiesQuery(meeting);
+  const result = await index.query(sql, parameters);
+  const cell = cellsOf(result);
+  return result.rows.map((row) => createVaultPath(String(cell(row, 'entity'))));
 }
 
 function cellsOf(result: QueryResult) {

@@ -33,7 +33,7 @@ import {
   runOnNoteChanges,
   ruleHeldByPlatform,
   undoLastRun,
-  updateAutomation,
+  setAutomationEnabled,
   VaultChangedError,
   type ActivityLog,
   type AutomationListing,
@@ -405,13 +405,7 @@ export function useAutomations(options: AutomationsOptions) {
   const setEnabled = useCallback(
     (rule: AutomationRule, enabled: boolean) =>
       exclusive(() =>
-        updateAutomation({
-          fs: ports.fs,
-          markdown: ports.markdown,
-          clock,
-          rule,
-          draft: { ...rule, enabled },
-        }),
+        setAutomationEnabled({ fs: ports.fs, markdown: ports.markdown, clock, rule, enabled }),
       ),
     [exclusive, ports, clock],
   );

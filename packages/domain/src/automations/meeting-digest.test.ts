@@ -282,10 +282,14 @@ describe('the reduce', () => {
     });
   });
 
-  it('is kept under a mark of the very parts it merged', () => {
-    expect(reducePartMark(['a', 'b'])).toBe(reducePartMark(['a', 'b']));
-    expect(reducePartMark(['a', 'b'])).not.toBe(reducePartMark(['a', 'c']));
-    expect(reducePartMark(['a'])).toMatch(/^reduce:[0-9a-f]{8}$/);
+  it('is kept under a mark of the very parts it merged, and their answers', () => {
+    const merged = { parts: ['a', 'b'], answers: ['one', 'two'] };
+    expect(reducePartMark(merged)).toBe(reducePartMark({ ...merged }));
+    expect(reducePartMark(merged)).not.toBe(reducePartMark({ ...merged, parts: ['a', 'c'] }));
+    expect(reducePartMark(merged)).not.toBe(
+      reducePartMark({ ...merged, answers: ['one', 'two again'] }),
+    );
+    expect(reducePartMark({ parts: ['a'], answers: ['one'] })).toMatch(/^reduce:[0-9a-f]{8}$/);
   });
 });
 

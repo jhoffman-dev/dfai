@@ -5,9 +5,14 @@ import {
   messageWithoutPaths,
   noteTitle,
   projectChoiceOutcome,
+  participantOwnerOf,
   projectOptionsOf,
+  rankProjects,
   splitFrontmatter,
+  type AnsweredNote,
+  type DirectoryPerson,
   type DoneAction,
+  type MeetingProjectTies,
   type NewProposal,
   type ProjectChoice,
   type ProjectOption,
@@ -18,6 +23,8 @@ import type { MarkdownPort } from '../notes/ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { changeProperties, type PropertyChange } from './apply-changes.ts';
 import type { ArchivePorts } from '../archive/archive-notes.ts';
+import { loadMeetingEntities, loadProjectTies } from '../meeting-links/link-directory.ts';
+import { seriesProjectFor } from '../meeting-links/meeting-series-source.ts';
 
 /** The open projects and areas a meeting may be filed under, read from the index (#227). */
 export async function loadProjectOptions({
@@ -38,6 +45,48 @@ export async function loadProjectOptions({
       status: text(cell(row, 'status')),
     })),
   );
+}
+
+/**
+ * Each unfiled meeting's likely projects, as linking would propose them
+ * (`meeting-link-plan.ts`, #793): first what its twin or series is filed
+ * under, then the open projects tied to its people and companies, likeliest
+ * first. Its list of projects shows these before the rest, so the cut never
+ * takes the one linking proposes.
+ */
+export async function loadMeetingProjectTies({
+  index,
+  markdown,
+  notes,
+  owner,
+}: {
+  index: Pick<IndexPort, 'query'>;
+  markdown: Pick<MarkdownPort, 'frontmatterProperties'>;
+  notes: readonly AnsweredNote[];
+  /** Who the vault's owner is, so a meeting's series is told by its other participants. */
+  owner: {
+    people: readonly DirectoryPerson[];
+    selfName: string | null;
+    selfEmails: readonly string[];
+  };
+}): Promise<MeetingProjectTies> {
+  const ties = new Map<string, VaultPath[]>();
+  const known = new Set<string>(owner.people.map((person) => person.path));
+  for (const note of notes) {
+    if (note.meeting === undefined || note.meeting.filed === true) continue;
+    const entities = await loadMeetingEntities({ index, meeting: note.path });
+    const tied = await loadProjectTies({ index, meeting: note.path, entities });
+    const series = await seriesProjectFor({
+      index,
+      path: note.path,
+      properties: markdown.frontmatterProperties(splitFrontmatter(note.text).frontmatter),
+      people: entities.filter((entity) => known.has(entity)),
+      owner: participantOwnerOf(owner),
+    });
+    const ranked = rankProjects(tied).map(({ project }) => project);
+    ties.set(note.path, series === null ? ranked : [series.project, ...ranked]);
+  }
+  return ties;
 }
 
 /** What the run does with the projects Claude chose: meetings to file, and proposals to write. */
