@@ -45,6 +45,7 @@ function page(rows: readonly ActivityEntryView[] = ENTRIES) {
       onToggleKind={vi.fn()}
       onText={vi.fn()}
       onOpenSubject={onOpenSubject}
+      onCopy={() => Promise.resolve()}
     />,
   );
   return { onOpenSubject };

@@ -30,12 +30,16 @@ const MODULES = [
 /** Where the Slack capture mapper lives (#103), compiled for #104's Code node by the same rules. */
 const CAPTURE_MAPPING = '../../packages/domain/src/capture/mapping/';
 
+/** The characters a reader cannot see, kept once in the domain for capture and the Activity log alike. */
+export const HIDDEN_CHARACTERS = '../../packages/domain/src/text/hidden-characters.ts';
+
 /**
  * The capture mapper's modules, in order: the meeting mapper's clock and
- * file-name rules it shares, then its own. A Slack message is written by the
- * same bytes whether n8n or the app maps it.
+ * file-name rules and the hidden characters it shares, then its own. A Slack
+ * message is written by the same bytes whether n8n or the app maps it.
  */
 const CAPTURE_MODULES = [
+  HIDDEN_CHARACTERS,
   `${MAPPING}meeting-mapping-error.ts`,
   `${MAPPING}meeting-instant.ts`,
   `${MAPPING}meeting-stated.ts`,

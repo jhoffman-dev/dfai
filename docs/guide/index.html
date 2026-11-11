@@ -159,6 +159,7 @@ td:first-child { white-space: nowrap; }
     <a href="#tags">Tags</a>
     <a href="#automations">Automations</a>
     <a href="#activity">Activity</a>
+    <a href="#event-details">Warning and error details</a>
     <a href="#claude">Claude in DFAI</a>
     <a href="#artifacts">Claude artifacts</a>
     <a href="#sources">Outside data and secrets</a>
@@ -521,6 +522,7 @@ pnpm tauri:dev</pre>
       </ol>
       <ul>
         <li><b>Waiting offers who.</b> Pick <b>Waiting</b> and a <b>Waiting on…</b> picker appears on the same row, listing your people. It's optional: press <b>Save</b> with or without someone. Pick a person and the status and the person are written together.</li>
+        <li><b>Typed is not picked.</b> Letters typed in <b>Waiting on…</b> or <b>File under…</b> are not a link until you pick a suggestion. Press <b>Save</b> with <i>Mar</i> typed and nothing picked, and the row says <i>“Mar” is typed but not picked. Pick it from the list, or clear it.</i> Nothing is written, and what you typed stays, even when the row scrolls out of view and back. The keys answer the same way: <b>↵</b>, a status key such as <b>N</b> or <b>W</b>, and a pick from the list <b>P</b> opened, which the row keeps for the next Save. Pick Mara Quill, or clear the field, and Save again. Clearing takes back what you typed, never a link already picked: leave a cleared field and it shows that link again.</li>
         <li><b>A status is enough.</b> A task given any status but Inbox leaves the list, with or without a project — a single action needs none — and stays in the file it is in. (This holds once your tasks <a href="#tasks">follow GTD</a>; in a vault still on statuses of its own, everything in the <code>Inbox</code> folder waits until it is filed.)</li>
         <li><b>A project files it — as a link.</b> Filing writes <code>project: "[[DFAI]]"</code>; where the project's own note sits doesn't matter. A meeting in its month folder stays where it is. A note in the <code>Inbox</code> folder moves to its type's <a href="#home-folders">home folder</a> for its day — a task to <code>Tasks/2026/10/</code>, a meeting from <code>Inbox/Meetings</code> to its month — and a plain note, or one whose type has no home, to <code>Notes/2026/</code>. It is never moved into the project's folder. Only the note's name goes with it, numbered if the folder has one by that name; nothing else in the file changes, and links to it are updated. A task that already lives outside the Inbox folder is linked to the project and stays where it is.</li>
         <li>Only a project or an area still in use can be chosen — not one waiting in the Inbox itself, and not an archived one.</li>
@@ -2073,7 +2075,7 @@ do: archive</pre>
         <li><a href="#automations">Automation</a> runs, dry runs and undos — a run a note set off names the note; the rule's own log keeps the detail.</li>
         <li><a href="#sources">Source</a> refreshes.</li>
         <li><a href="#meeting-import">Meetings</a> as they arrive: imported, archived as a second copy, or could not be imported and why.</li>
-        <li>Notes written through the Local API or MCP: the route and the note, never the contents.</li>
+        <li>Notes written through the Local API or MCP: the route and the note, never the contents. A write DFAI refused is a warning that says why, in the words the tool was told — <i>“POST v1/meetings refused (invalid): "transcriptMD" is not a field of a meeting”</i> — and a fault of DFAI's own says only that it could not answer.</li>
         <li>Claude's edits accepted and undone, failed turns, and a chat that couldn't be saved to <code>Chats/</code>, in fixed wording — never your question. Each turn adds one line of numbers only: <i>“Chat answered: 3 rounds, 41k in (30k cached), 2.1k out, claude-opus-5-5.”</i> — or <i>Chat stopped</i> or <i>Chat failed</i>, with what it had spent by then. A line never names a chat note, since its name is the start of your question: it says “a chat note” instead. So do the notices about links left, archiving and kept edits.</li>
         <li>Index rebuilds and failures.</li>
         <li><a href="#export">Exports</a>: what was exported, in which format, and where it went — or why it couldn't be.</li>
@@ -2085,6 +2087,36 @@ do: archive</pre>
       <p>Not recorded: typing, autosaves, reads, note contents, secrets, folder paths, or the “update links?” offer.</p>
       <h3>Where it's kept</h3>
       <p>On this Mac, in DFAI's data folder — one file per vault, never in the vault. About 30 days, and no more than 5 MB; the oldest lines go first. It doesn't <a href="#sync">sync</a>.</p>
+    </section>
+
+    <section id="event-details">
+      <h2>Warning and error details</h2>
+      <p class="sub">A warning or an error is one short line wherever it shows. Click its words to read the whole of it.</p>
+      <h3>Where it opens</h3>
+      <ul>
+        <li>A <b>Warning</b> or <b>Error</b> line on the <a href="#activity">Activity</a> page. An <b>Info</b> line doesn't open: its one line is all there is.</li>
+        <li>A warning or an error in the <a href="#undo">box at the bottom right</a>. The box stays while you read its details. Once you close them it goes after a few seconds, as it would have.</li>
+        <li>A red notice at the top of the window, and the notice about edits kept after a failed save.</li>
+      </ul>
+      <h3>What it shows</h3>
+      <ul>
+        <li>The level, <b>Warning</b> or <b>Error</b>, and when it happened.</li>
+        <li>The whole message, wrapped rather than cut to one line. A box or a notice opens to exactly the words it says, however long.</li>
+        <li><b>About</b>: the note, rule or source it concerns, with <b>Open</b> — the same place the line's own <b>Open</b> goes.</li>
+        <li><b>Detail</b>: anything more the event kept. A rule that could not run keeps its problem here, past where the line cuts it short; on the web, an index the browser won't store keeps what the browser said.</li>
+        <li><b>Notes</b>: the other notes the line is about, such as the meetings a rule's run heard.</li>
+        <li><b>Copy</b> puts all of it on the clipboard as plain text, a fact to a line. The button says <b>Copied</b> for a couple of seconds once it has, and <b>Could not copy.</b> shows beside it if the browser has no clipboard to give.</li>
+      </ul>
+      <h3>Keys</h3>
+      <ul>
+        <li><b>Tab</b> reaches a line that opens; <b>Enter</b> or <b>Space</b> opens it.</li>
+        <li><b>Esc</b>, <b>Close</b> or a click outside closes it, and the focus goes back to the line.</li>
+      </ul>
+      <h3>It stays until you close it</h3>
+      <ul>
+        <li>The details stay open, on the words you opened, when the line they came from goes: a box pushed out by newer ones, a notice that cleared itself, an Activity line gathered under its meeting or trimmed from the log.</li>
+      </ul>
+      <p>An Activity line's details hold what the line holds, under the same rules: no note contents, no secrets, no folder paths, no chat note's name. A box or a notice opens to its own words as it showed them.</p>
     </section>
 
     <section id="claude">

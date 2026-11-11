@@ -104,7 +104,12 @@ export async function makeTaskFromMeeting({
   });
   if (!applied.ok) throw new ProposalRefused(applied.problem);
   const ruled = applied.writes.map((write) => heldToTaskRules(ports, { write, link, today }));
-  const wrote = await carryOut(ports, { writes: ruled, link, headline: item.title });
+  const wrote = await carryOut(ports, {
+    writes: ruled,
+    link,
+    headline: item.title,
+    failed: 'the task could not be added to its meeting',
+  });
   const [made] = wrote;
   // A task is a record of its own: it is always made, under a numbered name if need be.
   if (made?.kind !== 'created') throw new Error(`No task was made for “${item.title}”.`);

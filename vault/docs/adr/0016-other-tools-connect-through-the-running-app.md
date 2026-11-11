@@ -801,7 +801,11 @@ not a replacement. It is held to the terms above:
   heard of it, so the route and the import never write one file together.
 - **No secret, no content in Activity.** The host's zone (the default for
   reading instants) is the only new thing the router is handed. Activity
-  says the route and the file, never what the meeting carried.
+  says the route and the file, never what the meeting carried. A refused
+  one also says why, in the words the caller was told (#814): the message of
+  its error body, cut to 160 characters on the line and kept whole (up to
+  1,000) as the line's detail; a fault of ours says only `internal`'s
+  "DFAI could not answer this request".
 - **No MCP tool.** The route takes a provider's raw meeting and email for a
   program; a model recording a meeting writes a note with `atlas_create_note`.
 

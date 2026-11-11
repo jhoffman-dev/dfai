@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, type ActivityEvent } from '@dfai/domain';
 import { activityRows, shownTime, subjectOf } from './activity-rows.ts';
+import { eventDetails } from './event-details.ts';
 
 // Built from local parts, so the test reads the same in any timezone.
 const local = (day: number, hour: number, minute: number, month = 8, year = 2026) =>
@@ -36,19 +37,21 @@ describe('activityRows', () => {
     },
   ];
 
-  it('shows each line as given, its subject named for its link, its id counted from the oldest', () => {
+  it('shows each line as given, its subject named for its link, its id its own', () => {
     expect(activityRows(events, TODAY)).toEqual([
       {
-        id: '1',
+        id: expect.any(String),
         time: 'Today, 14:03',
         dateTime: '2026-09-28T14:03:00',
         level: 'error',
         kind: 'save',
         message: 'b',
         subject: null,
+        // An error opens to its details (#815); the line of news below does not.
+        details: eventDetails(events[0] as ActivityEvent, TODAY),
       },
       {
-        id: '0',
+        id: expect.any(String),
         time: 'Today, 03:00',
         dateTime: '2026-09-28T03:00:00',
         level: 'info',
@@ -59,9 +62,44 @@ describe('activityRows', () => {
     ]);
   });
 
+  const idOf = (index: number) => activityRows(events, TODAY)[index]?.id ?? '';
+
   it('finds what a row links to by its id, and nothing for an id it does not know', () => {
-    expect(subjectOf(events, '0')).toEqual({ kind: 'rule', path: RULE });
-    expect(subjectOf(events, '1')).toBeNull();
+    expect(subjectOf(events, idOf(1))).toEqual({ kind: 'rule', path: RULE });
+    expect(subjectOf(events, idOf(0))).toBeNull();
     expect(subjectOf(events, '7')).toBeNull();
+  });
+
+  it('keeps each line its id when newer lines arrive and the oldest go (#815)', () => {
+    const [newest, oldest] = events as [ActivityEvent, ActivityEvent];
+    const middle: ActivityEvent = { ...newest, at: newest.at - 1000, message: 'm' };
+    const before = activityRows([newest, middle, oldest], TODAY).map((row) => row.id);
+    const arrived: ActivityEvent = { ...newest, at: newest.at + 1000, message: 'n' };
+    const after = activityRows([arrived, newest, middle], TODAY).map((row) => row.id);
+
+    expect(new Set(before).size).toBe(3);
+    expect(after.slice(1)).toEqual(before.slice(0, 2));
+    expect(subjectOf([arrived, newest, oldest], before[2] ?? '')).toEqual({
+      kind: 'rule',
+      path: RULE,
+    });
+  });
+
+  it('tells two lines of the same moment and words apart', () => {
+    const [newest] = events as [ActivityEvent];
+    const ids = activityRows([newest, newest, { ...newest, message: 'c' }], TODAY).map(
+      (row) => row.id,
+    );
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('hands a trimmed twin’s id to the twin left: the one case where an id moves (#815)', () => {
+    const [newest] = events as [ActivityEvent];
+    const [younger, older] = activityRows([newest, newest], TODAY).map((row) => row.id);
+    expect(younger).not.toBe(older);
+
+    // The older twin is trimmed. Nothing in an event tells the two apart, so the id stays with the words.
+    const [left] = activityRows([newest], TODAY).map((row) => row.id);
+    expect(left).toBe(older);
   });
 });

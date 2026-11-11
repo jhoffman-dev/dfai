@@ -136,7 +136,12 @@ export async function acceptProposalNote({
       ...(payload !== undefined && { payload: payloadRecord(proposal.payload) }),
     },
   ).catch(async (cause: unknown) => {
-    throw await takenBack(ports, { wrote, headline, cause });
+    throw await takenBack(ports, {
+      wrote,
+      headline,
+      failed: 'the proposal could not be marked accepted',
+      cause,
+    });
   });
   const archived = await archiveProposal({ ports, path, today });
   return { proposal: path, headline, wrote, ...archived };
@@ -198,7 +203,12 @@ async function writeAccepted(
   if (!applied.ok) throw new ProposalRefused(applied.problem);
 
   const ruled = applied.writes.map((write) => heldToTaskRules(ports, { write, link, today }));
-  return carryOut(ports, { writes: ruled, link, headline });
+  return carryOut(ports, {
+    writes: ruled,
+    link,
+    headline,
+    failed: 'the rest of what accepting it writes could not be written',
+  });
 }
 
 /**

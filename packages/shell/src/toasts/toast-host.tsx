@@ -2,8 +2,11 @@ import { memo, useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import { noticeReport } from '@dfai/domain';
-import type { ActivityLog } from '@dfai/application';
-import { ToastStack } from '@dfai/ui';
+import type { ActivityLog, Clock } from '@dfai/application';
+import { EventDetailsContext, ToastStack, useEventDetailsHost, type ToastShown } from '@dfai/ui';
+import { noticeDetails } from '../activity/event-details.ts';
+import { browserClipboard, type ClipboardWriter } from '../settings/clipboard.ts';
+import { localClock } from '../today.ts';
 import type { Toasts, ToastsState } from './toasts.ts';
 
 /**
@@ -12,7 +15,13 @@ import type { Toasts, ToastsState } from './toasts.ts';
  * as it is shown — from the store itself, not from what was drawn, so one
  * pushed out by newer toasts before the next draw is still kept — and one
  * missed while it showed can be found later; a change made is not: the file
- * is its record. Another vault opening lets every toast go, since each
+ * is its record. A warning or an error opens, from its words, to the
+ * details of its own words (#815), which stay open though the toast goes —
+ * pushed out by newer ones, replaced in its slot, let go with its vault: the
+ * popup is held here, above the queue. Closed with its toast gone, it hands
+ * the focus to the toasts' column itself — in the peek while they are drawn
+ * there — and never to another toast's button, which an Enter would press.
+ * Another vault opening lets every toast go, since each
  * one's Undo belongs to the vault it was made in. `children` are toasts
  * still drawn by their own hooks, kept in the same column.
  *
@@ -23,26 +32,59 @@ export const ToastHost = memo(function ToastHost({
   toasts,
   activity,
   vault,
+  clock = localClock,
+  clipboard = browserClipboard,
   children,
 }: {
   toasts: Toasts;
   activity: Pick<ActivityLog, 'record'>;
   /** The vault open now; toasts are let go when it changes. */
   vault?: string | null;
+  /** Names the day a toast's details are dated against. */
+  clock?: Pick<Clock, 'today'>;
+  /** Where a toast's details are copied to. */
+  clipboard?: ClipboardWriter;
   children?: ReactNode;
 }) {
   const queue = useStore(toasts.store, (state) => state.toasts);
   const place = useStore(toasts.store, (state) => state.place);
   useWarningsRecorded(toasts, activity);
   useEffect(() => toasts.openVault(vault ?? null), [toasts, vault]);
+  const column = useRef<HTMLDivElement>(null);
+  const details = useEventDetailsHost(() => column.current);
   const stack = (
-    <ToastStack toasts={queue} onDismiss={toasts.dismiss}>
+    <ToastStack
+      ref={column}
+      toasts={withDetails(queue, clock)}
+      onDismiss={toasts.dismiss}
+      onCopy={(text) => clipboard.write(text)}
+    >
       {children}
     </ToastStack>
   );
   // In the peek's place while it is up: inside its focus trap, so Tab reaches an Undo (#468).
-  return place === null ? stack : createPortal(stack, place);
+  // The details are held outside that place, so they stay open as the peek comes and
+  // goes: the toasts are drawn anew in the other place, each known by its own id.
+  return (
+    <EventDetailsContext.Provider value={details.host}>
+      {place === null ? stack : createPortal(stack, place)}
+      {details.popup}
+    </EventDetailsContext.Provider>
+  );
 });
+
+/**
+ * The toasts, each warning and error with the details its words open to.
+ * Dated as the words are pressed, not as they are drawn: a toast left up
+ * past midnight is yesterday's, and nothing draws it again to say so.
+ */
+function withDetails(queue: ToastsState['toasts'], clock: Pick<Clock, 'today'>): ToastShown[] {
+  return queue.map((toast) => {
+    const { tone } = toast;
+    if (tone === 'change') return toast;
+    return { ...toast, details: () => noticeDetails({ ...toast, level: tone }, clock.today()) };
+  });
+}
 
 /** Records each warning and error toast in Activity once, as the store first holds it. */
 function useWarningsRecorded(toasts: Toasts, activity: Pick<ActivityLog, 'record'>): void {

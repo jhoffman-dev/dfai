@@ -298,7 +298,13 @@ describe('POST /v1/meetings: refused', () => {
     expect(api.writes).toEqual([]);
     expect(api.folders.size).toBe(0);
     expect(api.activity.reports).toEqual([
-      expect.objectContaining({ level: 'warning', message: 'POST v1/meetings refused (invalid).' }),
+      expect.objectContaining({
+        level: 'warning',
+        message: expect.stringMatching(
+          /^POST v1\/meetings refused \(invalid\): start: the meeting has no start time.*…$/,
+        ),
+        detail: expect.stringContaining('start: the meeting has no start time'),
+      }),
     ]);
   });
 

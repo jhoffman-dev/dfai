@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
+import { inboxRowsInReach } from './inbox.ts';
 
 /**
  * PR #273 (UI v2 slice 1) under attack: what the new palette *renders*, not
@@ -259,7 +260,7 @@ const PAGES: Record<string, (page: Page) => Promise<void>> = {
       .click();
     await expect(page.getByRole('article', { name: 'Inbox' })).toBeVisible();
     // The rows are held back, out of reach, until the page's offers are read (#130).
-    await expect(page.locator('.inbox__row').first()).toBeVisible();
+    await inboxRowsInReach(page);
   },
   table: async (page) => {
     await sidebarSection(page, 'views').getByRole('button', { name: 'Sheet', exact: true }).click();

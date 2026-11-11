@@ -16,9 +16,23 @@ const moved = (id: number, title: string, onUndo = vi.fn()): ToastShown => ({
 });
 
 describe('ToastStack', () => {
-  it('draws nothing while there is nothing to say', () => {
-    const { container } = render(<ToastStack toasts={[]} onDismiss={vi.fn()} />);
-    expect(container.firstChild).toBeNull();
+  it('draws its column, empty, while there is nothing to say: where a lost focus is sent', () => {
+    render(<ToastStack toasts={[]} onDismiss={vi.fn()} />);
+    const column = screen.getByRole('group', { name: 'Notifications' });
+    expect(column.childElementCount).toBe(0);
+    // Tab never stops on it, yet it can be handed the focus.
+    expect(column.tabIndex).toBe(-1);
+  });
+
+  it('is a named group, never a landmark: empty or not, it is no stop on a tour of the page’s regions', () => {
+    const { rerender } = render(<ToastStack toasts={[]} onDismiss={vi.fn()} />);
+    expect(screen.queryByRole('region')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Notifications' })).toBeTruthy();
+
+    rerender(<ToastStack toasts={[moved(1, 'Sow the beans')]} onDismiss={vi.fn()} />);
+    expect(screen.queryByRole('region')).toBeNull();
+    const column = screen.getByRole('group', { name: 'Notifications' });
+    expect(within(column).getByRole('status')).toBeTruthy();
   });
 
   it('shows several, oldest first, each saying its own words', () => {

@@ -3,6 +3,7 @@ export {
   ACTIVITY_LEVELS,
   ACTIVITY_SUBJECT_KINDS,
   MAX_ACTIVITY_MESSAGE,
+  MAX_ACTIVITY_DETAIL,
   MAX_ACTIVITY_NOTES,
   activityEvent,
   insideVault,
@@ -74,3 +75,4 @@ export type {
 export { withoutSecrets } from './without-secrets.ts';
 export { groupActivity } from './activity-groups.ts';
 export type { ActivityItem } from './activity-groups.ts';
+export { opensDetails } from './opens-details.ts';

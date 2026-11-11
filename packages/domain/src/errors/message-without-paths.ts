@@ -4,6 +4,9 @@
  * automation runner and the Activity log strip paths by one rule.
  */
 
+/** What an absolute path is struck to. */
+export const PATH_PLACEHOLDER = '<path>';
+
 /** The words for a thrown value that cannot be turned into any. */
 export const UNDESCRIBED_ERROR = 'an error DFAI could not put into words';
 
@@ -37,7 +40,7 @@ export function messageWithoutPaths(error: unknown): string {
     const at = start.index + lead.length;
     if (at < from) continue;
     const end = at + pathLength(text, at, lead);
-    kept += `${text.slice(from, at)}<path>`;
+    kept += `${text.slice(from, at)}${PATH_PLACEHOLDER}`;
     from = end;
   }
   return kept + text.slice(from);
