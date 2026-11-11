@@ -83,7 +83,7 @@ describe('TapCaret attacks (#836)', () => {
   // iOS fires no mouse events for a long-press: only the touchstart, ~500 ms
   // before the focus and the caret it puts down. That press is past the
   // 300 ms window, so the long-press's caret is lost exactly as in #835.
-  it.fails('keeps the caret a long-press put down when its selectionchange comes late', () => {
+  it('keeps the caret a long-press put down when its selectionchange comes late', () => {
     const line = secondLine();
     editor.view.dom.dispatchEvent(new Event('touchstart', { bubbles: true }));
     vi.advanceTimersByTime(500);
@@ -96,45 +96,39 @@ describe('TapCaret attacks (#836)', () => {
   // A busy main thread delivers a tap, a tap away and a tap back in one batch:
   // the second focus clears the first read, but ProseMirror's check from the
   // first focus still runs at 20 ms and puts its own selection back.
-  it.fails(
-    'keeps the caret of a second tap when the editor blurred and refocused within 20 ms',
-    () => {
-      const line = secondLine();
-      press('touchstart', line, 4);
-      vi.advanceTimersByTime(5);
-      editor.view.dom.blur();
-      vi.advanceTimersByTime(5);
-      press('touchstart', line, 9);
-      selectionChangeAfter(60);
+  it('keeps the caret of a second tap when the editor blurred and refocused within 20 ms', () => {
+    const line = secondLine();
+    press('touchstart', line, 4);
+    vi.advanceTimersByTime(5);
+    editor.view.dom.blur();
+    vi.advanceTimersByTime(5);
+    press('touchstart', line, 9);
+    selectionChangeAfter(60);
 
-      expect(editor.state.selection.head).toBe(positionIn(line, 9));
-    },
-  );
+    expect(editor.state.selection.head).toBe(positionIn(line, 9));
+  });
 
   // Focus without a press must leave ProseMirror's selection, as the PR's own
   // test says; but a press inside the already-focused editor, one that made no
   // focus, still counts for a keyboard or script focus up to 300 ms later.
-  it.fails(
-    'puts the editor’s own selection back on a keyboard focus soon after a press that did not focus',
-    () => {
-      const line = secondLine();
-      const own = positionIn(line, 2);
-      editor.view.dom.focus();
-      editor.commands.setTextSelection(own);
-      vi.advanceTimersByTime(100);
-      editor.view.dom.dispatchEvent(new Event('touchstart', { bubbles: true }));
-      editor.view.dom.blur();
-      vi.advanceTimersByTime(100);
-      press(null, line, 9);
-      selectionChangeAfter(60);
+  it('puts the editor’s own selection back on a keyboard focus soon after a press that did not focus', () => {
+    const line = secondLine();
+    const own = positionIn(line, 2);
+    editor.view.dom.focus();
+    editor.commands.setTextSelection(own);
+    vi.advanceTimersByTime(100);
+    editor.view.dom.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    editor.view.dom.blur();
+    vi.advanceTimersByTime(100);
+    press(null, line, 9);
+    selectionChangeAfter(60);
 
-      expect(editor.state.selection.head).toBe(own);
-    },
-  );
+    expect(editor.state.selection.head).toBe(own);
+  });
 
   // The read goes through a private of prosemirror-view; a version without it
   // must cost the fix, not throw from a timer on every tap.
-  it.fails('degrades without throwing when the DOM observer has no flush', () => {
+  it('degrades without throwing when the DOM observer has no flush', () => {
     const domObserver = observer();
     const flush = domObserver.flush;
     Object.defineProperty(domObserver, 'flush', { value: undefined, configurable: true });
@@ -147,7 +141,7 @@ describe('TapCaret attacks (#836)', () => {
     }
   });
 
-  it.fails('degrades without throwing when the DOM observer’s flush throws', () => {
+  it('degrades without throwing when the DOM observer’s flush throws', () => {
     const flush = vi.spyOn(observer(), 'flush').mockImplementation(() => {
       throw new Error('A later prosemirror-view changed its observer.');
     });

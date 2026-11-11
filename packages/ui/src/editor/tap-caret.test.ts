@@ -146,6 +146,19 @@ describe('TapCaret (#835)', () => {
   });
 });
 
+describe('TapCaret: cleanup (#836)', () => {
+  it('takes its press-end listeners off the document when the editor goes', () => {
+    const added = vi.spyOn(document, 'addEventListener');
+    const removed = vi.spyOn(document, 'removeEventListener');
+    new Editor({ extensions: [StarterKit, TapCaret] }).destroy();
+    const pressEnds = (calls: unknown[][]) =>
+      calls.filter(([type]) => ['mouseup', 'touchend', 'touchcancel'].includes(String(type)));
+
+    expect(pressEnds(added.mock.calls)).toHaveLength(3);
+    expect(pressEnds(removed.mock.calls)).toEqual(pressEnds(added.mock.calls));
+  });
+});
+
 describe('TapCaret: which focus a press made (#836)', () => {
   /** Sets the editor's own selection, then focuses it with no press, the browser putting its caret elsewhere. */
   function focusWithoutPress(): { own: number } {

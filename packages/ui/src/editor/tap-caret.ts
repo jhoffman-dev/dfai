@@ -9,8 +9,14 @@ import type { EditorView } from '@tiptap/pm/view';
  */
 const FOCUS_CHECK_MS = 20;
 
-/** A press this recent made the focus; ProseMirror uses the same window for its own reads. */
-const PRESS_FOCUS_MS = 300;
+/**
+ * A focus this soon after a press ends is still the press's, as with a tap's
+ * synthesised mouse events; ProseMirror uses the same span for its own reads.
+ */
+const RELEASE_GRACE_MS = 300;
+
+/** Ends a press wherever it is let go; a mouse can be released outside the editor. */
+const PRESS_ENDS = ['mouseup', 'touchend', 'touchcancel'] as const;
 
 /**
  * The view's DOM observer. Not in prosemirror-view's types, but it is how the
@@ -18,7 +24,7 @@ const PRESS_FOCUS_MS = 300;
  * the tap-caret test fails if it goes.
  */
 interface ObservedView {
-  domObserver: { flush(): void };
+  domObserver?: { flush?: unknown };
 }
 
 /**
@@ -36,33 +42,75 @@ export const TapCaret = Extension.create({
   name: 'tapCaret',
 
   addProseMirrorPlugins() {
-    let pressedAt = Number.NEGATIVE_INFINITY;
-    let read: ReturnType<typeof setTimeout> | undefined;
-    const press = () => {
-      pressedAt = Date.now();
-      return false;
-    };
-    return [
-      new Plugin({
-        props: {
-          handleDOMEvents: {
-            mousedown: press,
-            touchstart: press,
-            focus: (view) => {
-              if (Date.now() - pressedAt > PRESS_FOCUS_MS) return false;
-              clearTimeout(read);
-              read = setTimeout(() => readPageSelection(view), FOCUS_CHECK_MS);
-              return false;
-            },
-          },
-        },
-        view: () => ({ destroy: () => clearTimeout(read) }),
-      }),
-    ];
+    return [tapCaretPlugin()];
   },
 });
 
+/**
+ * A press counts from its start until it ends plus the grace, however long it
+ * is held (an iOS long-press focuses ~500 ms in, with no mouse events), and
+ * only for the focus it makes: one that starts with the editor already focused
+ * makes none, and the focus it does make uses it up.
+ */
+function tapCaretPlugin(): Plugin {
+  let held = false;
+  let releasedAt = Number.NEGATIVE_INFINITY;
+  const reads = new Set<ReturnType<typeof setTimeout>>();
+  const start = (view: EditorView) => {
+    if (!view.hasFocus()) held = true;
+    return false;
+  };
+  const end = () => {
+    if (held) releasedAt = Date.now();
+    held = false;
+  };
+  const madeByPress = () => {
+    const made = held || Date.now() - releasedAt <= RELEASE_GRACE_MS;
+    held = false;
+    releasedAt = Number.NEGATIVE_INFINITY;
+    return made;
+  };
+  // Each focus keeps its own read: ProseMirror's check from an earlier focus
+  // still runs, so cancelling that read on a quick refocus would lose the caret.
+  const armRead = (view: EditorView) => {
+    const read = setTimeout(() => {
+      reads.delete(read);
+      readPageSelection(view);
+    }, FOCUS_CHECK_MS);
+    reads.add(read);
+  };
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        mousedown: start,
+        touchstart: start,
+        focus: (view) => {
+          if (madeByPress()) armRead(view);
+          return false;
+        },
+      },
+    },
+    view: (view) => {
+      const doc = view.dom.ownerDocument;
+      for (const type of PRESS_ENDS) doc.addEventListener(type, end, true);
+      return {
+        destroy: () => {
+          for (const type of PRESS_ENDS) doc.removeEventListener(type, end, true);
+          reads.forEach(clearTimeout);
+          reads.clear();
+        },
+      };
+    },
+  });
+}
+
 function readPageSelection(view: EditorView): void {
-  if (view.isDestroyed) return;
-  (view as unknown as ObservedView).domObserver.flush();
+  const observer = (view as ObservedView).domObserver;
+  if (typeof observer?.flush !== 'function') return;
+  try {
+    observer.flush();
+  } catch {
+    // Safe to ignore: without the read, ProseMirror's own check puts its
+    // selection back, exactly as before this extension.
+  }
 }
