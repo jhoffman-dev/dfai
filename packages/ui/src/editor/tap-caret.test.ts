@@ -22,7 +22,8 @@ let letSelectionChangeThrough = false;
  * ProseMirror hears of the selection, as a busy main thread would.
  */
 function holdSelectionChange(event: Event): void {
-  if (event.type === 'selectionchange' && !letSelectionChangeThrough) event.stopImmediatePropagation();
+  if (event.type === 'selectionchange' && !letSelectionChangeThrough)
+    event.stopImmediatePropagation();
 }
 
 beforeEach(() => {
