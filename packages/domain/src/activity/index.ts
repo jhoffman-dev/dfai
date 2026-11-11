@@ -75,3 +75,4 @@ export type {
 export { withoutSecrets } from './without-secrets.ts';
 export { groupActivity } from './activity-groups.ts';
 export type { ActivityItem } from './activity-groups.ts';
+export { opensDetails } from './opens-details.ts';

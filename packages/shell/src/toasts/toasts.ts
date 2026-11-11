@@ -1,5 +1,7 @@
 import { createStore, type StoreApi } from 'zustand';
+import type { Clock } from '@dfai/application';
 import type { ToastShown } from '@dfai/ui';
+import { localClock } from '../today.ts';
 
 /**
  * How many toasts show at once; one more lets the oldest go — an error
@@ -20,6 +22,8 @@ export interface ToastRequest extends Omit<ToastShown, 'id'> {
 }
 
 interface QueuedToast extends ToastShown {
+  /** When it was shown, as the clock said: what its details are dated by (#815). */
+  readonly at: number;
   readonly slot?: string;
   readonly onGone?: () => void;
 }
@@ -57,7 +61,7 @@ export interface Toasts {
   placeIn(place: HTMLElement | null): void;
 }
 
-export function createToasts(): Toasts {
+export function createToasts(clock: Pick<Clock, 'now'> = localClock): Toasts {
   const store = createStore<ToastsState>()(() => ({ toasts: [], place: null }));
   let shown = 0;
   let open: string | null = null;
@@ -73,7 +77,7 @@ export function createToasts(): Toasts {
     store,
     show: (request) => {
       shown += 1;
-      const toast: QueuedToast = { ...request, id: shown };
+      const toast: QueuedToast = { ...request, id: shown, at: clock.now() };
       const { toasts } = store.getState();
       const sameSlot = (each: QueuedToast) =>
         request.slot !== undefined && each.slot === request.slot;
