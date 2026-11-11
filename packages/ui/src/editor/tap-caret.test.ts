@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Editor } from '@tiptap/core';
+import { Editor, type Extensions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { TapCaret } from './tap-caret.ts';
 
@@ -157,6 +157,34 @@ describe('TapCaret: cleanup (#836)', () => {
     expect(pressEnds(added.mock.calls)).toHaveLength(3);
     expect(pressEnds(removed.mock.calls)).toEqual(pressEnds(added.mock.calls));
   });
+
+  it('takes its press-cancel listeners off the document and window when the editor goes', () => {
+    /** The `type` listeners added to and removed from `target` while an editor is made and destroyed. */
+    const listenersWhile = (extensions: Extensions, target: EventTarget, type: string) => {
+      const added = vi.spyOn(target, 'addEventListener');
+      const removed = vi.spyOn(target, 'removeEventListener');
+      // An earlier test's spy on the same method is reused, calls and all.
+      added.mockClear();
+      removed.mockClear();
+      new Editor({ extensions }).destroy();
+      const ofType = (calls: unknown[][]) => calls.filter(([called]) => called === type);
+      const listeners = { added: ofType(added.mock.calls), removed: ofType(removed.mock.calls) };
+      added.mockRestore();
+      removed.mockRestore();
+      return listeners;
+    };
+
+    for (const [target, type] of [
+      [document, 'dragstart'],
+      [window, 'blur'],
+    ] as const) {
+      const withTapCaret = listenersWhile([StarterKit, TapCaret], target, type);
+      const without = listenersWhile([StarterKit], target, type);
+
+      expect(withTapCaret.added.length).toBeGreaterThan(without.added.length);
+      expect(withTapCaret.removed).toEqual(withTapCaret.added);
+    }
+  });
 });
 
 describe('TapCaret: which focus a press made (#836)', () => {
@@ -213,6 +241,56 @@ describe('TapCaret: which focus a press made (#836)', () => {
     selectionChangeAfter(60);
     release('touchend', editor.view.dom);
     editor.view.dom.blur();
+    vi.advanceTimersByTime(100);
+    const { own } = focusWithoutPress();
+
+    expect(editor.state.selection.head).toBe(own);
+  });
+
+  it('uses up the grace after a press’s end on the focus that press made', () => {
+    editor.view.dom.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    release('touchend', editor.view.dom);
+    press(null, secondLine(), 4);
+    selectionChangeAfter(60);
+    editor.view.dom.blur();
+    vi.advanceTimersByTime(100);
+    const { own } = focusWithoutPress();
+
+    expect(editor.state.selection.head).toBe(own);
+  });
+
+  // A press whose end never arrives must not count for a later focus.
+  it('drops a press that turns into a drag', () => {
+    stubHitTesting(secondLine(), 6);
+    editor.view.dom.dispatchEvent(new Event('mousedown', { bubbles: true }));
+    editor.view.dom.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    vi.advanceTimersByTime(100);
+    const { own } = focusWithoutPress();
+
+    expect(editor.state.selection.head).toBe(own);
+  });
+
+  it('drops a press when the window loses focus', () => {
+    editor.view.dom.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    window.dispatchEvent(new FocusEvent('blur'));
+    vi.advanceTimersByTime(100);
+    const { own } = focusWithoutPress();
+
+    expect(editor.state.selection.head).toBe(own);
+  });
+
+  it('drops a press held more than 2 s', () => {
+    editor.view.dom.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    vi.advanceTimersByTime(2001);
+    const { own } = focusWithoutPress();
+
+    expect(editor.state.selection.head).toBe(own);
+  });
+
+  it('gives no grace to the end of a press held more than 2 s', () => {
+    editor.view.dom.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    vi.advanceTimersByTime(2001);
+    release('touchend', document.body);
     vi.advanceTimersByTime(100);
     const { own } = focusWithoutPress();
 
