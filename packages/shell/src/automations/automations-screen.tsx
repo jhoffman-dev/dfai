@@ -1,6 +1,7 @@
 import {
   CHAT_READ_TOOLS,
   createVaultPath,
+  meetingReadsTwice,
   planClockLabel,
   PROPOSAL_SCHEMAS,
   type VaultPath,
@@ -23,6 +24,7 @@ import {
 import { useSkillChoices } from '../skills/use-skill-choices.ts';
 import { localTimeZone } from '../today.ts';
 import { automationRows, logViews } from './automation-rows.ts';
+import { readTwiceViews, turnOffRule } from './read-twice.ts';
 import { useAutomationEditor } from './use-automation-editor.ts';
 import type { useAutomations } from './use-automations.ts';
 
@@ -89,6 +91,9 @@ export function AutomationsScreen({
     listing?.automations.find((loaded) => loaded.rule.path === id) ?? null;
   const open = editor.editing?.kind === 'rule' ? loadedOf(editor.editing.rule.path) : null;
   const openNote = (path: string) => onOpenNote(createVaultPath(path));
+  const readTwice = readTwiceViews(
+    meetingReadsTwice(listing?.automations.map(({ rule }) => rule) ?? []),
+  );
 
   return (
     <AutomationsPage
@@ -99,6 +104,15 @@ export function AutomationsScreen({
       notice={automations.notice}
       busy={automations.busy}
       setup={setup === null ? null : <MeetingSetup {...setup} />}
+      readTwice={readTwice}
+      onTurnOff={(path) => {
+        // What its click could not do is the page's notice (#793): the runner's own reason when its
+        // write failed and it said one, else why not; anything said after it takes its place.
+        automations.setNotice(null);
+        void turnOffRule(automations, path).then((problem) => {
+          if (problem !== null) automations.setNotice((said) => said ?? problem);
+        });
+      }}
       onNew={editor.newRule}
       onAddPreset={editor.addPreset}
       onOpen={(id) => {

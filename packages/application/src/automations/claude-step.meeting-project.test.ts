@@ -11,15 +11,22 @@ import {
   builtInPromptAt,
   createVaultPath,
   logPathFor,
+  MAX_PROJECT_CHOICES,
   parseObjectType,
   type AutomationRule,
   type ClaudeAction,
 } from '@dfai/domain';
 import type { ModelEvent } from '../chat/ports.ts';
-import { automationVault, jsonNote, TASK_TYPES } from '../testing/automation-vault.ts';
+import {
+  automationVault,
+  jsonNote,
+  TASK_TYPES,
+  type IndexedLink,
+} from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeClaudeStepPorts } from '../testing/fake-claude-step.ts';
 import { MEETING_BODY, MEETING_HEADER } from '../testing/meeting-files.ts';
+import { fileChosenMeetings } from './meeting-project-choice.ts';
 import { runAutomation } from './run-automation.ts';
 import { undoLastRun } from './undo-last-run.ts';
 import type { VaultGuard } from './vault-guard.ts';
@@ -60,7 +67,17 @@ const answer = (project?: Record<string, unknown>): ModelEvent[] => [
   { type: 'text', text: JSON.stringify({ items: [], ...(project !== undefined && { project }) }) },
 ];
 
-function setUp({ round, filed = false }: { round: ModelEvent[]; filed?: boolean }) {
+function setUp({
+  round,
+  filed = false,
+  more = {},
+  links = [],
+}: {
+  round: ModelEvent[];
+  filed?: boolean;
+  more?: Record<string, string>;
+  links?: readonly IndexedLink[];
+}) {
   const claude = fakeClaudeStepPorts({ rounds: [round], model: 'claude-opus-5-5', today: TODAY });
   const header = { ...MEETING_HEADER, atlas_import_outcome: 'imported' };
   const notes: Record<string, string> = {
@@ -70,8 +87,9 @@ function setUp({ round, filed = false }: { round: ModelEvent[]; filed?: boolean 
     'Areas/Operations.md': jsonNote({ type: 'project', para: 'area' }),
     'Resources/Style guide.md': jsonNote({ type: 'project', para: 'resource' }),
     'Projects/Old payrun.md': jsonNote({ type: 'project', para: 'archive' }),
+    ...more,
   };
-  const vault = automationVault({ notes, today: TODAY, types: TYPES, claude });
+  const vault = automationVault({ notes, today: TODAY, types: TYPES, claude, links });
   const run = { ports: vault.ports, clock: CLOCK, guard: GUARD, activity: recordingActivity() };
   const byHand = ({ declared = true }: { declared?: boolean } = {}) =>
     runAutomation({ ...run, rule: rule(declared ? 'mine' : undefined), trigger: 'hand' });
@@ -96,6 +114,60 @@ describe('the After a meeting step’s project (#227)', () => {
     expect(said).toContain('Areas/Operations.md — Operations (area)');
     expect(said).not.toContain('Style guide');
     expect(said).not.toContain('Old payrun');
+  });
+
+  it('is shown at most the cap, the projects tied to the meeting’s people first, and told the rest are cut (#793)', async () => {
+    const more = Object.fromEntries(
+      Array.from({ length: 60 }, (_, at) => [
+        `Projects/Aster ${String(at).padStart(2, '0')}.md`,
+        jsonNote({ type: 'project' }),
+      ]),
+    );
+    const MARA = 'People/Mara Quill.md';
+    const ZINNIA = 'Projects/Zinnia rollout.md';
+    const { claude, vault, byHand } = setUp({
+      round: answer({ ...LEDGER, path: ZINNIA }),
+      more: {
+        ...more,
+        [MARA]: jsonNote({ type: 'person' }),
+        [ZINNIA]: jsonNote({ type: 'project', status: 'active' }),
+      },
+      links: [
+        { src: MEETING, key: 'people', dst: MARA },
+        { src: ZINNIA, key: 'people', dst: MARA },
+      ],
+    });
+    await byHand();
+    const system = claude.fake.requests[0]!.system;
+    const listed = system.split('\n').filter((line) => / — .* \((project|area)\)$/.test(line));
+
+    expect(listed).toHaveLength(MAX_PROJECT_CHOICES);
+    expect(listed[0]).toBe(`- ${ZINNIA} — Zinnia rollout (project)`);
+    expect(system).toContain(`${MAX_PROJECT_CHOICES} of the 63 open projects and areas are shown`);
+    // Read against the list it was shown: the tied project, last by title, is a choice it may make.
+    expect(vault.properties(MEETING)['project']).toBe('[[Zinnia rollout]]');
+  });
+
+  it('leaves a meeting changed since it was read without the project, and says why', async () => {
+    const { vault } = setUp({ round: answer(), filed: true });
+    const warnings: string[] = [];
+    const done = await fileChosenMeetings({
+      ports: vault.ports,
+      changes: [
+        {
+          path: createVaultPath(MEETING),
+          key: 'project',
+          expect: { absent: true },
+          to: { value: '[[Ledger]]' },
+        },
+      ],
+      today: TODAY,
+      warnings,
+    });
+    expect(done).toEqual([]);
+    expect(vault.properties(MEETING)['project']).toBe('[[Operations]]');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/^Left 2026-10-06 Standup without the project Claude chose: /);
   });
 
   it('files the meeting under a project Claude is sure of, and Undo last run takes it back', async () => {

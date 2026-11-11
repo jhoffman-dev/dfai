@@ -271,6 +271,40 @@ test('the "After a meeting" preset: its apply and model shown, written with its 
   await expectFile(vault, '.atlas/prompts/after-a-meeting.md').toContain('## Who owns an item');
 });
 
+test('both meeting presets on: every meeting read twice is said, and the extraction turned off only on a click (#793)', async ({
+  page,
+}) => {
+  const vault = await createVault();
+  await vault.mkdir('.atlas/types');
+  await vault.write('.atlas/types/meeting.md', shipped('.atlas/types/meeting.md'));
+  await installHost(page, vault);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+  await page.getByRole('button', { name: 'Automations', exact: true }).click();
+  const screen = page.getByRole('article', { name: 'Automations' });
+  const extraction = 'Pull actions and decisions out of a new meeting';
+  const warning = screen.getByRole('note', { name: 'Every meeting is read twice' });
+
+  for (const preset of ['After a meeting', extraction]) {
+    await page.getByRole('button', { name: preset, exact: true }).click();
+    await screen
+      .getByRole('region', { name: 'Automation' })
+      .getByRole('button', { name: 'Create automation' })
+      .click();
+    await expect(screen.getByRole('list', { name: 'All automations' })).toContainText(preset);
+  }
+
+  await expect(warning).toContainText('Every meeting is read twice');
+  const rule = `.atlas/automations/${extraction}.md`;
+  await expectFile(vault, rule).toContain('\nenabled: true\n');
+  await warning.getByRole('button', { name: `Turn off “${extraction}”` }).click();
+
+  await expectFile(vault, rule).toContain('\nenabled: false\n');
+  await expectFile(vault, '.atlas/automations/After a meeting.md').toContain('\nenabled: true\n');
+  await expect(warning).toHaveCount(0);
+});
+
 test('the "Friday review" preset: weekly at 15:00, a note in Reviews from the weekly review (#40)', async ({
   page,
 }) => {

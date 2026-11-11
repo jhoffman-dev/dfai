@@ -38,8 +38,9 @@
  *   whether a note last written before it was handled. It is a real instant.
  * - A time in a `handled` or `answered` line is a real UTC instant from the
  *   clock the use-case was handed, so it is comparable with a file's time.
- * - A `stored` line is a model's answer about a meeting's words, kept by the
- *   declared step (ADR-0036, "The model's answer is kept and reused") when a
+ * - A `stored` line is a model's answer about a meeting's words, kept by a
+ *   step making proposals (ADR-0036, "The model's answer is kept and reused";
+ *   any such step since #793) when a
  *   run that asked could not finish, so its retry asks nothing again. It is
  *   no record of what was handled: forgetting one only costs an ask.
  *

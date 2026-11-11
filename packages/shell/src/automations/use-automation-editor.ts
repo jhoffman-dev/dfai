@@ -46,6 +46,27 @@ function normalised(draft: AutomationDraft): AutomationDraft {
 }
 
 /**
+ * The open rule with its on or off as the rules are listed now (#793): the
+ * list's switch and the read-twice offer write only `enabled`, so the editor
+ * takes it again, and its draft does too unless the person changed it there.
+ * Every other key stays as opened, so an edit made on disk is still refused.
+ */
+function withListedEnabled(
+  was: Editing | null,
+  listing: ReturnType<typeof useAutomations>['listing'],
+): Editing | null {
+  if (was?.kind !== 'rule') return was;
+  const listed = listing?.automations.find((each) => each.rule.path === was.rule.path)?.rule;
+  if (listed === undefined || listed.enabled === was.rule.enabled) return was;
+  const unchanged = was.draft.enabled === was.rule.enabled;
+  return {
+    ...was,
+    rule: { ...was.rule, enabled: listed.enabled },
+    draft: unchanged ? { ...was.draft, enabled: listed.enabled } : was.draft,
+  };
+}
+
+/**
  * The Automations page's editor (P25-03): one rule at a time, new or open,
  * with the query builder for "which notes", a dry run of what it would do
  * today, and saving through the runner's one-at-a-time door.
@@ -95,6 +116,9 @@ export function useAutomationEditor({
     );
   }, [query.text]);
 
+  const { listing } = automations;
+  useEffect(() => setEditing((was) => withListedEnabled(was, listing)), [listing]);
+
   const { load } = query;
   const start = useCallback(
     (next: Editing) => {
@@ -123,7 +147,6 @@ export function useAutomationEditor({
     return naming ?? draftProblem(draft);
   }, [editing, draft, ports.notePaths]);
 
-  const { listing } = automations;
   const runDry = useCallback(async () => {
     if (draft === null || editing === null) return;
     const named = {
