@@ -94,8 +94,8 @@ describe('TapCaret attacks (#836)', () => {
   });
 
   // A busy main thread delivers a tap, a tap away and a tap back in one batch:
-  // the second focus clears the first read, but ProseMirror's check from the
-  // first focus still runs at 20 ms and puts its own selection back.
+  // ProseMirror's check from the first focus still runs at 20 ms, so each
+  // focus keeps its own read; cancelling the first would put its own selection back.
   it('keeps the caret of a second tap when the editor blurred and refocused within 20 ms', () => {
     const line = secondLine();
     press('touchstart', line, 4);

@@ -15,16 +15,26 @@ const FOCUS_CHECK_MS = 20;
  */
 const RELEASE_GRACE_MS = 300;
 
+/**
+ * A press held longer than this no longer counts, so one whose end never
+ * arrives cannot stick; an iOS long-press focuses ~500 ms in.
+ */
+const MAX_PRESS_MS = 2000;
+
 /** Ends a press wherever it is let go; a mouse can be released outside the editor. */
 const PRESS_ENDS = ['mouseup', 'touchend', 'touchcancel'] as const;
+
+/** Ends a press with no end event to come: a drag swallows the mouseup. */
+const PRESS_CANCELS = ['dragstart'] as const;
 
 /**
  * The view's DOM observer. Not in prosemirror-view's types, but it is how the
  * view itself reads the page's selection (on every `selectionchange`), and
- * the tap-caret test fails if it goes.
+ * the tap-caret test fails if it goes; a version without it throws on the
+ * read, which is caught.
  */
-interface ObservedView {
-  domObserver?: { flush?: unknown };
+interface ObservedView extends EditorView {
+  domObserver: { flush: () => void };
 }
 
 /**
@@ -47,26 +57,36 @@ export const TapCaret = Extension.create({
 });
 
 /**
- * A press counts from its start until it ends plus the grace, however long it
- * is held (an iOS long-press focuses ~500 ms in, with no mouse events), and
- * only for the focus it makes: one that starts with the editor already focused
- * makes none, and the focus it does make uses it up.
+ * A press counts from its start until it ends plus the grace, held for up to
+ * 2 s (an iOS long-press focuses ~500 ms in, with no mouse events), and only
+ * for the focus it makes: one that starts with the editor already focused
+ * makes none, and the focus it does make uses it up. A drag or the window
+ * losing focus drops it, as no end will come.
  */
 function tapCaretPlugin(): Plugin {
-  let held = false;
+  let pressedAt = Number.NEGATIVE_INFINITY;
   let releasedAt = Number.NEGATIVE_INFINITY;
   const reads = new Set<ReturnType<typeof setTimeout>>();
+  const held = () => Date.now() - pressedAt <= MAX_PRESS_MS;
   const start = (view: EditorView) => {
-    if (!view.hasFocus()) held = true;
+    if (!view.hasFocus()) pressedAt = Date.now();
     return false;
   };
+  const cancel = () => {
+    pressedAt = Number.NEGATIVE_INFINITY;
+  };
+  // Focus moving within the page is not the window losing it (jsdom fires
+  // the window a blur then, with the newly focused element as relatedTarget).
+  const leave = (event: FocusEvent) => {
+    if (event.relatedTarget === null) cancel();
+  };
   const end = () => {
-    if (held) releasedAt = Date.now();
-    held = false;
+    if (held()) releasedAt = Date.now();
+    cancel();
   };
   const madeByPress = () => {
-    const made = held || Date.now() - releasedAt <= RELEASE_GRACE_MS;
-    held = false;
+    const made = held() || Date.now() - releasedAt <= RELEASE_GRACE_MS;
+    cancel();
     releasedAt = Number.NEGATIVE_INFINITY;
     return made;
   };
@@ -92,10 +112,16 @@ function tapCaretPlugin(): Plugin {
     },
     view: (view) => {
       const doc = view.dom.ownerDocument;
+      const win = doc.defaultView;
       for (const type of PRESS_ENDS) doc.addEventListener(type, end, true);
+      for (const type of PRESS_CANCELS) doc.addEventListener(type, cancel, true);
+      // Not captured: an element's blur would reach a capturing window listener too.
+      win?.addEventListener('blur', leave);
       return {
         destroy: () => {
           for (const type of PRESS_ENDS) doc.removeEventListener(type, end, true);
+          for (const type of PRESS_CANCELS) doc.removeEventListener(type, cancel, true);
+          win?.removeEventListener('blur', leave);
           reads.forEach(clearTimeout);
           reads.clear();
         },
@@ -105,12 +131,11 @@ function tapCaretPlugin(): Plugin {
 }
 
 function readPageSelection(view: EditorView): void {
-  const observer = (view as ObservedView).domObserver;
-  if (typeof observer?.flush !== 'function') return;
   try {
-    observer.flush();
+    (view as ObservedView).domObserver.flush();
   } catch {
-    // Safe to ignore: without the read, ProseMirror's own check puts its
-    // selection back, exactly as before this extension.
+    // Safe to ignore: without the read (no observer, no flush, or a flush
+    // that throws), ProseMirror's own check puts its selection back, exactly
+    // as before this extension.
   }
 }
