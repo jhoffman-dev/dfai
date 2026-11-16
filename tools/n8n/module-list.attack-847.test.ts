@@ -95,17 +95,13 @@ describe('the module-list check against what the built node does (attack #847)',
 
 describe('the module-list check against correct lists (attack #847)', () => {
   it('passes a module whose import is used only as a type, without the type keyword', () => {
-    const shape = fixture(
-      'shape.ts',
-      'export interface Shape {\n  n: number;\n}\nexport const UNIT = 1;\n',
-    );
+    fixture('shape.ts', 'export interface Shape {\n  n: number;\n}\nexport const UNIT = 1;\n');
     const user = fixture(
       'shape-user.ts',
       "import { Shape } from './shape.ts';\nexport function size(s: Shape): number {\n  return s.n;\n}\n",
     );
     const run = 'return size({ n: 3 });';
     expect(runBuilt([user], run)()).toBe(3);
-    expect(shape).toContain('shape.ts');
     expect(moduleListProblems([user], [run])).toEqual([]);
   });
 

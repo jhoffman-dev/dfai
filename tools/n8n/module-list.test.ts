@@ -201,3 +201,68 @@ describe('the module-list check', () => {
     ]);
   });
 });
+
+/*
+ * Re-check of #847: node code that is correct in n8n must pass, and modules
+ * the build turns into a broken script must not.
+ */
+describe('the module-list check against what n8n runs (re-check #847)', () => {
+  const A = fixture('twice.ts', 'export function twice(n: number): number {\n  return n * 2;\n}\n');
+
+  it.each([
+    [
+      'a class the lines declare',
+      'class Acc {\n  constructor() {\n    this.n = twice(1);\n  }\n}\nreturn new Acc();',
+    ],
+    ['a method of an object', 'return { toJSON() { return twice(1); } };'],
+    ['a getter of an object', 'return { get size() { return twice(1); } };'],
+    [
+      'class fields and methods',
+      'class B {\n  n = 1;\n  m() { return twice(this.n); }\n}\nreturn new B().m();',
+    ],
+    [
+      'a named function expression',
+      'const f = function again(n) { return n > 0 ? again(n - 1) : twice(n); };\nreturn f(2);',
+    ],
+    ['arguments', 'return (function () { return twice(arguments.length); })(1);'],
+    ['typeof a name nothing declares', "return typeof maybe === 'undefined' ? twice(1) : 0;"],
+    ['n8n’s DateTime', 'return twice(DateTime.now().year);'],
+  ])('passes node lines using %s', (_, run) => {
+    expect(moduleListProblems([A], [run])).toEqual([]);
+  });
+
+  it.each([
+    ['a destructured export', 'export const { a } = { a: 1 };\n'],
+    ['import.meta', 'export const here = (): string => import.meta.url;\n'],
+    ['a top-level await', 'export const v = await Promise.resolve(1);\n'],
+    [
+      'a top-level for await',
+      'for await (const each of [1]) console.log(each);\nexport const v = 1;\n',
+    ],
+    ['an export declare', 'export declare const v: number;\n'],
+  ])('reports a module with %s, by name', (form, text) => {
+    const module = fixture(`broken-${form.replaceAll(' ', '-')}.ts`, text);
+    const problems = moduleListProblems(
+      [module],
+      ['return twice(1) + JSON.stringify([a, here, v]);'].map((run) => run),
+      ['a', 'here', 'twice'],
+    );
+    expect(problems).toContainEqual(
+      expect.stringContaining(module.slice(module.lastIndexOf('/') + 1)),
+    );
+  });
+
+  it.each(['expect', 'vi', 'process', 'Buffer', 'fetch', 'constructor'])(
+    'reports %s, which the test runner has but n8n does not',
+    (name) => {
+      expect(moduleListProblems([A], [`return twice(${name});`])).toEqual([
+        expect.stringContaining(name),
+      ]);
+    },
+  );
+
+  it('reports a name used outside the scope that declares it', () => {
+    const run = 'items.map((total) => total);\nreturn twice(total);';
+    expect(moduleListProblems([A], [run])).toEqual([expect.stringContaining('total')]);
+  });
+});
