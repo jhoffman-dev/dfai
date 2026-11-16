@@ -215,7 +215,7 @@ class BlockReader {
   private endFence(): ItemFence | null {
     const { code, item } = this.fenced as OpenFence;
     this.fenced = null;
-    this.push({
+    this.blocks.push({
       kind: 'code',
       text: code.join('\n'),
       marker: null,
@@ -230,7 +230,7 @@ class BlockReader {
     const open = this.open as Open;
     this.open = null;
     this.levels = [];
-    this.push({
+    this.blocks.push({
       kind: 'heading',
       text: open.lines.join(' '),
       marker: null,
@@ -269,7 +269,7 @@ class BlockReader {
   private alone(kind: 'heading' | 'rule', text: string): void {
     this.close();
     this.levels = [];
-    this.push({ kind, text, marker: null, depth: 0, quoted: false });
+    this.blocks.push({ kind, text, marker: null, depth: 0, quoted: false });
   }
 
   private item(match: RegExpExecArray): void {
@@ -338,11 +338,13 @@ class BlockReader {
       this.blocks.push(...quoteBlocks(text, open.inner.finish()));
       return;
     }
-    this.push({ kind: open.kind, text, marker: open.marker, depth: open.depth, quoted: false });
-  }
-
-  private push(block: RawAnswerBlock): void {
-    this.blocks.push(block);
+    this.blocks.push({
+      kind: open.kind,
+      text,
+      marker: open.marker,
+      depth: open.depth,
+      quoted: false,
+    });
   }
 }
 
