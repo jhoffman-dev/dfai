@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
+import { holdModalLayer } from '../modal-layer.ts';
 import { escapeLeftByEditor } from '../editor/escape-unused.ts';
 import { Icon, type IconName } from '../icon.tsx';
 import { isImeKey } from '../ime.ts';
@@ -102,7 +103,10 @@ export function PeekDialog(props: PeekDialogProps) {
         if (!open) props.onClose();
       }}
     >
-      <Dialog.Portal {...(props.container !== undefined && { container: props.container })}>
+      <Dialog.Portal
+        ref={holdModalLayer}
+        {...(props.container !== undefined && { container: props.container })}
+      >
         <Dialog.Backdrop className="peek__scrim" />
         <Dialog.Viewport className="peek__viewport">
           <Dialog.Popup
