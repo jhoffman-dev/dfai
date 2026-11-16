@@ -66,9 +66,10 @@ test('with a toast up behind Settings, Tab from the body reaches the toast or th
   const seen = new Set<string>();
   for (let press = 0; press < 6; press += 1) {
     await page.keyboard.press('Tab');
-    const at = await holder();
-    seen.add(at);
-    expect(at).toMatch(/^(dialog|toast)$/);
+    // Polled: Tab from the toast lands first on the dialog's focus guard, which
+    // hands it into the dialog. A place in the app keeps it, and times out.
+    await expect.poll(holder).toMatch(/^(dialog|toast)$/);
+    seen.add(await holder());
   }
   // The toast was reachable at all, or this asserts nothing about it.
   expect(seen.has('toast')).toBe(true);

@@ -34,9 +34,11 @@ const STAYS_LIVE = '[data-stays-live]';
  * A modal dialog's portal ref: the layer is held while the portal is in the
  * page (its dialog open or closing) and let go as it leaves, in React's commit.
  * A ref rather than a wrapper component, so a dialog renders nothing more for
- * it (the work budgets count every render). A portal drawn inside the app (the
- * peek's gallery specimen, over its pane) holds nothing: making the app inert
- * would make that dialog inert too.
+ * it (the work budgets count every render). A portal given a `container`
+ * inside the shell holds nothing, since making the app inert would make that
+ * dialog inert too. No dialog in the app does that today (the peek takes a
+ * `container`, but the app passes none); the check keeps the lint rule, which
+ * asks every portal for this ref, from turning such a dialog inert.
  */
 export function holdModalLayer(portal: HTMLElement | null): (() => void) | undefined {
   if (portal === null || portal.closest(BEHIND_MODALS) !== null) return undefined;
@@ -66,19 +68,33 @@ export function useInertBehindModals(ref: RefObject<HTMLElement | null>): void {
   useLayoutEffect(() => {
     const root = ref.current;
     if (root === null) return undefined;
-    let made: readonly Element[] = [];
+    const made = new Set<Element>();
     let kept: Range | null = null;
-    const free = () => {
-      for (const element of made) element.removeAttribute('inert');
-      made = [];
+    // What the app mounts while a modal is open (the drawer's way back, say)
+    // is made inert as it comes. Only the children of the elements walked
+    // matter, so each is watched without `subtree`.
+    const mounts = new MutationObserver(() => makeInert());
+    const makeInert = () => {
+      mounts.disconnect();
+      const live = [...root.querySelectorAll(STAYS_LIVE)];
+      for (const element of outsideLive(root, live)) {
+        element.setAttribute('inert', '');
+        made.add(element);
+      }
+      for (const parent of walked(root, live)) mounts.observe(parent, { childList: true });
     };
+    const free = () => {
+      mounts.disconnect();
+      for (const element of made) element.removeAttribute('inert');
+      made.clear();
+    };
+    let inert = false;
     const follow = () => {
-      const inert = held > 0;
-      if (inert === made.length > 0) return;
+      if (inert === held > 0) return;
+      inert = held > 0;
       if (inert) {
         kept = rangeWithin(root);
-        made = outsideLive(root, [...root.querySelectorAll(STAYS_LIVE)]);
-        for (const element of made) element.setAttribute('inert', '');
+        makeInert();
         return;
       }
       free();
@@ -91,6 +107,17 @@ export function useInertBehindModals(ref: RefObject<HTMLElement | null>): void {
       free();
     };
   }, [ref]);
+}
+
+/** `root` and the elements down the way to each live region: those whose children are walked. */
+function walked(root: Element, live: readonly Element[]): Element[] {
+  const parents = [root];
+  for (const child of root.children) {
+    if (!live.includes(child) && live.some((region) => child.contains(region))) {
+      parents.push(...walked(child, live));
+    }
+  }
+  return parents;
 }
 
 /** The children of `root`, and down the way to each live region, that hold no live region. */
