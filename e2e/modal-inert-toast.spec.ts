@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection } from './host.ts';
+import { modalFocus, tabWithin } from './modal-focus.ts';
 import { toastSaying } from './toasts.ts';
 
 /**
@@ -52,24 +53,12 @@ test('with a toast up behind Settings, Tab from the body reaches the toast or th
   await raiseToast(page);
   await page.keyboard.press('Meta+Comma');
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
-  const holder = () =>
-    page.evaluate(() => {
-      const active = document.activeElement;
-      if (active === null || active === document.body) return 'body';
-      // A focus guard Base UI draws round the dialog is the dialog's own.
-      if (active.closest('[role="dialog"], [data-base-ui-focus-guard]') !== null) return 'dialog';
-      if (active.closest('.toast') !== null) return 'toast';
-      return `the app: ${active.tagName.toLowerCase()}.${active.className}`;
-    });
-  await expect.poll(holder).toBe('dialog');
+  await expect.poll(() => modalFocus(page, 'Settings')).toBe('dialog');
 
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const seen = new Set<string>();
   for (let press = 0; press < 6; press += 1) {
-    await page.keyboard.press('Tab');
-    // Polled, so a place in the app that keeps the focus times out.
-    await expect.poll(holder).toMatch(/^(dialog|toast)$/);
-    seen.add(await holder());
+    seen.add(await tabWithin(page, { dialog: 'Settings', toast: true }));
   }
   // The toast was reachable at all, or this asserts nothing about it.
   expect(seen.has('toast')).toBe(true);

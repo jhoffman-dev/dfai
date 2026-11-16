@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures.ts';
 import { createVault, installHost } from './host.ts';
+import { modalFocus, tabWithin } from './modal-focus.ts';
 
 /**
  * The app behind an open modal is out of the keyboard's reach (#827). Base UI
@@ -19,22 +20,11 @@ test('with Settings open and the focus on the body, Tab stays in the dialog', as
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
-  const inDialog = () =>
-    page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null);
-  await expect.poll(inDialog).toBe(true);
+  await expect.poll(() => modalFocus(page, 'Settings')).toBe('dialog');
 
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
-  // In the dialog, or on one of the focus guards Base UI draws round it: Tab
-  // from the body reaches the first guard, which hands the focus on a frame
-  // later, and on a slow first run on Linux once kept it (#848's CI). Either
-  // is the modal's own; the app behind it is what must not be reached.
-  const inTheModal = () =>
-    page.evaluate(
-      () => document.activeElement?.closest('[role="dialog"], [data-base-ui-focus-guard]') !== null,
-    );
+  expect(await modalFocus(page, 'Settings')).toBe('body');
   for (let press = 0; press < 4; press += 1) {
-    await page.keyboard.press('Tab');
-    await expect.poll(inTheModal).toBe(true);
+    expect(await tabWithin(page, { dialog: 'Settings' })).toBe('dialog');
   }
 });

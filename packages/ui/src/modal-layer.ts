@@ -72,7 +72,9 @@ export function useInertBehindModals(ref: RefObject<HTMLElement | null>): void {
     let kept: Range | null = null;
     // What the app mounts while a modal is open (the drawer's way back, say)
     // is made inert as it comes. Only the children of the elements walked
-    // matter, so each is watched without `subtree`.
+    // matter, so each is watched without `subtree`. The live regions must stay
+    // mounted for the life of the shell: an element made inert is not freed if
+    // a live region later mounts inside it.
     const mounts = new MutationObserver(() => makeInert());
     const makeInert = () => {
       mounts.disconnect();
