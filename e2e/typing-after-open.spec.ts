@@ -11,6 +11,7 @@
  * linked pages, its backlinks, its properties' choices — lands around a cursor
  * without moving it.
  */
+import { caretAtLineEnd } from './caret.ts';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, installHost, sidebarSection, type FakeVault } from './host.ts';
 
@@ -154,8 +155,10 @@ test('what a note reads after it opens lands around the cursor without moving it
 
   // Clicked into and typed in while the linked pages, the backlinks and the
   // index have not answered yet.
-  await page.getByLabel('Note', { exact: true }).getByText(MARA_BODY).click();
-  // eslint-disable-next-line e2e-flake/no-keys-after-focus -- this test is the click-then-type race (#140)
+  // The caret is held at the line's end before the typing: ProseMirror's own
+  // reset after focus is caret.ts's to wait out. What is proved here is that
+  // the reads landing later never move it.
+  await caretAtLineEnd(page.getByLabel('Note', { exact: true }).getByText(MARA_BODY));
   await page.keyboard.type(' One');
   const waiting = await hostCalls(page);
   expect(waiting.held).toBeGreaterThan(waiting.answered);

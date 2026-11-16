@@ -1,7 +1,7 @@
+import { caretAtLineEndByTap } from './caret.ts';
 import { expect, test, type Page } from './fixtures.ts';
 import { dragWithTouch } from './drag.ts';
 import { createVault, expectFile, openVaultByTouch, sidebarSection } from './host.ts';
-import { expectFocusIn } from './typing.ts';
 
 /**
  * #661: the core loop on an iPad, by finger. This spec runs only in the `ipad`
@@ -97,12 +97,7 @@ test('on an iPad, a finger runs the day: Today, a tick, the Inbox, a note, a car
 
   await test.step('a note, opened and edited by a tap', async () => {
     await page.getByRole('treeitem', { name: 'Garden plan', exact: true }).tap();
-    const line = page.getByLabel('Note', { exact: true }).getByText('First line.');
-    const box = await line.boundingBox();
-    if (box === null) throw new Error('The note’s first line is not on the page.');
-    // The far right of the line's block, where a tap leaves the caret at its end.
-    await line.tap({ position: { x: box.width - 1, y: box.height / 2 } });
-    await expectFocusIn(line);
+    await caretAtLineEndByTap(page.getByLabel('Note', { exact: true }).getByText('First line.'));
     await page.keyboard.type(' Tapped.');
     await expectFile(vault, 'Garden plan.md').toContain('First line. Tapped.');
   });

@@ -1,6 +1,6 @@
+import { caretAtLineEndByTap } from './caret.ts';
 import { expect, test } from './fixtures.ts';
 import { signInOnTheWeb, webVaultOnGitHub } from './web-github.ts';
-import { expectFocusIn } from './typing.ts';
 
 /**
  * #667: the web build on an iPad, mostly online. A note opened once opens
@@ -45,11 +45,7 @@ test('on the web, a save refused because a Mac moved the note offers a copy or d
   await expect(line).toBeVisible();
   await github.commitOutside({ 'Garden plan.md': '# Garden plan\n\nThe Mac’s line.\n' });
 
-  const box = await line.boundingBox();
-  if (box === null) throw new Error('The note’s first line is not on the page.');
-  // The far right of the line's block, where a tap leaves the caret at its end.
-  await line.tap({ position: { x: box.width - 1, y: box.height / 2 } });
-  await expectFocusIn(line);
+  await caretAtLineEndByTap(line);
   await page.keyboard.type(' Tapped.');
   const keep = page.getByRole('button', { name: 'Keep mine as a copy' });
   await expect(keep).toBeVisible({ timeout: 10_000 });
