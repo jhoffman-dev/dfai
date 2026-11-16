@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { useRef, type ReactNode } from 'react';
+import { Dialog } from './dialog.tsx';
 import { Icon } from './icon.tsx';
+import { useInertBehindModals } from './modal-layer.ts';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /**
@@ -85,6 +86,8 @@ export function AppShell({
    */
   bar?: ReactNode;
 }) {
+  const shell = useRef<HTMLDivElement>(null);
+  useInertBehindModals(shell);
   const work =
     main === null ? (
       panes
@@ -109,7 +112,7 @@ export function AppShell({
     .join(' ');
 
   return (
-    <div className={className}>
+    <div className={className} ref={shell}>
       {sidebarBeside && (
         <nav className="shell__sidebar" aria-label="Vault">
           {sidebar}

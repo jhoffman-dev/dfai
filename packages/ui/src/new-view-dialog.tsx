@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from './dialog.tsx';
 import { viewIcon, type NewViewRequest, type ViewLayout } from '@dfai/domain';
 import { Icon, sidebarGlyph } from './icon.tsx';
 import { isImeKey } from './ime.ts';

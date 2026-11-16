@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { AlertDialog } from './dialog.tsx';
 import type { SkillDraft, SkillField, SkillProblem } from '@dfai/domain';
 import { Icon } from './icon.tsx';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';

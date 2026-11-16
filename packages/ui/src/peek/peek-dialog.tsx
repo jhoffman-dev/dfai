@@ -6,7 +6,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from '../dialog.tsx';
 import { escapeLeftByEditor } from '../editor/escape-unused.ts';
 import { Icon, type IconName } from '../icon.tsx';
 import { isImeKey } from '../ime.ts';

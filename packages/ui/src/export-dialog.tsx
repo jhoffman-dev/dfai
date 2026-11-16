@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from './dialog.tsx';
 import type { ExportFormat } from '@dfai/domain';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 

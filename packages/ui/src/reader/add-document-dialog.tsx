@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from '../dialog.tsx';
 import type { DocumentKind } from '@dfai/domain';
 import { Icon } from '../icon.tsx';
 import { useReturnFocus, type FocusFallback } from '../return-focus.ts';

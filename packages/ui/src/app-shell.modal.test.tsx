@@ -24,7 +24,9 @@ function WithSettings() {
         </button>
       }
       overlay={
-        open && <SettingsUnavailable onClose={() => setOpen(false)}>Nothing here</SettingsUnavailable>
+        open && (
+          <SettingsUnavailable onClose={() => setOpen(false)}>Nothing here</SettingsUnavailable>
+        )
       }
     />
   );
@@ -43,7 +45,11 @@ function WithDelete() {
       }
       overlay={
         open && (
-          <DeleteDialog subject={NOTE} onConfirm={() => setOpen(false)} onClose={() => setOpen(false)} />
+          <DeleteDialog
+            subject={NOTE}
+            onConfirm={() => setOpen(false)}
+            onClose={() => setOpen(false)}
+          />
         )
       }
     />

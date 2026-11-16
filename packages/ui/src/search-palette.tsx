@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from './dialog.tsx';
 import { createVaultPath, placeCrumb, type PaletteCommand } from '@dfai/domain';
 import type { SearchHit } from '@dfai/application';
 import { Icon, sidebarGlyph } from './icon.tsx';

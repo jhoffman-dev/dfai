@@ -1,5 +1,5 @@
 import { linksGoAsLinks } from '@dfai/domain';
-import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { AlertDialog } from './dialog.tsx';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /** What is about to go to the Trash, as the question names it. */

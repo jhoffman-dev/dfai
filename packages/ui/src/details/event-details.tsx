@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from '../dialog.tsx';
 import type { ActivityLevel } from '@dfai/domain';
 
 /** A warning or an error, said whole (#815): what its one line had no room for. */

@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from './dialog.tsx';
 import { FileDrop } from './file-drop.tsx';
 import { Icon, type IconName } from './icon.tsx';
 import { isImeKey } from './ime.ts';

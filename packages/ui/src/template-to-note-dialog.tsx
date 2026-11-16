@@ -1,4 +1,4 @@
-import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { AlertDialog } from './dialog.tsx';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /**

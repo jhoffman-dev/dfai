@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from '../dialog.tsx';
 import {
   usePinchAndWheel,
   useRoomSize,

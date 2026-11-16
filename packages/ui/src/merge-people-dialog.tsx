@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { Dialog } from './dialog.tsx';
 import { delayedSpinner } from './delayed-spinner.tsx';
 import { Icon } from './icon.tsx';
 import { isImeKey } from './ime.ts';
