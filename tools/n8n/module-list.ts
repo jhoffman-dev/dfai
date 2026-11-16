@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { moduleScript } from './code-node.ts';
+import { moduleScript, transpiledModule } from './code-node.ts';
 import { compilerHost, n8nGlobals, type NodeMode, SCRIPT_OPTIONS } from './node-script-host.ts';
 
 /*
@@ -27,6 +28,8 @@ interface Block {
   readonly end: number;
   /** Where the block hands its exports on: the module's `const { … } =` line. */
   readonly header?: { readonly start: number; readonly end: number } | undefined;
+  /** The names the module imports as values, which the build strips with their imports. */
+  readonly imported?: ReadonlySet<string> | undefined;
 }
 
 interface Script {
@@ -35,34 +38,65 @@ interface Script {
   readonly blocks: readonly Block[];
 }
 
+/**
+ * The local names of a module's imports that survive transpiling, read as
+ * the build reads the module: a type-only import is gone by then.
+ */
+function valueImportNames(name: string): Set<string> {
+  const url = new URL(name, import.meta.url);
+  const javascript = transpiledModule(name, readFileSync(url, 'utf8'));
+  const output = ts.createSourceFile(name, javascript, ts.ScriptTarget.ES2022, true);
+  return new Set(
+    output.statements.filter(ts.isImportDeclaration).flatMap(({ importClause }) => {
+      const named = importClause?.namedBindings;
+      const bound =
+        named === undefined
+          ? []
+          : ts.isNamespaceImport(named)
+            ? [named.name]
+            : named.elements.map((each) => each.name);
+      return [...(importClause?.name === undefined ? [] : [importClause.name]), ...bound].map(
+        (each) => each.text,
+      );
+    }),
+  );
+}
+
 /** One node as n8n runs it: the modules, then its own lines, in one function body and one scope. */
 function nodeScript(file: string, modules: readonly string[], run: string): Script {
   const blocks: Block[] = [];
   let text = '(async function () {\n';
-  const add = (label: string, code: string, header?: Block['header']) => {
-    blocks.push({ label, start: text.length, end: text.length + code.length, header });
+  const add = (label: string, code: string, module?: Pick<Block, 'header' | 'imported'>) => {
+    blocks.push({ label, start: text.length, end: text.length + code.length, ...module });
     text += `${code}\n`;
   };
   for (const name of modules) {
     const code = moduleScript(name);
     const first = code.indexOf('\n') + 1;
     const start = text.length + first;
-    add(name, code, { start, end: start + code.indexOf('\n', first) - first });
+    const header = { start, end: start + code.indexOf('\n', first) - first };
+    add(name, code, { header, imported: valueImportNames(name) });
   }
   add(OWN_LINES, run);
   return { file, text: `${text}});\n`, blocks };
 }
 
-/** `typeof name` of a name nothing declares is "undefined" in JavaScript, not an error. */
-function underTypeof(source: ts.SourceFile, at: number): boolean {
-  const find = (node: ts.Node): ts.Node | undefined =>
+/**
+ * A name probed for with `typeof`, such as a platform global (`Buffer`): of a
+ * name nothing declares, `typeof` is "undefined" in JavaScript, not an error.
+ * A name the module imports as a value is no probe: its module is missing, and
+ * `typeof` would only hide that. So it is reported.
+ */
+function probedFor(source: ts.SourceFile, at: number, block: Block | undefined): boolean {
+  const find = (node: ts.Node): ts.Identifier | undefined =>
     node.getStart(source) === at && ts.isIdentifier(node)
       ? node
       : node.pos <= at && at < node.end
         ? ts.forEachChild(node, find)
         : undefined;
   const found = find(source);
-  return found !== undefined && ts.isTypeOfExpression(found.parent);
+  if (found === undefined || !ts.isTypeOfExpression(found.parent)) return false;
+  return !(block?.imported?.has(found.text) ?? false);
 }
 
 /** Cannot find a name, in its forms. `typeof` of such a name is "undefined", not an error. */
@@ -98,8 +132,9 @@ function brokenProblems(script: Script, diagnostics: readonly ts.Diagnostic[]): 
     const hint = hintFor(diagnostic.code);
     const at = diagnostic.start ?? 0;
     if (hint === undefined || diagnostic.file === undefined) return [];
-    if (NOT_FOUND_CODES.has(diagnostic.code) && underTypeof(diagnostic.file, at)) return [];
-    const where = blockAt(script, at)?.label ?? 'the assembled node';
+    const block = blockAt(script, at);
+    if (NOT_FOUND_CODES.has(diagnostic.code) && probedFor(diagnostic.file, at, block)) return [];
+    const where = block?.label ?? 'the assembled node';
     const what = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
     return [`${where}: ${what} (${hint})`];
   });
