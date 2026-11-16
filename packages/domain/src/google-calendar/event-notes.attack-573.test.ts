@@ -137,11 +137,41 @@ describe('attack #573: the window in odd zones', () => {
     'Europe/London',
   ];
 
-  it('starts each window at the first instant of its first day, every day of the year', () => {
+  /** Every day of 2026, as `YYYY-MM-DD`, and the first of 2027. */
+  const year = Array.from({ length: 367 }, (_, day) =>
+    new Date(Date.UTC(2026, 0, 1 + day)).toISOString().slice(0, 10),
+  );
+
+  /**
+   * The days of the year the property turns on in `zone`: the days either
+   * side of each change of its offset, wherever in the day the change falls,
+   * and one day a month as the ordinary case. Every other day is an ordinary
+   * one again, and all 366 in nine zones cost seconds under load (#820).
+   */
+  function daysThatMatter(clock: ReturnType<typeof wallClockIn>) {
+    const offsets = year.map((day) => {
+      const midnight = Date.parse(`${day}T00:00:00Z`);
+      const shown = clock(midnight);
+      return Date.parse(`${shown.day}T${shown.time}Z`) - midnight;
+    });
+    const days = new Set(year.filter((_, at) => at % 30 === 0));
+    let changes = 0;
+    for (let at = 1; at < year.length; at += 1) {
+      if (offsets[at] === offsets[at - 1]) continue;
+      changes += 1;
+      // Changed between two UTC midnights: the zone's own day of it is within one either side.
+      for (const near of year.slice(Math.max(0, at - 2), at + 3)) days.add(near);
+    }
+    return { days: [...days], changes };
+  }
+
+  it('starts each window at the first instant of its first day, on every day a clock changes', () => {
+    const changing: string[] = [];
     for (const zone of zones) {
       const clock = wallClockIn(zone);
-      for (let day = 0; day < 366; day += 1) {
-        const today = new Date(Date.UTC(2026, 0, 1 + day)).toISOString().slice(0, 10);
+      const { days, changes } = daysThatMatter(clock);
+      if (changes > 0) changing.push(`${zone} ${changes}`);
+      for (const today of days) {
         const window = meetingWindow({ today, timeZone: zone });
         expect(window, `${zone} ${today}`).not.toBeNull();
         if (window === null) continue;
@@ -150,6 +180,14 @@ describe('attack #573: the window in odd zones', () => {
         expect(startOfDayIn(window.fromDay, zone)).toBe(window.timeMin);
       }
     }
+    // The zones whose clocks change in 2026, twice each: so the days above hold every change.
+    expect(changing).toEqual([
+      'Pacific/Chatham 2',
+      'America/Santiago 2',
+      'America/St_Johns 2',
+      'Australia/Lord_Howe 2',
+      'Europe/London 2',
+    ]);
   });
 
   it('writes an event spanning midnight with its start and its end on their own days', () => {
