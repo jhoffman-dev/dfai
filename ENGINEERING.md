@@ -91,14 +91,16 @@ Never claim something works because it compiles. Verify the actual behaviour.
 
 The specialised subagents for this repo live in `.claude/agents/` and follow
 these rules without restating them: `coder`, `code-reviewer`, `tester`,
-`adversarial-tester`, `bug-fixer`, `pr-review-fixer`.
+`adversarial-tester`, `bug-fixer`, `pr-review-fixer`, `pr-merger`.
 A project agent overrides a user-level agent of the same name, so these are the
 ones that run here whatever `~/.claude/agents/` holds.
 
 Prefer delegating to the narrow agent over doing the job ad hoc; each one knows
 its own hand-off contract (what it may change, what it must report). `coder`,
-`bug-fixer` and `pr-review-fixer` may change code; `code-reviewer`, `tester` and
-`adversarial-tester` never do.
+`bug-fixer` and `pr-review-fixer` may change code; `code-reviewer`, `tester`,
+`adversarial-tester` and `pr-merger` never do. `pr-merger` is the only agent
+that merges a pull request: it merges the ones that are marked ready, verified
+and green, and holds anything high risk for the maintainer.
 
 ## Machine notes (James's Macs)
 
