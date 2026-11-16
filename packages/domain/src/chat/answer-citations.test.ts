@@ -103,6 +103,20 @@ describe('citeAnswer: which blocks must cite (#37)', () => {
   });
 });
 
+describe('citeAnswer: code and headings in a quote (#845)', () => {
+  it('exempts fenced code in a quote, as the editor draws it as code', () => {
+    expect(verdicts('> ```\n> Mara Quill owns payroll\n> ```')).toEqual(['code:exempt']);
+  });
+
+  it('exempts a heading in a quote, and the heading’s link cites nothing under it', () => {
+    // Read as one quote, the heading's link would count the claim under it as cited.
+    expect(verdicts('> # [[Larkspur]]\n> Mara Quill owns payroll')).toEqual([
+      'heading:exempt',
+      'quote:uncited',
+    ]);
+  });
+});
+
 describe('citeAnswer: reading the blocks', () => {
   it('joins a paragraph’s lines, and starts a new one after a blank line', () => {
     const blocks = citeAnswer('First line\nsecond line [[A]]\n\nNext');
