@@ -97,6 +97,9 @@ function answerOf(shapes: readonly string[]): string {
 /** What a fence in a list item turns on: the item, the fence at its text or not, and what follows. */
 const ITEM_FENCE_SHAPES = ['- W', '1. W', '  - W', '  ```', '```', '  W', ''];
 
+/** What a line under a quote turns on: a setext underline there is lazy text, not a heading (#831). */
+const QUOTE_SETEXT_SHAPES = ['W', '> W', '> - W', '> ```', '===', '---', '-', ''];
+
 /** Every answer of these shapes and this many lines. */
 function everyAnswer(shapes: readonly string[], lines: number): string[][] {
   if (lines === 0) return [[]];
@@ -107,7 +110,8 @@ function everyAnswer(shapes: readonly string[], lines: number): string[][] {
  * Every answer of one or two lines, so every shape meets every other one
  * beneath it (a setext rule under a word, a fence opened in a quote); every
  * answer of three and four lines over the shapes a fence in a list item turns
- * on, so one closes inside the item and the item carries on after it; and 400
+ * on, so one closes inside the item and the item carries on after it; every
+ * answer of three lines over the shapes a quote's lazy line turns on; and 400
  * seeded answers of three or four lines over every shape for the rest. It was
  * 3000 random answers of one to four lines, which left some pairs undrawn and
  * cost seconds when the gate shared the machine (#820).
@@ -118,26 +122,15 @@ function answers(): string[] {
   return [
     ...[1, 2].flatMap((lines) => everyAnswer(SHAPES, lines).map(answerOf)),
     ...[3, 4].flatMap((lines) => everyAnswer(ITEM_FENCE_SHAPES, lines).map(answerOf)),
+    ...everyAnswer(QUOTE_SETEXT_SHAPES, 3).map(answerOf),
     ...Array.from({ length: 400 }, () =>
       answerOf(Array.from({ length: 3 + Math.floor(random() * 2) }, pick)),
     ),
   ];
 }
 
-/**
- * Where Ask reads a word as code that the editor draws as prose, found when
- * these answers were listed out (#820): a fence at the text of an outer item,
- * under an item nested in it, is read as a fence of its own that runs to the
- * end, where the editor ends it with the outer item. Listed exactly, so any
- * other escape fails here, and the fix takes these out.
- */
-const KNOWN_ESCAPES = [
-  '"- w0\\n  - w1\\n  ```\\n- w2": w2 is code',
-  '"- w0\\n  - w1\\n  ```\\n1. w2": w2 is code',
-];
-
 describe('Ask’s blocks against the editor’s (PR #547)', () => {
-  it('judges every word the editor draws as prose, on every short answer, every item fence and seeded longer ones', () => {
+  it('judges every word the editor draws as prose, on every short answer, every item fence, every quote’s lazy line and seeded longer ones', () => {
     const escaped: string[] = [];
     const drawn = new Set<string>();
     for (const answer of answers()) {
@@ -152,7 +145,7 @@ describe('Ask’s blocks against the editor’s (PR #547)', () => {
           escaped.push(`${JSON.stringify(answer)}: ${token} is ${ask.get(token) ?? 'not drawn'}`);
       }
     }
-    expect(escaped.slice(0, 5)).toEqual(KNOWN_ESCAPES);
+    expect(escaped.slice(0, 5)).toEqual([]);
     expect([...drawn].sort()).toEqual(['carried on', 'closed']);
   });
 });
