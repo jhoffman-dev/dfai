@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { createVaultPath, placeCrumb, type PaletteCommand } from '@dfai/domain';
 import type { SearchHit } from '@dfai/application';
+import { holdModalLayer } from './modal-layer.ts';
 import { Icon, sidebarGlyph } from './icon.tsx';
 import { isImeKey } from './ime.ts';
 import { Key, KeyHints } from './key-hints.tsx';
@@ -117,7 +118,7 @@ export function SearchPalette({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette" finalFocus={finalFocus} aria-label="Search notes">
             <div className="palette__field">

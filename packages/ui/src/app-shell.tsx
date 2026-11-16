@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Icon } from './icon.tsx';
+import { holdModalLayer, useInertBehindModals } from './modal-layer.ts';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /**
@@ -85,6 +86,8 @@ export function AppShell({
    */
   bar?: ReactNode;
 }) {
+  const shell = useRef<HTMLDivElement>(null);
+  useInertBehindModals(shell);
   const work =
     main === null ? (
       panes
@@ -109,7 +112,7 @@ export function AppShell({
     .join(' ');
 
   return (
-    <div className={className}>
+    <div className={className} ref={shell} data-behind-modals>
       {sidebarBeside && (
         <nav className="shell__sidebar" aria-label="Vault">
           {sidebar}
@@ -117,7 +120,9 @@ export function AppShell({
       )}
       {drawer !== null && <DrawerSidebar drawer={drawer}>{sidebar}</DrawerSidebar>}
       <main className="shell__main">
-        {notices}
+        <div className="shell__notices" data-stays-live>
+          {notices}
+        </div>
         {work}
         {!sidebarBeside && onShowSidebar !== undefined && (
           <button
@@ -134,7 +139,7 @@ export function AppShell({
       </main>
       {bar}
       {asideShown && <div className="shell__aside">{aside}</div>}
-      <div className="visually-hidden" role="status">
+      <div className="visually-hidden" role="status" data-stays-live>
         {status}
       </div>
       {overlay}
@@ -152,7 +157,7 @@ export function AppShell({
 function DrawerSidebar({ drawer, children }: { drawer: SidebarDrawer; children: ReactNode }) {
   return (
     <Dialog.Root open={drawer.open} onOpenChange={drawer.onOpenChange}>
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Backdrop className="shell__scrim" />
         <DrawerPopup returnFocus={drawer.returnFocus}>{children}</DrawerPopup>
       </Dialog.Portal>
