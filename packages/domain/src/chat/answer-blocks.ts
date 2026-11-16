@@ -43,8 +43,8 @@ interface Open {
   indent: number;
   /** A blank line came after it: only an indented line, for an item, may still join it. */
   broken: boolean;
-  /** For a quote: the fence open inside it, which a lazy line cannot carry on. */
-  fenced: string | null;
+  /** For a quote: whether a lazy line may carry it on, once read; null until then. */
+  takesLazy: boolean | null;
   /** An item carried on after a fence inside it: drawn only if it says more. */
   continued: boolean;
   /** For a quote: which of its lines came lazily, without a `>`. */
@@ -65,10 +65,14 @@ export function answerBlocks(answer: string): RawAnswerBlock[] {
 
 /** Cuts an answer into its blocks; the `lazy` lines may only carry a paragraph on. */
 function readBlocks(answer: string, lazy: ReadonlySet<number>): RawAnswerBlock[] {
+  return readLines(answer.replace(/\r\n?/g, '\n').split('\n'), lazy).finish();
+}
+
+/** A reader that has read these lines, with what it last read still open. */
+function readLines(lines: readonly string[], lazy: ReadonlySet<number>): BlockReader {
   const reader = new BlockReader(lazy);
-  const lines = answer.replace(/\r\n?/g, '\n').split('\n');
   for (let at = 0; at < lines.length; at += 1) at = reader.line(lines, at);
-  return reader.finish();
+  return reader;
 }
 
 class BlockReader {
@@ -83,14 +87,14 @@ class BlockReader {
   line(lines: readonly string[], at: number): number {
     const line = lines[at] as string;
     if (line.trim() === '') return this.blank(at);
+    // A lazy line is the text of the paragraph it carries on, whatever it looks like (CommonMark).
+    if (this.lazy.has(at)) return this.text(line, at);
     const inItem = this.itemFenceAt(line);
     if (inItem !== null) return this.itemFence(lines, at, inItem);
     const fence = openingFence(line);
     if (fence !== null) return this.fence(lines, at, fence);
     if (HEADING.test(line)) return this.alone('heading', headingText(line), at);
-    // A setext underline cannot be a lazy line (CommonMark): under a quote it is the quote's text.
-    if (this.open?.kind === 'paragraph' && SETEXT.test(line) && !this.lazy.has(at))
-      return this.setext(at);
+    if (this.open?.kind === 'paragraph' && SETEXT.test(line)) return this.setext(at);
     if (RULE.test(line)) return this.alone('rule', line.trim(), at);
     const item = ITEM.exec(line);
     if (item !== null && this.mayStartItem(item)) return this.item(item, at);
@@ -98,6 +102,18 @@ class BlockReader {
     if (quote !== null) return this.quote(quote[1] as string, at);
     if (TABLE.test(line)) return this.table(line, at);
     return this.text(line, at);
+  }
+
+  /**
+   * Whether a lazy line may carry on what was read last: only a paragraph's
+   * text, in an item or a quote or not — never a rule, a heading, or a fence.
+   */
+  takesLazyLine(): boolean {
+    const open = this.open;
+    if (open?.kind === 'paragraph') return true;
+    if (open?.kind === 'item') return !open.broken && (open.lines.at(-1) ?? '').trim() !== '';
+    if (open?.kind === 'quote') return quoteTakesLazy(open);
+    return false;
   }
 
   finish(): RawAnswerBlock[] {
@@ -161,7 +177,8 @@ class BlockReader {
    * innermost one it reaches, which closes the items nested in that — or null.
    */
   private itemFenceAt(line: string): ItemFence | null {
-    if (this.open?.kind !== 'item') return null;
+    // The list stays open after a fence that ended with its item: the lines under it may be the outer item's.
+    if (this.levels.length === 0) return null;
     const depth = this.levels.findLastIndex((textAt) => textAt <= indentOf(line));
     if (depth < 0) return null;
     const indent = this.levels[depth] as number;
@@ -233,9 +250,7 @@ class BlockReader {
     if (this.open?.kind !== 'quote') this.begin('quote');
     const open = this.open as Open;
     open.lines.push(text);
-    if (open.fenced !== null) {
-      if (closingFence(open.fenced).test(text)) open.fenced = null;
-    } else open.fenced = openingFence(text);
+    open.takesLazy = null;
     return at;
   }
 
@@ -254,8 +269,8 @@ class BlockReader {
       return at;
     }
     // A lazy line carries on the paragraph or quote it follows, as CommonMark reads it —
-    // not a quote's open fence, nor a quote whose last line was blank.
-    if (open !== null && open.kind !== 'item' && open.kind !== 'table' && lazyJoins(open)) {
+    // a quote only where it ends in a paragraph's text.
+    if (open?.kind === 'paragraph' || (open?.kind === 'quote' && quoteTakesLazy(open))) {
       if (open.kind === 'quote') open.lazy.add(open.lines.length);
       open.lines.push(line.trim());
       return at;
@@ -335,16 +350,20 @@ function opened(kind: Open['kind'], first: string | null): Open {
     depth: 0,
     indent: 0,
     broken: false,
-    fenced: null,
+    takesLazy: null,
     continued: false,
     lazy: new Set(),
   };
 }
 
-/** Whether a lazy line may carry on `open`: a paragraph, or a quote with no fence open and no blank last line. */
-function lazyJoins(open: Open): boolean {
-  if (open.kind !== 'quote') return true;
-  return open.fenced === null && (open.lines.at(-1) ?? '').trim() !== '';
+/**
+ * Whether a lazy line may carry on an open quote: read as an answer of its
+ * own, the quote ends in a paragraph's text. Kept once read, as a lazy line
+ * that joins it leaves that text open.
+ */
+function quoteTakesLazy(open: Open): boolean {
+  open.takesLazy ??= readLines(open.lines, open.lazy).takesLazyLine();
+  return open.takesLazy;
 }
 
 function indentOf(line: string): number {
