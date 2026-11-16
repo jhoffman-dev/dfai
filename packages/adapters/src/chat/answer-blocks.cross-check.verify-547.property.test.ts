@@ -100,10 +100,33 @@ const ITEM_FENCE_SHAPES = ['- W', '1. W', '  - W', '  ```', '```', '  W', ''];
 /** What a line under a quote turns on: a setext underline there is lazy text, not a heading (#831). */
 const QUOTE_SETEXT_SHAPES = ['W', '> W', '> - W', '> ```', '===', '---', '-', ''];
 
+/**
+ * What follows an item nested in another turns on (#845): a fence at the
+ * nested item's text or the outer one's, and what the outer list does next.
+ */
+const NESTED_ITEM = ['- W', '  - W'];
+const NESTED_ITEM_SHAPES = ['    ```', '  ```', '```', '- W', '1. W', '  W', ''];
+
+/**
+ * What follows an item in a quote turns on (#845): the quote ending in a rule
+ * or a fence, in the item or not, and a line under it that may be lazy.
+ */
+const QUOTED_ITEM = ['> - W'];
+const QUOTED_ITEM_SHAPES = ['W', '> W', '> ---', '> ===', '>   ```', '> ```', '===', '-', ''];
+
 /** Every answer of these shapes and this many lines. */
 function everyAnswer(shapes: readonly string[], lines: number): string[][] {
   if (lines === 0) return [[]];
   return everyAnswer(shapes, lines - 1).flatMap((head) => shapes.map((last) => [...head, last]));
+}
+
+/** Every answer that opens with `opening` and goes on with this many lines of these shapes. */
+function everyAnswerAfter(
+  opening: readonly string[],
+  shapes: readonly string[],
+  lines: number,
+): string[] {
+  return everyAnswer(shapes, lines).map((rest) => answerOf([...opening, ...rest]));
 }
 
 /**
@@ -111,7 +134,8 @@ function everyAnswer(shapes: readonly string[], lines: number): string[][] {
  * beneath it (a setext rule under a word, a fence opened in a quote); every
  * answer of three and four lines over the shapes a fence in a list item turns
  * on, so one closes inside the item and the item carries on after it; every
- * answer of three lines over the shapes a quote's lazy line turns on; and 400
+ * answer of three lines over the shapes a quote's lazy line turns on, and
+ * after an item nested in another or an item in a quote; and 400
  * seeded answers of three or four lines over every shape for the rest. It was
  * 3000 random answers of one to four lines, which left some pairs undrawn and
  * cost seconds when the gate shared the machine (#820).
@@ -123,6 +147,8 @@ function answers(): string[] {
     ...[1, 2].flatMap((lines) => everyAnswer(SHAPES, lines).map(answerOf)),
     ...[3, 4].flatMap((lines) => everyAnswer(ITEM_FENCE_SHAPES, lines).map(answerOf)),
     ...everyAnswer(QUOTE_SETEXT_SHAPES, 3).map(answerOf),
+    ...everyAnswerAfter(NESTED_ITEM, NESTED_ITEM_SHAPES, 3),
+    ...everyAnswerAfter(QUOTED_ITEM, QUOTED_ITEM_SHAPES, 3),
     ...Array.from({ length: 400 }, () =>
       answerOf(Array.from({ length: 3 + Math.floor(random() * 2) }, pick)),
     ),
@@ -130,7 +156,7 @@ function answers(): string[] {
 }
 
 describe('Ask’s blocks against the editor’s (PR #547)', () => {
-  it('judges every word the editor draws as prose, on every short answer, every item fence, every quote’s lazy line and seeded longer ones', () => {
+  it('judges every word the editor draws as prose, on every short answer, every item fence, every quote’s lazy line, nested and quoted items, and seeded longer ones', () => {
     const escaped: string[] = [];
     const drawn = new Set<string>();
     for (const answer of answers()) {
