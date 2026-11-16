@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { moduleScript, transpiledModule } from './code-node.ts';
+import { moduleScript, moduleValueImports } from './code-node.ts';
 import { compilerHost, n8nGlobals, type NodeMode, SCRIPT_OPTIONS } from './node-script-host.ts';
+import { namesDeclared, namesFromOutside } from './node-scope.ts';
 
 /*
  * A Code node's modules are a hand-kept list (#825): the order is the bytes of
@@ -39,33 +39,9 @@ interface Script {
 }
 
 /**
- * The local names of a module's imports that survive transpiling, read as
- * the build reads the module: a type-only import is gone by then.
- */
-function valueImportNames(name: string): Set<string> {
-  const url = new URL(name, import.meta.url);
-  const javascript = transpiledModule(name, readFileSync(url, 'utf8'));
-  const output = ts.createSourceFile(name, javascript, ts.ScriptTarget.ES2022, true);
-  return new Set(
-    output.statements.filter(ts.isImportDeclaration).flatMap(({ importClause }) => {
-      const named = importClause?.namedBindings;
-      const bound =
-        named === undefined
-          ? []
-          : ts.isNamespaceImport(named)
-            ? [named.name]
-            : named.elements.map((each) => each.name);
-      return [...(importClause?.name === undefined ? [] : [importClause.name]), ...bound].map(
-        (each) => each.text,
-      );
-    }),
-  );
-}
-
-/**
  * A module's block with its body left out: the same `const { … } =` line, so
- * the same names in the same scope, for checking a further node's own lines
- * without checking the modules again.
+ * the same names in the same scope, for checking a node's own lines without
+ * checking the modules' code again.
  */
 function declarationOnly(code: string): string {
   const headerEnd = code.indexOf('\n', code.indexOf('\n') + 1) + 1;
@@ -92,7 +68,7 @@ function nodeScript(modules: readonly string[], { file, run, bodies }: NodeSpec)
     const first = code.indexOf('\n') + 1;
     const start = text.length + first;
     const header = { start, end: start + code.indexOf('\n', first) - first };
-    add(name, code, { header, imported: valueImportNames(name) });
+    add(name, code, { header, imported: moduleValueImports(name) });
   }
   add(OWN_LINES, run);
   return { file, text: `${text}});\n`, blocks };
@@ -210,7 +186,12 @@ interface ListCheck {
   readonly mode?: NodeMode;
 }
 
-function nodeProblems(program: ts.Program, script: Script): { broken: string[]; unused: string[] } {
+interface NodeCheck {
+  readonly broken: readonly string[];
+  readonly unused: readonly string[];
+}
+
+function nodeProblems(program: ts.Program, script: Script): NodeCheck {
   const source = program.getSourceFile(script.file) as ts.SourceFile;
   const diagnostics = [
     ...program.getSyntacticDiagnostics(source),
@@ -222,27 +203,64 @@ function nodeProblems(program: ts.Program, script: Script): { broken: string[]; 
   };
 }
 
+function programOf(scripts: readonly Script[], globals: string): ts.Program {
+  const files = Object.fromEntries(scripts.map(({ file, text }) => [file, text]));
+  const host = compilerHost({ ...files, [GLOBALS]: globals });
+  return ts.createProgram([...Object.keys(files), GLOBALS], SCRIPT_OPTIONS, host);
+}
+
+/** What the modules' code reads from outside itself, in a script that holds it in full. */
+function modulesReadFromOutside(program: ts.Program, script: Script): Set<string> {
+  const modules = script.blocks.filter(({ header }) => header !== undefined);
+  const first = modules[0];
+  const last = modules[modules.length - 1];
+  if (first === undefined || last === undefined) return new Set();
+  const source = program.getSourceFile(script.file) as ts.SourceFile;
+  return namesFromOutside(program.getTypeChecker(), source, { start: first.start, end: last.end });
+}
+
+/**
+ * Each node's check. The modules' code is checked once, beside no node's
+ * lines, and each node's lines beside only the names the modules hand on,
+ * unless some node declares a name that code reads from outside itself: then
+ * that node could change what the code means, and every node is checked with
+ * the modules' code in full. Either way the answer does not depend on the
+ * order of the nodes.
+ */
+function checkNodes(
+  modules: readonly string[],
+  runs: readonly string[],
+  globals: string,
+): NodeCheck[] {
+  const full = (run: string, at: number) =>
+    nodeScript(modules, { file: `/n8n-code-node-${at}.js`, run, bodies: true });
+  const code = nodeScript(modules, { file: '/n8n-modules.js', run: '', bodies: true });
+  const lines = runs.map((run, at) =>
+    nodeScript(modules, { file: `/n8n-code-node-${at}.js`, run, bodies: false }),
+  );
+  const program = programOf([code, ...lines], globals);
+  const fromOutside = modulesReadFromOutside(program, code);
+  const declares = runs.some((run) =>
+    [...namesDeclared(run)].some((name) => fromOutside.has(name)),
+  );
+  if (!declares) return [code, ...lines].map((script) => nodeProblems(program, script));
+  const scripts = runs.map(full);
+  const each = programOf(scripts, globals);
+  return scripts.map((script) => nodeProblems(each, script));
+}
+
 /**
  * What is wrong with one Code-node module list, given the `run` lines of
- * every node built from it. Each node is checked as its own script, in one
- * program. A module is unused when no node reads it. An empty answer means
- * the list is right.
+ * every node built from it. A module is unused when no node reads it. An
+ * empty answer means the list is right.
  */
 export function moduleListProblems(
   modules: readonly string[],
   runs: readonly string[],
   { provided = [], mode = 'runOnceForAllItems' }: ListCheck = {},
 ): string[] {
-  // The modules' bodies are the same in every node, so the first node checks them and the
-  // rest check only their own lines against the names the modules hand on.
   const distinct = runs.length === 0 ? [''] : [...new Set(runs)];
-  const scripts = distinct.map((run, at) =>
-    nodeScript(modules, { file: `/n8n-code-node-${at}.js`, run, bodies: at === 0 }),
-  );
-  const files = Object.fromEntries(scripts.map(({ file, text }) => [file, text]));
-  const host = compilerHost({ ...files, [GLOBALS]: n8nGlobals(mode, provided) });
-  const program = ts.createProgram([...Object.keys(files), GLOBALS], SCRIPT_OPTIONS, host);
-  const checked = scripts.map((script) => nodeProblems(program, script));
+  const checked = checkNodes(modules, distinct, n8nGlobals(mode, provided));
   const unused = modules.filter((name) => checked.every((node) => node.unused.includes(name)));
   return [
     ...new Set(checked.flatMap(({ broken }) => broken)),

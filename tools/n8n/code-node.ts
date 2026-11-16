@@ -82,14 +82,31 @@ export function exportedValues(source: ts.SourceFile): string[] {
  * modules, and the build is a one-shot run, so a file cannot change under it.
  */
 export function moduleScript(name: string): string {
-  const known = compiledModules.get(name);
-  if (known !== undefined) return known;
-  const script = compiledModule(name);
-  compiledModules.set(name, script);
-  return script;
+  return compiled(name).script;
 }
 
-const compiledModules = new Map<string, string>();
+/**
+ * The local names a module imports as values: the imports the transpiler
+ * kept, which the build strips. A type-only import is gone by then.
+ */
+export function moduleValueImports(name: string): ReadonlySet<string> {
+  return compiled(name).valueImports;
+}
+
+interface CompiledModule {
+  readonly script: string;
+  readonly valueImports: ReadonlySet<string>;
+}
+
+const compiledModules = new Map<string, CompiledModule>();
+
+function compiled(name: string): CompiledModule {
+  const known = compiledModules.get(name);
+  if (known !== undefined) return known;
+  const module = compiledModule(name);
+  compiledModules.set(name, module);
+  return module;
+}
 
 /** A module's TypeScript as the JavaScript a Code node carries, before its imports and exports go. */
 export function transpiledModule(name: string, text: string): string {
@@ -99,15 +116,33 @@ export function transpiledModule(name: string, text: string): string {
   }).outputText;
 }
 
-function compiledModule(name: string): string {
+function importedNames(name: string, javascript: string): Set<string> {
+  const output = ts.createSourceFile(name, javascript, ts.ScriptTarget.ES2022, true);
+  return new Set(
+    output.statements.filter(ts.isImportDeclaration).flatMap(({ importClause }) => {
+      const named = importClause?.namedBindings;
+      const bound =
+        named === undefined
+          ? []
+          : ts.isNamespaceImport(named)
+            ? [named.name]
+            : named.elements.map((each) => each.name);
+      const all = importClause?.name === undefined ? bound : [importClause.name, ...bound];
+      return all.map((each) => each.text);
+    }),
+  );
+}
+
+function compiledModule(name: string): CompiledModule {
   const text = readFileSync(new URL(name, import.meta.url), 'utf8');
   const names = exportedValues(ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true));
-  const code = transpiledModule(name, text)
-    .replace(IMPORT, '')
-    .replace(EMPTY_EXPORT, '')
-    .replace(EXPORT, '');
+  const javascript = transpiledModule(name, text);
+  const code = javascript.replace(IMPORT, '').replace(EMPTY_EXPORT, '').replace(EXPORT, '');
   const list = names.join(', ');
-  return `// ${name.slice(name.lastIndexOf('/') + 1)}\nconst { ${list} } = (() => {\n${code}return { ${list} };\n})();\n`;
+  return {
+    script: `// ${name.slice(name.lastIndexOf('/') + 1)}\nconst { ${list} } = (() => {\n${code}return { ${list} };\n})();\n`,
+    valueImports: importedNames(name, javascript),
+  };
 }
 
 const HEADER = [

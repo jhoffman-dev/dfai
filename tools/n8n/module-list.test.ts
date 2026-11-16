@@ -112,8 +112,10 @@ describe('the module list of every Code node the build makes', () => {
       const runs = nodes.map(({ run }) => run);
       expect(moduleListProblems(LISTS[list], runs, check)).toEqual([]);
     },
-    // Type-checks a whole mapper: about a second here, several on a loaded CI runner.
-    30_000,
+    // Type-checks a whole mapper once: the meeting list takes about 0.2 s here (the file about
+    // 1 s). Before its module code was checked once per list, four full checks took 6.8 s on a
+    // CI runner, past the 5 s default; 10 s leaves room for a loaded runner.
+    10_000,
   );
 });
 
