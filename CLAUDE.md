@@ -183,7 +183,8 @@ machine:
   that commit. On top of the agent's own list, high risk here is a PR that
   touches:
   - **The vault on disk:** how notes are written, moved, renamed, deleted or
-    migrated (`packages/adapters/src/markdown`, `packages/adapters/src/vault`,
+    migrated (`packages/adapters/src/markdown` where it changes the bytes a
+    save writes, not parsing alone; `packages/adapters/src/vault`,
     `apps/desktop/src-tauri/src/vault*`, `rename_migration`), sync and conflict
     handling (`packages/*/src/sync`, `git_process`, ADR-0003, ADR-0025,
     ADR-0048), and automations or archive rules that move files.
@@ -191,17 +192,23 @@ machine:
     of saved settings.
   - **Secrets and the local API:** `apps/desktop/src-tauri/src/secrets*`,
     `apps/auth-function`, `packages/*/src/auth`, the API's and MCP server's
-    access rules (ADR-0016, ADR-0017), and any Google, Slack, GitHub or Granola
-    sign-in.
+    access rules (`packages/application/src/api`, `packages/adapters/src/api`,
+    `apps/desktop/src-tauri/src/api`, `apps/mcp`; ADR-0016, ADR-0017) — a new
+    read-only route that follows those ADRs is not high risk, a change to who
+    may call or what may be written is — and any Google, Slack, GitHub or
+    Granola sign-in.
   - **What the app may do on the machine:** `tauri.conf.json`,
     `apps/desktop/src-tauri/capabilities/`, the content security policy.
   - **Release and hosting:** `.github/workflows/release.yml`,
     `web-hosting.yml`, `.github/release/`, anything under `tools/ci/` that
     guards them.
-  - **The gate:** `.github/` as a whole, `tools/ci/`, the speed budgets, the
-    coverage floors, the e2e-flake lint rules, and any test that is deleted,
-    skipped, quarantined or made looser. Dependabot PRs fall here or under new
-    dependencies, so James merges those.
+  - **The gate:** `.github/` as a whole, `tools/ci/`, the speed budgets
+    (`tools/perf/budgets.json`), the coverage floors, the e2e-flake lint rules,
+    the `scripts` in any `package.json`, and any test that is deleted, skipped,
+    quarantined or made looser.
+  - **Dependencies:** any change to `pnpm-lock.yaml`, `Cargo.lock`, or the
+    dependency lists in a `package.json` or `Cargo.toml`. Every Dependabot PR
+    is James's to merge.
   - **The rules:** `CLAUDE.md`, `ENGINEERING.md`, `.claude/`.
 
 - **Never guess his first name** from "jhoffman". It is James; if a name is
@@ -217,11 +224,12 @@ machine:
   runs `pnpm tauri:dev` from the main checkout: frontend changes show live, Rust
   changes rebuild and relaunch, dependency changes need a stop,
   `pnpm install`, and a rerun.
-- **Merge flow.** Each agent works in its own worktree on its own branch. Merge
-  with `git merge --no-ff`, then check `git diff --stat <branch> main` is empty
-  so nothing was dropped (if `main` had moved, it shows only `main`'s own
-  changes). If `main` moved while the branch was out, run the gate
-  on the combined `main` before calling it done.
+- **Merge flow.** Each agent works in its own worktree on its own branch, and
+  no agent merges into `main` locally: `pr-merger` merges through
+  `gh pr merge`, or James does. A combined trial is built with
+  `git merge --no-ff` on a throwaway `trial/*` branch. After a trialled set has
+  merged, `git diff --stat <trial> origin/main` is empty, so nothing was
+  dropped.
 
 ## Before starting any work, read the issues
 
