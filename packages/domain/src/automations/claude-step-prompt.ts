@@ -8,6 +8,12 @@
  * prompt as written; the Claude Code provider renders the conversation as a
  * transcript whose own tags are neutralized, which would take DFAI's fence
  * down with a note's, leaving the note's words with nothing round them.
+ *
+ * What stays the same from one ask to the next comes first — who it is, the
+ * rule's prompt, the answer's shape, then the data beside the notes (who was
+ * there, the vocabulary, the projects) — and the notes last, so the parts of
+ * one long meeting share all of it as one prefix (#793). Nothing that changes
+ * per ask goes before the notes; the date changes only once a day.
  */
 
 import { neutralizeFraming } from '../chat/tool-call-text.ts';
@@ -64,9 +70,9 @@ export function claudeStepSystem({
     '</rule_prompt>',
     '',
     answer,
+    ...dataSection(data),
     '',
     notesSection(notes),
-    ...dataSection(data),
   ].join('\n');
 }
 
@@ -94,7 +100,7 @@ function dataSection(data: readonly PromptData[]): string[] {
     ({ about, text }) =>
       `<vault_data about=${defused(JSON.stringify(about))}>\n${defused(text)}\n</vault_data>`,
   );
-  return ['', '## What the vault says about them', '', ...sections];
+  return ['', '## What the vault says about the notes below', '', ...sections];
 }
 
 /** What a step is asked: the notes it is about are in the system prompt. */

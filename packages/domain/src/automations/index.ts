@@ -2,6 +2,7 @@ export {
   AUTOMATION_MARKER,
   AUTOMATION_MARKER_VALUE,
   automationFrontmatter,
+  sameAutomation,
   automationIdFor,
   automationIdKey,
   automationIdProblem,
@@ -215,6 +216,7 @@ export {
 } from './meeting-project-choice.ts';
 export type {
   ChoosingMeeting,
+  MeetingProjectTies,
   ProjectChoice,
   ProjectChoiceOutcome,
   ProjectOption,
@@ -348,6 +350,12 @@ export {
   meetingSetupWritesNothing,
   meetingsProcessedOnArrival,
 } from './meeting-setup.ts';
+export {
+  meetingReadsTwice,
+  meetingsReadTwice,
+  meetingsReadTwiceWarning,
+} from './meetings-read-twice.ts';
+export type { MeetingReadTwice } from './meetings-read-twice.ts';
 export type {
   MeetingSetupFacts,
   MeetingSetupLine,
