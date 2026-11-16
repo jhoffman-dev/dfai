@@ -47,11 +47,25 @@ interface Open {
   fenced: string | null;
   /** An item carried on after a fence inside it: drawn only if it says more. */
   continued: boolean;
+  /** For a quote: which of its lines came lazily, without a `>`. */
+  lazy: Set<number>;
+}
+
+/** A fence opened inside a list item: its opening run, and the item's depth and text indent. */
+interface ItemFence {
+  opener: string;
+  depth: number;
+  indent: number;
 }
 
 /** Cuts an answer into its blocks, in order. */
 export function answerBlocks(answer: string): RawAnswerBlock[] {
-  const reader = new BlockReader();
+  return readBlocks(answer, new Set());
+}
+
+/** Cuts an answer into its blocks; the `lazy` lines may only carry a paragraph on. */
+function readBlocks(answer: string, lazy: ReadonlySet<number>): RawAnswerBlock[] {
+  const reader = new BlockReader(lazy);
   const lines = answer.replace(/\r\n?/g, '\n').split('\n');
   for (let at = 0; at < lines.length; at += 1) at = reader.line(lines, at);
   return reader.finish();
@@ -63,6 +77,8 @@ class BlockReader {
   /** The indent of each list level still open, outermost first. */
   private levels: number[] = [];
 
+  constructor(private readonly lazy: ReadonlySet<number>) {}
+
   /** Reads the line at `at`; returns the last line it took (a fence takes several). */
   line(lines: readonly string[], at: number): number {
     const line = lines[at] as string;
@@ -72,7 +88,9 @@ class BlockReader {
     const fence = openingFence(line);
     if (fence !== null) return this.fence(lines, at, fence);
     if (HEADING.test(line)) return this.alone('heading', headingText(line), at);
-    if (this.open?.kind === 'paragraph' && SETEXT.test(line)) return this.setext(at);
+    // A setext underline cannot be a lazy line (CommonMark): under a quote it is the quote's text.
+    if (this.open?.kind === 'paragraph' && SETEXT.test(line) && !this.lazy.has(at))
+      return this.setext(at);
     if (RULE.test(line)) return this.alone('rule', line.trim(), at);
     const item = ITEM.exec(line);
     if (item !== null && this.mayStartItem(item)) return this.item(item, at);
@@ -138,11 +156,17 @@ class BlockReader {
     return !empty && (!/^\d/.test(marker) || Number.parseInt(marker, 10) === 1);
   }
 
-  /** The fence a line opens inside the open item — indented to its text — or null. */
-  private itemFenceAt(line: string): string | null {
-    const open = this.open;
-    if (open?.kind !== 'item' || indentOf(line) < open.indent) return null;
-    return openingFence(line.slice(open.indent));
+  /**
+   * The fence a line opens inside an open item — indented to the text of the
+   * innermost one it reaches, which closes the items nested in that — or null.
+   */
+  private itemFenceAt(line: string): ItemFence | null {
+    if (this.open?.kind !== 'item') return null;
+    const depth = this.levels.findLastIndex((textAt) => textAt <= indentOf(line));
+    if (depth < 0) return null;
+    const indent = this.levels[depth] as number;
+    const opener = openingFence(line.slice(indent));
+    return opener === null ? null : { opener, depth, indent };
   }
 
   /**
@@ -150,10 +174,10 @@ class BlockReader {
    * at a line less indented than the item's text — as the editor reads it
    * (mdast). The items after it are still items, and still judged.
    */
-  private itemFence(lines: readonly string[], at: number, opener: string): number {
-    const item = this.open as Open;
+  private itemFence(lines: readonly string[], at: number, item: ItemFence): number {
     this.close();
-    const closer = closingFence(opener);
+    this.levels = this.levels.slice(0, item.depth + 1);
+    const closer = closingFence(item.opener);
     let end = at + 1;
     let closed = false;
     for (; end < lines.length; end += 1) {
@@ -232,6 +256,7 @@ class BlockReader {
     // A lazy line carries on the paragraph or quote it follows, as CommonMark reads it —
     // not a quote's open fence, nor a quote whose last line was blank.
     if (open !== null && open.kind !== 'item' && open.kind !== 'table' && lazyJoins(open)) {
+      if (open.kind === 'quote') open.lazy.add(open.lines.length);
       open.lines.push(line.trim());
       return at;
     }
@@ -254,7 +279,7 @@ class BlockReader {
     if (open.continued && open.lines.every((line) => line.trim() === '')) return;
     const text = open.lines.join('\n');
     if (open.kind === 'quote') {
-      this.blocks.push(...quoteBlocks(text));
+      this.blocks.push(...quoteBlocks(text, open.lazy));
       return;
     }
     this.push({ kind: open.kind, text, marker: open.marker, depth: open.depth, quoted: false });
@@ -270,8 +295,8 @@ class BlockReader {
  * each item its own block, judged on its own as one outside a quote is; the
  * rest of the quote stays one quote, cited by a link on any of its lines.
  */
-function quoteBlocks(text: string): RawAnswerBlock[] {
-  const inner = answerBlocks(text);
+function quoteBlocks(text: string, lazy: ReadonlySet<number>): RawAnswerBlock[] {
+  const inner = readBlocks(text, lazy);
   if (!inner.some((block) => block.kind === 'item')) {
     return [{ kind: 'quote', text, marker: null, depth: 0, quoted: false }];
   }
@@ -312,6 +337,7 @@ function opened(kind: Open['kind'], first: string | null): Open {
     broken: false,
     fenced: null,
     continued: false,
+    lazy: new Set(),
   };
 }
 
