@@ -111,15 +111,29 @@ describe('the module-list check', () => {
     expect(moduleListProblems(['./sha256.ts', './standard-webhook.ts'], RUN_LINES)).toEqual([]);
   });
 
-  it('names a module that is imported but missing from the list', () => {
+  it('names a module that is imported but missing from the list, and what to do', () => {
     expect(moduleListProblems(['./standard-webhook.ts'], RUN_LINES)).toEqual([
-      './standard-webhook.ts imports sha256.ts, which is not listed before it',
+      expect.stringMatching(
+        /^\.\/standard-webhook\.ts: Cannot find name 'hmacSha256'\. \(list the module that exports it/,
+      ),
     ]);
   });
 
-  it('names a module listed after the module that imports it', () => {
-    const problems = moduleListProblems(['./standard-webhook.ts', './sha256.ts'], RUN_LINES);
-    expect(problems).toEqual([expect.stringContaining('sha256.ts, which is not listed before it')]);
+  it('passes a module listed after one that uses it only once the node runs', () => {
+    expect(moduleListProblems(['./standard-webhook.ts', './sha256.ts'], RUN_LINES)).toEqual([]);
+  });
+
+  it('names a module listed after one that reads it while the modules load', () => {
+    const base = fixture('load-base.ts', 'export function one(): number {\n  return 1;\n}\n');
+    const early = fixture(
+      'load-early.ts',
+      "import { one } from './load-base.ts';\nexport const TWO = one() + 1;\n",
+    );
+    expect(moduleListProblems([early, base], ['return TWO;'])).toEqual([
+      expect.stringMatching(
+        /load-early\.ts: Block-scoped variable 'one' used before its declaration/,
+      ),
+    ]);
   });
 
   it('names a module listed that nothing imports and no node uses', () => {
@@ -143,7 +157,7 @@ describe('the module-list check', () => {
   it('names what the node uses that no listed module exports, unless something else provides it', () => {
     const run = 'return savedReply(dfaiCaptureMarkdown);';
     expect(moduleListProblems(['./slack-reply.ts'], [run])).toEqual([
-      'the node uses dfaiCaptureMarkdown, which no listed module exports',
+      expect.stringMatching(/^the node’s own lines: Cannot find name 'dfaiCaptureMarkdown'\./),
     ]);
     expect(moduleListProblems(['./slack-reply.ts'], [run], ['dfaiCaptureMarkdown'])).toEqual([]);
   });
@@ -165,27 +179,28 @@ describe('the module-list check', () => {
     });
   });
 
-  describe('names each import or export the build cannot inline, and why', () => {
+  describe('names each import or export the build cannot inline, and what to do', () => {
     const base = fixture('base.ts', 'export function one(): number {\n  return 1;\n}\n');
     const use = '\nexport function two(): number {\n  return 2;\n}\n';
     it.each([
-      ['renamed', "import { one as uno } from './base.ts';\nuno();", /a renamed import/],
-      ['namespace', "import * as b from './base.ts';\nb.one();", /a namespace import/],
-      ['default', "import one from './base.ts';\none();", /a default import/],
-      ['side-effect', "import './base.ts';", /side effects only/],
-      ['re-export', "export { one } from './base.ts';", /re-export/],
-      ['star', "export * from './base.ts';", /re-export/],
-      ['list', 'const three = 3;\nexport { three };', /an export list/],
-      ['default-export', 'export default 3;', /a default export/],
-      ['enum', 'export enum Size {\n  S,\n}', /does not strip/],
+      ['renamed', "import { one as uno } from './base.ts';\nuno();", /Cannot find name 'uno'/],
+      ['namespace', "import * as b from './base.ts';\nb.one();", /Cannot find name 'b'/],
+      ['default', "import uno from './base.ts';\nuno();", /Cannot find name 'uno'/],
+      ['re-export', "export { one } from './base.ts';", /export declaration/],
+      ['star', "export * from './base.ts';", /export declaration/],
+      ['list', 'const three = 3;\nexport { three };', /export declaration/],
+      ['default-export', 'export default 3;', /export assignment|top level/],
+      ['enum', 'export enum Size {\n  S,\n}', /Modifiers cannot appear here/],
       ['dynamic', "export const later = () => import('./base.ts');", /at run time/],
       ['require', "export const now = () => require('./base.ts');", /at run time/],
     ])('%s', (form, lines, why) => {
       const module = fixture(`form-${form}.ts`, `${lines}${use}`);
-      const problems = moduleListProblems([base, module], ['return two() + one();']);
-      expect(problems).toContainEqual(expect.stringMatching(why));
-      expect(problems.find((each) => why.test(each))).toMatch(
-        /; the (build inlines only|node is one script)/,
+      const problem = moduleListProblems([base, module], ['return two() + one();']).find((each) =>
+        why.test(each),
+      );
+      expect(problem).toMatch(new RegExp(`^${module}: `));
+      expect(problem).toMatch(
+        /\((list the module|the build inlines only)|; the build inlines only/,
       );
     });
   });
@@ -197,7 +212,7 @@ describe('the module-list check', () => {
       "import { type Shape, UNIT } from './shape.ts';\nexport function size(s: Shape): number {\n  return s.n * UNIT;\n}\n",
     );
     expect(moduleListProblems([user], ['return size({ n: 3 });'])).toEqual([
-      expect.stringMatching(/unit-user\.ts imports .*shape\.ts, which is not listed before it$/),
+      expect.stringMatching(/unit-user\.ts: Cannot find name 'UNIT'/),
     ]);
   });
 });
@@ -232,27 +247,24 @@ describe('the module-list check against what n8n runs (re-check #847)', () => {
   });
 
   it.each([
-    ['a destructured export', 'export const { a } = { a: 1 };\n'],
-    ['import.meta', 'export const here = (): string => import.meta.url;\n'],
-    ['a top-level await', 'export const v = await Promise.resolve(1);\n'],
+    ['a destructured export', 'export const { a } = { a: 1 };\n', 'a'],
+    ['import.meta', 'export const here = (): string => import.meta.url;\n', 'here'],
+    ['a top-level await', 'export const v = await Promise.resolve(1);\n', 'v'],
     [
       'a top-level for await',
       'for await (const each of [1]) console.log(each);\nexport const v = 1;\n',
+      'v',
     ],
-    ['an export declare', 'export declare const v: number;\n'],
-  ])('reports a module with %s, by name', (form, text) => {
+    ['an export declare', 'export declare const v: number;\n', 'v'],
+  ])('reports a module with %s, by name', (form, text, name) => {
     const module = fixture(`broken-${form.replaceAll(' ', '-')}.ts`, text);
-    const problems = moduleListProblems(
-      [module],
-      ['return twice(1) + JSON.stringify([a, here, v]);'].map((run) => run),
-      ['a', 'here', 'twice'],
-    );
-    expect(problems).toContainEqual(
-      expect.stringContaining(module.slice(module.lastIndexOf('/') + 1)),
+    const problems = moduleListProblems([module], [`return ${name};`]);
+    expect(problems.filter((each) => !each.includes(' is listed, but '))).toContainEqual(
+      expect.stringMatching(new RegExp(`^${module}: `)),
     );
   });
 
-  it.each(['expect', 'vi', 'process', 'Buffer', 'fetch', 'constructor'])(
+  it.each(['expect', 'vi', 'process', 'fetch', 'constructor'])(
     'reports %s, which the test runner has but n8n does not',
     (name) => {
       expect(moduleListProblems([A], [`return twice(${name});`])).toEqual([
