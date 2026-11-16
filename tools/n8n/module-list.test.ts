@@ -112,6 +112,8 @@ describe('the module list of every Code node the build makes', () => {
       const runs = nodes.map(({ run }) => run);
       expect(moduleListProblems(LISTS[list], runs, check)).toEqual([]);
     },
+    // Type-checks a whole mapper: about a second here, several on a loaded CI runner.
+    30_000,
   );
 });
 
@@ -314,6 +316,29 @@ describe('the module-list check against what n8n runs (re-check #847)', () => {
     expect(moduleListProblems([both], ['const twice = 1;\nreturn thrice(twice);'])).toContainEqual(
       expect.stringContaining('twice'),
     );
+  });
+
+  it('checks a further node’s own lines in the same scope as the modules', () => {
+    const both = fixture(
+      'twice-thrice-2.ts',
+      'export function twice(n: number): number {\n  return n * 2;\n}\nexport function thrice(n: number): number {\n  return n * 3;\n}\n',
+    );
+    const runs = ['return twice(1);', 'const thrice = 1;\nreturn twice(thrice + missing);'];
+    const problems = moduleListProblems([both], runs);
+    expect(problems).toContainEqual(
+      expect.stringMatching(
+        /^the node’s own lines: Cannot redeclare block-scoped variable 'thrice'/,
+      ),
+    );
+    expect(problems).toContainEqual(expect.stringContaining("Cannot find name 'missing'"));
+  });
+
+  it('counts a module as used when only a further node reads it', () => {
+    const runs = ['return 1;', 'return twice(1);'];
+    expect(moduleListProblems([A], runs)).toEqual([]);
+    expect(moduleListProblems([A], ['return 1;', 'return 2;'])).toEqual([
+      expect.stringContaining(' is listed, but no listed module imports it and no node uses it'),
+    ]);
   });
 
   it.each([

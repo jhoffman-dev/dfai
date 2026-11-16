@@ -62,8 +62,25 @@ function valueImportNames(name: string): Set<string> {
   );
 }
 
+/**
+ * A module's block with its body left out: the same `const { … } =` line, so
+ * the same names in the same scope, for checking a further node's own lines
+ * without checking the modules again.
+ */
+function declarationOnly(code: string): string {
+  const headerEnd = code.indexOf('\n', code.indexOf('\n') + 1) + 1;
+  return `${code.slice(0, headerEnd)}return /** @type {any} */ ({});\n})();`;
+}
+
+interface NodeSpec {
+  readonly file: string;
+  readonly run: string;
+  /** Whether the modules' bodies are checked here, or only the names they hand on. */
+  readonly bodies: boolean;
+}
+
 /** One node as n8n runs it: the modules, then its own lines, in one function body and one scope. */
-function nodeScript(file: string, modules: readonly string[], run: string): Script {
+function nodeScript(modules: readonly string[], { file, run, bodies }: NodeSpec): Script {
   const blocks: Block[] = [];
   let text = '(async function () {\n';
   const add = (label: string, code: string, module?: Pick<Block, 'header' | 'imported'>) => {
@@ -71,7 +88,7 @@ function nodeScript(file: string, modules: readonly string[], run: string): Scri
     text += `${code}\n`;
   };
   for (const name of modules) {
-    const code = moduleScript(name);
+    const code = bodies ? moduleScript(name) : declarationOnly(moduleScript(name));
     const first = code.indexOf('\n') + 1;
     const start = text.length + first;
     const header = { start, end: start + code.indexOf('\n', first) - first };
@@ -216,8 +233,11 @@ export function moduleListProblems(
   runs: readonly string[],
   { provided = [], mode = 'runOnceForAllItems' }: ListCheck = {},
 ): string[] {
-  const scripts = (runs.length === 0 ? [''] : runs).map((run, at) =>
-    nodeScript(`/n8n-code-node-${at}.js`, modules, run),
+  // The modules' bodies are the same in every node, so the first node checks them and the
+  // rest check only their own lines against the names the modules hand on.
+  const distinct = runs.length === 0 ? [''] : [...new Set(runs)];
+  const scripts = distinct.map((run, at) =>
+    nodeScript(modules, { file: `/n8n-code-node-${at}.js`, run, bodies: at === 0 }),
   );
   const files = Object.fromEntries(scripts.map(({ file, text }) => [file, text]));
   const host = compilerHost({ ...files, [GLOBALS]: n8nGlobals(mode, provided) });
