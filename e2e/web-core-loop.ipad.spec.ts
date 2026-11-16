@@ -1,6 +1,5 @@
-import { caretAtLineEndBy } from './caret.ts';
+import { caretAtLineEndByTap } from './caret.ts';
 import { expect, type Page } from './fixtures.ts';
-import { LINE_END } from './platform.ts';
 import { webVaultOnGitHub } from './web-github.ts';
 import { webTest as test } from './web-test.ts';
 import {
@@ -17,22 +16,6 @@ import {
  * Today and the Inbox from the browser's index, search, and signing out
  * leaving nothing of the vault on the device. Every step taps.
  */
-
-async function tapAtTheEndOf(page: Page, text: string) {
-  const line = page.getByLabel('Note', { exact: true }).getByText(text);
-  const box = await line.boundingBox();
-  if (box === null) throw new Error(`“${text}” is not on the page.`);
-  // The far right of the line's block, where a tap leaves the caret at its end.
-  // Held by the editor before the typing: ProseMirror can undo a tap read late
-  // after the focus, as it undoes a key (caret.ts, #797). The first try is the
-  // tap alone, so where the tap leaves the caret is what is checked. A tap done
-  // again is a double tap, which selects a word: on a retry only, the key to
-  // the line's end, from the iPad's keyboard that then types, collapses it.
-  await caretAtLineEndBy(line, async (attempt) => {
-    await line.tap({ position: { x: box.width - 1, y: box.height / 2 }, timeout: 1_000 });
-    if (attempt > 1) await page.keyboard.press(LINE_END);
-  });
-}
 
 const goTo = (page: Page, name: RegExp) =>
   page.getByRole('list', { name: 'Go to' }).getByRole('button', { name });
@@ -53,7 +36,7 @@ test('on the web, a finger signs in, edits a note into a commit, and runs Today,
 
   await test.step('a note, opened and edited by a tap, is committed', async () => {
     await page.getByRole('treeitem', { name: 'Garden plan', exact: true }).tap();
-    await tapAtTheEndOf(page, 'First line.');
+    await caretAtLineEndByTap(page.getByLabel('Note', { exact: true }).getByText('First line.'));
     await page.keyboard.type(' Tapped.');
     await expect(saveStatus(page)).toHaveText('Saved', { timeout: 10_000 });
     await expect
