@@ -10,7 +10,7 @@ const MAPPING = '../../packages/domain/src/meetings/mapping/';
  * one script with no imports, so the modules are joined into it; they import
  * nothing but each other.
  */
-const MODULES = [
+export const MODULES = [
   `${MAPPING}meeting-mapping-error.ts`,
   `${MAPPING}meeting-instant.ts`,
   `${MAPPING}meeting-stated.ts`,
@@ -38,7 +38,7 @@ export const HIDDEN_CHARACTERS = '../../packages/domain/src/text/hidden-characte
  * file-name rules and the hidden characters it shares, then its own. A Slack
  * message is written by the same bytes whether n8n or the app maps it.
  */
-const CAPTURE_MODULES = [
+export const CAPTURE_MODULES = [
   HIDDEN_CHARACTERS,
   `${MAPPING}meeting-mapping-error.ts`,
   `${MAPPING}meeting-instant.ts`,
@@ -60,7 +60,7 @@ const EXPORT = /^export\s+(?=(async\s+)?(function|class|const|let)\b)/gm;
 const EMPTY_EXPORT = /^export\s*\{\s*\};?[ \t]*\n?/gm;
 
 /** The names a module exports as values (types leave nothing behind in JavaScript). */
-function exportedValues(source: ts.SourceFile): string[] {
+export function exportedValues(source: ts.SourceFile): string[] {
   const exported = (node: ts.Node) =>
     ts.canHaveModifiers(node) &&
     (ts.getModifiers(node) ?? []).some((each) => each.kind === ts.SyntaxKind.ExportKeyword);
@@ -132,6 +132,9 @@ export function captureCodeNodeScript(run: string, extra: readonly string[] = []
   return `${CAPTURE_HEADER}\n\n${writer}\n${modules}\n// --- n8n ---\n${run}\n`;
 }
 
+/** The capture mapper's own GitHub check, which only the map node carries after it. */
+export const MAP_CAPTURE_EXTRA = ['./capture-github.ts'] as const;
+
 /**
  * The Slack workflow's "Map capture to DFAI file" node (#104), on its
  * fallback commit: the payload `buildNode` assembled, as the file DFAI would
@@ -147,7 +150,7 @@ export function mapCaptureScript(buildNode: string): string {
       `const file = mapCapture($('${buildNode}').first().json, OPTIONS);`,
       'return [{ json: { ...file, held: heldCapturePath($input.first().json, file) } }];',
     ].join('\n'),
-    ['./capture-github.ts'],
+    MAP_CAPTURE_EXTRA,
   );
 }
 
