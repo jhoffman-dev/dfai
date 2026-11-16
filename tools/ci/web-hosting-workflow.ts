@@ -17,7 +17,7 @@ export const DEPLOY_ACTION =
 export const ALLOWED_ACTIONS: ReadonlySet<string> = new Set([
   'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
   'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
-  'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413',
+  'pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115',
   'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9',
   'actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9',
   'actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9',
@@ -62,7 +62,7 @@ const buildSteps: Step[] = [
   },
   {
     if: KEY_SET,
-    uses: 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413',
+    uses: 'pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115',
     with: { version: 11 },
   },
   {
