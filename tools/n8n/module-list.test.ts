@@ -342,6 +342,34 @@ describe('the module-list check against what n8n runs (re-check #847)', () => {
     },
   );
 
+  describe('typeof of a name a module imports, against a name it probes for', () => {
+    const b = fixture('guard-b.ts', "export function sign(): string {\n  return 'signed';\n}\n");
+    // Read only under typeof: the call is not checked, so nothing but the import can say it is missing.
+    const a = fixture(
+      'guard-a.ts',
+      "import { sign } from './guard-b.ts';\nexport const canSign = (): boolean => typeof sign === 'function';\n",
+    );
+    const run = 'return canSign();';
+
+    it('reports the module it imports from when that is missing, though typeof hides the throw', () => {
+      expect(moduleListProblems([a], [run])).toEqual([
+        expect.stringMatching(/guard-a\.ts: Cannot find name 'sign'/),
+      ]);
+    });
+
+    it('passes when the module it imports from is listed', () => {
+      expect(moduleListProblems([b, a], [run])).toEqual([]);
+    });
+
+    it.each(['Buffer', 'someUndeclaredGlobal'])('passes a module that probes for %s', (name) => {
+      const probe = fixture(
+        `probe-${name}.ts`,
+        `export const has = (): boolean => typeof ${name} === 'function';\n`,
+      );
+      expect(moduleListProblems([probe], ['return has();'])).toEqual([]);
+    });
+  });
+
   it('reports typeof of a name declared later in the same scope, which throws', () => {
     const run = 'const kind = typeof later;\nconst later = twice(1);\nreturn kind;';
     expect(moduleListProblems([A], [run])).toEqual([expect.stringContaining('later')]);
