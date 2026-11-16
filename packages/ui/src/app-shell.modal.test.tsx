@@ -192,4 +192,31 @@ describe('the modal layer', () => {
     releaseOuter?.();
     expect(inert(opener)).toBe(false);
   });
+
+  it('makes what the app mounts while a modal is open inert too, and frees it on close', async () => {
+    const shell = (sidebarOpen: boolean, settings: boolean) => (
+      <AppShell
+        sidebar={<p>tree</p>}
+        sidebarOpen={sidebarOpen}
+        onShowSidebar={() => undefined}
+        overlay={
+          settings && (
+            <SettingsUnavailable onClose={() => undefined}>Nothing here</SettingsUnavailable>
+          )
+        }
+      />
+    );
+    const { rerender } = render(shell(true, true));
+    await screen.findByRole('dialog', { name: 'Settings' });
+    await waitFor(() => expect(inert(screen.getByText('tree'))).toBe(true));
+
+    // The window narrowed: the sidebar goes, and the way back to it comes in.
+    rerender(shell(false, true));
+    const showSidebar = screen.getByRole('button', { name: 'Show sidebar', hidden: true });
+    await waitFor(() => expect(inert(showSidebar)).toBe(true));
+
+    rerender(shell(false, false));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(inert(showSidebar)).toBe(false);
+  });
 });
