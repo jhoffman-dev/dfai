@@ -32,6 +32,14 @@ const SETEXT = /^ {0,3}(?:=+|-+) *$/;
 const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])(?:\s+(.*))?$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const TABLE = /^\s*\|/;
+/** A table's second row, under its header: without one, a `|` row is a paragraph (GFM). */
+const DELIMITER_ROW = /^\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?$/;
+/**
+ * How deep quotes nest before a `>` is read as text, as markdown-it's
+ * `maxNesting` does: a reader per level would otherwise overflow the stack.
+ * Text past it is still a quote's, and still judged.
+ */
+const MAX_QUOTE_NESTING = 100;
 
 /** What the block being read is, while lines may still join it. */
 interface Open {
@@ -93,11 +101,22 @@ class BlockReader {
   private fenced: OpenFence | null = null;
   /** The indent of each list level still open, outermost first. */
   private levels: number[] = [];
+  private linesRead = 0;
 
-  constructor(private readonly work: ReadWork) {}
+  /**
+   * `nesting` is how many quotes this reader is in; `opensUnderParagraph`, that
+   * its quote broke into a paragraph, which the editor holds its first line
+   * to: it starts no item a paragraph would not let start.
+   */
+  constructor(
+    private readonly work: ReadWork,
+    private readonly nesting = 0,
+    private readonly opensUnderParagraph = false,
+  ) {}
 
   line(line: string): void {
     this.work.steps += 1;
+    this.linesRead += 1;
     if (this.fenced !== null && this.fenceTakes(line)) return;
     if (line.trim() === '') return this.blank();
     const inItem = this.itemFenceAt(line);
@@ -109,16 +128,23 @@ class BlockReader {
     if (RULE.test(line)) return this.alone('rule', line.trim());
     const item = ITEM.exec(line);
     if (item !== null && this.mayStartItem(item)) return this.item(item);
-    const quote = QUOTE.exec(line);
+    const quote = this.nesting < MAX_QUOTE_NESTING ? QUOTE.exec(line) : null;
     if (quote !== null) return this.quote(quote[1] as string);
     if (TABLE.test(line)) return this.table(line);
     this.text(line);
   }
 
-  /** A lazy line is the text of the paragraph it carries on, whatever it looks like (CommonMark). */
+  /**
+   * A lazy line is the text of the paragraph it carries on, whatever it looks
+   * like (CommonMark). Asked once, at the top, whether it is one: it goes
+   * straight down to the innermost quote, which takes it.
+   */
   lazyLine(line: string): void {
     this.work.steps += 1;
-    this.text(line);
+    const inner = this.open?.inner ?? null;
+    if (inner === null) return this.text(line);
+    this.open?.lines.push(line);
+    inner.lazyLine(line);
   }
 
   /**
@@ -130,14 +156,14 @@ class BlockReader {
     const open = this.open;
     if (this.fenced !== null) return false;
     if (open?.kind === 'paragraph') return true;
-    if (open?.kind === 'item') return !open.broken && (open.lines.at(-1) ?? '').trim() !== '';
-    if (open?.kind === 'quote') return (open.inner as BlockReader).takesLazyLine();
-    return false;
+    if (open?.kind === 'item') return itemTakesLazy(open);
+    if (open?.kind === 'table') return !isTable(open.lines);
+    return open?.inner?.takesLazyLine() ?? false;
   }
 
   finish(): RawAnswerBlock[] {
     // An unclosed fence runs to the end of the answer.
-    if (this.fenced !== null) this.endFence(false);
+    if (this.fenced !== null) this.endFence();
     this.close();
     return this.blocks;
   }
@@ -162,17 +188,31 @@ class BlockReader {
   /** Whether the open fence takes this line: false when the line ends it with its item. */
   private fenceTakes(line: string): boolean {
     const fence = this.fenced as OpenFence;
-    const cut = fence.item === null ? 0 : Math.min(fence.item.indent, indentOf(line));
-    if (fence.item !== null && line.trim() !== '' && indentOf(line) < fence.item.indent) {
-      this.endFence(false);
+    const indent = indentOf(line);
+    if (fence.item !== null && line.trim() !== '' && indent < fence.item.indent) {
+      this.endFence();
       return false;
     }
-    if (fence.closer.test(line.slice(cut))) this.endFence(true);
+    const cut = fence.item === null ? 0 : Math.min(fence.item.indent, indent);
+    if (fence.closer.test(line.slice(cut))) this.closeFence();
     else fence.code.push(line.slice(cut));
     return true;
   }
 
-  private endFence(closed: boolean): void {
+  /** The fence ends at its closing run: in an item, what follows may still say the item's piece. */
+  private closeFence(): void {
+    const item = this.endFence();
+    if (item === null) return;
+    this.open = {
+      ...opened('item', null),
+      depth: item.depth,
+      indent: item.indent,
+      continued: true,
+    };
+  }
+
+  /** Draws the open fence's code; returns the item it was in, if any. */
+  private endFence(): ItemFence | null {
     const { code, item } = this.fenced as OpenFence;
     this.fenced = null;
     this.push({
@@ -182,14 +222,7 @@ class BlockReader {
       depth: item?.depth ?? 0,
       quoted: false,
     });
-    if (!closed || item === null) return;
-    // Closed inside the item: what follows, indented to its text, still says the item's piece.
-    this.open = {
-      ...opened('item', null),
-      depth: item.depth,
-      indent: item.indent,
-      continued: true,
-    };
+    return item;
   }
 
   /** The paragraph above becomes a heading, as `Summary` over `=======` is one. */
@@ -212,7 +245,8 @@ class BlockReader {
    * begins `2026.` carries the sentence on.
    */
   private mayStartItem(item: RegExpExecArray): boolean {
-    if (this.open?.kind !== 'paragraph') return true;
+    const underParagraph = this.opensUnderParagraph && this.linesRead === 1;
+    if (this.open?.kind !== 'paragraph' && !underParagraph) return true;
     const marker = item[2] as string;
     const empty = (item[3] ?? '').trim() === '';
     return !empty && (!/^\d/.test(marker) || Number.parseInt(marker, 10) === 1);
@@ -251,11 +285,15 @@ class BlockReader {
   }
 
   private quote(text: string): void {
-    if (this.open?.kind !== 'quote') this.begin('quote');
+    if (this.open?.kind !== 'quote') {
+      const underParagraph =
+        this.open?.kind === 'paragraph' || (this.opensUnderParagraph && this.linesRead === 1);
+      this.begin('quote');
+      (this.open as Open).inner = new BlockReader(this.work, this.nesting + 1, underParagraph);
+    }
     const open = this.open as Open;
-    open.inner ??= new BlockReader(this.work);
     open.lines.push(text);
-    open.inner.line(text);
+    open.inner?.line(text);
   }
 
   private table(line: string): void {
@@ -266,7 +304,8 @@ class BlockReader {
   private text(line: string): void {
     const open = this.open;
     const indent = line.length - line.trimStart().length;
-    if (open?.kind === 'item' && (!open.broken || indent >= open.indent)) {
+    // An empty item, or one a blank line broke, takes only a line indented to its text.
+    if (open?.kind === 'item' && (itemTakesLazy(open) || indent >= open.indent)) {
       open.lines.push(open.broken ? `\n${line.trim()}` : line.trim());
       open.broken = false;
       return;
@@ -277,11 +316,7 @@ class BlockReader {
       open.lines.push(line.trim());
       return;
     }
-    if (open?.kind === 'quote' && (open.inner as BlockReader).takesLazyLine()) {
-      open.lines.push(line.trim());
-      (open.inner as BlockReader).lazyLine(line.trim());
-      return;
-    }
+    if (open?.inner?.takesLazyLine() === true) return this.lazyLine(line.trim());
     this.begin('paragraph');
     this.levels = [];
     this.open?.lines.push(line.trim());
@@ -299,8 +334,8 @@ class BlockReader {
     this.open = null;
     if (open.continued && open.lines.every((line) => line.trim() === '')) return;
     const text = open.lines.join('\n');
-    if (open.kind === 'quote') {
-      this.blocks.push(...quoteBlocks(text, (open.inner as BlockReader).finish()));
+    if (open.inner !== null) {
+      this.blocks.push(...quoteBlocks(text, open.inner.finish()));
       return;
     }
     this.push({ kind: open.kind, text, marker: open.marker, depth: open.depth, quoted: false });
@@ -312,12 +347,13 @@ class BlockReader {
 }
 
 /**
- * A quote's blocks, from its text read as an answer of its own: a list in it is
- * each item its own block, judged on its own as one outside a quote is; the
- * rest of the quote stays one quote, cited by a link on any of its lines.
+ * A quote's blocks, from its text read as an answer of its own. A quote of
+ * prose stays one quote, cited by a link on any of its lines. A list in it is
+ * each item its own block, judged on its own as one outside a quote is; code,
+ * a heading or a rule in it is drawn as one, and exempt as one.
  */
 function quoteBlocks(text: string, inner: readonly RawAnswerBlock[]): RawAnswerBlock[] {
-  if (!inner.some((block) => block.kind === 'item')) {
+  if (inner.every((block) => ['paragraph', 'table', 'quote'].includes(block.kind))) {
     return [{ kind: 'quote', text, marker: null, depth: 0, quoted: false }];
   }
   return inner.map((block) => ({
@@ -358,6 +394,16 @@ function opened(kind: Open['kind'], first: string | null): Open {
     inner: null,
     continued: false,
   };
+}
+
+/** Whether an item's text runs on to the next line: it has text, and no blank line came after it. */
+function itemTakesLazy(item: Open): boolean {
+  return !item.broken && (item.lines.at(-1) ?? '').trim() !== '';
+}
+
+/** Whether a table's rows so far are one: a header with a delimiter row under it. */
+function isTable(rows: readonly string[]): boolean {
+  return rows.length >= 2 && DELIMITER_ROW.test(rows[1] as string);
 }
 
 function indentOf(line: string): number {

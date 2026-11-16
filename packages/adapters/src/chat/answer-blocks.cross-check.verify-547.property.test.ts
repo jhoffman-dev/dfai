@@ -54,6 +54,22 @@ function editorKinds(node: Nodes, under: string, out: Map<string, string>): void
     for (const child of node.children as Nodes[]) editorKinds(child, here, out);
 }
 
+/**
+ * The words the editor draws in fenced code, which Ask reads too and must not
+ * judge. Indented code is left out: Ask does not read it as code (#849).
+ */
+function fencedWords(answer: string, node: Nodes, out: Set<string>): void {
+  if (node.type === 'code') {
+    const source = answer.slice(node.position?.start.offset, node.position?.end.offset);
+    // An indented code block may start with a fence's marks, as its own first line.
+    const first = (source.split('\n')[0] ?? '').replace(/^[\s>]*/, '');
+    if (/^(?:```|~~~)/.test(first) && !node.value.startsWith(first))
+      for (const word of node.value.match(/w\d+/g) ?? []) out.add(word);
+  }
+  if ('children' in node)
+    for (const child of node.children as Nodes[]) fencedWords(answer, child, out);
+}
+
 /** Where Ask puts each word it draws: the kind of its block. */
 function askKinds(answer: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -98,7 +114,7 @@ function answerOf(shapes: readonly string[]): string {
 const ITEM_FENCE_SHAPES = ['- W', '1. W', '  - W', '  ```', '```', '  W', ''];
 
 /** What a line under a quote turns on: a setext underline there is lazy text, not a heading (#831). */
-const QUOTE_SETEXT_SHAPES = ['W', '> W', '> - W', '> ```', '===', '---', '-', ''];
+const QUOTE_SETEXT_SHAPES = ['W', '> W', '> - W', '> | W |', '> ```', '===', '---', '-', ''];
 
 /**
  * What follows an item nested in another turns on (#845): a fence at the
@@ -109,10 +125,29 @@ const NESTED_ITEM_SHAPES = ['    ```', '  ```', '```', '- W', '1. W', '  W', '']
 
 /**
  * What follows an item in a quote turns on (#845): the quote ending in a rule
- * or a fence, in the item or not, and a line under it that may be lazy.
+ * or a fence, in the item or not, and a line under it that may be lazy; an
+ * empty item takes none, so the quote after it starts afresh.
  */
-const QUOTED_ITEM = ['> - W'];
+const QUOTED_ITEMS = [['> - W'], ['> -']];
 const QUOTED_ITEM_SHAPES = ['W', '> W', '> ---', '> ===', '>   ```', '> ```', '===', '-', ''];
+
+/**
+ * What a quote that breaks into a paragraph turns on (#845): the editor starts
+ * no empty item on its first line, so what follows is the paragraph's text.
+ */
+const QUOTE_UNDER_PARAGRAPH = ['W', '> -'];
+const QUOTE_UNDER_PARAGRAPH_SHAPES = [
+  '>   3) W',
+  '>     ~~~~ py',
+  '>     ### W ##',
+  '>   W',
+  '> ```',
+  'W',
+  '',
+];
+
+/** The openers of a list item, each followed by every three lines of the item-fence shapes. */
+const ITEM_OPENERS = ['- W', '1. W', '  - W'];
 
 /** Every answer of these shapes and this many lines. */
 function everyAnswer(shapes: readonly string[], lines: number): string[][] {
@@ -145,10 +180,12 @@ function answers(): string[] {
   const pick = () => SHAPES[Math.floor(random() * SHAPES.length)] as string;
   return [
     ...[1, 2].flatMap((lines) => everyAnswer(SHAPES, lines).map(answerOf)),
-    ...[3, 4].flatMap((lines) => everyAnswer(ITEM_FENCE_SHAPES, lines).map(answerOf)),
+    ...everyAnswer(ITEM_FENCE_SHAPES, 3).map(answerOf),
+    ...ITEM_OPENERS.flatMap((opener) => everyAnswerAfter([opener], ITEM_FENCE_SHAPES, 3)),
     ...everyAnswer(QUOTE_SETEXT_SHAPES, 3).map(answerOf),
     ...everyAnswerAfter(NESTED_ITEM, NESTED_ITEM_SHAPES, 3),
-    ...everyAnswerAfter(QUOTED_ITEM, QUOTED_ITEM_SHAPES, 3),
+    ...QUOTED_ITEMS.flatMap((opening) => everyAnswerAfter(opening, QUOTED_ITEM_SHAPES, 3)),
+    ...everyAnswerAfter(QUOTE_UNDER_PARAGRAPH, QUOTE_UNDER_PARAGRAPH_SHAPES, 3),
     ...Array.from({ length: 400 }, () =>
       answerOf(Array.from({ length: 3 + Math.floor(random() * 2) }, pick)),
     ),
@@ -156,22 +193,28 @@ function answers(): string[] {
 }
 
 describe('Ask’s blocks against the editor’s (PR #547)', () => {
-  it('judges every word the editor draws as prose, on every short answer, every item fence, every quote’s lazy line, nested and quoted items, and seeded longer ones', () => {
+  it('judges every word the editor draws as prose, and none it draws as fenced code, on every short answer, every item fence, every quote’s lazy line, nested and quoted items, and seeded longer ones', () => {
     const escaped: string[] = [];
+    const judgedCode: string[] = [];
     const drawn = new Set<string>();
     for (const answer of answers()) {
       const editor = new Map<string, string>();
       const tree = parseBodyToMdast(answer);
       for (const path of itemFences(answer, tree)) drawn.add(path);
       editorKinds(tree, 'prose', editor);
+      const fenced = new Set<string>();
+      fencedWords(answer, tree, fenced);
       const ask = askKinds(answer);
       for (const [token, kind] of editor) {
         const judged = ['paragraph', 'item', 'quote', 'table'].includes(ask.get(token) ?? '');
         if (kind === 'prose' && !judged)
           escaped.push(`${JSON.stringify(answer)}: ${token} is ${ask.get(token) ?? 'not drawn'}`);
+        if (fenced.has(token) && judged)
+          judgedCode.push(`${JSON.stringify(answer)}: ${token} is ${ask.get(token)}`);
       }
     }
     expect(escaped.slice(0, 5)).toEqual([]);
+    expect(judgedCode.slice(0, 5)).toEqual([]);
     expect([...drawn].sort()).toEqual(['carried on', 'closed']);
   });
 });
