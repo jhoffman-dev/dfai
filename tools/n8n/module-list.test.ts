@@ -277,4 +277,30 @@ describe('the module-list check against what n8n runs (re-check #847)', () => {
     const run = 'items.map((total) => total);\nreturn twice(total);';
     expect(moduleListProblems([A], [run])).toEqual([expect.stringContaining('total')]);
   });
+
+  it('reports a name the node’s lines declare that a listed module also hands on', () => {
+    // The build puts the lines in the modules' scope: n8n throws "Identifier 'twice' has already been declared".
+    const both = fixture(
+      'twice-thrice.ts',
+      'export function twice(n: number): number {\n  return n * 2;\n}\nexport function thrice(n: number): number {\n  return n * 3;\n}\n',
+    );
+    expect(moduleListProblems([both], ['const twice = 1;\nreturn thrice(twice);'])).toContainEqual(
+      expect.stringContaining('twice'),
+    );
+  });
+
+  it.each([
+    [
+      'a class field read as a bare name',
+      'class C {\n  x = 1;\n  m() { return twice(x); }\n}\nreturn new C().m();',
+    ],
+    ['a type read as a value', 'return twice(Partial);'],
+  ])('reports %s, which throws a ReferenceError in n8n', (_, run) => {
+    expect(moduleListProblems([A], [run])).not.toEqual([]);
+  });
+
+  it('reports typeof of a name declared later in the same scope, which throws', () => {
+    const run = 'const kind = typeof later;\nconst later = twice(1);\nreturn kind;';
+    expect(moduleListProblems([A], [run])).toEqual([expect.stringContaining('later')]);
+  });
 });
