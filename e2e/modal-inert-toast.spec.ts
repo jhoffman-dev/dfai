@@ -56,7 +56,8 @@ test('with a toast up behind Settings, Tab from the body reaches the toast or th
     page.evaluate(() => {
       const active = document.activeElement;
       if (active === null || active === document.body) return 'body';
-      if (active.closest('[role="dialog"]') !== null) return 'dialog';
+      // A focus guard Base UI draws round the dialog is the dialog's own.
+      if (active.closest('[role="dialog"], [data-base-ui-focus-guard]') !== null) return 'dialog';
       if (active.closest('.toast') !== null) return 'toast';
       return `the app: ${active.tagName.toLowerCase()}.${active.className}`;
     });
@@ -66,8 +67,7 @@ test('with a toast up behind Settings, Tab from the body reaches the toast or th
   const seen = new Set<string>();
   for (let press = 0; press < 6; press += 1) {
     await page.keyboard.press('Tab');
-    // Polled: Tab from the toast lands first on the dialog's focus guard, which
-    // hands it into the dialog. A place in the app keeps it, and times out.
+    // Polled, so a place in the app that keeps the focus times out.
     await expect.poll(holder).toMatch(/^(dialog|toast)$/);
     seen.add(await holder());
   }
