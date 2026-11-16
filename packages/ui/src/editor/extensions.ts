@@ -39,6 +39,7 @@ import {
 import { SlashCommands, type SlashCommandView } from './slash-commands.ts';
 import { TagHighlight } from './tag-highlight.ts';
 import { TagSuggestionExtension, type TagSuggestionView } from './tag-suggestion.ts';
+import { TapCaret } from './tap-caret.ts';
 
 /**
  * The editor's node set, chosen to match what the markdown serializer can write.
@@ -124,6 +125,7 @@ export function createEditorExtensions({
     QueryBlock.configure({ source: queries }),
     LinkKeys,
     RevealedBlock,
+    TapCaret,
     ImageUploads.configure({ embed: embedImage }),
     WikiLinkSuggestion.configure({ suggest, onView, blocks: picking, createNote }),
     TagSuggestionExtension.configure({ suggest: suggestTags, onView: onTagView }),
