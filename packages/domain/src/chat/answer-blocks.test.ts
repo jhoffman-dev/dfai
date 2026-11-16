@@ -80,3 +80,18 @@ describe('answerBlocks reads each line once per quote it is in', () => {
     expect(workOf(answer)).toBeLessThanOrEqual(4 * 200 * 500);
   });
 });
+
+describe('answerBlocks past the quote nesting cap (#845)', () => {
+  const fencedClaim = (depth: number) =>
+    ['```', 'claim', '```'].map((line) => `${'>'.repeat(depth)} ${line}`).join('\n');
+  const shape = (answer: string) =>
+    answerBlocks(answer).map((block) => `${block.kind}:${block.text}`);
+
+  it('reads a fence 100 quotes deep as code', () => {
+    expect(shape(fencedClaim(100))).toEqual(['code:claim']);
+  });
+
+  it('reads a fence 101 quotes deep as the quote’s text, judged, never exempt', () => {
+    expect(answerBlocks(fencedClaim(101)).map((block) => block.kind)).toEqual(['quote']);
+  });
+});
