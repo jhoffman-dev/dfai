@@ -91,14 +91,21 @@ export function moduleScript(name: string): string {
 
 const compiledModules = new Map<string, string>();
 
+/** A module's TypeScript as the JavaScript a Code node carries, before its imports and exports go. */
+export function transpiledModule(name: string, text: string): string {
+  return ts.transpileModule(text, {
+    fileName: name,
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText;
+}
+
 function compiledModule(name: string): string {
   const text = readFileSync(new URL(name, import.meta.url), 'utf8');
   const names = exportedValues(ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true));
-  const { outputText } = ts.transpileModule(text, {
-    fileName: name,
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  });
-  const code = outputText.replace(IMPORT, '').replace(EMPTY_EXPORT, '').replace(EXPORT, '');
+  const code = transpiledModule(name, text)
+    .replace(IMPORT, '')
+    .replace(EMPTY_EXPORT, '')
+    .replace(EXPORT, '');
   const list = names.join(', ');
   return `// ${name.slice(name.lastIndexOf('/') + 1)}\nconst { ${list} } = (() => {\n${code}return { ${list} };\n})();\n`;
 }
