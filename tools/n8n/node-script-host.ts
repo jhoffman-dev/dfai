@@ -18,48 +18,81 @@ export const SCRIPT_OPTIONS: ts.CompilerOptions = {
   skipLibCheck: true,
 };
 
-/**
- * What an n8n Code node defines beside its own code: the `$` helpers, the
- * legacy `items`, Luxon's date types, `console` and `Buffer`, which n8n
- * documents, and the web text helpers its Node runtime has (github-file.ts
- * falls back on them where `Buffer` is missing).
- * https://docs.n8n.io/code/builtin/overview/
+/** How n8n runs a Code node: once for all its input items, or once for each. */
+export type NodeMode = 'runOnceForAllItems' | 'runOnceForEachItem';
+
+/*
+ * What an n8n Code node defines beside its own code, as n8n's JavaScript task
+ * runner builds the node's context (packages/@n8n/task-runner/src/js-task-runner/
+ * js-task-runner.ts, `buildContext` and `getNativeVariables`):
+ * - `console` and `$getWorkflowStaticData`;
+ * - the Node.js globals it exposes (`Buffer`, the timers) and the "missing JS
+ *   natives" (`atob`, `btoa`, `TextDecoder`, `TextEncoder`, their streams,
+ *   `FormData`), but not `fetch` or `process`;
+ * - the workflow data proxy (packages/workflow/src/workflow-data-proxy.ts),
+ *   which defines `$`, `$json`, `$binary`, `$input` and the rest, and Luxon's
+ *   `DateTime`, `Duration` and `Interval`, in both modes;
+ * - `$execution`, `$vars` and `$secrets`, the proxy's additional keys;
+ * - `items` when the node runs once for all items, `item` when it runs once for each.
+ * `require` is defined too, but nothing listed here can be loaded by it, so it is left out.
  */
-export const N8N_GLOBALS = [
-  'declare function $(node: string): any;',
-  ...[
-    '$input',
-    '$json',
-    '$binary',
-    '$node',
-    '$items',
-    '$now',
-    '$today',
-    '$env',
-    '$execution',
-    '$workflow',
-    '$prevNode',
-    '$runIndex',
-    '$itemIndex',
-    '$vars',
-    '$secrets',
-    '$jmespath',
-    '$getWorkflowStaticData',
-    '$nodeVersion',
-    '$parameter',
-    'items',
-    'DateTime',
-    'Duration',
-    'Interval',
-    'console',
-    'Buffer',
-    'atob',
-    'btoa',
-    'TextDecoder',
-    'TextEncoder',
-  ].map((name) => `declare const ${name}: any;`),
-  '',
-].join('\n');
+const N8N_NAMES = [
+  '$input',
+  '$json',
+  '$binary',
+  '$node',
+  '$items',
+  '$now',
+  '$today',
+  '$env',
+  '$execution',
+  '$workflow',
+  '$prevNode',
+  '$runIndex',
+  '$itemIndex',
+  '$vars',
+  '$secrets',
+  '$jmespath',
+  '$getWorkflowStaticData',
+  '$nodeVersion',
+  '$parameter',
+  'DateTime',
+  'Duration',
+  'Interval',
+  'console',
+  'Buffer',
+  'setTimeout',
+  'setInterval',
+  'setImmediate',
+  'clearTimeout',
+  'clearInterval',
+  'clearImmediate',
+  'atob',
+  'btoa',
+  'TextDecoder',
+  'TextDecoderStream',
+  'TextEncoder',
+  'TextEncoderStream',
+  'FormData',
+];
+
+const MODE_NAMES: Readonly<Record<NodeMode, string>> = {
+  runOnceForAllItems: 'items',
+  runOnceForEachItem: 'item',
+};
+
+/**
+ * The declaration file of what a node in `mode` defines, and `provided`.
+ * Each is `any`: the check asks only whether a name exists, never its type.
+ */
+export function n8nGlobals(mode: NodeMode, provided: readonly string[]): string {
+  const names = [...N8N_NAMES, MODE_NAMES[mode], ...provided];
+  return [
+    'declare function $(node: string): any;',
+    ...names.map((name) => `declare const ${name}: any;`),
+    '',
+  ].join('\n');
+}
 
 const base = ts.createCompilerHost(SCRIPT_OPTIONS);
 

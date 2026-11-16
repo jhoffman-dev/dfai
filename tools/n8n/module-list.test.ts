@@ -1,11 +1,12 @@
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CAPTURE_MODULES, MAP_CAPTURE_EXTRA, MODULES } from './code-node.ts';
 import { WEBHOOK_MODULES } from './granola-code-node.ts';
 import { CAPTURE_MARKDOWN_GLOBAL } from './capture-bundle.ts';
 import { moduleListProblems } from './module-list.ts';
+import type { NodeMode } from './node-script-host.ts';
 import {
   CAPTURE_MODULES as SLACK_CAPTURE_MODULES,
   REPLY_MODULES,
@@ -37,6 +38,7 @@ interface CodeNode {
   readonly name: string;
   readonly modules: string;
   readonly run: string;
+  readonly mode: NodeMode;
 }
 
 /** Every Code node `pnpm n8n:build` wrote that carries modules: what it holds, and its own lines. */
@@ -46,7 +48,7 @@ function builtCodeNodes(): CodeNode[] {
     .filter((file) => file.endsWith('.workflow.json'))
     .flatMap((file) => {
       const workflow = JSON.parse(readFileSync(new URL(file, folder), 'utf8')) as {
-        nodes: { name: string; parameters?: { jsCode?: string } }[];
+        nodes: { name: string; parameters?: { jsCode?: string; mode?: NodeMode } }[];
       };
       return workflow.nodes.flatMap(({ name, parameters }) => {
         const code = parameters?.jsCode;
@@ -54,7 +56,8 @@ function builtCodeNodes(): CodeNode[] {
         const at = code.indexOf(RUN);
         const run = code.slice(at + RUN.length);
         const modules = [...code.slice(0, at).matchAll(BLOCK)].map((each) => each[1]).join(', ');
-        return [{ name: `${file} › ${name}`, modules, run }];
+        const mode = parameters?.mode ?? 'runOnceForAllItems';
+        return [{ name: `${file} › ${name}`, modules, run, mode }];
       });
     });
 }
@@ -65,16 +68,24 @@ const baseNames = (list: readonly string[]) =>
 const listOf = (node: CodeNode) =>
   LIST_NAMES.find((each) => baseNames(LISTS[each]) === node.modules);
 
-/** The runs of every built node, by the list it carries. */
-function runsByList(nodes: readonly CodeNode[]): Map<string, string[]> {
-  const runs = new Map<string, string[]>(LIST_NAMES.map((list) => [list, [] as string[]]));
-  for (const node of nodes) runs.get(listOf(node) ?? '')?.push(node.run);
-  return runs;
+/** The built nodes, by the list they carry. */
+function nodesByList(nodes: readonly CodeNode[]): Map<string, CodeNode[]> {
+  const byList = new Map<string, CodeNode[]>(LIST_NAMES.map((list) => [list, []]));
+  for (const node of nodes) byList.get(listOf(node) ?? '')?.push(node);
+  return byList;
 }
+
+/*
+ * The first check in a process pays for TypeScript's start-up (about half a
+ * second idle, several under load): paid here, so no test's time carries it.
+ */
+beforeAll(() => {
+  moduleListProblems([], []);
+}, 30_000);
 
 describe('the module list of every Code node the build makes', () => {
   const nodes = builtCodeNodes();
-  const runs = runsByList(nodes);
+  const byList = nodesByList(nodes);
 
   it('matches every built Code node to the list it was built from', () => {
     expect(nodes.length).toBeGreaterThan(0);
@@ -83,20 +94,32 @@ describe('the module list of every Code node the build makes', () => {
   });
 
   it.each(LIST_NAMES)('%s is carried by a built node', (list) => {
-    expect(runs.get(list)?.length).toBeGreaterThan(0);
+    expect(byList.get(list)?.length).toBeGreaterThan(0);
+  });
+
+  it.each(LIST_NAMES)('%s is run in one mode by every node that carries it', (list) => {
+    expect(new Set(byList.get(list)?.map(({ mode }) => mode)).size).toBe(1);
   });
 
   it.each(LIST_NAMES)(
-    '%s lists every module its modules import, before them, and none unused',
+    '%s holds every module its nodes need, read before it loads, and none unused',
     (list) => {
-      const provided = list === 'the capture mapper' ? [CAPTURE_MARKDOWN_GLOBAL] : [];
-      expect(moduleListProblems(LISTS[list], runs.get(list) ?? [], provided)).toEqual([]);
+      const nodes = byList.get(list) ?? [];
+      const check = {
+        provided: list === 'the capture mapper' ? [CAPTURE_MARKDOWN_GLOBAL] : [],
+        mode: nodes[0]?.mode ?? 'runOnceForAllItems',
+      };
+      const runs = nodes.map(({ run }) => run);
+      expect(moduleListProblems(LISTS[list], runs, check)).toEqual([]);
     },
   );
 });
 
 /** A fixture module in a folder of its own, named by the absolute path a list may hold. */
 const folder = mkdtempSync(join(tmpdir(), 'module-list-'));
+afterAll(() => {
+  rmSync(folder, { recursive: true, force: true });
+});
 function fixture(file: string, text: string): string {
   writeFileSync(join(folder, file), text);
   return join(folder, file);
@@ -123,7 +146,9 @@ describe('the module-list check', () => {
     expect(moduleListProblems(['./standard-webhook.ts', './sha256.ts'], RUN_LINES)).toEqual([]);
   });
 
-  it('names a module listed after one that reads it while the modules load', () => {
+  // A read through the reader's own function called at load (`export const TWO = h()`) is not
+  // caught: the compiler does not follow calls. So "before" is held only for direct reads.
+  it('names a module listed after one that reads it directly while the modules load (not through a call)', () => {
     const base = fixture('load-base.ts', 'export function one(): number {\n  return 1;\n}\n');
     const early = fixture(
       'load-early.ts',
@@ -159,7 +184,9 @@ describe('the module-list check', () => {
     expect(moduleListProblems(['./slack-reply.ts'], [run])).toEqual([
       expect.stringMatching(/^the node’s own lines: Cannot find name 'dfaiCaptureMarkdown'\./),
     ]);
-    expect(moduleListProblems(['./slack-reply.ts'], [run], ['dfaiCaptureMarkdown'])).toEqual([]);
+    expect(
+      moduleListProblems(['./slack-reply.ts'], [run], { provided: ['dfaiCaptureMarkdown'] }),
+    ).toEqual([]);
   });
 
   describe('needs no module for an import that is only a type', () => {
@@ -298,6 +325,22 @@ describe('the module-list check against what n8n runs (re-check #847)', () => {
   ])('reports %s, which throws a ReferenceError in n8n', (_, run) => {
     expect(moduleListProblems([A], [run])).not.toEqual([]);
   });
+
+  it.each([
+    ['items', 'runOnceForEachItem'],
+    ['item', 'runOnceForAllItems'],
+  ] as const)(
+    'reports %s in a node run in %s mode, which n8n does not define there',
+    (name, mode) => {
+      expect(moduleListProblems([A], [`return twice(${name}.length);`], { mode })).toEqual([
+        expect.stringContaining(`'${name}'`),
+      ]);
+      const other = mode === 'runOnceForAllItems' ? 'runOnceForEachItem' : 'runOnceForAllItems';
+      expect(moduleListProblems([A], [`return twice(${name}.length);`], { mode: other })).toEqual(
+        [],
+      );
+    },
+  );
 
   it('reports typeof of a name declared later in the same scope, which throws', () => {
     const run = 'const kind = typeof later;\nconst later = twice(1);\nreturn kind;';

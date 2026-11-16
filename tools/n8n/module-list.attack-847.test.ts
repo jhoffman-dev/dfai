@@ -1,7 +1,7 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { moduleScript } from './code-node.ts';
 import { moduleListProblems } from './module-list.ts';
 
@@ -13,6 +13,14 @@ import { moduleListProblems } from './module-list.ts';
  */
 
 const folder = mkdtempSync(join(tmpdir(), 'module-list-attack-847-'));
+afterAll(() => {
+  rmSync(folder, { recursive: true, force: true });
+});
+
+// The first check in a process pays for TypeScript's start-up: paid here, so no test's time carries it.
+beforeAll(() => {
+  moduleListProblems([], []);
+}, 30_000);
 
 /** A fixture module on disk, named by the absolute path a list may hold. */
 function fixture(file: string, text: string): string {

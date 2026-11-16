@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { moduleScript } from './code-node.ts';
-import { compilerHost, N8N_GLOBALS, SCRIPT_OPTIONS } from './node-script-host.ts';
+import { compilerHost, n8nGlobals, type NodeMode, SCRIPT_OPTIONS } from './node-script-host.ts';
 
 /*
  * A Code node's modules are a hand-kept list (#825): the order is the bytes of
@@ -9,9 +9,13 @@ import { compilerHost, N8N_GLOBALS, SCRIPT_OPTIONS } from './node-script-host.ts
  * with `moduleScript`, exactly as `pnpm n8n:build` does, and asks the
  * TypeScript compiler what in that one script would throw in n8n. A listed
  * module nothing uses is reported too.
+ *
+ * Order is held only where it matters at run time: a module whose name is read
+ * while the modules load, listed after the reader, is reported. One read
+ * through the reader's own function called at load (`export const TWO = h()`)
+ * is not: the compiler does not follow calls, so that limit is the compiler's.
  */
 
-const SCRIPT = '/n8n-code-node.js';
 const GLOBALS = '/n8n-code-node-globals.d.ts';
 
 /** The run lines' place in the script, named for the author. */
@@ -26,12 +30,13 @@ interface Block {
 }
 
 interface Script {
+  readonly file: string;
   readonly text: string;
   readonly blocks: readonly Block[];
 }
 
-/** Every node built from the list, as one script: the modules, then each node's lines as its own function. */
-function nodeScript(modules: readonly string[], runs: readonly string[]): Script {
+/** One node as n8n runs it: the modules, then its own lines, in one function body and one scope. */
+function nodeScript(file: string, modules: readonly string[], run: string): Script {
   const blocks: Block[] = [];
   let text = '(async function () {\n';
   const add = (label: string, code: string, header?: Block['header']) => {
@@ -44,8 +49,8 @@ function nodeScript(modules: readonly string[], runs: readonly string[]): Script
     const start = text.length + first;
     add(name, code, { start, end: start + code.indexOf('\n', first) - first });
   }
-  for (const run of runs) add(OWN_LINES, `(async function () {\n${run}\n});`);
-  return { text: `${text}});\n`, blocks };
+  add(OWN_LINES, run);
+  return { file, text: `${text}});\n`, blocks };
 }
 
 /** `typeof name` of a name nothing declares is "undefined" in JavaScript, not an error. */
@@ -60,8 +65,13 @@ function underTypeof(source: ts.SourceFile, at: number): boolean {
   return found !== undefined && ts.isTypeOfExpression(found.parent);
 }
 
-/** Cannot find a name, in its forms; a name used before its declaration runs; a value missing for `{ name }`. */
-const NAME_CODES = new Set([2304, 2448, 2449, 2552, 2580, 2581, 2582, 2583, 2584, 2591, 18004]);
+/** Cannot find a name, in its forms. `typeof` of such a name is "undefined", not an error. */
+const NOT_FOUND_CODES = new Set([2304, 2552, 2580, 2581, 2582, 2583, 2584]);
+/**
+ * Every name that throws a ReferenceError: not found, a member or a type read
+ * as a bare name, read before its declaration runs, missing for `{ name }`.
+ */
+const NAME_CODES = new Set([...NOT_FOUND_CODES, 2448, 2449, 2591, 2662, 2663, 2693, 18004]);
 /** A name declared twice in one scope. */
 const TWICE_CODES = new Set([2300, 2451]);
 /** All of a `const { … }` unused, or its one name. */
@@ -88,7 +98,7 @@ function brokenProblems(script: Script, diagnostics: readonly ts.Diagnostic[]): 
     const hint = hintFor(diagnostic.code);
     const at = diagnostic.start ?? 0;
     if (hint === undefined || diagnostic.file === undefined) return [];
-    if (NAME_CODES.has(diagnostic.code) && underTypeof(diagnostic.file, at)) return [];
+    if (NOT_FOUND_CODES.has(diagnostic.code) && underTypeof(diagnostic.file, at)) return [];
     const where = blockAt(script, at)?.label ?? 'the assembled node';
     const what = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
     return [`${where}: ${what} (${hint})`];
@@ -126,8 +136,8 @@ function headerNames(script: Script, header: NonNullable<Block['header']>): stri
   return list.split(',').filter((each) => each.trim() !== '');
 }
 
-/** A listed module none of whose names the rest of the script reads. */
-function unusedModules(script: Script, diagnostics: readonly ts.Diagnostic[]): string[] {
+/** The listed modules none of whose names the rest of this node's script reads. */
+function unusedIn(script: Script, diagnostics: readonly ts.Diagnostic[]): string[] {
   return script.blocks
     .filter(({ header }) => {
       if (header === undefined) return false;
@@ -138,32 +148,51 @@ function unusedModules(script: Script, diagnostics: readonly ts.Diagnostic[]): s
       const names = headerNames(script, header);
       return unused.some(({ code }) => code === 6198) || unused.length === names.length;
     })
-    .map(({ label }) => `${label} is listed, but no listed module imports it and no node uses it`);
+    .map(({ label }) => label);
 }
 
-/**
- * What is wrong with one Code-node module list, given the `run` lines of
- * every node built from it and the names something other than a listed module
- * defines in the node (`provided`, such as a bundle's global). An empty answer
- * means the list is right.
- */
-export function moduleListProblems(
-  modules: readonly string[],
-  runs: readonly string[],
-  provided: readonly string[] = [],
-): string[] {
-  const script = nodeScript(modules, runs);
-  const globals = `${N8N_GLOBALS}${provided.map((name) => `declare const ${name}: any;\n`).join('')}`;
-  const host = compilerHost({ [SCRIPT]: script.text, [GLOBALS]: globals });
-  const program = ts.createProgram([SCRIPT, GLOBALS], SCRIPT_OPTIONS, host);
-  const source = program.getSourceFile(SCRIPT) as ts.SourceFile;
+interface ListCheck {
+  /** Names something other than a listed module defines in the node, such as a bundle's global. */
+  readonly provided?: readonly string[];
+  /** How n8n runs the nodes, which decides whether `items` or `item` is defined. */
+  readonly mode?: NodeMode;
+}
+
+function nodeProblems(program: ts.Program, script: Script): { broken: string[]; unused: string[] } {
+  const source = program.getSourceFile(script.file) as ts.SourceFile;
   const diagnostics = [
     ...program.getSyntacticDiagnostics(source),
     ...program.getSemanticDiagnostics(source),
   ];
+  return {
+    broken: [...brokenProblems(script, diagnostics), ...loadProblems(script, source)],
+    unused: unusedIn(script, diagnostics),
+  };
+}
+
+/**
+ * What is wrong with one Code-node module list, given the `run` lines of
+ * every node built from it. Each node is checked as its own script, in one
+ * program. A module is unused when no node reads it. An empty answer means
+ * the list is right.
+ */
+export function moduleListProblems(
+  modules: readonly string[],
+  runs: readonly string[],
+  { provided = [], mode = 'runOnceForAllItems' }: ListCheck = {},
+): string[] {
+  const scripts = (runs.length === 0 ? [''] : runs).map((run, at) =>
+    nodeScript(`/n8n-code-node-${at}.js`, modules, run),
+  );
+  const files = Object.fromEntries(scripts.map(({ file, text }) => [file, text]));
+  const host = compilerHost({ ...files, [GLOBALS]: n8nGlobals(mode, provided) });
+  const program = ts.createProgram([...Object.keys(files), GLOBALS], SCRIPT_OPTIONS, host);
+  const checked = scripts.map((script) => nodeProblems(program, script));
+  const unused = modules.filter((name) => checked.every((node) => node.unused.includes(name)));
   return [
-    ...brokenProblems(script, diagnostics),
-    ...loadProblems(script, source),
-    ...unusedModules(script, diagnostics),
+    ...new Set(checked.flatMap(({ broken }) => broken)),
+    ...unused.map(
+      (name) => `${name} is listed, but no listed module imports it and no node uses it`,
+    ),
   ];
 }
