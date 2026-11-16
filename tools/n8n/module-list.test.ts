@@ -333,6 +333,41 @@ describe('the module-list check against what n8n runs (re-check #847)', () => {
     expect(problems).toContainEqual(expect.stringContaining("Cannot find name 'missing'"));
   });
 
+  describe('a name a module’s code leaves to the node, declared by only some nodes', () => {
+    const reads = fixture(
+      'reads-config.ts',
+      'export function read(): number {\n  return config;\n}\n',
+    );
+    const declares = 'const config = 1;\nreturn read();';
+    const lacks = 'return read();';
+
+    it.each([
+      ['declaring node first', [declares, lacks]],
+      ['lacking node first', [lacks, declares]],
+    ])('reports it for the node that lacks it, %s', (_, runs) => {
+      expect(moduleListProblems([reads], runs)).toEqual([
+        expect.stringMatching(/reads-config\.ts: Cannot find name 'config'/),
+      ]);
+    });
+
+    it('passes when every node declares it', () => {
+      expect(moduleListProblems([reads], [declares, `${declares}\n// again`])).toEqual([]);
+    });
+
+    // `var` is hoisted, so a module reading it at load gets undefined; `const` throws there.
+    it.each([
+      ['hoisting node first', ['var config = 1;\nreturn TWO;', 'const config = 1;\nreturn TWO;']],
+      ['throwing node first', ['const config = 1;\nreturn TWO;', 'var config = 1;\nreturn TWO;']],
+    ])('reports a read before a node’s const declares it, %s', (_, runs) => {
+      const early = fixture('reads-config-early.ts', 'export const TWO = config + 1;\n');
+      expect(moduleListProblems([early], runs)).toEqual([
+        expect.stringMatching(
+          /reads-config-early\.ts: Block-scoped variable 'config' used before its declaration/,
+        ),
+      ]);
+    });
+  });
+
   it('counts a module as used when only a further node reads it', () => {
     const runs = ['return 1;', 'return twice(1);'];
     expect(moduleListProblems([A], runs)).toEqual([]);
