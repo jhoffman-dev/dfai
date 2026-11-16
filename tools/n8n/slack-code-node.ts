@@ -34,7 +34,7 @@ function slackScript(what: string, modules: readonly string[], run: readonly str
   return `${header(what, from)}\n\n${modules.map(moduleScript).join('\n')}\n// --- n8n ---\n${run.join('\n')}\n`;
 }
 
-const VERIFY_MODULES = [
+export const VERIFY_MODULES = [
   './sha256.ts',
   './standard-webhook.ts',
   './slack-signature.ts',
@@ -94,7 +94,7 @@ const SHAPING = '../../packages/domain/src/capture/slack/';
  * and limits first, which the fitting reads, then the domain's Slack shaping
  * — the one a pasted link in the app uses too (#105) — and the action's view of it.
  */
-const CAPTURE_MODULES = [
+export const CAPTURE_MODULES = [
   HIDDEN_CHARACTERS,
   `${CONTRACT}capture-refusal.ts`,
   `${CONTRACT}capture-text.ts`,
@@ -138,15 +138,14 @@ const REPLY_TEXT: Readonly<Record<ReplyOutcome, string>> = {
   failed: 'failedReply($input.first().json)',
 };
 
+/** A reply node's one module: the words of each outcome. */
+export const REPLY_MODULES = ['./slack-reply.ts'] as const;
+
 /** A "Reply:" node: to James, by DM from the app's bot, in one line. */
 export function replyScript(outcome: ReplyOutcome): string {
-  return slackScript(
-    `the ${outcome} reply`,
-    ['./slack-reply.ts'],
-    [
-      `return [{ json: { channel: $('${N.verify}').first().json.userId, text: ${REPLY_TEXT[outcome]} } }];`,
-    ],
-  );
+  return slackScript(`the ${outcome} reply`, REPLY_MODULES, [
+    `return [{ json: { channel: $('${N.verify}').first().json.userId, text: ${REPLY_TEXT[outcome]} } }];`,
+  ]);
 }
 
 /** Every script the Slack workflow holds, as `pnpm n8n:build` commits them. */
