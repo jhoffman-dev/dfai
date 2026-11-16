@@ -63,13 +63,21 @@ interface OpenFence {
   item: ItemFence | null;
 }
 
-/** The work a read does: every line any reader visits, a quote's once for each quote it is in. */
+/**
+ * The work a read does, in steps: every line any reader visits, a quote's once
+ * for each quote it is in, and every reader asked whether it takes a lazy line.
+ */
 export interface ReadWork {
-  lines: number;
+  steps: number;
 }
 
-/** Cuts an answer into its blocks, in order; `work` counts the lines visited. */
-export function answerBlocks(answer: string, work: ReadWork = { lines: 0 }): RawAnswerBlock[] {
+/** Cuts an answer into its blocks, in order. */
+export function answerBlocks(answer: string): RawAnswerBlock[] {
+  return readAnswer(answer, { steps: 0 });
+}
+
+/** Cuts an answer into its blocks, counting the work it does in `work`. Exported for tests. */
+export function readAnswer(answer: string, work: ReadWork): RawAnswerBlock[] {
   const reader = new BlockReader(work);
   for (const line of answer.replace(/\r\n?/g, '\n').split('\n')) reader.line(line);
   return reader.finish();
@@ -89,7 +97,7 @@ class BlockReader {
   constructor(private readonly work: ReadWork) {}
 
   line(line: string): void {
-    this.work.lines += 1;
+    this.work.steps += 1;
     if (this.fenced !== null && this.fenceTakes(line)) return;
     if (line.trim() === '') return this.blank();
     const inItem = this.itemFenceAt(line);
@@ -109,7 +117,7 @@ class BlockReader {
 
   /** A lazy line is the text of the paragraph it carries on, whatever it looks like (CommonMark). */
   lazyLine(line: string): void {
-    this.work.lines += 1;
+    this.work.steps += 1;
     this.text(line);
   }
 
@@ -118,6 +126,7 @@ class BlockReader {
    * text, in an item or a quote or not — never a rule, a heading, or a fence.
    */
   takesLazyLine(): boolean {
+    this.work.steps += 1;
     const open = this.open;
     if (this.fenced !== null) return false;
     if (open?.kind === 'paragraph') return true;
