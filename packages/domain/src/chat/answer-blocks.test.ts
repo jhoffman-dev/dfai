@@ -42,3 +42,35 @@ describe('answerBlocks, read as the editor draws the answer (#831)', () => {
     expect(shape('> w0\n> ===\n> - w1')).toEqual(['heading@0:w0', 'item@0:w1']);
   });
 });
+
+/**
+ * The work a read does, in lines visited by any reader: an answer is read
+ * again on every streamed chunk, so it must stay in step with the answer's
+ * own size — its lines and its `>` marks — at any quote depth (#845).
+ */
+describe('answerBlocks reads each line once per quote it is in', () => {
+  const size = (answer: string) => answer.split('\n').length + (answer.match(/>/g) ?? []).length;
+  const workOf = (answer: string) => {
+    const work = { lines: 0 };
+    answerBlocks(answer, work);
+    return work.lines;
+  };
+
+  it('a lazy line under every one of 20 quotes, each one deeper', () => {
+    const answer = Array.from({ length: 20 }, (_, at) => `${'> '.repeat(at + 1)}a\nb`).join('\n');
+    expect(workOf(answer)).toBeGreaterThan(0);
+    expect(workOf(answer)).toBeLessThanOrEqual(2 * size(answer));
+  });
+
+  it('one lazy line under 1,000 nested quotes', () => {
+    const answer = `${'> '.repeat(1000)}a\nb`;
+    expect(workOf(answer)).toBeGreaterThan(0);
+    expect(workOf(answer)).toBeLessThanOrEqual(2 * size(answer));
+  });
+
+  it('4,000 lines alternating quoted and lazy', () => {
+    const answer = Array.from({ length: 4000 }, (_, at) => (at % 2 ? 'b' : '> a')).join('\n');
+    expect(workOf(answer)).toBeGreaterThan(0);
+    expect(workOf(answer)).toBeLessThanOrEqual(2 * size(answer));
+  });
+});
