@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
+import { StrictMode, useRef, useState, type ReactNode } from 'react';
+import { Dialog } from '@base-ui/react/dialog';
 
 import { AppShell } from './app-shell.tsx';
 import { DeleteDialog } from './delete-dialog.tsx';
+import { holdModalLayer } from './modal-layer.ts';
 import { SettingsUnavailable } from './settings-dialog.tsx';
+import { Toast } from './toast.tsx';
 
 /**
  * The app behind an open modal is out of reach of the keyboard as well as of
@@ -14,10 +17,12 @@ import { SettingsUnavailable } from './settings-dialog.tsx';
  * tabbable, so until the dialog's first focus lands a frame later, Tab walked
  * the sidebar and the tab strip behind it.
  */
-function WithSettings() {
+function WithSettings({ notices = null }: { notices?: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <AppShell
+      notices={notices}
+      status="208 notes indexed"
       sidebar={
         <button type="button" onClick={() => setOpen(true)}>
           Settings
@@ -56,51 +61,138 @@ function WithDelete() {
   );
 }
 
-function shellOf(container: HTMLElement): HTMLElement {
-  const shell = container.querySelector<HTMLElement>('.shell');
-  if (shell === null) throw new Error('no shell');
-  return shell;
+/** Whether the keyboard and assistive tech are kept out of `element`. */
+const inert = (element: Element): boolean => element.closest('[inert]') !== null;
+
+/** A dialog drawn inside the app, as the peek's gallery specimen is, over its pane. */
+function WithDialogInside() {
+  const pane = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <AppShell
+      sidebar={
+        <button type="button" onClick={() => setOpen(true)}>
+          Peek
+        </button>
+      }
+      main={
+        <div ref={pane}>
+          <Dialog.Root open={open} onOpenChange={setOpen}>
+            <Dialog.Portal ref={holdModalLayer} container={pane}>
+              <Dialog.Popup aria-label="Peek">
+                <Dialog.Close>Close</Dialog.Close>
+              </Dialog.Popup>
+            </Dialog.Portal>
+          </Dialog.Root>
+        </div>
+      }
+    />
+  );
 }
 
 describe('AppShell behind a modal', () => {
   it('makes the app inert while a dialog is open, and gives the focus back to the opener on close', async () => {
     const user = userEvent.setup();
-    const app = shellOf(render(<WithSettings />).container);
-    expect(app.hasAttribute('inert')).toBe(false);
+    render(<WithSettings />);
+    const opener = screen.getByRole('button', { name: 'Settings' });
+    expect(inert(opener)).toBe(false);
 
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
-    await screen.findByRole('dialog', { name: 'Settings' });
-    await waitFor(() => expect(app.hasAttribute('inert')).toBe(true));
+    await user.click(opener);
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' });
+    await waitFor(() => expect(inert(opener)).toBe(true));
+    expect(inert(dialog)).toBe(false);
 
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(app.hasAttribute('inert')).toBe(false);
-    await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Settings' })),
-    );
+    expect(inert(opener)).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
   it('makes the app inert while an alert dialog is open', async () => {
     const user = userEvent.setup();
-    const app = shellOf(render(<WithDelete />).container);
+    render(<WithDelete />);
+    const opener = screen.getByRole('button', { name: 'Delete' });
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(opener);
     await screen.findByRole('alertdialog');
-    await waitFor(() => expect(app.hasAttribute('inert')).toBe(true));
+    await waitFor(() => expect(inert(opener)).toBe(true));
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(app.hasAttribute('inert')).toBe(false);
+    expect(inert(opener)).toBe(false);
   });
 
   it('lets go of the app when it unmounts with a dialog still open', async () => {
     const user = userEvent.setup();
-    const { container, unmount } = render(<WithSettings />);
-    const app = shellOf(container);
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
-    await waitFor(() => expect(app.hasAttribute('inert')).toBe(true));
+    const { unmount } = render(<WithSettings />);
+    const opener = screen.getByRole('button', { name: 'Settings' });
+    await user.click(opener);
+    await waitFor(() => expect(inert(opener)).toBe(true));
 
     unmount();
-    expect(app.hasAttribute('inert')).toBe(false);
+    expect(inert(opener)).toBe(false);
+  });
+
+  it('keeps a toast raised behind an open dialog announced and dismissable', async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+    render(
+      <WithSettings
+        notices={<Toast message="Sync is offline" tone="error" onDismiss={onDismiss} />}
+      />,
+    );
+    const opener = screen.getByRole('button', { name: 'Settings' });
+    await user.click(opener);
+    await screen.findByRole('dialog', { name: 'Settings' });
+    await waitFor(() => expect(inert(opener)).toBe(true));
+
+    expect(inert(screen.getByText('Sync is offline'))).toBe(false);
+    expect(inert(screen.getByText('208 notes indexed'))).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a ref run twice by StrictMode once', async () => {
+    const user = userEvent.setup();
+    render(
+      <StrictMode>
+        <WithSettings />
+      </StrictMode>,
+    );
+    const opener = screen.getByRole('button', { name: 'Settings' });
+    await user.click(opener);
+    await waitFor(() => expect(inert(opener)).toBe(true));
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(inert(opener)).toBe(false);
+  });
+
+  it('leaves the app alone for a dialog drawn inside it', async () => {
+    const user = userEvent.setup();
+    render(<WithDialogInside />);
+    const opener = screen.getByRole('button', { name: 'Peek' });
+    await user.click(opener);
+    const dialog = await screen.findByRole('dialog', { name: 'Peek' });
+
+    expect(inert(dialog)).toBe(false);
+    expect(inert(opener)).toBe(false);
+  });
+});
+
+describe('the modal layer', () => {
+  it('keeps the app inert until the last of two open modals closes', () => {
+    render(<WithSettings />);
+    const opener = screen.getByRole('button', { name: 'Settings' });
+    const outer = document.body.appendChild(document.createElement('div'));
+    const inner = document.body.appendChild(document.createElement('div'));
+
+    const releaseOuter = holdModalLayer(outer);
+    const releaseInner = holdModalLayer(inner);
+    expect(inert(opener)).toBe(true);
+    releaseInner?.();
+    expect(inert(opener)).toBe(true);
+    releaseOuter?.();
+    expect(inert(opener)).toBe(false);
   });
 });
