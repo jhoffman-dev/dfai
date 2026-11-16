@@ -19,6 +19,11 @@
  * once per focus, so the second click is not undone. Pressing the key also
  * collapses the word or line a quick second or third click selects.
  *
+ * A tap is not done again: the app now keeps the caret a press put down
+ * through that reset (#835, fixed by the tap-caret plugin), so
+ * caretAtLineEndByTap fails on the first miss rather than hide that fix
+ * regressing (#838).
+ *
  * ⌘→ goes to the end of the line as drawn, so on a paragraph that wraps it
  * stops short of the block's end: the check then fails loudly, never passes.
  *
@@ -73,33 +78,26 @@ async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
 }
 
 /**
- * How many taps a line gets when ProseMirror's reset after focus undoes one.
- * The reset runs once per focus, so the second tap is not undone.
- */
-const TAPS_PAST_THE_RESET = 2;
-
-/**
  * Taps the far right of the line `line` is in, which leaves the caret at its
- * end, and waits until the editor holds it there (#797, #821). A tap that
- * focuses the editor can be undone by the reset after focus, which puts the
- * caret back at the note's start: then, and only then, the line is tapped
- * again, with no key, so where a tap leaves the caret is what is checked every
- * time. A tap that leaves the caret anywhere else fails at once, saying where.
+ * end, and waits until the editor holds it there (#797, #821). Tapped once,
+ * never again: the app keeps a tap's caret through ProseMirror's reset after
+ * focus (#835, the tap-caret plugin), so a caret put back at the note's start
+ * is that fix regressing, and a second tap would hide it. A tap that leaves
+ * the caret anywhere but its line's end fails at once, saying where.
  */
 export async function caretAtLineEndByTap(line: Locator): Promise<void> {
   const box = await line.boundingBox();
   if (box === null) throw new Error('The line is not on the page.');
-  for (let tap = 1; ; tap += 1) {
-    const before = JSON.stringify((await caretOf(line)).page);
-    await line.tap({ position: { x: box.width - 1, y: box.height / 2 }, ...ONE_TRY });
-    const landed = await caretSettledAfter(line, before);
-    if (landed.inLine && landed.at === 'end') return;
-    if (!landed.atNoteStart || tap === TAPS_PAST_THE_RESET) {
-      throw new Error(
-        `The tap did not leave the caret at its line's end. ${whereCaretsAre(landed)}`,
-      );
-    }
-  }
+  const before = JSON.stringify((await caretOf(line)).page);
+  await line.tap({ position: { x: box.width - 1, y: box.height / 2 }, ...ONE_TRY });
+  const landed = await caretSettledAfter(line, before);
+  if (landed.inLine && landed.at === 'end') return;
+  const reset = landed.atNoteStart
+    ? " It is at the note's start, where the reset after focus puts it: the tap-caret fix (#835) is not holding."
+    : '';
+  throw new Error(
+    `The tap did not leave the caret at its line's end.${reset} ${whereCaretsAre(landed)}`,
+  );
 }
 
 /**
