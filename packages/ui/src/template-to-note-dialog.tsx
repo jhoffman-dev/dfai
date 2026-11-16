@@ -1,4 +1,5 @@
-import { AlertDialog } from './dialog.tsx';
+import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { holdModalLayer } from './modal-layer.ts';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /**
@@ -33,7 +34,7 @@ export function TemplateToNoteDialog({
         if (!open) onClose();
       }}
     >
-      <AlertDialog.Portal>
+      <AlertDialog.Portal ref={holdModalLayer}>
         <AlertDialog.Viewport className="palette__backdrop">
           <AlertDialog.Popup className="palette confirm" finalFocus={finalFocus}>
             <AlertDialog.Title className="confirm__title">Make “{name}” a note?</AlertDialog.Title>

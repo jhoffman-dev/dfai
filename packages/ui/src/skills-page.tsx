@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { AlertDialog } from './dialog.tsx';
+import { AlertDialog } from '@base-ui/react/alert-dialog';
 import type { SkillDraft, SkillField, SkillProblem } from '@dfai/domain';
+import { holdModalLayer } from './modal-layer.ts';
 import { Icon } from './icon.tsx';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
@@ -539,7 +540,7 @@ function Question({
         if (!open) onSafe();
       }}
     >
-      <AlertDialog.Portal>
+      <AlertDialog.Portal ref={holdModalLayer}>
         <AlertDialog.Viewport className="palette__backdrop">
           <AlertDialog.Popup className="palette confirm">
             <AlertDialog.Title className="confirm__title">{title}</AlertDialog.Title>

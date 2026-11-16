@@ -1,5 +1,6 @@
 import { linksGoAsLinks } from '@dfai/domain';
-import { AlertDialog } from './dialog.tsx';
+import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { holdModalLayer } from './modal-layer.ts';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /** What is about to go to the Trash, as the question names it. */
@@ -72,7 +73,7 @@ export function DeleteDialog({
         if (!open) onClose();
       }}
     >
-      <AlertDialog.Portal>
+      <AlertDialog.Portal ref={holdModalLayer}>
         <AlertDialog.Viewport className="palette__backdrop">
           <AlertDialog.Popup className="palette confirm" finalFocus={finalFocus}>
             {/* Deleting is offered on every platform (#657). TODO(#670): on the web a

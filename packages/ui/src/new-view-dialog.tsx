@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Dialog } from './dialog.tsx';
+import { Dialog } from '@base-ui/react/dialog';
 import { viewIcon, type NewViewRequest, type ViewLayout } from '@dfai/domain';
+import { holdModalLayer } from './modal-layer.ts';
 import { Icon, sidebarGlyph } from './icon.tsx';
 import { isImeKey } from './ime.ts';
 import { KeyHints } from './key-hints.tsx';
@@ -57,7 +58,7 @@ export function NewViewDialog({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette new-type new-view" finalFocus={finalFocus}>
             <Dialog.Title className="new-type__title">New view</Dialog.Title>

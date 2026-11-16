@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Dialog } from './dialog.tsx';
+import { Dialog } from '@base-ui/react/dialog';
 import type { ExportFormat } from '@dfai/domain';
+import { holdModalLayer } from './modal-layer.ts';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /** Where the export question is: asking how, making the export, or saying why it could not. */
@@ -84,7 +85,7 @@ export function ExportDialog({
         if (!open && !working) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette confirm export" finalFocus={finalFocus}>
             <Dialog.Title className="confirm__title">Export {subject}</Dialog.Title>

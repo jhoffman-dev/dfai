@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { Dialog } from '../dialog.tsx';
+import { Dialog } from '@base-ui/react/dialog';
 import {
   usePinchAndWheel,
   useRoomSize,
   useZoomedView,
   type ZoomedView,
 } from './image-lightbox-view.ts';
+import { holdModalLayer } from '../modal-layer.ts';
 import { toggledZoom, zoomedIn, zoomedOut, zoomLabel, type Point } from './image-zoom.ts';
 
 /** An image of the note, as the viewer is handed it. */
@@ -60,7 +61,7 @@ export function ImageLightbox({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Backdrop className="lightbox__backdrop" />
         <Dialog.Popup
           className="lightbox"

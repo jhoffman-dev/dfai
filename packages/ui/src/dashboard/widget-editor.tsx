@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from 'react';
-import { Dialog } from '../dialog.tsx';
+import { Dialog } from '@base-ui/react/dialog';
 import {
   GRID_COLUMNS,
   SQL_SHOWS,
@@ -14,6 +14,7 @@ import {
   type WidgetKind,
 } from '@dfai/domain';
 import type { WidgetResult } from '@dfai/application';
+import { holdModalLayer } from '../modal-layer.ts';
 import { Icon, widgetGlyph, widgetKindGlyph } from '../icon.tsx';
 import type { OverlaySlot } from '../overlay-slot.ts';
 import { FilterList, type ViewField } from '../view-query-popovers.tsx';
@@ -71,7 +72,7 @@ export function WidgetEditor(props: WidgetEditorProps) {
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Backdrop className="widget-sheet__backdrop" />
         <Dialog.Popup className="widget-sheet" aria-label={heading}>
           <header className="widget-sheet__head">

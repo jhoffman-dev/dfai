@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from 'react';
-import { Dialog } from './dialog.tsx';
+import { Dialog } from '@base-ui/react/dialog';
 import { Icon } from './icon.tsx';
-import { useInertBehindModals } from './modal-layer.ts';
+import { holdModalLayer, useInertBehindModals } from './modal-layer.ts';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 
 /**
@@ -155,7 +155,7 @@ export function AppShell({
 function DrawerSidebar({ drawer, children }: { drawer: SidebarDrawer; children: ReactNode }) {
   return (
     <Dialog.Root open={drawer.open} onOpenChange={drawer.onOpenChange}>
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Backdrop className="shell__scrim" />
         <DrawerPopup returnFocus={drawer.returnFocus}>{children}</DrawerPopup>
       </Dialog.Portal>

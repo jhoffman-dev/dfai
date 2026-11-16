@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Dialog } from './dialog.tsx';
+import { Dialog } from '@base-ui/react/dialog';
 import { placeCrumb, type NoteSuggestion } from '@dfai/domain';
+import { holdModalLayer } from './modal-layer.ts';
 import { Icon } from './icon.tsx';
 import { isImeKey } from './ime.ts';
 import { Key, KeyHints } from './key-hints.tsx';
@@ -43,7 +44,7 @@ export function LinkPicker({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette" aria-label="Link to a note">
             <div className="palette__field">
