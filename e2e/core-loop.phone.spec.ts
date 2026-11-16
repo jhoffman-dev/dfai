@@ -1,6 +1,6 @@
+import { caretAtLineEndByTap } from './caret.ts';
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, expectFile, openVaultByTouch } from './host.ts';
-import { expectFocusIn } from './typing.ts';
 
 /**
  * #672: the phone's other two screens, by thumb — Today, and finding a note to
@@ -109,12 +109,7 @@ test('on a phone, Notes finds a note by search, opens it to read, and a tapped e
   await expect(screen(page, 'Today')).not.toHaveAttribute('aria-current', 'page');
   await expectNoSidewaysScroll(page);
 
-  const line = noteBody(page).getByText('First line.');
-  const box = await line.boundingBox();
-  if (box === null) throw new Error('The note’s first line is not on the page.');
-  // The far right of the line's block, where a tap leaves the caret at its end.
-  await line.tap({ position: { x: box.width - 1, y: box.height / 2 } });
-  await expectFocusIn(line);
+  await caretAtLineEndByTap(noteBody(page).getByText('First line.'));
   await page.keyboard.type(' By thumb.');
   await expectFile(vault, 'Garden plan.md').toContain('First line. By thumb.');
 });
