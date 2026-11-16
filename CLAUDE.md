@@ -42,6 +42,7 @@ divides cleanly.
 | Run the gate and report it faithfully           | `tester`                |
 | Try to break what was just built                | `adversarial-tester`    |
 | Apply review comments on a PR                   | `pr-review-fixer`       |
+| See what can merge, and merge it                | `pr-merger`             |
 | Find where something lives (read-only search)   | `Explore` (built in)    |
 | Write up a decision or a status page            | `documenter` (Notion) ¹ |
 
@@ -55,7 +56,14 @@ job that fits none of the rows above goes to the closest agent with a brief that
 says what is different, or the coordinator does it.
 
 `coder`, `bug-fixer` and `pr-review-fixer` may change code. `code-reviewer`,
-`tester` and `adversarial-tester` never do.
+`tester`, `adversarial-tester` and `pr-merger` never do. `pr-merger` is the only
+agent that merges.
+
+**The coordinator runs on Fable; each agent runs on the model its own file
+names** (`model:` in its frontmatter — Opus for the coding, review and attack
+agents today). Spawn agents without a `model` override, and don't use a fork for
+agent work, because a fork runs on the coordinator's model. To change an
+agent's model, change its file.
 
 Each phase of `PLAN.md` is a `coder` task, and **every phase gets a
 `code-reviewer` pass and an `adversarial-tester` pass before it is called done**.
@@ -150,15 +158,51 @@ machine:
   Before starting, `git pull`; claim an issue by assigning it to yourself
   (`gh issue edit <n> --add-assignee @me`) and skip issues already assigned or
   with an open PR. Changes reach `main` through a pull request (a ruleset
-  requires it; the admin bypass is for the coordinator's merges, not a habit).
+  requires it). Nobody uses the admin bypass: not the coordinator, not
+  `pr-merger`.
 - **A pull request that is not ready to merge is a draft.** Open every PR with
   `gh pr create --draft`. Mark it ready (`gh pr ready <n>`) only when it has
   passed its `code-reviewer` and `adversarial-tester` passes, the fixes are in,
   the gate and e2e are verified, and everything it is stacked on has merged or
   is ready too. If a ready PR turns out not to be, put it back
-  (`gh pr ready <n> --undo`). James merges every PR himself and reads "open, not
-  draft" as "safe to merge" — the draft flag is the signal he acts on, not a
-  message in a chat.
+  (`gh pr ready <n> --undo`). "Open, not draft" means "safe to merge", to James
+  and to `pr-merger` alike — the draft flag is the signal, not a message in a
+  chat.
+- **A ready PR is merged by `pr-merger`, unless it is high risk.** James asked
+  for this on 2026-11-16, so he no longer clicks through a queue of green PRs.
+  When the coordinator marks a PR ready, it posts a comment whose first line is
+  `Ready to merge at <sha>` (then what was verified, and whether the app needs a
+  restart), and spawns `pr-merger` — then, and whenever CI finishes on a ready
+  PR. Several PRs ready together still get one combined trial; name the trial
+  PR in the brief. `pr-merger` merges with a merge commit
+  (`gh pr merge --merge`), needs the `gate` check green on the head commit, and
+  reports three lists: merged, held for James, not ready. The coordinator then
+  does what a merge owes: the board, the worktree, the two keepers.
+- **High risk is held for James.** `pr-merger` leaves these open and says why.
+  James merges them himself, or tells the coordinator he approves that PR at
+  that commit. On top of the agent's own list, high risk here is a PR that
+  touches:
+  - **The vault on disk:** how notes are written, moved, renamed, deleted or
+    migrated (`packages/adapters/src/markdown`, `packages/adapters/src/vault`,
+    `apps/desktop/src-tauri/src/vault*`, `rename_migration`), sync and conflict
+    handling (`packages/*/src/sync`, `git_process`, ADR-0003, ADR-0025,
+    ADR-0048), and automations or archive rules that move files.
+  - **The index's stored shape:** `index_schema.sql` and any migration of it or
+    of saved settings.
+  - **Secrets and the local API:** `apps/desktop/src-tauri/src/secrets*`,
+    `apps/auth-function`, `packages/*/src/auth`, the API's and MCP server's
+    access rules (ADR-0016, ADR-0017), and any Google, Slack, GitHub or Granola
+    sign-in.
+  - **What the app may do on the machine:** `tauri.conf.json`,
+    `apps/desktop/src-tauri/capabilities/`, the content security policy.
+  - **Release and hosting:** `.github/workflows/release.yml`,
+    `web-hosting.yml`, `.github/release/`, anything under `tools/ci/` that
+    guards them.
+  - **The gate:** `.github/` as a whole, `tools/ci/`, the speed budgets, the
+    coverage floors, the e2e-flake lint rules, and any test that is deleted,
+    skipped, quarantined or made looser. Dependabot PRs fall here or under new
+    dependencies, so James merges those.
+  - **The rules:** `CLAUDE.md`, `ENGINEERING.md`, `.claude/`.
 
 - **Never guess his first name** from "jhoffman". It is James; if a name is
   needed and unknown, write `[Your name]`. (Claude has invented "Jordan" before.)
