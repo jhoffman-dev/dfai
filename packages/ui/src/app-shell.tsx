@@ -112,7 +112,7 @@ export function AppShell({
     .join(' ');
 
   return (
-    <div className={className} ref={shell}>
+    <div className={className} ref={shell} data-behind-modals>
       {sidebarBeside && (
         <nav className="shell__sidebar" aria-label="Vault">
           {sidebar}
@@ -120,7 +120,9 @@ export function AppShell({
       )}
       {drawer !== null && <DrawerSidebar drawer={drawer}>{sidebar}</DrawerSidebar>}
       <main className="shell__main">
-        {notices}
+        <div className="shell__notices" data-stays-live>
+          {notices}
+        </div>
         {work}
         {!sidebarBeside && onShowSidebar !== undefined && (
           <button
@@ -137,7 +139,7 @@ export function AppShell({
       </main>
       {bar}
       {asideShown && <div className="shell__aside">{aside}</div>}
-      <div className="visually-hidden" role="status">
+      <div className="visually-hidden" role="status" data-stays-live>
         {status}
       </div>
       {overlay}

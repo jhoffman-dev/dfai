@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { StrictMode, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 
 import { AppShell } from './app-shell.tsx';
@@ -148,17 +148,14 @@ describe('AppShell behind a modal', () => {
 
     expect(inert(screen.getByText('Sync is offline'))).toBe(false);
     expect(inert(screen.getByText('208 notes indexed'))).toBe(false);
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    // Base UI's own `aria-hidden` still covers it (it spares only `[aria-live]`), as before #827.
+    await user.click(screen.getByRole('button', { name: 'Dismiss', hidden: true }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('counts a ref run twice by StrictMode once', async () => {
     const user = userEvent.setup();
-    render(
-      <StrictMode>
-        <WithSettings />
-      </StrictMode>,
-    );
+    render(<WithSettings />, { reactStrictMode: true });
     const opener = screen.getByRole('button', { name: 'Settings' });
     await user.click(opener);
     await waitFor(() => expect(inert(opener)).toBe(true));

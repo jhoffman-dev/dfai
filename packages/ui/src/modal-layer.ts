@@ -11,23 +11,35 @@ import { useLayoutEffect, type RefObject } from 'react';
  * `aria-hidden` reach the whole app: it spares the ancestors of every
  * `aria-live` region, so it cannot be mirrored onto `inert` either.)
  *
- * Each of the app's modal dialogs gives its portal `ref={holdModalLayer}`;
- * the shell owns the `inert`. The attribute is set and cleared as the count changes, not on a
- * render, so the app is inert before the popup's first focus and free again
- * before Base UI gives the focus back to what opened it.
+ * Each of the app's modal dialogs gives its portal `ref={holdModalLayer}`,
+ * and the shell (`data-behind-modals`) makes itself inert while any is held.
+ * The attribute is set and cleared as the count changes, not on a render, so
+ * the app is inert before the popup's first focus and free again before Base
+ * UI gives the focus back to what opened it.
+ *
+ * The count is module state, shared by every dialog in the window. That is
+ * safe because React runs a ref's cleanup whenever its element leaves the
+ * page — on close, on unmount, when an error tears the tree down, and between
+ * StrictMode's double runs — so every hold is let go exactly once.
  */
 let held = 0;
 const listeners = new Set<() => void>();
+
+/** What a shell marks itself with, so a portal drawn inside it is known. */
+const BEHIND_MODALS = '[data-behind-modals]';
+/** What stays live behind a modal: the toasts and the status, still announced. */
+const STAYS_LIVE = '[data-stays-live]';
 
 /**
  * A modal dialog's portal ref: the layer is held while the portal is in the
  * page (its dialog open or closing) and let go as it leaves, in React's commit.
  * A ref rather than a wrapper component, so a dialog renders nothing more for
- * it (the work budgets count every render). Not for a portal drawn inside the
- * app (the peek's, over its pane): making the app inert would make it inert too.
+ * it (the work budgets count every render). A portal drawn inside the app (the
+ * peek's gallery specimen, over its pane) holds nothing: making the app inert
+ * would make that dialog inert too.
  */
 export function holdModalLayer(portal: HTMLElement | null): (() => void) | undefined {
-  if (portal === null) return undefined;
+  if (portal === null || portal.closest(BEHIND_MODALS) !== null) return undefined;
   held += 1;
   notify();
   return () => {
@@ -41,7 +53,9 @@ function notify(): void {
 }
 
 /**
- * Keeps the element in `ref` inert while any modal is open over the app.
+ * Keeps the element in `ref` inert while any modal is open over the app, all
+ * but its regions marked `data-stays-live`, so a toast or the status raised
+ * behind a dialog is still announced and can still be dismissed.
  *
  * WebKit drops the selection inside an element as it turns inert, so the caret
  * in a note would come back at the top when the focus returns to the editor.
@@ -50,25 +64,45 @@ function notify(): void {
  */
 export function useInertBehindModals(ref: RefObject<HTMLElement | null>): void {
   useLayoutEffect(() => {
-    const element = ref.current;
-    if (element === null) return undefined;
+    const root = ref.current;
+    if (root === null) return undefined;
+    let made: readonly Element[] = [];
     let kept: Range | null = null;
+    const free = () => {
+      for (const element of made) element.removeAttribute('inert');
+      made = [];
+    };
     const follow = () => {
       const inert = held > 0;
-      if (inert === element.hasAttribute('inert')) return;
-      if (inert) kept = rangeWithin(element);
-      element.toggleAttribute('inert', inert);
-      if (!inert && kept !== null) restoreRange(kept);
+      if (inert === made.length > 0) return;
+      if (inert) {
+        kept = rangeWithin(root);
+        made = outsideLive(root, [...root.querySelectorAll(STAYS_LIVE)]);
+        for (const element of made) element.setAttribute('inert', '');
+        return;
+      }
+      free();
+      if (kept !== null) restoreRange(kept);
     };
     follow();
     listeners.add(follow);
     return () => {
       listeners.delete(follow);
-      element.removeAttribute('inert');
+      free();
     };
   }, [ref]);
 }
 
+/** The children of `root`, and down the way to each live region, that hold no live region. */
+function outsideLive(root: Element, live: readonly Element[]): Element[] {
+  const outside: Element[] = [];
+  for (const child of root.children) {
+    if (live.includes(child)) continue;
+    if (live.some((region) => child.contains(region))) outside.push(...outsideLive(child, live));
+    else outside.push(child);
+  }
+  return outside;
+}
 function rangeWithin(element: HTMLElement): Range | null {
   const selection = element.ownerDocument.getSelection();
   if (selection === null || selection.rangeCount === 0) return null;
