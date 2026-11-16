@@ -165,56 +165,84 @@ function everyAnswerAfter(
 }
 
 /**
- * Every answer of one or two lines, so every shape meets every other one
- * beneath it (a setext rule under a word, a fence opened in a quote); every
- * answer of three and four lines over the shapes a fence in a list item turns
- * on, so one closes inside the item and the item carries on after it; every
- * answer of three lines over the shapes a quote's lazy line turns on, and
- * after an item nested in another or an item in a quote; and 400
- * seeded answers of three or four lines over every shape for the rest. It was
- * 3000 random answers of one to four lines, which left some pairs undrawn and
- * cost seconds when the gate shared the machine (#820).
+ * The answers, in families, each its own test so none runs long when the gate
+ * shares the machine (#820, #845): every answer of one or two lines, so every
+ * shape meets every other one beneath it (a setext rule under a word, a fence
+ * opened in a quote); every answer of three lines over the shapes a fence in
+ * a list item turns on, and of four lines from an item's opener, so one closes
+ * inside the item and the item carries on after it; every answer of three
+ * lines over the shapes a quote's lazy line turns on, and after an item nested
+ * in another, an item in a quote, or a quote under a paragraph; and 400
+ * seeded answers of three or four lines over every shape for the rest.
  */
-function answers(): string[] {
-  const random = mulberry32(547);
-  const pick = () => SHAPES[Math.floor(random() * SHAPES.length)] as string;
+function itemFenceAnswers(): string[] {
   return [
-    ...[1, 2].flatMap((lines) => everyAnswer(SHAPES, lines).map(answerOf)),
     ...everyAnswer(ITEM_FENCE_SHAPES, 3).map(answerOf),
     ...ITEM_OPENERS.flatMap((opener) => everyAnswerAfter([opener], ITEM_FENCE_SHAPES, 3)),
-    ...everyAnswer(QUOTE_SETEXT_SHAPES, 3).map(answerOf),
-    ...everyAnswerAfter(NESTED_ITEM, NESTED_ITEM_SHAPES, 3),
-    ...QUOTED_ITEMS.flatMap((opening) => everyAnswerAfter(opening, QUOTED_ITEM_SHAPES, 3)),
-    ...everyAnswerAfter(QUOTE_UNDER_PARAGRAPH, QUOTE_UNDER_PARAGRAPH_SHAPES, 3),
-    ...Array.from({ length: 400 }, () =>
-      answerOf(Array.from({ length: 3 + Math.floor(random() * 2) }, pick)),
-    ),
   ];
 }
 
-describe('Ask’s blocks against the editor’s (PR #547)', () => {
-  it('judges every word the editor draws as prose, and none it draws as fenced code, on every short answer, every item fence, every quote’s lazy line, nested and quoted items, and seeded longer ones', () => {
-    const escaped: string[] = [];
-    const judgedCode: string[] = [];
-    const drawn = new Set<string>();
-    for (const answer of answers()) {
-      const editor = new Map<string, string>();
-      const tree = parseBodyToMdast(answer);
-      for (const path of itemFences(answer, tree)) drawn.add(path);
-      editorKinds(tree, 'prose', editor);
-      const fenced = new Set<string>();
-      fencedWords(answer, tree, fenced);
-      const ask = askKinds(answer);
-      for (const [token, kind] of editor) {
-        const judged = ['paragraph', 'item', 'quote', 'table'].includes(ask.get(token) ?? '');
-        if (kind === 'prose' && !judged)
-          escaped.push(`${JSON.stringify(answer)}: ${token} is ${ask.get(token) ?? 'not drawn'}`);
-        if (fenced.has(token) && judged)
-          judgedCode.push(`${JSON.stringify(answer)}: ${token} is ${ask.get(token)}`);
-      }
+function seededAnswers(): string[] {
+  const random = mulberry32(547);
+  const pick = () => SHAPES[Math.floor(random() * SHAPES.length)] as string;
+  return Array.from({ length: 400 }, () =>
+    answerOf(Array.from({ length: 3 + Math.floor(random() * 2) }, pick)),
+  );
+}
+
+const FAMILIES: readonly (readonly [string, () => string[]])[] = [
+  ['short answers', () => [1, 2].flatMap((lines) => everyAnswer(SHAPES, lines).map(answerOf))],
+  ['quote lazy lines', () => everyAnswer(QUOTE_SETEXT_SHAPES, 3).map(answerOf)],
+  ['nested items', () => everyAnswerAfter(NESTED_ITEM, NESTED_ITEM_SHAPES, 3)],
+  [
+    'quoted items',
+    () => QUOTED_ITEMS.flatMap((opening) => everyAnswerAfter(opening, QUOTED_ITEM_SHAPES, 3)),
+  ],
+  [
+    'quotes under a paragraph',
+    () => everyAnswerAfter(QUOTE_UNDER_PARAGRAPH, QUOTE_UNDER_PARAGRAPH_SHAPES, 3),
+  ],
+  ['seeded longer answers', seededAnswers],
+];
+
+/** Where Ask and the editor part over these answers, and how the editor read their item fences. */
+function compare(answers: readonly string[]) {
+  const escaped: string[] = [];
+  const judgedCode: string[] = [];
+  const drawn = new Set<string>();
+  for (const answer of answers) {
+    const editor = new Map<string, string>();
+    const tree = parseBodyToMdast(answer);
+    for (const path of itemFences(answer, tree)) drawn.add(path);
+    editorKinds(tree, 'prose', editor);
+    const fenced = new Set<string>();
+    fencedWords(answer, tree, fenced);
+    const ask = askKinds(answer);
+    for (const [token, kind] of editor) {
+      const judged = ['paragraph', 'item', 'quote', 'table'].includes(ask.get(token) ?? '');
+      if (kind === 'prose' && !judged)
+        escaped.push(`${JSON.stringify(answer)}: ${token} is ${ask.get(token) ?? 'not drawn'}`);
+      if (fenced.has(token) && judged)
+        judgedCode.push(`${JSON.stringify(answer)}: ${token} is ${ask.get(token)}`);
     }
-    expect(escaped.slice(0, 5)).toEqual([]);
-    expect(judgedCode.slice(0, 5)).toEqual([]);
+  }
+  return { escaped: escaped.slice(0, 5), judgedCode: judgedCode.slice(0, 5), drawn };
+}
+
+describe('Ask’s blocks against the editor’s (PR #547)', () => {
+  it('judges every word the editor draws as prose, and none it draws as fenced code, on every item fence, closed in its item and carried on after', () => {
+    const { escaped, judgedCode, drawn } = compare(itemFenceAnswers());
+    expect(escaped).toEqual([]);
+    expect(judgedCode).toEqual([]);
     expect([...drawn].sort()).toEqual(['carried on', 'closed']);
   });
+
+  it.each(FAMILIES)(
+    'judges every word the editor draws as prose, and none it draws as fenced code, on %s',
+    (_family, answers) => {
+      const { escaped, judgedCode } = compare(answers());
+      expect(escaped).toEqual([]);
+      expect(judgedCode).toEqual([]);
+    },
+  );
 });
