@@ -203,6 +203,8 @@ function seeded(seed: number) {
 }
 
 const KEYS = ['title', 'status', 'tags', 'archived', 'archivedFrom', 'archivedPrior', 'due'];
+/** The keys the archive stamp writes over, and so restores by their text as written. */
+const STAMPED: readonly string[] = ['archived', 'archivedFrom', 'archivedPrior'];
 const VALUES = [
   ' open',
   ' "quoted"',
@@ -224,32 +226,129 @@ const VALUES = [
   ' open # trailing',
 ];
 
+interface Line {
+  readonly key: string;
+  readonly comment: string;
+  readonly value: string;
+}
+
+/**
+ * A block frontmatter of these lines, with what it holds that the property
+ * turns on, so a run can show it drew every one.
+ */
+function block({ drawn, tail, eol }: { drawn: readonly Line[]; tail: string; eol: string }) {
+  const lines = drawn.map(({ key, comment, value }) => `${comment}${key}:${value}\n`);
+  const text = `---\n${lines.join('')}${tail}---\nBody.\n`.replace(/\n/g, eol);
+  const last = drawn[drawn.length - 1]!;
+  const shapes = [
+    `${drawn.length} keys`,
+    `${JSON.stringify(last.value)} last, tail ${tail !== ''}`,
+    `${last.key} last, ${JSON.stringify(eol)}`,
+    `${last.key}:${JSON.stringify(last.value)} last, tail ${tail !== ''}`,
+    ...drawn.flatMap(({ key, comment, value }) => [
+      `${JSON.stringify(value)} with ${JSON.stringify(eol)}`,
+      `${key} with ${JSON.stringify(eol)}`,
+      `${key} commented ${comment !== ''}`,
+      `${key}:${JSON.stringify(value)}`,
+      ...(STAMPED.includes(key)
+        ? [`${key}:${JSON.stringify(value)} with ${JSON.stringify(eol)}`]
+        : []),
+    ]),
+  ];
+  return { text, shapes };
+}
+
 /** An ordinary block frontmatter: unique keys, scalar, list or map values, comments between. */
-function ordinaryBlock(seed: number): string {
+function ordinaryBlock(seed: number): { text: string; shapes: string[] } {
   const pick = seeded(seed);
   const count = pick([1, 2, 3, 4, 5, 6]);
   // Unique keys in a seeded order: draw each from what is left.
   const left = [...KEYS];
-  const keys = Array.from({ length: count }, () => left.splice(left.indexOf(pick(left)), 1)[0]);
-  const lines = keys.map((key) => {
-    const comment = pick(['', '', '', '# about it\n']);
-    return `${comment}${key}:${pick(VALUES)}\n`;
-  });
-  const tail = pick(['', '', '# tail\n']);
-  const eol = pick(['\n', '\n', '\r\n']);
-  return `---\n${lines.join('')}${tail}---\nBody.\n`.replace(/\n/g, eol);
+  const keys = Array.from({ length: count }, () => left.splice(left.indexOf(pick(left)), 1)[0]!);
+  const drawn = keys.map((key) => ({
+    key,
+    comment: pick(['', '', '', '# about it\n']),
+    value: pick(VALUES),
+  }));
+  return block({ drawn, tail: pick(['', '', '# tail\n']), eol: pick(['\n', '\n', '\r\n']) });
 }
 
+/**
+ * Every key last with every value, with and without a tail after it: 252
+ * blocks, which seeds would take thousands to draw. The tail and the line
+ * ending go opposite ways, so each key and value is also met under both line
+ * endings; another key before it, its value turning, puts each in a block
+ * that is not its alone.
+ */
+function everyLastKeyAndValue(): { text: string; shapes: string[] }[] {
+  return KEYS.flatMap((key, k) =>
+    VALUES.flatMap((value, v) =>
+      [true, false].map((tailed, t) => {
+        const before = {
+          key: KEYS[(k + 1 + (v % (KEYS.length - 1))) % KEYS.length]!,
+          comment: '',
+          value: VALUES[(v + k + 7 * t) % VALUES.length]!,
+        };
+        return block({
+          drawn: [before, { key, comment: (v + t) % 4 === 0 ? '# about it\n' : '', value }],
+          tail: tailed ? '# tail\n' : '',
+          eol: (k + v + t) % 2 === 0 ? '\n' : '\r\n',
+        });
+      }),
+    ),
+  );
+}
+
+/** Every shape the property turns on: what the blocks below are shown to draw. */
+const EVERY_SHAPE = [
+  ...[1, 2, 3, 4, 5, 6].map((count) => `${count} keys`),
+  ...VALUES.flatMap((value) =>
+    [true, false].map((tail) => `${JSON.stringify(value)} last, tail ${tail}`),
+  ),
+  ...['\n', '\r\n'].flatMap((eol) => [
+    ...VALUES.map((value) => `${JSON.stringify(value)} with ${JSON.stringify(eol)}`),
+    ...KEYS.flatMap((key) => [
+      `${key} last, ${JSON.stringify(eol)}`,
+      `${key} with ${JSON.stringify(eol)}`,
+    ]),
+  ]),
+  ...KEYS.flatMap((key) => [true, false].map((commented) => `${key} commented ${commented}`)),
+  // The stamp restores each key by its text as written, so what matters is
+  // each key with each value — the stamped ones under each line ending — and
+  // each key and value last, with and without what follows it.
+  ...KEYS.flatMap((key) => VALUES.map((value) => `${key}:${JSON.stringify(value)}`)),
+  ...STAMPED.flatMap((key) =>
+    VALUES.flatMap((value) =>
+      ['\n', '\r\n'].map((eol) => `${key}:${JSON.stringify(value)} with ${JSON.stringify(eol)}`),
+    ),
+  ),
+  ...KEYS.flatMap((key) =>
+    VALUES.flatMap((value) =>
+      [true, false].map((tail) => `${key}:${JSON.stringify(value)} last, tail ${tail}`),
+    ),
+  ),
+];
+
 describe('archive → unarchive gives any ordinary block back byte for byte (property)', () => {
-  it('holds for 2000 seeded blocks', async () => {
-    for (let seed = 1; seed <= 2000; seed += 1) {
-      const text = ordinaryBlock(seed);
+  // 300 seeds, not the 2000 this once ran, and every key last with every
+  // value listed out: together they draw every value and key with each line
+  // ending, every key with every value — the stamped keys under each line
+  // ending — and every key and value last with and without a tail after it,
+  // every key commented and not, and one to six keys. 2000 seeds still missed
+  // some of those, and cost seconds when the gate shared the machine (#820).
+  it('holds for 300 seeded blocks and every key last with every value', async () => {
+    const blocks = [
+      ...Array.from({ length: 300 }, (_, at) => ({ seed: at + 1, ...ordinaryBlock(at + 1) })),
+      ...everyLastKeyAndValue().map((listed, at) => ({ seed: `listed ${at}`, ...listed })),
+    ];
+    const drawn = new Set<string>();
+    for (const { seed, text, shapes } of blocks) {
+      for (const shape of shapes) drawn.add(shape);
       const files = await roundTrip('Projects/X.md', text);
       if (files.get('Projects/X.md') !== text) {
         expect({ seed, restored: files.get('Projects/X.md') }).toEqual({ seed, restored: text });
       }
     }
-    // It asserts what 2000 blocks give back, not how fast: about a second
-    // alone, but past vitest's 5 s default when the gate shares the machine.
-  }, 60_000);
+    expect(EVERY_SHAPE.filter((shape) => !drawn.has(shape))).toEqual([]);
+  });
 });

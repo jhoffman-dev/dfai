@@ -91,10 +91,17 @@ function randomProposal(at: number, rng: () => number): ProposalNote {
   });
 }
 
-function randomSet(seed: number): ProposalNote[] {
+const drawnSets = new Map<number, readonly ProposalNote[]>();
+
+/** A seed's proposals, drawn once: each property below reads the same 2000 sets. */
+function randomSet(seed: number): readonly ProposalNote[] {
+  const drawn = drawnSets.get(seed);
+  if (drawn !== undefined) return drawn;
   const rng = rngOf(seed);
   const count = 1 + Math.floor(rng() * 9);
-  return Array.from({ length: count }, (_, at) => randomProposal(at, rng));
+  const set = Array.from({ length: count }, (_, at) => randomProposal(at, rng));
+  drawnSets.set(seed, set);
+  return set;
 }
 
 const SEEDS = Array.from({ length: 2000 }, (_, at) => 1000 + at);
@@ -194,9 +201,10 @@ describe('conflictGroups — properties over seeded random proposal sets (attack
     const differ: number[] = [];
     for (const seed of SEEDS) {
       const open = randomSet(seed);
+      const asArrived = groupSets(open).join('|');
       const rng = rngOf(seed * 7 + 1);
       for (let round = 0; round < 5; round += 1) {
-        if (groupSets(shuffled(open, rng)).join('|') !== groupSets(open).join('|')) {
+        if (groupSets(shuffled(open, rng)).join('|') !== asArrived) {
           differ.push(seed);
           break;
         }

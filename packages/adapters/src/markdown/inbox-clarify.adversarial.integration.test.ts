@@ -134,9 +134,16 @@ const OTHERS = {
 const person = createVaultPath(PERSON);
 const project = createVaultPath(PROJECT);
 
-/** Seeded, so a failure names a vault that can be built again. */
+/**
+ * Seeded, so a failure names a vault that can be built again. The seed is
+ * scrambled first: fed in as it is, seeds 1 to 200 all drew the same first
+ * number, so no note was ever drawn without the first of OTHER_LINES (#820).
+ */
 function seeded(seed: number) {
-  let state = seed >>> 0;
+  let mixed = (seed + 0x6d2b79f5) >>> 0;
+  mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+  mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+  let state = (mixed ^ (mixed >>> 14)) >>> 0;
   const next = () => {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     return state / 0x100000000;
@@ -165,20 +172,9 @@ function randomTask(seed: number) {
   for (const line of ['type: task', 'status: inbox'])
     lines.splice(random.int(lines.length + 1), 0, line);
   const eol = random.pick(['\n', '\r\n']);
-  const body = random.pick([
-    '',
-    'Body.\n',
-    '\n# Agenda\n\n---\nstatus: inbox\n---\n',
-    'No newline at the end',
-  ]);
+  const body = random.pick(BODIES);
   const text = `---\n${lines.join('\n')}\n---\n${body}`.replaceAll('\n', eol);
-  const decision = random.pick<Clarification>([
-    { status: 'next-action' },
-    { status: 'someday', defer: '2026-11-02' },
-    { status: 'waiting', waitingOn: person, due: '2026-10-20' },
-    { status: 'archive' },
-    { due: '2026-12-31', contexts: ['@phone', '@a: b'] },
-  ]);
+  const decision = random.pick(DECISIONS());
   const back: Clarification = {
     status: 'inbox',
     ...(decision.waitingOn !== undefined && { waitingOn: null }),
@@ -186,8 +182,48 @@ function randomTask(seed: number) {
     ...(decision.due !== undefined && { due: null }),
     ...(decision.contexts !== undefined && { contexts: [] }),
   };
-  return { text, eol, decision, back };
+  const at = lines.indexOf('status: inbox');
+  const where = at === 0 ? 'first' : at === lines.length - 1 ? 'last' : 'between';
+  const shapes = [
+    `${JSON.stringify(decision)} with ${JSON.stringify(eol)}`,
+    `${JSON.stringify(decision)} over ${JSON.stringify(body)}`,
+    `status ${where} with ${JSON.stringify(eol)}`,
+    ...OTHER_LINES.map((line) => `${JSON.stringify(line)} ${lines.includes(line)}`),
+  ];
+  return { text, eol, decision, back, shapes };
 }
+
+const BODIES = ['', 'Body.\n', '\n# Agenda\n\n---\nstatus: inbox\n---\n', 'No newline at the end'];
+const DECISIONS = (): Clarification[] => [
+  { status: 'next-action' },
+  { status: 'someday', defer: '2026-11-02' },
+  { status: 'waiting', waitingOn: person, due: '2026-10-20' },
+  { status: 'archive' },
+  { due: '2026-12-31', contexts: ['@phone', '@a: b'] },
+];
+
+/** Every shape a decision turns on: what the 100 seeds below are shown to draw. */
+const EVERY_SHAPE = [
+  ...DECISIONS().flatMap((decision) => [
+    ...['\n', '\r\n'].map((eol) => `${JSON.stringify(decision)} with ${JSON.stringify(eol)}`),
+    ...BODIES.map((body) => `${JSON.stringify(decision)} over ${JSON.stringify(body)}`),
+  ]),
+  ...['first', 'between', 'last'].flatMap((where) =>
+    ['\n', '\r\n'].map((eol) => `status ${where} with ${JSON.stringify(eol)}`),
+  ),
+  ...OTHER_LINES.flatMap((line) => [
+    `${JSON.stringify(line)} true`,
+    `${JSON.stringify(line)} false`,
+  ]),
+];
+
+/**
+ * 100 seeds, not 200: 87 already draw every decision with each line ending
+ * and over each body, the status key first, between and last, and every
+ * other line kept and left out. The runs past that drew more of the same,
+ * and cost seconds when the gate shared the machine (#820).
+ */
+const SEEDS = 100;
 
 const SET_KEYS = /^(status|waiting_on|defer|due|contexts|completed):/;
 
@@ -240,9 +276,11 @@ describe('deciding a task changes the keys it sets and nothing else (#112)', () 
     expect(vault.files.get(TASK)).toBe(text);
   });
 
-  it('over 200 seeded notes: every line but the keys set is kept, and undo gives the note back', async () => {
-    for (let seed = 1; seed <= 200; seed += 1) {
-      const { text, eol, decision } = randomTask(seed);
+  it('over 100 seeded notes: every line but the keys set is kept, and undo gives the note back', async () => {
+    const drawn = new Set<string>();
+    for (let seed = 1; seed <= SEEDS; seed += 1) {
+      const { text, eol, decision, shapes } = randomTask(seed);
+      for (const shape of shapes) drawn.add(shape);
       const vault = memoryVault({ ...OTHERS, [TASK]: text });
       const outcome = await vault.clarify(TASK, decision);
       const after = vault.files.get(TASK) ?? '';
@@ -254,10 +292,11 @@ describe('deciding a task changes the keys it sets and nothing else (#112)', () 
       });
       expect(vault.files.get(TASK), `seed ${seed}`).toBe(text);
     }
+    expect(EVERY_SHAPE.filter((shape) => !drawn.has(shape))).toEqual([]);
   });
 
-  it('over 200 seeded notes: deciding and then deciding back to Inbox restores the note', async () => {
-    for (let seed = 1; seed <= 200; seed += 1) {
+  it('over 100 seeded notes: deciding and then deciding back to Inbox restores the note', async () => {
+    for (let seed = 1; seed <= SEEDS; seed += 1) {
       const { text, decision, back } = randomTask(seed);
       const vault = memoryVault({ ...OTHERS, [TASK]: text });
       await vault.clarify(TASK, decision);
