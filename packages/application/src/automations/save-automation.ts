@@ -10,6 +10,8 @@ import {
   draftProblem,
   logPathFor,
   opensUnclosedFrontmatter,
+  parseAutomationRule,
+  sameAutomation,
   splitFrontmatter,
   type AutomationDraft,
   type AutomationRule,
@@ -18,6 +20,7 @@ import {
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
 import { UnclosedFrontmatterError } from '../query/set-property.ts';
+import { readSettingsBlock } from '../notes/settings-block.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 import { appendToRuleLog } from './automation-log.ts';
@@ -82,7 +85,10 @@ async function freeId(fs: VaultFsPort, name: string): Promise<string> {
 /**
  * Rewrites a rule's frontmatter to the editor's, keeping the file's body — the
  * person's notes about the rule — byte for byte. The file keeps its name, so
- * its log stays its log.
+ * its log stays its log. A rule whose file says something else now than when
+ * it was read — another editor, the other Mac's sync — is refused, never
+ * written over (#793). Its on or off is the editor's only when the person
+ * changed it there; otherwise the file's, so a switch since is not undone.
  */
 export async function updateAutomation({
   rule,
@@ -92,12 +98,11 @@ export async function updateAutomation({
   const problem = draft.name.trim() === '' ? 'Name the automation.' : draftProblem(draft);
   if (problem !== null) throw new AutomationRefusedError(problem);
   await ensureBuiltInPrompt(write.fs, draft);
-  const { text, modified } = await write.fs.readTextFile(rule.path);
-  // Unclosed since it was read: a block on top would hold only the edit (#683).
-  if (opensUnclosedFrontmatter(text)) throw new UnclosedFrontmatterError(rule.path);
+  const { text, modified, now } = await readUnchanged(write, rule);
+  const enabled = draft.enabled === rule.enabled ? now.enabled : draft.enabled;
   const document = splitFrontmatter(text);
   const frontmatter = write.markdown.updateFrontmatter(document.frontmatter, {
-    ...automationFrontmatter(draft),
+    ...automationFrontmatter({ ...draft, enabled }),
     id: rule.id,
   });
   await write.fs.writeTextFile({
@@ -105,10 +110,61 @@ export async function updateAutomation({
     contents: frontmatter + document.body,
     expectedModified: modified,
   });
-  if (draft.enabled && !rule.enabled) {
+  if (enabled && !now.enabled) {
     await logTurnedOn({ ...write, rule: { id: rule.id, name: draft.name.trim() } });
   }
 }
+
+/**
+ * Turns a rule on or off: only its `enabled` is written, onto the file as it
+ * is now, so whatever else was edited there since the rule was read stays
+ * (#793). Turning one on is logged, as a save that turns it on is.
+ */
+export async function setAutomationEnabled({
+  rule,
+  enabled,
+  ...write
+}: RuleWrite & { rule: AutomationRule; enabled: boolean }): Promise<void> {
+  const { text, modified } = await write.fs.readTextFile(rule.path);
+  if (opensUnclosedFrontmatter(text)) throw new UnclosedFrontmatterError(rule.path);
+  const now = ruleIn(write.markdown, rule.path, text);
+  if (now === null) throw changedOnDisk(rule);
+  const document = splitFrontmatter(text);
+  const frontmatter = write.markdown.updateFrontmatter(document.frontmatter, { enabled });
+  await write.fs.writeTextFile({
+    path: rule.path,
+    contents: frontmatter + document.body,
+    expectedModified: modified,
+  });
+  if (enabled && !now.enabled)
+    await logTurnedOn({ ...write, rule: { id: now.id, name: now.name } });
+}
+
+/** The rule's file, read now, and the rule it says, when that is still the rule it was read as; refused otherwise. */
+async function readUnchanged(
+  write: RuleWrite,
+  rule: AutomationRule,
+): Promise<{ text: string; modified: number; now: AutomationRule }> {
+  const read = await write.fs.readTextFile(rule.path);
+  // Unclosed since it was read: a block on top would hold only the edit (#683).
+  if (opensUnclosedFrontmatter(read.text)) throw new UnclosedFrontmatterError(rule.path);
+  const now = ruleIn(write.markdown, rule.path, read.text);
+  if (now === null || !sameAutomation(now, rule)) throw changedOnDisk(rule);
+  return { ...read, now };
+}
+
+/** The rule a file's text says, or null when it says none that reads. */
+function ruleIn(markdown: MarkdownPort, path: VaultPath, text: string): AutomationRule | null {
+  const block = readSettingsBlock(markdown, text);
+  if ('problem' in block) return null;
+  const read = parseAutomationRule(path, block.properties);
+  return 'rule' in read ? read.rule : null;
+}
+
+const changedOnDisk = (rule: AutomationRule) =>
+  new AutomationRefusedError(
+    `“${rule.name}” was changed on disk since it was read, so it was not saved: look at it again, then save.`,
+  );
 
 /**
  * Writes the prompt a rule's Claude step names when it is one DFAI ships and

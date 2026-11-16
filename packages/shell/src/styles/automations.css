@@ -364,3 +364,13 @@
     display: none;
   }
 }
+
+/* Both meeting presets on (#793): the warning and its one button on a line. */
+.automations__read-twice {
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.automations__read-twice p {
+  margin: 0;
+}

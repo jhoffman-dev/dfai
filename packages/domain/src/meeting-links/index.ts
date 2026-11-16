@@ -33,6 +33,7 @@ export type {
 } from './meeting-link-plan.ts';
 export {
   compileLinkDirectoryQuery,
+  compileMeetingEntitiesQuery,
   compileProjectTiesQuery,
   LINK_DIRECTORY_PAGE_SIZE,
   linkDirectoryOf,

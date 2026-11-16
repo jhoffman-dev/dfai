@@ -9,6 +9,7 @@ import {
   isAutomationNote,
   isAutomationPath,
   parseAutomationRule,
+  sameAutomation,
   setKeyProblem,
   setValueFromInput,
   type AutomationDraft,
@@ -124,6 +125,35 @@ describe('automationFrontmatter', () => {
 
   it('takes out set: when the rule archives', () => {
     expect(automationFrontmatter(AUTOMATION_PRESETS[0]!)['set']).toBeNull();
+  });
+});
+
+describe('sameAutomation', () => {
+  const read = () => {
+    const parsed = parseAutomationRule(PATH, { ...RULE, id: 'tidy' });
+    if (!('rule' in parsed)) throw new Error('the rule does not read');
+    return parsed.rule;
+  };
+
+  it('is the same rule read twice', () => {
+    expect(sameAutomation(read(), read())).toBe(true);
+  });
+
+  it('is another rule when a key its file is written with changed', () => {
+    expect(sameAutomation(read(), { ...read(), which: 'FROM task' })).toBe(false);
+    expect(sameAutomation(read(), { ...read(), olderThanDays: 31 })).toBe(false);
+    expect(sameAutomation(read(), { ...read(), action: { kind: 'set', values: { a: 1 } } })).toBe(
+      false,
+    );
+  });
+
+  it('is another rule under another id', () => {
+    expect(sameAutomation(read(), { ...read(), id: 'tidy-2' })).toBe(false);
+  });
+
+  // A switch writes only `enabled` (#793): an editor open on the rule since is not refused for it.
+  it('is the same rule turned on or off', () => {
+    expect(sameAutomation(read(), { ...read(), enabled: false })).toBe(true);
   });
 });
 
