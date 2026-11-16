@@ -611,7 +611,11 @@ function meetingData(context: AnswerContext): PromptData[] {
     ...(terms.length > 0
       ? [{ about: 'the right spellings of names and terms', text: terms.join('\n') }]
       : []),
-    ...projectChoiceData({ notes: context.notes, options: context.vault?.projects ?? [] }),
+    ...projectChoiceData({
+      notes: context.notes,
+      options: context.vault?.projects ?? [],
+      ...(context.vault?.projectTies !== undefined && { ties: context.vault.projectTies }),
+    }),
   ];
 }
 
