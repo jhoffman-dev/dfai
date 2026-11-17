@@ -64,3 +64,5 @@ export {
   assistTone,
 } from './assist-summary.ts';
 export type { AssistTone } from './assist-summary.ts';
+export { assistHeld } from './assist-held.ts';
+export type { AssistHeld, HeldField } from './assist-held.ts';

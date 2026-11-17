@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fakeIndexPort, fakeMarkdown } from '../testing/fake-ports.ts';
+import { assistHeld } from '@dfai/domain';
+import { jsonMarkdown, jsonNote } from '../testing/json-markdown.ts';
 import { atlasQueryIndex } from '../testing/query-index.ts';
 import { listInbox } from './list-inbox.ts';
 
@@ -105,5 +107,64 @@ describe('listInbox', () => {
       truncated: false,
       total: 2,
     });
+  });
+});
+
+describe('what each item has written, read from a real index (#903)', () => {
+  it('carries project and due as written, resolved or not, for the plan to hold as set', async () => {
+    const files = {
+      'Projects/Larkspur Payroll.md': jsonNote({ type: 'project' }),
+      'Areas/Hiring.md': jsonNote({ type: 'area' }),
+      'Inbox/Two links.md': jsonNote({
+        project: ['[[Larkspur Payroll]]', '[[Hiring]]'],
+        due: '2026-12-01',
+      }),
+      'Inbox/A number.md': jsonNote({ project: 3, due: 'next Friday' }),
+      'Inbox/Empty.md': jsonNote({ project: '', due: '' }),
+      'Inbox/Dangling.md': jsonNote({ project: '[[Old Payroll]]' }),
+      'Inbox/Plain words.md': jsonNote({ project: 'Larkspur Payroll' }),
+    };
+    const query = atlasQueryIndex({ files, markdown: jsonMarkdown() });
+    const { items } = await listInbox({ index: fakeIndexPort({ query }) });
+    const of = (title: string) => {
+      const item = items.find((each) => each.title === title)!;
+      const held = assistHeld(item);
+      return { written: item.written, set: [held.project !== null, held.due !== null] };
+    };
+
+    expect(of('Two links')).toEqual({
+      written: expect.objectContaining({
+        project: 'Projects/Larkspur Payroll.md',
+        projectNames: ['Larkspur Payroll', 'Hiring'],
+        due: '2026-12-01',
+        dueWritten: '2026-12-01',
+      }),
+      set: [true, true],
+    });
+    expect(of('A number')).toEqual({
+      written: expect.objectContaining({
+        project: null,
+        projectNames: ['3'],
+        due: null,
+        dueWritten: 'next Friday',
+      }),
+      set: [true, true],
+    });
+    expect(of('Empty')).toEqual({
+      written: expect.objectContaining({
+        project: null,
+        projectNames: [],
+        due: null,
+        dueWritten: '',
+      }),
+      set: [false, false],
+    });
+    expect(of('Dangling').written).toMatchObject({ project: null, projectNames: ['Old Payroll'] });
+    expect(of('Dangling').set).toEqual([true, false]);
+    expect(of('Plain words').written).toMatchObject({
+      project: null,
+      projectNames: ['Larkspur Payroll'],
+    });
+    expect(of('Plain words').set).toEqual([true, false]);
   });
 });

@@ -26,6 +26,7 @@ import { assistSureness } from './assist-confidence.ts';
 import type { InboxItem } from './inbox.ts';
 import {
   assistHeld,
+  heldWords,
   sameDay,
   samePerson,
   sameProject,
@@ -275,10 +276,12 @@ function filledIn(
     return { question: differsWords(held.project, facts, project.title) };
   }
   if (due !== null && held.due !== null && !sameDay(held.due, due)) {
-    return { question: `You set it due ${held.due.shown}; Claude suggests ${due}.` };
+    return { question: `You set it due ${heldWords(held.due)}; Claude suggests ${due}.` };
   }
   if (waitingOn !== null && held.waitingOn !== null && !samePerson(held.waitingOn, waitingOn)) {
-    return { question: `It waits on ${held.waitingOn.shown}; Claude suggests ${waitingOn.title}.` };
+    return {
+      question: `It waits on ${heldWords(held.waitingOn)}; Claude suggests ${waitingOn.title}.`,
+    };
   }
   return {
     project: held.project === null ? project : null,
@@ -289,11 +292,7 @@ function filledIn(
 
 /** The question when a set project differs from the one suggested: the vault's own names for both. */
 function differsWords(held: HeldField, facts: AssistFacts, suggested: string): string {
-  const now =
-    held.resolved === null
-      ? held.shown
-      : (facts.filingTargets.find((target) => target.path === held.resolved)?.title ?? held.shown);
-  return `You filed this under ${now}; Claude suggests ${suggested}.`;
+  return `You filed this under ${heldWords(held, facts.filingTargets)}; Claude suggests ${suggested}.`;
 }
 
 /**

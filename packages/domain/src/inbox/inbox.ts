@@ -24,7 +24,7 @@ import {
 import { isMeetingType } from '../meetings/meeting-header.ts';
 import { PROPOSAL_TYPE } from '../proposals/proposal.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
-import { waitingOnNames } from '../review/review-query.ts';
+import { waitingOnNames, writtenNames } from '../review/review-query.ts';
 import { ARCHIVED_PARA, FILED_UNDER, FILED_UNDER_KEY } from '../types/para.ts';
 import { paraOf } from '../types/para-value.ts';
 import { relationTypeRefusal } from '../types/property-value.ts';
@@ -102,8 +102,8 @@ export interface InboxItem {
 export interface InboxWritten {
   /** The note `project` links, when its link resolves. */
   readonly project: VaultPath | null;
-  /** `project` as written — a link by what it shows, plain text as is; '' for nothing. */
-  readonly projectWritten: string;
+  /** Each item under `project` as written — a link by what it shows, plain text as is; none for nothing. */
+  readonly projectNames: readonly string[];
   /** `due` as a day, when it reads as one. */
   readonly due: string | null;
   /** `due` as written; '' for nothing. */
@@ -422,7 +422,7 @@ export function inboxItem(row: {
     task: type?.toLowerCase() === TASK_TYPE ? inboxTask(row) : null,
     written: {
       project: pathOrNull(row.project),
-      projectWritten: waitingOnNames(row.projectWritten),
+      projectNames: writtenNames(row.projectWritten),
       due: textOrNull(row.due),
       dueWritten: waitingOnNames(row.dueWritten),
       waitingOn: pathOrNull(row.waitingOn),

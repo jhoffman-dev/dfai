@@ -112,12 +112,16 @@ const textOrNull = (value: unknown) =>
  * task rules read them. '' for nobody.
  */
 export function waitingOnNames(joined: unknown): string {
-  if (typeof joined !== 'string') return '';
+  return writtenNames(joined).join(', ');
+}
+
+/** Each item of a property as the statement joined them, by what it shows; blanks left out. */
+export function writtenNames(joined: unknown): string[] {
+  if (typeof joined !== 'string') return [];
   return joined
     .split(ITEM_SEPARATOR)
     .map(shownName)
-    .filter((name) => name !== '')
-    .join(', ');
+    .filter((name) => name !== '');
 }
 
 function shownName(item: string): string {

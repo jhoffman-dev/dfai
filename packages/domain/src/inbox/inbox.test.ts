@@ -170,7 +170,7 @@ describe('inboxItem', () => {
       task: null,
       written: {
         project: null,
-        projectWritten: '',
+        projectNames: [],
         due: null,
         dueWritten: '',
         waitingOn: null,
@@ -194,7 +194,7 @@ describe('inboxItem', () => {
     expect(item.task).toBeNull();
     expect(item.written).toEqual({
       project: null,
-      projectWritten: 'Old Payroll',
+      projectNames: ['Old Payroll'],
       due: null,
       dueWritten: 'next Friday',
       waitingOn: 'People/Mara Quill.md',

@@ -529,3 +529,35 @@ describe('never overwriting, over every type (#903 round 3, seeded)', () => {
     }
   });
 });
+
+describe('an item under several projects (#903 round 4)', () => {
+  const ONBOARDING = { path: createVaultPath('Projects/Onboarding.md'), title: 'Onboarding' };
+  const facts: AssistFacts = { ...FACTS, filingTargets: [PAYROLL, HIRING, ONBOARDING] };
+  const underBoth = (type: string) =>
+    note('Inbox/Call Mara Quill.md', {
+      type,
+      status: 'inbox',
+      project: null,
+      projectWritten: '[[Old Payroll]]\u001f[[Areas/Hiring]]',
+    });
+  const plan = (item: ReturnType<typeof underBoth>, extra: Partial<AssistItemAnswer>) =>
+    assistPlan(item, answer(extra), facts).step;
+
+  it('agrees, adding nothing, when Claude suggests any one of them', () => {
+    expect(plan(underBoth('task'), { projects: ['Hiring'] })).toEqual({
+      kind: 'leave',
+      because: 'Already a task, with nothing clear to add.',
+    });
+    expect(plan(underBoth('note'), { kind: 'note', projects: ['Areas/Hiring.md'] })).toEqual({
+      kind: 'leave',
+      because: 'Already filed there.',
+    });
+  });
+
+  it('names all of them when Claude suggests another, each by the vault’s title where it has one', () => {
+    expect(plan(underBoth('task'), { projects: ['Onboarding'] })).toEqual({
+      kind: 'ask',
+      question: 'You filed this under Old Payroll and Hiring; Claude suggests Onboarding.',
+    });
+  });
+});
