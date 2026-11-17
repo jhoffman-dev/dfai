@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { NOTE_RUNS_PER_HOUR, noteRunsHold, type NoteRunsHold } from './automation-due.ts';
+import {
+  NOTE_RUNS_PER_HOUR,
+  noteRunsHold,
+  type NoteRunsHold,
+  type RuleAsks,
+} from './automation-due.ts';
 import {
   claudeStepBudget,
   DECLARED_STEP_ASKS_PER_HOUR,
@@ -210,6 +215,11 @@ describe('noteRunsHoldIsFailing (#813): failing if and only if its own last run 
       lastFailed: true,
     });
     expect(noteRunsHoldIsFailing(hold!)).toBe(true);
+    expect(noteRunsHoldMessage(hold!)).toBe(
+      'It failed all 5 times it ran this hour. The last failure: The index could not be read. ' +
+        'The 30 asks to Claude an hour that it shares with “Board digest” are used up, ' +
+        'so it tries again at 12:10.',
+    );
   });
 
   it('held by the shared asks while only the sharer’s runs failed: waiting', () => {
@@ -405,8 +415,53 @@ describe('noteRunsHoldMessage (#813): what a held rule says, in plain words', ()
       }),
     ).toBe(
       'It failed 1 of the 21 times it ran this hour. The last failure: No. ' +
-        'It has used up two hourly limits, so it tries again at 14:32.',
+        'It has used up its hourly runs and the 30 asks to Claude an hour it shares with “Board digest”, ' +
+        'so it tries again at 14:32.',
     );
+    expect(
+      noteRunsHoldMessage({
+        ...ALONE,
+        runs: { most: 20, spent: 20, countsAsks: false },
+        failures: { failed: 1, ran: 21, latest: 'No.', lastFailed: true },
+      }),
+    ).toBe(
+      'It failed 1 of the 21 times it ran this hour. The last failure: No. ' +
+        'It has used up its hourly runs and its 30 asks to Claude, so it tries again at 14:32.',
+    );
+  });
+
+  it('failing, held by the shared asks only: says who used them, never that it used its own limit', () => {
+    const by = (...others: RuleAsks[]): NoteRunsHold => ({
+      ...SHARED,
+      sharedAsks: {
+        most: 30,
+        asked: 30,
+        by: [{ name: 'After a meeting', asks: 0, own: true, enabled: true }, ...others],
+      },
+      failures: { failed: 2, ran: 2, latest: 'No.', lastFailed: true },
+    });
+    const close = (hold: NoteRunsHold) => noteRunsHoldMessage(hold).split('No. ')[1];
+    expect(close(by({ name: 'Board digest', asks: 30, own: false, enabled: false }))).toBe(
+      'The 30 asks to Claude an hour that it shares with “Board digest” are used up, so it tries again at 14:32.',
+    );
+    expect(close(by({ name: 'After a meeting', asks: 30, own: false, enabled: true }))).toBe(
+      'The 30 asks to Claude an hour that it shares with another “After a meeting” are used up, ' +
+        'so it tries again at 14:32.',
+    );
+    expect(
+      close(
+        by(
+          { name: 'Board digest', asks: 20, own: false, enabled: true },
+          { name: 'Weekly review', asks: 10, own: false, enabled: true },
+        ),
+      ),
+    ).toBe(
+      'The 30 asks to Claude an hour that it shares with “Board digest” and “Weekly review” are used up, ' +
+        'so it tries again at 14:32.',
+    );
+    expect(
+      close({ ...ALONE, failures: { failed: 2, ran: 2, latest: 'No.', lastFailed: true } }),
+    ).toBe('It has used up its 30 asks to Claude this hour, so it tries again at 14:32.');
   });
 
   it('waiting after earlier failures: not broken, and says how many failed before the last one worked', () => {
