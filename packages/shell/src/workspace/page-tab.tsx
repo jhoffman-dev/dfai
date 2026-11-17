@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react';
-import type { PagePlace, Tab, TabId } from '@dfai/domain';
+import { pageOffered } from '@dfai/application';
+import { featureOfPlace, type PagePlace, type Tab, type TabId } from '@dfai/domain';
 import { ActivityContainer } from '../activity/activity-container.tsx';
 import { AskContainer } from '../ask/ask-container.tsx';
 import { ArchiveContainer } from '../archive/archive-container.tsx';
@@ -18,6 +19,7 @@ import { LibraryContainer } from '../research/library-container.tsx';
 import { TodayContainer } from '../today/today-container.tsx';
 import { TypeContainer } from '../types/type-container.tsx';
 import { DocumentContainer } from '../reader/document-container.tsx';
+import { FeatureOffPage } from '../features/feature-off-page.tsx';
 import { samePageWiring, type PageWiringContext } from './page-wiring.ts';
 import { useTabPageHistory } from './tab-history.ts';
 import { useIsFirstShownPane } from './workspace-store.ts';
@@ -82,7 +84,10 @@ function usePageTab({ wiring, pane, tab, place }: PageTabProps) {
   );
 }
 
-/** The page a place names, by its kind, in its container. */
+/**
+ * The page a place names, by its kind, in its container; or, for the page of
+ * a feature switched off, the notice saying so (#901).
+ */
 function containerFor({
   place,
   pane,
@@ -95,6 +100,11 @@ function containerFor({
   tabId: TabId;
   chrome: PageChrome;
 }): ReactNode {
+  const { features } = props.wiring.pages;
+  const feature = featureOfPlace(place);
+  if (feature !== null && !pageOffered(place, features.offered)) {
+    return <FeatureOffPage feature={feature} chrome={props.chrome} onTurnOn={features.onTurnOn} />;
+  }
   switch (place.kind) {
     case 'graph':
       return <GraphContainer {...props} scope={place.scope} />;

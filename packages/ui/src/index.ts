@@ -216,6 +216,9 @@ export { NewArtifactDialog, LINK_ONLY_NOTE, artifactKindGlyph } from './new-arti
 export type { ArtifactChoice, NewArtifactDraft } from './new-artifact-dialog.tsx';
 export { FileDrop } from './file-drop.tsx';
 export { QuickAddSettings } from './quick-add-settings.tsx';
+export { FeatureSettings } from './feature-settings.tsx';
+export type { FeatureRow } from './feature-settings.tsx';
+export { FeatureOffNotice } from './feature-off-notice.tsx';
 export { ProfileSettings } from './profile-settings.tsx';
 export type { SelfEmailsView } from './self-emails-form.tsx';
 export type { QuickAddRow } from './quick-add-settings.tsx';

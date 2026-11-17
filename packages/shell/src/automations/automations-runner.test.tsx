@@ -18,6 +18,7 @@ import {
   fakeVaultFs,
   recordingActivity,
   type AutomationPorts,
+  type EntryPointsOffered,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { createIndexStatusStore } from '../index/index-status-store.ts';
@@ -26,6 +27,7 @@ import { createReadInvalidator } from '../reads/read-invalidator.ts';
 import { createAutomationRelay } from '../api/automation-relay.ts';
 import { AutomationsRunner, type AutomationsRunnerProps } from './automations-runner.tsx';
 import { createAutomationsStore } from './automations-store.ts';
+import { offeredFor } from '../features/offered-for.ts';
 import { createSyncStore, publishSync } from '../sync/sync-store.ts';
 import type { SyncController } from '../sync/use-sync.ts';
 
@@ -158,6 +160,7 @@ function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
   const changes = createNoteChanges({ onError: (cause) => void cause });
   const windowDraws = { count: 0 };
   let showPage: (shown: boolean) => void = () => {};
+  let offerAnew: (offered: EntryPointsOffered) => void = () => {};
   const props: Omit<AutomationsRunnerProps, 'live'> = {
     offered: EVERY_ENTRY_POINT,
     store,
@@ -176,8 +179,10 @@ function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
   function Window() {
     windowDraws.count += 1;
     const [shown, setShown] = useState(live);
+    const [offered, setOffered] = useState<EntryPointsOffered>(EVERY_ENTRY_POINT);
     showPage = setShown;
-    return <AutomationsRunner {...props} live={shown} />;
+    offerAnew = setOffered;
+    return <AutomationsRunner {...props} offered={offered} live={shown} />;
   }
   const view = render(
     <Wrapper>
@@ -199,6 +204,7 @@ function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
     indexNews,
     view,
     show: (on: boolean) => act(() => showPage(on)),
+    offer: (offered: EntryPointsOffered) => act(() => offerAnew(offered)),
   };
 }
 
@@ -293,6 +299,29 @@ describe('the automations runner (#326)', () => {
     await show(true);
     await settle();
     expect(names()).toEqual(['Sweep renamed']);
+  });
+
+  it('carries on, not starting over, when a feature is switched off (#901)', async () => {
+    const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
+    const { store, relay, changes, offer } = mountRunner(vault);
+    await settle();
+    const listing = store.getState().automations?.listing;
+    const watching = relay.clock.forVault(VAULT);
+    expect(listing).toBeDefined();
+    expect(watching).not.toBeNull();
+
+    offer(offeredFor(EVERY_ENTRY_POINT, ['reading']));
+    await settle();
+    expect(store.getState().automations?.listing).toBe(listing);
+    // Watching since the same moment, with the same pauses: the runner was not made again.
+    expect(relay.clock.forVault(VAULT)?.watchingSince).toBe(watching?.watchingSince);
+    expect(relay.clock.forVault(VAULT)?.pauses).toBe(watching?.pauses);
+    expect(runsIn(vault.files[LOG])).toEqual([]);
+
+    // Still listening: a note it is told of sets its rule off as before.
+    act(() => changes.publish(added(vault.files, TASK)));
+    await settle();
+    expect(vault.files['Archive/Tasks/A.md']).toBeDefined();
   });
 
   it('leaves its store empty once it is gone', async () => {

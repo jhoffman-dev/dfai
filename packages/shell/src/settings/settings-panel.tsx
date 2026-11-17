@@ -26,6 +26,7 @@ export function SettingsPanel({
   connections,
   onClose,
   fallbackFocus,
+  openAt,
   children,
 }: {
   ports: SettingsPorts;
@@ -39,6 +40,8 @@ export function SettingsPanel({
   connections: boolean;
   onClose: () => void;
   fallbackFocus?: () => HTMLElement | null;
+  /** The section Settings opens at, in place of the top. */
+  openAt?: SettingsSectionLink;
   /** Sections after Connections, which the app supplies. */
   children?: ReactNode;
 }) {
@@ -62,6 +65,7 @@ export function SettingsPanel({
         {...(sections ? { sections } : {})}
         connections={connections}
         {...(fallbackFocus ? { fallbackFocus } : {})}
+        {...(openAt !== undefined && { openAt })}
       >
         {children}
       </SettingsDialog>

@@ -1,7 +1,11 @@
+// Types only: the guide's build runs this file under plain Node (`tools/guide/build-guide.ts`).
 import type {
   AutomationDraft,
   Datasource,
   ExportFormat,
+  FeatureId,
+  FeaturesOn,
+  PagePlace,
   PlatformCapabilities,
   PlatformCapability,
 } from '@dfai/domain';
@@ -87,9 +91,35 @@ const NEEDS = {
    * committed; keeping this text as a copy, or discarding it, loses nothing.
    */
   overwriteConflict: ['localFolderVault'],
+  // Reading's surfaces (#901): on every platform, each behind the person's switch alone.
+  /** The Library and All highlights: their sidebar rows, ⌘K's commands and their pages. */
+  libraryPages: [],
+  /** A PDF or EPUB in the reader, however it is reached: Pages, a link, a highlight, a kept tab. */
+  documentReader: [],
+  /** ⌘K's Add PDF… and Add EPUB…. */
+  addDocuments: [],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
 export type EntryPoint = keyof typeof NEEDS;
+
+/**
+ * The key feature each entry point belongs to, where the person can switch
+ * it off in Settings → Features (#901, ADR-0055): offered then means the
+ * platform can, and the person wants it. One with no feature here follows
+ * the platform alone.
+ */
+const FEATURE_OF: Partial<Record<EntryPoint, FeatureId>> = {
+  libraryPages: 'reading',
+  documentReader: 'reading',
+  addDocuments: 'reading',
+};
+
+/** The entry point each page a switch can hide is drawn under, by the page's kind. */
+const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
+  library: 'libraryPages',
+  highlights: 'libraryPages',
+  document: 'documentReader',
+};
 
 /** Whether the screen offers each entry point. Every one is named, so none is forgotten. */
 export type EntryPointsOffered = Readonly<Record<EntryPoint, boolean>>;
@@ -102,13 +132,56 @@ export function capabilitiesNeeded(entry: EntryPoint): readonly PlatformCapabili
   return NEEDS[entry];
 }
 
-/** Which entry points a platform with `capabilities` offers: those whose every capability it has. */
-export function entryPointsOffered(capabilities: PlatformCapabilities): EntryPointsOffered {
-  return Object.freeze(
+/** The feature an entry point belongs to, or null when no switch hides it. */
+export function featureOfEntry(entry: EntryPoint): FeatureId | null {
+  return FEATURE_OF[entry] ?? null;
+}
+
+/**
+ * Which entry points a platform with `capabilities` offers, with the features
+ * `on` the person has on: those whose every capability it has, and whose
+ * feature is on. Left out, every feature is on.
+ */
+export function entryPointsOffered(
+  capabilities: PlatformCapabilities,
+  on?: FeaturesOn,
+): EntryPointsOffered {
+  const platform = Object.freeze(
     Object.fromEntries(
       ENTRY_POINTS.map((entry) => [entry, NEEDS[entry].every((name) => capabilities[name])]),
     ),
   ) as EntryPointsOffered;
+  return on === undefined ? platform : offeredWithFeatures(platform, on);
+}
+
+/**
+ * What the platform offers, less each entry point whose feature is off: the
+ * one place the person's switches reach the screen. With nothing taken away
+ * it answers `offered` itself, so a window with every feature on keeps the
+ * very object it was handed.
+ */
+export function offeredWithFeatures(
+  offered: EntryPointsOffered,
+  on: FeaturesOn,
+): EntryPointsOffered {
+  const off = ENTRY_POINTS.filter((entry) => {
+    const feature = FEATURE_OF[entry];
+    return offered[entry] && feature !== undefined && !on[feature];
+  });
+  if (off.length === 0) return offered;
+  return Object.freeze({
+    ...offered,
+    ...Object.fromEntries(off.map((entry) => [entry, false])),
+  });
+}
+
+/**
+ * Whether the page a place names is offered: a page no switch can hide
+ * always is. One that is not is what a tab kept on it shows a notice for.
+ */
+export function pageOffered(place: PagePlace, offered: EntryPointsOffered): boolean {
+  const entry = PAGE_ENTRY[place.kind];
+  return entry === undefined || offered[entry];
 }
 
 /** Every entry point offered, as a platform with every capability has them. */
