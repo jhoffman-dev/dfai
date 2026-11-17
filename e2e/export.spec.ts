@@ -46,7 +46,9 @@ async function exportAs(page: Page, format: RegExp) {
 }
 
 const exported = (host: FakeHost, name: string) =>
-  expect.poll(async () => (await readdir(host.exports.root).catch(() => [])).includes(name));
+  expect.poll(async () =>
+    (await readdir(host.exports.root).catch((): string[] => [])).includes(name),
+  );
 
 test('exports a note as Markdown as it is: the same bytes, the note unchanged', async ({
   page,

@@ -57,7 +57,7 @@ export const webTest = test.extend<{ webUrl: string }>({
         headless,
         viewport,
         hasTouch,
-        deviceScaleFactor,
+        ...(deviceScaleFactor !== undefined && { deviceScaleFactor }),
         ...(userAgent !== undefined && { userAgent }),
         // Routes never reach a page the web build's worker controls (playwright.config.ts).
         serviceWorkers: 'block',

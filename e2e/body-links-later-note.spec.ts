@@ -10,8 +10,8 @@ import { createVault, emitVaultChanged, installHost } from './host.ts';
 test('a note made after a note linking to it is linked here', async ({ page }) => {
   const vault = await createVault();
   await vault.write('Deal.md', '# Deal\n\nSigned with [[Larkspur Payroll|the payroll firm]].\n');
-  // The real index lists what it holds, so a refresh reads only what changed.
-  await installHost(page, vault, { keepsManifest: true });
+  // The stand-in index lists what it holds, as the real one does, so a refresh reads only what changed.
+  await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();

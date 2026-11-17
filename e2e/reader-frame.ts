@@ -16,9 +16,10 @@ export async function shownFrame(page: Page): Promise<Frame | null> {
     // Only a lone frame is the chapter on screen. During a chapter change the outgoing frame can still be
     // attached, before or after the incoming one: its chapter is built asynchronously, and a slower one is
     // appended late and destroyed once it resolves (book-frame.ts).
-    if (handles.length !== 1) return null;
+    const [only] = handles;
+    if (handles.length !== 1 || only === undefined) return null;
     // An iframe removed since it was found has no frame any more.
-    return await handles[0].contentFrame();
+    return await only.contentFrame();
   } catch (error) {
     // On an open page these fail only when the iframe is removed while it is read ("not attached to the
     // DOM", "unable to adopt element handle"): the reader is between chapters, which is what null says.
