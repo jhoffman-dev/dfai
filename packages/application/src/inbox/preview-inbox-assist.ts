@@ -195,6 +195,8 @@ async function askClaude(
   });
   const tooLong = claudeSystemProblem(system);
   if (tooLong !== null) return { kind: 'not-now', message: tooLong };
+  // Dismissed while the notes were read: nothing is sent, and nothing counted.
+  if (signal?.aborted === true) return { kind: 'not-now', message: STOPPED };
   ports.recordAsk(localTimeMs(ports.clock.localNow()) ?? ports.clock.now());
   const said = await oneRound(provider, {
     system,

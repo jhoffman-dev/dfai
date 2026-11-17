@@ -16,14 +16,20 @@ const thirty = (at: number) => Array.from({ length: 30 }, () => at);
 
 describe('attack2-903: a stored time ahead of the clock', () => {
   it('holds Suggest no longer than the time it says it can ask again', () => {
-    // A clock that ran a day fast for a while, then was put right.
+    // A clock that ran a day fast for a while, then was put right. The store hands the
+    // allowance such times as now, and keeps them so (#903 round 3: assist-asks-store),
+    // so they age out an hour later; a pure rule given the same future times at two
+    // moments could not both hold and then free them.
     const ahead = thirty(NOW + 24 * HOUR);
     const first = assistAllowance({ logged: [], previewed: ahead, now: NOW });
     expect(first.ok).toBe(false);
     if (first.ok) return;
     const promised = localTimeMs(first.until)!;
     expect(promised).toBe(NOW + HOUR);
-    expect(assistAllowance({ logged: [], previewed: ahead, now: promised + 1_000 }).ok).toBe(true);
+    const asStored = thirty(NOW);
+    expect(assistAllowance({ logged: [], previewed: asStored, now: promised + 1_000 }).ok).toBe(
+      true,
+    );
   });
 });
 
@@ -58,17 +64,15 @@ describe('attack2-903: real vault names with joiners or right-to-left script (pi
       ARTICLE,
     ]);
 
-  it('refuses the whole batch for a project whose real name holds an emoji joined by ZWJ', () => {
-    const outcome = read({ projects: ['Projects/\u{1F9D1}‍\u{1F4BB} Launch.md'] });
-    expect(outcome).toEqual({
-      ok: false,
-      problem: "An entry's projects are not a short list of names.",
-    });
+  it('reads a project whose real name holds an emoji joined by ZWJ (#903 round 3: the plan checks it)', () => {
+    const outcome = read({ projects: ['Projects/\u{1F9D1}\u200D\u{1F4BB} Launch.md'] });
+    expect(outcome.ok).toBe(true);
   });
 
-  it('refuses the whole batch for a person whose real name holds a zero-width non-joiner', () => {
+  it('reads a person whose real name holds a zero-width non-joiner', () => {
     // Persian names are commonly written with U+200C.
-    expect(read({ waitingOn: 'People/می‌را.md' }).ok).toBe(false);
+    // #903 round 3: read, and checked against the vault by the plan.
+    expect(read({ waitingOn: 'People/می‌را.md' }).ok).toBe(true);
   });
 
   it('accepts a right-to-left name with no format characters', () => {

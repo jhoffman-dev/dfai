@@ -32,13 +32,39 @@ describe('Suggest’s asks', () => {
     expect(asks.asked('/vault')).toEqual([AT - 60_000, AT]);
   });
 
-  it('read a stored value that is not a list of times as none', () => {
-    window.localStorage.setItem(KEY, '{"at": 1}');
-    expect(browserAssistAsks().asked('/vault')).toEqual([]);
+  it('read a stored value that is not a list of times as unknown, and count this window’s own', () => {
     window.localStorage.setItem(KEY, '[1, "2", null, 3]');
-    expect(browserAssistAsks().asked('/vault')).toEqual([1, 3]);
-    window.localStorage.setItem(KEY, 'not json');
     expect(browserAssistAsks().asked('/vault')).toEqual([]);
+    const asks = browserAssistAsks();
+    asks.record('/vault', AT);
+    window.localStorage.setItem(KEY, 'not json');
+    expect(asks.asked('/vault')).toEqual([AT]);
+  });
+
+  it('count a time kept while the clock ran fast as now, and let it age out', () => {
+    const asks = browserAssistAsks();
+    for (let n = 0; n < 3; n += 1) asks.record('/vault', AT + 24 * 3_600_000);
+    expect(asks.asked('/vault', AT)).toEqual([AT, AT, AT]);
+    // Kept as now: another window reads them so, and an hour on they are gone.
+    expect(browserAssistAsks().asked('/vault')).toEqual([AT, AT, AT]);
+    asks.record('/vault', AT + 3_600_000 + 1_000);
+    expect(asks.asked('/vault')).toEqual([AT + 3_600_000 + 1_000]);
+  });
+
+  it('record a time ahead of the ask as the ask’s own', () => {
+    const asks = browserAssistAsks();
+    window.localStorage.setItem(KEY, JSON.stringify([AT + 60_000]));
+    asks.record('/vault', AT);
+    expect(asks.asked('/vault')).toEqual([AT, AT]);
+  });
+
+  it('take back a claimed ask that was never sent, and only that one', () => {
+    const asks = browserAssistAsks();
+    asks.record('/vault', AT - 1_000);
+    asks.record('/vault', AT);
+    asks.withdraw('/vault', AT);
+    asks.withdraw('/vault', AT + 5);
+    expect(browserAssistAsks().asked('/vault')).toEqual([AT - 1_000]);
   });
 
   it('are still counted in this window when storage throws', () => {

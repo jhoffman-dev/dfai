@@ -222,7 +222,7 @@ describe('previewInboxAssist', () => {
     expect(outcome).toEqual({
       kind: 'not-now',
       message:
-        'Not broken: Claude has been asked 30 times this hour, and Suggest stops at 30. It counts its own asks and those of “After a meeting”; that rule does not count Suggest’s yet. Suggest can ask again at 09:01; nothing to do.',
+        'Not broken: Claude has been asked 30 or more times this hour, counting “After a meeting”, and Suggest stops at 30. It can ask again at 09:01; nothing to do.',
     });
     expect(model.requests).toHaveLength(0);
     expect(recorded).toEqual([]);
@@ -313,10 +313,33 @@ describe('previewInboxAssist', () => {
     expect(recorded).toEqual([localTimeMs(LOCAL_NOW)]);
   });
 
-  it('stops when the person dismisses it, and still counts the ask', async () => {
-    const { ports, recorded } = setUp({ rounds: [answer(entry(CALL.path))] });
+  it('sends nothing, and counts nothing, when dismissed before the ask is sent', async () => {
+    const { ports, model, recorded } = setUp({ rounds: [answer(entry(CALL.path))] });
     const dismissed = new AbortController();
     dismissed.abort();
+    const outcome = await previewInboxAssist(ports, {
+      items: [CALL],
+      previewed: [],
+      signal: dismissed.signal,
+    });
+    expect(outcome).toEqual({
+      kind: 'not-now',
+      message: 'Claude did not finish. Nothing changed.',
+    });
+    expect(model.requests).toHaveLength(0);
+    expect(recorded).toEqual([]);
+  });
+
+  it('stops when dismissed while Claude answers, and still counts the ask', async () => {
+    const dismissed = new AbortController();
+    const { ports, recorded } = setUp({
+      rounds: [
+        async function* () {
+          dismissed.abort();
+          yield { type: 'text' as const, text: '{"items": []}' };
+        },
+      ],
+    });
     const outcome = await previewInboxAssist(ports, {
       items: [CALL],
       previewed: [],

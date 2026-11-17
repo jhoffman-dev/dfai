@@ -20,11 +20,18 @@ import { MORNING_BRIEF_FOLDER } from '../automations/morning-brief.ts';
 import { namesNote } from '../automations/proposal-schema.ts';
 import { MEETING_TYPE } from '../meetings/meeting-header.ts';
 import { PROPOSAL_TYPE } from '../proposals/proposal.ts';
-import { noteTitle } from '../vault/vault-entry.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
-import type { AssistItemAnswer, AssistKind } from './assist-answer.ts';
+import { hasUnshownCharacters, type AssistItemAnswer, type AssistKind } from './assist-answer.ts';
 import { assistSureness } from './assist-confidence.ts';
-import type { InboxItem, InboxTask } from './inbox.ts';
+import type { InboxItem } from './inbox.ts';
+import {
+  assistHeld,
+  sameDay,
+  samePerson,
+  sameProject,
+  type AssistHeld,
+  type HeldField,
+} from './assist-held.ts';
 
 /** The most items one ask is about. */
 export const ASSIST_ITEMS_PER_ASK = 10;
@@ -133,9 +140,11 @@ export function assistPlan(
     step,
     why: answer.why,
   });
+  if (answer.unshowable === true) return row(ask(UNSHOWABLE));
   const question = questionOf(answer);
   if (question !== null) return row({ kind: 'ask', question });
   const projects = targetsNamed(answer.projects, facts.filingTargets);
+  if (projects.unshowable) return row(ask(UNSHOWABLE));
   if (projects.unknown !== null) {
     return row(ask(`Claude named “${projects.unknown}”, which is not a project or area here.`));
   }
@@ -143,12 +152,28 @@ export function assistPlan(
     return row(ask(`Which one: ${projects.found.map((each) => `“${each.title}”`).join(' or ')}?`));
   }
   const project = projects.found[0] ?? null;
-  if (answer.kind === 'task') return row(taskStep({ item, answer, facts, project }));
+  const held = assistHeld(item);
+  if (answer.kind === 'task') return row(taskStep({ item, answer, facts, project, held }));
   // Only a note is filed as one: a task stays one unless the person says otherwise.
   if (item.task !== null) {
     return row(ask(`You made this a task; Claude thinks it is ${KIND_WORDS[answer.kind]}.`));
   }
-  return row(project === null ? leave('Nowhere clear to file it.') : { kind: 'file', project });
+  return row(fileStep(project, held.project, facts));
+}
+
+/** What an item Claude's answer cannot be shown for becomes: a question, with nothing of the answer in it. */
+const UNSHOWABLE = 'Claude’s answer for this item could not be shown.';
+
+/** Filing a note: under the one project named, unless it is filed already. */
+function fileStep(
+  project: AssistTarget | null,
+  held: HeldField | null,
+  facts: AssistFacts,
+): AssistStep {
+  if (project === null) return leave('Nowhere clear to file it.');
+  if (held === null) return { kind: 'file', project };
+  if (sameProject(held, project.path)) return leave('Already filed there.');
+  return ask(differsWords(held, facts, project.title));
 }
 
 const ask = (question: string): AssistStep => ({ kind: 'ask', question });
@@ -181,21 +206,28 @@ function taskStep({
   answer,
   facts,
   project,
+  held,
 }: {
   item: InboxItem;
   answer: AssistItemAnswer;
   facts: AssistFacts;
   project: AssistTarget | null;
+  held: AssistHeld;
 }): AssistStep {
+  const type = item.type?.trim().toLowerCase() ?? null;
+  if (item.task === null && type !== null && type !== PLAIN_NOTE_TYPE) {
+    return ask(`This is a ${type} note; Claude thinks it is a task.`);
+  }
   const dueProblem = dueQuestion(answer.due, facts.today);
   if (dueProblem !== null) return ask(dueProblem);
   const people = targetsNamed(answer.waitingOn === null ? [] : [answer.waitingOn], facts.people);
+  if (people.unshowable) return ask(UNSHOWABLE);
   if (people.unknown !== null) {
     return ask(`Claude says it waits on “${people.unknown}”, who is not in People.`);
   }
   if (people.found.length > 1) return ask('Which person does it wait on?');
   const suggested = { project, due: answer.due, waitingOn: people.found[0] ?? null };
-  const filled = filledIn(item.task, suggested, facts);
+  const filled = filledIn(held, suggested, facts);
   if ('question' in filled) return ask(filled.question);
   const makeTask = item.task === null;
   if (!makeTask && filled.project === null && filled.due === null && filled.waitingOn === null) {
@@ -203,6 +235,9 @@ function taskStep({
   }
   return { kind: 'task', makeTask, ...filled };
 }
+
+/** A note's type when it says only that it is a note: the one type a task may be made from besides none. */
+const PLAIN_NOTE_TYPE = 'note';
 
 /**
  * The most a due date may lie ahead, in years, and still be planned: a date
@@ -225,72 +260,65 @@ interface TaskFields {
 }
 
 /**
- * What a suggestion adds to what the task already holds: only what is
- * missing. A field the person set is never overwritten: a suggestion that
- * agrees adds nothing, one that differs is a question showing both.
+ * What a suggestion adds to what the item already holds: only what is
+ * empty. A field with anything written in it is never overwritten: a
+ * suggestion that agrees adds nothing, one that differs is a question
+ * showing both.
  */
 function filledIn(
-  held: InboxTask | null,
+  held: AssistHeld,
   suggested: TaskFields,
   facts: AssistFacts,
 ): TaskFields | { question: string } {
-  if (held === null) return suggested;
-  const project = keptOrAdded(held.project, suggested.project?.path ?? null);
-  if (project === 'differs') {
-    return {
-      question: `You filed this under ${titleOf(held.project!, facts.filingTargets)}; Claude suggests ${suggested.project!.title}.`,
-    };
+  const { project, due, waitingOn } = suggested;
+  if (project !== null && held.project !== null && !sameProject(held.project, project.path)) {
+    return { question: differsWords(held.project, facts, project.title) };
   }
-  const due = keptOrAdded(held.due, suggested.due);
-  if (due === 'differs') {
-    return { question: `You set it due ${held.due}; Claude suggests ${suggested.due}.` };
+  if (due !== null && held.due !== null && !sameDay(held.due, due)) {
+    return { question: `You set it due ${held.due.shown}; Claude suggests ${due}.` };
   }
-  const waiting = waitingKeptOrAdded(held, suggested.waitingOn);
-  if (waiting !== null) return { question: waiting };
+  if (waitingOn !== null && held.waitingOn !== null && !samePerson(held.waitingOn, waitingOn)) {
+    return { question: `It waits on ${held.waitingOn.shown}; Claude suggests ${waitingOn.title}.` };
+  }
   return {
-    project: project === 'added' ? suggested.project : null,
-    due: due === 'added' ? suggested.due : null,
-    waitingOn: held.waitingOn === null && held.waitingOnNames === '' ? suggested.waitingOn : null,
+    project: held.project === null ? project : null,
+    due: held.due === null ? due : null,
+    waitingOn: held.waitingOn === null ? waitingOn : null,
   };
 }
 
-/** Whether a suggested value adds to a field, agrees with it, differs from it, or says nothing. */
-function keptOrAdded(held: string | null, suggested: string | null): 'added' | 'kept' | 'differs' {
-  if (suggested === null || held === suggested) return 'kept';
-  return held === null ? 'added' : 'differs';
-}
-
-/** The question when the person the task waits on is not the one suggested; null when it agrees or adds. */
-function waitingKeptOrAdded(held: InboxTask, suggested: AssistTarget | null): string | null {
-  if (suggested === null) return null;
-  const writtenAs = held.waitingOnNames.trim();
-  if (held.waitingOn === null && writtenAs === '') return null;
-  const agrees =
-    held.waitingOn !== null
-      ? held.waitingOn === suggested.path
-      : writtenAs.toLowerCase() === suggested.title.toLowerCase();
-  if (agrees) return null;
-  const now = held.waitingOn === null ? writtenAs : noteTitle(held.waitingOn);
-  return `It waits on ${now}; Claude suggests ${suggested.title}.`;
-}
-
-function titleOf(path: VaultPath, targets: readonly AssistTarget[]): string {
-  return targets.find((target) => target.path === path)?.title ?? noteTitle(path);
+/** The question when a set project differs from the one suggested: the vault's own names for both. */
+function differsWords(held: HeldField, facts: AssistFacts, suggested: string): string {
+  const now =
+    held.resolved === null
+      ? held.shown
+      : (facts.filingTargets.find((target) => target.path === held.resolved)?.title ?? held.shown);
+  return `You filed this under ${now}; Claude suggests ${suggested}.`;
 }
 
 /**
  * The vault notes `names` name, each found by its path or its title as a
  * link would be, and the first name that names none: null when all are real.
+ * A name holding characters that cannot be shown must name a note exactly —
+ * its path, or its title as the vault spells it — or the answer cannot be
+ * shown at all (`unshowable`).
  */
 function targetsNamed(
   names: readonly string[],
   targets: readonly AssistTarget[],
-): { found: readonly AssistTarget[]; unknown: string | null } {
+): { found: readonly AssistTarget[]; unknown: string | null; unshowable: boolean } {
   const found: AssistTarget[] = [];
   for (const name of names) {
-    const named = targets.filter((target) => namesNote(name, target.path));
-    if (named.length === 0) return { found, unknown: name };
+    const exact = hasUnshownCharacters(name);
+    const named = targets.filter((target) =>
+      exact ? namesExactly(name, target) : namesNote(name, target.path),
+    );
+    if (named.length === 0) return { found, unknown: name, unshowable: exact };
     for (const target of named) if (!found.includes(target)) found.push(target);
   }
-  return { found, unknown: null };
+  return { found, unknown: null, unshowable: false };
+}
+
+function namesExactly(name: string, target: AssistTarget): boolean {
+  return name === target.path || name === target.path.replace(/\.md$/, '') || name === target.title;
 }

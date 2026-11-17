@@ -34,8 +34,13 @@ describe('attack-903: why is one line of plain text', () => {
     ['a NUL', 'Looks\u0000fine'],
     ['a zero-width space', 'Looks​fine'],
     ['a vertical tab', 'First\u000BSecond'],
-  ])('a why holding %s is refused', (_, why) => {
-    expect(read([entry(CALL, { why })]).ok).toBe(false);
+  ])('a why holding %s is never shown (#903 round 3: one item, not the batch)', (name, why) => {
+    const outcome = read([entry(CALL, { why })]);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value[0]!.why).toBeNull();
+    // A zero-width space hides only the reason; the others make the item a question.
+    expect(outcome.value[0]!.unshowable).toBe(name !== 'a zero-width space');
   });
 });
 

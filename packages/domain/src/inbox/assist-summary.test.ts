@@ -124,7 +124,7 @@ describe('the ask allowance', () => {
 
   it('says so as a held rule does: not broken, when, nothing to do', () => {
     expect(assistAllowanceWords('2026-11-17T14:10:00')).toBe(
-      'Not broken: Claude has been asked 30 times this hour, and Suggest stops at 30. It counts its own asks and those of “After a meeting”; that rule does not count Suggest’s yet. Suggest can ask again at 14:10; nothing to do.',
+      'Not broken: Claude has been asked 30 or more times this hour, counting “After a meeting”, and Suggest stops at 30. It can ask again at 14:10; nothing to do.',
     );
   });
 });

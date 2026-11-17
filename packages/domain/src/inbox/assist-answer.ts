@@ -41,8 +41,17 @@ export interface AssistItemAnswer {
   /** The person it waits on, as Claude named them, or null. */
   readonly waitingOn: string | null;
   readonly confidence: ProposalConfidence;
-  /** One sentence: why. */
-  readonly why: string;
+  /**
+   * One sentence: why. Null when it held characters that are not shown as
+   * text (a zero-width joiner, say): the plan is shown without it.
+   */
+  readonly why: string | null;
+  /**
+   * True when the why held control, bidi or separator characters: text
+   * written not to read as it shows. The item becomes a question, and
+   * nothing of Claude's answer for it is shown.
+   */
+  readonly unshowable?: boolean;
 }
 
 const ENTRY_KEYS = ['item', 'kind', 'projects', 'due', 'waitingOn', 'confidence', 'why'] as const;
@@ -98,14 +107,15 @@ function readEntry(raw: unknown, asked: readonly VaultPath[]): Reading<AssistIte
   const due = raw['due'] === null ? null : day(raw['due']);
   const waitingOn = raw['waitingOn'] === null ? null : shortText(raw['waitingOn']);
   const why = shortText(raw['why']);
+  const said = why === undefined ? undefined : whyShown(why);
   if (kind === undefined)
     return refused(`An entry's kind is not one of ${ASSIST_KINDS.join(', ')}.`);
   if (confidence === undefined) return refused("An entry's confidence is not high, medium or low.");
   if (projects === undefined) return refused("An entry's projects are not a short list of names.");
   if (due === undefined) return refused("An entry's due is not a day (YYYY-MM-DD) or null.");
   if (waitingOn === undefined) return refused("An entry's waitingOn is not a short name or null.");
-  if (why === undefined) return refused("An entry's why is not one short sentence.");
-  return { ok: true, value: { item, kind, projects, due, waitingOn, confidence, why } };
+  if (said === undefined) return refused("An entry's why is not one short sentence.");
+  return { ok: true, value: { item, kind, projects, due, waitingOn, confidence, ...said } };
 }
 
 function onlyKeys(record: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
@@ -114,20 +124,39 @@ function onlyKeys(record: Readonly<Record<string, unknown>>, keys: readonly stri
 }
 
 /**
- * What one line of plain text never holds: control characters (line breaks,
- * NUL, the vertical tab, U+0085), format characters (the bidi overrides and
- * isolates, zero-width ones) and the line and paragraph separators. Refused
- * rather than stripped: text that carries them was not written to be read
- * as it shows, so the answer is not trusted. An emoji joined by a zero-width
- * joiner is refused with them.
+ * What text that reads as it shows never holds: control characters (line
+ * breaks, NUL, the vertical tab, U+0085), format characters (bidi overrides
+ * and isolates, zero-width ones) and the line and paragraph separators.
  */
 const UNSHOWN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
+/**
+ * The ones that make text read other than it is: controls, separators and
+ * bidi marks, overrides and isolates. A zero-width joiner in an emoji, or a
+ * zero-width non-joiner in a Persian word, is not one of them.
+ */
+const MISLEADING = /[\p{Cc}\p{Zl}\p{Zp}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
+
+/**
+ * Whether a name or reason holds characters that are not shown as text. A
+ * name holding one is trusted only when it names a vault note exactly, and
+ * is then shown by the vault's own title, never as Claude wrote it (#903).
+ */
+export function hasUnshownCharacters(text: string): boolean {
+  return UNSHOWN.test(text);
+}
+
+/** How a why is shown: as written, without itself, or not at all with the item asked about. */
+function whyShown(why: string): { why: string | null; unshowable: boolean } {
+  if (MISLEADING.test(why)) return { why: null, unshowable: true };
+  return { why: UNSHOWN.test(why) ? null : why, unshowable: false };
+}
 
 /** One line of text, not blank, no longer than {@link ASSIST_TEXT_MAX}; undefined for anything else. */
 function shortText(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const text = value.trim();
-  if (text === '' || text.length > ASSIST_TEXT_MAX || UNSHOWN.test(value)) return undefined;
+  if (text === '' || text.length > ASSIST_TEXT_MAX) return undefined;
   return text;
 }
 

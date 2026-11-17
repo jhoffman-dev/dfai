@@ -52,5 +52,5 @@ export function assistAllowance({
  */
 export function assistAllowanceWords(until: LocalTime): string {
   const most = DECLARED_STEP_ASKS_PER_HOUR;
-  return `Not broken: Claude has been asked ${most} times this hour, and Suggest stops at ${most}. It counts its own asks and those of “After a meeting”; that rule does not count Suggest’s yet. Suggest can ask again at ${until.slice(11, 16)}; nothing to do.`;
+  return `Not broken: Claude has been asked ${most} or more times this hour, counting “After a meeting”, and Suggest stops at ${most}. It can ask again at ${until.slice(11, 16)}; nothing to do.`;
 }

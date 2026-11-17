@@ -16,7 +16,7 @@ export {
   processDestination,
   processRefusal,
 } from './inbox.ts';
-export type { InboxItem, InboxKey, InboxTask } from './inbox.ts';
+export type { InboxItem, InboxKey, InboxTask, InboxWritten } from './inbox.ts';
 export { clarifyPlan, waitingOnRefusal } from './clarify.ts';
 export type { Clarification, ClarifyPlan } from './clarify.ts';
 export {

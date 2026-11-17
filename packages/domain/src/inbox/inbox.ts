@@ -89,6 +89,29 @@ export interface InboxItem {
   readonly importError: string | null;
   /** What it holds as a task, or null for a note that is not one. */
   readonly task: InboxTask | null;
+  /**
+   * What any item, a task or not, has written under `project`, `due` and
+   * `waiting_on`, resolved or not (#903): what Inbox assist must never write
+   * over. Left out where a caller built the item by hand; then only `task`
+   * says what is set.
+   */
+  readonly written?: InboxWritten;
+}
+
+/** What an item has written under the fields a plan could fill, as written and as resolved. */
+export interface InboxWritten {
+  /** The note `project` links, when its link resolves. */
+  readonly project: VaultPath | null;
+  /** `project` as written — a link by what it shows, plain text as is; '' for nothing. */
+  readonly projectWritten: string;
+  /** `due` as a day, when it reads as one. */
+  readonly due: string | null;
+  /** `due` as written; '' for nothing. */
+  readonly dueWritten: string;
+  /** The person `waiting_on` links, when it resolves. */
+  readonly waitingOn: VaultPath | null;
+  /** `waiting_on` as written; '' for nobody. */
+  readonly waitingOnNames: string;
 }
 
 /**
@@ -129,6 +152,8 @@ export const INBOX_QUERY_COLUMNS = [
   'due',
   'modified',
   'importDeclared',
+  'projectWritten',
+  'dueWritten',
 ] as const;
 
 /**
@@ -303,7 +328,9 @@ export function compileInboxQuery({
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
       `  files.modified AS "modified",`,
-      `  ${holds('files.path', IMPORT_CONTRACT_KEY)} AS "importDeclared"`,
+      `  ${holds('files.path', IMPORT_CONTRACT_KEY)} AS "importDeclared",`,
+      `  ${allItems(FILED_UNDER_KEY)} AS "projectWritten",`,
+      `  ${allItems(TASK_KEYS.due)} AS "dueWritten"`,
       ...WAITING_FILES,
       ...bounds,
       `ORDER BY ${INBOX_TIME} DESC, files.path`,
@@ -373,6 +400,8 @@ export function inboxItem(row: {
   waitingOnNames?: unknown;
   defer?: unknown;
   due?: unknown;
+  projectWritten?: unknown;
+  dueWritten?: unknown;
 }): InboxItem {
   const { path, importStamped = false, importOutcome = null, importDeclared = false } = row;
   const type = textOrNull(row.type);
@@ -391,6 +420,14 @@ export function inboxItem(row: {
     }),
     importError: textOrNull(row.importError),
     task: type?.toLowerCase() === TASK_TYPE ? inboxTask(row) : null,
+    written: {
+      project: pathOrNull(row.project),
+      projectWritten: waitingOnNames(row.projectWritten),
+      due: textOrNull(row.due),
+      dueWritten: waitingOnNames(row.dueWritten),
+      waitingOn: pathOrNull(row.waitingOn),
+      waitingOnNames: waitingOnNames(row.waitingOnNames),
+    },
   };
 }
 

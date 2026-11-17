@@ -168,6 +168,37 @@ describe('inboxItem', () => {
       importOutcome: 'pending',
       importError: null,
       task: null,
+      written: {
+        project: null,
+        projectWritten: '',
+        due: null,
+        dueWritten: '',
+        waitingOn: null,
+        waitingOnNames: '',
+      },
+    });
+  });
+
+  it('carries what any note has written under project, due and waiting_on, resolved or not (#903)', () => {
+    const item = inboxItem({
+      path: path('Inbox/Payroll article.md'),
+      title: 'Payroll article',
+      type: 'reference',
+      project: null,
+      projectWritten: '[[Old Payroll]]',
+      due: null,
+      dueWritten: 'next Friday',
+      waitingOn: 'People/Mara Quill.md',
+      waitingOnNames: '[[Mara Quill]]',
+    });
+    expect(item.task).toBeNull();
+    expect(item.written).toEqual({
+      project: null,
+      projectWritten: 'Old Payroll',
+      due: null,
+      dueWritten: 'next Friday',
+      waitingOn: 'People/Mara Quill.md',
+      waitingOnNames: 'Mara Quill',
     });
   });
 

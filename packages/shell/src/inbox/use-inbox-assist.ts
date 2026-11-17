@@ -4,6 +4,7 @@ import {
   assistReason,
   assistStepWords,
   assistTone,
+  localTimeMs,
   messageWithoutPaths,
   type AssistRow,
   type InboxItem,
@@ -61,8 +62,6 @@ export function useInboxAssist({
   const onSuggest = useCallback(() => {
     const given = latest.current;
     if (given.wiring === null || inFlight.current !== null) return;
-    const { asks } = given.wiring;
-    const vault = given.vaultKey ?? '';
     const controller = new AbortController();
     inFlight.current = controller;
     const mine = ++generation.current;
@@ -71,20 +70,20 @@ export function useInboxAssist({
       if (generation.current === mine) setView(shown);
     };
     setView({ kind: 'asking' });
+    const claim = claimAsk(given.wiring.asks, given.vaultKey ?? '', given.clock);
     previewInboxAssist(
-      {
-        ...assistPorts(given.wiring, given.ports, given.clock),
-        recordAsk: (at) => asks.record(vault, at),
-      },
-      { items: given.items ?? [], previewed: asks.asked(vault), signal: controller.signal },
-    ).then(
-      (outcome) => show(viewOf(outcome)),
-      (error: unknown) =>
-        show({
-          kind: 'not-now',
-          message: `Suggest could not finish: ${messageWithoutPaths(error)} Nothing changed.`,
-        }),
-    );
+      { ...assistPorts(given.wiring, given.ports, given.clock), recordAsk: claim.sent },
+      { items: given.items ?? [], previewed: claim.before, signal: controller.signal },
+    )
+      .then(
+        (outcome) => show(viewOf(outcome)),
+        (error: unknown) =>
+          show({
+            kind: 'not-now',
+            message: `Suggest could not finish: ${messageWithoutPaths(error)} Nothing changed.`,
+          }),
+      )
+      .finally(claim.settle);
   }, []);
   const onDismiss = useCallback(() => {
     generation.current += 1;
@@ -96,6 +95,37 @@ export function useInboxAssist({
     () => (wiring === null ? null : { view, onSuggest, onDismiss }),
     [wiring, view, onSuggest, onDismiss],
   );
+}
+
+/**
+ * An ask claimed at the press, before anything is read: kept at once, so
+ * another window pressed a moment later counts it. It is taken back if no
+ * ask was sent after all (nothing to ask about, the hour spent, Claude out of
+ * reach); one that was sent counts however it ended.
+ *
+ * Two windows pressed at once with one ask left: the second reads the
+ * first's claim and is refused. Where storage cannot be written (a private
+ * window, a full store) each window counts its own alone, so the worst case
+ * is 29 plus one per open window; accepted for a button a person presses.
+ */
+function claimAsk(
+  asks: AssistAsks,
+  vault: string,
+  clock: Pick<Clock, 'now' | 'localNow'>,
+): { before: readonly number[]; sent: () => void; settle: () => void } {
+  const at = localTimeMs(clock.localNow()) ?? clock.now();
+  const before = asks.asked(vault, at);
+  asks.record(vault, at);
+  let sent = false;
+  return {
+    before,
+    sent: () => {
+      sent = true;
+    },
+    settle: () => {
+      if (!sent) asks.withdraw(vault, at);
+    },
+  };
 }
 
 function assistPorts(

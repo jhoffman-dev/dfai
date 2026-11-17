@@ -343,3 +343,189 @@ describe('the due horizon (#903)', () => {
     }
   });
 });
+
+describe('what is written, resolved or not, on any item (#903 round 3)', () => {
+  const written = (row: Record<string, unknown>, type: string | null = 'task') =>
+    note('Inbox/Call Mara Quill.md', { type, status: 'inbox', ...row });
+
+  it('asks when a project is written but does not resolve: a deleted note, or plain words', () => {
+    expect(
+      stepOf({ projects: ['Areas/Hiring.md'] }, written({ projectWritten: '[[Old Payroll]]' })),
+    ).toEqual({
+      kind: 'ask',
+      question: 'You filed this under Old Payroll; Claude suggests Hiring.',
+    });
+    expect(
+      stepOf({ projects: ['Areas/Hiring.md'] }, written({ projectWritten: 'Larkspur Payroll' })),
+    ).toEqual({
+      kind: 'ask',
+      question: 'You filed this under Larkspur Payroll; Claude suggests Hiring.',
+    });
+    // Plain words naming the suggested project agree, and add nothing.
+    expect(
+      stepOf(
+        { projects: ['Projects/Larkspur Payroll.md'] },
+        written({ projectWritten: 'Larkspur Payroll' }),
+      ),
+    ).toEqual({
+      kind: 'leave',
+      because: 'Already a task, with nothing clear to add.',
+    });
+  });
+
+  it('asks when a due date is written but reads as no day', () => {
+    expect(stepOf({ due: '2026-12-01' }, written({ dueWritten: 'next Friday' }))).toEqual({
+      kind: 'ask',
+      question: 'You set it due next Friday; Claude suggests 2026-12-01.',
+    });
+  });
+
+  it('asks when who it waits on is written in words that name someone else', () => {
+    expect(
+      stepOf({ waitingOn: 'Mara Quill' }, written({ waitingOnNames: 'the payroll team' })),
+    ).toEqual({
+      kind: 'ask',
+      question: 'It waits on the payroll team; Claude suggests Mara Quill.',
+    });
+  });
+
+  it.each(['person', 'reference', 'resource', 'project', 'meeting-notes'])(
+    'never makes a %s note a task: it asks',
+    (type) => {
+      expect(stepOf({ projects: ['Areas/Hiring.md'] }, written({}, type))).toEqual({
+        kind: 'ask',
+        question: `This is a ${type} note; Claude thinks it is a task.`,
+      });
+    },
+  );
+
+  it('makes a plain note, or one of the note type, a task', () => {
+    for (const type of [null, 'note', 'Note']) {
+      expect(stepOf({}, written({}, type))).toMatchObject({ kind: 'task', makeTask: true });
+    }
+  });
+
+  it('never files a note under another project than the one written on it', () => {
+    const filedNote = written({ project: PAYROLL.path }, 'note');
+    expect(stepOf({ kind: 'note', projects: ['Areas/Hiring.md'] }, filedNote)).toEqual({
+      kind: 'ask',
+      question: 'You filed this under Larkspur Payroll; Claude suggests Hiring.',
+    });
+    expect(stepOf({ kind: 'note', projects: ['Larkspur Payroll'] }, filedNote)).toEqual({
+      kind: 'leave',
+      because: 'Already filed there.',
+    });
+    const typedNote = written({ projectWritten: 'Old Payroll' }, 'reference');
+    expect(stepOf({ kind: 'reference', projects: ['Areas/Hiring.md'] }, typedNote).kind).toBe(
+      'ask',
+    );
+  });
+});
+
+describe('names Claude wrote with characters that are not shown (#903 round 3)', () => {
+  const FAMILY = { path: createVaultPath('Areas/👨‍👩‍👧 Family.md'), title: '👨‍👩‍👧 Family' };
+  const MIRA = { path: createVaultPath('People/می‌را.md'), title: 'می‌را' };
+  const facts: AssistFacts = { ...FACTS, filingTargets: [PAYROLL, FAMILY], people: [MARA, MIRA] };
+  const plan = (extra: Partial<AssistItemAnswer>) => assistPlan(note(), answer(extra), facts);
+
+  it('files under an area named with a joined emoji when it names the area exactly, by its own title', () => {
+    expect(plan({ kind: 'note', projects: [FAMILY.path] }).step).toEqual({
+      kind: 'file',
+      project: FAMILY,
+    });
+    expect(plan({ kind: 'note', projects: [FAMILY.title] }).step).toEqual({
+      kind: 'file',
+      project: FAMILY,
+    });
+  });
+
+  it('waits on a person named in Persian with a zero-width non-joiner, named exactly', () => {
+    expect(plan({ waitingOn: MIRA.path }).step).toMatchObject({ kind: 'task', waitingOn: MIRA });
+  });
+
+  it('turns only this item into a question when such a name is a look-alike, showing nothing of it', () => {
+    for (const lookalike of ['areas/👨‍👩‍👧 family.md', 'Areas/👨‍👩 Family.md', 'Larkspur​ Payroll']) {
+      expect(plan({ kind: 'note', projects: [lookalike] }).step).toEqual({
+        kind: 'ask',
+        question: 'Claude’s answer for this item could not be shown.',
+      });
+    }
+  });
+
+  it('turns the item into that question for a why with a right-to-left override', () => {
+    expect(plan({ why: null, unshowable: true }).step).toEqual({
+      kind: 'ask',
+      question: 'Claude’s answer for this item could not be shown.',
+    });
+  });
+});
+
+describe('never overwriting, over every type (#903 round 3, seeded)', () => {
+  /** mulberry32: every run walks the same cases. */
+  const seeded = (seed: number) => {
+    let state = seed >>> 0;
+    return () => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+  const pick = <T>(rng: () => number, from: readonly T[]): T =>
+    from[Math.floor(rng() * from.length)]!;
+  const TYPES = [
+    null,
+    'note',
+    'task',
+    'person',
+    'reference',
+    'resource',
+    'project',
+    'area',
+    'meeting',
+    'company',
+  ];
+  const WRITTEN = ['', '', 'Old Payroll', 'Larkspur Payroll', '[[Hiring]]'];
+  const DUES_WRITTEN = ['', '', 'next Friday', '2026-12-01'];
+  const NAMES = ['', '', 'Mara Quill', 'the payroll team'];
+
+  it('makes a task only of a plain note, and fills only fields nothing is written in (5,000 cases)', () => {
+    const rng = seeded(9033);
+    for (let n = 0; n < 5_000; n += 1) {
+      const type = pick(rng, TYPES);
+      const row = {
+        type,
+        status: 'inbox',
+        project: pick(rng, [null, PAYROLL.path]),
+        projectWritten: pick(rng, WRITTEN),
+        due: pick(rng, [null, '2026-12-01']),
+        dueWritten: pick(rng, DUES_WRITTEN),
+        waitingOn: pick(rng, [null, MARA.path]),
+        waitingOnNames: pick(rng, NAMES),
+      };
+      const item = note('Inbox/Call Mara Quill.md', row);
+      const given = answer({
+        kind: pick(rng, ['task', 'note', 'reference'] as const),
+        projects: pick(rng, [[], ['Areas/Hiring.md'], ['Larkspur Payroll']]),
+        due: pick(rng, [null, '2026-11-20', '2026-12-01']),
+        waitingOn: pick(rng, [null, 'Mara Quill']),
+      });
+      const step = assistPlan(item, given, FACTS).step;
+      const label = JSON.stringify({ row, given });
+      const set = (resolved: unknown, written: string) =>
+        resolved !== null || written.trim() !== '';
+      if (step.kind === 'task') {
+        if (step.makeTask) expect([null, 'note'], label).toContain(type);
+        if (step.project !== null) expect(set(row.project, row.projectWritten), label).toBe(false);
+        if (step.due !== null) expect(set(row.due, row.dueWritten), label).toBe(false);
+        if (step.waitingOn !== null)
+          expect(set(row.waitingOn, row.waitingOnNames), label).toBe(false);
+      }
+      if (step.kind === 'file') {
+        expect(type, label).not.toBe('task');
+        expect(set(row.project, row.projectWritten), label).toBe(false);
+      }
+    }
+  });
+});
