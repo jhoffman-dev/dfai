@@ -235,12 +235,6 @@
   background: color-mix(in srgb, var(--accent-text) 18%, var(--raised));
 }
 
-/* What making a line a task did, with its one Undo: the notice bar
-   (primitives.css) under the page bar, so it never shrinks the page. */
-.promotion-notice {
-  flex: none;
-}
-
 /* One line of metadata: "P14 · Bug fixer · 1h", in ink-3, the · in the
    separator grey. It is cut at the card's edge rather than wrapped. */
 .board__meta {
