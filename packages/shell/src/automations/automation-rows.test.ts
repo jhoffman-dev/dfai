@@ -3,7 +3,9 @@ import {
   createVaultPath,
   planAutomation,
   AUTOMATION_PRESETS,
+  noteRunsHoldMessage,
   type AutomationRule,
+  type NoteRunsHold,
   type LogEntry,
 } from '@dfai/domain';
 import { automationRows, dryRunView, logViews, shownTime } from './automation-rows.ts';
@@ -78,6 +80,70 @@ describe('automationRows', () => {
       ['Tidy', null, null, false, null],
       ['Bad', null, null, false, 'This rule’s file cannot be read: Say when it runs.'],
     ]);
+  });
+});
+
+describe('automationRows of a rule held by an hourly limit (#813)', () => {
+  const AFTER: AutomationRule = {
+    ...RULE,
+    id: 'After a meeting',
+    path: p('.atlas/automations/After a meeting.md'),
+    name: 'After a meeting',
+    when: { kind: 'note', type: 'meeting', on: ['created'] },
+  };
+  const EXTRACTION = 'Pull actions and decisions out of a new meeting';
+  const hold: NoteRunsHold = {
+    rule: 'After a meeting',
+    until: '2026-09-27T09:40:00',
+    runs: null,
+    sharedAsks: { most: 30, asked: 30, by: [{ name: 'After a meeting', asks: 30 }] },
+  };
+  const heldClock = {
+    ...CLOCK,
+    pauses: new Map([
+      [
+        AFTER.id,
+        { reason: noteRunsHoldMessage(hold), failures: 0, retryAt: hold.until, hold },
+      ],
+    ]),
+    readTwice: [
+      { path: `.atlas/automations/${EXTRACTION}.md`, name: EXTRACTION, declared: 'After a meeting' },
+    ],
+  };
+
+  it('shows it waiting, not as a notice, with when it runs and the rule it may turn off', () => {
+    const [row] = automationRows(
+      { automations: [{ rule: AFTER, log: [], idWritten: true }], broken: [] },
+      heldClock,
+    );
+    expect(row?.notice).toBeNull();
+    expect(row?.nextRun).toBe('27 Sep 2026, 09:40');
+    expect(row?.waiting).toEqual({
+      reason: noteRunsHoldMessage(hold, { alsoReading: [EXTRACTION] }),
+      turnOff: [{ id: `.atlas/automations/${EXTRACTION}.md`, rule: EXTRACTION }],
+    });
+  });
+
+  it('offers no turn-off for a rule another declared step reads beside', () => {
+    const [row] = automationRows(
+      {
+        automations: [{ rule: { ...AFTER, name: 'Other digest' }, log: [], idWritten: true }],
+        broken: [],
+      },
+      { ...heldClock, pauses: new Map([[AFTER.id, { ...heldClock.pauses.get(AFTER.id)!, hold: { ...hold, rule: 'Other digest' } }]]) },
+    );
+    expect(row?.waiting?.turnOff).toEqual([]);
+    expect(row?.waiting?.reason).not.toContain(EXTRACTION);
+  });
+
+  it('leaves a failing rule’s pause as its notice, not waiting', () => {
+    const failing = { reason: 'Could not run (No.); it is tried again at 09:05.', failures: 1, retryAt: '2026-09-27T09:05:00' };
+    const [row] = automationRows(
+      { automations: [{ rule: AFTER, log: [], idWritten: true }], broken: [] },
+      { ...CLOCK, pauses: new Map([[AFTER.id, failing]]) },
+    );
+    expect(row?.notice).toBe(failing.reason);
+    expect(row?.waiting).toBeUndefined();
   });
 });
 
