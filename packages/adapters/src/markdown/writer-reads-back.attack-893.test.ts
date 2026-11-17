@@ -123,3 +123,62 @@ describe('a task with an id whose line is only spaces', () => {
     expectReadBack(task(blank, [quote(paragraph(text('x')))]));
   });
 });
+
+describe('a line starting with `_` before italic written with `_` reads back as text', () => {
+  // Second pass: the `\_` remark writes before a line-start `_` dropped
+  // (old seed 2413). Italic beside bold is written `_…_`, and a bare `_`
+  // starting the line then opens emphasis with it. Listed lines put a piece
+  // at a line start, or a mark first, never both.
+  const bold = (value: string): EditorNode => ({ ...text(value), marks: [{ type: 'bold' }] });
+  const italicStrike = (value: string): EditorNode => ({
+    ...text(value),
+    marks: [{ type: 'italic' }, { type: 'strike' }],
+  });
+  const line = [text('_~'), bold('x'), italicStrike('y')];
+  const inEach = (content: EditorNode[]): EditorDocument =>
+    note(
+      paragraph(...content),
+      { type: 'heading', attrs: { level: 2 }, content },
+      quote(paragraph(...content)),
+      callout(paragraph(text('k')), paragraph(...content)),
+      bullets([paragraph(...content)]),
+      {
+        type: 'taskList',
+        content: [
+          { type: 'taskItem', attrs: { checked: false }, content: [paragraph(...content)] },
+        ],
+      },
+      paragraph(text('k'), { type: 'hardBreak' }, ...content),
+    );
+
+  it('in every kind of text block', () => {
+    expectReadBack(inEach(line));
+  });
+});
+
+describe('an id on a block whose only content is a hard break', () => {
+  // Second pass: `withAnchor`'s `if (!afterBox) return paragraph;` dropped
+  // (old seeds 597, 1152, 1379, 1541): `### ^id1`, `4. ^id1` read the id
+  // as the block's text. The listed blank-only family gives only tasks an id.
+  const breakOnly = (blank: string): EditorNode[] =>
+    blank === '' ? [{ type: 'hardBreak' }] : [text(blank), { type: 'hardBreak' }];
+
+  it.each(['', ' '])('a heading, an item and a paragraph of %j then a break', (blank) => {
+    const content = breakOnly(blank);
+    expectReadBack(
+      note(
+        { type: 'heading', attrs: { level: 3, anchor: 'h1' }, content },
+        bullets([paragraph(text('k'))]),
+        {
+          type: 'orderedList',
+          attrs: { start: 3 },
+          content: [
+            { type: 'listItem', content: [paragraph(text('k'))] },
+            { type: 'listItem', attrs: { anchor: 'i1' }, content: [paragraph(...content)] },
+          ],
+        },
+        { type: 'paragraph', attrs: { anchor: 'p1' }, content },
+      ),
+    );
+  });
+});
