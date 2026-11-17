@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import type { ApiConnectionStatus } from '@dfai/application';
+import { holdModalLayer } from './modal-layer.ts';
 import { AppearanceSettings } from './appearance-settings.tsx';
 import { Icon } from './icon.tsx';
 import { SettingsSection } from './settings-section.tsx';
@@ -275,7 +276,7 @@ function settingsFrame({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette settings" finalFocus={finalFocus} aria-label="Settings">
             <header className="settings__header">
