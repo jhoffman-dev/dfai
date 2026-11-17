@@ -371,6 +371,65 @@ describe('showAsRead keeps the caret on its own line (#885 exact places)', () =>
     expect(editor.state.selection.head).toBe(at('Same.', 3, 1));
   });
 
+  describe('when the caret’s line keeps its text but not its kind or marks', () => {
+    beforeEach(() => {
+      editor.commands.setContent(note('Top.', 'Order chairs', 'Notes', 'End.') as object);
+      caret(at('Order chairs', 3));
+    });
+
+    it('keeps the caret on its line when the line is made a heading', () => {
+      showAsRead(
+        editor,
+        docOf([
+          paragraph('Top.'),
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'Order chairs' }],
+          },
+          paragraph('Notes about chairs'),
+          paragraph('End.'),
+        ]),
+      );
+
+      expect(editor.state.selection.head).toBe(at('Order chairs', 3));
+      expect(editor.state.selection.$head.parent.type.name).toBe('heading');
+    });
+
+    it('keeps the caret on its line when a word on it is made bold', () => {
+      showAsRead(
+        editor,
+        docOf([
+          paragraph('Top.'),
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'Order ' },
+              { type: 'text', text: 'chairs', marks: [{ type: 'bold' }] },
+            ],
+          },
+          paragraph('Notes about chairs'),
+          paragraph('End.'),
+        ]),
+      );
+
+      expect(editor.state.selection.head).toBe(at('Order chairs', 3));
+    });
+  });
+
+  it('keeps the caret on its retyped line when another line, untouched, reads as it did', () => {
+    editor.commands.setContent(
+      note('Top.', 'Order chairs', 'Mid.', 'Order chairs', 'End.') as object,
+    );
+    caret(at('Order chairs', 3, 0));
+    showAsRead(
+      editor,
+      note('Theirs, on top.', 'Order the chairs', 'Mid.', 'Order chairs', 'End, edited.'),
+    );
+
+    expect(editor.state.selection.head).toBe(at('Order the chairs', 3));
+  });
+
   it('puts the caret on a neighbour, not the note end, when its line is removed among changes', () => {
     caret(at('B line.', 2));
     showAsRead(editor, note('A line.', 'C line, edited.', 'D.', 'E.'));
