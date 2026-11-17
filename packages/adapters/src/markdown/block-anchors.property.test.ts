@@ -10,7 +10,14 @@ import {
 } from '@dfai/domain';
 import { parseMarkdownBody, serializeMarkdownBody } from './markdown-blocks.ts';
 import { generatedDocument, TARGETS } from './writer-fuzz.test-support.ts';
-import { EVERY_PIECE } from './writer-listed.test-support.ts';
+import {
+  EVERY_PIECE,
+  INLINE_KINDS,
+  inlineOfKind,
+  OUTERS,
+  TOP_KINDS,
+} from './writer-listed.test-support.ts';
+import { inlineKindOf } from './writer-shapes.test-support.ts';
 
 /*
  * The promise of P26-01: an id given to any block of a note, in any place a
@@ -27,13 +34,20 @@ import { EVERY_PIECE } from './writer-listed.test-support.ts';
  * run, for what nobody thought to list.
  */
 
-const SEEDS = 8;
+/**
+ * 50 seeds, in runs of 17 so each `it` stays short on CI: their notes hold
+ * more places than the writer's seeds do.
+ */
+const SEED_RUNS = [
+  [1, 17],
+  [18, 34],
+  [35, 50],
+] as const;
 
 /** The blocks whose id follows the words of their line, and the lists whose items' ids do. */
 const LINE_HOMES = ['paragraph', 'heading', 'bulletList', 'orderedList', 'taskList'] as const;
 /** The blocks that take their id on a line of their own after them. */
 const OWN_LINE = ['bulletList', 'orderedList', 'taskList', 'blockquote', 'callout', 'table'];
-const TOP_KINDS = [...OWN_LINE, 'paragraph', 'heading', 'bookmark', 'blockEmbed'];
 const LISTS = ['bulletList', 'orderedList'] as const;
 const ITEM_OF: Readonly<Record<string, string>> = {
   bulletList: 'listItem',
@@ -133,8 +147,6 @@ const endingInEveryPiece = (home: string): EditorDocument[] =>
     return note(home in ITEM_OF ? withId(written) : written);
   });
 
-const OUTERS = ['bulletList', 'orderedList', 'taskList', 'blockquote', 'callout'];
-
 /** Each kind of block holding each kind of list, holding each kind of list or none. */
 const nestedTwoDeep = OUTERS.flatMap((outer) =>
   LISTS.flatMap((middle) =>
@@ -154,6 +166,24 @@ const beforeEveryKind = OWN_LINE.flatMap((first) => [
 const withIdsAlready = [...OWN_LINE, 'paragraph', 'heading'].map((kind) =>
   note(withId(block(kind, 'a k')), block(kind, 'k a')),
 );
+
+/** `node` with `content` as the words of the line an id follows: its own, or its first item's. */
+function withLine(node: EditorNode, content: EditorNode[]): EditorNode {
+  if (!ITEM_OF[node.type]) return { ...node, content };
+  const [item] = node.content ?? [];
+  const [first, ...rest] = item?.content ?? [];
+  return { ...node, content: [{ ...item!, content: [{ ...first!, content }, ...rest] }] };
+}
+
+/** A `home` whose line ends in an inline of each kind, there to be the last thing before an id. */
+const endingInEveryInline = (home: string): EditorDocument[] =>
+  INLINE_KINDS.map((kind, at) => {
+    const written = withLine(block(home, 'a'), [
+      { type: 'text', text: 'a ' },
+      inlineOfKind(kind, at),
+    ]);
+    return note(home in ITEM_OF ? withId(written) : written);
+  });
 
 /** A family of listed notes, and the shapes they are there to try between them. */
 interface Family {
@@ -193,6 +223,11 @@ const FAMILIES: readonly Family[] = [
       ...[...TOP_KINDS, 'end'].map((next) => `${first} before ${next}`),
     ]),
   },
+  ...LINE_HOMES.map((home) => ({
+    name: `each kind of inline ending the words of ${HOME_NAMES[home]}`,
+    notes: endingInEveryInline(home),
+    shapes: INLINE_KINDS.map((kind) => `id after ${kind} in ${chainIn(home)}`),
+  })),
   { name: 'ids already in the note', notes: withIdsAlready, shapes: ['an id already in the note'] },
 ];
 
@@ -237,6 +272,7 @@ function shapesAt(doc: EditorDocument, given: EditorDocument, at: readonly numbe
   return [
     `place ${chain}`,
     ...ends,
+    ...(last ? [`id after ${inlineKindOf(last)} in ${chain}`] : []),
     ...(next !== null && OWN_LINE.includes(node.type) ? [`${node.type} before ${next}`] : []),
     ...(anchorsIn(doc).size > 0 ? ['an id already in the note'] : []),
   ];
@@ -270,20 +306,22 @@ function failureAt(body: string, parsed: ParsedBody, at: number[]): string | nul
     : `at ${JSON.stringify(at)} added=${JSON.stringify(added)} found=${JSON.stringify(found)} ids=${anchorsIn(reread).size}/${anchorsIn(parsed.doc).size}`;
 }
 
-/** Every place in `notes` that failed to take an id alone, and the shapes the places tried. */
+/** Every place in `notes` that failed to take an id alone, the shapes tried, and how many places. */
 function tryEveryOpenPlace(notes: readonly EditorDocument[]) {
   const failures: string[] = [];
   const tried = new Set<string>();
+  let places = 0;
   notes.forEach((doc, index) => {
     const body = noteOnDisk(doc);
     const parsed = parseMarkdownBody(body);
     for (const at of openPlaces(parsed.doc)) {
+      places += 1;
       for (const shape of shapesAt(parsed.doc, doc, at)) tried.add(shape);
       const failure = failureAt(body, parsed, at);
       if (failure !== null) failures.push(`note ${index} ${failure}`);
     }
   });
-  return { failures, tried };
+  return { failures, tried, places };
 }
 
 describe('giving any block an id changes nothing else in the file', () => {
@@ -296,9 +334,12 @@ describe('giving any block an id changes nothing else in the file', () => {
     },
   );
 
-  it(`holds for every open place in ${SEEDS} seeded notes`, () => {
-    const seeded = Array.from({ length: SEEDS }, (_, at) => generatedDocument(at + 1));
-    const { failures } = tryEveryOpenPlace(seeded);
+  it.each(SEED_RUNS)('holds for every open place in seeded notes %i to %i', (first, last) => {
+    const seeded = Array.from({ length: last - first + 1 }, (_, at) =>
+      generatedDocument(first + at),
+    );
+    const { failures, places } = tryEveryOpenPlace(seeded);
     expect(failures.slice(0, 5), `${failures.length} places`).toEqual([]);
+    expect(places, 'places tried').toBeGreaterThan(seeded.length);
   });
 });

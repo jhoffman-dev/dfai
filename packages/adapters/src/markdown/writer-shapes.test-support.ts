@@ -17,7 +17,11 @@ import {
   markSetKey,
   NESTED,
   OPENERS,
+  BLANKS,
   LISTED_FAMILIES,
+  MARK_SETS,
+  MARKED_PLACES,
+  OUTERS,
   TOP_KINDS,
   type ListedFamily,
 } from './writer-listed.test-support.ts';
@@ -29,17 +33,23 @@ import {
  * document that is taken out, or a list that grows, is seen.
  */
 
+const quoted = JSON.stringify;
+const LISTS = ['bulletList', 'orderedList'] as const;
+
 /** The shapes the writer's property turns on that a document holds. */
 export function shapesOf(doc: EditorDocument): Set<string> {
   const shapes = new Set<string>();
-  const visit = (node: EditorNode, parent: string, top: boolean) => {
+  const visit = (node: EditorNode, parent: string, top: boolean, holders: readonly string[]) => {
     for (const shape of nodeShapes(node, parent, top)) shapes.add(shape);
+    const within = OUTERS.includes(node.type as never) ? [...holders, node.type] : holders;
+    if (within.length >= 3 && within !== holders)
+      shapes.add(`nested ${within.slice(-3).join('>')}`);
     const container = HOLDERS.has(parent) || parent.startsWith('table') ? parent : node.type;
     if (node.type === 'paragraph' || node.type === 'heading')
       for (const shape of lineShapes(node.content ?? [], container)) shapes.add(shape);
-    for (const child of node.content ?? []) visit(child, node.type, false);
+    for (const child of node.content ?? []) visit(child, node.type, false, within);
   };
-  for (const node of doc.content) visit(node, 'doc', true);
+  for (const node of doc.content) visit(node, 'doc', true, []);
   doc.content
     .slice(1)
     .forEach((node, at) => shapes.add(`${node.type} after ${doc.content[at]!.type}`));
@@ -115,7 +125,8 @@ function addressShapes(value: string, marking: string, start: boolean): string[]
   });
 }
 
-const inlineKindOf = (node: EditorNode): string =>
+/** What kind of inline a node is (`INLINE_KINDS`): text by its set of marks, or the atom. */
+export const inlineKindOf = (node: EditorNode): string =>
   node.type === 'text' ? markSetKey((node.marks ?? []).map((mark) => mark.type)) : node.type;
 
 /** What a line of a text block starts and ends with, and the pieces under each mark in it. */
@@ -134,21 +145,26 @@ function lineShapes(content: readonly EditorNode[], container: string): string[]
     .forEach((node, at) =>
       shapes.push(`${inlineKindOf(node)} after ${inlineKindOf(content[at]!)}`),
     );
+  const only = content.length === 1 && first?.type === 'text' ? first.text : undefined;
+  if (only !== undefined && BLANKS.includes(only))
+    shapes.push(`${quoted(only)} alone in ${container}`);
   for (const node of content) {
     if (node.type === 'hardBreak') shapes.push(`line break in ${container}`);
     if (node.type !== 'text') continue;
+    shapes.push(`${inlineKindOf(node)} in ${container}`);
+
     for (const mark of node.marks ?? [])
       if (mark.type === 'link') shapes.push(`link to ${String(mark.attrs?.['href'])}`);
     for (const marking of markingsOf(node))
       shapes.push(...addressShapes(node.text ?? '', marking, node === first));
     for (const p of EVERY_PIECE)
       if (node.text?.includes(p))
-        for (const marking of markingsOf(node)) shapes.push(`${JSON.stringify(p)} in ${marking}`);
+        for (const marking of markingsOf(node))
+          shapes.push(`${quoted(p)} in ${marking}`, `${quoted(p)} in ${marking} in ${container}`);
   }
   return shapes;
 }
 
-const quoted = JSON.stringify;
 const atTheEnds = (containers: readonly string[]) =>
   EVERY_PIECE.flatMap((p) =>
     containers.flatMap((container) => [
@@ -175,6 +191,23 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
     ]),
   ),
   "every piece in an image's description": EVERY_PIECE.map((p) => `${quoted(p)} in alt`),
+  ...Object.fromEntries(
+    MARKED_PLACES.map((place) => [
+      `every piece under every mark in a ${place}`,
+      [
+        ...EVERY_PIECE.flatMap((p) =>
+          MARKINGS.map((marking) => `${quoted(p)} in ${marking} in ${place}`),
+        ),
+        ...MARK_SETS.map((set) => `${markSetKey(set)} in ${place}`),
+      ],
+    ]),
+  ),
+  'lists nested three deep': OUTERS.flatMap((outer) =>
+    LISTS.flatMap((middle) => LISTS.map((inner) => `nested ${outer}>${middle}>${inner}`)),
+  ),
+  'blank-only lines in every kind of text block': BLANKS.flatMap((blank) =>
+    CONTAINERS.map((container) => `${quoted(blank)} alone in ${container}`),
+  ),
   'every kind of block, atom, link, embed and id': [
     ...[1, 2, 3, 4, 5, 6].map((level) => `heading ${level}`),
     ...[1, 3].map((start) => `ordered from ${start}`),

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EditorDocument, EditorNode, ParsedBody } from '@dfai/domain';
 import { parseMarkdownBody, RAW_BLOCK, serializeMarkdownBody } from './markdown-blocks.ts';
 import { documentOf, generatedDocument } from './writer-fuzz.test-support.ts';
-import { shapesNotIn, WRITER_FAMILIES } from './writer-shapes.test-support.ts';
+import { shapesNotIn, shapesOf, WRITER_FAMILIES } from './writer-shapes.test-support.ts';
 
 /**
  * The writer's promise (A21-03): an edited block reads back as the editor had
@@ -122,10 +122,32 @@ const casesOf = (family: string, documents: readonly EditorDocument[]): Case[] =
  * addresses running on. 3000 seeds drew them too, and took up to 105 s on CI
  * to do it (#888). A few seeds still run, for what nobody thought to list.
  */
-const SEEDS = 12;
-const SEEDED = Array.from({ length: SEEDS }, (_, at) => generatedDocument(at + 1));
+const SEEDS = 100;
+/** The seeds in runs of 25, so each `it` stays short on CI (about 35 ms a seed there). */
+const SEED_RUNS = Array.from(
+  { length: SEEDS / 25 },
+  (_, run) => [25 * run + 1, 25 * run + 25] as const,
+);
+const seededFrom = (first: number, last: number) =>
+  Array.from({ length: last - first + 1 }, (_, at) => generatedDocument(first + at));
+
+/** How many seeds the guard draws: the generator alone, with no writer, so it is quick. */
+const GUARD_SEEDS = 400;
+
+/** A node of one kind in a place of another, or a set of marks in a place: `bold+link in tableCell`. */
+const PLACED = /^[\w+]+ in \w+$/;
+const placedIn = (docs: readonly EditorDocument[]) =>
+  new Set(docs.flatMap((doc) => [...shapesOf(doc)].filter((shape) => PLACED.test(shape))));
 
 describe('an edited block reads back as the editor had it', () => {
+  // The lists the listed documents are built from are typed out, where the
+  // generator writes its kinds inline: a kind it gains must be listed too.
+  it(`lists every kind of node in every place ${GUARD_SEEDS} seeds of the generator put one`, () => {
+    const listed = placedIn(WRITER_FAMILIES.flatMap((family) => family.documents));
+    const seeded = placedIn(seededFrom(1, GUARD_SEEDS));
+    expect([...seeded].filter((shape) => !listed.has(shape)).sort()).toEqual([]);
+  });
+
   describe.each([
     ['written afresh', writtenAfresh],
     ['saved, reopened and edited again', editedAgain],
@@ -138,8 +160,8 @@ describe('an edited block reads back as the editor had it', () => {
       },
     );
 
-    it(`holds for ${SEEDS} seeded documents`, () => {
-      expectReadBack(casesOf('seed', SEEDED), check);
+    it.each(SEED_RUNS)('holds for seeded documents %i to %i', (first, last) => {
+      expectReadBack(casesOf(`seeds ${first} to ${last}`, seededFrom(first, last)), check);
     });
   });
 });

@@ -42,8 +42,8 @@ export const CONTAINERS = [
   'tableHeader',
   'tableCell',
 ] as const;
-export /** The blocks that hold text blocks of their own. */
-const HOLDERS = new Set<string>(['listItem', 'taskItem', 'blockquote', 'callout']);
+/** The blocks that hold text blocks of their own. */
+export const HOLDERS = new Set<string>(['listItem', 'taskItem', 'blockquote', 'callout']);
 export const NESTED = ['paragraph', 'bulletList', 'orderedList', 'blockquote'] as const;
 
 const piece = (at: number) => EVERY_PIECE[at % EVERY_PIECE.length]!;
@@ -290,7 +290,7 @@ const runsOf = <T>(sequence: readonly T[], size: number): T[][] =>
  * The marks the generator puts together on one run of text: any of bold,
  * italic and strike, a link or not; or code alone.
  */
-const MARK_SETS: readonly (readonly string[])[] = [
+export const MARK_SETS: readonly (readonly string[])[] = [
   ...[0, 1, 2, 3, 4, 5, 6, 7].flatMap((bits) => {
     const set = ['bold', 'italic', 'strike'].filter((_, at) => (bits >> at) % 2 === 1);
     return [set, [...set, 'link']];
@@ -304,7 +304,8 @@ export const markSetKey = (types: readonly string[]) =>
 /** What can stand beside what in a line: text under each set of marks, and each atom. */
 export const INLINE_KINDS = [...MARK_SETS.map(markSetKey), 'wikiLink', 'image', 'hardBreak'];
 
-function inlineOfKind(kind: string, at: number): EditorNode {
+/** An inline node of `kind` (`INLINE_KINDS`), turned by `at`. */
+export function inlineOfKind(kind: string, at: number): EditorNode {
   if (kind === 'wikiLink') return wikiLink(at);
   if (kind === 'image') return image(at, at % 2 === 0 ? 'k' : null);
   if (kind === 'hardBreak') return { type: 'hardBreak' };
@@ -401,6 +402,154 @@ const besideEveryBlock = (): EditorDocument[] =>
     noteOf(run.map((kind, at) => blockOfKind(TOP_KINDS[kind]!, 12 * n + at))),
   );
 
+/**
+ * A line holding every piece under every single mark between them, as `at`
+ * turns, one run under a set of marks the generator puts together, and an
+ * unmarked piece.
+ */
+const markedLine = (at: number): EditorNode[] => [
+  ...MARKINGS.slice(1).map((marking, m) => text(piece(at + 11 * m), marked(marking, at + m))),
+  text(
+    piece(at + 5),
+    cycle(MARK_SETS, at).flatMap((type) => marked(type, at)),
+  ),
+  // Unmarked last: `#x` unmarked before a marked run is markdown the writer
+  // keeps as source, a limit of the format rather than of the writer.
+  text(piece(at + 55)),
+];
+
+/** The kinds of text block, by what holds them, that `markedLine` runs through. */
+export const MARKED_PLACES = [
+  'heading',
+  'listItem',
+  'taskItem',
+  'blockquote',
+  'callout',
+  'tableHeader',
+  'tableCell',
+];
+
+/** Every piece under every mark, `LINES` lines at a time, in the text blocks of `place`. */
+function markedIn(place: string, lines: number[]): EditorNode[] {
+  const paragraphs = () => lines.map((at) => paragraph(markedLine(at)));
+  switch (place) {
+    case 'heading':
+      return lines.map((at) => ({
+        type: 'heading',
+        attrs: { level: 1 + (at % 6) },
+        content: markedLine(at),
+      }));
+    case 'listItem':
+      return [
+        {
+          ...((lines[0]! / LINES) % 2 === 0
+            ? { type: 'bulletList' }
+            : { type: 'orderedList', attrs: { start: 1 } }),
+          content: lines.map((at) => ({ type: 'listItem', content: [paragraph(markedLine(at))] })),
+        },
+      ];
+    case 'taskItem':
+      return [
+        {
+          type: 'taskList',
+          content: lines.map((at) => ({
+            type: 'taskItem',
+            attrs: { checked: at % 2 === 0 },
+            content: [paragraph(markedLine(at))],
+          })),
+        },
+      ];
+    case 'blockquote':
+      return [{ type: 'blockquote', content: paragraphs() }];
+    case 'callout':
+      return [callout(paragraphs(), lines[0]!)];
+    default:
+      // A cell of `place` in each row, the other cells a word.
+      return lines.map((at) => ({
+        type: 'table',
+        attrs: { align: [null, null] },
+        content: ['tableHeader', 'tableCell'].map((type) => ({
+          type: 'tableRow',
+          content: [
+            { type, content: [paragraph(type === place ? markedLine(at) : [text('k')])] },
+            { type, content: [paragraph([text('k')])] },
+          ],
+        })),
+      }));
+  }
+}
+
+const LISTS = ['bulletList', 'orderedList'] as const;
+/** The blocks a list can stand in, three deep: each kind of list, a quote and a callout. */
+export const OUTERS = ['bulletList', 'orderedList', 'taskList', 'blockquote', 'callout'] as const;
+
+/** A list of `type` holding one item of `at`'s words, and `inner` after them. */
+function listOf(type: string, at: number, inner?: EditorNode): EditorNode {
+  const item = type === 'taskList' ? 'taskItem' : 'listItem';
+  return {
+    type,
+    ...(type === 'orderedList' && { attrs: { start: at % 2 === 0 ? 1 : 3 } }),
+    content: [
+      {
+        type: item,
+        ...(item === 'taskItem' && { attrs: { checked: at % 2 === 0 } }),
+        content: [paragraph(line(at)), ...(inner ? [inner] : [])],
+      },
+    ],
+  };
+}
+
+/** Each block that holds lists, holding each kind of list, holding each kind of list. */
+const nestedThreeDeep = (): EditorNode[] =>
+  OUTERS.flatMap((outer, o) =>
+    LISTS.flatMap((middle, m) =>
+      LISTS.map((inner, i) => {
+        const at = 4 * o + 2 * m + i;
+        const lists = listOf(middle, at + 1, listOf(inner, at + 2));
+        if (outer === 'blockquote') return { type: outer, content: [paragraph(line(at)), lists] };
+        if (outer === 'callout') return callout([paragraph(line(at)), lists], at);
+        return listOf(outer, at, lists);
+      }),
+    ),
+  );
+
+/** The pieces that are only whitespace: a line of nothing else is blank. */
+export const BLANKS = EVERY_PIECE.filter((p) => /^\s+$/u.test(p));
+
+/** A blank-only line of each blank piece in each kind of text block. */
+const blankLines = (): EditorNode[] =>
+  BLANKS.flatMap((blank, at) => [
+    paragraph([text('k')]),
+    paragraph([text(blank)]),
+    { type: 'heading', attrs: { level: 1 + at }, content: [text(blank)] },
+    {
+      type: 'bulletList',
+      content: [
+        lineItem('listItem', at),
+        { type: 'listItem', content: [paragraph([text(blank)])] },
+      ],
+    },
+    {
+      type: 'taskList',
+      content: [
+        { type: 'taskItem', attrs: { checked: false }, content: [paragraph([text(blank)])] },
+      ],
+    },
+    { type: 'blockquote', content: [paragraph(line(at)), paragraph([text(blank)])] },
+    callout([paragraph(line(at)), paragraph([text(blank)])], at),
+    {
+      type: 'table',
+      attrs: { align: [null, null] },
+      content: ['tableHeader', 'tableCell'].map((type) => ({
+        type: 'tableRow',
+        content: [
+          { type, content: [paragraph([text(blank)])] },
+          { type, content: [paragraph(line(at))] },
+        ],
+      })),
+    },
+  ]);
+
 /** A family of listed documents: the shapes of one kind the property turns on. */
 export interface ListedFamily {
   readonly name: string;
@@ -424,6 +573,12 @@ export const LISTED_FAMILIES: readonly ListedFamily[] = [
     documents: everyPieceThrough(underMark(marking, m)),
   })),
   { name: "every piece in an image's description", documents: everyPieceThrough(inDescriptions) },
+  ...MARKED_PLACES.map((place) => ({
+    name: `every piece under every mark in a ${place}`,
+    documents: everyPieceThrough((lines) => markedIn(place, lines)),
+  })),
+  { name: 'lists nested three deep', documents: [noteOf(nestedThreeDeep())] },
+  { name: 'blank-only lines in every kind of text block', documents: [noteOf(blankLines())] },
   {
     name: 'every kind of block, atom, link, embed and id',
     documents: Array.from({ length: KIND_TURNS }, (_, at) => noteOf(kindsAt(at))),
