@@ -196,13 +196,14 @@ pnpm tauri:dev</pre>
         <div class="card"><h4>Sidebar, top</h4><p>Search <kbd>⌘K</kbd>, <a href="#today">Today</a>, <a href="#para">Inbox</a>, <a href="#tasks">Weekly review</a>, Graph, Tags, Automations, <a href="#activity">Activity</a>, <a href="#templates">Templates</a>, <a href="#skills">Skills</a> and <a href="#terms">Terms</a>. Counts show how many notes each holds — the Inbox's counts proposals waiting for an answer too; Activity's red badge counts new errors.</p></div>
         <div class="card"><h4>Favorites</h4><p>Star any page (the ☆ in its top bar) to pin it here.</p></div>
         <div class="card"><h4>Types · Views · Dashboards</h4><p>Built from your vault. The <b>+</b> beside a heading makes a new one.</p></div>
-        <div class="card"><h4>Pages</h4><p>Your folders and notes. Near the end, <b>Archive</b> opens the <a href="#archive">Archive</a>; <b>System</b>, last, is the <code>.atlas</code> folder (types, automations, sources, settings). Templates and skills aren't in it — they have their own pages, <a href="#templates">Templates</a> and <a href="#skills">Skills</a>.</p></div>
+        <div class="card"><h4>Pages</h4><p>Your folders and notes, tucked away until you ask for them: see <b>Show or hide Pages</b> below. Near the end, <b>Archive</b> opens the <a href="#archive">Archive</a>; <b>System</b>, last, is the <code>.atlas</code> folder (types, automations, sources, settings). Templates and skills aren't in it — they have their own pages, <a href="#templates">Templates</a> and <a href="#skills">Skills</a>.</p></div>
       </div>
       <h3>Arrange the sidebar</h3>
       <ul>
-        <li><b>One scroll for the sections.</b> The vault's name, the links at the top (Search, Today, Inbox and the rest) and the footer (Settings, the sun-or-moon theme button, sync) stay put. Everything from the first section to the last — Favorites, Types, Views, Dashboards and Pages, in your order — scrolls together in the one area between them, and each open section shows all its rows; no section has a scrollbar of its own.</li>
+        <li><b>One scroll for the sections.</b> The vault's name, the links at the top (Search, Today, Inbox and the rest) and the footer (Settings, the sun-or-moon theme button, sync) stay put. Everything from the first section to the last — Favorites, Types, Views and Dashboards, and Pages when it's shown, in your order — scrolls together in the one area between them, and each open section shows all its rows; no section has a scrollbar of its own.</li>
         <li><b>Headings stay in sight.</b> As you scroll through a section, its heading (with its grip and <b>+</b>) stays pinned at the top until the next section's heading takes its place.</li>
-        <li><b>Open or close a section</b> by clicking its heading (Favorites, Types, Views, Dashboards or Pages). A shut section stays exactly where it is in your order; only its rows fold away, so nothing below it jumps past it.</li>
+        <li><b>Show or hide Pages.</b> The sidebar starts with Favorites, Types, Views and Dashboards; Pages, the tree of your folders and notes, is tucked away. To show it, press the <b>…</b> (<b>Sidebar options</b>) button in the vault header and tick <b>Show Pages</b>, or press <kbd>⌘K</kbd> and choose <b>Show Pages</b>. It stays shown until you untick <b>Show Pages</b> or choose <b>Hide Pages</b> in <kbd>⌘K</kbd>, and this Mac remembers the choice, even after a restart. Hidden, Pages keeps its place in your order.</li>
+        <li><b>Open or close a section</b> by clicking its heading (Favorites, Types, Views, Dashboards, or Pages when it's shown). A shut section stays exactly where it is in your order; only its rows fold away, so nothing below it jumps past it.</li>
         <li><b>Put the sections in any order.</b> Hover over a heading, or tab to it, and a grip appears just to its left (<b>Move Favorites</b>, <b>Move Pages</b> and so on). Drag the grip, or focus it and press <kbd>⌥↑</kbd> / <kbd>⌥↓</kbd> to move the section one place. Open or shut, every section moves in the same one order.</li>
         <li><b>The order belongs to the vault.</b> It's saved in <code>.atlas/settings.md</code>, so it follows the vault to another Mac, and each vault keeps its own.</li>
       </ul>
@@ -296,7 +297,7 @@ pnpm tauri:dev</pre>
       <h3>Make one</h3>
       <ul>
         <li><kbd>⌘N</kbd> makes a note in the folder you're looking at, or at the top level. Made while you're looking at an archived note, it goes at the top level, not in the Archive.</li>
-        <li>Right-click a folder in Pages → <b>New note here</b>.</li>
+        <li>Right-click a folder in Pages → <b>New note here</b>, once Pages is shown (<a href="#screen">Show or hide Pages</a>).</li>
         <li>On a type's page, <b>New &lt;type&gt;</b> (<b>New person</b>, <b>New book</b>) — on the toolbar or at the foot of the table — makes a note of that type from its <a href="#templates">template</a>, in the type's <a href="#home-folders">home folder</a>.</li>
         <li><kbd>⇧⌘N</kbd> (or <kbd>⌥⌘N</kbd>) opens quick capture: type a line and it becomes a task in the Inbox, without leaving the page — see <a href="#capture-anywhere">Quick capture</a>.</li>
       </ul>
@@ -357,7 +358,7 @@ pnpm tauri:dev</pre>
 
     <section id="pages">
       <h2>Folders, moving and deleting</h2>
-      <p class="sub">Right-click (or hover and press <b>…</b>) on anything in Pages.</p>
+      <p class="sub">Right-click (or hover and press <b>…</b>) on anything in Pages. Pages is tucked away at first: <a href="#screen">Show or hide Pages</a> says how to show it.</p>
       <ul>
         <li><b>New folder</b>, <b>New note here</b>, <b>Rename</b>, <b>Move to…</b>, <b>Archive</b>, <b>Delete…</b> — on a folder, <b>Archive N notes</b>; see <a href="#archive">Archive</a>.</li>
         <li>Drag a note or folder onto a folder to move it. From the keyboard: select a row, <kbd>Space</kbd> to pick it up, arrows, <kbd>Space</kbd> to drop.</li>
@@ -421,7 +422,7 @@ pnpm tauri:dev</pre>
       <h3>Archive a note</h3>
       <div class="grid2">
         <div class="card"><h4>Page menu</h4><p><b>…</b> in the note's top bar → <b>Archive</b>.</p></div>
-        <div class="card"><h4>Pages</h4><p>Right-click a note → <b>Archive</b>. On a folder, <b>Archive N notes</b> archives every note in it; the folder and any other files stay put.</p></div>
+        <div class="card"><h4>Pages</h4><p>With Pages shown (<a href="#screen">Show or hide Pages</a>), right-click a note → <b>Archive</b>. On a folder, <b>Archive N notes</b> archives every note in it; the folder and any other files stay put.</p></div>
         <div class="card"><h4>Search</h4><p><kbd>⌘K</kbd> → <b>Archive this note</b>, for the note you're on. <b>Open Archive</b> is there too.</p></div>
         <div class="card"><h4>Several at once</h4><p>In a table view, <b>Select</b>, tick the rows, then <b>Archive N notes</b> — see <a href="#views">Views</a>.</p></div>
       </div>
@@ -438,14 +439,14 @@ pnpm tauri:dev</pre>
       </ul>
       <h3>Out of the way</h3>
       <ul>
-        <li>In Pages the whole Archive is one <b>Archive</b> row; click it to open the Archive page rather than a long folder.</li>
+        <li>In Pages, once it's shown, the whole Archive is one <b>Archive</b> row; click it to open the Archive page rather than a long folder.</li>
         <li>Archived notes are left out of views and type counts, search, the graph, <code>[[</code> suggestions and note pickers, the Tags page's counts, and the <b>Links</b> panel's links in and unlinked mentions.</li>
         <li>A project note with PARA = Archive is left out of the Project type's views and query blocks, note pickers, a board's project groups, the sidebar's Project count, the weekly review, the projects a meeting is linked to, and what Inbox notes can be filed under. Search and the graph still find it, and the Archive page lists it.</li>
         <li>To reach them anyway: <b>Include archived</b> in search (<kbd>⌘K</kbd>) and on a view's toolbar, and the <b>Archived</b> switch on the graph. On a view it turns itself off when you go to another view; search starts without it each time.</li>
         <li>Renaming a tag still changes it in archived notes, so they read right when they come back.</li>
       </ul>
       <h3>The Archive page</h3>
-      <p>Open it from the <b>Archive</b> row in Pages, or <kbd>⌘K</kbd> → <b>Open Archive</b>. It lists archived notes — in the Archive folder, and project notes with PARA = Archive where they stand — most recently archived first, with where each <b>Came from</b> and the day it was <b>Archived</b>. A project archived where it stands came from where it is, and shows no day.</p>
+      <p>Open it with <kbd>⌘K</kbd> → <b>Open Archive</b>, or from the <b>Archive</b> row in Pages once Pages is shown (<a href="#screen">Show or hide Pages</a>). It lists archived notes — in the Archive folder, and project notes with PARA = Archive where they stand — most recently archived first, with where each <b>Came from</b> and the day it was <b>Archived</b>. A project archived where it stands came from where it is, and shows no day.</p>
       <ul>
         <li><b>Search the Archive…</b> matches notes whose title or path holds every word you type, in any capitals — <i>überblick</i> finds <i>Überblick</i>, however the Mac stored its accent. It shows up to 500 at a time; with more, it says <i>More are archived; search to narrow them.</i></li>
         <li>Click a name to open the note. <b>Unarchive</b> on its row puts it back.</li>
@@ -1905,7 +1906,7 @@ ORDER BY phase</pre>
       <h3>Where they are</h3>
       <ul>
         <li><b>Automations</b> is in the sidebar, under <b>Tags</b>. It opens a page listing every rule.</li>
-        <li>Each rule is a note in <code>.atlas/automations</code>, under <b>System</b> in Pages. Its frontmatter is the rule; anything you write in its body is your own notes about it.</li>
+        <li>Each rule is a note in <code>.atlas/automations</code>, under <b>System</b> in Pages (shown from the sidebar's <b>…</b> menu, <a href="#screen">Show or hide Pages</a>). Its frontmatter is the rule; anything you write in its body is your own notes about it.</li>
       </ul>
       <h3>Start one</h3>
       <ul>
@@ -2290,7 +2291,7 @@ do: archive</pre>
     <section id="sources">
       <h2>Outside data and secrets</h2>
       <p class="sub">A source brings data from outside the vault — a calendar feed, a CSV or JSON file or web address, or someone else's SQLite database — in as ordinary notes.</p>
-      <p>A source is a note in <code>.atlas/sources</code> (under <b>System</b> in Pages) whose properties say where to read, the format (<code>ics</code>, <code>csv</code>, <code>json</code> or <code>sqlite</code>), which folder to write into, which type the notes are, and which field becomes which property. The DFAI project's own vault has one, <i>Milestones</i>, to copy from.</p>
+      <p>A source is a note in <code>.atlas/sources</code> (under <b>System</b> in Pages (shown from the sidebar's <b>…</b> menu, <a href="#screen">Show or hide Pages</a>)) whose properties say where to read, the format (<code>ics</code>, <code>csv</code>, <code>json</code> or <code>sqlite</code>), which folder to write into, which type the notes are, and which field becomes which property. The DFAI project's own vault has one, <i>Milestones</i>, to copy from.</p>
       <ul>
         <li>Open the source note and press <b>Refresh</b>. It shows what it <b>Reads</b>, where it <b>Writes to</b>, how often it <b>Refreshes</b> (only when you ask, or every few minutes while the note is open), and what the last refresh did: created, refreshed, kept your text, no longer in the feed.</li>
         <li>If you've edited a note since, your text is kept; only the fields the source owns are rewritten. A record that has gone from the feed marks its note — it is never deleted.</li>
@@ -2649,7 +2650,7 @@ pnpm tauri:dev</pre>
         <li>Tags are stored as you typed them, <code>#tag</code> in the text or a <code>tags:</code> list in the frontmatter. Obsidian reads single-word and nested tags the same way; it reads <code>#tag me#</code> as <code>#tag</code> followed by text.</li>
         <li>Archived notes are ordinary files in <code>Archive/</code>, at the path they had, with <code>archived</code> and <code>archivedFrom</code> in their frontmatter, so Obsidian still opens them.</li>
         <li>Frontmatter written flow-style, <code>{status: done, tags: [a]}</code>, and files that start with a byte-order mark are kept intact when DFAI changes a property.</li>
-        <li><code>.atlas/</code> holds types, templates, views, dashboards, sources, automations and settings. It shows as <b>System</b> in Pages — all but the templates and the skills, which are on the <a href="#templates">Templates</a> and <a href="#skills">Skills</a> pages, and the views and dashboards, which have their sections.</li>
+        <li><code>.atlas/</code> holds types, templates, views, dashboards, sources, automations and settings. It shows as <b>System</b> in Pages (shown from the sidebar's <b>…</b> menu, <a href="#screen">Show or hide Pages</a>) — all but the templates and the skills, which are on the <a href="#templates">Templates</a> and <a href="#skills">Skills</a> pages, and the views and dashboards, which have their sections.</li>
         <li>A template is a plain markdown file in <code>.atlas/templates/</code>, named for what it makes: <code>Person.md</code>, <code>Daily.md</code>, <code>Task.md</code>, <code>Artifact.md</code>.</li>
         <li>Each <a href="#automations">automation</a> is a note in <code>.atlas/automations/</code>, and its run log a note in <code>.atlas/automations/log/</code>, named after the rule's <code>id</code>. Both are plain markdown you can read, diff and edit.</li>
         <li>The <a href="#activity">Activity</a> log is not in the vault: one file per vault in DFAI's data folder on this Mac, about 30 days or 5 MB.</li>
