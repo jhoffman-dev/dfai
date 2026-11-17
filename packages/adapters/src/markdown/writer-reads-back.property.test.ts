@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EditorDocument, EditorNode, ParsedBody } from '@dfai/domain';
 import { parseMarkdownBody, RAW_BLOCK, serializeMarkdownBody } from './markdown-blocks.ts';
-import { documentOf, generatedDocument } from './writer-fuzz.test-support.ts';
+import { documentOf, generatedDocument, seedRuns } from './writer-fuzz.test-support.ts';
 import {
   shapesNotIn,
   shapesOf,
@@ -18,6 +18,12 @@ import {
  * The one other outcome allowed is a block read back as its own source, shown
  * read-only (ADR-0004): markdown that cannot be written faithfully is kept as
  * written rather than turned silently into something else.
+ *
+ * Seeds: 100 by default, in `it`s of 25, beside the listed families that
+ * hold every shape the property turns on; that keeps each pull request's run
+ * to seconds (#888). The 3000 the property once ran every time are for a
+ * nightly run, `WRITER_SEEDS=3000` (#896): rare combinations still turn up
+ * there, and each one found is listed as a family.
  */
 
 interface Saved {
@@ -91,15 +97,19 @@ function misread(cases: readonly Case[], check: (doc: EditorDocument) => [Outcom
 
 /**
  * Kept as source is the last resort, not the answer: no listed document is,
- * each is built to be written faithfully, and a seed only rarely (6 of the
- * first 3000, none of these).
+ * each is built to be written faithfully, and a seed only rarely — 6 of the
+ * first 3000 (347, 787, 892, 1927, 2584, 2877), never two in a run of 25.
  */
-function expectReadBack(cases: readonly Case[], check: (doc: EditorDocument) => [Outcome, string]) {
+function expectReadBack(
+  cases: readonly Case[],
+  check: (doc: EditorDocument) => [Outcome, string],
+  { keptAsSource = 0 }: { keptAsSource?: number } = {},
+) {
   const { different, raw } = misread(cases, check);
   expect(different.slice(0, 8), `${different.length} of ${cases.length} read differently`).toEqual(
     [],
   );
-  expect(raw, 'kept as source').toEqual([]);
+  expect(raw.length, `kept as source: ${raw.join(', ')}`).toBeLessThanOrEqual(keptAsSource);
 }
 
 function writtenAfresh(doc: EditorDocument): [Outcome, string] {
@@ -127,12 +137,12 @@ const casesOf = (family: string, documents: readonly EditorDocument[]): Case[] =
  * addresses running on. 3000 seeds drew them too, and took up to 105 s on CI
  * to do it (#888). A few seeds still run, for what nobody thought to list.
  */
-const SEEDS = 100;
-/** The seeds in runs of 25, so each `it` stays short on CI (about 35 ms a seed there). */
-const SEED_RUNS = Array.from(
-  { length: SEEDS / 25 },
-  (_, run) => [25 * run + 1, 25 * run + 25] as const,
-);
+const SEED_RUNS = seedRuns({
+  name: 'WRITER_SEEDS',
+  set: process.env['WRITER_SEEDS'],
+  fallback: 100,
+  size: 25,
+});
 const seededFrom = (first: number, last: number) =>
   Array.from({ length: last - first + 1 }, (_, at) => generatedDocument(first + at));
 
@@ -194,7 +204,11 @@ describe('an edited block reads back as the editor had it', () => {
     );
 
     it.each(SEED_RUNS)('holds for seeded documents %i to %i', (first, last) => {
-      expectReadBack(casesOf(`seeds ${first} to ${last}`, seededFrom(first, last)), check);
+      const seeded = seededFrom(first, last).map((doc, at) => ({
+        name: `seed ${first + at}`,
+        doc,
+      }));
+      expectReadBack(seeded, check, { keptAsSource: 1 });
     });
   });
 });

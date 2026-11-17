@@ -9,8 +9,9 @@ import {
   type ParsedBody,
 } from '@dfai/domain';
 import { parseMarkdownBody, serializeMarkdownBody } from './markdown-blocks.ts';
-import { generatedDocument, TARGETS } from './writer-fuzz.test-support.ts';
+import { generatedDocument, seedRuns, TARGETS } from './writer-fuzz.test-support.ts';
 import {
+  BARE_LINES,
   EVERY_PIECE,
   INLINE_KINDS,
   inlineOfKind,
@@ -31,18 +32,18 @@ import { inlineKindOf } from './writer-shapes.test-support.ts';
  * nested two deep; each block that takes its id on a line of its own before
  * each kind of block and at the end; and ids already in the note. 400 seeds
  * drew most of them, and took 16 s on CI to do it (#888). A few seeds still
- * run, for what nobody thought to list.
+ * run, for what nobody thought to list: 50 by default, in `it`s of 17, so
+ * each pull request's run takes seconds; the 400 it once ran every time are
+ * for a nightly run, `ANCHOR_SEEDS=400` (#896).
  */
 
-/**
- * 50 seeds, in runs of 17 so each `it` stays short on CI: their notes hold
- * more places than the writer's seeds do.
- */
-const SEED_RUNS = [
-  [1, 17],
-  [18, 34],
-  [35, 50],
-] as const;
+/** The seeds, in runs of 17: a block-id seed costs more than a writer's one. */
+const SEED_RUNS = seedRuns({
+  name: 'ANCHOR_SEEDS',
+  set: process.env['ANCHOR_SEEDS'],
+  fallback: 50,
+  size: 17,
+});
 
 /** The blocks whose id follows the words of their line, and the lists whose items' ids do. */
 const LINE_HOMES = ['paragraph', 'heading', 'bulletList', 'orderedList', 'taskList'] as const;
@@ -185,12 +186,43 @@ const endingInEveryInline = (home: string): EditorDocument[] =>
     return note(home in ITEM_OF ? withId(written) : written);
   });
 
+/** A `kind` holding only `line`, with an id on the block, or on its item for a list. */
+function withBareLine(kind: string, line: EditorNode[]): EditorNode {
+  if (kind === 'blockquote' || kind === 'callout')
+    return withId({ ...block(kind, 'a'), content: [{ type: 'paragraph', content: line }] });
+  const written = withLine(block(kind, 'a'), line);
+  if (!ITEM_OF[kind]) return withId(written);
+  const [item, ...rest] = written.content ?? [];
+  return { ...written, content: [withId(item!), ...rest] };
+}
+
+/** An id on each kind of block whose line is only blanks or a break, then an open place. */
+const besideBareLines = Object.values(BARE_LINES).flatMap((line) =>
+  [...LINE_HOMES, 'blockquote', 'callout'].map((kind) =>
+    note(withBareLine(kind, line), block('paragraph', 'a k')),
+  ),
+);
+
+/** The shapes of an id on a block of only blanks or a break in `doc`, as the note was given. */
+function bareShapes(doc: EditorDocument): string[] {
+  const bare = (line: readonly EditorNode[]) =>
+    line.length > 0 &&
+    line.every((node) => node.type === 'hardBreak' || /^\s*$/u.test(node.text ?? 'x'));
+  return doc.content.flatMap((top) => {
+    const holder = ITEM_OF[top.type] ? top.content?.[0] : top;
+    if (typeof holder?.attrs?.['anchor'] !== 'string') return [];
+    const line = top.type === 'paragraph' || top.type === 'heading' ? top : holder.content?.[0];
+    return bare(line?.content ?? []) ? [`an id on a ${top.type} of only blanks or a break`] : [];
+  });
+}
+
 const pieceFamily = (home: string) => `every piece ending the words of ${HOME_NAMES[home]}`;
 const inlineFamily = (home: string) =>
   `each kind of inline ending the words of ${HOME_NAMES[home]}`;
 const NESTED_FAMILY = 'every kind of block holding lists two deep';
 const OWN_LINE_FAMILY = 'every block with its id on a line of its own, before each kind of block';
 const IDS_FAMILY = 'ids already in the note';
+const BARE_FAMILY = 'open places beside a block with an id and only blanks or a break';
 
 /** The listed notes of each family. */
 const NOTES_BY_FAMILY: Readonly<Record<string, readonly EditorDocument[]>> = {
@@ -199,6 +231,7 @@ const NOTES_BY_FAMILY: Readonly<Record<string, readonly EditorDocument[]>> = {
   [OWN_LINE_FAMILY]: beforeEveryKind,
   ...Object.fromEntries(LINE_HOMES.map((home) => [inlineFamily(home), endingInEveryInline(home)])),
   [IDS_FAMILY]: withIdsAlready,
+  [BARE_FAMILY]: besideBareLines,
 };
 
 /**
@@ -233,6 +266,9 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
     ]),
   ),
   [IDS_FAMILY]: ['an id already in the note'],
+  [BARE_FAMILY]: [...LINE_HOMES, 'blockquote', 'callout'].map(
+    (kind) => `an id on a ${kind} of only blanks or a break`,
+  ),
 };
 
 /** Each family with listed notes, and the shapes they are there to try between them. */
@@ -323,6 +359,7 @@ function tryEveryOpenPlace(notes: readonly EditorDocument[]) {
   const tried = new Set<string>();
   let places = 0;
   notes.forEach((doc, index) => {
+    for (const shape of bareShapes(doc)) tried.add(shape);
     const body = noteOnDisk(doc);
     const parsed = parseMarkdownBody(body);
     for (const at of openPlaces(parsed.doc)) {

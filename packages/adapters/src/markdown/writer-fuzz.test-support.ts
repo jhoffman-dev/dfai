@@ -551,3 +551,29 @@ export const documentOf = (nodes: readonly EditorNode[]) =>
       'doc',
     ),
   );
+
+/**
+ * How many seeds a property runs: `set`, the value of the environment
+ * variable `name` that a test read (a nightly run sets the old breadth), or
+ * else `fallback`; in runs of `size` as `[first, last]`, so each `it` stays
+ * small however many there are.
+ */
+export function seedRuns({
+  name,
+  set,
+  fallback,
+  size,
+}: {
+  name: string;
+  set: string | undefined;
+  fallback: number;
+  size: number;
+}): (readonly [number, number])[] {
+  const count = set === undefined || set === '' ? fallback : Number(set);
+  if (!Number.isInteger(count) || count < 1)
+    throw new Error(`${name} must be a whole number above 0, not ${String(set)}`);
+  return Array.from(
+    { length: Math.ceil(count / size) },
+    (_, run) => [run * size + 1, Math.min((run + 1) * size, count)] as const,
+  );
+}

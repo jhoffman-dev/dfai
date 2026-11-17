@@ -624,12 +624,15 @@ export const BLOCK_OPENERS: readonly string[] = [
   '[x]: y',
 ];
 
-/** Each block opener alone on a line, and on the line a hard break starts, in one kind of text block. */
-function openersIn(place: string): EditorNode[] {
-  const lines = BLOCK_OPENERS.flatMap((opener) => [
+/** Each block opener alone on a line, and on the line a hard break starts. */
+const openerLines = (): EditorNode[][] =>
+  BLOCK_OPENERS.flatMap((opener) => [
     [text(opener)],
     [text('k'), { type: 'hardBreak' }, text(opener)],
   ]);
+
+/** Each of `lines` as a text block of `place`: a block, an item, a quote's or callout's paragraph, a cell. */
+function linesIn(place: string, lines: EditorNode[][]): EditorNode[] {
   switch (place) {
     case 'paragraph':
       return lines.map(paragraph);
@@ -702,6 +705,94 @@ const listsAfterParagraphs = (): EditorNode[] => {
   });
 };
 
+/**
+ * The delimiters the writer puts round each mark, as a piece of text may
+ * also hold them: `*` or `_` for italic and `**` or `__` for bold (it
+ * alternates them beside each other, `emphasis-handlers.ts`), `~~` for
+ * strike (`strikethrough-handler.ts`), a backtick for code, `[` for a link or
+ * a wiki link, `!` for an image. There is no table of them to read: they are
+ * the settings and handlers named here. Text that ends in one, straight
+ * before a run it delimits, may pair with the run's own.
+ */
+export const DELIMITERS: readonly string[] = ['*', '_', '**', '__', '~', '~~', '`', '[', '!'];
+
+/** The runs a delimiter can stand before: one mark, two marked runs side by side, or an atom. */
+export const DELIMITED_RUNS: readonly (readonly string[])[] = [
+  ['italic'],
+  ['bold'],
+  ['strike'],
+  ['code'],
+  ['link'],
+  ['italic', 'bold'],
+  ['bold', 'italic'],
+  // Italic beside bold is written `_…_`: old seed 2413, `_~` then these.
+  ['bold', 'italic+strike'],
+  ['image'],
+  ['wikiLink'],
+];
+
+const runOf = (kind: string, at: number): EditorNode =>
+  kind === 'image' || kind === 'wikiLink'
+    ? inlineOfKind(kind, at)
+    : text(
+        at % 2 === 0 ? 'x' : 'y',
+        kind.split('+').flatMap((type) => marked(type, at)),
+      );
+
+/** Each delimiter straight before each run, at the start of a line and after a word. */
+const delimitedLines = (): EditorNode[][] =>
+  DELIMITERS.flatMap((delimiter) =>
+    DELIMITED_RUNS.flatMap((runs) =>
+      [delimiter, `k${delimiter}`].map((lead) => [
+        text(lead),
+        ...runs.map((kind, at) => runOf(kind, at)),
+      ]),
+    ),
+  );
+
+/** The kinds of text block the delimiter lines are written in. */
+/** The kinds of text block the delimiter lines are written in: all of them. */
+export const DELIMITED_PLACES = CONTAINERS;
+
+/** What a line of only blanks or a break holds: a break, blanks then a break, or blanks. */
+export const BARE_LINES: Readonly<Record<string, EditorNode[]>> = {
+  'a break': [{ type: 'hardBreak' }],
+  'blanks then a break': [{ type: 'text', text: ' ' }, { type: 'hardBreak' }],
+  blanks: [{ type: 'text', text: ' ' }],
+};
+
+const withAnchor = (node: EditorNode, anchor: string): EditorNode => ({
+  ...node,
+  attrs: { ...node.attrs, anchor },
+});
+
+/** Each kind of text block that takes an id, with an id and only a bare line. */
+const idsOnBareLines = (): EditorNode[] =>
+  Object.values(BARE_LINES).flatMap((content, at) => [
+    { type: 'paragraph', attrs: { anchor: `bp${at}` }, content },
+    { type: 'heading', attrs: { level: 3, anchor: `bh${at}` }, content },
+    {
+      type: 'orderedList',
+      attrs: { start: 3 },
+      content: [
+        { type: 'listItem', content: [paragraph([text('k')])] },
+        { type: 'listItem', attrs: { anchor: `bl${at}` }, content: [paragraph(content)] },
+      ],
+    },
+    {
+      type: 'taskList',
+      content: [
+        {
+          type: 'taskItem',
+          attrs: { checked: false, anchor: `bt${at}` },
+          content: [paragraph(content)],
+        },
+      ],
+    },
+    { type: 'blockquote', attrs: { anchor: `bq${at}` }, content: [paragraph(content)] },
+    withAnchor(callout([paragraph(content)], at), `bc${at}`),
+  ]);
+
 /** A family of listed documents: the shapes of one kind the property turns on. */
 export interface ListedFamily {
   readonly name: string;
@@ -730,10 +821,17 @@ export const LISTED_FAMILIES: readonly ListedFamily[] = [
     documents: everyPieceThrough((lines) => markedIn(place, lines)),
   })),
   { name: 'lists nested three deep', documents: [noteOf(nestedThreeDeep())] },
-  { name: 'blank-only lines in every kind of text block', documents: [noteOf(blankLines())] },
+  {
+    name: 'blank-only lines in every kind of text block',
+    documents: [noteOf([...blankLines(), ...idsOnBareLines()])],
+  },
+  ...DELIMITED_PLACES.map((place) => ({
+    name: `a mark's delimiter straight before a run in a ${place}`,
+    documents: [noteOf(linesIn(place, delimitedLines()))],
+  })),
   ...CONTAINERS.map((place) => ({
     name: `pieces that open a block at the start of a line in a ${place}`,
-    documents: [noteOf(openersIn(place))],
+    documents: [noteOf(linesIn(place, openerLines()))],
   })),
   { name: 'a list straight after a paragraph', documents: [noteOf(listsAfterParagraphs())] },
   {

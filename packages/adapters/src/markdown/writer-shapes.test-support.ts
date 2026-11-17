@@ -17,7 +17,11 @@ import {
   markSetKey,
   NESTED,
   OPENERS,
+  BARE_LINES,
   BLANKS,
+  DELIMITED_PLACES,
+  DELIMITED_RUNS,
+  DELIMITERS,
   BLOCK_OPENERS,
   LISTED_FAMILIES,
   MARK_SETS,
@@ -59,6 +63,18 @@ export function shapesOf(doc: EditorDocument): Set<string> {
   return shapes;
 }
 
+/** The runs `DELIMITED_RUNS` names, as a line's shapes name them. */
+const DELIMITED_KEYS = new Set(DELIMITED_RUNS.map((runs) => runs.join(', ')));
+
+/** An id on a `type` whose line is only blanks, a break, or blanks then a break. */
+function bareShapes(type: string, line: readonly EditorNode[]): string[] {
+  const blank = (node: EditorNode) => node.type === 'text' && /^\s*$/u.test(node.text ?? '');
+  const breaks = line.filter((node) => node.type === 'hardBreak').length;
+  if (!line.every((node) => node.type === 'hardBreak' || blank(node))) return [];
+  const bare = breaks === 0 ? 'blanks' : line.length === breaks ? 'a break' : 'blanks then a break';
+  return [`an id on a ${type} of only ${bare}`];
+}
+
 /** A list straight after a paragraph in `node`, and a task's id after only blanks. */
 function heldShapes(node: EditorNode): string[] {
   const content = node.content ?? [];
@@ -71,6 +87,10 @@ function heldShapes(node: EditorNode): string[] {
       return [`a list numbered from 3 after a paragraph in ${node.type}`];
     return [];
   });
+  const line = node.type === 'paragraph' || node.type === 'heading' ? node : content[0];
+  const bare = line?.content ?? [];
+  if (typeof node.attrs?.['anchor'] === 'string' && bare.length > 0)
+    shapes.push(...bareShapes(node.type, bare));
   const words = content[0]?.content;
   const only = words?.length === 1 ? words[0]?.text : undefined;
   if (node.type === 'taskItem' && typeof node.attrs?.['anchor'] === 'string' && only !== undefined)
@@ -182,6 +202,24 @@ function lineShapes(content: readonly EditorNode[], container: string): string[]
         shapes.push(`${quoted(opener)} opens a line after a break in ${container}`);
     });
   }
+  content.forEach((node, at) => {
+    if (node.type !== 'text') return;
+    const next = content[at + 1];
+    if (next === undefined) return;
+    const after = content[at + 2];
+    const runs = [
+      inlineKindOf(next),
+      ...(after?.type === 'text' && after.marks?.length
+        ? [`${inlineKindOf(next)}, ${inlineKindOf(after)}`]
+        : []),
+    ];
+    const where =
+      at === 0 && DELIMITERS.includes(node.text ?? '') ? 'at a line start' : 'after a word';
+    for (const delimiter of DELIMITERS)
+      if (node.text?.endsWith(delimiter))
+        for (const run of runs.filter((key) => DELIMITED_KEYS.has(key)))
+          shapes.push(`${quoted(delimiter)} before ${run} ${where} in ${container}`);
+  });
   const only = content.length === 1 && first?.type === 'text' ? first.text : undefined;
   if (only !== undefined && BLANKS.includes(only))
     shapes.push(`${quoted(only)} alone in ${container}`);
@@ -246,7 +284,11 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
     ...CONTAINERS.map((container) => `${quoted(blank)} alone in ${container}`),
     `${quoted(blank)} alone before an id`,
     `${quoted(blank)} alone before an id, a block after`,
-  ]),
+  ]).concat(
+    ['paragraph', 'heading', 'listItem', 'taskItem', 'blockquote', 'callout'].flatMap((type) =>
+      Object.keys(BARE_LINES).map((bare) => `an id on a ${type} of only ${bare}`),
+    ),
+  ),
   ...Object.fromEntries(
     CONTAINERS.map((place) => [
       `pieces that open a block at the start of a line in a ${place}`,
@@ -254,6 +296,18 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
         `${quoted(opener)} opens a line in ${place}`,
         `${quoted(opener)} opens a line after a break in ${place}`,
       ]),
+    ]),
+  ),
+  ...Object.fromEntries(
+    DELIMITED_PLACES.map((place) => [
+      `a mark's delimiter straight before a run in a ${place}`,
+      DELIMITERS.flatMap((delimiter) =>
+        DELIMITED_RUNS.flatMap((runs) =>
+          ['at a line start', 'after a word'].map(
+            (where) => `${quoted(delimiter)} before ${runs.join(', ')} ${where} in ${place}`,
+          ),
+        ),
+      ),
     ]),
   ),
   'a list straight after a paragraph': ['listItem', 'taskItem', 'blockquote', 'callout'].flatMap(
