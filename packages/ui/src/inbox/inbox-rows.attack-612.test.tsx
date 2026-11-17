@@ -9,7 +9,7 @@
  * tall in an 800px window, so the list places a screenful and its overscan.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { createVaultPath, type InboxItem } from '@dfai/domain';
 import { InboxPage, type InboxPageProps } from '../inbox-page.tsx';
 
@@ -60,8 +60,17 @@ function scrollPageTo(top: number) {
 }
 
 const BOTTOM = 10_000_000;
-const status = (title: string) =>
-  screen.queryByRole<HTMLSelectElement>('combobox', { name: `Status of ${title}` });
+/**
+ * A row's status, found in its own form: a combobox query over the whole page
+ * names every select on it, which took most of these tests' time and timed
+ * them out under load (#854).
+ */
+function status(title: string): HTMLSelectElement | null {
+  const row = screen.queryByRole('form', { name: `Clarify ${title}` });
+  return (
+    row && within(row).queryByRole<HTMLSelectElement>('combobox', { name: `Status of ${title}` })
+  );
+}
 
 describe('InboxRows — 2,000 rows (#225, PR #612)', () => {
   it('keeps the last row’s pick when it is scrolled out of the page and back', () => {

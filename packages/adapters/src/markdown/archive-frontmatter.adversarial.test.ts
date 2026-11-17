@@ -205,6 +205,8 @@ function seeded(seed: number) {
 const KEYS = ['title', 'status', 'tags', 'archived', 'archivedFrom', 'archivedPrior', 'due'];
 /** The keys the archive stamp writes over, and so restores by their text as written. */
 const STAMPED: readonly string[] = ['archived', 'archivedFrom', 'archivedPrior'];
+/** How many keys an ordinary block holds. */
+const KEY_COUNTS = [1, 2, 3, 4, 5, 6];
 const VALUES = [
   ' open',
   ' "quoted"',
@@ -261,7 +263,7 @@ function block({ drawn, tail, eol }: { drawn: readonly Line[]; tail: string; eol
 /** An ordinary block frontmatter: unique keys, scalar, list or map values, comments between. */
 function ordinaryBlock(seed: number): { text: string; shapes: string[] } {
   const pick = seeded(seed);
-  const count = pick([1, 2, 3, 4, 5, 6]);
+  const count = pick(KEY_COUNTS);
   // Unique keys in a seeded order: draw each from what is left.
   const left = [...KEYS];
   const keys = Array.from({ length: count }, () => left.splice(left.indexOf(pick(left)), 1)[0]!);
@@ -299,9 +301,24 @@ function everyLastKeyAndValue(): { text: string; shapes: string[] }[] {
   );
 }
 
+/** One block of each size there is, one to every key: what seeded blocks drew the counts for. */
+function everyKeyCount(): { text: string; shapes: string[] }[] {
+  return KEY_COUNTS.map((count) =>
+    block({
+      drawn: KEYS.slice(0, count).map((key, k) => ({
+        key,
+        comment: '',
+        value: VALUES[(count + k) % VALUES.length]!,
+      })),
+      tail: '',
+      eol: '\n',
+    }),
+  );
+}
+
 /** Every shape the property turns on: what the blocks below are shown to draw. */
 const EVERY_SHAPE = [
-  ...[1, 2, 3, 4, 5, 6].map((count) => `${count} keys`),
+  ...KEY_COUNTS.map((count) => `${count} keys`),
   ...VALUES.flatMap((value) =>
     [true, false].map((tail) => `${JSON.stringify(value)} last, tail ${tail}`),
   ),
@@ -330,16 +347,19 @@ const EVERY_SHAPE = [
 ];
 
 describe('archive → unarchive gives any ordinary block back byte for byte (property)', () => {
-  // 300 seeds, not the 2000 this once ran, and every key last with every
-  // value listed out: together they draw every value and key with each line
-  // ending, every key with every value — the stamped keys under each line
-  // ending — and every key and value last with and without a tail after it,
-  // every key commented and not, and one to six keys. 2000 seeds still missed
-  // some of those, and cost seconds when the gate shared the machine (#820).
-  it('holds for 300 seeded blocks and every key last with every value', async () => {
+  // Every key last with every value, and one block of each size, listed out:
+  // they draw every value and key with each line ending, every key with every
+  // value — the stamped keys under each line ending — every key and value last
+  // with and without a tail after it, every key commented and not, and one to
+  // six keys. Each block costs about a millisecond to archive and give back
+  // (ten under coverage in CI), so the 300 seeded blocks that drew the counts
+  // timed the test out at 5 s (#854); 10 seeded ones stay for what the lists
+  // do not think of.
+  it('holds for 10 seeded blocks, every key last with every value, and every size', async () => {
     const blocks = [
-      ...Array.from({ length: 300 }, (_, at) => ({ seed: at + 1, ...ordinaryBlock(at + 1) })),
+      ...Array.from({ length: 10 }, (_, at) => ({ seed: at + 1, ...ordinaryBlock(at + 1) })),
       ...everyLastKeyAndValue().map((listed, at) => ({ seed: `listed ${at}`, ...listed })),
+      ...everyKeyCount().map((listed, at) => ({ seed: `size ${KEY_COUNTS[at]}`, ...listed })),
     ];
     const drawn = new Set<string>();
     for (const { seed, text, shapes } of blocks) {
