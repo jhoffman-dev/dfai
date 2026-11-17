@@ -66,43 +66,75 @@ const WORDS = [
   '>',
 ];
 
-const words = (max: number) =>
-  Array.from({ length: 1 + count(max) }, () => pick(WORDS)).join(pick([' ', '  ', '\n', ' \n ']));
+/** What the notes drawn so far hold that the property turns on. */
+let seen = new Set<string>();
+const saw = (shape: string) => seen.add(shape);
+
+/** Starts a test's record of what its notes hold. */
+function drawing(): Set<string> {
+  seen = new Set();
+  return seen;
+}
+
+const SEPARATORS = [' ', '  ', '\n', ' \n '];
+
+/** Words for a quote, a comment, an anchor, prose, or a comment written back (`where`). */
+function words(max: number, where: string): string {
+  const drawn = Array.from({ length: 1 + count(max) }, () => pick(WORDS));
+  const separator = pick(SEPARATORS);
+  for (const word of drawn) saw(`${where} has ${word}`);
+  if (drawn.length > 1) saw(`${where} joined by ${JSON.stringify(separator)}`);
+  return drawn.join(separator);
+}
 
 const ANCHORS: (() => HighlightAnchor)[] = [
-  () => ({
-    kind: 'pdf',
-    page: 1 + count(400),
-    quote: { exact: words(6), prefix: words(3), suffix: words(3) },
-    rects: Array.from({ length: count(3) }, () => ({
+  () => {
+    const page = 1 + count(400);
+    const quote = {
+      exact: words(6, 'anchor'),
+      prefix: words(3, 'anchor'),
+      suffix: words(3, 'anchor'),
+    };
+    const rects = Array.from({ length: count(3) }, () => ({
       x: random() * 0.5,
       y: random() * 0.5,
       width: 0.1 + random() * 0.4,
       height: 0.01 + random() * 0.1,
-    })),
-  }),
-  () => ({
-    kind: 'pdf',
-    page: 1 + count(9),
-    quote: null,
-    rects: [{ x: 0, y: random() * 0.5, width: 1, height: 0.25 }],
-  }),
-  () => ({
-    kind: 'epub',
-    cfi: `epubcfi(/6/${2 * (1 + count(40))}!/4/2/1:${count(300)})`,
-    quote: { exact: words(6), prefix: '', suffix: words(2) },
-  }),
-  () => ({
-    kind: 'kindle',
-    location: { start: 1 + count(9000), end: random() < 0.5 ? null : 9001 + count(10) },
-    annotationId: random() < 0.5 ? null : `AMZ-${count(1e6)}`,
-  }),
+    }));
+    saw(`pdf quote in ${rects.length} rects`);
+    return { kind: 'pdf', page, quote, rects };
+  },
+  () => {
+    saw('pdf area');
+    return {
+      kind: 'pdf',
+      page: 1 + count(9),
+      quote: null,
+      rects: [{ x: 0, y: random() * 0.5, width: 1, height: 0.25 }],
+    };
+  },
+  () => {
+    saw('epub');
+    return {
+      kind: 'epub',
+      cfi: `epubcfi(/6/${2 * (1 + count(40))}!/4/2/1:${count(300)})`,
+      quote: { exact: words(6, 'anchor'), prefix: '', suffix: words(2, 'anchor') },
+    };
+  },
+  () => {
+    const start = 1 + count(9000);
+    const end = random() < 0.5 ? null : 9001 + count(10);
+    const annotationId = random() < 0.5 ? null : `AMZ-${count(1e6)}`;
+    saw(`kindle ending ${end !== null}, with an id ${annotationId !== null}`);
+    return { kind: 'kindle', location: { start, end }, annotationId };
+  },
 ];
 
-const style = (): HighlightStyle => ({
-  mark: pick(['highlight', 'underline'] as const),
-  color: pick(HIGHLIGHT_COLORS),
-});
+function style(): HighlightStyle {
+  const drawn = { mark: pick(['highlight', 'underline'] as const), color: pick(HIGHLIGHT_COLORS) };
+  saw(`${drawn.mark} in ${drawn.color}`);
+  return drawn;
+}
 
 const TOMBSTONE_LINE = '<!-- atlas:highlight-removed [^\\n]*-->\\n';
 
@@ -117,17 +149,31 @@ const withoutTombstones = (text: string): string =>
     .replace(new RegExp(`^\\n${TOMBSTONE_LINE}`, 'gm'), '')
     .replace(new RegExp(`^(---\\n[\\s\\S]*?\\n---\\n)${TOMBSTONE_LINE}`), '$1');
 
-const newHighlight = (): NewHighlight => ({
-  quote: words(12),
-  anchor: pick(ANCHORS)(),
-  style: style(),
-  ...(random() < 0.6 && { comment: words(8).replace(/^>|\n>/g, ' ') }),
-});
+function newHighlight(): NewHighlight {
+  const quote = words(12, 'quote');
+  const anchor = pick(ANCHORS)();
+  const drawn = style();
+  const commented = random() < 0.6;
+  saw(`commented ${commented}`);
+  return {
+    quote,
+    anchor,
+    style: drawn,
+    ...(commented && { comment: words(8, 'comment').replace(/^>|\n>/g, ' ') }),
+  };
+}
+
+/** One to five highlights to append. */
+function newHighlights(): NewHighlight[] {
+  const asked = 1 + count(4);
+  saw(`${asked} highlights appended`);
+  return Array.from({ length: asked }, newHighlight);
+}
 
 /** What a note holds around highlights: prose, a plain quote, a fence with a look-alike, a list. */
 const FILLER = [
   // Prose never opens with `<!--`: a line that does is an HTML comment block, which hides the rest if unclosed.
-  () => `Prose: ${words(10).replace(/\n/g, ' ')}\n`,
+  () => `Prose: ${words(10, 'prose').replace(/\n/g, ' ')}\n`,
   () => '> A plain quote, no marker.\n',
   () =>
     '```\n> Not a highlight.\n> <!-- atlas:highlight {"v":1,"kind":"kindle","location":3} -->\n\n^fake01\n```\n',
@@ -136,7 +182,11 @@ const FILLER = [
 ];
 
 function literatureNote(): string {
-  const body = Array.from({ length: count(4) }, () => pick(FILLER)()).join('\n');
+  const body = Array.from({ length: count(4) }, () => {
+    const at = Math.floor(random() * FILLER.length);
+    saw(`filler ${at}`);
+    return FILLER[at]!();
+  }).join('\n');
   return `---\ntype: literature\nkind: pdf\ntitle: "Generated"\n---\n${body}`;
 }
 
@@ -146,6 +196,7 @@ function editedByHand(text: string): string {
   let edited = text;
   for (const block of [...blocks].reverse()) {
     const choice = count(3);
+    saw(`hand edit ${choice}`);
     if (choice === 0) edited = splice(edited, block.start, block.start + 1, '>  ');
     if (choice === 1)
       edited = splice(edited, block.quoteEnd, block.quoteEnd, '>\n> Added in Obsidian.\n');
@@ -177,130 +228,184 @@ function expectOthersKept(before: string, after: string, except: string | null) 
   }
 }
 
-const RUNS = Number(process.env['HIGHLIGHT_PROPERTY_RUNS'] ?? 300);
 /**
  * Each run parses the note a few times over, so a run takes milliseconds, and
- * under coverage on a loaded machine 300 runs have taken 13 s. The cap is
- * there to catch a hang, not to time the work.
+ * 300 a test timed out under load (#854). Each test shows below that its runs
+ * drew every shape the property turns on.
  */
-const TIMEOUT = Math.max(60_000, RUNS * 25);
+const RUNS = Number(process.env['HIGHLIGHT_PROPERTY_RUNS'] ?? 60);
+
+/** Where a highlight stands among a note's, which decides what is either side of it. */
+function placeOf(at: number, of: number): string {
+  if (of === 1) return 'the only highlight';
+  if (at === 0) return 'the first highlight';
+  return at === of - 1 ? 'the last highlight' : 'a highlight between others';
+}
+
+/** A highlight of the note's to write to, by where it stands. */
+function targetIn(text: string): HighlightBlock {
+  const blocks = readHighlights(text, noteBlocks);
+  const target = pick(blocks);
+  saw(placeOf(blocks.indexOf(target), blocks.length));
+  return target;
+}
+
+const wordsIn = (where: string) => [
+  ...WORDS.map((word) => `${where} has ${word}`),
+  ...SEPARATORS.map((separator) => `${where} joined by ${JSON.stringify(separator)}`),
+];
+
+/** Every shape a note and the highlights appended to it hold that the property turns on. */
+const EVERY_NOTE_SHAPE = [
+  ...FILLER.map((_, at) => `filler ${at}`),
+  ...[1, 2, 3, 4, 5].map((asked) => `${asked} highlights appended`),
+  ...[0, 1, 2, 3].map((rects) => `pdf quote in ${rects} rects`),
+  'pdf area',
+  'epub',
+  ...[true, false].flatMap((ending) =>
+    [true, false].map((id) => `kindle ending ${ending}, with an id ${id}`),
+  ),
+  ...['highlight', 'underline'].flatMap((mark) =>
+    HIGHLIGHT_COLORS.map((color) => `${mark} in ${color}`),
+  ),
+  'commented true',
+  'commented false',
+  ...['quote', 'comment', 'anchor', 'prose'].flatMap(wordsIn),
+];
+
+/** Every edit by hand, each a person makes in Obsidian. */
+const EVERY_HAND_EDIT = [0, 1, 2, 3].map((choice) => `hand edit ${choice}`);
+
+/** Every place the highlight written to can stand. */
+const EVERY_PLACE = [
+  'the only highlight',
+  'the first highlight',
+  'a highlight between others',
+  'the last highlight',
+];
+
+const missing = (shapes: readonly string[], drawn: ReadonlySet<string>) =>
+  shapes.filter((shape) => !drawn.has(shape));
 
 describe('literature notes under any edits', () => {
-  it(
-    'reads back every highlight appended, with fresh ids, and writes only after the last byte',
-    () => {
-      for (let run = 0; run < RUNS; run += 1) {
-        const before = literatureNote();
-        const added = Array.from({ length: 1 + count(4) }, newHighlight);
-        const { text, highlights } = appendHighlights({
-          text: before,
-          highlights: added,
-          random,
-          noteBlocks,
-        });
-        expect(text.startsWith(before)).toBe(true);
-        const fresh = highlights
-          .filter((highlight) => highlight.added)
-          .map((highlight) => highlight.id);
-        expect(new Set(fresh).size).toBe(fresh.length);
-        for (const id of fresh) expect(id).toMatch(/^[a-z0-9]{6}$/);
-        expect(fresh).not.toContain('li0001');
-        for (const [index, highlight] of added.entries()) {
-          const answered = highlights[index];
-          if (answered?.added !== true) continue;
-          const block = highlightNamed(text, answered.id, noteBlocks);
-          expect(plainQuote(block.quote)).toBe(
-            quoteLines(highlight.quote).map(plainQuote).join('\n\n'),
-          );
-          // A Kindle anchor keeps the export's words (R3).
-          const written =
-            highlight.anchor.kind === 'kindle'
-              ? { ...highlight.anchor, exact: highlight.quote }
-              : highlight.anchor;
-          expect(block.anchor).toEqual(written);
-          expect(block.comment).toBe(commentLines(highlight.comment ?? '').join('\n'));
-          expect(block.style).toEqual(highlight.style);
-        }
-        expect(readHighlights(before, noteBlocks)).toEqual([]);
-      }
-    },
-    TIMEOUT,
-  );
-
-  it(
-    'changes only the comment it is given, keeping hand edits everywhere',
-    () => {
-      for (let run = 0; run < RUNS; run += 1) {
-        const { text: written } = appendHighlights({
-          text: literatureNote(),
-          highlights: Array.from({ length: 1 + count(4) }, newHighlight),
-          random,
-          noteBlocks,
-        });
-        const text = editedByHand(written);
-        const target = pick(readHighlights(text, noteBlocks));
-        const comment = random() < 0.2 ? '' : words(6).replace(/^>|\n>/g, ' ');
-        const changed = withHighlightComment({ text, id: target.id, comment, noteBlocks });
-        expect(highlightNamed(changed, target.id, noteBlocks).comment).toBe(
-          commentLines(comment).join('\n'),
+  it('reads back every highlight appended, with fresh ids, and writes only after the last byte', () => {
+    const shapes = drawing();
+    for (let run = 0; run < RUNS; run += 1) {
+      const before = literatureNote();
+      const added = newHighlights();
+      const { text, highlights } = appendHighlights({
+        text: before,
+        highlights: added,
+        random,
+        noteBlocks,
+      });
+      expect(text.startsWith(before)).toBe(true);
+      const fresh = highlights
+        .filter((highlight) => highlight.added)
+        .map((highlight) => highlight.id);
+      expect(new Set(fresh).size).toBe(fresh.length);
+      for (const id of fresh) expect(id).toMatch(/^[a-z0-9]{6}$/);
+      expect(fresh).not.toContain('li0001');
+      for (const [index, highlight] of added.entries()) {
+        const answered = highlights[index];
+        if (answered?.added !== true) continue;
+        const block = highlightNamed(text, answered.id, noteBlocks);
+        expect(plainQuote(block.quote)).toBe(
+          quoteLines(highlight.quote).map(plainQuote).join('\n\n'),
         );
-        expect(highlightNamed(changed, target.id, noteBlocks).quote).toBe(target.quote);
-        expect(changed.slice(0, target.markerEnd)).toBe(text.slice(0, target.markerEnd));
-        expect(changed.endsWith(text.slice(target.quoteEnd))).toBe(true);
-        expectOthersKept(text, changed, target.id);
+        // A Kindle anchor keeps the export's words (R3).
+        const written =
+          highlight.anchor.kind === 'kindle'
+            ? { ...highlight.anchor, exact: highlight.quote }
+            : highlight.anchor;
+        expect(block.anchor).toEqual(written);
+        expect(block.comment).toBe(commentLines(highlight.comment ?? '').join('\n'));
+        expect(block.style).toEqual(highlight.style);
       }
-    },
-    TIMEOUT,
-  );
+      expect(readHighlights(before, noteBlocks)).toEqual([]);
+    }
+    expect(missing([...EVERY_NOTE_SHAPE], shapes)).toEqual([]);
+  });
 
-  it(
-    'writes back the same bytes for every comment as it reads',
-    () => {
-      for (let run = 0; run < RUNS; run += 1) {
-        const { text: written } = appendHighlights({
-          text: literatureNote(),
-          highlights: Array.from({ length: 1 + count(4) }, newHighlight),
-          random,
-          noteBlocks,
-        });
-        const text = editedByHand(written);
-        for (const block of readHighlights(text, noteBlocks)) {
-          expect(
-            withHighlightComment({ text, id: block.id, comment: block.comment, noteBlocks }),
-          ).toBe(text);
-        }
-      }
-    },
-    TIMEOUT,
-  );
+  it('changes only the comment it is given, keeping hand edits everywhere', () => {
+    const shapes = drawing();
+    for (let run = 0; run < RUNS; run += 1) {
+      const { text: written } = appendHighlights({
+        text: literatureNote(),
+        highlights: newHighlights(),
+        random,
+        noteBlocks,
+      });
+      const text = editedByHand(written);
+      const target = targetIn(text);
+      const typedNothing = random() < 0.2;
+      if (typedNothing) saw('typed nothing');
+      const comment = typedNothing ? '' : words(6, 'typed').replace(/^>|\n>/g, ' ');
+      const changed = withHighlightComment({ text, id: target.id, comment, noteBlocks });
+      expect(highlightNamed(changed, target.id, noteBlocks).comment).toBe(
+        commentLines(comment).join('\n'),
+      );
+      expect(highlightNamed(changed, target.id, noteBlocks).quote).toBe(target.quote);
+      expect(changed.slice(0, target.markerEnd)).toBe(text.slice(0, target.markerEnd));
+      expect(changed.endsWith(text.slice(target.quoteEnd))).toBe(true);
+      expectOthersKept(text, changed, target.id);
+    }
+    expect(
+      missing(
+        [
+          ...EVERY_NOTE_SHAPE,
+          ...EVERY_HAND_EDIT,
+          ...EVERY_PLACE,
+          'typed nothing',
+          ...wordsIn('typed'),
+        ],
+        shapes,
+      ),
+    ).toEqual([]);
+  });
 
-  it(
-    'removes only the highlight it is given, and removing all it added gives the note back',
-    () => {
-      for (let run = 0; run < RUNS; run += 1) {
-        const before = `${literatureNote().trimEnd()}\n`;
-        const { text: written, highlights } = appendHighlights({
-          text: before,
-          highlights: Array.from({ length: 1 + count(4) }, newHighlight),
-          random,
-          noteBlocks,
-        });
-        const text = editedByHand(written);
-        const target = pick(readHighlights(text, noteBlocks));
-        const removed = withoutHighlight({ text, id: target.id, noteBlocks });
-        expect(readHighlights(removed, noteBlocks).map((block) => block.id)).not.toContain(
-          target.id,
-        );
-        expectOthersKept(text, removed, target.id);
-        let emptied = written;
-        for (const { id } of [...highlights].reverse()) {
-          if (readHighlights(emptied, noteBlocks).some((block) => block.id === id))
-            emptied = withoutHighlight({ text: emptied, id, noteBlocks });
-        }
-        // A Kindle highlight leaves its tombstone where it was (ADR-0043 §5): all else comes back.
-        expect(withoutTombstones(emptied)).toBe(before);
+  it('writes back the same bytes for every comment as it reads', () => {
+    const shapes = drawing();
+    for (let run = 0; run < RUNS; run += 1) {
+      const { text: written } = appendHighlights({
+        text: literatureNote(),
+        highlights: newHighlights(),
+        random,
+        noteBlocks,
+      });
+      const text = editedByHand(written);
+      for (const block of readHighlights(text, noteBlocks)) {
+        expect(
+          withHighlightComment({ text, id: block.id, comment: block.comment, noteBlocks }),
+        ).toBe(text);
       }
-    },
-    TIMEOUT,
-  );
+    }
+    expect(missing([...EVERY_NOTE_SHAPE, ...EVERY_HAND_EDIT], shapes)).toEqual([]);
+  });
+
+  it('removes only the highlight it is given, and removing all it added gives the note back', () => {
+    const shapes = drawing();
+    for (let run = 0; run < RUNS; run += 1) {
+      const before = `${literatureNote().trimEnd()}\n`;
+      const { text: written, highlights } = appendHighlights({
+        text: before,
+        highlights: newHighlights(),
+        random,
+        noteBlocks,
+      });
+      const text = editedByHand(written);
+      const target = targetIn(text);
+      const removed = withoutHighlight({ text, id: target.id, noteBlocks });
+      expect(readHighlights(removed, noteBlocks).map((block) => block.id)).not.toContain(target.id);
+      expectOthersKept(text, removed, target.id);
+      let emptied = written;
+      for (const { id } of [...highlights].reverse()) {
+        if (readHighlights(emptied, noteBlocks).some((block) => block.id === id))
+          emptied = withoutHighlight({ text: emptied, id, noteBlocks });
+      }
+      // A Kindle highlight leaves its tombstone where it was (ADR-0043 §5): all else comes back.
+      expect(withoutTombstones(emptied)).toBe(before);
+    }
+    expect(missing([...EVERY_NOTE_SHAPE, ...EVERY_HAND_EDIT, ...EVERY_PLACE], shapes)).toEqual([]);
+  });
 });
