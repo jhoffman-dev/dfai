@@ -446,6 +446,7 @@ test('a focused note re-read with a line added at its end keeps its scroll and i
 test('a hidden tab whose long note was re-read is shown where it was scrolled', async ({
   page,
 }) => {
+  // A guard, not a regression test: it passes with or without #877's fix.
   const { vault } = await openVault(page);
   const top = await openLongAlpha(page, vault);
   await row(page, 'beta').click({ modifiers: ['Meta'] });

@@ -177,8 +177,11 @@ export function selectionAfterReread(
   if (selection instanceof AllSelection) return new AllSelection(after);
   const diff = diffLines(before, after);
   const place = (pos: number) => after.resolve(placeAcross(diff, pos, after.content.size));
-  if (selection instanceof TextSelection)
-    return TextSelection.between(place(selection.anchor), place(selection.head));
+  if (selection instanceof TextSelection) {
+    const anchor = place(selection.anchor);
+    // A caret is one place: carried once.
+    return TextSelection.between(anchor, selection.empty ? anchor : place(selection.head));
+  }
   // A picked node (an image, an embed) or cells of a table come back as a
   // caret near where they were: which node is "the same" after a re-read is
   // not known, and a caret is the safe thing to type at.

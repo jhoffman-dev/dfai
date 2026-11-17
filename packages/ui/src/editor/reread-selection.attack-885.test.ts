@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Editor, getSchema } from '@tiptap/core';
 import { undoDepth } from '@tiptap/pm/history';
-import { Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model';
+import { Fragment, Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model';
 import { AllSelection, NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
 import { CellSelection } from '@tiptap/pm/tables';
 import type { EditorDocument } from '@dfai/domain';
@@ -76,7 +76,8 @@ function blockOf(random: Random): Block {
         ],
       };
     case 7:
-      return { type: 'image', attrs: { src: 'a.png' } };
+      // An image is inline in the app's schema: it sits in a line.
+      return { type: 'paragraph', content: [{ type: 'image', attrs: { src: 'a.png' } }] };
     case 8:
       return { type: 'horizontalRule' };
     default:
@@ -86,7 +87,8 @@ function blockOf(random: Random): Block {
 
 /** A changed copy of `blocks`, as another tool might save it. */
 function edited(random: Random, blocks: Block[]): Block[] {
-  const after = blocks.map((block) => structuredClone(block));
+  // Blocks are only spliced and replaced, never changed in place, so they are shared.
+  const after = [...blocks];
   const kind = random();
   if (kind < 0.04) return [];
   if (kind < 0.08) return Array.from({ length: Math.floor(random() * 10) }, () => blockOf(random));
@@ -101,7 +103,7 @@ function edited(random: Random, blocks: Block[]): Block[] {
       after.splice(Math.floor(random() * (after.length + 1)), 0, moved!);
     } else if (op === 3) {
       const source = after[Math.min(at, after.length - 1)]!;
-      after.splice(at, 0, structuredClone(source));
+      after.splice(at, 0, source);
     } else {
       const index = Math.min(at, after.length - 1);
       const current = after[index]!;
@@ -223,6 +225,9 @@ describe('the re-read mapping never throws and never leaves the note (#885 prope
     for (let seed = 1; seed <= 3000 && failures.length < 5; seed += 1) {
       const { doc, after, selection } = seededCase(seed, schema);
       const now = schema.nodeFromJSON(docOf(after));
+      // A note the generator nested wrongly would prove nothing.
+      doc.check();
+      now.check();
       try {
         const mapped = selectionAfterReread(selection, { before: doc, after: now });
         const wrong = wrongIn(mapped, now);
@@ -271,21 +276,25 @@ describe('showAsRead never throws, never writes, never leaves the note (#885 pro
   }
 
   it('draws every kind of block and of selection in the listed cases', () => {
-    expect(new Set(EVERY_BLOCK.map((block) => block.type))).toEqual(
-      new Set([
-        'heading',
-        'bulletList',
-        'orderedList',
-        'taskList',
-        'codeBlock',
-        'blockquote',
-        'table',
-        'image',
-        'horizontalRule',
-        'paragraph',
-      ]),
-    );
     const doc = getSchema(extensions()).nodeFromJSON(docOf(EVERY_BLOCK));
+    doc.check();
+    const drawn = new Set<string>();
+    doc.descendants((node) => {
+      drawn.add(node.type.name);
+    });
+    for (const kind of [
+      'heading',
+      'bulletList',
+      'orderedList',
+      'taskList',
+      'codeBlock',
+      'blockquote',
+      'table',
+      'image',
+      'horizontalRule',
+      'paragraph',
+    ])
+      expect(drawn, kind).toContain(kind);
     const kinds = SELECTION_DRAWS.map((draw) => {
       const selection = selectionIn(drawing(draw), doc);
       if (selection instanceof TextSelection) return selection.empty ? 'caret' : 'range';
@@ -497,29 +506,36 @@ describe('showAsRead keeps the caret on its own line (#885 exact places)', () =>
 
 describe('the re-read mapping is linear in the note (#885)', () => {
   /**
-   * How many node comparisons carrying a caret across a re-read makes on a
-   * note of `lines` lines, many identical, with the caret on the middle line
-   * and a line among the identical ones changed. Counted, not timed: the
-   * times are in #886.
+   * How many times carrying a caret across a re-read compares or reads a
+   * node, on a note of `lines` lines, many identical, with every other line
+   * changed: the changed stretch is the whole note, so the scans over it run
+   * in full, the caret's line among them (on the middle line, kept, with some
+   * of its twins changed). Counted, not timed: the times are in #886.
    */
   function comparisons(lines: number, schema: Schema): number {
     const content = Array.from({ length: lines }, (_, i) =>
       paragraph(i % 3 === 0 ? '' : 'Same line.'),
     );
-    const middle = Math.floor(lines / 2);
-    const changed = content.map((block, i) => (i === middle ? paragraph('Changed.') : block));
+    const middle = 2 * Math.floor(lines / 4);
+    const changed = content.map((block, i) => (i % 2 === 1 ? paragraph(`Changed ${i}.`) : block));
     const before = schema.nodeFromJSON(docOf(content));
     const after = schema.nodeFromJSON(docOf(changed));
     let caret = 0;
     before.forEach((_node, offset, i) => {
       if (i === middle) caret = offset + 1;
     });
-    const eq = vi.spyOn(ProseMirrorNode.prototype, 'eq');
+    const spies = [
+      vi.spyOn(ProseMirrorNode.prototype, 'eq'),
+      vi.spyOn(ProseMirrorNode.prototype, 'toJSON'),
+      vi.spyOn(ProseMirrorNode.prototype, 'textContent', 'get'),
+      vi.spyOn(Fragment.prototype, 'findDiffStart'),
+      vi.spyOn(Fragment.prototype, 'findDiffEnd'),
+    ];
     try {
       selectionAfterReread(TextSelection.create(before, caret), { before, after });
-      return eq.mock.calls.length;
+      return spies.reduce((sum, spy) => sum + spy.mock.calls.length, 0);
     } finally {
-      eq.mockRestore();
+      spies.forEach((spy) => spy.mockRestore());
     }
   }
 
