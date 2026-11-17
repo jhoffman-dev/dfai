@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { PageAction, PageBar, type PageHistory } from '../page-bar.tsx';
 import { HiddenTitle } from '../page-head.tsx';
+import { TintedPill } from '../status-pill.tsx';
 import { Toggle } from '../toggle.tsx';
-import type { AutomationRow } from './automation-views.ts';
+import type { AutomationRow, AutomationWaiting } from './automation-views.ts';
 import { ReadTwiceNotice, type ReadTwiceView } from './read-twice-notice.tsx';
 
 export interface AutomationsPageProps {
@@ -108,7 +109,16 @@ function Adders({ presets, onNew, onAddPreset, busy }: AutomationsPageProps) {
   );
 }
 
-function RuleList({ rows, error, openId, onOpen, onToggle, onRunNow, busy }: AutomationsPageProps) {
+function RuleList({
+  rows,
+  error,
+  openId,
+  onOpen,
+  onToggle,
+  onRunNow,
+  onTurnOff,
+  busy,
+}: AutomationsPageProps) {
   if (error !== null) {
     return (
       <p className="table__error" role="alert">
@@ -162,6 +172,14 @@ function RuleList({ rows, error, openId, onOpen, onToggle, onRunNow, busy }: Aut
                   {row.notice}
                 </p>
               )}
+              {row.waiting !== undefined && (
+                <Waiting
+                  name={row.name}
+                  waiting={row.waiting}
+                  busy={busy}
+                  {...(onTurnOff !== undefined && { onTurnOff })}
+                />
+              )}
             </div>
             <dl className="automation-card__times">
               <div>
@@ -186,5 +204,40 @@ function RuleList({ rows, error, openId, onOpen, onToggle, onRunNow, busy }: Aut
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * A rule held by an hourly limit (#813): the status pill's Waiting, never
+ * the failure's warning, with why in full and what may be turned off.
+ */
+function Waiting({
+  name,
+  waiting,
+  busy,
+  onTurnOff,
+}: {
+  name: string;
+  waiting: AutomationWaiting;
+  busy: boolean;
+  onTurnOff?: (id: string) => void;
+}) {
+  return (
+    <div className="automation-card__waiting" role="status" aria-label={`${name} is waiting`}>
+      <TintedPill text="Waiting" color="waiting" />
+      <p className="automation-card__waiting-reason">{waiting.reason}</p>
+      {onTurnOff !== undefined &&
+        waiting.turnOff.map(({ id, rule }) => (
+          <button
+            key={id}
+            type="button"
+            className="btn btn--secondary btn--sm"
+            disabled={busy}
+            onClick={() => onTurnOff(id)}
+          >
+            Turn off “{rule}”
+          </button>
+        ))}
+    </div>
   );
 }

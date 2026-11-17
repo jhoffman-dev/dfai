@@ -10,16 +10,24 @@ import {
   logEntrySummary,
   nextRunOf,
   ruleClockOf,
+  noteRunsHoldMessage,
   noteTitle,
   type AutomationPlan,
   type DoneAction,
   type LocalTime,
   type LogEntry,
+  type MeetingReadTwice,
   type PriorValue,
   type VaultPath,
 } from '@dfai/domain';
 import type { AutomationListing, LoadedAutomation } from '@dfai/application';
-import type { AutomationRow, DryRunView, LogEntryView, LogLineView } from '@dfai/ui';
+import type {
+  AutomationRow,
+  AutomationWaiting,
+  DryRunView,
+  LogEntryView,
+  LogLineView,
+} from '@dfai/ui';
 import type { RulePause } from './use-automations.ts';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -41,6 +49,8 @@ export interface RowClock {
   readonly planNow?: LocalTime | null;
   /** What says a time is on the plan zone's clock, `Chicago time`; null when it is the Mac's (#587). */
   readonly planClock?: string | null;
+  /** The rules that read every meeting a second time beside a declared step (#793): what a held one offers to turn off. */
+  readonly readTwice?: readonly MeetingReadTwice[];
 }
 
 /** Every rule as its row: broken ones too, with why. */
@@ -65,7 +75,13 @@ function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow 
   const { watchingSince, now } = ruleClockOf({ rule, ...clock, planNow: clock.planNow ?? null });
   const last = lastRunOf(log);
   const pause = clock.pauses.get(rule.id);
-  const next = pause?.retryAt === null ? null : nextRunOf({ rule, log, watchingSince, now });
+  const hold = pause?.hold;
+  const next =
+    hold !== undefined
+      ? hold.until
+      : pause?.retryAt === null
+        ? null
+        : nextRunOf({ rule, log, watchingSince, now });
   return {
     id: rule.path,
     name: rule.name,
@@ -76,7 +92,20 @@ function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow 
     nextRun: next === null ? null : withClock(shownTime(next), rule, clock),
     canUndo: lastUndoableRun(log) !== null,
     problem: null,
-    notice: pause?.reason ?? futureNotice(log, now),
+    notice: hold === undefined ? (pause?.reason ?? futureNotice(log, now)) : null,
+    ...(hold !== undefined && { waiting: waitingOf(hold, clock.readTwice ?? []) }),
+  };
+}
+
+/** What a rule held by an hourly limit says (#813), offering to turn off a rule that reads every meeting beside it. */
+function waitingOf(
+  hold: NonNullable<RulePause['hold']>,
+  readTwice: readonly MeetingReadTwice[],
+): AutomationWaiting {
+  const beside = readTwice.filter((read) => read.declared === hold.rule);
+  return {
+    reason: noteRunsHoldMessage(hold, { alsoReading: beside.map((read) => read.name) }),
+    turnOff: beside.map((read) => ({ id: read.path, rule: read.name })),
   };
 }
 

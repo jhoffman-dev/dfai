@@ -13,6 +13,7 @@ import {
   type AutomationRule,
   type LocalTime,
   type LogEntry,
+  type NoteRunsHold,
   type RunTrigger,
 } from '@dfai/domain';
 import {
@@ -156,6 +157,8 @@ export interface RulePause {
    * cannot see end, so the pause keeps its backoff (#637 attack).
    */
   readonly unavailableBy?: UnavailableFoundBy;
+  /** Set when an hourly limit holds it (#813): it waits, and is not failing; which limit, and who spent it. */
+  readonly hold?: NoteRunsHold;
 }
 
 /** The vault's automations as last read, and which vault they were read from. */
@@ -604,9 +607,10 @@ function pauseAfter(previous: RulePause | undefined, cause: unknown, now: LocalT
   // Held by the hourly cap, it is not failing: it waits for the hour, and counts no failure.
   if (cause instanceof NoteRunsCappedError) {
     return {
-      reason: `Held back: ${cause.message}`,
+      reason: cause.message,
       failures: previous?.failures ?? 0,
       retryAt: cause.until,
+      hold: cause.hold,
     };
   }
   const failures = (previous?.failures ?? 0) + 1;

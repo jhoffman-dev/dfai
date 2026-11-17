@@ -183,9 +183,7 @@ describe('noteRunsHoldMessage (#813): what a held rule says, in plain words', ()
         'It runs next at 12:10, on what changed meanwhile. ' +
         'Nothing needs fixing: it catches up by itself.',
     );
-    expect(
-      noteRunsHoldMessage({ ...RUNS, runs: { most: 20, spent: 21, countsAsks: true } }),
-    ).toBe(
+    expect(noteRunsHoldMessage({ ...RUNS, runs: { most: 20, spent: 21, countsAsks: true } })).toBe(
       'Waiting, not broken: it has reached an hourly limit. ' +
         'It may run 20 times an hour, each question it asks Claude counted as a run, ' +
         'and it has used 21 in the last hour. ' +

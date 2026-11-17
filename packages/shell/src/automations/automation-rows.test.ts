@@ -101,13 +101,14 @@ describe('automationRows of a rule held by an hourly limit (#813)', () => {
   const heldClock = {
     ...CLOCK,
     pauses: new Map([
-      [
-        AFTER.id,
-        { reason: noteRunsHoldMessage(hold), failures: 0, retryAt: hold.until, hold },
-      ],
+      [AFTER.id, { reason: noteRunsHoldMessage(hold), failures: 0, retryAt: hold.until, hold }],
     ]),
     readTwice: [
-      { path: `.atlas/automations/${EXTRACTION}.md`, name: EXTRACTION, declared: 'After a meeting' },
+      {
+        path: `.atlas/automations/${EXTRACTION}.md`,
+        name: EXTRACTION,
+        declared: 'After a meeting',
+      },
     ],
   };
 
@@ -130,14 +131,26 @@ describe('automationRows of a rule held by an hourly limit (#813)', () => {
         automations: [{ rule: { ...AFTER, name: 'Other digest' }, log: [], idWritten: true }],
         broken: [],
       },
-      { ...heldClock, pauses: new Map([[AFTER.id, { ...heldClock.pauses.get(AFTER.id)!, hold: { ...hold, rule: 'Other digest' } }]]) },
+      {
+        ...heldClock,
+        pauses: new Map([
+          [
+            AFTER.id,
+            { ...heldClock.pauses.get(AFTER.id)!, hold: { ...hold, rule: 'Other digest' } },
+          ],
+        ]),
+      },
     );
     expect(row?.waiting?.turnOff).toEqual([]);
     expect(row?.waiting?.reason).not.toContain(EXTRACTION);
   });
 
   it('leaves a failing rule’s pause as its notice, not waiting', () => {
-    const failing = { reason: 'Could not run (No.); it is tried again at 09:05.', failures: 1, retryAt: '2026-09-27T09:05:00' };
+    const failing = {
+      reason: 'Could not run (No.); it is tried again at 09:05.',
+      failures: 1,
+      retryAt: '2026-09-27T09:05:00',
+    };
     const [row] = automationRows(
       { automations: [{ rule: AFTER, log: [], idWritten: true }], broken: [] },
       { ...CLOCK, pauses: new Map([[AFTER.id, failing]]) },

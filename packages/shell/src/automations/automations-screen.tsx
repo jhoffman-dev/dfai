@@ -77,6 +77,7 @@ export function AutomationsScreen({
   const { listing, watchingSince, pauses, planZone } = automations;
   const planNow = planNowOf(clock, planZone);
   const planClock = planClockLabel({ planZone, macZone: localTimeZone() });
+  const reads = meetingReadsTwice(listing?.automations.map(({ rule }) => rule) ?? []);
   const rows =
     listing === null || watchingSince === null
       ? null
@@ -86,14 +87,13 @@ export function AutomationsScreen({
           pauses,
           planNow,
           planClock,
+          readTwice: reads,
         });
   const loadedOf = (id: string) =>
     listing?.automations.find((loaded) => loaded.rule.path === id) ?? null;
   const open = editor.editing?.kind === 'rule' ? loadedOf(editor.editing.rule.path) : null;
   const openNote = (path: string) => onOpenNote(createVaultPath(path));
-  const readTwice = readTwiceViews(
-    meetingReadsTwice(listing?.automations.map(({ rule }) => rule) ?? []),
-  );
+  const readTwice = readTwiceViews(reads);
 
   return (
     <AutomationsPage

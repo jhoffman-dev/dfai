@@ -30,7 +30,10 @@ function asksSentences(
 ): string[] {
   const others = by.filter(({ name }) => name !== rule).map(({ name }) => name);
   if (others.length === 0) {
-    return [`It may ask Claude ${most} times an hour, and it has asked ${asked} times in the last hour.`, ASK_MEANS];
+    return [
+      `It may ask Claude ${most} times an hour, and it has asked ${asked} times in the last hour.`,
+      ASK_MEANS,
+    ];
   }
   const counts = by.map(({ name, asks }) => `“${name}” ${asks}`).join(', ');
   return [

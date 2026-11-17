@@ -136,6 +136,26 @@
   white-space: nowrap;
 }
 
+/* A rule held by an hourly limit (#813): waiting, not failing, so the
+   status pill's Waiting and the reason in plain ink, wrapped in full — not
+   the warning colour a failure's notice is cut short in. */
+.automation-card__waiting {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 4px;
+  white-space: normal;
+}
+
+.automation-card__waiting-reason {
+  color: var(--ink-2);
+  flex: 1 1 240px;
+  font-size: var(--text-meta);
+  margin: 0;
+  min-width: 0;
+}
+
 /* When it last ran and runs next: two terms on one line, a · between. */
 .automation-card__times {
   color: var(--ink-3);
