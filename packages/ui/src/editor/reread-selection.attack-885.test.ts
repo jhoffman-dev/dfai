@@ -184,48 +184,58 @@ function selectionIn(random: Random, doc: ProseMirrorNode): Selection {
 }
 
 describe('showAsRead never throws, never writes, never leaves the note (#885 property)', () => {
-  // 3,000 editor round-trips take ~4.6 s alone, past vitest's 5 s default
-  // once the other editor tests run beside it.
-  it('holds for 3,000 seeded notes, selections and outside edits', { timeout: 30_000 }, () => {
-    const failures: string[] = [];
-    editor = mount(docOf([paragraph('')]));
-    const updates = vi.fn();
-    editor.on('update', updates);
-    for (let seed = 1; seed <= 3000 && failures.length < 5; seed += 1) {
-      const random = seeded(seed);
-      const before = Array.from({ length: Math.floor(random() * 41) }, () => blockOf(random));
-      const after = edited(random, before);
-      editor.commands.setContent(docOf(before) as object, { emitUpdate: false });
-      editor.view.dispatch(editor.state.tr.setSelection(selectionIn(random, editor.state.doc)));
-      const depth = undoDepth(editor.state);
-      const updatesBefore = updates.mock.calls.length;
-      try {
-        showAsRead(editor, docOf(after));
-      } catch (error) {
-        failures.push(`seed ${seed}: threw ${String(error)}`);
-        continue;
-      }
-      const { doc, selection } = editor.state;
-      const size = doc.content.size;
-      const inside = (pos: number) => pos >= 0 && pos <= size;
-      if (!inside(selection.from) || !inside(selection.to))
-        failures.push(`seed ${seed}: selection ${selection.from}-${selection.to} outside ${size}`);
-      else if (
-        selection instanceof TextSelection &&
-        (!selection.$anchor.parent.inlineContent || !selection.$head.parent.inlineContent)
-      )
-        failures.push(`seed ${seed}: text selection outside text`);
-      try {
-        Selection.fromJSON(doc, selection.toJSON());
-      } catch (error) {
-        failures.push(`seed ${seed}: selection not valid in the new note: ${String(error)}`);
-      }
-      if (updates.mock.calls.length !== updatesBefore)
-        failures.push(`seed ${seed}: emitted update`);
-      if (undoDepth(editor.state) !== depth) failures.push(`seed ${seed}: added an undo step`);
-    }
-    expect(failures).toEqual([]);
-  });
+  // 3,000 editor round-trips take ~4.6 s alone and ~30 s on a CI shard with
+  // coverage, so they run as six tests of 500 seeds, each with room to spare.
+  const SEEDS_PER_TEST = 500;
+  for (let first = 1; first <= 3000; first += SEEDS_PER_TEST) {
+    const last = first + SEEDS_PER_TEST - 1;
+    it(
+      `holds for seeded notes, selections and outside edits ${first}–${last}`,
+      { timeout: 30_000 },
+      () => {
+        const failures: string[] = [];
+        editor = mount(docOf([paragraph('')]));
+        const updates = vi.fn();
+        editor.on('update', updates);
+        for (let seed = first; seed <= last && failures.length < 5; seed += 1) {
+          const random = seeded(seed);
+          const before = Array.from({ length: Math.floor(random() * 41) }, () => blockOf(random));
+          const after = edited(random, before);
+          editor.commands.setContent(docOf(before) as object, { emitUpdate: false });
+          editor.view.dispatch(editor.state.tr.setSelection(selectionIn(random, editor.state.doc)));
+          const depth = undoDepth(editor.state);
+          const updatesBefore = updates.mock.calls.length;
+          try {
+            showAsRead(editor, docOf(after));
+          } catch (error) {
+            failures.push(`seed ${seed}: threw ${String(error)}`);
+            continue;
+          }
+          const { doc, selection } = editor.state;
+          const size = doc.content.size;
+          const inside = (pos: number) => pos >= 0 && pos <= size;
+          if (!inside(selection.from) || !inside(selection.to))
+            failures.push(
+              `seed ${seed}: selection ${selection.from}-${selection.to} outside ${size}`,
+            );
+          else if (
+            selection instanceof TextSelection &&
+            (!selection.$anchor.parent.inlineContent || !selection.$head.parent.inlineContent)
+          )
+            failures.push(`seed ${seed}: text selection outside text`);
+          try {
+            Selection.fromJSON(doc, selection.toJSON());
+          } catch (error) {
+            failures.push(`seed ${seed}: selection not valid in the new note: ${String(error)}`);
+          }
+          if (updates.mock.calls.length !== updatesBefore)
+            failures.push(`seed ${seed}: emitted update`);
+          if (undoDepth(editor.state) !== depth) failures.push(`seed ${seed}: added an undo step`);
+        }
+        expect(failures).toEqual([]);
+      },
+    );
+  }
 });
 
 describe('showAsRead keeps the caret on its own line (#885 exact places)', () => {
