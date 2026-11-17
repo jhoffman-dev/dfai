@@ -142,11 +142,13 @@ function RuleList({
         return (
           <li
             key={row.id}
-            className={
-              row.id === openId
-                ? 'page-list__row automation-card automation-card--open'
-                : 'page-list__row automation-card'
-            }
+            className={[
+              'page-list__row automation-card',
+              row.id === openId ? 'automation-card--open' : '',
+              row.waiting !== undefined ? 'automation-card--waiting' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
           >
             <Toggle
               label={`Run ${row.name} on its schedule`}
@@ -172,14 +174,6 @@ function RuleList({
                   {row.notice}
                 </p>
               )}
-              {row.waiting !== undefined && (
-                <Waiting
-                  name={row.name}
-                  waiting={row.waiting}
-                  busy={busy}
-                  {...(onTurnOff !== undefined && { onTurnOff })}
-                />
-              )}
             </div>
             <dl className="automation-card__times">
               <div>
@@ -200,6 +194,14 @@ function RuleList({
             >
               Run now
             </button>
+            {row.waiting !== undefined && (
+              <Waiting
+                name={row.name}
+                waiting={row.waiting}
+                busy={busy}
+                {...(onTurnOff !== undefined && { onTurnOff })}
+              />
+            )}
           </li>
         );
       })}

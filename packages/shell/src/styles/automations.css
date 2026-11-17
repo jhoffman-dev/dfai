@@ -138,13 +138,27 @@
 
 /* A rule held by an hourly limit (#813): waiting, not failing, so the
    status pill's Waiting and the reason in plain ink, wrapped in full — not
-   the warning colour a failure's notice is cut short in. */
+   the warning colour a failure's notice is cut short in. It takes a row of
+   its own under the card's line, so the row grows to hold it. */
+.automation-card--waiting {
+  height: auto;
+  min-height: 34px;
+  padding-bottom: var(--space-2);
+  padding-top: 7px;
+}
+
 .automation-card__waiting {
   align-items: flex-start;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-top: 4px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  white-space: normal;
+}
+
+.automation-card__waiting .btn {
+  max-width: 100%;
   white-space: normal;
 }
 
