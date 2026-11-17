@@ -20,6 +20,7 @@ import {
   BLANKS,
   LISTED_FAMILIES,
   MARK_SETS,
+  INNERMOST,
   MARKED_PLACES,
   OUTERS,
   TOP_KINDS,
@@ -203,7 +204,7 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
     ]),
   ),
   'lists nested three deep': OUTERS.flatMap((outer) =>
-    LISTS.flatMap((middle) => LISTS.map((inner) => `nested ${outer}>${middle}>${inner}`)),
+    LISTS.flatMap((middle) => INNERMOST.map((inner) => `nested ${outer}>${middle}>${inner}`)),
   ),
   'blank-only lines in every kind of text block': BLANKS.flatMap((blank) =>
     CONTAINERS.map((container) => `${quoted(blank)} alone in ${container}`),

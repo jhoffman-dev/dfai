@@ -413,8 +413,10 @@ const markedLine = (at: number): EditorNode[] => [
     piece(at + 5),
     cycle(MARK_SETS, at).flatMap((type) => marked(type, at)),
   ),
-  // Unmarked last: `#x` unmarked before a marked run is markdown the writer
-  // keeps as source, a limit of the format rather than of the writer.
+  // Unmarked last: a tag such as `#x` straight before a bold run that starts
+  // with punctuation has no faithful markdown (`**` cannot open after a letter
+  // there, and an escaped `x` is no longer the tag), so the writer keeps the
+  // block as source, as ADR-0004 allows. The limit is pinned in its own test.
   text(piece(at + 55)),
 ];
 
@@ -499,13 +501,20 @@ function listOf(type: string, at: number, inner?: EditorNode): EditorNode {
   };
 }
 
-/** Each block that holds lists, holding each kind of list, holding each kind of list. */
+/** What the generator nests innermost in a list's item: another list, or a quote. */
+export const INNERMOST = [...LISTS, 'blockquote'] as const;
+
+/** Each block that holds lists, holding each kind of list, holding each kind of list or a quote. */
 const nestedThreeDeep = (): EditorNode[] =>
   OUTERS.flatMap((outer, o) =>
     LISTS.flatMap((middle, m) =>
-      LISTS.map((inner, i) => {
-        const at = 4 * o + 2 * m + i;
-        const lists = listOf(middle, at + 1, listOf(inner, at + 2));
+      INNERMOST.map((inner, i) => {
+        const at = 6 * o + 3 * m + i;
+        const innermost =
+          inner === 'blockquote'
+            ? { type: inner, content: [paragraph(line(at + 2))] }
+            : listOf(inner, at + 2);
+        const lists = listOf(middle, at + 1, innermost);
         if (outer === 'blockquote') return { type: outer, content: [paragraph(line(at)), lists] };
         if (outer === 'callout') return callout([paragraph(line(at)), lists], at);
         return listOf(outer, at, lists);

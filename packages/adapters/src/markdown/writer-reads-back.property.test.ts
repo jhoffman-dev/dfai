@@ -134,10 +134,38 @@ const seededFrom = (first: number, last: number) =>
 /** How many seeds the guard draws: the generator alone, with no writer, so it is quick. */
 const GUARD_SEEDS = 400;
 
-/** A node of one kind in a place of another, or a set of marks in a place: `bold+link in tableCell`. */
-const PLACED = /^[\w+]+ in \w+$/;
+/**
+ * A node of one kind in a place of another, a set of marks in a place
+ * (`bold+link in tableCell`), or blocks nested three deep (`nested a>b>c`).
+ */
+const PLACED = /^(?:[\w+]+ in \w+|nested [\w>]+)$/;
 const placedIn = (docs: readonly EditorDocument[]) =>
   new Set(docs.flatMap((doc) => [...shapesOf(doc)].filter((shape) => PLACED.test(shape))));
+
+describe('a limit of markdown the writer keeps as source (ADR-0004)', () => {
+  it('keeps a tag straight before a bold run that starts with punctuation as source', () => {
+    // `**` cannot open after a letter before punctuation, and `#&#x78;` is no
+    // longer the tag `#x`: no markdown reads back as this. A writer that finds
+    // one will fail here, and this test can then go.
+    const doc: EditorDocument = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: '#x' },
+            { type: 'text', text: '_', marks: [{ type: 'bold' }] },
+          ],
+        },
+      ],
+    };
+    const { markdown, parsed } = saveAndReload(doc);
+    expect(markdown).toBe('#&#x78;**\\_**\n');
+    expect(parsed.doc.content.map((node) => [node.type, node.attrs?.['markdown']])).toEqual([
+      [RAW_BLOCK, '#&#x78;**\\_**'],
+    ]);
+  });
+});
 
 describe('an edited block reads back as the editor had it', () => {
   // The lists the listed documents are built from are typed out, where the
