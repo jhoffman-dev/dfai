@@ -12,7 +12,11 @@ export const FETCH_NOTE_NODE = 'Fetch Granola note';
 /** What the committed verify node holds instead of the secret, which James pastes in n8n only. */
 export const SECRET_PLACEHOLDER = 'whsec_PASTE_THE_SECRET_FROM_GRANOLA_HERE';
 
-const WEBHOOK_MODULES = ['./sha256.ts', './standard-webhook.ts', './granola-webhook.ts'] as const;
+export const WEBHOOK_MODULES = [
+  './sha256.ts',
+  './standard-webhook.ts',
+  './granola-webhook.ts',
+] as const;
 
 const WEBHOOK_HEADER = [
   '// DFAI Granola webhook check (Standard Webhooks, HMAC-SHA256 in plain JavaScript).',
