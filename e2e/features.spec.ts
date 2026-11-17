@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test, type Page } from './fixtures.ts';
@@ -161,4 +162,46 @@ test('switching Reading off with a PDF open keeps its tab, showing the notice', 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(settings(page).locator(':focus')).toHaveCount(1);
   await expect(features).not.toBeFocused();
+});
+
+type ManifestChunk = { file: string; src?: string; isEntry?: boolean; isDynamicEntry?: boolean };
+
+/** Every chunk a reader's part is in or imports statically, besides the entry: read from the build. */
+function readerChunks(): string[] {
+  const manifest = JSON.parse(
+    readFileSync(join('apps', 'desktop', 'dist', '.vite', 'manifest.json'), 'utf8'),
+  ) as Record<string, ManifestChunk & { imports?: string[] }>;
+  const parts = Object.values(manifest).filter(
+    (chunk) =>
+      chunk.isDynamicEntry === true && chunk.src?.includes('packages/shell/src/reader/') === true,
+  );
+  const imported = parts.flatMap((part) => part.imports ?? []).map((key) => manifest[key]);
+  const files = [...parts, ...imported]
+    .filter((chunk): chunk is ManifestChunk => chunk !== undefined && chunk.isEntry !== true)
+    .map((chunk) => chunk.file);
+  return [...new Set(files)];
+}
+
+test("a PDF tab kept with Reading off loads none of the reader's code as the app starts", async ({
+  page,
+}) => {
+  const chunks = readerChunks();
+  expect(chunks.length).toBeGreaterThan(0);
+  await openVault(page);
+  await openPdfFromPages(page);
+  await expect(reader(page)).toBeVisible();
+  await switchReading(page, false);
+  await expect(notice(page)).toBeVisible();
+
+  const fetched: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (chunks.some((file) => path.endsWith(file))) fetched.push(path);
+  });
+  // A reload stands in for quitting and relaunching: the tab comes back on the PDF.
+  await page.reload();
+  await expect(notice(page)).toBeVisible();
+  await expect(page.getByText(/notes indexed/)).toBeVisible();
+  await expect(reader(page)).toHaveCount(0);
+  expect(fetched).toEqual([]);
 });

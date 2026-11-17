@@ -105,16 +105,51 @@ export type EntryPoint = keyof typeof NEEDS;
 /**
  * The key feature each entry point belongs to, where the person can switch
  * it off in Settings → Features (#901, ADR-0055): offered then means the
- * platform can, and the person wants it. One with no feature here follows
- * the platform alone.
+ * platform can, and the person wants it. Every entry point says, so a new one
+ * cannot be left out by accident; null follows the platform alone.
  */
-const FEATURE_OF: Partial<Record<EntryPoint, FeatureId>> = {
+const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
+  connectionsSettings: null,
+  localApiServer: null,
+  globalCaptureSettings: null,
+  globalCaptureShortcut: null,
+  secretsSettings: null,
+  googleCalendarSettings: null,
+  meetingSync: null,
+  blockSync: null,
+  granolaSettings: null,
+  granolaPull: null,
+  slackSettings: null,
+  slackLinkOffer: null,
+  kindleSettings: null,
+  kindleCommands: null,
+  claudeSettings: null,
+  claudeChat: null,
+  skillDraft: null,
+  claudeAutomations: null,
+  syncSettings: null,
+  syncLight: null,
+  backgroundSync: null,
+  newSyncRepository: null,
+  chooseVaultFolder: null,
+  openVaultFromGitHub: null,
+  meaningSearch: null,
+  exportNotes: null,
+  pdfExport: null,
+  googleDocExport: null,
+  webSourceRefresh: null,
+  sqliteSourceRefresh: null,
+  regenerateThumbnail: null,
+  overwriteConflict: null,
   libraryPages: 'reading',
   documentReader: 'reading',
   addDocuments: 'reading',
 };
 
-/** The entry point each page a switch can hide is drawn under, by the page's kind. */
+/**
+ * The entry point each page a switch can hide is drawn under, by the page's
+ * kind: the one table from a place to its feature, through `FEATURE_OF`.
+ */
 const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
   library: 'libraryPages',
   highlights: 'libraryPages',
@@ -134,7 +169,7 @@ export function capabilitiesNeeded(entry: EntryPoint): readonly PlatformCapabili
 
 /** The feature an entry point belongs to, or null when no switch hides it. */
 export function featureOfEntry(entry: EntryPoint): FeatureId | null {
-  return FEATURE_OF[entry] ?? null;
+  return FEATURE_OF[entry];
 }
 
 /**
@@ -166,7 +201,7 @@ export function offeredWithFeatures(
 ): EntryPointsOffered {
   const off = ENTRY_POINTS.filter((entry) => {
     const feature = FEATURE_OF[entry];
-    return offered[entry] && feature !== undefined && !on[feature];
+    return offered[entry] && feature !== null && !on[feature];
   });
   if (off.length === 0) return offered;
   return Object.freeze({
@@ -176,12 +211,20 @@ export function offeredWithFeatures(
 }
 
 /**
- * Whether the page a place names is offered: a page no switch can hide
- * always is. One that is not is what a tab kept on it shows a notice for.
+ * The switched-off feature a page belongs to, when its entry point is not
+ * offered for that: what a tab kept on it shows a notice for in place of the
+ * page. Null for a page that is drawn.
  */
-export function pageOffered(place: PagePlace, offered: EntryPointsOffered): boolean {
+export function pageTurnedOff(place: PagePlace, offered: EntryPointsOffered): FeatureId | null {
   const entry = PAGE_ENTRY[place.kind];
-  return entry === undefined || offered[entry];
+  if (entry === undefined || offered[entry]) return null;
+  return FEATURE_OF[entry];
+}
+
+/** The feature whose page a place is, on or off: null for a page no switch can hide. */
+export function featureOfPage(place: PagePlace): FeatureId | null {
+  const entry = PAGE_ENTRY[place.kind];
+  return entry === undefined ? null : FEATURE_OF[entry];
 }
 
 /** Every entry point offered, as a platform with every capability has them. */

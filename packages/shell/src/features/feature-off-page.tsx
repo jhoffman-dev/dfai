@@ -1,3 +1,4 @@
+import type { StoreApi } from 'zustand';
 import type { EntryPointsOffered } from '@dfai/application';
 import { featureById, type FeatureId } from '@dfai/domain';
 import { FeatureOffNotice } from '@dfai/ui';
@@ -9,6 +10,12 @@ export interface FeaturesWiring {
   readonly offered: EntryPointsOffered;
   /** Opens Settings at Features. */
   readonly onTurnOn: () => void;
+  /**
+   * Whether the open vault's settings have said which features are off: a
+   * store, so only a tab on a feature's page hears it change, and a vault
+   * opening draws nothing else for it.
+   */
+  readonly known: StoreApi<boolean>;
 }
 
 /**

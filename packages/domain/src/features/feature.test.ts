@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath } from '../vault/vault-path.ts';
-import type { NavigationPlace } from '../panes/navigation-history.ts';
 import {
   EVERY_FEATURE_ON,
   featureById,
-  featureOfPlace,
   FEATURES,
   featuresOffAfter,
+  featuresOffAsWritten,
   featuresOn,
   isFeatureId,
   parseFeaturesOff,
@@ -106,25 +104,27 @@ describe('featuresOffAfter', () => {
   });
 });
 
-describe('featureOfPlace', () => {
-  const pdf = createVaultPath('Library/The Lantern Keepers.pdf');
-
-  it("names Reading for the Library, All highlights and a document's reader", () => {
-    const places: NavigationPlace[] = [
-      { kind: 'library' },
-      { kind: 'highlights' },
-      { kind: 'document', path: pdf },
-    ];
-    expect(places.map(featureOfPlace)).toEqual(['reading', 'reading', 'reading']);
+describe('featuresOffAsWritten', () => {
+  it('keeps every string as written, in order, ids this version does not know among them', () => {
+    expect(featuresOffAsWritten(['somethingNew', 'reading', 7, null, 'later'])).toEqual([
+      'somethingNew',
+      'reading',
+      'later',
+    ]);
   });
 
-  it('names no feature for a note, even one beside a PDF, or for pages no switch hides', () => {
-    const places: NavigationPlace[] = [
-      { kind: 'note', path: createVaultPath('Library/The Lantern Keepers.md') },
-      { kind: 'today' },
-      { kind: 'inbox' },
-      { kind: 'tags', tag: null },
-    ];
-    expect(places.map(featureOfPlace)).toEqual([null, null, null, null]);
+  it('holds nothing to keep in what is not a list', () => {
+    for (const value of [undefined, null, 'reading', { reading: true }]) {
+      expect(featuresOffAsWritten(value)).toEqual([]);
+    }
+  });
+
+  it('flips one id and leaves the others where they stand', () => {
+    const written = featuresOffAsWritten(['somethingNew', 'reading']);
+    expect(featuresOffAfter(written, { id: 'reading', on: true })).toEqual(['somethingNew']);
+    expect(featuresOffAfter(['somethingNew'], { id: 'reading', on: false })).toEqual([
+      'somethingNew',
+      'reading',
+    ]);
   });
 });

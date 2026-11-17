@@ -2497,7 +2497,13 @@ function AppWindow({
       showOverlay,
     ],
   );
-  const featureOff = useFeatureOffWiring({ offered, overlay, showOverlay });
+  const featureOff = useFeatureOffWiring({
+    offered,
+    known: features.known,
+    overlay,
+    showOverlay,
+    hideOverlay,
+  });
   const settingsShown = settingsSectionsShown({
     vaultOpen: location !== null,
     offered,

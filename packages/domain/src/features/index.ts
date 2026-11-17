@@ -1,9 +1,9 @@
 export {
   EVERY_FEATURE_ON,
   featureById,
-  featureOfPlace,
   FEATURES,
   FEATURES_OFF_KEY,
+  featuresOffAsWritten,
   featuresOffAfter,
   featuresOn,
   isFeatureId,

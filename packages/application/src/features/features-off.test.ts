@@ -13,6 +13,14 @@ describe('featuresOffOf', () => {
   it('reads the listed features through the domain rules', () => {
     expect(featuresOffOf({ featuresOff: ['reading', 'someday', 'reading'] })).toEqual(['reading']);
   });
+
+  it('answers the same frozen array for the same content, read after read', () => {
+    expect(featuresOffOf({})).toBe(featuresOffOf({ featuresOff: 'reading' }));
+    expect(Object.isFrozen(featuresOffOf({}))).toBe(true);
+    const off = featuresOffOf({ featuresOff: ['reading'] });
+    expect(featuresOffOf({ featuresOff: ['someday', 'reading'] })).toBe(off);
+    expect(Object.isFrozen(off)).toBe(true);
+  });
 });
 
 describe('saveFeatureSwitch', () => {
@@ -30,13 +38,27 @@ describe('saveFeatureSwitch', () => {
 
   it('takes a feature switched on back out of the list, keeping ids it does not know', async () => {
     const { fs, written } = vaultWith({
-      [PATH]: '---\n{"featuresOff":["reading"],"sidebarOrder":["views"]}\n---\n',
+      [PATH]: '---\n{"featuresOff":["later","reading","someday"],"sidebarOrder":["views"]}\n---\n',
     });
     const settings = createSettingsWriter({ fs, markdown: jsonMarkdown() });
     await saveFeatureSwitch({ settings, id: 'reading', on: true });
 
-    expect(written[PATH]).toContain('"featuresOff":[]');
+    expect(written[PATH]).toContain('"featuresOff":["later","someday"]');
     expect(written[PATH]).toContain('"sidebarOrder":["views"]');
+  });
+
+  it('replaces a value that is not a list with a list of only what was just chosen', async () => {
+    for (const [on, expected] of [
+      [false, '"featuresOff":["reading"]'],
+      [true, '"featuresOff":[]'],
+    ] as const) {
+      const { fs, written } = vaultWith({
+        [PATH]: '---\n{"featuresOff":"reading, someday"}\n---\n',
+      });
+      const settings = createSettingsWriter({ fs, markdown: jsonMarkdown() });
+      await saveFeatureSwitch({ settings, id: 'reading', on });
+      expect(written[PATH]).toContain(expected);
+    }
   });
 
   it('makes the settings file when there is none', async () => {

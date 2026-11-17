@@ -5,7 +5,6 @@ import {
   DESKTOP_CAPABILITIES,
   EVERY_FEATURE_ON,
   FEATURES,
-  featureOfPlace,
   featuresOn,
   PLATFORM_CAPABILITIES,
   WEB_CAPABILITIES,
@@ -24,7 +23,8 @@ import {
   featureOfEntry,
   NEEDS_THE_DESKTOP_APP,
   offeredWithFeatures,
-  pageOffered,
+  featureOfPage,
+  pageTurnedOff,
   presetsOffered,
   ruleHeldByPlatform,
   sourceRefreshOffered,
@@ -172,7 +172,7 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
   });
 });
 
-describe('pageOffered (#901)', () => {
+describe('pageTurnedOff and featureOfPage (#901)', () => {
   const pdf = createVaultPath('Library/The Lantern Keepers.pdf');
   const readingPages: PagePlace[] = [
     { kind: 'library' },
@@ -180,22 +180,27 @@ describe('pageOffered (#901)', () => {
     { kind: 'document', path: pdf },
   ];
 
-  it("hides Reading's pages while it is off, the pages the domain says are Reading's", () => {
+  it('names Reading for its pages, and hides them while it is off', () => {
     const offered = entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(['reading']));
-    expect(readingPages.map(featureOfPlace)).toEqual(['reading', 'reading', 'reading']);
-    expect(readingPages.map((place) => pageOffered(place, offered))).toEqual([false, false, false]);
+    expect(readingPages.map(featureOfPage)).toEqual(['reading', 'reading', 'reading']);
+    expect(readingPages.map((place) => pageTurnedOff(place, offered))).toEqual([
+      'reading',
+      'reading',
+      'reading',
+    ]);
   });
 
-  it('offers every page while every feature is on', () => {
+  it('draws every page while every feature is on', () => {
     const offered = entryPointsOffered(DESKTOP_CAPABILITIES);
-    expect(readingPages.map((place) => pageOffered(place, offered))).toEqual([true, true, true]);
+    expect(readingPages.map((place) => pageTurnedOff(place, offered))).toEqual([null, null, null]);
   });
 
-  it('offers a page no switch hides, whatever is off', () => {
+  it('draws a page no switch hides, whatever is off', () => {
     const offered = entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(['reading']));
-    expect(featureOfPlace({ kind: 'today' })).toBeNull();
-    expect(pageOffered({ kind: 'today' }, offered)).toBe(true);
-    expect(pageOffered({ kind: 'tags', tag: null }, offered)).toBe(true);
+    for (const place of [{ kind: 'today' }, { kind: 'tags', tag: null }] as const) {
+      expect(featureOfPage(place)).toBeNull();
+      expect(pageTurnedOff(place, offered)).toBeNull();
+    }
   });
 });
 

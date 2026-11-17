@@ -9,7 +9,7 @@ import {
   type PlatformCapability,
 } from '@dfai/domain';
 import { offeredFor } from '../features/offered-for.ts';
-import { settingsSectionsShown } from './settings-sections.ts';
+import { APP_SETTINGS_ORDER, settingsSectionsShown } from './settings-sections.ts';
 
 const titles = (offered: ReturnType<typeof entryPointsOffered>, vaultOpen = true) =>
   settingsSectionsShown({ vaultOpen, offered }).links.map((section) => section.title);
@@ -63,7 +63,9 @@ describe('settingsSectionsShown', () => {
     expect(titles(entryPointsOffered(DESKTOP_CAPABILITIES))).toEqual(
       titles(entryPointsOffered(EVERYTHING)),
     );
-    expect(titles(entryPointsOffered(DESKTOP_CAPABILITIES))).toHaveLength(14);
+    expect(titles(entryPointsOffered(DESKTOP_CAPABILITIES))).toHaveLength(
+      APP_SETTINGS_ORDER.filter((entry) => entry.whenLimited !== true).length,
+    );
   });
 
   it.each([

@@ -20,6 +20,11 @@ export interface FeaturesSetting {
   readonly off: readonly FeatureId[];
   /** Whether `off` is what this vault's settings hold; the switches wait for it. */
   readonly loaded: boolean;
+  /**
+   * Whether this vault's settings note has answered at all, read or found
+   * unreadable: until then nobody knows what is off, so a feature's page waits.
+   */
+  readonly answered: boolean;
   /** Why the last switch was not saved. */
   readonly problem: string | null;
   readonly switchFeature: (change: { readonly id: FeatureId; readonly on: boolean }) => void;
@@ -59,7 +64,7 @@ export function useFeaturesSetting({
     },
     [fs, markdown],
   );
-  const { value, loaded, save, problem } = useVaultSetting({
+  const { value, loaded, answered, save, problem } = useVaultSetting({
     fs,
     markdown,
     parse: featuresOffOf,
@@ -82,7 +87,7 @@ export function useFeaturesSetting({
   const rows = useMemo(() => featureRows(off), [off]);
   // One object while nothing in it changes: Settings → Features draws again only then.
   return useMemo(
-    () => ({ off, loaded, problem, switchFeature, rows, onSwitch }),
-    [off, loaded, problem, switchFeature, rows, onSwitch],
+    () => ({ off, loaded, answered, problem, switchFeature, rows, onSwitch }),
+    [off, loaded, answered, problem, switchFeature, rows, onSwitch],
   );
 }

@@ -76,6 +76,9 @@ const ORDER: readonly {
   { key: 'about', withVault: false },
 ];
 
+/** The table itself, for a test to derive what it expects from rather than count. */
+export { ORDER as APP_SETTINGS_ORDER };
+
 /** The sections shown, as the app draws them and as the dialog lists them. */
 export interface SettingsSectionsShown {
   readonly keys: readonly AppSettingsSection[];

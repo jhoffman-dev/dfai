@@ -20,6 +20,8 @@ import { SETTINGS_SECTIONS } from '@dfai/ui';
 import type { Overlay } from '../overlay.ts';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
 import { createReadInvalidator } from '../reads/read-invalidator.ts';
+import { createStore } from 'zustand';
+import { offeredFor } from './offered-for.ts';
 import { paletteCommandsOffered, useFeatureOffWiring, useFeatures } from './use-features.ts';
 
 const preloaded = vi.hoisted(() => [] as FeaturesOn[]);
@@ -97,6 +99,16 @@ describe('useFeatures', () => {
     expect(hook.result.current.offered).toBe(off);
   });
 
+  it("says the vault's settings have answered only once they have, read or not", async () => {
+    const { hook } = renderFeatures(noteVault('---\nfeaturesOff: [reading]\n---\n').fs);
+    expect(hook.result.current.known.getState()).toBe(false);
+    await waitFor(() => expect(hook.result.current.known.getState()).toBe(true));
+    const unreadable = fakeVaultFs({ readNotes: () => Promise.reject(new Error('locked')) });
+    const failing = renderFeatures(unreadable).hook;
+    await waitFor(() => expect(failing.result.current.known.getState()).toBe(true));
+    expect(failing.result.current.offered).toBe(platform);
+  });
+
   it("fetches the chunks of the features on once the vault's settings say which", async () => {
     preloaded.length = 0;
     const { hook } = renderFeatures(noteVault('---\nfeaturesOff: [reading]\n---\n').fs);
@@ -110,14 +122,35 @@ describe('useFeatures', () => {
 describe('useFeatureOffWiring', () => {
   function renderWiring() {
     const shown: Overlay[] = [];
+    const hidden: Overlay[] = [];
     const showOverlay = (overlay: Overlay) => void shown.push(overlay);
+    const hideOverlay = (overlay: Overlay) => void hidden.push(overlay);
+    const known = createStore<boolean>()(() => false);
     const hook = renderHook(
       ({ overlay, offered }: { overlay: Overlay | null; offered: typeof platform }) =>
-        useFeatureOffWiring({ offered, overlay, showOverlay }),
+        useFeatureOffWiring({ offered, known, overlay, showOverlay, hideOverlay }),
       { initialProps: { overlay: null as Overlay | null, offered: platform } },
     );
-    return { hook, shown };
+    return { hook, shown, hidden };
   }
+
+  it('closes Add PDF… or Add EPUB… once adding documents stops being offered', () => {
+    const readingOff = offeredFor(platform, ['reading']);
+    for (const overlay of ['add-pdf', 'add-epub'] as const) {
+      const { hook, hidden } = renderWiring();
+      hook.rerender({ overlay, offered: platform });
+      expect(hidden).toEqual([]);
+      hook.rerender({ overlay, offered: readingOff });
+      expect(hidden).toEqual([overlay]);
+    }
+  });
+
+  it('leaves an overlay no switch hides open, whatever is off', () => {
+    const { hook, hidden } = renderWiring();
+    hook.rerender({ overlay: 'settings', offered: offeredFor(platform, ['reading']) });
+    hook.rerender({ overlay: 'search', offered: offeredFor(platform, ['reading']) });
+    expect(hidden).toEqual([]);
+  });
 
   it('hands the tabs one object while what is offered is the same', () => {
     const { hook } = renderWiring();

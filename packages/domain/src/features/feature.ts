@@ -1,5 +1,3 @@
-import type { NavigationPlace } from '../panes/navigation-history.ts';
-
 /**
  * The key features a person can switch off in Settings → Features (#901), so
  * that what they never use leaves the view. Switching one off deletes
@@ -71,25 +69,28 @@ export function featuresOn(
 /** Every feature on, as a vault that never switched one off has them. */
 export const EVERY_FEATURE_ON: FeaturesOn = featuresOn([]);
 
-/** The off list after a feature's switch is flipped: kept in the order the features were switched off. */
-export function featuresOffAfter(
-  off: readonly FeatureId[],
-  { id, on }: { readonly id: FeatureId; readonly on: boolean },
-): readonly FeatureId[] {
+/**
+ * The off list after one feature's switch is flipped: that id taken out, and
+ * put back at the end when it is switched off. Every other id is kept as it
+ * stands, in its order, whether or not this version knows it.
+ */
+export function featuresOffAfter<Id extends string>(
+  off: readonly Id[],
+  { id, on }: { readonly id: Id; readonly on: boolean },
+): readonly Id[] {
   const others = off.filter((other) => other !== id);
   return on ? others : [...others, id];
 }
 
-/** The feature whose page a place is, or null when it belongs to none that can be switched off. */
-export function featureOfPlace(place: NavigationPlace): FeatureId | null {
-  switch (place.kind) {
-    case 'library':
-    case 'highlights':
-    case 'document':
-      return 'reading';
-    default:
-      return null;
-  }
+/**
+ * The off list as the settings file holds it, for a write to change one id
+ * of: every string as written, in its order, ids this version does not know
+ * among them, so a switch a newer version made on another Mac survives a flip
+ * here. What is not a list holds no switch to keep: a write replaces it.
+ */
+export function featuresOffAsWritten(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
 /** The feature itself, by its id. */

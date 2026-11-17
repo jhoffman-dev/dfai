@@ -32,14 +32,21 @@ rather than the platform. A second set of checks beside it would drift from it.
    features are a registry in the domain (`packages/domain/src/features`):
    each has an id, a label, a one-line summary, and the features it
    `requires`; one is off whenever something it requires is. `FEATURE_OF`,
-   beside `NEEDS`, names the feature of each entry point a switch can hide.
+   beside `NEEDS`, names the feature of every entry point, or null for one no
+   switch hides: a new entry point cannot leave it unsaid. `PAGE_ENTRY` names
+   the entry point a page is drawn under, so a place reaches its feature
+   through the one table.
    Everything else keeps reading `offered.*`, as before; nothing grows an
    `if` of its own.
 
 2. **The off list, per vault.** `featuresOff: [ids]` in `.atlas/settings.md`.
    Storing what is off means an absent key is everything on, so no existing
    vault changes, and a feature added later arrives on. An id the app does not
-   know is ignored; anything that is not a list switches nothing off. It is
+   know is ignored when read, and kept when written: a switch starts from the
+   list as the file holds it and adds or takes out its own id alone, so what a
+   newer version switched off on another Mac survives. Anything that is not a
+   list switches nothing off; it is the one case where a switch rewrites the
+   key whole, as a list holding only what was just chosen. It is
    read in the window's one read of the settings note and settles in the same
    commit as the sidebar's order, and a switch is one byte-preserving write of
    that key through the vault's one settings writer. Per vault rather than per
@@ -61,7 +68,11 @@ rather than the platform. A second set of checks beside it would drift from it.
    tab, a link, a highlight's jump, a file clicked in Pages, a search result —
    reaches `containerFor` like any other, which draws a notice in its place:
    "Reading is turned off", with "Turn on in Settings", which opens Settings
-   at Features. Slice 1 gates Reading (PDF and EPUB, the Library, All
+   at Features. Until the vault's settings have answered, a tab on a
+   feature's page shows its empty frame rather than the page, so a kept tab
+   on a PDF never loads the reader of a Reading that turns out to be off; an
+   overlay a feature's command opened (Add PDF…) closes when its entry point
+   stops being offered. Slice 1 gates Reading (PDF and EPUB, the Library, All
    highlights) under three new entry points, `libraryPages`, `documentReader`
    and `addDocuments`; the other six switches come in later slices of #901.
 
@@ -83,6 +94,11 @@ rather than the platform. A second set of checks beside it would drift from it.
   that needs a capability" where they said "every entry point".
 - Before a vault's settings are read, every feature is on, so for a vault
   with Reading off its rows show for the moment the read takes, as the
-  sidebar's default order does.
+  sidebar's default order does. Its pages wait, as above.
+- A comment being typed in a highlight of a literature note's panel, or in
+  the reader, is lost if Reading is switched off from another device while
+  it is open, as closing the tab would lose it.
+- Until slice 2 makes Kindle a feature that requires Reading, Kindle's sync
+  and ⌘K's "Sync Kindle now" keep running with Reading off.
 - Settings opened from the notice opens at Features with its heading focused;
   opened any other way, it opens at its top as before.

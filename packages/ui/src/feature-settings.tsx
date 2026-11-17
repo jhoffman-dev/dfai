@@ -1,7 +1,6 @@
 import { memo } from 'react';
 import { SettingsSection } from './settings-section.tsx';
 import { SETTINGS_SECTIONS } from './settings-section-links.ts';
-import { Toggle } from './toggle.tsx';
 
 /** One key feature's row in Settings → Features. */
 export interface FeatureRow {
@@ -49,12 +48,19 @@ export const FeatureSettings = memo(function FeatureSettings({
               {row.needs === null ? row.summary : `${row.summary} Needs ${row.needs}.`}
             </span>
           </span>
-          <Toggle
-            label={row.label}
-            checked={row.on}
+          {/* `Toggle`'s markup and classes, drawn in place: a component per row would be
+              a counted render per feature ("Open Settings" is held to a work budget). */}
+          <button
+            type="button"
+            role="switch"
+            className="toggle"
+            aria-checked={row.on}
+            aria-label={row.label}
             disabled={!ready || row.needs !== null}
-            onChange={(on) => onSwitch({ id: row.id, on })}
-          />
+            onClick={() => onSwitch({ id: row.id, on: !row.on })}
+          >
+            <span className="toggle__knob" />
+          </button>
         </div>
       ))}
       {problem !== null && (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createStore, type StoreApi } from 'zustand';
 import type {
   ActivityLog,
   EntryPoint,
@@ -31,14 +32,21 @@ export function useFeatures({
   markdown: MarkdownPort;
   vaultKey: string | null;
   activity: Pick<ActivityLog, 'inOpenVault'>;
-}): { readonly offered: EntryPointsOffered; readonly setting: FeaturesSetting } {
+}): {
+  readonly offered: EntryPointsOffered;
+  readonly setting: FeaturesSetting;
+  readonly known: StoreApi<boolean>;
+} {
   const setting = useFeaturesSetting(read);
   const offered = offeredFor(platform, setting.off);
-  const { loaded, off } = setting;
+  const { loaded, answered, off } = setting;
   useEffect(() => {
     if (loaded) void preloadFeatures(featuresOn(off));
   }, [loaded, off]);
-  return { offered, setting };
+  // Told after the commit, so only what subscribes (a tab on a feature's page) draws for it.
+  const [known] = useState(() => createStore<boolean>()(() => false));
+  useEffect(() => known.setState(answered, true), [known, answered]);
+  return { offered, setting, known };
 }
 
 /**
@@ -49,13 +57,18 @@ export function useFeatures({
  */
 export function useFeatureOffWiring({
   offered,
+  known,
   overlay,
   showOverlay,
+  hideOverlay,
 }: {
   offered: EntryPointsOffered;
+  known: StoreApi<boolean>;
   overlay: Overlay | null;
   showOverlay: (overlay: Overlay) => void;
+  hideOverlay: (overlay: Overlay) => void;
 }): { readonly wiring: FeaturesWiring; readonly settingsAt: SettingsSectionLink | null } {
+  useOverlaysOffered({ offered, overlay, hideOverlay });
   const [settingsAt, setSettingsAt] = useState<SettingsSectionLink | null>(null);
   // Forgotten once Settings has been open and closed, so no later opening
   // inherits it, however the notice's own opening was drawn. While it is null,
@@ -73,8 +86,35 @@ export function useFeatureOffWiring({
     setSettingsAt(SETTINGS_SECTIONS.features);
     showOverlay('settings');
   }, [showOverlay]);
-  const wiring = useMemo(() => ({ offered, onTurnOn }), [offered, onTurnOn]);
+  const wiring = useMemo(() => ({ offered, onTurnOn, known }), [offered, onTurnOn, known]);
   return { wiring, settingsAt };
+}
+
+/**
+ * The overlay a feature's entry point opens, by the overlay: an Add PDF…
+ * left open when Reading is switched off — on another Mac, say — closes, as
+ * its command is gone.
+ */
+const OVERLAY_ENTRY: Partial<Record<Overlay, EntryPoint>> = {
+  'add-pdf': 'addDocuments',
+  'add-epub': 'addDocuments',
+};
+
+/** Closes the overlay that is up once its entry point stops being offered. */
+function useOverlaysOffered({
+  offered,
+  overlay,
+  hideOverlay,
+}: {
+  offered: EntryPointsOffered;
+  overlay: Overlay | null;
+  hideOverlay: (overlay: Overlay) => void;
+}): void {
+  const entry = overlay === null ? undefined : OVERLAY_ENTRY[overlay];
+  const gone = entry !== undefined && !offered[entry];
+  useEffect(() => {
+    if (gone && overlay !== null) hideOverlay(overlay);
+  }, [gone, overlay, hideOverlay]);
 }
 
 /** The palette's commands the window offers: one with an `entry` only while that is offered. */
