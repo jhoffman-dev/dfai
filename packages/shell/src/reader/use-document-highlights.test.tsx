@@ -90,10 +90,13 @@ function setUp({ dirty = false }: { dirty?: boolean } = {}) {
   return { files, ports };
 }
 
-function useTab(ports: DocumentPorts) {
-  const note = useLiteratureNoteOf({ ports, vault: VAULT, pdf: PDF }) ?? null;
-  const { highlights } = usePlacedHighlights({ ports, vault: VAULT, note, opened, generation: 1 });
-  const writes = useReaderWrites({ ports, vault: VAULT, note, pdf: PDF, opened });
+function useTab(
+  ports: DocumentPorts,
+  { doc = opened, vault = VAULT }: { doc?: PdfJsDocument; vault?: string } = {},
+) {
+  const note = useLiteratureNoteOf({ ports, vault, pdf: PDF }) ?? null;
+  const { highlights } = usePlacedHighlights({ ports, vault, note, opened: doc, generation: 1 });
+  const writes = useReaderWrites({ ports, vault, note, pdf: PDF, opened: doc });
   return { note, highlights, ...writes };
 }
 
@@ -165,6 +168,104 @@ describe("a reader tab's literature note", () => {
     await act(() => result.current.actions.onRemove(id));
     await waitFor(() => expect(result.current.highlights).toEqual([]));
     expect(files.get(NOTE)).not.toContain('atlas:highlight');
+  });
+
+  it('removes two highlights asked for at once, the second after the first has landed (#880)', async () => {
+    const { ports, files } = setUp();
+    const { result } = renderHook(() => useTab(ports), { wrapper: queryWrapper().wrapper });
+    await waitFor(() => expect(result.current.note).toBe(NOTE));
+    for (const page of [1, 2]) {
+      await act(() =>
+        result.current.actions.onHighlight({
+          selection: { page, start: 0, end: 7 },
+          style: { mark: 'highlight', color: 'yellow' },
+        }),
+      );
+    }
+    await waitFor(() => expect(result.current.highlights).toHaveLength(2));
+    const [first, second] = result.current.highlights.map((highlight) => highlight.id);
+
+    // As the host does: a write against text that is no longer on disk is refused.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const write = ports.fs.writeTextFile;
+    ports.fs.writeTextFile = async (request) => {
+      await held;
+      if (files.get(request.path) !== request.expectedText) {
+        throw new Error('the note changed on disk since it was opened');
+      }
+      return write(request);
+    };
+    let removed: Promise<boolean[]> = Promise.resolve([]);
+    act(() => {
+      removed = Promise.all([
+        result.current.actions.onRemove(first as string),
+        result.current.actions.onRemove(second as string),
+      ]);
+    });
+    release();
+    await act(async () => expect(await removed).toEqual([true, true]));
+    expect(files.get(NOTE)).not.toContain('atlas:highlight');
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('asks for no area picture for a repeat, nor while the note has unsaved typing (ADR-0043)', async () => {
+    const drawn = vi.fn(opened.pictureOf);
+    const doc: PdfJsDocument = { ...opened, pictureOf: drawn };
+    const area = {
+      page: 2,
+      box: { x: 0.1, y: 0.1, width: 0.3, height: 0.2 },
+      style: { mark: 'highlight', color: 'yellow' },
+    } as const;
+    const listed = (ports: DocumentPorts) => ({
+      ...ports,
+      fs: { ...ports.fs, listDirectory: async () => [] },
+    });
+
+    const free = setUp();
+    const tab = renderHook(() => useTab(listed(free.ports), { doc, vault: '/vault-repeat' }), {
+      wrapper: queryWrapper().wrapper,
+    });
+    await waitFor(() => expect(tab.result.current.note).toBe(NOTE));
+    await act(() => tab.result.current.actions.onHighlightArea(area));
+    await act(() => tab.result.current.actions.onHighlightArea(area));
+    expect(drawn).toHaveBeenCalledTimes(1);
+
+    drawn.mockClear();
+    const typing = setUp({ dirty: true });
+    const dirty = renderHook(() => useTab(listed(typing.ports), { doc, vault: '/vault-typing' }), {
+      wrapper: queryWrapper().wrapper,
+    });
+    await waitFor(() => expect(dirty.result.current.note).toBe(NOTE));
+    await act(() => dirty.result.current.actions.onHighlightArea(area));
+    expect(dirty.result.current.notice).toMatch(/unsaved/i);
+    expect(drawn).not.toHaveBeenCalled();
+  });
+
+  it('answers a second removal of a highlight already gone as done, with no notice (#880)', async () => {
+    const { ports, files } = setUp();
+    const { result } = renderHook(() => useTab(ports, { vault: '/vault-gone' }), {
+      wrapper: queryWrapper().wrapper,
+    });
+    await waitFor(() => expect(result.current.note).toBe(NOTE));
+    await act(() =>
+      result.current.actions.onHighlight({
+        selection: { page: 1, start: 0, end: 7 },
+        style: { mark: 'highlight', color: 'yellow' },
+      }),
+    );
+    await waitFor(() => expect(result.current.highlights).toHaveLength(1));
+    const id = result.current.highlights[0]?.id as string;
+    let removals: Promise<boolean[]> = Promise.resolve([]);
+    act(() => {
+      removals = Promise.all([
+        result.current.actions.onRemove(id),
+        result.current.actions.onRemove(id),
+      ]);
+    });
+    await act(async () => expect(await removals).toEqual([true, true]));
+    expect(files.get(NOTE)).not.toContain(`^${id}`);
+    expect(result.current.notice).toBeNull();
   });
 
   it('saves an area’s picture and its highlight', async () => {

@@ -353,6 +353,107 @@ describe('the highlights panel', () => {
     expect(props.onRemove).toHaveBeenCalledWith('k3x9q2');
   });
 
+  it('asks for a removal once while it is being written, by click or by Enter, keeping focus (#880)', async () => {
+    const props = panel([HIGHLIGHT]);
+    let answer: (removed: boolean) => void = () => {};
+    props.onRemove.mockImplementation(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete…' }));
+    const asking = screen.getByRole('group', { name: 'Delete this highlight?' });
+    const remove = within(asking).getByRole('button', { name: 'Delete' });
+    remove.focus();
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('{Enter}');
+    await userEvent.click(remove);
+    expect(props.onRemove).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(remove);
+    expect(remove.getAttribute('aria-disabled')).toBe('true');
+    expect(asking.getAttribute('aria-busy')).toBe('true');
+    // Clicked without moving the focus, Keep does nothing while the removal is written.
+    fireEvent.click(within(asking).getByRole('button', { name: 'Keep' }));
+    expect(screen.getByRole('group', { name: 'Delete this highlight?' })).toBe(asking);
+
+    // Refused, it can be asked for again from where the focus is.
+    answer(false);
+    await waitFor(() => expect(remove.getAttribute('aria-disabled')).toBe('false'));
+    expect(asking.getAttribute('aria-busy')).toBe('false');
+    await userEvent.keyboard('{Enter}');
+    expect(props.onRemove).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays busy once removed until the row goes, then hands focus to the next row (#880)', async () => {
+    const second: ReaderHighlight = { ...HIGHLIGHT, id: 'm4p2', quote: 'Fog came in' };
+    const props = {
+      entries: pdfPanelEntries([HIGHLIGHT, second]),
+      emptyHint: 'Select words on a page to highlight them.',
+      flashing: null,
+      onShow: vi.fn(),
+      onEditComment: vi.fn(async () => true),
+      onRemove: vi.fn(async () => true),
+    };
+    const { rerender } = render(<HighlightsPanel {...props} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Delete…' })[0] as HTMLElement);
+    const remove = screen.getByRole('button', { name: 'Delete' });
+    remove.focus();
+    await userEvent.keyboard('{Enter}');
+    // Answered, but still shown until the note is read again: not to be asked for twice.
+    await waitFor(() => expect(props.onRemove).toHaveBeenCalledTimes(1));
+    expect(remove.getAttribute('aria-disabled')).toBe('true');
+    await userEvent.keyboard('{Enter}');
+    expect(props.onRemove).toHaveBeenCalledTimes(1);
+
+    rerender(<HighlightsPanel {...props} entries={pdfPanelEntries([second])} />);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /Fog came in/ })),
+    );
+  });
+
+  it('hands focus on when the row went before its removal answered, and only then (#880)', async () => {
+    const second: ReaderHighlight = { ...HIGHLIGHT, id: 'm4p2', quote: 'Fog came in' };
+    const third: ReaderHighlight = { ...HIGHLIGHT, id: 'r7t1', quote: 'The keepers lit' };
+    let answer: (removed: boolean) => void = () => {};
+    const props = {
+      entries: pdfPanelEntries([HIGHLIGHT, second]),
+      emptyHint: 'Select words on a page to highlight them.',
+      flashing: null,
+      onShow: vi.fn(),
+      onEditComment: vi.fn(async () => true),
+      onRemove: vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve))),
+    };
+    const { rerender } = render(<HighlightsPanel {...props} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Delete…' })[0] as HTMLElement);
+    screen.getByRole('button', { name: 'Delete' }).focus();
+    await userEvent.keyboard('{Enter}');
+
+    // The list is read again (another change's news) before the removal answers.
+    rerender(<HighlightsPanel {...props} entries={pdfPanelEntries([second])} />);
+    answer(true);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /Fog came in/ })),
+    );
+
+    (document.activeElement as HTMLElement).blur();
+    rerender(<HighlightsPanel {...props} entries={pdfPanelEntries([second, third])} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('hands focus to the panel’s heading when the last row goes (#880)', async () => {
+    const props = {
+      entries: pdfPanelEntries([HIGHLIGHT]),
+      emptyHint: 'Select words on a page to highlight them.',
+      flashing: null,
+      onShow: vi.fn(),
+      onEditComment: vi.fn(async () => true),
+      onRemove: vi.fn(async () => true),
+    };
+    const { rerender } = render(<HighlightsPanel {...props} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Delete…' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    rerender(<HighlightsPanel {...props} entries={[]} />);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: /Highlights/ })),
+    );
+  });
+
   it('says when a highlight could not be found exactly, and an area for what it is', () => {
     panel([
       { ...HIGHLIGHT, id: 'a', placement: { kind: 'lost' } },

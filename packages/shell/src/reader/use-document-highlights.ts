@@ -17,6 +17,7 @@ import {
 } from '@dfai/application';
 import {
   findInDocument,
+  HighlightNotFoundError,
   LITERATURE_NOTE_TYPE,
   plainQuote,
   type HighlightBlock,
@@ -26,6 +27,7 @@ import type { ReaderActions, ReaderHighlight } from '@dfai/ui';
 import type { PdfJsDocument } from '@dfai/adapters/pdf';
 import { browserImagePlacementStore } from '../notes/browser-image-placement-store.ts';
 import { cryptoRng } from '../random.ts';
+import { noteWriteTurns, turnWhenNeeded } from './note-write-turns.ts';
 import { scopedReadKey, scopedReadMeta } from '../reads/query-client.ts';
 
 /*
@@ -138,7 +140,10 @@ const shownHighlight = ({ block, placement }: PlacedHighlight): ReaderHighlight 
 /**
  * A write into the literature note, against the version just read: false,
  * and its refusal said in `notice`, when it was not taken; the note's
- * highlights are read again either way.
+ * highlights are read again either way. A note's writes take turns, from
+ * every tab that writes it, so a second waits for the first rather than
+ * being refused as stale (#880). The turn starts when the write first reads
+ * the note: what it does before (a page's text, a chapter's) holds up no one.
  */
 export function useNoteWriting({
   ports,
@@ -157,14 +162,23 @@ export function useNoteWriting({
   const writing = useCallback(
     async (write: (note: VaultPath, ports: WritePorts) => Promise<unknown>): Promise<boolean> => {
       if (note === null) return false;
+      const turn = turnWhenNeeded(writeTurns, `${vault}\n${note}`);
+      const fs: VaultFsPort = {
+        ...ports.fs,
+        readTextFile: async (path) => {
+          if (path === note) await turn.begin();
+          return ports.fs.readTextFile(path);
+        },
+      };
       try {
-        await write(note, { ...ports, rng: cryptoRng });
+        await write(note, { ...ports, fs, rng: cryptoRng });
         setNotice(null);
         return true;
       } catch (error) {
         setNotice(messageOf(error));
         return false;
       } finally {
+        turn.end();
         await client.invalidateQueries({
           queryKey: scopedReadKey(vault, 'literature-highlights', note),
         });
@@ -175,6 +189,8 @@ export function useNoteWriting({
   );
   return { writing, notice };
 }
+
+const writeTurns = noteWriteTurns();
 
 /** What the PDF reader's marks write, and the notice when one is refused. */
 export function useReaderWrites({
@@ -204,6 +220,9 @@ export function useReaderWrites({
           }),
         ),
       onHighlightArea: ({ page, box, style, comment }) =>
+        // The picture is asked for inside the note's turn, as ADR-0043 has it: only once the note
+        // is free to be written and does not already hold the area. So a picture that never
+        // finishes drawing still holds up the note's other highlight writes (#884).
         writing((path, write) =>
           highlightArea(write, {
             note: path,
@@ -218,7 +237,7 @@ export function useReaderWrites({
         ),
       onEditComment: ({ id, comment }) =>
         writing((path, write) => editHighlightComment(write, { path, id, comment })),
-      onRemove: (id) => writing((path, write) => removeHighlight(write, { path, id })),
+      onRemove: (id) => writing((path, write) => removeHighlightIfThere(write, { path, id })),
       onSearch: async (phrase) => findInDocument(await allPageTexts(opened), phrase),
     }),
     [opened, pdf, writing],
@@ -227,5 +246,20 @@ export function useReaderWrites({
 }
 
 export type WritePorts = DocumentPorts & { readonly rng: typeof cryptoRng };
+
+/**
+ * Removes highlight `id` from the note. One already gone (a removal queued
+ * before this one took it, or another app did) is what was asked: done, not refused.
+ */
+export async function removeHighlightIfThere(
+  ports: WritePorts,
+  { path, id }: { path: VaultPath; id: string },
+): Promise<void> {
+  try {
+    await removeHighlight(ports, { path, id });
+  } catch (error) {
+    if (!(error instanceof HighlightNotFoundError && error.id === id)) throw error;
+  }
+}
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
