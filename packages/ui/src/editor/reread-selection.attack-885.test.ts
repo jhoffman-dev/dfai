@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Editor } from '@tiptap/core';
+import { Editor, getSchema } from '@tiptap/core';
 import { undoDepth } from '@tiptap/pm/history';
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model';
 import { AllSelection, NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
 import { CellSelection } from '@tiptap/pm/tables';
 import type { EditorDocument } from '@dfai/domain';
@@ -128,20 +128,25 @@ const docOf = (blocks: Block[]) =>
 
 let editor: Editor;
 
+/** The app's own editor extensions, with nothing to suggest or load. */
+function extensions() {
+  return createEditorExtensions({
+    suggest: () => [],
+    onView: () => {},
+    onSlashView: () => {},
+    suggestTags: () => [],
+    onTagView: () => {},
+    onOpenTag: null,
+    offerLink: false,
+    loadImage: async () => null,
+    embedImage: null,
+  });
+}
+
 function mount(content: EditorDocument): Editor {
   return new Editor({
     element: document.body.appendChild(document.createElement('div')),
-    extensions: createEditorExtensions({
-      suggest: () => [],
-      onView: () => {},
-      onSlashView: () => {},
-      suggestTags: () => [],
-      onTagView: () => {},
-      onOpenTag: null,
-      offerLink: false,
-      loadImage: async () => null,
-      embedImage: null,
-    }),
+    extensions: extensions(),
     content: content as object,
     editorProps: { attributes: { tabindex: '-1' } },
   });
@@ -183,59 +188,142 @@ function selectionIn(random: Random, doc: ProseMirrorNode): Selection {
   return Selection.atStart(doc);
 }
 
-describe('showAsRead never throws, never writes, never leaves the note (#885 property)', () => {
-  // 3,000 editor round-trips take ~4.6 s alone and ~30 s on a CI shard with
-  // coverage, so they run as six tests of 500 seeds, each with room to spare.
-  const SEEDS_PER_TEST = 500;
-  for (let first = 1; first <= 3000; first += SEEDS_PER_TEST) {
-    const last = first + SEEDS_PER_TEST - 1;
-    it(
-      `holds for seeded notes, selections and outside edits ${first}–${last}`,
-      { timeout: 30_000 },
-      () => {
-        const failures: string[] = [];
-        editor = mount(docOf([paragraph('')]));
-        const updates = vi.fn();
-        editor.on('update', updates);
-        for (let seed = first; seed <= last && failures.length < 5; seed += 1) {
-          const random = seeded(seed);
-          const before = Array.from({ length: Math.floor(random() * 41) }, () => blockOf(random));
-          const after = edited(random, before);
-          editor.commands.setContent(docOf(before) as object, { emitUpdate: false });
-          editor.view.dispatch(editor.state.tr.setSelection(selectionIn(random, editor.state.doc)));
-          const depth = undoDepth(editor.state);
-          const updatesBefore = updates.mock.calls.length;
-          try {
-            showAsRead(editor, docOf(after));
-          } catch (error) {
-            failures.push(`seed ${seed}: threw ${String(error)}`);
-            continue;
-          }
-          const { doc, selection } = editor.state;
-          const size = doc.content.size;
-          const inside = (pos: number) => pos >= 0 && pos <= size;
-          if (!inside(selection.from) || !inside(selection.to))
-            failures.push(
-              `seed ${seed}: selection ${selection.from}-${selection.to} outside ${size}`,
-            );
-          else if (
-            selection instanceof TextSelection &&
-            (!selection.$anchor.parent.inlineContent || !selection.$head.parent.inlineContent)
-          )
-            failures.push(`seed ${seed}: text selection outside text`);
-          try {
-            Selection.fromJSON(doc, selection.toJSON());
-          } catch (error) {
-            failures.push(`seed ${seed}: selection not valid in the new note: ${String(error)}`);
-          }
-          if (updates.mock.calls.length !== updatesBefore)
-            failures.push(`seed ${seed}: emitted update`);
-          if (undoDepth(editor.state) !== depth) failures.push(`seed ${seed}: added an undo step`);
-        }
-        expect(failures).toEqual([]);
-      },
-    );
+/** What is wrong with `selection` as a selection in `doc`, or null. */
+function wrongIn(selection: Selection, doc: ProseMirrorNode): string | null {
+  const size = doc.content.size;
+  const inside = (pos: number) => pos >= 0 && pos <= size;
+  if (!inside(selection.from) || !inside(selection.to))
+    return `selection ${selection.from}-${selection.to} outside ${size}`;
+  if (
+    selection instanceof TextSelection &&
+    (!selection.$anchor.parent.inlineContent || !selection.$head.parent.inlineContent)
+  )
+    return 'text selection outside text';
+  try {
+    Selection.fromJSON(doc, selection.toJSON());
+  } catch (error) {
+    return `selection not valid in the new note: ${String(error)}`;
   }
+  return null;
+}
+
+/** A seeded note, a selection in it, and the note as another tool changed it. */
+function seededCase(seed: number, schema: Schema) {
+  const random = seeded(seed);
+  const before = Array.from({ length: Math.floor(random() * 41) }, () => blockOf(random));
+  const after = edited(random, before);
+  const doc = schema.nodeFromJSON(docOf(before));
+  return { doc, after, selection: selectionIn(random, doc) };
+}
+
+describe('the re-read mapping never throws and never leaves the note (#885 property)', () => {
+  it('holds for 3,000 seeded notes, selections and outside edits, without an editor', () => {
+    const schema = getSchema(extensions());
+    const failures: string[] = [];
+    for (let seed = 1; seed <= 3000 && failures.length < 5; seed += 1) {
+      const { doc, after, selection } = seededCase(seed, schema);
+      const now = schema.nodeFromJSON(docOf(after));
+      try {
+        const mapped = selectionAfterReread(selection, { before: doc, after: now });
+        const wrong = wrongIn(mapped, now);
+        if (wrong !== null) failures.push(`seed ${seed}: ${wrong}`);
+      } catch (error) {
+        failures.push(`seed ${seed}: threw ${String(error)}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+});
+
+/** A block of each kind `blockOf` draws: its switch reads the first draw, so a constant picks it. */
+const EVERY_BLOCK = Array.from({ length: 11 }, (_, k) => blockOf(() => (k + 0.5) / 11));
+
+/**
+ * A selection of each kind `selectionIn` draws: all, a node, cells, a range, a
+ * caret. The first draw picks the kind; the next ones its ends, kept apart.
+ */
+const SELECTION_DRAWS = [[0.02], [0.1], [0.2, 0.1, 0.9], [0.4, 0.1, 0.9], [0.8]];
+
+/** A random source that gives `values` over and over. */
+function drawing(values: number[]): Random {
+  let next = 0;
+  return () => values[next++ % values.length]!;
+}
+
+describe('showAsRead never throws, never writes, never leaves the note (#885 property)', () => {
+  /** Shows `before` with the selection `draw` picks, re-reads `after`, and says what went wrong. */
+  function reread(before: Block[], after: Block[], draw: Random): string | null {
+    editor.commands.setContent(docOf(before) as object, { emitUpdate: false });
+    editor.view.dispatch(editor.state.tr.setSelection(selectionIn(draw, editor.state.doc)));
+    const depth = undoDepth(editor.state);
+    const updates = vi.fn();
+    editor.on('update', updates);
+    try {
+      showAsRead(editor, docOf(after));
+    } catch (error) {
+      return `threw ${String(error)}`;
+    } finally {
+      editor.off('update', updates);
+    }
+    if (updates.mock.calls.length > 0) return 'emitted update';
+    if (undoDepth(editor.state) !== depth) return 'added an undo step';
+    return wrongIn(editor.state.selection, editor.state.doc);
+  }
+
+  it('draws every kind of block and of selection in the listed cases', () => {
+    expect(new Set(EVERY_BLOCK.map((block) => block.type))).toEqual(
+      new Set([
+        'heading',
+        'bulletList',
+        'orderedList',
+        'taskList',
+        'codeBlock',
+        'blockquote',
+        'table',
+        'image',
+        'horizontalRule',
+        'paragraph',
+      ]),
+    );
+    const doc = getSchema(extensions()).nodeFromJSON(docOf(EVERY_BLOCK));
+    const kinds = SELECTION_DRAWS.map((draw) => {
+      const selection = selectionIn(drawing(draw), doc);
+      if (selection instanceof TextSelection) return selection.empty ? 'caret' : 'range';
+      if (selection instanceof AllSelection) return 'all';
+      if (selection instanceof NodeSelection) return 'node';
+      return selection instanceof CellSelection ? 'cells' : 'other';
+    });
+    expect(kinds).toEqual(['all', 'node', 'cells', 'range', 'caret']);
+  });
+
+  it('holds for every kind of block and selection, through the editor', () => {
+    editor = mount(docOf([paragraph('')]));
+    // Every block, with the first and last swapped, one dropped and a line added.
+    const after = [
+      EVERY_BLOCK.at(-1)!,
+      ...EVERY_BLOCK.slice(2, -1),
+      paragraph('NEW'),
+      EVERY_BLOCK[0]!,
+    ];
+    const failures = SELECTION_DRAWS.flatMap((draw) => {
+      const wrong = reread(EVERY_BLOCK, after, drawing(draw));
+      return wrong === null ? [] : [`draw ${draw.join()}: ${wrong}`];
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it('holds for 30 seeded notes, selections and outside edits, through the editor', () => {
+    editor = mount(docOf([paragraph('')]));
+    const failures: string[] = [];
+    for (let seed = 1; seed <= 30; seed += 1) {
+      const random = seeded(seed);
+      const before = Array.from({ length: Math.floor(random() * 41) }, () => blockOf(random));
+      const after = edited(random, before);
+      const wrong = reread(before, after, random);
+      if (wrong !== null) failures.push(`seed ${seed}: ${wrong}`);
+    }
+    expect(failures).toEqual([]);
+  });
 });
 
 describe('showAsRead keeps the caret on its own line (#885 exact places)', () => {
@@ -348,62 +436,42 @@ describe('showAsRead keeps the caret on its own line (#885 exact places)', () =>
   });
 });
 
-describe('showAsRead speed on a long note with many identical lines (#885)', () => {
-  /** The note, the caret in its middle, and the note with the line after it changed. */
-  function longNote(lines: number) {
+describe('the re-read mapping is linear in the note (#885)', () => {
+  /**
+   * How many node comparisons carrying a caret across a re-read makes on a
+   * note of `lines` lines, many identical, with the caret on the middle line
+   * and a line among the identical ones changed. Counted, not timed: the
+   * times are in #886.
+   */
+  function comparisons(lines: number, schema: Schema): number {
     const content = Array.from({ length: lines }, (_, i) =>
       paragraph(i % 3 === 0 ? '' : 'Same line.'),
     );
     const middle = Math.floor(lines / 2);
-    const changed = content.map((block, i) => (i === middle + 1 ? paragraph('Changed.') : block));
-    return { content, middle, changed };
-  }
-
-  function caretOnLine(index: number): void {
-    let pos = 0;
-    editor.state.doc.forEach((_node, offset, i) => {
-      if (i === index) pos = offset + 1;
+    const changed = content.map((block, i) => (i === middle ? paragraph('Changed.') : block));
+    const before = schema.nodeFromJSON(docOf(content));
+    const after = schema.nodeFromJSON(docOf(changed));
+    let caret = 0;
+    before.forEach((_node, offset, i) => {
+      if (i === middle) caret = offset + 1;
     });
-    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos)));
-  }
-
-  /** Median of five: one showAsRead, and one plain setContent of the same change. */
-  function timeOne(lines: number): { reread: number; plain: number; mapping: number } {
-    const { content, middle, changed } = longNote(lines);
-    const reread: number[] = [];
-    const plain: number[] = [];
-    const mapping: number[] = [];
-    for (let run = 0; run < 5; run += 1) {
-      editor?.destroy();
-      editor = mount(docOf(content));
-      caretOnLine(middle);
-      let started = performance.now();
-      showAsRead(editor, docOf(changed));
-      reread.push(performance.now() - started);
-      editor.commands.setContent(docOf(content) as object, { emitUpdate: false });
-      caretOnLine(middle);
-      started = performance.now();
-      editor.commands.setContent(docOf(changed) as object, { emitUpdate: false });
-      plain.push(performance.now() - started);
-      const before = editor.schema.nodeFromJSON(docOf(content));
-      const after = editor.schema.nodeFromJSON(docOf(changed));
-      const selection = TextSelection.create(before, 3 * middle + 1);
-      started = performance.now();
-      selectionAfterReread(selection, { before, after });
-      mapping.push(performance.now() - started);
+    const eq = vi.spyOn(ProseMirrorNode.prototype, 'eq');
+    try {
+      selectionAfterReread(TextSelection.create(before, caret), { before, after });
+      return eq.mock.calls.length;
+    } finally {
+      eq.mockRestore();
     }
-    const median = (xs: number[]) => xs.sort((a, b) => a - b)[2]!;
-    return { reread: median(reread), plain: median(plain), mapping: median(mapping) };
   }
 
-  // Ten mounts of up to 5,000 lines take ~2.6 s here and past 5 s on a CI shard with coverage.
-  it('re-reads 1,000 and 5,000 lines with one changed', { timeout: 30_000 }, () => {
-    const small = timeOne(1000);
-    const large = timeOne(5000);
-    const ms = (t: { reread: number; plain: number; mapping: number }) =>
-      `showAsRead ${t.reread.toFixed(1)} ms, plain setContent ${t.plain.toFixed(1)} ms, mapping alone ${t.mapping.toFixed(2)} ms`;
-    process.stdout.write(`[attack-885] 1,000 lines: ${ms(small)}; 5,000 lines: ${ms(large)}\n`);
-    expect(large.mapping).toBeGreaterThan(0);
+  it('makes about five times the comparisons for five times the lines, not twenty-five', () => {
+    const schema = getSchema(extensions());
+    const small = comparisons(1000, schema);
+    const large = comparisons(5000, schema);
+
+    expect(small).toBeGreaterThan(0);
+    expect(large / small).toBeGreaterThan(4);
+    expect(large / small).toBeLessThan(7);
   });
 });
 
