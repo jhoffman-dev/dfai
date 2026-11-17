@@ -1,8 +1,8 @@
 /**
  * What a rule held by an hourly limit says (#813), built from
  * {@link NoteRunsHold} so whoever shows it never reads the state back out of
- * a sentence. A rule whose runs in the hour failed is failing, not waiting,
- * and says so; one that is only waiting says it is not broken, which limit,
+ * a sentence. A rule whose own last run this hour failed is failing, not
+ * waiting, and says so; one that is only waiting says it is not broken, which limit,
  * when it runs, and the one thing that would help, if any: turning off
  * another rule that is on and shares its asks. The limits are constants, so
  * nothing else is offered.
@@ -14,11 +14,11 @@ import { localTimeMs, localTimeOf } from './schedule.ts';
 const MINUTE_MS = 60_000;
 
 /**
- * Whether a held rule is failing rather than waiting: any run that spent the
- * limit holding it failed. Such a rule is shown and logged as failing.
+ * Whether a held rule is failing rather than waiting: its own last run this
+ * hour failed. One that failed earlier and has since worked is waiting.
  */
 export function noteRunsHoldIsFailing(hold: NoteRunsHold): boolean {
-  return hold.failures !== null;
+  return hold.failures?.lastFailed ?? false;
 }
 
 /** The minute it can run, `14:32`: a hold ending part-way through a minute runs at the next one. */
@@ -70,23 +70,43 @@ function asksClause(
 
 const sentence = (clause: string) => `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`;
 
-/** What a failing hold says: how many of its runs failed, the last one's why, and when it tries again. */
-function failingMessage(hold: NoteRunsHold, { failed, ran, latest }: HoldFailures): string {
-  const count =
-    failed === ran
-      ? `It failed all ${ran} times it ran this hour.`
-      : `It failed ${failed} of the ${ran} times it ran this hour.`;
-  const why = /[.!?]$/.test(latest.trim()) ? latest.trim() : `${latest.trim()}.`;
+/** How many of its runs failed: `all 20 times`, `3 of the 20 times`, `the one time`, `both times`. */
+function failedCount({ failed, ran }: HoldFailures): string {
+  if (ran === 1) return 'It failed the one time it ran this hour.';
+  if (failed === ran) {
+    return ran === 2
+      ? 'It failed both times it ran this hour.'
+      : `It failed all ${ran} times it ran this hour.`;
+  }
+  return `It failed ${failed} of the ${ran} times it ran this hour.`;
+}
+
+/** What a failing hold says: how many of its runs failed, the last failure's why, and when it tries again. */
+function failingMessage(hold: NoteRunsHold, failures: HoldFailures): string {
+  const reason = failures.latest.trim();
+  const why =
+    reason === '' ? [] : [`The last failure: ${/[.!?]$/.test(reason) ? reason : `${reason}.`}`];
   const limits =
     hold.runs !== null && hold.sharedAsks !== null
       ? 'It has used up two hourly limits'
       : 'It has used up its hourly limit';
-  return `${count} The last time: ${why} ${limits}, so it tries again at ${runsAt(hold.until)}.`;
+  return [
+    failedCount(failures),
+    ...why,
+    `${limits}, so it tries again at ${runsAt(hold.until)}.`,
+  ].join(' ');
+}
+
+/** Said of a waiting rule whose earlier runs failed, so the count is not hidden. */
+function earlierFailures(failures: HoldFailures | null): string[] {
+  if (failures === null) return [];
+  const runs = failures.failed === 1 ? '1 run' : `${failures.failed} runs`;
+  return [`${runs} failed earlier this hour; the last one worked.`];
 }
 
 /** The sentences a held rule says. */
 export function noteRunsHoldMessage(hold: NoteRunsHold): string {
-  if (hold.failures !== null) return failingMessage(hold, hold.failures);
+  if (hold.failures?.lastFailed) return failingMessage(hold, hold.failures);
   const shared = hold.sharedAsks;
   const others = (shared?.by ?? []).filter((each) => !each.own);
   const offerable = others.filter((each) => each.enabled);
@@ -103,5 +123,5 @@ export function noteRunsHoldMessage(hold: NoteRunsHold): string {
     shared === null || offerable.length === 0
       ? `${when}; nothing to do.`
       : `${when}. To give it the whole ${shared.most}, turn off ${andList(offerable.map((each) => nameOf(hold.rule, each)))}.`;
-  return `${what} ${remedy}`;
+  return [what, ...earlierFailures(hold.failures), remedy].join(' ');
 }

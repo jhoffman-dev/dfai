@@ -157,7 +157,7 @@ export interface RulePause {
    * cannot see end, so the pause keeps its backoff (#637 attack).
    */
   readonly unavailableBy?: UnavailableFoundBy;
-  /** Set when an hourly limit holds it (#813): it waits, and is not failing; which limit, and who spent it. */
+  /** Set when an hourly limit holds it (#813): which limit, who spent it, and whether its own last run failed. */
   readonly hold?: NoteRunsHold;
 }
 
@@ -604,7 +604,8 @@ function useClaudeRecheck({
 
 /** A rule's pause after one more failure. */
 function pauseAfter(previous: RulePause | undefined, cause: unknown, now: LocalTime): RulePause {
-  // Held by the hourly cap, it is not failing: it waits for the hour, and counts no failure.
+  // Held by the hourly cap, the clock waits for the hour and counts no failure of its own; whether
+  // it is waiting or failing — its own last run failed — is the hold's to say (#813).
   if (cause instanceof NoteRunsCappedError) {
     return {
       reason: cause.message,

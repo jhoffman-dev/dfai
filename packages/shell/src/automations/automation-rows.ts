@@ -84,7 +84,7 @@ function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow 
     nextRun: next === null ? null : withClock(shownTime(next), rule, clock),
     canUndo: lastUndoableRun(log) !== null,
     problem: null,
-    // Held but not failing, it waits (#813); a held rule whose runs failed keeps the failure's notice.
+    // Held, it waits (#813) — unless its own last run failed: then it keeps the failure's notice.
     notice: waiting ? null : (pause?.reason ?? futureNotice(log, now)),
     ...(waiting && pause !== undefined && { waiting: pause.reason }),
   };

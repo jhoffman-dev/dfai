@@ -159,19 +159,24 @@ export interface RuleAsks {
   readonly enabled: boolean;
 }
 
-/** Of the held rule's runs in the hour that spent the limit holding it, how many failed, and the last one's why. */
+/**
+ * Of the held rule's own runs in the hour, how many failed, the last
+ * failure's why, and whether its last run was that failure — which alone
+ * makes the hold failing rather than waiting (`noteRunsHoldIsFailing`).
+ */
 export interface HoldFailures {
   readonly failed: number;
   readonly ran: number;
   readonly latest: string;
+  readonly lastFailed: boolean;
 }
 
 /**
  * Why a rule set off by notes is held, as plain data for whoever says it
  * (#813): until when, and each limit that holds it — null for one that does
- * not — with its most and what was spent of it in the hour; and, when any run
- * that spent it failed, how many and why (`failures`: such a rule is failing,
- * not waiting — see `noteRunsHoldIsFailing`).
+ * not — with its most and what was spent of it in the hour; and, when any of
+ * its own runs this hour failed, how many and why (`failures`). It is failing,
+ * not waiting, only when its own last run failed (`noteRunsHoldIsFailing`).
  */
 export interface NoteRunsHold {
   readonly rule: string;
@@ -216,10 +221,6 @@ export function noteRunsHold({
   const runsHold = runs.until !== null;
   const asksHold = asks !== null && asks.until !== null;
   const countsAsks = budget.asksPerHour === null;
-  // A run spent the limits holding the rule: its runs, its asks, or both.
-  const spentHeld = (entry: LogEntry) =>
-    (runsHold && runsSpentBy(entry) + (countsAsks ? asksSpentBy(entry) : 0) > 0) ||
-    (asksHold && asksSpentBy(entry) > 0);
   return {
     rule,
     until,
@@ -227,7 +228,7 @@ export function noteRunsHold({
     sharedAsks: asksHold
       ? { most: asks.most, asked: asks.spent, by: askedBy({ rule, entries, sharers, now }) }
       : null,
-    failures: failuresAmong(inHourUpTo(entries, end), spentHeld),
+    failures: failuresAmong(inHourUpTo(entries, end)),
   };
 }
 
@@ -253,18 +254,26 @@ function askedBy({
   });
 }
 
-/** Of the runs in the hour that spent a limit holding the rule, the failed ones; null when none failed. */
-function failuresAmong(
-  inHour: readonly { at: number; entry: LogEntry }[],
-  spentHeld: (entry: LogEntry) => boolean,
-): HoldFailures | null {
-  const ran = inHour.filter(({ entry }) => spentHeld(entry));
+/**
+ * Of the rule's own runs in the hour — whatever each spent, whichever limit
+ * holds it — the failed ones, and whether the latest run is one; null when
+ * none failed. A sharer's runs are never counted here.
+ */
+function failuresAmong(inHour: readonly { at: number; entry: LogEntry }[]): HoldFailures | null {
+  const ran = inHour.filter(({ entry }) => entry.kind === 'run' || entry.kind === 'failed');
   const failed = ran.flatMap(({ at, entry }) =>
     entry.kind === 'failed' ? [{ at, problem: entry.problem }] : [],
   );
   if (failed.length === 0) return null;
-  const last = failed.reduce((a, b) => (b.at >= a.at ? b : a));
-  return { failed: failed.length, ran: ran.length, latest: last.problem };
+  // The latest by time; of two at the same moment, the one written later.
+  const last = ran.reduce((a, b) => (b.at >= a.at ? b : a));
+  const lastFailure = failed.reduce((a, b) => (b.at >= a.at ? b : a));
+  return {
+    failed: failed.length,
+    ran: ran.length,
+    latest: lastFailure.problem,
+    lastFailed: last.entry.kind === 'failed',
+  };
 }
 
 interface Limit {

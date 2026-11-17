@@ -19,7 +19,7 @@ export interface AutomationRow {
   readonly problem: string | null;
   /** Something the rule's runs are held up by — paused, or a log dated ahead — said beside it. */
   readonly notice: string | null;
-  /** Set while an hourly limit holds it and its runs did not fail (#813): it is waiting, not failing; why, in plain words. */
+  /** Set while an hourly limit holds it and its own last run did not fail (#813): it is waiting; why, in plain words. */
   readonly waiting?: string;
 }
 
