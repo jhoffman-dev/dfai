@@ -82,7 +82,7 @@
 
 /* Mixing a little ink into the fill darkens in light and lightens in dark,
    and tints a bare button, so one rule serves every kind. */
-.btn:hover:not(:disabled) {
+.btn:hover:not(:disabled, [aria-disabled='true']) {
   background: color-mix(in srgb, var(--btn-bg) 88%, var(--btn-ink));
 }
 
@@ -91,7 +91,8 @@
   outline: none;
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn[aria-disabled='true'] {
   cursor: default;
   opacity: 0.5;
 }
@@ -136,7 +137,7 @@
   padding: 0 8px;
 }
 
-.btn--ghost:hover:not(:disabled) {
+.btn--ghost:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--hover);
   color: var(--ink);
 }

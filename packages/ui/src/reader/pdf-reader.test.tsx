@@ -368,7 +368,8 @@ describe('the highlights panel', () => {
     expect(document.activeElement).toBe(remove);
     expect(remove.getAttribute('aria-disabled')).toBe('true');
     expect(asking.getAttribute('aria-busy')).toBe('true');
-    await userEvent.click(within(asking).getByRole('button', { name: 'Keep' }));
+    // Clicked without moving the focus, Keep does nothing while the removal is written.
+    fireEvent.click(within(asking).getByRole('button', { name: 'Keep' }));
     expect(screen.getByRole('group', { name: 'Delete this highlight?' })).toBe(asking);
 
     // Refused, it can be asked for again from where the focus is.

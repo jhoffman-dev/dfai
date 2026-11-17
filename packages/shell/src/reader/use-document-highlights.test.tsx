@@ -90,7 +90,10 @@ function setUp({ dirty = false }: { dirty?: boolean } = {}) {
   return { files, ports };
 }
 
-function useTab(ports: DocumentPorts, { doc = opened, vault = VAULT } = {}) {
+function useTab(
+  ports: DocumentPorts,
+  { doc = opened, vault = VAULT }: { doc?: PdfJsDocument; vault?: string } = {},
+) {
   const note = useLiteratureNoteOf({ ports, vault, pdf: PDF }) ?? null;
   const { highlights } = usePlacedHighlights({ ports, vault, note, opened: doc, generation: 1 });
   const writes = useReaderWrites({ ports, vault, note, pdf: PDF, opened: doc });
@@ -212,8 +215,7 @@ describe("a reader tab's literature note", () => {
     const doc: PdfJsDocument = {
       ...opened,
       // Once drawing, the picture never comes (a page pdf.js never finishes rendering).
-      pictureOf: (request) =>
-        drawing ? new Promise<Uint8Array>(() => {}) : opened.pictureOf(request),
+      pictureOf: () => (drawing ? new Promise<Uint8Array>(() => {}) : opened.pictureOf()),
     };
     const fs = { ...ports.fs, listDirectory: async () => [] };
     const { result } = renderHook(

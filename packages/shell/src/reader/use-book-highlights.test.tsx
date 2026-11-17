@@ -93,7 +93,10 @@ function setUp({ dirty = false }: { dirty?: boolean } = {}) {
   return { files, ports };
 }
 
-function useTab(ports: DocumentPorts, { opened = book, vault = VAULT } = {}) {
+function useTab(
+  ports: DocumentPorts,
+  { opened = book, vault = VAULT }: { opened?: FoliateBook; vault?: string } = {},
+) {
   const note = useLiteratureNoteOf({ ports, vault, pdf: BOOK }) ?? null;
   const placed = usePlacedBookHighlights({ ports, vault, note, book: opened, generation: 1 });
   const writes = useBookWrites({ ports, vault, note, book: opened });

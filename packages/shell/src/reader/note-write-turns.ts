@@ -9,7 +9,7 @@
 export interface NoteWriteTurns {
   /** Runs `write` once every write to `note` taken before it has settled; answers what it answers. */
   take<T>(note: string, write: () => Promise<T>): Promise<T>;
-  /** Whether a write to `note` is running or waiting. */
+  /** Whether a write to `note` is running or waiting; for tests, which hold that nothing is left behind. */
   busy(note: string): boolean;
 }
 
@@ -28,5 +28,29 @@ export function noteWriteTurns(): NoteWriteTurns {
       return turn;
     },
     busy: (note) => lastOf.has(note),
+  };
+}
+
+/**
+ * A turn at `note` taken only when it is first needed, `begin()` answering once
+ * it has come, and given up by `end()`, needed or not. So work before the note
+ * is read (a page's text, a chapter's) never holds up another write to it.
+ */
+export function turnWhenNeeded(
+  turns: NoteWriteTurns,
+  note: string,
+): { begin(): Promise<void>; end(): void } {
+  let end: () => void = () => {};
+  const ended = new Promise<void>((resolve) => (end = resolve));
+  let begun: Promise<void> | null = null;
+  return {
+    begin: () =>
+      (begun ??= new Promise<void>((started) => {
+        void turns.take(note, () => {
+          started();
+          return ended;
+        });
+      })),
+    end,
   };
 }
