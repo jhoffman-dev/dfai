@@ -46,6 +46,7 @@
     "./packages/*/src/**/*",
     "apps/*/src/**/*",
     "tools/**/*.ts",
+    "e2e/**/*.ts",
     "*.config.ts",
     "*.config.js"
   ],

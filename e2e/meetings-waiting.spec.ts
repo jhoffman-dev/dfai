@@ -55,7 +55,8 @@ async function openVault(page: Page, macName?: string) {
 
 /** A second Mac running DFAI, in a window of its own: its own id, and a clone of the vault's repository. */
 async function secondMac(browser: Browser, remote: string, env: NodeJS.ProcessEnv, name: string) {
-  const context = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  const { baseURL } = test.info().project.use;
+  const context = await browser.newContext(baseURL === undefined ? {} : { baseURL });
   await seenAsMac(context);
   const page = await context.newPage();
   await page.setViewportSize({ width: 1440, height: 900 });

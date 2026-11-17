@@ -3,7 +3,7 @@ import { seenAsMac } from './platform.ts';
 import { takeUnreportedStubBugs } from './stub-bugs.ts';
 import { removeTempFolders, tempFoldersMade } from './temp-folders.ts';
 
-export { expect, type Browser, type Locator, type Page } from '@playwright/test';
+export { expect, type Browser, type Locator, type Page, type Route } from '@playwright/test';
 
 /**
  * Playwright's `test`, which removes the temp folders the host helpers made: a
