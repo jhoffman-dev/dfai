@@ -56,6 +56,56 @@ function offsetAcross(old: ProseMirrorNode, now: ProseMirrorNode, offset: number
   return end.b + overlap;
 }
 
+/** The old line and the stretch of changed lines it was in, before and after. */
+interface Stretch {
+  was: Line[];
+  own: number;
+  changed: Line[];
+}
+
+/**
+ * `old` itself among the changed lines, unedited: of the lines reading the
+ * same, the one of the same rank (the second of two blank lines stays the
+ * second), the last when there are fewer now.
+ */
+function sameLine(old: ProseMirrorNode, { was, own, changed }: Stretch): Line | undefined {
+  const rank = was.slice(0, own).filter((line) => line.node.eq(old)).length;
+  const copies = changed.filter((line) => line.node.eq(old));
+  return copies[Math.min(rank, copies.length - 1)];
+}
+
+/** How much text `old` and `now` share: what they start with and end with alike. */
+function shared(old: ProseMirrorNode, now: ProseMirrorNode): number {
+  const start = old.content.findDiffStart(now.content);
+  const end = old.content.findDiffEnd(now.content);
+  if (start === null || end === null) return old.content.size;
+  const tail = old.content.size - end.a;
+  return Math.min(start + tail, old.content.size, now.content.size);
+}
+
+/**
+ * `old` as edited: the changed line, not another old line untouched, that
+ * shares the most text with it, the nearest to its place on a tie; else the
+ * line in its place.
+ */
+function editedLine(old: ProseMirrorNode, { was, own, changed }: Stretch): Line | undefined {
+  const untouched = new Set(was.map((line) => line.node.textContent));
+  let best: { line: Line; score: number; distance: number } | undefined;
+  changed.forEach((line, i) => {
+    if (untouched.has(line.node.textContent)) return;
+    const score = shared(old, line.node);
+    const distance = Math.abs(i - own);
+    if (score === 0) return;
+    if (
+      best === undefined ||
+      score > best.score ||
+      (score === best.score && distance < best.distance)
+    )
+      best = { line, score, distance };
+  });
+  return best?.line ?? changed[own];
+}
+
 /** The place in `diff.after` for `pos` in the old note, by its line and its offset in it. */
 function placeAcross(diff: LineDiff, pos: number, size: number): number {
   const { before, after, same } = diff;
@@ -71,16 +121,14 @@ function placeAcross(diff: LineDiff, pos: number, size: number): number {
   if (index >= before.length - same.end)
     return at(after[index - before.length + after.length]!, offset);
 
-  // Among the changed lines: the same line moved, else the line in its place, else the line before.
+  // Among the changed lines: the same line moved, else the line edited, else the line before.
   const changed = after.slice(same.start, after.length - same.end);
+  const was = before.slice(same.start, before.length - same.end);
   const own = index - same.start;
-  const moved = changed
-    .map((now, i) => ({ now, distance: Math.abs(i - own) }))
-    .filter(({ now }) => now.node.eq(line.node))
-    .sort((a, b) => a.distance - b.distance)[0];
-  if (moved !== undefined) return at(moved.now, offset);
-  const inPlace = changed[own];
-  if (inPlace !== undefined) return at(inPlace, offsetAcross(line.node, inPlace.node, offset));
+  const moved = sameLine(line.node, { was, own, changed });
+  if (moved !== undefined) return at(moved, offset);
+  const edited = editedLine(line.node, { was, own, changed });
+  if (edited !== undefined) return at(edited, offsetAcross(line.node, edited.node, offset));
   const previous = after[same.start + changed.length - 1];
   if (previous !== undefined) return previous.start + previous.node.content.size;
   const next = after[same.start + changed.length];
@@ -103,5 +151,8 @@ export function selectionAfterReread(
   const place = (pos: number) => after.resolve(placeAcross(diff, pos, after.content.size));
   if (selection instanceof TextSelection)
     return TextSelection.between(place(selection.anchor), place(selection.head));
+  // A picked node (an image, an embed) or cells of a table come back as a
+  // caret near where they were: which node is "the same" after a re-read is
+  // not known, and a caret is the safe thing to type at.
   return Selection.near(place(selection.from));
 }

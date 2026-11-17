@@ -184,7 +184,9 @@ function selectionIn(random: Random, doc: ProseMirrorNode): Selection {
 }
 
 describe('showAsRead never throws, never writes, never leaves the note (#885 property)', () => {
-  it('holds for 3,000 seeded notes, selections and outside edits', () => {
+  // 3,000 editor round-trips take ~4.6 s alone, past vitest's 5 s default
+  // once the other editor tests run beside it.
+  it('holds for 3,000 seeded notes, selections and outside edits', { timeout: 30_000 }, () => {
     const failures: string[] = [];
     editor = mount(docOf([paragraph('')]));
     const updates = vi.fn();
