@@ -187,4 +187,18 @@ describe('showAsRead in an editor without focus: the next page caret is read (#8
 
     expect(editor.state.selection.head).toBe(at(changed, 12));
   });
+
+  it('still shows the note, caret kept, when the observer has no record to clear', () => {
+    // A prosemirror-view without the internal: the re-read behaves as before #877.
+    const domObserver = (editor.view as unknown as { domObserver: object }).domObserver;
+    Object.defineProperty(domObserver, 'currentSelection', {
+      value: undefined,
+      configurable: true,
+    });
+    select(at(LINE_2, 4));
+
+    expect(() => showAsRead(editor, note(LINE_1, LINE_2, 'Theirs.'))).not.toThrow();
+    expect(editor.state.doc.lastChild?.textContent).toBe('Theirs.');
+    expect(editor.state.selection.head).toBe(at(LINE_2, 4));
+  });
 });

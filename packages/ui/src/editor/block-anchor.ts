@@ -3,6 +3,8 @@ import { Fragment, Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { BLOCK_ANCHOR_ATTR, isBlockId, type EditorDocument } from '@dfai/domain';
 import { keepIds } from './block-anchor-keeping.ts';
+import { forgetPageSelection } from './page-selection.ts';
+import { selectionAfterReread } from './reread-selection.ts';
 
 /**
  * The blocks that can hold a block id (P26-01, ADR-0022): a paragraph, a
@@ -42,14 +44,26 @@ export const READ_FROM_FILE = 'atlas:readFromFile';
  * Not a step to undo: the file changed, the person did not type it. Undoing
  * it would put back what the file no longer says — after a promoted line, the
  * line without the task it now names — and save that over the file.
+ *
+ * The caret stays on its line, at its offset in it (#877).
  */
 export function showAsRead(editor: Editor, doc: EditorDocument): void {
+  const { doc: before, selection } = editor.state;
   editor
     .chain()
     .setMeta(READ_FROM_FILE, true)
     .setMeta('addToHistory', false)
     .setContent(doc as object, { emitUpdate: false })
+    // Replacing the whole note would put the caret at its end (#877).
+    .command(({ tr }) => {
+      tr.setSelection(selectionAfterReread(selection, { before, after: tr.doc }));
+      return true;
+    })
     .run();
+  // Without focus, ProseMirror leaves the page's caret alone and keeps its
+  // record of where it last saw it; a click back on that spot would then not
+  // be read, and the editor would act on its own selection instead (#877).
+  if (!editor.view.hasFocus()) forgetPageSelection(editor.view);
 }
 
 /**
