@@ -297,6 +297,40 @@ test('typing in a tab that was hidden through an outside change never writes ove
   await expectFile(vault, 'alpha.md').toContain('Theirs, added outside.');
 });
 
+test('Enter after a click on a line of a note re-read while its tab was hidden breaks that line', async ({
+  page,
+}) => {
+  // Found in #850: the re-read moves the editor's selection while the page's
+  // caret is elsewhere, and the editor keeps its record of where the page's
+  // caret last was. A click that puts the page's caret back on that spot is
+  // not read, so Enter splits the line the editor thinks it is on, after
+  // the outside paragraph, while the caret is drawn on this one (#ISSUE).
+  test.fail(true, '#ISSUE: a click on the spot the editor last read is not read after a re-read');
+  const { vault } = await openVault(page);
+  await openAndType(page, 'alpha', ' Mine.');
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await expect(article(page, 1, 'beta')).toBeVisible();
+  await expectFile(vault, 'alpha.md').toBe(edited('alpha', ' Mine.'));
+  await vault.write('alpha.md', '# alpha\n\nLine of alpha. Mine.\n\nTheirs, added outside.\n');
+  await emitVaultChanged(page, ['alpha.md']);
+  await tab(page, 1, 'alpha').click();
+  const outside = article(page, 1, 'alpha').getByText('Theirs, added outside.');
+  await expect(outside).toBeVisible();
+
+  // Where the typing left the caret before the tab was hidden: the line's end.
+  const line = article(page, 1, 'alpha').getByText('Line of alpha. Mine.');
+  const box = await line.boundingBox();
+  if (box === null) throw new Error('The line is not on the page.');
+  await line.click({ position: { x: box.width - 1, y: box.height / 2 } });
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Later.');
+
+  await expectFile(vault, 'alpha.md').toContain('Later.');
+  expect(await vault.read('alpha.md')).toBe(
+    '# alpha\n\nLine of alpha. Mine.\n\nLater.\n\nTheirs, added outside.\n',
+  );
+});
+
 test('typing in one of two tabs on a note, then at once in the other, loses neither', async ({
   page,
 }) => {

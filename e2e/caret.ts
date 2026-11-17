@@ -81,13 +81,15 @@ async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
   // the click was tried again: a page still busy opening the note can hold
   // the click past ONE_TRY, so it gets what is left, not ONE_TRY.
   const left = caretWaitFromNow();
-  // ⌘→ is always pressed, never skipped when the editor already says the
-  // caret is there: until ProseMirror reads the click, its selection is the
-  // one from before, and the typing goes where the click put the page's
-  // caret. ⌘← is pressed after ⌘→ whenever the caret is in the line, at its
-  // end or, where it wraps, short of it: from a line's start under a bookmark
-  // card, ⌘← takes the caret up to the line above.
+  // ⌘→ is pressed only once the editor has read the click, as a person's
+  // key comes: pressed sooner, the click and the key can reach the editor as
+  // one selection change, and when the key puts the page's caret back where
+  // the editor last read it, the editor reads nothing at all (#ISSUE). ⌘← is
+  // pressed after ⌘→ whenever the caret is in the line, at its end or, where
+  // it wraps, short of it: from a line's start under a bookmark card, ⌘←
+  // takes the caret up to the line above.
   await line.click({ position: { x: 1, y: 5 }, ...left() });
+  await caretReadByEditor(line, left);
   let caret = await pressAndRead(line, LINE_END, left);
   if (endKeyUndone(caret)) caret = await pressAndRead(line, LINE_END, left);
   if (where === 'start' && caret.inLine) caret = await pressAndRead(line, LINE_START, left);
