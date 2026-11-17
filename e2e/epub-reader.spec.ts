@@ -171,17 +171,21 @@ test('an underline and a comment made from the selection, and a highlight delete
   await expectFile(vault, NOTE).toContain('"mark":"underline"');
   await expect.poll(() => painted(page, 'dfai-underline-yellow')).toEqual(['slow but steady pace']);
 
-  // Held, the deletions' writes are slow, as a busy machine's are (#873).
-  const release = host.holdWrites(NOTE);
+  const asking = panel(page).getByRole('group', { name: 'Delete this highlight?' });
   for (let left = 2; left > 0; left -= 1) {
     await expect(panel(page).getByRole('button', { name: 'Delete…' })).toHaveCount(left);
     await panel(page).getByRole('button', { name: 'Delete…' }).first().click();
-    await panel(page)
-      .getByRole('group', { name: 'Delete this highlight?' })
-      .getByRole('button', { name: 'Delete' })
-      .click();
+    // A row stays, still asking, until its removal is written to the note, so
+    // the next row's turn waits for it to go; held, the write is as slow as a
+    // busy machine's (#873).
+    const release = host.holdWrites(NOTE);
+    const written = host.writesTo(NOTE);
+    await asking.getByRole('button', { name: 'Delete' }).click();
+    await expect.poll(() => host.writesTo(NOTE)).toBe(written + 1);
+    await expect(asking).toHaveCount(1);
+    release();
+    await expect(asking).toHaveCount(0);
   }
-  release();
   await expectFile(vault, NOTE).toBe(before);
 });
 
