@@ -91,9 +91,22 @@ test('a rule held by its hourly asks shows as waiting, says why and when, and of
   await expect(row.getByText('Next run').locator('..')).toContainText(until);
   await expect(row.locator('.automation-card__notice')).toHaveCount(0);
 
+  // The row grows to hold all of it: the reason and the button end inside the row.
+  const turnOff = waiting.getByRole('button', { name: `Turn off “${extraction}”` });
+  const bottomOf = async (locator: typeof row) => {
+    const box = await locator.boundingBox();
+    return box === null ? Number.NaN : box.y + box.height;
+  };
+  await expect
+    .poll(async () => (await bottomOf(row)) - (await bottomOf(turnOff)))
+    .toBeGreaterThanOrEqual(0);
+  await expect
+    .poll(async () => (await bottomOf(row)) - (await bottomOf(waiting.locator('p'))))
+    .toBeGreaterThanOrEqual(0);
+
   // The turn-off it offers is the #793 one: only the extraction is turned off.
   const rule = `.atlas/automations/${extraction}.md`;
-  await waiting.getByRole('button', { name: `Turn off “${extraction}”` }).click();
+  await turnOff.click();
   await expect.poll(() => vault.read(rule)).toContain('\nenabled: false\n');
   expect(await vault.read(`.atlas/automations/${after}.md`)).toContain('\nenabled: true\n');
   expect(await vault.exists(meeting)).toBe(true);
