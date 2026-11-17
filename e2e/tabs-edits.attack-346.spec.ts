@@ -351,6 +351,112 @@ test('a note re-read while its editor has focus keeps the caret on its line, and
   );
 });
 
+const THEIRS = '# alpha\n\nLine of alpha. Mine.\n\nTheirs, added outside.\n';
+
+/**
+ * After a re-read with nothing typed, alpha's tab is hidden (which flushes any
+ * pending write) and beta is typed in and saved, so a write alpha asked for
+ * would have been asked for by then: there is none, and the file holds the
+ * outside tool's bytes exactly (ADR-0003).
+ */
+async function expectNoWriteAfterReread(
+  page: Page,
+  vault: FakeVault,
+  host: FakeHost,
+  writes: number,
+) {
+  await page.keyboard.press('Control+Tab');
+  await expect(article(page, 1, 'beta')).toBeVisible();
+  await caretAtLineEnd(article(page, 1, 'beta').getByText('Line of beta.'));
+  await page.keyboard.type(' B.');
+  await expectFile(vault, 'beta.md').toBe(edited('beta', ' B.'));
+  expect(host.writesTo('alpha.md')).toBe(writes);
+  expect(await vault.read('alpha.md')).toBe(THEIRS);
+}
+
+test('a note re-read in a hidden tab, with nothing typed, is not written', async ({ page }) => {
+  const { vault, host } = await openVault(page);
+  await openAndType(page, 'alpha', ' Mine.');
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await expect(article(page, 1, 'beta')).toBeVisible();
+  await expectFile(vault, 'alpha.md').toBe(edited('alpha', ' Mine.'));
+  await expectSaved(pane(page, 1));
+  const writes = host.writesTo('alpha.md');
+  await vault.write('alpha.md', THEIRS);
+  await emitVaultChanged(page, ['alpha.md']);
+  await tab(page, 1, 'alpha').click();
+  await expect(article(page, 1, 'alpha').getByText('Theirs, added outside.')).toBeVisible();
+  await expectNoWriteAfterReread(page, vault, host, writes);
+});
+
+test('a note re-read in a focused editor, with nothing typed, is not written', async ({ page }) => {
+  const { vault, host } = await openVault(page);
+  await openAndType(page, 'alpha', ' Mine.');
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await expect(article(page, 1, 'beta')).toBeVisible();
+  await tab(page, 1, 'alpha').click();
+  await caretAtLineEnd(article(page, 1, 'alpha').getByText('Line of alpha. Mine.'));
+  await expectFile(vault, 'alpha.md').toBe(edited('alpha', ' Mine.'));
+  await expectSaved(pane(page, 1));
+  const writes = host.writesTo('alpha.md');
+  await vault.write('alpha.md', THEIRS);
+  await emitVaultChanged(page, ['alpha.md']);
+  await expect(article(page, 1, 'alpha').getByText('Theirs, added outside.')).toBeVisible();
+  await expectNoWriteAfterReread(page, vault, host, writes);
+});
+
+const LONG = Array.from({ length: 80 }, (_, i) => `Line ${i + 1} of alpha.`);
+const longNote = (...more: string[]) => `# alpha\n\n${[...LONG, ...more].join('\n\n')}\n`;
+
+/** How far the scroller holding alpha's note is scrolled. */
+const scrollOfAlpha = (page: Page) =>
+  article(page, 1, 'alpha').evaluate((element) => {
+    for (let at = element.parentElement; at !== null; at = at.parentElement) {
+      const { overflowY } = getComputedStyle(at);
+      if ((overflowY === 'auto' || overflowY === 'scroll') && at.scrollHeight > at.clientHeight)
+        return at.scrollTop;
+    }
+    throw new Error('alpha is not in a scroller.');
+  });
+
+/** Opens alpha as a long note with the caret on line 40, scrolled away from the top. */
+async function openLongAlpha(page: Page, vault: FakeVault): Promise<number> {
+  await vault.write('alpha.md', longNote());
+  await emitVaultChanged(page, ['alpha.md']);
+  await row(page, 'alpha').click();
+  await expect(article(page, 1, 'alpha')).toBeVisible();
+  await caretAtLineEnd(article(page, 1, 'alpha').getByText('Line 40 of alpha.', { exact: true }));
+  await expect.poll(() => scrollOfAlpha(page)).toBeGreaterThan(0);
+  return scrollOfAlpha(page);
+}
+
+test('a focused note re-read with a line added at its end keeps its scroll and its caret', async ({
+  page,
+}) => {
+  const { vault } = await openVault(page);
+  const top = await openLongAlpha(page, vault);
+  await vault.write('alpha.md', longNote('Theirs, added outside.'));
+  await emitVaultChanged(page, ['alpha.md']);
+  await expect(article(page, 1, 'alpha').getByText('Theirs, added outside.')).toHaveCount(1);
+  await page.keyboard.type(' More.');
+  await expectFile(vault, 'alpha.md').toContain('Line 40 of alpha. More.');
+  await expect.poll(() => scrollOfAlpha(page)).toBe(top);
+});
+
+test('a hidden tab whose long note was re-read is shown where it was scrolled', async ({
+  page,
+}) => {
+  const { vault } = await openVault(page);
+  const top = await openLongAlpha(page, vault);
+  await row(page, 'beta').click({ modifiers: ['Meta'] });
+  await expect(article(page, 1, 'beta')).toBeVisible();
+  await vault.write('alpha.md', longNote('Theirs, added outside.'));
+  await emitVaultChanged(page, ['alpha.md']);
+  await tab(page, 1, 'alpha').click();
+  await expect(article(page, 1, 'alpha').getByText('Theirs, added outside.')).toHaveCount(1);
+  await expect.poll(() => scrollOfAlpha(page)).toBe(top);
+});
+
 test('typing in one of two tabs on a note, then at once in the other, loses neither', async ({
   page,
 }) => {
