@@ -256,10 +256,11 @@ describe('the declared step’s hourly allowance', () => {
       sharedAsks: {
         most: DECLARED_STEP_ASKS_PER_HOUR,
         asked: DECLARED_STEP_ASKS_PER_HOUR,
-        by: [{ name: RULE.name, asks: DECLARED_STEP_ASKS_PER_HOUR }],
+        by: [{ name: RULE.name, asks: DECLARED_STEP_ASKS_PER_HOUR, own: true, enabled: true }],
       },
+      failures: null,
     });
-    expect((held as NoteRunsCappedError).message).toContain('Waiting, not broken');
+    expect((held as NoteRunsCappedError).message).toContain('Not broken');
     expect(asked()).toHaveLength(0);
     expect(vault.files.get(logPathFor(RULE.id))).toBe(logged);
     expect(parseRunLog(logged!)).toHaveLength(DECLARED_STEP_ASKS_PER_HOUR);
@@ -367,8 +368,8 @@ describe('one hourly allowance for every declared rule in the vault', () => {
     expect(held).toBeInstanceOf(NoteRunsCappedError);
     // It names the rule that spent the rest, with how many each asked (#813).
     expect((held as NoteRunsCappedError).hold.sharedAsks?.by).toEqual([
-      { name: RULE.name, asks: 10 },
-      { name: 'After a client call', asks: 20 },
+      { name: RULE.name, asks: 10, own: true, enabled: true },
+      { name: 'After a client call', asks: 20, own: false, enabled: true },
     ]);
     expect(asked()).toHaveLength(0);
   });

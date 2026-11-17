@@ -117,29 +117,15 @@ describe('AutomationsPage', () => {
     ).toBe(true);
   });
 
-  it('shows a rule held by an hourly limit as waiting, with why and what to do, not as failed (#813)', async () => {
-    const reason = 'Waiting, not broken: it has reached an hourly limit. It runs next at 12:10.';
-    const onTurnOff = vi.fn();
-    page({
-      rows: [
-        {
-          ...ROW,
-          notice: null,
-          waiting: {
-            reason,
-            turnOff: [{ id: '.atlas/automations/Pull.md', rule: 'Pull actions' }],
-          },
-        },
-      ],
-      onTurnOff,
-    });
+  it('shows a rule held by an hourly limit as waiting, with why, not as failed (#813)', () => {
+    const reason = 'Not broken: it has run 20 times this hour. It runs next at 12:10.';
+    page({ rows: [{ ...ROW, notice: null, waiting: reason }] });
     const waiting = screen.getByRole('status', { name: 'Tidy is waiting' });
-    expect(within(waiting).getByText('Waiting').closest('.status-pill')).not.toBeNull();
     expect(within(waiting).getByText('Waiting').closest('[data-tone="waiting"]')).not.toBeNull();
     expect(within(waiting).getByText(reason)).toBeTruthy();
+    expect(within(waiting).queryByRole('button')).toBeNull();
     expect(document.querySelector('.automation-card__notice')).toBeNull();
-    await userEvent.click(within(waiting).getByRole('button', { name: 'Turn off “Pull actions”' }));
-    expect(onTurnOff).toHaveBeenCalledWith('.atlas/automations/Pull.md');
+    expect(document.querySelector('.automation-card--waiting')).not.toBeNull();
   });
 
   it('shows a failing rule’s notice, and no waiting state', () => {

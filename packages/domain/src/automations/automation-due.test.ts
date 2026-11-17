@@ -192,14 +192,12 @@ describe('a rule a note sets off', () => {
     expect(noteRunsHeldUntil(many('2026-10-08T11:00:01'), NOW)).toBe('2026-10-08T12:00:01');
   });
 
-  it('says it is waiting, not broken: its own runs, and when it runs on what it heard meanwhile', () => {
+  it('says it is not broken: its own runs, and when it runs on what it heard meanwhile', () => {
     const hold = noteRunsHold({ rule: 'Tidy', entries: minutes(10, NOTE_RUNS_PER_HOUR), now: NOW });
     expect(hold === null ? null : noteRunsHoldMessage(hold)).toBe(
-      'Waiting, not broken: it has reached an hourly limit. ' +
-        `It may run ${NOTE_RUNS_PER_HOUR} times an hour, each question it asks Claude counted as a run, ` +
-        `and it has used ${NOTE_RUNS_PER_HOUR} in the last hour. ` +
-        'It runs next at 12:10, on what changed meanwhile. ' +
-        'Nothing needs fixing: it catches up by itself.',
+      `Not broken: it has used ${NOTE_RUNS_PER_HOUR} runs this hour, and ${NOTE_RUNS_PER_HOUR} is its most ` +
+        '(each question it asks Claude counts as a run). ' +
+        'It runs next at 12:10, on what arrived meanwhile; nothing to do.',
     );
   });
 });

@@ -487,15 +487,17 @@ describe('useAutomations: rules a note sets off (P29-01)', () => {
     // Not tried again while held: one line in Activity, not one per sync heard.
     const reports = (initial.activity as ReturnType<typeof recordingActivity>).reports;
     expect(reports.filter((report) => report.level === 'error')).toHaveLength(0);
-    expect(reports.filter((report) => report.message.startsWith('Sweep: Waiting'))).toHaveLength(1);
+    expect(reports.filter((report) => report.message.startsWith('Sweep: Not broken'))).toHaveLength(
+      1,
+    );
     expect(vault.files[TASK]).toBeDefined();
     expect(vault.files[LOG]).toBe(log);
     // Held for the hour, not failing: one pause, no failure counted however much it hears.
     expect(hook.result.current.pauses.get('Sweep')).toEqual({
       reason:
-        'Waiting, not broken: it has reached an hourly limit. It may run 20 times an hour, ' +
-        'each question it asks Claude counted as a run, and it has used 20 in the last hour. ' +
-        'It runs next at 09:10, on what changed meanwhile. Nothing needs fixing: it catches up by itself.',
+        'Not broken: it has used 20 runs this hour, and 20 is its most ' +
+        '(each question it asks Claude counts as a run). ' +
+        'It runs next at 09:10, on what arrived meanwhile; nothing to do.',
       failures: 0,
       retryAt: '2026-09-27T09:10:00',
       hold: {
@@ -503,6 +505,7 @@ describe('useAutomations: rules a note sets off (P29-01)', () => {
         until: '2026-09-27T09:10:00',
         runs: { most: 20, spent: 20, countsAsks: true },
         sharedAsks: null,
+        failures: null,
       },
     });
 

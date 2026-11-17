@@ -330,12 +330,10 @@ describe('the declared step’s hourly allowance', () => {
       sharers: [{ name: 'Board digest', entries: times(10, asked) }],
     });
     expect(hold === null ? null : noteRunsHoldMessage(hold)).toBe(
-      'Waiting, not broken: it has reached an hourly limit. ' +
-        `It shares one limit with “Board digest”: together they may ask Claude ${DECLARED_STEP_ASKS_PER_HOUR} times an hour. ` +
-        'An ask is one question to Claude about one note, or about one part of a long note. ' +
-        `In the last hour they asked ${DECLARED_STEP_ASKS_PER_HOUR} times: “After a meeting” 20, “Board digest” 10. ` +
-        'It runs next at 12:10, on what changed meanwhile. ' +
-        'Nothing needs fixing: wait, or turn off “Board digest” to leave the limit to this rule.',
+      `Not broken: it shares one limit of ${DECLARED_STEP_ASKS_PER_HOUR} asks to Claude an hour with “Board digest” ` +
+        '(this rule 20, “Board digest” 10; an ask is one question, and a long meeting takes a few). ' +
+        'It runs next at 12:10, on what arrived meanwhile. ' +
+        `To give it the whole ${DECLARED_STEP_ASKS_PER_HOUR}, turn off “Board digest”.`,
     );
   });
 
