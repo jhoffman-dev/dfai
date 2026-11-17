@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
+import { holdModalLayer } from './modal-layer.ts';
 import { Icon } from './icon.tsx';
 import { isImeKey } from './ime.ts';
 import { KeyHints } from './key-hints.tsx';
@@ -98,7 +99,7 @@ export function CapturePalette({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette" finalFocus={finalFocus} aria-label="Capture a task">
             <div className="palette__field">
