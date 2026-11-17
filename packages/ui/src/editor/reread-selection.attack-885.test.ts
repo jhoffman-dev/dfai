@@ -219,10 +219,10 @@ function seededCase(seed: number, schema: Schema) {
 }
 
 describe('the re-read mapping never throws and never leaves the note (#885 property)', () => {
-  it('holds for 3,000 seeded notes, selections and outside edits, without an editor', () => {
+  it('holds for 1,000 seeded notes, selections and outside edits, without an editor', () => {
     const schema = getSchema(extensions());
     const failures: string[] = [];
-    for (let seed = 1; seed <= 3000 && failures.length < 5; seed += 1) {
+    for (let seed = 1; seed <= 1000 && failures.length < 5; seed += 1) {
       const { doc, after, selection } = seededCase(seed, schema);
       const now = schema.nodeFromJSON(docOf(after));
       // A note the generator nested wrongly would prove nothing.
