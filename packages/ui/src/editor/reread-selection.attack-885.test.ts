@@ -439,6 +439,15 @@ describe('showAsRead keeps the caret on its own line (#885 exact places)', () =>
     expect(editor.state.selection.head).toBe(at('Order the chairs', 3));
   });
 
+  it('does not send the caret to a far line that shares a character with its removed line', () => {
+    editor.commands.setContent(note('Top.', 'Buy milk.', 'x', 'y', 'z', 'w', 'Last.') as object);
+    caret(at('Buy milk.', 'Buy milk.'.length));
+    showAsRead(editor, note('Top.', 'x', 'y', 'z', 'w', 'Last line.'));
+
+    // Its place: the line now where it was, not "Last line." four lines down.
+    expect(editor.state.selection.$head.parent.textContent).toBe('x');
+  });
+
   it('puts the caret on a neighbour, not the note end, when its line is removed among changes', () => {
     caret(at('B line.', 2));
     showAsRead(editor, note('A line.', 'C line, edited.', 'D.', 'E.'));
