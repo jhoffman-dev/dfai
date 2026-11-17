@@ -217,7 +217,11 @@ test('two highlights deleted one after the other, the second before the first is
   await first.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect.poll(() => host.writesTo(NOTE)).toBe(written + 1);
   await second.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(rows).toHaveCount(2);
+  // Its removal waits its turn behind the first's, shown pending rather than refused.
+  await expect(second.getByRole('button', { name: 'Delete', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
   release();
 
   await expect(rows).toHaveCount(0);

@@ -90,10 +90,10 @@ function setUp({ dirty = false }: { dirty?: boolean } = {}) {
   return { files, ports };
 }
 
-function useTab(ports: DocumentPorts) {
-  const note = useLiteratureNoteOf({ ports, vault: VAULT, pdf: PDF }) ?? null;
-  const { highlights } = usePlacedHighlights({ ports, vault: VAULT, note, opened, generation: 1 });
-  const writes = useReaderWrites({ ports, vault: VAULT, note, pdf: PDF, opened });
+function useTab(ports: DocumentPorts, { doc = opened, vault = VAULT } = {}) {
+  const note = useLiteratureNoteOf({ ports, vault, pdf: PDF }) ?? null;
+  const { highlights } = usePlacedHighlights({ ports, vault, note, opened: doc, generation: 1 });
+  const writes = useReaderWrites({ ports, vault, note, pdf: PDF, opened: doc });
   return { note, highlights, ...writes };
 }
 
@@ -203,6 +203,74 @@ describe("a reader tab's literature note", () => {
     release();
     await act(async () => expect(await removed).toEqual([true, true]));
     expect(files.get(NOTE)).not.toContain('atlas:highlight');
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('removes a highlight while an area’s picture is still being drawn, which reads no note (#880)', async () => {
+    const { ports, files } = setUp();
+    let drawing = false;
+    const doc: PdfJsDocument = {
+      ...opened,
+      // Once drawing, the picture never comes (a page pdf.js never finishes rendering).
+      pictureOf: (request) =>
+        drawing ? new Promise<Uint8Array>(() => {}) : opened.pictureOf(request),
+    };
+    const fs = { ...ports.fs, listDirectory: async () => [] };
+    const { result } = renderHook(
+      () => useTab({ ...ports, fs }, { doc, vault: '/vault-picture' }),
+      {
+        wrapper: queryWrapper().wrapper,
+      },
+    );
+    await waitFor(() => expect(result.current.note).toBe(NOTE));
+    await act(() =>
+      result.current.actions.onHighlight({
+        selection: { page: 1, start: 0, end: 7 },
+        style: { mark: 'highlight', color: 'yellow' },
+      }),
+    );
+    await waitFor(() => expect(result.current.highlights).toHaveLength(1));
+    const id = result.current.highlights[0]?.id as string;
+
+    drawing = true;
+    act(() => {
+      void result.current.actions.onHighlightArea({
+        page: 2,
+        box: { x: 0.1, y: 0.1, width: 0.3, height: 0.2 },
+        style: { mark: 'highlight', color: 'yellow' },
+      });
+    });
+    let removed: boolean | 'pending' = 'pending';
+    act(() => {
+      void result.current.actions.onRemove(id).then((answer) => (removed = answer));
+    });
+    await waitFor(() => expect(removed).toBe(true), { timeout: 500 });
+    expect(files.get(NOTE)).not.toContain(`^${id}`);
+  });
+
+  it('answers a second removal of a highlight already gone as done, with no notice (#880)', async () => {
+    const { ports, files } = setUp();
+    const { result } = renderHook(() => useTab(ports, { vault: '/vault-gone' }), {
+      wrapper: queryWrapper().wrapper,
+    });
+    await waitFor(() => expect(result.current.note).toBe(NOTE));
+    await act(() =>
+      result.current.actions.onHighlight({
+        selection: { page: 1, start: 0, end: 7 },
+        style: { mark: 'highlight', color: 'yellow' },
+      }),
+    );
+    await waitFor(() => expect(result.current.highlights).toHaveLength(1));
+    const id = result.current.highlights[0]?.id as string;
+    let removals: Promise<boolean[]> = Promise.resolve([]);
+    act(() => {
+      removals = Promise.all([
+        result.current.actions.onRemove(id),
+        result.current.actions.onRemove(id),
+      ]);
+    });
+    await act(async () => expect(await removals).toEqual([true, true]));
+    expect(files.get(NOTE)).not.toContain(`^${id}`);
     expect(result.current.notice).toBeNull();
   });
 
