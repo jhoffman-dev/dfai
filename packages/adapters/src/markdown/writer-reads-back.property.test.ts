@@ -1,23 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import type { EditorDocument, EditorNode } from '@dfai/domain';
+import type { EditorDocument, EditorNode, ParsedBody } from '@dfai/domain';
 import { parseMarkdownBody, RAW_BLOCK, serializeMarkdownBody } from './markdown-blocks.ts';
-import { documentOf, generatedDocument } from './writer-fuzz.test-support.ts';
+import { documentOf, generatedDocument, seedRuns } from './writer-fuzz.test-support.ts';
+import {
+  shapesNotIn,
+  shapesOf,
+  unlistedFamilies,
+  WRITER_FAMILIES,
+} from './writer-shapes.test-support.ts';
 
 /**
  * The writer's promise (A21-03): an edited block reads back as the editor had
- * it. Seeded editor documents — every block kind the editor writes, text full
- * of markdown's punctuation, every mark — go through the writer and the
- * reader, and must come back as the same document, adjacent text merged.
+ * it. Editor documents — every block kind the editor writes, text full of
+ * markdown's punctuation, every mark — go through the writer and the reader,
+ * and must come back as the same document, adjacent text merged.
  *
  * The one other outcome allowed is a block read back as its own source, shown
  * read-only (ADR-0004): markdown that cannot be written faithfully is kept as
  * written rather than turned silently into something else.
+ *
+ * Seeds: 100 by default, in `it`s of 25, beside the listed families that
+ * hold every shape the property turns on; that keeps each pull request's run
+ * to seconds (#888). The 3000 the property once ran every time are for a
+ * nightly run, `WRITER_SEEDS=3000` (#896): rare combinations still turn up
+ * there, and each one found is listed as a family.
  */
 
-/** A new note holding `doc`, saved and read back. */
-function saveAndReload(doc: EditorDocument): { markdown: string; reread: EditorNode[] } {
+interface Saved {
+  readonly markdown: string;
+  readonly parsed: ParsedBody;
+}
+
+/**
+ * A new note holding `doc`, saved and read back: once per document, since
+ * both properties start from it.
+ */
+const savedOnce = new WeakMap<EditorDocument, Saved>();
+function saveAndReload(doc: EditorDocument): Saved {
+  const known = savedOnce.get(doc);
+  if (known !== undefined) return known;
   const markdown = serializeMarkdownBody({ originalBody: '', parsed: parseMarkdownBody(''), doc });
-  return { markdown, reread: [...parseMarkdownBody(markdown).doc.content] };
+  const saved = { markdown, parsed: parseMarkdownBody(markdown) };
+  savedOnce.set(doc, saved);
+  return saved;
 }
 
 /** The same note, with every text block in it given one more word, saved over itself. */
@@ -32,77 +57,211 @@ function editedEverywhere(doc: EditorDocument): EditorDocument {
 
 type Outcome = 'same' | 'raw' | 'different';
 
-function outcomeOf(doc: EditorDocument, reread: EditorNode[]): Outcome {
-  if (documentOf(reread) === documentOf(doc.content)) return 'same';
-  // Block by block: each reads back as it was, or as its own source.
-  const blocks = doc.content.filter((node) => node.type !== 'paragraph' || node.content?.length);
-  if (blocks.length !== reread.length) return 'different';
-  const each = blocks.map((node, at) =>
-    documentOf([reread[at]!]) === documentOf([node])
-      ? 'same'
-      : reread[at]!.type === RAW_BLOCK
-        ? 'raw'
-        : 'different',
-  );
-  return each.includes('different') ? 'different' : 'raw';
+/** How a document read back, and the blocks of it that were kept as source. */
+interface ReadBack {
+  readonly outcome: Outcome;
+  readonly markdown: string;
+  readonly kept: readonly EditorNode[];
 }
 
-/** Seeds whose documents do not read back as written, with their markdown, for the report. */
-function misread(seeds: number, check: (doc: EditorDocument) => [Outcome, string]) {
+function readBackOf(
+  doc: EditorDocument,
+  reread: readonly EditorNode[],
+  markdown: string,
+): ReadBack {
+  if (documentOf(reread) === documentOf(doc.content))
+    return { outcome: 'same', markdown, kept: [] };
+  // Block by block: each reads back as it was, or as its own source.
+  const blocks = doc.content.filter((node) => node.type !== 'paragraph' || node.content?.length);
+  if (blocks.length !== reread.length) return { outcome: 'different', markdown, kept: [] };
+  const kept = blocks.filter((_, at) => reread[at]!.type === RAW_BLOCK);
+  const different = blocks.some(
+    (node, at) =>
+      reread[at]!.type !== RAW_BLOCK && documentOf([reread[at]!]) !== documentOf([node]),
+  );
+  return { outcome: different ? 'different' : 'raw', markdown, kept };
+}
+
+interface Case {
+  readonly name: string;
+  readonly doc: EditorDocument;
+}
+
+/** The cases whose documents do not read back as written, and those kept as source. */
+function misread(cases: readonly Case[], check: (doc: EditorDocument) => ReadBack) {
   const different: string[] = [];
-  let raw = 0;
-  for (let seed = 1; seed <= seeds; seed += 1) {
-    let outcome: Outcome;
-    let markdown: string;
+  const raw: { name: string; kept: readonly EditorNode[] }[] = [];
+  for (const { name, doc } of cases) {
+    let read: ReadBack;
     try {
-      [outcome, markdown] = check(generatedDocument(seed));
+      read = check(doc);
     } catch (error) {
-      [outcome, markdown] = ['different', `threw ${String(error)}`];
+      read = { outcome: 'different', markdown: `threw ${String(error)}`, kept: [] };
     }
-    if (outcome === 'raw') raw += 1;
-    if (outcome === 'different') different.push(`seed ${seed}: ${JSON.stringify(markdown)}`);
+    if (read.outcome === 'raw') raw.push({ name, kept: read.kept });
+    if (read.outcome === 'different') different.push(`${name}: ${JSON.stringify(read.markdown)}`);
   }
   return { different, raw };
 }
 
-const SEEDS = 3000;
+function expectNoneDifferent(different: readonly string[], cases: number) {
+  expect(different.slice(0, 8), `${different.length} of ${cases} read differently`).toEqual([]);
+}
+
+/** Kept as source is the last resort, not the answer: no listed document is, each built to be written faithfully. */
+function expectReadBack(cases: readonly Case[], check: (doc: EditorDocument) => ReadBack) {
+  const { different, raw } = misread(cases, check);
+  expectNoneDifferent(different, cases.length);
+  expect(
+    raw.map(({ name }) => name),
+    'kept as source',
+  ).toEqual([]);
+}
+
 /**
- * About 17 s alone; past 120 s under the gate's coverage run beside the
- * rest of the suite on a loaded Mac (2026-10-04, twice). The work is fixed
- * and deterministic, so this is a budget for CPU, not a wait on a moment.
+ * Whether a block kept as source holds the one thing markdown has no way to
+ * write (ADR-0004, pinned above): a tag straight before a marked run that
+ * starts with punctuation, or with an atom, which no escape can open after
+ * the tag's last letter without unmaking the tag.
  */
-const BUDGET_MS = 300_000;
+function keptForTheKnownReason(block: EditorNode): boolean {
+  const marks = (node: EditorNode) => (node.marks ?? []).map((mark) => mark.type);
+  const opensAfterTag = (before: EditorNode, run: EditorNode) =>
+    before.type === 'text' &&
+    /#[A-Za-z][\w-]*$/u.test(before.text ?? '') &&
+    marks(run).some((mark) => !marks(before).includes(mark)) &&
+    (run.type !== 'text' || /^[^\p{L}\p{N}\s]/u.test(run.text ?? ''));
+  const line = (node: EditorNode): boolean =>
+    (node.content ?? []).some((run, at) => at > 0 && opensAfterTag(node.content![at - 1]!, run)) ||
+    (node.content ?? []).some(line);
+  return line(block);
+}
+
+/**
+ * The seeded documents each way kept as source, over every seeded `it` that
+ * ran: at most 1 in 100 of them, rounded down, as the property has always
+ * allowed (#888) — 6 of the first 3000 seeds are.
+ */
+const keptSeeds = new Map<string, { seeds: number; kept: string[] }>();
+
+function writtenAfresh(doc: EditorDocument): ReadBack {
+  const { markdown, parsed } = saveAndReload(doc);
+  return readBackOf(doc, parsed.doc.content, markdown);
+}
+
+function editedAgain(first: EditorDocument): ReadBack {
+  const { markdown: original, parsed } = saveAndReload(first);
+  if (parsed.doc.content.some((node) => node.type === RAW_BLOCK))
+    return { outcome: 'same', markdown: original, kept: [] };
+  const doc = editedEverywhere(parsed.doc);
+  const markdown = serializeMarkdownBody({ originalBody: original, parsed, doc });
+  const reread = [...parseMarkdownBody(markdown).doc.content];
+  return readBackOf(doc, reread, `${original}\n=>\n${markdown}`);
+}
+
+const casesOf = (family: string, documents: readonly EditorDocument[]): Case[] =>
+  documents.map((doc, at) => ({ name: `${family} ${at}`, doc }));
+
+/**
+ * The listed documents, a family at a time, each holding every shape of its
+ * family (`WRITER_FAMILIES`): every piece of the generator's text at each end
+ * of every kind of text block and under every mark, every kind of block,
+ * nesting, atom, link, embed and id, everything beside everything, and
+ * addresses running on. 3000 seeds drew them too, and took up to 105 s on CI
+ * to do it (#888). A few seeds still run, for what nobody thought to list.
+ */
+const SEED_RUNS = seedRuns({
+  name: 'WRITER_SEEDS',
+  set: process.env['WRITER_SEEDS'],
+  fallback: 100,
+  size: 25,
+});
+const seededFrom = (first: number, last: number) =>
+  Array.from({ length: last - first + 1 }, (_, at) => generatedDocument(first + at));
+
+/** How many seeds the guard draws: the generator alone, with no writer, so it is quick. */
+const GUARD_SEEDS = 400;
+
+/** Every shape `docs` hold between them. */
+const shapesIn = (docs: readonly EditorDocument[]) =>
+  new Set(docs.flatMap((doc) => [...shapesOf(doc)]));
+
+describe('a limit of markdown the writer keeps as source (ADR-0004)', () => {
+  it('keeps a tag straight before a bold run that starts with punctuation as source', () => {
+    // `**` cannot open after a letter before punctuation, and `#&#x78;` is no
+    // longer the tag `#x`: no markdown reads back as this. A writer that finds
+    // one will fail here, and this test can then go.
+    const doc: EditorDocument = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: '#x' },
+            { type: 'text', text: '_', marks: [{ type: 'bold' }] },
+          ],
+        },
+      ],
+    };
+    const { markdown, parsed } = saveAndReload(doc);
+    expect(markdown).toBe('#&#x78;**\\_**\n');
+    expect(parsed.doc.content.map((node) => [node.type, node.attrs?.['markdown']])).toEqual([
+      [RAW_BLOCK, '#&#x78;**\\_**'],
+    ]);
+  });
+});
 
 describe('an edited block reads back as the editor had it', () => {
-  it(
-    `holds for ${SEEDS} seeded documents written afresh`,
-    () => {
-      const { different, raw } = misread(SEEDS, (doc) => {
-        const { markdown, reread } = saveAndReload(doc);
-        return [outcomeOf(doc, reread), markdown];
-      });
-      expect(different.slice(0, 8), `${different.length} of ${SEEDS} read differently`).toEqual([]);
-      // Kept as source is the last resort, not the answer: a handful at most.
-      expect(raw, `${raw} of ${SEEDS} kept as source`).toBeLessThanOrEqual(SEEDS / 100);
-    },
-    BUDGET_MS,
-  );
+  it('lists the documents of every family of shapes', () => {
+    expect(unlistedFamilies()).toEqual([]);
+  });
 
-  it(
-    `holds for ${SEEDS} seeded documents saved, reopened and edited again`,
-    () => {
-      const { different, raw } = misread(SEEDS, (first) => {
-        const { markdown: original } = saveAndReload(first);
-        const parsed = parseMarkdownBody(original);
-        if (parsed.doc.content.some((node) => node.type === RAW_BLOCK)) return ['same', original];
-        const doc = editedEverywhere(parsed.doc);
-        const markdown = serializeMarkdownBody({ originalBody: original, parsed, doc });
-        const reread = [...parseMarkdownBody(markdown).doc.content];
-        return [outcomeOf(doc, reread), `${original}\n=>\n${markdown}`];
+  // The lists the listed documents are built from are typed out, where the
+  // generator writes its kinds inline: a kind or a shape it gains must be listed too.
+  it(`lists every shape ${GUARD_SEEDS} seeds of the generator draw`, () => {
+    const listed = shapesIn(WRITER_FAMILIES.flatMap((family) => family.documents));
+    const seeded = shapesIn(seededFrom(1, GUARD_SEEDS));
+    expect([...seeded].filter((shape) => !listed.has(shape)).sort()).toEqual([]);
+  });
+
+  describe.each([
+    ['written afresh', writtenAfresh],
+    ['saved, reopened and edited again', editedAgain],
+  ] as const)('%s', (way, check) => {
+    it.each(WRITER_FAMILIES.map((family) => [family.name, family] as const))(
+      'holds for %s, which its listed documents all hold',
+      (_name, family) => {
+        expect(shapesNotIn(family.documents, family.shapes)).toEqual([]);
+        expectReadBack(casesOf(family.name, family.documents), check);
+      },
+    );
+
+    it.each(SEED_RUNS)('holds for seeded documents %i to %i', (first, last) => {
+      const seeded = seededFrom(first, last).map((doc, at) => ({
+        name: `seed ${first + at}`,
+        doc,
+      }));
+      const { different, raw } = misread(seeded, check);
+      // Counted first, so the check over the whole run sees them however this one ends.
+      const tally = keptSeeds.get(way) ?? { seeds: 0, kept: [] };
+      keptSeeds.set(way, {
+        seeds: tally.seeds + seeded.length,
+        kept: [...tally.kept, ...raw.map(({ name }) => name)],
       });
-      expect(different.slice(0, 8), `${different.length} of ${SEEDS} read differently`).toEqual([]);
-      expect(raw, `${raw} of ${SEEDS} kept as source`).toBeLessThanOrEqual(SEEDS / 100);
-    },
-    BUDGET_MS,
-  );
+      expectNoneDifferent(different, seeded.length);
+      const unknown = raw.filter(({ kept }) => !kept.every(keptForTheKnownReason));
+      expect(
+        unknown.map(({ name }) => name),
+        'kept as source for another reason',
+      ).toEqual([]);
+    });
+
+    it('keeps at most 1 in 100 of the seeded documents that ran as source', () => {
+      const { seeds, kept } = keptSeeds.get(way) ?? { seeds: 0, kept: [] };
+      expect(
+        kept.length,
+        `of ${seeds} seeds, kept as source: ${kept.join(', ')}`,
+      ).toBeLessThanOrEqual(Math.floor(seeds / 100));
+    });
+  });
 });
