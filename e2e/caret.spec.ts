@@ -114,10 +114,34 @@ async function undoLineEndKey(page: Page, line: string, times: number): Promise<
   }, times);
 }
 
+/**
+ * Opens the note with its editor focused by a click on another line, and
+ * waits until ProseMirror's check after that focus has run. The helper's
+ * click then makes no focus and so no check, and the only undo of ⌘→ is the
+ * one undoLineEndKey forces: the check could otherwise undo the press after
+ * it too (#869), which is not what these tests are about. The check runs on
+ * a 20 ms timer set at the focus, so a 20 ms timer set after it, at the
+ * focusin, runs once the check has.
+ */
+async function openNoteFocusedPastItsCheck(page: Page): Promise<void> {
+  await openNote(page);
+  await page.evaluate(() => {
+    window.addEventListener(
+      'focusin',
+      () => setTimeout(() => ((window as { focusChecked?: boolean }).focusChecked = true), 20),
+      { capture: true, once: true },
+    );
+  });
+  await page.getByText('Below the table.').click();
+  await expect
+    .poll(() => page.evaluate(() => (window as { focusChecked?: boolean }).focusChecked))
+    .toBe(true);
+}
+
 test('a line-end key undone back to where the click put the caret is pressed once more', async ({
   page,
 }) => {
-  await openNote(page);
+  await openNoteFocusedPastItsCheck(page);
   await undoLineEndKey(page, 'Above the table.', 1);
   const above = page.getByText('Above the table.');
 
@@ -128,7 +152,7 @@ test('a line-end key undone back to where the click put the caret is pressed onc
 });
 
 test("a line-end key undone twice fails with the helper's own message", async ({ page }) => {
-  await openNote(page);
+  await openNoteFocusedPastItsCheck(page);
   await undoLineEndKey(page, 'Above the table.', 2);
 
   const missed = await caretAtLineEnd(page.getByText('Above the table.')).then(
