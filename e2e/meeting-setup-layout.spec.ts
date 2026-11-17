@@ -75,7 +75,9 @@ for (const [label, width, height] of [
     // And the yes still writes: what it did is said in the bar, clear of the editor.
     await setup.getByRole('button', { name: 'Preview' }).click();
     await setup.getByRole('button', { name: 'Set up' }).click();
-    await expect(setup.getByRole('status')).toBeVisible();
+    await expect(
+      setup.getByRole('status').filter({ hasText: /Meetings are processed when they arrive/ }),
+    ).toBeVisible();
     await expect.poll(() => overlap(setup, editor)).toBe(0);
   });
 }
