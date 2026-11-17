@@ -28,16 +28,25 @@ const NOTES: Record<string, string> = {
   'People/Mara Quill.md': '---\ntype: person\nemail: mara.quill@example.com\n---\n',
 };
 
-/** Every command that writes, moves or removes anything, or appends to Activity. */
-const WRITES = [
-  'write_text_file',
-  'create_note',
-  'create_folder',
-  'move_entry',
-  'trash_entry',
-  'write_binary_file',
-  'activity_append',
-] as const;
+/**
+ * Every host command Suggest may cause: reads, and Claude Code's run. Any
+ * other — a write, a move, a secret, an index change, and any command added
+ * later — fails the test by default.
+ */
+const READS = new Set([
+  'read_notes',
+  'read_text_file',
+  'list_notes',
+  'list_files',
+  'list_directory',
+  'index_query',
+  'index_notes_of_type',
+  'model_process_start',
+]);
+
+/** The commands asked for since `before`, by name. */
+const calledSince = (before: ReadonlyMap<string, number>, now: ReadonlyMap<string, number>) =>
+  [...now].filter(([command, count]) => count > (before.get(command) ?? 0)).map(([c]) => c);
 
 const ANSWER = JSON.stringify({
   items: [
@@ -86,13 +95,13 @@ test('Suggest shows what Claude would do with each item and the sentence, and wr
   await expect(main.getByRole('button', { name: 'Call Mara Quill', exact: true })).toBeVisible();
   const asks = () => host.claude.runs().filter((run) => run.args[0] === '-p');
   expect(asks()).toHaveLength(0);
-  const writesBefore = WRITES.map((command) => host.callsTo(command));
+  const before = host.commandCounts();
 
   await main.getByRole('button', { name: 'Suggest' }).click();
 
   const suggestions = main.getByRole('region', { name: 'Suggestions' });
   await expect(suggestions.getByRole('status')).toHaveText(
-    '3 items: would file 1, 1 question, would leave 1 Nothing is written.',
+    '3 items: would act on 1, 1 question, would leave 1 Nothing is written.',
   );
   const call = suggestions.getByRole('listitem', { name: 'Call Mara Quill' });
   await expect(call).toContainText('Make it a task under Larkspur Payroll');
@@ -112,12 +121,14 @@ test('Suggest shows what Claude would do with each item and the sentence, and wr
   expect(told).toContain(`<vault_data note="${ARTICLE}">`);
   expect(told).not.toContain(FRESH);
 
-  // Nothing was written: no write of any kind was asked of the host, and every file is as it was.
-  expect(WRITES.map((command) => host.callsTo(command))).toEqual(writesBefore);
+  // Nothing was written: the host was asked for reads alone, and every file is as it was.
+  const called = calledSince(before, host.commandCounts());
+  expect(called).toContain('model_process_start');
+  expect(called.filter((command) => !READS.has(command))).toEqual([]);
   for (const [path, text] of Object.entries(NOTES)) expect(await vault.read(path)).toBe(text);
 
   // Dismissed from the keyboard, it is gone.
   await focusThenPress(suggestions.getByRole('button', { name: 'Dismiss' }), 'Enter');
   await expect(suggestions).toHaveCount(0);
-  expect(WRITES.map((command) => host.callsTo(command))).toEqual(writesBefore);
+  expect(calledSince(before, host.commandCounts()).filter((c) => !READS.has(c))).toEqual([]);
 });

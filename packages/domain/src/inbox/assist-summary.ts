@@ -15,17 +15,17 @@ export function assistTone(step: AssistStep): AssistTone {
 }
 
 /**
- * The plan in one sentence: "14 items: would file 9, 2 questions, would
+ * The plan in one sentence: "14 items: would act on 9, 2 questions, would
  * leave 3". A part with none is left out; no items at all is said plainly.
  */
 export function assistSummary(rows: readonly AssistRow[]): string {
   if (rows.length === 0) return 'Nothing to suggest: no items to look at.';
   const count = (tone: AssistTone) => rows.filter((row) => assistTone(row.step) === tone).length;
-  const filed = count('file');
+  const acted = count('file');
   const asked = count('ask');
   const left = count('leave');
   const parts = [
-    filed > 0 ? `would file ${filed}` : null,
+    acted > 0 ? `would act on ${acted}` : null,
     asked > 0 ? `${asked} ${asked === 1 ? 'question' : 'questions'}` : null,
     left > 0 ? `would leave ${left}` : null,
   ].filter((part) => part !== null);

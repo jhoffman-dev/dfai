@@ -113,11 +113,21 @@ function onlyKeys(record: Readonly<Record<string, unknown>>, keys: readonly stri
   return present.length === keys.length && present.every((key) => keys.includes(key));
 }
 
+/**
+ * What one line of plain text never holds: control characters (line breaks,
+ * NUL, the vertical tab, U+0085), format characters (the bidi overrides and
+ * isolates, zero-width ones) and the line and paragraph separators. Refused
+ * rather than stripped: text that carries them was not written to be read
+ * as it shows, so the answer is not trusted. An emoji joined by a zero-width
+ * joiner is refused with them.
+ */
+const UNSHOWN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
 /** One line of text, not blank, no longer than {@link ASSIST_TEXT_MAX}; undefined for anything else. */
 function shortText(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const text = value.trim();
-  if (text === '' || text.length > ASSIST_TEXT_MAX || /[\r\n]/.test(text)) return undefined;
+  if (text === '' || text.length > ASSIST_TEXT_MAX || UNSHOWN.test(value)) return undefined;
   return text;
 }
 

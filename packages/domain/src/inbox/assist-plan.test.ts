@@ -247,3 +247,99 @@ describe('what is asked about', () => {
     expect(batch.notConsidered).toBe(0);
   });
 });
+
+describe('never overwriting what the person set (#903)', () => {
+  const TOBIAS = { path: createVaultPath('People/Tobias Fenn.md'), title: 'Tobias Fenn' };
+  const facts: AssistFacts = { ...FACTS, people: [MARA, TOBIAS] };
+  const filed = (row: Record<string, unknown> = {}) =>
+    note('Inbox/Call Mara Quill.md', {
+      type: 'task',
+      status: 'inbox',
+      project: PAYROLL.path,
+      due: '2026-12-01',
+      waitingOn: MARA.path,
+      ...row,
+    });
+  const planned = (extra: Partial<AssistItemAnswer>, item = filed()) =>
+    assistPlan(item, answer(extra), facts).step;
+
+  it('asks, showing both, when the project differs', () => {
+    expect(planned({ projects: ['Areas/Hiring.md'] })).toEqual({
+      kind: 'ask',
+      question: 'You filed this under Larkspur Payroll; Claude suggests Hiring.',
+    });
+  });
+
+  it('asks, showing both, when the due differs', () => {
+    expect(planned({ due: '2026-11-18' })).toEqual({
+      kind: 'ask',
+      question: 'You set it due 2026-12-01; Claude suggests 2026-11-18.',
+    });
+  });
+
+  it('asks, showing both, when the person it waits on differs, linked or written', () => {
+    expect(planned({ waitingOn: 'People/Tobias Fenn.md' })).toEqual({
+      kind: 'ask',
+      question: 'It waits on Mara Quill; Claude suggests Tobias Fenn.',
+    });
+    const written = filed({ waitingOn: null, waitingOnNames: 'Mara Quill' });
+    expect(planned({ waitingOn: 'Tobias Fenn' }, written)).toEqual({
+      kind: 'ask',
+      question: 'It waits on Mara Quill; Claude suggests Tobias Fenn.',
+    });
+    expect(planned({ waitingOn: 'Mara Quill' }, written)).toEqual({
+      kind: 'leave',
+      because: 'Already a task, with nothing clear to add.',
+    });
+  });
+
+  it('asks when a task is called a note or reference, rather than file it as one', () => {
+    expect(planned({ kind: 'note', projects: ['Areas/Hiring.md'] })).toEqual({
+      kind: 'ask',
+      question: 'You made this a task; Claude thinks it is a note.',
+    });
+    expect(planned({ kind: 'reference' })).toEqual({
+      kind: 'ask',
+      question: 'You made this a task; Claude thinks it is reference.',
+    });
+  });
+
+  it('leaves it when every suggestion agrees with what is set', () => {
+    expect(
+      planned({ projects: ['Larkspur Payroll'], due: '2026-12-01', waitingOn: 'Mara Quill' }),
+    ).toEqual({ kind: 'leave', because: 'Already a task, with nothing clear to add.' });
+  });
+
+  it('fills in only what is missing, and plans nothing for what is set', () => {
+    const bare = filed({ project: null, due: null, waitingOn: null });
+    expect(
+      planned({ projects: ['Areas/Hiring.md'], due: '2026-11-20', waitingOn: 'Mara Quill' }, bare),
+    ).toEqual({
+      kind: 'task',
+      makeTask: false,
+      project: HIRING,
+      due: '2026-11-20',
+      waitingOn: MARA,
+    });
+    const noDue = filed({ due: null });
+    expect(planned({ projects: ['Larkspur Payroll'], due: '2026-11-20' }, noDue)).toEqual({
+      kind: 'task',
+      makeTask: false,
+      project: null,
+      due: '2026-11-20',
+      waitingOn: null,
+    });
+  });
+});
+
+describe('the due horizon (#903)', () => {
+  it('plans a due up to two years ahead, and asks about one further', () => {
+    expect(stepOf({ due: '2028-11-17' })).toMatchObject({ kind: 'task', due: '2028-11-17' });
+    for (const due of ['2028-11-18', '3026-11-17', '9999-12-31']) {
+      expect(stepOf({ due })).toEqual({
+        kind: 'ask',
+        question: `Claude gave a due date more than two years away (${due}).`,
+      });
+    }
+  });
+});

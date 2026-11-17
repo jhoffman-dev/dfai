@@ -1,4 +1,14 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type { GtdStatus, InboxItem, VaultPath } from '@dfai/domain';
 import { Icon } from './icon.tsx';
 import {
@@ -29,6 +39,7 @@ import type { InboxOfferReading } from './inbox-offer.ts';
 import { useListAnchor, type ListAnchorParts } from './list-anchor.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
 import { AssistSummary, type AssistView } from './inbox/assist-summary.tsx';
+import { useAssistKeys } from './inbox/use-assist-keys.ts';
 
 const NO_REFUSALS: readonly InboxRefusal[] = [];
 
@@ -209,12 +220,17 @@ export function InboxPage(props: InboxPageProps) {
     offersRead.some((read) => read?.waitingForIndex === true),
   );
   const anchor = useListAnchor(parts, live);
-  const home = useInboxHome({
+  const assistKeys = useAssistKeys(assist);
+  const homeKeys = useInboxHome({
     page: article,
     empty: props.contents?.items.length === 0,
     busy: props.busy,
     onUndo: props.onUndo,
   });
+  const onPageKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    homeKeys.onKeyDown(event);
+    assistKeys.onPageKeyDown(event);
+  };
   return (
     <>
       <PageBar
@@ -235,6 +251,7 @@ export function InboxPage(props: InboxPageProps) {
                 <SuggestAction
                   asking={assist.view?.kind === 'asking'}
                   onSuggest={assist.onSuggest}
+                  buttonRef={assistKeys.suggest}
                 />
               )}
             </>
@@ -251,13 +268,19 @@ export function InboxPage(props: InboxPageProps) {
         {...ROW_SCROLLER_MARK}
       >
         <RowScrollerContext.Provider value={scroller}>
-          <article className="page page--wide inbox" aria-label="Inbox" ref={article} {...home}>
+          <article
+            className="page page--wide inbox"
+            aria-label="Inbox"
+            ref={article}
+            {...homeKeys}
+            onKeyDown={onPageKeyDown}
+          >
             <HiddenTitle>To process</HiddenTitle>
             {settingsUnreadable !== null && <SettingsUnreadable {...settingsUnreadable} />}
             {ownerUnknown !== null && <OwnerUnknown {...ownerUnknown} />}
             {meetingsWaiting !== null && <MeetingsWaiting {...meetingsWaiting} />}
             {assist !== null && assist.view !== null && (
-              <AssistSummary view={assist.view} onDismiss={assist.onDismiss} />
+              <AssistSummary view={assist.view} onDismiss={assistKeys.dismiss} />
             )}
             <Offers
               offers={[
@@ -299,23 +322,27 @@ export function InboxPage(props: InboxPageProps) {
 
 /**
  * Suggest's button (#900). Memoised, so the bar drawn again as rows are
- * decided does not draw it again: opening and working the Inbox do the work
- * they did before it was there.
+ * decided does not draw it again: without it, opening the Inbox drew 451
+ * components and deciding a row 702, against 448 and 690 with it (#903).
+ * While it asks it stays focusable (`busy`), so the keyboard keeps its place.
  */
 const SuggestAction = memo(function SuggestAction({
   asking,
   onSuggest,
+  buttonRef,
 }: {
   asking: boolean;
   onSuggest: () => void;
+  buttonRef: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <PageAction
       icon="spark"
       label="Suggest"
       title="Suggest what to do with the items in view. Nothing is written."
-      disabled={asking}
+      busy={asking}
       onPress={onSuggest}
+      buttonRef={buttonRef}
     />
   );
 });

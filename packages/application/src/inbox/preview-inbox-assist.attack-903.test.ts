@@ -59,6 +59,7 @@ function setUp({
     throw new Error(`${name} was asked for`);
   };
   const ports: InboxAssistPorts = {
+    recordAsk: () => {},
     provider: () => model,
     deadline: () => {
       const controller = new AbortController();

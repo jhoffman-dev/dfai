@@ -14,6 +14,7 @@ import {
   FILED_UNDER_TYPES,
   filingRefusal,
   INBOX_ASSIST_PROMPT,
+  INBOX_ASSIST_ROLE,
   inboxAssistData,
   localTimeMs,
   messageWithoutPaths,
@@ -31,9 +32,12 @@ import {
 import { notesInUseOfTypes } from '../archive/notes-in-use.ts';
 import { allowanceAskTimes } from '../automations/ask-allowance.ts';
 import { CLAUDE_RUN_TIMEOUT_MS } from '../automations/claude-step.ts';
-import { ModelProviderError, type ModelProvider, type ProviderStatus } from '../chat/ports.ts';
-import { runChatTurn, turnFailureOf } from '../chat/run-chat-turn.ts';
-import type { ChatToolbox } from '../chat/toolbox.ts';
+import {
+  ChatCancelled,
+  ModelProviderError,
+  type ModelProvider,
+  type ProviderStatus,
+} from '../chat/ports.ts';
 import type { IndexPort } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
@@ -53,6 +57,12 @@ export interface InboxAssistPorts {
   readonly index: Pick<IndexPort, 'notesOfType' | 'query'>;
   /** Whether a pane holds typing in the note not saved yet. */
   readonly unsaved: (path: VaultPath) => boolean;
+  /**
+   * Keeps the moment an ask is sent, in wall-clock milliseconds, before it
+   * is sent: an ask counts against the hour however it ends. Suggest writes
+   * no log, so its caller keeps these.
+   */
+  readonly recordAsk: (at: number) => void;
 }
 
 export interface InboxAssistRequest {
@@ -63,12 +73,11 @@ export interface InboxAssistRequest {
    * log, so its caller counts its asks against the hourly allowance.
    */
   readonly previewed: readonly number[];
+  /** Aborts the ask: the person dismissed it. It still counts. */
+  readonly signal?: AbortSignal;
 }
 
-/**
- * What a preview came to. `asked` is when it asked Claude, for the caller
- * to count — null when it did not; an ask is counted however it ended.
- */
+/** What a preview came to. */
 export type InboxAssistOutcome =
   | {
       readonly kind: 'plan';
@@ -76,10 +85,9 @@ export type InboxAssistOutcome =
       readonly rows: readonly AssistRow[];
       /** Items after those planned, not looked at in this ask. */
       readonly notConsidered: number;
-      readonly asked: number | null;
     }
   /** It did not ask, or its answer was not used; `message` says why, plainly. */
-  | { readonly kind: 'not-now'; readonly message: string; readonly asked: number | null };
+  | { readonly kind: 'not-now'; readonly message: string };
 
 /**
  * A plan for the items in view, from one ask to Claude about at most ten of
@@ -91,13 +99,13 @@ export type InboxAssistOutcome =
  */
 export async function previewInboxAssist(
   ports: InboxAssistPorts,
-  { items, previewed }: InboxAssistRequest,
+  { items, previewed, signal }: InboxAssistRequest,
 ): Promise<InboxAssistOutcome> {
   const batch = assistBatch(items, (path) => ports.unsaved(path));
   const open = batch.considered.filter(({ skip }) => skip === null).map(({ item }) => item);
   const { notes, quiet } = await quietNotes(ports, open);
   const skipOf = (item: InboxItem, listed: string | null) => listed ?? quiet.get(item.path) ?? null;
-  const plan = (row: (item: InboxItem) => AssistRow, asked: number | null): InboxAssistOutcome => {
+  const plan = (row: (item: InboxItem) => AssistRow): InboxAssistOutcome => {
     const rows = batch.considered.map(({ item, skip }) => {
       const because = skipOf(item, skip);
       return because === null ? row(item) : leftRow(item, because);
@@ -107,17 +115,16 @@ export async function previewInboxAssist(
       summary: assistSummary(rows),
       rows,
       notConsidered: batch.notConsidered,
-      asked,
     };
   };
   // Every item considered was skipped: nothing is asked.
-  if (notes.length === 0) return plan((item) => leftRow(item, ''), null);
+  if (notes.length === 0) return plan((item) => leftRow(item, ''));
   const held = await allowanceHeld(ports, previewed);
-  if (held !== null) return { kind: 'not-now', message: held, asked: null };
-  const asking = await askClaude(ports, notes);
+  if (held !== null) return { kind: 'not-now', message: held };
+  const asking = await askClaude(ports, { notes, signal });
   if (asking.kind === 'not-now') return asking;
   const entries = new Map(asking.entries.map((entry) => [entry.item, entry]));
-  return plan((item) => assistPlan(item, entries.get(item.path)!, asking.facts), asking.asked);
+  return plan((item) => assistPlan(item, entries.get(item.path)!, asking.facts));
 }
 
 function leftRow(item: InboxItem, because: string): AssistRow {
@@ -161,15 +168,22 @@ type Asking =
       readonly kind: 'answered';
       readonly entries: readonly AssistItemAnswer[];
       readonly facts: AssistFacts;
-      readonly asked: number;
     }
   | Extract<InboxAssistOutcome, { kind: 'not-now' }>;
 
-/** One ask about `notes`, with no tools, and its answer read whole or refused. */
-async function askClaude(ports: InboxAssistPorts, notes: readonly AnsweredNote[]): Promise<Asking> {
+const notUsed = (problem: string): Asking => ({
+  kind: 'not-now',
+  message: `Claude’s answer was not used: ${problem} Nothing changed.`,
+});
+
+/** One ask about `notes`, with no tools, counted before it is sent, and its answer read whole or refused. */
+async function askClaude(
+  ports: InboxAssistPorts,
+  { notes, signal }: { notes: readonly AnsweredNote[]; signal: AbortSignal | undefined },
+): Promise<Asking> {
   const provider = ports.provider();
   const status = await provider.status();
-  if (!status.ready) return { kind: 'not-now', message: unreachableWords(status), asked: null };
+  if (!status.ready) return { kind: 'not-now', message: unreachableWords(status) };
   const facts = await vaultFacts(ports);
   const system = claudeStepSystem({
     today: facts.today,
@@ -177,73 +191,73 @@ async function askClaude(ports: InboxAssistPorts, notes: readonly AnsweredNote[]
     answer: ASSIST_ANSWER_SHAPE,
     notes,
     data: inboxAssistData(facts),
+    role: INBOX_ASSIST_ROLE,
   });
   const tooLong = claudeSystemProblem(system);
-  if (tooLong !== null) return { kind: 'not-now', message: tooLong, asked: null };
-  const asked = localTimeMs(ports.clock.localNow()) ?? 0;
-  const said = await lastWord(ports, { provider, system });
-  if (!said.ok) return { kind: 'not-now', message: said.message, asked };
+  if (tooLong !== null) return { kind: 'not-now', message: tooLong };
+  ports.recordAsk(localTimeMs(ports.clock.localNow()) ?? ports.clock.now());
+  const said = await oneRound(provider, {
+    system,
+    signal: linked(ports.deadline(CLAUDE_RUN_TIMEOUT_MS), signal),
+  });
+  if (!said.ok) return { kind: 'not-now', message: said.message };
   const read = readAssistAnswer(
     said.text,
     notes.map((note) => note.path),
   );
-  if (!read.ok) {
+  return read.ok ? { kind: 'answered', entries: read.value, facts } : notUsed(read.problem);
+}
+
+/**
+ * Claude's answer in one round, or why there is none. Suggest sends one
+ * request and reads what comes back: a tool call, or a call written so badly
+ * it could not be read, refuses the answer rather than start another round,
+ * so one ask is one request.
+ */
+async function oneRound(
+  provider: ModelProvider,
+  { system, signal }: { system: string; signal: AbortSignal },
+): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+  const request = {
+    model: DECLARED_STEP_MODEL,
+    system,
+    messages: [{ role: 'user' as const, text: CLAUDE_STEP_QUESTION }],
+    tools: [],
+  };
+  let text = '';
+  try {
+    for await (const event of provider.stream(request, signal)) {
+      if (event.type === 'text') text += event.text;
+      if (event.type === 'tool_call' || event.type === 'malformed') {
+        return { ok: false, message: TOOL_REFUSED };
+      }
+    }
+  } catch (thrown) {
+    if (thrown instanceof ChatCancelled) return { ok: false, message: STOPPED };
+    if (!(thrown instanceof ModelProviderError)) throw thrown;
     return {
-      kind: 'not-now',
-      message: `Claude’s answer was not used: ${read.problem} Nothing changed.`,
-      asked,
+      ok: false,
+      message: `Not now: Claude could not be reached (${messageWithoutPaths(thrown)}). Nothing changed.`,
     };
   }
-  return { kind: 'answered', entries: read.value, facts, asked };
+  return signal.aborted ? { ok: false, message: STOPPED } : { ok: true, text };
 }
 
-/** Claude's last word, or why there is none, in words the person can act on. */
-async function lastWord(
-  ports: InboxAssistPorts,
-  { provider, system }: { provider: ModelProvider; system: string },
-): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
-  try {
-    const outcome = await runChatTurn({
-      provider,
-      toolbox: NO_TOOLS,
-      model: DECLARED_STEP_MODEL,
-      system,
-      history: [{ role: 'user', text: CLAUDE_STEP_QUESTION }],
-      signal: ports.deadline(CLAUDE_RUN_TIMEOUT_MS),
-      onEvent: () => {
-        // Only the last word is read: nothing is shown as it arrives.
-      },
-    });
-    if (outcome.stopped) return { ok: false, message: 'Claude did not finish. Nothing changed.' };
-    const last = outcome.added.findLast((message) => message.role === 'assistant');
-    return { ok: true, text: last?.role === 'assistant' ? last.text : '' };
-  } catch (thrown) {
-    const { cause } = turnFailureOf(thrown);
-    if (cause instanceof ModelProviderError) {
-      return {
-        ok: false,
-        message: `Not now: Claude could not be reached (${messageWithoutPaths(cause)}). Nothing changed.`,
-      };
-    }
-    if (cause instanceof ToolRefused) return { ok: false, message: cause.message };
-    throw thrown;
+const STOPPED = 'Claude did not finish. Nothing changed.';
+const TOOL_REFUSED =
+  'Claude’s answer was not used: it reached for a tool, and Suggest gives it none. Nothing changed.';
+
+/** A signal that aborts when either does: the time limit, or the person dismissing the ask. */
+function linked(deadline: AbortSignal, dismissed: AbortSignal | undefined): AbortSignal {
+  if (dismissed === undefined) return deadline;
+  const both = new AbortController();
+  const stop = () => both.abort();
+  for (const signal of [deadline, dismissed]) {
+    if (signal.aborted) stop();
+    else signal.addEventListener('abort', stop, { once: true });
   }
+  return both.signal;
 }
-
-class ToolRefused extends Error {
-  constructor() {
-    super(
-      'Claude’s answer was not used: it reached for a tool, and Suggest gives it none. Nothing changed.',
-    );
-    this.name = 'ToolRefused';
-  }
-}
-
-/** Suggest gives Claude no tools: a call to any fails the ask, and nothing it said is used. */
-const NO_TOOLS: ChatToolbox = {
-  specs: [],
-  run: () => Promise.reject(new ToolRefused()),
-};
 
 function unreachableWords(status: Extract<ProviderStatus, { ready: false }>): string {
   const fix = status.fix === null ? '' : ` Fix: ${status.fix}`;

@@ -20,10 +20,11 @@ import { MORNING_BRIEF_FOLDER } from '../automations/morning-brief.ts';
 import { namesNote } from '../automations/proposal-schema.ts';
 import { MEETING_TYPE } from '../meetings/meeting-header.ts';
 import { PROPOSAL_TYPE } from '../proposals/proposal.ts';
+import { noteTitle } from '../vault/vault-entry.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import type { AssistItemAnswer, AssistKind } from './assist-answer.ts';
 import { assistSureness } from './assist-confidence.ts';
-import type { InboxItem } from './inbox.ts';
+import type { InboxItem, InboxTask } from './inbox.ts';
 
 /** The most items one ask is about. */
 export const ASSIST_ITEMS_PER_ASK = 10;
@@ -143,6 +144,10 @@ export function assistPlan(
   }
   const project = projects.found[0] ?? null;
   if (answer.kind === 'task') return row(taskStep({ item, answer, facts, project }));
+  // Only a note is filed as one: a task stays one unless the person says otherwise.
+  if (item.task !== null) {
+    return row(ask(`You made this a task; Claude thinks it is ${KIND_WORDS[answer.kind]}.`));
+  }
   return row(project === null ? leave('Nowhere clear to file it.') : { kind: 'file', project });
 }
 
@@ -182,20 +187,95 @@ function taskStep({
   facts: AssistFacts;
   project: AssistTarget | null;
 }): AssistStep {
-  if (answer.due !== null && answer.due < facts.today) {
-    return ask(`Claude gave a due date that has passed (${answer.due}).`);
-  }
+  const dueProblem = dueQuestion(answer.due, facts.today);
+  if (dueProblem !== null) return ask(dueProblem);
   const people = targetsNamed(answer.waitingOn === null ? [] : [answer.waitingOn], facts.people);
   if (people.unknown !== null) {
     return ask(`Claude says it waits on “${people.unknown}”, who is not in People.`);
   }
   if (people.found.length > 1) return ask('Which person does it wait on?');
-  const waitingOn = people.found[0] ?? null;
+  const suggested = { project, due: answer.due, waitingOn: people.found[0] ?? null };
+  const filled = filledIn(item.task, suggested, facts);
+  if ('question' in filled) return ask(filled.question);
   const makeTask = item.task === null;
-  if (!makeTask && project === null && answer.due === null && waitingOn === null) {
+  if (!makeTask && filled.project === null && filled.due === null && filled.waitingOn === null) {
     return leave('Already a task, with nothing clear to add.');
   }
-  return { kind: 'task', makeTask, project, due: answer.due, waitingOn };
+  return { kind: 'task', makeTask, ...filled };
+}
+
+/**
+ * The most a due date may lie ahead, in years, and still be planned: a date
+ * further out is more likely a misreading than a deadline.
+ */
+export const ASSIST_DUE_HORIZON_YEARS = 2;
+
+/** Why a due date is a question rather than a plan: passed, or past the horizon; null when it is neither. */
+function dueQuestion(due: string | null, today: string): string | null {
+  if (due === null) return null;
+  if (due < today) return `Claude gave a due date that has passed (${due}).`;
+  const horizon = `${Number(today.slice(0, 4)) + ASSIST_DUE_HORIZON_YEARS}${today.slice(4)}`;
+  return due > horizon ? `Claude gave a due date more than two years away (${due}).` : null;
+}
+
+interface TaskFields {
+  readonly project: AssistTarget | null;
+  readonly due: string | null;
+  readonly waitingOn: AssistTarget | null;
+}
+
+/**
+ * What a suggestion adds to what the task already holds: only what is
+ * missing. A field the person set is never overwritten: a suggestion that
+ * agrees adds nothing, one that differs is a question showing both.
+ */
+function filledIn(
+  held: InboxTask | null,
+  suggested: TaskFields,
+  facts: AssistFacts,
+): TaskFields | { question: string } {
+  if (held === null) return suggested;
+  const project = keptOrAdded(held.project, suggested.project?.path ?? null);
+  if (project === 'differs') {
+    return {
+      question: `You filed this under ${titleOf(held.project!, facts.filingTargets)}; Claude suggests ${suggested.project!.title}.`,
+    };
+  }
+  const due = keptOrAdded(held.due, suggested.due);
+  if (due === 'differs') {
+    return { question: `You set it due ${held.due}; Claude suggests ${suggested.due}.` };
+  }
+  const waiting = waitingKeptOrAdded(held, suggested.waitingOn);
+  if (waiting !== null) return { question: waiting };
+  return {
+    project: project === 'added' ? suggested.project : null,
+    due: due === 'added' ? suggested.due : null,
+    waitingOn: held.waitingOn === null && held.waitingOnNames === '' ? suggested.waitingOn : null,
+  };
+}
+
+/** Whether a suggested value adds to a field, agrees with it, differs from it, or says nothing. */
+function keptOrAdded(held: string | null, suggested: string | null): 'added' | 'kept' | 'differs' {
+  if (suggested === null || held === suggested) return 'kept';
+  return held === null ? 'added' : 'differs';
+}
+
+/** The question when the person the task waits on is not the one suggested; null when it agrees or adds. */
+function waitingKeptOrAdded(held: InboxTask, suggested: AssistTarget | null): string | null {
+  if (suggested === null) return null;
+  const writtenAs = held.waitingOnNames.trim();
+  if (held.waitingOn === null && writtenAs === '') return null;
+  const agrees =
+    held.waitingOn !== null
+      ? held.waitingOn === suggested.path
+      : writtenAs.toLowerCase() === suggested.title.toLowerCase();
+  if (agrees) return null;
+  const now = held.waitingOn === null ? writtenAs : noteTitle(held.waitingOn);
+  return `It waits on ${now}; Claude suggests ${suggested.title}.`;
+}
+
+function titleOf(path: VaultPath, targets: readonly AssistTarget[]): string {
+  return targets.find((target) => target.path === path)?.title ?? noteTitle(path);
 }
 
 /**

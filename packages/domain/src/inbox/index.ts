@@ -41,6 +41,7 @@ export type { AssistAllowance } from './assist-allowance.ts';
 export { ASSIST_ACTION_FLOOR, ASSIST_GUESS_FLOOR, assistSureness } from './assist-confidence.ts';
 export type { AssistSureness } from './assist-confidence.ts';
 export {
+  ASSIST_DUE_HORIZON_YEARS,
   ASSIST_ITEMS_PER_ASK,
   ASSIST_QUIET_MS,
   assistBatch,

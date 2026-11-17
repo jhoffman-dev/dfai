@@ -9,7 +9,16 @@
  */
 
 import type { AssistTarget } from '../inbox/assist-plan.ts';
+import type { ClaudeRole } from './claude-step-prompt.ts';
 import type { PromptData } from './proposal-schema.ts';
+
+/** Who asks, for Suggest: it gives Claude no tools, and nothing is proposed or changed. */
+export const INBOX_ASSIST_ROLE: ClaudeRole = {
+  asker: 'asked by Suggest in the Inbox of DFAI',
+  reach:
+    'You have no tools, and you change nothing: DFAI reads your answer to suggest what the\n' +
+    'person might do, and they see the suggestion before anything happens.',
+};
 
 export const INBOX_ASSIST_PROMPT = `For each note below, say what it is, as one of:
 - task: something the person has to do;

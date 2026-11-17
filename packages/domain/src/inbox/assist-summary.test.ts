@@ -48,7 +48,7 @@ describe('assistSummary', () => {
       LEAVE,
       LEAVE,
     );
-    expect(assistSummary(plan)).toBe('14 items: would file 9, 2 questions, would leave 3');
+    expect(assistSummary(plan)).toBe('14 items: would act on 9, 2 questions, would leave 3');
   });
 
   it('says none plainly', () => {
@@ -56,7 +56,7 @@ describe('assistSummary', () => {
   });
 
   it('says one in the singular, and leaves out parts with none', () => {
-    expect(assistSummary(rows(TASK))).toBe('1 item: would file 1');
+    expect(assistSummary(rows(TASK))).toBe('1 item: would act on 1');
     expect(assistSummary(rows(ASK))).toBe('1 item: 1 question');
     expect(assistSummary(rows(LEAVE))).toBe('1 item: would leave 1');
     expect(assistSummary(rows(ASK, LEAVE))).toBe('2 items: 1 question, would leave 1');
@@ -124,7 +124,18 @@ describe('the ask allowance', () => {
 
   it('says so as a held rule does: not broken, when, nothing to do', () => {
     expect(assistAllowanceWords('2026-11-17T14:10:00')).toBe(
-      'Not broken: Claude has been asked 30 times this hour, and 30 is the most Suggest and “After a meeting” may ask together. Suggest can ask again at 14:10; nothing to do.',
+      'Not broken: Claude has been asked 30 times this hour, and Suggest stops at 30. It counts its own asks and those of “After a meeting”; that rule does not count Suggest’s yet. Suggest can ask again at 14:10; nothing to do.',
     );
+  });
+});
+
+describe('the ask allowance when the clock goes back (#903)', () => {
+  it('counts an ask recorded later than now as made now', () => {
+    const now = localTimeMs('2026-11-01T01:09:00')!;
+    const later = Array.from({ length: 30 }, () => localTimeMs('2026-11-01T01:30:00')!);
+    expect(assistAllowance({ logged: [], previewed: later, now })).toEqual({
+      ok: false,
+      until: '2026-11-01T02:09:00',
+    });
   });
 });

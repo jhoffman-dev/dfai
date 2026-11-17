@@ -1,4 +1,4 @@
-import { useId, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, type KeyboardEvent } from 'react';
 import { Icon } from '../icon.tsx';
 import { noticeBarClass } from '../notice-bar.ts';
 
@@ -39,7 +39,7 @@ const TONE_PILL: Readonly<Record<AssistRowView['tone'], string>> = {
 };
 
 const TONE_WORD: Readonly<Record<AssistRowView['tone'], string>> = {
-  file: 'Would file',
+  file: 'Would act',
   ask: 'Question',
   leave: 'Would leave',
 };
@@ -47,9 +47,14 @@ const TONE_WORD: Readonly<Record<AssistRowView['tone'], string>> = {
 /**
  * What Inbox assist would do (#900): the sentence that sums it up, then each
  * item with what would be done and why. Nothing here writes; Dismiss, or
- * Escape anywhere in it, puts it away.
+ * Escape anywhere in it, puts it away. It takes the focus as it opens, on its
+ * heading, so the keyboard follows Suggest to what it shows (#903).
  */
 export function AssistSummary({ view, onDismiss }: AssistSummaryProps) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape') return;
     event.preventDefault();
@@ -63,6 +68,9 @@ export function AssistSummary({ view, onDismiss }: AssistSummaryProps) {
     >
       <Icon name="spark" size={14} className="notice-bar__icon" />
       <div className="notice-bar__text">
+        <h3 className="inbox-assist__heading" tabIndex={-1} ref={heading}>
+          Suggestions
+        </h3>
         <AssistBody view={view} />
       </div>
       <button type="button" className="btn btn--ghost btn--sm" onClick={onDismiss}>

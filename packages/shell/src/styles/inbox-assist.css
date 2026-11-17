@@ -37,3 +37,10 @@
   font-size: var(--text-small);
   grid-column: 3;
 }
+
+.inbox-assist__heading {
+  color: var(--ink-3);
+  font-size: var(--text-small);
+  font-weight: 500;
+  margin: 0 0 var(--space-1);
+}

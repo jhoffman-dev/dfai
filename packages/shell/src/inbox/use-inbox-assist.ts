@@ -17,24 +17,10 @@ import {
   type InboxAssistPorts,
 } from '@dfai/application';
 import type { AssistRowView, AssistView, InboxAssistProps } from '@dfai/ui';
+import type { AssistAsks } from './assist-asks-store.ts';
 
-/**
- * When Suggest asked Claude, per vault, in this window: the preview writes
- * no log, so its asks are counted here against the hourly allowance (#900).
- * They are not kept past the window; the scheduled rule's log will be.
- */
-export interface AssistAsks {
-  asked(vault: string): readonly number[];
-  record(vault: string, at: number): void;
-}
-
-export function assistAsks(): AssistAsks {
-  const byVault = new Map<string, number[]>();
-  return {
-    asked: (vault) => byVault.get(vault) ?? [],
-    record: (vault, at) => byVault.set(vault, [...(byVault.get(vault) ?? []), at]),
-  };
-}
+export { assistAsks, browserAssistAsks } from './assist-asks-store.ts';
+export type { AssistAsks } from './assist-asks-store.ts';
 
 /** What Suggest needs from the window: Claude as a rule's step reaches it, and the asks it made. */
 export interface InboxAssistWiring {
@@ -70,24 +56,29 @@ export function useInboxAssist({
   // bar drawn again as rows are decided does not draw it again.
   const latest = useRef({ wiring, ports, clock, items, vaultKey });
   latest.current = { wiring, ports, clock, items, vaultKey };
+  // The ask in flight, if any: Dismiss aborts it (it still counts), and a press meanwhile does nothing.
+  const inFlight = useRef<AbortController | null>(null);
   const onSuggest = useCallback(() => {
     const given = latest.current;
-    if (given.wiring === null) return;
+    if (given.wiring === null || inFlight.current !== null) return;
     const { asks } = given.wiring;
     const vault = given.vaultKey ?? '';
+    const controller = new AbortController();
+    inFlight.current = controller;
     const mine = ++generation.current;
     const show = (shown: AssistView) => {
+      if (inFlight.current === controller) inFlight.current = null;
       if (generation.current === mine) setView(shown);
     };
     setView({ kind: 'asking' });
-    previewInboxAssist(assistPorts(given.wiring, given.ports, given.clock), {
-      items: given.items ?? [],
-      previewed: asks.asked(vault),
-    }).then(
-      (outcome) => {
-        if (outcome.asked !== null) asks.record(vault, outcome.asked);
-        show(viewOf(outcome));
+    previewInboxAssist(
+      {
+        ...assistPorts(given.wiring, given.ports, given.clock),
+        recordAsk: (at) => asks.record(vault, at),
       },
+      { items: given.items ?? [], previewed: asks.asked(vault), signal: controller.signal },
+    ).then(
+      (outcome) => show(viewOf(outcome)),
       (error: unknown) =>
         show({
           kind: 'not-now',
@@ -97,6 +88,8 @@ export function useInboxAssist({
   }, []);
   const onDismiss = useCallback(() => {
     generation.current += 1;
+    inFlight.current?.abort();
+    inFlight.current = null;
     setView(null);
   }, []);
   return useMemo(
@@ -109,7 +102,7 @@ function assistPorts(
   wiring: InboxAssistWiring,
   ports: ArchivePorts,
   clock: Pick<Clock, 'now' | 'today' | 'localNow'>,
-): InboxAssistPorts {
+): Omit<InboxAssistPorts, 'recordAsk'> {
   return {
     ...wiring.claude,
     clock,
