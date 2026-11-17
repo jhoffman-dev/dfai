@@ -42,3 +42,24 @@ describe('useHiddenSections', () => {
     expect(result.current.hidden).toBe(before);
   });
 });
+
+describe('useHiddenSections, with another window', () => {
+  it('follows a change another window kept', () => {
+    let kept: readonly SidebarSectionId[] = ['userSpace'];
+    let changed = () => {};
+    const store: HiddenSectionStore = {
+      read: () => kept,
+      write: () => {},
+      subscribe: (listener) => {
+        changed = listener;
+        return () => {};
+      },
+    };
+    const { result } = renderHook(() => useHiddenSections(store));
+    expect(result.current.isShown('userSpace')).toBe(false);
+
+    kept = [];
+    act(() => changed());
+    expect(result.current.isShown('userSpace')).toBe(true);
+  });
+});

@@ -1,10 +1,12 @@
-import { useCallback, useState } from 'react';
-import type { SidebarSectionId } from '@dfai/domain';
+import { useCallback, useEffect, useState } from 'react';
+import { withSectionShown, type SidebarSectionId } from '@dfai/domain';
 
 /** Where the sections left out of the sidebar are remembered; a read always answers, with the default when nothing was kept. */
 export interface HiddenSectionStore {
   readonly read: () => readonly SidebarSectionId[];
   readonly write: (hidden: readonly SidebarSectionId[]) => void;
+  /** Calls `changed` when another window changes what is kept; returns how to stop. Left out, nothing is heard. */
+  readonly subscribe?: (changed: () => void) => () => void;
 }
 
 export interface HiddenSections {
@@ -22,13 +24,15 @@ export interface HiddenSections {
  */
 export function useHiddenSections(store: HiddenSectionStore): HiddenSections {
   const [hidden, setHidden] = useState<readonly SidebarSectionId[]>(() => store.read());
+  // Another window's choice is followed; an effect, so opening a vault draws nothing more.
+  useEffect(() => store.subscribe?.(() => setHidden(store.read())), [store]);
 
   const isShown = useCallback((section: SidebarSectionId) => !hidden.includes(section), [hidden]);
 
   const setShown = useCallback(
     (section: SidebarSectionId, shown: boolean) => {
-      if (shown === !hidden.includes(section)) return;
-      const next = shown ? hidden.filter((id) => id !== section) : [...hidden, section];
+      const next = withSectionShown({ hidden, section, shown });
+      if (next === null) return;
       // Outside the state updater on purpose: React may run an updater twice.
       store.write(next);
       setHidden(next);

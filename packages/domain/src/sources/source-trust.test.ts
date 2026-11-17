@@ -36,6 +36,8 @@ describe('sourceTrustRefusal', () => {
 
     expect(refusal).toMatch(/\.atlas\/sources/);
     expect(refusal).toMatch(/System → sources/);
+    // System is in Pages, which may be hidden (#902): the refusal says how to show it.
+    expect(refusal).toContain("show it from the sidebar's … menu");
   });
 
   it('names the secret it would have sent', () => {

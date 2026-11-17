@@ -3,6 +3,9 @@ import type { Datasource } from './datasource.ts';
 import { secretsUsedBy } from './source-request.ts';
 import { isOutsideVault } from './sqlite-file.ts';
 
+/** System lives in Pages, which a first run hides (#902): the way to it. */
+const SHOW_PAGES_HINT = "If Pages isn't in the sidebar, show it from the sidebar's … menu.";
+
 /**
  * Why a source may not run from where its note is, or null when it may.
  *
@@ -28,13 +31,14 @@ export function sourceTrustRefusal({
     const named = secrets.map((name) => `“${name}”`).join(', ');
     return (
       `This source sends the secret ${named}, so it runs only from ${SOURCES_DIRECTORY}. ` +
-      `Move the note there (System → sources) to refresh it.`
+      `Move the note there (System → sources) to refresh it. ${SHOW_PAGES_HINT}`
     );
   }
   if (source.format === 'sqlite' && source.file !== null && isOutsideVault(source.file)) {
     return (
       `This source reads a database outside the vault, so it runs only from ` +
-      `${SOURCES_DIRECTORY}. Move the note there (System → sources) to refresh it.`
+      `${SOURCES_DIRECTORY}. Move the note there (System → sources) to refresh it. ` +
+      SHOW_PAGES_HINT
     );
   }
   return null;

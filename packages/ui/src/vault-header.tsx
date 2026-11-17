@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import { typeIcon } from '@dfai/domain';
 import { Icon, sidebarGlyph } from './icon.tsx';
@@ -191,6 +191,30 @@ const SidebarOptionsMenu = memo(function SidebarOptionsMenu({
   onPagesShownChange,
   onOpenChange,
 }: SidebarOptions) {
+  // The menu is mounted on the first press, not with the header: opening a
+  // vault draws only this button (the work budgets, tools/perf/budgets.json).
+  const [pressed, setPressed] = useState(open);
+  if (!pressed) {
+    return (
+      <button
+        type="button"
+        className="icon-button"
+        title="Sidebar options"
+        aria-label="Sidebar options"
+        aria-haspopup="menu"
+        aria-expanded={false}
+        // In the Tab order as the menu's own trigger is: WebKit on a Mac leaves
+        // a button with no tabindex out of it.
+        tabIndex={0}
+        onClick={() => {
+          setPressed(true);
+          onOpenChange(true);
+        }}
+      >
+        <Icon name="more" />
+      </button>
+    );
+  }
   return (
     <Menu.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
       <Menu.Trigger className="icon-button" title="Sidebar options" aria-label="Sidebar options">

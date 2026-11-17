@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { browserHiddenSectionStore as store } from './browser-hidden-section-store.ts';
+import { browserHiddenSectionStore } from './browser-hidden-section-store.ts';
+
+const store = browserHiddenSectionStore;
 
 const KEY = 'atlas.sidebar.hidden';
 
@@ -51,5 +53,20 @@ describe('browserHiddenSectionStore', () => {
   it('swallows a write the browser refuses, so the app carries on', () => {
     withDeniedStorage();
     expect(() => store.write([])).not.toThrow();
+  });
+});
+
+describe('browserHiddenSectionStore.subscribe', () => {
+  it('hears another window change the key, and only that key', () => {
+    const changed = vi.fn();
+    const stop = browserHiddenSectionStore.subscribe?.(changed);
+    window.dispatchEvent(new StorageEvent('storage', { key: 'atlas.theme' }));
+    expect(changed).not.toHaveBeenCalled();
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+    expect(changed).toHaveBeenCalledTimes(1);
+
+    stop?.();
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+    expect(changed).toHaveBeenCalledTimes(1);
   });
 });

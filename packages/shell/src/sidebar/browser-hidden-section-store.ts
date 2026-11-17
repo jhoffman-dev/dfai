@@ -29,4 +29,12 @@ export const browserHiddenSectionStore: HiddenSectionStore = {
       // not come back next time.
     }
   },
+  subscribe: (changed: () => void) => {
+    // Fired in every other window of this origin when one writes the key.
+    const heard = (event: StorageEvent) => {
+      if (event.key === KEY || event.key === null) changed();
+    };
+    window.addEventListener('storage', heard);
+    return () => window.removeEventListener('storage', heard);
+  },
 };

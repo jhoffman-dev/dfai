@@ -145,6 +145,7 @@ import { useSidebarCatalog } from './sidebar/use-sidebar-catalog.ts';
 import { browserSectionStore } from './sidebar/browser-section-store.ts';
 import { browserHiddenSectionStore } from './sidebar/browser-hidden-section-store.ts';
 import { palettePagesCommands, runPalettePagesCommand } from './sidebar/palette-pages.ts';
+import { focusPagesWhenDrawn } from './sidebar/focus-pages.ts';
 import { useHiddenSections } from './sidebar/use-hidden-sections.ts';
 import { createBrowserGroupFoldStore } from './query/browser-group-fold-store.ts';
 import { createBrowserLinkedRangeStore } from './linked-pages/browser-linked-range-store.ts';
@@ -452,7 +453,7 @@ function focusFallback(): HTMLElement | null {
   return (
     document.querySelector<HTMLElement>('.pane--focused [contenteditable="true"]') ??
     document.querySelector<HTMLElement>('[role="tree"] [tabindex="0"]') ??
-    document.querySelector<HTMLElement>('.sidebar button[title="Search (⌘K)"]')
+    document.querySelector<HTMLElement>('.sidebar [data-sidebar-search]')
   );
 }
 
@@ -1082,6 +1083,11 @@ function AppWindow({
     () => (compact ? setDrawerOpen((was) => !was) : setSidebarOpen((was) => !was)),
     [compact],
   );
+  const revealPages = useCallback(() => {
+    if (compact) setDrawerOpen(true);
+    else setSidebarOpen(true);
+    focusPagesWhenDrawn();
+  }, [compact]);
   const drawer = useMemo(
     () =>
       compact
@@ -2320,7 +2326,7 @@ function AppWindow({
       return;
     }
     if (runPaletteKindleCommand(id, kindleSync)) return;
-    if (runPalettePagesCommand(id, hiddenSections)) return;
+    if (runPalettePagesCommand(id, { sections: hiddenSections, revealPages })) return;
     // A command that goes somewhere leaves the peek first, so where it went is on screen.
     leavingPeekFor(() => runPlaceCommand(id, pasted));
   });

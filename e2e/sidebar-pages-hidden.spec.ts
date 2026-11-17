@@ -1,6 +1,6 @@
 import { expect, test, type Page } from './fixtures.ts';
 import { createVault, installHost, sidebarSection } from './host.ts';
-import { focusOn, focusThenPress } from './typing.ts';
+import { expectFocusIn, focusOn, focusThenPress } from './typing.ts';
 
 // #902: the sidebar's Pages section is hidden on a first run, and shown from the
 // header's "Sidebar options" menu or ⌘K until it is hidden again. Every test
@@ -106,6 +106,8 @@ test('⌘K offers Show Pages while it is hidden and Hide Pages while it is shown
   await found.getByRole('option', { name: 'Show Pages' }).click();
   await expect(headings(page)).toHaveText(WITH_PAGES);
   await expect(treeItem(page, 'Garden')).toBeVisible();
+  // Where the files are, ready for the keyboard.
+  await expectFocusIn(pages(page));
 
   found = await palette(page, 'Pages');
   await expect(found.getByRole('option', { name: 'Hide Pages' })).toBeVisible();
@@ -131,3 +133,53 @@ test('hiding Pages from a tree row hands the focus to the Search row, not the pa
   await expect(page.getByRole('tree')).toHaveCount(0);
   await expect(sidebar(page).getByRole('button', { name: 'Search', exact: true })).toBeFocused();
 });
+
+test('⌘K Show Pages brings a hidden sidebar back with Pages in it; Hide Pages leaves the sidebar alone', async ({
+  page,
+}) => {
+  await openVault(page);
+  await expect(headings(page)).toHaveText(WITHOUT_PAGES);
+  await page.getByRole('button', { name: 'Hide sidebar' }).click();
+  await expect(sidebar(page)).toBeHidden();
+
+  const shown = await palette(page, 'Show Pages');
+  await shown.getByRole('option', { name: 'Show Pages' }).click();
+  await expect(sidebar(page)).toBeVisible();
+  await expect(headings(page)).toHaveText(WITH_PAGES);
+  await expectFocusIn(pages(page));
+
+  await page.getByRole('button', { name: 'Hide sidebar' }).click();
+  await expect(sidebar(page)).toBeHidden();
+  const hidden = await palette(page, 'Hide Pages');
+  await hidden.getByRole('option', { name: 'Hide Pages' }).click();
+  await expect(hidden).toHaveCount(0);
+  await expect(sidebar(page)).toBeHidden();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('atlas.sidebar.hidden')))
+    .toBe('["userSpace"]');
+});
+
+for (const [where, width] of [
+  ['beside the work', 1280],
+  ['in the drawer', 720],
+] as const) {
+  test(`⌘K Show Pages from inside a note moves the focus to Pages, ${where}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await openVault(page);
+    const found = await palette(page, 'Garden');
+    await found
+      .getByRole('option', { name: /Garden/ })
+      .first()
+      .click();
+    const editor = page
+      .getByRole('article', { name: 'Garden' })
+      .locator('[contenteditable="true"]');
+    await editor.click();
+    await expectFocusIn(editor);
+
+    const shown = await palette(page, 'Show Pages');
+    await shown.getByRole('option', { name: 'Show Pages' }).click();
+    await expect(pages(page)).toBeVisible();
+    await expectFocusIn(pages(page));
+  });
+}

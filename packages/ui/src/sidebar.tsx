@@ -425,7 +425,14 @@ function QuickRows({
       <li
         className={onOpenAsk === undefined ? 'sidebar__item' : 'sidebar__item sidebar__item--pair'}
       >
-        <button type="button" className="sidebar__row" onClick={onSearch} title="Search (⌘K)">
+        {/* data-sidebar-search: where the app's focus goes when nothing nearer is left (app.tsx). */}
+        <button
+          type="button"
+          className="sidebar__row"
+          onClick={onSearch}
+          title="Search (⌘K)"
+          data-sidebar-search=""
+        >
           <Icon name="search" className="sidebar__icon" />
           <span className="sidebar__name">Search</span>
           <kbd className="sidebar__key" aria-hidden="true">

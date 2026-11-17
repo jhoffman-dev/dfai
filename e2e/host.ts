@@ -2879,9 +2879,9 @@ function holdIn(
 export async function openVaultByTouch(
   page: Page,
   vault: FakeVault,
-  { now }: { now?: Date } = {},
+  { now, sidebarAsFirstRun = false }: { now?: Date; sidebarAsFirstRun?: boolean } = {},
 ): Promise<FakeHost> {
-  const host = await installHost(page, vault);
+  const host = await installHost(page, vault, { sidebarAsFirstRun });
   if (now !== undefined) await page.clock.setFixedTime(now);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).tap();

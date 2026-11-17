@@ -4,6 +4,7 @@ export {
   parseHiddenSections,
   SIDEBAR_SECTIONS,
   SIDEBAR_SECTION_LABELS,
+  withSectionShown,
 } from './sidebar-section.ts';
 export type { SidebarSection, SidebarSectionId } from './sidebar-section.ts';
 export { classifySidebarNote, orderSidebarEntries, sidebarEntry } from './sidebar-entry.ts';

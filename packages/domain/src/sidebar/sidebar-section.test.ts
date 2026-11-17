@@ -4,6 +4,7 @@ import {
   parseCollapsedSections,
   parseHiddenSections,
   SIDEBAR_SECTIONS,
+  withSectionShown,
 } from './sidebar-section.ts';
 
 describe('SIDEBAR_SECTIONS', () => {
@@ -92,5 +93,44 @@ describe('parseHiddenSections', () => {
     const first = parseHiddenSections(undefined);
     first.push('views');
     expect(parseHiddenSections(undefined)).toEqual(['userSpace']);
+  });
+});
+
+describe('withSectionShown', () => {
+  it('shows a hidden section', () => {
+    expect(
+      withSectionShown({ hidden: ['userSpace', 'views'], section: 'userSpace', shown: true }),
+    ).toEqual(['views']);
+  });
+
+  it('hides a shown section', () => {
+    expect(withSectionShown({ hidden: [], section: 'userSpace', shown: false })).toEqual([
+      'userSpace',
+    ]);
+  });
+
+  it('changes nothing when the section is already so', () => {
+    expect(
+      withSectionShown({ hidden: ['userSpace'], section: 'userSpace', shown: false }),
+    ).toBeNull();
+    expect(withSectionShown({ hidden: [], section: 'userSpace', shown: true })).toBeNull();
+  });
+
+  it('refuses to hide the last section shown, which would leave the sidebar empty', () => {
+    const others = ['favorites', 'types', 'views', 'dashboards'] as const;
+    expect(withSectionShown({ hidden: others, section: 'userSpace', shown: false })).toBeNull();
+  });
+
+  it('never makes a list that parseHiddenSections would refuse', () => {
+    const ids = SIDEBAR_SECTIONS.map((section) => section.id);
+    for (let mask = 0; mask < 1 << ids.length; mask += 1) {
+      const hidden = ids.filter((_, at) => (mask & (1 << at)) !== 0);
+      for (const section of ids) {
+        for (const shown of [true, false]) {
+          const next = withSectionShown({ hidden, section, shown });
+          if (next !== null) expect(parseHiddenSections(next)).toEqual(next);
+        }
+      }
+    }
   });
 });

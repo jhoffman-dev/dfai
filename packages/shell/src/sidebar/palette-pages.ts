@@ -15,10 +15,23 @@ export function palettePagesCommands(pagesShown: boolean): PaletteCommand[] {
   ];
 }
 
-/** Runs one; false when `id` is neither. */
-export function runPalettePagesCommand(id: string, sections: HiddenSections): boolean {
-  if (id === SHOW_PAGES) sections.setShown('userSpace', true);
-  else if (id === HIDE_PAGES) sections.setShown('userSpace', false);
+/** What ⌘K's Pages commands act on: the hidden sections, and how to bring the sidebar on screen. */
+export interface PagesCommands {
+  readonly sections: HiddenSections;
+  /** Shows the sidebar, or opens its drawer, and puts the focus on Pages once it is drawn. */
+  readonly revealPages: () => void;
+}
+
+/**
+ * Runs one; false when `id` is neither. Show Pages also brings the sidebar on
+ * screen, as it is the command a person reaches for to find their files;
+ * Hide Pages leaves the sidebar as it is.
+ */
+export function runPalettePagesCommand(id: string, commands: PagesCommands): boolean {
+  if (id === SHOW_PAGES) {
+    commands.sections.setShown('userSpace', true);
+    commands.revealPages();
+  } else if (id === HIDE_PAGES) commands.sections.setShown('userSpace', false);
   else return false;
   return true;
 }

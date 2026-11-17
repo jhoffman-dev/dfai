@@ -73,3 +73,22 @@ export function parseHiddenSections(remembered: unknown): SidebarSectionId[] {
   const hidden = [...new Set(remembered.filter(isSidebarSectionId))];
   return hidden.length === ORDER.length ? [...HIDDEN_AT_FIRST] : hidden;
 }
+
+/**
+ * The hidden sections after one is shown or hidden, or null when there is
+ * nothing to change: it is already so, or hiding it would leave no section
+ * shown — the list `parseHiddenSections` refuses, so it is never made here.
+ */
+export function withSectionShown({
+  hidden,
+  section,
+  shown,
+}: {
+  hidden: readonly SidebarSectionId[];
+  section: SidebarSectionId;
+  shown: boolean;
+}): SidebarSectionId[] | null {
+  if (shown !== hidden.includes(section)) return null;
+  const next = shown ? hidden.filter((id) => id !== section) : [...hidden, section];
+  return new Set(next).size >= ORDER.length ? null : next;
+}
