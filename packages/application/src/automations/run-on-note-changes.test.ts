@@ -275,7 +275,7 @@ describe('runOnNoteChanges: what holds it back', () => {
     expect(vault.log).toEqual([]);
   });
 
-  it('runs nothing once it has run as often this hour as one may, and says why', async () => {
+  it('runs nothing once it has run as often this hour as one may, and says it is waiting, not failing', async () => {
     const { vault, activity, run, as } = setUp({ [STANDUP]: meeting('standup') });
     for (let at = 0; at < NOTE_RUNS_PER_HOUR; at += 1) {
       const entry: LogEntry = {
@@ -298,9 +298,11 @@ describe('runOnNoteChanges: what holds it back', () => {
     expect(vault.files.get(logPathFor(MARK.id))).toBe(logged);
     expect(activity.reports.map((report) => [report.level, report.message])).toEqual([
       [
-        'error',
-        `Mark new meetings: Could not run. It has used its ${NOTE_RUNS_PER_HOUR} runs, or questions put to Claude, ` +
-          'for the last hour, the most a rule may. It runs on what changed meanwhile at 09:10.',
+        'info',
+        'Mark new meetings: Waiting, not broken: it has reached an hourly limit. ' +
+          `It may run ${NOTE_RUNS_PER_HOUR} times an hour, each question it asks Claude counted as a run, ` +
+          `and it has used ${NOTE_RUNS_PER_HOUR} in the last hour. ` +
+          'It runs next at 09:10, on what changed meanwhile. Nothing needs fixing: it catches up by itself.',
       ],
     ]);
   });
