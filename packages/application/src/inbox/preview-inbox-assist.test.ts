@@ -252,4 +252,55 @@ describe('previewInboxAssist', () => {
     });
     expect(model.requests).toHaveLength(0);
   });
+
+  it('leaves out a note gone since the Inbox was listed', async () => {
+    const { ports, model } = setUp();
+    ports.fs.readNotes = async () => [];
+    const outcome = await previewInboxAssist(ports, { items: [CALL], previewed: [] });
+    if (outcome.kind !== 'plan') throw new Error(outcome.message);
+    expect(outcome.rows[0]!.step).toEqual({ kind: 'leave', because: 'It is no longer there.' });
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it('says Claude did not finish when the ask is stopped, and counts it', async () => {
+    const { ports } = setUp({ rounds: [answer(entry(CALL.path))] });
+    const stopped = new AbortController();
+    stopped.abort();
+    const outcome = await previewInboxAssist(
+      { ...ports, deadline: () => stopped.signal },
+      { items: [CALL], previewed: [] },
+    );
+    expect(outcome).toEqual({
+      kind: 'not-now',
+      message: 'Claude did not finish. Nothing changed.',
+      asked: localTimeMs(LOCAL_NOW),
+    });
+  });
+
+  it('refuses an answer with no words', async () => {
+    const { ports } = setUp({ rounds: [[]] });
+    const outcome = await previewInboxAssist(ports, { items: [CALL], previewed: [] });
+    expect(outcome).toMatchObject({
+      kind: 'not-now',
+      message: 'Claude’s answer was not used: It is not JSON. Nothing changed.',
+    });
+  });
+
+  it('says what is wrong without a fix when there is none', async () => {
+    const { ports } = setUp({
+      status: { ready: false, problem: 'unavailable', message: 'Claude is busy.', fix: null },
+    });
+    const outcome = await previewInboxAssist(ports, { items: [CALL], previewed: [] });
+    expect(outcome).toMatchObject({
+      message:
+        'Not now: Claude can’t be reached. Claude is busy. Nothing was asked; nothing changed.',
+    });
+  });
+
+  it('lets an unexpected failure through, rather than calling it Claude’s', async () => {
+    const { ports } = setUp({ rounds: [new TypeError('a bug')] });
+    await expect(previewInboxAssist(ports, { items: [CALL], previewed: [] })).rejects.toThrow(
+      'a bug',
+    );
+  });
 });
