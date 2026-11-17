@@ -69,15 +69,28 @@ const lineOf = ({ pieces, size, destination, title, linked }: Drawn): string => 
 };
 
 /**
+ * The alt pieces that end in a pipe or a size: whether that pipe starts a size
+ * turns on the backslashes before it (`readImageMarkdown`), which the piece
+ * before decides.
+ */
+const PIPE_ENDS: readonly string[] = ['|', '\\|', '|300', '|40x30'];
+
+/**
  * What a line holds that the size token turns on: what the alt ends in right
- * before the size, and each pair of the size, destination, title and link
- * around it — so a run can show it drew every one.
+ * before the size, the piece before a pipe-ended last one, and each pair of
+ * the size, destination, title and link around it — so a run can show it drew
+ * every one.
  */
 function shapesOf({ pieces, size, destination, title, linked }: Drawn): string[] {
   const [s, d, t] = [size, destination, title].map((part) => JSON.stringify(part));
+  const last = pieces[pieces.length - 1] ?? null;
+  const beforeLast = pieces[pieces.length - 2] ?? null;
   return [
     `${pieces.length} pieces`,
-    `${JSON.stringify(pieces[pieces.length - 1] ?? null)} then ${s}`,
+    `${JSON.stringify(last)} then ${s}`,
+    ...(last !== null && PIPE_ENDS.includes(last)
+      ? [`${JSON.stringify(beforeLast)} before ${JSON.stringify(last)}`]
+      : []),
     `${s} to ${d}`,
     `${s} titled ${t}`,
     `${d} titled ${t}`,
@@ -122,8 +135,33 @@ function everyPieceBeforeEverySize(): Drawn[] {
   );
 }
 
+/**
+ * Every piece (and none) before each pipe-ended last piece, 76 lines: an
+ * escaped backslash then a pipe reads as a size where a lone backslash does
+ * not. The index turns the size, destination, title and link.
+ */
+function everyPieceBeforeAPipe(): Drawn[] {
+  return PIPE_ENDS.flatMap((last, q) =>
+    [null, ...ALT_PIECES].map((before, b) => {
+      const at = q * (ALT_PIECES.length + 1) + b;
+      return {
+        pieces: before === null ? [last] : [before, last],
+        size: SIZES[(b + q) % SIZES.length]!,
+        destination: DESTINATIONS[at % DESTINATIONS.length]!,
+        title: TITLES[at % TITLES.length]!,
+        linked: at % 3 === 0,
+      };
+    }),
+  );
+}
+
 /** Every shape the property turns on: what the lines below are shown to draw. */
 const EVERY_SHAPE = [
+  ...PIPE_ENDS.flatMap((last) =>
+    [null, ...ALT_PIECES].map(
+      (before) => `${JSON.stringify(before)} before ${JSON.stringify(last)}`,
+    ),
+  ),
   ...[0, 1, 2, 3].map((count) => `${count} pieces`),
   ...[null, ...ALT_PIECES].flatMap((end) =>
     SIZES.map((size) => `${JSON.stringify(end)} then ${JSON.stringify(size)}`),
@@ -200,8 +238,12 @@ const SEED = 568;
 // Each line costs a parse and a save in every test, and the saves of an edit
 // are the slow part (#854): 300 seeded lines took 5 s under load and still
 // missed shapes the listed lines draw. A few seeded ones stay for what the
-// list does not think of.
-const DRAWN = [...everyPieceBeforeEverySize().filter(oneImage), ...samples(SEED, 30)];
+// lists do not think of.
+const DRAWN = [
+  ...everyPieceBeforeEverySize().filter(oneImage),
+  ...everyPieceBeforeAPipe().filter(oneImage),
+  ...samples(SEED, 10),
+];
 const SAMPLES = DRAWN.map(lineOf);
 
 describe('an image’s |width, over random image markdown (seed 568)', () => {
