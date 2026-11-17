@@ -54,13 +54,131 @@ const DESTINATIONS = [
 const TITLES = ['', ' "The title"', " 'single'", ' (paren)', ' "with \\"quote\\""'] as const;
 const SIZES = ['', '|300', '|400x300', '|64', '|1200'] as const;
 
-function randomImage(rng: () => number): string {
-  const count = Math.floor(rng() * 4);
-  let alt = '';
-  for (let i = 0; i < count; i += 1) alt += pick(rng, ALT_PIECES);
-  const inner = `![${alt}${pick(rng, SIZES)}](${pick(rng, DESTINATIONS)}${pick(rng, TITLES)})`;
-  return rng() < 0.2 ? `[${inner}](https://example.com/page)` : inner;
+/** The parts an image line is drawn from. */
+interface Drawn {
+  readonly pieces: readonly string[];
+  readonly size: string;
+  readonly destination: string;
+  readonly title: string;
+  readonly linked: boolean;
 }
+
+const lineOf = ({ pieces, size, destination, title, linked }: Drawn): string => {
+  const inner = `![${pieces.join('')}${size}](${destination}${title})`;
+  return `Before ${linked ? `[${inner}](https://example.com/page)` : inner} after`;
+};
+
+/**
+ * The alt pieces that end in a pipe or a size: whether that pipe starts a size
+ * turns on the backslashes before it (`readImageMarkdown`), which the piece
+ * before decides.
+ */
+const PIPE_ENDS: readonly string[] = ALT_PIECES.filter((piece) => /\|[\dx]*$/.test(piece));
+
+/**
+ * What a line holds that the size token turns on: what the alt ends in right
+ * before the size, the piece before a pipe-ended last one, and each pair of
+ * the size, destination, title and link around it — so a run can show it drew
+ * every one.
+ */
+function shapesOf({ pieces, size, destination, title, linked }: Drawn): string[] {
+  const [s, d, t] = [size, destination, title].map((part) => JSON.stringify(part));
+  const last = pieces[pieces.length - 1] ?? null;
+  const beforeLast = pieces[pieces.length - 2] ?? null;
+  return [
+    `${pieces.length} pieces`,
+    `${JSON.stringify(last)} then ${s}`,
+    ...(last !== null && PIPE_ENDS.includes(last)
+      ? [`${JSON.stringify(beforeLast)} before ${JSON.stringify(last)}`]
+      : []),
+    `${s} to ${d}`,
+    `${s} titled ${t}`,
+    `${d} titled ${t}`,
+    ...[s, d, t].map((part) => `linked ${linked} ${part}`),
+  ];
+}
+
+function randomDrawn(rng: () => number): Drawn {
+  const count = Math.floor(rng() * 4);
+  const pieces = Array.from({ length: count }, () => pick(rng, ALT_PIECES));
+  return {
+    pieces,
+    size: pick(rng, SIZES),
+    destination: pick(rng, DESTINATIONS),
+    title: pick(rng, TITLES),
+    linked: rng() < 0.2,
+  };
+}
+
+/**
+ * Every alt piece last before every size (and no alt before each), 95 lines,
+ * which 300 seeds do not reach. The index turns the destination, the title and
+ * the link so that every pair of them, and of each with the size, is met too.
+ */
+function everyPieceBeforeEverySize(): Drawn[] {
+  const ends = [null, ...ALT_PIECES];
+  return ends.flatMap((end, e) =>
+    SIZES.map((size, s) => {
+      const at = e * SIZES.length + s;
+      const before = Array.from(
+        { length: end === null ? 0 : (at + 1) % 3 },
+        (_, k) => ALT_PIECES[(e + 5 * k + s + 1) % ALT_PIECES.length]!,
+      );
+      return {
+        pieces: end === null ? [] : [...before, end],
+        size,
+        destination: DESTINATIONS[at % DESTINATIONS.length]!,
+        title: TITLES[(at + Math.floor(at / DESTINATIONS.length)) % TITLES.length]!,
+        linked: Math.floor(at / 2) % 2 === 1,
+      };
+    }),
+  );
+}
+
+/**
+ * Every piece (and none) before each pipe-ended last piece, 76 lines: an
+ * escaped backslash then a pipe reads as a size where a lone backslash does
+ * not. The index turns the size, destination, title and link.
+ */
+function everyPieceBeforeAPipe(): Drawn[] {
+  return PIPE_ENDS.flatMap((last, q) =>
+    [null, ...ALT_PIECES].map((before, b) => {
+      const at = q * (ALT_PIECES.length + 1) + b;
+      return {
+        pieces: before === null ? [last] : [before, last],
+        size: SIZES[(b + q) % SIZES.length]!,
+        destination: DESTINATIONS[at % DESTINATIONS.length]!,
+        title: TITLES[at % TITLES.length]!,
+        linked: at % 3 === 0,
+      };
+    }),
+  );
+}
+
+/** Every shape the property turns on: what the lines below are shown to draw. */
+const EVERY_SHAPE = [
+  ...PIPE_ENDS.flatMap((last) =>
+    [null, ...ALT_PIECES].map(
+      (before) => `${JSON.stringify(before)} before ${JSON.stringify(last)}`,
+    ),
+  ),
+  ...[0, 1, 2, 3].map((count) => `${count} pieces`),
+  ...[null, ...ALT_PIECES].flatMap((end) =>
+    SIZES.map((size) => `${JSON.stringify(end)} then ${JSON.stringify(size)}`),
+  ),
+  ...SIZES.flatMap((size) => [
+    ...DESTINATIONS.map((d) => `${JSON.stringify(size)} to ${JSON.stringify(d)}`),
+    ...TITLES.map((t) => `${JSON.stringify(size)} titled ${JSON.stringify(t)}`),
+  ]),
+  ...DESTINATIONS.flatMap((d) =>
+    TITLES.map((t) => `${JSON.stringify(d)} titled ${JSON.stringify(t)}`),
+  ),
+  ...[true, false].flatMap((linked) =>
+    [...SIZES, ...DESTINATIONS, ...TITLES].map(
+      (part) => `linked ${linked} ${JSON.stringify(part)}`,
+    ),
+  ),
+];
 
 const mapImages = (node: EditorNode, change: (image: EditorNode) => EditorNode): EditorNode =>
   node.type === 'image'
@@ -102,21 +220,38 @@ function imagesOf(markdown: string): Record<string, unknown>[] {
 const withoutSize = (attrs: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(attrs).filter(([key]) => key !== 'width' && key !== 'height'));
 
-/** Lines that read back as exactly one image in a paragraph, so the invariants are about it. */
-function samples(seed: number, count: number): string[] {
+/** Whether a line reads back as exactly one image in a paragraph, so the invariants are about it. */
+const oneImage = (drawn: Drawn) => imagesOf(`${lineOf(drawn)}\n`).length === 1;
+
+/** Seeded lines that read back as one image each. */
+function samples(seed: number, count: number): Drawn[] {
   const rng = seeded(seed);
-  const lines: string[] = [];
-  while (lines.length < count) {
-    const line = `Before ${randomImage(rng)} after`;
-    if (imagesOf(`${line}\n`).length === 1) lines.push(line);
+  const drawn: Drawn[] = [];
+  while (drawn.length < count) {
+    const next = randomDrawn(rng);
+    if (oneImage(next)) drawn.push(next);
   }
-  return lines;
+  return drawn;
 }
 
 const SEED = 568;
-const SAMPLES = samples(SEED, 300);
+// Each line costs a parse and a save in every test, and the saves of an edit
+// are the slow part (#854): 300 seeded lines took 5 s under load and still
+// missed shapes the listed lines draw. A few seeded ones stay for what the
+// lists do not think of.
+const DRAWN = [
+  ...everyPieceBeforeEverySize().filter(oneImage),
+  ...everyPieceBeforeAPipe().filter(oneImage),
+  ...samples(SEED, 10),
+];
+const SAMPLES = DRAWN.map(lineOf);
 
 describe('an image’s |width, over random image markdown (seed 568)', () => {
+  it('draws every shape the size token turns on', () => {
+    const drawn = new Set(DRAWN.flatMap(shapesOf));
+    expect(EVERY_SHAPE.filter((shape) => !drawn.has(shape))).toEqual([]);
+  });
+
   it('is written back byte-identical when nothing is edited', () => {
     const changed = SAMPLES.map((line) => `${line}\n`).filter(
       (body) => saveWith(body, (doc) => doc) !== body,
