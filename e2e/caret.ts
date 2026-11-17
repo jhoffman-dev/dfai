@@ -23,19 +23,24 @@ import { LINE_END, LINE_START, TEXT_END } from './platform.ts';
 /** How long the editor is given to hold the caret where it is wanted. */
 const CARET_WAIT = { timeout: 5_000 };
 
+/** What is left of one `CARET_WAIT` for a helper's next step. */
+type WaitLeft = () => { timeout: number };
+
+/**
+ * One `CARET_WAIT` shared by every step after this call: each step gets what
+ * the steps before it left, never 0, which Playwright reads as no limit.
+ */
+function caretWaitFromNow(): WaitLeft {
+  const ends = performance.now() + CARET_WAIT.timeout;
+  return () => ({ timeout: Math.max(1, Math.round(ends - performance.now())) });
+}
+
 /**
  * How long one action may take: well under `CARET_WAIT`, so a line that
  * cannot be clicked or tapped fails with the action's own message, not only
  * with that wait running out.
  */
 const ONE_TRY = { timeout: 1_000 };
-
-/**
- * How long caretAt's one click may take: the whole of `CARET_WAIT`, which
- * its clicks had between them when they were tried again, since a page
- * still busy opening the note can hold one click past `ONE_TRY` (#850).
- */
-const ONLY_TRY = CARET_WAIT;
 
 /** Click the line `line` is in, and put the caret at that line's end. */
 export async function caretAtLineEnd(line: Locator): Promise<void> {
@@ -72,17 +77,20 @@ export async function caretAtNoteEnd(editor: Locator): Promise<void> {
  * endKeyUndone.
  */
 async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
+  // One CARET_WAIT for the click, the keys and the reads together, as when
+  // the click was tried again: a page still busy opening the note can hold
+  // the click past ONE_TRY, so it gets what is left, not ONE_TRY.
+  const left = caretWaitFromNow();
   // ⌘→ is always pressed, never skipped when the editor already says the
   // caret is there: until ProseMirror reads the click, its selection is the
   // one from before, and the typing goes where the click put the page's
-  // caret. ⌘← is pressed from the line's end: at a line's start under a
-  // bookmark card, it takes the caret up to the line above.
-  await line.click({ position: { x: 1, y: 5 }, ...ONLY_TRY });
-  let caret = await pressAndRead(line, LINE_END);
-  if (endKeyUndone(caret)) caret = await pressAndRead(line, LINE_END);
-  if (where === 'start' && caret.inLine && caret.at === 'end') {
-    caret = await pressAndRead(line, LINE_START);
-  }
+  // caret. ⌘← is pressed after ⌘→ whenever the caret is in the line, at its
+  // end or, where it wraps, short of it: from a line's start under a bookmark
+  // card, ⌘← takes the caret up to the line above.
+  await line.click({ position: { x: 1, y: 5 }, ...left() });
+  let caret = await pressAndRead(line, LINE_END, left);
+  if (endKeyUndone(caret)) caret = await pressAndRead(line, LINE_END, left);
+  if (where === 'start' && caret.inLine) caret = await pressAndRead(line, LINE_START, left);
   if (caret.inLine && caret.at === where) return;
   throw new Error(
     `The click did not leave the caret at its line's ${where}.${resetBy('click', caret)} ${whereCaretsAre(caret)}`,
@@ -90,9 +98,9 @@ async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
 }
 
 /** Presses `key`, and returns the caret once the editor has read the page's. */
-async function pressAndRead(line: Locator, key: string): Promise<Caret> {
+async function pressAndRead(line: Locator, key: string, left: WaitLeft): Promise<Caret> {
   await line.page().keyboard.press(key);
-  return caretReadByEditor(line);
+  return caretReadByEditor(line, left);
 }
 
 /**
@@ -102,9 +110,9 @@ async function pressAndRead(line: Locator, key: string): Promise<Caret> {
  * page's; the tap-caret plugin reads it just before, on its own timer, so
  * the click's caret is kept. A key that lands between that read and the
  * check, as a key pressed at once after the click can, is undone by the
- * check, back to the click's caret (#850). No person presses that soon, so
- * ⌘→ is pressed once more, never the click: a click the check undid leaves
- * the caret off its line, and fails at once.
+ * check, back to the click's caret (#850, until #869 fixes the plugin). No
+ * person presses that soon, so ⌘→ is pressed once more, never the click: a
+ * click the check undid leaves the caret off its line, and fails at once.
  */
 function endKeyUndone(caret: Caret): boolean {
   return caret.inLine && caret.at === 'start';
@@ -114,12 +122,12 @@ function endKeyUndone(caret: Caret): boolean {
  * The caret once the editor has read the page's, after a click or a key
  * moved the page's: until then the two disagree.
  */
-async function caretReadByEditor(line: Locator): Promise<Caret> {
+async function caretReadByEditor(line: Locator, left: WaitLeft): Promise<Caret> {
   let caret = await caretOf(line);
   await expect(async () => {
     caret = await caretOf(line);
     expect(caret.agrees, whereCaretsAre(caret)).toBe(true);
-  }).toPass(CARET_WAIT);
+  }).toPass(left());
   return caret;
 }
 
@@ -260,7 +268,7 @@ function caretOf(line: Locator) {
       const agrees = pageHead === selection.head && domSelection!.isCollapsed === selection.empty;
 
       // Depth 0 is between top-level blocks (a selected card, a gap cursor):
-      // no block holds the caret, and before() would throw. A miss to retry.
+      // no block holds the caret, and before() would throw. Not in the line.
       if ($head.depth === 0) {
         return {
           inLine: false,

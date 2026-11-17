@@ -79,6 +79,51 @@ test("a click whose caret is put back at the note's start fails at once, naming 
   expect(missed).toContain('the tap-caret fix (#835) is not holding for a click');
 });
 
+/**
+ * Puts the page's caret back at the start of `line` on the keyup of the
+ * first `times` presses of the line-end key, as ProseMirror's check after
+ * focus does to a key that lands between the tap-caret plugin's read and
+ * that check (#850, #869).
+ */
+async function undoLineEndKey(page: Page, line: string, times: number): Promise<void> {
+  await page.getByText(line).evaluate((block, count) => {
+    let left = count;
+    block.ownerDocument.addEventListener('keyup', (event) => {
+      if (left === 0 || (event.key !== 'ArrowRight' && event.key !== 'End')) return;
+      left -= 1;
+      const text = block.firstChild;
+      if (text === null) throw new Error('the line has no text');
+      document.getSelection()?.collapse(text, 0);
+    });
+  }, times);
+}
+
+test('a line-end key undone back to where the click put the caret is pressed once more', async ({
+  page,
+}) => {
+  await openNote(page);
+  await undoLineEndKey(page, 'Above the table.', 1);
+  const above = page.getByText('Above the table.');
+
+  await caretAtLineEnd(above);
+  await page.keyboard.type('!');
+
+  await expect(above).toHaveText('Above the table.!');
+});
+
+test("a line-end key undone twice fails with the helper's own message", async ({ page }) => {
+  await openNote(page);
+  await undoLineEndKey(page, 'Above the table.', 2);
+
+  const missed = await caretAtLineEnd(page.getByText('Above the table.')).then(
+    () => null,
+    (error: unknown) => String(error),
+  );
+
+  expect(missed).toContain("The click did not leave the caret at its line's end.");
+  expect(missed).not.toContain('#835');
+});
+
 test('a caret beside a card, not in any line, is a miss, never an error', async ({ page }) => {
   const vault = await createVault();
   await vault.write('cards.md', '# Cards\n\n[[Rome]] <!-- atlas:bookmark -->\n\nPacking list.\n');
