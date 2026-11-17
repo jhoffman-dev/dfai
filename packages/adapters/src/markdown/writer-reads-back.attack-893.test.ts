@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { EditorDocument, EditorNode } from '@dfai/domain';
+import type { EditorDocument, EditorMark, EditorNode } from '@dfai/domain';
 import { parseMarkdownBody, serializeMarkdownBody } from './markdown-blocks.ts';
 import { documentOf } from './writer-fuzz.test-support.ts';
 
@@ -180,5 +180,22 @@ describe('an id on a block whose only content is a hard break', () => {
         { type: 'paragraph', attrs: { anchor: 'p1' }, content },
       ),
     );
+  });
+});
+
+describe('struck link text ending in a space, struck text straight after the link', () => {
+  // Third pass: `writeDelete` (strikethrough-handler.ts) no longer writing the
+  // last character inside a `~~` as a reference when it is a space (`if
+  // (close.inside)` dropped; old seed 1684): `[~~x ~~](#h)~~e~~` does not
+  // close, and the strike runs on. Outside a link the editor moves a run's
+  // edge spaces out of the mark; inside one it cannot.
+  const link: EditorMark = { type: 'link', attrs: { href: '#h', title: null } };
+  const struck = (value: string, marks: EditorMark[] = []): EditorNode => ({
+    ...text(value),
+    marks: [{ type: 'strike' }, ...marks],
+  });
+
+  it.each(['x ', 'x\t', 'x '])('%j struck in a link, then struck text', (value) => {
+    expectReadBack(note(paragraph(struck(value, [link]), struck('e'))));
   });
 });

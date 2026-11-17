@@ -793,6 +793,37 @@ const idsOnBareLines = (): EditorNode[] =>
     withAnchor(callout([paragraph(content)], at), `bc${at}`),
   ]);
 
+/**
+ * The marks a link's text can carry besides the link: there is no highlight
+ * mark to write. A wiki link's marks wrap the whole link, so its alias has
+ * no edge inside a mark, and is left out.
+ */
+export const LINKED_MARKS = ['bold', 'italic', 'strike', 'code'] as const;
+/** The blanks at a link text's edge that the editor cannot move out of the mark. */
+export const EDGE_BLANKS = [' ', '\t', '\u00a0'] as const;
+
+/**
+ * Link text in each mark that starts or ends with each blank, beside a run in
+ * the same mark before or after the link. Outside a link the editor moves a
+ * run's edge blanks out of the mark; inside one it cannot, so the writer must
+ * close the mark over them (old seed 1684: `[~~x ~~](#h)~~e~~`).
+ */
+const edgesInLinks = (): EditorNode[][] =>
+  LINKED_MARKS.flatMap((mark, m) =>
+    EDGE_BLANKS.flatMap((blank, b) =>
+      (['starting', 'ending'] as const).flatMap((edge) =>
+        (['before', 'after'] as const).map((side) => {
+          const linked = text(edge === 'starting' ? `${blank}x` : `x${blank}`, [
+            { type: mark },
+            ...marked('link', m + b),
+          ]);
+          const beside = text('e', [{ type: mark }]);
+          return side === 'before' ? [text('k '), beside, linked] : [linked, beside, text(' k')];
+        }),
+      ),
+    ),
+  );
+
 /** A family of listed documents: the shapes of one kind the property turns on. */
 export interface ListedFamily {
   readonly name: string;
@@ -825,6 +856,10 @@ export const LISTED_FAMILIES: readonly ListedFamily[] = [
     name: 'blank-only lines in every kind of text block',
     documents: [noteOf([...blankLines(), ...idsOnBareLines()])],
   },
+  ...(['paragraph', 'listItem', 'tableCell'] as const).map((place) => ({
+    name: `marked link text with a blank at its edge, beside the same mark in a ${place}`,
+    documents: [noteOf(linesIn(place, edgesInLinks()))],
+  })),
   ...DELIMITED_PLACES.map((place) => ({
     name: `a mark's delimiter straight before a run in a ${place}`,
     documents: [noteOf(linesIn(place, delimitedLines()))],

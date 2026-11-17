@@ -22,6 +22,8 @@ import {
   DELIMITED_PLACES,
   DELIMITED_RUNS,
   DELIMITERS,
+  EDGE_BLANKS,
+  LINKED_MARKS,
   BLOCK_OPENERS,
   LISTED_FAMILIES,
   MARK_SETS,
@@ -65,6 +67,43 @@ export function shapesOf(doc: EditorDocument): Set<string> {
 
 /** The runs `DELIMITED_RUNS` names, as a line's shapes name them. */
 const DELIMITED_KEYS = new Set(DELIMITED_RUNS.map((runs) => runs.join(', ')));
+
+const marksOn = (node: EditorNode | undefined) =>
+  node?.type === 'text' ? (node.marks ?? []).map((mark) => mark.type) : [];
+
+/** Marked link text with a blank at its edge, beside a run in the same mark (not linked). */
+function linkEdgeShapes(content: readonly EditorNode[], container: string): string[] {
+  return content.flatMap((node, at) => {
+    const marks = marksOn(node);
+    if (!marks.includes('link')) return [];
+    const value = node.text ?? '';
+    return LINKED_MARKS.filter((mark) => marks.includes(mark)).flatMap((mark) =>
+      EDGE_BLANKS.flatMap((blank) =>
+        (
+          [
+            ['starting', value.startsWith(blank)],
+            ['ending', value.endsWith(blank)],
+          ] as const
+        ).flatMap(([edge, has]) =>
+          (
+            [
+              ['before', content[at - 1]],
+              ['after', content[at + 1]],
+            ] as const
+          )
+            .filter(
+              ([, beside]) =>
+                has && marksOn(beside).includes(mark) && !marksOn(beside).includes('link'),
+            )
+            .map(
+              ([side]) =>
+                `${mark} link text ${edge} with ${quoted(blank)}, ${mark} ${side} it in ${container}`,
+            ),
+        ),
+      ),
+    );
+  });
+}
 
 /** An id on a `type` whose line is only blanks, a break, or blanks then a break. */
 function bareShapes(type: string, line: readonly EditorNode[]): string[] {
@@ -202,6 +241,7 @@ function lineShapes(content: readonly EditorNode[], container: string): string[]
         shapes.push(`${quoted(opener)} opens a line after a break in ${container}`);
     });
   }
+  shapes.push(...linkEdgeShapes(content, container));
   content.forEach((node, at) => {
     if (node.type !== 'text') return;
     const next = content[at + 1];
@@ -305,6 +345,21 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
         DELIMITED_RUNS.flatMap((runs) =>
           ['at a line start', 'after a word'].map(
             (where) => `${quoted(delimiter)} before ${runs.join(', ')} ${where} in ${place}`,
+          ),
+        ),
+      ),
+    ]),
+  ),
+  ...Object.fromEntries(
+    (['paragraph', 'listItem', 'tableCell'] as const).map((place) => [
+      `marked link text with a blank at its edge, beside the same mark in a ${place}`,
+      LINKED_MARKS.flatMap((mark) =>
+        EDGE_BLANKS.flatMap((blank) =>
+          ['starting', 'ending'].flatMap((edge) =>
+            ['before', 'after'].map(
+              (side) =>
+                `${mark} link text ${edge} with ${quoted(blank)}, ${mark} ${side} it in ${place}`,
+            ),
           ),
         ),
       ),
