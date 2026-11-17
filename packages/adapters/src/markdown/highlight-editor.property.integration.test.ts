@@ -277,9 +277,16 @@ const UNEDITED: readonly Recipe[] = [
  * the only one and one between others, with lazy lines and without.
  */
 const TYPED_INTO: readonly Recipe[] = [
-  ...(['first', 'last'] as const).flatMap((place) =>
-    BOTH.flatMap((lazy) =>
-      BOTH.map((windows) => ({ place, lazy, windows, asked: 3, removeOne: true })),
+  // Places turn fastest, so the first comments typed, which hold every word (`EVERY_TYPED`), go to the first and the last.
+  ...BOTH.flatMap((lazy) =>
+    BOTH.flatMap((windows) =>
+      (['first', 'last'] as const).map((place) => ({
+        place,
+        lazy,
+        windows,
+        asked: 3,
+        removeOne: true,
+      })),
     ),
   ),
   ...BOTH.flatMap((lazy) => [
@@ -287,9 +294,13 @@ const TYPED_INTO: readonly Recipe[] = [
     { place: 'only' as const, lazy, asked: 1, removeOne: false },
   ]),
 ].map((recipe, at) => {
-  // The first two are written around every filler there is, as the unedited ones are.
+  // Their highlights turn through every style; the first two are written around every filler there is.
+  const styles = Array.from(
+    { length: recipe.asked },
+    (_, k) => STYLES[(5 * at + k) % STYLES.length]!,
+  );
   const filler = [EVERY_PROSE, EVERY_OTHER_FILLER][at];
-  return filler === undefined ? recipe : { ...recipe, filler };
+  return { ...recipe, styles, ...(filler !== undefined && { filler }) };
 });
 
 /** A test's notes: the listed ones, then `RUNS` seeded ones. */
@@ -474,6 +485,9 @@ const EVERY_NOTE_SHAPE = [
 const EVERY_EDIT_SHAPE = [
   ...wordsIn('typed'),
   'typed nothing',
+  // Into the last, a comment runs to the end of the file.
+  'every word typed into first',
+  'every word typed into last',
   ...PLACES.flatMap((place) => BOTH.map((lazy) => `typed into ${place}, lazy ${lazy}`)),
   ...(['first', 'last'] as const).flatMap((place) =>
     BOTH.flatMap((lazy) =>
@@ -526,6 +540,7 @@ describe('generated literature notes in the editor', () => {
       }
       edited += 1;
       keep();
+      if (EVERY_TYPED[at] !== undefined) saw(`every word typed into ${place}`);
       saw(`typed into ${place}, lazy ${note.lazy}`);
       if (note.removed) {
         saw(`typed into ${place}, lazy ${note.lazy}, windows ${note.windows}, one removed`);

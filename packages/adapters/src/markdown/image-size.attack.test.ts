@@ -73,7 +73,7 @@ const lineOf = ({ pieces, size, destination, title, linked }: Drawn): string => 
  * turns on the backslashes before it (`readImageMarkdown`), which the piece
  * before decides.
  */
-const PIPE_ENDS: readonly string[] = ['|', '\\|', '|300', '|40x30'];
+const PIPE_ENDS: readonly string[] = ALT_PIECES.filter((piece) => /\|[\dx]*$/.test(piece));
 
 /**
  * What a line holds that the size token turns on: what the alt ends in right

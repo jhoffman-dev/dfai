@@ -91,7 +91,10 @@ function words(max: number, where: string): string {
   return drawn.join(separator);
 }
 
-/** A PDF anchor on a quote, over `rects` rectangles (none to three). */
+/** How many rectangles a PDF quote is drawn over. */
+const RECT_COUNTS = [0, 1, 2, 3];
+
+/** A PDF anchor on a quote, over `rects` rectangles (`RECT_COUNTS`). */
 function pdfQuote(rects: number): HighlightAnchor {
   saw(`pdf quote in ${rects} rects`);
   return {
@@ -138,7 +141,7 @@ function kindle(ending: boolean, withId: boolean): HighlightAnchor {
 
 /** Each kind of anchor, drawn the same: what a seeded highlight is anchored by. */
 const ANCHORS: (() => HighlightAnchor)[] = [
-  () => pdfQuote(count(3)),
+  () => pdfQuote(pick(RECT_COUNTS)),
   pdfArea,
   epub,
   () => kindle(random() < 0.5, random() < 0.5),
@@ -146,7 +149,7 @@ const ANCHORS: (() => HighlightAnchor)[] = [
 
 /** Every anchor shape there is: what the listed highlights turn through. */
 const EVERY_ANCHOR: (() => HighlightAnchor)[] = [
-  ...[0, 1, 2, 3].map((rects) => () => pdfQuote(rects)),
+  ...RECT_COUNTS.map((rects) => () => pdfQuote(rects)),
   pdfArea,
   epub,
   ...[true, false].flatMap((ending) => [true, false].map((withId) => () => kindle(ending, withId))),
@@ -391,11 +394,12 @@ const countFor = (place: Place, edit: number) =>
   ({ only: 1, first: 2, between: 3 + (edit % 3), last: 2 })[place];
 
 /** A write to every place with every edit by hand to the highlight written to. */
-const PLACED_EDITS: readonly Listed[] = PLACES.flatMap((place, p) =>
-  HAND_EDITS.map((edit, e) => ({
+// Places turn fastest, so the first four writes, which type every word (`typedFor`), go to each place.
+const PLACED_EDITS: readonly Listed[] = HAND_EDITS.flatMap((edit, e) =>
+  PLACES.map((place, p) => ({
     place,
     edit,
-    highlights: highlightsFor(4 * p + e, countFor(place, e)),
+    highlights: highlightsFor(4 * e + p, countFor(place, e)),
   })),
 );
 
@@ -417,7 +421,7 @@ function indexAt(place: Place | undefined, count: number): number {
 function handEditedWithTarget(
   written: string,
   listed: Listed | null,
-): { text: string; target: HighlightBlock } {
+): { text: string; target: HighlightBlock; place: Place } {
   const count = readHighlights(written, noteBlocks).length;
   const at = indexAt(listed?.place, count);
   const { text, edits } = editedByHand(
@@ -429,7 +433,7 @@ function handEditedWithTarget(
   const place = placeOf(at, blocks.length);
   saw(`written to ${place}`);
   saw(`written to ${place} after ${edits.get(target.id)}`);
-  return { text, target };
+  return { text, target, place };
 }
 
 const wordsIn = (where: string) => [
@@ -441,7 +445,7 @@ const wordsIn = (where: string) => [
 const EVERY_NOTE_SHAPE = [
   ...FILLER.map(({ name }) => `filler ${name}`),
   ...[1, 2, 3, 4, 5].map((asked) => `${asked} highlights appended`),
-  ...[0, 1, 2, 3].map((rects) => `pdf quote in ${rects} rects`),
+  ...RECT_COUNTS.map((rects) => `pdf quote in ${rects} rects`),
   'pdf area',
   'epub',
   ...[true, false].flatMap((ending) =>
@@ -516,8 +520,9 @@ describe('literature notes under any edits', () => {
         random,
         noteBlocks,
       });
-      const { text, target } = handEditedWithTarget(written, listed);
+      const { text, target, place } = handEditedWithTarget(written, listed);
       const comment = typedFor(run);
+      if (EVERY_WORD[run] !== undefined) saw(`every word typed into ${place}`);
       const changed = withHighlightComment({ text, id: target.id, comment, noteBlocks });
       expect(highlightNamed(changed, target.id, noteBlocks).comment).toBe(
         commentLines(comment).join('\n'),
@@ -533,6 +538,7 @@ describe('literature notes under any edits', () => {
           ...EVERY_NOTE_SHAPE,
           ...EVERY_HAND_EDIT,
           ...EVERY_PLACED_EDIT,
+          ...PLACES.map((place) => `every word typed into ${place}`),
           'typed nothing',
           ...wordsIn('typed'),
         ],
