@@ -121,7 +121,7 @@ test('a held rule shows as waiting with why and when, and one whose runs failed 
   // Failing: the warning notice, the count, its last reason and when it tries again; never waiting.
   const failing = rowOf(extraction);
   await expect(failing.locator('.automation-card__notice')).toHaveText(
-    'It failed all 20 times it ran this hour. The last time: Claude could not be reached. ' +
+    'It failed all 20 times it ran this hour. The last failure: Claude could not be reached. ' +
       `It has used up its hourly limit, so it tries again at ${until}.`,
   );
   await expect(failing.getByRole('status', { name: `${extraction} is waiting` })).toHaveCount(0);

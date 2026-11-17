@@ -106,7 +106,7 @@ describe('noteRunsHold (#813): why a rule is held, as plain data', () => {
     ]);
   });
 
-  it('says its own runs, and how many of them failed and why, when only its runs are spent', () => {
+  it('counts its own runs that failed this hour, and the last failure’s why', () => {
     const entries = [
       ...Array.from({ length: 17 }, () => changed(50)),
       failed(45, 'The index could not be read.'),
@@ -119,7 +119,7 @@ describe('noteRunsHold (#813): why a rule is held, as plain data', () => {
       until: '2026-10-14T12:10:00',
       runs: { most: NOTE_RUNS_PER_HOUR, spent: NOTE_RUNS_PER_HOUR, countsAsks: true },
       sharedAsks: null,
-      failures: { failed: 3, ran: 20, latest: 'Claude could not be reached.' },
+      failures: { failed: 3, ran: 20, latest: 'Claude could not be reached.', lastFailed: true },
     });
   });
 
@@ -136,8 +136,13 @@ describe('noteRunsHold (#813): why a rule is held, as plain data', () => {
       countsAsks: false,
     });
     expect(hold?.sharedAsks).toBeNull();
-    // Only the runs that spent the limit holding it are counted: the ask spent the other one.
-    expect(hold?.failures).toEqual({ failed: 20, ran: 20, latest: 'The index could not be read.' });
+    // Its last run asked Claude and worked, after twenty that failed.
+    expect(hold?.failures).toEqual({
+      failed: 20,
+      ran: 21,
+      latest: 'The index could not be read.',
+      lastFailed: false,
+    });
   });
 
   it('says both limits when both are spent, and waits for the later one', () => {
@@ -155,22 +160,89 @@ describe('noteRunsHold (#813): why a rule is held, as plain data', () => {
   });
 });
 
-describe('noteRunsHoldIsFailing (#813): any failed run that spent the limit makes it failing', () => {
-  const base: NoteRunsHold = {
-    rule: 'Mark new meetings',
-    until: '2026-10-14T12:10:00',
-    runs: { most: 20, spent: 20, countsAsks: true },
-    sharedAsks: null,
-    failures: null,
+describe('noteRunsHoldIsFailing (#813): failing if and only if its own last run this hour failed', () => {
+  const SHARED = {
+    most: DECLARED_STEP_ASKS_PER_HOUR,
+    asked: 30,
+    by: [{ name: 'Board digest', asks: 30, own: false, enabled: true }],
   };
-  it('is waiting with no failures, and failing with one or more', () => {
-    expect(noteRunsHoldIsFailing(base)).toBe(false);
-    expect(
-      noteRunsHoldIsFailing({ ...base, failures: { failed: 1, ran: 20, latest: 'No.' } }),
-    ).toBe(true);
-    expect(
-      noteRunsHoldIsFailing({ ...base, failures: { failed: 20, ran: 20, latest: 'No.' } }),
-    ).toBe(true);
+
+  it('1 of 20 failed, then 19 worked: waiting, the earlier failure still counted', () => {
+    const entries = [failed(55), ...Array.from({ length: 19 }, (_, at) => changed(50 - at))];
+    const hold = noteRunsHold({ rule: 'Mark new meetings', entries, now: NOW });
+    expect(hold?.failures).toEqual({
+      failed: 1,
+      ran: 20,
+      latest: 'The index could not be read.',
+      lastFailed: false,
+    });
+    expect(noteRunsHoldIsFailing(hold!)).toBe(false);
+  });
+
+  it('19 worked, then the last one failed: failing', () => {
+    const entries = [
+      ...Array.from({ length: 19 }, (_, at) => changed(55 - at)),
+      failed(30, 'Claude could not be reached.'),
+    ];
+    const hold = noteRunsHold({ rule: 'Mark new meetings', entries, now: NOW });
+    expect(hold?.failures).toEqual({
+      failed: 1,
+      ran: 20,
+      latest: 'Claude could not be reached.',
+      lastFailed: true,
+    });
+    expect(noteRunsHoldIsFailing(hold!)).toBe(true);
+  });
+
+  it('held by the shared asks while all its own runs failed before asking: failing', () => {
+    const hold = noteRunsHold({
+      rule: 'After a meeting',
+      entries: Array.from({ length: 5 }, (_, at) => failed(40 - at)),
+      now: NOW,
+      budget: DECLARED,
+      sharers: [{ name: 'Board digest', entries: [asked(50, 30)] }],
+    });
+    expect(hold?.sharedAsks).toEqual(SHARED);
+    expect(hold?.failures).toEqual({
+      failed: 5,
+      ran: 5,
+      latest: 'The index could not be read.',
+      lastFailed: true,
+    });
+    expect(noteRunsHoldIsFailing(hold!)).toBe(true);
+  });
+
+  it('held by the shared asks while only the sharer’s runs failed: waiting', () => {
+    const sharerFailed: LogEntry = {
+      kind: 'failed',
+      at: '2026-10-14T11:20:00',
+      trigger: 'note',
+      problem: 'No.',
+      claude: { model: DECLARED_STEP_MODEL, ms: 10, asks: 10 },
+    };
+    const hold = noteRunsHold({
+      rule: 'After a meeting',
+      entries: [asked(30, 20)],
+      now: NOW,
+      budget: DECLARED,
+      sharers: [{ name: 'Board digest', entries: [sharerFailed] }],
+    });
+    expect(hold?.sharedAsks?.asked).toBe(30);
+    expect(hold?.failures).toBeNull();
+    expect(noteRunsHoldIsFailing(hold!)).toBe(false);
+  });
+
+  it('no runs of its own this hour, held by the shared limit: waiting', () => {
+    const hold = noteRunsHold({
+      rule: 'After a meeting',
+      entries: [],
+      now: NOW,
+      budget: DECLARED,
+      sharers: [{ name: 'Board digest', entries: [asked(50, 30)] }],
+    });
+    expect(hold?.sharedAsks).toEqual(SHARED);
+    expect(hold?.failures).toBeNull();
+    expect(noteRunsHoldIsFailing(hold!)).toBe(false);
   });
 });
 
@@ -287,26 +359,39 @@ describe('noteRunsHoldMessage (#813): what a held rule says, in plain words', ()
     );
   });
 
-  it('failing: every run failed — the count, the last reason in its own words, the retry time', () => {
-    expect(
-      noteRunsHoldMessage({
-        ...RUNS,
-        failures: { failed: 20, ran: 20, latest: 'Claude could not be reached.' },
-      }),
-    ).toBe(
-      'It failed all 20 times it ran this hour. The last time: Claude could not be reached. ' +
+  const failing = (failed: number, ran: number, latest: string) => ({
+    ...RUNS,
+    failures: { failed, ran, latest, lastFailed: true },
+  });
+
+  it('failing: every run failed — the count, the last failure in its own words, the retry time', () => {
+    expect(noteRunsHoldMessage(failing(20, 20, 'Claude could not be reached.'))).toBe(
+      'It failed all 20 times it ran this hour. The last failure: Claude could not be reached. ' +
         'It has used up its hourly limit, so it tries again at 09:10.',
     );
   });
 
-  it('failing: some runs failed — both numbers', () => {
-    expect(
-      noteRunsHoldMessage({
-        ...RUNS,
-        failures: { failed: 3, ran: 20, latest: 'The index could not be read' },
-      }),
-    ).toBe(
-      'It failed 3 of the 20 times it ran this hour. The last time: The index could not be read. ' +
+  it('failing: some runs failed — both numbers, and one full stop after a reason without one', () => {
+    expect(noteRunsHoldMessage(failing(3, 20, 'The index could not be read'))).toBe(
+      'It failed 3 of the 20 times it ran this hour. The last failure: The index could not be read. ' +
+        'It has used up its hourly limit, so it tries again at 09:10.',
+    );
+    expect(noteRunsHoldMessage(failing(1, 20, 'No.'))).toBe(
+      'It failed 1 of the 20 times it ran this hour. The last failure: No. ' +
+        'It has used up its hourly limit, so it tries again at 09:10.',
+    );
+  });
+
+  it('failing: the one time it ran', () => {
+    expect(noteRunsHoldMessage(failing(1, 1, 'No.'))).toBe(
+      'It failed the one time it ran this hour. The last failure: No. ' +
+        'It has used up its hourly limit, so it tries again at 09:10.',
+    );
+  });
+
+  it('failing: a blank reason is left out', () => {
+    expect(noteRunsHoldMessage(failing(2, 2, '  '))).toBe(
+      'It failed both times it ran this hour. ' +
         'It has used up its hourly limit, so it tries again at 09:10.',
     );
   });
@@ -316,11 +401,26 @@ describe('noteRunsHoldMessage (#813): what a held rule says, in plain words', ()
       noteRunsHoldMessage({
         ...SHARED,
         runs: { most: 20, spent: 20, countsAsks: false },
-        failures: { failed: 1, ran: 21, latest: 'No.' },
+        failures: { failed: 1, ran: 21, latest: 'No.', lastFailed: true },
       }),
     ).toBe(
-      'It failed 1 of the 21 times it ran this hour. The last time: No. ' +
+      'It failed 1 of the 21 times it ran this hour. The last failure: No. ' +
         'It has used up two hourly limits, so it tries again at 14:32.',
+    );
+  });
+
+  it('waiting after earlier failures: not broken, and says how many failed before the last one worked', () => {
+    const earlier = (failed: number) => ({
+      ...RUNS,
+      failures: { failed, ran: 20, latest: 'No.', lastFailed: false },
+    });
+    expect(noteRunsHoldMessage(earlier(1))).toBe(
+      'Not broken: it has run 20 times this hour, and 20 is its most. ' +
+        '1 run failed earlier this hour; the last one worked. ' +
+        'It runs next at 09:10, on what arrived meanwhile; nothing to do.',
+    );
+    expect(noteRunsHoldMessage(earlier(3))).toContain(
+      '3 runs failed earlier this hour; the last one worked.',
     );
   });
 

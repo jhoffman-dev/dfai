@@ -125,11 +125,21 @@ describe('automationRows of a rule held by an hourly limit (#813)', () => {
   });
 
   it('shows a held rule whose runs failed as failing: its notice, never waiting', () => {
-    const failing = { ...hold, failures: { failed: 2, ran: 5, latest: 'No.' } };
+    const failing = { ...hold, failures: { failed: 2, ran: 5, latest: 'No.', lastFailed: true } };
     const row = rowOf(heldBy(failing));
     expect(row?.notice).toBe(noteRunsHoldMessage(failing));
     expect(row?.waiting).toBeUndefined();
     expect(row?.nextRun).toBe('27 Sep 2026, 09:40');
+  });
+
+  it('shows a rule whose earlier runs failed but whose last one worked as waiting', () => {
+    const recovered = {
+      ...hold,
+      failures: { failed: 2, ran: 5, latest: 'No.', lastFailed: false },
+    };
+    const row = rowOf(heldBy(recovered));
+    expect(row?.notice).toBeNull();
+    expect(row?.waiting).toBe(noteRunsHoldMessage(recovered));
   });
 
   it('leaves a failing rule’s pause as its notice, not waiting', () => {

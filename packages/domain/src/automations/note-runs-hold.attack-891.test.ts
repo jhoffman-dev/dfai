@@ -16,7 +16,7 @@ import {
   DECLARED_STEP_MODEL,
   SHARED_STEP_BUDGET,
 } from './claude-step-budget.ts';
-import { noteRunsHoldMessage } from './note-runs-hold.ts';
+import { noteRunsHoldIsFailing, noteRunsHoldMessage } from './note-runs-hold.ts';
 import type { LogEntry } from './run-log.ts';
 import { localTimeMs, localTimeOf } from './schedule.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
@@ -220,8 +220,9 @@ describe('noteRunsHoldMessage tells the truth (#813)', () => {
 
     const message = noteRunsHoldMessage(hold!);
 
-    expect(message).not.toContain('not broken');
-    expect(message).not.toContain('Nothing needs fixing');
+    expect(noteRunsHoldIsFailing(hold!)).toBe(true);
+    expect(message).not.toMatch(/not broken/i);
+    expect(message).not.toMatch(/nothing (needs fixing|to do)/i);
   });
 
   it('does not say it runs at a minute before the hold ends', () => {

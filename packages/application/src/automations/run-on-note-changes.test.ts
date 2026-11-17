@@ -325,7 +325,7 @@ describe('runOnNoteChanges: what holds it back', () => {
       [
         'error',
         `Mark new meetings: Could not run. It failed all ${NOTE_RUNS_PER_HOUR} times it ran this hour. ` +
-          'The last time: Claude could not be reached. ' +
+          'The last failure: Claude could not be reached. ' +
           'It has used up its hourly limit, so it tries again at 09:10.',
       ],
     ]);
