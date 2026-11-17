@@ -86,15 +86,31 @@ function failingMessage(hold: NoteRunsHold, failures: HoldFailures): string {
   const reason = failures.latest.trim();
   const why =
     reason === '' ? [] : [`The last failure: ${/[.!?]$/.test(reason) ? reason : `${reason}.`}`];
-  const limits =
-    hold.runs !== null && hold.sharedAsks !== null
-      ? 'It has used up two hourly limits'
-      : 'It has used up its hourly limit';
   return [
     failedCount(failures),
     ...why,
-    `${limits}, so it tries again at ${runsAt(hold.until)}.`,
+    `${usedUp(hold)}, so it tries again at ${runsAt(hold.until)}.`,
   ].join(' ');
+}
+
+/**
+ * Which limit is used up, and by whom: its own runs, or the asks it shares —
+ * named as the waiting message names them, since there another rule may
+ * have spent them — or both.
+ */
+function usedUp({ rule, runs, sharedAsks }: NoteRunsHold): string {
+  if (sharedAsks === null) return 'It has used up its hourly limit';
+  const others = sharedAsks.by.filter((each) => !each.own);
+  const sharedWith = andList(others.map((each) => nameOf(rule, each, true)));
+  const { most } = sharedAsks;
+  if (runs === null) {
+    return others.length === 0
+      ? `It has used up its ${most} asks to Claude this hour`
+      : `The ${most} asks to Claude an hour that it shares with ${sharedWith} are used up`;
+  }
+  return others.length === 0
+    ? `It has used up its hourly runs and its ${most} asks to Claude`
+    : `It has used up its hourly runs and the ${most} asks to Claude an hour it shares with ${sharedWith}`;
 }
 
 /** Said of a waiting rule whose earlier runs failed, so the count is not hidden. */
