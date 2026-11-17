@@ -106,6 +106,9 @@ function shared(old: ProseMirrorNode, now: ProseMirrorNode): number {
  * shares the most text with it, the nearest to its place on a tie. A line
  * that is `old` with another kind or marks (made a heading, a word made bold)
  * is not untouched: only the other old lines, compared whole, are left out.
+ * A line counts only if it shares at least half of the caret's line's text:
+ * a line ending in the same full stop is not this one. (Half of the shorter
+ * of the two would let any two-letter line in on a shared full stop.)
  */
 function editedLine(
   old: ProseMirrorNode,
@@ -117,7 +120,7 @@ function editedLine(
     if (untouched.has(keyOf(line.node))) return;
     const score = shared(old, line.node);
     const distance = Math.abs(i - own);
-    if (score === 0) return;
+    if (score === 0 || 2 * score < old.textContent.length) return;
     if (
       best === undefined ||
       score > best.score ||
