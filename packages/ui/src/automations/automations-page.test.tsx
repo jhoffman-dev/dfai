@@ -117,6 +117,25 @@ describe('AutomationsPage', () => {
     ).toBe(true);
   });
 
+  it('shows a rule held by an hourly limit as waiting, with why, not as failed (#813)', () => {
+    const reason = 'Not broken: it has run 20 times this hour. It runs next at 12:10.';
+    page({ rows: [{ ...ROW, notice: null, waiting: reason }] });
+    const waiting = screen.getByRole('status', { name: 'Tidy is waiting' });
+    expect(within(waiting).getByText('Waiting').closest('[data-tone="waiting"]')).not.toBeNull();
+    expect(within(waiting).getByText(reason)).toBeTruthy();
+    expect(within(waiting).queryByRole('button')).toBeNull();
+    expect(document.querySelector('.automation-card__notice')).toBeNull();
+    expect(document.querySelector('.automation-card--waiting')).not.toBeNull();
+  });
+
+  it('shows a failing rule’s notice, and no waiting state', () => {
+    page({ rows: [{ ...ROW, notice: 'Could not run (No.); it is tried again at 09:05.' }] });
+    expect(document.querySelector('.automation-card__notice')?.textContent).toBe(
+      'Could not run (No.); it is tried again at 09:05.',
+    );
+    expect(screen.queryByRole('status', { name: 'Tidy is waiting' })).toBeNull();
+  });
+
   it('shows reading, an error and a notice', () => {
     const { unmount } = render(
       <AutomationsPage

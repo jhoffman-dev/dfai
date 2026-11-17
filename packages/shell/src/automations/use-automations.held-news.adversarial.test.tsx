@@ -216,10 +216,10 @@ describe('useAutomations: a rule held back while more arrives than it keeps', ()
       );
       await settle();
     }
-    // Held, and saying it will come back to them: "It runs on what changed meanwhile at 09:10."
+    // Held, and saying it will come back to them: "It runs next at 09:10, on what arrived meanwhile."
     expect(arrivals.filter((path) => vault.files[path] !== undefined)).toEqual(arrivals);
     expect(activity.reports.map((report) => report.message).join('\n')).toContain(
-      'It runs on what changed meanwhile',
+      'It runs next at 09:10, on what arrived meanwhile',
     );
 
     // The hour passes, and the next: time for every held run, twenty an hour.

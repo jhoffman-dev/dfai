@@ -10,6 +10,7 @@ import {
   logEntrySummary,
   nextRunOf,
   ruleClockOf,
+  noteRunsHoldIsFailing,
   noteTitle,
   type AutomationPlan,
   type DoneAction,
@@ -65,7 +66,14 @@ function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow 
   const { watchingSince, now } = ruleClockOf({ rule, ...clock, planNow: clock.planNow ?? null });
   const last = lastRunOf(log);
   const pause = clock.pauses.get(rule.id);
-  const next = pause?.retryAt === null ? null : nextRunOf({ rule, log, watchingSince, now });
+  const hold = pause?.hold;
+  const waiting = hold !== undefined && !noteRunsHoldIsFailing(hold);
+  const next =
+    hold !== undefined
+      ? hold.until
+      : pause?.retryAt === null
+        ? null
+        : nextRunOf({ rule, log, watchingSince, now });
   return {
     id: rule.path,
     name: rule.name,
@@ -76,7 +84,9 @@ function rowOf({ rule, log }: LoadedAutomation, clock: RowClock): AutomationRow 
     nextRun: next === null ? null : withClock(shownTime(next), rule, clock),
     canUndo: lastUndoableRun(log) !== null,
     problem: null,
-    notice: pause?.reason ?? futureNotice(log, now),
+    // Held, it waits (#813) — unless its own last run failed: then it keeps the failure's notice.
+    notice: waiting ? null : (pause?.reason ?? futureNotice(log, now)),
+    ...(waiting && pause !== undefined && { waiting: pause.reason }),
   };
 }
 

@@ -275,7 +275,7 @@ describe('runOnNoteChanges: what holds it back', () => {
     expect(vault.log).toEqual([]);
   });
 
-  it('runs nothing once it has run as often this hour as one may, and says why', async () => {
+  it('runs nothing once it has run as often this hour as one may, and says it is waiting, not failing', async () => {
     const { vault, activity, run, as } = setUp({ [STANDUP]: meeting('standup') });
     for (let at = 0; at < NOTE_RUNS_PER_HOUR; at += 1) {
       const entry: LogEntry = {
@@ -298,9 +298,35 @@ describe('runOnNoteChanges: what holds it back', () => {
     expect(vault.files.get(logPathFor(MARK.id))).toBe(logged);
     expect(activity.reports.map((report) => [report.level, report.message])).toEqual([
       [
+        'info',
+        `Mark new meetings: Not broken: it has used ${NOTE_RUNS_PER_HOUR} runs this hour, ` +
+          `and ${NOTE_RUNS_PER_HOUR} is its most (each question it asks Claude counts as a run). ` +
+          'It runs next at 09:10, on what arrived meanwhile; nothing to do.',
+      ],
+    ]);
+  });
+
+  it('logs an error, not news, when the runs that used up its hour failed (#813)', async () => {
+    const { vault, activity, run, as } = setUp({ [STANDUP]: meeting('standup') });
+    for (let at = 0; at < NOTE_RUNS_PER_HOUR; at += 1) {
+      const entry: LogEntry = {
+        kind: 'failed',
+        at: `${TODAY}T08:${String(10 + at).padStart(2, '0')}:00`,
+        trigger: 'note',
+        problem: 'Claude could not be reached.',
+      };
+      await appendToRuleLog({ fs: vault.ports.fs, rule: MARK, entry, now: CLOCK.now() });
+    }
+
+    const held = await run(MARK, [as('added', STANDUP)]).catch((cause: unknown) => cause);
+
+    expect(held).toBeInstanceOf(NoteRunsCappedError);
+    expect(activity.reports.map((report) => [report.level, report.message])).toEqual([
+      [
         'error',
-        `Mark new meetings: Could not run. It has used its ${NOTE_RUNS_PER_HOUR} runs, or questions put to Claude, ` +
-          'for the last hour, the most a rule may. It runs on what changed meanwhile at 09:10.',
+        `Mark new meetings: Could not run. It failed all ${NOTE_RUNS_PER_HOUR} times it ran this hour. ` +
+          'The last failure: Claude could not be reached. ' +
+          'It has used up its hourly limit, so it tries again at 09:10.',
       ],
     ]);
   });

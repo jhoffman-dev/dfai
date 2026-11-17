@@ -133,20 +133,189 @@ export function noteRunsHeldUntil(
   budget: ClaudeStepBudget = SHARED_STEP_BUDGET,
   allowanceEntries: readonly LogEntry[] = entries,
 ): LocalTime | null {
+  return heldLimits({ entries, allowance: allowanceEntries, now, budget })?.until ?? null;
+}
+
+/**
+ * Another rule's log, as the vault's shared asks are counted over it: its
+ * name, for saying it, and whether it is on — one that is off still counts
+ * what it asked this hour, but turning it off is no remedy.
+ */
+export interface NamedLog {
+  readonly name: string;
+  readonly entries: readonly LogEntry[];
+  /** Defaults to on. */
+  readonly enabled?: boolean;
+}
+
+/**
+ * How many of the shared asks one rule spent in the hour. `own` says which is
+ * the held rule itself: names are not unique, so it is never told by name.
+ */
+export interface RuleAsks {
+  readonly name: string;
+  readonly asks: number;
+  readonly own: boolean;
+  readonly enabled: boolean;
+}
+
+/**
+ * Of the held rule's own runs in the hour, how many failed, the last
+ * failure's why, and whether its last run was that failure — which alone
+ * makes the hold failing rather than waiting (`noteRunsHoldIsFailing`).
+ */
+export interface HoldFailures {
+  readonly failed: number;
+  readonly ran: number;
+  readonly latest: string;
+  readonly lastFailed: boolean;
+}
+
+/**
+ * Why a rule set off by notes is held, as plain data for whoever says it
+ * (#813): until when, and each limit that holds it — null for one that does
+ * not — with its most and what was spent of it in the hour; and, when any of
+ * its own runs this hour failed, how many and why (`failures`). It is failing,
+ * not waiting, only when its own last run failed (`noteRunsHoldIsFailing`).
+ */
+export interface NoteRunsHold {
+  readonly rule: string;
+  readonly until: LocalTime;
+  /** Its own runs an hour; `countsAsks` when each ask it makes is counted as a run too. */
+  readonly runs: {
+    readonly most: number;
+    readonly spent: number;
+    readonly countsAsks: boolean;
+  } | null;
+  /** The vault's one allowance of asks an hour: how many were asked, and by which rules. */
+  readonly sharedAsks: {
+    readonly most: number;
+    readonly asked: number;
+    readonly by: readonly RuleAsks[];
+  } | null;
+  readonly failures: HoldFailures | null;
+}
+
+/**
+ * {@link noteRunsHeldUntil}, said as data: for `rule`, whose log is
+ * `entries`, beside the `sharers` — every other rule that spends the shared
+ * asks — at `now`. Null while it may run. Counts exactly as that does.
+ */
+export function noteRunsHold({
+  rule,
+  entries,
+  now,
+  budget = SHARED_STEP_BUDGET,
+  sharers = [],
+}: {
+  rule: string;
+  entries: readonly LogEntry[];
+  now: LocalTime;
+  budget?: ClaudeStepBudget;
+  sharers?: readonly NamedLog[];
+}): NoteRunsHold | null {
+  const allowance = [...entries, ...sharers.flatMap((log) => log.entries)];
+  const limits = heldLimits({ entries, allowance, now, budget });
+  if (limits === null) return null;
+  const { until, runs, asks, end } = limits;
+  const runsHold = runs.until !== null;
+  const asksHold = asks !== null && asks.until !== null;
+  const countsAsks = budget.asksPerHour === null;
+  return {
+    rule,
+    until,
+    runs: runsHold ? { most: NOTE_RUNS_PER_HOUR, spent: runs.spent, countsAsks } : null,
+    sharedAsks: asksHold
+      ? { most: asks.most, asked: asks.spent, by: askedBy({ rule, entries, sharers, now }) }
+      : null,
+    failures: failuresAmong(inHourUpTo(entries, end)),
+  };
+}
+
+/** Each rule that asked in the hour, the held one first, with how many it asked. */
+function askedBy({
+  rule,
+  entries,
+  sharers,
+  now,
+}: {
+  rule: string;
+  entries: readonly LogEntry[];
+  sharers: readonly NamedLog[];
+  now: LocalTime;
+}): RuleAsks[] {
+  const logs = [
+    { name: rule, entries, own: true, enabled: true },
+    ...sharers.map((log) => ({ ...log, own: false, enabled: log.enabled ?? true })),
+  ];
+  return logs.flatMap(({ name, entries: log, own, enabled }) => {
+    const asks = asksSpentInHour(log, now);
+    return asks === 0 ? [] : [{ name, asks, own, enabled }];
+  });
+}
+
+/**
+ * Of the rule's own runs in the hour — whatever each spent, whichever limit
+ * holds it — the failed ones, and whether the latest run is one; null when
+ * none failed. A sharer's runs are never counted here.
+ */
+function failuresAmong(inHour: readonly { at: number; entry: LogEntry }[]): HoldFailures | null {
+  const ran = inHour.filter(({ entry }) => entry.kind === 'run' || entry.kind === 'failed');
+  const failed = ran.flatMap(({ at, entry }) =>
+    entry.kind === 'failed' ? [{ at, problem: entry.problem }] : [],
+  );
+  if (failed.length === 0) return null;
+  // The latest by time; of two at the same moment, the one written later.
+  const last = ran.reduce((a, b) => (b.at >= a.at ? b : a));
+  const lastFailure = failed.reduce((a, b) => (b.at >= a.at ? b : a));
+  return {
+    failed: failed.length,
+    ran: ran.length,
+    latest: lastFailure.problem,
+    lastFailed: last.entry.kind === 'failed',
+  };
+}
+
+interface Limit {
+  readonly until: LocalTime | null;
+  readonly spent: number;
+}
+
+/**
+ * Each limit on a rule's runs in the hour up to `now`, and until when the
+ * later holds it; null while neither does. `allowance` is every entry the
+ * shared asks are counted over, its own log's among them.
+ */
+function heldLimits({
+  entries,
+  allowance,
+  now,
+  budget,
+}: {
+  entries: readonly LogEntry[];
+  allowance: readonly LogEntry[];
+  now: LocalTime;
+  budget: ClaudeStepBudget;
+}): {
+  until: LocalTime;
+  runs: Limit;
+  asks: (Limit & { most: number }) | null;
+  end: number;
+} | null {
   const end = localTimeMs(now);
   if (end === null) return null;
-  const inHour = inHourUpTo(entries, end);
   const { asksPerHour } = budget;
-  if (asksPerHour === null) {
-    return heldUntil(
-      spendTimes(inHour, (entry) => runsSpentBy(entry) + asksSpentBy(entry)),
-      NOTE_RUNS_PER_HOUR,
-    );
+  const spentByRun = (entry: LogEntry) =>
+    runsSpentBy(entry) + (asksPerHour === null ? asksSpentBy(entry) : 0);
+  const runTimes = spendTimes(inHourUpTo(entries, end), spentByRun);
+  const runs = { until: heldUntil(runTimes, NOTE_RUNS_PER_HOUR), spent: runTimes.length };
+  let asks: (Limit & { most: number }) | null = null;
+  if (asksPerHour !== null) {
+    const askTimes = spendTimes(inHourUpTo(allowance, end), asksSpentBy);
+    asks = { until: heldUntil(askTimes, asksPerHour), spent: askTimes.length, most: asksPerHour };
   }
-  return latest(
-    heldUntil(spendTimes(inHour, runsSpentBy), NOTE_RUNS_PER_HOUR),
-    heldUntil(spendTimes(inHourUpTo(allowanceEntries, end), asksSpentBy), asksPerHour),
-  );
+  const until = latest(runs.until, asks?.until ?? null);
+  return until === null ? null : { until, runs, asks, end };
 }
 
 /**
@@ -201,16 +370,4 @@ function runsSpentBy(entry: LogEntry): number {
   if (entry.claude !== undefined) return 0;
   if (entry.kind === 'failed') return entry.trigger === 'note' ? 1 : 0;
   return entry.trigger === 'note' && entry.done.length > 0 ? 1 : 0;
-}
-
-/** What a rule held back until `until` by {@link noteRunsHeldUntil} says. */
-export function noteRunsCappedProblem(
-  until: LocalTime,
-  budget: ClaudeStepBudget = SHARED_STEP_BUDGET,
-): string {
-  const spent =
-    budget.asksPerHour === null
-      ? `It has used its ${NOTE_RUNS_PER_HOUR} runs, or questions put to Claude, for the last hour, the most a rule may.`
-      : `Claude has been asked ${budget.asksPerHour} times in the last hour by the rules that make your own action items into tasks, the most they may together, or it has used its ${NOTE_RUNS_PER_HOUR} runs.`;
-  return `${spent} It runs on what changed meanwhile at ${until.slice(11, 16)}.`;
 }

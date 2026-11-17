@@ -4,9 +4,10 @@ import {
   dueTrigger,
   nextRunOf,
   NOTE_RUNS_PER_HOUR,
-  noteRunsCappedProblem,
   noteRunsHeldUntil,
+  noteRunsHold,
 } from './automation-due.ts';
+import { noteRunsHoldMessage } from './note-runs-hold.ts';
 import type { AutomationRule } from './automation-rule.ts';
 import type { LogEntry } from './run-log.ts';
 
@@ -191,10 +192,12 @@ describe('a rule a note sets off', () => {
     expect(noteRunsHeldUntil(many('2026-10-08T11:00:01'), NOW)).toBe('2026-10-08T12:00:01');
   });
 
-  it('says why it is held, and when it runs on what it heard meanwhile', () => {
-    expect(noteRunsCappedProblem('2026-10-08T12:10:00')).toBe(
-      `It has used its ${NOTE_RUNS_PER_HOUR} runs, or questions put to Claude, for the last hour, the most a rule may. ` +
-        'It runs on what changed meanwhile at 12:10.',
+  it('says it is not broken: its own runs, and when it runs on what it heard meanwhile', () => {
+    const hold = noteRunsHold({ rule: 'Tidy', entries: minutes(10, NOTE_RUNS_PER_HOUR), now: NOW });
+    expect(hold === null ? null : noteRunsHoldMessage(hold)).toBe(
+      `Not broken: it has used ${NOTE_RUNS_PER_HOUR} runs this hour, and ${NOTE_RUNS_PER_HOUR} is its most ` +
+        '(each question it asks Claude counts as a run). ' +
+        'It runs next at 12:10, on what arrived meanwhile; nothing to do.',
     );
   });
 });

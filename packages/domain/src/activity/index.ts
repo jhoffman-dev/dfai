@@ -45,6 +45,7 @@ export {
   apiWriteReport,
   automationEntryReport,
   automationFailedReport,
+  automationHeldReport,
   ledgerRepairedReport,
   chatReport,
   dryRunReport,

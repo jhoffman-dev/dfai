@@ -486,16 +486,27 @@ describe('useAutomations: rules a note sets off (P29-01)', () => {
     await settle();
     // Not tried again while held: one line in Activity, not one per sync heard.
     const reports = (initial.activity as ReturnType<typeof recordingActivity>).reports;
-    expect(reports.filter((report) => report.level === 'error')).toHaveLength(1);
+    expect(reports.filter((report) => report.level === 'error')).toHaveLength(0);
+    expect(reports.filter((report) => report.message.startsWith('Sweep: Not broken'))).toHaveLength(
+      1,
+    );
     expect(vault.files[TASK]).toBeDefined();
     expect(vault.files[LOG]).toBe(log);
     // Held for the hour, not failing: one pause, no failure counted however much it hears.
     expect(hook.result.current.pauses.get('Sweep')).toEqual({
       reason:
-        'Held back: It has used its 20 runs, or questions put to Claude, for the last hour, ' +
-        'the most a rule may. It runs on what changed meanwhile at 09:10.',
+        'Not broken: it has used 20 runs this hour, and 20 is its most ' +
+        '(each question it asks Claude counts as a run). ' +
+        'It runs next at 09:10, on what arrived meanwhile; nothing to do.',
       failures: 0,
       retryAt: '2026-09-27T09:10:00',
+      hold: {
+        rule: 'Sweep',
+        until: '2026-09-27T09:10:00',
+        runs: { most: 20, spent: 20, countsAsks: true },
+        sharedAsks: null,
+        failures: null,
+      },
     });
 
     now = '2026-09-27T09:11:00';

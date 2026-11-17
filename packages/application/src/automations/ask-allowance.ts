@@ -5,6 +5,7 @@ import {
   type AutomationRule,
   type LocalTime,
   type LogEntry,
+  type NamedLog,
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { listVaultNotes } from '../vault/read-vault.ts';
@@ -18,25 +19,39 @@ interface AllowancePorts {
 }
 
 /**
- * The log entries the vault's one hourly ask allowance is counted over
- * (#179): for a rule whose step spends it, `own` — the rule's log as this
- * run read it — and the log of every other rule that spends it; for any
- * other rule, `own` alone.
+ * The other rules whose logs the vault's one hourly ask allowance is counted
+ * over (#179), each by its name and whether it is on (#813): every rule but
+ * `rule` whose step spends it, on or off, since one turned off this hour still
+ * spent what it asked; none when `rule`'s step does not.
  */
-export async function allowanceEntries(
+export async function allowanceSharers(
   { fs, markdown }: AllowancePorts,
+  rule: AutomationRule,
+): Promise<NamedLog[]> {
+  if (!sharesAskAllowance(rule.action)) return [];
+  const notePaths = await listVaultNotes({ fs });
+  const { automations } = await loadAutomations({ fs, markdown, notePaths });
+  return automations
+    .filter(
+      (other) =>
+        automationIdKey(other.rule.id) !== automationIdKey(rule.id) &&
+        sharesAskAllowance(other.rule.action),
+    )
+    .map((other) => ({ name: other.rule.name, entries: other.log, enabled: other.rule.enabled }));
+}
+
+/**
+ * The log entries the vault's one hourly ask allowance is counted over
+ * (#179): `own` — the rule's log as this run read it — and those of
+ * {@link allowanceSharers}.
+ */
+async function allowanceEntries(
+  ports: AllowancePorts,
   rule: AutomationRule,
   own: readonly LogEntry[],
 ): Promise<readonly LogEntry[]> {
-  if (!sharesAskAllowance(rule.action)) return own;
-  const notePaths = await listVaultNotes({ fs });
-  const { automations } = await loadAutomations({ fs, markdown, notePaths });
-  const others = automations.filter(
-    (other) =>
-      automationIdKey(other.rule.id) !== automationIdKey(rule.id) &&
-      sharesAskAllowance(other.rule.action),
-  );
-  return [...own, ...others.flatMap((other) => other.log)];
+  const sharers = await allowanceSharers(ports, rule);
+  return [...own, ...sharers.flatMap((other) => other.entries)];
 }
 
 /**

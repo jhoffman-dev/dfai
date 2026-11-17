@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { PageAction, PageBar, type PageHistory } from '../page-bar.tsx';
 import { HiddenTitle } from '../page-head.tsx';
+import { TintedPill } from '../status-pill.tsx';
 import { Toggle } from '../toggle.tsx';
 import type { AutomationRow } from './automation-views.ts';
 import { ReadTwiceNotice, type ReadTwiceView } from './read-twice-notice.tsx';
@@ -132,11 +133,13 @@ function RuleList({ rows, error, openId, onOpen, onToggle, onRunNow, busy }: Aut
         return (
           <li
             key={row.id}
-            className={
-              row.id === openId
-                ? 'page-list__row automation-card automation-card--open'
-                : 'page-list__row automation-card'
-            }
+            className={[
+              'page-list__row automation-card',
+              row.id === openId ? 'automation-card--open' : '',
+              row.waiting !== undefined ? 'automation-card--waiting' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
           >
             <Toggle
               label={`Run ${row.name} on its schedule`}
@@ -182,9 +185,23 @@ function RuleList({ rows, error, openId, onOpen, onToggle, onRunNow, busy }: Aut
             >
               Run now
             </button>
+            {row.waiting !== undefined && <Waiting name={row.name} reason={row.waiting} />}
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * A rule held by an hourly limit whose runs did not fail (#813): the status
+ * pill's Waiting, never the failure's warning, with why in full.
+ */
+function Waiting({ name, reason }: { name: string; reason: string }) {
+  return (
+    <div className="automation-card__waiting" role="status" aria-label={`${name} is waiting`}>
+      <TintedPill text="Waiting" color="waiting" />
+      <p className="automation-card__waiting-reason">{reason}</p>
+    </div>
   );
 }
