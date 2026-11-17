@@ -63,36 +63,58 @@ interface Stretch {
   changed: Line[];
 }
 
+/** A line's identity as `eq` sees it: its kind, attributes, marks and text. */
+const keyOf = (node: ProseMirrorNode) => JSON.stringify(node.toJSON());
+
 /**
  * `old` itself among the changed lines, unedited: of the lines reading the
  * same, the one of the same rank (the second of two blank lines stays the
- * second), the last when there are fewer now.
+ * second), with where it lies in the stretch. Only when every such line is
+ * still there: with one gone, the rank no longer says which.
  */
-function sameLine(old: ProseMirrorNode, { was, own, changed }: Stretch): Line | undefined {
+function sameLine(
+  old: ProseMirrorNode,
+  { was, own, changed }: Stretch,
+): { line: Line; distance: number; certain: boolean } | undefined {
   const rank = was.slice(0, own).filter((line) => line.node.eq(old)).length;
-  const copies = changed.filter((line) => line.node.eq(old));
-  return copies[Math.min(rank, copies.length - 1)];
+  const twins = rank + was.slice(own).filter((line) => line.node.eq(old)).length;
+  const copies = changed
+    .map((line, i) => ({ line, distance: Math.abs(i - own) }))
+    .filter(({ line }) => line.node.eq(old));
+  if (copies.length >= twins) return { ...copies[rank]!, certain: true };
+  const nearest = copies.sort((a, b) => a.distance - b.distance)[0];
+  return nearest === undefined ? undefined : { ...nearest, certain: false };
 }
 
-/** How much text `old` and `now` share: what they start with and end with alike. */
+/**
+ * How much text `old` and `now` share: what they start with and end with
+ * alike, as plain text, so a word made bold still counts as the same words.
+ */
 function shared(old: ProseMirrorNode, now: ProseMirrorNode): number {
-  const start = old.content.findDiffStart(now.content);
-  const end = old.content.findDiffEnd(now.content);
-  if (start === null || end === null) return old.content.size;
-  const tail = old.content.size - end.a;
-  return Math.min(start + tail, old.content.size, now.content.size);
+  const a = old.textContent;
+  const b = now.textContent;
+  const shorter = Math.min(a.length, b.length);
+  let start = 0;
+  while (start < shorter && a[start] === b[start]) start += 1;
+  let end = 0;
+  while (end < shorter - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end += 1;
+  return start + end;
 }
 
 /**
  * `old` as edited: the changed line, not another old line untouched, that
- * shares the most text with it, the nearest to its place on a tie; else the
- * line in its place.
+ * shares the most text with it, the nearest to its place on a tie. A line
+ * that is `old` with another kind or marks (made a heading, a word made bold)
+ * is not untouched: only the other old lines, compared whole, are left out.
  */
-function editedLine(old: ProseMirrorNode, { was, own, changed }: Stretch): Line | undefined {
-  const untouched = new Set(was.map((line) => line.node.textContent));
+function editedLine(
+  old: ProseMirrorNode,
+  { was, own, changed }: Stretch,
+): { line: Line; distance: number } | undefined {
+  const untouched = new Set(was.filter((_, i) => i !== own).map((line) => keyOf(line.node)));
   let best: { line: Line; score: number; distance: number } | undefined;
   changed.forEach((line, i) => {
-    if (untouched.has(line.node.textContent)) return;
+    if (untouched.has(keyOf(line.node))) return;
     const score = shared(old, line.node);
     const distance = Math.abs(i - own);
     if (score === 0) return;
@@ -103,7 +125,7 @@ function editedLine(old: ProseMirrorNode, { was, own, changed }: Stretch): Line 
     )
       best = { line, score, distance };
   });
-  return best?.line ?? changed[own];
+  return best;
 }
 
 /** The place in `diff.after` for `pos` in the old note, by its line and its offset in it. */
@@ -121,14 +143,20 @@ function placeAcross(diff: LineDiff, pos: number, size: number): number {
   if (index >= before.length - same.end)
     return at(after[index - before.length + after.length]!, offset);
 
-  // Among the changed lines: the same line moved, else the line edited, else the line before.
+  // Among the changed lines: the same line moved, when its rank says which;
+  // else that or the line edited, whichever lies nearer its place (the
+  // unedited one on a tie); else the line in its place; else the line before.
   const changed = after.slice(same.start, after.length - same.end);
   const was = before.slice(same.start, before.length - same.end);
   const own = index - same.start;
-  const moved = sameLine(line.node, { was, own, changed });
-  if (moved !== undefined) return at(moved, offset);
-  const edited = editedLine(line.node, { was, own, changed });
-  if (edited !== undefined) return at(edited, offsetAcross(line.node, edited.node, offset));
+  const stretch = { was, own, changed };
+  const moved = sameLine(line.node, stretch);
+  if (moved?.certain === true) return at(moved.line, offset);
+  const edited = editedLine(line.node, stretch);
+  if (moved !== undefined && (edited === undefined || moved.distance <= edited.distance))
+    return at(moved.line, offset);
+  const kept = edited?.line ?? changed[own];
+  if (kept !== undefined) return at(kept, offsetAcross(line.node, kept.node, offset));
   const previous = after[same.start + changed.length - 1];
   if (previous !== undefined) return previous.start + previous.node.content.size;
   const next = after[same.start + changed.length];
