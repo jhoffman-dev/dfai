@@ -80,29 +80,36 @@ test("a click whose caret is put back at the note's start fails at once, naming 
 });
 
 /**
- * Puts the caret back at the start of `line` on the keyup of the first
- * `times` presses of the line-end key, as ProseMirror's check after focus
+ * Puts the caret back at the start of `line` the first `times` times the
+ * editor reads it at that line's end, as ProseMirror's check after focus
  * does to a key that lands between the tap-caret plugin's read and that
- * check (#850, #869). Put back through the editor, so the editor and the
- * page agree at once and that check, if still to come, finds them in step.
+ * check (#850, #869). Done when the editor reads the key's caret, not on
+ * keyup: WebKit on Linux can move the caret for End after its keyup. Put
+ * back through the editor, so the editor and the page agree at once and
+ * that check, if still to come, finds them in step.
  */
 async function undoLineEndKey(page: Page, line: string, times: number): Promise<void> {
   await page.getByText(line).evaluate((block, count) => {
     const root = block.closest('.ProseMirror') as
       | (Element & {
           editor: {
+            on(event: 'selectionUpdate', listener: () => void): void;
             commands: { setTextSelection(pos: number): boolean };
+            state: { selection: { empty: boolean; head: number } };
             view: { posAtDOM(node: Node, offset: number): number };
           };
         })
       | null;
     if (root === null) throw new Error('the line is not in an editor');
     const { editor } = root;
+    const start = editor.view.posAtDOM(block, 0);
+    const end = start + (block.textContent ?? '').length;
     let left = count;
-    block.ownerDocument.addEventListener('keyup', (event) => {
-      if (left === 0 || (event.key !== 'ArrowRight' && event.key !== 'End')) return;
+    editor.on('selectionUpdate', () => {
+      const { selection } = editor.state;
+      if (left === 0 || !selection.empty || selection.head !== end) return;
       left -= 1;
-      editor.commands.setTextSelection(editor.view.posAtDOM(block, 0));
+      editor.commands.setTextSelection(start);
     });
   }, times);
 }
