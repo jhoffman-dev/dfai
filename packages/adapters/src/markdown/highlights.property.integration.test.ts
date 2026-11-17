@@ -181,13 +181,46 @@ const FILLER = [
   () => '## A heading\n',
 ];
 
-function literatureNote(): string {
-  const body = Array.from({ length: count(4) }, () => {
-    const at = Math.floor(random() * FILLER.length);
-    saw(`filler ${at}`);
-    return FILLER[at]!();
-  }).join('\n');
+/** Every word joined by each separator: what the first notes' prose and the first comments typed hold. */
+const EVERY_WORD = SEPARATORS.map((separator) => ({
+  text: WORDS.join(separator),
+  shapes: (where: string) => [
+    ...WORDS.map((word) => `${where} has ${word}`),
+    `${where} joined by ${JSON.stringify(separator)}`,
+  ],
+}));
+
+/**
+ * The `run`th note: the first ones each a prose of every word, as one in five
+ * fillers is prose and seeded notes take dozens to draw each word in one;
+ * then seeded fillers.
+ */
+function literatureNote(run: number): string {
+  const listed = EVERY_WORD[run];
+  if (listed !== undefined) {
+    ['filler 0', ...listed.shapes('prose')].forEach(saw);
+  }
+  const body =
+    listed === undefined
+      ? Array.from({ length: count(4) }, () => {
+          const at = Math.floor(random() * FILLER.length);
+          saw(`filler ${at}`);
+          return FILLER[at]!();
+        }).join('\n')
+      : `Prose: ${listed.text.replace(/\n/g, ' ')}\n`;
   return `---\ntype: literature\nkind: pdf\ntitle: "Generated"\n---\n${body}`;
+}
+
+/** The comment the `run`th edit types: every word at first, then seeded ones, some of them nothing. */
+function typedFor(run: number): string {
+  const listed = EVERY_WORD[run];
+  if (listed !== undefined) {
+    listed.shapes('typed').forEach(saw);
+    return listed.text.replace(/^>|\n>/g, ' ');
+  }
+  const typedNothing = random() < 0.2;
+  if (typedNothing) saw('typed nothing');
+  return typedNothing ? '' : words(6, 'typed').replace(/^>|\n>/g, ' ');
 }
 
 /** Edits a person makes in Obsidian: tidy a quote line, add a line to a comment, words between blocks. */
@@ -229,11 +262,12 @@ function expectOthersKept(before: string, after: string, except: string | null) 
 }
 
 /**
- * Each run parses the note a few times over, so a run takes milliseconds, and
- * 300 a test timed out under load (#854). Each test shows below that its runs
- * drew every shape the property turns on.
+ * Each run parses the note a few times over, so a run takes milliseconds (near
+ * 100 under coverage in CI), and 300 a test timed out under load (#854). The
+ * first runs list every word (`EVERY_WORD`), and each test shows below that
+ * its runs drew every shape the property turns on.
  */
-const RUNS = Number(process.env['HIGHLIGHT_PROPERTY_RUNS'] ?? 60);
+const RUNS = Number(process.env['HIGHLIGHT_PROPERTY_RUNS'] ?? 24);
 
 /** Where a highlight stands among a note's, which decides what is either side of it. */
 function placeOf(at: number, of: number): string {
@@ -291,7 +325,7 @@ describe('literature notes under any edits', () => {
   it('reads back every highlight appended, with fresh ids, and writes only after the last byte', () => {
     const shapes = drawing();
     for (let run = 0; run < RUNS; run += 1) {
-      const before = literatureNote();
+      const before = literatureNote(run);
       const added = newHighlights();
       const { text, highlights } = appendHighlights({
         text: before,
@@ -331,16 +365,14 @@ describe('literature notes under any edits', () => {
     const shapes = drawing();
     for (let run = 0; run < RUNS; run += 1) {
       const { text: written } = appendHighlights({
-        text: literatureNote(),
+        text: literatureNote(run),
         highlights: newHighlights(),
         random,
         noteBlocks,
       });
       const text = editedByHand(written);
       const target = targetIn(text);
-      const typedNothing = random() < 0.2;
-      if (typedNothing) saw('typed nothing');
-      const comment = typedNothing ? '' : words(6, 'typed').replace(/^>|\n>/g, ' ');
+      const comment = typedFor(run);
       const changed = withHighlightComment({ text, id: target.id, comment, noteBlocks });
       expect(highlightNamed(changed, target.id, noteBlocks).comment).toBe(
         commentLines(comment).join('\n'),
@@ -368,7 +400,7 @@ describe('literature notes under any edits', () => {
     const shapes = drawing();
     for (let run = 0; run < RUNS; run += 1) {
       const { text: written } = appendHighlights({
-        text: literatureNote(),
+        text: literatureNote(run),
         highlights: newHighlights(),
         random,
         noteBlocks,
@@ -386,7 +418,7 @@ describe('literature notes under any edits', () => {
   it('removes only the highlight it is given, and removing all it added gives the note back', () => {
     const shapes = drawing();
     for (let run = 0; run < RUNS; run += 1) {
-      const before = `${literatureNote().trimEnd()}\n`;
+      const before = `${literatureNote(run).trimEnd()}\n`;
       const { text: written, highlights } = appendHighlights({
         text: before,
         highlights: newHighlights(),

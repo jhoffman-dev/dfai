@@ -41,10 +41,11 @@ function seeded(seed: number): () => number {
 const random = seeded(Number(process.env['HIGHLIGHT_EDITOR_SEED'] ?? 20261023));
 const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
 const count = (max: number) => Math.floor(random() * (max + 1));
-// Each note costs about 30 ms to write, save and draw, so 200 a test timed out
-// under load (#854). One note around each filler (`EVERY_FILLER`) draws the
-// rare ones, and each test shows below that its notes drew every shape.
-const RUNS = Number(process.env['HIGHLIGHT_EDITOR_RUNS'] ?? 20);
+// Each note costs about 30 ms to write, save and draw (ten times that under
+// coverage in CI), so 200 a test timed out under load (#854). Listed notes
+// and comments (`EVERY_FILLER`, `EVERY_TYPED`) draw the rare shapes, and each
+// test shows below that its notes drew every shape.
+const RUNS = Number(process.env['HIGHLIGHT_EDITOR_RUNS'] ?? 15);
 
 /** What the notes drawn so far hold that the property turns on. */
 let seen = new Set<string>();
@@ -158,17 +159,43 @@ interface Filler {
 }
 
 /**
- * Each filler there is, each prose with each of its inlines: one in 30
- * fillers is a given prose, which seeded notes would take a hundred or more
- * to draw.
+ * Every filler there is in two notes: prose with each of its inlines, and
+ * each other filler. One in 30 fillers is a given prose, which seeded notes
+ * would take a hundred or more to draw.
  */
 const EVERY_FILLER: readonly Filler[] = [
-  ...INLINE.map((inline) => ({
-    text: prose(inline),
-    shapes: ['filler 0', `prose with ${inline}`],
-  })),
-  ...FILLER.slice(1).map((fill, at) => ({ text: fill(), shapes: [`filler ${at + 1}`] })),
+  {
+    text: INLINE.map(prose).join('\n'),
+    shapes: ['filler 0', ...INLINE.map((inline) => `prose with ${inline}`)],
+  },
+  {
+    text: FILLER.slice(1)
+      .map((fill) => fill())
+      .join('\n'),
+    shapes: FILLER.slice(1).map((_, at) => `filler ${at + 1}`),
+  },
 ];
+
+/** Comments holding every word, one joined by each separator: what the first edits type. */
+const EVERY_TYPED: readonly Filler[] = SEPARATORS.map((separator) => ({
+  text: WORDS.join(separator),
+  shapes: [
+    ...WORDS.map((word) => `typed has ${word}`),
+    `typed joined by ${JSON.stringify(separator)}`,
+  ],
+}));
+
+/** The comment the `at`th edit types: a listed one, then seeded ones, some of them nothing. */
+function typedFor(at: number): string {
+  const listed = EVERY_TYPED[at];
+  if (listed !== undefined) {
+    listed.shapes.forEach(saw);
+    return listed.text;
+  }
+  const typedNothing = random() < 0.15;
+  if (typedNothing) saw('typed nothing');
+  return typedNothing ? '' : words(6, 'typed');
+}
 
 /** The fillers a test's notes are written around: each listed one, then `RUNS` seeded ones. */
 const fillers = (): (Filler | null)[] => [
@@ -346,14 +373,12 @@ describe('generated literature notes in the editor', () => {
     const shapes = drawing();
     let edited = 0;
     const notes = fillers();
-    for (const filler of notes) {
+    for (const [at, filler] of notes.entries()) {
       const text = generatedNote(filler);
       const blocks = readHighlights(text, noteBlocks);
       const target = pick(blocks);
       saw(placeOf(blocks.indexOf(target), blocks.length));
-      const typedNothing = random() < 0.15;
-      if (typedNothing) saw('typed nothing');
-      const comment = typedNothing ? '' : words(6, 'typed');
+      const comment = typedFor(at);
       let changed: string;
       try {
         changed = withHighlightComment({ text, id: target.id, comment, noteBlocks });
