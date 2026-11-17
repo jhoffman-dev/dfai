@@ -151,7 +151,10 @@ test('words highlighted and commented in the book land in the note, and show aga
 test('an underline and a comment made from the selection, and a highlight deleted after asking', async ({
   page,
 }) => {
-  const vault = await openVault(page);
+  const vault = await createVault();
+  const host = await installHost(page, vault);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
   await addEpub(page, { name: 'fables-of-brightwater.epub', bytes: EPUB });
   await expectFile(vault, NOTE).toContain('kind: epub');
   const before = await vault.read(NOTE);
@@ -168,6 +171,8 @@ test('an underline and a comment made from the selection, and a highlight delete
   await expectFile(vault, NOTE).toContain('"mark":"underline"');
   await expect.poll(() => painted(page, 'dfai-underline-yellow')).toEqual(['slow but steady pace']);
 
+  // Held, the deletions' writes are slow, as a busy machine's are (#873).
+  const release = host.holdWrites(NOTE);
   for (let left = 2; left > 0; left -= 1) {
     await expect(panel(page).getByRole('button', { name: 'Delete…' })).toHaveCount(left);
     await panel(page).getByRole('button', { name: 'Delete…' }).first().click();
@@ -176,6 +181,7 @@ test('an underline and a comment made from the selection, and a highlight delete
       .getByRole('button', { name: 'Delete' })
       .click();
   }
+  release();
   await expectFile(vault, NOTE).toBe(before);
 });
 
