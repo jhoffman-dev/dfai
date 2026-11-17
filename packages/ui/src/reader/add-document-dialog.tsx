@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import type { DocumentKind } from '@dfai/domain';
+import { holdModalLayer } from '../modal-layer.ts';
 import { Icon } from '../icon.tsx';
 import { useReturnFocus, type FocusFallback } from '../return-focus.ts';
 
@@ -52,7 +53,7 @@ export function AddDocumentDialog({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette new-type add-pdf" finalFocus={finalFocus}>
             <Dialog.Title className="new-type__title">Add {copy.name} to Library</Dialog.Title>

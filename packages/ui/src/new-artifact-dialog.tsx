@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
+import { holdModalLayer } from './modal-layer.ts';
 import { FileDrop } from './file-drop.tsx';
 import { Icon, type IconName } from './icon.tsx';
 import { isImeKey } from './ime.ts';
@@ -83,7 +84,7 @@ export function NewArtifactDialog({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette new-type new-artifact" finalFocus={finalFocus}>
             <Dialog.Title className="new-type__title">New artifact</Dialog.Title>

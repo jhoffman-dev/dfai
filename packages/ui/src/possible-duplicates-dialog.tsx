@@ -1,5 +1,6 @@
 import { Dialog } from '@base-ui/react/dialog';
 import type { PillHue } from '@dfai/domain';
+import { holdModalLayer } from './modal-layer.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
 import { useReturnFocus, type FocusFallback } from './return-focus.ts';
 import { TintedPill } from './status-pill.tsx';
@@ -62,7 +63,7 @@ export function PossibleDuplicatesDialog({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup className="palette confirm duplicates" finalFocus={finalFocus}>
             <Dialog.Title className="confirm__title">Possible duplicates</Dialog.Title>
