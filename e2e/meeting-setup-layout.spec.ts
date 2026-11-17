@@ -76,7 +76,7 @@ for (const [label, width, height] of [
     await setup.getByRole('button', { name: 'Preview' }).click();
     await setup.getByRole('button', { name: 'Set up' }).click();
     await expect(
-      setup.getByRole('status').filter({ hasText: /Meetings are processed when they arrive/ }),
+      setup.getByRole('status').filter({ hasText: /Nothing needed writing/ }),
     ).toBeVisible();
     await expect.poll(() => overlap(setup, editor)).toBe(0);
   });
