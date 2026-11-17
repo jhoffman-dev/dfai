@@ -182,3 +182,20 @@ describe('an id on a block whose only content is a hard break', () => {
     );
   });
 });
+
+describe('struck link text ending in a space, struck text straight after the link', () => {
+  // Third pass: `writeDelete` (strikethrough-handler.ts) no longer writing the
+  // last character inside a `~~` as a reference when it is a space (`if
+  // (close.inside)` dropped; old seed 1684): `[~~x ~~](#h)~~e~~` does not
+  // close, and the strike runs on. Outside a link the editor moves a run's
+  // edge spaces out of the mark; inside one it cannot.
+  const link = { type: 'link', attrs: { href: '#h', title: null } };
+  const struck = (value: string, marks: object[] = []): EditorNode => ({
+    ...text(value),
+    marks: [{ type: 'strike' }, ...marks],
+  });
+
+  it.each(['x ', 'x\t', 'x '])('%j struck in a link, then struck text', (value) => {
+    expectReadBack(note(paragraph(struck(value, [link]), struck('e'))));
+  });
+});
