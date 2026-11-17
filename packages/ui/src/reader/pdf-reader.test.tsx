@@ -353,6 +353,28 @@ describe('the highlights panel', () => {
     expect(props.onRemove).toHaveBeenCalledWith('k3x9q2');
   });
 
+  it('asks for a removal once while it is being written, by click or by Enter (#880)', async () => {
+    const props = panel([HIGHLIGHT]);
+    let answer: (removed: boolean) => void = () => {};
+    props.onRemove.mockImplementation(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete…' }));
+    const asking = screen.getByRole('group', { name: 'Delete this highlight?' });
+    const remove = within(asking).getByRole('button', { name: 'Delete' });
+    await userEvent.click(remove);
+    await userEvent.click(remove);
+    remove.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(props.onRemove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveProperty('disabled', true);
+    expect(within(asking).getByRole('button', { name: 'Keep' })).toHaveProperty('disabled', true);
+
+    // Refused, it can be asked for again.
+    answer(false);
+    await waitFor(() => expect(remove).toHaveProperty('disabled', false));
+    await userEvent.click(remove);
+    expect(props.onRemove).toHaveBeenCalledTimes(2);
+  });
+
   it('says when a highlight could not be found exactly, and an area for what it is', () => {
     panel([
       { ...HIGHLIGHT, id: 'a', placement: { kind: 'lost' } },
