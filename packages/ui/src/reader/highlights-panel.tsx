@@ -26,10 +26,11 @@ export function HighlightsPanel(props: HighlightsPanelProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   // The row whose removal was answered, until it is gone and its focus handed on.
   const removed = useRef<{ id: string; at: number } | null>(null);
-  const entries = props.entries;
+  // The rows as last shown: a removal can answer after the list has already been read again.
+  const shown = useRef(props.entries);
   const handOnFocus = useCallback(() => {
     const gone = removed.current;
-    if (gone === null || entries.some((entry) => entry.id === gone.id)) return;
+    if (gone === null || shown.current.some((entry) => entry.id === gone.id)) return;
     removed.current = null;
     // Its row took the focus with it: the row now in its place has it, else the heading,
     // unless the person has put it somewhere else meanwhile.
@@ -39,8 +40,11 @@ export function HighlightsPanel(props: HighlightsPanelProps) {
     const row = rows[Math.min(gone.at, rows.length - 1)];
     const control = row?.querySelector<HTMLButtonElement>('button:not(:disabled)');
     (control ?? heading.current)?.focus();
-  }, [entries]);
-  useEffect(handOnFocus, [handOnFocus]);
+  }, []);
+  useEffect(() => {
+    shown.current = props.entries;
+    handOnFocus();
+  }, [props.entries, handOnFocus]);
   return (
     <aside className="pdf-panel" aria-label="Highlights" ref={panel}>
       <h2 className="pdf-panel__title" ref={heading} tabIndex={-1}>

@@ -220,20 +220,21 @@ export function useReaderWrites({
           }),
         ),
       onHighlightArea: ({ page, box, style, comment }) =>
-        writing(async (path, write) => {
-          // Drawn before the use-case reads the note, so a picture that never comes holds up no other write.
-          const picture = await opened.pictureOf({ page, box, scale: 2 });
-          return highlightArea(write, {
+        // The picture is asked for inside the note's turn, as ADR-0043 has it: only once the note
+        // is free to be written and does not already hold the area. So a picture that never
+        // finishes drawing still holds up the note's other highlight writes (#884).
+        writing((path, write) =>
+          highlightArea(write, {
             note: path,
             pdf,
             page,
             box,
-            picture: async () => picture,
+            picture: () => opened.pictureOf({ page, box, scale: 2 }),
             placement: browserImagePlacementStore.read(),
             style,
             ...(comment !== undefined && { comment }),
-          });
-        }),
+          }),
+        ),
       onEditComment: ({ id, comment }) =>
         writing((path, write) => editHighlightComment(write, { path, id, comment })),
       onRemove: (id) => writing((path, write) => removeHighlightIfThere(write, { path, id })),
