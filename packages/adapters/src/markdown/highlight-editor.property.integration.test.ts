@@ -50,7 +50,7 @@ const count = (max: number) => Math.floor(random() * (max + 1));
 // coverage in CI), so 200 a test timed out under load (#854). Listed notes
 // and comments (`UNEDITED`, `TYPED_INTO`, `EVERY_TYPED`) draw the rare shapes
 // and pairs, and each test shows below that its notes drew every one.
-const RUNS = Number(process.env['HIGHLIGHT_EDITOR_RUNS'] ?? 6);
+const RUNS = Number(process.env['HIGHLIGHT_EDITOR_RUNS'] ?? 4);
 
 /** What the test's notes hold that the property turns on. */
 let seen = new Set<string>();
@@ -279,11 +279,11 @@ const UNEDITED: readonly Recipe[] = [
 const TYPED_INTO: readonly Recipe[] = [
   ...(['first', 'last'] as const).flatMap((place) =>
     BOTH.flatMap((lazy) =>
-      BOTH.map((windows) => ({ place, lazy, windows, asked: 4, removeOne: true })),
+      BOTH.map((windows) => ({ place, lazy, windows, asked: 3, removeOne: true })),
     ),
   ),
   ...BOTH.flatMap((lazy) => [
-    { place: 'between' as const, lazy, asked: 3, removeOne: false },
+    { place: 'between' as const, lazy, asked: lazy ? 3 : 5, removeOne: false },
     { place: 'only' as const, lazy, asked: 1, removeOne: false },
   ]),
 ].map((recipe, at) => {

@@ -182,19 +182,23 @@ const withoutTombstones = (text: string): string =>
 interface ListedHighlight {
   readonly style: HighlightStyle;
   readonly anchor: () => HighlightAnchor;
+  /** A comment of every word (`EVERY_WORD`), or a drawn one. */
+  readonly comment?: { text: string; shapes: (where: string) => string[] };
 }
 
 function newHighlight(listed?: ListedHighlight): NewHighlight {
   const quote = words(12, 'quote');
   const anchor = (listed?.anchor ?? pick(ANCHORS))();
   const drawn = style(listed?.style);
-  const commented = random() < 0.6;
+  if (listed?.comment !== undefined) listed.comment.shapes('comment').forEach(saw);
+  const commented = listed?.comment !== undefined || random() < 0.6;
   saw(`commented ${commented}`);
+  const comment = listed?.comment?.text ?? (commented ? words(8, 'comment') : null);
   return {
     quote,
     anchor,
     style: drawn,
-    ...(commented && { comment: words(8, 'comment').replace(/^>|\n>/g, ' ') }),
+    ...(comment !== null && { comment: comment.replace(/^>|\n>/g, ' ') }),
   };
 }
 
@@ -220,7 +224,7 @@ const FILLER: readonly { name: string; write: () => string }[] = [
   { name: 'heading', write: () => '## A heading\n' },
 ];
 
-/** Every word joined by each separator: what the first notes' prose and the first comments typed hold. */
+/** Every word joined by each separator: what the first notes' prose, listed comments and the first comments typed hold. */
 const EVERY_WORD = SEPARATORS.map((separator) => ({
   text: WORDS.join(separator),
   shapes: (where: string) => [
@@ -328,12 +332,12 @@ function expectOthersKept(before: string, after: string, except: string | null) 
 
 /**
  * Each run parses the note a few times over, so a run takes milliseconds (near
- * 100 under coverage in CI), and 300 a test timed out under load (#854). The
- * first runs list every word (`EVERY_WORD`), the writes to one highlight list
- * every place it stands with every edit by hand to it (`PLACED_EDITS`), and
- * each test shows below that its runs drew every shape the property turns on.
+ * 100 under coverage in CI), and 300 a test timed out under load (#854). Listed
+ * notes come first: every count, style, anchor and word (`EVERY_COUNT`,
+ * `EVERY_WORD`), and each place written to with each edit by hand to it
+ * (`PLACED_EDITS`). Each test shows below that its notes drew every shape.
  */
-const RUNS = Number(process.env['HIGHLIGHT_PROPERTY_RUNS'] ?? 10);
+const RUNS = Number(process.env['HIGHLIGHT_PROPERTY_RUNS'] ?? 6);
 
 type Place = 'only' | 'first' | 'between' | 'last';
 const PLACES: readonly Place[] = ['only', 'first', 'between', 'last'];
@@ -363,30 +367,35 @@ const highlightsFor = (at: number, count: number): ListedHighlight[] =>
   Array.from({ length: count }, (_, k) => ({
     style: STYLES[(5 * at + k) % STYLES.length]!,
     anchor: EVERY_ANCHOR[(3 * at + k) % EVERY_ANCHOR.length]!,
+    ...(k === 0 && EVERY_WORD[at] !== undefined && { comment: EVERY_WORD[at] }),
   }));
 
-/** Notes of 1, 2, 4 and 5 highlights: twelve, one in each style and every anchor among them. */
-const EVERY_COUNT: readonly Listed[] = [
-  [0, 1],
-  [1, 3],
-  [3, 7],
-  [7, 12],
-].map(([from = 0, to = 0]) => ({
-  highlights: STYLES.slice(from, to).map((style, k) => ({
-    style,
-    anchor: EVERY_ANCHOR[(from + k) % EVERY_ANCHOR.length]!,
-  })),
+/** Notes of 1 to 5 highlights, one in each style and every anchor among them. */
+const EVERY_COUNT: readonly Listed[] = [1, 2, 3, 4, 5].map((count) => ({
+  highlights: Array.from({ length: count }, (_, k) => {
+    const n = (count * (count - 1)) / 2 + k;
+    return {
+      style: STYLES[n % STYLES.length]!,
+      anchor: EVERY_ANCHOR[n % EVERY_ANCHOR.length]!,
+      // The first four hold a comment of every word, one joined by each separator.
+      ...(EVERY_WORD[n] !== undefined && { comment: EVERY_WORD[n] }),
+    };
+  }),
 }));
 
-/** How many highlights a listed write's note has, by the place written to: 1, 2, 5 and 4. */
-const COUNT_BY_PLACE: Record<Place, number> = { only: 1, first: 2, between: 5, last: 4 };
+/**
+ * How many highlights a listed write's note has, by the place written to and
+ * the edit: as few as the place allows, and between others every count from 3.
+ */
+const countFor = (place: Place, edit: number) =>
+  ({ only: 1, first: 2, between: 3 + (edit % 3), last: 2 })[place];
 
 /** A write to every place with every edit by hand to the highlight written to. */
 const PLACED_EDITS: readonly Listed[] = PLACES.flatMap((place, p) =>
   HAND_EDITS.map((edit, e) => ({
     place,
     edit,
-    highlights: highlightsFor(4 * p + e, COUNT_BY_PLACE[place]),
+    highlights: highlightsFor(4 * p + e, countFor(place, e)),
   })),
 );
 
