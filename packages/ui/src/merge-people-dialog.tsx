@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
+import { holdModalLayer } from './modal-layer.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
 import { Icon } from './icon.tsx';
 import { isImeKey } from './ime.ts';
@@ -88,7 +89,7 @@ export function MergePeopleDialog({
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup
             className={state.kind === 'picking' ? 'palette' : 'palette confirm merge'}

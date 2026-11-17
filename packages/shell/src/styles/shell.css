@@ -42,6 +42,12 @@
   position: relative;
 }
 
+/* The notices' and toasts' wrapper, which stays live while a modal makes the
+   rest of the window inert (#827). It takes no part in the layout. */
+.shell__notices {
+  display: contents;
+}
+
 /* The panes' wrapper, which their links preview from by delegation (slice
    6b). It takes no part in the layout: the split is the main column's child. */
 .shell__links {
