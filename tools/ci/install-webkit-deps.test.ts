@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 /*
  * tools/ci/install-webkit-deps.sh against stand-ins for sudo, apt-get and
@@ -64,31 +64,41 @@ case "$*" in
 esac
 `;
 
+let bin: string;
 let root: string;
 let state: string;
 let archives: string;
 let debs: string;
 let path: string;
 
-function stub(bin: string, name: string, body: string) {
+function stub(name: string, body: string) {
   writeFileSync(join(bin, name), body);
   chmodSync(join(bin, name), 0o755);
 }
+
+// The stand-ins are written once for the file, not per test: they keep no
+// state of their own (that is $STATE's), and on macOS the first run of a
+// newly written executable costs a few hundred milliseconds, so fresh ones
+// per test timed the tests out under load (#854).
+beforeAll(() => {
+  bin = mkdtempSync(join(tmpdir(), 'dfai-webkit-deps-bin-'));
+  stub('sudo', SUDO);
+  stub('pnpm', PNPM);
+  stub('apt-get', APT_GET);
+});
+
+afterAll(() => rmSync(bin, { recursive: true, force: true }));
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'dfai-webkit-deps-'));
   state = join(root, 'state');
   archives = join(root, 'archives');
   debs = join(root, 'debs');
-  const bin = join(root, 'bin');
-  for (const dir of [state, join(state, 'mirror'), archives, bin]) mkdirSync(dir);
+  for (const dir of [state, join(state, 'mirror'), archives]) mkdirSync(dir);
   for (const [name, contents] of Object.entries(MIRROR)) {
     writeFileSync(join(state, 'mirror', name), contents);
   }
-  stub(bin, 'sudo', SUDO);
-  stub(bin, 'pnpm', PNPM);
-  stub(bin, 'apt-get', APT_GET);
-  // The test's own bin first; sha512sum, sed and the rest from the system.
+  // The stand-ins' bin first; sha512sum, sed and the rest from the system.
   path = `${bin}:${process.env.PATH ?? ''}`;
 });
 
