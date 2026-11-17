@@ -4,6 +4,7 @@ import {
   automationHeldReport,
   ledgerRepairedReport,
   messageWithoutPaths,
+  noteRunsHoldIsFailing,
   type LogEntry,
   type RuleNamed,
   type StoredAnswerDraft,
@@ -23,7 +24,8 @@ import { VaultChangedError } from './vault-guard.ts';
  * another vault opening is not the rule's failure, and the log open now is
  * that other vault's, so it is not recorded; nor is one held for the next
  * pull, which did nothing and runs again then. One held by an hourly limit
- * is said as waiting, not as a failure (#813).
+ * is said as waiting, not as a failure — unless the runs that used the hour
+ * failed, when it is failing and said so (#813).
  */
 export async function reported<Entry extends LogEntry | null>({
   activity,
@@ -48,7 +50,7 @@ export async function reported<Entry extends LogEntry | null>({
       if (report !== null) recorder.record(report);
       throw cause;
     }
-    if (cause instanceof NoteRunsCappedError) {
+    if (cause instanceof NoteRunsCappedError && !noteRunsHoldIsFailing(cause.hold)) {
       recorder.record(automationHeldReport({ rule, waiting: cause.message }));
     } else if (!(cause instanceof VaultChangedError) && !(cause instanceof HeldForPullError)) {
       recorder.record(automationFailedReport({ rule, doing, problem: messageWithoutPaths(cause) }));

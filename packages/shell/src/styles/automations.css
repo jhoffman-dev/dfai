@@ -157,11 +157,6 @@
   white-space: normal;
 }
 
-.automation-card__waiting .btn {
-  max-width: 100%;
-  white-space: normal;
-}
-
 .automation-card__waiting-reason {
   color: var(--ink-2);
   flex: 1 1 240px;

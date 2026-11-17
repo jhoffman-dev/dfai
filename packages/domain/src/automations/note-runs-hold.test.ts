@@ -295,7 +295,7 @@ describe('noteRunsHoldMessage (#813): what a held rule says, in plain words', ()
       }),
     ).toBe(
       'It failed all 20 times it ran this hour. The last time: Claude could not be reached. ' +
-        'Its hourly limit is used up, so it tries again at 09:10.',
+        'It has used up its hourly limit, so it tries again at 09:10.',
     );
   });
 
@@ -307,7 +307,7 @@ describe('noteRunsHoldMessage (#813): what a held rule says, in plain words', ()
       }),
     ).toBe(
       'It failed 3 of the 20 times it ran this hour. The last time: The index could not be read. ' +
-        'Its hourly limit is used up, so it tries again at 09:10.',
+        'It has used up its hourly limit, so it tries again at 09:10.',
     );
   });
 
@@ -320,7 +320,7 @@ describe('noteRunsHoldMessage (#813): what a held rule says, in plain words', ()
       }),
     ).toBe(
       'It failed 1 of the 21 times it ran this hour. The last time: No. ' +
-        'Two hourly limits are used up, so it tries again at 14:32.',
+        'It has used up two hourly limits, so it tries again at 14:32.',
     );
   });
 

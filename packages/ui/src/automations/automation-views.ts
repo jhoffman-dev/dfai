@@ -19,14 +19,8 @@ export interface AutomationRow {
   readonly problem: string | null;
   /** Something the rule's runs are held up by — paused, or a log dated ahead — said beside it. */
   readonly notice: string | null;
-  /** Set while an hourly limit holds it (#813): it is waiting, not failing. */
-  readonly waiting?: AutomationWaiting;
-}
-
-/** Why a held rule waits, in plain words, and the rules it offers to turn off, by file. */
-export interface AutomationWaiting {
-  readonly reason: string;
-  readonly turnOff: readonly { readonly id: string; readonly rule: string }[];
+  /** Set while an hourly limit holds it and its runs did not fail (#813): it is waiting, not failing; why, in plain words. */
+  readonly waiting?: string;
 }
 
 /** One line under a log entry: a thing done, or a note left alone and why. */

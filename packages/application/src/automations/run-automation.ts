@@ -203,7 +203,12 @@ async function runOnHeard(
     moved: movedHandledNotes(run.changes, handled),
   };
   const versions = unhandledVersions(triggering, handled);
-  const hold = await holdOf(run.ports, run.rule, entries, run.clock.localNow());
+  const hold = await holdOf({
+    ports: run.ports,
+    rule: run.rule,
+    entries,
+    now: run.clock.localNow(),
+  });
   if (versions.length === 0 || hold !== null) {
     await recordGone(run, departed, 'note');
     if (versions.length > 0 && hold !== null) throw new NoteRunsCappedError(hold);
@@ -214,12 +219,17 @@ async function runOnHeard(
 }
 
 /** What holds a rule a note sets off back at `now`, beside the rules it shares its asks with; null when nothing does. */
-async function holdOf(
-  ports: AutomationRun['ports'],
-  rule: AutomationRule,
-  entries: readonly LogEntry[],
-  now: LocalTime,
-): Promise<NoteRunsHold | null> {
+async function holdOf({
+  ports,
+  rule,
+  entries,
+  now,
+}: {
+  ports: AutomationRun['ports'];
+  rule: AutomationRule;
+  entries: readonly LogEntry[];
+  now: LocalTime;
+}): Promise<NoteRunsHold | null> {
   const budget = claudeStepBudget(rule.action);
   const sharers = await allowanceSharers(ports, rule);
   return noteRunsHold({ rule: rule.name, entries, now, budget, sharers });
@@ -261,7 +271,7 @@ export async function runOnMissedArrivals(run: AutomationRun): Promise<LogEntry 
       handled,
     });
     if (versions.length === 0) return null;
-    const hold = await holdOf(run.ports, rule, entries, run.clock.localNow());
+    const hold = await holdOf({ ports: run.ports, rule, entries, now: run.clock.localNow() });
     if (hold !== null) throw new NoteRunsCappedError(hold);
     const aim: Aim = (ports, today) => planForVersions({ ports, rule, versions, today });
     return runOnce({ run, trigger: 'note', aim, quiet: true });

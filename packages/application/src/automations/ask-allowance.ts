@@ -20,8 +20,9 @@ interface AllowancePorts {
 
 /**
  * The other rules whose logs the vault's one hourly ask allowance is counted
- * over (#179), each by its name (#813): every rule but `rule` whose step
- * spends it; none when `rule`'s step does not.
+ * over (#179), each by its name and whether it is on (#813): every rule but
+ * `rule` whose step spends it, on or off, since one turned off this hour still
+ * spent what it asked; none when `rule`'s step does not.
  */
 export async function allowanceSharers(
   { fs, markdown }: AllowancePorts,
@@ -36,7 +37,7 @@ export async function allowanceSharers(
         automationIdKey(other.rule.id) !== automationIdKey(rule.id) &&
         sharesAskAllowance(other.rule.action),
     )
-    .map((other) => ({ name: other.rule.name, entries: other.log }));
+    .map((other) => ({ name: other.rule.name, entries: other.log, enabled: other.rule.enabled }));
 }
 
 /**

@@ -289,8 +289,8 @@ export {
   noteRunsHeldUntil,
   noteRunsHold,
 } from './automation-due.ts';
-export type { NamedLog, NoteRunsHold, RuleAsks } from './automation-due.ts';
-export { noteRunsHoldMessage } from './note-runs-hold.ts';
+export type { HoldFailures, NamedLog, NoteRunsHold, RuleAsks } from './automation-due.ts';
+export { noteRunsHoldIsFailing, noteRunsHoldMessage } from './note-runs-hold.ts';
 export {
   emptyLedger,
   isSchemaKey,
