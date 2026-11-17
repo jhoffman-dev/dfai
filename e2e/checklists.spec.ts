@@ -124,7 +124,9 @@ test('promoting a line makes the task, links it back, and one Undo takes back bo
   await expect(notice).toHaveCount(0);
   // The pane reads the note back as it was: the line is words again, not a link.
   await expect(link).toHaveCount(0);
+  // The caret stays on the line through the re-read (#877), so the line also
+  // holds its "Make task" button: the line is matched, not its exact text.
   await expect(
-    page.getByLabel('Note', { exact: true }).getByText('Order chairs', { exact: true }),
+    page.getByLabel('Note', { exact: true }).locator('p', { hasText: 'Order chairs' }),
   ).toBeVisible();
 });

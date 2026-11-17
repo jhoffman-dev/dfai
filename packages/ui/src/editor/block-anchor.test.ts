@@ -188,6 +188,22 @@ describe('showAsRead in an editor without focus: the next page caret is read (#8
     expect(editor.state.selection.head).toBe(at(changed, 12));
   });
 
+  it('shows the note in an editor not yet mounted, which has no page caret to forget', () => {
+    // An embed's editor can be handed a re-read before React mounts it (#877 CI).
+    const unmounted = new Editor({
+      element: null,
+      extensions: [StarterKit, BlockAnchor],
+      content: note(LINE_1) as object,
+    });
+    try {
+      showAsRead(unmounted, note(LINE_1, 'Theirs.'));
+
+      expect(unmounted.state.doc.lastChild?.textContent).toBe('Theirs.');
+    } finally {
+      unmounted.destroy();
+    }
+  });
+
   it('still shows the note, caret kept, when the observer has no record to clear', () => {
     // A prosemirror-view without the internal: the re-read behaves as before #877.
     const domObserver = (editor.view as unknown as { domObserver: object }).domObserver;
