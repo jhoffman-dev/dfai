@@ -57,19 +57,29 @@ function editedEverywhere(doc: EditorDocument): EditorDocument {
 
 type Outcome = 'same' | 'raw' | 'different';
 
-function outcomeOf(doc: EditorDocument, reread: readonly EditorNode[]): Outcome {
-  if (documentOf(reread) === documentOf(doc.content)) return 'same';
+/** How a document read back, and the blocks of it that were kept as source. */
+interface ReadBack {
+  readonly outcome: Outcome;
+  readonly markdown: string;
+  readonly kept: readonly EditorNode[];
+}
+
+function readBackOf(
+  doc: EditorDocument,
+  reread: readonly EditorNode[],
+  markdown: string,
+): ReadBack {
+  if (documentOf(reread) === documentOf(doc.content))
+    return { outcome: 'same', markdown, kept: [] };
   // Block by block: each reads back as it was, or as its own source.
   const blocks = doc.content.filter((node) => node.type !== 'paragraph' || node.content?.length);
-  if (blocks.length !== reread.length) return 'different';
-  const each = blocks.map((node, at) =>
-    documentOf([reread[at]!]) === documentOf([node])
-      ? 'same'
-      : reread[at]!.type === RAW_BLOCK
-        ? 'raw'
-        : 'different',
+  if (blocks.length !== reread.length) return { outcome: 'different', markdown, kept: [] };
+  const kept = blocks.filter((_, at) => reread[at]!.type === RAW_BLOCK);
+  const different = blocks.some(
+    (node, at) =>
+      reread[at]!.type !== RAW_BLOCK && documentOf([reread[at]!]) !== documentOf([node]),
   );
-  return each.includes('different') ? 'different' : 'raw';
+  return { outcome: different ? 'different' : 'raw', markdown, kept };
 }
 
 interface Case {
@@ -77,53 +87,76 @@ interface Case {
   readonly doc: EditorDocument;
 }
 
-/** The cases whose documents do not read back as written, with their markdown, for the report. */
-function misread(cases: readonly Case[], check: (doc: EditorDocument) => [Outcome, string]) {
+/** The cases whose documents do not read back as written, and those kept as source. */
+function misread(cases: readonly Case[], check: (doc: EditorDocument) => ReadBack) {
   const different: string[] = [];
-  const raw: string[] = [];
+  const raw: { name: string; kept: readonly EditorNode[] }[] = [];
   for (const { name, doc } of cases) {
-    let outcome: Outcome;
-    let markdown: string;
+    let read: ReadBack;
     try {
-      [outcome, markdown] = check(doc);
+      read = check(doc);
     } catch (error) {
-      [outcome, markdown] = ['different', `threw ${String(error)}`];
+      read = { outcome: 'different', markdown: `threw ${String(error)}`, kept: [] };
     }
-    if (outcome === 'raw') raw.push(name);
-    if (outcome === 'different') different.push(`${name}: ${JSON.stringify(markdown)}`);
+    if (read.outcome === 'raw') raw.push({ name, kept: read.kept });
+    if (read.outcome === 'different') different.push(`${name}: ${JSON.stringify(read.markdown)}`);
   }
   return { different, raw };
 }
 
-/**
- * Kept as source is the last resort, not the answer: no listed document is,
- * each is built to be written faithfully, and a seed only rarely — 6 of the
- * first 3000 (347, 787, 892, 1927, 2584, 2877), never two in a run of 25.
- */
-function expectReadBack(
-  cases: readonly Case[],
-  check: (doc: EditorDocument) => [Outcome, string],
-  { keptAsSource = 0 }: { keptAsSource?: number } = {},
-) {
+function expectNoneDifferent(different: readonly string[], cases: number) {
+  expect(different.slice(0, 8), `${different.length} of ${cases} read differently`).toEqual([]);
+}
+
+/** Kept as source is the last resort, not the answer: no listed document is, each built to be written faithfully. */
+function expectReadBack(cases: readonly Case[], check: (doc: EditorDocument) => ReadBack) {
   const { different, raw } = misread(cases, check);
-  expect(different.slice(0, 8), `${different.length} of ${cases.length} read differently`).toEqual(
-    [],
-  );
-  expect(raw.length, `kept as source: ${raw.join(', ')}`).toBeLessThanOrEqual(keptAsSource);
+  expectNoneDifferent(different, cases.length);
+  expect(
+    raw.map(({ name }) => name),
+    'kept as source',
+  ).toEqual([]);
 }
 
-function writtenAfresh(doc: EditorDocument): [Outcome, string] {
+/**
+ * Whether a block kept as source holds the one thing markdown has no way to
+ * write (ADR-0004, pinned above): a tag straight before a marked run that
+ * starts with punctuation, or with an atom, which no escape can open after
+ * the tag's last letter without unmaking the tag.
+ */
+function keptForTheKnownReason(block: EditorNode): boolean {
+  const marks = (node: EditorNode) => (node.marks ?? []).map((mark) => mark.type);
+  const opensAfterTag = (before: EditorNode, run: EditorNode) =>
+    before.type === 'text' &&
+    /#[A-Za-z][\w-]*$/u.test(before.text ?? '') &&
+    marks(run).some((mark) => !marks(before).includes(mark)) &&
+    (run.type !== 'text' || /^[^\p{L}\p{N}\s]/u.test(run.text ?? ''));
+  const line = (node: EditorNode): boolean =>
+    (node.content ?? []).some((run, at) => at > 0 && opensAfterTag(node.content![at - 1]!, run)) ||
+    (node.content ?? []).some(line);
+  return line(block);
+}
+
+/**
+ * The seeded documents each way kept as source, over every seeded `it` that
+ * ran: at most 1 in 100 of them, rounded down, as the property has always
+ * allowed (#888) — 6 of the first 3000 seeds are.
+ */
+const keptSeeds = new Map<string, { seeds: number; kept: string[] }>();
+
+function writtenAfresh(doc: EditorDocument): ReadBack {
   const { markdown, parsed } = saveAndReload(doc);
-  return [outcomeOf(doc, parsed.doc.content), markdown];
+  return readBackOf(doc, parsed.doc.content, markdown);
 }
 
-function editedAgain(first: EditorDocument): [Outcome, string] {
+function editedAgain(first: EditorDocument): ReadBack {
   const { markdown: original, parsed } = saveAndReload(first);
-  if (parsed.doc.content.some((node) => node.type === RAW_BLOCK)) return ['same', original];
+  if (parsed.doc.content.some((node) => node.type === RAW_BLOCK))
+    return { outcome: 'same', markdown: original, kept: [] };
   const doc = editedEverywhere(parsed.doc);
   const markdown = serializeMarkdownBody({ originalBody: original, parsed, doc });
   const reread = [...parseMarkdownBody(markdown).doc.content];
-  return [outcomeOf(doc, reread), `${original}\n=>\n${markdown}`];
+  return readBackOf(doc, reread, `${original}\n=>\n${markdown}`);
 }
 
 const casesOf = (family: string, documents: readonly EditorDocument[]): Case[] =>
@@ -194,7 +227,7 @@ describe('an edited block reads back as the editor had it', () => {
   describe.each([
     ['written afresh', writtenAfresh],
     ['saved, reopened and edited again', editedAgain],
-  ] as const)('%s', (_way, check) => {
+  ] as const)('%s', (way, check) => {
     it.each(WRITER_FAMILIES.map((family) => [family.name, family] as const))(
       'holds for %s, which its listed documents all hold',
       (_name, family) => {
@@ -208,7 +241,27 @@ describe('an edited block reads back as the editor had it', () => {
         name: `seed ${first + at}`,
         doc,
       }));
-      expectReadBack(seeded, check, { keptAsSource: 1 });
+      const { different, raw } = misread(seeded, check);
+      // Counted first, so the check over the whole run sees them however this one ends.
+      const tally = keptSeeds.get(way) ?? { seeds: 0, kept: [] };
+      keptSeeds.set(way, {
+        seeds: tally.seeds + seeded.length,
+        kept: [...tally.kept, ...raw.map(({ name }) => name)],
+      });
+      expectNoneDifferent(different, seeded.length);
+      const unknown = raw.filter(({ kept }) => !kept.every(keptForTheKnownReason));
+      expect(
+        unknown.map(({ name }) => name),
+        'kept as source for another reason',
+      ).toEqual([]);
+    });
+
+    it('keeps at most 1 in 100 of the seeded documents that ran as source', () => {
+      const { seeds, kept } = keptSeeds.get(way) ?? { seeds: 0, kept: [] };
+      expect(
+        kept.length,
+        `of ${seeds} seeds, kept as source: ${kept.join(', ')}`,
+      ).toBeLessThanOrEqual(Math.floor(seeds / 100));
     });
   });
 });
