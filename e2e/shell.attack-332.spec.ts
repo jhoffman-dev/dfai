@@ -73,9 +73,7 @@ async function openVault(page: Page, { many = false } = {}): Promise<FakeVault> 
   await installHost(page, vault);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
-  await expect(page.getByText(/notes indexed/)).toBeVisible({
-    timeout: many ? INDEXING_MANY : undefined,
-  });
+  await expect(page.getByText(/notes indexed/)).toBeVisible(many ? { timeout: INDEXING_MANY } : {});
   return vault;
 }
 
