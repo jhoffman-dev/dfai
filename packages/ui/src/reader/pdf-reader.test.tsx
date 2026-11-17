@@ -407,6 +407,35 @@ describe('the highlights panel', () => {
     );
   });
 
+  it('hands focus on when the row went before its removal answered, and only then (#880)', async () => {
+    const second: ReaderHighlight = { ...HIGHLIGHT, id: 'm4p2', quote: 'Fog came in' };
+    const third: ReaderHighlight = { ...HIGHLIGHT, id: 'r7t1', quote: 'The keepers lit' };
+    let answer: (removed: boolean) => void = () => {};
+    const props = {
+      entries: pdfPanelEntries([HIGHLIGHT, second]),
+      emptyHint: 'Select words on a page to highlight them.',
+      flashing: null,
+      onShow: vi.fn(),
+      onEditComment: vi.fn(async () => true),
+      onRemove: vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve))),
+    };
+    const { rerender } = render(<HighlightsPanel {...props} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Delete…' })[0] as HTMLElement);
+    screen.getByRole('button', { name: 'Delete' }).focus();
+    await userEvent.keyboard('{Enter}');
+
+    // The list is read again (another change's news) before the removal answers.
+    rerender(<HighlightsPanel {...props} entries={pdfPanelEntries([second])} />);
+    answer(true);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /Fog came in/ })),
+    );
+
+    (document.activeElement as HTMLElement).blur();
+    rerender(<HighlightsPanel {...props} entries={pdfPanelEntries([second, third])} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('hands focus to the panel’s heading when the last row goes (#880)', async () => {
     const props = {
       entries: pdfPanelEntries([HIGHLIGHT]),
