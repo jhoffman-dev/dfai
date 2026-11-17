@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
+import { readPageSelection } from './page-selection.ts';
 
 /**
  * ProseMirror's check after focus waits this long (prosemirror-view's
@@ -26,16 +27,6 @@ const PRESS_ENDS = ['mouseup', 'touchend', 'touchcancel'] as const;
 
 /** Ends a press with no end event to come: a drag swallows the mouseup. */
 const PRESS_CANCELS = ['dragstart'] as const;
-
-/**
- * The view's DOM observer. Not in prosemirror-view's types, but it is how the
- * view itself reads the page's selection (on every `selectionchange`), and
- * the tap-caret test fails if it goes; a version without it throws on the
- * read, which is caught.
- */
-interface ObservedView extends EditorView {
-  domObserver: { flush: () => void };
-}
 
 /**
  * Keeps the caret a press put down when that press focused the editor (#835).
@@ -128,14 +119,4 @@ function tapCaretPlugin(): Plugin {
       };
     },
   });
-}
-
-function readPageSelection(view: EditorView): void {
-  try {
-    (view as ObservedView).domObserver.flush();
-  } catch {
-    // Safe to ignore: without the read (no observer, no flush, or a flush
-    // that throws), ProseMirror's own check puts its selection back, exactly
-    // as before this extension.
-  }
 }
