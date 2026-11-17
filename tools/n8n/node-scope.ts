@@ -23,6 +23,14 @@ function isMemberName(node: ts.Identifier): boolean {
   );
 }
 
+/** The variable an identifier reads: for `{ name }`, the value, not the property it makes. */
+function variableRead(checker: ts.TypeChecker, node: ts.Identifier): ts.Symbol | undefined {
+  const { parent } = node;
+  return ts.isShorthandPropertyAssignment(parent) && parent.name === node
+    ? checker.getShorthandAssignmentValueSymbol(parent)
+    : checker.getSymbolAtLocation(node);
+}
+
 /**
  * The names the code in `[start, end)` reads from outside that range: names
  * nothing declares, and names declared elsewhere (another module's
@@ -39,7 +47,7 @@ export function namesFromOutside(
   const visit = (node: ts.Node): void => {
     if (node.end <= range.start || node.pos >= range.end) return;
     if (ts.isIdentifier(node) && !isMemberName(node) && node.getStart(source) >= range.start) {
-      const declarations = checker.getSymbolAtLocation(node)?.declarations ?? [];
+      const declarations = variableRead(checker, node)?.declarations ?? [];
       if (!declarations.some(inRange)) outside.add(node.text);
     }
     ts.forEachChild(node, visit);

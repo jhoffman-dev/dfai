@@ -103,9 +103,9 @@ const compiledModules = new Map<string, CompiledModule>();
 function compiled(name: string): CompiledModule {
   const known = compiledModules.get(name);
   if (known !== undefined) return known;
-  const module = compiledModule(name);
-  compiledModules.set(name, module);
-  return module;
+  const built = compiledModule(name);
+  compiledModules.set(name, built);
+  return built;
 }
 
 /** A module's TypeScript as the JavaScript a Code node carries, before its imports and exports go. */
