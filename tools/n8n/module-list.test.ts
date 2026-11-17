@@ -356,6 +356,22 @@ describe('the module-list check against what n8n runs (re-check #847)', () => {
       expect(moduleListProblems([reads], [declares, `${declares}\n// again`])).toEqual([]);
     });
 
+    it('passes when every node declares a name the module reads as `{ name }`', () => {
+      const shorthand = fixture(
+        'reads-config-shorthand.ts',
+        'export function read(): { config: number } {\n  return { config };\n}\n',
+      );
+      expect(moduleListProblems([shorthand], [declares, `${declares}\n// again`])).toEqual([]);
+    });
+
+    it('reports it when a node declares it only inside its own function', () => {
+      const nested =
+        'function inner() {\n  const config = 1;\n  return config;\n}\nreturn read() + inner();';
+      expect(moduleListProblems([reads], [nested, `${nested}\n// again`])).toEqual([
+        expect.stringMatching(/reads-config\.ts: Cannot find name 'config'/),
+      ]);
+    });
+
     // `var` is hoisted, so a module reading it at load gets undefined; `const` throws there.
     it.each([
       ['hoisting node first', ['var config = 1;\nreturn TWO;', 'const config = 1;\nreturn TWO;']],
