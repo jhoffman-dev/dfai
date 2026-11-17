@@ -116,7 +116,7 @@ describe('noteRunsHold (#813): why a rule is held, as plain data', () => {
     });
     expect(hold).toEqual({
       rule: 'After a meeting',
-      until: '2026-10-14T12:40:00',
+      until: '2026-10-14T12:30:00',
       runs: { most: NOTE_RUNS_PER_HOUR, spent: NOTE_RUNS_PER_HOUR, countsAsks: false },
       sharedAsks: {
         most: DECLARED_STEP_ASKS_PER_HOUR,

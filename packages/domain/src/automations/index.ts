@@ -286,9 +286,11 @@ export {
   nextRunOf,
   ruleClockOf,
   NOTE_RUNS_PER_HOUR,
-  noteRunsCappedProblem,
   noteRunsHeldUntil,
+  noteRunsHold,
 } from './automation-due.ts';
+export type { NamedLog, NoteRunsHold, RuleAsks } from './automation-due.ts';
+export { noteRunsHoldMessage } from './note-runs-hold.ts';
 export {
   emptyLedger,
   isSchemaKey,
