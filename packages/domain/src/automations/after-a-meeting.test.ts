@@ -7,6 +7,7 @@ import { CLAUDE_ASKS_PER_RUN } from './answered-note.ts';
 import { noteRunsHoldMessage } from './note-runs-hold.ts';
 import {
   asksSpentInHour,
+  askTimesInHour,
   NOTE_RUNS_PER_HOUR,
   noteRunsHold,
   noteRunsHeldUntil,
@@ -36,6 +37,7 @@ import {
 import { withClaudeChoices, type ClaudeAction } from './claude-step.ts';
 import { AUTOMATION_PRESETS } from './presets.ts';
 import type { LogEntry } from './run-log.ts';
+import { localTimeMs } from './schedule.ts';
 
 /**
  * #179, ADR-0036 ("Where it runs"; Model) and the ADR-0028 addendum ("The
@@ -354,6 +356,17 @@ describe('the declared step’s hourly allowance', () => {
     expect(asksSpentInHour([asked(50, 25), asked(40, 4), failed(30)], NOW)).toBe(29);
     expect(asksSpentInHour([{ ...asked(0, 7), at: '2026-10-14T11:00:00' }], NOW)).toBe(0);
     expect(asksSpentInHour([asked(10, 3)], 'not a time')).toBe(0);
+  });
+
+  it('says when each of those asks was made, oldest first, for an asker with no log (#900)', () => {
+    const minutes = (ago: number) => localTimeMs(NOW)! - ago * 60_000;
+    expect(askTimesInHour([asked(10, 2), asked(50, 1), failed(30)], NOW)).toEqual([
+      minutes(50),
+      minutes(10),
+      minutes(10),
+    ]);
+    expect(askTimesInHour([{ ...asked(0, 7), at: '2026-10-14T11:00:00' }], NOW)).toEqual([]);
+    expect(askTimesInHour([asked(10, 3)], 'not a time')).toEqual([]);
   });
 });
 

@@ -280,6 +280,7 @@ export type { AnsweredMeeting, ClaudeAsks, NoteCut, NoteSkipped } from './answer
 export type { NoteAnswer, NoteAnswerValue } from './note-answer.ts';
 export {
   asksSpentInHour,
+  askTimesInHour,
   backoffMinutes,
   unavailableBackoffMinutes,
   dueTrigger,
@@ -364,3 +365,8 @@ export type {
   MeetingSetupLoss,
   MeetingSetupPlan,
 } from './meeting-setup.ts';
+export {
+  INBOX_ASSIST_LISTED_MAX,
+  INBOX_ASSIST_PROMPT,
+  inboxAssistData,
+} from './inbox-assist-prompt.ts';

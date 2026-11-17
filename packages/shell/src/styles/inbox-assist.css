@@ -1,0 +1,39 @@
+/* ---- Suggest (#900) ----
+   What Inbox assist would do, under the bar once Suggest is pressed: the
+   sentence, then a row an item — its name, a muted pastel chip, what would
+   be done and why. Neutral chrome: only the chip carries colour. */
+.inbox-assist__note {
+  color: var(--ink-3);
+}
+
+.inbox-assist__rows {
+  display: grid;
+  gap: var(--space-1);
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.inbox-assist__row {
+  align-items: baseline;
+  display: grid;
+  gap: 2px var(--space-2);
+  grid-template-columns: minmax(0, 14rem) auto minmax(0, 1fr);
+}
+
+.inbox-assist__title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-assist__does {
+  color: var(--ink);
+}
+
+.inbox-assist__why {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  grid-column: 3;
+}
