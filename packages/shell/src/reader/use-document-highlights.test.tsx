@@ -167,6 +167,45 @@ describe("a reader tab's literature note", () => {
     expect(files.get(NOTE)).not.toContain('atlas:highlight');
   });
 
+  it('removes two highlights asked for at once, the second after the first has landed (#880)', async () => {
+    const { ports, files } = setUp();
+    const { result } = renderHook(() => useTab(ports), { wrapper: queryWrapper().wrapper });
+    await waitFor(() => expect(result.current.note).toBe(NOTE));
+    for (const page of [1, 2]) {
+      await act(() =>
+        result.current.actions.onHighlight({
+          selection: { page, start: 0, end: 7 },
+          style: { mark: 'highlight', color: 'yellow' },
+        }),
+      );
+    }
+    await waitFor(() => expect(result.current.highlights).toHaveLength(2));
+    const [first, second] = result.current.highlights.map((highlight) => highlight.id);
+
+    // As the host does: a write against text that is no longer on disk is refused.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const write = ports.fs.writeTextFile;
+    ports.fs.writeTextFile = async (request) => {
+      await held;
+      if (files.get(request.path) !== request.expectedText) {
+        throw new Error('the note changed on disk since it was opened');
+      }
+      return write(request);
+    };
+    let removed: Promise<boolean[]> = Promise.resolve([]);
+    act(() => {
+      removed = Promise.all([
+        result.current.actions.onRemove(first as string),
+        result.current.actions.onRemove(second as string),
+      ]);
+    });
+    release();
+    await act(async () => expect(await removed).toEqual([true, true]));
+    expect(files.get(NOTE)).not.toContain('atlas:highlight');
+    expect(result.current.notice).toBeNull();
+  });
+
   it('saves an area’s picture and its highlight', async () => {
     const { ports, files } = setUp();
     const written: { path: VaultPath; bytes: Uint8Array }[] = [];
