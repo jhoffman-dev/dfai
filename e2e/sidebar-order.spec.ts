@@ -12,7 +12,10 @@ const VIEW = ['---', 'atlas: view', 'type: task', 'layout: table', '---', '', '#
   '\n',
 );
 
-async function openVault(page: Page, { settings }: { settings?: string } = {}): Promise<FakeVault> {
+async function openVault(
+  page: Page,
+  { settings, firstRun = false }: { settings?: string; firstRun?: boolean } = {},
+): Promise<FakeVault> {
   const vault = await createVault();
   await vault.mkdir('.atlas/types');
   await vault.mkdir('.atlas/views');
@@ -21,7 +24,7 @@ async function openVault(page: Page, { settings }: { settings?: string } = {}): 
   await vault.write('Garden.md', '# Garden\n');
   if (settings !== undefined) await vault.write('.atlas/settings.md', settings);
 
-  await installHost(page, vault);
+  await installHost(page, vault, { sidebarAsFirstRun: firstRun });
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
@@ -114,6 +117,32 @@ test('a section moves from the keyboard, keeping focus on its grip', async ({ pa
   await expect
     .poll(() => savedOrder(vault))
     .toEqual(['favorites', 'types', 'userSpace', 'views', 'dashboards']);
+});
+
+test('with Pages hidden, as on a first run, a section moves among the four shown and Pages keeps its place (#902)', async ({
+  page,
+}) => {
+  const vault = await openVault(page, {
+    settings: '---\nsidebarOrder: [favorites, userSpace, types, views, dashboards]\n---\n',
+    firstRun: true,
+  });
+  await expect(headings(page)).toHaveText(['Favorites', 'Types', 'Views', 'Dashboards']);
+
+  await focusThenPress(grip(page, 'Favorites'), 'Alt+ArrowDown');
+  await expect(headings(page)).toHaveText(['Types', 'Favorites', 'Views', 'Dashboards']);
+  await expect(grip(page, 'Favorites')).toBeFocused();
+  await expect
+    .poll(() => savedOrder(vault))
+    .toEqual(['userSpace', 'types', 'favorites', 'views', 'dashboards']);
+
+  // The last one shown goes no further, though Pages sits hidden in the order.
+  await focusThenPress(grip(page, 'Dashboards'), 'Alt+ArrowDown');
+  await expect(headings(page)).toHaveText(['Types', 'Favorites', 'Views', 'Dashboards']);
+
+  await page.getByRole('button', { name: 'Sidebar options' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Show Pages' }).click();
+  await page.keyboard.press('Escape');
+  await expect(headings(page)).toHaveText(['Pages', 'Types', 'Favorites', 'Views', 'Dashboards']);
 });
 
 test('a shut section keeps its place, and can be moved like an open one', async ({ page }) => {

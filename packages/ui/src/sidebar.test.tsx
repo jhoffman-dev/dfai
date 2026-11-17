@@ -372,6 +372,35 @@ describe('Sidebar', () => {
     expect(screen.getByText('No dashboards yet.')).toBeDefined();
   });
 
+  it('mounts no tree at all while Pages is hidden, and keeps the other sections (#902)', () => {
+    show({ hiddenSections: ['userSpace'] });
+    expect(screen.getAllByRole('heading', { level: 2 }).map((node) => node.textContent)).toEqual([
+      'Favorites',
+      'Types',
+      'Views',
+      'Dashboards',
+    ]);
+    expect(screen.queryByRole('tree')).toBeNull();
+    expect(document.querySelector('[role="treeitem"]')).toBeNull();
+    expect(screen.getByRole('button', { name: /^Search/ })).toBeDefined();
+  });
+
+  it('draws Pages, tree and all, once it is shown again', () => {
+    const { rerender, props } = show({ hiddenSections: ['userSpace'] });
+    rerender(<Sidebar {...props} hiddenSections={[]} />);
+    expect(heading('Pages').getAttribute('aria-expanded')).toBe('true');
+    expect(within(screen.getByRole('tree')).getByText('Acme')).toBeDefined();
+  });
+
+  it('still marks the open note where it is listed outside a hidden Pages', () => {
+    show({
+      hiddenSections: ['userSpace'],
+      active: { kind: 'note', path: createVaultPath('Acme.md') },
+    });
+    expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Acme' }).getAttribute('aria-current')).toBe('page');
+  });
+
   it('shows what is in Pages as a tree, without the extension on a note', () => {
     show();
     expect(screen.getByRole('tree')).toBeDefined();

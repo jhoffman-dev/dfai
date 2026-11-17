@@ -143,6 +143,10 @@ import { useTypes } from './types/use-types.ts';
 import { useTypeCommands } from './types/use-type-commands.ts';
 import { useSidebarCatalog } from './sidebar/use-sidebar-catalog.ts';
 import { browserSectionStore } from './sidebar/browser-section-store.ts';
+import { browserHiddenSectionStore } from './sidebar/browser-hidden-section-store.ts';
+import { palettePagesCommands, runPalettePagesCommand } from './sidebar/palette-pages.ts';
+import { focusPagesWhenDrawn } from './sidebar/focus-pages.ts';
+import { useHiddenSections } from './sidebar/use-hidden-sections.ts';
 import { createBrowserGroupFoldStore } from './query/browser-group-fold-store.ts';
 import { createBrowserLinkedRangeStore } from './linked-pages/browser-linked-range-store.ts';
 import { useTemplates } from './types/use-templates.ts';
@@ -442,13 +446,15 @@ const OFFER_NOTHING = () => false;
 
 /**
  * Where focus goes when an overlay closes and what opened it has gone: the
- * note being edited, or else the tree — somewhere a keyboard can carry on
- * from, rather than `<body>`.
+ * note being edited, or else the tree, or else — Pages hidden (#902) — the
+ * sidebar's Search row: somewhere a keyboard can carry on from, rather than
+ * `<body>`.
  */
 function focusFallback(): HTMLElement | null {
   return (
     document.querySelector<HTMLElement>('.pane--focused [contenteditable="true"]') ??
-    document.querySelector<HTMLElement>('[role="tree"] [tabindex="0"]')
+    document.querySelector<HTMLElement>('[role="tree"] [tabindex="0"]') ??
+    document.querySelector<HTMLElement>('.sidebar [data-sidebar-search]')
   );
 }
 
@@ -1028,8 +1034,10 @@ function AppWindow({
 
   useSqlViews({ index: index.index, types, ready: indexReady, status: indexStore });
 
+  const hiddenSections = useHiddenSections(browserHiddenSectionStore);
   const paletteCommandsFor = useSteadyCallback((focused: NavigationPlace | null) => [
     ...PALETTE_COMMANDS,
+    ...palettePagesCommands(hiddenSections.isShown('userSpace')),
     ...paletteArchiveCommands(focused?.kind === 'note' ? focused.path : null),
     // Offered wherever the host can export: the commands themselves are made further down.
     ...(!exportOffered
@@ -1076,6 +1084,11 @@ function AppWindow({
     () => (compact ? setDrawerOpen((was) => !was) : setSidebarOpen((was) => !was)),
     [compact],
   );
+  const revealPages = useCallback(() => {
+    if (compact) setDrawerOpen(true);
+    else setSidebarOpen(true);
+    focusPagesWhenDrawn();
+  }, [compact]);
   const drawer = useMemo(
     () =>
       compact
@@ -2314,6 +2327,7 @@ function AppWindow({
       return;
     }
     if (runPaletteKindleCommand(id, kindleSync)) return;
+    if (runPalettePagesCommand(id, { sections: hiddenSections, revealPages })) return;
     // A command that goes somewhere leaves the peek first, so where it went is on screen.
     leavingPeekFor(() => runPlaceCommand(id, pasted));
   });
@@ -2614,6 +2628,13 @@ function AppWindow({
                     onMenuOpenChange={(open) =>
                       open ? showOverlay('new-note-menu') : hideOverlay('new-note-menu')
                     }
+                    sidebarOptions={{
+                      pagesShown: hiddenSections.isShown('userSpace'),
+                      onPagesShownChange: (shown) => hiddenSections.setShown('userSpace', shown),
+                      open: overlay === 'sidebar-options',
+                      onOpenChange: (open) =>
+                        open ? showOverlay('sidebar-options') : hideOverlay('sidebar-options'),
+                    }}
                   />
                   <ActiveSidebar
                     store={workspace}
@@ -2660,6 +2681,7 @@ function AppWindow({
                     }}
                     sectionStore={browserSectionStore}
                     sectionOrder={sidebarOrder.order}
+                    hiddenSections={hiddenSections.hidden}
                     onSearch={() => showOverlay('search')}
                     onOpenGraph={() => openGraph({ kind: 'vault' })}
                     onOpenTags={() => openTags(null)}

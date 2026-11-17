@@ -67,6 +67,19 @@
     min-width: 44px;
   }
 
+  /* The vault header's buttons — New note, Sidebar options, Hide sidebar —
+     are 44px square, all three alike so the row stays even; the row grows to
+     hold them, and a long vault name gives way, as it does at any width.
+     Sidebar options is the one way to Pages on a touch screen (#902). */
+  .vault-header {
+    height: 48px;
+  }
+
+  .vault-header .icon-button {
+    height: 44px;
+    width: 44px;
+  }
+
   /* Drawn as they are — the ⋮⋮ beside the block, the 8px grip on an image's
      edge — with a 44px hit area round each; the handle's reaches into the
      gutter, not the text. */

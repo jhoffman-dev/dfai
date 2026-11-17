@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -207,5 +208,94 @@ describe('VaultHeader', () => {
 
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(document.body.style.overflowY).toBe(''));
+  });
+});
+
+/** The header with the options menu's state held as the app holds it, every change recorded. */
+function WithOptions({ shownAtFirst, changes }: { shownAtFirst: boolean; changes: boolean[] }) {
+  const [open, setOpen] = useState(false);
+  const [pagesShown, setPagesShown] = useState(shownAtFirst);
+  return (
+    <VaultHeader
+      {...props}
+      sidebarOptions={{
+        pagesShown,
+        onPagesShownChange: (shown) => {
+          changes.push(shown);
+          setPagesShown(shown);
+        },
+        open,
+        onOpenChange: setOpen,
+      }}
+    />
+  );
+}
+
+describe('VaultHeader’s Sidebar options (#902)', () => {
+  const trigger = () => screen.getByRole('button', { name: 'Sidebar options' });
+  const showPages = () => screen.findByRole('menuitemcheckbox', { name: 'Show Pages' });
+
+  it('offers no options menu when the app gives no sidebar options', () => {
+    render(<VaultHeader {...props} />);
+    expect(screen.queryByRole('button', { name: 'Sidebar options' })).toBeNull();
+  });
+
+  it('shows Show Pages unticked while Pages is hidden, and ticks it when chosen', async () => {
+    const changes: boolean[] = [];
+    render(<WithOptions shownAtFirst={false} changes={changes} />);
+
+    await userEvent.click(trigger());
+    expect(await screen.findByRole('menu', { name: 'Sidebar options' })).toBeDefined();
+    expect((await showPages()).getAttribute('aria-checked')).toBe('false');
+
+    await userEvent.click(await showPages());
+    expect(changes).toEqual([true]);
+    await waitFor(async () =>
+      expect((await showPages()).getAttribute('aria-checked')).toBe('true'),
+    );
+  });
+
+  it('shows Show Pages ticked while Pages is shown, and unticks it from the keyboard', async () => {
+    const changes: boolean[] = [];
+    render(<WithOptions shownAtFirst changes={changes} />);
+
+    trigger().focus();
+    await userEvent.keyboard('{Enter}');
+    const item = await showPages();
+    expect(item.getAttribute('aria-checked')).toBe('true');
+    await userEvent.keyboard('{ArrowDown}');
+    await waitFor(() => expect(document.activeElement).toBe(item));
+
+    await userEvent.keyboard('{Enter}');
+    expect(changes).toEqual([false]);
+  });
+
+  it('tells the app when it opens and shuts, so it is one overlay among the rest', async () => {
+    const onOpenChange = vi.fn();
+    render(
+      <VaultHeader
+        {...props}
+        sidebarOptions={{
+          pagesShown: false,
+          onPagesShownChange: () => {},
+          open: false,
+          onOpenChange,
+        }}
+      />,
+    );
+    await userEvent.click(trigger());
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(true));
+    // The app holds it shut, so it stays shut.
+    expect(screen.queryByRole('menu', { name: 'Sidebar options' })).toBeNull();
+  });
+
+  it('gives focus back to its button when it closes', async () => {
+    render(<WithOptions shownAtFirst={false} changes={[]} />);
+    await userEvent.click(trigger());
+    await showPages();
+
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Sidebar options' })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger()));
   });
 });

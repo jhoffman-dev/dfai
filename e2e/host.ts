@@ -8,6 +8,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { createEmbeddingHost } from './embedding-host.ts';
 import { createGitStub, type GitStub } from './git-host.ts';
+import { startWithPagesShown } from './pages-shown.ts';
 import { PROPS_TYPE_FOLD_INDEX } from '../packages/domain/src/index.ts';
 import { makeTempFolder, removeWithTempFolders } from './temp-folders.ts';
 import { isIntendedRefusal, recordStubBug, stubBugOf, UnstubbedCommandError } from './stub-bugs.ts';
@@ -759,6 +760,7 @@ export async function installHost(
     echoWrites = false,
     coarseTickSeconds,
     embedMsPerText = 0,
+    sidebarAsFirstRun = false,
   }: {
     /**
      * Canned feeds by URL, for sources that fetch rather than read a file. The
@@ -782,8 +784,14 @@ export async function installHost(
     coarseTickSeconds?: number;
     /** How long the stand-in model takes a passage, off the page's thread (`embedding-host.ts`). */
     embedMsPerText?: number;
+    /**
+     * Leaves the sidebar as a first run has it, Pages hidden (#902). Off by
+     * default: the suite and the work budgets were written with Pages shown.
+     */
+    sidebarAsFirstRun?: boolean;
   } = {},
 ): Promise<FakeHost> {
+  if (!sidebarAsFirstRun) await startWithPagesShown(page);
   /** What the picker answers with. */
   let offered = vault.root;
   // One current root, as `VaultState` holds, and every path is resolved against
@@ -2874,9 +2882,9 @@ function holdIn(
 export async function openVaultByTouch(
   page: Page,
   vault: FakeVault,
-  { now }: { now?: Date } = {},
+  { now, sidebarAsFirstRun = false }: { now?: Date; sidebarAsFirstRun?: boolean } = {},
 ): Promise<FakeHost> {
-  const host = await installHost(page, vault);
+  const host = await installHost(page, vault, { sidebarAsFirstRun });
   if (now !== undefined) await page.clock.setFixedTime(now);
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).tap();

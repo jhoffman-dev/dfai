@@ -1,10 +1,25 @@
+import { memo, useState } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import { typeIcon } from '@dfai/domain';
 import { Icon, sidebarGlyph } from './icon.tsx';
+import { useSteadyCallback } from './steady-callback.ts';
 
 export interface TemplateChoice {
   readonly path: string;
   readonly name: string;
+}
+
+/**
+ * The header's "Sidebar options" menu (#902): which sections the sidebar
+ * shows. Only Pages is offered; whether it is shown by default is not this
+ * component's to decide.
+ */
+export interface SidebarOptions {
+  readonly pagesShown: boolean;
+  readonly onPagesShownChange: (shown: boolean) => void;
+  /** The menu's open state, owned by the app so that it is one overlay among the rest. */
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
 }
 
 /**
@@ -24,6 +39,7 @@ export function VaultHeader({
   onHideSidebar,
   menuOpen,
   onMenuOpenChange,
+  sidebarOptions,
 }: {
   vaultName: string;
   /** The letter on the vault's tile. */
@@ -46,7 +62,17 @@ export function VaultHeader({
    */
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
+  /** Given when the sidebar's sections can be shown or hidden from here. */
+  sidebarOptions?: SidebarOptions;
 }) {
+  // The app hands over new handlers on every render; these stay the same, so
+  // the options menu is drawn only when what it shows changes.
+  const pagesShownChange = useSteadyCallback((shown: boolean) =>
+    sidebarOptions?.onPagesShownChange(shown),
+  );
+  const optionsOpenChange = useSteadyCallback((open: boolean) =>
+    sidebarOptions?.onOpenChange(open),
+  );
   return (
     <div className="vault-header">
       <span className="vault-header__tile" aria-hidden="true">
@@ -135,6 +161,14 @@ export function VaultHeader({
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      {sidebarOptions !== undefined && (
+        <SidebarOptionsMenu
+          pagesShown={sidebarOptions.pagesShown}
+          open={sidebarOptions.open}
+          onPagesShownChange={pagesShownChange}
+          onOpenChange={optionsOpenChange}
+        />
+      )}
       {onHideSidebar !== undefined && (
         <button
           className="icon-button"
@@ -149,6 +183,66 @@ export function VaultHeader({
     </div>
   );
 }
+
+/** "…": a checkbox for each section the sidebar can leave out — Pages, for now. */
+const SidebarOptionsMenu = memo(function SidebarOptionsMenu({
+  pagesShown,
+  open,
+  onPagesShownChange,
+  onOpenChange,
+}: SidebarOptions) {
+  // The menu is mounted on the first press, not with the header: opening a
+  // vault draws only this button (the work budgets, tools/perf/budgets.json).
+  const [pressed, setPressed] = useState(open);
+  if (!pressed) {
+    return (
+      <button
+        type="button"
+        className="icon-button"
+        title="Sidebar options"
+        aria-label="Sidebar options"
+        aria-haspopup="menu"
+        aria-expanded={false}
+        // In the Tab order as the menu's own trigger is: WebKit on a Mac leaves
+        // a button with no tabindex out of it.
+        tabIndex={0}
+        onClick={() => {
+          setPressed(true);
+          onOpenChange(true);
+        }}
+      >
+        <Icon name="more" />
+      </button>
+    );
+  }
+  return (
+    <Menu.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
+      <Menu.Trigger className="icon-button" title="Sidebar options" aria-label="Sidebar options">
+        <Icon name="more" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner className="menu-positioner" side="bottom" align="end" sideOffset={6}>
+          <Menu.Popup className="menu" aria-label="Sidebar options" render={<ul />}>
+            <li>
+              <Menu.CheckboxItem
+                nativeButton
+                render={<button type="button" />}
+                checked={pagesShown}
+                onCheckedChange={(checked) => onPagesShownChange(checked)}
+              >
+                <Icon name="folder" size={16} />
+                <span className="menu__label">Show Pages</span>
+                <Menu.CheckboxItemIndicator render={<span />}>
+                  <Icon name="check" size={16} />
+                </Menu.CheckboxItemIndicator>
+              </Menu.CheckboxItem>
+            </li>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+});
 
 function VaultName({ name }: { name: string }) {
   return (

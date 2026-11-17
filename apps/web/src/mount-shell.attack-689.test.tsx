@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import { mountShell } from '@dfai/shell';
 import { composeWebShell } from './composition.ts';
@@ -12,6 +12,9 @@ import { composeWebShell } from './composition.ts';
 beforeAll(() => vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'));
 
 const unmounts: (() => void)[] = [];
+// Written with the sidebar's Pages shown, which a first run now hides (#902).
+beforeEach(() => window.localStorage.setItem('atlas.sidebar.hidden', '[]'));
+
 afterEach(() => {
   for (const unmount of unmounts.splice(0)) unmount();
   vi.restoreAllMocks();
