@@ -309,7 +309,6 @@ test('Enter after a click on a line of a note re-read while its tab was hidden b
   // caret last was. A click that puts the page's caret back on that spot is
   // not read, so Enter splits the line the editor thinks it is on, after
   // the outside paragraph, while the caret is drawn on this one (#877).
-  test.fail(true, '#877: a click on the spot the editor last read is not read after a re-read');
   const { vault } = await openVault(page);
   await openAndType(page, 'alpha', ' Mine.');
   await row(page, 'beta').click({ modifiers: ['Meta'] });
@@ -332,6 +331,23 @@ test('Enter after a click on a line of a note re-read while its tab was hidden b
   await expectFile(vault, 'alpha.md').toContain('Later.');
   expect(await vault.read('alpha.md')).toBe(
     '# alpha\n\nLine of alpha. Mine.\n\nLater.\n\nTheirs, added outside.\n',
+  );
+});
+
+test('a note re-read while its editor has focus keeps the caret on its line, and typing lands there', async ({
+  page,
+}) => {
+  // #877: the re-read put the editor's selection at the note's end, and a
+  // focused editor drew it there too, so typing on went after their paragraph.
+  const { vault } = await openVault(page);
+  await openAndType(page, 'alpha', ' Mine.');
+  await expectFile(vault, 'alpha.md').toBe(edited('alpha', ' Mine.'));
+  await vault.write('alpha.md', '# alpha\n\nLine of alpha. Mine.\n\nTheirs, added outside.\n');
+  await emitVaultChanged(page, ['alpha.md']);
+  await expect(article(page, 1, 'alpha').getByText('Theirs, added outside.')).toBeVisible();
+  await page.keyboard.type(' More.');
+  await expectFile(vault, 'alpha.md').toBe(
+    '# alpha\n\nLine of alpha. Mine. More.\n\nTheirs, added outside.\n',
   );
 });
 
