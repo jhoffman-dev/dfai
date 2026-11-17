@@ -63,7 +63,8 @@ export function showAsRead(editor: Editor, doc: EditorDocument): void {
   // Without focus, ProseMirror leaves the page's caret alone and keeps its
   // record of where it last saw it; a click back on that spot would then not
   // be read, and the editor would act on its own selection instead (#877).
-  if (!editor.view.hasFocus()) forgetPageSelection(editor.view);
+  // An editor not yet mounted has no view, so no record to forget.
+  if (!editor.isDestroyed && !editor.view.hasFocus()) forgetPageSelection(editor.view);
 }
 
 /**
