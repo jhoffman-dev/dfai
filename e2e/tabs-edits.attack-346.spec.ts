@@ -280,6 +280,10 @@ test('typing in a tab that was hidden through an outside change never writes ove
   await vault.write('alpha.md', '# alpha\n\nLine of alpha. Mine.\n\nTheirs, added outside.\n');
   await emitVaultChanged(page, ['alpha.md']);
   await tab(page, 1, 'alpha').click();
+  // Clicked once the note shows the outside change, as a person would: a
+  // re-read that lands after the click moves the caret to the note's end
+  // (#877), and the typing would go there.
+  await expect(article(page, 1, 'alpha').getByText('Theirs, added outside.')).toBeVisible();
   await caretAtLineEnd(article(page, 1, 'alpha').getByText('Line of alpha. Mine.'));
   await page.keyboard.type(' Later.');
   // Either the editor caught up and the file has both, or the save is refused
