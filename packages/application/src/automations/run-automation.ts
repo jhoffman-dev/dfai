@@ -4,7 +4,7 @@ import {
   leftHandledNotes,
   messageWithoutPaths,
   movedHandledNotes,
-  noteRunsHeldUntil,
+  noteRunsHold,
   noteTriggerHears,
   readsData,
   storedAnswerFor,
@@ -13,10 +13,12 @@ import {
   type AutomationPlan,
   type AutomationRule,
   type DoneAction,
+  type LocalTime,
   type LoggedVersion,
   type LogEntry,
   type MovedVersion,
   type NoteChange,
+  type NoteRunsHold,
   type NoteTrigger,
   type NoteVersionRef,
   type OutputPeriod,
@@ -44,7 +46,7 @@ import { briefEachMeeting } from './meeting-briefs.ts';
 import { meetingsNotLinked } from './meetings-not-linked.ts';
 import { PeriodNoteArrived, periodStateOf } from './period-state.ts';
 import { heldEntries } from '../index/refresh-index.ts';
-import { allowanceEntries, askedThisHour } from './ask-allowance.ts';
+import { allowanceSharers, askedThisHour } from './ask-allowance.ts';
 import { appendForRun, reported } from './automation-activity.ts';
 import { readRuleLog } from './automation-log.ts';
 import {
@@ -201,18 +203,26 @@ async function runOnHeard(
     moved: movedHandledNotes(run.changes, handled),
   };
   const versions = unhandledVersions(triggering, handled);
-  const budget = claudeStepBudget(run.rule.action);
-  const allowance = await allowanceEntries(run.ports, run.rule, entries);
-  const heldUntil = noteRunsHeldUntil(entries, run.clock.localNow(), budget, allowance);
-  if (versions.length === 0 || heldUntil !== null) {
+  const hold = await holdOf(run.ports, run.rule, entries, run.clock.localNow());
+  if (versions.length === 0 || hold !== null) {
     await recordGone(run, departed, 'note');
-    if (versions.length > 0 && heldUntil !== null) {
-      throw new NoteRunsCappedError(heldUntil, budget);
-    }
+    if (versions.length > 0 && hold !== null) throw new NoteRunsCappedError(hold);
     return null;
   }
   const aim: Aim = (ports, today) => planForVersions({ ports, rule: run.rule, versions, today });
   return runOnce({ run, trigger: 'note', aim, quiet: true, departed });
+}
+
+/** What holds a rule a note sets off back at `now`, beside the rules it shares its asks with; null when nothing does. */
+async function holdOf(
+  ports: AutomationRun['ports'],
+  rule: AutomationRule,
+  entries: readonly LogEntry[],
+  now: LocalTime,
+): Promise<NoteRunsHold | null> {
+  const budget = claudeStepBudget(rule.action);
+  const sharers = await allowanceSharers(ports, rule);
+  return noteRunsHold({ rule: rule.name, entries, now, budget, sharers });
 }
 
 /**
@@ -251,10 +261,8 @@ export async function runOnMissedArrivals(run: AutomationRun): Promise<LogEntry 
       handled,
     });
     if (versions.length === 0) return null;
-    const budget = claudeStepBudget(rule.action);
-    const allowance = await allowanceEntries(run.ports, rule, entries);
-    const heldUntil = noteRunsHeldUntil(entries, run.clock.localNow(), budget, allowance);
-    if (heldUntil !== null) throw new NoteRunsCappedError(heldUntil, budget);
+    const hold = await holdOf(run.ports, rule, entries, run.clock.localNow());
+    if (hold !== null) throw new NoteRunsCappedError(hold);
     const aim: Aim = (ports, today) => planForVersions({ ports, rule, versions, today });
     return runOnce({ run, trigger: 'note', aim, quiet: true });
   };

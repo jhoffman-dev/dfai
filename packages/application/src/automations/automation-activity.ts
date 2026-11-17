@@ -1,6 +1,7 @@
 import {
   automationEntryReport,
   automationFailedReport,
+  automationHeldReport,
   ledgerRepairedReport,
   messageWithoutPaths,
   type LogEntry,
@@ -13,6 +14,7 @@ import type { VaultFsPort } from '../vault/ports.ts';
 import { appendToRuleLog } from './automation-log.ts';
 import { ClaudeUnavailableError } from './claude-step.ts';
 import { HeldForPullError } from './fresh-pull-hold.ts';
+import { NoteRunsCappedError } from './note-runs.ts';
 import { VaultChangedError } from './vault-guard.ts';
 
 /**
@@ -20,7 +22,8 @@ import { VaultChangedError } from './vault-guard.ts';
  * the summary its rule's log was given, or why it stopped. A run cut off by
  * another vault opening is not the rule's failure, and the log open now is
  * that other vault's, so it is not recorded; nor is one held for the next
- * pull, which did nothing and runs again then.
+ * pull, which did nothing and runs again then. One held by an hourly limit
+ * is said as waiting, not as a failure (#813).
  */
 export async function reported<Entry extends LogEntry | null>({
   activity,
@@ -45,7 +48,9 @@ export async function reported<Entry extends LogEntry | null>({
       if (report !== null) recorder.record(report);
       throw cause;
     }
-    if (!(cause instanceof VaultChangedError) && !(cause instanceof HeldForPullError)) {
+    if (cause instanceof NoteRunsCappedError) {
+      recorder.record(automationHeldReport({ rule, waiting: cause.message }));
+    } else if (!(cause instanceof VaultChangedError) && !(cause instanceof HeldForPullError)) {
       recorder.record(automationFailedReport({ rule, doing, problem: messageWithoutPaths(cause) }));
     }
     throw cause;

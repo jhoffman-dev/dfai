@@ -114,6 +114,26 @@ export function automationFailedReport({
 }
 
 /**
+ * A rule held by an hourly limit (#813): it is waiting, not failing, so it
+ * is said as news, not as an error. `waiting` is what the hold says.
+ */
+export function automationHeldReport({
+  rule,
+  waiting,
+}: {
+  rule: RuleNamed;
+  waiting: string;
+}): ActivityReport {
+  return {
+    level: 'info',
+    kind: 'automation',
+    message: `${rule.name}: ${waiting}`,
+    subject: ruleSubject(rule),
+    detail: waiting,
+  };
+}
+
+/**
  * A rule's list of what it has handled did not add up — a line lost or
  * unreadable, two lists, a format this DFAI does not know — and was rebuilt
  * from the entries its log still holds. Said once, when it is rebuilt.

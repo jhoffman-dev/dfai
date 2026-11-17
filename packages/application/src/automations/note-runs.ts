@@ -5,18 +5,18 @@ import {
   isInPlay,
   MAX_ACTIONS_PER_RUN,
   missedArrivals,
-  noteRunsCappedProblem,
+  noteRunsHoldMessage,
   unhandledVersions,
   writesOneNoteAPeriod,
   type AutomationPlan,
   type AutomationRule,
-  type ClaudeStepBudget,
   type DoneAction,
   type HandledLedger,
   type LogEntry,
   type LocalTime,
   type HandledVersions,
   type LoggedVersion,
+  type NoteRunsHold,
   type NoteTrigger,
   type NoteVersionRef,
   type VaultPath,
@@ -282,15 +282,16 @@ export async function writtenBy({
 /**
  * A rule notes set off that has run as often in the last hour as one may
  * (`NOTE_RUNS_PER_HOUR`), or whose step has asked Claude as often as the
- * vault's one allowance, shared by every declared step, lets it (`budget`, #179). It is held back until `until`, when the
+ * vault's one allowance, shared by every declared step, lets it (#179). It is held back until `until`, when the
  * hour allows another run; what it heard meanwhile is run on then.
  */
 export class NoteRunsCappedError extends Error {
-  constructor(
-    readonly until: LocalTime,
-    budget: ClaudeStepBudget,
-  ) {
-    super(noteRunsCappedProblem(until, budget));
+  readonly until: LocalTime;
+
+  /** `hold` says which limit, with its counts and the rules that spent it (#813). */
+  constructor(readonly hold: NoteRunsHold) {
+    super(noteRunsHoldMessage(hold));
     this.name = 'NoteRunsCappedError';
+    this.until = hold.until;
   }
 }
