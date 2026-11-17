@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { canMoveSection, movedSection, sectionOrder, type SidebarSectionId } from '@dfai/domain';
+import {
+  canMoveSection,
+  movedSection,
+  placeInOrder,
+  sectionOrder,
+  shownSections,
+  type SidebarSectionId,
+} from '@dfai/domain';
 
 /**
  * Where a viewer's collapsed sections are remembered.
@@ -27,6 +34,7 @@ export interface SectionOrder {
 }
 
 const UNCHOSEN: SectionOrder = { saved: null };
+const NONE_HIDDEN: readonly SidebarSectionId[] = [];
 
 /**
  * Which sections are open, the order they are shown in, and how to open, shut
@@ -36,10 +44,14 @@ const UNCHOSEN: SectionOrder = { saved: null };
  * What is remembered is the collapsed sections rather than the open ones, so a
  * section added in a later version arrives open instead of hidden behind a
  * setting nobody set.
+ *
+ * A hidden section (#902) is left out of what is shown, and a move among the
+ * shown ones is placed around it; which are hidden is the app's to say.
  */
 export function useSidebarSections(
   store: SectionStore,
   order: SectionOrder = UNCHOSEN,
+  hidden: readonly SidebarSectionId[] = NONE_HIDDEN,
 ): {
   shown: readonly SidebarSectionId[];
   isExpanded: (section: SidebarSectionId) => boolean;
@@ -54,6 +66,7 @@ export function useSidebarSections(
   );
   const { saved, onChange } = order;
   const chosen = useMemo(() => sectionOrder(saved), [saved]);
+  const shown = useMemo(() => shownSections({ order: chosen, hidden }), [chosen, hidden]);
 
   const toggle = useCallback(
     (section: SidebarSectionId) => {
@@ -74,8 +87,9 @@ export function useSidebarSections(
   );
 
   const canMove = useCallback(
-    ({ id, to }: { id: SidebarSectionId; to: number }) => canMoveSection({ order: chosen, id, to }),
-    [chosen],
+    ({ id, to }: { id: SidebarSectionId; to: number }) =>
+      canMoveSection({ order: chosen, id, to: placeInOrder({ order: chosen, shown, to }) }),
+    [chosen, shown],
   );
 
   const move = useMemo(
@@ -85,10 +99,12 @@ export function useSidebarSections(
         : ({ id, to }: { id: SidebarSectionId; to: number }) => {
             // A move that changes nothing on screen writes nothing.
             if (!canMove({ id, to })) return;
-            onChange(movedSection({ order: chosen, id, to }));
+            onChange(
+              movedSection({ order: chosen, id, to: placeInOrder({ order: chosen, shown, to }) }),
+            );
           },
-    [onChange, canMove, chosen],
+    [onChange, canMove, chosen, shown],
   );
 
-  return { shown: chosen, isExpanded, toggle, move, canMove };
+  return { shown, isExpanded, toggle, move, canMove };
 }

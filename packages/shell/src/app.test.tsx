@@ -327,7 +327,12 @@ beforeAll(() => vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel
 // The window now remembers its split per vault, in local storage, and every
 // test here opens the same vault. Without this each test would inherit the
 // panes the one before it left, which is an order dependence.
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+  window.localStorage.clear();
+  // These tests were written with the sidebar's Pages shown, which a first run
+  // now hides (#902); sidebar-pages-hidden.spec.ts covers the first run.
+  window.localStorage.setItem('atlas.sidebar.hidden', '[]');
+});
 
 // The pages loaded on first use, loaded before the tests as the app loads them after
 // start-up: the first import of their chunks is slow enough under load to outlast a find.

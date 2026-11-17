@@ -69,3 +69,33 @@ export function movedSection(move: SectionMove): SidebarSectionId[] {
   const at = rest.indexOf(target) + (place > from ? 1 : 0);
   return [...rest.slice(0, at), move.id, ...rest.slice(at)];
 }
+
+/** The sections the sidebar draws: every one in the order chosen, less those hidden (#902). */
+export function shownSections({
+  order,
+  hidden,
+}: {
+  order: readonly SidebarSectionId[] | null;
+  hidden: readonly SidebarSectionId[];
+}): SidebarSectionId[] {
+  return sectionOrder(order).filter((id) => !hidden.includes(id));
+}
+
+/**
+ * Where a drop at place `to` among the shown sections lands in the whole
+ * order: the place of the shown section it was dropped on. A hidden section
+ * keeps its own place, so a move made around it puts the moved one exactly
+ * where it was dropped on screen.
+ */
+export function placeInOrder({
+  order,
+  shown,
+  to,
+}: {
+  order: readonly SidebarSectionId[] | null;
+  shown: readonly SidebarSectionId[];
+  to: number;
+}): number {
+  const target = shown[Math.max(0, Math.min(to, shown.length - 1))];
+  return target === undefined ? to : sectionOrder(order).indexOf(target);
+}

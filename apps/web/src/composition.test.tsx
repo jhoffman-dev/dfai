@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ENTRY_POINTS, entryPointsOffered, platformLimits } from '@dfai/application';
 import { WEB_CAPABILITIES } from '@dfai/domain';
@@ -16,6 +16,9 @@ import { composeWeb, composeWebShell } from './composition.ts';
 beforeAll(() => vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'));
 
 let unmount: (() => void) | null = null;
+// Written with the sidebar's Pages shown, which a first run now hides (#902).
+beforeEach(() => window.localStorage.setItem('atlas.sidebar.hidden', '[]'));
+
 afterEach(() => {
   unmount?.();
   unmount = null;

@@ -19,11 +19,13 @@ function Ordered({
   changes,
   sectionStore = forgetful(),
   movable = true,
+  hidden = [],
 }: {
   saved?: readonly SidebarSectionId[] | null;
   changes: SidebarSectionId[][];
   sectionStore?: SectionStore;
   movable?: boolean;
+  hidden?: readonly SidebarSectionId[];
 }) {
   const [order, setOrder] = useState(saved);
   const onChange = (next: readonly SidebarSectionId[]) => {
@@ -41,6 +43,7 @@ function Ordered({
       active={null}
       sectionStore={sectionStore}
       sectionOrder={movable ? { saved: order, onChange } : { saved: order }}
+      hiddenSections={hidden}
       onSearch={() => {}}
       onOpen={() => {}}
       onOpenType={() => {}}
@@ -232,5 +235,37 @@ describe('Sidebar, the slide', () => {
 
     expect(headings()[2]).toBe('Types');
     expect(animate).not.toHaveBeenCalled();
+  });
+
+  describe('with Pages hidden (#902)', () => {
+    const pagesUpTop: SidebarSectionId[] = [
+      'favorites',
+      'userSpace',
+      'types',
+      'views',
+      'dashboards',
+    ];
+
+    it('moves a section among the shown ones exactly where it went, Pages keeping its place', async () => {
+      const changes: SidebarSectionId[][] = [];
+      render(<Ordered saved={pagesUpTop} changes={changes} hidden={['userSpace']} />);
+
+      grip('Favorites').focus();
+      await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+      expect(headings()).toEqual(['Types', 'Favorites', 'Views', 'Dashboards']);
+      expect(changes).toEqual([['userSpace', 'types', 'favorites', 'views', 'dashboards']]);
+    });
+
+    it('stops Alt+↓ on the last shown section, though a hidden one may follow it', async () => {
+      const changes: SidebarSectionId[][] = [];
+      render(<Ordered changes={changes} hidden={['userSpace']} />);
+
+      grip('Dashboards').focus();
+      await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+      expect(headings()).toEqual(['Favorites', 'Types', 'Views', 'Dashboards']);
+      expect(changes).toEqual([]);
+    });
   });
 });

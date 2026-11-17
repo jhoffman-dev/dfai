@@ -34,7 +34,10 @@ const DASHBOARD = [
 const task = (title: string, status: string): string =>
   ['---', 'type: task', `status: ${status}`, '---', '', `# ${title}`, ''].join('\n');
 
-async function openVault(page: Page): Promise<FakeVault> {
+async function openVault(
+  page: Page,
+  { firstRun = false }: { firstRun?: boolean } = {},
+): Promise<FakeVault> {
   const vault = await createVault();
   await vault.mkdir('.atlas/types');
   await vault.mkdir('.atlas/views');
@@ -53,7 +56,7 @@ async function openVault(page: Page): Promise<FakeVault> {
   await vault.write('Notes/Ship it.md', task('Ship it', 'todo'));
   await vault.write('Notes/Write it.md', task('Write it', 'done'));
 
-  await installHost(page, vault);
+  await installHost(page, vault, { sidebarAsFirstRun: firstRun });
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
@@ -81,6 +84,29 @@ test('the vault arrives in five sections', async ({ page }) => {
   ).toBeVisible();
   await expect(
     sidebarSection(page, 'dashboards').getByRole('button', { name: 'Progress', exact: true }),
+  ).toBeVisible();
+});
+
+test('a first run shows four sections, Pages left out until the header menu shows it (#902)', async ({
+  page,
+}) => {
+  await openVault(page, { firstRun: true });
+
+  for (const name of SECTIONS.filter((section) => section !== 'Pages')) {
+    await expect(heading(page, name)).toHaveAttribute('aria-expanded', 'true');
+  }
+  await expect(
+    sidebarSection(page, 'views').getByRole('button', { name: 'Board', exact: true }),
+  ).toBeVisible();
+  await expect(heading(page, 'Pages')).toHaveCount(0);
+  await expect(sidebarSection(page, 'userSpace')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Sidebar options' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Show Pages' }).click();
+  await page.keyboard.press('Escape');
+  await expect(heading(page, 'Pages')).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    sidebarSection(page, 'userSpace').getByRole('treeitem', { name: 'Notes', exact: true }),
   ).toBeVisible();
 });
 

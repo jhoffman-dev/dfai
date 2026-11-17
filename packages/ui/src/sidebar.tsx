@@ -106,6 +106,7 @@ export function Sidebar({
   active,
   sectionStore,
   sectionOrder,
+  hiddenSections,
   onSearch,
   onOpenGraph,
   onOpenTags,
@@ -141,6 +142,11 @@ export function Sidebar({
   sectionStore: SectionStore;
   /** The order the vault keeps the sections in, and how to change it; left out, they stay put. */
   sectionOrder?: SectionOrder;
+  /**
+   * The sections left out of the sidebar altogether (#902): not drawn, so a
+   * hidden Pages mounts no tree. Left out, every section is shown.
+   */
+  hiddenSections?: readonly SidebarSectionId[];
   onSearch: () => void;
   /** Opens the graph of the whole vault; its row sits under the quick views when given. */
   onOpenGraph?: () => void;
@@ -187,7 +193,7 @@ export function Sidebar({
   viewsCreate?: HeaderMenu;
   onToggleFavorite: (path: VaultPath) => void;
 }) {
-  const sections = useSidebarSections(sectionStore, sectionOrder);
+  const sections = useSidebarSections(sectionStore, sectionOrder, hiddenSections);
   const root = useRef<HTMLDivElement>(null);
   // Held as state, not a ref, so the tree is handed the element once it is
   // mounted (see useScrollMargin).
@@ -419,7 +425,14 @@ function QuickRows({
       <li
         className={onOpenAsk === undefined ? 'sidebar__item' : 'sidebar__item sidebar__item--pair'}
       >
-        <button type="button" className="sidebar__row" onClick={onSearch} title="Search (⌘K)">
+        {/* data-sidebar-search: where the app's focus goes when nothing nearer is left (app.tsx). */}
+        <button
+          type="button"
+          className="sidebar__row"
+          onClick={onSearch}
+          title="Search (⌘K)"
+          data-sidebar-search=""
+        >
           <Icon name="search" className="sidebar__icon" />
           <span className="sidebar__name">Search</span>
           <kbd className="sidebar__key" aria-hidden="true">

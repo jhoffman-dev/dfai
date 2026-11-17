@@ -3,7 +3,7 @@
  * Attack on PR #699 (#657): the web build, mounted as main.ts mounts it, on a
  * vault holding a rule with a Claude step, and the presets that would write one.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { NEEDS_THE_DESKTOP_APP } from '@dfai/application';
 import { createVaultPath } from '@dfai/domain';
@@ -15,6 +15,9 @@ import { sessionVaultFs } from './session-vault.ts';
 beforeAll(() => vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'));
 
 let unmount: (() => void) | null = null;
+// Written with the sidebar's Pages shown, which a first run now hides (#902).
+beforeEach(() => window.localStorage.setItem('atlas.sidebar.hidden', '[]'));
+
 afterEach(() => {
   unmount?.();
   unmount = null;
