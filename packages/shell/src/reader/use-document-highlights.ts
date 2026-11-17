@@ -26,6 +26,7 @@ import type { ReaderActions, ReaderHighlight } from '@dfai/ui';
 import type { PdfJsDocument } from '@dfai/adapters/pdf';
 import { browserImagePlacementStore } from '../notes/browser-image-placement-store.ts';
 import { cryptoRng } from '../random.ts';
+import { noteWriteTurns } from './note-write-turns.ts';
 import { scopedReadKey, scopedReadMeta } from '../reads/query-client.ts';
 
 /*
@@ -138,7 +139,9 @@ const shownHighlight = ({ block, placement }: PlacedHighlight): ReaderHighlight 
 /**
  * A write into the literature note, against the version just read: false,
  * and its refusal said in `notice`, when it was not taken; the note's
- * highlights are read again either way.
+ * highlights are read again either way. A note's writes take turns, from
+ * every tab that writes it, so a second waits for the first rather than
+ * being refused as stale (#880).
  */
 export function useNoteWriting({
   ports,
@@ -158,7 +161,7 @@ export function useNoteWriting({
     async (write: (note: VaultPath, ports: WritePorts) => Promise<unknown>): Promise<boolean> => {
       if (note === null) return false;
       try {
-        await write(note, { ...ports, rng: cryptoRng });
+        await writeTurns.take(`${vault}\n${note}`, () => write(note, { ...ports, rng: cryptoRng }));
         setNotice(null);
         return true;
       } catch (error) {
@@ -175,6 +178,8 @@ export function useNoteWriting({
   );
   return { writing, notice };
 }
+
+const writeTurns = noteWriteTurns();
 
 /** What the PDF reader's marks write, and the notice when one is refused. */
 export function useReaderWrites({
