@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EditorDocument, EditorNode, ParsedBody } from '@dfai/domain';
 import { parseMarkdownBody, RAW_BLOCK, serializeMarkdownBody } from './markdown-blocks.ts';
 import { documentOf, generatedDocument } from './writer-fuzz.test-support.ts';
-import { LISTED_DOCUMENTS } from './writer-listed.test-support.ts';
-import { shapesNotIn } from './writer-shapes.test-support.ts';
+import { shapesNotIn, WRITER_FAMILIES } from './writer-shapes.test-support.ts';
 
 /**
  * The writer's promise (A21-03): an edited block reads back as the editor had
@@ -86,57 +85,61 @@ function misread(cases: readonly Case[], check: (doc: EditorDocument) => [Outcom
 }
 
 /**
- * The listed documents hold every shape the property turns on
- * (`EVERY_SHAPE`): every piece of the generator's text at each end of every
- * kind of text block and under every mark, every kind of block, nesting, atom,
- * link, embed and id. 3000 seeds drew them too, and took up to 105 s on CI to
- * do it (#888). A few seeds still run, for what nobody thought to list.
- */
-const SEEDS = 12;
-const CASES: readonly Case[] = [
-  ...LISTED_DOCUMENTS.map((doc, at) => ({ name: `listed ${at}`, doc })),
-  ...Array.from({ length: SEEDS }, (_, at) => ({
-    name: `seed ${at + 1}`,
-    doc: generatedDocument(at + 1),
-  })),
-];
-
-/**
  * Kept as source is the last resort, not the answer: no listed document is,
  * each is built to be written faithfully, and a seed only rarely (6 of the
  * first 3000, none of these).
  */
-function expectReadBack({ different, raw }: { different: string[]; raw: string[] }) {
-  expect(different.slice(0, 8), `${different.length} of ${CASES.length} read differently`).toEqual(
+function expectReadBack(cases: readonly Case[], check: (doc: EditorDocument) => [Outcome, string]) {
+  const { different, raw } = misread(cases, check);
+  expect(different.slice(0, 8), `${different.length} of ${cases.length} read differently`).toEqual(
     [],
   );
   expect(raw, 'kept as source').toEqual([]);
 }
 
+function writtenAfresh(doc: EditorDocument): [Outcome, string] {
+  const { markdown, parsed } = saveAndReload(doc);
+  return [outcomeOf(doc, parsed.doc.content), markdown];
+}
+
+function editedAgain(first: EditorDocument): [Outcome, string] {
+  const { markdown: original, parsed } = saveAndReload(first);
+  if (parsed.doc.content.some((node) => node.type === RAW_BLOCK)) return ['same', original];
+  const doc = editedEverywhere(parsed.doc);
+  const markdown = serializeMarkdownBody({ originalBody: original, parsed, doc });
+  const reread = [...parseMarkdownBody(markdown).doc.content];
+  return [outcomeOf(doc, reread), `${original}\n=>\n${markdown}`];
+}
+
+const casesOf = (family: string, documents: readonly EditorDocument[]): Case[] =>
+  documents.map((doc, at) => ({ name: `${family} ${at}`, doc }));
+
+/**
+ * The listed documents, a family at a time, each holding every shape of its
+ * family (`WRITER_FAMILIES`): every piece of the generator's text at each end
+ * of every kind of text block and under every mark, every kind of block,
+ * nesting, atom, link, embed and id, everything beside everything, and
+ * addresses running on. 3000 seeds drew them too, and took up to 105 s on CI
+ * to do it (#888). A few seeds still run, for what nobody thought to list.
+ */
+const SEEDS = 12;
+const SEEDED = Array.from({ length: SEEDS }, (_, at) => generatedDocument(at + 1));
+
 describe('an edited block reads back as the editor had it', () => {
-  it('the listed documents hold every shape the property turns on', () => {
-    expect(shapesNotIn(LISTED_DOCUMENTS)).toEqual([]);
-  });
-
-  it(`holds for the listed documents and ${SEEDS} seeds, written afresh`, () => {
-    expectReadBack(
-      misread(CASES, (doc) => {
-        const { markdown, parsed } = saveAndReload(doc);
-        return [outcomeOf(doc, parsed.doc.content), markdown];
-      }),
+  describe.each([
+    ['written afresh', writtenAfresh],
+    ['saved, reopened and edited again', editedAgain],
+  ] as const)('%s', (_way, check) => {
+    it.each(WRITER_FAMILIES.map((family) => [family.name, family] as const))(
+      'holds for %s, which its listed documents all hold',
+      (_name, family) => {
+        expect(shapesNotIn(family.documents, family.shapes)).toEqual([]);
+        expectReadBack(casesOf(family.name, family.documents), check);
+      },
     );
-  });
 
-  it(`holds for the listed documents and ${SEEDS} seeds, saved, reopened and edited again`, () => {
-    expectReadBack(
-      misread(CASES, (first) => {
-        const { markdown: original, parsed } = saveAndReload(first);
-        if (parsed.doc.content.some((node) => node.type === RAW_BLOCK)) return ['same', original];
-        const doc = editedEverywhere(parsed.doc);
-        const markdown = serializeMarkdownBody({ originalBody: original, parsed, doc });
-        const reread = [...parseMarkdownBody(markdown).doc.content];
-        return [outcomeOf(doc, reread), `${original}\n=>\n${markdown}`];
-      }),
-    );
+    it(`holds for ${SEEDS} seeded documents`, () => {
+      expectReadBack(casesOf('seed', SEEDED), check);
+    });
   });
 });

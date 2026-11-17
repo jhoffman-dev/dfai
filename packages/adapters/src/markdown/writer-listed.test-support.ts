@@ -69,37 +69,48 @@ const line = (first: number): EditorNode[] => [text(`${piece(first)}${piece(firs
 const LINES = 6;
 const linesFrom = (first: number) => Array.from({ length: LINES }, (_, n) => first + n);
 
-/**
- * The pieces from `first` at each end of a line in every kind of text block,
- * under every mark beside unmarked ones, and in an image's description.
- */
-function piecesFrom(first: number): EditorNode[] {
-  const lines = linesFrom(first);
-  const item = (type: string, at: number) => ({
-    type,
-    ...(type === 'taskItem' && { attrs: { checked: at % 2 === 0 } }),
-    content: [paragraph(line(at))],
-  });
-  const tables = [0, 2, 4].map((n) => table(lines[n]!, lines[n + 1]!));
-  return [
+const lineItem = (type: string, at: number): EditorNode => ({
+  type,
+  ...(type === 'taskItem' && { attrs: { checked: at % 2 === 0 } }),
+  content: [paragraph(line(at))],
+});
+
+/** The pieces from `first` at each end of a line, in each kind of text block of `group`. */
+const AT_THE_ENDS: Readonly<Record<string, (lines: number[], first: number) => EditorNode[]>> = {
+  'paragraphs and headings': (lines) => [
     ...lines.map((at) => paragraph(line(at))),
     ...lines.map((at) => ({ type: 'heading', attrs: { level: 1 + (at % 6) }, content: line(at) })),
-    { type: 'bulletList', content: lines.map((at) => item('listItem', at)) },
-    { type: 'taskList', content: lines.map((at) => item('taskItem', at)) },
+  ],
+  'list and task items': (lines) => [
+    { type: 'bulletList', content: lines.map((at) => lineItem('listItem', at)) },
+    { type: 'taskList', content: lines.map((at) => lineItem('taskItem', at)) },
+  ],
+  'quotes and callouts': (lines, first) => [
     { type: 'blockquote', content: lines.map((at) => paragraph(line(at))) },
     callout(
       lines.map((at) => paragraph(line(at))),
       first,
     ),
-    ...tables,
-    ...MARKINGS.slice(1).flatMap((marking, m) =>
-      lines.map((at) =>
-        paragraph([text(piece(at), marked(marking, at)), text(piece(at + 17 * m))]),
-      ),
-    ),
-    paragraph([0, 2, 4].map((n) => image(first + n, `${piece(first + n)}${piece(first + n + 1)}`))),
-  ];
-}
+  ],
+  'table cells': (lines) => [0, 2, 4].map((n) => table(lines[n]!, lines[n + 1]!)),
+};
+
+/** The pieces from `first` under `marking`, each beside an unmarked one. */
+const underMark =
+  (marking: string, m: number) =>
+  (lines: number[]): EditorNode[] =>
+    lines.map((at) => paragraph([text(piece(at), marked(marking, at)), text(piece(at + 17 * m))]));
+
+/** The pieces from `first` in images' descriptions. */
+const inDescriptions = (_lines: number[], first: number): EditorNode[] => [
+  paragraph([0, 2, 4].map((n) => image(first + n, `${piece(first + n)}${piece(first + n + 1)}`))),
+];
+
+/** Every piece, `LINES` at a time, through `build`: one note for each. */
+const everyPieceThrough = (build: (lines: number[], first: number) => EditorNode[]) =>
+  Array.from({ length: Math.ceil(EVERY_PIECE.length / LINES) }, (_, n) =>
+    noteOf(build(linesFrom(n * LINES), n * LINES)),
+  );
 
 function table(left: number, right: number): EditorNode {
   return {
@@ -305,24 +316,22 @@ function inlineOfKind(kind: string, at: number): EditorNode {
 }
 
 /**
- * Each address at the start of a line, straight before every address and a
+ * `address` at the start of a line, straight before every address and a
  * word, with markup to escape after it, and straight after a word, under
  * every mark. GFM reads an address on over what follows it; the writer takes
  * off the escapes it can, and what it can take off at the start of a line
  * differs from after the word an edit puts before it.
  */
-const addressesRunningOn = (): EditorNode[] =>
-  ADDRESSES.flatMap((address, a) =>
-    MARKINGS.flatMap((marking, m) =>
-      [...ADDRESSES, cycle(WORDS, a + m)].map((next, n) => {
-        const marks = marked(marking, a + m + n);
-        return paragraph([
-          text(`${address}${next}${cycle(OPENERS, a + m + n)}`, marks),
-          text(' k '),
-          text(`${cycle(WORDS, a + m + n)}${address}`, marks),
-        ]);
-      }),
-    ),
+const runningOn = (address: string, a: number): EditorNode[] =>
+  MARKINGS.flatMap((marking, m) =>
+    [...ADDRESSES, cycle(WORDS, a + m)].map((next, n) => {
+      const marks = marked(marking, a + m + n);
+      return paragraph([
+        text(`${address}${next}${cycle(OPENERS, a + m + n)}`, marks),
+        text(' k '),
+        text(`${cycle(WORDS, a + m + n)}${address}`, marks),
+      ]);
+    }),
   );
 
 /** Every kind of text and atom straight after every other, in paragraphs of a few. */
@@ -392,16 +401,40 @@ const besideEveryBlock = (): EditorDocument[] =>
     noteOf(run.map((kind, at) => blockOfKind(TOP_KINDS[kind]!, 12 * n + at))),
   );
 
+/** A family of listed documents: the shapes of one kind the property turns on. */
+export interface ListedFamily {
+  readonly name: string;
+  readonly documents: readonly EditorDocument[];
+}
+
 /**
- * The listed documents: the pieces, `LINES` at a time, through every place
- * and mark; every kind of block, atom, link and id, by turns; and every kind
- * of text and atom beside every other, and every kind of block.
+ * The listed documents, by family: every piece at each end of each kind of
+ * text block, under each mark and in images' descriptions; every kind of
+ * block, atom, link, embed and id, by turns; every kind of text and atom
+ * beside every other, and of block; and each address running on into what
+ * follows it.
  */
-export const LISTED_DOCUMENTS: readonly EditorDocument[] = [
-  ...Array.from({ length: Math.ceil(EVERY_PIECE.length / LINES) }, (_, n) =>
-    noteOf(piecesFrom(n * LINES)),
-  ),
-  ...Array.from({ length: KIND_TURNS }, (_, at) => noteOf(kindsAt(at))),
-  noteOf([...besideEveryInline(), ...addressesRunningOn()]),
-  ...besideEveryBlock(),
+export const LISTED_FAMILIES: readonly ListedFamily[] = [
+  ...Object.entries(AT_THE_ENDS).map(([group, build]) => ({
+    name: `each piece at each end of ${group}`,
+    documents: everyPieceThrough(build),
+  })),
+  ...MARKINGS.slice(1).map((marking, m) => ({
+    name: `every piece under ${marking}`,
+    documents: everyPieceThrough(underMark(marking, m)),
+  })),
+  { name: "every piece in an image's description", documents: everyPieceThrough(inDescriptions) },
+  {
+    name: 'every kind of block, atom, link, embed and id',
+    documents: Array.from({ length: KIND_TURNS }, (_, at) => noteOf(kindsAt(at))),
+  },
+  {
+    name: 'every kind of text and atom beside every other',
+    documents: [noteOf(besideEveryInline())],
+  },
+  { name: 'every kind of block beside every other', documents: besideEveryBlock() },
+  ...ADDRESSES.map((address, a) => ({
+    name: `${address} running on into what follows it`,
+    documents: [noteOf(runningOn(address, a))],
+  })),
 ];

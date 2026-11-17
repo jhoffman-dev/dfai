@@ -17,7 +17,9 @@ import {
   markSetKey,
   NESTED,
   OPENERS,
+  LISTED_FAMILIES,
   TOP_KINDS,
+  type ListedFamily,
 } from './writer-listed.test-support.ts';
 
 /**
@@ -146,65 +148,105 @@ function lineShapes(content: readonly EditorNode[], container: string): string[]
   return shapes;
 }
 
-/** Every shape the writer's property turns on, all named from the generator's lists. */
-export const EVERY_SHAPE: readonly string[] = [
-  ...[1, 2, 3, 4, 5, 6].map((level) => `heading ${level}`),
-  ...[1, 3].map((start) => `ordered from ${start}`),
-  ...[true, false].flatMap((yes) => [`task checked ${yes}`, `callout titled ${yes}`]),
-  ...['listItem', 'taskItem', 'blockquote', 'callout'].flatMap((holder) =>
-    NESTED.map((kind) => `${kind} in ${holder}`),
-  ),
-  ...TOP_KINDS.map((type) => `${type} in doc`),
-  ...[...CAN_CARRY_AN_ID].flatMap((type) =>
-    ['listItem', 'taskItem'].includes(type) ? [`id on ${type}`] : [`id on ${type} at top`],
-  ),
-  ...['paragraph', 'bulletList', 'orderedList', 'blockquote'].map((type) => `id on ${type}`),
-  ...['wikiLink', 'image', 'hardBreak'].flatMap((inline) =>
-    ['paragraph', 'heading'].map((block) => `${inline} in ${block}`),
-  ),
-  ...SRCS.map((src) => `image of ${src}`),
-  'image alt none',
-  'image alt some',
-  ...EVERY_PIECE.map((p) => `${JSON.stringify(p)} in alt`),
-  ...HREFS.map((href) => `link to ${href}`),
-  ...TARGETS.flatMap((target) =>
-    ['wikiLink', 'bookmark', 'blockEmbed'].map((type) => `${type} to ${target}`),
-  ),
-  ...['wikiLink', 'bookmark'].flatMap((type) =>
-    ['#Part', 'null'].map((heading) => `${type} heading ${heading}`),
-  ),
-  ...EMBED_FRAGMENTS.map((fragment) => `blockEmbed heading ${fragment}`),
-  ...[true, false].flatMap((yes) => [
-    `wikiLink alias ${yes}`,
-    `blockEmbed alias ${yes}`,
-    `wikiLink embed ${yes}`,
-  ]),
-  ...LINK_MARKINGS.map((marking) => `wikiLink ${marking}`),
-  ...CONTAINERS.map((container) => `line break in ${container}`),
-  ...ADDRESSES.flatMap((address) =>
-    MARKINGS.flatMap((marking) =>
-      [
-        ...ADDRESSES.map((other) => `before ${JSON.stringify(other)}`),
-        'before a word',
-        'after a word',
-        'before markup',
-        ...ADDRESSES.map((next) => `starts a line before ${JSON.stringify(next)}`),
-      ].map((beside) => `${JSON.stringify(address)} ${beside} in ${marking}`),
-    ),
-  ),
-  ...INLINE_KINDS.flatMap((first) => INLINE_KINDS.map((next) => `${next} after ${first}`)),
-  ...TOP_KINDS.flatMap((first) => TOP_KINDS.map((next) => `${next} after ${first}`)),
-  ...EVERY_PIECE.flatMap((p) => [
-    ...MARKINGS.map((marking) => `${JSON.stringify(p)} in ${marking}`),
-    ...CONTAINERS.flatMap((container) => [
-      `${JSON.stringify(p)} starts ${container}`,
-      `${JSON.stringify(p)} ends ${container}`,
+const quoted = JSON.stringify;
+const atTheEnds = (containers: readonly string[]) =>
+  EVERY_PIECE.flatMap((p) =>
+    containers.flatMap((container) => [
+      `${quoted(p)} starts ${container}`,
+      `${quoted(p)} ends ${container}`,
     ]),
-  ]),
-];
+  );
 
-/** The shapes in `EVERY_SHAPE` that none of `docs` holds. */
-export function shapesNotIn(docs: readonly EditorDocument[], required = EVERY_SHAPE): string[] {
+/** The shapes each family of listed documents must hold, by the family's name. */
+const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
+  'each piece at each end of paragraphs and headings': atTheEnds(['paragraph', 'heading']),
+  'each piece at each end of list and task items': atTheEnds(['listItem', 'taskItem']),
+  'each piece at each end of quotes and callouts': atTheEnds(['blockquote', 'callout']),
+  'each piece at each end of table cells': atTheEnds(['tableHeader', 'tableCell']),
+  ...Object.fromEntries(
+    MARKINGS.slice(1).map((marking, m) => [
+      `every piece under ${marking}`,
+      [
+        ...EVERY_PIECE.map((p) => `${quoted(p)} in ${marking}`),
+        // The unmarked pieces beside them run through every piece under the first mark.
+        ...(m === 0 ? EVERY_PIECE.map((p) => `${quoted(p)} in none`) : []),
+        ...(marking === 'link' ? HREFS.map((href) => `link to ${href}`) : []),
+      ],
+    ]),
+  ),
+  "every piece in an image's description": EVERY_PIECE.map((p) => `${quoted(p)} in alt`),
+  'every kind of block, atom, link, embed and id': [
+    ...[1, 2, 3, 4, 5, 6].map((level) => `heading ${level}`),
+    ...[1, 3].map((start) => `ordered from ${start}`),
+    ...[true, false].flatMap((yes) => [`task checked ${yes}`, `callout titled ${yes}`]),
+    ...['listItem', 'taskItem', 'blockquote', 'callout'].flatMap((holder) =>
+      NESTED.map((kind) => `${kind} in ${holder}`),
+    ),
+    ...TOP_KINDS.map((type) => `${type} in doc`),
+    ...[...CAN_CARRY_AN_ID].flatMap((type) =>
+      ['listItem', 'taskItem'].includes(type) ? [`id on ${type}`] : [`id on ${type} at top`],
+    ),
+    ...['paragraph', 'bulletList', 'orderedList', 'blockquote'].map((type) => `id on ${type}`),
+    ...['wikiLink', 'image', 'hardBreak'].flatMap((inline) =>
+      ['paragraph', 'heading'].map((block) => `${inline} in ${block}`),
+    ),
+    ...SRCS.map((src) => `image of ${src}`),
+    'image alt none',
+    'image alt some',
+    ...TARGETS.flatMap((target) =>
+      ['wikiLink', 'bookmark', 'blockEmbed'].map((type) => `${type} to ${target}`),
+    ),
+    ...['wikiLink', 'bookmark'].flatMap((type) =>
+      ['#Part', 'null'].map((heading) => `${type} heading ${heading}`),
+    ),
+    ...EMBED_FRAGMENTS.map((fragment) => `blockEmbed heading ${fragment}`),
+    ...[true, false].flatMap((yes) => [
+      `wikiLink alias ${yes}`,
+      `blockEmbed alias ${yes}`,
+      `wikiLink embed ${yes}`,
+    ]),
+    ...LINK_MARKINGS.map((marking) => `wikiLink ${marking}`),
+    ...CONTAINERS.map((container) => `line break in ${container}`),
+  ],
+  'every kind of text and atom beside every other': INLINE_KINDS.flatMap((first) =>
+    INLINE_KINDS.map((next) => `${next} after ${first}`),
+  ),
+  'every kind of block beside every other': TOP_KINDS.flatMap((first) =>
+    TOP_KINDS.map((next) => `${next} after ${first}`),
+  ),
+  ...Object.fromEntries(
+    ADDRESSES.map((address) => [
+      `${address} running on into what follows it`,
+      MARKINGS.flatMap((marking) =>
+        [
+          ...ADDRESSES.map((other) => `before ${quoted(other)}`),
+          'before a word',
+          'after a word',
+          'before markup',
+          ...ADDRESSES.map((next) => `starts a line before ${quoted(next)}`),
+        ].map((beside) => `${quoted(address)} ${beside} in ${marking}`),
+      ),
+    ]),
+  ),
+};
+
+/** A family of listed documents and the shapes they must hold between them. */
+export interface WriterFamily extends ListedFamily {
+  readonly shapes: readonly string[];
+}
+
+/** Every family of listed documents, each with the shapes it is there to hold. */
+export const WRITER_FAMILIES: readonly WriterFamily[] = LISTED_FAMILIES.map((family) => {
+  const shapes = SHAPES_BY_FAMILY[family.name];
+  if (shapes === undefined) throw new Error(`no shapes named for ${family.name}`);
+  return { ...family, shapes };
+});
+
+/** The shapes in `required` that none of `docs` holds. */
+export function shapesNotIn(
+  docs: readonly EditorDocument[],
+  required: readonly string[],
+): string[] {
   const drawn = new Set(docs.flatMap((doc) => [...shapesOf(doc)]));
   return required.filter((shape) => !drawn.has(shape));
 }
