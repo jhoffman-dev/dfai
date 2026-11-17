@@ -4,10 +4,12 @@ import { expect, test } from './fixtures.ts';
 import { createVault, emitVaultChanged, installHost } from './host.ts';
 
 /**
- * #813: "After a meeting", held by its hourly asks with both meeting presets
- * on, reads as waiting — not failed — and says why, when it runs and what
- * may be turned off. Its log is written as asking Claude thirty times ten
- * minutes ago, so a meeting arriving now finds the hour spent.
+ * #813: with both meeting presets on and their hours spent, "After a
+ * meeting" — held by its thirty asks — reads as waiting, says why and when,
+ * and offers nothing to turn off (the extraction does not spend its asks);
+ * the extraction — held by twenty runs that all failed — reads as failing,
+ * with the count, the last reason and when it tries again. The logs are
+ * written as spent ten minutes ago, so a meeting arriving now finds both held.
  */
 
 const shipped = (path: string) =>
@@ -38,7 +40,15 @@ const asked = (at: string, asks: number): LogEntry => ({
   claude: { model: 'claude-sonnet-5-5', ms: 10, asks },
 });
 
-test('a rule held by its hourly asks shows as waiting, says why and when, and offers the other preset off (#813)', async ({
+/** A run set off by a meeting that failed at `at`. */
+const failed = (at: string): LogEntry => ({
+  kind: 'failed',
+  at,
+  trigger: 'note',
+  problem: 'Claude could not be reached.',
+});
+
+test('a held rule shows as waiting with why and when, and one whose runs failed shows as failing (#813)', async ({
   page,
 }) => {
   const after = 'After a meeting';
@@ -64,50 +74,56 @@ test('a rule held by its hourly asks shows as waiting, says why and when, and of
     await expect(list).toContainText(preset);
   }
 
-  // Each spent its hour ten minutes ago: thirty asks, and twenty runs' worth.
+  // Each spent its hour ten minutes ago: thirty asks, and twenty runs that failed.
   const spentAt = new Date(Date.now() - 10 * 60_000);
   const at = localTime(spentAt);
   const until = localTime(new Date(spentAt.getTime() + 60 * 60_000)).slice(11, 16);
   await vault.write(logPathFor(after), newLogText(after, [asked(at, 30)]));
-  await vault.write(logPathFor(extraction), newLogText(extraction, [asked(at, 20)]));
+  await vault.write(
+    logPathFor(extraction),
+    newLogText(
+      extraction,
+      Array.from({ length: 20 }, () => failed(at)),
+    ),
+  );
 
   // A meeting arrives, as a pull brings one: both hear it, and both are held.
   const meeting = 'Inbox/Meetings/Larkspur sync.md';
   await vault.write(meeting, VALID.replace(/^external_id: .*$/m, "external_id: 'gemini-eeee0005'"));
   await emitVaultChanged(page, [meeting]);
 
-  const row = list
-    .getByRole('listitem')
-    .filter({ has: page.getByRole('button', { name: after, exact: true }) });
+  const rowOf = (name: string) =>
+    list.getByRole('listitem').filter({ has: page.getByRole('button', { name, exact: true }) });
+
+  // Waiting: the pill, why, when, nothing to do — and no turn-off, which would not free it.
+  const row = rowOf(after);
   const waiting = row.getByRole('status', { name: `${after} is waiting` });
   await expect(waiting).toBeVisible();
   await expect(waiting.locator('.status-pill[data-tone="waiting"]')).toHaveText('Waiting');
-  await expect(waiting).toContainText('Waiting, not broken: it has reached an hourly limit.');
   await expect(waiting).toContainText(
-    'It may ask Claude 30 times an hour, and it has asked 30 times in the last hour.',
+    'Not broken: it has asked Claude 30 times this hour, and 30 is its most ' +
+      '(an ask is one question; a long meeting takes a few). ' +
+      `It runs next at ${until}, on what arrived meanwhile; nothing to do.`,
   );
-  await expect(waiting).toContainText(`It runs next at ${until}, on what changed meanwhile.`);
-  await expect(waiting).toContainText(`“${extraction}” reads every meeting too`);
   await expect(row.getByText('Next run').locator('..')).toContainText(until);
   await expect(row.locator('.automation-card__notice')).toHaveCount(0);
+  await expect(waiting.getByRole('button')).toHaveCount(0);
 
-  // The row grows to hold all of it: the reason and the button end inside the row.
-  const turnOff = waiting.getByRole('button', { name: `Turn off “${extraction}”` });
+  // The row grows to hold all of its reason.
   const bottomOf = async (locator: typeof row) => {
     const box = await locator.boundingBox();
     return box === null ? Number.NaN : box.y + box.height;
   };
   await expect
-    .poll(async () => (await bottomOf(row)) - (await bottomOf(turnOff)))
-    .toBeGreaterThanOrEqual(0);
-  await expect
     .poll(async () => (await bottomOf(row)) - (await bottomOf(waiting.locator('p'))))
     .toBeGreaterThanOrEqual(0);
 
-  // The turn-off it offers is the #793 one: only the extraction is turned off.
-  const rule = `.atlas/automations/${extraction}.md`;
-  await turnOff.click();
-  await expect.poll(() => vault.read(rule)).toContain('\nenabled: false\n');
-  expect(await vault.read(`.atlas/automations/${after}.md`)).toContain('\nenabled: true\n');
+  // Failing: the warning notice, the count, its last reason and when it tries again; never waiting.
+  const failing = rowOf(extraction);
+  await expect(failing.locator('.automation-card__notice')).toHaveText(
+    'It failed all 20 times it ran this hour. The last time: Claude could not be reached. ' +
+      `It has used up its hourly limit, so it tries again at ${until}.`,
+  );
+  await expect(failing.getByRole('status', { name: `${extraction} is waiting` })).toHaveCount(0);
   expect(await vault.exists(meeting)).toBe(true);
 });
