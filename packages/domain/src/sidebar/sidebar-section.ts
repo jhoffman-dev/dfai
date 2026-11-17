@@ -53,3 +53,23 @@ export function parseCollapsedSections(remembered: unknown): SidebarSectionId[] 
   if (!Array.isArray(remembered)) return [];
   return [...new Set(remembered.filter(isSidebarSectionId))];
 }
+
+/** Hidden on a first run (#902): Pages is there to be found, not to fill the sidebar. */
+const HIDDEN_AT_FIRST: readonly SidebarSectionId[] = ['userSpace'];
+
+/**
+ * Which sections a viewer has hidden from the sidebar, out of whatever was
+ * remembered.
+ *
+ * Unlike collapsed, hidden has a default: nothing remembered, or anything that
+ * is not a list (a corrupt or hand-edited value), hides Pages. An empty list
+ * is a choice — every section shown — and is kept. Ids that name no section
+ * are dropped. A list that would hide every section is taken as corrupt too,
+ * since no control in the app can make one and it would leave the sidebar
+ * without a section to show.
+ */
+export function parseHiddenSections(remembered: unknown): SidebarSectionId[] {
+  if (!Array.isArray(remembered)) return [...HIDDEN_AT_FIRST];
+  const hidden = [...new Set(remembered.filter(isSidebarSectionId))];
+  return hidden.length === ORDER.length ? [...HIDDEN_AT_FIRST] : hidden;
+}

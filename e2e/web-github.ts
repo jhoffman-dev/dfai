@@ -1,5 +1,6 @@
 import type { BrowserContext, Page, Route } from '@playwright/test';
 import { FakeGitHub } from '../packages/adapters/src/testing/github.ts';
+import { startWithPagesShown } from './pages-shown.ts';
 import { recordStubBug } from './stub-bugs.ts';
 
 /**
@@ -29,6 +30,8 @@ export async function webVaultOnGitHub(
   github.tokens.add(DEV_TOKEN);
   let cut: boolean | 'writes' = false;
   let signInCut = false;
+  // The web specs were written with Pages shown, as the desktop's were (host.ts).
+  await startWithPagesShown(page);
   await refuseLeavingTheMachine(page.context());
   await answerSignIn(page.context(), () => signInCut);
   await page.context().route('https://api.github.com/**', async (route) => {

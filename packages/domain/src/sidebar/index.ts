@@ -1,6 +1,7 @@
 export {
   isSidebarSectionId,
   parseCollapsedSections,
+  parseHiddenSections,
   SIDEBAR_SECTIONS,
   SIDEBAR_SECTION_LABELS,
 } from './sidebar-section.ts';
@@ -55,6 +56,8 @@ export {
   canMoveSection,
   movedSection,
   parseSectionOrder,
+  placeInOrder,
   sectionOrder,
+  shownSections,
   SIDEBAR_ORDER_KEY,
 } from './section-order.ts';

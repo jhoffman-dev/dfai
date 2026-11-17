@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { canMoveSection, movedSection, parseSectionOrder, sectionOrder } from './section-order.ts';
+import {
+  canMoveSection,
+  movedSection,
+  parseSectionOrder,
+  placeInOrder,
+  sectionOrder,
+  shownSections,
+} from './section-order.ts';
 import type { SidebarSectionId } from './sidebar-section.ts';
 
 const DEFAULT: readonly SidebarSectionId[] = [
@@ -134,5 +141,70 @@ describe('canMoveSection', () => {
       'userSpace',
       'dashboards',
     ]);
+  });
+});
+
+describe('shownSections', () => {
+  it('is every section in its order when none is hidden', () => {
+    expect(shownSections({ order: null, hidden: [] })).toEqual(DEFAULT);
+  });
+
+  it('leaves the hidden ones out and keeps the rest where they were', () => {
+    const order: SidebarSectionId[] = ['userSpace', 'views', 'favorites', 'types', 'dashboards'];
+    expect(shownSections({ order, hidden: ['userSpace', 'types'] })).toEqual([
+      'views',
+      'favorites',
+      'dashboards',
+    ]);
+  });
+});
+
+describe('placeInOrder', () => {
+  // Pages moved up between Favorites and Types, then hidden.
+  const order: SidebarSectionId[] = ['favorites', 'userSpace', 'types', 'views', 'dashboards'];
+  const shown = shownSections({ order, hidden: ['userSpace'] });
+
+  it('is the same place when nothing is hidden', () => {
+    expect(
+      [0, 1, 2, 3, 4].map((to) => placeInOrder({ order: DEFAULT, shown: DEFAULT, to })),
+    ).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('is the place of the shown section it was dropped on', () => {
+    expect(placeInOrder({ order, shown, to: 1 })).toBe(2);
+    expect(placeInOrder({ order, shown, to: 0 })).toBe(0);
+    expect(placeInOrder({ order, shown, to: 3 })).toBe(4);
+  });
+
+  it('clamps a place past either end to the first or last shown section', () => {
+    expect(placeInOrder({ order, shown, to: -3 })).toBe(0);
+    expect(placeInOrder({ order, shown, to: 9 })).toBe(4);
+  });
+
+  it('moves a section among the shown ones exactly where it was dropped, past the hidden one', () => {
+    const up = movedSection({ order, id: 'dashboards', to: placeInOrder({ order, shown, to: 1 }) });
+    expect(shownSections({ order: up, hidden: ['userSpace'] })).toEqual([
+      'favorites',
+      'dashboards',
+      'types',
+      'views',
+    ]);
+    const down = movedSection({
+      order,
+      id: 'favorites',
+      to: placeInOrder({ order, shown, to: 1 }),
+    });
+    expect(shownSections({ order: down, hidden: ['userSpace'] })).toEqual([
+      'types',
+      'favorites',
+      'views',
+      'dashboards',
+    ]);
+  });
+
+  it('keeps the hidden section in the order a move writes', () => {
+    const moved = movedSection({ order, id: 'views', to: placeInOrder({ order, shown, to: 0 }) });
+    expect(moved).toHaveLength(5);
+    expect(moved).toContain('userSpace');
   });
 });

@@ -8,6 +8,19 @@ export interface TemplateChoice {
 }
 
 /**
+ * The header's "Sidebar options" menu (#902): which sections the sidebar
+ * shows. Only Pages is offered; whether it is shown by default is not this
+ * component's to decide.
+ */
+export interface SidebarOptions {
+  readonly pagesShown: boolean;
+  readonly onPagesShownChange: (shown: boolean) => void;
+  /** The menu's open state, owned by the app so that it is one overlay among the rest. */
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}
+
+/**
  * The top of the sidebar: which vault is open, how to add to it, and how to put
  * the sidebar away.
  */
@@ -24,6 +37,7 @@ export function VaultHeader({
   onHideSidebar,
   menuOpen,
   onMenuOpenChange,
+  sidebarOptions,
 }: {
   vaultName: string;
   /** The letter on the vault's tile. */
@@ -46,6 +60,8 @@ export function VaultHeader({
    */
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
+  /** Given when the sidebar's sections can be shown or hidden from here. */
+  sidebarOptions?: SidebarOptions;
 }) {
   return (
     <div className="vault-header">
@@ -135,6 +151,7 @@ export function VaultHeader({
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      {sidebarOptions !== undefined && <SidebarOptionsMenu options={sidebarOptions} />}
       {onHideSidebar !== undefined && (
         <button
           className="icon-button"
@@ -147,6 +164,37 @@ export function VaultHeader({
         </button>
       )}
     </div>
+  );
+}
+
+/** "…": a checkbox for each section the sidebar can leave out — Pages, for now. */
+function SidebarOptionsMenu({ options }: { options: SidebarOptions }) {
+  return (
+    <Menu.Root open={options.open} onOpenChange={(open) => options.onOpenChange(open)}>
+      <Menu.Trigger className="icon-button" title="Sidebar options" aria-label="Sidebar options">
+        <Icon name="more" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner className="menu-positioner" side="bottom" align="end" sideOffset={6}>
+          <Menu.Popup className="menu" aria-label="Sidebar options" render={<ul />}>
+            <li>
+              <Menu.CheckboxItem
+                nativeButton
+                render={<button type="button" />}
+                checked={options.pagesShown}
+                onCheckedChange={(checked) => options.onPagesShownChange(checked)}
+              >
+                <Icon name="folder" size={16} />
+                <span className="menu__label">Show Pages</span>
+                <Menu.CheckboxItemIndicator render={<span />}>
+                  <Icon name="check" size={16} />
+                </Menu.CheckboxItemIndicator>
+              </Menu.CheckboxItem>
+            </li>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 

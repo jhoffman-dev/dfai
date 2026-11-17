@@ -116,6 +116,13 @@ describe('holdsTheScreen', () => {
   it('is false with nothing up, or only a menu or popover', () => {
     expect(holdsTheScreen(null)).toBe(false);
     expect(holdsTheScreen('new-note-menu')).toBe(false);
+    expect(holdsTheScreen('sidebar-options')).toBe(false);
+  });
+
+  it('lets the Sidebar options menu give way to a palette, and opens nothing over one (#902)', () => {
+    expect(openOverlay('new-note-menu', 'sidebar-options')).toBe('sidebar-options');
+    expect(openOverlay('sidebar-options', 'search')).toBe('search');
+    expect(openOverlay('search', 'sidebar-options')).toBe('search');
   });
 });
 

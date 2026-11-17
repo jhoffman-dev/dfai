@@ -18,6 +18,7 @@ export type Overlay =
   | 'add-pdf'
   | 'add-epub'
   | 'new-note-menu'
+  | 'sidebar-options'
   | 'views-menu'
   | 'open-from-github'
   | 'template-delete'
