@@ -386,7 +386,8 @@ describe('showAsRead speed on a long note with many identical lines (#885)', () 
     return { reread: median(reread), plain: median(plain), mapping: median(mapping) };
   }
 
-  it('re-reads 1,000 and 5,000 lines with one changed', () => {
+  // Ten mounts of up to 5,000 lines take ~2.6 s here and past 5 s on a CI shard with coverage.
+  it('re-reads 1,000 and 5,000 lines with one changed', { timeout: 30_000 }, () => {
     const small = timeOne(1000);
     const large = timeOne(5000);
     const ms = (t: { reread: number; plain: number; mapping: number }) =>
