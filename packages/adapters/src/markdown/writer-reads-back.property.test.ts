@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { EditorDocument, EditorNode, ParsedBody } from '@dfai/domain';
 import { parseMarkdownBody, RAW_BLOCK, serializeMarkdownBody } from './markdown-blocks.ts';
 import { documentOf, generatedDocument } from './writer-fuzz.test-support.ts';
-import { shapesNotIn, shapesOf, WRITER_FAMILIES } from './writer-shapes.test-support.ts';
+import {
+  shapesNotIn,
+  shapesOf,
+  unlistedFamilies,
+  WRITER_FAMILIES,
+} from './writer-shapes.test-support.ts';
 
 /**
  * The writer's promise (A21-03): an edited block reads back as the editor had
@@ -134,13 +139,9 @@ const seededFrom = (first: number, last: number) =>
 /** How many seeds the guard draws: the generator alone, with no writer, so it is quick. */
 const GUARD_SEEDS = 400;
 
-/**
- * A node of one kind in a place of another, a set of marks in a place
- * (`bold+link in tableCell`), or blocks nested three deep (`nested a>b>c`).
- */
-const PLACED = /^(?:[\w+]+ in \w+|nested [\w>]+)$/;
-const placedIn = (docs: readonly EditorDocument[]) =>
-  new Set(docs.flatMap((doc) => [...shapesOf(doc)].filter((shape) => PLACED.test(shape))));
+/** Every shape `docs` hold between them. */
+const shapesIn = (docs: readonly EditorDocument[]) =>
+  new Set(docs.flatMap((doc) => [...shapesOf(doc)]));
 
 describe('a limit of markdown the writer keeps as source (ADR-0004)', () => {
   it('keeps a tag straight before a bold run that starts with punctuation as source', () => {
@@ -168,11 +169,15 @@ describe('a limit of markdown the writer keeps as source (ADR-0004)', () => {
 });
 
 describe('an edited block reads back as the editor had it', () => {
+  it('lists the documents of every family of shapes', () => {
+    expect(unlistedFamilies()).toEqual([]);
+  });
+
   // The lists the listed documents are built from are typed out, where the
-  // generator writes its kinds inline: a kind it gains must be listed too.
-  it(`lists every kind of node in every place ${GUARD_SEEDS} seeds of the generator put one`, () => {
-    const listed = placedIn(WRITER_FAMILIES.flatMap((family) => family.documents));
-    const seeded = placedIn(seededFrom(1, GUARD_SEEDS));
+  // generator writes its kinds inline: a kind or a shape it gains must be listed too.
+  it(`lists every shape ${GUARD_SEEDS} seeds of the generator draw`, () => {
+    const listed = shapesIn(WRITER_FAMILIES.flatMap((family) => family.documents));
+    const seeded = shapesIn(seededFrom(1, GUARD_SEEDS));
     expect([...seeded].filter((shape) => !listed.has(shape)).sort()).toEqual([]);
   });
 

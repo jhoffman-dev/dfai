@@ -542,6 +542,20 @@ const blankLines = (): EditorNode[] =>
       type: 'taskList',
       content: [
         { type: 'taskItem', attrs: { checked: false }, content: [paragraph([text(blank)])] },
+        // An id after a box with only blanks: the blanks are written as references.
+        {
+          type: 'taskItem',
+          attrs: { checked: true, anchor: `blank${at}` },
+          content: [paragraph([text(blank)])],
+        },
+        {
+          type: 'taskItem',
+          attrs: { checked: false, anchor: `blankq${at}` },
+          content: [
+            paragraph([text(blank)]),
+            { type: 'blockquote', content: [paragraph(line(at))] },
+          ],
+        },
       ],
     },
     { type: 'blockquote', content: [paragraph(line(at)), paragraph([text(blank)])] },
@@ -558,6 +572,135 @@ const blankLines = (): EditorNode[] =>
       })),
     },
   ]);
+
+/**
+ * What opens a block at the start of a line, by the CommonMark rule that
+ * makes it so. The writer escapes each there: they are remark's `unsafe`
+ * entries marked `atBreak` (mdast-util-to-markdown), which it does not
+ * export, so they are listed here, rule by rule.
+ */
+export const BLOCK_OPENERS: readonly string[] = [
+  // ATX heading (CommonMark 4.2): one to six `#`, then a space, a tab or the end of the line.
+  '#',
+  '# x',
+  '#\tx',
+  '## x',
+  '###### x',
+  // Bullet list item (5.2): `-`, `+` or `*`, then a space, a tab or the end of the line.
+  '-',
+  '+',
+  '*',
+  '- x',
+  '+ x',
+  '* x',
+  '-\tx',
+  // Ordered list item (5.2): digits, then `.` or `)`, then a space, a tab or the end of the line.
+  '1.',
+  '1. x',
+  '3.\tx',
+  '1)',
+  '1) x',
+  // Block quote (5.1): `>`.
+  '>',
+  '> x',
+  // Fenced code (4.5): three backticks or tildes, a language or none.
+  '```',
+  '~~~',
+  '```js',
+  // Thematic break (4.1): three `-`, `*` or `_`, spaces between or not.
+  '---',
+  '***',
+  '___',
+  '- - -',
+  // Setext heading underline (4.3): `=` or `-` under a line of text, here after a line break.
+  '=',
+  '===',
+  // HTML block (4.6): a tag or a comment.
+  '<div>',
+  '<!-- c -->',
+  // GFM table (4.10): a line of cells.
+  '| x |',
+  // Link reference definition (4.7).
+  '[x]: y',
+];
+
+/** Each block opener alone on a line, and on the line a hard break starts, in one kind of text block. */
+function openersIn(place: string): EditorNode[] {
+  const lines = BLOCK_OPENERS.flatMap((opener) => [
+    [text(opener)],
+    [text('k'), { type: 'hardBreak' }, text(opener)],
+  ]);
+  switch (place) {
+    case 'paragraph':
+      return lines.map(paragraph);
+    case 'heading':
+      return lines.map((content, at) => ({
+        type: 'heading',
+        attrs: { level: 1 + (at % 6) },
+        content,
+      }));
+    case 'listItem':
+    case 'taskItem':
+      return [
+        {
+          type: place === 'listItem' ? 'bulletList' : 'taskList',
+          content: lines.map((content, at) => ({
+            type: place,
+            ...(place === 'taskItem' && { attrs: { checked: at % 2 === 0 } }),
+            content: [paragraph(content)],
+          })),
+        },
+      ];
+    case 'blockquote':
+      return [{ type: 'blockquote', content: lines.map(paragraph) }];
+    case 'callout':
+      return [callout(lines.map(paragraph), 0)];
+    default:
+      return lines.map((content) => ({
+        type: 'table',
+        attrs: { align: [null, null] },
+        content: ['tableHeader', 'tableCell'].map((type) => ({
+          type: 'tableRow',
+          content: [
+            { type, content: [paragraph(type === place ? content : [text('k')])] },
+            { type, content: [paragraph([text('k')])] },
+          ],
+        })),
+      }));
+  }
+}
+
+/**
+ * A list straight after a paragraph in each block that holds both: one whose
+ * first item is empty, which under a line of text would underline it as a
+ * heading, and one numbered from 3, which would carry the paragraph on.
+ */
+const listsAfterParagraphs = (): EditorNode[] => {
+  const emptyFirst = {
+    type: 'bulletList',
+    content: [
+      { type: 'listItem', content: [paragraph([])] },
+      { type: 'listItem', content: [paragraph([text('x')])] },
+    ],
+  };
+  const fromThree = {
+    type: 'orderedList',
+    attrs: { start: 3 },
+    content: [{ type: 'listItem', content: [paragraph([text('x')])] }],
+  };
+  return [emptyFirst, fromThree].flatMap((list) => {
+    const held = [paragraph([text('k')]), list];
+    return [
+      { type: 'bulletList', content: [{ type: 'listItem', content: held }] },
+      {
+        type: 'taskList',
+        content: [{ type: 'taskItem', attrs: { checked: true }, content: held }],
+      },
+      { type: 'blockquote', content: held },
+      callout(held, 1),
+    ];
+  });
+};
 
 /** A family of listed documents: the shapes of one kind the property turns on. */
 export interface ListedFamily {
@@ -588,6 +731,11 @@ export const LISTED_FAMILIES: readonly ListedFamily[] = [
   })),
   { name: 'lists nested three deep', documents: [noteOf(nestedThreeDeep())] },
   { name: 'blank-only lines in every kind of text block', documents: [noteOf(blankLines())] },
+  ...CONTAINERS.map((place) => ({
+    name: `pieces that open a block at the start of a line in a ${place}`,
+    documents: [noteOf(openersIn(place))],
+  })),
+  { name: 'a list straight after a paragraph', documents: [noteOf(listsAfterParagraphs())] },
   {
     name: 'every kind of block, atom, link, embed and id',
     documents: Array.from({ length: KIND_TURNS }, (_, at) => noteOf(kindsAt(at))),

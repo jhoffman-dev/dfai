@@ -18,6 +18,7 @@ import {
   NESTED,
   OPENERS,
   BLANKS,
+  BLOCK_OPENERS,
   LISTED_FAMILIES,
   MARK_SETS,
   INNERMOST,
@@ -42,6 +43,7 @@ export function shapesOf(doc: EditorDocument): Set<string> {
   const shapes = new Set<string>();
   const visit = (node: EditorNode, parent: string, top: boolean, holders: readonly string[]) => {
     for (const shape of nodeShapes(node, parent, top)) shapes.add(shape);
+    for (const shape of heldShapes(node)) shapes.add(shape);
     const within = OUTERS.includes(node.type as never) ? [...holders, node.type] : holders;
     if (within.length >= 3 && within !== holders)
       shapes.add(`nested ${within.slice(-3).join('>')}`);
@@ -54,6 +56,28 @@ export function shapesOf(doc: EditorDocument): Set<string> {
   doc.content
     .slice(1)
     .forEach((node, at) => shapes.add(`${node.type} after ${doc.content[at]!.type}`));
+  return shapes;
+}
+
+/** A list straight after a paragraph in `node`, and a task's id after only blanks. */
+function heldShapes(node: EditorNode): string[] {
+  const content = node.content ?? [];
+  const shapes = content.slice(1).flatMap((list, at) => {
+    if (content[at]!.type !== 'paragraph') return [];
+    const firstItem = list.content?.[0]?.content ?? [];
+    if (list.type === 'bulletList' && firstItem.every((block) => !block.content?.length))
+      return [`a list with an empty first item after a paragraph in ${node.type}`];
+    if (list.type === 'orderedList' && list.attrs?.['start'] !== 1)
+      return [`a list numbered from 3 after a paragraph in ${node.type}`];
+    return [];
+  });
+  const words = content[0]?.content;
+  const only = words?.length === 1 ? words[0]?.text : undefined;
+  if (node.type === 'taskItem' && typeof node.attrs?.['anchor'] === 'string' && only !== undefined)
+    if (BLANKS.includes(only))
+      shapes.push(
+        `${quoted(only)} alone before an id${content.length > 1 ? ', a block after' : ''}`,
+      );
   return shapes;
 }
 
@@ -146,6 +170,18 @@ function lineShapes(content: readonly EditorNode[], container: string): string[]
     .forEach((node, at) =>
       shapes.push(`${inlineKindOf(node)} after ${inlineKindOf(content[at]!)}`),
     );
+  for (const opener of BLOCK_OPENERS) {
+    if (first?.type === 'text' && first.text?.startsWith(opener))
+      shapes.push(`${quoted(opener)} opens a line in ${container}`);
+    content.slice(1).forEach((node, at) => {
+      if (
+        content[at]!.type === 'hardBreak' &&
+        node.type === 'text' &&
+        node.text?.startsWith(opener)
+      )
+        shapes.push(`${quoted(opener)} opens a line after a break in ${container}`);
+    });
+  }
   const only = content.length === 1 && first?.type === 'text' ? first.text : undefined;
   if (only !== undefined && BLANKS.includes(only))
     shapes.push(`${quoted(only)} alone in ${container}`);
@@ -206,8 +242,25 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
   'lists nested three deep': OUTERS.flatMap((outer) =>
     LISTS.flatMap((middle) => INNERMOST.map((inner) => `nested ${outer}>${middle}>${inner}`)),
   ),
-  'blank-only lines in every kind of text block': BLANKS.flatMap((blank) =>
-    CONTAINERS.map((container) => `${quoted(blank)} alone in ${container}`),
+  'blank-only lines in every kind of text block': BLANKS.flatMap((blank) => [
+    ...CONTAINERS.map((container) => `${quoted(blank)} alone in ${container}`),
+    `${quoted(blank)} alone before an id`,
+    `${quoted(blank)} alone before an id, a block after`,
+  ]),
+  ...Object.fromEntries(
+    CONTAINERS.map((place) => [
+      `pieces that open a block at the start of a line in a ${place}`,
+      BLOCK_OPENERS.flatMap((opener) => [
+        `${quoted(opener)} opens a line in ${place}`,
+        `${quoted(opener)} opens a line after a break in ${place}`,
+      ]),
+    ]),
+  ),
+  'a list straight after a paragraph': ['listItem', 'taskItem', 'blockquote', 'callout'].flatMap(
+    (holder) => [
+      `a list with an empty first item after a paragraph in ${holder}`,
+      `a list numbered from 3 after a paragraph in ${holder}`,
+    ],
   ),
   'every kind of block, atom, link, embed and id': [
     ...[1, 2, 3, 4, 5, 6].map((level) => `heading ${level}`),
@@ -262,6 +315,16 @@ const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
       ),
     ]),
   ),
+};
+
+/**
+ * The families whose shapes are named here but whose documents are not
+ * listed: a family taken out of `LISTED_FAMILIES` takes its test with it,
+ * so this is what shows it is gone.
+ */
+export const unlistedFamilies = (): string[] => {
+  const listed = new Set(LISTED_FAMILIES.map((family) => family.name));
+  return Object.keys(SHAPES_BY_FAMILY).filter((name) => !listed.has(name));
 };
 
 /** A family of listed documents and the shapes they must hold between them. */

@@ -185,51 +185,62 @@ const endingInEveryInline = (home: string): EditorDocument[] =>
     return note(home in ITEM_OF ? withId(written) : written);
   });
 
-/** A family of listed notes, and the shapes they are there to try between them. */
-interface Family {
-  readonly name: string;
-  readonly notes: readonly EditorDocument[];
-  readonly shapes: readonly string[];
-}
+const pieceFamily = (home: string) => `every piece ending the words of ${HOME_NAMES[home]}`;
+const inlineFamily = (home: string) =>
+  `each kind of inline ending the words of ${HOME_NAMES[home]}`;
+const NESTED_FAMILY = 'every kind of block holding lists two deep';
+const OWN_LINE_FAMILY = 'every block with its id on a line of its own, before each kind of block';
+const IDS_FAMILY = 'ids already in the note';
+
+/** The listed notes of each family. */
+const NOTES_BY_FAMILY: Readonly<Record<string, readonly EditorDocument[]>> = {
+  ...Object.fromEntries(LINE_HOMES.map((home) => [pieceFamily(home), endingInEveryPiece(home)])),
+  [NESTED_FAMILY]: nestedTwoDeep,
+  [OWN_LINE_FAMILY]: beforeEveryKind,
+  ...Object.fromEntries(LINE_HOMES.map((home) => [inlineFamily(home), endingInEveryInline(home)])),
+  [IDS_FAMILY]: withIdsAlready,
+};
 
 /**
- * The listed notes, a family at a time, each with every shape of its family
- * the promise turns on, named from the lists above and the generator's.
+ * The shapes each family's notes must try between them, named apart from the
+ * notes from the lists above and the generator's, so a family whose notes
+ * are taken out is seen.
  */
-const FAMILIES: readonly Family[] = [
-  ...LINE_HOMES.map((home) => ({
-    name: `every piece ending the words of ${HOME_NAMES[home]}`,
-    notes: endingInEveryPiece(home),
-    shapes: [
-      `place ${chainIn(home)}`,
-      ...EVERY_PIECE.map((p) => `${JSON.stringify(p)} ends ${chainIn(home)}`),
-    ],
-  })),
-  {
-    name: 'every kind of block holding lists two deep',
-    notes: nestedTwoDeep,
-    shapes: OUTERS.flatMap((outer) =>
-      LISTS.flatMap((middle) => [
-        `place ${chainIn(outer)}>${middle}>listItem`,
-        ...LISTS.map((inner) => `place ${chainIn(outer)}>${middle}>listItem>${inner}>listItem`),
-      ]),
-    ),
-  },
-  {
-    name: 'every block with its id on a line of its own, before each kind of block',
-    notes: beforeEveryKind,
-    shapes: OWN_LINE.flatMap((first) => [
-      `place ${first}`,
-      ...[...TOP_KINDS, 'end'].map((next) => `${first} before ${next}`),
+const SHAPES_BY_FAMILY: Readonly<Record<string, readonly string[]>> = {
+  ...Object.fromEntries(
+    LINE_HOMES.map((home) => [
+      pieceFamily(home),
+      [
+        `place ${chainIn(home)}`,
+        ...EVERY_PIECE.map((p) => `${JSON.stringify(p)} ends ${chainIn(home)}`),
+      ],
     ]),
-  },
-  ...LINE_HOMES.map((home) => ({
-    name: `each kind of inline ending the words of ${HOME_NAMES[home]}`,
-    notes: endingInEveryInline(home),
-    shapes: INLINE_KINDS.map((kind) => `id after ${kind} in ${chainIn(home)}`),
-  })),
-  { name: 'ids already in the note', notes: withIdsAlready, shapes: ['an id already in the note'] },
-];
+  ),
+  [NESTED_FAMILY]: OUTERS.flatMap((outer) =>
+    LISTS.flatMap((middle) => [
+      `place ${chainIn(outer)}>${middle}>listItem`,
+      ...LISTS.map((inner) => `place ${chainIn(outer)}>${middle}>listItem>${inner}>listItem`),
+    ]),
+  ),
+  [OWN_LINE_FAMILY]: OWN_LINE.flatMap((first) => [
+    `place ${first}`,
+    ...[...TOP_KINDS, 'end'].map((next) => `${first} before ${next}`),
+  ]),
+  ...Object.fromEntries(
+    LINE_HOMES.map((home) => [
+      inlineFamily(home),
+      INLINE_KINDS.map((kind) => `id after ${kind} in ${chainIn(home)}`),
+    ]),
+  ),
+  [IDS_FAMILY]: ['an id already in the note'],
+};
+
+/** Each family with listed notes, and the shapes they are there to try between them. */
+const FAMILIES = Object.entries(NOTES_BY_FAMILY).map(([name, notes]) => {
+  const shapes = SHAPES_BY_FAMILY[name];
+  if (shapes === undefined) throw new Error(`no shapes named for ${name}`);
+  return { name, notes, shapes };
+});
 
 /** A note as it would be on disk: written once, the way the app writes. */
 function noteOnDisk(doc: EditorDocument): string {
@@ -325,6 +336,10 @@ function tryEveryOpenPlace(notes: readonly EditorDocument[]) {
 }
 
 describe('giving any block an id changes nothing else in the file', () => {
+  it('lists the notes of every family of shapes', () => {
+    expect(Object.keys(SHAPES_BY_FAMILY).filter((name) => !(name in NOTES_BY_FAMILY))).toEqual([]);
+  });
+
   it.each(FAMILIES.map((family) => [family.name, family] as const))(
     'holds for every open place in %s, which its listed notes all try',
     (_name, { notes, shapes }) => {
