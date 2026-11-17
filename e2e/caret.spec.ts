@@ -80,20 +80,29 @@ test("a click whose caret is put back at the note's start fails at once, naming 
 });
 
 /**
- * Puts the page's caret back at the start of `line` on the keyup of the
- * first `times` presses of the line-end key, as ProseMirror's check after
- * focus does to a key that lands between the tap-caret plugin's read and
- * that check (#850, #869).
+ * Puts the caret back at the start of `line` on the keyup of the first
+ * `times` presses of the line-end key, as ProseMirror's check after focus
+ * does to a key that lands between the tap-caret plugin's read and that
+ * check (#850, #869). Put back through the editor, so the editor and the
+ * page agree at once and that check, if still to come, finds them in step.
  */
 async function undoLineEndKey(page: Page, line: string, times: number): Promise<void> {
   await page.getByText(line).evaluate((block, count) => {
+    const root = block.closest('.ProseMirror') as
+      | (Element & {
+          editor: {
+            commands: { setTextSelection(pos: number): boolean };
+            view: { posAtDOM(node: Node, offset: number): number };
+          };
+        })
+      | null;
+    if (root === null) throw new Error('the line is not in an editor');
+    const { editor } = root;
     let left = count;
     block.ownerDocument.addEventListener('keyup', (event) => {
       if (left === 0 || (event.key !== 'ArrowRight' && event.key !== 'End')) return;
       left -= 1;
-      const text = block.firstChild;
-      if (text === null) throw new Error('the line has no text');
-      document.getSelection()?.collapse(text, 0);
+      editor.commands.setTextSelection(editor.view.posAtDOM(block, 0));
     });
   }, times);
 }
