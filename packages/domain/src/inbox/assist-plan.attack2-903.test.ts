@@ -22,6 +22,8 @@ const FACTS: AssistFacts = {
   today: '2026-11-17',
   filingTargets: [PAYROLL, HIRING],
   people: [MARA, TOBIAS],
+  directory: [],
+  items: new Map(),
 };
 const ITEM_PATH = createVaultPath('Inbox/Call Mara Quill.md');
 
@@ -33,6 +35,8 @@ const answer = (extra: Partial<AssistItemAnswer> = {}): AssistItemAnswer => ({
   waitingOn: null,
   confidence: 'high',
   why: 'It asks for a call.',
+  duplicateOf: null,
+  people: [],
   ...extra,
 });
 const itemWith = (row: Record<string, unknown>): InboxItem =>

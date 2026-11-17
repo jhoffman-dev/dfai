@@ -23,6 +23,7 @@ const PLAN: AssistView = {
       does: 'Make it a task',
       why: HOSTILE_WHY,
       tone: 'file',
+      people: [],
     },
     {
       path: 'Inbox/Payroll article.md',
@@ -30,6 +31,7 @@ const PLAN: AssistView = {
       does: 'Ask you',
       why: 'Which one?',
       tone: 'ask',
+      people: [],
     },
   ],
   more: null,

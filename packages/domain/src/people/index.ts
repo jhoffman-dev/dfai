@@ -41,3 +41,5 @@ export type {
   MergeNote,
   PersonMergePlan,
 } from './person-merge-plan.ts';
+export { addressesIn, givesAddress, personMatch } from './person-match.ts';
+export type { PersonCandidate, PersonMatch } from './person-match.ts';

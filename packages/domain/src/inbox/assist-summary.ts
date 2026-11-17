@@ -4,28 +4,40 @@
  * plan says it the same way and the page holds no rule.
  */
 
+import type { AssistPersonStep } from './assist-people.ts';
 import { ASSIST_ITEMS_PER_ASK, type AssistRow, type AssistStep } from './assist-plan.ts';
 
-/** How a row's step is shown: filed (a task or a note), a question, or left. */
-export type AssistTone = 'file' | 'ask' | 'leave';
+/** How a row's step is shown: filed (a task or a note), a duplicate, a question, or left. */
+export type AssistTone = 'file' | 'duplicate' | 'ask' | 'leave';
 
 export function assistTone(step: AssistStep): AssistTone {
-  if (step.kind === 'ask') return 'ask';
-  return step.kind === 'leave' ? 'leave' : 'file';
+  if (step.kind === 'task') return 'file';
+  return step.kind;
 }
 
 /**
- * The plan in one sentence: "14 items: would act on 9, 2 questions, would
- * leave 3". A part with none is left out; no items at all is said plainly.
+ * The plan in one sentence: "14 items: would act on 6, link 3 people, add 1
+ * person, 1 duplicate, 2 questions, would leave 2". A part with none is left
+ * out; no items at all is said plainly.
  */
 export function assistSummary(rows: readonly AssistRow[]): string {
   if (rows.length === 0) return 'Nothing to suggest: no items to look at.';
   const count = (tone: AssistTone) => rows.filter((row) => assistTone(row.step) === tone).length;
-  const acted = count('file');
-  const asked = count('ask');
-  const left = count('leave');
+  const people = (kind: AssistPersonStep['kind']) =>
+    rows.reduce((sum, row) => sum + row.people.filter((each) => each.kind === kind).length, 0);
+  const [acted, linked, added, copies, asked, left] = [
+    count('file'),
+    people('link'),
+    people('add'),
+    count('duplicate'),
+    count('ask'),
+    count('leave'),
+  ];
   const parts = [
     acted > 0 ? `would act on ${acted}` : null,
+    linked > 0 ? `link ${linked} ${linked === 1 ? 'person' : 'people'}` : null,
+    added > 0 ? `add ${added} ${added === 1 ? 'person' : 'people'}` : null,
+    copies > 0 ? `${copies} ${copies === 1 ? 'duplicate' : 'duplicates'}` : null,
     asked > 0 ? `${asked} ${asked === 1 ? 'question' : 'questions'}` : null,
     left > 0 ? `would leave ${left}` : null,
   ].filter((part) => part !== null);
@@ -39,6 +51,8 @@ export function assistStepWords(step: AssistStep): string {
       return taskWords(step);
     case 'file':
       return `File under ${step.project.title}`;
+    case 'duplicate':
+      return `Looks like a duplicate of ${step.of.title}`;
     case 'leave':
       return 'Leave it';
     case 'ask':
@@ -54,6 +68,13 @@ function taskWords(step: Extract<AssistStep, { kind: 'task' }>): string {
     step.waitingOn === null ? null : `waiting on ${step.waitingOn.title}`,
   ].filter((part) => part !== null);
   return parts.join(', ');
+}
+
+/** What would be done about the people a row names, a line each: "Links Mara Quill", "Would add Tobias Fenn". */
+export function assistPeopleWords(row: AssistRow): string[] {
+  return row.people.map((each) =>
+    each.kind === 'link' ? `Links ${each.person.title}` : `Would add ${each.name}`,
+  );
 }
 
 /** The row's one short reason: its question, why it is left, or Claude's why. */

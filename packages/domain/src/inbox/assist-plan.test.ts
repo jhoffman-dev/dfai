@@ -11,6 +11,7 @@ import {
   assistQuietSkip,
   type AssistFacts,
 } from './assist-plan.ts';
+import { listedPeopleOf } from './assist-held.ts';
 import { inboxItem } from './inbox.ts';
 
 /**
@@ -28,6 +29,8 @@ const FACTS: AssistFacts = {
   today: '2026-11-17',
   filingTargets: [PAYROLL, HIRING],
   people: [MARA],
+  directory: [],
+  items: new Map(),
 };
 
 const note = (path = 'Inbox/Call Mara Quill.md', row: Record<string, unknown> = {}) =>
@@ -42,6 +45,8 @@ const answer = (extra: Partial<AssistItemAnswer> = {}): AssistItemAnswer => ({
   waitingOn: null,
   confidence: 'high',
   why: 'It asks for a call.',
+  duplicateOf: null,
+  people: [],
   ...extra,
 });
 const stepOf = (extra: Partial<AssistItemAnswer>, item = note()) =>
@@ -510,9 +515,23 @@ describe('never overwriting, over every type (#903 round 3, seeded)', () => {
         projects: pick(rng, [[], ['Areas/Hiring.md'], ['Larkspur Payroll']]),
         due: pick(rng, [null, '2026-11-20', '2026-12-01']),
         waitingOn: pick(rng, [null, 'Mara Quill']),
+        // #906: the people it names never overwrite those it lists.
+        people: pick(rng, [[], [{ name: 'Mara Quill', email: null, person: MARA.path }]]),
       });
-      const step = assistPlan(item, given, FACTS).step;
-      const label = JSON.stringify({ row, given });
+      const listedPeople = pick(rng, [
+        null,
+        listedPeopleOf('[[Mara Quill]]'),
+        listedPeopleOf('Wren'),
+      ]);
+      const facts = {
+        ...FACTS,
+        directory: [{ path: MARA.path, name: MARA.title, emails: [], aliases: [] }],
+        items: new Map([[item.path, { duplicates: [], addresses: [], listedPeople }]]),
+      };
+      const planned = assistPlan(item, given, facts);
+      const step = planned.step;
+      const label = JSON.stringify({ row, given, listedPeople });
+      if (planned.people.length > 0) expect(listedPeople, label).toBeNull();
       const set = (resolved: unknown, written: string) =>
         resolved !== null || written.trim() !== '';
       if (step.kind === 'task') {

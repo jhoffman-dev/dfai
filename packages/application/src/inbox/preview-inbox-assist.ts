@@ -1,4 +1,5 @@
 import {
+  addressesIn,
   ASSIST_ANSWER_SHAPE,
   assistAllowance,
   assistAllowanceWords,
@@ -9,6 +10,7 @@ import {
   CLAUDE_STEP_QUESTION,
   claudeStepSystem,
   claudeSystemProblem,
+  compileReviewTasksQuery,
   createVaultPath,
   DECLARED_STEP_MODEL,
   FILED_UNDER_TYPES,
@@ -16,17 +18,25 @@ import {
   INBOX_ASSIST_PROMPT,
   INBOX_ASSIST_ROLE,
   inboxAssistData,
+  inboxAssistOffered,
+  listedPeopleOf,
   localTimeMs,
+  MEETING_PEOPLE_KEY,
   messageWithoutPaths,
   PERSON_TYPE,
+  possibleDuplicateTasks,
   readAssistAnswer,
+  reviewTask,
+  splitFrontmatter,
   waitingOnRefusal,
   type AnsweredNote,
   type AssistFacts,
   type AssistItemAnswer,
+  type AssistItemFacts,
   type AssistRow,
   type AssistTarget,
   type InboxItem,
+  type TaskCandidate,
   type VaultPath,
 } from '@dfai/domain';
 import { notesInUseOfTypes } from '../archive/notes-in-use.ts';
@@ -39,6 +49,8 @@ import {
   type ProviderStatus,
 } from '../chat/ports.ts';
 import type { IndexPort } from '../index/ports.ts';
+import { loadLinkDirectory } from '../meeting-links/link-directory.ts';
+import { rowsOf } from '../review/review-reads.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { Clock } from '../ports.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
@@ -121,14 +133,20 @@ export async function previewInboxAssist(
   if (notes.length === 0) return plan((item) => leftRow(item, ''));
   const held = await allowanceHeld(ports, previewed);
   if (held !== null) return { kind: 'not-now', message: held };
-  const asking = await askClaude(ports, { notes, signal });
+  const asking = await askClaude(ports, { notes, items: open, signal });
   if (asking.kind === 'not-now') return asking;
   const entries = new Map(asking.entries.map((entry) => [entry.item, entry]));
   return plan((item) => assistPlan(item, entries.get(item.path)!, asking.facts));
 }
 
 function leftRow(item: InboxItem, because: string): AssistRow {
-  return { path: item.path, title: item.title, step: { kind: 'leave', because }, why: null };
+  return {
+    path: item.path,
+    title: item.title,
+    step: { kind: 'leave', because },
+    why: null,
+    people: [],
+  };
 }
 
 /** The open items' notes as read, and why each one changed too lately, or gone since, is left out. */
@@ -179,12 +197,20 @@ const notUsed = (problem: string): Asking => ({
 /** One ask about `notes`, with no tools, counted before it is sent, and its answer read whole or refused. */
 async function askClaude(
   ports: InboxAssistPorts,
-  { notes, signal }: { notes: readonly AnsweredNote[]; signal: AbortSignal | undefined },
+  {
+    notes,
+    items,
+    signal,
+  }: {
+    notes: readonly AnsweredNote[];
+    items: readonly InboxItem[];
+    signal: AbortSignal | undefined;
+  },
 ): Promise<Asking> {
   const provider = ports.provider();
   const status = await provider.status();
   if (!status.ready) return { kind: 'not-now', message: unreachableWords(status) };
-  const facts = await vaultFacts(ports);
+  const facts = await vaultFacts(ports, { notes, items });
   const system = claudeStepSystem({
     today: facts.today,
     prompt: INBOX_ASSIST_PROMPT,
@@ -206,6 +232,7 @@ async function askClaude(
   const read = readAssistAnswer(
     said.text,
     notes.map((note) => note.path),
+    inboxAssistOffered(facts),
   );
   return read.ok ? { kind: 'answered', entries: read.value, facts } : notUsed(read.problem);
 }
@@ -266,16 +293,27 @@ function unreachableWords(status: Extract<ProviderStatus, { ready: false }>): st
   return `Not now: Claude can’t be reached. ${messageWithoutPaths(status.message)}${fix} Nothing was asked; nothing changed.`;
 }
 
-/** The projects, areas and people clarifying offers: what an answer's names are checked against. */
-async function vaultFacts(ports: InboxAssistPorts): Promise<AssistFacts> {
-  const [projects, people] = await Promise.all([
+/**
+ * What an answer is checked against, read on the press and never on opening
+ * the Inbox: the projects, areas and people clarifying offers, the people's
+ * addresses and aliases, the open tasks an item may copy, and what each
+ * asked item holds of its own. Four reads of the index, all at once.
+ */
+async function vaultFacts(
+  ports: InboxAssistPorts,
+  asked: { notes: readonly AnsweredNote[]; items: readonly InboxItem[] },
+): Promise<AssistFacts> {
+  const [projects, people, tasks, directory] = await Promise.all([
     notesInUseOfTypes({ index: ports.index, types: FILED_UNDER_TYPES }),
     notesInUseOfTypes({ index: ports.index, types: [PERSON_TYPE] }),
+    rowsOf(ports.index, compileReviewTasksQuery()),
+    loadLinkDirectory({ index: ports.index }),
   ]);
   const target = (note: { path: string; title: string }): AssistTarget => ({
     path: createVaultPath(note.path),
     title: note.title,
   });
+  const candidates = tasks.rows.map(reviewTask);
   return {
     today: ports.clock.today(),
     filingTargets: projects
@@ -288,5 +326,41 @@ async function vaultFacts(ports: InboxAssistPorts): Promise<AssistFacts> {
         (note) => waitingOnRefusal({ path: createVaultPath(note.path), type: note.type }) === null,
       )
       .map(target),
+    directory: directory.people,
+    items: new Map(
+      asked.notes.map((note) => [
+        note.path,
+        itemFacts(ports, {
+          item: asked.items.find((each) => each.path === note.path)!,
+          text: note.text,
+          tasks: candidates,
+        }),
+      ]),
+    ),
   };
+}
+
+/** What one asked item holds of its own: the tasks it may copy, the addresses it gives, the people it lists. */
+function itemFacts(
+  ports: Pick<InboxAssistPorts, 'markdown'>,
+  { item, text, tasks }: { item: InboxItem; text: string; tasks: readonly TaskCandidate[] },
+): AssistItemFacts {
+  const project = item.task?.project ?? item.written?.project ?? null;
+  return {
+    duplicates: possibleDuplicateTasks({ item: { ...item, project }, tasks }),
+    addresses: addressesIn(text),
+    listedPeople: listedPeople(ports, text),
+  };
+}
+
+/**
+ * What the item lists under `people`. A block that cannot be read lists
+ * something unknown, which a suggestion is never written over.
+ */
+function listedPeople(ports: Pick<InboxAssistPorts, 'markdown'>, text: string) {
+  const { frontmatter } = splitFrontmatter(text);
+  if (ports.markdown.frontmatterProblem(frontmatter) !== null) {
+    return { resolved: null, written: ['people that could not be read'] };
+  }
+  return listedPeopleOf(ports.markdown.frontmatterProperties(frontmatter)[MEETING_PEOPLE_KEY]);
 }

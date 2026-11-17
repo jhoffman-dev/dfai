@@ -10,8 +10,10 @@ export interface AssistRowView {
   readonly does: string;
   /** One short reason. */
   readonly why: string;
-  /** How its chip is drawn: filed, a question, or left. */
-  readonly tone: 'file' | 'ask' | 'leave';
+  /** How its chip is drawn: filed, a duplicate, a question, or left. */
+  readonly tone: 'file' | 'duplicate' | 'ask' | 'leave';
+  /** What would be done about the people it names, a line each: "Links Mara Quill". */
+  readonly people: readonly string[];
 }
 
 /** What Suggest has to show (#900), once it was pressed. */
@@ -34,12 +36,14 @@ export interface AssistSummaryProps {
 /** A chip's pastel, from the statuses' own: neutral chrome round it. */
 const TONE_PILL: Readonly<Record<AssistRowView['tone'], string>> = {
   file: 'next',
+  duplicate: 'review',
   ask: 'waiting',
   leave: 'backlog',
 };
 
 const TONE_WORD: Readonly<Record<AssistRowView['tone'], string>> = {
   file: 'Would act',
+  duplicate: 'Duplicate',
   ask: 'Question',
   leave: 'Would leave',
 };
@@ -102,6 +106,11 @@ function AssistPlan({ summary, rows, more }: Extract<AssistView, { kind: 'plan' 
                 {TONE_WORD[row.tone]}
               </span>
               <span className="inbox-assist__does">{row.does}</span>
+              {row.people.map((line) => (
+                <span key={line} className="inbox-assist__person">
+                  {line}
+                </span>
+              ))}
               {row.why !== '' && <small className="inbox-assist__why">{row.why}</small>}
             </li>
           ))}

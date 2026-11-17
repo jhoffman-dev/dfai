@@ -9,6 +9,8 @@
  */
 
 import { namesNote } from '../automations/proposal-schema.ts';
+import { indexedTexts } from '../gtd/gtd-status.ts';
+import { writtenNames } from '../review/review-query.ts';
 import { noteTitle } from '../vault/vault-entry.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import type { InboxItem } from './inbox.ts';
@@ -42,6 +44,14 @@ export function assistHeld(item: InboxItem): AssistHeld {
     due: held(written.due, [written.dueWritten]),
     waitingOn: held(written.waitingOn, [written.waitingOnNames]),
   };
+}
+
+/**
+ * What an item lists under `people` (#906), from its frontmatter's value as
+ * read: each one by what it shows, a link by its label; null when nothing.
+ */
+export function listedPeopleOf(value: unknown): HeldField | null {
+  return held(null, writtenNames(indexedTexts(value).join('\u001f')));
 }
 
 function held(resolved: string | null, written: readonly string[]): HeldField | null {
