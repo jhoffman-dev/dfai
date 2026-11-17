@@ -293,6 +293,19 @@ const NO_CAPABILITY_VALUES = [
 /** What the screen's production code may not do besides: ask the device, or name the capabilities. */
 const NO_PLATFORM_SNIFF = [...NO_DEVICE_SNIFF, ...NO_CAPABILITY_VALUES];
 
+/**
+ * A modal dialog's portal holds the modal layer, so the app behind it is inert
+ * (#827): a dialog without it leaves the app tabbable until its first focus.
+ */
+const MODAL_PORTAL_HOLDS_LAYER = [
+  {
+    selector:
+      "JSXOpeningElement[name.object.name=/^(Alert)?Dialog$/][name.property.name='Portal']:not(:has(JSXAttribute[name.name='ref']))",
+    message:
+      "Give a dialog's portal ref={holdModalLayer} (packages/ui/src/modal-layer.ts), so the app behind it is inert (#827).",
+  },
+];
+
 /** The test files of a package's source, which may read the device to press its command key. */
 const testsOf = (root) => [`${root}/**/*.test.{ts,tsx}`, `${root}/**/*.test-support.ts`];
 
@@ -311,7 +324,9 @@ const screenSyntax = (root, dynamicRestrictions) => {
       // The shell draws packages/ui and the web bundles it (#689).
       files: [`${root}/**/*.{ts,tsx,mts,cts}`],
       ignores: [...nodeOnly, ...testsOf(root), shortcuts],
-      rules: { 'no-restricted-syntax': [...shared, ...NO_PLATFORM_SNIFF] },
+      rules: {
+        'no-restricted-syntax': [...shared, ...NO_PLATFORM_SNIFF, ...MODAL_PORTAL_HOLDS_LAYER],
+      },
     },
     {
       files: [...testsOf(root), ...(root === 'packages/shell/src' ? [shortcuts] : [])],

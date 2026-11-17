@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
+import { holdModalLayer } from '../modal-layer.ts';
 import type { ActivityLevel } from '@dfai/domain';
 
 /** A warning or an error, said whole (#815): what its one line had no room for. */
@@ -142,7 +143,7 @@ export function useEventDetailsHost(landmark: DetailsLandmark): {
   const openSubject = shown.onOpenSubject;
   const popup = (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Portal>
+      <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
           <Dialog.Popup
             className="palette confirm event-details"
