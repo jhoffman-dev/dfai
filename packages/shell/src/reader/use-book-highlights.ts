@@ -4,7 +4,6 @@ import {
   editHighlightComment,
   highlightBookSelection,
   placeBookHighlights,
-  removeHighlight,
   searchBook,
   type PlacedBookHighlight,
 } from '@dfai/application';
@@ -13,6 +12,7 @@ import type { BookReaderActions, ReaderBookHighlight } from '@dfai/ui';
 import { yieldToHost, type FoliateBook } from '@dfai/adapters/epub';
 import { scopedReadKey, scopedReadMeta } from '../reads/query-client.ts';
 import {
+  removeHighlightIfThere,
   useNoteHighlights,
   useNoteWriting,
   type DocumentPorts,
@@ -107,7 +107,7 @@ export function useBookWrites({
         ),
       onEditComment: ({ id, comment }) =>
         writing((path, write) => editHighlightComment(write, { path, id, comment })),
-      onRemove: (id) => writing((path, write) => removeHighlight(write, { path, id })),
+      onRemove: (id) => writing((path, write) => removeHighlightIfThere(write, { path, id })),
       onSearch: (phrase) => searchBook(book, phrase, yieldToHost),
     }),
     [book, writing],
