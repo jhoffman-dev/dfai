@@ -49,6 +49,7 @@ function HighlightEntry({
 }: HighlightsPanelProps & { highlight: PanelEntry }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const classes = ['pdf-entry', `pdf-entry--${highlight.color}`];
   if (flashing === highlight.id) classes.push('pdf-entry--flash');
   return (
@@ -81,13 +82,19 @@ function HighlightEntry({
           <button
             type="button"
             className="btn btn--danger btn--sm"
-            onClick={() => void onRemove(highlight.id)}
+            disabled={removing}
+            onClick={() => {
+              setRemoving(true);
+              // A refused removal is said by the reader's notice; the question stays to try again.
+              void onRemove(highlight.id).finally(() => setRemoving(false));
+            }}
           >
             Delete
           </button>
           <button
             type="button"
             className="btn btn--ghost btn--sm"
+            disabled={removing}
             onClick={() => setConfirming(false)}
           >
             Keep
