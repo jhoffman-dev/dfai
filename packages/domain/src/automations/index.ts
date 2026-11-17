@@ -265,6 +265,7 @@ export {
   CLAUDE_TOTAL_NOTE_CHARACTERS,
   claudeStepSystem,
 } from './claude-step-prompt.ts';
+export type { ClaudeRole } from './claude-step-prompt.ts';
 export { claudeWriteRefusal } from './claude-write-folder.ts';
 export { atlasItemKey, claudeNewProposal, claudeProposalId } from './claude-proposal-id.ts';
 export { leading, MAX_LOGGED_CHARACTERS, truncated } from './answer-limits.ts';
@@ -280,6 +281,7 @@ export type { AnsweredMeeting, ClaudeAsks, NoteCut, NoteSkipped } from './answer
 export type { NoteAnswer, NoteAnswerValue } from './note-answer.ts';
 export {
   asksSpentInHour,
+  askTimesInHour,
   backoffMinutes,
   unavailableBackoffMinutes,
   dueTrigger,
@@ -364,3 +366,9 @@ export type {
   MeetingSetupLoss,
   MeetingSetupPlan,
 } from './meeting-setup.ts';
+export {
+  INBOX_ASSIST_LISTED_MAX,
+  INBOX_ASSIST_PROMPT,
+  INBOX_ASSIST_ROLE,
+  inboxAssistData,
+} from './inbox-assist-prompt.ts';

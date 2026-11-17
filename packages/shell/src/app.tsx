@@ -324,6 +324,7 @@ import { useSidebarOrder } from './sidebar/use-sidebar-order.ts';
 import { useVaultTags } from './tags/use-vault-tags.ts';
 import { useArchive } from './archive/use-archive.ts';
 import { useInboxWaiting } from './inbox/use-inbox-waiting.ts';
+import { browserAssistAsks } from './inbox/assist-asks-store.ts';
 import { createPendingWrites } from './workspace/pending-writes.ts';
 import { createPageHoldsByVault } from './workspace/page-holds.ts';
 import { useBuiltInTypes } from './types/use-built-in-types.ts';
@@ -2405,6 +2406,12 @@ function AppWindow({
     }),
     [chat, followSource, openWebLink, followInFocusedPane, askFocus],
   );
+  // Suggest's asks, kept on this machine and counted against the hourly allowance (#900).
+  const [inboxAssistAsks] = useState(browserAssistAsks);
+  const inboxAssist = useMemo(
+    () => (offered.claudeChat ? { claude: claudeStep, asks: inboxAssistAsks } : null),
+    [offered.claudeChat, claudeStep, inboxAssistAsks],
+  );
   const inboxWiring = useMemo(
     () => ({
       closing: closing.writes,
@@ -2435,6 +2442,7 @@ function AppWindow({
       ownerUnknown: ownerNeeded ? { onOpenSettings: () => showOverlay('settings') } : null,
       meetingProjects,
       meetingSetup,
+      assist: inboxAssist,
       view:
         inboxView === null
           ? null
@@ -2455,6 +2463,7 @@ function AppWindow({
       ownerNeeded,
       meetingProjects,
       meetingSetup,
+      inboxAssist,
       inboxView,
       openNote,
       showOverlay,

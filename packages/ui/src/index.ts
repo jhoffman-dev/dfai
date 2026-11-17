@@ -277,6 +277,7 @@ export type { TemplateNotice } from './template-banner.tsx';
 export { lostUsesText, templateUsesText } from './template-words.ts';
 export type { ArchiveContents, ArchivePageProps } from './archive-page.tsx';
 export type {
+  InboxAssistProps,
   InboxContents,
   InboxPageProps,
   InboxTypesOffer,
@@ -285,6 +286,7 @@ export type {
 } from './inbox-page.tsx';
 export type { InboxOfferReading } from './inbox-offer.ts';
 export type { InboxRefusal } from './inbox/inbox-rows.tsx';
+export type { AssistRowView, AssistView } from './inbox/assist-summary.tsx';
 export type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';
 export { WeeklyReviewPage } from './weekly-review-page.tsx';
 export type { WeeklyReviewPageProps } from './weekly-review-page.tsx';

@@ -328,6 +328,17 @@ export function asksSpentInHour(entries: readonly LogEntry[], now: LocalTime): n
   return spendTimes(inHourUpTo(entries, end), asksSpentBy).length;
 }
 
+/**
+ * When each ask `entries` made in the hour up to `now` was made, in
+ * milliseconds, oldest first, once for each: what an asker that keeps no log
+ * of its own (Inbox assist's preview, #899) counts its own asks beside.
+ */
+export function askTimesInHour(entries: readonly LogEntry[], now: LocalTime): number[] {
+  const end = localTimeMs(now);
+  if (end === null) return [];
+  return spendTimes(inHourUpTo(entries, end), asksSpentBy);
+}
+
 /** The entries in the hour up to `end`, each with its moment. */
 function inHourUpTo(entries: readonly LogEntry[], end: number): { at: number; entry: LogEntry }[] {
   return entries.flatMap((entry) => {

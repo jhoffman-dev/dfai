@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode, type Ref } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import type { PageCrumb } from '@dfai/domain';
 import { Icon, sidebarGlyph, type IconName } from './icon.tsx';
@@ -154,10 +154,12 @@ export function PageAction({
   title = label,
   tone = 'ghost',
   disabled = false,
+  busy = false,
   expanded,
   pressed,
   onPressStart,
   onPress,
+  buttonRef,
   children,
 }: {
   icon: IconName;
@@ -166,6 +168,11 @@ export function PageAction({
   title?: string;
   tone?: 'ghost' | 'secondary' | 'primary';
   disabled?: boolean;
+  /**
+   * Unavailable for now, but still focusable (`aria-disabled`): a press does
+   * nothing, and the keyboard's focus is not dropped as a disabled button's is.
+   */
+  busy?: boolean;
   /** Given when the button opens a form under the bar. */
   expanded?: boolean;
   /** Given when the button shows and hides something beside the page: the type editor, say. */
@@ -173,6 +180,8 @@ export function PageAction({
   /** The pointer coming down, before the press focuses anything. */
   onPressStart?: () => void;
   onPress: () => void;
+  /** The button itself, for a page that hands the focus back to it. */
+  buttonRef?: Ref<HTMLButtonElement>;
   /** After the label: a shortcut hint, say. */
   children?: ReactNode;
 }) {
@@ -182,10 +191,12 @@ export function PageAction({
       className={`btn btn--${tone} btn--sm page-bar__action`}
       title={title}
       disabled={disabled}
+      {...(busy && { 'aria-disabled': true })}
+      {...(buttonRef !== undefined && { ref: buttonRef })}
       {...(expanded !== undefined && { 'aria-expanded': expanded })}
       {...(pressed !== undefined && { 'aria-pressed': pressed })}
       {...(onPressStart !== undefined && { onPointerDown: onPressStart })}
-      onClick={onPress}
+      onClick={busy ? undefined : onPress}
     >
       <Icon name={icon} size={15} />
       <span className="page-bar__action-label">{label}</span>

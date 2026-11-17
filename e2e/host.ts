@@ -486,6 +486,8 @@ export interface FakeHost {
   writesTo(relativePath: string): number;
   /** How many times the app has asked the host for this command, counted as each call starts. */
   callsTo(command: string): number;
+  /** How many times the app has asked the host for each command so far, counted as each call starts. */
+  commandCounts(): ReadonlyMap<string, number>;
   /**
    * How many calls of this command have been answered in the page, failures
    * included. Each is counted a task after its answer settles there, so the
@@ -2383,6 +2385,7 @@ export async function installHost(
     },
     writesTo: (relativePath) => writes.get(relativePath) ?? 0,
     callsTo: (command) => calls.get(command) ?? 0,
+    commandCounts: () => new Map(calls),
     answeredTo: (command) =>
       page.evaluate(
         (named) =>
