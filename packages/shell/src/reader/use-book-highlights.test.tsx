@@ -93,10 +93,13 @@ function setUp({ dirty = false }: { dirty?: boolean } = {}) {
   return { files, ports };
 }
 
-function useTab(ports: DocumentPorts) {
-  const note = useLiteratureNoteOf({ ports, vault: VAULT, pdf: BOOK }) ?? null;
-  const placed = usePlacedBookHighlights({ ports, vault: VAULT, note, book, generation: 1 });
-  const writes = useBookWrites({ ports, vault: VAULT, note, book });
+function useTab(
+  ports: DocumentPorts,
+  { opened = book, vault = VAULT }: { opened?: FoliateBook; vault?: string } = {},
+) {
+  const note = useLiteratureNoteOf({ ports, vault, pdf: BOOK }) ?? null;
+  const placed = usePlacedBookHighlights({ ports, vault, note, book: opened, generation: 1 });
+  const writes = useBookWrites({ ports, vault, note, book: opened });
   return { note, ...placed, ...writes, placedNotice: placed.notice };
 }
 
@@ -144,6 +147,45 @@ describe("a book reader tab's literature note", () => {
     expect(files.get(NOTE)).toContain('> Who laughs last.');
     await act(() => result.current.actions.onRemove(id));
     expect(files.get(NOTE)).toBe(before);
+  });
+
+  it('removes a highlight while a new one’s chapter text is still being read, which reads no note (#880)', async () => {
+    const { ports, files } = setUp();
+    let stuck = false;
+    const slow: FoliateBook = {
+      ...book,
+      // Once stuck, the chapter's text never comes.
+      sectionText: (section) => (stuck ? new Promise<string>(() => {}) : book.sectionText(section)),
+    };
+    const { result } = renderHook(
+      () => useTab(ports, { opened: slow, vault: '/vault-slow-book' }),
+      {
+        wrapper: queryWrapper().wrapper,
+      },
+    );
+    await waitFor(() => expect(result.current.note).toBe(NOTE));
+    await act(() =>
+      result.current.actions.onHighlight({
+        selection: { section: 0, start: 0, end: 6 },
+        style: { mark: 'underline', color: 'yellow' },
+      }),
+    );
+    await waitFor(() => expect(result.current.highlights).toHaveLength(1));
+    const id = result.current.highlights[0]?.id as string;
+
+    stuck = true;
+    act(() => {
+      void result.current.actions.onHighlight({
+        selection: { section: 1, start: 0, end: 4 },
+        style: { mark: 'highlight', color: 'blue' },
+      });
+    });
+    let removed: boolean | 'pending' = 'pending';
+    act(() => {
+      void result.current.actions.onRemove(id).then((answer) => (removed = answer));
+    });
+    await waitFor(() => expect(removed).toBe(true), { timeout: 500 });
+    expect(files.get(NOTE)).not.toContain(`^${id}`);
   });
 
   it('finds a phrase in every chapter', async () => {

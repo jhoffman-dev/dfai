@@ -189,6 +189,46 @@ test('an underline and a comment made from the selection, and a highlight delete
   await expectFile(vault, NOTE).toBe(before);
 });
 
+test('two highlights deleted one after the other, the second before the first is written, both go (#880)', async ({
+  page,
+}) => {
+  const vault = await createVault();
+  const host = await installHost(page, vault);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
+  await addEpub(page, { name: 'fables-of-brightwater.epub', bytes: EPUB });
+  await expectFile(vault, NOTE).toContain('kind: epub');
+  const before = await vault.read(NOTE);
+  const toolbar = page.getByRole('toolbar', { name: 'Mark the selection' });
+  const rows = panel(page).getByRole('listitem');
+  await selectWords(page, 'fell fast asleep');
+  await toolbar.getByRole('button', { name: 'Underline' }).click();
+  await expect(rows).toHaveCount(1);
+  await selectWords(page, 'slow but steady pace');
+  await toolbar.getByRole('button', { name: 'Underline' }).click();
+  await expect(rows).toHaveCount(2);
+
+  const first = rows.filter({ hasText: 'fell fast asleep' });
+  const second = rows.filter({ hasText: 'slow but steady pace' });
+  await first.getByRole('button', { name: 'Delete…' }).click();
+  await second.getByRole('button', { name: 'Delete…' }).click();
+  const release = host.holdWrites(NOTE);
+  const written = host.writesTo(NOTE);
+  await first.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect.poll(() => host.writesTo(NOTE)).toBe(written + 1);
+  await second.getByRole('button', { name: 'Delete', exact: true }).click();
+  // Its removal waits its turn behind the first's, shown pending rather than refused.
+  await expect(second.getByRole('button', { name: 'Delete', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  release();
+
+  await expect(rows).toHaveCount(0);
+  await expectFile(vault, NOTE).toBe(before);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
 test('the contents, the chapter turns, find in the book and the text size', async ({ page }) => {
   await openVault(page);
   await addEpub(page, { name: 'fables-of-brightwater.epub', bytes: EPUB });
