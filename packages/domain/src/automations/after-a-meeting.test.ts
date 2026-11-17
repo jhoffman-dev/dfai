@@ -4,10 +4,11 @@ import { checkAtlasQuery } from '../query-language/check.ts';
 import { parseAtlasQuery } from '../query-language/parse.ts';
 import { createVaultPath } from '../vault/vault-path.ts';
 import { CLAUDE_ASKS_PER_RUN } from './answered-note.ts';
+import { noteRunsHoldMessage } from './note-runs-hold.ts';
 import {
   asksSpentInHour,
   NOTE_RUNS_PER_HOUR,
-  noteRunsCappedProblem,
+  noteRunsHold,
   noteRunsHeldUntil,
 } from './automation-due.ts';
 import {
@@ -320,11 +321,21 @@ describe('the declared step’s hourly allowance', () => {
     );
   });
 
-  it('says both limits when the step is held, and that the allowance is shared', () => {
-    expect(noteRunsCappedProblem('2026-10-14T12:10:00', declared)).toBe(
-      `Claude has been asked ${DECLARED_STEP_ASKS_PER_HOUR} times in the last hour by the rules ` +
-        'that make your own action items into tasks, the most they may together, ' +
-        `or it has used its ${NOTE_RUNS_PER_HOUR} runs. It runs on what changed meanwhile at 12:10.`,
+  it('says which limit holds the step, with its counts, and which rule shares its asks', () => {
+    const hold = noteRunsHold({
+      rule: 'After a meeting',
+      entries: times(20, asked),
+      now: NOW,
+      budget: declared,
+      sharers: [{ name: 'Board digest', entries: times(10, asked) }],
+    });
+    expect(hold === null ? null : noteRunsHoldMessage(hold)).toBe(
+      'Waiting, not broken: it has reached an hourly limit. ' +
+        `It shares one limit with “Board digest”: together they may ask Claude ${DECLARED_STEP_ASKS_PER_HOUR} times an hour. ` +
+        'An ask is one question to Claude about one note, or about one part of a long note. ' +
+        `In the last hour they asked ${DECLARED_STEP_ASKS_PER_HOUR} times: “After a meeting” 20, “Board digest” 10. ` +
+        'It runs next at 12:10, on what changed meanwhile. ' +
+        'Nothing needs fixing: wait, or turn off “Board digest” to leave the limit to this rule.',
     );
   });
 
