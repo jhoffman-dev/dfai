@@ -12,3 +12,9 @@ export type { ClarifyOutcome, ClarifyRequest, ClarifyUndo } from './clarify-inbo
 export { captureToInbox } from './capture.ts';
 export { GLOBAL_CAPTURE_EVENT } from './global-capture.ts';
 export type { GlobalCapturePort, GlobalCaptureShortcut } from './global-capture.ts';
+export { previewInboxAssist } from './preview-inbox-assist.ts';
+export type {
+  InboxAssistOutcome,
+  InboxAssistPorts,
+  InboxAssistRequest,
+} from './preview-inbox-assist.ts';

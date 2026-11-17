@@ -1,5 +1,6 @@
 import {
   asksSpentInHour,
+  askTimesInHour,
   automationIdKey,
   sharesAskAllowance,
   type AutomationRule,
@@ -67,4 +68,21 @@ export async function askedThisHour(
   if (!sharesAskAllowance(rule.action)) return 0;
   const own = await readRuleLog(ports.fs, rule);
   return asksSpentInHour(await allowanceEntries(ports, rule, own.entries), now);
+}
+
+/**
+ * When each ask the vault's hourly allowance has had in the hour up to `now`
+ * was made, by every rule that spends it, in wall-clock milliseconds: what an
+ * asker that keeps no log (Inbox assist's preview, #899) counts its own beside.
+ */
+export async function allowanceAskTimes(
+  { fs, markdown }: AllowancePorts,
+  now: LocalTime,
+): Promise<number[]> {
+  const notePaths = await listVaultNotes({ fs });
+  const { automations } = await loadAutomations({ fs, markdown, notePaths });
+  const entries = automations
+    .filter((each) => sharesAskAllowance(each.rule.action))
+    .flatMap((each) => each.log);
+  return askTimesInHour(entries, now);
 }

@@ -13,6 +13,7 @@ import { useMeetingsWaitingBanner } from '../meetings/use-meetings-waiting-banne
 import { useMeetingSetup, type MeetingSetupWiring } from '../meetings/use-meeting-setup.ts';
 import type { SyncStore } from '../sync/sync-store.ts';
 import { useInbox } from './use-inbox.ts';
+import { useInboxAssist, type InboxAssistWiring } from './use-inbox-assist.ts';
 
 type InboxPageProps = ComponentProps<typeof InboxPage>;
 
@@ -47,6 +48,8 @@ export interface InboxWiring extends Pick<
   readonly onOpenSource: (link: string) => void;
   /** Setting up meeting post-processing in one yes (#191), shared with the Automations page. */
   readonly meetingSetup: MeetingSetupWiring;
+  /** Suggest (#900): Claude as a rule's step reaches it; null where Claude is not offered. */
+  readonly assist: InboxAssistWiring | null;
 }
 
 /**
@@ -63,8 +66,16 @@ export interface InboxWiring extends Pick<
 export function InboxContainer({ wiring, chrome }: PageContainerProps) {
   const { pages, pane } = wiring;
   // The offers are spread below, since each is given only while the window makes it.
-  const { closing, pendingWrites, onOpenSource, meetingsWaiting, sync, meetingSetup, ...offers } =
-    pages.inbox;
+  const {
+    closing,
+    pendingWrites,
+    onOpenSource,
+    meetingsWaiting,
+    sync,
+    meetingSetup,
+    assist: assistWiring,
+    ...offers
+  } = pages.inbox;
   const setup = useMeetingSetup(meetingSetup, { vault: pane.vault, where: 'inbox' });
   const waitingBanner = useMeetingsWaitingBanner({
     waiting: meetingsWaiting,
@@ -100,6 +111,13 @@ export function InboxContainer({ wiring, chrome }: PageContainerProps) {
     closing,
     held: pages.holds.inbox,
     toasts: pane.toasts,
+  });
+  const assist = useInboxAssist({
+    wiring: assistWiring,
+    ports: pages.ports,
+    clock: localClock,
+    items: inbox.contents?.items ?? null,
+    vaultKey: pane.vault,
   });
   const proposals = useProposals({
     ports: pages.ports,
@@ -151,6 +169,7 @@ export function InboxContainer({ wiring, chrome }: PageContainerProps) {
       meetingsWaiting={waitingBanner}
       {...offers}
       meetingSetup={setup}
+      assist={assist}
       proposals={{ ...proposals.section, onOpen: pages.openNote, onOpenSource }}
       {...chrome}
     />

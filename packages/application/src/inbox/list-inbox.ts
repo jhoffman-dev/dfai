@@ -127,6 +127,8 @@ async function readPage({
       waitingOnNames: cell(row, 'waitingOnNames'),
       defer: cell(row, 'defer'),
       due: cell(row, 'due'),
+      projectWritten: cell(row, 'projectWritten'),
+      dueWritten: cell(row, 'dueWritten'),
     });
     return { item, key: inboxKeyOf({ path, modified: cell(row, 'modified') }) };
   });

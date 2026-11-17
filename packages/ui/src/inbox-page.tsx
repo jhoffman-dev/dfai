@@ -1,4 +1,14 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type { GtdStatus, InboxItem, VaultPath } from '@dfai/domain';
 import { Icon } from './icon.tsx';
 import {
@@ -28,6 +38,8 @@ import { MeetingCleanup, type MeetingCleanupProps } from './meeting-cleanup.tsx'
 import type { InboxOfferReading } from './inbox-offer.ts';
 import { useListAnchor, type ListAnchorParts } from './list-anchor.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
+import { AssistSummary, type AssistView } from './inbox/assist-summary.tsx';
+import { useAssistKeys } from './inbox/use-assist-keys.ts';
 
 const NO_REFUSALS: readonly InboxRefusal[] = [];
 
@@ -146,8 +158,18 @@ export interface InboxPageProps {
   view?: { readonly title: string; readonly onOpen: () => void } | null;
   /** What Claude or an automation proposed, answered here rather than filed (P29-02). */
   proposals?: ProposalsSectionProps | null;
+  /** Suggest (#900): what Claude would do with the items in view, writing nothing; null where Claude is not offered. */
+  assist?: InboxAssistProps | null;
   onShowSidebar?: () => void;
   history?: PageHistory;
+}
+
+/** Suggest's button and, once it was pressed, what it has to show. */
+export interface InboxAssistProps {
+  /** Null until Suggest is pressed, and again once dismissed. */
+  readonly view: AssistView | null;
+  readonly onSuggest: () => void;
+  readonly onDismiss: () => void;
 }
 
 /**
@@ -172,6 +194,7 @@ export function InboxPage(props: InboxPageProps) {
   const meetingProjects = props.meetingProjects ?? null;
   const meetingSetup = props.meetingSetup ?? null;
   const proposals = props.proposals ?? null;
+  const assist = props.assist ?? null;
   const problem = props.problem ?? leftRefusal(props);
   const counted = describe(props.contents, proposals?.contents?.open.length ?? 0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -197,21 +220,41 @@ export function InboxPage(props: InboxPageProps) {
     offersRead.some((read) => read?.waitingForIndex === true),
   );
   const anchor = useListAnchor(parts, live);
-  const home = useInboxHome({
+  const assistKeys = useAssistKeys(assist);
+  const homeKeys = useInboxHome({
     page: article,
     empty: props.contents?.items.length === 0,
     busy: props.busy,
     onUndo: props.onUndo,
   });
+  const onPageKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    homeKeys.onKeyDown(event);
+    assistKeys.onPageKeyDown(event);
+  };
   return (
     <>
       <PageBar
         crumb={{ icon: 'inbox', parent: 'Inbox' }}
         name="To process"
         {...(counted !== null && { count: counted })}
-        {...(view !== null && {
+        {...((view !== null || assist !== null) && {
           actions: (
-            <PageAction icon="table" label={`Open the ${view.title} view`} onPress={view.onOpen} />
+            <>
+              {view !== null && (
+                <PageAction
+                  icon="table"
+                  label={`Open the ${view.title} view`}
+                  onPress={view.onOpen}
+                />
+              )}
+              {assist !== null && (
+                <SuggestAction
+                  asking={assist.view?.kind === 'asking'}
+                  onSuggest={assist.onSuggest}
+                  buttonRef={assistKeys.suggest}
+                />
+              )}
+            </>
           ),
         })}
         {...(props.onShowSidebar !== undefined && { onShowSidebar: props.onShowSidebar })}
@@ -225,11 +268,20 @@ export function InboxPage(props: InboxPageProps) {
         {...ROW_SCROLLER_MARK}
       >
         <RowScrollerContext.Provider value={scroller}>
-          <article className="page page--wide inbox" aria-label="Inbox" ref={article} {...home}>
+          <article
+            className="page page--wide inbox"
+            aria-label="Inbox"
+            ref={article}
+            {...homeKeys}
+            onKeyDown={onPageKeyDown}
+          >
             <HiddenTitle>To process</HiddenTitle>
             {settingsUnreadable !== null && <SettingsUnreadable {...settingsUnreadable} />}
             {ownerUnknown !== null && <OwnerUnknown {...ownerUnknown} />}
             {meetingsWaiting !== null && <MeetingsWaiting {...meetingsWaiting} />}
+            {assist !== null && assist.view !== null && (
+              <AssistSummary view={assist.view} onDismiss={assistKeys.dismiss} />
+            )}
             <Offers
               offers={[
                 slot('types', offer, (known) => <TypesOffer {...known} />),
@@ -267,6 +319,33 @@ export function InboxPage(props: InboxPageProps) {
     </>
   );
 }
+
+/**
+ * Suggest's button (#900). Memoised, so the bar drawn again as rows are
+ * decided does not draw it again: without it, opening the Inbox drew 451
+ * components and deciding a row 702, against 448 and 690 with it (#903).
+ * While it asks it stays focusable (`busy`), so the keyboard keeps its place.
+ */
+const SuggestAction = memo(function SuggestAction({
+  asking,
+  onSuggest,
+  buttonRef,
+}: {
+  asking: boolean;
+  onSuggest: () => void;
+  buttonRef: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <PageAction
+      icon="spark"
+      label="Suggest"
+      title="Suggest what to do with the items in view. Nothing is written."
+      busy={asking}
+      onPress={onSuggest}
+      buttonRef={buttonRef}
+    />
+  );
+});
 
 /** One offer's slot: drawn once it is known, null while it is still read. */
 type OfferSlot = readonly [key: string, offer: ReactNode];

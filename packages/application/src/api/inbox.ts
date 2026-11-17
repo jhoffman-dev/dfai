@@ -2,12 +2,13 @@ import {
   createVaultPath,
   INBOX_LIST_LIMIT,
   InvalidVaultPathError,
+  type InboxItem,
   type VaultPath,
 } from '@dfai/domain';
 import { listVaultInbox } from '../inbox/list-inbox.ts';
 import { FilingRefusedError, processInboxItems } from '../inbox/process-inbox.ts';
 import { ApiError } from './api-error.ts';
-import type { ApiArchiveOutcome } from './contract.ts';
+import type { ApiArchiveOutcome, ApiInboxItem } from './contract.ts';
 import { moveBatch } from './archive.ts';
 import { decodeInboxCursor, encodeInboxCursor } from './cursor.ts';
 import { bodyObject, countOf, requiredString } from './fields.ts';
@@ -35,7 +36,35 @@ export async function inboxRoute(request: VaultRequest): Promise<RouteResult> {
     page: { limit, after },
   });
   const next = truncated && last !== null ? encodeInboxCursor(last) : null;
-  return { status: 200, body: { items, truncated, next, total } };
+  return { status: 200, body: { items: items.map(apiInboxItem), truncated, next, total } };
+}
+
+/**
+ * An item as the contract answers it, field by field: the Inbox's own item
+ * carries more (what Inbox assist reads, #903), and a field reaches the API
+ * only when the contract names it.
+ */
+function apiInboxItem(item: InboxItem): ApiInboxItem {
+  const { task } = item;
+  return {
+    path: item.path,
+    title: item.title,
+    type: item.type,
+    arrivedIn: item.arrivedIn,
+    importOutcome: item.importOutcome,
+    importError: item.importError,
+    task:
+      task === null
+        ? null
+        : {
+            status: task.status,
+            project: task.project,
+            waitingOn: task.waitingOn,
+            waitingOnNames: task.waitingOnNames,
+            defer: task.defer,
+            due: task.due,
+          },
+  };
 }
 
 /**

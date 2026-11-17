@@ -225,6 +225,43 @@ describe('GET /v1/inbox', () => {
     expect(api.writes).toEqual([]);
   });
 
+  it('answers each item with exactly the contract’s keys, and no more (#903)', async () => {
+    const files = {
+      'Inbox/Call Sam.md': '---\ntype: task\nproject: "[[DFAI]]"\ndue: next Friday\n---\n',
+      'Inbox/Payroll article.md': '---\ntype: reference\nproject: Larkspur Payroll\n---\n',
+      'Projects/DFAI.md': PROJECT,
+    };
+    const api = apiFixture({
+      files,
+      index: { query: atlasQueryIndex({ markdown: fakeMarkdown(), files }) },
+    });
+    const response = await api.send({ method: 'GET', path: '/v1/inbox' });
+
+    const items = (bodyOf(response) as { items: Record<string, unknown>[] }).items;
+    expect(items).toHaveLength(2);
+    // A field added to InboxItem fails this until someone decides it belongs in the API.
+    for (const item of items) {
+      expect(Object.keys(item).sort()).toEqual([
+        'arrivedIn',
+        'importError',
+        'importOutcome',
+        'path',
+        'task',
+        'title',
+        'type',
+      ]);
+    }
+    const task = items.find((item) => item['path'] === 'Inbox/Call Sam.md')!['task'];
+    expect(Object.keys(task as object).sort()).toEqual([
+      'defer',
+      'due',
+      'project',
+      'status',
+      'waitingOn',
+      'waitingOnNames',
+    ]);
+  });
+
   it('pages past a full page by cursor, saying where the next starts and how many wait (#167)', async () => {
     const files = {
       'Inbox/A.md': 'a\n',
