@@ -23,7 +23,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-const PIECES = [
+export const PIECES = [
   '*',
   '**',
   '_',
@@ -93,9 +93,26 @@ const PIECES = [
   ' ',
 ];
 
-const TARGETS = ['Note', '_draft_', 'a*b*c', 'a<b>', 'x `y` z', '~~s~~', 'a&amp;b', 'k\\k', 'a b'];
-const HREFS = ['https://example.com', 'https://e.com/a_b_', 'mailto:a@b.co', 'x y', '<x>', '#h'];
-const SRCS = ['pic.png', 'a b.png', 'x)y.png', 'https://e.com/i.png'];
+export const TARGETS = [
+  'Note',
+  '_draft_',
+  'a*b*c',
+  'a<b>',
+  'x `y` z',
+  '~~s~~',
+  'a&amp;b',
+  'k\\k',
+  'a b',
+];
+export const HREFS = [
+  'https://example.com',
+  'https://e.com/a_b_',
+  'mailto:a@b.co',
+  'x y',
+  '<x>',
+  '#h',
+];
+export const SRCS = ['pic.png', 'a b.png', 'x)y.png', 'https://e.com/i.png'];
 
 type Random = () => number;
 
@@ -271,10 +288,10 @@ export function generatedDocument(seed: number): EditorDocument {
   return withIdsAndEmbeds({ type: 'doc', content }, mulberry32(seed ^ 0x5bd1e995));
 }
 
-const EMBED_FRAGMENTS = ['#^ab12', '#^Q-7', '#Part', '#A heading'];
+export const EMBED_FRAGMENTS = ['#^ab12', '#^Q-7', '#Part', '#A heading'];
 
 /** The nodes the editor lets hold an id, wherever they are. */
-const CAN_CARRY_AN_ID = new Set([
+export const CAN_CARRY_AN_ID = new Set([
   'paragraph',
   'heading',
   'listItem',

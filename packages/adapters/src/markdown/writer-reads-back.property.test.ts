@@ -1,23 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import type { EditorDocument, EditorNode } from '@dfai/domain';
+import type { EditorDocument, EditorNode, ParsedBody } from '@dfai/domain';
 import { parseMarkdownBody, RAW_BLOCK, serializeMarkdownBody } from './markdown-blocks.ts';
 import { documentOf, generatedDocument } from './writer-fuzz.test-support.ts';
+import { LISTED_DOCUMENTS } from './writer-listed.test-support.ts';
+import { shapesNotIn } from './writer-shapes.test-support.ts';
 
 /**
  * The writer's promise (A21-03): an edited block reads back as the editor had
- * it. Seeded editor documents — every block kind the editor writes, text full
- * of markdown's punctuation, every mark — go through the writer and the
- * reader, and must come back as the same document, adjacent text merged.
+ * it. Editor documents — every block kind the editor writes, text full of
+ * markdown's punctuation, every mark — go through the writer and the reader,
+ * and must come back as the same document, adjacent text merged.
  *
  * The one other outcome allowed is a block read back as its own source, shown
  * read-only (ADR-0004): markdown that cannot be written faithfully is kept as
  * written rather than turned silently into something else.
  */
 
-/** A new note holding `doc`, saved and read back. */
-function saveAndReload(doc: EditorDocument): { markdown: string; reread: EditorNode[] } {
+interface Saved {
+  readonly markdown: string;
+  readonly parsed: ParsedBody;
+}
+
+/**
+ * A new note holding `doc`, saved and read back: once per document, since
+ * both properties start from it.
+ */
+const savedOnce = new WeakMap<EditorDocument, Saved>();
+function saveAndReload(doc: EditorDocument): Saved {
+  const known = savedOnce.get(doc);
+  if (known !== undefined) return known;
   const markdown = serializeMarkdownBody({ originalBody: '', parsed: parseMarkdownBody(''), doc });
-  return { markdown, reread: [...parseMarkdownBody(markdown).doc.content] };
+  const saved = { markdown, parsed: parseMarkdownBody(markdown) };
+  savedOnce.set(doc, saved);
+  return saved;
 }
 
 /** The same note, with every text block in it given one more word, saved over itself. */
@@ -32,7 +47,7 @@ function editedEverywhere(doc: EditorDocument): EditorDocument {
 
 type Outcome = 'same' | 'raw' | 'different';
 
-function outcomeOf(doc: EditorDocument, reread: EditorNode[]): Outcome {
+function outcomeOf(doc: EditorDocument, reread: readonly EditorNode[]): Outcome {
   if (documentOf(reread) === documentOf(doc.content)) return 'same';
   // Block by block: each reads back as it was, or as its own source.
   const blocks = doc.content.filter((node) => node.type !== 'paragraph' || node.content?.length);
@@ -47,62 +62,81 @@ function outcomeOf(doc: EditorDocument, reread: EditorNode[]): Outcome {
   return each.includes('different') ? 'different' : 'raw';
 }
 
-/** Seeds whose documents do not read back as written, with their markdown, for the report. */
-function misread(seeds: number, check: (doc: EditorDocument) => [Outcome, string]) {
+interface Case {
+  readonly name: string;
+  readonly doc: EditorDocument;
+}
+
+/** The cases whose documents do not read back as written, with their markdown, for the report. */
+function misread(cases: readonly Case[], check: (doc: EditorDocument) => [Outcome, string]) {
   const different: string[] = [];
-  let raw = 0;
-  for (let seed = 1; seed <= seeds; seed += 1) {
+  const raw: string[] = [];
+  for (const { name, doc } of cases) {
     let outcome: Outcome;
     let markdown: string;
     try {
-      [outcome, markdown] = check(generatedDocument(seed));
+      [outcome, markdown] = check(doc);
     } catch (error) {
       [outcome, markdown] = ['different', `threw ${String(error)}`];
     }
-    if (outcome === 'raw') raw += 1;
-    if (outcome === 'different') different.push(`seed ${seed}: ${JSON.stringify(markdown)}`);
+    if (outcome === 'raw') raw.push(name);
+    if (outcome === 'different') different.push(`${name}: ${JSON.stringify(markdown)}`);
   }
   return { different, raw };
 }
 
-const SEEDS = 3000;
 /**
- * About 17 s alone; past 120 s under the gate's coverage run beside the
- * rest of the suite on a loaded Mac (2026-10-04, twice). The work is fixed
- * and deterministic, so this is a budget for CPU, not a wait on a moment.
+ * The listed documents hold every shape the property turns on
+ * (`EVERY_SHAPE`): every piece of the generator's text at each end of every
+ * kind of text block and under every mark, every kind of block, nesting, atom,
+ * link, embed and id. 3000 seeds drew them too, and took up to 105 s on CI to
+ * do it (#888). A few seeds still run, for what nobody thought to list.
  */
-const BUDGET_MS = 300_000;
+const SEEDS = 12;
+const CASES: readonly Case[] = [
+  ...LISTED_DOCUMENTS.map((doc, at) => ({ name: `listed ${at}`, doc })),
+  ...Array.from({ length: SEEDS }, (_, at) => ({
+    name: `seed ${at + 1}`,
+    doc: generatedDocument(at + 1),
+  })),
+];
+
+/**
+ * Kept as source is the last resort, not the answer: no listed document is,
+ * each is built to be written faithfully, and a seed only rarely (6 of the
+ * first 3000, none of these).
+ */
+function expectReadBack({ different, raw }: { different: string[]; raw: string[] }) {
+  expect(different.slice(0, 8), `${different.length} of ${CASES.length} read differently`).toEqual(
+    [],
+  );
+  expect(raw, 'kept as source').toEqual([]);
+}
 
 describe('an edited block reads back as the editor had it', () => {
-  it(
-    `holds for ${SEEDS} seeded documents written afresh`,
-    () => {
-      const { different, raw } = misread(SEEDS, (doc) => {
-        const { markdown, reread } = saveAndReload(doc);
-        return [outcomeOf(doc, reread), markdown];
-      });
-      expect(different.slice(0, 8), `${different.length} of ${SEEDS} read differently`).toEqual([]);
-      // Kept as source is the last resort, not the answer: a handful at most.
-      expect(raw, `${raw} of ${SEEDS} kept as source`).toBeLessThanOrEqual(SEEDS / 100);
-    },
-    BUDGET_MS,
-  );
+  it('the listed documents hold every shape the property turns on', () => {
+    expect(shapesNotIn(LISTED_DOCUMENTS)).toEqual([]);
+  });
 
-  it(
-    `holds for ${SEEDS} seeded documents saved, reopened and edited again`,
-    () => {
-      const { different, raw } = misread(SEEDS, (first) => {
-        const { markdown: original } = saveAndReload(first);
-        const parsed = parseMarkdownBody(original);
+  it(`holds for the listed documents and ${SEEDS} seeds, written afresh`, () => {
+    expectReadBack(
+      misread(CASES, (doc) => {
+        const { markdown, parsed } = saveAndReload(doc);
+        return [outcomeOf(doc, parsed.doc.content), markdown];
+      }),
+    );
+  });
+
+  it(`holds for the listed documents and ${SEEDS} seeds, saved, reopened and edited again`, () => {
+    expectReadBack(
+      misread(CASES, (first) => {
+        const { markdown: original, parsed } = saveAndReload(first);
         if (parsed.doc.content.some((node) => node.type === RAW_BLOCK)) return ['same', original];
         const doc = editedEverywhere(parsed.doc);
         const markdown = serializeMarkdownBody({ originalBody: original, parsed, doc });
         const reread = [...parseMarkdownBody(markdown).doc.content];
         return [outcomeOf(doc, reread), `${original}\n=>\n${markdown}`];
-      });
-      expect(different.slice(0, 8), `${different.length} of ${SEEDS} read differently`).toEqual([]);
-      expect(raw, `${raw} of ${SEEDS} kept as source`).toBeLessThanOrEqual(SEEDS / 100);
-    },
-    BUDGET_MS,
-  );
+      }),
+    );
+  });
 });
