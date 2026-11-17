@@ -304,8 +304,8 @@ test('Enter after a click on a line of a note re-read while its tab was hidden b
   // caret is elsewhere, and the editor keeps its record of where the page's
   // caret last was. A click that puts the page's caret back on that spot is
   // not read, so Enter splits the line the editor thinks it is on, after
-  // the outside paragraph, while the caret is drawn on this one (#ISSUE).
-  test.fail(true, '#ISSUE: a click on the spot the editor last read is not read after a re-read');
+  // the outside paragraph, while the caret is drawn on this one (#877).
+  test.fail(true, '#877: a click on the spot the editor last read is not read after a re-read');
   const { vault } = await openVault(page);
   await openAndType(page, 'alpha', ' Mine.');
   await row(page, 'beta').click({ modifiers: ['Meta'] });

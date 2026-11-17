@@ -84,7 +84,7 @@ async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
   // ⌘→ is pressed only once the editor has read the click, as a person's
   // key comes: pressed sooner, the click and the key can reach the editor as
   // one selection change, and when the key puts the page's caret back where
-  // the editor last read it, the editor reads nothing at all (#ISSUE). ⌘← is
+  // the editor last read it, the editor reads nothing at all (#877). ⌘← is
   // pressed after ⌘→ whenever the caret is in the line, at its end or, where
   // it wraps, short of it: from a line's start under a bookmark card, ⌘←
   // takes the caret up to the line above.
