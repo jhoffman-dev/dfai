@@ -5,39 +5,37 @@
  * The click lands at the line's start on purpose: where a click lands is not
  * to be relied on, so the key that follows must move the caret from anywhere
  * on the line. End and Home do not: in WebKit on macOS they scroll and leave
- * the caret where it was. ⌘→ and ⌘← are the Mac's end and start of line.
+ * the caret where it was. ⌘→ and ⌘← are the Mac's end and start of line. The
+ * keys are the platform's own (platform.ts): End and Home on Linux.
  *
- * And the key alone is not enough. For 20 ms after it is focused, ProseMirror
- * puts its own selection back on the page unless it has read the page's by
- * then; under load the caret the click or the key moved is put back at the
- * note's start, and the typing after it lands there. So the editor's own
- * selection is what is waited on, the page's caret must be at the same place
- * (an editor that has not read the page yet holds an old one), and the click
- * and the key are both done
- * again if it was undone: the key alone would only move the put-back caret
- * along the note's first line, never back to this one (#489). The reset runs
- * once per focus, so the second click is not undone. Pressing the key also
- * collapses the word or line a quick second or third click selects.
- *
- * A tap is not done again: the app now keeps the caret a press put down
- * through that reset (#835, fixed by the tap-caret plugin), so
- * caretAtLineEndByTap fails on the first miss rather than hide that fix
- * regressing (#838).
+ * For 20 ms after it is focused, ProseMirror puts its own selection back on
+ * the page unless it has read the page's by then; under load that is the
+ * note's start (#489). So the editor's own selection is what is waited on,
+ * and the page's caret must be at the same place: an editor that has not
+ * read the page yet holds an old one.
  *
  * ⌘→ goes to the end of the line as drawn, so on a paragraph that wraps it
  * stops short of the block's end: the check then fails loudly, never passes.
- *
- * The keys are the platform's own (platform.ts): End and Home on Linux.
  */
 import { expect, type Locator } from '@playwright/test';
 import { LINE_END, LINE_START, TEXT_END } from './platform.ts';
 
+/** How long the editor is given to hold the caret where it is wanted. */
+const CARET_WAIT = { timeout: 5_000 };
+
 /**
- * How long one try's action may take: well under the retry's own 5 s, so a
- * line that cannot be clicked or tapped fails with the action's own message,
- * not only with the retry's time running out.
+ * How long one action may take: well under `CARET_WAIT`, so a line that
+ * cannot be clicked or tapped fails with the action's own message, not only
+ * with that wait running out.
  */
 const ONE_TRY = { timeout: 1_000 };
+
+/**
+ * How long caretAt's one click may take: the whole of `CARET_WAIT`, which
+ * its clicks had between them when they were tried again, since a page
+ * still busy opening the note can hold one click past `ONE_TRY` (#850).
+ */
+const ONLY_TRY = CARET_WAIT;
 
 /** Click the line `line` is in, and put the caret at that line's end. */
 export async function caretAtLineEnd(line: Locator): Promise<void> {
@@ -64,17 +62,65 @@ export async function caretAtNoteEnd(editor: Locator): Promise<void> {
   });
 }
 
+/**
+ * Clicks the line `line` is in and presses the keys to its start or end. The
+ * click is never done again: the app keeps a click's caret through
+ * ProseMirror's reset after focus (#835, the tap-caret plugin), so a caret
+ * put back at the note's start is that fix regressing, and a second click
+ * would hide it (#850). A caret anywhere but at the line's `where` fails at
+ * once, saying where, but for one case, where ⌘→ is pressed again: see
+ * endKeyUndone.
+ */
 async function caretAt(line: Locator, where: 'start' | 'end'): Promise<void> {
-  // Always pressed, never skipped when the editor already says the caret is
-  // there: until ProseMirror reads the click, its selection is the one from
-  // before, and the typing goes where the click put the page's caret. ⌘← is
-  // pressed from the line's end: at a line's start under a bookmark card, it
-  // takes the caret up to the line above.
-  const keys = where === 'end' ? [LINE_END] : [LINE_END, LINE_START];
-  await caretHeldAt(line, { at: where }, async () => {
-    await line.click({ position: { x: 1, y: 5 }, ...ONE_TRY });
-    for (const key of keys) await line.page().keyboard.press(key);
-  });
+  // ⌘→ is always pressed, never skipped when the editor already says the
+  // caret is there: until ProseMirror reads the click, its selection is the
+  // one from before, and the typing goes where the click put the page's
+  // caret. ⌘← is pressed from the line's end: at a line's start under a
+  // bookmark card, it takes the caret up to the line above.
+  await line.click({ position: { x: 1, y: 5 }, ...ONLY_TRY });
+  let caret = await pressAndRead(line, LINE_END);
+  if (endKeyUndone(caret)) caret = await pressAndRead(line, LINE_END);
+  if (where === 'start' && caret.inLine && caret.at === 'end') {
+    caret = await pressAndRead(line, LINE_START);
+  }
+  if (caret.inLine && caret.at === where) return;
+  throw new Error(
+    `The click did not leave the caret at its line's ${where}.${resetBy('click', caret)} ${whereCaretsAre(caret)}`,
+  );
+}
+
+/** Presses `key`, and returns the caret once the editor has read the page's. */
+async function pressAndRead(line: Locator, key: string): Promise<Caret> {
+  await line.page().keyboard.press(key);
+  return caretReadByEditor(line);
+}
+
+/**
+ * Whether the caret is still where the click put it, at its line's start, as
+ * if the ⌘→ after it was never pressed. ProseMirror's check 20 ms after
+ * focus puts its own selection back on the page unless it has read the
+ * page's; the tap-caret plugin reads it just before, on its own timer, so
+ * the click's caret is kept. A key that lands between that read and the
+ * check, as a key pressed at once after the click can, is undone by the
+ * check, back to the click's caret (#850). No person presses that soon, so
+ * ⌘→ is pressed once more, never the click: a click the check undid leaves
+ * the caret off its line, and fails at once.
+ */
+function endKeyUndone(caret: Caret): boolean {
+  return caret.inLine && caret.at === 'start';
+}
+
+/**
+ * The caret once the editor has read the page's, after a click or a key
+ * moved the page's: until then the two disagree.
+ */
+async function caretReadByEditor(line: Locator): Promise<Caret> {
+  let caret = await caretOf(line);
+  await expect(async () => {
+    caret = await caretOf(line);
+    expect(caret.agrees, whereCaretsAre(caret)).toBe(true);
+  }).toPass(CARET_WAIT);
+  return caret;
 }
 
 /**
@@ -92,12 +138,19 @@ export async function caretAtLineEndByTap(line: Locator): Promise<void> {
   await line.tap({ position: { x: box.width - 1, y: box.height / 2 }, ...ONE_TRY });
   const landed = await caretSettledAfter(line, before);
   if (landed.inLine && landed.at === 'end') return;
-  const reset = landed.atNoteStart
-    ? " It is at the note's start, where the reset after focus puts it: the tap-caret fix (#835) is not holding."
-    : '';
   throw new Error(
-    `The tap did not leave the caret at its line's end.${reset} ${whereCaretsAre(landed)}`,
+    `The tap did not leave the caret at its line's end.${resetBy('tap', landed)} ${whereCaretsAre(landed)}`,
   );
+}
+
+/**
+ * Says so when a caret the editor has read left its line for where the
+ * reset after focus leaves it: the note's start, or, once the keys moved it
+ * from there, elsewhere in the note's first block.
+ */
+function resetBy(press: 'click' | 'tap', caret: Caret): string {
+  if (!caret.agrees || caret.inLine || !caret.inFirstBlock) return '';
+  return ` It is where the reset after focus puts it: the tap-caret fix (#835) is not holding for a ${press}.`;
 }
 
 /**
@@ -112,7 +165,7 @@ async function caretSettledAfter(line: Locator, before: string) {
     const held = caret.inLine && caret.at === 'end';
     const moved = JSON.stringify(caret.page) !== before;
     expect(caret.agrees && (held || moved), whereCaretsAre(caret)).toBe(true);
-  }).toPass({ timeout: 5_000 });
+  }).toPass(CARET_WAIT);
   return caret;
 }
 
@@ -122,20 +175,14 @@ function whereCaretsAre(caret: { editor: unknown; page: unknown }): string {
 
 /**
  * Puts the caret at the end of the note's last block, `lastLine`, by `move`
- * (a key to the note's end), done again until the editor holds it there: the
- * same reset after focus undoes a key as it undoes a click (#797). `move` is
- * told which try it is, from 1. Its actions should take `ONE_TRY`'s time or less.
+ * (a key to the note's end), done again until the editor holds it there: a
+ * focus with no press, such as `focus()`, is left to ProseMirror's reset, and
+ * that reset undoes a key as it would a click (#797). The reset runs once per
+ * focus, so the second try is not undone. `move` is told which try it is,
+ * from 1. Its actions should take `ONE_TRY`'s time or less.
  */
 export async function caretAtNoteEndBy(
   lastLine: Locator,
-  move: (attempt: number) => Promise<void>,
-): Promise<void> {
-  await caretHeldAt(lastLine, { at: 'end', lastBlock: true }, move);
-}
-
-async function caretHeldAt(
-  line: Locator,
-  wanted: { at: 'start' | 'end'; lastBlock?: true },
   move: (attempt: number) => Promise<void>,
 ): Promise<void> {
   let attempt = 0;
@@ -145,19 +192,26 @@ async function caretHeldAt(
     // The editor's caret and the page's must agree: an editor still holding
     // an old caret at this line's end, before it reads where the page's caret
     // went, would pass here and then take the typing elsewhere.
-    const caret = await caretOf(line);
+    const caret = await caretOf(lastLine);
     // The diff shows only the fields checked; where each caret is goes in the message.
-    expect(caret, whereCaretsAre(caret)).toMatchObject({ inLine: true, agrees: true, ...wanted });
-  }).toPass({ timeout: 5_000 });
+    expect(caret, whereCaretsAre(caret)).toMatchObject({
+      inLine: true,
+      agrees: true,
+      at: 'end',
+      lastBlock: true,
+    });
+  }).toPass(CARET_WAIT);
 }
 
 /**
  * Where the editor that holds `line` has its caret: whether it is in the
  * block `line` is in, at that block's start, end, or neither, and whether
- * that block is the note's last; whether it is at the note's start, where
- * ProseMirror's reset after focus puts it; whether the page's caret is at the
+ * that block is the note's last or first, where ProseMirror's reset after
+ * focus puts it; whether the page's caret is at the
  * same place; and, for a failure to show, each caret's block text and offset.
  */
+type Caret = Awaited<ReturnType<typeof caretOf>>;
+
 function caretOf(line: Locator) {
   return line.evaluate(
     (element) => {
@@ -212,7 +266,7 @@ function caretOf(line: Locator) {
           inLine: false,
           at: 'neither',
           lastBlock: false,
-          atNoteStart: false,
+          inFirstBlock: false,
           agrees,
           editor,
           page: pageCaret,
@@ -227,16 +281,12 @@ function caretOf(line: Locator) {
             ? 'start'
             : 'neither';
       const lastBlock = $head.index(0) === state.doc.childCount - 1;
-      // The first place a caret can be: the start of the first block at every depth.
-      let atNoteStart = selection.empty && $head.parentOffset === 0;
-      for (let depth = 0; depth < $head.depth; depth += 1) {
-        atNoteStart &&= $head.index(depth) === 0;
-      }
+      const inFirstBlock = $head.index(0) === 0;
       return {
         inLine: block !== null && block.contains(element),
         at,
         lastBlock,
-        atNoteStart,
+        inFirstBlock,
         agrees,
         editor,
         page: pageCaret,

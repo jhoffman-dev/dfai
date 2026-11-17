@@ -48,13 +48,15 @@ test('the caret reaches the end and start of the lines next to and inside a tabl
   await expect(page.locator('.editor td p').filter({ hasText: /^10$/ })).toHaveCount(1);
 });
 
-test('the caret still reaches the line when the editor puts its old caret back after the click', async ({
+test("a click whose caret is put back at the note's start fails at once, naming the tap-caret fix", async ({
   page,
 }) => {
   await openNote(page);
-  // What ProseMirror's focus handler does when it loses the race with the
-  // click (#489): it puts the selection it had — the note's start — back on
-  // the page. Done once, on the first click's mouseup, so it always loses.
+  // What ProseMirror's check after focus did before the tap-caret fix (#835)
+  // when it lost the race with the click (#489): it put the selection it
+  // had — the note's start — back on the page. Done on the click's mouseup,
+  // so it always loses. The helper clicks once, so it must fail rather than
+  // click again and hide the fix regressing (#850).
   await page.getByLabel('Note', { exact: true }).evaluate((editor) => {
     editor.addEventListener(
       'mouseup',
@@ -67,21 +69,17 @@ test('the caret still reaches the line when the editor puts its old caret back a
       { once: true },
     );
   });
-  const above = page.getByText('Above the table.');
 
-  await caretAtLineEnd(above);
-  await page.keyboard.type('!');
+  const missed = await caretAtLineEnd(page.getByText('Above the table.')).then(
+    () => null,
+    (error: unknown) => String(error),
+  );
 
   expect(await page.evaluate(() => (window as { caretPutBack?: boolean }).caretPutBack)).toBe(true);
-  await expect(above).toHaveText('Above the table.!');
-  await expect(
-    page.getByLabel('Note', { exact: true }).getByRole('heading', { level: 1 }),
-  ).toHaveText('Tables');
+  expect(missed).toContain('the tap-caret fix (#835) is not holding for a click');
 });
 
-test('a caret beside a card, not in any line, is a miss to retry, never an error', async ({
-  page,
-}) => {
+test('a caret beside a card, not in any line, is a miss, never an error', async ({ page }) => {
   const vault = await createVault();
   await vault.write('cards.md', '# Cards\n\n[[Rome]] <!-- atlas:bookmark -->\n\nPacking list.\n');
   await installHost(page, vault);
@@ -119,6 +117,6 @@ test('a caret beside a card, not in any line, is a miss to retry, never an error
     () => null,
     (error: unknown) => String(error),
   );
-  expect(missed).toContain('"inLine": false');
+  expect(missed).toContain("The click did not leave the caret at its line's start.");
   expect(missed).not.toContain('RangeError');
 });
