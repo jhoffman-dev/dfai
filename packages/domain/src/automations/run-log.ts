@@ -662,7 +662,7 @@ function rowLines(entry: LoggedEntry): string[] {
 }
 
 /** A new log's text, for the rule named. */
-export function newLogText(ruleName: string, entries: readonly LogEntry[]): string {
+export function newLogText(ruleName: string, entries: readonly LoggedEntry[]): string {
   const head = `---\natlas: ${LOG_MARKER_VALUE}\n---\n\n# ${oneLine(ruleName)} — run log\n\n`;
   return head + entries.map(formatLogEntry).join('\n');
 }
