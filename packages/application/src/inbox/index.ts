@@ -18,3 +18,15 @@ export type {
   InboxAssistPorts,
   InboxAssistRequest,
 } from './preview-inbox-assist.ts';
+export { applyAssistRow, applySureRows } from './apply-inbox-assist.ts';
+export type {
+  ApplyAssistPorts,
+  AssistApplied,
+  AssistAppliedEach,
+  AssistAppliedRow,
+  AssistApplyRequest,
+  AssistUndo,
+} from './apply-inbox-assist.ts';
+export { undoAssistRow, undoAssistRows } from './undo-inbox-assist.ts';
+export type { AssistUndone } from './undo-inbox-assist.ts';
+export { INBOX_ASSIST_RULE } from './assist-log.ts';

@@ -19,6 +19,7 @@ import { setNoteProperties } from '../query/set-property.ts';
 import { loadObjectTypes, noteTypeName } from '../types/load-types.ts';
 import { UnsavedTypingError } from '../vault/update-links.ts';
 import { FilingRefusedError, filingTarget, processInboxItems } from './process-inbox.ts';
+import { recordingWrites } from './recording-writes.ts';
 
 /** A clarification the rules refuse, with the reason the row shows. Nothing was written. */
 export class ClarifyRefusedError extends Error {
@@ -142,20 +143,6 @@ export async function clarifyInboxItem(request: ClarifyRequest): Promise<Clarify
     linksUpdated: filed.linksUpdated,
     undo: { from: path, to: landed, before: text, after },
   };
-}
-
-/** The ports, with the last text each note was written with remembered. */
-function recordingWrites(ports: ArchivePorts): {
-  ports: ArchivePorts;
-  written: ReadonlyMap<VaultPath, string>;
-} {
-  const written = new Map<VaultPath, string>();
-  const writeTextFile: ArchivePorts['fs']['writeTextFile'] = async (write) => {
-    const modified = await ports.fs.writeTextFile(write);
-    written.set(write.path, write.contents);
-    return modified;
-  };
-  return { ports: { ...ports, fs: { ...ports.fs, writeTextFile } }, written };
 }
 
 const notFiled = (cause: unknown): string =>

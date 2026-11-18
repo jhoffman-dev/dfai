@@ -84,6 +84,7 @@
  * the file stays a size a person will read.
  */
 
+import { isArchivedPath } from '../archive/archive.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
 import { noteTitle } from '../vault/vault-entry.ts';
 import { AUTOMATIONS_DIRECTORY } from '../vault/vault-visibility.ts';
@@ -158,6 +159,19 @@ export type DoneAction =
   /** Undo took a meeting's summary block, its keys and its trashed tasks' links back out. */
   | { readonly kind: 'unsummarised'; readonly path: VaultPath }
   | { readonly kind: 'unarchived'; readonly from: VaultPath; readonly to: VaultPath }
+  /**
+   * Inbox assist (#909) changed an Inbox item at the person's press: filled
+   * in what was empty, linked its people, filed it, or archived it as a
+   * duplicate. `to` is where it is now, and `digest` what it says there.
+   */
+  | {
+      readonly kind: 'assisted';
+      readonly from: VaultPath;
+      readonly to: VaultPath;
+      readonly digest: string;
+    }
+  /** Undo put an item Inbox assist changed back at `to`, saying what it said before. */
+  | { readonly kind: 'unassisted'; readonly from: VaultPath; readonly to: VaultPath }
   | {
       readonly kind: 'set' | 'restored';
       readonly path: VaultPath;
@@ -341,8 +355,11 @@ export function logEntryHeading(entry: LogEntry): string {
 }
 
 function actionLine(action: DoneAction): string {
-  if (action.kind === 'archived' || action.kind === 'unarchived') {
+  if (action.kind === 'archived' || action.kind === 'unarchived' || action.kind === 'unassisted') {
     return `- ${action.kind} ${code(action.from)} → ${code(action.to)}`;
+  }
+  if (action.kind === 'assisted') {
+    return `- assisted ${code(action.from)} → ${code(action.to)} at ${code(action.digest)}`;
   }
   if (action.kind === 'proposed' || action.kind === 'created') {
     const at =
@@ -496,7 +513,14 @@ function countDone(done: readonly DoneAction[]): string {
     done.flatMap((action) => (action.kind === 'restored' ? [action.path] : [])),
   ).size;
   const proposals = (count: number) => `${count} ${count === 1 ? 'proposal' : 'proposals'}`;
+  const items = (count: number) => `${count} Inbox ${count === 1 ? 'item' : 'items'}`;
+  const assisted = done.filter((action) => action.kind === 'assisted');
+  const duplicates = assisted.filter((action) => isArchivedPath(action.to)).length;
+  const clarified = assisted.length - duplicates;
   const parts = [
+    clarified > 0 ? `Clarified ${items(clarified)}.` : '',
+    duplicates > 0 ? `Archived ${duplicates} ${duplicates === 1 ? 'duplicate' : 'duplicates'}.` : '',
+    tally('unassisted') > 0 ? `Took back ${items(tally('unassisted'))}.` : '',
     tally('archived') > 0 ? `Archived ${notes(tally('archived'))}.` : '',
     tally('unarchived') > 0 ? `Put back ${notes(tally('unarchived'))}.` : '',
     changed > 0 ? `Changed ${notes(changed)}.` : '',
@@ -758,7 +782,8 @@ const CLAUDE_CAPPED = `Read the first ${CLAUDE_NOTES_PER_RUN} notes, the most on
 
 const HEADING = /^## (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) · (.+)$/;
 const PRIOR_SPAN = `(nothing|${JSON_SPAN})`;
-const MOVE_LINE = new RegExp(`^- (archived|unarchived) ${JSON_SPAN} → ${JSON_SPAN}$`);
+const MOVE_LINE = new RegExp(`^- (archived|unarchived|unassisted) ${JSON_SPAN} → ${JSON_SPAN}$`);
+const ASSISTED_LINE = new RegExp(`^- assisted ${JSON_SPAN} → ${JSON_SPAN} at ${JSON_SPAN}$`);
 const MADE_LINE = new RegExp(`^- (proposed|created) ${JSON_SPAN}(?: at ${JSON_SPAN})?$`);
 const SUMMARISED_LINE = new RegExp(
   `^- summarised ${JSON_SPAN} at ${JSON_SPAN}(?: over ${JSON_SPAN})?$`,
@@ -1086,8 +1111,14 @@ function readLine(line: string): DoneAction | PassedOver | null {
   try {
     const move = MOVE_LINE.exec(line);
     if (move !== null) {
-      const kind = move[1] as 'archived' | 'unarchived';
+      const kind = move[1] as 'archived' | 'unarchived' | 'unassisted';
       return { kind, from: pathOf(move[2]!), to: pathOf(move[3]!) };
+    }
+    const assisted = ASSISTED_LINE.exec(line);
+    if (assisted !== null) {
+      const digest = JSON.parse(assisted[3]!) as unknown;
+      if (typeof digest !== 'string') return null;
+      return { kind: 'assisted', from: pathOf(assisted[1]!), to: pathOf(assisted[2]!), digest };
     }
     const made = MADE_LINE.exec(line);
     if (made !== null) {

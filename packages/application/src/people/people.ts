@@ -6,6 +6,8 @@ import {
   PEOPLE_FOLDER,
   PERSON_TYPE,
   newPersonRefusal,
+  PERSON_EMAIL_KEY,
+  splitFrontmatter,
   VAULT_ROOT,
   wikiLinkTargetFor,
   type KnownPerson,
@@ -62,7 +64,8 @@ export class PersonRefusedError extends Error {
  *
  * Answers with the link to write, worked out from the note as made — the name
  * may have been cleaned or numbered, and a link written from what was typed
- * would open some other note, or none.
+ * would open some other note, or none. Given an `email`, the person's note
+ * says it from the start, in the same one write (#909).
  */
 export async function createPerson({
   fs,
@@ -71,6 +74,7 @@ export async function createPerson({
   types,
   templates,
   notePaths,
+  email,
 }: {
   fs: VaultFsPort;
   markdown: Pick<MarkdownPort, 'frontmatterProperties' | 'updateFrontmatter'>;
@@ -78,6 +82,8 @@ export async function createPerson({
   types: readonly ObjectType[];
   templates: readonly NoteTemplate[];
   notePaths: readonly VaultPath[];
+  /** Their address, written as their `email`; left out for none. */
+  email?: string;
 }): Promise<CreatedPerson> {
   const refusal = newPersonRefusal(name);
   if (refusal !== null) throw new PersonRefusedError(refusal);
@@ -90,12 +96,13 @@ export async function createPerson({
     properties: [],
   };
   const template = findTypeTemplate(templates, type);
-  const contents = quickAddContents({
+  const made = quickAddContents({
     markdown,
     type,
     values: {},
     template: template === null ? null : await readTemplate({ fs, template }),
   });
+  const contents = email === undefined ? made : withEmail(markdown, made, email);
 
   const folder = await peopleFolder(fs);
   const path = nextAvailableNotePath({ folder, name, taken: new Set<string>(notePaths) });
@@ -110,6 +117,16 @@ export async function createPerson({
   // number chosen after the check would be a name the check never saw.
   await fs.createNote({ path, contents });
   return { path, target: wikiLinkTargetFor(path, [...notePaths, path]) };
+}
+
+/** A new person's note, saying their address under `email` whatever the vault's Person type declares. */
+function withEmail(
+  markdown: Pick<MarkdownPort, 'updateFrontmatter'>,
+  contents: string,
+  email: string,
+): string {
+  const { frontmatter, body } = splitFrontmatter(contents);
+  return markdown.updateFrontmatter(frontmatter, { [PERSON_EMAIL_KEY]: email }) + body;
 }
 
 /** The vault's people folder, as it is spelled there — made if there is none. */
