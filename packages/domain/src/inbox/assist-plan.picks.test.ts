@@ -61,6 +61,10 @@ const task = (extra: Partial<TaskCandidate> = {}): TaskCandidate => ({
   due: null,
   recurrence: null,
   waitingOn: '',
+  dueUnread: false,
+  defer: null,
+  contexts: [],
+  people: [],
   ...extra,
 });
 const RENEW = task();
@@ -82,6 +86,7 @@ const own = (extra: Partial<AssistItemFacts> = {}): AssistItemFacts => ({
   inboxTwin: null,
   addresses: [],
   listedPeople: null,
+  written: new Map(),
   text: TITLE,
   hasBody: false,
   ...extra,
@@ -215,7 +220,7 @@ describe('duplicates: planned only when the vault confirms and Claude agrees', (
       {},
       { due: '2026-12-01', dueWritten: '2026-12-01' },
     );
-    expect(row.step).toMatchObject({ kind: 'duplicate', newerHolds: ['due', 'people', 'notes'] });
+    expect(row.step).toMatchObject({ kind: 'duplicate', newerHolds: ['due', 'people', 'body'] });
   });
 
   it('asks on an item that is the newer of two captures in the Inbox', () => {
@@ -342,6 +347,10 @@ describe('adds: the item’s own text and the vault must leave no doubt', () => 
 
   it('asks when the item does not name them, or lacks that exact address', () => {
     expect(plan({ people: tobias() }, { ...TOBIAS_TEXT, text: 'Lunch on Friday' }).step).toEqual(
+      question('Add Tobias Fenn from Tobias@Example.org?'),
+    );
+    const elsewhere = { text: 'Lunch on Friday', addresses: ['wren@example.org'] };
+    expect(plan({ people: tobias({ email: 'wren@example.org' }) }, elsewhere).step).toEqual(
       question('Claude named someone this item doesn’t mention.'),
     );
     expect(
@@ -385,6 +394,177 @@ describe('adds: the item’s own text and the vault must leave no doubt', () => 
   });
 });
 
+describe('the strength of the evidence (#907, second round)', () => {
+  const linkOf = (text: string, person: PersonCandidate) =>
+    plan(
+      { people: [named(person.aliases[0] ?? person.name, { person: person.path })] },
+      { text },
+      {
+        people: [{ path: person.path, title: person.name }],
+        directory: [person],
+      },
+    ).step;
+  const one = (path: string, name: string, aliases: string[] = []): PersonCandidate => ({
+    path: createVaultPath(path),
+    name,
+    emails: [],
+    aliases,
+  });
+
+  it.each([
+    ['I will call them', one('People/Will Hollis.md', 'Will Hollis', ['Will']), 'Will Hollis'],
+    ['maybe in May', one('People/May Chen.md', 'May Chen', ['May']), 'May Chen'],
+    ['mark as done', one('People/Mark.md', 'Mark'), 'Mark'],
+    ['Al dente, then call', one('People/Al.md', 'Al'), 'Al'],
+    ['Plan M for the move', one('People/Mara Quill.md', 'Mara Quill', ['M']), 'Mara Quill'],
+  ])('asks rather than link from one word: %j', (text, person, title) => {
+    expect(linkOf(text, person)).toEqual(question(`Is this ${title}?`));
+  });
+
+  it('links on the full name, or on one of their addresses, never on a link’s path', () => {
+    expect(linkOf('Call May Chen', one('People/May Chen.md', 'May Chen', ['May'])).kind).toBe(
+      'task',
+    );
+    expect(
+      linkOf('See https://example.com/team/mara-quill', one(MARA.path, 'Mara Quill')).kind,
+    ).toBe('ask');
+    const mine = { text: 'ping mara.quill@example.com', addresses: ['mara.quill@example.com'] };
+    expect(plan({ people: [named('Mara Quill', { person: MARA.path })] }, mine).people).toEqual([
+      { kind: 'link', person: MARA },
+    ]);
+  });
+
+  it('asks whose address it is when the item does not tie the name to it', () => {
+    const text = 'Ask Tobias Fenn to forward this to wren@example.org';
+    const row = plan(
+      { people: [named('Tobias Fenn', { email: 'wren@example.org' })] },
+      { text, addresses: ['wren@example.org'] },
+    );
+    expect(row.step).toEqual(question('Is wren@example.org Tobias Fenn’s address?'));
+  });
+
+  it('adds under an address that names nobody when the item holds one name and one address', () => {
+    const text = 'Lunch on Friday with Wren Calloway, wc1@example.org';
+    const row = plan(
+      { people: [named('Wren Calloway', { email: 'wc1@example.org' })] },
+      { text, addresses: ['wc1@example.org'] },
+    );
+    expect(row.people).toEqual([{ kind: 'add', name: 'Wren Calloway', email: 'wc1@example.org' }]);
+  });
+
+  it('asks of a name found only inside an address', () => {
+    const mine = { text: 'ping tobias.fenn@example.com', addresses: ['tobias.fenn@example.com'] };
+    const row = plan(
+      { people: [named('Tobias Fenn', { email: 'tobias.fenn@example.com' })] },
+      mine,
+    );
+    expect(row.step).toEqual(question('Add Tobias Fenn from tobias.fenn@example.com?'));
+  });
+
+  it('asks of two names for one mailbox, or two near names, in one item', () => {
+    const text = 'Tobias Fenn and Toby Fenn: tobias@example.org, tobias.fen@example.org';
+    const addresses = ['tobias@example.org', 'tobias.fen@example.org'];
+    const oneMailbox = [
+      named('Tobias Fenn', { email: 'tobias@example.org' }),
+      named('Toby Fenn', { email: 'tobias@example.org' }),
+    ];
+    expect(plan({ people: oneMailbox }, { text, addresses }).step).toEqual(
+      question('Is tobias@example.org Toby Fenn’s address?'),
+    );
+    const near = {
+      text: 'Tobias Fenn tobias@example.org; Tobias Fen tobias.fen@example.org',
+      addresses,
+    };
+    const twoNear = [
+      named('Tobias Fenn', { email: 'tobias@example.org' }),
+      named('Tobias Fen', { email: 'tobias.fen@example.org' }),
+    ];
+    expect(plan({ people: twoNear }, near).step).toEqual(
+      question('Is Tobias Fen the same as Tobias Fenn?'),
+    );
+  });
+
+  it('asks of a near new person planned from another item', () => {
+    const first = {
+      ...plan(
+        { people: [named('Tobias Fenn', { email: 'tobias@example.org' })] },
+        { text: 'Tobias Fenn tobias@example.org', addresses: ['tobias@example.org'] },
+      ),
+      title: 'Lunch',
+    };
+    const second = {
+      ...plan(
+        { people: [named('Tobias Fen', { email: 'tobias.fen@example.org' })] },
+        { text: 'Tobias Fen tobias.fen@example.org', addresses: ['tobias.fen@example.org'] },
+      ),
+      title: 'Dinner',
+    };
+    expect(first.people).toHaveLength(1);
+    expect(second.people).toHaveLength(1);
+    expect(withoutRepeatedAdds([first, second])[1]!.step).toEqual(
+      question('Tobias Fen would be added from Lunch already. Is this them?'),
+    );
+  });
+
+  const copy = (
+    taskExtra: Partial<TaskCandidate>,
+    written: Record<string, string[]> = {},
+    row: Record<string, unknown> = {},
+  ) =>
+    plan(
+      { duplicateOf: RENEW.path },
+      {
+        duplicates: [{ task: task(taskExtra), likeness: 'same-title' }],
+        written: new Map(Object.entries(written)),
+      },
+      {},
+      row,
+    ).step;
+
+  it('asks when the copies differ on who it waits on, a defer date, people or contexts', () => {
+    expect(copy({ waitingOn: 'Tobias Fenn' }, { waiting_on: ['Mara Quill'] }).kind).toBe('ask');
+    expect(copy({ contexts: ['@phone'] }, { contexts: ['@desk'] }).kind).toBe('ask');
+    expect(copy({ people: ['Tobias Fenn'] }, {}, {}).kind).toBe('duplicate');
+    const listed = plan(
+      { duplicateOf: RENEW.path },
+      {
+        duplicates: [{ task: task({ people: ['Tobias Fenn'] }), likeness: 'same-title' }],
+        listedPeople: listedPeopleOf('[[Mara Quill]]'),
+      },
+    ).step;
+    expect(listed.kind).toBe('ask');
+    expect(copy({ waitingOn: 'Mara Quill' }, { waiting_on: ['Mara Quill'] }).kind).toBe(
+      'duplicate',
+    );
+  });
+
+  it('names every key this copy holds that the kept task lacks, bookkeeping aside', () => {
+    const step = copy(
+      { contexts: ['@phone'] },
+      {
+        type: ['task'],
+        status: ['inbox'],
+        created: ['2026-11-01'],
+        atlas_filed: ['x'],
+        tags: ['payroll'],
+        priority: ['high'],
+        contexts: ['@phone'],
+        defer: ['2026-12-01'],
+      },
+    );
+    expect(step).toMatchObject({ kind: 'duplicate', newerHolds: ['tags', 'priority', 'defer'] });
+  });
+
+  it('asks of a task that repeats in any written form, is someday, longterm or deferred, or whose due is unreadable', () => {
+    expect(copy({ recurrence: 'weekly\u001fmonthly' }).kind).toBe('ask');
+    expect(copy({ status: 'someday' }).kind).toBe('ask');
+    expect(copy({ status: 'longterm' }).kind).toBe('ask');
+    expect(copy({ defer: '2026-12-01' }).kind).toBe('ask');
+    expect(copy({ dueUnread: true }).kind).toBe('ask');
+    expect(copy({}, {}, { due: null, dueWritten: 'next Friday' }).kind).toBe('ask');
+  });
+});
+
 describe('the principle, over seeded answers (#906, #907)', () => {
   /** mulberry32: every run walks the same cases. */
   const seeded = (seed: number) => {
@@ -414,8 +594,31 @@ describe('the principle, over seeded answers (#906, #907)', () => {
     'Lunch with Tobias Fenn <tobias@example.org>',
     'Ask Wren Calloway <wren@example.org> and Mara Quill <mara@other.example.net>',
     'From mara.quill@example.com',
+    'Ask Tobias Fenn to forward this to wren@example.org',
+    'maybe in May, mark it; see /team/mara-quill',
+    'ping tobias.fenn@example.com',
   ];
-  const DIRECTORIES = [[MARA_PERSON], [MARA_PERSON, STONE_PERSON], [MARA_PERSON, ARCHIVED_TOBIAS]];
+  const MAY_CHEN: PersonCandidate = {
+    path: createVaultPath('People/May Chen.md'),
+    name: 'May Chen',
+    emails: [],
+    aliases: ['May', 'Mara'],
+  };
+  const WRITTEN: Record<string, string[]>[] = [
+    {},
+    { waiting_on: ['Mara Quill'] },
+    { contexts: ['@desk'] },
+    { tags: ['payroll'], type: ['task'], created: ['2026-11-01'] },
+    { defer: ['2026-12-01'] },
+  ];
+  /** Keys whose difference, both written, is a question; every other key is named in newerHolds. */
+  const QUESTION_KEYS = ['waiting_on', 'defer', 'people', 'contexts'];
+  const DIRECTORIES = [
+    [MARA_PERSON],
+    [MARA_PERSON, STONE_PERSON],
+    [MARA_PERSON, ARCHIVED_TOBIAS],
+    [MARA_PERSON, MAY_CHEN],
+  ];
   const CANDIDATES: PossibleDuplicateTask[][] = [
     [],
     [SAME],
@@ -423,6 +626,8 @@ describe('the principle, over seeded answers (#906, #907)', () => {
     [{ task: task({ project: PAYROLL.path }), likeness: 'same-title' }],
     [{ task: task({ recurrence: 'weekly' }), likeness: 'same-title' }],
     [{ task: task({ due: '2026-12-01' }), likeness: 'same-title' }],
+    [{ task: task({ waitingOn: 'Tobias Fenn', contexts: ['@phone'] }), likeness: 'same-title' }],
+    [{ task: task({ status: 'someday' }), likeness: 'same-title' }],
   ];
   const addressesOf = (text: string) => [...text.matchAll(/[^\s<>]+@[^\s<>]+/g)].map((m) => m[0]);
 
@@ -432,7 +637,14 @@ describe('the principle, over seeded answers (#906, #907)', () => {
       const text = pick(rng, TEXTS);
       const directory = pick(rng, DIRECTORIES);
       const candidates = pick(rng, CANDIDATES);
-      const mine = { text, addresses: addressesOf(text), duplicates: candidates, hasBody: true };
+      const written = pick(rng, WRITTEN);
+      const mine = {
+        text,
+        addresses: addressesOf(text),
+        duplicates: candidates,
+        hasBody: true,
+        written: new Map(Object.entries(written)),
+      };
       const given = answer({
         confidence: pick(rng, ['high', 'high', 'medium'] as const),
         kind: pick(rng, ['task', 'task', 'note'] as const),
@@ -442,15 +654,27 @@ describe('the principle, over seeded answers (#906, #907)', () => {
         people: Array.from({ length: 1 + Math.floor(rng() * 2) }, () =>
           named(pick(rng, NAMES), {
             email: pick(rng, EMAILS),
-            person: pick(rng, [null, MARA.path, STONE.path] as (VaultPath | null)[]),
+            person: pick(rng, [null, MARA.path, STONE.path, MAY_CHEN.path] as (VaultPath | null)[]),
           }),
         ),
       });
       const rows: AssistRow[] = [0, 1].map((at) => ({
-        ...assistPlan(item(), given, facts(mine, { directory })),
+        ...assistPlan(
+          item(),
+          given,
+          facts(mine, {
+            directory,
+            people: [...facts().people, { path: MAY_CHEN.path, title: MAY_CHEN.name }],
+          }),
+        ),
         title: `Row ${at}`,
       }));
-      const label = JSON.stringify({ text, directory: directory.map((p) => p.path), given });
+      const label = JSON.stringify({
+        text,
+        written,
+        directory: directory.map((p) => p.path),
+        given,
+      });
       const row = rows[0]!;
       if (row.step.kind === 'duplicate') {
         const kept = candidates.find(
@@ -458,6 +682,23 @@ describe('the principle, over seeded answers (#906, #907)', () => {
         )!;
         expect(kept.likeness, label).toBe('same-title');
         expect(kept.task.recurrence, label).toBeNull();
+        expect(kept.task.defer, label).toBeNull();
+        expect(['someday', 'longterm'], label).not.toContain(kept.task.status);
+        const holds = (row.step as { newerHolds: readonly string[] }).newerHolds;
+        for (const [key, values] of Object.entries(written)) {
+          const theirs: Record<string, readonly string[]> = {
+            waiting_on: kept.task.waitingOn === '' ? [] : [kept.task.waitingOn],
+            contexts: kept.task.contexts,
+            defer: [],
+            people: kept.task.people,
+          };
+          const differ = (theirs[key]?.length ?? 0) > 0 && values.join() !== theirs[key]!.join();
+          if (QUESTION_KEYS.includes(key)) expect(differ, label).toBe(false);
+          const bookkeeping = ['type', 'status', 'created'].includes(key);
+          if (!bookkeeping && (theirs[key]?.length ?? 0) === 0) {
+            expect(holds, label).toContain(key);
+          }
+        }
         expect(kept.task.project, label).toBe(given.projects[0] ?? null);
         if (given.due !== null && kept.task.due !== null)
           expect(kept.task.due, label).toBe(given.due);
@@ -467,10 +708,18 @@ describe('the principle, over seeded answers (#906, #907)', () => {
         if (step.kind === 'link') {
           const person = directory.find((each) => each.path === step.person.path) ?? MARA_PERSON;
           const byAddress = mine.addresses.some((a) => person.emails.includes(a.toLowerCase()));
-          expect(byAddress || mentionsName(text, person.name), label).toBe(true);
+          // From a name: the full name, of two words or more, in the prose.
+          const fullName = [person.name, ...person.aliases].some(
+            (name) => name.trim().split(/\s+/u).length >= 2 && mentionsName(text, name),
+          );
+          expect(byAddress || fullName, label).toBe(true);
         } else {
           expect(mentionsName(text, step.name), label).toBe(true);
           expect(mine.addresses, label).toContain(step.email);
+          const tied =
+            step.email.toLowerCase().startsWith(step.name.split(' ')[0]!.toLowerCase()) ||
+            text.includes(`${step.name} <${step.email}>`);
+          expect(tied, label).toBe(true);
           expect(
             personMatch({ name: step.name, email: step.email, people: directory }).kind,
             label,

@@ -23,7 +23,7 @@ export const PROJECT_STATUS_KEY = 'status';
 const ITEM_SEPARATOR = '\u001f';
 
 /** A note at `column` of a type, in use: in user space and out of the Archive. */
-function inUseOfTypeSql(column: string, typeParameter: string): string {
+export function inUseOfTypeSql(column: string, typeParameter: string): string {
   return [
     `EXISTS (SELECT 1 FROM props AS ty WHERE ty.path = ${column} AND ty.key = 'type'`,
     `    AND lower(trim(ty.value_text)) = ${typeParameter})`,
@@ -40,7 +40,7 @@ const notOneDay = (key: string) => notOneDaySql(key, 'f.path');
  * Every item a property holds, in order, joined by {@link ITEM_SEPARATOR}:
  * text as written, a nested value as its JSON — as the task rules read it.
  */
-const allItems = (key: string) =>
+export const allItems = (key: string) =>
   `(SELECT group_concat(v, char(31)) FROM (SELECT coalesce(p.value_text, p.value_json) AS v FROM props AS p WHERE p.path = f.path AND p.key = '${key}' ORDER BY p.idx))`;
 
 /**

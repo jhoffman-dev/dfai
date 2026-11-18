@@ -27,10 +27,18 @@ export interface TaskCandidate {
   readonly status: GtdStatus | null;
   /** `YYYY-MM-DD`, or null. */
   readonly due: string | null;
-  /** How it repeats, or null: a repeating task is never planned as one an item copies. */
+  /** True when a due date is written that does not read as one day. */
+  readonly dueUnread: boolean;
+  /** `YYYY-MM-DD`: the day it comes back into play; null when none is read. */
+  readonly defer: string | null;
+  /** How it repeats, as written in any form, or null: a repeating task is never planned as one an item copies. */
   readonly recurrence: string | null;
   /** Who it waits on, as written; '' for nobody. */
   readonly waitingOn: string;
+  /** Its contexts, as written. */
+  readonly contexts: readonly string[];
+  /** The people it lists, as written. */
+  readonly people: readonly string[];
 }
 
 /**
@@ -80,32 +88,51 @@ export const TITLE_WORDS_MAX = 64;
 
 /** A title's words as the rule compares them: one case, no punctuation, no filler, at most {@link TITLE_WORDS_MAX}. */
 export function titleWords(title: string): readonly string[] {
+  return foldTitle(title).words;
+}
+
+/** A title folded once: its words, and whether any were left past the cap. */
+interface FoldedTitle {
+  readonly words: readonly string[];
+  readonly cut: boolean;
+}
+
+function foldTitle(title: string): FoldedTitle {
+  const read = title.slice(0, TITLE_WORDS_MAX * 64);
   const words: string[] = [];
-  for (const word of title
-    .slice(0, TITLE_WORDS_MAX * 64)
+  for (const word of read
     .normalize('NFKC')
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)) {
     if (word === '' || TITLE_FILLER.has(word)) continue;
+    if (words.length === TITLE_WORDS_MAX) return { words, cut: true };
     words.push(word);
-    if (words.length === TITLE_WORDS_MAX) break;
   }
-  return words;
+  return { words, cut: read.length < title.length };
 }
 
 /** How alike two titles are, or null when the rule does not list them together. The same either way round. */
 export function titleLikeness(left: string, right: string): TaskLikeness | null {
-  return wordsLikeness(titleWords(left), titleWords(right));
+  return foldedLikeness(foldTitle(left), foldTitle(right));
 }
 
-function wordsLikeness(a: readonly string[], b: readonly string[]): TaskLikeness | null {
+/**
+ * How alike two folded titles are. Titles cut at the cap are never the same
+ * title, nor the same words: what lies past it is unread, so they are at
+ * most one within the other — a question, never a plan (#907).
+ */
+function foldedLikeness(left: FoldedTitle, right: FoldedTitle): TaskLikeness | null {
+  const [a, b] = [left.words, right.words];
   if (a.length === 0 || b.length === 0) return null;
-  if (a.length === b.length && a.every((word, at) => word === b[at])) return 'same-title';
+  const cut = left.cut || right.cut;
+  if (a.length === b.length && a.every((word, at) => word === b[at])) {
+    return cut ? 'contained' : 'same-title';
+  }
   const setA = new Set(a);
   const setB = new Set(b);
   const [fewer, more] = setA.size <= setB.size ? [setA, setB] : [setB, setA];
   if (![...fewer].every((word) => more.has(word))) return null;
-  if (fewer.size === more.size) return 'same-words';
+  if (fewer.size === more.size && !cut) return 'same-words';
   return fewer.size >= CONTAINED_MIN_WORDS ? 'contained' : null;
 }
 
@@ -130,11 +157,11 @@ export function possibleDuplicateTasks({
   item: Pick<TaskCandidate, 'path' | 'title' | 'project'>;
   tasks: readonly TaskCandidate[];
 }): PossibleDuplicateTask[] {
-  const words = titleWords(item.title);
+  const folded = foldTitle(item.title);
   return tasks
     .filter((task) => mayBeCopied(item, task))
     .flatMap((task) => {
-      const likeness = wordsLikeness(words, titleWords(task.title));
+      const likeness = foldedLikeness(folded, foldTitle(task.title));
       return likeness === null ? [] : [{ task, likeness }];
     })
     .sort((a, b) => RANK[a.likeness] - RANK[b.likeness] || byPath(a.task.path, b.task.path))

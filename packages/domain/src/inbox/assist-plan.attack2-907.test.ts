@@ -77,6 +77,10 @@ const task = (extra: Partial<TaskCandidate> = {}): TaskCandidate => ({
   due: null,
   recurrence: null,
   waitingOn: '',
+  dueUnread: false,
+  defer: null,
+  contexts: [],
+  people: [],
   ...extra,
 });
 const answer: AssistItemAnswer = {

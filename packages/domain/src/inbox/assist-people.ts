@@ -6,14 +6,17 @@
  * with Claude merely agreeing: Claude's names and addresses are never
  * evidence on their own (#907).
  *
- * - **Links** someone Claude picked, offered to it, whom the item's text
- *   names by their name or an alias as whole words, or by one of their
- *   addresses — and nothing in it says otherwise: an address Claude gives
- *   them that is not theirs, an address with their name that is not theirs,
- *   or someone else of that name.
- * - **Would add** someone the item's text names as whole words, under an
- *   address it holds exactly, whom nobody in People (the Archive included) is
- *   exactly or nearly, and whose cleaned name is no note's title already.
+ * - **Links** someone Claude picked, offered to it, whom the item holds one
+ *   of the addresses of, or whose full name (two words or more: one word is
+ *   also a common word) its prose gives as whole words — never a name found
+ *   only in an address or a link — and nothing in it says otherwise: an
+ *   address Claude gives them that is not theirs, an address with their name
+ *   that is not theirs, or someone else of that name.
+ * - **Would add** someone the item's prose names in full, under an address it
+ *   holds exactly and ties to them (the address names them, or is written
+ *   right beside their name), whom nobody in People (the Archive included)
+ *   is exactly or nearly, nor any other add planned, and whose cleaned name
+ *   is no note's title already.
  * - Anything between is a question, naming the vault's own person where there is one.
  *
  * Never over what is written: an item that lists people already keeps them. A
@@ -24,12 +27,14 @@ import { namesNote } from '../automations/proposal-schema.ts';
 import { isArchivedPath } from '../archive/archive.ts';
 import { newPersonRefusal } from '../people/person.ts';
 import {
+  addressBesideName,
   addressNamesPerson,
   foldedPersonName,
   hasMailbox,
   heldAddress,
   mailboxKey,
   mentionsName,
+  nameWordCount,
   namesOf,
   personMatch,
   type PersonCandidate,
@@ -73,11 +78,47 @@ export function assistPeople(
   for (const each of named) {
     const decided = each.person === null ? added(each, facts) : linkedTo(each, facts);
     if ('question' in decided) return decided;
-    if (decided.step !== null && !steps.some((step) => sameStep(step, decided.step!))) {
-      steps.push(decided.step);
+    const step = decided.step;
+    if (step === null || steps.some((earlier) => sameStep(earlier, step))) continue;
+    const clash = step.kind === 'add' ? clashingAdd(step, steps) : undefined;
+    if (clash !== undefined && step.kind === 'add') {
+      const oneMailbox = mailboxKey(clash.email) === mailboxKey(step.email);
+      return {
+        question: oneMailbox
+          ? `Is ${step.email} ${step.name}’s address?`
+          : `Is ${step.name} the same as ${clash.name}?`,
+      };
     }
+    steps.push(step);
   }
   return { steps };
+}
+
+/** A new person as the vault's people are matched, to match planned adds against one another. */
+const asCandidate = (step: { name: string; email: string }): PersonCandidate => ({
+  // Not a note yet: its address stands in for a path, which matching only tells apart by.
+  path: step.email as PersonCandidate['path'],
+  name: step.name,
+  emails: [step.email],
+  aliases: [],
+});
+
+/**
+ * The earlier planned add that `step` may be: the same mailbox, the same name
+ * but for case, accents or spacing, or one the vault's near match would call
+ * them (#907). Undefined when it is nobody planned.
+ */
+export function clashingAdd(
+  step: Extract<AssistPersonStep, { kind: 'add' }>,
+  earlier: readonly AssistPersonStep[],
+): Extract<AssistPersonStep, { kind: 'add' }> | undefined {
+  const adds = earlier.filter((each) => each.kind === 'add');
+  return adds.find(
+    (each) =>
+      sameStep(each, step) ||
+      personMatch({ name: step.name, email: step.email, people: [asCandidate(each)] }).kind !==
+        'none',
+  );
 }
 
 /**
@@ -97,13 +138,13 @@ export function assistNewNames(
   return [...new Set(names)];
 }
 
-/** Whether two steps are one: the same person linked, or one new person by mailbox or by name. */
+/** Whether two steps are one: the same person linked, or one new person by the same name at the same mailbox. */
 export function sameStep(left: AssistPersonStep, right: AssistPersonStep): boolean {
   if (left.kind === 'link' || right.kind === 'link') {
     return left.kind === 'link' && right.kind === 'link' && left.person.path === right.person.path;
   }
   return (
-    mailboxKey(left.email) === mailboxKey(right.email) ||
+    mailboxKey(left.email) === mailboxKey(right.email) &&
     foldedPersonName(left.name) === foldedPersonName(right.name)
   );
 }
@@ -125,7 +166,9 @@ function linkedTo(named: AssistPersonAnswer, facts: AssistPeopleFacts): Decided 
   }
   const byAddress = facts.addresses.some((address) => hasMailbox(person, address));
   if (byAddress) return linked(target, facts);
-  if (!namesOf(person).some((name) => mentionsName(facts.text, name))) return isThis(target.title);
+  // A name is evidence only in full: one word ("May", "Will") is also a common word.
+  const fullNames = namesOf(person).filter((name) => nameWordCount(name) >= 2);
+  if (!fullNames.some((name) => mentionsName(facts.text, name))) return isThis(target.title);
   if (facts.addresses.some((address) => addressNamesPerson(address, person))) {
     return isThis(target.title);
   }
@@ -171,19 +214,28 @@ function linked(target: AssistTarget, facts: AssistPeopleFacts): Decided {
   };
 }
 
-/** Adding someone Claude picked nobody for: only when the item's text and the vault both leave no doubt. */
+/**
+ * Adding someone Claude picked nobody for: only when the item's prose names
+ * them in full, under an address it holds exactly and that is tied to them —
+ * the address names them, or is written right beside their name — and the
+ * vault leaves no doubt.
+ */
 function added(named: AssistPersonAnswer, facts: AssistPeopleFacts): Decided {
-  if (!mentionsName(facts.text, named.name)) {
-    return { question: 'Claude named someone this item doesn’t mention.' };
-  }
   const name = cleanEntryName(named.name);
   const email = named.email === null ? null : heldAddress(facts.addresses, named.email);
   if (named.email !== null && email === null) return { question: unmentionedEmail(name) };
+  if (!mentionsName(facts.text, named.name)) {
+    const fromAddress = email !== null && addressNamesPerson(email, asCandidate({ name, email }));
+    if (fromAddress) return { question: `Add ${name} from ${email}?` };
+    return { question: 'Claude named someone this item doesn’t mention.' };
+  }
   const known = knownAlready(named.name, email, facts.directory);
   if (known !== null) return known;
   if (email === null) {
     return { question: `${name} is not in People, and the item gives no email. Add them?` };
   }
+  if (nameWordCount(name) < 2) return { question: `Add ${name} to People?` };
+  if (!tiedTo(email, name, facts)) return { question: `Is ${email} ${name}’s address?` };
   const unusable = unusableName(name, facts.takenTitles);
   if (unusable !== null) return { question: unusable };
   if (facts.listed !== null) {
@@ -192,6 +244,12 @@ function added(named: AssistPersonAnswer, facts: AssistPeopleFacts): Decided {
     };
   }
   return { step: { kind: 'add', name, email } };
+}
+
+/** Whether the item ties `email` to `name`: the address names them, or is written right beside their name. */
+function tiedTo(email: string, name: string, facts: AssistPeopleFacts): boolean {
+  if (addressNamesPerson(email, asCandidate({ name, email }))) return true;
+  return addressBesideName(facts.text, name, email);
 }
 
 /** The question when someone in People, the Archive included, is them or may be; null when nobody is. */

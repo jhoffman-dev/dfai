@@ -15,6 +15,7 @@ const asked = (path: string, modified: number, text = 'Before December.\n'): Ass
   text,
   modified,
   listedPeople: null,
+  written: new Map(),
 });
 const task = (path: string, extra: Partial<TaskCandidate> = {}): TaskCandidate => ({
   path: createVaultPath(path),
@@ -24,6 +25,10 @@ const task = (path: string, extra: Partial<TaskCandidate> = {}): TaskCandidate =
   due: null,
   recurrence: null,
   waitingOn: '',
+  dueUnread: false,
+  defer: null,
+  contexts: [],
+  people: [],
   ...extra,
 });
 

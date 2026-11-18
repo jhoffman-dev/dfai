@@ -26,6 +26,8 @@ export interface AssistAsked {
   readonly modified: number;
   /** What it lists under `people`, read from its frontmatter; null when nothing. */
   readonly listedPeople: HeldField | null;
+  /** Every property written in its frontmatter, by lower-case key. */
+  readonly written: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -53,6 +55,7 @@ export function assistItemFacts({
         inboxTwin: inboxTwinOf(each, asked),
         addresses: addressesIn(body),
         listedPeople: each.listedPeople,
+        written: each.written,
         text: `${each.item.title}\n${body}`,
         hasBody: body.trim() !== '',
       };

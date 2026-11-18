@@ -11,9 +11,9 @@ import {
   CLAUDE_STEP_QUESTION,
   claudeStepSystem,
   claudeSystemProblem,
-  compileReviewTasksQuery,
+  assistTaskCandidate,
+  compileAssistTasksQuery,
   compileTitledNotesQuery,
-  foldedPersonName,
   createVaultPath,
   DECLARED_STEP_MODEL,
   FILED_UNDER_TYPES,
@@ -28,8 +28,9 @@ import {
   messageWithoutPaths,
   PERSON_TYPE,
   readAssistAnswer,
-  reviewTask,
   splitFrontmatter,
+  takenTitles,
+  writtenPropertiesOf,
   waitingOnRefusal,
   withoutRepeatedAdds,
   type AnsweredNote,
@@ -38,7 +39,6 @@ import {
   type AssistRow,
   type AssistTarget,
   type InboxItem,
-  type TaskCandidate,
   type VaultPath,
 } from '@dfai/domain';
 import { notesInUseOfTypes } from '../archive/notes-in-use.ts';
@@ -317,7 +317,7 @@ async function vaultFacts(
   const [projects, people, tasks, directory] = await Promise.all([
     notesInUseOfTypes({ index: ports.index, types: FILED_UNDER_TYPES }),
     notesInUseOfTypes({ index: ports.index, types: [PERSON_TYPE] }),
-    rowsOf(ports.index, compileReviewTasksQuery()),
+    rowsOf(ports.index, compileAssistTasksQuery()),
     loadLinkDirectory({ index: ports.index }),
   ]);
   const target = (note: { path: string; title: string }): AssistTarget => ({
@@ -343,45 +343,41 @@ async function vaultFacts(
       asked: asked.notes.flatMap((note) => {
         const item = byPath.get(note.path);
         if (item === undefined) return [];
-        return [{ item, ...note, listedPeople: listedPeople(ports, note.text) }];
+        return [{ item, ...note, ...propertiesOf(ports, note.text) }];
       }),
-      tasks: tasks.rows.map(taskCandidate),
+      tasks: tasks.rows.map(assistTaskCandidate),
     }),
   };
 }
 
-/** A task as the duplicate rule reads it, from the weekly review's row. */
-function taskCandidate(row: Record<string, unknown>): TaskCandidate {
-  const task = reviewTask(row);
-  return {
-    path: task.path,
-    title: task.title,
-    project: task.project,
-    status: task.status,
-    due: task.due,
-    recurrence: task.recurrence ?? null,
-    waitingOn: task.waitingOn,
-  };
-}
-
-/** Which of `names` a note of any type has as its title, folded: one read, and none for no names. */
+/** Which of `names` a note of any type has as its title, folded: one bounded read, and none for no names. */
 async function titlesTaken(
   ports: InboxAssistPorts,
   names: readonly string[],
 ): Promise<ReadonlySet<string>> {
   if (names.length === 0) return new Set();
-  const { rows } = await rowsOf(ports.index, compileTitledNotesQuery(names));
-  return new Set(rows.map((row) => foldedPersonName(String(row['title'] ?? ''))));
+  const { rows, truncated } = await rowsOf(ports.index, compileTitledNotesQuery(names));
+  const titles = rows.map((row) => String(row['title'] ?? ''));
+  return takenTitles(names, titles, { cut: truncated });
 }
 
 /**
- * What the item lists under `people`. A block that cannot be read lists
- * something unknown, which a suggestion is never written over.
+ * What the item has written in its frontmatter, and lists under `people`. A
+ * block that cannot be read holds something unknown: its people are never
+ * written over, and a copy of it is never planned silently.
  */
-function listedPeople(ports: Pick<InboxAssistPorts, 'markdown'>, text: string) {
+function propertiesOf(ports: Pick<InboxAssistPorts, 'markdown'>, text: string) {
   const { frontmatter } = splitFrontmatter(text);
   if (ports.markdown.frontmatterProblem(frontmatter) !== null) {
-    return { resolved: null, written: ['people that could not be read'] };
+    const unread = ['what could not be read'];
+    return {
+      listedPeople: { resolved: null, written: unread },
+      written: new Map([['frontmatter', unread]]),
+    };
   }
-  return listedPeopleOf(ports.markdown.frontmatterProperties(frontmatter)[MEETING_PEOPLE_KEY]);
+  const properties = ports.markdown.frontmatterProperties(frontmatter);
+  return {
+    listedPeople: listedPeopleOf(properties[MEETING_PEOPLE_KEY]),
+    written: writtenPropertiesOf(properties),
+  };
 }

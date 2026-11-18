@@ -27,6 +27,8 @@ export interface AssistHeld {
   readonly project: HeldField | null;
   readonly due: HeldField | null;
   readonly waitingOn: HeldField | null;
+  /** Its defer date, as its task reads it (#907); null when none is. */
+  readonly defer: HeldField | null;
 }
 
 /** What `item` has set, from what is written on it — or, for an item built without that, its task. */
@@ -43,7 +45,23 @@ export function assistHeld(item: InboxItem): AssistHeld {
     project: held(written.project, written.projectNames),
     due: held(written.due, [written.dueWritten]),
     waitingOn: held(written.waitingOn, [written.waitingOnNames]),
+    defer: held(item.task?.defer ?? null, []),
   };
+}
+
+/**
+ * Every property an item has written, by key folded to lower case: each item
+ * by what it shows, a link by its label; keys with nothing written left out (#907).
+ */
+export function writtenPropertiesOf(
+  properties: Readonly<Record<string, unknown>>,
+): ReadonlyMap<string, readonly string[]> {
+  const found = new Map<string, readonly string[]>();
+  for (const [key, value] of Object.entries(properties)) {
+    const names = writtenNames(indexedTexts(value).join('\u001f'));
+    if (names.length > 0) found.set(key.trim().toLowerCase(), names);
+  }
+  return found;
 }
 
 /**

@@ -125,12 +125,53 @@ function nameWords(text: string): string[] {
 /** The most words of an item looked through for a name: a pasted page is not read to its end. */
 export const MENTION_WORDS_MAX = 4_000;
 
-/** Whether `text` names `name` as whole words, in order: "Mara Quill" in "call mara quill today", not in "Maralyn". */
+/**
+ * The item's prose: its words with addresses, links and paths taken out. A
+ * name found only in `tobias.fenn@example.com` or `/team/mara-quill` is not
+ * the item naming someone (#907).
+ */
+function proseWords(text: string): string[] {
+  const prose = text
+    .slice(0, MENTION_WORDS_MAX * 16)
+    .split(/\s+/u)
+    .filter((token) => !/[@/]|^www\./iu.test(token))
+    .join(' ');
+  return nameWords(prose).slice(0, MENTION_WORDS_MAX);
+}
+
+/** Whether `text` names `name` in its prose as whole words, in order: "Mara Quill" in "call mara quill today", not in "Maralyn". */
 export function mentionsName(text: string, name: string): boolean {
   const wanted = nameWords(name);
   if (wanted.length === 0) return false;
-  const words = nameWords(text.slice(0, MENTION_WORDS_MAX * 16)).slice(0, MENTION_WORDS_MAX);
+  const words = proseWords(text);
   return words.some((_, at) => wanted.every((word, offset) => words[at + offset] === word));
+}
+
+/** How many words a name has, as names are compared: a name of one word is also a common word ("May", "Will"). */
+export function nameWordCount(name: string): number {
+  return nameWords(name).length;
+}
+
+/**
+ * Whether `text` writes `email` right after `name`: "Wren Calloway
+ * <wc1@example.org>", "Wren Calloway, wc1@example.org", "Wren Calloway:
+ * wc1@example.org". An address further off may be anyone's ("Ask Tobias Fenn
+ * to forward this to wren@example.org").
+ */
+export function addressBesideName(text: string, name: string, email: string): boolean {
+  const wanted = nameWords(name);
+  const address = email.trim().toLowerCase();
+  if (wanted.length === 0) return false;
+  for (const line of text.slice(0, MENTION_WORDS_MAX * 16).split(/\n/u)) {
+    const tokens = line.split(/\s+/u).filter((token) => token !== '');
+    const words = tokens.map((token) => nameWords(token).join(' '));
+    for (let at = 0; at + wanted.length < tokens.length; at += 1) {
+      if (!wanted.every((word, offset) => words[at + offset] === word)) continue;
+      const next = tokens[at + wanted.length]!.replace(/^[<([]+|[>)\],;:.]+$/gu, '');
+      if (next.toLowerCase() === address) return true;
+    }
+  }
+  return false;
 }
 
 /** Whether an address looks like theirs by its local part — `mara@`, `mara.quill@` — wherever it is. */

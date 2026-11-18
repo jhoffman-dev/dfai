@@ -535,6 +535,7 @@ describe('never overwriting, over every type (#903 round 3, seeded)', () => {
               inboxTwin: null,
               addresses: [],
               listedPeople,
+              written: new Map(),
               text: item.title,
               hasBody: false,
             },

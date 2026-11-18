@@ -41,6 +41,7 @@ const facts = (own: Partial<AssistItemFacts> = {}): AssistFacts => ({
         inboxTwin: null,
         addresses: [],
         listedPeople: null,
+        written: new Map(),
         text: 'Renew Larkspur contract with Tobias Fenn',
         hasBody: true,
         ...own,
@@ -82,6 +83,10 @@ describe('attack-907: duplicates', () => {
         due: null,
         recurrence: null,
         waitingOn: '',
+        dueUnread: false,
+        defer: null,
+        contexts: [],
+        people: [],
       },
       likeness: 'same-title',
     };

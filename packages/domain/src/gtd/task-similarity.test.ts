@@ -25,6 +25,10 @@ const task = (title: string, extra: Partial<TaskCandidate> = {}): TaskCandidate 
   due: null,
   recurrence: null,
   waitingOn: '',
+  dueUnread: false,
+  defer: null,
+  contexts: [],
+  people: [],
   ...extra,
 });
 const ITEM = {
@@ -67,7 +71,9 @@ describe('titleLikeness', () => {
   it('compares at most the first words of a title, folding each title once', () => {
     const long = Array.from({ length: 10_000 }, (_, at) => `word${at}`).join(' ');
     expect(titleWords(long)).toHaveLength(TITLE_WORDS_MAX);
-    expect(titleLikeness(long, `${long} and more`)).toBe('same-title');
+    // Past the cap is unread: two such titles are at most one within the other (#907).
+    expect(titleLikeness(long, `${long} and more`)).toBe('contained');
+    expect(titleLikeness(long, long)).toBe('contained');
   });
 
   it.each([

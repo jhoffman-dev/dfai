@@ -7,13 +7,17 @@
  *   words in another order nor a title within a longer one;
  * - Claude, sure the item is a task, picked that task;
  * - the task is filed where the item is, or would be: the same project, or none for both;
- * - the task does not repeat, and is not due on another day than the item;
+ * - the task does not repeat (anything written under its recurrence), is not
+ *   someday, longterm or deferred, and has no due date written that reads as no day;
+ * - the item and the task do not differ on a due date, who it waits on, a
+ *   defer date, its people or its contexts, where both have one;
  * - and the item is not the newer of two captures in the Inbox, nor one of two
  *   that cannot be told apart.
  *
  * Anything else the rule or Claude found is a question naming the vault's
- * own title. A planned duplicate says what this copy holds that the kept task
- * lacks, so applying it can ask before anything is lost.
+ * own title. A planned duplicate names everything written on this copy that
+ * the kept task lacks or may lack (`newerHolds`), so applying it can ask
+ * before anything is lost: it only ever errs toward naming more.
  */
 
 import type { PossibleDuplicateTask, TaskCandidate } from '../gtd/task-similarity.ts';
@@ -22,20 +26,21 @@ import type { AssistItemAnswer } from './assist-answer.ts';
 import { sameProject, type AssistHeld, type HeldField } from './assist-held.ts';
 import { OFF_LIST } from './assist-people.ts';
 
-/** What the newer copy holds that the task it copies lacks. */
-export type AssistCopyHolds = 'due' | 'project' | 'waitingOn' | 'people' | 'notes';
-
 /** A planned duplicate: the task kept, and what this copy holds that it lacks. */
 export interface AssistDuplicate {
   readonly kind: 'duplicate';
   readonly of: { readonly path: VaultPath; readonly title: string };
-  readonly newerHolds: readonly AssistCopyHolds[];
+  /**
+   * The keys written on this copy that the kept task lacks, has differently,
+   * or is not read for, each in lower case, and `body` for words of its own.
+   */
+  readonly newerHolds: readonly string[];
 }
 
 /** What the duplicate rule reads of one item. */
 export interface AssistCopyFacts {
   readonly answer: AssistItemAnswer;
-  /** What the item has written on it. */
+  /** What the item has written on it under the fields a plan fills. */
   readonly held: AssistHeld;
   /** The one project Claude would file it under, or null. */
   readonly filing: VaultPath | null;
@@ -45,7 +50,24 @@ export interface AssistCopyFacts {
   readonly listedPeople: HeldField | null;
   /** Whether the item has words of its own beyond its title. */
   readonly hasBody: boolean;
+  /** Every property written on the item, by lower-case key; left out where a caller read none. */
+  readonly written?: ReadonlyMap<string, readonly string[]>;
 }
+
+/**
+ * Keys that say what a note is or when it was touched, not what the task
+ * holds: never counted as something this copy has that the kept one lacks.
+ * So are DFAI's own `atlas_` keys.
+ */
+export const COPY_BOOKKEEPING_KEYS: ReadonlySet<string> = new Set([
+  'type',
+  'status',
+  'title',
+  'created',
+  'updated',
+  'modified',
+  'id',
+]);
 
 type Question = { readonly kind: 'ask'; readonly question: string };
 const ask = (question: string): Question => ({ kind: 'ask', question });
@@ -54,8 +76,9 @@ const sameAs = (task: { title: string }) => ask(`Is this the same as ${task.titl
 /** The duplicate planned, a question, or null when neither the rule nor Claude found a copy. */
 export function assistDuplicate(facts: AssistCopyFacts): AssistDuplicate | Question | null {
   const { answer, candidates } = facts;
-  if (facts.inboxTwin !== null)
+  if (facts.inboxTwin !== null) {
     return ask(`Is this the same as ${facts.inboxTwin}, also in your Inbox?`);
+  }
   if (answer.duplicateOf === null) {
     const found = candidates.find((each) => each.likeness === 'same-title');
     return found === undefined ? null : sameAs(found.task);
@@ -64,7 +87,8 @@ export function assistDuplicate(facts: AssistCopyFacts): AssistDuplicate | Quest
   if (picked === undefined) return ask(OFF_LIST);
   const { task } = picked;
   if (picked.likeness !== 'same-title' || answer.kind !== 'task') return sameAs(task);
-  if (!filedAlike(facts, task) || !dueAlike(facts, task) || repeats(task)) return sameAs(task);
+  if (!filedAlike(facts, task) || !dueAlike(facts, task) || !settled(task)) return sameAs(task);
+  if (differs(facts, task)) return sameAs(task);
   return {
     kind: 'duplicate',
     of: { path: task.path, title: task.title },
@@ -79,23 +103,85 @@ function filedAlike({ held, filing }: AssistCopyFacts, task: TaskCandidate): boo
   return filing === task.project;
 }
 
-/** Whether the item is due on the task's day, where both have one; a due date written but unread is not. */
+/** Whether the item is due on the task's day, where both have one; a due date written but unread on either never is. */
 function dueAlike({ held, answer }: AssistCopyFacts, task: TaskCandidate): boolean {
-  if (task.due === null) return true;
-  if (held.due !== null) return held.due.resolved === task.due;
-  return answer.due === null || answer.due === task.due;
+  if (task.dueUnread || (held.due !== null && held.due.resolved === null)) return false;
+  const mine = held.due?.resolved ?? answer.due;
+  return task.due === null || mine === null || mine === task.due;
 }
 
-const repeats = (task: TaskCandidate) => task.recurrence !== null && task.recurrence.trim() !== '';
+/** A task that neither repeats nor waits for later: someday, longterm and deferred tasks are questions. */
+function settled(task: TaskCandidate): boolean {
+  if (task.recurrence !== null || task.defer !== null) return false;
+  return task.status !== 'someday' && task.status !== 'longterm';
+}
 
-/** What the item holds that the task lacks; people and notes always, the task's own not being read. */
-function newerHolds(facts: AssistCopyFacts, task: TaskCandidate): AssistCopyHolds[] {
-  const { held } = facts;
+const folded = (names: readonly string[]) =>
+  new Set(names.map((name) => name.trim().toLowerCase()).filter((name) => name !== ''));
+
+/** Whether two lists, both written, name different things. */
+function bothDiffer(mine: readonly string[], theirs: readonly string[]): boolean {
+  const [a, b] = [folded(mine), folded(theirs)];
+  if (a.size === 0 || b.size === 0) return false;
+  return a.size !== b.size || [...a].some((each) => !b.has(each));
+}
+
+/** What the item says it waits on, as written. */
+function waitsOn({ held, written }: AssistCopyFacts): readonly string[] {
+  return written?.get('waiting_on') ?? held.waitingOn?.written ?? [];
+}
+
+/** Whether the item and the task, both having one, differ on who it waits on, a defer date, its people or contexts. */
+function differs(facts: AssistCopyFacts, task: TaskCandidate): boolean {
+  const { held, written, listedPeople } = facts;
+  const deferred =
+    written?.get('defer') ?? (held.defer === null ? [] : [held.defer.resolved ?? '']);
+  return (
+    bothDiffer(waitsOn(facts), task.waitingOn.split(', ')) ||
+    bothDiffer(deferred, task.defer === null ? [] : [task.defer]) ||
+    bothDiffer(listedPeople?.written ?? [], task.people) ||
+    bothDiffer(written?.get('contexts') ?? [], task.contexts)
+  );
+}
+
+/** What the task holds under a key, where it is read; undefined where it is not. */
+function taskHolds(task: TaskCandidate, key: string): readonly string[] | undefined {
+  const of: Readonly<Record<string, readonly string[]>> = {
+    due: task.due === null ? [] : [task.due],
+    defer: task.defer === null ? [] : [task.defer],
+    waiting_on: task.waitingOn === '' ? [] : task.waitingOn.split(', '),
+    contexts: task.contexts,
+    people: task.people,
+  };
+  return of[key];
+}
+
+/**
+ * Every key written on the item that the task lacks, has differently, or is
+ * not read for — bookkeeping aside — and `body` for words of its own. What
+ * it holds under the fields a plan fills counts too, read or not: this only
+ * ever errs toward naming more.
+ */
+function newerHolds(facts: AssistCopyFacts, task: TaskCandidate): string[] {
+  const keys = [...new Set([...(facts.written?.keys() ?? []), ...heldKeys(facts)])];
+  const holds = keys.filter((key) => {
+    if (COPY_BOOKKEEPING_KEYS.has(key) || key.startsWith('atlas_')) return false;
+    // Filed alike already: the same project, or none for both.
+    if (key === 'project') return false;
+    const theirs = taskHolds(task, key);
+    const mine = facts.written?.get(key) ?? [];
+    return theirs === undefined || theirs.length === 0 || bothDiffer(mine, theirs);
+  });
+  return facts.hasBody ? [...holds, 'body'] : holds;
+}
+
+/** The keys an item holds under the fields a plan fills, as its row reads them. */
+function heldKeys({ held, listedPeople }: AssistCopyFacts): string[] {
   return [
-    held.due !== null && task.due === null ? 'due' : null,
-    held.project !== null && task.project === null ? 'project' : null,
-    held.waitingOn !== null && task.waitingOn.trim() === '' ? 'waitingOn' : null,
-    facts.listedPeople !== null ? 'people' : null,
-    facts.hasBody ? 'notes' : null,
-  ].filter((each): each is AssistCopyHolds => each !== null);
+    held.due !== null ? 'due' : null,
+    held.project !== null ? 'project' : null,
+    held.waitingOn !== null ? 'waiting_on' : null,
+    held.defer !== null ? 'defer' : null,
+    listedPeople !== null ? 'people' : null,
+  ].filter((key) => key !== null);
 }

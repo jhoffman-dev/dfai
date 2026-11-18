@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, inboxItem, REVIEW_TASKS_QUERY_MARK } from '@dfai/domain';
+import { createVaultPath, inboxItem, ASSIST_TASKS_QUERY_MARK } from '@dfai/domain';
 import { fakeModel, type ScriptedRound } from '../testing/fake-model.ts';
 import { fakeIndexPort, fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { previewInboxAssist, type InboxAssistPorts } from './preview-inbox-assist.ts';
@@ -56,7 +56,7 @@ function ports(round: ScriptedRound): InboxAssistPorts {
     index: fakeIndexPort({
       notesOfType: async () => [],
       query: async (sql) =>
-        sql.startsWith(REVIEW_TASKS_QUERY_MARK)
+        sql.includes(ASSIST_TASKS_QUERY_MARK)
           ? table(
               ['path', 'title', 'status', 'project'],
               [

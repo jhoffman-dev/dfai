@@ -182,11 +182,11 @@ describe('duplicates and people in the sentence and the rows (#906)', () => {
       'Looks like a duplicate of Renew Larkspur Payroll contract',
     );
     expect(assistTone(DUPLICATE)).toBe('duplicate');
-    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['notes'] })).toBe(
+    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['body'] })).toBe(
       'Looks like a duplicate of Renew Larkspur Payroll contract; this copy also has notes',
     );
-    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['due', 'people', 'notes'] })).toBe(
-      'Looks like a duplicate of Renew Larkspur Payroll contract; this copy also has a due date, people and notes',
+    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['due', 'people', 'tags', 'body'] })).toBe(
+      'Looks like a duplicate of Renew Larkspur Payroll contract; this copy also has a due date, people, tags and notes',
     );
     expect(assistPeopleWords(withPeople(TASK, [LINK, ADD]))).toEqual([
       'Links Mara Quill',

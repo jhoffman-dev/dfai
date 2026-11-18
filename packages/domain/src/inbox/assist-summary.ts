@@ -4,7 +4,7 @@
  * plan says it the same way and the page holds no rule.
  */
 
-import type { AssistCopyHolds, AssistDuplicate } from './assist-duplicate.ts';
+import type { AssistDuplicate } from './assist-duplicate.ts';
 import type { AssistPersonStep } from './assist-people.ts';
 import { ASSIST_ITEMS_PER_ASK, type AssistRow, type AssistStep } from './assist-plan.ts';
 
@@ -61,18 +61,20 @@ export function assistStepWords(step: AssistStep): string {
   }
 }
 
-const HOLDS_WORDS: Readonly<Record<AssistCopyHolds, string>> = {
+const HOLDS_WORDS: Readonly<Record<string, string>> = {
   due: 'a due date',
-  project: 'a project',
-  waitingOn: 'who it waits on',
+  defer: 'a defer date',
+  waiting_on: 'who it waits on',
   people: 'people',
-  notes: 'notes',
+  contexts: 'contexts',
+  recurrence: 'a repeat',
+  body: 'notes',
 };
 
 /** "Looks like a duplicate of X; this copy also has a due date and notes". */
 function duplicateWords(step: AssistDuplicate): string {
   const head = `Looks like a duplicate of ${step.of.title}`;
-  const holds = step.newerHolds.map((each) => HOLDS_WORDS[each]);
+  const holds = step.newerHolds.map((key) => HOLDS_WORDS[key] ?? key.replace(/_/gu, ' '));
   if (holds.length === 0) return head;
   const listed =
     holds.length === 1 ? holds[0]! : `${holds.slice(0, -1).join(', ')} and ${holds.at(-1)!}`;

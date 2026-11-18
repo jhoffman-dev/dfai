@@ -26,7 +26,7 @@ import type { VaultPath } from '../vault/vault-path.ts';
 import { hasUnshownCharacters, type AssistItemAnswer, type AssistKind } from './assist-answer.ts';
 import { assistSureness } from './assist-confidence.ts';
 import { assistDuplicate, type AssistDuplicate } from './assist-duplicate.ts';
-import { assistPeople, OFF_LIST, sameStep, type AssistPersonStep } from './assist-people.ts';
+import { assistPeople, clashingAdd, OFF_LIST, type AssistPersonStep } from './assist-people.ts';
 import type { InboxItem } from './inbox.ts';
 import {
   assistHeld,
@@ -78,6 +78,8 @@ export interface AssistItemFacts {
   readonly addresses: readonly string[];
   /** What it lists under `people` already; null when nothing. */
   readonly listedPeople: HeldField | null;
+  /** Every property written in its frontmatter, by lower-case key. */
+  readonly written: ReadonlyMap<string, readonly string[]>;
   /** Its own words, title and body: what a person it names must be found in. */
   readonly text: string;
   /** Whether it has words beyond its title. */
@@ -89,6 +91,7 @@ const NO_ITEM_FACTS: AssistItemFacts = {
   inboxTwin: null,
   addresses: [],
   listedPeople: null,
+  written: new Map(),
   text: '',
   hasBody: false,
 };
@@ -197,6 +200,7 @@ export function assistPlan(
     inboxTwin: own.inboxTwin,
     listedPeople: own.listedPeople,
     hasBody: own.hasBody,
+    written: own.written,
   });
   if (duplicate !== null || step.kind === 'leave') return row(duplicate ?? step);
   const people = assistPeople(answer.people, {
@@ -241,12 +245,15 @@ function filingStep(item: InboxItem, answer: AssistItemAnswer, facts: AssistFact
 export function withoutRepeatedAdds(rows: readonly AssistRow[]): AssistRow[] {
   const adding: { step: AssistPersonStep; title: string }[] = [];
   return rows.map((row) => {
-    const repeated = row.people.find((step) =>
-      adding.some((earlier) => step.kind === 'add' && sameStep(earlier.step, step)),
-    );
-    if (repeated !== undefined && repeated.kind === 'add') {
-      const first = adding.find((earlier) => sameStep(earlier.step, repeated))!;
-      const question = `${repeated.name} would be added from ${first.title} already. Is this them?`;
+    for (const step of row.people) {
+      if (step.kind !== 'add') continue;
+      const earlier = clashingAdd(
+        step,
+        adding.map((each) => each.step),
+      );
+      if (earlier === undefined) continue;
+      const first = adding.find((each) => each.step === earlier)!;
+      const question = `${step.name} would be added from ${first.title} already. Is this them?`;
       return { ...row, step: ask(question), people: [] };
     }
     for (const step of row.people) if (step.kind === 'add') adding.push({ step, title: row.title });

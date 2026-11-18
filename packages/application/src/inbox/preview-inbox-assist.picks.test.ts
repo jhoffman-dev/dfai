@@ -3,7 +3,7 @@ import {
   ASSIST_TITLED_QUERY_MARK,
   createVaultPath,
   inboxItem,
-  REVIEW_TASKS_QUERY_MARK,
+  ASSIST_TASKS_QUERY_MARK,
   type InboxItem,
 } from '@dfai/domain';
 import { fakeModel, type ScriptedRound } from '../testing/fake-model.ts';
@@ -77,8 +77,8 @@ function setUp(round: ScriptedRound, { titled = [] as string[] } = {}) {
     index: fakeIndexPort({
       notesOfType: async (type) => (type === 'person' ? [{ path: MARA, title: 'Mara Quill' }] : []),
       query: async (sql) => {
-        queries.push(sql.slice(0, 40));
-        if (sql.startsWith(REVIEW_TASKS_QUERY_MARK)) {
+        queries.push(sql.slice(0, 80));
+        if (sql.includes(ASSIST_TASKS_QUERY_MARK)) {
           return table(
             ['path', 'title', 'status', 'project'],
             [
@@ -87,7 +87,7 @@ function setUp(round: ScriptedRound, { titled = [] as string[] } = {}) {
             ],
           );
         }
-        if (sql.startsWith(ASSIST_TITLED_QUERY_MARK)) {
+        if (sql.includes(ASSIST_TITLED_QUERY_MARK)) {
           return table(
             ['title'],
             titled.map((title) => [title]),
@@ -190,9 +190,9 @@ describe('previewInboxAssist: duplicates and people (#906)', () => {
 
   it('reads the tasks and the people’s addresses in one statement each, and no titles with no one to add', async () => {
     const { queries } = await preview(answer(entry(RENEW_ITEM), entry(LUNCH_ITEM)));
-    expect(queries.filter((sql) => sql.startsWith(REVIEW_TASKS_QUERY_MARK))).toHaveLength(1);
+    expect(queries.filter((sql) => sql.includes(ASSIST_TASKS_QUERY_MARK))).toHaveLength(1);
     expect(queries.filter((sql) => sql.includes('meeting links: directory'))).toHaveLength(1);
-    expect(queries.filter((sql) => sql.startsWith(ASSIST_TITLED_QUERY_MARK))).toHaveLength(0);
+    expect(queries.filter((sql) => sql.includes(ASSIST_TITLED_QUERY_MARK))).toHaveLength(0);
   });
 
   it('reads once whether a new person’s name is a note’s title already, and asks if it is', async () => {
@@ -201,7 +201,7 @@ describe('previewInboxAssist: duplicates and people (#906)', () => {
       answer(entry(RENEW_ITEM), entry(LUNCH_ITEM, { people: [tobias] })),
       { titled: ['Tobias Fenn'] },
     );
-    expect(queries.filter((sql) => sql.startsWith(ASSIST_TITLED_QUERY_MARK))).toHaveLength(1);
+    expect(queries.filter((sql) => sql.includes(ASSIST_TITLED_QUERY_MARK))).toHaveLength(1);
     expect(outcome.rows[1]!.step).toEqual({
       kind: 'ask',
       question: 'A note is called Tobias Fenn already. Is this them?',
