@@ -49,3 +49,59 @@
   font-weight: 500;
   margin: 0 0 var(--space-1);
 }
+
+/* ---- Apply, with undo (#909) ----
+   Under a row's reason: Apply, or what was done and Undo, or why it asked.
+   The panel's own buttons sit after the rows. Neutral chrome throughout. */
+.inbox-assist__act {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  grid-column: 3;
+}
+
+.inbox-assist__done {
+  color: var(--ink);
+}
+
+.inbox-assist__said,
+.inbox-assist__busy {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+
+.inbox-assist__all {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.inbox-assist__all .btn[aria-disabled='true'] {
+  opacity: 0.6;
+}
+
+@media (max-width: 40rem) {
+  .inbox-assist__act {
+    grid-column: 1 / -1;
+  }
+}
+
+/* What Claude chose that nothing confirms, beside Apply (#911); and rows an
+   earlier apply left unfinished, above the plan. Neutral chrome. */
+.inbox-assist__caution {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  grid-column: 3;
+}
+
+.inbox-assist__unfinished {
+  margin-bottom: var(--space-2);
+}
+
+.inbox-assist__left {
+  display: grid;
+  gap: 2px;
+  grid-column: 2 / -1;
+}

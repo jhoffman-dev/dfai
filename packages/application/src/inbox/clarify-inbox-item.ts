@@ -19,6 +19,7 @@ import { setNoteProperties } from '../query/set-property.ts';
 import { loadObjectTypes, noteTypeName } from '../types/load-types.ts';
 import { UnsavedTypingError } from '../vault/update-links.ts';
 import { FilingRefusedError, filingTarget, processInboxItems } from './process-inbox.ts';
+import { recordingWrites, type Rewritten } from './recording-writes.ts';
 
 /** A clarification the rules refuse, with the reason the row shows. Nothing was written. */
 export class ClarifyRefusedError extends Error {
@@ -36,6 +37,11 @@ export interface ClarifyUndo {
   readonly before: string;
   /** Its text as clarifying left it: undo is refused once the note says anything else. */
   readonly after: string;
+  /**
+   * The other notes filing it rewrote — their links to it — each with its text
+   * before and after (#911). An exact undo puts exactly these back.
+   */
+  readonly relinked?: readonly Rewritten[];
 }
 
 /** What clarifying a note did. */
@@ -70,6 +76,12 @@ export interface ClarifyRequest {
   readonly today: string;
   /** `save` unless said otherwise: the app's own commands are the person's (ADR-0016). */
   readonly unsavedTyping?: UnsavedTyping;
+  /**
+   * The note's whole text as the caller checked it (#911). Given, a note that
+   * says anything else is refused before anything is written, and its
+   * properties are written only over exactly that text.
+   */
+  readonly expectedText?: string;
 }
 
 /**
@@ -88,13 +100,16 @@ export interface ClarifyRequest {
  */
 export async function clarifyInboxItem(request: ClarifyRequest): Promise<ClarifyOutcome> {
   const { notePaths, today } = request;
-  const { ports, written } = recordingWrites(request.ports);
+  const { ports, written, rewritten } = recordingWrites(request.ports);
   const unsavedTyping = request.unsavedTyping ?? 'save';
   const path = vaultSpellingOf(request.path, notePaths);
   if (path === null) throw new ClarifyRefusedError('There is no note at that path.');
   await settleTyping({ ports, path, unsavedTyping });
 
   const { text, modified } = await ports.fs.readTextFile(path);
+  const { expectedText } = request;
+  if (expectedText !== undefined && text !== expectedText)
+    throw new ClarifyRefusedError(CHANGED_SINCE_CHECKED);
   const clarification = await asTheVaultSpells(request);
   const types = await loadObjectTypes({ fs: ports.fs, markdown: ports.markdown });
   const plan = clarifyPlan({
@@ -110,7 +125,8 @@ export async function clarifyInboxItem(request: ClarifyRequest): Promise<Clarify
   if (Object.keys(plan.changes).length > 0) {
     assertWritable(ports, { text, changes: plan.changes });
     const write = { fs: ports.fs, markdown: ports.markdown, path, values: plan.changes, today };
-    await setNoteProperties({ ...write, ifModified: modified }).catch(refusedByTheRules);
+    const held = { ifModified: modified, ...(expectedText !== undefined && { ifText: text }) };
+    await setNoteProperties({ ...write, ...held }).catch(refusedByTheRules);
     if (ports.editors.state(path) !== 'dirty') ports.editors.reload(path);
   }
   const filed =
@@ -124,6 +140,10 @@ export async function clarifyInboxItem(request: ClarifyRequest): Promise<Clarify
           today,
           updateLinks: true,
           unsavedTyping,
+          // Held to what this save left (#911): an edit made as it moves is not stamped over.
+          ...(expectedText !== undefined && {
+            expectedTexts: new Map([[path, written.get(path) ?? text]]),
+          }),
         }).catch((cause: unknown) => {
           // Everything it throws, it throws before it moves anything: once the
           // properties are written, a filing that cannot start is said in `failed`,
@@ -135,28 +155,17 @@ export async function clarifyInboxItem(request: ClarifyRequest): Promise<Clarify
   // What clarifying itself wrote, not the disk read back: an edit saved since is
   // then a change the undo refuses to write over.
   const after = written.get(landed) ?? written.get(path) ?? text;
+  const relinked = rewritten().filter((note) => note.path !== path && note.path !== landed);
   return {
     path: landed,
     movedFrom: landed === path ? null : path,
     failed: filed.failed,
     linksUpdated: filed.linksUpdated,
-    undo: { from: path, to: landed, before: text, after },
+    undo: { from: path, to: landed, before: text, after, relinked },
   };
 }
 
-/** The ports, with the last text each note was written with remembered. */
-function recordingWrites(ports: ArchivePorts): {
-  ports: ArchivePorts;
-  written: ReadonlyMap<VaultPath, string>;
-} {
-  const written = new Map<VaultPath, string>();
-  const writeTextFile: ArchivePorts['fs']['writeTextFile'] = async (write) => {
-    const modified = await ports.fs.writeTextFile(write);
-    written.set(write.path, write.contents);
-    return modified;
-  };
-  return { ports: { ...ports, fs: { ...ports.fs, writeTextFile } }, written };
-}
+const CHANGED_SINCE_CHECKED = 'It changed since it was checked, so nothing was written.';
 
 const notFiled = (cause: unknown): string =>
   `Clarified, but not filed: ${cause instanceof Error ? cause.message : String(cause)}`;

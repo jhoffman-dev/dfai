@@ -92,6 +92,18 @@ describe('Suggest on the Inbox', () => {
     expect(screen.queryByRole('button', { name: 'Suggest' })).toBeNull();
   });
 
+  it('holds Suggest while rows are applied or undone, and lets it go after (#911)', () => {
+    page(assistOf({ ...PLAN, busy: true } as AssistView));
+    expect(screen.getByRole('button', { name: 'Suggest' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    cleanup();
+    page(assistOf({ ...PLAN, busy: false } as AssistView));
+    expect(screen.getByRole('button', { name: 'Suggest' }).getAttribute('aria-disabled')).not.toBe(
+      'true',
+    );
+  });
+
   it('says it is asking, and holds Suggest meanwhile', () => {
     page(assistOf({ kind: 'asking' }));
     const region = screen.getByRole('region', { name: 'Suggestions' });
@@ -107,7 +119,7 @@ describe('Suggest on the Inbox', () => {
     page(assistOf(PLAN));
     const region = screen.getByRole('region', { name: 'Suggestions' });
     expect(within(region).getByRole('status').textContent).toBe(
-      '2 items: would act on 1, 1 question Nothing is written.',
+      '2 items: would act on 1, 1 question Nothing is written until you apply it.',
     );
     const call = within(region).getByRole('listitem', { name: 'Call Mara Quill' });
     expect(within(call).getByText('Would act').dataset['tone']).toBe('next');
@@ -150,7 +162,7 @@ describe('Suggest on the Inbox', () => {
     );
     const region = screen.getByRole('region', { name: 'Suggestions' });
     expect(within(region).getByRole('status').textContent).toBe(
-      '2 items: would act on 1, link 1 person, add 1 person, 1 duplicate Nothing is written.',
+      '2 items: would act on 1, link 1 person, add 1 person, 1 duplicate Nothing is written until you apply it.',
     );
     const call = within(region).getByRole('listitem', { name: 'Call Mara Quill' });
     expect(within(call).getByText('Links Mara Quill')).toBeTruthy();

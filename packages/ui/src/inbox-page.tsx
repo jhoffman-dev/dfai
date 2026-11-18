@@ -38,7 +38,12 @@ import { MeetingCleanup, type MeetingCleanupProps } from './meeting-cleanup.tsx'
 import type { InboxOfferReading } from './inbox-offer.ts';
 import { useListAnchor, type ListAnchorParts } from './list-anchor.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
-import { AssistSummary, type AssistView } from './inbox/assist-summary.tsx';
+import {
+  AssistSummary,
+  type AssistActions,
+  type AssistUnfinishedView,
+  type AssistView,
+} from './inbox/assist-summary.tsx';
 import { useAssistKeys } from './inbox/use-assist-keys.ts';
 
 const NO_REFUSALS: readonly InboxRefusal[] = [];
@@ -158,7 +163,7 @@ export interface InboxPageProps {
   view?: { readonly title: string; readonly onOpen: () => void } | null;
   /** What Claude or an automation proposed, answered here rather than filed (P29-02). */
   proposals?: ProposalsSectionProps | null;
-  /** Suggest (#900): what Claude would do with the items in view, writing nothing; null where Claude is not offered. */
+  /** Suggest (#900): what Claude would do with the items in view, applied only at a press (#909); null where Claude is not offered. */
   assist?: InboxAssistProps | null;
   onShowSidebar?: () => void;
   history?: PageHistory;
@@ -170,6 +175,10 @@ export interface InboxAssistProps {
   readonly view: AssistView | null;
   readonly onSuggest: () => void;
   readonly onDismiss: () => void;
+  /** Apply and Undo, per row and for all (#909); null where nothing can be applied. */
+  readonly actions?: AssistActions | null;
+  /** Rows an earlier apply left unfinished (#911); none when left out. */
+  readonly unfinished?: readonly AssistUnfinishedView[];
 }
 
 /**
@@ -249,7 +258,11 @@ export function InboxPage(props: InboxPageProps) {
               )}
               {assist !== null && (
                 <SuggestAction
-                  asking={assist.view?.kind === 'asking'}
+                  // Held while it asks, and while rows are being applied or undone (#911).
+                  asking={
+                    assist.view?.kind === 'asking' ||
+                    (assist.view?.kind === 'plan' && assist.view.busy === true)
+                  }
                   onSuggest={assist.onSuggest}
                   buttonRef={assistKeys.suggest}
                 />
@@ -280,7 +293,12 @@ export function InboxPage(props: InboxPageProps) {
             {ownerUnknown !== null && <OwnerUnknown {...ownerUnknown} />}
             {meetingsWaiting !== null && <MeetingsWaiting {...meetingsWaiting} />}
             {assist !== null && assist.view !== null && (
-              <AssistSummary view={assist.view} onDismiss={assistKeys.dismiss} />
+              <AssistSummary
+                view={assist.view}
+                onDismiss={assistKeys.dismiss}
+                actions={assist.actions ?? null}
+                unfinished={assist.unfinished ?? []}
+              />
             )}
             <Offers
               offers={[

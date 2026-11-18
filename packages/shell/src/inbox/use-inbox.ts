@@ -419,6 +419,11 @@ export function useInbox(options: InboxOptions) {
   }, [statuses]);
   // One object per clarification, not one per render: its bar's time is kept by it (#165).
   const lastAction = useMemo(() => (last === null ? null : { title: last.title }), [last]);
+  /** Another write of the Inbox's, behind the clarifications in the same queue (#909): Inbox assist's. */
+  const write = useCallback(
+    (job: (given: WriteGiven) => Promise<Written>) => writes.enqueue(ports, vaultKey, job),
+    [writes, ports, vaultKey],
+  );
   return {
     contents,
     /** The statuses a row may give a task: the ones the vault's Task type declares. */
@@ -444,6 +449,7 @@ export function useInbox(options: InboxOptions) {
     showMore,
     /** Settles once every clarification asked for so far is written, or has failed. */
     written: writes.drained,
+    write,
   };
 }
 
@@ -466,7 +472,7 @@ function logOfVaultOpenNow(
 }
 
 /** What one queued write did: whether it was done, and whether it wrote. */
-interface Written {
+export interface Written {
   readonly done: boolean;
   readonly wrote: boolean;
 }
@@ -474,7 +480,7 @@ interface Written {
 const NOT_WRITTEN: Written = { done: false, wrote: false };
 
 /** What a queued write is handed as it begins: the vault's notes as they stand, and the ports to write through. */
-interface WriteGiven {
+export interface WriteGiven {
   readonly notePaths: readonly VaultPath[];
   readonly ports: ArchivePorts;
 }
