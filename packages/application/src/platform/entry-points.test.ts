@@ -32,6 +32,8 @@ import {
   sourceRefreshOffered,
   type EntryPoint,
   type EntryPointsOffered,
+  type WorkEntry,
+  type WorkOffered,
 } from './entry-points.ts';
 
 /** Every capability on, saving as a commit among them. */
@@ -213,10 +215,9 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
 });
 
 describe('workOffered: work that starts by itself waits for the settings (#901)', () => {
-  /** Written out by hand, so an entry point added to or taken from the set shows here. */
-  const HELD: readonly EntryPoint[] = ['kindleSync', 'slackLinkOffer', 'chatWork'];
-  const held = (offered: EntryPointsOffered) =>
-    ENTRY_POINTS.filter((entry) => EVERY_ENTRY_POINT[entry] && !offered[entry]);
+  /** Written out by hand, so an entry point added to or taken from the work shows here. */
+  const HELD: readonly WorkEntry[] = ['kindleSync', 'slackLinkOffer', 'chatWork'];
+  const held = (working: WorkOffered) => [...STARTS_WORK].filter((entry) => !working[entry]);
 
   it('holds, until the settings answer, every runner, timer and listener of a feature with a switch', () => {
     expect([...STARTS_WORK].sort()).toEqual([...HELD].sort());
@@ -229,17 +230,14 @@ describe('workOffered: work that starts by itself waits for the settings (#901)'
     for (const entry of STARTS_WORK) expect(featureOfEntry(entry)).not.toBeNull();
   });
 
-  it('holds no row, command, page or Settings section: what is drawn shows at once', () => {
-    const before = workOffered(EVERY_ENTRY_POINT, { answered: false });
-    for (const entry of [
-      'claudeChat',
-      'graphPage',
-      'libraryPages',
-      'kindleCommands',
-      'slackSettings',
-    ] as const) {
-      expect(before[entry]).toBe(true);
+  it('classifies every entry point a switch can take away, as drawn or as work', () => {
+    const switchable = ENTRY_POINTS.filter((entry) => featureOfEntry(entry) !== null);
+    const drawn = switchable.filter((entry) => !STARTS_WORK.has(entry as WorkEntry));
+    // What is drawn shows at once, and is never in the work held for the settings.
+    for (const entry of ['claudeChat', 'graphPage', 'libraryPages', 'kindleCommands'] as const) {
+      expect(drawn).toContain(entry);
     }
+    expect(drawn.length + STARTS_WORK.size).toBe(switchable.length);
   });
 
   it('answers the very object it was handed once the settings have answered', () => {
@@ -253,7 +251,8 @@ describe('workOffered: work that starts by itself waits for the settings (#901)'
     expect(workOffered(lacking, { answered: false })).toBe(first);
     expect(Object.isFrozen(first)).toBe(true);
     expect(first.chatWork).toBe(false);
-    expect(first.exportNotes).toBe(lacking.exportNotes);
+    const answered = workOffered(lacking, { answered: true });
+    for (const entry of STARTS_WORK) expect(first[entry] && !answered[entry]).toBe(false);
   });
 });
 

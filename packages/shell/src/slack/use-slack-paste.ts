@@ -58,6 +58,9 @@ const NOTHING_HELD: Held = { vault: null, preview: null, saving: false, saved: n
  * Pastes are listened for only while `enabled` (Slack offered and Slack
  * capture switched on, #901). Switched off, the offer up is put away and an
  * answer still on its way is dropped, so switching it on brings none back.
+ * A save already under way when the switch goes off is not stopped: it still
+ * writes its note, but neither its result nor a failure is shown, as the
+ * offer it answers has gone (`dismiss` moved past it).
  */
 export function useSlackPaste(ports: SlackPastePorts, enabled: boolean): SlackPaste {
   const [offered, setOffered] = useState<Offered | null>(null);

@@ -119,7 +119,7 @@ export type EntryPoint = keyof typeof NEEDS;
  * platform can, and the person wants it. Every entry point says, so a new one
  * cannot be left out by accident; null follows the platform alone.
  */
-const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
+const FEATURE_OF = {
   connectionsSettings: null,
   localApiServer: null,
   globalCaptureSettings: null,
@@ -161,22 +161,51 @@ const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
   documentReader: 'reading',
   addDocuments: 'reading',
   graphPage: 'graph',
-};
+} as const satisfies Readonly<Record<EntryPoint, FeatureId | null>>;
+
+/** The entry points a switch in Settings → Features can take away. */
+type SwitchableEntry = {
+  [Entry in EntryPoint]: (typeof FEATURE_OF)[Entry] extends null ? never : Entry;
+}[EntryPoint];
 
 /**
- * The entry points of a switchable feature that start work by themselves — a
- * runner, a timer, a listener, a call to the network — rather than draw
- * something (#901). Until the vault's settings have answered, its off list
- * is not known, so these are held (`workOffered`): a feature the file
- * switches off never starts, and one it leaves on starts once the answer is
- * in. Rows, commands, pages and Settings sections are not held, so the
- * chrome shows at once. A new runner of a switchable feature goes here.
+ * What each entry point of a switchable feature is (#901): `'draws'` — a row,
+ * a command, a page, a Settings section — or `'work'`, which starts by itself:
+ * a runner, a timer, a listener, a call to the network. Every one says, so an
+ * entry point given a feature in `FEATURE_OF` does not compile until it is
+ * classified here, and a runner cannot be left out of the settings wait by
+ * forgetting it.
+ *
+ * Until the vault's settings have answered, the off list is not known, so
+ * the work is held (`workOffered`): a feature the file switches off never
+ * starts, and one it leaves on starts once the answer is in. What draws is
+ * not held, so the chrome shows at once.
  */
-export const STARTS_WORK: ReadonlySet<EntryPoint> = new Set<EntryPoint>([
-  'kindleSync',
-  'slackLinkOffer',
-  'chatWork',
-]);
+const KIND_OF = {
+  slackSettings: 'draws',
+  slackLinkOffer: 'work',
+  kindleSettings: 'draws',
+  kindleCommands: 'draws',
+  kindleSync: 'work',
+  claudeChat: 'draws',
+  chatWork: 'work',
+  libraryPages: 'draws',
+  documentReader: 'draws',
+  addDocuments: 'draws',
+  graphPage: 'draws',
+} as const satisfies Readonly<Record<SwitchableEntry, 'draws' | 'work'>>;
+
+/** The entry points of a switchable feature that start work by themselves, which wait for the settings. */
+export type WorkEntry = {
+  [Entry in SwitchableEntry]: (typeof KIND_OF)[Entry] extends 'work' ? Entry : never;
+}[SwitchableEntry];
+
+/** The work entry points, held until the vault's settings answer: built from `KIND_OF`, never by hand. */
+export const STARTS_WORK: ReadonlySet<WorkEntry> = new Set(
+  (Object.keys(KIND_OF) as SwitchableEntry[]).filter(
+    (entry): entry is WorkEntry => KIND_OF[entry] === 'work',
+  ),
+);
 
 /**
  * The entry point each page a switch can hide is drawn under, by the page's
@@ -193,6 +222,13 @@ const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
 /** Whether the screen offers each entry point. Every one is named, so none is forgotten. */
 export type EntryPointsOffered = Readonly<Record<EntryPoint, boolean>>;
 
+/**
+ * Whether each piece of work of a switchable feature may start: only the work
+ * entries, so a runner's `enabled` is read from what waits for the settings,
+ * and a row's or a page's cannot be.
+ */
+export type WorkOffered = Pick<EntryPointsOffered, WorkEntry>;
+
 /** Every entry point, in the order they are listed. */
 export const ENTRY_POINTS = Object.freeze(Object.keys(NEEDS) as EntryPoint[]);
 
@@ -203,7 +239,8 @@ export function capabilitiesNeeded(entry: EntryPoint): readonly PlatformCapabili
 
 /** The feature an entry point belongs to, or null when no switch hides it. */
 export function featureOfEntry(entry: EntryPoint): FeatureId | null {
-  return FEATURE_OF[entry];
+  const feature: FeatureId | null = FEATURE_OF[entry];
+  return feature;
 }
 
 /**
@@ -245,7 +282,7 @@ export function offeredWithFeatures(
 }
 
 /** Each object held, by the object it came from: the same `offered` is always held as the same object. */
-const heldUntilAnswered = new WeakMap<EntryPointsOffered, EntryPointsOffered>();
+const heldUntilAnswered = new WeakMap<EntryPointsOffered, WorkOffered>();
 
 /**
  * What work that starts by itself may start: `offered` once the vault's
@@ -256,7 +293,7 @@ const heldUntilAnswered = new WeakMap<EntryPointsOffered, EntryPointsOffered>();
 export function workOffered(
   offered: EntryPointsOffered,
   { answered }: { answered: boolean },
-): EntryPointsOffered {
+): WorkOffered {
   if (answered) return offered;
   let held = heldUntilAnswered.get(offered);
   if (held === undefined) {

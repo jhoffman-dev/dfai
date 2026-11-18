@@ -13,12 +13,16 @@ export interface FeatureRow {
   readonly needs: string | null;
 }
 
+/** The status a switch held while the vault's settings are unread points at. */
+const LOADING = 'features-loading';
+
 /**
  * Settings → Features (#901): one row per key feature, with its switch. A
  * feature switched off leaves the view; nothing of it is deleted. The
  * switches wait until the vault's settings have been read, so a flip is never
  * made on a list that is not the vault's, and one whose feature needs another
- * that is off is held too, saying why. A held switch is `aria-disabled`
+ * that is off is held too, saying why. While the settings are unread, a
+ * "Loading…" status says so, and each held switch points at it. A held switch is `aria-disabled`
  * rather than disabled: Tab still reaches it and a screen reader reads the
  * reason, and pressing it does nothing. Memoised: it draws once as Settings
  * opens, and again only when the switches change ("Open Settings" is held to a
@@ -43,10 +47,16 @@ export const FeatureSettings = memo(function FeatureSettings({
         Switch off what you don’t use, and it leaves the sidebar, ⌘K and Settings for this vault.
         Nothing is deleted: switch it back on and it is all there.
       </p>
+      {!ready && (
+        <p className="settings__status" id={LOADING} role="status">
+          Loading…
+        </p>
+      )}
       {rows.map((row) => {
         const why = `feature-${row.id}-needs`;
         // Held, not disabled, so Tab still reaches it and a screen reader hears why.
         const held = !ready || row.needs !== null;
+        const reasons = [...(ready ? [] : [LOADING]), ...(row.needs === null ? [] : [why])];
         return (
           <div className="settings__row" key={row.id}>
             <span className="settings__row-text">
@@ -71,7 +81,7 @@ export const FeatureSettings = memo(function FeatureSettings({
               aria-checked={row.on}
               aria-label={row.label}
               aria-disabled={held}
-              {...(row.needs !== null && { 'aria-describedby': why })}
+              {...(reasons.length > 0 && { 'aria-describedby': reasons.join(' ') })}
               onClick={() => {
                 if (!held) onSwitch({ id: row.id, on: !row.on });
               }}

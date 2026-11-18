@@ -59,6 +59,35 @@ describe('FeatureSettings', () => {
     expect(onSwitch).not.toHaveBeenCalled();
   });
 
+  it('says "Loading…" while the settings are unread, and each held switch points at it', () => {
+    renderWith(
+      [
+        { ...READING, on: false },
+        {
+          id: 'kindle',
+          label: 'Kindle',
+          summary: 'Kindle highlights.',
+          on: false,
+          needs: 'Reading',
+        },
+      ],
+      { ready: false },
+    );
+    expect(within(card()).getByRole('status').textContent).toBe('Loading…');
+    expect(screen.getByRole('switch', { name: 'Reading', description: 'Loading…' })).toBeTruthy();
+    expect(
+      screen.getByRole('switch', { name: 'Kindle', description: 'Loading… Needs Reading.' }),
+    ).toBeTruthy();
+  });
+
+  it('drops "Loading…" once the settings are read', () => {
+    renderWith([READING]);
+    expect(within(card()).queryByRole('status')).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Reading' }).hasAttribute('aria-describedby')).toBe(
+      false,
+    );
+  });
+
   it('holds a feature off, and says why, while what it needs is off', () => {
     renderWith([
       { ...READING, on: false },
