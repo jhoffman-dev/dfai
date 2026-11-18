@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
-import type {
-  ActivityLog,
-  EntryPoint,
-  EntryPointsOffered,
-  MarkdownPort,
-  VaultFsPort,
+import {
+  workOffered,
+  type ActivityLog,
+  type EntryPoint,
+  type EntryPointsOffered,
+  type MarkdownPort,
+  type VaultFsPort,
 } from '@dfai/application';
 import { featuresOn } from '@dfai/domain';
 import { SETTINGS_SECTIONS, type SettingsSectionLink } from '@dfai/ui';
@@ -34,7 +35,11 @@ export function useFeatures({
   activity: Pick<ActivityLog, 'inOpenVault'>;
 }): {
   readonly offered: EntryPointsOffered;
-  /** What work that starts by itself may start: see below. */
+  /**
+   * What work that starts by itself — Kindle's sync, the Slack paste
+   * listener, the chat's checks — may start: held until the vault's settings
+   * have answered (`workOffered`, ADR-0055). Runners read this, not `offered`.
+   */
   readonly working: EntryPointsOffered;
   readonly setting: FeaturesSetting;
   readonly known: StoreApi<boolean>;
@@ -48,7 +53,8 @@ export function useFeatures({
   // Told after the commit, so only what subscribes (a tab on a feature's page) draws for it.
   const [known] = useState(() => createStore<boolean>()(() => false));
   useEffect(() => known.setState(answered, true), [known, answered]);
-  return { offered, working: offered, setting, known };
+  const working = workOffered(offered, { answered });
+  return { offered, working, setting, known };
 }
 
 /**

@@ -719,7 +719,7 @@ function AppWindow({
     vaultKey,
     activity: activityLog,
   });
-  const { offered } = features;
+  const { offered, working } = features;
   const exportOffered = offered.exportNotes;
   const exportFormats = useMemo(() => exportFormatsOffered(offered), [offered]);
   const presetNames = useMemo(
@@ -927,7 +927,7 @@ function AppWindow({
     vaultKey,
     indexReady,
     onWrote: onChanged,
-    enabled: offered.kindleSync,
+    enabled: working.kindleSync,
   });
 
   const thumbnails = useThumbnailQueue({
@@ -1462,8 +1462,7 @@ function AppWindow({
     store: browserChatSettingsStore,
     seat: chatSeat,
     askShown,
-    // Asked of no one until the vault's settings say whether Ask is on, as a feature's page waits.
-    enabled: offered.claudeChat && features.setting.answered,
+    enabled: working.chatWork,
     vault: {
       api: apiDeps,
       fs: location === null ? null : vault.fs,
@@ -1962,7 +1961,7 @@ function AppWindow({
     }),
     [slackPort, vault.fs, notes.markdown, index.index, vaultKey, openNote],
   );
-  const slackPaste = useSlackPaste(slackPastePorts, offered.slackLinkOffer);
+  const slackPaste = useSlackPaste(slackPastePorts, working.slackLinkOffer);
   const slackOffer =
     slackPaste.view === null ? null : (
       <SlackMessageOffer

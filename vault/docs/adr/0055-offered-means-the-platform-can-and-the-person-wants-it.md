@@ -108,6 +108,20 @@ rather than the platform. A second set of checks beside it would drift from it.
      brings none back. Its token stays in the Keychain.
      Automations and Meetings come in slice 3.
 
+   **Work that starts by itself waits for the settings read.** Until the
+   vault's settings note answers, the off list is empty and every feature
+   reads as on. That is right for what is drawn — rows, commands and
+   Settings show at once, as the sidebar's default order does — but not for
+   work: a runner, timer, listener or network call of a switchable feature
+   would start for a feature the file switches off. Such entry points are
+   listed once, in `STARTS_WORK` beside `FEATURE_OF` (`kindleSync`,
+   `slackLinkOffer`, and `chatWork`: the chat's reachability check, window
+   context and turns), and `workOffered` holds them until the read answers;
+   runners read `working`, not `offered`. A failed read still answers, and
+   with no vault open nothing runs. The feature chunks' preloads already wait
+   for the read. So a Slack link pasted before the answer is a plain paste,
+   whatever the file says, and Kindle's first sync comes after it.
+
 5. **What is not gated.** The local API and the MCP server keep answering for
    an off feature. The request is about the view; changing who may call what
    is a separate decision with its own risk (ADR-0016, ADR-0017).
