@@ -17,6 +17,7 @@ export * from './checklists/index.ts';
 export * from './dashboard/index.ts';
 export * from './embeddings/index.ts';
 export * from './export/index.ts';
+export * from './features/index.ts';
 export * from './google-calendar/index.ts';
 export * from './granola/index.ts';
 export * from './graph/index.ts';

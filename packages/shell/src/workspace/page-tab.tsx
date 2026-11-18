@@ -1,4 +1,6 @@
 import { memo, type ReactNode } from 'react';
+import { useStore } from 'zustand';
+import { featureOfPage, pageTurnedOff } from '@dfai/application';
 import type { PagePlace, Tab, TabId } from '@dfai/domain';
 import { ActivityContainer } from '../activity/activity-container.tsx';
 import { AskContainer } from '../ask/ask-container.tsx';
@@ -6,7 +8,7 @@ import { ArchiveContainer } from '../archive/archive-container.tsx';
 import { AutomationsContainer } from '../automations/automations-container.tsx';
 import { GraphContainer } from '../graph/graph-container.tsx';
 import { InboxContainer } from '../inbox/inbox-container.tsx';
-import type { PageChrome } from '../page-frame-fallback.tsx';
+import { PageFrameFallback, type PageChrome } from '../page-frame-fallback.tsx';
 import { QueryContainer } from '../query/query-container.tsx';
 import { ReviewContainer } from '../review/review-container.tsx';
 import { TagsContainer } from '../tags/tags-container.tsx';
@@ -18,6 +20,7 @@ import { LibraryContainer } from '../research/library-container.tsx';
 import { TodayContainer } from '../today/today-container.tsx';
 import { TypeContainer } from '../types/type-container.tsx';
 import { DocumentContainer } from '../reader/document-container.tsx';
+import { FeatureOffPage } from '../features/feature-off-page.tsx';
 import { samePageWiring, type PageWiringContext } from './page-wiring.ts';
 import { useTabPageHistory } from './tab-history.ts';
 import { useIsFirstShownPane } from './workspace-store.ts';
@@ -75,14 +78,28 @@ function usePageTab({ wiring, pane, tab, place }: PageTabProps) {
     ...(firstShown && onShowSidebar !== null && { onShowSidebar }),
   };
   const pages: PageWiringContext = { pages: wiring.pages, pane: wiring.pane, overlays, reveals };
+  // A feature's page waits for the vault's settings to say whether it is on,
+  // so a kept tab never loads a reader that is switched off (#901). Every
+  // other page selects a constant, so a vault opening draws it no more.
+  const held = useStore(
+    wiring.pages.features.known,
+    (known) => !known && featureOfPage(place) !== null,
+  );
   return (
     <div className="pane__tab">
-      {containerFor({ place, wiring: pages, tabId: tab.id, chrome, pane })}
+      {held ? (
+        <PageFrameFallback {...chrome} />
+      ) : (
+        containerFor({ place, wiring: pages, tabId: tab.id, chrome, pane })
+      )}
     </div>
   );
 }
 
-/** The page a place names, by its kind, in its container. */
+/**
+ * The page a place names, by its kind, in its container; or, for the page of
+ * a feature switched off, the notice saying so (#901).
+ */
 function containerFor({
   place,
   pane,
@@ -95,6 +112,11 @@ function containerFor({
   tabId: TabId;
   chrome: PageChrome;
 }): ReactNode {
+  const { features } = props.wiring.pages;
+  const off = pageTurnedOff(place, features.offered);
+  if (off !== null) {
+    return <FeatureOffPage feature={off} chrome={props.chrome} onTurnOn={features.onTurnOn} />;
+  }
   switch (place.kind) {
     case 'graph':
       return <GraphContainer {...props} scope={place.scope} />;

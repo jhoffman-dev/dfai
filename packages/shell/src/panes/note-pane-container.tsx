@@ -577,16 +577,18 @@ export function useNotePane({
   });
   const dashboard = useDashboard({ note: note.open, index, types, notePaths, indexKey });
   const literatureDocument = literatureDocumentOf(note.open?.properties ?? null);
-  // Each highlight of a PDF's or a book's literature note offers "Open in PDF" or "Open in EPUB" (#506), as its file reads.
+  // Each highlight of a PDF's or a book's literature note offers "Open in PDF" or "Open in EPUB" (#506), as its file reads;
+  // none while the reader is not offered (Reading switched off, #901).
+  const readerOffered = context.offered.documentReader;
   const highlightLinks = useMemo(
     () =>
-      note.open === null
+      note.open === null || !readerOffered
         ? null
         : readerHighlightLinks(notes.markdown, {
             properties: note.open.properties,
             text: note.open.onDisk,
           }),
-    [notes.markdown, note.open],
+    [notes.markdown, note.open, readerOffered],
   );
   const dashboardEditing = useDashboardEditing({
     note: note.open,

@@ -104,6 +104,7 @@ import {
   MovePicker,
   AboutSettings,
   NotHereSettings,
+  FeatureSettings,
   IndexSettings,
   indexStatusText,
   SidebarFooter,
@@ -321,6 +322,11 @@ import { paletteKindleCommands, runPaletteKindleCommand } from './kindle/palette
 import { useSecrets } from './settings/use-secrets.ts';
 import { useQuickAddSetting } from './quick-add/use-quick-add-setting.ts';
 import { useSidebarOrder } from './sidebar/use-sidebar-order.ts';
+import {
+  paletteCommandsOffered,
+  useFeatureOffWiring,
+  useFeatures,
+} from './features/use-features.ts';
 import { useVaultTags } from './tags/use-vault-tags.ts';
 import { useArchive } from './archive/use-archive.ts';
 import { useInboxWaiting } from './inbox/use-inbox-waiting.ts';
@@ -389,17 +395,30 @@ const PALETTE_COMMANDS = [
   // No keyword holds a "t", for the same reason as the comment below (#169).
   { id: OPEN_SKILLS, label: 'Skills', keywords: ['skill', 'claude', 'ai'] },
   // No word with a "t" in it: the palette's work budget types "tobia" (tools/perf/budgets.spec.ts).
-  { id: ADD_PDF, label: 'Add PDF…', keywords: ['pdf', 'book', 'paper', 'library', 'reader'] },
-  { id: ADD_EPUB, label: 'Add EPUB…', keywords: ['epub', 'ebook', 'book', 'library', 'reader'] },
+  // Reading's four (#901): each offered under its `entry`, so switching Reading off takes them out.
+  {
+    id: ADD_PDF,
+    label: 'Add PDF…',
+    keywords: ['pdf', 'book', 'paper', 'library', 'reader'],
+    entry: 'addDocuments',
+  },
+  {
+    id: ADD_EPUB,
+    label: 'Add EPUB…',
+    keywords: ['epub', 'ebook', 'book', 'library', 'reader'],
+    entry: 'addDocuments',
+  },
   {
     id: OPEN_LIBRARY,
     label: 'Library',
+    entry: 'libraryPages',
     // No keyword holds a "t": ⌘K's first letter typed lists no more commands for it than before (#507).
     keywords: ['books', 'sources', 'pdf', 'epub', 'kindle', 'reading'],
   },
   {
     id: OPEN_HIGHLIGHTS,
     label: 'All highlights',
+    entry: 'libraryPages',
     keywords: ['quotes', 'annotations', 'comments', 'kindle', 'pdf', 'epub', 'reading'],
   },
   {
@@ -522,7 +541,7 @@ function AppWindow({
   slack: slackPort,
   globalCapture: globalCapturePorts,
   exporting: exportPorts,
-  offered,
+  offered: platformOffered,
   limits = NOTHING_MISSING,
 }: {
   appInfo: AppInfoPort;
@@ -582,12 +601,6 @@ function AppWindow({
   limits?: readonly PlatformLimit[];
 }) {
   const [app, setApp] = useState<AppInfoState>({ kind: 'loading' });
-  const exportOffered = offered.exportNotes;
-  const exportFormats = useMemo(() => exportFormatsOffered(offered), [offered]);
-  const presetNames = useMemo(
-    () => presetsOffered(AUTOMATION_PRESETS, offered).map((preset) => preset.name),
-    [offered],
-  );
   // The last sync runs before the Activity log's final write, so its line is kept.
   const closing = useMemo(() => closingInStages(activityPorts.closing), [activityPorts.closing]);
   const editors = useOpenEditors();
@@ -701,6 +714,21 @@ function AppWindow({
   const notes = useMemo(
     () => boundToVault(notePorts, vaultKey, ownWrites),
     [notePorts, vaultKey, ownWrites],
+  );
+  // What the platform offers less the features switched off (#901): one object per off list.
+  const features = useFeatures({
+    platform: platformOffered,
+    fs: vault.fs,
+    markdown: notes.markdown,
+    vaultKey,
+    activity: activityLog,
+  });
+  const { offered } = features;
+  const exportOffered = offered.exportNotes;
+  const exportFormats = useMemo(() => exportFormatsOffered(offered), [offered]);
+  const presetNames = useMemo(
+    () => presetsOffered(AUTOMATION_PRESETS, offered).map((preset) => preset.name),
+    [offered],
   );
   // Opened once per vault: a new vault gets a new opening (#238). Each write
   // says which of the graph and the tags it changed, read again when the
@@ -1036,7 +1064,7 @@ function AppWindow({
 
   const hiddenSections = useHiddenSections(browserHiddenSectionStore);
   const paletteCommandsFor = useSteadyCallback((focused: NavigationPlace | null) => [
-    ...PALETTE_COMMANDS,
+    ...paletteCommandsOffered(PALETTE_COMMANDS, offered),
     ...palettePagesCommands(hiddenSections.isShown('userSpace')),
     ...paletteArchiveCommands(focused?.kind === 'note' ? focused.path : null),
     // Offered wherever the host can export: the commands themselves are made further down.
@@ -2469,6 +2497,13 @@ function AppWindow({
       showOverlay,
     ],
   );
+  const featureOff = useFeatureOffWiring({
+    offered,
+    known: features.known,
+    overlay,
+    showOverlay,
+    hideOverlay,
+  });
   const settingsShown = settingsSectionsShown({
     vaultOpen: location !== null,
     offered,
@@ -2481,6 +2516,17 @@ function AppWindow({
         return (
           location !== null && (
             <ProfileSettingsCard setting={profileSetting} emails={selfEmailsSetting} />
+          )
+        );
+      case 'features':
+        return (
+          location !== null && (
+            <FeatureSettings
+              rows={features.setting.rows}
+              ready={features.setting.loaded}
+              problem={features.setting.problem}
+              onSwitch={features.setting.onSwitch}
+            />
           )
         );
       case 'index':
@@ -2686,8 +2732,10 @@ function AppWindow({
                     onOpenGraph={() => openGraph({ kind: 'vault' })}
                     onOpenTags={() => openTags(null)}
                     {...(offered.claudeChat && { onOpenAsk: openAsk })}
-                    onOpenLibrary={() => openPage({ kind: 'library' })}
-                    onOpenHighlights={() => openPage({ kind: 'highlights' })}
+                    {...(offered.libraryPages && {
+                      onOpenLibrary: () => openPage({ kind: 'library' }),
+                      onOpenHighlights: () => openPage({ kind: 'highlights' }),
+                    })}
                     onOpenAutomations={() => openPage({ kind: 'automations' })}
                     activity={{
                       onOpen: () => openPage({ kind: 'activity' }),
@@ -2763,6 +2811,7 @@ function AppWindow({
                       openBlock,
                       openPage,
                       holds: holdsByVault.of(location.absolutePath),
+                      features: featureOff.wiring,
                       today: todayWiring,
                       inbox: inboxWiring,
                       templates: templatesPage.page,
@@ -2868,6 +2917,7 @@ function AppWindow({
                 connections={offered.connectionsSettings}
                 onClose={() => hideOverlay('settings')}
                 fallbackFocus={focusFallback}
+                {...(featureOff.settingsAt !== null && { openAt: featureOff.settingsAt })}
               >
                 {/* The list on the left and these come from one table: what it leaves out is not drawn. */}
                 {settingsShown.keys.map((key) => (

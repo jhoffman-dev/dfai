@@ -14,13 +14,14 @@ import { createReadInvalidator } from '../reads/read-invalidator.ts';
 import { useProfileSetting } from '../profile/use-profile-setting.ts';
 import { useSidebarOrder } from '../sidebar/use-sidebar-order.ts';
 import { useQuickAddSetting } from '../quick-add/use-quick-add-setting.ts';
+import { useFeaturesSetting } from '../features/use-features-setting.ts';
 
 const SETTINGS = '.atlas/settings.md';
 const ACTIVITY = recordingActivity();
 
 function countingVault() {
   const file = {
-    text: '---\nprofileName: Mara Quill\nquickAdd: [task]\nsidebarOrder: [views, types]\n---\n',
+    text: '---\nprofileName: Mara Quill\nquickAdd: [task]\nsidebarOrder: [views, types]\nfeaturesOff: [reading]\n---\n',
   };
   const asked: string[][] = [];
   const fs = fakeVaultFs({
@@ -35,21 +36,28 @@ function countingVault() {
   return { fs, file, settingsReads };
 }
 
+/** What each render showed of the sidebar's order and the features switched off, in order. */
+type Drawn = { readonly order: boolean; readonly features: boolean };
+
 function renderSettings(fs: ReturnType<typeof countingVault>['fs']) {
   const { wrapper, client } = queryWrapper();
   const reads = createReadInvalidator({ client });
+  const drawn: Drawn[] = [];
   const hook = renderHook(
     () => {
       const shared = { fs, markdown: remarkMarkdown, vaultKey: 'v', activity: ACTIVITY };
-      return {
+      const shown = {
         profile: useProfileSetting(shared),
         order: useSidebarOrder(shared),
         quickAdd: useQuickAddSetting(shared),
+        features: useFeaturesSetting(shared),
       };
+      drawn.push({ order: shown.order.order.saved !== null, features: shown.features.loaded });
+      return shown;
     },
     { wrapper },
   );
-  return { hook, reads };
+  return { hook, reads, drawn };
 }
 
 const settle = async () => {
@@ -62,9 +70,21 @@ describe('the settings note, read once', () => {
     const { hook } = renderSettings(fs);
     await waitFor(() => expect(hook.result.current.quickAdd.configured).toEqual(['task']));
     await waitFor(() => expect(hook.result.current.order.order.saved).toEqual(['views', 'types']));
+    await waitFor(() => expect(hook.result.current.features.off).toEqual(['reading']));
     await settle();
 
     expect(settingsReads()).toBe(1);
+  });
+
+  it('settles the features switched off in the same render as the sidebar order (#901)', async () => {
+    const { fs } = countingVault();
+    const { hook, drawn } = renderSettings(fs);
+    await waitFor(() => expect(hook.result.current.features.loaded).toBe(true));
+    await settle();
+
+    // Never one without the other: the read lands for both in one go, so it costs no render.
+    expect(drawn.some((each) => each.order)).toBe(true);
+    expect(drawn.filter((each) => each.order !== each.features)).toEqual([]);
   });
 
   it('is not read again when the index moves for a note that is not it', async () => {
@@ -96,6 +116,7 @@ describe('the settings note, read once', () => {
     await waitFor(() => expect(hook.result.current.quickAdd.configured).toEqual(['project']));
     await waitFor(() => expect(hook.result.current.order.order.saved).toEqual(['types', 'views']));
     expect(hook.result.current.profile.profile).toMatchObject({ name: 'Tobias Fenn' });
+    expect(hook.result.current.features.off).toEqual([]);
     await settle();
     expect(settingsReads() - before).toBe(1);
   });

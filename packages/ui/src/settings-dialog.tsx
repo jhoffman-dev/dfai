@@ -58,6 +58,7 @@ export function SettingsDialog({
   onCopyMcpCommand,
   onClose,
   fallbackFocus,
+  openAt,
   children,
 }: {
   connection: ConnectionSettingsState;
@@ -74,6 +75,8 @@ export function SettingsDialog({
   onCopyMcpCommand: () => void;
   onClose: () => void;
   fallbackFocus?: FocusFallback;
+  /** The section Settings opens at, its heading focused, in place of the top (#901). */
+  openAt?: SettingsSectionLink;
   /** Sections after Connections — the index, for one. */
   children?: ReactNode;
 }) {
@@ -89,6 +92,7 @@ export function SettingsDialog({
   return settingsFrame({
     onClose,
     finalFocus,
+    ...(openAt !== undefined && { openAt }),
     sections: listed,
     body: (
       <>
@@ -217,6 +221,18 @@ function McpCommand({
   );
 }
 
+/**
+ * The heading of the section Settings opens at, brought into view, for the
+ * dialog to focus as it opens; true, the dialog's own first focus, while that
+ * section is not drawn.
+ */
+function headingToOpenAt(section: SettingsSectionLink): HTMLElement | true {
+  const heading = document.getElementById(section.id);
+  if (heading === null) return true;
+  heading.scrollIntoView({ block: 'start' });
+  return heading;
+}
+
 /** Brings a section into view and hands it the focus, by its heading. */
 function reveal(section: SettingsSectionLink): void {
   const heading = document.getElementById(section.id);
@@ -261,11 +277,13 @@ const SectionList = memo(function SectionList({
 function settingsFrame({
   onClose,
   finalFocus,
+  openAt,
   sections = [],
   body,
 }: {
   onClose: () => void;
   finalFocus: ReturnType<typeof useReturnFocus>;
+  openAt?: SettingsSectionLink;
   sections?: readonly SettingsSectionLink[];
   body: ReactNode;
 }) {
@@ -278,7 +296,12 @@ function settingsFrame({
     >
       <Dialog.Portal ref={holdModalLayer}>
         <Dialog.Viewport className="palette__backdrop">
-          <Dialog.Popup className="palette settings" finalFocus={finalFocus} aria-label="Settings">
+          <Dialog.Popup
+            className="palette settings"
+            finalFocus={finalFocus}
+            {...(openAt !== undefined && { initialFocus: () => headingToOpenAt(openAt) })}
+            aria-label="Settings"
+          >
             <header className="settings__header">
               <h1 className="settings__title">Settings</h1>
               <Dialog.Close className="icon-button" aria-label="Close">

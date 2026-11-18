@@ -137,6 +137,7 @@ describe('the web build (#656)', () => {
       ).toEqual([
         'Appearance',
         'Profile',
+        'Features',
         'Index',
         'Images',
         'Quick add',

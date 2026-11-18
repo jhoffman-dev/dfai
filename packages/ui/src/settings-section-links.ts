@@ -16,6 +16,7 @@ export const SETTINGS_SECTIONS = {
   appearance: { id: 'settings-appearance', title: 'Appearance', icon: 'sun' },
   connections: { id: 'settings-connections', title: 'Connections', icon: 'link' },
   profile: { id: 'settings-profile', title: 'Profile', icon: 'person' },
+  features: { id: 'settings-features', title: 'Features', icon: 'grid' },
   index: { id: 'settings-index', title: 'Index', icon: 'search' },
   images: { id: 'settings-images', title: 'Images', icon: 'image' },
   globalCapture: {
