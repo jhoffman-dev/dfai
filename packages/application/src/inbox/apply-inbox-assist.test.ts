@@ -12,6 +12,7 @@ import {
   parseAssistLog,
   parseRunLog,
   digestOf,
+  isInInbox,
   type AssistEvidence,
   type AssistRow,
   type InboxItem,
@@ -947,11 +948,17 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
 /** Appends `edit` to the note right after the row moves it: another editor saving into it as it lands. */
 function editAfterTheMove(v: ReturnType<typeof setUp>, edit: string) {
   const move = v.ports.fs.moveEntry;
+  const edited = { count: 0 };
   v.ports.fs.moveEntry = async (each) => {
     await move(each);
-    if (each.to !== LOG && v.files.has(each.to))
-      v.files.set(each.to, `${v.files.get(each.to)!}${edit}`);
+    // Only as a row moves a note on, out of the Inbox: never as an undo moves it back.
+    if (each.to === LOG || isInInbox(each.to) || v.files.get(each.to)?.endsWith(edit) !== false) {
+      return;
+    }
+    v.files.set(each.to, `${v.files.get(each.to)!}${edit}`);
+    edited.count += 1;
   };
+  return edited;
 }
 
 describe('review #911 round 2: an edit made while the row moves the note is never lost (item 1)', () => {
@@ -1104,11 +1111,14 @@ describe('apply then undo, as a seeded property', () => {
   }
 
   it('restores every byte of every note, and every path, whatever rows are applied and in whatever order', async () => {
+    let editsMade = 0;
     for (let seed = 1; seed <= 24; seed += 1) {
       const random = seededRandom(seed);
       const v = setUp({ ...VAULT, ...thirdNotes(random) });
       const before = v.snapshot();
       const previewed = await v.preview();
+      // Every other seed, someone edits each note the row moves, as it lands (#911).
+      const edits = seed % 2 === 0 ? editAfterTheMove(v, 'Mine.\n') : { count: 0 };
       const rows = [...previewed.rows].sort(() => random() - 0.5).filter(() => random() < 0.8);
       const results = await applySureRows(v.ports, { rows, notePaths: v.notePaths() });
       expect(v.files.get(KEPT), `seed ${seed}`).toBe(VAULT[KEPT]);
@@ -1125,7 +1135,21 @@ describe('apply then undo, as a seeded property', () => {
       expect([...notesBut(v.files).keys()].sort(), `seed ${seed}`).toEqual(
         [...notesBut(before).keys()].sort(),
       );
-      expect(notesBut(v.files), `seed ${seed}`).toEqual(notesBut(before));
+      // Every edit is still there; every note no one edited is byte for byte as it was.
+      const kept = [...notesBut(v.files)].filter(([, text]) => text.endsWith('Mine.\n'));
+      expect(kept.length, `seed ${seed}`).toBe(edits.count);
+      editsMade += edits.count;
+      for (const [path, text] of kept)
+        expect(before.get(path), `seed ${seed}: ${path}`).toBeDefined();
+      const untouched = new Map(
+        [...notesBut(v.files)].filter(([, text]) => !text.endsWith('Mine.\n')),
+      );
+      const touched = new Set(kept.map(([path]) => path));
+      expect(untouched, `seed ${seed}`).toEqual(
+        new Map([...notesBut(before)].filter(([path]) => !touched.has(path))),
+      );
     }
+    // The property is about something: edits did land as notes moved.
+    expect(editsMade).toBeGreaterThan(5);
   });
 });
