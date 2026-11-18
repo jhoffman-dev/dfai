@@ -57,7 +57,8 @@ export interface AssistApplyStep {
 /** Why a planned row is shown but not applied in this slice; null for a row that is. */
 export function assistNotAppliable(row: AssistRow): string | null {
   const { step } = row;
-  if (step.kind === 'ask' || step.kind === 'leave') return 'Questions and items left are never applied.';
+  if (step.kind === 'ask' || step.kind === 'leave')
+    return 'Questions and items left are never applied.';
   if (step.kind === 'task' && step.waitingOn !== null) {
     return 'Who a task waits on is set by hand for now: it changes the task’s status.';
   }
@@ -90,11 +91,11 @@ export function assistApplyStep(row: AssistRow): AssistApplyStep | null {
  * the duplicate stamp.
  */
 export function assistStepKeys(step: AssistApplyStep): string[] {
-  const { fill } = step;
+  const fill = step.fill ?? NO_FILL;
   return [
-    ...(fill?.makeTask === true ? ['type', TASK_KEYS.status] : []),
-    ...(fill?.project != null ? [FILED_UNDER_KEY] : []),
-    ...(fill?.due != null ? [TASK_KEYS.due] : []),
+    ...(fill.makeTask ? ['type', TASK_KEYS.status] : []),
+    ...(fill.project !== null ? [FILED_UNDER_KEY] : []),
+    ...(fill.due !== null ? [TASK_KEYS.due] : []),
     ...(step.links.length + step.adds.length > 0 ? [MEETING_PEOPLE_KEY] : []),
     ...(step.duplicateOf !== null ? [DUPLICATE_OF_KEY] : []),
   ];
@@ -104,31 +105,32 @@ export function assistStepKeys(step: AssistApplyStep): string[] {
 export function assistStepPaths(step: AssistApplyStep): VaultPath[] {
   return [
     step.path,
-    ...(step.fill?.project != null ? [step.fill.project.path] : []),
+    ...(step.fill !== null && step.fill.project !== null ? [step.fill.project.path] : []),
     ...step.links.map((person) => person.path),
     ...(step.duplicateOf !== null ? [step.duplicateOf.path] : []),
   ];
 }
+
+/** A duplicate's fill: nothing. */
+const NO_FILL: AssistFill = { makeTask: false, project: null, due: null };
 
 /** What applying `step` did, in a sentence or two: "Made it a task under Larkspur Payroll. Linked Mara Quill." */
 export function assistAppliedWords(step: AssistApplyStep): string {
   if (step.duplicateOf !== null) {
     return `Archived as a duplicate of ${step.duplicateOf.title}.`;
   }
-  const { fill } = step;
-  const under = fill?.project != null ? ` under ${fill.project.title}` : '';
-  const due = fill?.due != null ? `, due ${fill.due}` : '';
-  const did =
-    fill?.makeTask === true
-      ? `Made it a task${under}${due}.`
-      : under !== ''
-        ? `Filed it${under}${due}.`
-        : due !== ''
-          ? `Set it due ${fill!.due}.`
-          : '';
   const people = [
     ...step.links.map((person) => `Linked ${person.title}.`),
     ...step.adds.map((person) => `Added ${person.name}.`),
   ];
-  return [did, ...people].filter((part) => part !== '').join(' ');
+  return [filledWords(step.fill ?? NO_FILL), ...people].filter((part) => part !== '').join(' ');
+}
+
+/** What filling in did: "Made it a task under Larkspur Payroll, due 2026-12-01."; empty for nothing. */
+function filledWords({ makeTask, project, due }: AssistFill): string {
+  const under = project === null ? '' : ` under ${project.title}`;
+  const by = due === null ? '' : `, due ${due}`;
+  if (makeTask) return `Made it a task${under}${by}.`;
+  if (project !== null) return `Filed it${under}${by}.`;
+  return due === null ? '' : `Set it due ${due}.`;
 }

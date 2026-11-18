@@ -39,7 +39,9 @@ const undone: LogEntry = {
 describe('the run log, for Inbox assist', () => {
   it('reads back what it wrote, a path with quotes and an arrow in it included', () => {
     const text = newLogText('Inbox assist', [applied, undone]);
-    expect(text).toContain('- assisted `"Inbox/Call “Mara” → now.md"` → `"Notes/2026/Call “Mara” → now.md"` at `"0a1b2c3d"`');
+    expect(text).toContain(
+      '- assisted `"Inbox/Call “Mara” → now.md"` → `"Notes/2026/Call “Mara” → now.md"` at `"0a1b2c3d"`',
+    );
     expect(parseRunLog(text)).toEqual([applied, undone]);
   });
 
@@ -51,7 +53,9 @@ describe('the run log, for Inbox assist', () => {
   });
 
   it('sums an apply and an undo up in words', () => {
-    expect(logEntrySummary(applied)).toBe('Clarified 1 Inbox item. Archived 1 duplicate. Made 1 note.');
+    expect(logEntrySummary(applied)).toBe(
+      'Clarified 1 Inbox item. Archived 1 duplicate. Made 1 note.',
+    );
     expect(logEntrySummary(undone)).toBe('Took back 1 Inbox item. Trashed 1 note.');
   });
 });
@@ -66,7 +70,8 @@ describe('assistActivityReport', () => {
     expect(report).toEqual({
       level: 'info',
       kind: 'automation',
-      message: 'Inbox assist applied “Call Mara”: Clarified 1 Inbox item. Archived 1 duplicate. Made 1 note.',
+      message:
+        'Inbox assist applied “Call Mara”: Clarified 1 Inbox item. Archived 1 duplicate. Made 1 note.',
       subject: { kind: 'note', path: FILED },
     });
   });
@@ -77,7 +82,10 @@ describe('assistActivityReport', () => {
       path: ITEM,
       happened: { doing: 'undo', entry: undone, logged: false },
     });
-    expect(unlogged).toMatchObject({ level: 'warning', message: expect.stringMatching(/^Inbox assist undid .*Its log could not be written\.$/u) });
+    expect(unlogged).toMatchObject({
+      level: 'warning',
+      message: expect.stringMatching(/^Inbox assist undid .*Its log could not be written\.$/u),
+    });
     const refused = assistActivityReport({
       title: 'Call Mara',
       path: ITEM,
@@ -85,7 +93,8 @@ describe('assistActivityReport', () => {
     });
     expect(refused).toMatchObject({
       level: 'warning',
-      message: 'Inbox assist could not undo “Call Mara”: it was changed since, so it was left as it is.',
+      message:
+        'Inbox assist could not undo “Call Mara”: it was changed since, so it was left as it is.',
     });
   });
 });

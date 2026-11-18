@@ -175,7 +175,10 @@ async function evidenceOf(
       item,
       answer,
       digest: digestOf(note.text),
-      kept: keptPath === undefined || read === undefined ? null : { path: keptPath, digest: digestOf(read.text) },
+      kept:
+        keptPath === undefined || read === undefined
+          ? null
+          : { path: keptPath, digest: digestOf(read.text) },
     };
   });
 }

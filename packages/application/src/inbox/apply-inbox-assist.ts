@@ -95,7 +95,11 @@ export async function applyAssistRow(
 ): Promise<AssistAppliedRow> {
   const unchanged = (applied: AssistApplied) => ({ applied, notePaths });
   if (evidence === undefined || assistApplyStep(row) === null) {
-    return unchanged({ kind: 'asked', ask: 'not-appliable', words: 'This row is not one that is applied.' });
+    return unchanged({
+      kind: 'asked',
+      ask: 'not-appliable',
+      words: 'This row is not one that is applied.',
+    });
   }
   const recorder = assistRecorder(ports);
   let checked: RecheckedNow;
@@ -103,10 +107,20 @@ export async function applyAssistRow(
     checked = await recheckNow(ports, { row, evidence, notePaths });
   } catch (cause) {
     const why = messageWithoutPaths(cause);
-    return unchanged({ kind: 'failed', words: `Not applied: it could not be checked (${why}). Nothing changed.` });
+    return unchanged({
+      kind: 'failed',
+      words: `Not applied: it could not be checked (${why}). Nothing changed.`,
+    });
   }
-  if (checked.kind === 'ask') return unchanged({ kind: 'asked', ask: checked.ask, words: checked.words });
-  const journal: Journal = { from: row.path, at: row.path, before: checked.text, after: checked.text, made: [] };
+  if (checked.kind === 'ask')
+    return unchanged({ kind: 'asked', ask: checked.ask, words: checked.words });
+  const journal: Journal = {
+    from: row.path,
+    at: row.path,
+    before: checked.text,
+    after: checked.text,
+    made: [],
+  };
   try {
     await carryOut(ports, { step: checked.step, journal, notePaths, modified: checked.modified });
   } catch (cause) {
@@ -145,10 +159,32 @@ function notesAfter(notePaths: readonly VaultPath[], journal: Journal): VaultPat
 
 async function appliedRow(
   ports: ApplyAssistPorts,
-  { recorder, journal, step, notePaths }: { recorder: ActivityRecorder; journal: Journal; step: AssistApplyStep; notePaths: readonly VaultPath[] },
+  {
+    recorder,
+    journal,
+    step,
+    notePaths,
+  }: {
+    recorder: ActivityRecorder;
+    journal: Journal;
+    step: AssistApplyStep;
+    notePaths: readonly VaultPath[];
+  },
 ): Promise<AssistAppliedRow> {
-  const undo: AssistUndo = { title: step.title, at: ports.clock.localNow(), item: itemUndo(journal), made: [...journal.made] };
-  const entry: LogEntry = { kind: 'run', at: undo.at, trigger: 'hand', done: doneOf(undo), left: [], capped: false };
+  const undo: AssistUndo = {
+    title: step.title,
+    at: ports.clock.localNow(),
+    item: itemUndo(journal),
+    made: [...journal.made],
+  };
+  const entry: LogEntry = {
+    kind: 'run',
+    at: undo.at,
+    trigger: 'hand',
+    done: doneOf(undo),
+    left: [],
+    capped: false,
+  };
   const logged = await logAssist(ports, { recorder, entry, title: step.title, path: journal.at });
   const words = assistAppliedWords(step) + (logged ? '' : ' Its log could not be written.');
   return {
@@ -161,14 +197,23 @@ async function appliedRow(
 function doneOf(undo: AssistUndo): DoneAction[] {
   return [
     { kind: 'assisted', from: undo.item.from, to: undo.item.to, digest: digestOf(undo.item.after) },
-    ...undo.made.map((person): DoneAction => ({ kind: 'created', path: person.path, digest: digestOf(person.text) })),
+    ...undo.made.map((person): DoneAction => ({
+      kind: 'created',
+      path: person.path,
+      digest: digestOf(person.text),
+    })),
   ];
 }
 
 /** The writes a row comes to, one after another, each recorded in `journal` as it lands. */
 async function carryOut(
   ports: ApplyAssistPorts,
-  { step, journal, notePaths, modified }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[]; modified: number },
+  {
+    step,
+    journal,
+    notePaths,
+    modified,
+  }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[]; modified: number },
 ): Promise<void> {
   const writing = journaling(ports, journal);
   if (step.duplicateOf !== null) {
@@ -179,7 +224,10 @@ async function carryOut(
 }
 
 /** The ports a row writes through: each note's text as written, and each person as made, kept in `journal`. */
-function journaling(ports: ApplyAssistPorts, journal: Journal): ApplyAssistPorts & { written: ReadonlyMap<VaultPath, string> } {
+function journaling(
+  ports: ApplyAssistPorts,
+  journal: Journal,
+): ApplyAssistPorts & { written: ReadonlyMap<VaultPath, string> } {
   const { ports: recording, written } = recordingWrites(ports);
   const createNote: ArchivePorts['fs']['createNote'] = async (create) => {
     const modified = await recording.fs.createNote(create);
@@ -194,13 +242,23 @@ type Writing = ReturnType<typeof journaling>;
 /** Stamps the item with the task it copies, then archives it: the kept task is never touched. */
 async function archiveDuplicate(
   ports: Writing,
-  { step, journal, notePaths, modified }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[]; modified: number },
+  {
+    step,
+    journal,
+    notePaths,
+    modified,
+  }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[]; modified: number },
 ): Promise<void> {
   const refusal = archiveRefusal(journal.from);
   if (refusal !== null) throw new NotApplied(refusal);
   const kept = `[[${wikiLinkTargetFor(step.duplicateOf!.path, notePaths)}]]`;
   await writeOnItem(ports, { journal, values: { [DUPLICATE_OF_KEY]: kept }, modified });
-  const outcome = await archiveNotes({ ports, paths: [journal.at], notePaths, today: ports.clock.today() });
+  const outcome = await archiveNotes({
+    ports,
+    paths: [journal.at],
+    notePaths,
+    today: ports.clock.today(),
+  });
   const move = outcome.moves[0];
   if (move !== undefined) {
     journal.at = move.move.to;
@@ -214,7 +272,11 @@ async function archiveDuplicate(
 /** Makes it a task, or files it, filling only what the row found empty: Clarify's one byte-preserving save. */
 async function fillIn(
   ports: Writing,
-  { step, journal, notePaths }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[] },
+  {
+    step,
+    journal,
+    notePaths,
+  }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[] },
 ): Promise<void> {
   const fill = step.fill!;
   const clarification: Clarification = {
@@ -233,7 +295,11 @@ async function fillIn(
   });
   const editedSince = outcome.undo.before !== journal.before;
   // Taken back to what Clarify read, so an edit made since the check is kept, not undone.
-  Object.assign(journal, { at: outcome.undo.to, before: outcome.undo.before, after: outcome.undo.after });
+  Object.assign(journal, {
+    at: outcome.undo.to,
+    before: outcome.undo.before,
+    after: outcome.undo.after,
+  });
   if (editedSince) throw new NotApplied(CHANGED_WHILE);
   if (outcome.failed.length > 0) throw new NotApplied(outcome.failed[0]!.reason);
 }
@@ -243,7 +309,11 @@ const CHANGED_WHILE = 'It changed while it was being applied.';
 /** Adds each new person, then links everyone under `people` in one write: a person made is linked, or taken out again. */
 async function linkPeople(
   ports: Writing,
-  { step, journal, notePaths }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[] },
+  {
+    step,
+    journal,
+    notePaths,
+  }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[] },
 ): Promise<void> {
   if (step.links.length + step.adds.length === 0) return;
   let paths = notePaths;
@@ -267,7 +337,11 @@ async function linkPeople(
  */
 async function writeOnItem(
   ports: Writing,
-  { journal, values, modified }: { journal: Journal; values: Record<string, unknown>; modified: number | null },
+  {
+    journal,
+    values,
+    modified,
+  }: { journal: Journal; values: Record<string, unknown>; modified: number | null },
 ): Promise<void> {
   let read = modified;
   if (read === null) {
@@ -276,7 +350,14 @@ async function writeOnItem(
     read = now.modified;
   }
   const { fs, markdown } = ports;
-  await setNoteProperties({ fs, markdown, path: journal.at, values, today: ports.clock.today(), ifModified: read });
+  await setNoteProperties({
+    fs,
+    markdown,
+    path: journal.at,
+    values,
+    today: ports.clock.today(),
+    ifModified: read,
+  });
   journal.after = ports.written.get(journal.at) ?? journal.after;
 }
 
@@ -295,18 +376,48 @@ class NotApplied extends Error {
  */
 async function failedApply(
   ports: ApplyAssistPorts,
-  { recorder, journal, cause, title, notePaths }: { recorder: ActivityRecorder; journal: Journal; cause: unknown; title: string; notePaths: readonly VaultPath[] },
+  {
+    recorder,
+    journal,
+    cause,
+    title,
+    notePaths,
+  }: {
+    recorder: ActivityRecorder;
+    journal: Journal;
+    cause: unknown;
+    title: string;
+    notePaths: readonly VaultPath[];
+  },
 ): Promise<AssistAppliedRow> {
   const reason = messageWithoutPaths(cause);
   const left = await takeBack(ports, journal, notesAfter(notePaths, journal));
   const made = journal.made.map((person) => noteTitle(person.path));
   const addedThenTaken =
-    made.length === 0 || left.people.length > 0 ? '' : ` ${made.join(' and ')} ${made.length === 1 ? 'was' : 'were'} added, then taken out again (in the Trash).`;
+    made.length === 0 || left.people.length > 0
+      ? ''
+      : ` ${made.join(' and ')} ${made.length === 1 ? 'was' : 'were'} added, then taken out again (in the Trash).`;
   if (left.problems.length === 0) {
-    sayNotDone(recorder, { title, path: journal.from, happened: { doing: 'apply', problem: reason } });
-    return { applied: { kind: 'failed', words: `Not applied: ${reason}${addedThenTaken} Nothing was left changed.` }, notePaths };
+    sayNotDone(recorder, {
+      title,
+      path: journal.from,
+      happened: { doing: 'apply', problem: reason },
+    });
+    return {
+      applied: {
+        kind: 'failed',
+        words: `Not applied: ${reason}${addedThenTaken} Nothing was left changed.`,
+      },
+      notePaths,
+    };
   }
-  const entry: LogEntry = { kind: 'failed', at: ports.clock.localNow(), trigger: 'hand', problem: reason, done: leftDone(journal, left) };
+  const entry: LogEntry = {
+    kind: 'failed',
+    at: ports.clock.localNow(),
+    trigger: 'hand',
+    problem: reason,
+    done: leftDone(journal, left),
+  };
   await logAssist(ports, { recorder, entry, title, path: left.itemAt });
   const words = `Not applied: ${reason} ${left.problems.join(' ')}`;
   return { applied: { kind: 'failed', words }, notePaths: notesAfter(notePaths, journal) };
@@ -321,7 +432,11 @@ interface LeftBehind {
 }
 
 /** Undoes what a row wrote, item first: a person is taken out only once nothing links them. */
-async function takeBack(ports: ApplyAssistPorts, journal: Journal, notePaths: readonly VaultPath[]): Promise<LeftBehind> {
+async function takeBack(
+  ports: ApplyAssistPorts,
+  journal: Journal,
+  notePaths: readonly VaultPath[],
+): Promise<LeftBehind> {
   const problems: string[] = [];
   if (changedItem(journal)) {
     const undone = await undoClarifyInboxItem({ ports, undo: itemUndo(journal), notePaths }).then(
@@ -335,10 +450,14 @@ async function takeBack(ports: ApplyAssistPorts, journal: Journal, notePaths: re
   }
   const people: AsRead[] = [];
   for (const person of [...journal.made].reverse()) {
-    await ports.fs.trashEntry({ path: person.path, unchanged: [person] }).catch((cause: unknown) => {
-      people.push(person);
-      problems.push(`${noteTitle(person.path)} was left in People (${messageWithoutPaths(cause)}).`);
-    });
+    await ports.fs
+      .trashEntry({ path: person.path, unchanged: [person] })
+      .catch((cause: unknown) => {
+        people.push(person);
+        problems.push(
+          `${noteTitle(person.path)} was left in People (${messageWithoutPaths(cause)}).`,
+        );
+      });
   }
   return { problems, itemAt: journal.from, itemChanged: false, people };
 }
@@ -346,8 +465,21 @@ async function takeBack(ports: ApplyAssistPorts, journal: Journal, notePaths: re
 /** What a row that could not be taken back whole left done, for its log. */
 function leftDone(journal: Journal, left: LeftBehind): DoneAction[] {
   return [
-    ...(left.itemChanged ? [{ kind: 'assisted' as const, from: journal.from, to: journal.at, digest: digestOf(journal.after) }] : []),
-    ...left.people.map((person): DoneAction => ({ kind: 'created', path: person.path, digest: digestOf(person.text) })),
+    ...(left.itemChanged
+      ? [
+          {
+            kind: 'assisted' as const,
+            from: journal.from,
+            to: journal.at,
+            digest: digestOf(journal.after),
+          },
+        ]
+      : []),
+    ...left.people.map((person): DoneAction => ({
+      kind: 'created',
+      path: person.path,
+      digest: digestOf(person.text),
+    })),
   ];
 }
 

@@ -147,7 +147,8 @@ function notesSettled({ item, kept, cut, now }: AssistRecheckInput, step: Assist
     if (note === null) return ask('kept-not-open', keptGone(step));
     if (note.unsaved) return ask('unsaved', 'It has typing not saved yet.');
     // A time ahead of the clock is a note still settling too.
-    if (now - note.modified < ASSIST_QUIET_MS) return ask('recent', 'Changed in the last 10 minutes.');
+    if (now - note.modified < ASSIST_QUIET_MS)
+      return ask('recent', 'Changed in the last 10 minutes.');
     if (note.properties === null) return ask('unreadable', 'Its frontmatter could not be read.');
   }
   return cut ? ask('read-cut', 'The vault could not be read whole just now.') : null;
@@ -177,7 +178,11 @@ function keptStillOlder({ item, kept }: AssistRecheckInput, step: AssistApplySte
   if (kept!.task === null) return ask('kept-not-open', keptGone(step));
   const mine = createdOf(item!.properties!.written);
   const theirs = createdOf(kept!.properties!.written);
-  if (mine === 'unread' || theirs === 'unread' || (mine !== null && theirs !== null && theirs > mine)) {
+  if (
+    mine === 'unread' ||
+    theirs === 'unread' ||
+    (mine !== null && theirs !== null && theirs > mine)
+  ) {
     return ask('kept-newer', `${step.duplicateOf.title} may be the newer copy. Which one is kept?`);
   }
   return null;
@@ -217,7 +222,8 @@ function peopleConfirmed(input: AssistRecheckInput, step: AssistApplyStep): Aske
   const { directory, takenTitles } = input.vault;
   for (const person of step.adds) {
     const match = personMatch({ name: person.name, email: person.email, people: directory });
-    if (match.kind !== 'none') return ask('person-exists', `${person.name} may be in People now. Is this them?`);
+    if (match.kind !== 'none')
+      return ask('person-exists', `${person.name} may be in People now. Is this them?`);
     if (takenTitles.has(foldedPersonName(person.name))) {
       return ask('title-taken', `A note is called ${person.name} already. Is this them?`);
     }
@@ -225,11 +231,16 @@ function peopleConfirmed(input: AssistRecheckInput, step: AssistApplyStep): Aske
   const texts = textsOf(input);
   const named = (where: Texts['whole']) => (person: Named) => namedIn(where, person, directory);
   const people: Named[] = [
-    ...step.links.map((target) => ({ kind: 'link' as const, path: target.path, name: target.title })),
+    ...step.links.map((target) => ({
+      kind: 'link' as const,
+      path: target.path,
+      name: target.title,
+    })),
     ...step.adds.map((added) => ({ kind: 'add' as const, ...added })),
   ];
   const missing = people.find((person) => !named(texts.whole)(person));
-  if (missing !== undefined) return ask('evidence-gone', `The item no longer names ${missing.name}.`);
+  if (missing !== undefined)
+    return ask('evidence-gone', `The item no longer names ${missing.name}.`);
   const quoted = people.find((person) => !named(texts.own)(person));
   if (quoted !== undefined) {
     return ask('quoted-only', `Only quoted or forwarded text names ${quoted.name}. Is this them?`);
@@ -300,14 +311,20 @@ function samePlan(input: AssistRecheckInput, step: AssistApplyStep): Asked | nul
     }
     if (whole.step.newerHolds.length > 0) {
       const holds = whole.step.newerHolds.join(', ');
-      return ask('newer-holds', `This copy holds what ${step.duplicateOf.title} lacks (${holds}). Archive it anyway?`);
+      return ask(
+        'newer-holds',
+        `This copy holds what ${step.duplicateOf.title} lacks (${holds}). Archive it anyway?`,
+      );
     }
   }
   if (!samePlanned(whole, input.row)) return ask('plan-changed', changedWords(whole));
   const { frontmatter, body } = splitFrontmatter(input.item!.text);
   const own = planAgain(input, `${frontmatter ?? ''}${assistOwnWords(body)}`);
   if (!samePlanned(own, input.row) && step.duplicateOf === null) {
-    return ask('quoted-only', 'What it would do rests on quoted or forwarded text. Check it by hand.');
+    return ask(
+      'quoted-only',
+      'What it would do rests on quoted or forwarded text. Check it by hand.',
+    );
   }
   return null;
 }
@@ -348,7 +365,11 @@ function unchanged({ item, kept, evidence }: AssistRecheckInput, step: AssistApp
     return ask('item-changed', 'It changed since the preview. Suggest again to see it.');
   }
   if (step.duplicateOf === null) return null;
-  if (evidence.kept === null || evidence.kept.path !== step.duplicateOf.path || digestOf(kept!.text) !== evidence.kept.digest) {
+  if (
+    evidence.kept === null ||
+    evidence.kept.path !== step.duplicateOf.path ||
+    digestOf(kept!.text) !== evidence.kept.digest
+  ) {
     return ask('kept-changed', `${step.duplicateOf.title} changed since the preview.`);
   }
   return null;

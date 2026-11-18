@@ -35,7 +35,11 @@ export async function undoAssistRow(
 ): Promise<AssistUndone> {
   const recorder = assistRecorder(ports);
   const refuse = (problem: string): AssistUndone => {
-    sayNotDone(recorder, { title: undo.title, path: undo.item.to, happened: { doing: 'undo', problem } });
+    sayNotDone(recorder, {
+      title: undo.title,
+      path: undo.item.to,
+      happened: { doing: 'undo', problem },
+    });
     return { kind: 'refused', words: `Not undone: ${problem}` };
   };
   const refusal = await undoRefusal(ports, undo);
@@ -53,10 +57,20 @@ export async function undoAssistRow(
     done: [{ kind: 'unassisted', from: undo.item.to, to: undo.item.from }, ...done],
     left,
   };
-  const logged = await logAssist(ports, { recorder, entry, title: undo.title, path: undo.item.from });
+  const logged = await logAssist(ports, {
+    recorder,
+    entry,
+    title: undo.title,
+    path: undo.item.from,
+  });
   const kept = left.map((each) => `${noteTitle(each.path)} was kept: ${each.reason}`);
   const words = ['Put back as it was.', ...kept, logged ? '' : 'Its log could not be written.'];
-  return { kind: 'undone', path: undo.item.from, words: words.filter((part) => part !== '').join(' '), logged };
+  return {
+    kind: 'undone',
+    path: undo.item.from,
+    words: words.filter((part) => part !== '').join(' '),
+    logged,
+  };
 }
 
 const CHANGED_SINCE = 'it was changed since, so it was left as it is.';

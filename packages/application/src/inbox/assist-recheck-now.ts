@@ -20,7 +20,10 @@ export interface RecheckPorts extends ArchivePorts {
 /** A row re-checked, with the item as it was read for it: what its writes are held to. */
 export type RecheckedNow =
   | Extract<AssistRecheck, { kind: 'ask' }>
-  | (Extract<AssistRecheck, { kind: 'apply' }> & { readonly text: string; readonly modified: number });
+  | (Extract<AssistRecheck, { kind: 'apply' }> & {
+      readonly text: string;
+      readonly modified: number;
+    });
 
 /**
  * Reads again everything a row rests on — the item, a duplicate's kept task,
@@ -30,7 +33,11 @@ export type RecheckedNow =
  */
 export async function recheckNow(
   ports: RecheckPorts,
-  { row, evidence, notePaths }: { row: AssistRow; evidence: AssistEvidence; notePaths: readonly VaultPath[] },
+  {
+    row,
+    evidence,
+    notePaths,
+  }: { row: AssistRow; evidence: AssistEvidence; notePaths: readonly VaultPath[] },
 ): Promise<RecheckedNow> {
   const item = await noteNow(ports, evidence.item.path);
   const read = await readAssistVault(ports, { notes: [], items: [] });
@@ -41,7 +48,10 @@ export async function recheckNow(
     row,
     evidence,
     item,
-    kept: kept === null ? null : { ...kept, task: read.tasks.find((task) => task.path === keptPath) ?? null },
+    kept:
+      kept === null
+        ? null
+        : { ...kept, task: read.tasks.find((task) => task.path === keptPath) ?? null },
     vault: { ...read.facts, takenTitles: await takenNow(ports, adding, notePaths) },
     tasks: read.tasks,
     cut: read.cut,

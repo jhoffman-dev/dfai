@@ -107,7 +107,7 @@ describe('Suggest on the Inbox', () => {
     page(assistOf(PLAN));
     const region = screen.getByRole('region', { name: 'Suggestions' });
     expect(within(region).getByRole('status').textContent).toBe(
-      '2 items: would act on 1, 1 question Nothing is written.',
+      '2 items: would act on 1, 1 question Nothing is written until you apply it.',
     );
     const call = within(region).getByRole('listitem', { name: 'Call Mara Quill' });
     expect(within(call).getByText('Would act').dataset['tone']).toBe('next');
@@ -150,7 +150,7 @@ describe('Suggest on the Inbox', () => {
     );
     const region = screen.getByRole('region', { name: 'Suggestions' });
     expect(within(region).getByRole('status').textContent).toBe(
-      '2 items: would act on 1, link 1 person, add 1 person, 1 duplicate Nothing is written.',
+      '2 items: would act on 1, link 1 person, add 1 person, 1 duplicate Nothing is written until you apply it.',
     );
     const call = within(region).getByRole('listitem', { name: 'Call Mara Quill' });
     expect(within(call).getByText('Links Mara Quill')).toBeTruthy();

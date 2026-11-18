@@ -12,7 +12,10 @@ import type { AssistRow } from './assist-plan.ts';
 /** #909: what each planned row comes to when applied, and the fields it must find empty. */
 
 const PATH = createVaultPath('Inbox/Call Mara.md');
-const LARKSPUR = { path: createVaultPath('Projects/Larkspur Payroll.md'), title: 'Larkspur Payroll' };
+const LARKSPUR = {
+  path: createVaultPath('Projects/Larkspur Payroll.md'),
+  title: 'Larkspur Payroll',
+};
 const MARA = { path: createVaultPath('People/Mara Quill.md'), title: 'Mara Quill' };
 const KEPT = { path: createVaultPath('Tasks/Call Mara.md'), title: 'Call Mara' };
 
@@ -24,10 +27,20 @@ const row = (step: AssistRow['step'], people: AssistRow['people'] = []): AssistR
   people,
 });
 const task = (extra: Partial<Extract<AssistRow['step'], { kind: 'task' }>> = {}) =>
-  row({ kind: 'task', makeTask: true, project: LARKSPUR, due: '2026-12-01', waitingOn: null, ...extra }, [
-    { kind: 'link', person: MARA },
-    { kind: 'add', name: 'Tobias Fenn', email: 'tobias@example.org' },
-  ]);
+  row(
+    {
+      kind: 'task',
+      makeTask: true,
+      project: LARKSPUR,
+      due: '2026-12-01',
+      waitingOn: null,
+      ...extra,
+    },
+    [
+      { kind: 'link', person: MARA },
+      { kind: 'add', name: 'Tobias Fenn', email: 'tobias@example.org' },
+    ],
+  );
 
 describe('assistApplyStep', () => {
   it('makes a task of a task row, filling what the plan found empty, and its people', () => {
@@ -69,7 +82,13 @@ describe('assistApplyStep', () => {
 
 describe('assistStepKeys', () => {
   it('names every key a task row writes', () => {
-    expect(assistStepKeys(assistApplyStep(task())!)).toEqual(['type', 'status', 'project', 'due', 'people']);
+    expect(assistStepKeys(assistApplyStep(task())!)).toEqual([
+      'type',
+      'status',
+      'project',
+      'due',
+      'people',
+    ]);
   });
 
   it('names only what is filled', () => {
@@ -103,10 +122,12 @@ describe('assistAppliedWords', () => {
     expect(assistAppliedWords(assistApplyStep(row({ kind: 'file', project: LARKSPUR }))!)).toBe(
       'Filed it under Larkspur Payroll.',
     );
-    const due = assistApplyStep(row({ kind: 'task', makeTask: false, project: null, due: '2026-12-01', waitingOn: null }))!;
+    const due = assistApplyStep(
+      row({ kind: 'task', makeTask: false, project: null, due: '2026-12-01', waitingOn: null }),
+    )!;
     expect(assistAppliedWords(due)).toBe('Set it due 2026-12-01.');
-    expect(assistAppliedWords(assistApplyStep(row({ kind: 'duplicate', of: KEPT, newerHolds: [] }))!)).toBe(
-      'Archived as a duplicate of Call Mara.',
-    );
+    expect(
+      assistAppliedWords(assistApplyStep(row({ kind: 'duplicate', of: KEPT, newerHolds: [] }))!),
+    ).toBe('Archived as a duplicate of Call Mara.');
   });
 });

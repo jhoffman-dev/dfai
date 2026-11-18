@@ -519,7 +519,9 @@ function countDone(done: readonly DoneAction[]): string {
   const clarified = assisted.length - duplicates;
   const parts = [
     clarified > 0 ? `Clarified ${items(clarified)}.` : '',
-    duplicates > 0 ? `Archived ${duplicates} ${duplicates === 1 ? 'duplicate' : 'duplicates'}.` : '',
+    duplicates > 0
+      ? `Archived ${duplicates} ${duplicates === 1 ? 'duplicate' : 'duplicates'}.`
+      : '',
     tally('unassisted') > 0 ? `Took back ${items(tally('unassisted'))}.` : '',
     tally('archived') > 0 ? `Archived ${notes(tally('archived'))}.` : '',
     tally('unarchived') > 0 ? `Put back ${notes(tally('unarchived'))}.` : '',

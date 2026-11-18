@@ -23,7 +23,8 @@ describe('assistOwnWords', () => {
   });
 
   it('leaves out header lines, in any case', () => {
-    const text = 'TO: Mara Quill\ncc: tobias@example.com\nSubject: Renewal\nSent: today\nDate: Friday\nReply-To: x@example.com\nBcc: y@example.com\nMine.';
+    const text =
+      'TO: Mara Quill\ncc: tobias@example.com\nSubject: Renewal\nSent: today\nDate: Friday\nReply-To: x@example.com\nBcc: y@example.com\nMine.';
     expect(assistOwnWords(text)).toBe('Mine.');
   });
 

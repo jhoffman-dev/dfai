@@ -148,7 +148,12 @@ describe('assistRecheck: it asks, and writes nothing, when', () => {
 
   it('a field it would fill is written now', () => {
     const previewed = task();
-    for (const field of ['due: 2026-12-05', 'project: "[[Fenn Renovation]]"', 'status: next-action', 'people: Tobias Fenn']) {
+    for (const field of [
+      'due: 2026-12-05',
+      'project: "[[Fenn Renovation]]"',
+      'status: next-action',
+      'people: Tobias Fenn',
+    ]) {
       const item = noteNow(`---\n${field}\n---\n${previewed.text}`);
       const checked = assistRecheck(recheckOf(previewed, { item }));
       expect(asked(checked)).toBe('field-written');
@@ -223,7 +228,9 @@ describe('assistRecheck: it asks, and writes nothing, when', () => {
     const previewed = adding(
       'Worth a look.\n\n---------- Forwarded message ---------\nFrom: Tobias Fenn <tobias@example.org>\nSubject: Lunch\n\nLunch on Friday?\n',
     );
-    expect(previewed.row.people).toEqual([{ kind: 'add', name: 'Tobias Fenn', email: 'tobias@example.org' }]);
+    expect(previewed.row.people).toEqual([
+      { kind: 'add', name: 'Tobias Fenn', email: 'tobias@example.org' },
+    ]);
     expect(asked(assistRecheck(recheckOf(previewed)))).toBe('quoted-only');
   });
 

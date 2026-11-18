@@ -29,7 +29,11 @@ import { undoAssistRow, undoAssistRows } from './undo-inbox-assist.ts';
 
 const TODAY = '2026-11-17';
 const NOON = Date.parse(`${TODAY}T12:00:00Z`);
-const CLOCK = { now: () => NOON + 60 * 60_000, today: () => TODAY, localNow: () => `${TODAY}T13:00:00` };
+const CLOCK = {
+  now: () => NOON + 60 * 60_000,
+  today: () => TODAY,
+  localNow: () => `${TODAY}T13:00:00`,
+};
 const LOG = logPathFor(INBOX_ASSIST_RULE.id);
 
 const json = (frontmatter: Record<string, unknown>, body = '') =>
@@ -93,12 +97,18 @@ function setUp(notes: Record<string, string> = VAULT) {
   const failOn = <K extends Failing['method']>(method: K) =>
     (async (args: never) => {
       counts[method] += 1;
-      if (failing?.method === method && failing.nth === counts[method]) throw new Error(`the disk refused the ${method}`);
+      if (failing?.method === method && failing.nth === counts[method])
+        throw new Error(`the disk refused the ${method}`);
       return (vault.ports.fs[method] as (args: never) => Promise<unknown>)(args);
     }) as ApplyAssistPorts['fs'][K];
   const index = vault.ports.index;
   const ports: ApplyAssistPorts = {
-    fs: { ...vault.ports.fs, createNote: failOn('createNote'), writeTextFile: failOn('writeTextFile'), moveEntry: failOn('moveEntry') },
+    fs: {
+      ...vault.ports.fs,
+      createNote: failOn('createNote'),
+      writeTextFile: failOn('writeTextFile'),
+      moveEntry: failOn('moveEntry'),
+    },
     markdown: vault.ports.markdown,
     editors: vault.ports.editors,
     index: {
@@ -110,15 +120,16 @@ function setUp(notes: Record<string, string> = VAULT) {
             "SELECT f.path, f.title FROM files f JOIN props p ON p.path = f.path AND p.key = 'type' WHERE p.value_text = ?",
             [type],
           )
-        ).rows.map(
-          ([path, title]) => ({ path: String(path), title: String(title) }),
-        ),
+        ).rows.map(([path, title]) => ({ path: String(path), title: String(title) })),
     },
     clock: CLOCK,
     activity,
   };
   const notePaths = () => [...vault.files.keys()].map((path) => createVaultPath(path));
-  const preview = async (answers: readonly unknown[] = ANSWERS, paths = Object.keys(VAULT).filter((at) => at.startsWith('Inbox/'))) => {
+  const preview = async (
+    answers: readonly unknown[] = ANSWERS,
+    paths = Object.keys(VAULT).filter((at) => at.startsWith('Inbox/')),
+  ) => {
     const model = fakeModel([[{ type: 'text', text: JSON.stringify({ items: answers }) }]]);
     const outcome = await previewInboxAssist(
       {
@@ -161,7 +172,8 @@ function setUp(notes: Record<string, string> = VAULT) {
 }
 
 /** Every note but the log, which records each apply and undo by design. */
-const notesBut = (files: ReadonlyMap<string, string>) => new Map([...files].filter(([path]) => path !== LOG));
+const notesBut = (files: ReadonlyMap<string, string>) =>
+  new Map([...files].filter(([path]) => path !== LOG));
 
 const appliedOf = (applied: AssistApplied) => {
   if (applied.kind !== 'applied') throw new Error(`not applied: ${applied.words}`);
@@ -173,7 +185,9 @@ describe('applyAssistRow: each kind of row', () => {
     const v = setUp();
     const before = v.snapshot();
     const applied = appliedOf(await v.apply(CALL));
-    expect(applied.words).toBe('Made it a task under Larkspur Payroll, due 2026-12-01. Linked Mara Quill.');
+    expect(applied.words).toBe(
+      'Made it a task under Larkspur Payroll, due 2026-12-01. Linked Mara Quill.',
+    );
     expect(v.files.has(CALL)).toBe(false);
     const filed = v.files.get(applied.path)!;
     expect(JSON.parse(filed.split('\n')[1]!)).toEqual({
@@ -186,9 +200,16 @@ describe('applyAssistRow: each kind of row', () => {
     expect(filed.endsWith(VAULT[CALL]!)).toBe(true);
     // One log entry, one Activity line.
     const [logged] = parseRunLog(v.files.get(LOG)!);
-    expect(logged).toMatchObject({ kind: 'run', trigger: 'hand', done: [{ kind: 'assisted', from: CALL, to: applied.path }] });
+    expect(logged).toMatchObject({
+      kind: 'run',
+      trigger: 'hand',
+      done: [{ kind: 'assisted', from: CALL, to: applied.path }],
+    });
     expect(v.activity.reports).toEqual([
-      expect.objectContaining({ level: 'info', message: 'Inbox assist applied “Call Mara”: Clarified 1 Inbox item.' }),
+      expect.objectContaining({
+        level: 'info',
+        message: 'Inbox assist applied “Call Mara”: Clarified 1 Inbox item.',
+      }),
     ]);
 
     const undone = await v.undo(applied);
@@ -215,9 +236,16 @@ describe('applyAssistRow: each kind of row', () => {
     const applied = appliedOf(await v.apply(LUNCH));
     expect(applied.words).toBe('Made it a task. Added Tobias Fenn.');
     const person = v.files.get('People/Tobias Fenn.md')!;
-    expect(JSON.parse(person.split('\n')[1]!)).toMatchObject({ type: 'person', email: 'tobias@example.org' });
-    expect(JSON.parse(v.files.get(LUNCH)!.split('\n')[1]!)).toMatchObject({ people: ['[[Tobias Fenn]]'] });
-    expect(applied.undo.made).toEqual([expect.objectContaining({ path: 'People/Tobias Fenn.md', text: person })]);
+    expect(JSON.parse(person.split('\n')[1]!)).toMatchObject({
+      type: 'person',
+      email: 'tobias@example.org',
+    });
+    expect(JSON.parse(v.files.get(LUNCH)!.split('\n')[1]!)).toMatchObject({
+      people: ['[[Tobias Fenn]]'],
+    });
+    expect(applied.undo.made).toEqual([
+      expect.objectContaining({ path: 'People/Tobias Fenn.md', text: person }),
+    ]);
 
     expect(await v.undo(applied)).toMatchObject({ kind: 'undone' });
     expect(notesBut(v.files)).toEqual(notesBut(before));
@@ -297,7 +325,11 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
     { row: CALL, fail: { method: 'writeTextFile', nth: 2 }, says: /Nothing was left changed\.$/u },
     { row: LUNCH, fail: { method: 'writeTextFile', nth: 1 }, says: /Nothing was left changed\.$/u },
     { row: LUNCH, fail: { method: 'createNote', nth: 1 }, says: /Nothing was left changed\.$/u },
-    { row: LUNCH, fail: { method: 'writeTextFile', nth: 2 }, says: /Tobias Fenn was added, then taken out again \(in the Trash\)\. Nothing was left changed\.$/u },
+    {
+      row: LUNCH,
+      fail: { method: 'writeTextFile', nth: 2 },
+      says: /Tobias Fenn was added, then taken out again \(in the Trash\)\. Nothing was left changed\.$/u,
+    },
     { row: RENEW, fail: { method: 'writeTextFile', nth: 1 }, says: /Nothing was left changed\.$/u },
     { row: RENEW, fail: { method: 'moveEntry', nth: 1 }, says: /Nothing was left changed\.$/u },
     { row: RENEW, fail: { method: 'writeTextFile', nth: 2 }, says: /Nothing was left changed\.$/u },
@@ -311,7 +343,12 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
       const applied = await v.apply(row, previewed);
       expect(applied).toMatchObject({ kind: 'failed', words: expect.stringMatching(says) });
       expect(v.files).toEqual(before);
-      expect(v.activity.reports).toEqual([expect.objectContaining({ level: 'warning', message: expect.stringContaining('could not apply') })]);
+      expect(v.activity.reports).toEqual([
+        expect.objectContaining({
+          level: 'warning',
+          message: expect.stringContaining('could not apply'),
+        }),
+      ]);
     });
   }
 
@@ -328,10 +365,16 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
       return failingFrom(write);
     };
     const applied = await v.apply(CALL, previewed);
-    expect(applied).toMatchObject({ kind: 'failed', words: expect.stringContaining('It was left as the row changed it') });
+    expect(applied).toMatchObject({
+      kind: 'failed',
+      words: expect.stringContaining('It was left as the row changed it'),
+    });
     // What was left changed is in the log, so it is not lost.
     expect(parseRunLog(v.files.get(LOG)!)).toEqual([
-      expect.objectContaining({ kind: 'failed', done: [expect.objectContaining({ kind: 'assisted', from: CALL })] }),
+      expect.objectContaining({
+        kind: 'failed',
+        done: [expect.objectContaining({ kind: 'assisted', from: CALL })],
+      }),
     ]);
   });
 });
@@ -375,8 +418,16 @@ describe('applySureRows', () => {
     const v = setUp();
     const previewed = await v.preview();
     v.fail({ method: 'moveEntry', nth: 1 });
-    const results = await applySureRows(v.ports, { rows: previewed.rows, notePaths: v.notePaths() });
-    expect(results.map(({ applied }) => applied.kind)).toEqual(['failed', 'applied', 'applied', 'applied']);
+    const results = await applySureRows(v.ports, {
+      rows: previewed.rows,
+      notePaths: v.notePaths(),
+    });
+    expect(results.map(({ applied }) => applied.kind)).toEqual([
+      'failed',
+      'applied',
+      'applied',
+      'applied',
+    ]);
   });
 });
 
@@ -387,7 +438,10 @@ describe('undo', () => {
     const edited = `${v.files.get(applied.path)!}My own line.\n`;
     v.files.set(applied.path, edited);
     const undone = await v.undo(applied);
-    expect(undone).toEqual({ kind: 'refused', words: 'Not undone: it was changed since, so it was left as it is.' });
+    expect(undone).toEqual({
+      kind: 'refused',
+      words: 'Not undone: it was changed since, so it was left as it is.',
+    });
     expect(v.files.get(applied.path)).toBe(edited);
     expect(v.files.has(CALL)).toBe(false);
   });
@@ -399,7 +453,10 @@ describe('undo', () => {
     v.files.set(person, `${v.files.get(person)!}Met at the renewal.\n`);
     const after = v.snapshot();
     const undone = await v.undo(applied);
-    expect(undone).toMatchObject({ kind: 'refused', words: expect.stringContaining('Tobias Fenn it was changed since') });
+    expect(undone).toMatchObject({
+      kind: 'refused',
+      words: expect.stringContaining('Tobias Fenn it was changed since'),
+    });
     expect(v.files).toEqual(after);
   });
 
@@ -407,18 +464,30 @@ describe('undo', () => {
     const v = setUp();
     const applied = appliedOf(await v.apply(CALL));
     v.vault.unsaved.add(applied.path);
-    expect(await v.undo(applied)).toMatchObject({ kind: 'refused', words: expect.stringContaining('typing') });
+    expect(await v.undo(applied)).toMatchObject({
+      kind: 'refused',
+      words: expect.stringContaining('typing'),
+    });
   });
 
   it('undoes every row, the last applied first, each on its own', async () => {
     const v = setUp();
     const before = v.snapshot();
     const previewed = await v.preview();
-    const results = await applySureRows(v.ports, { rows: previewed.rows, notePaths: v.notePaths() });
-    const undos = results.flatMap(({ path, applied }) => (applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : []));
+    const results = await applySureRows(v.ports, {
+      rows: previewed.rows,
+      notePaths: v.notePaths(),
+    });
+    const undos = results.flatMap(({ path, applied }) =>
+      applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : [],
+    );
     expect(undos).toHaveLength(4);
     const order: VaultPath[] = [];
-    const undone = await undoAssistRows(v.ports, { undos, notePaths: v.notePaths(), onEach: ({ path }) => void order.push(path) });
+    const undone = await undoAssistRows(v.ports, {
+      undos,
+      notePaths: v.notePaths(),
+      onEach: ({ path }) => void order.push(path),
+    });
     expect(undone.every(({ undone: each }) => each.kind === 'undone')).toBe(true);
     expect(order).toEqual([RENEW, LUNCH, ARTICLE, CALL]);
     expect(notesBut(v.files)).toEqual(notesBut(before));
@@ -435,8 +504,11 @@ describe('apply then undo, as a seeded property', () => {
       const rows = [...previewed.rows].sort(() => random() - 0.5).filter(() => random() < 0.8);
       const results = await applySureRows(v.ports, { rows, notePaths: v.notePaths() });
       expect(v.files.get(KEPT), `seed ${seed}`).toBe(VAULT[KEPT]);
-      for (const path of v.files.keys()) expect(path.includes('..'), `seed ${seed}: ${path}`).toBe(false);
-      const undos = results.flatMap(({ path, applied }) => (applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : []));
+      for (const path of v.files.keys())
+        expect(path.includes('..'), `seed ${seed}: ${path}`).toBe(false);
+      const undos = results.flatMap(({ path, applied }) =>
+        applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : [],
+      );
       await undoAssistRows(v.ports, { undos, notePaths: v.notePaths() });
       expect(notesBut(v.files), `seed ${seed}`).toEqual(notesBut(before));
     }

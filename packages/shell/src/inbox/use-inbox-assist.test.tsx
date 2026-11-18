@@ -110,9 +110,14 @@ describe('useInboxAssist', () => {
           why: 'Nowhere clear to file it.',
           tone: 'leave',
           people: [],
+          action: { kind: 'none' },
         },
       ],
       more: null,
+      canApplyAll: false,
+      canUndoAll: false,
+      busy: false,
+      said: '',
     });
     expect(wiring.asks.asked('/vault')).toEqual([Date.UTC(2026, 11, 1, 9, 0, 0)]);
   });

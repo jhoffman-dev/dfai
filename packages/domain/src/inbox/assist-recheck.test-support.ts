@@ -18,7 +18,10 @@ export const NOW = Date.UTC(2026, 10, 17, 9);
 /** An hour before {@link NOW}: a note left alone. */
 export const QUIET = NOW - 60 * 60_000;
 
-export const LARKSPUR = { path: createVaultPath('Projects/Larkspur Payroll.md'), title: 'Larkspur Payroll' };
+export const LARKSPUR = {
+  path: createVaultPath('Projects/Larkspur Payroll.md'),
+  title: 'Larkspur Payroll',
+};
 export const MARA = { path: createVaultPath('People/Mara Quill.md'), title: 'Mara Quill' };
 export const KEPT_PATH = createVaultPath('Tasks/Renew Larkspur contract.md');
 
@@ -50,7 +53,8 @@ export const KEPT_TASK: TaskCandidate = {
   contexts: [],
   people: [],
 };
-export const KEPT_TEXT = '---\ntype: task\nstatus: next-action\ncreated: 2026-11-01\n---\n\nRenew it.\n';
+export const KEPT_TEXT =
+  '---\ntype: task\nstatus: next-action\ncreated: 2026-11-01\n---\n\nRenew it.\n';
 
 /** The frontmatter of a test note, read as `key: value` lines: what the markdown port gives, for these notes. */
 export function propertiesOf(text: string): NonNullable<AssistNoteNow['properties']> {
@@ -63,10 +67,16 @@ export function propertiesOf(text: string): NonNullable<AssistNoteNow['propertie
     if (value !== '') written.set(line.slice(0, at).trim().toLowerCase(), [value]);
   }
   const people = written.get('people');
-  return { written, listedPeople: people === undefined ? null : { resolved: null, written: people } };
+  return {
+    written,
+    listedPeople: people === undefined ? null : { resolved: null, written: people },
+  };
 }
 
-export const answerFor = (item: VaultPath, extra: Partial<AssistItemAnswer> = {}): AssistItemAnswer => ({
+export const answerFor = (
+  item: VaultPath,
+  extra: Partial<AssistItemAnswer> = {},
+): AssistItemAnswer => ({
   item,
   kind: 'task',
   projects: [],
@@ -101,15 +111,22 @@ export function preview({
   tasks?: readonly TaskCandidate[];
   keptText?: string;
 }): Previewed {
-  const item: InboxItem = inboxItem({ path: createVaultPath(`Inbox/${title}.md`), title, type: null });
+  const item: InboxItem = inboxItem({
+    path: createVaultPath(`Inbox/${title}.md`),
+    title,
+    type: null,
+  });
   const read = propertiesOf(text);
   const items = assistItemFacts({
-    asked: [{ item, text, modified: QUIET, listedPeople: read.listedPeople, written: read.written }],
+    asked: [
+      { item, text, modified: QUIET, listedPeople: read.listedPeople, written: read.written },
+    ],
     tasks,
   });
   const given = answerFor(item.path, answer);
   const row = assistPlan(item, given, { ...vault, items });
-  const kept = row.step.kind === 'duplicate' ? { path: row.step.of.path, digest: digestOf(keptText) } : null;
+  const kept =
+    row.step.kind === 'duplicate' ? { path: row.step.of.path, digest: digestOf(keptText) } : null;
   return { row, evidence: { item, answer: given, digest: digestOf(text), kept }, text };
 }
 

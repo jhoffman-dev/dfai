@@ -29,9 +29,18 @@ import {
 
 const RUNS = 600;
 
-const pick = <T>(random: () => number, from: readonly T[]): T => from[Math.floor(random() * from.length)]!;
+const pick = <T>(random: () => number, from: readonly T[]): T =>
+  from[Math.floor(random() * from.length)]!;
 
-const FIELDS = ['', 'due: 2026-12-05\n', 'project: "[[Larkspur Payroll]]"\n', 'status: next-action\n', 'people: Mara Quill\n', 'created: 2026-10-01\n', 'contexts: "@phone"\n'];
+const FIELDS = [
+  '',
+  'due: 2026-12-05\n',
+  'project: "[[Larkspur Payroll]]"\n',
+  'status: next-action\n',
+  'people: Mara Quill\n',
+  'created: 2026-10-01\n',
+  'contexts: "@phone"\n',
+];
 const BODIES = [
   '',
   'Call Mara Quill <mara.quill@example.com> by 2026-12-01.\n',
@@ -72,25 +81,46 @@ describe('assistRecheck, as a property', () => {
       const title = pick(random, [KEPT_TASK.title, 'Call Mara', 'Lunch with Tobias']);
       const front = pick(random, FIELDS);
       const text = `${front === '' ? '' : `---\n${front}---\n`}${pick(random, BODIES)}`;
-      const previewed = preview({ title, text, answer: answerOf(random, title), tasks: [KEPT_TASK] });
+      const previewed = preview({
+        title,
+        text,
+        answer: answerOf(random, title),
+        tasks: [KEPT_TASK],
+      });
       // Most notes are left alone between the preview and the press; some are edited.
       const edited = random() < 0.6 ? text : pick(random, EDITS)(text);
-      const directory = pick(random, [VAULT.directory, [MARA_CANDIDATE, { path: createVaultPath('People/Tobias Fenn.md'), name: 'Tobias Fenn', emails: ['tobias@example.org'], aliases: [] }]]);
+      const directory = pick(random, [
+        VAULT.directory,
+        [
+          MARA_CANDIDATE,
+          {
+            path: createVaultPath('People/Tobias Fenn.md'),
+            name: 'Tobias Fenn',
+            emails: ['tobias@example.org'],
+            aliases: [],
+          },
+        ],
+      ]);
       const checked = assistRecheck(
         recheckOf(previewed, {
           item: noteNow(edited, { modified: random() < 0.85 ? NOW - 3_600_000 : NOW - 60_000 }),
-          kept: previewed.row.step.kind === 'duplicate' ? { ...noteNow(KEPT_TEXT), task: KEPT_TASK } : null,
+          kept:
+            previewed.row.step.kind === 'duplicate'
+              ? { ...noteNow(KEPT_TEXT), task: KEPT_TASK }
+              : null,
           vault: { ...VAULT, directory },
         }),
       );
       if (checked.kind !== 'apply') continue;
       applied += 1;
       const written = propertiesOf(edited).written;
-      for (const key of assistStepKeys(checked.step)) expect(written.has(key), `run ${run}: ${key}`).toBe(false);
+      for (const key of assistStepKeys(checked.step))
+        expect(written.has(key), `run ${run}: ${key}`).toBe(false);
       expect(checked.step.path).toBe(previewed.row.path);
       expect(checked.step.path).not.toBe(KEPT_PATH);
       const known = new Set<string>([previewed.row.path, LARKSPUR.path, MARA.path, KEPT_PATH]);
-      for (const path of assistStepPaths(checked.step)) expect(known.has(path), `run ${run}: ${path}`).toBe(true);
+      for (const path of assistStepPaths(checked.step))
+        expect(known.has(path), `run ${run}: ${path}`).toBe(true);
       // Applied only as previewed: an edit between the two never reaches a write.
       expect(edited).toBe(text);
     }
