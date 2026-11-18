@@ -4,6 +4,12 @@
  *
  * A `button` rather than a checkbox: it already answers Space and Enter, and
  * `role="switch"` is what a screen reader wants to hear for an on/off control.
+ *
+ * Settings → Features (`feature-settings.tsx`) draws this markup in place,
+ * not this component, to keep its rows free of renders: a change to the
+ * markup or classes here is made there too. Its held switches use
+ * `aria-disabled` (still focusable, with the reason as their description)
+ * where this one uses `disabled`; the class styles both alike.
  */
 export function Toggle({
   label,

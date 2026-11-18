@@ -37,7 +37,9 @@ function setup({ hasToken = true, vault = '/vaults/larkspur' as string | null } 
     timeZone: () => 'UTC',
     openNote,
   };
-  const hook = renderHook(() => useSlackPaste(ports));
+  const hook = renderHook(({ enabled }: { enabled: boolean }) => useSlackPaste(ports, enabled), {
+    initialProps: { enabled: true },
+  });
   return { api, slack, openNote, hook };
 }
 
@@ -51,6 +53,31 @@ describe('useSlackPaste', () => {
     expect(offered).toBe(false);
     expect(hook.result.current.view).toBeNull();
     expect(slack.calls).toEqual([]);
+  });
+
+  it('puts its offer away when Slack capture is switched off, and keeps it away when it is on again (#901)', async () => {
+    const { hook } = setup();
+    act(() => {
+      hook.result.current.offer(SLACK_PERMALINK);
+    });
+    await waitFor(() => expect(hook.result.current.view?.state).toBe('ready'));
+    hook.rerender({ enabled: false });
+    expect(hook.result.current.view).toBeNull();
+    hook.rerender({ enabled: true });
+    expect(hook.result.current.view).toBeNull();
+  });
+
+  it('drops the answer to a paste still being read when Slack capture is switched off', async () => {
+    const { hook, slack } = setup();
+    act(() => {
+      hook.result.current.offer(SLACK_PERMALINK);
+    });
+    expect(hook.result.current.view).toEqual({ state: 'reading' });
+    hook.rerender({ enabled: false });
+    await waitFor(() => expect(slack.calls.length).toBeGreaterThan(1));
+    await act(async () => {});
+    hook.rerender({ enabled: true });
+    expect(hook.result.current.view).toBeNull();
   });
 
   it('with no vault open, offers nothing', () => {
@@ -123,7 +150,7 @@ describe('useSlackPaste', () => {
       timeZone: () => 'UTC',
       openNote: vi.fn(),
     });
-    const hook = renderHook((vault: string) => useSlackPaste(ports(vault)), {
+    const hook = renderHook((vault: string) => useSlackPaste(ports(vault), true), {
       initialProps: '/vaults/larkspur',
     });
     act(() => {
@@ -176,6 +203,35 @@ describe('useSlackPasteListener', () => {
     expect(paste(paragraph, SLACK_PERMALINK).defaultPrevented).toBe(false);
     paste(capture, SLACK_PERMALINK);
     expect(offer.mock.calls).toEqual([[SLACK_PERMALINK], [SLACK_PERMALINK]]);
+  });
+
+  it('listens to no paste while Slack capture is off, and again once it is on (#901)', () => {
+    const offer = vi.fn(() => true);
+    const adding = vi.spyOn(document, 'addEventListener');
+    const hook = renderHook(({ on }: { on: boolean }) => useSlackPasteListener(on ? offer : null), {
+      initialProps: { on: true },
+    });
+    const editor = document.body.appendChild(document.createElement('div'));
+    editor.className = 'ProseMirror';
+    paste(editor, SLACK_PERMALINK);
+    expect(offer).toHaveBeenCalledTimes(1);
+
+    adding.mockClear();
+    hook.rerender({ on: false });
+    paste(editor, SLACK_PERMALINK);
+    expect(offer).toHaveBeenCalledTimes(1);
+    expect(adding.mock.calls.filter(([type]) => type === 'paste')).toEqual([]);
+
+    hook.rerender({ on: true });
+    paste(editor, SLACK_PERMALINK);
+    expect(offer).toHaveBeenCalledTimes(2);
+
+    // Drawn again for another feature's switch, the same offer keeps the one listener.
+    adding.mockClear();
+    hook.rerender({ on: true });
+    expect(adding.mock.calls.filter(([type]) => type === 'paste')).toEqual([]);
+    adding.mockRestore();
+    hook.unmount();
   });
 
   it('leaves a paste anywhere else alone', () => {

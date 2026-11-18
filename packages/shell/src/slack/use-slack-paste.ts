@@ -9,6 +9,7 @@ import {
 } from '@dfai/application';
 import type { SlackOfferView } from '@dfai/ui';
 import { problemOf } from './slack-offer-state.ts';
+import { useSlackPasteListener } from './slack-paste-listener.ts';
 
 /** The offer a pasted Slack link makes, and what it can be asked to do. */
 export interface SlackPaste {
@@ -53,8 +54,12 @@ const NOTHING_HELD: Held = { vault: null, preview: null, saving: false, saved: n
  * and an answer to an earlier paste is dropped; an offer made in one vault
  * is not shown, or saved, in another. The link itself is the editor's or the
  * field's: nothing here takes it out of what was pasted.
+ *
+ * Pastes are listened for only while `enabled` (Slack offered and Slack
+ * capture switched on, #901). Switched off, the offer up is put away and an
+ * answer still on its way is dropped, so switching it on brings none back.
  */
-export function useSlackPaste(ports: SlackPastePorts): SlackPaste {
+export function useSlackPaste(ports: SlackPastePorts, enabled: boolean): SlackPaste {
   const [offered, setOffered] = useState<Offered | null>(null);
   const held = useRef<Held>(NOTHING_HELD);
   /** Shows `view` as the offer made in the vault the paste was in. */
@@ -127,6 +132,10 @@ export function useSlackPaste(ports: SlackPastePorts): SlackPaste {
     held.current = NOTHING_HELD;
     setView(null);
   }, [setView]);
+  useEffect(() => {
+    if (!enabled) dismiss();
+  }, [enabled, dismiss]);
+  useSlackPasteListener(enabled ? offer : null);
 
   const open = useCallback(() => {
     const { saved } = held.current;

@@ -34,6 +34,13 @@ describe('FEATURES', () => {
   it('has Reading, which needs nothing', () => {
     expect(featureById('reading')).toMatchObject({ label: 'Reading', requires: [] });
   });
+
+  it('has Kindle, which needs Reading, and Ask, Graph and Slack capture, which need nothing', () => {
+    expect(featureById('kindle')).toMatchObject({ label: 'Kindle', requires: ['reading'] });
+    expect(featureById('ask')).toMatchObject({ label: 'Ask and Claude chat', requires: [] });
+    expect(featureById('graph')).toMatchObject({ label: 'Graph', requires: [] });
+    expect(featureById('slack')).toMatchObject({ label: 'Slack capture', requires: [] });
+  });
 });
 
 describe('parseFeaturesOff', () => {
@@ -61,10 +68,17 @@ describe('featuresOn', () => {
   });
 
   it('turns off only the feature switched off', () => {
-    expect(featuresOn(['reading']).reading).toBe(false);
+    expect(featuresOn(['graph'])).toEqual({ ...EVERY_FEATURE_ON, graph: false });
+    expect(featuresOn(['kindle'])).toEqual({ ...EVERY_FEATURE_ON, kindle: false });
   });
 
-  // A registry of its own: DFAI's has nothing that requires another yet (slice 1 of #901).
+  it('has Kindle off whenever Reading is, whatever the list says of Kindle', () => {
+    expect(featuresOn(['reading'])).toEqual({ ...EVERY_FEATURE_ON, reading: false, kindle: false });
+    expect(featuresOn(['reading', 'kindle']).kindle).toBe(false);
+    expect(featuresOn(['kindle']).reading).toBe(true);
+  });
+
+  // A registry of its own, deeper than DFAI's: what `requires` means, all the way down.
   type Id = 'books' | 'shelf' | 'loans' | 'maps';
   const LIBRARY: readonly Feature<Id>[] = [
     { id: 'books', label: 'Books', summary: 'Books.', requires: [] },
@@ -98,6 +112,11 @@ describe('featuresOffAfter', () => {
     expect(featuresOffAfter(['reading'], { id: 'reading', on: false })).toEqual(['reading']);
   });
 
+  it('leaves a feature held off by what it requires out of the list: Reading off writes no Kindle', () => {
+    expect(featuresOffAfter([], { id: 'reading', on: false })).toEqual(['reading']);
+    expect(featuresOffAfter(['reading'], { id: 'reading', on: true })).toEqual([]);
+  });
+
   it('takes out a feature switched on', () => {
     expect(featuresOffAfter(['reading'], { id: 'reading', on: true })).toEqual([]);
     expect(featuresOffAfter([], { id: 'reading', on: true })).toEqual([]);
@@ -105,11 +124,27 @@ describe('featuresOffAfter', () => {
 });
 
 describe('featuresOffAsWritten', () => {
-  it('keeps every string as written, in order, ids this version does not know among them', () => {
-    expect(featuresOffAsWritten(['somethingNew', 'reading', 7, null, 'later'])).toEqual([
+  it('keeps every entry as written, in order: unknown ids and entries that are not ids', () => {
+    const odd = { hand: 'written' };
+    expect(featuresOffAsWritten(['somethingNew', 'reading', 7, null, odd, 'later'])).toEqual([
       'somethingNew',
       'reading',
+      7,
+      null,
+      odd,
       'later',
+    ]);
+  });
+
+  it('flips one id among entries that are not ids and keeps every one of them', () => {
+    const written = featuresOffAsWritten([7, 'reading', null, false]);
+    expect(featuresOffAfter(written, { id: 'reading', on: true })).toEqual([7, null, false]);
+    expect(featuresOffAfter(written, { id: 'graph', on: false })).toEqual([
+      7,
+      'reading',
+      null,
+      false,
+      'graph',
     ]);
   });
 

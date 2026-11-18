@@ -187,11 +187,13 @@ test("a PDF tab kept with Reading off loads none of the reader's code as the app
 }) => {
   const chunks = readerChunks();
   expect(chunks.length).toBeGreaterThan(0);
-  await openVault(page);
+  const vault = await openVault(page);
   await openPdfFromPages(page);
   await expect(reader(page)).toBeVisible();
   await switchReading(page, false);
   await expect(notice(page)).toBeVisible();
+  // Held in the file before the reload, or the window relaunches with Reading on.
+  await expectFile(vault, SETTINGS).toMatch(/featuresOff:\s*\n\s*- reading/);
 
   const fetched: string[] = [];
   page.on('request', (request) => {

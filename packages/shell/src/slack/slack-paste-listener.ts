@@ -12,9 +12,12 @@ const OFFERED_IN = '.ProseMirror, [data-paste-offers]';
  * Hands every paste of text into a note or quick capture to `offer`, which
  * says whether it is a Slack message link. The paste itself goes on as it
  * would: the link is kept where it was pasted, whatever comes of the offer.
+ * With `offer` null — Slack not offered, or Slack capture switched off
+ * (#901) — no listener is on the page at all, until one is handed again.
  */
-export function useSlackPasteListener(offer: (text: string) => boolean): void {
+export function useSlackPasteListener(offer: ((text: string) => boolean) | null): void {
   useEffect(() => {
+    if (offer === null) return undefined;
     const onPaste = (event: ClipboardEvent) => {
       const target = event.target instanceof Node ? event.target : null;
       const element = target instanceof Element ? target : (target?.parentElement ?? null);
