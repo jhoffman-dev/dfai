@@ -16,7 +16,7 @@ import {
 import { automationVault } from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeModel } from '../testing/fake-model.ts';
-import { seededRandom } from '../../../domain/src/testing/hostile-text.ts';
+import { seededRandom } from '@dfai/domain/testing';
 import {
   applyAssistRow,
   applySureRows,
