@@ -371,4 +371,5 @@ export {
   INBOX_ASSIST_PROMPT,
   INBOX_ASSIST_ROLE,
   inboxAssistData,
+  inboxAssistOffered,
 } from './inbox-assist-prompt.ts';

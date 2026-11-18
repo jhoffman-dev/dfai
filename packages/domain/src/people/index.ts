@@ -41,3 +41,12 @@ export type {
   MergeNote,
   PersonMergePlan,
 } from './person-merge-plan.ts';
+export {
+  addressesIn,
+  foldedPersonName,
+  heldAddress,
+  mailboxKey,
+  mentionsName,
+  personMatch,
+} from './person-match.ts';
+export type { PersonCandidate, PersonMatch } from './person-match.ts';

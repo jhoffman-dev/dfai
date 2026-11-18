@@ -69,3 +69,13 @@ export {
 export type { ClarifyVocabulary, TaskTypeChange } from './task-type.ts';
 export { rowAfterStep, rowKeyOf } from './row-keys.ts';
 export type { KeyPress, RowKey } from './row-keys.ts';
+export {
+  CONTAINED_MIN_WORDS,
+  DUPLICATE_TASKS_PER_ITEM,
+  possibleDuplicateTasks,
+  TITLE_FILLER,
+  titleLikeness,
+  titleWords,
+  TITLE_WORDS_MAX,
+} from './task-similarity.ts';
+export type { PossibleDuplicateTask, TaskCandidate, TaskLikeness } from './task-similarity.ts';

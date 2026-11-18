@@ -27,6 +27,8 @@ const entry = (path: string, extra: Record<string, unknown> = {}) => ({
   waitingOn: null,
   confidence: 'high',
   why: 'It asks for a call.',
+  duplicateOf: null,
+  people: [],
   ...extra,
 });
 const said = (text: string): ScriptedRound => [{ type: 'text', text }];
@@ -156,9 +158,9 @@ describe('attack-903: what the model is handed', () => {
     });
     await previewInboxAssist(ports, { items: [CALL, ARTICLE], previewed: [] });
     const system = model.requests[0]!.system;
-    // Two notes and two data lists: four fences open, four close, and no more.
-    expect(system.match(/<vault_data (note|about)=/g)).toHaveLength(4);
-    expect(system.match(/<\/vault_data>/g)).toHaveLength(4);
+    // Two notes and three data lists: five fences open, five close, and no more.
+    expect(system.match(/<vault_data (note|about)=/g)).toHaveLength(5);
+    expect(system.match(/<\/vault_data>/g)).toHaveLength(5);
     expect(system.match(/<\/rule_prompt>/g)).toHaveLength(1);
   });
 });

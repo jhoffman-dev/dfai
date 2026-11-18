@@ -29,6 +29,32 @@ export const ASSIST_TEXT_MAX = 300;
 /** The longest an answer may be, in characters: ten items' worth, with room to spare. */
 export const ASSIST_ANSWER_MAX = 20_000;
 
+/** The most people an entry may name: an item naming more is a list to read, not one to file. */
+export const ASSIST_MAX_PEOPLE = 3;
+
+/** A person an item names, as Claude read it: still its say-so. */
+export interface AssistPersonAnswer {
+  /** Their name as the item gives it; shown only when it holds nothing unshown. */
+  readonly name: string;
+  /** Their address as the item gives it, or null. */
+  readonly email: string | null;
+  /** The person in People Claude says they are, from those it was offered, or null. */
+  readonly person: VaultPath | null;
+}
+
+/**
+ * What an ask offered Claude to pick from (#906): for each item, the tasks it
+ * may copy; for all, the people listed. A pick of anything else is off the
+ * list, and makes the item a question.
+ */
+export interface AssistOffered {
+  readonly duplicates: ReadonlyMap<VaultPath, readonly VaultPath[]>;
+  readonly people: readonly VaultPath[];
+}
+
+/** Nothing offered: any pick at all is off the list. */
+export const NOTHING_OFFERED: AssistOffered = { duplicates: new Map(), people: [] };
+
 /** One item's entry, as checked: still Claude's say-so, not yet a plan. */
 export interface AssistItemAnswer {
   /** The item's path, exactly as it was asked about. */
@@ -52,9 +78,30 @@ export interface AssistItemAnswer {
    * nothing of Claude's answer for it is shown.
    */
   readonly unshowable?: boolean;
+  /** The task it copies, from those it was offered for this item, or null. */
+  readonly duplicateOf: VaultPath | null;
+  /** The people it names, at most {@link ASSIST_MAX_PEOPLE}. */
+  readonly people: readonly AssistPersonAnswer[];
+  /**
+   * True when Claude picked a task or a person it was not offered: the pick
+   * is dropped, and the item is a question.
+   */
+  readonly offList?: boolean;
 }
 
-const ENTRY_KEYS = ['item', 'kind', 'projects', 'due', 'waitingOn', 'confidence', 'why'] as const;
+const ENTRY_KEYS = [
+  'item',
+  'kind',
+  'projects',
+  'due',
+  'waitingOn',
+  'confidence',
+  'why',
+  'duplicateOf',
+  'people',
+] as const;
+
+const PERSON_KEYS = ['name', 'email', 'person'] as const;
 
 /** What the answer must look like, as Claude is told it. */
 export const ASSIST_ANSWER_SHAPE = [
@@ -63,7 +110,10 @@ export const ASSIST_ANSWER_SHAPE = [
   `${ASSIST_KINDS.join(', ')}; "projects": a list of at most ${ASSIST_MAX_PROJECTS} paths of projects or`,
   'areas from the list given, [] when none fits; "due": "YYYY-MM-DD" or null; "waitingOn": the',
   'path of a person from the list given, or null; "confidence": high, medium or low; "why": one',
-  'short sentence } ] }',
+  'short sentence; "duplicateOf": the path of a task from the possible duplicates given for that',
+  `note, or null; "people": a list of at most ${ASSIST_MAX_PEOPLE} { "name": as the note gives it;`,
+  '"email": their address as the note gives it, or null; "person": the path of a person from the',
+  'list given, or null } } ] }',
   'Give exactly one entry for each note, and no other keys.',
 ].join('\n');
 
@@ -74,6 +124,7 @@ export const ASSIST_ANSWER_SHAPE = [
 export function readAssistAnswer(
   answer: string,
   asked: readonly VaultPath[],
+  offered: AssistOffered = NOTHING_OFFERED,
 ): Reading<readonly AssistItemAnswer[]> {
   if (answer.length > ASSIST_ANSWER_MAX) return refused('It is longer than an answer can be.');
   const json = answerJson(answer);
@@ -84,7 +135,7 @@ export function readAssistAnswer(
   }
   const entries: AssistItemAnswer[] = [];
   for (const raw of value['items'] as readonly unknown[]) {
-    const entry = readEntry(raw, asked);
+    const entry = readEntry(raw, asked, offered);
     if (!entry.ok) return entry;
     if (entries.some((seen) => seen.item === entry.value.item)) {
       return refused(`It answers for ${JSON.stringify(entry.value.item)} twice.`);
@@ -96,7 +147,11 @@ export function readAssistAnswer(
   return { ok: true, value: asked.map((path) => entries.find((entry) => entry.item === path)!) };
 }
 
-function readEntry(raw: unknown, asked: readonly VaultPath[]): Reading<AssistItemAnswer> {
+function readEntry(
+  raw: unknown,
+  asked: readonly VaultPath[],
+  offered: AssistOffered,
+): Reading<AssistItemAnswer> {
   if (!isRecord(raw)) return refused('An entry is not an object.');
   if (!onlyKeys(raw, ENTRY_KEYS)) return refused('An entry has a key the shape does not.');
   const item = asked.find((path) => path === raw['item']);
@@ -115,7 +170,72 @@ function readEntry(raw: unknown, asked: readonly VaultPath[]): Reading<AssistIte
   if (due === undefined) return refused("An entry's due is not a day (YYYY-MM-DD) or null.");
   if (waitingOn === undefined) return refused("An entry's waitingOn is not a short name or null.");
   if (said === undefined) return refused("An entry's why is not one short sentence.");
-  return { ok: true, value: { item, kind, projects, due, waitingOn, confidence, ...said } };
+  const picks = readPicks(raw, offered.duplicates.get(item) ?? [], offered.people);
+  if (!picks.ok) return picks;
+  const read = { item, kind, projects, due, waitingOn, confidence, ...said, ...picks.value };
+  return { ok: true, value: read };
+}
+
+type Picks = Pick<AssistItemAnswer, 'duplicateOf' | 'people' | 'offList'> & {
+  unshowable?: true;
+};
+
+/**
+ * An entry's duplicate and people, each pick resolved to what was offered.
+ * A pick of anything else is dropped and marks the entry `offList`; a name or
+ * address holding characters that are not shown marks it `unshowable`.
+ */
+function readPicks(
+  raw: Readonly<Record<string, unknown>>,
+  duplicates: readonly VaultPath[],
+  people: readonly VaultPath[],
+): Reading<Picks> {
+  const duplicate = raw['duplicateOf'] === null ? null : shortText(raw['duplicateOf']);
+  if (duplicate === undefined) return refused("An entry's duplicateOf is not a path or null.");
+  const named = personList(raw['people']);
+  if (named === undefined) return refused("An entry's people are not a short list of people.");
+  const duplicateOf = duplicate === null ? null : offeredPath(duplicate, duplicates);
+  const resolved = named.map((each) => ({
+    ...each,
+    person: each.person === null ? null : offeredPath(each.person, people),
+  }));
+  const offList =
+    (duplicate !== null && duplicateOf === null) ||
+    named.some((each, at) => each.person !== null && resolved[at]!.person === null);
+  const unshowable = named.some(
+    (each) => UNSHOWN.test(each.name) || (each.email !== null && UNSHOWN.test(each.email)),
+  );
+  return {
+    ok: true,
+    value: {
+      duplicateOf,
+      people: resolved,
+      ...(offList && { offList }),
+      ...(unshowable && { unshowable }),
+    },
+  };
+}
+
+/** The path offered that `pick` names: the path itself, or it without `.md`; null when it names none. */
+function offeredPath(pick: string, offered: readonly VaultPath[]): VaultPath | null {
+  return offered.find((path) => pick === path || pick === path.replace(/\.md$/, '')) ?? null;
+}
+
+type NamedPerson = { name: string; email: string | null; person: string | null };
+
+function personList(value: unknown): readonly NamedPerson[] | undefined {
+  if (!Array.isArray(value) || value.length > ASSIST_MAX_PEOPLE) return undefined;
+  const people = value.map(namedPerson);
+  return people.every((each) => each !== undefined) ? (people as NamedPerson[]) : undefined;
+}
+
+function namedPerson(raw: unknown): NamedPerson | undefined {
+  if (!isRecord(raw) || !onlyKeys(raw, PERSON_KEYS)) return undefined;
+  const name = shortText(raw['name']);
+  const email = raw['email'] === null ? null : shortText(raw['email']);
+  const person = raw['person'] === null ? null : shortText(raw['person']);
+  if (name === undefined || email === undefined || person === undefined) return undefined;
+  return { name, email, person };
 }
 
 function onlyKeys(record: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {

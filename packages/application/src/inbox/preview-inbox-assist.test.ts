@@ -60,6 +60,8 @@ const entry = (path: string, extra: Record<string, unknown> = {}) => ({
   waitingOn: null,
   confidence: 'high',
   why: 'It asks for a call.',
+  duplicateOf: null,
+  people: [],
   ...extra,
 });
 const said = (text: string): ScriptedRound => [{ type: 'text', text }];

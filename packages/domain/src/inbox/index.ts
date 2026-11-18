@@ -32,10 +32,17 @@ export {
   ASSIST_ANSWER_SHAPE,
   ASSIST_KINDS,
   ASSIST_MAX_PROJECTS,
+  ASSIST_MAX_PEOPLE,
   ASSIST_TEXT_MAX,
+  NOTHING_OFFERED,
   readAssistAnswer,
 } from './assist-answer.ts';
-export type { AssistItemAnswer, AssistKind } from './assist-answer.ts';
+export type {
+  AssistItemAnswer,
+  AssistKind,
+  AssistOffered,
+  AssistPersonAnswer,
+} from './assist-answer.ts';
 export { assistAllowance, assistAllowanceWords } from './assist-allowance.ts';
 export type { AssistAllowance } from './assist-allowance.ts';
 export { ASSIST_ACTION_FLOOR, ASSIST_GUESS_FLOOR, assistSureness } from './assist-confidence.ts';
@@ -47,22 +54,41 @@ export {
   assistBatch,
   assistListedSkip,
   assistPlan,
+  withoutRepeatedAdds,
   assistQuietSkip,
 } from './assist-plan.ts';
 export type {
   AssistBatch,
   AssistFacts,
+  AssistItemFacts,
   AssistRow,
   AssistStep,
   AssistTarget,
 } from './assist-plan.ts';
 export {
   assistMoreWords,
+  assistPeopleWords,
   assistReason,
   assistStepWords,
   assistSummary,
   assistTone,
 } from './assist-summary.ts';
 export type { AssistTone } from './assist-summary.ts';
-export { assistHeld } from './assist-held.ts';
+export { assistHeld, listedPeopleOf, writtenPropertiesOf } from './assist-held.ts';
 export type { AssistHeld, HeldField } from './assist-held.ts';
+export { assistNewNames, assistPeople, OFF_LIST as ASSIST_OFF_LIST } from './assist-people.ts';
+export type { AssistPeopleFacts, AssistPersonStep } from './assist-people.ts';
+export { assistDuplicate } from './assist-duplicate.ts';
+export { COPY_BOOKKEEPING_KEYS } from './assist-duplicate.ts';
+export type { AssistDuplicate } from './assist-duplicate.ts';
+export { assistItemFacts } from './assist-item-facts.ts';
+export type { AssistAsked } from './assist-item-facts.ts';
+export {
+  ASSIST_TASKS_QUERY_MARK,
+  ASSIST_TITLED_QUERY_MARK,
+  ASSIST_TITLES_MAX,
+  assistTaskCandidate,
+  compileAssistTasksQuery,
+  compileTitledNotesQuery,
+  takenTitles,
+} from './assist-queries.ts';

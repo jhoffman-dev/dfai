@@ -5,6 +5,7 @@ import { assistAllowance, assistAllowanceWords } from './assist-allowance.ts';
 import type { AssistRow, AssistStep } from './assist-plan.ts';
 import {
   assistMoreWords,
+  assistPeopleWords,
   assistReason,
   assistStepWords,
   assistSummary,
@@ -34,6 +35,7 @@ const row = (step: AssistStep, why: string | null = 'It asks for a call.'): Assi
   title: 'Call Mara Quill',
   step,
   why,
+  people: [],
 });
 const rows = (...steps: AssistStep[]) => steps.map((step) => row(step));
 
@@ -137,5 +139,59 @@ describe('the ask allowance when the clock goes back (#903)', () => {
       ok: false,
       until: '2026-11-01T02:09:00',
     });
+  });
+});
+
+describe('duplicates and people in the sentence and the rows (#906)', () => {
+  const RENEW = {
+    path: createVaultPath('Tasks/Renew.md'),
+    title: 'Renew Larkspur Payroll contract',
+  };
+  const DUPLICATE: AssistStep = { kind: 'duplicate', of: RENEW, newerHolds: [] };
+  const LINK = { kind: 'link', person: MARA } as const;
+  const ADD = { kind: 'add', name: 'Tobias Fenn', email: 'tobias@example.org' } as const;
+  const withPeople = (step: AssistStep, people: AssistRow['people']): AssistRow => ({
+    ...row(step),
+    people,
+  });
+
+  it('counts people linked and added, and duplicates, in the issue’s order', () => {
+    const plan = [
+      withPeople(TASK, [LINK, ADD]),
+      withPeople(TASK, [LINK]),
+      withPeople(FILE, [LINK]),
+      ...rows(TASK, TASK, TASK, DUPLICATE, ASK, ASK),
+    ];
+    expect(assistSummary(plan)).toBe(
+      '9 items: would act on 6, link 3 people, add 1 person, 1 duplicate, 2 questions',
+    );
+  });
+
+  it('says one person, two people added and two duplicates, and leaves out parts with none', () => {
+    expect(assistSummary([withPeople(TASK, [LINK])])).toBe('1 item: would act on 1, link 1 person');
+    expect(assistSummary([withPeople(TASK, [ADD, { ...ADD, name: 'Wren Calloway' }])])).toBe(
+      '1 item: would act on 1, add 2 people',
+    );
+    expect(assistSummary(rows(DUPLICATE, DUPLICATE, LEAVE))).toBe(
+      '3 items: 2 duplicates, would leave 1',
+    );
+  });
+
+  it('says a duplicate, and each person, in a line of its own', () => {
+    expect(assistStepWords(DUPLICATE)).toBe(
+      'Looks like a duplicate of Renew Larkspur Payroll contract',
+    );
+    expect(assistTone(DUPLICATE)).toBe('duplicate');
+    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['body'] })).toBe(
+      'Looks like a duplicate of Renew Larkspur Payroll contract; this copy also has notes',
+    );
+    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['due', 'people', 'tags', 'body'] })).toBe(
+      'Looks like a duplicate of Renew Larkspur Payroll contract; this copy also has a due date, people, tags and notes',
+    );
+    expect(assistPeopleWords(withPeople(TASK, [LINK, ADD]))).toEqual([
+      'Links Mara Quill',
+      'Would add Tobias Fenn',
+    ]);
+    expect(assistPeopleWords(row(TASK))).toEqual([]);
   });
 });
