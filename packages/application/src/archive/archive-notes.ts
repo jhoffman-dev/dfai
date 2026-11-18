@@ -18,6 +18,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
+import { NoteChangedError } from '../notes/note-changed-error.ts';
 import { ensureFolder } from '../vault/create-folder.ts';
 import { moveEntryTo, type Relocation, type RelocationPorts } from '../vault/relocate-entry.ts';
 import {
@@ -69,6 +70,14 @@ export interface NoteBatch {
   readonly updateLinks?: boolean;
   /** `save` unless said otherwise: the app's own commands are the person's. */
   readonly unsavedTyping?: UnsavedTyping;
+  /**
+   * The whole text each note was checked as, by its path before the batch
+   * (#911). Given for a note, its frontmatter is written where it lands only
+   * while it still says exactly that — an edit made while it moved is not
+   * stamped over, and the note is reported as moved but not stamped. Left
+   * out, a note is stamped as it is read where it lands.
+   */
+  readonly expectedTexts?: ReadonlyMap<VaultPath, string>;
 }
 
 /** Where one note of a batch goes, given what the vault holds by then. */
@@ -183,12 +192,14 @@ export async function moveAndStampNotes(batch: NoteBatch, rule: MoveRule): Promi
     try {
       const to = await rule.destination({ path, taken: new Set(notePaths) });
       const stamp = rule.stamp(path);
+      const ifText = batch.expectedTexts?.get(path);
       const moved = await relocateAndStamp({
         ports,
         move: { from: path, to },
         stamp,
         notePaths,
         unsavedTyping: batch.unsavedTyping ?? 'save',
+        ...(ifText !== undefined && { ifText }),
       });
       moves.push(moved.relocation);
       if (moved.stampProblem !== null) failed.push(moved.stampProblem);
@@ -226,7 +237,7 @@ export interface StampOutcome {
  * carry on.
  */
 export async function stampNotes(
-  batch: Pick<NoteBatch, 'ports' | 'paths' | 'unsavedTyping'>,
+  batch: Pick<NoteBatch, 'ports' | 'paths' | 'unsavedTyping' | 'expectedTexts'>,
   rule: Pick<MoveRule, 'refusal'> & { readonly stamp: Stamp },
 ): Promise<StampOutcome> {
   const stamped: VaultPath[] = [];
@@ -239,7 +250,14 @@ export async function stampNotes(
       continue;
     }
     try {
-      await rewriteFrontmatter({ ports: batch.ports, path, stamp: rule.stamp, unsavedTyping });
+      const ifText = batch.expectedTexts?.get(path);
+      await rewriteFrontmatter({
+        ports: batch.ports,
+        path,
+        stamp: rule.stamp,
+        unsavedTyping,
+        ...(ifText !== undefined && { ifText }),
+      });
       stamped.push(path);
     } catch (cause) {
       failed.push(
@@ -263,12 +281,15 @@ async function relocateAndStamp({
   stamp,
   notePaths,
   unsavedTyping,
+  ifText,
 }: {
   ports: ArchivePorts;
   move: EntryMove;
   stamp: Stamp;
   notePaths: readonly VaultPath[];
   unsavedTyping: UnsavedTyping;
+  /** The text the note must still say where it lands to be stamped (#911). */
+  ifText?: string;
 }): Promise<{ relocation: Relocation; stampProblem: ArchiveFailure | null }> {
   const folder = await ensureFolder({ fs: ports.fs, folder: parentVaultPath(move.to) });
   const landing = joinVaultPath(folder, vaultPathName(move.to));
@@ -279,7 +300,13 @@ async function relocateAndStamp({
     notePaths,
   });
   try {
-    await rewriteFrontmatter({ ports, path: landing, stamp, unsavedTyping });
+    await rewriteFrontmatter({
+      ports,
+      path: landing,
+      stamp,
+      unsavedTyping,
+      ...(ifText !== undefined && { ifText }),
+    });
     return { relocation, stampProblem: null };
   } catch (cause) {
     const reason = `Moved, but its frontmatter was not updated: ${reasonOf(cause)}`;
@@ -309,17 +336,25 @@ export async function rewriteFrontmatter({
   path,
   stamp,
   unsavedTyping,
+  ifText,
 }: {
   ports: ArchivePorts;
   path: VaultPath;
   stamp: Stamp;
   unsavedTyping: UnsavedTyping;
+  /**
+   * The note's whole text as the caller last checked or wrote it (#911): any
+   * other text is refused before anything is written, and the save is held to
+   * it. Left out, the note is changed as it is read.
+   */
+  ifText?: string;
 }): Promise<void> {
   if (ports.editors.state(path) === 'dirty') {
     if (unsavedTyping === 'leave') throw new UnsavedTypingError(path);
     await ports.editors.flush([path]);
   }
   const { text, modified } = await ports.fs.readTextFile(path);
+  if (ifText !== undefined && text !== ifText) throw new NoteChangedError(path);
   const document = splitFrontmatter(text);
   const problem = ports.markdown.frontmatterProblem(document.frontmatter);
   if (problem !== null) throw new Error(`its frontmatter could not be read (${problem})`);
@@ -343,6 +378,7 @@ export async function rewriteFrontmatter({
     path,
     contents: dropped ? document.body : frontmatter + document.body,
     expectedModified: modified,
+    ...(ifText !== undefined && { expectedText: text }),
   });
   if (ports.editors.state(path) !== 'dirty') ports.editors.reload(path);
 }

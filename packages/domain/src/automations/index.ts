@@ -97,6 +97,7 @@ export {
 export type {
   ClaudeRunInfo,
   DoneAction,
+  AssistIntent,
   AssistMark,
   LogEntry,
   LoggedEntry,

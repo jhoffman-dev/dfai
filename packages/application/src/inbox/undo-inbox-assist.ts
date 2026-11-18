@@ -7,10 +7,11 @@ import {
   type PassedOver,
   type VaultPath,
 } from '@dfai/domain';
+import type { ActivityRecorder } from '../activity/ports.ts';
 import type { ApplyAssistPorts, AssistUndo } from './apply-inbox-assist.ts';
 import { assistRecorder, logAssist, sayNotDone } from './assist-log.ts';
 import { linksToUpdate } from '../vault/update-links.ts';
-import { undoClarifyInboxItem } from './clarify-inbox-item.ts';
+import { PartlyUndoneError, undoExactly } from './exact-undo.ts';
 
 /** What undoing one applied row came to. */
 export type AssistUndone =
@@ -22,7 +23,9 @@ export type AssistUndone =
       readonly logged: boolean;
     }
   /** Refused, and nothing touched: why. */
-  | { readonly kind: 'refused'; readonly words: string };
+  | { readonly kind: 'refused'; readonly words: string }
+  /** Begun and stopped (#911): what is done and what is left, logged; undoing again finishes it. */
+  | { readonly kind: 'partly'; readonly words: string };
 
 /**
  * Takes one applied row back (#909), through the Inbox's exact undo: the item
@@ -45,11 +48,14 @@ export async function undoAssistRow(
     return { kind: 'refused', words: `Not undone: ${problem}` };
   };
   const refusal =
-    (await undoRefusal(ports, undo)) ?? (await linkedElsewhere(ports, undo, notePaths));
+    (await undoRefusal(ports, undo)) ??
+    (await linkedElsewhere(ports, undo, notePaths)) ??
+    (await linkedSince(ports, undo, notePaths));
   if (refusal !== null) return refuse(refusal);
   try {
-    await undoClarifyInboxItem({ ports, undo: undo.item, notePaths, exact: true });
+    await undoExactly({ ports, undo: undo.item, notePaths });
   } catch (cause) {
+    if (cause instanceof PartlyUndoneError) return partly(ports, { recorder, undo, cause });
     return refuse(messageWithoutPaths(cause));
   }
   const { done, left } = await takeOutPeople(ports, undo);
@@ -79,13 +85,61 @@ export async function undoAssistRow(
 
 const CHANGED_SINCE = 'it was changed since, so it was left as it is.';
 
+/** An undo that wrote something and stopped: what is left, logged as an undo entry and said. */
+async function partly(
+  ports: ApplyAssistPorts,
+  {
+    recorder,
+    undo,
+    cause,
+  }: { recorder: ActivityRecorder; undo: AssistUndo; cause: PartlyUndoneError },
+): Promise<AssistUndone> {
+  const { left, itemAt } = cause.progress;
+  const entry: LogEntry = {
+    kind: 'undo',
+    at: ports.clock.localNow(),
+    of: undo.at,
+    done: [],
+    left: left.map((reason) => ({ path: itemAt, reason })),
+    row: undo.row,
+  };
+  await logAssist(ports, { recorder, entry, title: undo.title, path: itemAt });
+  return { kind: 'partly', words: cause.message };
+}
+
+/**
+ * Why moving the item back would break a link made since (#911): another
+ * note, not one the row rewrote, now links to it by the path it is at — and
+ * would open nothing once it moved back. A link by its title still opens it
+ * there. Read from the notes on disk. Null when none does.
+ */
+async function linkedSince(
+  ports: ApplyAssistPorts,
+  undo: AssistUndo,
+  notePaths: readonly VaultPath[],
+): Promise<string | null> {
+  const { from, to } = undo.item;
+  if (from === to) return null;
+  const ours = new Set<string>([to, ...(undo.item.relinked ?? []).map((note) => note.path)]);
+  const others = notePaths.filter((path) => !ours.has(path));
+  const target = to.slice(0, -'.md'.length);
+  const byPath = new RegExp(`\\[\\[${escaped(target)}(?:\\.md)?(?:[|#\\]])`, 'u');
+  const notes = await ports.fs.readNotes(others);
+  const linking = notes.find((note) => byPath.test(note.text));
+  if (linking === undefined) return null;
+  return `${noteTitle(linking.path as VaultPath)} links to it where it is now, and undoing would break that link, so nothing was undone.`;
+}
+
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+
 /** Why an undo is refused before anything is touched; null when every note is as the row left it. */
 async function undoRefusal(ports: ApplyAssistPorts, undo: AssistUndo): Promise<string | null> {
   const { item } = undo;
   if (ports.editors.state(item.to) === 'dirty') return 'it has typing not saved yet.';
   // Gone from where the row left it: the Inbox's undo finds it, or says it is not there.
   const now = await ports.fs.readTextFile(item.to).catch(() => null);
-  if (now !== null && now.text !== item.after) return CHANGED_SINCE;
+  // Its text put back already is an undo stopped part-way: undoing again finishes it.
+  if (now !== null && now.text !== item.after && now.text !== item.before) return CHANGED_SINCE;
   for (const person of undo.made) {
     const read = await ports.fs.readTextFile(person.path).catch(() => null);
     if (read === null) return `${noteTitle(person.path)} is not where it was added.`;

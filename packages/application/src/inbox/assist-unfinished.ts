@@ -25,16 +25,18 @@ export interface AssistUnfinished {
  * item as it was or not, each person it made there or not — and how to put
  * it right by hand. Read only: nothing is repaired.
  */
-export async function findUnfinishedAssist(ports: {
-  readonly fs: Pick<VaultFsPort, 'readNotes'>;
-}): Promise<AssistUnfinished[]> {
+export async function findUnfinishedAssist(
+  ports: { readonly fs: Pick<VaultFsPort, 'readNotes'> },
+  /** Items this window is applying or undoing now: their rows are open, not left unfinished. */
+  writing: ReadonlySet<string> = new Set(),
+): Promise<AssistUnfinished[]> {
   const [log] = await ports.fs.readNotes([logPathFor(INBOX_ASSIST_RULE.id)]);
   if (log === undefined) return [];
   const entries = parseAssistLog(log.text);
   const closed = new Set(entries.flatMap(closedRow));
   const open = entries.filter(
     (entry): entry is Extract<AssistMark, { kind: 'begun' }> =>
-      entry.kind === 'begun' && !closed.has(entry.row),
+      entry.kind === 'begun' && !closed.has(entry.row) && !writing.has(entry.path),
   );
   return Promise.all(open.map((begun) => leftOf(ports, begun, entries)));
 }
@@ -50,21 +52,47 @@ async function leftOf(
   begun: Extract<AssistMark, { kind: 'begun' }>,
   entries: readonly LoggedEntry[],
 ): Promise<AssistUnfinished> {
-  const made = entries.flatMap((entry) =>
-    entry.kind === 'step' && entry.row === begun.row
-      ? entry.done.flatMap((done) => (done.kind === 'created' ? [done] : []))
+  const steps = entries.flatMap((entry) =>
+    entry.kind === 'step' && entry.row === begun.row ? [entry] : [],
+  );
+  const made = steps.flatMap((step) =>
+    step.done.flatMap((done) => (done.kind === 'created' ? [done] : [])),
+  );
+  const intents = steps.flatMap((step) => (step.about === undefined ? [] : [step.about]));
+  const moved = intents.flatMap((about) => (about.doing === 'move' ? [about.to] : []));
+  const toCreate = intents.flatMap((about) =>
+    about.doing === 'create' && !made.some((person) => person.path === about.path)
+      ? [about.path]
       : [],
   );
-  const read = await ports.fs.readNotes([begun.path, ...made.map((person) => person.path)]);
+  const relinked = [
+    ...new Set(intents.flatMap((about) => (about.doing === 'relink' ? [about.path] : []))),
+  ];
+  const paths = [begun.path, ...moved, ...made.map((person) => person.path), ...toCreate];
+  const read = await ports.fs.readNotes(paths);
   const textOf = (path: VaultPath) => read.find((note) => note.path === path)?.text ?? null;
   const title = noteTitle(begun.path);
+  const movedTo = moved.find((path) => textOf(path) !== null) ?? null;
   return {
     title,
     path: begun.path,
     lines: [
       `It was to do: ${begun.plan}`,
-      itemLine(title, begun, textOf(begun.path)),
+      movedTo !== null && textOf(begun.path) === null
+        ? `${title} is at ${movedTo} now: what the row wrote may be in it. Check its properties, or move it back.`
+        : itemLine(title, begun, textOf(begun.path)),
       ...made.map((person) => personLine(title, person, textOf(person.path))),
+      ...toCreate.flatMap((path) =>
+        textOf(path) === null
+          ? []
+          : [
+              `${noteTitle(path)} may have been made (${path}) just before it stopped, and was not recorded as made. Link it from ${title}, or put it in the Trash.`,
+            ],
+      ),
+      ...relinked.map(
+        (path) =>
+          `${noteTitle(path)} (${path}) may have had its links to ${title} rewritten. Check them.`,
+      ),
     ],
   };
 }

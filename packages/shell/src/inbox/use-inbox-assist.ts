@@ -80,9 +80,11 @@ export function useInboxAssist({
   latest.current = { wiring, ports, clock, items, vaultKey };
   // The ask in flight, if any: Dismiss aborts it (it still counts), and a press meanwhile does nothing.
   const inFlight = useRef<AbortController | null>(null);
+  const writingNow = useRef<() => ReadonlySet<string>>(() => NO_WRITING);
   const onSuggest = useCallback(() => {
     const given = latest.current;
-    if (given.wiring === null || inFlight.current !== null) return;
+    // Held while rows are written (#911): their open rows are not news of a crash.
+    if (given.wiring === null || inFlight.current !== null || writingNow.current().size > 0) return;
     const controller = new AbortController();
     inFlight.current = controller;
     const mine = ++generation.current;
@@ -91,7 +93,7 @@ export function useInboxAssist({
       if (generation.current === mine) setView(next);
     };
     setView({ kind: 'asking' });
-    findUnfinishedAssist({ fs: given.ports.fs }).then(
+    findUnfinishedAssist({ fs: given.ports.fs }, writingNow.current()).then(
       (found) => generation.current === mine && setUnfinished(found),
       // A log that cannot be read says nothing left unfinished; the apply itself refuses to write without it.
       () => generation.current === mine && setUnfinished(NO_UNFINISHED),
@@ -113,6 +115,7 @@ export function useInboxAssist({
   }, []);
   const planned = shown?.kind === 'plan' ? shown : null;
   const applying = useAssistApply({ planned, apply, clock });
+  writingNow.current = applying.writing;
   const { stop } = applying;
   const onDismiss = useCallback(() => {
     generation.current += 1;
@@ -207,3 +210,4 @@ function rowView(row: AssistRow, action: AssistRowAction): AssistRowView {
 }
 
 const NO_UNFINISHED: readonly AssistUnfinished[] = [];
+const NO_WRITING: ReadonlySet<string> = new Set();

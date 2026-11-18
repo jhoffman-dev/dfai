@@ -8,10 +8,12 @@ import {
   MEETING_PEOPLE_KEY,
   messageWithoutPaths,
   noteTitle,
+  vaultSpellingOf,
   wikiLinkTargetFor,
   type AssistApplyAsk,
   type AssistApplyStep,
   type AssistEvidence,
+  type AssistIntent,
   type AssistRow,
   type Clarification,
   type DoneAction,
@@ -29,7 +31,8 @@ import { loadTemplates } from '../types/templates.ts';
 import type { AsRead } from '../vault/ports.ts';
 import { assistRecorder, logAssist, logMark, sayNotDone } from './assist-log.ts';
 import { recheckNow, type RecheckedNow } from './assist-recheck-now.ts';
-import { clarifyInboxItem, undoClarifyInboxItem, type ClarifyUndo } from './clarify-inbox-item.ts';
+import { clarifyInboxItem, type ClarifyUndo } from './clarify-inbox-item.ts';
+import { PartlyUndoneError, undoExactly } from './exact-undo.ts';
 import { recordingWrites, type Rewritten } from './recording-writes.ts';
 
 /** What applying an Inbox assist row reaches (#909): the Inbox's own writes, the clock, and Activity. */
@@ -112,6 +115,14 @@ export async function applyAssistRow(
   if (refusal !== null || evidence === undefined) {
     return unchanged(nothingChanged(refusal ?? 'Nothing of it was kept at the preview.'));
   }
+  // As the vault spells it, or not at all (#911): on a disk that ignores case,
+  // `inbox/x.md` would open `Inbox/x.md` and be logged under a name the vault does not have.
+  const spelled = vaultSpellingOf(row.path, notePaths);
+  if (spelled !== row.path) {
+    const why =
+      spelled === null ? 'it is not a note in the vault.' : `the vault spells it ${spelled}.`;
+    return unchanged(nothingChanged(why));
+  }
   let checked: RecheckedNow;
   try {
     checked = await recheckNow(ports, { row, evidence, notePaths });
@@ -158,7 +169,10 @@ async function begin(
   { row, step, text }: { row: AssistRow; step: AssistApplyStep; text: string },
 ): Promise<Journal | null> {
   const at = ports.clock.localNow();
-  const id = `${at} ${row.path}`;
+  // Unique per apply (#911): the second, the item, the clock's instant and this run's count —
+  // two rows begun in one second, even of one item, never share an id the log closes.
+  rowsBegun += 1;
+  const id = `${at} ${row.path} ${ports.clock.now()}.${rowsBegun}`;
   const plan = assistAppliedWords(step);
   const mark = {
     kind: 'begun' as const,
@@ -184,6 +198,9 @@ async function begin(
     made: [],
   };
 }
+
+/** How many rows this run of DFAI has begun: part of each row's id. */
+let rowsBegun = 0;
 
 const itemUndo = (journal: Journal): ClarifyUndo => ({
   from: journal.from,
@@ -277,7 +294,18 @@ function journaling(
   journal: Journal,
 ): ApplyAssistPorts & { written: ReadonlyMap<VaultPath, string> } {
   const { ports: recording, written } = recordingWrites(ports);
+  // Where the item is, as the row's own moves take it: a write anywhere else is another note's.
+  const itemAt = new Set<VaultPath>([journal.from]);
+  const about = (intent: AssistIntent) =>
+    logMark(ports, {
+      kind: 'step',
+      at: ports.clock.localNow(),
+      row: journal.row,
+      done: [],
+      about: intent,
+    });
   const createNote: ArchivePorts['fs']['createNote'] = async (create) => {
+    await about({ doing: 'create', path: create.path });
     const modified = await recording.fs.createNote(create);
     const made = { path: create.path, modified, text: create.contents };
     journal.made.push(made);
@@ -285,7 +313,17 @@ function journaling(
     await logMark(ports, { kind: 'step', at: ports.clock.localNow(), row: journal.row, done });
     return modified;
   };
-  return { ...ports, ...recording, fs: { ...recording.fs, createNote }, written };
+  const writeTextFile: ArchivePorts['fs']['writeTextFile'] = async (write) => {
+    if (!itemAt.has(write.path)) await about({ doing: 'relink', path: write.path });
+    return recording.fs.writeTextFile(write);
+  };
+  const moveEntry: ArchivePorts['fs']['moveEntry'] = async (move) => {
+    await about({ doing: 'move', path: move.from, to: move.to });
+    await recording.fs.moveEntry(move);
+    if (itemAt.has(move.from)) itemAt.add(move.to);
+  };
+  const fs = { ...recording.fs, createNote, writeTextFile, moveEntry };
+  return { ...ports, ...recording, fs, written };
 }
 
 type Writing = ReturnType<typeof journaling>;
@@ -308,6 +346,8 @@ async function archiveDuplicate(
     paths: [journal.at],
     notePaths,
     today: ports.clock.today(),
+    // The Archive's stamp, where it lands, held to what the row just wrote (#911).
+    expectedTexts: new Map([[journal.at, journal.after]]),
   });
   const move = outcome.moves[0];
   if (move !== undefined) {
@@ -478,18 +518,31 @@ async function takeBack(
 ): Promise<LeftBehind> {
   const problems: string[] = [];
   if (changedItem(journal)) {
-    const undone = await undoClarifyInboxItem({
+    const undone = await undoExactly({
       ports,
       undo: itemUndo(journal),
       notePaths,
-      exact: true,
+      keepItemEdit: true,
     }).then(
-      () => null,
-      (cause: unknown) => messageWithoutPaths(cause),
+      ({ keptEdit }) => ({ keptEdit, problem: null, itemAt: journal.from }),
+      (cause: unknown) => ({
+        keptEdit: false,
+        problem: messageWithoutPaths(cause),
+        itemAt: cause instanceof PartlyUndoneError ? cause.progress.itemAt : journal.at,
+      }),
     );
-    if (undone !== null) {
-      problems.push(`It was left as the row changed it (${undone}), and anyone it added is kept.`);
-      return { problems, itemAt: journal.at, itemChanged: true, people: journal.made };
+    if (undone.problem !== null) {
+      problems.push(
+        `It was left as the row changed it (${undone.problem}), and anyone it added is kept.`,
+      );
+      return { problems, itemAt: undone.itemAt, itemChanged: true, people: journal.made };
+    }
+    if (undone.keptEdit) {
+      // Edited while it was applied: back where it was with that edit, never written over.
+      problems.push(
+        'It was edited while it was being applied: it is back where it was with that edit kept, and what this row wrote into it before the edit is still there.',
+      );
+      return { problems, itemAt: journal.from, itemChanged: true, people: journal.made };
     }
   }
   const people: AsRead[] = [];
@@ -514,7 +567,7 @@ function leftDone(journal: Journal, left: LeftBehind): DoneAction[] {
           {
             kind: 'assisted' as const,
             from: journal.from,
-            to: journal.at,
+            to: left.itemAt,
             digest: digestOf(journal.after),
           },
         ]

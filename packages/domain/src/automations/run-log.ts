@@ -338,7 +338,18 @@ export type AssistMark =
       readonly at: LocalTime;
       readonly row: string;
       readonly done: readonly DoneAction[];
+      /**
+       * What the row is about to do, logged before it does it (#911), so a crash
+       * between the two still names it: make a person, rewrite another note's
+       * links, or move the item.
+       */
+      readonly about?: AssistIntent;
     };
+
+/** One write an Inbox assist row is about to make. */
+export type AssistIntent =
+  | { readonly doing: 'create' | 'relink'; readonly path: VaultPath }
+  | { readonly doing: 'move'; readonly path: VaultPath; readonly to: VaultPath };
 
 /** Anything a log holds: a rule's entries, and Inbox assist's marks. */
 export type LoggedEntry = LogEntry | AssistMark;
@@ -426,7 +437,11 @@ export function logEntrySummary(entry: LoggedEntry): string {
   if (entry.kind === 'failed') return oneLine(truncated(entry.problem));
   if (entry.kind === 'letGo') return letGoWords(entry.count);
   if (entry.kind === 'begun') return oneLine(truncated(entry.plan));
-  if (entry.kind === 'step') return countDone(entry.done);
+  if (entry.kind === 'step') {
+    const { about } = entry;
+    if (about === undefined || entry.done.length > 0) return countDone(entry.done);
+    return `About to ${about.doing} ${noteTitle(about.path)}.`;
+  }
   if (entry.kind === 'run' && entry.period !== undefined && !madeANote(entry)) {
     return `Its note for ${shown(entry.period.slot)} is made already: nothing new.`;
   }
@@ -658,7 +673,14 @@ function rowLines(entry: LoggedEntry): string[] {
   if (!('row' in entry) || entry.row === undefined) return [];
   const item =
     entry.kind === 'begun' ? [`- item ${code(entry.path)} at ${code(entry.digest)}`] : [];
-  return [`- row ${code(entry.row)}`, ...item];
+  const about = entry.kind === 'step' && entry.about !== undefined ? [intentLine(entry.about)] : [];
+  return [`- row ${code(entry.row)}`, ...item, ...about];
+}
+
+/** What a step says its row is about to do: `- about to move "from" → "to"`. */
+function intentLine(about: AssistIntent): string {
+  const to = about.doing === 'move' ? ` → ${code(about.to)}` : '';
+  return `- about to ${about.doing} ${code(about.path)}${to}`;
 }
 
 /** A new log's text, for the rule named. */
@@ -937,8 +959,11 @@ function parseSection(section: string): LoggedEntry | null {
   const row = rowOf(body);
   const ofRow = row === null ? {} : { row };
   if (title === BEGUN_HEADING) return begunOf(at, body, row);
-  if (title === STEP_HEADING)
-    return row === null ? null : { kind: 'step', at, row, done: linesOf(body).done };
+  if (title === STEP_HEADING) {
+    if (row === null) return null;
+    const about = intentOf(body);
+    return { kind: 'step', at, row, done: linesOf(body).done, ...(about !== null && { about }) };
+  }
   const undid = /^Undid the run of (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(title);
   if (undid !== null) {
     return { kind: 'undo', at, of: `${undid[1]}T${undid[2]}`, ...linesOf(body), ...ofRow };
@@ -987,6 +1012,27 @@ function parseSection(section: string): LoggedEntry | null {
 }
 
 const ROW_LINE = new RegExp(`^- row ${JSON_SPAN}$`);
+const INTENT_LINE = new RegExp(
+  `^- about to (create|relink|move) ${JSON_SPAN}(?: → ${JSON_SPAN})?$`,
+);
+
+/** What a step says its row was about to do; null for none, or a line that does not read. */
+function intentOf(body: readonly string[]): AssistIntent | null {
+  for (const line of body) {
+    const match = INTENT_LINE.exec(line);
+    if (match === null) continue;
+    try {
+      const path = pathOf(match[2]!);
+      if (match[1] === 'move')
+        return match[3] === undefined ? null : { doing: 'move', path, to: pathOf(match[3]) };
+      return { doing: match[1] as 'create' | 'relink', path };
+    } catch {
+      // A line edited into a path that is no path names nothing, on purpose.
+      return null;
+    }
+  }
+  return null;
+}
 const ITEM_LINE = new RegExp(`^- item ${JSON_SPAN} at ${JSON_SPAN}$`);
 
 /** The Inbox assist row an entry is of; null for none, or one whose line does not read. */

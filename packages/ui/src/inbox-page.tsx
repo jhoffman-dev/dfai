@@ -258,7 +258,11 @@ export function InboxPage(props: InboxPageProps) {
               )}
               {assist !== null && (
                 <SuggestAction
-                  asking={assist.view?.kind === 'asking'}
+                  // Held while it asks, and while rows are being applied or undone (#911).
+                  asking={
+                    assist.view?.kind === 'asking' ||
+                    (assist.view?.kind === 'plan' && assist.view.busy === true)
+                  }
                   onSuggest={assist.onSuggest}
                   buttonRef={assistKeys.suggest}
                 />

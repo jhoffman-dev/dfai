@@ -98,7 +98,9 @@ export function useAssistApply({
       }),
     [],
   );
-  const actions = useActions({ latest, update, abort });
+  // The rows asked for and not yet settled, known at once: a second press before the page draws again does nothing.
+  const claimed = useRef(new Set<string>());
+  const actions = useActions({ latest, update, abort, claimed });
   const evidence = useMemo(
     () => new Map((planned?.evidence ?? []).map((each) => [each.item.path, each] as const)),
     [planned],
@@ -123,6 +125,8 @@ export function useAssistApply({
     said: state.said,
     /** Stops "Apply all" after the row it is on: the suggestions were put away. */
     stop: () => abort.current?.abort(),
+    /** The items being applied or undone now (#911): Suggest waits for them, and they are not left unfinished. */
+    writing: () => claimed.current as ReadonlySet<string>,
   };
 }
 
@@ -141,13 +145,13 @@ function useActions({
   latest,
   update,
   abort,
+  claimed,
 }: {
   latest: Latest;
   update: Update;
   abort: { current: AbortController | null };
+  claimed: { current: Set<string> };
 }): AssistActions {
-  // The rows asked for and not yet settled, known at once: a second press before the page draws again does nothing.
-  const claimed = useRef(new Set<string>());
   return useMemo(() => {
     const claim = (paths: readonly string[]) => {
       const free = paths.filter((path) => !claimed.current.has(path));
@@ -290,7 +294,7 @@ function useActions({
           .finally(claimedRows.release);
       },
     };
-  }, [latest, update, abort]);
+  }, [latest, update, abort, claimed]);
 }
 
 const withRow = (before: Applying, path: string, row: RowState): Applying => ({
