@@ -87,7 +87,9 @@ export { assistOwnWords } from './assist-own-words.ts';
 export {
   assistAppliedWords,
   assistApplyStep,
+  assistCautionWords,
   assistNotAppliable,
+  assistRowIntegrity,
   assistStepKeys,
   assistStepPaths,
 } from './assist-apply.ts';

@@ -40,7 +40,7 @@ describe('a due date is a word of the item’s own prose', () => {
   });
 
   it('asks for a day that is no day, or one that has passed', () => {
-    expect(asked(due('Renew it by 2026-02-30.\n', '2026-02-30'))).toBe('due-unconfirmed');
+    expect(asked(due('Renew it by 2027-02-30.\n', '2027-02-30'))).toBe('due-unconfirmed');
     expect(asked(due('Renew it by 2026-11-01.\n', '2026-11-01'))).not.toBe('apply');
   });
 });

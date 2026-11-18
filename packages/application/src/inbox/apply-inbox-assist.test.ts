@@ -9,6 +9,7 @@ import {
   createVaultPath,
   inboxItem,
   logPathFor,
+  parseAssistLog,
   parseRunLog,
   digestOf,
   type AssistEvidence,
@@ -101,8 +102,11 @@ function setUp(notes: Record<string, string> = VAULT) {
   const counts = { createNote: 0, writeTextFile: 0, moveEntry: 0 };
   const failOn = <K extends Failing['method']>(method: K) =>
     (async (args: never) => {
-      counts[method] += 1;
-      if (failing?.method === method && failing.nth === counts[method])
+      // The log's own writes are not counted: the failures are of the row's writes to notes.
+      const at =
+        (args as { path?: string; from?: string }).path ?? (args as { from?: string }).from;
+      if (at !== LOG) counts[method] += 1;
+      if (at !== LOG && failing?.method === method && failing.nth === counts[method])
         throw new Error(`the disk refused the ${method}`);
       return (vault.ports.fs[method] as (args: never) => Promise<unknown>)(args);
     }) as ApplyAssistPorts['fs'][K];
@@ -277,7 +281,10 @@ describe('applyAssistRow: each kind of row', () => {
   it('never applies a question', async () => {
     const v = setUp();
     const before = v.snapshot();
-    expect(await v.apply(JUNK)).toMatchObject({ kind: 'asked', ask: 'not-appliable' });
+    expect(await v.apply(JUNK)).toEqual({
+      kind: 'failed',
+      words: 'Not applied: It is a question, and questions are never applied. Nothing changed.',
+    });
     expect(v.files).toEqual(before);
     expect(v.activity.reports).toEqual([]);
   });
@@ -347,7 +354,11 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
       v.fail(fail);
       const applied = await v.apply(row, previewed);
       expect(applied).toMatchObject({ kind: 'failed', words: expect.stringMatching(says) });
-      expect(v.files).toEqual(before);
+      expect(notesBut(v.files)).toEqual(notesBut(before));
+      // The row it began is closed, so no crash is ever read into it.
+      const closing = parseRunLog(v.files.get(LOG)!).at(-1);
+      expect(closing).toMatchObject({ kind: 'failed', row: expect.stringContaining(row) });
+      expect(closing).not.toHaveProperty('done');
       expect(v.activity.reports).toEqual([
         expect.objectContaining({
           level: 'warning',
@@ -365,8 +376,8 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
     const failingFrom = v.ports.fs.writeTextFile;
     let calls = 0;
     v.ports.fs.writeTextFile = async (write) => {
-      calls += 1;
-      if (calls >= 2) throw new Error('the disk is full');
+      if (write.path !== LOG) calls += 1;
+      if (write.path !== LOG && calls >= 2) throw new Error('the disk is full');
       return failingFrom(write);
     };
     const applied = await v.apply(CALL, previewed);
@@ -385,7 +396,7 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
 });
 
 describe('applyAssistRow: what it says when the vault does not answer', () => {
-  it('keeps what it did, and says so, when its log cannot be written', async () => {
+  it('writes nothing when it cannot log that it begins', async () => {
     const v = setUp();
     const previewed = await v.preview();
     const create = v.ports.fs.createNote;
@@ -393,17 +404,33 @@ describe('applyAssistRow: what it says when the vault does not answer', () => {
       if (note.path === LOG) throw new Error('the disk is full');
       return create(note);
     };
+    const before = v.snapshot();
+    expect(await v.apply(CALL, previewed)).toEqual({
+      kind: 'failed',
+      words: 'Not applied: its log could not be written. Nothing changed.',
+    });
+    expect(v.files).toEqual(before);
+  });
+
+  it('keeps what it did, and says so, when only its closing entry cannot be written', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const write = v.ports.fs.writeTextFile;
+    v.ports.fs.writeTextFile = async (each) => {
+      if (each.path === LOG) throw new Error('the disk is full');
+      return write(each);
+    };
     const applied = appliedOf(await v.apply(CALL, previewed));
     expect(applied.logged).toBe(false);
     expect(applied.words).toMatch(/Its log could not be written\.$/u);
-    expect(v.files.has(LOG)).toBe(false);
     expect(v.activity.reports).toEqual([
       expect.objectContaining({
         level: 'warning',
         message: expect.stringContaining('Its log could not be written.'),
       }),
     ]);
-    // Its undo does not rest on the log.
+    // Its undo does not rest on the log; the begun row is what a person reads after.
+    v.ports.fs.writeTextFile = write;
     expect(await v.undo(applied)).toMatchObject({ kind: 'undone' });
     expect(v.files.get(CALL)).toBe(VAULT[CALL]);
   });
@@ -604,7 +631,10 @@ describe('the preview, for Apply', () => {
     const previewed = await v.preview();
     expect(previewed.of(RENEW).evidence?.kept).toBeNull();
     v.ports.fs.readNotes = read;
-    expect(await v.apply(RENEW, previewed)).toMatchObject({ kind: 'asked', ask: 'kept-changed' });
+    expect(await v.apply(RENEW, previewed)).toEqual({
+      kind: 'failed',
+      words: 'Not applied: The digest of the kept task at the preview is missing. Nothing changed.',
+    });
   });
 
   it('applies nothing for a row it has no evidence for', async () => {
@@ -622,7 +652,10 @@ describe('the preview, for Apply', () => {
         notePaths: v.notePaths(),
       }),
     ).toMatchObject({
-      applied: { kind: 'asked', ask: 'not-appliable' },
+      applied: {
+        kind: 'failed',
+        words: 'Not applied: Nothing of it was kept at the preview. Nothing changed.',
+      },
     });
   });
 
@@ -752,7 +785,7 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     const previewed = await v.preview();
     const seen: string[] = [];
     const logAt = () =>
-      parseRunLog(v.files.get(LOG) ?? '')
+      parseAssistLog(v.files.get(LOG) ?? '')
         .map((entry) => entry.kind)
         .join(',');
     for (const method of ['writeTextFile', 'createNote', 'moveEntry'] as const) {
@@ -760,7 +793,7 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
         path?: string;
         from?: string;
       }) => Promise<unknown>;
-      (v.ports.fs as Record<string, unknown>)[method] = async (args: {
+      (v.ports.fs as unknown as Record<string, unknown>)[method] = async (args: {
         path?: string;
         from?: string;
       }) => {
@@ -775,7 +808,7 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
       'createNote People/Tobias Fenn.md after [begun]',
       `writeTextFile ${LUNCH} after [begun,step]`,
     ]);
-    expect(parseRunLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
+    expect(parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
       'begun',
       'step',
       'run',
@@ -787,7 +820,10 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     const previewed = await v.preview();
     v.fail({ method: 'moveEntry', nth: 1 });
     expect((await v.apply(CALL, previewed)).kind).toBe('failed');
-    expect(parseRunLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual(['begun', 'failed']);
+    expect(parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
+      'begun',
+      'failed',
+    ]);
     expect(await findUnfinishedAssist(v.ports)).toEqual([]);
   });
 

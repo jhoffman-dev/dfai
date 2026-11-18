@@ -280,6 +280,8 @@ export type LogEntry =
       readonly claude?: ClaudeRunInfo;
       /** For a step that writes one note a period: the period it wrote it for, or found it written. */
       readonly period?: OutputPeriod;
+      /** For an Inbox assist row (#911): the row it closes, begun by a `begun` entry. */
+      readonly row?: string;
     }
   | {
       readonly kind: 'undo';
@@ -288,6 +290,8 @@ export type LogEntry =
       readonly of: LocalTime;
       readonly done: readonly DoneAction[];
       readonly left: readonly PassedOver[];
+      /** For an Inbox assist row (#911): the row it took back. */
+      readonly row?: string;
     }
   /** A run that could not start — its query did not read — or whose Claude step failed, and why. */
   | {
@@ -299,6 +303,8 @@ export type LogEntry =
       readonly claude?: ClaudeRunInfo;
       /** For a Claude step cut off part-way: what it had already made, which stays. */
       readonly done?: readonly DoneAction[];
+      /** For an Inbox assist row (#911): the row it closes. */
+      readonly row?: string;
     }
   | { readonly kind: 'turnedOn'; readonly at: LocalTime }
   /** A rule DFAI found that had never run nor been turned on here: its schedule counts from then. */
@@ -309,6 +315,33 @@ export type LogEntry =
    * than it holds, and let the oldest go. Not a run: it counts toward nothing.
    */
   | { readonly kind: 'letGo'; readonly at: LocalTime; readonly count: number };
+
+/**
+ * An Inbox assist row about to write (#911), logged before its first write so
+ * a crash leaves a trace — which row, the item and the digest of what it said,
+ * and what the row was to do — and what it did on its way: a person made. A
+ * row with no entry closing it (a run, or a failure, naming the row) was left
+ * unfinished. No rule writes these: they are not a rule's entries, and
+ * {@link parseRunLog} leaves them out.
+ */
+export type AssistMark =
+  | {
+      readonly kind: 'begun';
+      readonly at: LocalTime;
+      readonly row: string;
+      readonly path: VaultPath;
+      readonly digest: string;
+      readonly plan: string;
+    }
+  | {
+      readonly kind: 'step';
+      readonly at: LocalTime;
+      readonly row: string;
+      readonly done: readonly DoneAction[];
+    };
+
+/** Anything a log holds: a rule's entries, and Inbox assist's marks. */
+export type LoggedEntry = LogEntry | AssistMark;
 
 /**
  * The most a log holds, in bytes, whatever its entries' count: a run that
@@ -337,7 +370,7 @@ const prior = (value: PriorValue): string => ('absent' in value ? 'nothing' : co
 const LET_GO_HEADING = 'Let news go';
 
 /** What an entry was, as its heading says after the time: "Ran on schedule". */
-export function logEntryHeading(entry: LogEntry): string {
+export function logEntryHeading(entry: LoggedEntry): string {
   switch (entry.kind) {
     case 'run':
       return TRIGGER_WORDS[entry.trigger];
@@ -351,8 +384,15 @@ export function logEntryHeading(entry: LogEntry): string {
       return 'First seen';
     case 'letGo':
       return LET_GO_HEADING;
+    case 'begun':
+      return BEGUN_HEADING;
+    case 'step':
+      return STEP_HEADING;
   }
 }
+
+const BEGUN_HEADING = 'Began applying';
+const STEP_HEADING = 'Went on applying';
 
 function actionLine(action: DoneAction): string {
   if (action.kind === 'archived' || action.kind === 'unarchived' || action.kind === 'unassisted') {
@@ -378,13 +418,15 @@ function actionLine(action: DoneAction): string {
 }
 
 /** A sentence for the entry, above its lines. */
-export function logEntrySummary(entry: LogEntry): string {
+export function logEntrySummary(entry: LoggedEntry): string {
   if (entry.kind === 'turnedOn' || entry.kind === 'seen') {
     return 'It runs on its schedule from here on.';
   }
   // A failure's words can be a model's (a tool it named, a title it chose): bounded, as the log is.
   if (entry.kind === 'failed') return oneLine(truncated(entry.problem));
   if (entry.kind === 'letGo') return letGoWords(entry.count);
+  if (entry.kind === 'begun') return oneLine(truncated(entry.plan));
+  if (entry.kind === 'step') return countDone(entry.done);
   if (entry.kind === 'run' && entry.period !== undefined && !madeANote(entry)) {
     return `Its note for ${shown(entry.period.slot)} is made already: nothing new.`;
   }
@@ -587,7 +629,7 @@ function versionLine({ path, digest, wrote, keys = [] }: LoggedVersion): string 
 }
 
 /** One entry, as the markdown the log holds. */
-export function formatLogEntry(entry: LogEntry): string {
+export function formatLogEntry(entry: LoggedEntry): string {
   const lines = [`## ${shown(entry.at)} · ${logEntryHeading(entry)}`, '', logEntrySummary(entry)];
   const done = 'done' in entry ? entry.done.map(actionLine) : [];
   const left =
@@ -602,13 +644,22 @@ export function formatLogEntry(entry: LogEntry): string {
   const period =
     entry.kind === 'run' && entry.period !== undefined ? [periodLine(entry.period)] : [];
   const memory = [...went, ...moved];
-  const said = [...done, ...left, ...versions, ...memory, ...claude, ...period];
+  const row = rowLines(entry);
+  const said = [...row, ...done, ...left, ...versions, ...memory, ...claude, ...period];
   if (said.length > 0) lines.push('', ...said);
   if (letGo.length > 0) lines.push('', ...letGo);
   return `${lines.join('\n')}\n`;
 }
 
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+/** An Inbox assist row's lines: which row, and — where it began — its item as it was. */
+function rowLines(entry: LoggedEntry): string[] {
+  if (!('row' in entry) || entry.row === undefined) return [];
+  const item =
+    entry.kind === 'begun' ? [`- item ${code(entry.path)} at ${code(entry.digest)}`] : [];
+  return [`- row ${code(entry.row)}`, ...item];
+}
 
 /** A new log's text, for the rule named. */
 export function newLogText(ruleName: string, entries: readonly LogEntry[]): string {
@@ -653,7 +704,7 @@ export function appendEntryToLog({
   /** The log as it is; null when there is none yet. */
   text: string | null;
   ruleName: string;
-  entry: LogEntry;
+  entry: LoggedEntry;
   /** The model's answers a run read and could not finish with, kept in the ledger for its retry (ADR-0036). */
   stored?: readonly StoredAnswerDraft[];
   /** The instant the entry is written, from the clock. */
@@ -666,19 +717,19 @@ export function appendEntryToLog({
     text === null ? { head: newLogText(ruleName, []), sections: [] } : splitSections(text);
   const found = locateLedger(existing);
   const sections = existing.filter((_, at) => !found.at.includes(at));
-  const folded = foldLetGo(sections, entry);
-  const ledger = ledgerAfter({
-    before: found.ledger,
-    entries: entriesOf(sections),
+  const { folded, ledger } = foldedIn({
+    found,
+    sections,
     entry,
-    written: folded.entry,
     now,
     keep,
     maxLedgerRecords,
     stored,
   });
   const ledgerText =
-    found.ledger === null && isEmptyLedger(ledger) ? '' : `${formatLedger(ledger)}\n`;
+    ledger === null || (found.ledger === null && isEmptyLedger(ledger))
+      ? ''
+      : `${formatLedger(ledger)}\n`;
   const all = [...folded.sections, formatLogEntry(folded.entry)].map((section) =>
     section.replace(/\n*$/, '\n'),
   );
@@ -728,7 +779,7 @@ export function appendLogEntry(args: Parameters<typeof appendEntryToLog>[0]): st
 function entriesOf(sections: readonly string[]): LogEntry[] {
   return sections.flatMap((section) => {
     const entry = parseSection(section);
-    return entry === null ? [] : [entry];
+    return entry === null || isAssistMark(entry) ? [] : [entry];
   });
 }
 
@@ -764,6 +815,37 @@ function ledgerAfter({
   const limits = maxLedgerRecords === undefined ? {} : { maxRecords: maxLedgerRecords };
   const pruned = pruneLedger(recorded, now, limits);
   return { ...pruned, through: markOf(written), damaged: false };
+}
+
+/**
+ * The entry as it is added, and the ledger after it. An Inbox assist mark is
+ * no rule's entry: it is added as it is, and the ledger left as it was.
+ */
+function foldedIn({
+  found,
+  sections,
+  entry,
+  now,
+  keep,
+  maxLedgerRecords,
+  stored,
+}: {
+  found: { readonly ledger: HandledLedger | null };
+  sections: readonly string[];
+  entry: LoggedEntry;
+  now: number;
+  keep: number;
+  maxLedgerRecords: number | undefined;
+  stored: readonly StoredAnswerDraft[];
+}): { folded: { sections: readonly string[]; entry: LoggedEntry }; ledger: HandledLedger | null } {
+  if (isAssistMark(entry)) return { folded: { sections, entry }, ledger: found.ledger };
+  const folded = foldLetGo(sections, entry);
+  const entries = entriesOf(sections);
+  const ledger = ledgerAfter({
+    ...{ before: found.ledger, entries, entry, written: folded.entry },
+    ...{ now, keep, maxLedgerRecords, stored },
+  });
+  return { folded, ledger };
 }
 
 /** A let-go notice joins the one right before it, summing the counts; any other entry is added as it is. */
@@ -823,13 +905,23 @@ const PERIOD_LINE = new RegExp(`^- period ${JSON_SPAN}(?: for ${JSON_SPAN})?$`);
  * rather than guessed at, so undo only ever does what the log exactly says.
  */
 export function parseRunLog(text: string): LogEntry[] {
+  return parseAssistLog(text).filter((entry): entry is LogEntry => !isAssistMark(entry));
+}
+
+/** Every entry a log holds, Inbox assist's marks among them (#911). */
+export function parseAssistLog(text: string): LoggedEntry[] {
   return splitSections(text).sections.flatMap((section) => {
     const entry = parseSection(section);
     return entry === null ? [] : [entry];
   });
 }
 
-function parseSection(section: string): LogEntry | null {
+/** Whether an entry is one of Inbox assist's marks, which no rule writes. */
+export function isAssistMark(entry: LoggedEntry): entry is AssistMark {
+  return entry.kind === 'begun' || entry.kind === 'step';
+}
+
+function parseSection(section: string): LoggedEntry | null {
   const [heading = '', ...rest] = section.split('\n');
   const match = HEADING.exec(heading.trim());
   if (match === null) return null;
@@ -842,9 +934,14 @@ function parseSection(section: string): LogEntry | null {
     const count = countOn(body, LET_GO_LINE);
     return count === null ? null : { kind: 'letGo', at, count };
   }
+  const row = rowOf(body);
+  const ofRow = row === null ? {} : { row };
+  if (title === BEGUN_HEADING) return begunOf(at, body, row);
+  if (title === STEP_HEADING)
+    return row === null ? null : { kind: 'step', at, row, done: linesOf(body).done };
   const undid = /^Undid the run of (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(title);
   if (undid !== null) {
-    return { kind: 'undo', at, of: `${undid[1]}T${undid[2]}`, ...linesOf(body) };
+    return { kind: 'undo', at, of: `${undid[1]}T${undid[2]}`, ...linesOf(body), ...ofRow };
   }
   const trigger = triggerOf(title.replace(/, and could not$/, ''));
   if (trigger === null) return null;
@@ -858,6 +955,7 @@ function parseSection(section: string): LogEntry | null {
       problem: body.find((line) => line !== '') ?? '',
       ...(claude !== null && { claude }),
       ...(made.length > 0 && { done: made }),
+      ...ofRow,
     };
   }
   const capped = body.some(
@@ -884,7 +982,45 @@ function parseSection(section: string): LogEntry | null {
     ...(moved.length > 0 && { moved }),
     ...(claude !== null && { claude }),
     ...(period !== null && { period }),
+    ...ofRow,
   };
+}
+
+const ROW_LINE = new RegExp(`^- row ${JSON_SPAN}$`);
+const ITEM_LINE = new RegExp(`^- item ${JSON_SPAN} at ${JSON_SPAN}$`);
+
+/** The Inbox assist row an entry is of; null for none, or one whose line does not read. */
+function rowOf(body: readonly string[]): string | null {
+  for (const line of body) {
+    const match = ROW_LINE.exec(line);
+    if (match === null) continue;
+    try {
+      const row = JSON.parse(match[1]!) as unknown;
+      return typeof row === 'string' ? row : null;
+    } catch {
+      // A row line edited into JSON that does not read names no row, on purpose.
+      return null;
+    }
+  }
+  return null;
+}
+
+/** A begun entry, read back: its row, item and digest, and the plan its summary says; null when any is missing. */
+function begunOf(at: LocalTime, body: readonly string[], row: string | null): AssistMark | null {
+  const plan = body.find((line) => line !== '') ?? '';
+  for (const line of body) {
+    const match = ITEM_LINE.exec(line);
+    if (match === null || row === null) continue;
+    try {
+      const digest = JSON.parse(match[2]!) as unknown;
+      if (typeof digest !== 'string') return null;
+      return { kind: 'begun', at, row, path: pathOf(match[1]!), digest, plan };
+    } catch {
+      // As any other line: one edited into what does not read is left out.
+      return null;
+    }
+  }
+  return null;
 }
 
 /** The period a run's line says it wrote its note for; null when none reads. */

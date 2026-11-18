@@ -1,4 +1,5 @@
 import {
+  createVaultPath,
   messageWithoutPaths,
   noteTitle,
   type DoneAction,
@@ -8,6 +9,7 @@ import {
 } from '@dfai/domain';
 import type { ApplyAssistPorts, AssistUndo } from './apply-inbox-assist.ts';
 import { assistRecorder, logAssist, sayNotDone } from './assist-log.ts';
+import { linksToUpdate } from '../vault/update-links.ts';
 import { undoClarifyInboxItem } from './clarify-inbox-item.ts';
 
 /** What undoing one applied row came to. */
@@ -42,10 +44,11 @@ export async function undoAssistRow(
     });
     return { kind: 'refused', words: `Not undone: ${problem}` };
   };
-  const refusal = await undoRefusal(ports, undo);
+  const refusal =
+    (await undoRefusal(ports, undo)) ?? (await linkedElsewhere(ports, undo, notePaths));
   if (refusal !== null) return refuse(refusal);
   try {
-    await undoClarifyInboxItem({ ports, undo: undo.item, notePaths });
+    await undoClarifyInboxItem({ ports, undo: undo.item, notePaths, exact: true });
   } catch (cause) {
     return refuse(messageWithoutPaths(cause));
   }
@@ -56,6 +59,7 @@ export async function undoAssistRow(
     of: undo.at,
     done: [{ kind: 'unassisted', from: undo.item.to, to: undo.item.from }, ...done],
     left,
+    row: undo.row,
   };
   const logged = await logAssist(ports, {
     recorder,
@@ -86,6 +90,32 @@ async function undoRefusal(ports: ApplyAssistPorts, undo: AssistUndo): Promise<s
     const read = await ports.fs.readTextFile(person.path).catch(() => null);
     if (read === null) return `${noteTitle(person.path)} is not where it was added.`;
     if (read.text !== person.text) return `${noteTitle(person.path)} ${CHANGED_SINCE}`;
+  }
+  return null;
+}
+
+/**
+ * Why a person the row added is not taken out (#911): a note other than the
+ * item links them now, read from the notes as they are on disk — the index
+ * may not have caught up with a link just saved. Null when none does.
+ */
+async function linkedElsewhere(
+  ports: ApplyAssistPorts,
+  undo: AssistUndo,
+  notePaths: readonly VaultPath[],
+): Promise<string | null> {
+  for (const person of undo.made) {
+    // As if the person went: every link that would no longer open them is a note linking them.
+    const gone = createVaultPath(`${person.path.slice(0, -3)} (taken out).md`);
+    const update = await linksToUpdate({
+      fs: ports.fs,
+      notePaths,
+      move: { from: person.path, to: gone },
+    });
+    const other = update.notes.find((note) => note.path !== undo.item.to);
+    if (other !== undefined) {
+      return `${noteTitle(other.path)} links ${noteTitle(person.path)} now, so nothing was undone.`;
+    }
   }
   return null;
 }

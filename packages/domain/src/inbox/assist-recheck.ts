@@ -26,6 +26,7 @@
  * - the item or the kept task says anything other than at the preview.
  */
 
+import { NEW_TASK_STATUS, TASK_KEYS } from '../gtd/gtd-status.ts';
 import type { TaskCandidate } from '../gtd/task-similarity.ts';
 import { splitFrontmatter } from '../markdown/markdown-document.ts';
 import {
@@ -47,7 +48,7 @@ import type { HeldField } from './assist-held.ts';
 import { assistItemFacts } from './assist-item-facts.ts';
 import { assistOwnWords } from './assist-own-words.ts';
 import { ASSIST_QUIET_MS, assistPlan, type AssistFacts, type AssistRow } from './assist-plan.ts';
-import type { InboxItem } from './inbox.ts';
+import { isInInbox, type InboxItem } from './inbox.ts';
 
 /** What the preview saw of one item it planned, kept until the row is applied. */
 export interface AssistEvidence {
@@ -105,6 +106,7 @@ export type AssistApplyAsk =
   | 'unreadable'
   | 'field-written'
   | 'kept-not-open'
+  | 'not-in-inbox'
   | 'kept-newer'
   | 'kept-differs'
   | 'newer-holds'
@@ -173,9 +175,17 @@ function fieldsEmpty({ item }: AssistRecheckInput, step: AssistApplyStep): Asked
  * it was made: one made after it asks. Neither's file time ever decides; an
  * item that says nothing is the copy because it is the one in the Inbox.
  */
-function keptStillOlder({ item, kept }: AssistRecheckInput, step: AssistApplyStep) {
+function keptStillOlder(input: AssistRecheckInput, step: AssistApplyStep) {
+  const { item, kept } = input;
   if (step.duplicateOf === null) return null;
   if (kept!.task === null) return ask('kept-not-open', keptGone(step));
+  const status = item!.properties!.written.get(TASK_KEYS.status)?.[0] ?? null;
+  if (!isInInbox(input.row.path) && status !== NEW_TASK_STATUS) {
+    return ask(
+      'not-in-inbox',
+      'It is no longer an item in the Inbox, so it is not archived as a copy.',
+    );
+  }
   const mine = createdOf(item!.properties!.written);
   const theirs = createdOf(kept!.properties!.written);
   if (
@@ -285,15 +295,40 @@ function namedIn(
 function dueConfirmed(input: AssistRecheckInput, step: AssistApplyStep): Asked | null {
   const due = step.fill?.due ?? null;
   if (due === null) return null;
+  if (!isRealDay(due) || due < input.vault.today) {
+    return ask('due-unconfirmed', `${due} is no day still ahead. Set the date by hand?`);
+  }
   const texts = textsOf(input);
-  const written = new RegExp(`(?<![\\d-])${due}(?![\\d-])`, 'u');
-  if (!written.test(texts.whole.text)) {
+  if (!saysDay(texts.whole.text, due)) {
     return ask('due-unconfirmed', `The item does not say ${due} itself. Set the date by hand?`);
   }
-  if (!written.test(texts.own.text)) {
+  if (!saysDay(texts.own.text, due)) {
     return ask('quoted-only', `Only quoted or forwarded text says ${due}. Set the date by hand?`);
   }
   return null;
+}
+
+/** Whether `day`, written `YYYY-MM-DD`, is a day of the calendar: 2026-02-30 is not. */
+function isRealDay(day: string): boolean {
+  const at = Date.UTC(
+    Number(day.slice(0, 4)),
+    Number(day.slice(5, 7)) - 1,
+    Number(day.slice(8, 10)),
+  );
+  return /^\d{4}-\d{2}-\d{2}$/u.test(day) && new Date(at).toISOString().slice(0, 10) === day;
+}
+
+/** Brackets and quotes a day may stand inside in prose, and the punctuation that may follow it. */
+const OPENING = /^[("'“‘]+/u;
+const CLOSING = /[)"'”’.,;:!?]+$/u;
+
+/**
+ * Whether the text says `day` as a word of its own (#911): not inside a URL, a
+ * path, a link or a longer run of digits, letters, slashes or dashes. Only
+ * brackets, quotes and the punctuation ending a clause may stand around it.
+ */
+function saysDay(text: string, day: string): boolean {
+  return text.split(/\s+/u).some((word) => word.replace(OPENING, '').replace(CLOSING, '') === day);
 }
 
 /**

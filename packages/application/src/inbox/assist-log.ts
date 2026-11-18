@@ -2,6 +2,7 @@ import {
   assistActivityReport,
   ledgerRepairedReport,
   type AssistActivity,
+  type AssistMark,
   type LogEntry,
   type VaultPath,
 } from '@dfai/domain';
@@ -56,6 +57,23 @@ export async function logAssist(
   const doing = entry.kind === 'undo' ? 'undo' : 'apply';
   recorder.record(assistActivityReport({ title, path, happened: { doing, entry, logged } }));
   return logged;
+}
+
+/**
+ * Writes one of a row's marks to Inbox assist's log (#911): that it began, or
+ * a person it made. No Activity line: the row's closing entry says it. Rejects
+ * when the log cannot be written, so a row never writes what no log records.
+ */
+export async function logMark(
+  ports: Pick<AssistLogPorts, 'fs' | 'clock'>,
+  mark: AssistMark,
+): Promise<void> {
+  await appendToRuleLog({
+    fs: ports.fs,
+    rule: INBOX_ASSIST_RULE,
+    entry: mark,
+    now: ports.clock.now(),
+  });
 }
 
 /** Says in one Activity line that an apply or an undo did nothing, and why. */

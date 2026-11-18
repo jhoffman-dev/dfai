@@ -35,6 +35,15 @@ export function assistActivityReport({
       subject,
     };
   }
+  if (happened.entry.kind === 'failed') {
+    // A row that could not be taken back whole: its closing entry says why, and what is left.
+    return {
+      level: 'warning',
+      kind: 'automation',
+      message: `Inbox assist could not apply “${title}”: ${logEntrySummary(happened.entry)}`,
+      subject,
+    };
+  }
   const verb = happened.doing === 'apply' ? 'applied' : 'undid';
   const unlogged = happened.logged ? '' : ' Its log could not be written.';
   return {

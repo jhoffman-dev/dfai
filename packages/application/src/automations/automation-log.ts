@@ -7,6 +7,7 @@ import {
   type AutomationRule,
   type HandledLedger,
   type LogEntry,
+  type LoggedEntry,
   type StoredAnswerDraft,
 } from '@dfai/domain';
 import { ensureFolder } from '../vault/create-folder.ts';
@@ -28,7 +29,7 @@ export interface RuleLog {
  */
 export class AutomationLogError extends Error {
   constructor(
-    readonly entry: LogEntry,
+    readonly entry: LoggedEntry,
     cause: unknown,
   ) {
     super(
@@ -73,7 +74,8 @@ export async function appendToRuleLog({
 }: {
   fs: VaultFsPort;
   rule: Pick<AutomationRule, 'id' | 'name'>;
-  entry: LogEntry;
+  /** A rule's entry, or one of Inbox assist's marks (#911). */
+  entry: LoggedEntry;
   now: number;
   onLedgerRepaired?: () => void;
   /** A Claude step's answers to keep in the ledger (ADR-0036), written in the same write. */

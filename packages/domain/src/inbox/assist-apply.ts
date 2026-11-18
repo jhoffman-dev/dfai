@@ -20,7 +20,10 @@
 
 import { DUPLICATE_OF_KEY } from '../meetings/meeting-arrival.ts';
 import { MEETING_PEOPLE_KEY } from '../meeting-links/meeting-link-keys.ts';
-import { TASK_KEYS } from '../gtd/gtd-status.ts';
+import { NEW_TASK_STATUS, TASK_KEYS } from '../gtd/gtd-status.ts';
+import { createVaultPath } from '../vault/vault-path.ts';
+import type { AssistEvidence } from './assist-recheck.ts';
+import { isInInbox } from './inbox.ts';
 import { FILED_UNDER_KEY } from '../types/para.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import type { AssistRow, AssistTarget } from './assist-plan.ts';
@@ -133,4 +136,70 @@ function filledWords({ makeTask, project, due }: AssistFill): string {
   if (makeTask) return `Made it a task${under}${by}.`;
   if (project !== null) return `Filed it${under}${by}.`;
   return due === null ? '' : `Set it due ${due}.`;
+}
+
+/** A digest as {@link digestOf} writes it. */
+const DIGEST = /^[0-9a-f]{8}$/u;
+
+/** Whether `path` is a vault path as the vault writes it: relative, inside it, every segment its own. */
+function ownPath(path: string): boolean {
+  try {
+    return createVaultPath(path) === path && path !== '';
+  } catch {
+    // A path the vault refuses (absolute, escaping it, a null byte) is no path of its own.
+    return false;
+  }
+}
+
+/**
+ * Why a row and the evidence it is handed do not belong together, before
+ * anything is read (#911); null when they do. The use-case trusts neither:
+ * a row of another item's evidence, a digest missing, a path outside the
+ * vault or not as the vault writes it, a duplicate's copy that is not an
+ * Inbox item, and a question are each refused.
+ */
+export function assistRowIntegrity(
+  row: AssistRow,
+  evidence: AssistEvidence | undefined,
+): string | null {
+  const notAppliable = assistNotAppliable(row);
+  if (row.step.kind === 'ask' || row.step.kind === 'leave')
+    return 'It is a question, and questions are never applied.';
+  if (notAppliable !== null) return notAppliable;
+  if (evidence === undefined) return 'Nothing of it was kept at the preview.';
+  if (evidence.item.path !== row.path || evidence.answer.item !== row.path) {
+    return 'What was kept of it at the preview is for another item.';
+  }
+  const step = assistApplyStep(row)!;
+  if (![...assistStepPaths(step), evidence.item.path].every(ownPath)) {
+    return 'A path it names is not one of the vault’s own.';
+  }
+  if (!DIGEST.test(evidence.digest)) return 'The digest of what it said at the preview is missing.';
+  if (step.duplicateOf === null) return null;
+  const { kept } = evidence;
+  if (kept === null || kept.path !== step.duplicateOf.path || !DIGEST.test(kept.digest)) {
+    return 'The digest of the kept task at the preview is missing.';
+  }
+  const inInbox = isInInbox(row.path) || evidence.item.task?.status === NEW_TASK_STATUS;
+  return inInbox ? null : 'The copy to archive is not an item in the Inbox.';
+}
+
+/**
+ * What the person reading a filing row is told (#911): the kind and the
+ * project are Claude's choice among real options, and nothing in the item's
+ * own text confirms either, so a steered answer can choose the wrong ones.
+ * Applying by hand, the person is the check. Null for any other row.
+ */
+export function assistCautionWords(row: AssistRow): string | null {
+  const { step } = row;
+  if (step.kind === 'file') {
+    return `Claude chose ${step.project.title}; nothing in the item confirms it. Check it before you apply.`;
+  }
+  if (step.kind !== 'task' || assistNotAppliable(row) !== null) return null;
+  const chosen = [
+    ...(step.makeTask ? ['that it is a task'] : []),
+    ...(step.project !== null ? [step.project.title] : []),
+  ];
+  if (chosen.length === 0) return null;
+  return `Claude chose ${chosen.join(' and ')}; nothing in the item confirms ${chosen.length === 1 ? 'it' : 'them'}. Check before you apply.`;
 }
