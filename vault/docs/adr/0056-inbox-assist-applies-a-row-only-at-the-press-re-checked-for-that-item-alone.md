@@ -154,30 +154,37 @@ under `packages/adapters` changes, and there is no new port.
 Every write on the item is held to the exact text the row checked or last
 left, and refuses before it writes: Clarify is handed that text
 (`expectedText`) and refuses a note that says anything else before planning
-anything; each later write passes it as `ifText` to `setNoteProperties`,
-which compares it with what it reads, and the host's own save is held to the
-digest of what was read, so an edit within the disk's timestamp tick is
-refused too. Never-overwrite does not rest on a rollback. Two moments are
-still held to the file's time alone: the stamp the filing, or the Archive,
-writes where the note lands, read just after the move (the move's and
-rewrite's own use-cases, unchanged here).
+anything; each later write passes it as `ifText` to `setNoteProperties`; the
+stamp the filing or the Archive writes where the note lands is held to the
+text the row wrote just before the move (an optional `expectedTexts` on the
+Archive's batch, #911), so an edit made while the note moved is never stamped
+over and never taken for what the row wrote; and the host's own save is held
+to the digest of what was read. For every write, the row's record of what the
+note says after it is exactly the text it checked plus its own change, never
+anything read later. Never-overwrite does not rest on a rollback.
 
-A row is applied whole or not at all. Its writes are recorded as they land;
+A row is applied whole or not at all. An edit landing as the note moves stops
+the row: the note goes back where it was **with the edit kept**, and the row
+says that what it wrote before the edit is still in it. Its writes are recorded as they land;
 a write that fails takes back every write before it, item first and then any
 person it added, and says so ("Tobias Fenn was added, then taken out again").
 What could not be taken back is left, logged as a failed entry, and said.
 
-Undo is one exact undo per row, through the Inbox's own
-(`undoClarifyInboxItem`, asked to be exact): the item from where it was to
-where it is, its whole text before and after, and each other note its filing
-rewrote. Moved back, it rewrites no link of its own accord: it puts back only
-what it recorded, so every byte of every note is as it was. It is refused, with nothing touched, when the
-item says anything other than what the row left, has typing not saved, or
-another note has taken its old place; or when a person it added was edited
-since, or is linked from any note but the item (read from the notes on disk:
-the index may not have a link just saved). **Undo all** takes the rows back the last applied first, each on its
-own. "Apply all" checks for an abort between rows: put away, it finishes the
-row it is on and starts no other.
+Undo is one exact undo per row (`exact-undo.ts`; the Inbox's by-hand undo is
+untouched). It reads everything first and refuses, touching nothing, when the
+item or a note its filing rewrote says anything else, the item has typing not
+saved, another note has taken its old place, a person it added was edited
+since or is linked from any note but the item, or another note now links to
+the item by the path it was filed at (undoing would break that link). Then,
+in this order, each write held to the text it replaces: it gives each other
+note its filing rewrote its text back, then the item's text where it is,
+then moves it back rewriting no link — so every byte of every note is as it
+was. Refused at its first write, nothing was touched. Stopped later, it says
+**Partly undone** with what is left ("Week still links to Notes/2026/Call
+Mara.md."), logs an undo entry with it, keeps Undo on offer, and undoing again
+finishes from where it stopped. **Undo all** takes the rows back the last
+applied first, each on its own. "Apply all" checks for an abort between rows:
+put away, it finishes the row it is on and starts no other.
 
 ### What is not undoable
 
@@ -186,15 +193,32 @@ row it is on and starts no other.
   item's digest), but no Undo is offered; slice 5's "Undo this run" needs it
   durable, and its own record.
 - A folder a filing or an archive made stays when the note moves back.
-- Before a row, nothing is checked against a crash. A crash mid-row leaves
-  the row's `begun` mark (the item, the digest of what it said, what it was
-  to do) and a `step` for each person made, with no closing entry. The next
-  Suggest shows it under **Left unfinished**, saying exactly what is on disk
-  — the item as it was, changed, or gone from where it was; each person made
-  as made, changed, or gone — and how to put it right by hand. Nothing is
-  repaired for the person, and the undo held in memory is lost with the
-  crash. The before-bytes are not in the log: the item is in the vault, and
-  synced, and the digest says whether it is still that text.
+- A crash mid-row leaves the row's `begun` mark (the item, the digest of
+  what it said, what it was to do) and a `step` mark written **before** each
+  person made, each other note's links rewritten, and each move — and one
+  after each person made — with no closing entry. Row ids are unique per apply
+  (the second, the item, the clock's instant and a count), so an earlier
+  row's closing entry never closes a later one. The next Suggest shows the row
+  under **Left unfinished**, saying exactly what is on disk — the item as it
+  was, changed, gone, or moved to where the mark said; each person made as
+  made, changed, or gone; a person about to be made who is there unrecorded;
+  each note whose links may have been rewritten — and how to put it right by
+  hand. Nothing is repaired for the person, and the undo held in memory is
+  lost with the crash. The before-bytes are not in the log: the item is in
+  the vault, and synced, and the digest says whether it is still that text.
+  Suggest waits while this window writes rows, and never shows them as left
+  unfinished.
+- Two Macs: the log syncs, so Mac B can see Mac A's `begun` mark with no
+  closing entry while A is mid-apply, or after A crashed. B shows it under
+  **Left unfinished** as any other; the advice is to finish or put it right
+  on the Mac that started it, once that Mac has synced. The mark does not yet
+  say which Mac began it: the vault's settings name the automations Mac, not
+  every Mac, so "started on <Mac>" waits for a name each Mac has.
+- What the checks see: a person's links (the added-person check, and link
+  rewriting) are wiki links only — a markdown link
+  (`[x](../People/Tobias%20Fenn.md)`) is not seen. An item path is taken only
+  as the vault spells it: `inbox/Payroll article.md` on a disk that ignores
+  case is refused, not applied under a name the vault does not have.
 - Filing by hand, the Inbox's own Undo still moves the note back rewriting
   links, as before: a bare link to a title another note shares can come back
   path-qualified (#911). Inbox assist's undo asks for the exact undo; the
