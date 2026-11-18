@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultPath, inboxItem, REVIEW_TASKS_QUERY_MARK, type InboxItem } from '@dfai/domain';
+import {
+  ASSIST_TITLED_QUERY_MARK,
+  createVaultPath,
+  inboxItem,
+  REVIEW_TASKS_QUERY_MARK,
+  type InboxItem,
+} from '@dfai/domain';
 import { fakeModel, type ScriptedRound } from '../testing/fake-model.ts';
 import { fakeIndexPort, fakeMarkdown, fakeVaultFs } from '../testing/fake-ports.ts';
 import { previewInboxAssist, type InboxAssistPorts } from './preview-inbox-assist.ts';
@@ -45,9 +51,12 @@ const answer = (...entries: unknown[]): ScriptedRound => [
   { type: 'text', text: JSON.stringify({ items: entries }) },
 ];
 
+const OFF_LIST =
+  'Claude suggested a task or person that isn’t in your vault. Check this one by hand.';
+
 const table = (columns: string[], rows: unknown[][]) => ({ columns, rows, truncated: false });
 
-function setUp(round: ScriptedRound) {
+function setUp(round: ScriptedRound, { titled = [] as string[] } = {}) {
   const model = fakeModel([round]);
   const queries: string[] = [];
   const ports: InboxAssistPorts = {
@@ -78,6 +87,12 @@ function setUp(round: ScriptedRound) {
             ],
           );
         }
+        if (sql.startsWith(ASSIST_TITLED_QUERY_MARK)) {
+          return table(
+            ['title'],
+            titled.map((title) => [title]),
+          );
+        }
         if (sql.includes('meeting links: directory')) {
           return table(
             ['path', 'title', 'type', 'key', 'value'],
@@ -92,8 +107,8 @@ function setUp(round: ScriptedRound) {
   return { ports, model, queries };
 }
 
-const preview = async (round: ScriptedRound) => {
-  const set = setUp(round);
+const preview = async (round: ScriptedRound, options: { titled?: string[] } = {}) => {
+  const set = setUp(round, options);
   const outcome = await previewInboxAssist(set.ports, {
     items: [RENEW_ITEM, LUNCH_ITEM],
     previewed: [],
@@ -161,8 +176,8 @@ describe('previewInboxAssist: duplicates and people (#906)', () => {
       ),
     );
     expect(outcome.rows.map((row) => row.step)).toEqual([
-      { kind: 'ask', question: 'Claude picked a task or a person it was not offered.' },
-      { kind: 'ask', question: 'Claude picked a task or a person it was not offered.' },
+      { kind: 'ask', question: OFF_LIST },
+      { kind: 'ask', question: OFF_LIST },
     ]);
   });
 
@@ -173,9 +188,23 @@ describe('previewInboxAssist: duplicates and people (#906)', () => {
     expect(outcome.rows[1]).toMatchObject({ step: { kind: 'task' }, people: [] });
   });
 
-  it('reads the tasks and the people’s addresses in one statement each', async () => {
+  it('reads the tasks and the people’s addresses in one statement each, and no titles with no one to add', async () => {
     const { queries } = await preview(answer(entry(RENEW_ITEM), entry(LUNCH_ITEM)));
     expect(queries.filter((sql) => sql.startsWith(REVIEW_TASKS_QUERY_MARK))).toHaveLength(1);
     expect(queries.filter((sql) => sql.includes('meeting links: directory'))).toHaveLength(1);
+    expect(queries.filter((sql) => sql.startsWith(ASSIST_TITLED_QUERY_MARK))).toHaveLength(0);
+  });
+
+  it('reads once whether a new person’s name is a note’s title already, and asks if it is', async () => {
+    const tobias = { name: 'Tobias Fenn', email: 'tobias@example.org', person: null };
+    const { queries, outcome } = await preview(
+      answer(entry(RENEW_ITEM), entry(LUNCH_ITEM, { people: [tobias] })),
+      { titled: ['Tobias Fenn'] },
+    );
+    expect(queries.filter((sql) => sql.startsWith(ASSIST_TITLED_QUERY_MARK))).toHaveLength(1);
+    expect(outcome.rows[1]!.step).toEqual({
+      kind: 'ask',
+      question: 'A note is called Tobias Fenn already. Is this them?',
+    });
   });
 });

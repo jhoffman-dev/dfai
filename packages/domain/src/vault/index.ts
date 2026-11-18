@@ -39,6 +39,7 @@ export { flattenVaultTree, sortVaultEntries } from './vault-tree.ts';
 export type { VaultTreeRow, VaultTreeState } from './vault-tree.ts';
 export {
   cleanEntryName,
+  isReservedEntryName,
   DEFAULT_FOLDER_NAME,
   DEFAULT_NOTE_NAME,
   firstNamedLine,

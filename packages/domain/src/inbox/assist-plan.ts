@@ -25,7 +25,8 @@ import { PROPOSAL_TYPE } from '../proposals/proposal.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { hasUnshownCharacters, type AssistItemAnswer, type AssistKind } from './assist-answer.ts';
 import { assistSureness } from './assist-confidence.ts';
-import { assistPeople, type AssistPersonStep } from './assist-people.ts';
+import { assistDuplicate, type AssistDuplicate } from './assist-duplicate.ts';
+import { assistPeople, OFF_LIST, sameStep, type AssistPersonStep } from './assist-people.ts';
 import type { InboxItem } from './inbox.ts';
 import {
   assistHeld,
@@ -59,23 +60,38 @@ export interface AssistFacts {
   readonly filingTargets: readonly AssistTarget[];
   /** The people an item can wait on, or name: those Claude is offered. */
   readonly people: readonly AssistTarget[];
-  /** Those people as they are matched by name and address (#906). */
+  /** Everyone in People, the Archive's included, as matched by name and address (#906). */
   readonly directory: readonly PersonCandidate[];
+  /** Names, folded, that a note of any type has as its title already: no new person takes one. */
+  readonly takenTitles: ReadonlySet<string>;
   /** What each item asked about holds of its own (#906); an item missing here holds nothing. */
   readonly items: ReadonlyMap<VaultPath, AssistItemFacts>;
 }
 
 /** What one item holds that its duplicate and people are checked against, read on the press. */
 export interface AssistItemFacts {
-  /** The tasks the title rule lists as ones it may copy, surest first. */
+  /** The open tasks, not Inbox items, the title rule lists as ones it may copy, surest first. */
   readonly duplicates: readonly PossibleDuplicateTask[];
+  /** Another Inbox item's title this one is the newer capture of, or cannot be told from; null for none. */
+  readonly inboxTwin: string | null;
   /** Every address its text gives. */
   readonly addresses: readonly string[];
   /** What it lists under `people` already; null when nothing. */
   readonly listedPeople: HeldField | null;
+  /** Its own words, title and body: what a person it names must be found in. */
+  readonly text: string;
+  /** Whether it has words beyond its title. */
+  readonly hasBody: boolean;
 }
 
-const NO_ITEM_FACTS: AssistItemFacts = { duplicates: [], addresses: [], listedPeople: null };
+const NO_ITEM_FACTS: AssistItemFacts = {
+  duplicates: [],
+  inboxTwin: null,
+  addresses: [],
+  listedPeople: null,
+  text: '',
+  hasBody: false,
+};
 
 /** What would be done with one item. */
 export type AssistStep =
@@ -88,8 +104,8 @@ export type AssistStep =
       readonly waitingOn: AssistTarget | null;
     }
   | { readonly kind: 'file'; readonly project: AssistTarget }
-  /** It copies a task already in the vault, which the title rule and Claude both found (#906). */
-  | { readonly kind: 'duplicate'; readonly of: AssistTarget }
+  /** It copies a task already in the vault, which the vault confirms and Claude agrees (#906). */
+  | AssistDuplicate
   | { readonly kind: 'leave'; readonly because: string }
   | { readonly kind: 'ask'; readonly question: string };
 
@@ -173,13 +189,23 @@ export function assistPlan(
   if (step.kind === 'ask') return row(step);
   if (answer.offList === true) return row(ask(OFF_LIST));
   const own = facts.items.get(item.path) ?? NO_ITEM_FACTS;
-  const duplicate = duplicateStep(answer, own.duplicates);
+  const duplicate = assistDuplicate({
+    answer,
+    held: assistHeld(item),
+    filing: 'project' in step ? (step.project?.path ?? null) : null,
+    candidates: own.duplicates,
+    inboxTwin: own.inboxTwin,
+    listedPeople: own.listedPeople,
+    hasBody: own.hasBody,
+  });
   if (duplicate !== null || step.kind === 'leave') return row(duplicate ?? step);
   const people = assistPeople(answer.people, {
     offered: facts.people,
     directory: facts.directory,
+    text: own.text,
     addresses: own.addresses,
     listed: own.listedPeople,
+    takenTitles: facts.takenTitles,
   });
   return 'question' in people ? row(ask(people.question)) : row(step, people.steps);
 }
@@ -207,29 +233,25 @@ function filingStep(item: InboxItem, answer: AssistItemAnswer, facts: AssistFact
   return fileStep(project, held.project, facts);
 }
 
-/** What an item becomes when Claude picked a task or person it was not offered. */
-const OFF_LIST = 'Claude picked a task or a person it was not offered.';
-
 /**
- * Whether the item copies a task: planned only when the title rule lists the
- * task as the same title or the same words and Claude, sure it is a task,
- * picked it. Any other disagreement — Claude picking a task the rule only
- * half-matched, or picking none where the rule found the same title — is a
- * question naming the task by the vault's title. Null when neither found one.
+ * The rows of one plan with no new person added twice: a person a row would
+ * add whom an earlier row adds already — the same mailbox, or the same name
+ * but for case, accents or spacing — makes the later row a question.
  */
-function duplicateStep(
-  answer: AssistItemAnswer,
-  candidates: readonly PossibleDuplicateTask[],
-): AssistStep | null {
-  const sameAs = (task: { title: string }) => ask(`Is this the same as ${task.title}?`);
-  if (answer.duplicateOf === null) {
-    const found = candidates.find((each) => each.likeness !== 'contained');
-    return found === undefined ? null : sameAs(found.task);
-  }
-  const picked = candidates.find((each) => each.task.path === answer.duplicateOf);
-  if (picked === undefined) return ask(OFF_LIST);
-  if (picked.likeness === 'contained' || answer.kind !== 'task') return sameAs(picked.task);
-  return { kind: 'duplicate', of: { path: picked.task.path, title: picked.task.title } };
+export function withoutRepeatedAdds(rows: readonly AssistRow[]): AssistRow[] {
+  const adding: { step: AssistPersonStep; title: string }[] = [];
+  return rows.map((row) => {
+    const repeated = row.people.find((step) =>
+      adding.some((earlier) => step.kind === 'add' && sameStep(earlier.step, step)),
+    );
+    if (repeated !== undefined && repeated.kind === 'add') {
+      const first = adding.find((earlier) => sameStep(earlier.step, repeated))!;
+      const question = `${repeated.name} would be added from ${first.title} already. Is this them?`;
+      return { ...row, step: ask(question), people: [] };
+    }
+    for (const step of row.people) if (step.kind === 'add') adding.push({ step, title: row.title });
+    return row;
+  });
 }
 
 /** What an item Claude's answer cannot be shown for becomes: a question, with nothing of the answer in it. */

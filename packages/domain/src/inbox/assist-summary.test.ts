@@ -147,7 +147,7 @@ describe('duplicates and people in the sentence and the rows (#906)', () => {
     path: createVaultPath('Tasks/Renew.md'),
     title: 'Renew Larkspur Payroll contract',
   };
-  const DUPLICATE: AssistStep = { kind: 'duplicate', of: RENEW };
+  const DUPLICATE: AssistStep = { kind: 'duplicate', of: RENEW, newerHolds: [] };
   const LINK = { kind: 'link', person: MARA } as const;
   const ADD = { kind: 'add', name: 'Tobias Fenn', email: 'tobias@example.org' } as const;
   const withPeople = (step: AssistStep, people: AssistRow['people']): AssistRow => ({
@@ -182,6 +182,12 @@ describe('duplicates and people in the sentence and the rows (#906)', () => {
       'Looks like a duplicate of Renew Larkspur Payroll contract',
     );
     expect(assistTone(DUPLICATE)).toBe('duplicate');
+    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['notes'] })).toBe(
+      'Looks like a duplicate of Renew Larkspur Payroll contract; this copy also has notes',
+    );
+    expect(assistStepWords({ ...DUPLICATE, newerHolds: ['due', 'people', 'notes'] })).toBe(
+      'Looks like a duplicate of Renew Larkspur Payroll contract; this copy also has a due date, people and notes',
+    );
     expect(assistPeopleWords(withPeople(TASK, [LINK, ADD]))).toEqual([
       'Links Mara Quill',
       'Would add Tobias Fenn',

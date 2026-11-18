@@ -32,7 +32,21 @@ const facts = (own: Partial<AssistItemFacts> = {}): AssistFacts => ({
   filingTargets: [LARKSPUR, FENN],
   people: [MARA],
   directory: DIRECTORY,
-  items: new Map([[ITEM, { duplicates: [], addresses: [], listedPeople: null, ...own }]]),
+  takenTitles: new Set(),
+  items: new Map([
+    [
+      ITEM,
+      {
+        duplicates: [],
+        inboxTwin: null,
+        addresses: [],
+        listedPeople: null,
+        text: 'Renew Larkspur contract with Tobias Fenn',
+        hasBody: true,
+        ...own,
+      },
+    ],
+  ]),
 });
 const item = () => inboxItem({ path: ITEM, title: 'Renew Larkspur contract', type: null });
 const answer = (extra: Partial<AssistItemAnswer> = {}): AssistItemAnswer => ({
@@ -65,6 +79,9 @@ describe('attack-907: duplicates', () => {
         title: 'Renew Larkspur contract',
         project: LARKSPUR.path,
         status: 'next-action',
+        due: null,
+        recurrence: null,
+        waitingOn: '',
       },
       likeness: 'same-title',
     };
@@ -89,11 +106,12 @@ describe('attack-907: people', () => {
     const row = plan(
       {
         people: [
-          named('Tobias Fenn', { email: 'tobi@example.org' }),
-          named('tobias fenn', { email: 'tobi@example.org' }),
+          named('Wren Calloway', { email: 'wren@example.org' }),
+          named('wren calloway', { email: 'wren@example.org' }),
         ],
       },
-      { addresses: ['tobi@example.org'] },
+      // Not Tobias: an archived Tobias Fenn is in this directory, and is a question (#907).
+      { addresses: ['wren@example.org'], text: 'Lunch with Wren Calloway <wren@example.org>' },
     );
     expect(row.people.filter((step) => step.kind === 'add')).toHaveLength(1);
   });

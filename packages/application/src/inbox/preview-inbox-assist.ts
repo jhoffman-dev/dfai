@@ -1,6 +1,7 @@
 import {
-  addressesIn,
   ASSIST_ANSWER_SHAPE,
+  assistItemFacts,
+  assistNewNames,
   assistAllowance,
   assistAllowanceWords,
   assistBatch,
@@ -11,6 +12,8 @@ import {
   claudeStepSystem,
   claudeSystemProblem,
   compileReviewTasksQuery,
+  compileTitledNotesQuery,
+  foldedPersonName,
   createVaultPath,
   DECLARED_STEP_MODEL,
   FILED_UNDER_TYPES,
@@ -24,15 +27,14 @@ import {
   MEETING_PEOPLE_KEY,
   messageWithoutPaths,
   PERSON_TYPE,
-  possibleDuplicateTasks,
   readAssistAnswer,
   reviewTask,
   splitFrontmatter,
   waitingOnRefusal,
+  withoutRepeatedAdds,
   type AnsweredNote,
   type AssistFacts,
   type AssistItemAnswer,
-  type AssistItemFacts,
   type AssistRow,
   type AssistTarget,
   type InboxItem,
@@ -118,10 +120,12 @@ export async function previewInboxAssist(
   const { notes, quiet } = await quietNotes(ports, open);
   const skipOf = (item: InboxItem, listed: string | null) => listed ?? quiet.get(item.path) ?? null;
   const plan = (row: (item: InboxItem) => AssistRow): InboxAssistOutcome => {
-    const rows = batch.considered.map(({ item, skip }) => {
-      const because = skipOf(item, skip);
-      return because === null ? row(item) : leftRow(item, because);
-    });
+    const rows = withoutRepeatedAdds(
+      batch.considered.map(({ item, skip }) => {
+        const because = skipOf(item, skip);
+        return because === null ? row(item) : leftRow(item, because);
+      }),
+    );
     return {
       kind: 'plan',
       summary: assistSummary(rows),
@@ -149,11 +153,14 @@ function leftRow(item: InboxItem, because: string): AssistRow {
   };
 }
 
+/** An item's note as read on the press: its text, and when it last changed. */
+type ReadNote = AnsweredNote & { readonly modified: number };
+
 /** The open items' notes as read, and why each one changed too lately, or gone since, is left out. */
 async function quietNotes(
   ports: InboxAssistPorts,
   open: readonly InboxItem[],
-): Promise<{ notes: AnsweredNote[]; quiet: Map<string, string> }> {
+): Promise<{ notes: ReadNote[]; quiet: Map<string, string> }> {
   const quiet = new Map<string, string>();
   if (open.length === 0) return { notes: [], quiet };
   const read = await ports.fs.readNotes(open.map((item) => item.path));
@@ -165,7 +172,9 @@ async function quietNotes(
         ? 'It is no longer there.'
         : assistQuietSkip({ modified: file.modified, now });
     if (skip !== null) quiet.set(item.path, skip);
-    return skip === null && file !== undefined ? [{ path: item.path, text: file.text }] : [];
+    return skip === null && file !== undefined
+      ? [{ path: item.path, text: file.text, modified: file.modified }]
+      : [];
   });
   return { notes, quiet };
 }
@@ -202,7 +211,7 @@ async function askClaude(
     items,
     signal,
   }: {
-    notes: readonly AnsweredNote[];
+    notes: readonly ReadNote[];
     items: readonly InboxItem[];
     signal: AbortSignal | undefined;
   },
@@ -234,7 +243,9 @@ async function askClaude(
     notes.map((note) => note.path),
     inboxAssistOffered(facts),
   );
-  return read.ok ? { kind: 'answered', entries: read.value, facts } : notUsed(read.problem);
+  if (!read.ok) return notUsed(read.problem);
+  const takenTitles = await titlesTaken(ports, assistNewNames(read.value));
+  return { kind: 'answered', entries: read.value, facts: { ...facts, takenTitles } };
 }
 
 /**
@@ -295,13 +306,13 @@ function unreachableWords(status: Extract<ProviderStatus, { ready: false }>): st
 
 /**
  * What an answer is checked against, read on the press and never on opening
- * the Inbox: the projects, areas and people clarifying offers, the people's
- * addresses and aliases, the open tasks an item may copy, and what each
- * asked item holds of its own. Four reads of the index, all at once.
+ * the Inbox: the projects, areas and people clarifying offers, everyone in
+ * People with their addresses and aliases, the open tasks an item may copy,
+ * and what each asked item holds of its own. Four reads of the index, all at once.
  */
 async function vaultFacts(
   ports: InboxAssistPorts,
-  asked: { notes: readonly AnsweredNote[]; items: readonly InboxItem[] },
+  asked: { notes: readonly ReadNote[]; items: readonly InboxItem[] },
 ): Promise<AssistFacts> {
   const [projects, people, tasks, directory] = await Promise.all([
     notesInUseOfTypes({ index: ports.index, types: FILED_UNDER_TYPES }),
@@ -313,7 +324,7 @@ async function vaultFacts(
     path: createVaultPath(note.path),
     title: note.title,
   });
-  const candidates = tasks.rows.map(reviewTask);
+  const byPath = new Map(asked.items.map((item) => [item.path, item]));
   return {
     today: ports.clock.today(),
     filingTargets: projects
@@ -327,30 +338,40 @@ async function vaultFacts(
       )
       .map(target),
     directory: directory.people,
-    items: new Map(
-      asked.notes.map((note) => [
-        note.path,
-        itemFacts(ports, {
-          item: asked.items.find((each) => each.path === note.path)!,
-          text: note.text,
-          tasks: candidates,
-        }),
-      ]),
-    ),
+    takenTitles: new Set(),
+    items: assistItemFacts({
+      asked: asked.notes.flatMap((note) => {
+        const item = byPath.get(note.path);
+        if (item === undefined) return [];
+        return [{ item, ...note, listedPeople: listedPeople(ports, note.text) }];
+      }),
+      tasks: tasks.rows.map(taskCandidate),
+    }),
   };
 }
 
-/** What one asked item holds of its own: the tasks it may copy, the addresses it gives, the people it lists. */
-function itemFacts(
-  ports: Pick<InboxAssistPorts, 'markdown'>,
-  { item, text, tasks }: { item: InboxItem; text: string; tasks: readonly TaskCandidate[] },
-): AssistItemFacts {
-  const project = item.task?.project ?? item.written?.project ?? null;
+/** A task as the duplicate rule reads it, from the weekly review's row. */
+function taskCandidate(row: Record<string, unknown>): TaskCandidate {
+  const task = reviewTask(row);
   return {
-    duplicates: possibleDuplicateTasks({ item: { ...item, project }, tasks }),
-    addresses: addressesIn(text),
-    listedPeople: listedPeople(ports, text),
+    path: task.path,
+    title: task.title,
+    project: task.project,
+    status: task.status,
+    due: task.due,
+    recurrence: task.recurrence ?? null,
+    waitingOn: task.waitingOn,
   };
+}
+
+/** Which of `names` a note of any type has as its title, folded: one read, and none for no names. */
+async function titlesTaken(
+  ports: InboxAssistPorts,
+  names: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (names.length === 0) return new Set();
+  const { rows } = await rowsOf(ports.index, compileTitledNotesQuery(names));
+  return new Set(rows.map((row) => foldedPersonName(String(row['title'] ?? ''))));
 }
 
 /**

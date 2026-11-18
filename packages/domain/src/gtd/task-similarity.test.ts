@@ -5,6 +5,7 @@ import {
   possibleDuplicateTasks,
   titleLikeness,
   titleWords,
+  TITLE_WORDS_MAX,
   type TaskCandidate,
 } from './task-similarity.ts';
 
@@ -21,6 +22,9 @@ const task = (title: string, extra: Partial<TaskCandidate> = {}): TaskCandidate 
   title,
   project: null,
   status: 'next-action',
+  due: null,
+  recurrence: null,
+  waitingOn: '',
   ...extra,
 });
 const ITEM = {
@@ -33,7 +37,7 @@ const listed = (tasks: TaskCandidate[], item = ITEM) =>
 
 describe('titleWords', () => {
   it('folds case, drops punctuation, spacing and filler', () => {
-    expect(titleWords('  Re: PLEASE renew the Larkspur-Payroll   contract!! ')).toEqual([
+    expect(titleWords('  Fwd: PLEASE renew the Larkspur-Payroll   contract!! ')).toEqual([
       'renew',
       'larkspur',
       'payroll',
@@ -47,6 +51,25 @@ describe('titleWords', () => {
 });
 
 describe('titleLikeness', () => {
+  it('keeps the words that can change what a task is (#907)', () => {
+    expect(titleLikeness('Move to Tobias', 'Move Tobias')).toBeNull();
+    expect(titleLikeness('Re-sign the lease', 'Sign the lease')).toBeNull();
+    // Listed at most as a title within a longer one: a question, never a plan.
+    expect(titleLikeness('Remember Mara’s birthday', 'Mara’s birthday')).toBe('contained');
+  });
+
+  it('lists the same words in another order as no more than same-words (#907)', () => {
+    expect(titleLikeness('Pay Mara for Tobias', 'Pay Tobias for Mara')).toBe('same-words');
+    expect(titleLikeness('Pay rent 1/12', 'Pay rent 12/1')).toBe('same-words');
+    expect(titleLikeness('Call Mara', 'Call Mara Mara')).toBe('same-words');
+  });
+
+  it('compares at most the first words of a title, folding each title once', () => {
+    const long = Array.from({ length: 10_000 }, (_, at) => `word${at}`).join(' ');
+    expect(titleWords(long)).toHaveLength(TITLE_WORDS_MAX);
+    expect(titleLikeness(long, `${long} and more`)).toBe('same-title');
+  });
+
   it.each([
     ['Renew Larkspur Payroll contract', 'renew larkspur payroll contract.', 'same-title'],
     ['TODO: renew the Larkspur Payroll contract', 'Renew Larkspur Payroll contract', 'same-title'],

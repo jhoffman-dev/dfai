@@ -17,11 +17,22 @@ const LINK = createVaultPath('Inbox/Payroll article.md');
 const RENEW = createVaultPath('Tasks/Renew Larkspur Payroll contract.md');
 const own = (paths: string[]): AssistItemFacts => ({
   duplicates: paths.map((path) => ({
-    task: { path: createVaultPath(path), title: path, project: null, status: null },
+    task: {
+      path: createVaultPath(path),
+      title: path,
+      project: null,
+      status: null,
+      due: null,
+      recurrence: null,
+      waitingOn: '',
+    },
     likeness: 'same-title' as const,
   })),
+  inboxTwin: null,
   addresses: [],
   listedPeople: null,
+  text: '',
+  hasBody: false,
 });
 const people = Array.from({ length: INBOX_ASSIST_LISTED_MAX + 5 }, (_, at) => ({
   path: createVaultPath(`People/Person ${at}.md`),

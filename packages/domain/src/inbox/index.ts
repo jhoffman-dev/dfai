@@ -54,6 +54,7 @@ export {
   assistBatch,
   assistListedSkip,
   assistPlan,
+  withoutRepeatedAdds,
   assistQuietSkip,
 } from './assist-plan.ts';
 export type {
@@ -75,5 +76,10 @@ export {
 export type { AssistTone } from './assist-summary.ts';
 export { assistHeld, listedPeopleOf } from './assist-held.ts';
 export type { AssistHeld, HeldField } from './assist-held.ts';
-export { assistPeople } from './assist-people.ts';
+export { assistNewNames, assistPeople, OFF_LIST as ASSIST_OFF_LIST } from './assist-people.ts';
 export type { AssistPeopleFacts, AssistPersonStep } from './assist-people.ts';
+export { assistDuplicate } from './assist-duplicate.ts';
+export type { AssistCopyHolds, AssistDuplicate } from './assist-duplicate.ts';
+export { assistItemFacts } from './assist-item-facts.ts';
+export type { AssistAsked } from './assist-item-facts.ts';
+export { ASSIST_TITLED_QUERY_MARK, compileTitledNotesQuery } from './assist-queries.ts';

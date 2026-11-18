@@ -211,7 +211,7 @@ test('Suggest says which item copies a task, who it links or would add, and asks
   const renew = suggestions.getByRole('listitem', { name: 'Renew Larkspur Payroll contract' });
   await expect(renew).toContainText('Duplicate');
   await expect(renew).toContainText(
-    'Looks like a duplicate of Renew the Larkspur Payroll contract',
+    'Looks like a duplicate of Renew the Larkspur Payroll contract; this copy also has notes',
   );
   const lunch = suggestions.getByRole('listitem', { name: 'Lunch with Tobias Fenn' });
   await expect(lunch).toContainText('Make it a task');

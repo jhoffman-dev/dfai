@@ -68,11 +68,16 @@ function sameMailbox(left: string, right: string): boolean {
   return a !== null && b !== null && a.local === b.local && a.domain === b.domain;
 }
 
-function hasMailbox(person: PersonCandidate, written: string): boolean {
+/** Whether `written` reaches one of their mailboxes. */
+export function hasMailbox(person: PersonCandidate, written: string): boolean {
   return person.emails.some((theirs) => sameMailbox(theirs, written));
 }
 
-const namesOf = (person: PersonCandidate) => [person.name, ...person.aliases];
+/** A person's name and aliases. */
+export const namesOf = (person: PersonCandidate): readonly string[] => [
+  person.name,
+  ...person.aliases,
+];
 
 function namedExactly(person: PersonCandidate, name: string): boolean {
   const key = vocabularyKey(name);
@@ -102,7 +107,48 @@ export function addressesIn(text: string): string[] {
   return [...text.matchAll(ADDRESS)].map((found) => found[0]);
 }
 
-/** Whether `email` is one of `given`, as a mailbox: an address the item itself holds. */
-export function givesAddress(given: readonly string[], email: string): boolean {
-  return given.some((written) => sameMailbox(written, email));
+/** The address in `given` that is `email` exactly, as the item spells it; null when none is. */
+export function heldAddress(given: readonly string[], email: string): string | null {
+  if (addressParts(email) === null) return null;
+  const wanted = email.trim().toLowerCase();
+  return given.find((written) => written.trim().toLowerCase() === wanted) ?? null;
+}
+
+/** Words as names are compared: spelt as the Terms page compares them, letters and digits only. */
+function nameWords(text: string): string[] {
+  return vocabularyKey(text)
+    .normalize('NFKC')
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
+    .filter((word) => word !== '');
+}
+
+/** The most words of an item looked through for a name: a pasted page is not read to its end. */
+export const MENTION_WORDS_MAX = 4_000;
+
+/** Whether `text` names `name` as whole words, in order: "Mara Quill" in "call mara quill today", not in "Maralyn". */
+export function mentionsName(text: string, name: string): boolean {
+  const wanted = nameWords(name);
+  if (wanted.length === 0) return false;
+  const words = nameWords(text.slice(0, MENTION_WORDS_MAX * 16)).slice(0, MENTION_WORDS_MAX);
+  return words.some((_, at) => wanted.every((word, offset) => words[at + offset] === word));
+}
+
+/** Whether an address looks like theirs by its local part — `mara@`, `mara.quill@` — wherever it is. */
+export function addressNamesPerson(address: string, person: PersonCandidate): boolean {
+  const parts = addressParts(address);
+  if (parts === null) return false;
+  return namesOf(person).some(
+    (name) => localPartsMatch(parts.local, asLocalPart(name), { publicMail: false }) !== null,
+  );
+}
+
+/** A name as a new person's are compared across a plan: case, accents and spacing aside. */
+export function foldedPersonName(name: string): string {
+  return vocabularyKey(name).normalize('NFD').replace(/\p{M}/gu, '').replace(/\s+/gu, '');
+}
+
+/** The mailbox an address reaches, `+tag` aside, as a key; null for text that is not an address. */
+export function mailboxKey(written: string): string | null {
+  const parts = addressParts(written);
+  return parts === null ? null : `${parts.local}@${parts.domain}`;
 }

@@ -76,5 +76,6 @@ export {
   TITLE_FILLER,
   titleLikeness,
   titleWords,
+  TITLE_WORDS_MAX,
 } from './task-similarity.ts';
 export type { PossibleDuplicateTask, TaskCandidate, TaskLikeness } from './task-similarity.ts';

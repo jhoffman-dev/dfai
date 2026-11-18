@@ -6,13 +6,16 @@
  *
  * Two titles are compared as words: folded to one case, punctuation and
  * spacing dropped, and the filler a quick capture adds ("please", "todo",
- * "re:") left out. A task under one project is never a copy of a task under
- * another; one without a project may be a copy of anything.
+ * "fwd:") left out — only words that cannot change what the task is. A task
+ * under one project is never a copy of a task under another; one without a
+ * project may be a copy of anything. Only `same-title` may ever be planned as
+ * a duplicate: the same words in another order can be another task ("Pay
+ * Mara for Tobias", "Pay Tobias for Mara").
  */
 
 import { isArchivedPath } from '../archive/archive.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
-import { FINISHED_TASK_STATUS, type GtdStatus } from './gtd-status.ts';
+import { FINISHED_TASK_STATUS, NEW_TASK_STATUS, type GtdStatus } from './gtd-status.ts';
 
 /** A task in the vault, as the rule compares it. */
 export interface TaskCandidate {
@@ -22,6 +25,12 @@ export interface TaskCandidate {
   /** The project or area it is filed under, or null. */
   readonly project: VaultPath | null;
   readonly status: GtdStatus | null;
+  /** `YYYY-MM-DD`, or null. */
+  readonly due: string | null;
+  /** How it repeats, or null: a repeating task is never planned as one an item copies. */
+  readonly recurrence: string | null;
+  /** Who it waits on, as written; '' for nobody. */
+  readonly waitingOn: string;
 }
 
 /**
@@ -48,38 +57,50 @@ export const DUPLICATE_TASKS_PER_ITEM = 3;
  */
 export const CONTAINED_MIN_WORDS = 3;
 
-/** Words a quick capture adds that say nothing about the task. */
+/**
+ * Words a quick capture adds that cannot change what the task is. "to", "re"
+ * and "remember" are not among them: "Move to Tobias" is not "Move Tobias".
+ */
 export const TITLE_FILLER: ReadonlySet<string> = new Set([
   'a',
   'an',
   'the',
-  'to',
   'please',
   'pls',
   'todo',
-  're',
   'fw',
   'fwd',
-  'asap',
-  'reminder',
-  'remember',
 ]);
 
-/** A title's words as the rule compares them: one case, no punctuation, no filler. */
+/**
+ * The most words of a title compared: a capture can hold a whole page as its
+ * title, and comparing it with every task would hold Suggest up.
+ */
+export const TITLE_WORDS_MAX = 64;
+
+/** A title's words as the rule compares them: one case, no punctuation, no filler, at most {@link TITLE_WORDS_MAX}. */
 export function titleWords(title: string): readonly string[] {
-  return title
+  const words: string[] = [];
+  for (const word of title
+    .slice(0, TITLE_WORDS_MAX * 64)
     .normalize('NFKC')
     .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word !== '' && !TITLE_FILLER.has(word));
+    .split(/[^\p{L}\p{N}]+/u)) {
+    if (word === '' || TITLE_FILLER.has(word)) continue;
+    words.push(word);
+    if (words.length === TITLE_WORDS_MAX) break;
+  }
+  return words;
 }
 
 /** How alike two titles are, or null when the rule does not list them together. The same either way round. */
 export function titleLikeness(left: string, right: string): TaskLikeness | null {
-  const a = titleWords(left);
-  const b = titleWords(right);
+  return wordsLikeness(titleWords(left), titleWords(right));
+}
+
+function wordsLikeness(a: readonly string[], b: readonly string[]): TaskLikeness | null {
   if (a.length === 0 || b.length === 0) return null;
-  if (a.join(' ') === b.join(' ')) return 'same-title';
+  if (a.length === b.length && a.every((word, at) => word === b[at])) return 'same-title';
   const setA = new Set(a);
   const setB = new Set(b);
   const [fewer, more] = setA.size <= setB.size ? [setA, setB] : [setB, setA];
@@ -96,9 +117,11 @@ const RANK: Readonly<Record<TaskLikeness, number>> = {
 
 /**
  * The tasks `item` may copy, surest first and then by path, at most
- * {@link DUPLICATE_TASKS_PER_ITEM}: never the item itself, never a finished
- * task or one in the Archive (a copy of finished work is new work), and never
- * a task under another project than the item's.
+ * {@link DUPLICATE_TASKS_PER_ITEM}: never the item itself, never a task
+ * still at the Inbox status (it is an item too: two captures are not one
+ * another's kept copy), never a finished task or one in the Archive (a copy
+ * of finished work is new work), and never a task under another project than
+ * the item's. The item's title is folded once, whatever the vault holds.
  */
 export function possibleDuplicateTasks({
   item,
@@ -107,10 +130,11 @@ export function possibleDuplicateTasks({
   item: Pick<TaskCandidate, 'path' | 'title' | 'project'>;
   tasks: readonly TaskCandidate[];
 }): PossibleDuplicateTask[] {
+  const words = titleWords(item.title);
   return tasks
     .filter((task) => mayBeCopied(item, task))
     .flatMap((task) => {
-      const likeness = titleLikeness(item.title, task.title);
+      const likeness = wordsLikeness(words, titleWords(task.title));
       return likeness === null ? [] : [{ task, likeness }];
     })
     .sort((a, b) => RANK[a.likeness] - RANK[b.likeness] || byPath(a.task.path, b.task.path))
@@ -123,5 +147,6 @@ const byPath = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 function mayBeCopied(item: Pick<TaskCandidate, 'path' | 'project'>, task: TaskCandidate): boolean {
   if (task.path === item.path) return false;
   if (task.status === FINISHED_TASK_STATUS || isArchivedPath(task.path)) return false;
+  if (task.status === NEW_TASK_STATUS) return false;
   return item.project === null || task.project === null || item.project === task.project;
 }

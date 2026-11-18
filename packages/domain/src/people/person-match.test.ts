@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
-import { addressesIn, givesAddress, personMatch, type PersonCandidate } from './person-match.ts';
+import {
+  addressesIn,
+  addressNamesPerson,
+  foldedPersonName,
+  heldAddress,
+  mailboxKey,
+  mentionsName,
+  personMatch,
+  type PersonCandidate,
+} from './person-match.ts';
+import { isReservedEntryName } from '../vault/new-note.ts';
 
 /**
  * #906: a name, and an address if one is given, is exactly one person in
@@ -73,13 +83,39 @@ describe('personMatch: none', () => {
   });
 });
 
-describe('addressesIn and givesAddress', () => {
-  it('finds the addresses prose gives, and compares them as mailboxes', () => {
+describe('addressesIn and heldAddress', () => {
+  it('finds the addresses prose gives, and holds one only as written, case aside', () => {
     const text = 'From: Tobias Fenn <Tobias.Fenn+news@example.com>, cc wren@example.org.\n';
     const found = addressesIn(text);
     expect(found).toEqual(['Tobias.Fenn+news@example.com', 'wren@example.org']);
-    expect(givesAddress(found, 'tobias.fenn@example.com')).toBe(true);
-    expect(givesAddress(found, 'tobias@example.com')).toBe(false);
-    expect(givesAddress(found, 'not an address')).toBe(false);
+    expect(heldAddress(found, 'tobias.fenn+NEWS@example.com')).toBe('Tobias.Fenn+news@example.com');
+    expect(heldAddress(found, 'tobias.fenn@example.com')).toBeNull();
+    expect(heldAddress(found, 'not an address')).toBeNull();
+  });
+});
+
+describe('what an item’s own text says of a person (#907)', () => {
+  it('names someone only as whole words, in order, case aside', () => {
+    expect(mentionsName('Call MARA quill today', 'Mara Quill')).toBe(true);
+    expect(mentionsName('Call Maralyn Quillson', 'Mara Quill')).toBe(false);
+    expect(mentionsName('Quill, Mara', 'Mara Quill')).toBe(false);
+    expect(mentionsName('anything', '  ')).toBe(false);
+  });
+
+  it('reads an address as theirs by its local part, wherever it is', () => {
+    expect(addressNamesPerson('mara@other.example.net', MARA)).toBe(true);
+    expect(addressNamesPerson('tobias@example.com', MARA)).toBe(false);
+    expect(addressNamesPerson('not an address', MARA)).toBe(false);
+  });
+
+  it('folds new names and mailboxes as a plan compares them', () => {
+    expect(foldedPersonName(' Tóbias  FENN ')).toBe(foldedPersonName('tobias fenn'));
+    expect(mailboxKey('Tobi+x@Example.org')).toBe(mailboxKey('tobi@example.org'));
+    expect(mailboxKey('nobody')).toBeNull();
+  });
+
+  it('knows the names no file can take', () => {
+    expect(['CON', 'nul.txt', 'com1', 'LPT9'].every(isReservedEntryName)).toBe(true);
+    expect(['Connie', 'Tobias Fenn', 'com'].some(isReservedEntryName)).toBe(false);
   });
 });

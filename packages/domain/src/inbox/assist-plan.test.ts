@@ -31,6 +31,7 @@ const FACTS: AssistFacts = {
   people: [MARA],
   directory: [],
   items: new Map(),
+  takenTitles: new Set(),
 };
 
 const note = (path = 'Inbox/Call Mara Quill.md', row: Record<string, unknown> = {}) =>
@@ -526,7 +527,19 @@ describe('never overwriting, over every type (#903 round 3, seeded)', () => {
       const facts = {
         ...FACTS,
         directory: [{ path: MARA.path, name: MARA.title, emails: [], aliases: [] }],
-        items: new Map([[item.path, { duplicates: [], addresses: [], listedPeople }]]),
+        items: new Map([
+          [
+            item.path,
+            {
+              duplicates: [],
+              inboxTwin: null,
+              addresses: [],
+              listedPeople,
+              text: item.title,
+              hasBody: false,
+            },
+          ],
+        ]),
       };
       const planned = assistPlan(item, given, facts);
       const step = planned.step;

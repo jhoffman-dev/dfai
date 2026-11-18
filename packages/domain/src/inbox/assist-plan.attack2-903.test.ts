@@ -24,6 +24,7 @@ const FACTS: AssistFacts = {
   people: [MARA, TOBIAS],
   directory: [],
   items: new Map(),
+  takenTitles: new Set(),
 };
 const ITEM_PATH = createVaultPath('Inbox/Call Mara Quill.md');
 
