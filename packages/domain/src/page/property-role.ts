@@ -7,11 +7,13 @@
  * only be a guess from the name, and a key it does not recognise is simply a
  * value, which is never wrong, only plain.
  */
-export type PropertyRole = 'person' | 'duration';
+export type PropertyRole = 'person' | 'duration' | 'priority';
 
 const ROLE_WORDS: readonly (readonly [PropertyRole, readonly string[]])[] = [
   ['person', ['source', 'owner', 'assignee', 'author', 'by', 'from', 'person', 'people']],
   ['duration', ['estimate', 'effort', 'duration', 'time']],
+  // A task's `priority` (#913): a number, 1 to 4, which reads better as its pill.
+  ['priority', ['priority']],
 ];
 
 export function propertyRole(key: string): PropertyRole | null {

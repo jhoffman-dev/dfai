@@ -12,6 +12,12 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { Icon } from '../icon.tsx';
+import {
+  PRIORITY_CHOICES,
+  priorityChoiceOf,
+  priorityFromChoice,
+  priorityPill,
+} from '../priority-pill.tsx';
 import type { RelationChoice } from '../properties-panel.tsx';
 import { LinkCombobox } from '../link-suggest/link-combobox.tsx';
 import type { CreateLink } from '../link-suggest/link-suggestions.tsx';
@@ -320,6 +326,7 @@ const InboxRow = memo(function InboxRow({
       </td>
       <td className="inbox__kind">
         {kindOf(item)}
+        {item.task !== null && priorityPill(item.task.priority)}
         <ImportStanding item={item} />
         {summaryPending !== null && (
           <span className="inbox__import inbox__summary-pending">
@@ -506,6 +513,19 @@ function ClarifyTask({
         disabled={busy}
         onPick={(due) => pick({ due })}
       />
+      <select
+        className="inbox__file inbox__priority"
+        aria-label={`Priority of ${item.title}`}
+        value={priorityChoiceOf(draft.priority === undefined ? task.priority : draft.priority)}
+        disabled={busy}
+        onChange={(event) => pick({ priority: priorityFromChoice(event.target.value) })}
+      >
+        {PRIORITY_CHOICES.map((choice) => (
+          <option key={choice.value} value={choice.value}>
+            {choice.label}
+          </option>
+        ))}
+      </select>
       <button
         type="submit"
         className="btn btn--primary btn--sm"

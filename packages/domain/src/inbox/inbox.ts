@@ -12,6 +12,7 @@ import {
   TASK_TYPE,
   type GtdStatus,
 } from '../gtd/gtd-status.ts';
+import { taskPriorityOf, type TaskPriority } from '../gtd/task-priority.ts';
 import { wikiLinkTargetFor } from '../markdown/resolve-wikilink.ts';
 import {
   IMPORT_CONTRACT_KEY,
@@ -69,6 +70,11 @@ export interface InboxTask {
   readonly defer: string | null;
   /** `YYYY-MM-DD`, or null. */
   readonly due: string | null;
+  /**
+   * How urgent it is, 1 to 4 (#913); null for none, or for a value that is
+   * not one. Absent where a caller built the task by hand, which is none.
+   */
+  readonly priority?: TaskPriority | null;
 }
 
 /** A note waiting in the Inbox, as the Inbox lists it. */
@@ -327,6 +333,7 @@ export function compileInboxQuery({
       `  ${allItems(TASK_KEYS.waitingOn)} AS "waitingOnNames",`,
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
+      `  ${singleValue(TASK_KEYS.priority)} AS "priority",`,
       `  files.modified AS "modified",`,
       `  ${holds('files.path', IMPORT_CONTRACT_KEY)} AS "importDeclared",`,
       `  ${allItems(FILED_UNDER_KEY)} AS "projectWritten",`,
@@ -400,6 +407,7 @@ export function inboxItem(row: {
   waitingOnNames?: unknown;
   defer?: unknown;
   due?: unknown;
+  priority?: unknown;
   projectWritten?: unknown;
   dueWritten?: unknown;
 }): InboxItem {
@@ -438,6 +446,7 @@ function inboxTask(row: {
   waitingOnNames?: unknown;
   defer?: unknown;
   due?: unknown;
+  priority?: unknown;
 }): InboxTask {
   return {
     status: gtdStatusOf(row.status),
@@ -446,6 +455,7 @@ function inboxTask(row: {
     waitingOnNames: waitingOnNames(row.waitingOnNames),
     defer: textOrNull(row.defer),
     due: textOrNull(row.due),
+    priority: taskPriorityOf(row.priority),
   };
 }
 

@@ -1614,12 +1614,20 @@ export async function installHost(
           return { columns: ['value'], rows: [[value]], truncated: false };
         }
 
-        const order = [...(/ORDER BY (.+)/.exec(sql)?.[1] ?? '').matchAll(/"([^"]+)" (ASC|DESC)/g)];
+        // A sort is `NULLIF("col", '') ASC NULLS LAST`, blanks last either way (#913); the
+        // tiebreak is a bare `"path" ASC`.
+        const order = [
+          ...(/ORDER BY (.+)/.exec(sql)?.[1] ?? '').matchAll(
+            /(?:NULLIF\()?"([^"]+)"(?:, '')?\)? (ASC|DESC)/g,
+          ),
+        ];
         matching.sort((left, right) => {
           for (const [, column, direction] of order) {
             const a = String(valueOf(left, column ?? '') ?? '');
             const b = String(valueOf(right, column ?? '') ?? '');
-            if (a !== b) return (a < b ? -1 : 1) * (direction === 'DESC' ? -1 : 1);
+            if (a === b) continue;
+            if (a === '' || b === '') return a === '' ? 1 : -1;
+            return (a < b ? -1 : 1) * (direction === 'DESC' ? -1 : 1);
           }
           return 0;
         });

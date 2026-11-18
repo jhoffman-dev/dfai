@@ -53,10 +53,16 @@ export async function todayRoute(request: VaultRequest): Promise<RouteResult> {
 }
 
 /**
- * A task as the contract answers it (`ApiReviewTask`): without the names its
- * project links by, which are the app's own, to read Today again by (#392).
+ * What a task holds that the contract does not answer: the names its project
+ * links by, which are the app's own, to read Today again by (#392), and its
+ * priority, which joins the contract with the API's slice of #912.
  */
-function answered<Task extends ReviewTask>(task: Task): Omit<Task, 'projectLinks'> {
-  const entries = Object.entries(task).filter(([key]) => key !== 'projectLinks');
-  return Object.fromEntries(entries) as Omit<Task, 'projectLinks'>;
+const UNANSWERED: ReadonlySet<string> = new Set(['projectLinks', 'priority']);
+
+type Unanswered = 'projectLinks' | 'priority';
+
+/** A task as the contract answers it (`ApiReviewTask`). */
+function answered<Task extends ReviewTask>(task: Task): Omit<Task, Unanswered> {
+  const entries = Object.entries(task).filter(([key]) => !UNANSWERED.has(key));
+  return Object.fromEntries(entries) as Omit<Task, Unanswered>;
 }

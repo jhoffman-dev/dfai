@@ -80,6 +80,7 @@ describe('compileReviewTasksQuery', () => {
           waiting_on: ['[[Mara Quill]]', '[[Tobias Fenn]]'],
           contexts: ['@office', ' @calls ', ''],
           project: '[[Atlas]]',
+          priority: 2,
         },
         modified: 1234,
         relations: [
@@ -102,12 +103,23 @@ describe('compileReviewTasksQuery', () => {
         recurrence: null,
         waitingOn: 'Mara Quill, Tobias Fenn',
         contexts: ['@office', '@calls'],
+        priority: 2,
         project: 'Projects/Atlas.md',
         projectTitle: 'Atlas',
         projectLinks: ['atlas'],
         modified: 1234,
       },
     ]);
+  });
+
+  it('reads a priority as one of the four, and anything else as none (#913)', () => {
+    const read = (priority: unknown) =>
+      tasksOf({
+        'Tasks/P.md': { frontmatter: { type: 'task', status: 'next-action', priority } },
+      })[0]?.priority;
+    expect(read(1)).toBe(1);
+    expect(read('4')).toBe(4);
+    for (const none of [null, '', 0, 5, 2.5, 'high', [1, 2]]) expect(read(none)).toBeNull();
   });
 
   it('reads how a task repeats, so finishing it can be drawn before it is written (#260)', () => {

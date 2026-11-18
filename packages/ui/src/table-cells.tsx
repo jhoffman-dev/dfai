@@ -6,6 +6,7 @@ import {
   optionColor,
   optionColorsOf,
   propertyRole,
+  taskPriorityOf,
   type OptionColors,
   type PropertyDef,
   type PropertyKind,
@@ -27,6 +28,7 @@ import { Icon } from './icon.tsx';
 import { openHowFrom, type OpenHow } from './open-how.ts';
 import { SelectBox } from './row-selection.tsx';
 import { sameEntries } from './steady-value.ts';
+import { priorityPill } from './priority-pill.tsx';
 import { StatusPill, TintedPill } from './status-pill.tsx';
 
 export type { CellEdit, CellValue } from './cells/cell-editing.ts';
@@ -360,8 +362,8 @@ interface ColumnColors {
   readonly colors: OptionColors | undefined;
 }
 
-/** How a cell's value reads: a choice's pill, several choices' pills, "You", or its words. */
-type CellLook = 'pill' | 'pills' | 'you' | 'text';
+/** How a cell's value reads: a choice's pill, several choices' pills, a priority's pill, "You", or its words. */
+type CellLook = 'pill' | 'pills' | 'priority' | 'you' | 'text';
 
 function faceOf({
   kind,
@@ -374,7 +376,10 @@ function faceOf({
 }): CellLook {
   if (kind === 'select') return 'pill';
   if (kind === 'multiSelect') return 'pills';
-  return propertyRole(column) === 'person' && isYou(value) ? 'you' : 'text';
+  const role = propertyRole(column);
+  // A task's priority (#913) as its pill; a value that is not one of the four reads as written.
+  if (role === 'priority' && taskPriorityOf(value) !== null) return 'priority';
+  return role === 'person' && isYou(value) ? 'you' : 'text';
 }
 
 /**
@@ -395,6 +400,7 @@ function cellFace({
 }) {
   if (text === '') return null;
   if (look === 'pill') return <StatusPill value={text} tone={optionColor(colors, text)} />;
+  if (look === 'priority') return priorityPill(value);
   if (look === 'pills') {
     return (
       <span className="table__pills">

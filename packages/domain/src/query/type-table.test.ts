@@ -49,7 +49,7 @@ describe('typeTableQuery', () => {
     const { sql } = compileViewQuery(typeTableQuery(task));
     expect(sql).toContain('FROM "v_task"');
     expect(sql).toContain('"status"');
-    expect(sql).toContain('ORDER BY "title" ASC');
+    expect(sql).toContain(`ORDER BY NULLIF("title", '') ASC NULLS LAST`);
   });
 
   it('asks for nothing but path and title when a type declares no properties', () => {

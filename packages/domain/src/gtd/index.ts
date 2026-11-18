@@ -46,6 +46,17 @@ export { automationStatusRewrite, rewrittenQuery, viewStatusRewrite } from './st
 export type { StatusesInUse, StatusRewrite } from './status-references.ts';
 export { isTaskNote, TASK_RULE_KEYS, taskRuleChanges } from './task-rules.ts';
 export {
+  comparePriority,
+  isTaskPriority,
+  PRIORITY_PROPERTY,
+  priorityChange,
+  priorityLabel,
+  priorityName,
+  TASK_PRIORITIES,
+  taskPriorityOf,
+} from './task-priority.ts';
+export type { PriorityChange, TaskPriority } from './task-priority.ts';
+export {
   listsTasksAlone,
   TASK_ROW_COLUMNS,
   taskRowFacts,

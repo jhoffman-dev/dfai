@@ -40,6 +40,8 @@ export interface Clarification {
   readonly due?: string | null;
   /** Where it can be done; an empty list takes them away. */
   readonly contexts?: readonly string[];
+  /** How urgent it is, 1 to 4 (#913); null takes it away. The task rules refuse anything else. */
+  readonly priority?: number | null;
   /** Makes a plain note a task, starting in the Inbox unless a status is given. */
   readonly asTask?: boolean;
 }
@@ -86,7 +88,7 @@ function statusRefusal(status: string, { statuses }: ClarifyVocabulary): string 
 /** The properties a clarification names for a task, before the task rules: a null takes a key out. */
 function taskChanges({
   properties,
-  clarification: { status, waitingOn, defer, due, contexts },
+  clarification: { status, waitingOn, defer, due, contexts, priority },
   notePaths,
   vocabulary,
 }: {
@@ -122,6 +124,7 @@ function taskChanges({
     const named = contexts.map((context) => context.trim()).filter((context) => context !== '');
     changes[TASK_KEYS.contexts] = named.length === 0 ? null : [...new Set(named)];
   }
+  if (priority !== undefined) changes[TASK_KEYS.priority] = priority;
   return { changes };
 }
 
