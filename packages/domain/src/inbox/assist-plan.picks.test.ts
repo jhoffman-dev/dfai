@@ -443,13 +443,13 @@ describe('the strength of the evidence (#907, second round)', () => {
     expect(row.step).toEqual(question('Is wren@example.org Tobias Fenn’s address?'));
   });
 
-  it('adds under an address that names nobody when the item holds one name and one address', () => {
+  it('asks of an address that names nobody, set off from the name by a comma (#907, third round)', () => {
     const text = 'Lunch on Friday with Wren Calloway, wc1@example.org';
     const row = plan(
       { people: [named('Wren Calloway', { email: 'wc1@example.org' })] },
       { text, addresses: ['wc1@example.org'] },
     );
-    expect(row.people).toEqual([{ kind: 'add', name: 'Wren Calloway', email: 'wc1@example.org' }]);
+    expect(row.step).toEqual(question('Is wc1@example.org Wren Calloway’s address?'));
   });
 
   it('asks of a name found only inside an address', () => {
@@ -562,6 +562,56 @@ describe('the strength of the evidence (#907, second round)', () => {
     expect(copy({ defer: '2026-12-01' }).kind).toBe('ask');
     expect(copy({ dueUnread: true }).kind).toBe('ask');
     expect(copy({}, {}, { due: null, dueWritten: 'next Friday' }).kind).toBe('ask');
+  });
+});
+
+describe('what ties an address to a name (#907, third round)', () => {
+  const addOf = (text: string, name: string, email: string) =>
+    plan({ people: [named(name, { email })] }, { text, addresses: [email] });
+
+  it('asks of an attendee list: the next address is the next person’s', () => {
+    const row = addOf(
+      'Attendees: Tobias Fenn, wren@example.org, Mara Quill',
+      'Tobias Fenn',
+      'wren@example.org',
+    );
+    expect(row.step).toEqual(question('Is wren@example.org Tobias Fenn’s address?'));
+  });
+
+  it.each([
+    'Lunch with Wren Calloway <wc1@example.org>',
+    'Lunch with Wren Calloway (wc1@example.org)',
+    'Wren Calloway: wc1@example.org',
+  ])('ties %j', (text) => {
+    expect(addOf(text, 'Wren Calloway', 'wc1@example.org').people).toEqual([
+      { kind: 'add', name: 'Wren Calloway', email: 'wc1@example.org' },
+    ]);
+  });
+
+  it('ties across a comma only an address that names them', () => {
+    const row = addOf(
+      'Tobias Fenn, tobias.fenn@example.com',
+      'Tobias Fenn',
+      'tobias.fenn@example.com',
+    );
+    expect(row.people).toEqual([
+      { kind: 'add', name: 'Tobias Fenn', email: 'tobias.fenn@example.com' },
+    ]);
+  });
+
+  it('asks of a first-name address at a public provider; ties a full-name one', () => {
+    expect(
+      addOf('Meet Tobias Fenn, tobias@gmail.com', 'Tobias Fenn', 'tobias@gmail.com').step,
+    ).toEqual(question('Is tobias@gmail.com Tobias Fenn’s address?'));
+    expect(
+      addOf('Meet Tobias Fenn, tobias.fenn@gmail.com', 'Tobias Fenn', 'tobias.fenn@gmail.com')
+        .people,
+    ).toEqual([{ kind: 'add', name: 'Tobias Fenn', email: 'tobias.fenn@gmail.com' }]);
+  });
+
+  it('does not tie an address to a name that ends a longer one', () => {
+    const row = addOf('From Sarah Jane Smith <sjs@example.org>', 'Jane Smith', 'sjs@example.org');
+    expect(row.step).toEqual(question('Is sjs@example.org Jane Smith’s address?'));
   });
 });
 
