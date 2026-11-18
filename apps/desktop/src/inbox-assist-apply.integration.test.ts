@@ -71,6 +71,8 @@ function walk(root: string, at = ''): string[] {
 }
 
 const mtime = (file: string) => Math.floor(statSync(file).mtimeMs);
+/** The host's words for a save refused as stale (`CHANGED_ON_DISK` in vault.rs). */
+const CHANGED_ON_DISK = 'the note changed on disk since it was opened';
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** The host's vault commands for one folder, and its Trash beside it, outside the vault. */
@@ -135,14 +137,19 @@ function hostFor(root: string, trash: string) {
       mkdirSync(trash, { recursive: true });
       renameSync(at(path), join(trash, String(path).replaceAll('/', '__')));
     },
-    write_text_file: ({ path, contents, expectedModified }) => {
-      if (
-        expectedModified !== null &&
-        existsSync(at(path)) &&
-        mtime(at(path)) !== expectedModified
-      ) {
-        throw new Error('the note changed on disk since it was read');
-      }
+    // As `write_text` in vault.rs: a note that is not there cannot be saved; one whose time is
+    // not the time it was read at, or — given a digest — whose bytes are not those it was read
+    // as (a write within the disk's timestamp tick), is refused with the host's own words.
+    write_text_file: ({ path, contents, expectedModified, expectedDigest }) => {
+      if (!existsSync(at(path)))
+        throw new Error('cannot read: No such file or directory (os error 2)');
+      const changed =
+        (expectedModified !== null &&
+          expectedModified !== undefined &&
+          mtime(at(path)) !== expectedModified) ||
+        (typeof expectedDigest === 'string' &&
+          sha(readFileSync(at(path), 'utf8')) !== expectedDigest);
+      if (changed) throw new Error(CHANGED_ON_DISK);
       writeFileSync(at(path), String(contents));
       return mtime(at(path));
     },
@@ -178,12 +185,17 @@ const entry = (item: string, extra: Record<string, unknown> = {}) => ({
 });
 
 /** A vault folder holding `notes`, the ports Apply is handed over it, and its row for `path`, previewed. */
-async function vaultWith(notes: Record<string, string>, answers: readonly unknown[]) {
+async function vaultWith(
+  notes: Record<string, string>,
+  answers: readonly unknown[],
+  /** Notes besides the Inbox items and the base: other notes in the vault. */
+  others: Record<string, string> = {},
+) {
   const root = mkdtempSync(join(tmpdir(), 'dfai-assist-apply-'));
   roots.push(root);
   const trash = join(root, '..', `${root.split('/').pop()!}-trash`);
   roots.push(trash);
-  const all = { ...BASE, ...notes };
+  const all = { ...BASE, ...others, ...notes };
   for (const folder of ['.atlas', '.atlas/types', 'Inbox', 'Projects', 'People', 'Tasks'])
     mkdirSync(join(root, folder));
   for (const [path, text] of Object.entries(all)) {
@@ -263,6 +275,7 @@ async function vaultWith(notes: Record<string, string>, answers: readonly unknow
   };
   return {
     root,
+    ports,
     disk,
     apply,
     undo,
@@ -379,5 +392,97 @@ describe('Inbox assist, applied and undone through the real adapters', () => {
       words: expect.stringContaining('taken its place'),
     });
     expect(v.disk()).toEqual(taken);
+  });
+
+  it('the host refuses a save held to text the note no longer says, in the same file time', async () => {
+    const CALL = 'Inbox/Call Mara.md';
+    const v = await vaultWith({ [CALL]: 'Call Mara Quill.\n' }, [entry(CALL)]);
+    const read = await v.ports.fs.readTextFile(createVaultPath(CALL));
+    // Another program's edit, landing within the disk's timestamp tick: the time stays.
+    writeFileSync(join(v.root, CALL), 'Edited elsewhere.\n');
+    utimesSync(join(v.root, CALL), new Date(read.modified), new Date(read.modified));
+    expect(mtime(join(v.root, CALL))).toBe(read.modified);
+    const save = v.ports.fs.writeTextFile({
+      path: createVaultPath(CALL),
+      contents: 'Mine.\n',
+      expectedModified: read.modified,
+      expectedText: read.text,
+    });
+    await expect(save).rejects.toThrow(CHANGED_ON_DISK);
+    expect(v.read(CALL)).toBe('Edited elsewhere.\n');
+  });
+
+  it('stamps no duplicate whose text changed within the same file time after the check', async () => {
+    const RENEW = 'Inbox/Renew Larkspur contract.md';
+    const v = await vaultWith({ [RENEW]: '' }, [entry(RENEW, { duplicateOf: KEPT })]);
+    const read = invoke.getMockImplementation()!;
+    let reads = 0;
+    invoke.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+      const answer = await read(command, args);
+      if (command === 'read_text_file' && args['path'] === RENEW && ++reads === 1) {
+        const file = join(v.root, RENEW);
+        const time = statSync(file).mtime;
+        writeFileSync(file, 'Ask them about the price first.\n');
+        utimesSync(file, time, time);
+      }
+      return answer;
+    });
+    const outcome = await v.apply(RENEW);
+    expect(outcome.kind).toBe('failed');
+    expect(v.read(RENEW)).toBe('Ask them about the price first.\n');
+    expect(existsSync(join(v.root, 'Archive'))).toBe(false);
+  });
+
+  it('puts back every other note a filing rewrote: a bare link to a shared title, a path link with an alias', async () => {
+    const CALL = 'Inbox/Call Mara.md';
+    const WEEK = 'Notes/Week.md';
+    const week =
+      'See [[Call Mara]], [[Inbox/Call Mara|the call]] and [[Tasks/Call Mara|the task]].\n';
+    const v = await vaultWith(
+      { [CALL]: 'Call Mara Quill <mara.quill@example.com>.\n' },
+      [
+        entry(CALL, {
+          projects: [PROJECT],
+          people: [{ name: 'Mara Quill', email: null, person: MARA }],
+        }),
+      ],
+      { 'Reference/Call Mara.md': 'Notes on calling Mara.\n', [WEEK]: week },
+    );
+    const before = v.disk();
+    const done = applied(await v.apply(CALL));
+    expect(v.read(WEEK)).not.toBe(week);
+    expect(done.undo.item.relinked?.map((note) => note.path)).toEqual([WEEK]);
+    expect(await v.undo(done)).toMatchObject({ kind: 'undone' });
+    expect(v.read(WEEK)).toBe(week);
+    expect(v.disk()).toEqual(before);
+  });
+
+  it('adds a person with their address spelled as the item spells it', async () => {
+    const LUNCH = 'Inbox/Lunch with Tobias.md';
+    const v = await vaultWith(
+      { [LUNCH]: 'Lunch with Tobias Fenn <Tobias.Fenn@Example.org> on Friday.\n' },
+      [
+        entry(LUNCH, {
+          people: [{ name: 'Tobias Fenn', email: 'tobias.fenn@example.org', person: null }],
+        }),
+      ],
+    );
+    applied(await v.apply(LUNCH));
+    expect(v.read('People/Tobias Fenn.md')).toMatch(/\nemail: Tobias\.Fenn@Example\.org\n/u);
+  });
+
+  it('archives a duplicate under a numbered name when the Archive has its name, and puts it back exactly', async () => {
+    const RENEW = 'Inbox/Renew Larkspur contract.md';
+    const taken = `Archive/${RENEW}`;
+    const v = await vaultWith({ [RENEW]: '' }, [entry(RENEW, { duplicateOf: KEPT })], {
+      [taken]: '---\narchived: 2026-10-01\n---\nAn older copy.\n',
+    });
+    const before = v.disk();
+    const done = applied(await v.apply(RENEW));
+    expect(done.path).not.toBe(taken);
+    expect(done.path).toMatch(/^Archive\/Inbox\/Renew Larkspur contract.+\.md$/u);
+    expect(v.read(taken)).toBe(before.get(taken));
+    await v.undo(done);
+    expect(v.disk()).toEqual(before);
   });
 });
