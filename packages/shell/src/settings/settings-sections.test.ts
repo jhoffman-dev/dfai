@@ -4,10 +4,12 @@ import {
   DESKTOP_CAPABILITIES,
   PLATFORM_CAPABILITIES,
   WEB_CAPABILITIES,
+  type FeatureId,
   type PlatformCapabilities,
   type PlatformCapability,
 } from '@dfai/domain';
-import { settingsSectionsShown } from './settings-sections.ts';
+import { offeredFor } from '../features/offered-for.ts';
+import { APP_SETTINGS_ORDER, settingsSectionsShown } from './settings-sections.ts';
 
 const titles = (offered: ReturnType<typeof entryPointsOffered>, vaultOpen = true) =>
   settingsSectionsShown({ vaultOpen, offered }).links.map((section) => section.title);
@@ -26,6 +28,7 @@ describe('settingsSectionsShown', () => {
       ),
     ).toEqual([
       'Profile',
+      'Features',
       'Index',
       'Images',
       'Quick capture from anywhere',
@@ -60,7 +63,9 @@ describe('settingsSectionsShown', () => {
     expect(titles(entryPointsOffered(DESKTOP_CAPABILITIES))).toEqual(
       titles(entryPointsOffered(EVERYTHING)),
     );
-    expect(titles(entryPointsOffered(DESKTOP_CAPABILITIES))).toHaveLength(13);
+    expect(titles(entryPointsOffered(DESKTOP_CAPABILITIES))).toHaveLength(
+      APP_SETTINGS_ORDER.filter((entry) => entry.whenLimited !== true).length,
+    );
   });
 
   it.each([
@@ -80,7 +85,7 @@ describe('settingsSectionsShown', () => {
 
   it('lists on the web only what a browser can do, with a vault open and without (#657)', () => {
     const web = entryPointsOffered(WEB_CAPABILITIES);
-    expect(titles(web)).toEqual(['Profile', 'Index', 'Images', 'Quick add', 'About']);
+    expect(titles(web)).toEqual(['Profile', 'Features', 'Index', 'Images', 'Quick add', 'About']);
     expect(titles(web, false)).toEqual(['Index', 'Images', 'About']);
   });
 
@@ -89,6 +94,32 @@ describe('settingsSectionsShown', () => {
     expect(settingsSectionsShown({ vaultOpen: true, offered: web })).toBe(
       settingsSectionsShown({ vaultOpen: true, offered: web }),
     );
+  });
+});
+
+describe('settingsSectionsShown: Features (#901)', () => {
+  const desktop = entryPointsOffered(DESKTOP_CAPABILITIES);
+
+  it("lists Features after Profile, with a vault open only: the switches are the vault's", () => {
+    const open = titles(desktop);
+    expect(open.slice(open.indexOf('Profile'), open.indexOf('Profile') + 2)).toEqual([
+      'Profile',
+      'Features',
+    ]);
+    expect(titles(desktop, false)).not.toContain('Features');
+  });
+
+  it('keeps Features, and every other section, with Reading switched off', () => {
+    const readingOff = offeredFor(desktop, ['reading']);
+    expect(titles(readingOff)).toEqual(titles(desktop));
+  });
+
+  it('makes the lists once for each off list, and again only when that list changes', () => {
+    const shown = (off: readonly FeatureId[]) =>
+      settingsSectionsShown({ vaultOpen: true, offered: offeredFor(desktop, off) });
+    expect(shown([])).toBe(settingsSectionsShown({ vaultOpen: true, offered: desktop }));
+    expect(shown(['reading'])).toBe(shown([...['reading' as const]]));
+    expect(shown(['reading'])).not.toBe(shown([]));
   });
 });
 

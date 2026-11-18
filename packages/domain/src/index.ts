@@ -63,3 +63,4 @@ export * from './platform/index.ts';
 export * from './auth/index.ts';
 export * from './touch/index.ts';
 export * from './web-cache/index.ts';
+export * from './features/index.ts';

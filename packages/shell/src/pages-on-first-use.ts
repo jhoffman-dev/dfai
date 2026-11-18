@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { FEATURES, type FeatureId, type FeaturesOn } from '@dfai/domain';
 import type * as LaterParts from './later-parts.ts';
 import type * as Readers from './reader/readers.ts';
 import { importAgain, reloadWindow } from './chunk-files.ts';
@@ -20,8 +21,17 @@ import { ChatFailed, PageFailed, PartFailed, SettingsFailed } from './part-faile
  * drawn inside a `Suspense`.
  */
 
-/** Every part's preload, in the order declared. */
+/** Every part's preload, in the order declared, but those of a feature a switch can hide. */
 const PRELOADS: (() => Promise<void>)[] = [];
+
+/**
+ * The preloads of each key feature's parts (#901), run only once the vault
+ * says the feature is on (`preloadFeatures`): a feature switched off loads none
+ * of its code until it is switched on.
+ */
+const FEATURE_PRELOADS = new Map<FeatureId, (() => Promise<void>)[]>(
+  FEATURES.map((feature) => [feature.id, []]),
+);
 
 /** A chunk of its own, named as the build names it: after its file. */
 const chunk = <M>(name: string, load: () => Promise<M>): Chunk<M> =>
@@ -43,6 +53,17 @@ const laterPage = <M, P extends PageChrome>(
   module: Chunk<M>,
   pick: (loaded: M) => ComponentType<P>,
 ) => later(module, pick, PageFailed);
+
+/** A page of a key feature: as `laterPage`, preloaded only while the feature is on. */
+function featurePage<M, P extends PageChrome>(
+  feature: FeatureId,
+  module: Chunk<M>,
+  pick: (loaded: M) => ComponentType<P>,
+): OnFirstUse<P> {
+  const part = onFirstUse({ chunk: module, pick, Failed: PageFailed, reloadWindow });
+  FEATURE_PRELOADS.get(feature)?.push(part.preload);
+  return part;
+}
 
 /** The chunk most parts share, so that loading it once, or once again, brings them all. */
 const laterParts = chunk(
@@ -77,8 +98,8 @@ export const activityScreen = laterPage(
 );
 /** The Library and All highlights (#507): one chunk, since one is often opened from the other. */
 const researchScreens = chunk('research-screens', () => import('./research/research-screens.tsx'));
-export const libraryScreen = laterPage(researchScreens, (m) => m.LibraryScreen);
-export const highlightsScreen = laterPage(researchScreens, (m) => m.HighlightsScreen);
+export const libraryScreen = featurePage('reading', researchScreens, (m) => m.LibraryScreen);
+export const highlightsScreen = featurePage('reading', researchScreens, (m) => m.HighlightsScreen);
 /**
  * The readers (#504, #505), with pdf.js and foliate-js, in one chunk nobody pays for until
  * start-up has committed: the PDF and EPUB readers draw the same parts, and adding a
@@ -89,8 +110,8 @@ export const readers = chunk(
   'readers',
   (): Promise<typeof Readers> => import('./reader/readers.ts'),
 );
-export const documentReader = laterPage(readers, (m) => m.DocumentReader);
-export const bookReader = laterPage(readers, (m) => m.BookReaderTab);
+export const documentReader = featurePage('reading', readers, (m) => m.DocumentReader);
+export const bookReader = featurePage('reading', readers, (m) => m.BookReaderTab);
 export const archivePage = laterPage(laterParts, (m) => m.ArchivePage);
 export const weeklyReviewPage = laterPage(laterParts, (m) => m.WeeklyReviewPage);
 export const templatesPage = laterPage(laterParts, (m) => m.TemplatesPage);
@@ -148,3 +169,11 @@ export async function preloadAll(preloads: readonly (() => Promise<void>)[]): Pr
  * to load it again where it is drawn.
  */
 export const preloadPages = (): Promise<void> => preloadAll(PRELOADS);
+
+/** Fetches the chunks of every key feature that is `on`; those of one switched off are left out. */
+export const preloadFeatures = (on: FeaturesOn): Promise<void> =>
+  preloadAll(FEATURES.flatMap((feature) => (on[feature.id] ? featurePreloads(feature.id) : [])));
+
+/** The preloads of a key feature's parts, in the order declared. */
+export const featurePreloads = (feature: FeatureId): readonly (() => Promise<void>)[] =>
+  FEATURE_PRELOADS.get(feature) ?? [];

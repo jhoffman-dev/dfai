@@ -31,6 +31,7 @@ export const SyncSettingsCard = syncSettingsCard.Component;
 /** The sections the app draws after the dialog's own, by the name `SETTINGS_SECTIONS` gives each. */
 export type AppSettingsSection =
   | 'profile'
+  | 'features'
   | 'index'
   | 'images'
   | 'globalCapture'
@@ -59,6 +60,7 @@ const ORDER: readonly {
   readonly whenLimited?: true;
 }[] = [
   { key: 'profile', withVault: true },
+  { key: 'features', withVault: true },
   { key: 'index', withVault: false },
   { key: 'images', withVault: false },
   { key: 'globalCapture', withVault: false, entry: 'globalCaptureSettings' },
@@ -73,6 +75,9 @@ const ORDER: readonly {
   { key: 'notHere', withVault: false, whenLimited: true },
   { key: 'about', withVault: false },
 ];
+
+/** The table itself, for a test to derive what it expects from rather than count. */
+export { ORDER as APP_SETTINGS_ORDER };
 
 /** The sections shown, as the app draws them and as the dialog lists them. */
 export interface SettingsSectionsShown {

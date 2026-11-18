@@ -3,6 +3,7 @@ import type { ArchivePorts } from '@dfai/application';
 import type { OpenHow } from '@dfai/ui';
 import type { ActivityWiring } from '../activity/activity-container.tsx';
 import type { AutomationsWiring } from '../automations/automations-container.tsx';
+import type { FeaturesWiring } from '../features/feature-off-page.tsx';
 import type { GraphWiring } from '../graph/graph-container.tsx';
 import type { InboxWiring } from '../inbox/inbox-container.tsx';
 import type { OverlayStore } from '../overlay-store.ts';
@@ -40,6 +41,8 @@ export interface PageWiring {
   readonly openPage: (place: PagePlace) => void;
   /** What the pages hold in flight for the open vault, shared by every tab on a page. */
   readonly holds: PageHolds;
+  /** What is offered, the features switched off among it, read by every tab for its page (#901). */
+  readonly features: FeaturesWiring;
   readonly today: TodayWiring;
   readonly inbox: InboxWiring;
   readonly templates: TemplatesWiring;
