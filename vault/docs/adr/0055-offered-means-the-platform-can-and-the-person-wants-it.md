@@ -31,7 +31,8 @@ rather than the platform. A second set of checks beside it would drift from it.
    capability it needs is there _and_ the feature it belongs to is on. The
    features are a registry in the domain (`packages/domain/src/features`):
    each has an id, a label, a one-line summary, and the features it
-   `requires`; one is off whenever something it requires is. `FEATURE_OF`,
+   `requires`; one is off whenever something it requires is. Kindle requires
+   Reading. `FEATURE_OF`,
    beside `NEEDS`, names the feature of every entry point, or null for one no
    switch hides: a new entry point cannot leave it unsaid. `PAGE_ENTRY` names
    the entry point a page is drawn under, so a place reaches its feature
@@ -46,7 +47,14 @@ rather than the platform. A second set of checks beside it would drift from it.
    list as the file holds it and adds or takes out its own id alone, so what a
    newer version switched off on another Mac survives. Anything that is not a
    list switches nothing off; it is the one case where a switch rewrites the
-   key whole, as a list holding only what was just chosen. It is
+   key whole, as a list holding only what was just chosen. Every entry a
+   switch does not change is written back as it was: ids from a newer
+   version, and entries that are not ids at all. **`requires` decides what is
+   on, never what is written:** the list holds only what the person switched
+   off. Switching Reading off writes `reading` alone; Kindle is then off
+   because Reading is, its row says "Needs Reading." and its switch is held
+   (shown off, not flippable) until Reading is on again, when Kindle is back
+   as the list left it. It is
    read in the window's one read of the settings note and settles in the same
    commit as the sidebar's order, and a switch is one byte-preserving write of
    that key through the vault's one settings writer. Per vault rather than per
@@ -74,11 +82,36 @@ rather than the platform. A second set of checks beside it would drift from it.
    overlay a feature's command opened (Add PDF…) closes when its entry point
    stops being offered. Slice 1 gates Reading (PDF and EPUB, the Library, All
    highlights) under three new entry points, `libraryPages`, `documentReader`
-   and `addDocuments`; the other six switches come in later slices of #901.
+   and `addDocuments`. Slice 2 adds four switches:
+   - **Kindle** (requires Reading): `kindleSettings`, `kindleCommands` and a
+     new `kindleSync`: the sync as the index is ready, its four-hour timer,
+     Sync now and Connect, which stop while it is off and start again,
+     syncing at once, when it is on. Its toast goes with it.
+   - **Ask and Claude chat**: `claudeChat`: the Ask page (`PAGE_ENTRY`), the
+     sidebar's Ask, ⌘J, ⇧⌘J, the page bar's Claude and the aside's Claude tab.
+     Its page's code (`askScreen`) is a feature preload.
+   - **Graph**: a new `graphPage`: the page (`PAGE_ENTRY`), the sidebar's
+     Graph and a note's Show in graph; its chunk is a feature preload.
+   - **Slack capture**: `slackSettings` and `slackLinkOffer`: Settings →
+     Slack, and the paste listener, which is taken off the page while it is
+     off (not left to answer nothing), with any offer up at the time.
+     Automations and Meetings come in slice 3.
 
 5. **What is not gated.** The local API and the MCP server keep answering for
    an off feature. The request is about the view; changing who may call what
    is a separate decision with its own risk (ADR-0016, ADR-0017).
+
+   **The Ask line.** The Ask switch hides Ask's and the chat's own surfaces
+   (pages, panels, commands, shortcuts), not Claude. Other features reach
+   Claude through the same `ModelProvider` and keep doing so with Ask off:
+   the Inbox's Suggest (now its own entry point, `inboxSuggest`, which no
+   switch hides), Skills' Ask Claude… (`skillDraft`) and rules' Claude steps
+   (`claudeAutomations`, untouched until slice 3). Settings → Claude stays
+   too: its provider and model are what those use. Search by meaning
+   (`meaningSearch`) and a note's related notes have their own on/off and no
+   switch here; Ask runs no embedding or indexing of its own. The graph's
+   data (`useVaultGraph`) is still read with Graph off, since note titles,
+   tab names and related notes are drawn from it.
 
 6. **Nothing is deleted.** Switching a feature off removes no note, file,
    setting or tab, and closes nothing. Switching it on brings everything back
@@ -98,7 +131,8 @@ rather than the platform. A second set of checks beside it would drift from it.
 - A comment being typed in a highlight of a literature note's panel, or in
   the reader, is lost if Reading is switched off from another device while
   it is open, as closing the tab would lose it.
-- Until slice 2 makes Kindle a feature that requires Reading, Kindle's sync
-  and ⌘K's "Sync Kindle now" keep running with Reading off.
+- A feature held off by what it requires cannot be switched on in its own
+  row; the person switches on what it needs. Nothing is rewritten for it,
+  so what another Mac chose for it survives.
 - Settings opened from the notice opens at Features with its heading focused;
   opened any other way, it opens at its top as before.

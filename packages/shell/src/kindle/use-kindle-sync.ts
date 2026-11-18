@@ -52,6 +52,12 @@ export interface KindleWindowOptions {
   readonly indexReady: boolean;
   /** Re-reads the tree and the index once a sync has written into the vault. */
   readonly onWrote: () => void;
+  /**
+   * Whether Kindle sync is offered (`offered.kindleSync`): off, with Kindle or
+   * Reading switched off (#901), nothing syncs, by itself or on asking, until
+   * it is on again.
+   */
+  readonly enabled: boolean;
 }
 
 export interface KindleController {
@@ -85,7 +91,7 @@ export function useKindleSync(options: KindleWindowOptions): KindleController {
   const runs = useKindleRuns({ options, intoVault, setRecord, say: toast.say });
 
   const connect = useSteadyCallback(async () => {
-    if (busy.now() !== null) return;
+    if (!options.enabled || busy.now() !== null) return;
     busy.set('connecting');
     setProblem(null);
     try {

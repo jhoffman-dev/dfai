@@ -85,6 +85,7 @@ function optionsFor(
     vaultKey: VAULT,
     indexReady: true,
     onWrote: () => {},
+    enabled: true,
     ...overrides,
   };
 }
@@ -239,6 +240,52 @@ describe('useKindleSync, a vault the person has not turned it on for (ADR-0044)'
       vi.advanceTimersByTime(KINDLE_AUTO_SYNC_INTERVAL_MS);
     });
     expect(calls).toEqual(['sync']);
+  });
+
+  it('stops syncing while Kindle is switched off, and syncs at once when it is on again (#901)', async () => {
+    const { kindle, calls } = host(SYNCED, CONNECTED);
+    const { rerender } = render(kindle);
+    await settle();
+    expect(calls).toEqual(['sync']);
+    rerender(optionsFor(kindle, { enabled: false }));
+    await act(async () => {
+      vi.advanceTimersByTime(KINDLE_AUTO_SYNC_INTERVAL_MS * 2);
+    });
+    expect(calls).toEqual(['sync']);
+    rerender(optionsFor(kindle));
+    await settle();
+    expect(calls).toEqual(['sync', 'sync']);
+    await act(async () => {
+      vi.advanceTimersByTime(KINDLE_AUTO_SYNC_INTERVAL_MS);
+    });
+    expect(calls).toEqual(['sync', 'sync', 'sync']);
+  });
+
+  it('keeps its timer, not starting over, when the window draws again for another switch', async () => {
+    const { kindle, calls } = host(SYNCED, CONNECTED);
+    const options = optionsFor(kindle);
+    const { rerender } = render(kindle);
+    await settle();
+    rerender(options);
+    rerender({ ...options });
+    await settle();
+    expect(calls).toEqual(['sync']);
+    await act(async () => {
+      vi.advanceTimersByTime(KINDLE_AUTO_SYNC_INTERVAL_MS);
+    });
+    expect(calls).toEqual(['sync', 'sync']);
+  });
+
+  it('syncs nothing on asking while Kindle is switched off, and says nothing', async () => {
+    const { kindle, calls } = host(SYNCED, CONNECTED);
+    const { result } = render(kindle, { enabled: false });
+    await settle();
+    act(() => result.current.syncNow());
+    act(() => result.current.connect());
+    await settle();
+    expect(calls).toEqual([]);
+    expect(result.current.toast).toBeNull();
+    expect(result.current.view.busy).toBeNull();
   });
 
   it('keeps no choice with no vault open', async () => {

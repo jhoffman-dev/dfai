@@ -48,8 +48,9 @@ export const FeatureSettings = memo(function FeatureSettings({
               {row.needs === null ? row.summary : `${row.summary} Needs ${row.needs}.`}
             </span>
           </span>
-          {/* `Toggle`'s markup and classes, drawn in place: a component per row would be
-              a counted render per feature ("Open Settings" is held to a work budget). */}
+          {/* `Toggle`'s markup and classes (`toggle.tsx`), drawn in place: a component per
+              row would be a counted render per feature ("Open Settings" is held to a work
+              budget). A change to the markup or classes there is made here too. */}
           <button
             type="button"
             role="switch"

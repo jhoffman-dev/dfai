@@ -178,6 +178,35 @@ describe('useSlackPasteListener', () => {
     expect(offer.mock.calls).toEqual([[SLACK_PERMALINK], [SLACK_PERMALINK]]);
   });
 
+  it('listens to no paste while Slack capture is off, and again once it is on (#901)', () => {
+    const offer = vi.fn(() => true);
+    const adding = vi.spyOn(document, 'addEventListener');
+    const hook = renderHook(({ on }: { on: boolean }) => useSlackPasteListener(on ? offer : null), {
+      initialProps: { on: true },
+    });
+    const editor = document.body.appendChild(document.createElement('div'));
+    editor.className = 'ProseMirror';
+    paste(editor, SLACK_PERMALINK);
+    expect(offer).toHaveBeenCalledTimes(1);
+
+    adding.mockClear();
+    hook.rerender({ on: false });
+    paste(editor, SLACK_PERMALINK);
+    expect(offer).toHaveBeenCalledTimes(1);
+    expect(adding.mock.calls.filter(([type]) => type === 'paste')).toEqual([]);
+
+    hook.rerender({ on: true });
+    paste(editor, SLACK_PERMALINK);
+    expect(offer).toHaveBeenCalledTimes(2);
+
+    // Drawn again for another feature's switch, the same offer keeps the one listener.
+    adding.mockClear();
+    hook.rerender({ on: true });
+    expect(adding.mock.calls.filter(([type]) => type === 'paste')).toEqual([]);
+    adding.mockRestore();
+    hook.unmount();
+  });
+
   it('leaves a paste anywhere else alone', () => {
     const offer = vi.fn(() => true);
     renderHook(() => useSlackPasteListener(offer));

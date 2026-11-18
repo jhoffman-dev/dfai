@@ -301,28 +301,31 @@ describe('the automations runner (#326)', () => {
     expect(names()).toEqual(['Sweep renamed']);
   });
 
-  it('carries on, not starting over, when a feature is switched off (#901)', async () => {
-    const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
-    const { store, relay, changes, offer } = mountRunner(vault);
-    await settle();
-    const listing = store.getState().automations?.listing;
-    const watching = relay.clock.forVault(VAULT);
-    expect(listing).toBeDefined();
-    expect(watching).not.toBeNull();
+  it.each([['reading'], ['kindle'], ['ask'], ['graph'], ['slack']] as const)(
+    'carries on, not starting over, when %s is switched off (#901)',
+    async (feature) => {
+      const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
+      const { store, relay, changes, offer } = mountRunner(vault);
+      await settle();
+      const listing = store.getState().automations?.listing;
+      const watching = relay.clock.forVault(VAULT);
+      expect(listing).toBeDefined();
+      expect(watching).not.toBeNull();
 
-    offer(offeredFor(EVERY_ENTRY_POINT, ['reading']));
-    await settle();
-    expect(store.getState().automations?.listing).toBe(listing);
-    // Watching since the same moment, with the same pauses: the runner was not made again.
-    expect(relay.clock.forVault(VAULT)?.watchingSince).toBe(watching?.watchingSince);
-    expect(relay.clock.forVault(VAULT)?.pauses).toBe(watching?.pauses);
-    expect(runsIn(vault.files[LOG])).toEqual([]);
+      offer(offeredFor(EVERY_ENTRY_POINT, [feature]));
+      await settle();
+      expect(store.getState().automations?.listing).toBe(listing);
+      // Watching since the same moment, with the same pauses: the runner was not made again.
+      expect(relay.clock.forVault(VAULT)?.watchingSince).toBe(watching?.watchingSince);
+      expect(relay.clock.forVault(VAULT)?.pauses).toBe(watching?.pauses);
+      expect(runsIn(vault.files[LOG])).toEqual([]);
 
-    // Still listening: a note it is told of sets its rule off as before.
-    act(() => changes.publish(added(vault.files, TASK)));
-    await settle();
-    expect(vault.files['Archive/Tasks/A.md']).toBeDefined();
-  });
+      // Still listening: a note it is told of sets its rule off as before.
+      act(() => changes.publish(added(vault.files, TASK)));
+      await settle();
+      expect(vault.files['Archive/Tasks/A.md']).toBeDefined();
+    },
+  );
 
   it('leaves its store empty once it is gone', async () => {
     const vault = memoryVault({ [RULE]: rule('Sweep') });

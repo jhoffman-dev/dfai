@@ -62,6 +62,9 @@ describe('FeatureSettings', () => {
       { id: 'kindle', label: 'Kindle', summary: 'Kindle highlights.', on: false, needs: 'Reading' },
     ]);
     expect(screen.getByRole('switch', { name: 'Kindle' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('switch', { name: 'Kindle' }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
     expect(screen.getByRole('switch', { name: 'Reading' }).hasAttribute('disabled')).toBe(false);
     expect(within(card()).getByText('Kindle highlights. Needs Reading.')).toBeTruthy();
   });

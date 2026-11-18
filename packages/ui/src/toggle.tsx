@@ -4,6 +4,10 @@
  *
  * A `button` rather than a checkbox: it already answers Space and Enter, and
  * `role="switch"` is what a screen reader wants to hear for an on/off control.
+ *
+ * Settings → Features (`feature-settings.tsx`) draws this markup in place,
+ * not this component, to keep its rows free of renders: a change to the
+ * markup or classes here is made there too.
  */
 export function Toggle({
   label,
