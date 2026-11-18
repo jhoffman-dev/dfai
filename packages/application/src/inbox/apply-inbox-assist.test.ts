@@ -10,6 +10,9 @@ import {
   inboxItem,
   logPathFor,
   parseRunLog,
+  digestOf,
+  type AssistEvidence,
+  type AssistRow,
   type InboxItem,
   type VaultPath,
 } from '@dfai/domain';
@@ -26,6 +29,8 @@ import {
 import { INBOX_ASSIST_RULE } from './assist-log.ts';
 import { previewInboxAssist } from './preview-inbox-assist.ts';
 import { undoAssistRow, undoAssistRows } from './undo-inbox-assist.ts';
+import { findUnfinishedAssist } from './assist-unfinished.ts';
+import { appendToRuleLog } from '../automations/automation-log.ts';
 
 const TODAY = '2026-11-17';
 const NOON = Date.parse(`${TODAY}T12:00:00Z`);
@@ -625,6 +630,211 @@ describe('the preview, for Apply', () => {
     const v = setUp({ ...VAULT, [CALL]: `---\n{not json\n---\n${VAULT[CALL]!}` });
     const previewed = await v.preview();
     expect(previewed.of(CALL).row.step.kind).toBe('ask');
+  });
+});
+
+/** Hands the first read of `path` back as it was, then puts `edited` in its place with the same file time, as a coarse disk would. */
+function editAfterFirstRead(v: ReturnType<typeof setUp>, path: string, edited: string) {
+  const read = v.ports.fs.readTextFile;
+  let first = true;
+  v.ports.fs.readTextFile = async (at) => {
+    const answer = await read(at);
+    if (at === path && first) {
+      first = false;
+      v.files.set(path, edited);
+    }
+    return answer;
+  };
+}
+
+describe('review #911: every write is held to the text that was checked', () => {
+  it('stamps no duplicate whose text changed within the same file time after the check (item 2)', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const edited = 'Ask them about the price first.\n';
+    editAfterFirstRead(v, RENEW, edited);
+    const applied = await v.apply(RENEW, previewed);
+    expect(applied.kind).toBe('failed');
+    expect(v.files.get(RENEW)).toBe(edited);
+    expect(v.vault.log.filter((line) => !line.includes(LOG))).toEqual([]);
+  });
+
+  it('writes no field over a due date set after the check, before Clarify reads (item 3)', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const edited = json({ due: '2026-12-05' }, VAULT[CALL]);
+    editAfterFirstRead(v, CALL, edited);
+    const applied = await v.apply(CALL, previewed);
+    expect(applied.kind).toBe('failed');
+    expect(v.files.get(CALL)).toBe(edited);
+    expect(v.vault.log.filter((line) => !line.includes(LOG))).toEqual([]);
+  });
+});
+
+describe('review #911: a row that does not belong with its evidence is refused before anything is read (item 4)', () => {
+  const refusedUnread = async (
+    bend: (given: { row: AssistRow; evidence: AssistEvidence }) => {
+      row: AssistRow;
+      evidence: AssistEvidence;
+    },
+  ) => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const given = bend({ row: previewed.of(CALL).row, evidence: previewed.of(CALL).evidence! });
+    let reads = 0;
+    const read = v.ports.fs.readTextFile;
+    v.ports.fs.readTextFile = async (at) => {
+      reads += 1;
+      return read(at);
+    };
+    const before = v.snapshot();
+    const { applied } = await applyAssistRow(v.ports, { ...given, notePaths: v.notePaths() });
+    expect(applied).toMatchObject({
+      kind: 'failed',
+      words: expect.stringMatching(/^Not applied: .*Nothing changed\.$/u),
+    });
+    expect(reads).toBe(0);
+    expect(v.files).toEqual(before);
+    return applied;
+  };
+
+  it('refuses evidence of another item', async () => {
+    const v = setUp();
+    const other = (await v.preview()).of(LUNCH).evidence!;
+    await refusedUnread(({ row }) => ({ row, evidence: other }));
+  });
+
+  it('refuses a missing digest', async () => {
+    await refusedUnread(({ row, evidence }) => ({ row, evidence: { ...evidence, digest: '' } }));
+  });
+
+  it('refuses a path that is not the vault’s own', async () => {
+    await refusedUnread(({ row, evidence }) => {
+      const path = 'Inbox/../People/Mara Quill.md' as VaultPath;
+      return {
+        row: { ...row, path },
+        evidence: {
+          ...evidence,
+          item: { ...evidence.item, path },
+          answer: { ...evidence.answer, item: path },
+        },
+      };
+    });
+  });
+
+  it('refuses a duplicate whose copy is not an Inbox item', async () => {
+    const v = setUp();
+    const renew = (await v.preview()).of(RENEW);
+    await refusedUnread(() => {
+      const path = createVaultPath('Tasks/Renew Larkspur contract copy.md');
+      const evidence = renew.evidence!;
+      return {
+        row: { ...renew.row, path },
+        evidence: {
+          ...evidence,
+          item: { ...evidence.item, path },
+          answer: { ...evidence.answer, item: path },
+        },
+      };
+    });
+  });
+
+  it('refuses a question', async () => {
+    const v = setUp();
+    const junk = (await v.preview()).of(JUNK);
+    await refusedUnread(() => ({ row: junk.row, evidence: junk.evidence! }));
+  });
+});
+
+describe('review #911: a row leaves a trace before it writes (item 5)', () => {
+  it('logs that it began before the first write, each person made at once, and that it ended', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const seen: string[] = [];
+    const logAt = () =>
+      parseRunLog(v.files.get(LOG) ?? '')
+        .map((entry) => entry.kind)
+        .join(',');
+    for (const method of ['writeTextFile', 'createNote', 'moveEntry'] as const) {
+      const was = v.ports.fs[method] as (args: {
+        path?: string;
+        from?: string;
+      }) => Promise<unknown>;
+      (v.ports.fs as Record<string, unknown>)[method] = async (args: {
+        path?: string;
+        from?: string;
+      }) => {
+        if ((args.path ?? args.from) !== LOG)
+          seen.push(`${method} ${args.path ?? args.from} after [${logAt()}]`);
+        return was(args);
+      };
+    }
+    appliedOf(await v.apply(LUNCH, previewed));
+    expect(seen).toEqual([
+      `writeTextFile ${LUNCH} after [begun]`,
+      'createNote People/Tobias Fenn.md after [begun]',
+      `writeTextFile ${LUNCH} after [begun,step]`,
+    ]);
+    expect(parseRunLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
+      'begun',
+      'step',
+      'run',
+    ]);
+  });
+
+  it('closes the row it began when it is taken back', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    v.fail({ method: 'moveEntry', nth: 1 });
+    expect((await v.apply(CALL, previewed)).kind).toBe('failed');
+    expect(parseRunLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual(['begun', 'failed']);
+    expect(await findUnfinishedAssist(v.ports)).toEqual([]);
+  });
+
+  it('finds a row a crash left unfinished, and says what is on disk and how to put it right', async () => {
+    const v = setUp();
+    const at = CLOCK.localNow();
+    const row = `${at} ${LUNCH}`;
+    const person = json({ type: 'person', email: 'tobias@example.org' });
+    v.files.set('People/Tobias Fenn.md', person);
+    for (const entry of [
+      {
+        kind: 'begun' as const,
+        at,
+        row,
+        path: createVaultPath(LUNCH),
+        digest: digestOf(VAULT[LUNCH]!),
+        plan: 'Made it a task. Added Tobias Fenn.',
+      },
+      {
+        kind: 'step' as const,
+        at,
+        row,
+        done: [
+          {
+            kind: 'created' as const,
+            path: createVaultPath('People/Tobias Fenn.md'),
+            digest: digestOf(person),
+          },
+        ],
+      },
+    ]) {
+      await appendToRuleLog({ fs: v.ports.fs, rule: INBOX_ASSIST_RULE, entry, now: CLOCK.now() });
+    }
+    const before = v.snapshot();
+    expect(await findUnfinishedAssist(v.ports)).toEqual([
+      {
+        title: 'Lunch with Tobias',
+        path: LUNCH,
+        lines: [
+          'It was to do: Made it a task. Added Tobias Fenn.',
+          'Lunch with Tobias is where it was, as it was before.',
+          'Tobias Fenn was made (People/Tobias Fenn.md), as made. Link it from Lunch with Tobias, or put it in the Trash.',
+        ],
+      },
+    ]);
+    // Said, never repaired.
+    expect(v.files).toEqual(before);
   });
 });
 
