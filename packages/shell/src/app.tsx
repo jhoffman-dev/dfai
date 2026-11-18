@@ -243,7 +243,6 @@ import { createClaudeStepRelay } from './api/claude-step-relay.ts';
 import { createMoveRelay } from './api/move-relay.ts';
 import { SettingsPanel } from './settings/settings-panel.tsx';
 import { useSlackPaste } from './slack/use-slack-paste.ts';
-import { useSlackPasteListener } from './slack/slack-paste-listener.ts';
 import {
   GlobalCaptureSettings,
   GoogleCalendarSettingsCard,
@@ -459,9 +458,6 @@ export { localToday };
 const DO_NOTHING = () => {};
 /** Where the shell is not told what its platform lacks: nothing, as on the desktop. */
 const NOTHING_MISSING: readonly PlatformLimit[] = Object.freeze([]);
-
-/** A paste read where no Slack is offered: never taken as a link to save. */
-const OFFER_NOTHING = () => false;
 
 /**
  * Where focus goes when an overlay closes and what opened it has gone: the
@@ -931,6 +927,7 @@ function AppWindow({
     vaultKey,
     indexReady,
     onWrote: onChanged,
+    enabled: offered.kindleSync,
   });
 
   const thumbnails = useThumbnailQueue({
@@ -1465,6 +1462,8 @@ function AppWindow({
     store: browserChatSettingsStore,
     seat: chatSeat,
     askShown,
+    // Asked of no one until the vault's settings say whether Ask is on, as a feature's page waits.
+    enabled: offered.claudeChat && features.setting.answered,
     vault: {
       api: apiDeps,
       fs: location === null ? null : vault.fs,
@@ -1963,8 +1962,7 @@ function AppWindow({
     }),
     [slackPort, vault.fs, notes.markdown, index.index, vaultKey, openNote],
   );
-  const slackPaste = useSlackPaste(slackPastePorts);
-  useSlackPasteListener(offered.slackLinkOffer ? slackPaste.offer : OFFER_NOTHING);
+  const slackPaste = useSlackPaste(slackPastePorts, offered.slackLinkOffer);
   const slackOffer =
     slackPaste.view === null ? null : (
       <SlackMessageOffer
@@ -2400,9 +2398,19 @@ function AppWindow({
       onMoveTo: (target: VaultPath) => askEntryMove({ path: target, kind: 'file' }),
       onDelete: (target: VaultPath) => askEntryDelete({ path: target, kind: 'file' }),
       onMergeInto: peopleMerge.commands.mergeInto,
-      onShowInGraph: (target: VaultPath) => openGraph({ kind: 'note', path: target, depth: 1 }),
+      ...(offered.graphPage && {
+        onShowInGraph: (target: VaultPath) => openGraph({ kind: 'note', path: target, depth: 1 }),
+      }),
     }),
-    [renamePaneNote, toggleFavorite, askEntryMove, askEntryDelete, peopleMerge, openGraph],
+    [
+      renamePaneNote,
+      toggleFavorite,
+      askEntryMove,
+      askEntryDelete,
+      peopleMerge,
+      openGraph,
+      offered.graphPage,
+    ],
   );
   const todayWiring = useMemo(
     () => ({
@@ -2437,8 +2445,8 @@ function AppWindow({
   // Suggest's asks, kept on this machine and counted against the hourly allowance (#900).
   const [inboxAssistAsks] = useState(browserAssistAsks);
   const inboxAssist = useMemo(
-    () => (offered.claudeChat ? { claude: claudeStep, asks: inboxAssistAsks } : null),
-    [offered.claudeChat, claudeStep, inboxAssistAsks],
+    () => (offered.inboxSuggest ? { claude: claudeStep, asks: inboxAssistAsks } : null),
+    [offered.inboxSuggest, claudeStep, inboxAssistAsks],
   );
   const inboxWiring = useMemo(
     () => ({
@@ -2499,6 +2507,7 @@ function AppWindow({
   );
   const featureOff = useFeatureOffWiring({
     offered,
+    platform: platformOffered,
     known: features.known,
     overlay,
     showOverlay,
@@ -2729,7 +2738,7 @@ function AppWindow({
                     sectionOrder={sidebarOrder.order}
                     hiddenSections={hiddenSections.hidden}
                     onSearch={() => showOverlay('search')}
-                    onOpenGraph={() => openGraph({ kind: 'vault' })}
+                    {...(offered.graphPage && { onOpenGraph: () => openGraph({ kind: 'vault' }) })}
                     onOpenTags={() => openTags(null)}
                     {...(offered.claudeChat && { onOpenAsk: openAsk })}
                     {...(offered.libraryPages && {

@@ -72,7 +72,8 @@ const laterParts = chunk(
 );
 
 // The pages the tabs show (`workspace/page-tab.tsx`), each in its own chunk.
-export const graphPage = laterPage(
+export const graphPage = featurePage(
+  'graph',
   chunk('graph-page', () => import('./graph/graph-page.tsx')),
   (m) => m.default,
 );
@@ -123,7 +124,7 @@ export const skillsPage = laterPage(laterParts, (m) => m.SkillsPage);
  * third that both import — one a failed preload can leave broken under
  * `later-parts`, past its Reload (#271).
  */
-export const askScreen = laterPage(laterParts, (m) => m.AskScreen);
+export const askScreen = featurePage('ask', laterParts, (m) => m.AskScreen);
 
 // What a note pane draws for a dashboard, an artifact, or a view's rarer layouts: inline.
 export const dashboardView = later(laterParts, (m) => m.DashboardView);

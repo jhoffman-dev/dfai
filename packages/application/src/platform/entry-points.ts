@@ -48,10 +48,17 @@ const NEEDS = {
   kindleSettings: ['kindle'],
   /** ⌘K's Connect Kindle, Sync Kindle now and Disconnect Kindle. */
   kindleCommands: ['kindle'],
+  /** Kindle's highlights synced as the index is ready and every four hours, and a sync asked for. */
+  kindleSync: ['kindle'],
   /** Settings → Claude. */
   claudeSettings: ['claudeCodeChat'],
   /** The chat: the aside's Claude tab, its toggle, ⇧⌘J, and Ask (its other seat). */
   claudeChat: ['claudeCodeChat'],
+  /**
+   * The Inbox's Suggest, which asks Claude where each item goes (#900): an
+   * Inbox function that reaches Claude as a rule's step does, not Ask's.
+   */
+  inboxSuggest: ['claudeCodeChat'],
   /** Skills' "Ask Claude…", which drafts a skill. */
   skillDraft: ['claudeCodeChat'],
   /**
@@ -98,6 +105,8 @@ const NEEDS = {
   documentReader: [],
   /** ⌘K's Add PDF… and Add EPUB…. */
   addDocuments: [],
+  /** The graph: its sidebar row, its page, and a note's Show in graph. */
+  graphPage: [],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
 export type EntryPoint = keyof typeof NEEDS;
@@ -119,12 +128,16 @@ const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
   blockSync: null,
   granolaSettings: null,
   granolaPull: null,
-  slackSettings: null,
-  slackLinkOffer: null,
-  kindleSettings: null,
-  kindleCommands: null,
+  slackSettings: 'slack',
+  slackLinkOffer: 'slack',
+  kindleSettings: 'kindle',
+  kindleCommands: 'kindle',
+  kindleSync: 'kindle',
+  // Settings → Claude stays with Ask off: its provider and model are what
+  // Suggest, Skills' Ask Claude… and rules' Claude steps reach Claude by.
   claudeSettings: null,
-  claudeChat: null,
+  claudeChat: 'ask',
+  inboxSuggest: null,
   skillDraft: null,
   claudeAutomations: null,
   syncSettings: null,
@@ -144,6 +157,7 @@ const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
   libraryPages: 'reading',
   documentReader: 'reading',
   addDocuments: 'reading',
+  graphPage: 'graph',
 };
 
 /**
@@ -154,6 +168,8 @@ const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
   library: 'libraryPages',
   highlights: 'libraryPages',
   document: 'documentReader',
+  ask: 'claudeChat',
+  graph: 'graphPage',
 };
 
 /** Whether the screen offers each entry point. Every one is named, so none is forgotten. */
@@ -213,11 +229,17 @@ export function offeredWithFeatures(
 /**
  * The switched-off feature a page belongs to, when its entry point is not
  * offered for that: what a tab kept on it shows a notice for in place of the
- * page. Null for a page that is drawn.
+ * page. Null for a page that is drawn, and for one whose entry point the
+ * platform itself does not offer, whatever the switch says: the notice's
+ * "Turn on in Settings" could not bring that back, so the page is drawn as
+ * it always was there.
  */
-export function pageTurnedOff(place: PagePlace, offered: EntryPointsOffered): FeatureId | null {
+export function pageTurnedOff(
+  place: PagePlace,
+  { offered, platform }: { offered: EntryPointsOffered; platform: EntryPointsOffered },
+): FeatureId | null {
   const entry = PAGE_ENTRY[place.kind];
-  if (entry === undefined || offered[entry]) return null;
+  if (entry === undefined || offered[entry] || !platform[entry]) return null;
   return FEATURE_OF[entry];
 }
 

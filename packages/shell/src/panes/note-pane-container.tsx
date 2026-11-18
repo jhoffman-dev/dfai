@@ -399,7 +399,7 @@ function useNoteTab({ wiring, names, chat, pane, tab, hidden }: NoteTabProps) {
     onMoveTo: note.onMoveTo,
     onDelete: note.onDelete,
     onMergeInto: note.onMergeInto,
-    onShowInGraph: note.onShowInGraph,
+    ...(note.onShowInGraph !== undefined && { onShowInGraph: note.onShowInGraph }),
     arrangement: {
       // Which of these a pane offers is the domain's rule; the bar draws a
       // button and a menu item for each it is given. Split only while the

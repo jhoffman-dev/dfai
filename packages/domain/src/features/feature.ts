@@ -3,7 +3,7 @@
  * that what they never use leaves the view. Switching one off deletes
  * nothing: its notes and files stay, and switching it on brings it back.
  */
-export type FeatureId = 'reading';
+export type FeatureId = 'reading' | 'kindle' | 'ask' | 'graph' | 'slack';
 
 /** One key feature: what Settings calls it, the line saying what it is, and what it cannot work without. */
 export interface Feature<Id extends string = FeatureId> {
@@ -20,6 +20,30 @@ export const FEATURES: readonly Feature[] = [
     id: 'reading',
     label: 'Reading',
     summary: 'PDFs and EPUBs in the reader, the Library and All highlights.',
+    requires: [],
+  },
+  {
+    id: 'kindle',
+    label: 'Kindle',
+    summary: 'Kindle highlights synced into literature notes, every four hours and on asking.',
+    requires: ['reading'],
+  },
+  {
+    id: 'ask',
+    label: 'Ask and Claude chat',
+    summary: 'Ask questions of the vault, and chat with Claude beside your notes.',
+    requires: [],
+  },
+  {
+    id: 'graph',
+    label: 'Graph',
+    summary: 'The map of how notes link to one another, for the vault or one note.',
+    requires: [],
+  },
+  {
+    id: 'slack',
+    label: 'Slack capture',
+    summary: 'A pasted Slack link offered for saving as a note, and its Settings.',
     requires: [],
   },
 ];
@@ -71,26 +95,30 @@ export const EVERY_FEATURE_ON: FeaturesOn = featuresOn([]);
 
 /**
  * The off list after one feature's switch is flipped: that id taken out, and
- * put back at the end when it is switched off. Every other id is kept as it
- * stands, in its order, whether or not this version knows it.
+ * put back at the end when it is switched off. Every other entry is kept as
+ * it stands, in its order, whatever it is and whether or not this version
+ * knows it. A feature off only because what it requires is off is not in the
+ * list, and no flip of another feature puts it there or takes it out.
  */
-export function featuresOffAfter<Id extends string>(
-  off: readonly Id[],
-  { id, on }: { readonly id: Id; readonly on: boolean },
-): readonly Id[] {
+export function featuresOffAfter<Entry>(
+  off: readonly Entry[],
+  { id, on }: { readonly id: Entry; readonly on: boolean },
+): readonly Entry[] {
   const others = off.filter((other) => other !== id);
   return on ? others : [...others, id];
 }
 
 /**
  * The off list as the settings file holds it, for a write to change one id
- * of: every string as written, in its order, ids this version does not know
- * among them, so a switch a newer version made on another Mac survives a flip
- * here. What is not a list holds no switch to keep: a write replaces it.
+ * of: every entry as written, in its order — ids this version does not know,
+ * and whatever a hand or a later version put there that is not an id — so a
+ * flip here changes that one id and nothing else. What is not a list holds
+ * no switch to keep: a write replaces it.
  */
-export function featuresOffAsWritten(value: unknown): readonly string[] {
+export function featuresOffAsWritten(value: unknown): readonly unknown[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
+  const entries: readonly unknown[] = value;
+  return [...entries];
 }
 
 /** The feature itself, by its id. */

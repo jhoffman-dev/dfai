@@ -69,13 +69,19 @@ const HIDES: Readonly<Record<PlatformCapability, readonly EntryPoint[]>> = {
   localFolderVault: ['chooseVaultFolder', 'openVaultFromGitHub', 'overwriteConflict'],
   repoCreation: ['newSyncRepository'],
   localModels: ['meaningSearch'],
-  claudeCodeChat: ['claudeSettings', 'claudeChat', 'skillDraft', 'claudeAutomations'],
+  claudeCodeChat: [
+    'claudeSettings',
+    'claudeChat',
+    'inboxSuggest',
+    'skillDraft',
+    'claudeAutomations',
+  ],
   heldSecrets: ['secretsSettings'],
   webFetch: ['webSourceRefresh'],
   googleCalendar: ['googleCalendarSettings', 'meetingSync', 'blockSync'],
   granola: ['granolaSettings', 'granolaPull'],
   slack: ['slackSettings', 'slackLinkOffer'],
-  kindle: ['kindleSettings', 'kindleCommands'],
+  kindle: ['kindleSettings', 'kindleCommands', 'kindleSync'],
   globalCapture: ['globalCaptureSettings', 'globalCaptureShortcut'],
   localApi: ['connectionsSettings', 'localApiServer'],
   sqliteSources: ['sqliteSourceRefresh'],
@@ -121,7 +127,16 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
    */
   const HIDES_WHEN_OFF: Readonly<Record<FeatureId, readonly EntryPoint[]>> = {
     reading: ['libraryPages', 'documentReader', 'addDocuments'],
+    kindle: ['kindleSettings', 'kindleCommands', 'kindleSync'],
+    // Settings → Claude, Suggest, Skills' Ask Claude… and rules' Claude steps stay (ADR-0055).
+    ask: ['claudeChat'],
+    graph: ['graphPage'],
+    slack: ['slackSettings', 'slackLinkOffer'],
   };
+
+  /** A feature and every feature that requires it, all the way down: what switching it off takes. */
+  const withDependents = (id: FeatureId): FeatureId[] =>
+    FEATURES.filter((feature) => !featuresOn([id])[feature.id]).map((feature) => feature.id);
 
   const hiddenBy = (off: readonly FeatureId[]): EntryPoint[] => {
     const offered = entryPointsOffered(EVERYTHING, featuresOn(off));
@@ -137,9 +152,27 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
     'hides what belongs to %s, and only that, when it is off',
     (id) => {
       expect(HIDES_WHEN_OFF[id].length).toBeGreaterThan(0);
-      expect(hiddenBy([id]).sort()).toEqual([...HIDES_WHEN_OFF[id]].sort());
+      const expected = withDependents(id).flatMap((off) => HIDES_WHEN_OFF[off]);
+      expect(hiddenBy([id]).sort()).toEqual(expected.sort());
     },
   );
+
+  it('hides Kindle with Reading, and Reading alone with Kindle', () => {
+    expect(withDependents('reading')).toEqual(['reading', 'kindle']);
+    expect(hiddenBy(['reading'])).toEqual(expect.arrayContaining([...HIDES_WHEN_OFF.kindle]));
+    expect(hiddenBy(['kindle'])).not.toEqual(expect.arrayContaining([...HIDES_WHEN_OFF.reading]));
+  });
+
+  it('keeps what other features reach Claude by when Ask is off', () => {
+    const offered = entryPointsOffered(EVERYTHING, featuresOn(['ask']));
+    expect(offered.claudeChat).toBe(false);
+    expect(offered).toMatchObject({
+      claudeSettings: true,
+      inboxSuggest: true,
+      skillDraft: true,
+      claudeAutomations: true,
+    });
+  });
 
   it('names, for each entry point, the feature it belongs to', () => {
     for (const entry of ENTRY_POINTS) {
@@ -158,7 +191,11 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
     expect(offeredWithFeatures(platform, EVERY_FEATURE_ON)).toBe(platform);
     const readingAlreadyOff = {
       ...platform,
-      ...Object.fromEntries(HIDES_WHEN_OFF.reading.map((entry) => [entry, false])),
+      ...Object.fromEntries(
+        withDependents('reading').flatMap((id) =>
+          HIDES_WHEN_OFF[id].map((entry) => [entry, false]),
+        ),
+      ),
     } as EntryPointsOffered;
     expect(offeredWithFeatures(readingAlreadyOff, featuresOn(['reading']))).toBe(readingAlreadyOff);
   });
@@ -179,11 +216,38 @@ describe('pageTurnedOff and featureOfPage (#901)', () => {
     { kind: 'highlights' },
     { kind: 'document', path: pdf },
   ];
+  /** Each switchable page beyond Reading's, with the feature it belongs to. */
+  const otherPages: readonly (readonly [PagePlace, FeatureId])[] = [
+    [{ kind: 'ask' }, 'ask'],
+    [{ kind: 'graph', scope: { kind: 'vault' } }, 'graph'],
+    [{ kind: 'graph', scope: { kind: 'note', path: pdf, depth: 1 } }, 'graph'],
+  ];
+
+  /** Whether `place` shows the notice with `off` switched off, on a platform with `capabilities`. */
+  const turnedOff = (
+    place: PagePlace,
+    off: readonly FeatureId[],
+    capabilities: PlatformCapabilities = DESKTOP_CAPABILITIES,
+  ) =>
+    pageTurnedOff(place, {
+      offered: entryPointsOffered(capabilities, featuresOn(off)),
+      platform: entryPointsOffered(capabilities),
+    });
+
+  it.each(otherPages)(
+    'names the feature of %o, and hides it only while that is off',
+    (place, id) => {
+      expect(featureOfPage(place)).toBe(id);
+      expect(turnedOff(place, [id])).toBe(id);
+      expect(turnedOff(place, [])).toBeNull();
+      const others = FEATURES.map((feature) => feature.id).filter((other) => other !== id);
+      expect(turnedOff(place, others)).toBeNull();
+    },
+  );
 
   it('names Reading for its pages, and hides them while it is off', () => {
-    const offered = entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(['reading']));
     expect(readingPages.map(featureOfPage)).toEqual(['reading', 'reading', 'reading']);
-    expect(readingPages.map((place) => pageTurnedOff(place, offered))).toEqual([
+    expect(readingPages.map((place) => turnedOff(place, ['reading']))).toEqual([
       'reading',
       'reading',
       'reading',
@@ -191,16 +255,27 @@ describe('pageTurnedOff and featureOfPage (#901)', () => {
   });
 
   it('draws every page while every feature is on', () => {
-    const offered = entryPointsOffered(DESKTOP_CAPABILITIES);
-    expect(readingPages.map((place) => pageTurnedOff(place, offered))).toEqual([null, null, null]);
+    expect(readingPages.map((place) => turnedOff(place, []))).toEqual([null, null, null]);
   });
 
   it('draws a page no switch hides, whatever is off', () => {
-    const offered = entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(['reading']));
     for (const place of [{ kind: 'today' }, { kind: 'tags', tag: null }] as const) {
       expect(featureOfPage(place)).toBeNull();
-      expect(pageTurnedOff(place, offered)).toBeNull();
+      expect(turnedOff(place, ['reading'])).toBeNull();
     }
+  });
+
+  it('blames no switch for a page the platform does not offer: Ask on the web is drawn as before', () => {
+    const ask: PagePlace = { kind: 'ask' };
+    expect(entryPointsOffered(WEB_CAPABILITIES).claudeChat).toBe(false);
+    expect(turnedOff(ask, [], WEB_CAPABILITIES)).toBeNull();
+    expect(turnedOff(ask, ['ask'], WEB_CAPABILITIES)).toBeNull();
+    // Where the platform has it, the switch alone decides.
+    expect(turnedOff(ask, ['ask'])).toBe('ask');
+    // The Graph needs nothing of the platform: its switch is the reason on the web too.
+    expect(
+      turnedOff({ kind: 'graph', scope: { kind: 'vault' } }, ['graph'], WEB_CAPABILITIES),
+    ).toBe('graph');
   });
 });
 

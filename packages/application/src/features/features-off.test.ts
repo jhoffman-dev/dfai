@@ -47,6 +47,28 @@ describe('saveFeatureSwitch', () => {
     expect(written[PATH]).toContain('"sidebarOrder":["views"]');
   });
 
+  it('keeps every entry it does not change, those that are not ids among them', async () => {
+    const { fs, written } = vaultWith({
+      [PATH]: '---\n{"featuresOff":[7,"reading",null,{"by":"hand"},"later"]}\n---\n',
+    });
+    const settings = createSettingsWriter({ fs, markdown: jsonMarkdown() });
+    await saveFeatureSwitch({ settings, id: 'reading', on: true });
+    expect(written[PATH]).toContain('"featuresOff":[7,null,{"by":"hand"},"later"]');
+
+    await saveFeatureSwitch({ settings, id: 'graph', on: false });
+    expect(written[PATH]).toContain('"featuresOff":[7,null,{"by":"hand"},"later","graph"]');
+  });
+
+  it('writes Reading alone when Reading is switched off: Kindle, held off by it, is not written', async () => {
+    const { fs, written } = vaultWith({ [PATH]: '---\n{}\n---\n' });
+    const settings = createSettingsWriter({ fs, markdown: jsonMarkdown() });
+    await saveFeatureSwitch({ settings, id: 'reading', on: false });
+    expect(written[PATH]).toContain('"featuresOff":["reading"]');
+
+    await saveFeatureSwitch({ settings, id: 'reading', on: true });
+    expect(written[PATH]).toContain('"featuresOff":[]');
+  });
+
   it('replaces a value that is not a list with a list of only what was just chosen', async () => {
     for (const [on, expected] of [
       [false, '"featuresOff":["reading"]'],

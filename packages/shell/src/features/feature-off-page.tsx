@@ -8,6 +8,8 @@ import { PageFrameFallback, type PageChrome } from '../page-frame-fallback.tsx';
 export interface FeaturesWiring {
   /** What the window offers, the person's switches taken into account. */
   readonly offered: EntryPointsOffered;
+  /** What the platform offers with every feature on (`pageTurnedOff` blames no switch for what it lacks). */
+  readonly platform: EntryPointsOffered;
   /** Opens Settings at Features. */
   readonly onTurnOn: () => void;
   /**
