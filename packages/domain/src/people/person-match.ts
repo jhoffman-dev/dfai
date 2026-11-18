@@ -9,6 +9,7 @@
  * name or address that list would call a likely duplicate is never "nobody".
  */
 
+import { isPublicMail } from '../meeting-links/attendee-matching.ts';
 import { vocabularyKey } from '../terms/spelling.ts';
 import { addressesMatch, addressParts, localPartsMatch } from './person-similarity.ts';
 import type { DuplicateCandidate } from './possible-duplicates.ts';
@@ -153,10 +154,12 @@ export function nameWordCount(name: string): number {
 }
 
 /**
- * Whether `text` writes `email` right after `name`: "Wren Calloway
- * <wc1@example.org>", "Wren Calloway, wc1@example.org", "Wren Calloway:
- * wc1@example.org". An address further off may be anyone's ("Ask Tobias Fenn
- * to forward this to wren@example.org").
+ * Whether `text` writes `email` as `name`'s own: "Wren Calloway
+ * <wc1@example.org>", "Wren Calloway (wc1@example.org)", "Wren Calloway:
+ * wc1@example.org" — the name starting its run of words, not the end of a
+ * longer one ("Sarah Jane Smith" is not "Jane Smith"). A comma or anything
+ * else between them ties nothing: in a list, the next address is the next
+ * person's ("Tobias Fenn, wren@example.org, Mara Quill").
  */
 export function addressBesideName(text: string, name: string, email: string): boolean {
   const wanted = nameWords(name);
@@ -167,15 +170,50 @@ export function addressBesideName(text: string, name: string, email: string): bo
     const words = tokens.map((token) => nameWords(token).join(' '));
     for (let at = 0; at + wanted.length < tokens.length; at += 1) {
       if (!wanted.every((word, offset) => words[at + offset] === word)) continue;
-      const next = tokens[at + wanted.length]!.replace(/^[<([]+|[>)\],;:.]+$/gu, '');
-      if (next.toLowerCase() === address) return true;
+      if (!startsRun(tokens[at - 1])) continue;
+      const last = tokens[at + wanted.length - 1]!;
+      if (writtenAs(last, tokens[at + wanted.length]!) === address) return true;
     }
   }
   return false;
 }
 
-/** Whether an address looks like theirs by its local part — `mara@`, `mara.quill@` — wherever it is. */
+/** Whether a name starting after `before` starts its run: at the line's start, after punctuation, or after a word without a capital. */
+function startsRun(before: string | undefined): boolean {
+  if (before === undefined) return true;
+  return /[^\p{L}\p{N}]$/u.test(before) || !/^\p{Lu}/u.test(before);
+}
+
+/** The address `next` gives as the name's own after `last`, lower-cased; '' for none: `Name <a>`, `Name (a)`, `Name: a`. */
+function writtenAs(last: string, next: string): string {
+  if (/[\p{L}\p{N}]:$/u.test(last)) return next.replace(/^[<(]|[>)]?[.,;]*$/gu, '').toLowerCase();
+  if (!/[\p{L}\p{N}]$/u.test(last)) return '';
+  const bracketed = /^[<(]([^<>()]+)[>)][.,;:]*$/u.exec(next);
+  return bracketed?.[1]?.toLowerCase() ?? '';
+}
+
+/**
+ * Whether an address looks like theirs by its local part — `mara@`,
+ * `mara.quill@` — wherever it is. At a public mail provider only their whole
+ * name does: `tobias@gmail.com` is anyone called Tobias.
+ */
 export function addressNamesPerson(address: string, person: PersonCandidate): boolean {
+  const parts = addressParts(address);
+  if (parts === null) return false;
+  return namesOf(person).some(
+    (name) =>
+      localPartsMatch(parts.local, asLocalPart(name), {
+        publicMail: isPublicMail(parts.domain),
+      }) !== null,
+  );
+}
+
+/**
+ * Whether an address may be theirs by its local part, at any provider: the
+ * doubt a link asks about (`mara@gmail.com` beside "Mara Quill"), never the
+ * evidence an add is planned on.
+ */
+export function addressMayBePerson(address: string, person: PersonCandidate): boolean {
   const parts = addressParts(address);
   if (parts === null) return false;
   return namesOf(person).some(

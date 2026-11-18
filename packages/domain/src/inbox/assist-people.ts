@@ -28,6 +28,7 @@ import { isArchivedPath } from '../archive/archive.ts';
 import { newPersonRefusal } from '../people/person.ts';
 import {
   addressBesideName,
+  addressMayBePerson,
   addressNamesPerson,
   foldedPersonName,
   hasMailbox,
@@ -169,7 +170,7 @@ function linkedTo(named: AssistPersonAnswer, facts: AssistPeopleFacts): Decided 
   // A name is evidence only in full: one word ("May", "Will") is also a common word.
   const fullNames = namesOf(person).filter((name) => nameWordCount(name) >= 2);
   if (!fullNames.some((name) => mentionsName(facts.text, name))) return isThis(target.title);
-  if (facts.addresses.some((address) => addressNamesPerson(address, person))) {
+  if (facts.addresses.some((address) => addressMayBePerson(address, person))) {
     return isThis(target.title);
   }
   const namesakes = facts.directory.filter(
