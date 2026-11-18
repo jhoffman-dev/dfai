@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { focusIsHome } from '../row-keys.ts';
 
 /** Where a row stands with being applied (#909), said already: the page decides nothing about it. */
 export type AssistRowAction =
@@ -134,7 +135,8 @@ function RowAction({ row, actions }: { row: AssistRowView; actions: AssistRowAct
 /**
  * Moves the focus to what a row shows next — its button, or its words — once
  * the control that had it is gone: pressed Apply is replaced by Undo, say.
- * Left where it is when the focus is anywhere else in the page.
+ * Focus that fell to nothing, or to the page's own home, was lost rather than
+ * moved (the page takes it back when it falls); anywhere else, it is left.
  */
 function useFollowingFocus(kind: AssistRowAction['kind']) {
   const button = useRef<HTMLButtonElement>(null);
@@ -144,15 +146,14 @@ function useFollowingFocus(kind: AssistRowAction['kind']) {
   useEffect(() => {
     const changed = was.current !== kind;
     was.current = kind;
-    const lost = document.activeElement === null || document.activeElement === document.body;
-    if (changed && (had.current || lost)) (button.current ?? words.current)?.focus();
+    if (changed && (had.current || focusIsHome())) (button.current ?? words.current)?.focus();
   }, [kind]);
   useEffect(() => {
     const track = () => {
-      const inside = [button.current, words.current].some(
+      if (focusIsHome()) return;
+      had.current = [button.current, words.current].some(
         (each) => each !== null && each === document.activeElement,
       );
-      had.current = inside;
     };
     document.addEventListener('focusin', track);
     return () => document.removeEventListener('focusin', track);

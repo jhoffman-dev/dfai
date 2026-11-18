@@ -147,7 +147,7 @@ describe('useInboxAssist: Apply and Undo', () => {
     const t = setUp();
     await t.suggest();
     act(() => t.actions().onApply(CALL));
-    await waitFor(() => expect(t.rowOf('Call Mara').action.kind).toBe('applied'));
+    await waitFor(() => expect(t.rowOf('Call Mara').action?.kind).toBe('applied'));
     expect(t.rowOf('Call Mara').action).toMatchObject({
       words: 'Made it a task under Larkspur Payroll. Linked Mara Quill.',
     });
@@ -158,7 +158,7 @@ describe('useInboxAssist: Apply and Undo', () => {
     expect(t.plan().canUndoAll).toBe(true);
 
     act(() => t.actions().onUndo(CALL));
-    await waitFor(() => expect(t.rowOf('Call Mara').action.kind).toBe('undone'));
+    await waitFor(() => expect(t.rowOf('Call Mara').action?.kind).toBe('undone'));
     expect(t.vault.files.get(CALL)).toBe(NOTES[CALL]);
     expect(t.activity.reports.map((report) => report.message.split(':')[0])).toEqual([
       'Inbox assist applied “Call Mara”',
@@ -171,15 +171,15 @@ describe('useInboxAssist: Apply and Undo', () => {
     await t.suggest();
     act(() => t.actions().onApplyAll());
     await waitFor(() => expect(t.plan().busy).toBe(false));
-    expect(t.rowOf('Call Mara').action.kind).toBe('applied');
-    expect(t.rowOf('Lunch with Tobias').action.kind).toBe('applied');
+    expect(t.rowOf('Call Mara').action?.kind).toBe('applied');
+    expect(t.rowOf('Lunch with Tobias').action?.kind).toBe('applied');
     expect(t.rowOf('Buy now').action).toEqual({ kind: 'none' });
     expect(t.vault.files.has('People/Tobias Fenn.md')).toBe(true);
     expect(t.plan().canApplyAll).toBe(false);
 
     act(() => t.actions().onUndoAll());
-    await waitFor(() => expect(t.rowOf('Call Mara').action.kind).toBe('undone'));
-    await waitFor(() => expect(t.rowOf('Lunch with Tobias').action.kind).toBe('undone'));
+    await waitFor(() => expect(t.rowOf('Call Mara').action?.kind).toBe('undone'));
+    await waitFor(() => expect(t.rowOf('Lunch with Tobias').action?.kind).toBe('undone'));
     for (const [path, text] of Object.entries(NOTES)) expect(t.vault.files.get(path)).toBe(text);
     expect(t.vault.files.has('People/Tobias Fenn.md')).toBe(false);
   });
@@ -200,7 +200,7 @@ describe('useInboxAssist: Apply and Undo', () => {
     await t.settled();
     t.letGo();
     await t.settled();
-    expect(t.rowOf('Call Mara').action.kind).toBe('applied');
+    expect(t.rowOf('Call Mara').action?.kind).toBe('applied');
     // One apply of Call Mara is one log line and one Activity line: the second press did nothing.
     expect(
       t.activity.reports.filter((report) => report.message.includes('Call Mara')),

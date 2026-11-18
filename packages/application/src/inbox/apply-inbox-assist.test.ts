@@ -379,6 +379,50 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
   });
 });
 
+describe('applyAssistRow: what it says when the vault does not answer', () => {
+  it('keeps what it did, and says so, when its log cannot be written', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const create = v.ports.fs.createNote;
+    v.ports.fs.createNote = async (note) => {
+      if (note.path === LOG) throw new Error('the disk is full');
+      return create(note);
+    };
+    const applied = appliedOf(await v.apply(CALL, previewed));
+    expect(applied.logged).toBe(false);
+    expect(applied.words).toMatch(/Its log could not be written\.$/u);
+    expect(v.files.has(LOG)).toBe(false);
+    expect(v.activity.reports).toEqual([
+      expect.objectContaining({
+        level: 'warning',
+        message: expect.stringContaining('Its log could not be written.'),
+      }),
+    ]);
+    // Its undo does not rest on the log.
+    expect(await v.undo(applied)).toMatchObject({ kind: 'undone' });
+    expect(v.files.get(CALL)).toBe(VAULT[CALL]);
+  });
+
+  it('writes nothing, and says why, when the vault cannot be read to check it', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const before = v.snapshot();
+    Object.assign(v.ports, {
+      index: {
+        ...v.ports.index,
+        query: async () => {
+          throw new Error('the index is closed');
+        },
+      },
+    });
+    expect(await v.apply(CALL, previewed)).toEqual({
+      kind: 'failed',
+      words: 'Not applied: it could not be checked (the index is closed). Nothing changed.',
+    });
+    expect(v.files).toEqual(before);
+  });
+});
+
 describe('applySureRows', () => {
   it('applies each sure row on its own, skips questions, and goes on past one that asks', async () => {
     const v = setUp();
@@ -491,6 +535,96 @@ describe('undo', () => {
     expect(undone.every(({ undone: each }) => each.kind === 'undone')).toBe(true);
     expect(order).toEqual([RENEW, LUNCH, ARTICLE, CALL]);
     expect(notesBut(v.files)).toEqual(notesBut(before));
+  });
+});
+
+describe('undo: the edges', () => {
+  it('refuses once the person it added is gone, touching nothing', async () => {
+    const v = setUp();
+    const applied = appliedOf(await v.apply(LUNCH));
+    v.files.delete('People/Tobias Fenn.md');
+    const after = v.snapshot();
+    expect(await v.undo(applied)).toEqual({
+      kind: 'refused',
+      words: 'Not undone: Tobias Fenn is not where it was added.',
+    });
+    expect(v.files).toEqual(after);
+  });
+
+  it('puts the item back and keeps the person, saying so, when the Trash refuses them', async () => {
+    const v = setUp();
+    const applied = appliedOf(await v.apply(LUNCH));
+    v.ports.fs.trashEntry = async () => {
+      throw new Error('the Trash is not there');
+    };
+    const undone = await v.undo(applied);
+    expect(undone).toMatchObject({
+      kind: 'undone',
+      words: 'Put back as it was. Tobias Fenn was kept: the Trash is not there',
+    });
+    expect(v.files.get(LUNCH)).toBe(VAULT[LUNCH]);
+    expect(v.files.has('People/Tobias Fenn.md')).toBe(true);
+    const [, undo] = parseRunLog(v.files.get(LOG)!);
+    expect(undo).toMatchObject({ kind: 'undo', left: [{ path: 'People/Tobias Fenn.md' }] });
+  });
+
+  it('undoes the rest when one row of Undo all is refused', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const results = await applySureRows(v.ports, {
+      rows: previewed.rows,
+      notePaths: v.notePaths(),
+    });
+    const undos = results.flatMap(({ path, applied }) =>
+      applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : [],
+    );
+    const call = undos.find(({ path }) => path === CALL)!.undo.item.to;
+    v.files.set(call, `${v.files.get(call)!}Mine.\n`);
+    const undone = await undoAssistRows(v.ports, { undos, notePaths: v.notePaths() });
+    expect(undone.map(({ path, undone: each }) => [path, each.kind])).toEqual([
+      [RENEW, 'undone'],
+      [LUNCH, 'undone'],
+      [ARTICLE, 'undone'],
+      [CALL, 'refused'],
+    ]);
+  });
+});
+
+describe('the preview, for Apply', () => {
+  it('keeps no digest of a kept task it cannot read, so applying that row asks', async () => {
+    const v = setUp();
+    const read = v.ports.fs.readNotes;
+    v.ports.fs.readNotes = async (paths) =>
+      (await read(paths)).filter((note) => note.path !== KEPT);
+    const previewed = await v.preview();
+    expect(previewed.of(RENEW).evidence?.kept).toBeNull();
+    v.ports.fs.readNotes = read;
+    expect(await v.apply(RENEW, previewed)).toMatchObject({ kind: 'asked', ask: 'kept-changed' });
+  });
+
+  it('applies nothing for a row it has no evidence for', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const results = await applySureRows(v.ports, {
+      rows: previewed.rows.map(({ row }) => ({ row, evidence: undefined })),
+      notePaths: v.notePaths(),
+    });
+    expect(results).toEqual([]);
+    expect(
+      await applyAssistRow(v.ports, {
+        ...previewed.of(CALL),
+        evidence: undefined,
+        notePaths: v.notePaths(),
+      }),
+    ).toMatchObject({
+      applied: { kind: 'asked', ask: 'not-appliable' },
+    });
+  });
+
+  it('plans no change of an item whose frontmatter cannot be read', async () => {
+    const v = setUp({ ...VAULT, [CALL]: `---\n{not json\n---\n${VAULT[CALL]!}` });
+    const previewed = await v.preview();
+    expect(previewed.of(CALL).row.step.kind).toBe('ask');
   });
 });
 

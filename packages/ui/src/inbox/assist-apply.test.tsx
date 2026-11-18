@@ -42,8 +42,13 @@ const plan = (
   ...extra,
 });
 
-function actions(): AssistActions & { [K in keyof AssistActions]: ReturnType<typeof vi.fn> } {
-  return { onApply: vi.fn(), onUndo: vi.fn(), onApplyAll: vi.fn(), onUndoAll: vi.fn() };
+function actions() {
+  return {
+    onApply: vi.fn<(path: string) => void>(),
+    onUndo: vi.fn<(path: string) => void>(),
+    onApplyAll: vi.fn<() => void>(),
+    onUndoAll: vi.fn<() => void>(),
+  } satisfies AssistActions;
 }
 
 const show = (view: AssistView, given = actions()) => {
@@ -146,6 +151,26 @@ describe('Apply on the suggestions', () => {
     expect(given.onApply).toHaveBeenCalledTimes(1);
     rerender(at({ kind: 'busy', words: 'Applying…' }));
     expect(document.activeElement?.textContent).toBe('Applying…');
+    rerender(at({ kind: 'applied', words: 'Made it a task.', problem: null }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Undo' }));
+  });
+
+  it('follows the row even when the page took the focus back to its home meanwhile', () => {
+    const given = actions();
+    const at = (action: AssistRowAction) => (
+      <div data-keys-home="" tabIndex={-1}>
+        <AssistSummary
+          view={plan([row('Call Mara', action)])}
+          onDismiss={() => undefined}
+          actions={given}
+        />
+      </div>
+    );
+    const { rerender, container } = render(at({ kind: 'apply', said: null }));
+    screen.getByRole('button', { name: 'Apply' }).focus();
+    rerender(at({ kind: 'busy', words: 'Applying…' }));
+    // The page's home takes the focus as the row's words go, as the Inbox's does.
+    (container.querySelector('[data-keys-home]') as HTMLElement).focus();
     rerender(at({ kind: 'applied', words: 'Made it a task.', problem: null }));
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Undo' }));
   });
