@@ -20,6 +20,8 @@ const entry = (item: string, extra: Record<string, unknown> = {}) => ({
   waitingOn: null,
   confidence: 'high',
   why: 'It asks for a call.',
+  duplicateOf: null,
+  people: [],
   ...extra,
 });
 const read = (entries: unknown[], asked = [CALL]) =>

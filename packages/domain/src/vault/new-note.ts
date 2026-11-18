@@ -48,6 +48,14 @@ export function isUnnamed(name: string): boolean {
   return cleanEntryName(name) === '';
 }
 
+/** Names Windows keeps for devices, with or without an extension: a file so named cannot be made there. */
+const RESERVED_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+
+/** Whether a cleaned name is one a file cannot take on every system the vault syncs to (#906). */
+export function isReservedEntryName(name: string): boolean {
+  return RESERVED_NAME.test(name.trim());
+}
+
 /** A name with what no filesystem accepts taken out; empty when nothing usable is left. */
 export function cleanEntryName(name: string): string {
   return (

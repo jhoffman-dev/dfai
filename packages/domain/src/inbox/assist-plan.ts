@@ -18,11 +18,15 @@
 
 import { MORNING_BRIEF_FOLDER } from '../automations/morning-brief.ts';
 import { namesNote } from '../automations/proposal-schema.ts';
+import type { PossibleDuplicateTask } from '../gtd/task-similarity.ts';
+import type { PersonCandidate } from '../people/person-match.ts';
 import { MEETING_TYPE } from '../meetings/meeting-header.ts';
 import { PROPOSAL_TYPE } from '../proposals/proposal.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { hasUnshownCharacters, type AssistItemAnswer, type AssistKind } from './assist-answer.ts';
 import { assistSureness } from './assist-confidence.ts';
+import { assistDuplicate, type AssistDuplicate } from './assist-duplicate.ts';
+import { assistPeople, clashingAdd, OFF_LIST, type AssistPersonStep } from './assist-people.ts';
 import type { InboxItem } from './inbox.ts';
 import {
   assistHeld,
@@ -54,9 +58,43 @@ export interface AssistFacts {
   readonly today: string;
   /** The projects and areas an item can be filed under, as clarifying offers them. */
   readonly filingTargets: readonly AssistTarget[];
-  /** The people an item can wait on. */
+  /** The people an item can wait on, or name: those Claude is offered. */
   readonly people: readonly AssistTarget[];
+  /** Everyone in People, the Archive's included, as matched by name and address (#906). */
+  readonly directory: readonly PersonCandidate[];
+  /** Names, folded, that a note of any type has as its title already: no new person takes one. */
+  readonly takenTitles: ReadonlySet<string>;
+  /** What each item asked about holds of its own (#906); an item missing here holds nothing. */
+  readonly items: ReadonlyMap<VaultPath, AssistItemFacts>;
 }
+
+/** What one item holds that its duplicate and people are checked against, read on the press. */
+export interface AssistItemFacts {
+  /** The open tasks, not Inbox items, the title rule lists as ones it may copy, surest first. */
+  readonly duplicates: readonly PossibleDuplicateTask[];
+  /** Another Inbox item's title this one is the newer capture of, or cannot be told from; null for none. */
+  readonly inboxTwin: string | null;
+  /** Every address its text gives. */
+  readonly addresses: readonly string[];
+  /** What it lists under `people` already; null when nothing. */
+  readonly listedPeople: HeldField | null;
+  /** Every property written in its frontmatter, by lower-case key. */
+  readonly written: ReadonlyMap<string, readonly string[]>;
+  /** Its own words, title and body: what a person it names must be found in. */
+  readonly text: string;
+  /** Whether it has words beyond its title. */
+  readonly hasBody: boolean;
+}
+
+const NO_ITEM_FACTS: AssistItemFacts = {
+  duplicates: [],
+  inboxTwin: null,
+  addresses: [],
+  listedPeople: null,
+  written: new Map(),
+  text: '',
+  hasBody: false,
+};
 
 /** What would be done with one item. */
 export type AssistStep =
@@ -69,6 +107,8 @@ export type AssistStep =
       readonly waitingOn: AssistTarget | null;
     }
   | { readonly kind: 'file'; readonly project: AssistTarget }
+  /** It copies a task already in the vault, which the vault confirms and Claude agrees (#906). */
+  | AssistDuplicate
   | { readonly kind: 'leave'; readonly because: string }
   | { readonly kind: 'ask'; readonly question: string };
 
@@ -79,6 +119,8 @@ export interface AssistRow {
   readonly step: AssistStep;
   /** Claude's one sentence; null for an item it was not asked about. */
   readonly why: string | null;
+  /** What would be done about the people it names: only beside a task or a note filed (#906). */
+  readonly people: readonly AssistPersonStep[];
 }
 
 /** Why an item is not asked about as the Inbox lists it, before its file is read; null when it may be. */
@@ -129,37 +171,94 @@ export function assistBatch(
   return { considered, notConsidered: items.length - considered.length };
 }
 
-/** The one step for `item`, from Claude's checked `answer` and what the vault holds. */
+/**
+ * The one step for `item`, from Claude's checked `answer` and what the vault
+ * holds, and what would be done about the people it names. Any question —
+ * about filing, a duplicate or a person — makes the whole item a question.
+ */
 export function assistPlan(
   item: InboxItem,
   answer: AssistItemAnswer,
   facts: AssistFacts,
 ): AssistRow {
-  const row = (step: AssistStep): AssistRow => ({
+  const row = (step: AssistStep, people: readonly AssistPersonStep[] = []): AssistRow => ({
     path: item.path,
     title: item.title,
     step,
     why: answer.why,
+    people,
   });
-  if (answer.unshowable === true) return row(ask(UNSHOWABLE));
+  const step = filingStep(item, answer, facts);
+  if (step.kind === 'ask') return row(step);
+  if (answer.offList === true) return row(ask(OFF_LIST));
+  const own = facts.items.get(item.path) ?? NO_ITEM_FACTS;
+  const duplicate = assistDuplicate({
+    answer,
+    held: assistHeld(item),
+    filing: 'project' in step ? (step.project?.path ?? null) : null,
+    candidates: own.duplicates,
+    inboxTwin: own.inboxTwin,
+    listedPeople: own.listedPeople,
+    hasBody: own.hasBody,
+    written: own.written,
+  });
+  if (duplicate !== null || step.kind === 'leave') return row(duplicate ?? step);
+  const people = assistPeople(answer.people, {
+    offered: facts.people,
+    directory: facts.directory,
+    text: own.text,
+    addresses: own.addresses,
+    listed: own.listedPeople,
+    takenTitles: facts.takenTitles,
+  });
+  return 'question' in people ? row(ask(people.question)) : row(step, people.steps);
+}
+
+/** What filing the item would be: a task, a note filed, left, or a question. */
+function filingStep(item: InboxItem, answer: AssistItemAnswer, facts: AssistFacts): AssistStep {
+  if (answer.unshowable === true) return ask(UNSHOWABLE);
   const question = questionOf(answer);
-  if (question !== null) return row({ kind: 'ask', question });
+  if (question !== null) return ask(question);
   const projects = targetsNamed(answer.projects, facts.filingTargets);
-  if (projects.unshowable) return row(ask(UNSHOWABLE));
+  if (projects.unshowable) return ask(UNSHOWABLE);
   if (projects.unknown !== null) {
-    return row(ask(`Claude named “${projects.unknown}”, which is not a project or area here.`));
+    return ask(`Claude named “${projects.unknown}”, which is not a project or area here.`);
   }
   if (projects.found.length > 1) {
-    return row(ask(`Which one: ${projects.found.map((each) => `“${each.title}”`).join(' or ')}?`));
+    return ask(`Which one: ${projects.found.map((each) => `“${each.title}”`).join(' or ')}?`);
   }
   const project = projects.found[0] ?? null;
   const held = assistHeld(item);
-  if (answer.kind === 'task') return row(taskStep({ item, answer, facts, project, held }));
+  if (answer.kind === 'task') return taskStep({ item, answer, facts, project, held });
   // Only a note is filed as one: a task stays one unless the person says otherwise.
   if (item.task !== null) {
-    return row(ask(`You made this a task; Claude thinks it is ${KIND_WORDS[answer.kind]}.`));
+    return ask(`You made this a task; Claude thinks it is ${KIND_WORDS[answer.kind]}.`);
   }
-  return row(fileStep(project, held.project, facts));
+  return fileStep(project, held.project, facts);
+}
+
+/**
+ * The rows of one plan with no new person added twice: a person a row would
+ * add whom an earlier row adds already — the same mailbox, or the same name
+ * but for case, accents or spacing — makes the later row a question.
+ */
+export function withoutRepeatedAdds(rows: readonly AssistRow[]): AssistRow[] {
+  const adding: { step: AssistPersonStep; title: string }[] = [];
+  return rows.map((row) => {
+    for (const step of row.people) {
+      if (step.kind !== 'add') continue;
+      const earlier = clashingAdd(
+        step,
+        adding.map((each) => each.step),
+      );
+      if (earlier === undefined) continue;
+      const first = adding.find((each) => each.step === earlier)!;
+      const question = `${step.name} would be added from ${first.title} already. Is this them?`;
+      return { ...row, step: ask(question), people: [] };
+    }
+    for (const step of row.people) if (step.kind === 'add') adding.push({ step, title: row.title });
+    return row;
+  });
 }
 
 /** What an item Claude's answer cannot be shown for becomes: a question, with nothing of the answer in it. */

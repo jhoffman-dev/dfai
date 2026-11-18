@@ -56,6 +56,8 @@ describe('attack2-903: real vault names with joiners or right-to-left script (pi
     waitingOn: null,
     confidence: 'high',
     why: 'It asks for a call.',
+    duplicateOf: null,
+    people: [],
     ...extra,
   });
   const read = (one: Record<string, unknown>) =>

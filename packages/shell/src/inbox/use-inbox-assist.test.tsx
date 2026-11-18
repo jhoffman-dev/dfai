@@ -33,6 +33,8 @@ const ANSWER = JSON.stringify({
       waitingOn: null,
       confidence: 'high',
       why: 'Words to keep.',
+      duplicateOf: null,
+      people: [],
     },
   ],
 });
@@ -107,6 +109,7 @@ describe('useInboxAssist', () => {
           does: 'Leave it',
           why: 'Nowhere clear to file it.',
           tone: 'leave',
+          people: [],
         },
       ],
       more: null,

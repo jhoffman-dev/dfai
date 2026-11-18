@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   assistMoreWords,
+  assistPeopleWords,
   assistReason,
   assistStepWords,
   assistTone,
@@ -160,5 +161,6 @@ function rowView(row: AssistRow): AssistRowView {
     does: assistStepWords(row.step),
     why: assistReason(row),
     tone: assistTone(row.step),
+    people: assistPeopleWords(row),
   };
 }

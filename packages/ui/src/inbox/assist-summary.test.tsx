@@ -35,6 +35,7 @@ const PLAN: AssistView = {
       does: 'Make it a task under Larkspur Payroll',
       why: 'It asks for a call about payroll.',
       tone: 'file',
+      people: [],
     },
     {
       path: 'Inbox/Payroll article.md',
@@ -42,6 +43,7 @@ const PLAN: AssistView = {
       does: 'Ask you',
       why: 'Which one: “Larkspur Payroll” or “Hiring”?',
       tone: 'ask',
+      people: [],
     },
   ],
   more: '3 more items were not looked at: one ask looks at 10.',
@@ -118,6 +120,47 @@ describe('Suggest on the Inbox', () => {
       within(region).getByText('3 more items were not looked at: one ask looks at 10.'),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Suggest' })).toHaveProperty('disabled', false);
+  });
+
+  it('shows a duplicate, and each person linked or added in a line of its own (#906)', () => {
+    page(
+      assistOf({
+        kind: 'plan',
+        summary: '2 items: would act on 1, link 1 person, add 1 person, 1 duplicate',
+        rows: [
+          {
+            path: 'Inbox/Call Mara Quill.md',
+            title: 'Call Mara Quill',
+            does: 'Make it a task',
+            why: 'It asks for a call.',
+            tone: 'file',
+            people: ['Links Mara Quill', 'Would add Tobias Fenn'],
+          },
+          {
+            path: 'Inbox/Payroll article.md',
+            title: 'Payroll article',
+            does: 'Looks like a duplicate of Renew Larkspur Payroll contract',
+            why: 'The same renewal.',
+            tone: 'duplicate',
+            people: [],
+          },
+        ],
+        more: null,
+      }),
+    );
+    const region = screen.getByRole('region', { name: 'Suggestions' });
+    expect(within(region).getByRole('status').textContent).toBe(
+      '2 items: would act on 1, link 1 person, add 1 person, 1 duplicate Nothing is written.',
+    );
+    const call = within(region).getByRole('listitem', { name: 'Call Mara Quill' });
+    expect(within(call).getByText('Links Mara Quill')).toBeTruthy();
+    expect(within(call).getByText('Would add Tobias Fenn')).toBeTruthy();
+    const copy = within(region).getByRole('listitem', { name: 'Payroll article' });
+    expect(within(copy).getByText('Duplicate').dataset['tone']).toBe('review');
+    expect(
+      within(copy).getByText('Looks like a duplicate of Renew Larkspur Payroll contract'),
+    ).toBeTruthy();
+    expect(within(copy).queryByText(/^Links |^Would add /)).toBeNull();
   });
 
   it('says plainly why not, in place of a plan', () => {
