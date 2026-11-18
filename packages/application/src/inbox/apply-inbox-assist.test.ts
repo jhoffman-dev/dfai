@@ -1033,7 +1033,8 @@ describe('review #911 round 2: an undo that stops part-way says so, logs it, and
     });
     const closing = parseRunLog(v.files.get(LOG)!).at(-1)!;
     expect(closing).toMatchObject({ kind: 'failed', done: [{ kind: 'assisted', from: CALL }] });
-    const left = (closing as { done: { to: string }[] }).done[0]!.to;
+    const assisted = closing.kind === 'failed' ? closing.done?.[0] : undefined;
+    const left = assisted?.kind === 'assisted' ? assisted.to : CALL;
     expect(v.files.has(left)).toBe(true);
     expect(left).not.toBe(CALL);
   });
@@ -1139,8 +1140,7 @@ describe('apply then undo, as a seeded property', () => {
       const kept = [...notesBut(v.files)].filter(([, text]) => text.endsWith('Mine.\n'));
       expect(kept.length, `seed ${seed}`).toBe(edits.count);
       editsMade += edits.count;
-      for (const [path, text] of kept)
-        expect(before.get(path), `seed ${seed}: ${path}`).toBeDefined();
+      for (const [path] of kept) expect(before.get(path), `seed ${seed}: ${path}`).toBeDefined();
       const untouched = new Map(
         [...notesBut(v.files)].filter(([, text]) => !text.endsWith('Mine.\n')),
       );
