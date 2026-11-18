@@ -57,8 +57,9 @@ the item's and the kept task's text), the notes as read again at the press,
 and the vault as it is then. It makes the plan again **for that item alone**,
 from its own words and the vault, and applies only if it is the plan shown.
 
-It is sufficient on its own because every change it applies is one it can
-justify from the item's own text and the vault. Claude's answer is trusted
+It is sufficient on its own for everything but two choices, said below:
+every other change it applies is one it can justify from the item's own text
+and the vault. Claude's answer is trusted
 for no more than its choice among options the domain computed: what kind of
 thing the item is (a closed set), which of the vault's projects (a list the
 domain offered), and which of the tasks the title rule listed. A steered
@@ -68,6 +69,18 @@ fields that are empty, and be seen before the press and undone after it.
 A fresh ask per item was rejected: it spends the hourly allowance ten times
 over, and it still trusts a model's answer. Applying the batch answer as it
 stands was rejected by rule 4.
+
+### What is trusted: the kind and the project (#911)
+
+Said plainly: a steered batch answer can choose the **wrong real project**,
+or the **wrong kind** (a task where the person meant a note, or the other
+way), with nothing in the item's text to back the choice. The re-check can
+only confirm that the project is a real one offered, and that the field was
+empty. At apply-by-hand the person reading the row is the only defence, so a
+filing or task row says so beside Apply: "Claude chose Larkspur Payroll;
+nothing in the item confirms it. Check it before you apply." This **blocks
+slice 5 (unattended)** until the project and the kind have evidence of their
+own in the item, or their own question.
 
 ### The argument, per row kind
 
@@ -101,11 +114,18 @@ or the item or the kept task says anything other than at the preview.
 `assistOwnWords` (`packages/domain/src/inbox/assist-own-words.ts`) is the
 definition, and its tests pin it. Not the person's own words, line by line:
 a line whose first character other than a space is `>`; a quote's
-attribution (`On … wrote:`); a header line starting `From:`, `To:`, `Cc:`,
+attribution (`On … wrote:`), wrapped by a mail client onto as many as four
+lines: from a line opening `On ` to the first ending `wrote:`, or ending `:`
+with only quoted lines, or nothing, after it; a header line starting `From:`, `To:`, `Cc:`,
 `Bcc:`, `Subject:`, `Sent:`, `Date:` or `Reply-To:`; and everything from a
 forwarded message's separator (`---------- Forwarded message ----------`,
 `-----Original Message-----`, `Begin forwarded message:`) or the first
 `From:` header to the end. It errs toward asking.
+
+A due date counts only as a word of the item's own prose: `2026-12-01` on
+its own, perhaps in brackets or before a full stop — never inside a URL, a
+path, a link or a longer run of digits, letters, slashes or dashes — and only
+a real day still ahead (`2026-02-30` and a day passed ask).
 
 ### Which copy is archived (rule 8)
 
@@ -120,15 +140,27 @@ no `created`, and the kept task is, by the title rule, not in the Inbox.
 Every write goes through a use-case the Inbox already uses by hand. Nothing
 under `packages/adapters` changes, and there is no new port.
 
-| What                                 | Through                                                                                                 | Undo                                                                               |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Make it a task, its due date         | `clarifyInboxItem`: one byte-preserving save                                                            | The item's whole text put back                                                     |
-| File it under its project            | `clarifyInboxItem` → `processInboxItems`: a move, then its link where it lands                          | Moved back to exactly where it was, its text put back                              |
-| Link its people                      | `setNoteProperties` on the item, held to the version the row left                                       | Part of the item's text put back                                                   |
-| Add a person                         | `createPerson`, with their address, then the link above                                                 | Put in the system Trash, only while it is byte for byte as made; otherwise refused |
-| Archive a duplicate                  | `setNoteProperties` (`atlas_duplicate_of`), then `archiveNotes`                                         | Moved back from the Archive to exactly where it was, its text put back             |
-| One log entry per apply and undo     | `appendToRuleLog`, rule id `inbox-assist`, kinds `assisted` / `unassisted` (new), `created` / `trashed` | —                                                                                  |
-| One Activity line per apply and undo | the Activity log, outside the vault                                                                     | —                                                                                  |
+| What                                              | Through                                                                                                                                                                        | Undo                                                                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Make it a task, its due date                      | `clarifyInboxItem`: one byte-preserving save                                                                                                                                   | The item's whole text put back                                                                            |
+| File it under its project                         | `clarifyInboxItem` → `processInboxItems`: a move, then its link where it lands                                                                                                 | Moved back to exactly where it was, rewriting no link; its text put back                                  |
+| Other notes' links to it, rewritten by the filing | the filing's link update, each note recorded with its text before and after                                                                                                    | Each put back byte for byte; refused, naming the note, once it says anything else                         |
+| Link its people                                   | `setNoteProperties` on the item                                                                                                                                                | Part of the item's text put back                                                                          |
+| Add a person                                      | `createPerson`, with their address as the item spells it, then the link above                                                                                                  | Put in the system Trash, only while byte for byte as made and no other note links them; otherwise refused |
+| Archive a duplicate                               | `setNoteProperties` (`atlas_duplicate_of`), then `archiveNotes` (a numbered name when the Archive has its name)                                                                | Moved back from the Archive to exactly where it was, rewriting no link; its text put back                 |
+| Log marks and entries                             | `appendToRuleLog`, rule id `inbox-assist`: `begun` before a row's first write, `step` after each person made, then a closing entry (`run`, `failed` or `undo`, naming the row) | —                                                                                                         |
+| One Activity line per apply and undo              | the Activity log, outside the vault                                                                                                                                            | —                                                                                                         |
+
+Every write on the item is held to the exact text the row checked or last
+left, and refuses before it writes: Clarify is handed that text
+(`expectedText`) and refuses a note that says anything else before planning
+anything; each later write passes it as `ifText` to `setNoteProperties`,
+which compares it with what it reads, and the host's own save is held to the
+digest of what was read, so an edit within the disk's timestamp tick is
+refused too. Never-overwrite does not rest on a rollback. Two moments are
+still held to the file's time alone: the stamp the filing, or the Archive,
+writes where the note lands, read just after the move (the move's and
+rewrite's own use-cases, unchanged here).
 
 A row is applied whole or not at all. Its writes are recorded as they land;
 a write that fails takes back every write before it, item first and then any
@@ -136,11 +168,14 @@ person it added, and says so ("Tobias Fenn was added, then taken out again").
 What could not be taken back is left, logged as a failed entry, and said.
 
 Undo is one exact undo per row, through the Inbox's own
-(`undoClarifyInboxItem`): the item from where it was to where it is, its
-whole text before and after. It is refused, with nothing touched, when the
+(`undoClarifyInboxItem`, asked to be exact): the item from where it was to
+where it is, its whole text before and after, and each other note its filing
+rewrote. Moved back, it rewrites no link of its own accord: it puts back only
+what it recorded, so every byte of every note is as it was. It is refused, with nothing touched, when the
 item says anything other than what the row left, has typing not saved, or
 another note has taken its old place; or when a person it added was edited
-since. **Undo all** takes the rows back the last applied first, each on its
+since, or is linked from any note but the item (read from the notes on disk:
+the index may not have a link just saved). **Undo all** takes the rows back the last applied first, each on its
 own. "Apply all" checks for an abort between rows: put away, it finishes the
 row it is on and starts no other.
 
@@ -151,8 +186,19 @@ row it is on and starts no other.
   item's digest), but no Undo is offered; slice 5's "Undo this run" needs it
   durable, and its own record.
 - A folder a filing or an archive made stays when the note moves back.
-- Links in other notes that a filing rewrote are rewritten back by the move
-  back, as Clarify's undo does today.
+- Before a row, nothing is checked against a crash. A crash mid-row leaves
+  the row's `begun` mark (the item, the digest of what it said, what it was
+  to do) and a `step` for each person made, with no closing entry. The next
+  Suggest shows it under **Left unfinished**, saying exactly what is on disk
+  — the item as it was, changed, or gone from where it was; each person made
+  as made, changed, or gone — and how to put it right by hand. Nothing is
+  repaired for the person, and the undo held in memory is lost with the
+  crash. The before-bytes are not in the log: the item is in the vault, and
+  synced, and the digest says whether it is still that text.
+- Filing by hand, the Inbox's own Undo still moves the note back rewriting
+  links, as before: a bare link to a title another note shares can come back
+  path-qualified (#911). Inbox assist's undo asks for the exact undo; the
+  Inbox's by-hand Undo is unchanged here and is left for its own fix.
 
 ## Consequences
 
