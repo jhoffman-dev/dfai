@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
 import { assistActivityReport } from '../inbox/assist-activity.ts';
-import { logEntrySummary, newLogText, parseRunLog, type LogEntry } from './run-log.ts';
+import {
+  logEntrySummary,
+  newLogText,
+  parseAssistLog,
+  parseRunLog,
+  type LogEntry,
+} from './run-log.ts';
 
 /**
  * #909: what Inbox assist's applies and undos write in its run log, read back
@@ -96,5 +102,43 @@ describe('assistActivityReport', () => {
       message:
         'Inbox assist could not undo “Call Mara”: it was changed since, so it was left as it is.',
     });
+  });
+});
+
+describe('the run log, for what an Inbox assist row is about to do (#911)', () => {
+  it('reads back each intent as written, and says it', () => {
+    const row = '2026-11-17T09:00:00 Inbox/Renew.md 1.1';
+    const marks = [
+      {
+        kind: 'step' as const,
+        at: '2026-11-17T09:00:00',
+        row,
+        done: [],
+        about: { doing: 'create' as const, path: PERSON },
+      },
+      {
+        kind: 'step' as const,
+        at: '2026-11-17T09:00:00',
+        row,
+        done: [],
+        about: { doing: 'relink' as const, path: createVaultPath('Notes/Week.md') },
+      },
+      {
+        kind: 'step' as const,
+        at: '2026-11-17T09:00:00',
+        row,
+        done: [],
+        about: { doing: 'move' as const, path: ITEM, to: FILED },
+      },
+    ];
+    const text = newLogText('Inbox assist', marks);
+    expect(text).toContain(`- about to move \`"${ITEM}"\` → \`"${FILED}"\``);
+    expect(parseAssistLog(text)).toEqual(marks);
+    expect(parseRunLog(text)).toEqual([]);
+    expect(marks.map(logEntrySummary)).toEqual([
+      'About to create Tobias Fenn.',
+      'About to relink Week.',
+      'About to move Call “Mara” → now.',
+    ]);
   });
 });

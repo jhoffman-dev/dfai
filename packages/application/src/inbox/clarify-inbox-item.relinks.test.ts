@@ -4,7 +4,7 @@
  * which is not the same as putting those notes back. A bare `[[Renew X]]`
  * whose title a task shares came back as `[[Inbox/Renew X]]`. Clarifying now
  * records each other note it rewrote, with its text before and after; an
- * undo asked to be exact puts exactly those back and rewrites nothing else.
+ * exact undo (`exact-undo.ts`) puts exactly those back and rewrites nothing else.
  *
  * Also item 3: a clarification given the text it was checked against refuses,
  * before writing anything, when the note says anything else.
@@ -14,11 +14,8 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, type Clarification } from '@dfai/domain';
 import { automationVault } from '../testing/automation-vault.ts';
-import {
-  clarifyInboxItem,
-  ClarifyRefusedError,
-  undoClarifyInboxItem,
-} from './clarify-inbox-item.ts';
+import { clarifyInboxItem, ClarifyRefusedError } from './clarify-inbox-item.ts';
+import { undoExactly } from './exact-undo.ts';
 
 const json = (frontmatter: object, body = '') =>
   `---\n${JSON.stringify(frontmatter)}\n---\n${body}`;
@@ -60,11 +57,10 @@ describe('clarifyInboxItem: the other notes a filing rewrites', () => {
   it('an exact undo puts every note back byte for byte, the bare link to a shared title included', async () => {
     const { vault, file, notePaths } = setUp();
     const outcome = await file();
-    await undoClarifyInboxItem({
+    await undoExactly({
       ports: vault.ports,
       undo: outcome.undo,
       notePaths: notePaths(),
-      exact: true,
     });
     expect(new Map(vault.files)).toEqual(new Map(Object.entries(NOTES)));
   });
@@ -74,11 +70,10 @@ describe('clarifyInboxItem: the other notes a filing rewrites', () => {
     const outcome = await file();
     vault.files.set(WEEK, `${vault.files.get(WEEK)!}Mine.\n`);
     const after = new Map(vault.files);
-    const undoing = undoClarifyInboxItem({
+    const undoing = undoExactly({
       ports: vault.ports,
       undo: outcome.undo,
       notePaths: notePaths(),
-      exact: true,
     });
     await expect(undoing).rejects.toThrow(
       new ClarifyRefusedError('Week was changed since, so nothing was undone.'),

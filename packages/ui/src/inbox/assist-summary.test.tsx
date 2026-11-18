@@ -92,6 +92,18 @@ describe('Suggest on the Inbox', () => {
     expect(screen.queryByRole('button', { name: 'Suggest' })).toBeNull();
   });
 
+  it('holds Suggest while rows are applied or undone, and lets it go after (#911)', () => {
+    page(assistOf({ ...PLAN, busy: true } as AssistView));
+    expect(screen.getByRole('button', { name: 'Suggest' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    cleanup();
+    page(assistOf({ ...PLAN, busy: false } as AssistView));
+    expect(screen.getByRole('button', { name: 'Suggest' }).getAttribute('aria-disabled')).not.toBe(
+      'true',
+    );
+  });
+
   it('says it is asking, and holds Suggest meanwhile', () => {
     page(assistOf({ kind: 'asking' }));
     const region = screen.getByRole('region', { name: 'Suggestions' });

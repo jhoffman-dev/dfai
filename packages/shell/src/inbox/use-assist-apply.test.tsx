@@ -267,4 +267,19 @@ describe('useInboxAssist: Apply and Undo', () => {
     act(() => t.hook.result.current!.onDismiss());
     expect(t.hook.result.current!.unfinished).toEqual([]);
   });
+
+  it('holds Suggest while a row is written, and never calls the row being written unfinished', async () => {
+    const t = setUp();
+    await t.suggest();
+    t.hold();
+    act(() => t.actions().onApply(CALL));
+    expect(t.plan().busy).toBe(true);
+    const asked = t.hook.result.current!.view;
+    act(() => t.hook.result.current!.onSuggest());
+    // Pressed while writing, Suggest does nothing: the plan stays as it is.
+    expect(t.hook.result.current!.view).toBe(asked);
+    t.letGo();
+    await t.settled();
+    expect(t.rowOf('Call Mara').action?.kind).toBe('applied');
+  });
 });

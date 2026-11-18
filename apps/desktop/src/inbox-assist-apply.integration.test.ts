@@ -8,6 +8,14 @@
  * file that is not exactly as read. It walks, reads and stores; it decides
  * nothing. The index answers from the notes as they were at the preview,
  * through real SQL. All names are made up.
+ *
+ * The stand-in proves the guard logic, not the host's path safety. Like
+ * `write_text` in vault.rs it refuses a note that is not there, a time other
+ * than the one read, and bytes whose SHA-256 is not the digest sent, and each
+ * save moves the time on. Unlike it, it does not resolve paths or refuse a
+ * symlink out of the vault, refuse a directory, write beside the note and
+ * rename over it, take the one-change-at-a-time turn, or word its errors
+ * exactly as the host does (only the stale-save message is the host's).
  */
 import { createHash } from 'node:crypto';
 import {
@@ -73,7 +81,8 @@ function walk(root: string, at = ''): string[] {
 const mtime = (file: string) => Math.floor(statSync(file).mtimeMs);
 /** The host's words for a save refused as stale (`CHANGED_ON_DISK` in vault.rs). */
 const CHANGED_ON_DISK = 'the note changed on disk since it was opened';
-const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+/** SHA-256 of the file's bytes, in lowercase hex, as vault.rs makes a save's digest. */
+const sha = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 
 /** The host's vault commands for one folder, and its Trash beside it, outside the vault. */
 function hostFor(root: string, trash: string) {
@@ -147,10 +156,16 @@ function hostFor(root: string, trash: string) {
         (expectedModified !== null &&
           expectedModified !== undefined &&
           mtime(at(path)) !== expectedModified) ||
-        (typeof expectedDigest === 'string' &&
-          sha(readFileSync(at(path), 'utf8')) !== expectedDigest);
+        (typeof expectedDigest === 'string' && sha(readFileSync(at(path))) !== expectedDigest);
       if (changed) throw new Error(CHANGED_ON_DISK);
+      const replaced = mtime(at(path));
       writeFileSync(at(path), String(contents));
+      // As `write_temporary`: every save leaves a time other than the one it replaced. Set in
+      // seconds, a time can land a hair short of the millisecond asked: step until it is later.
+      for (let step = 1; mtime(at(path)) <= replaced; step += 1) {
+        const later = new Date(replaced + step);
+        utimesSync(at(path), later, later);
+      }
       return mtime(at(path));
     },
   };
@@ -484,5 +499,35 @@ describe('Inbox assist, applied and undone through the real adapters', () => {
     expect(v.read(taken)).toBe(before.get(taken));
     await v.undo(done);
     expect(v.disk()).toEqual(before);
+  });
+
+  it('the stand-in host moves the time on with every save, as vault.rs does', async () => {
+    const CALL = 'Inbox/Call Mara.md';
+    const v = await vaultWith({ [CALL]: 'Call Mara Quill.\n' }, [entry(CALL)]);
+    const path = createVaultPath(CALL);
+    const first = await v.ports.fs.readTextFile(path);
+    const saved = await v.ports.fs.writeTextFile({
+      path,
+      contents: 'One.\n',
+      expectedModified: first.modified,
+      expectedText: first.text,
+    });
+    const again = await v.ports.fs.writeTextFile({
+      path,
+      contents: 'Two.\n',
+      expectedModified: saved,
+      expectedText: 'One.\n',
+    });
+    expect(saved).toBeGreaterThan(first.modified);
+    expect(again).toBeGreaterThan(saved);
+    // Held to the bytes: a digest of other bytes is refused, whatever the time.
+    await expect(
+      v.ports.fs.writeTextFile({
+        path,
+        contents: 'Three.\n',
+        expectedModified: again,
+        expectedText: 'One.\n',
+      }),
+    ).rejects.toThrow(CHANGED_ON_DISK);
   });
 });

@@ -417,7 +417,9 @@ describe('applyAssistRow: what it says when the vault does not answer', () => {
     const previewed = await v.preview();
     const write = v.ports.fs.writeTextFile;
     v.ports.fs.writeTextFile = async (each) => {
-      if (each.path === LOG) throw new Error('the disk is full');
+      // Only the entry closing the row, its heading "Ran by hand", cannot be written.
+      if (each.path === LOG && each.contents.includes('· Ran by hand'))
+        throw new Error('the disk is full');
       return write(each);
     };
     const applied = appliedOf(await v.apply(CALL, previewed));
@@ -805,11 +807,13 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     appliedOf(await v.apply(LUNCH, previewed));
     expect(seen).toEqual([
       `writeTextFile ${LUNCH} after [begun]`,
-      'createNote People/Tobias Fenn.md after [begun]',
-      `writeTextFile ${LUNCH} after [begun,step]`,
+      // The intent to make him logged before he is made, and his making right after.
+      'createNote People/Tobias Fenn.md after [begun,step]',
+      `writeTextFile ${LUNCH} after [begun,step,step]`,
     ]);
     expect(parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
       'begun',
+      'step',
       'step',
       'run',
     ]);
@@ -820,8 +824,10 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     const previewed = await v.preview();
     v.fail({ method: 'moveEntry', nth: 1 });
     expect((await v.apply(CALL, previewed)).kind).toBe('failed');
+    // Begun, about to move (the move that failed), closed.
     expect(parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
       'begun',
+      'step',
       'failed',
     ]);
     expect(await findUnfinishedAssist(v.ports)).toEqual([]);
@@ -935,6 +941,137 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     ]);
     // Said, never repaired.
     expect(v.files).toEqual(before);
+  });
+});
+
+/** Appends `edit` to the note right after the row moves it: another editor saving into it as it lands. */
+function editAfterTheMove(v: ReturnType<typeof setUp>, edit: string) {
+  const move = v.ports.fs.moveEntry;
+  v.ports.fs.moveEntry = async (each) => {
+    await move(each);
+    if (each.to !== LOG && v.files.has(each.to))
+      v.files.set(each.to, `${v.files.get(each.to)!}${edit}`);
+  };
+}
+
+describe('review #911 round 2: an edit made while the row moves the note is never lost (item 1)', () => {
+  for (const [row, kind] of [
+    [ARTICLE, 'filing'],
+    [RENEW, 'duplicate'],
+  ] as const) {
+    it(`${kind}: the stamp where it lands is refused, and the note goes back with the edit`, async () => {
+      const v = setUp();
+      const previewed = await v.preview();
+      editAfterTheMove(v, 'Mine.\n');
+      const applied = await v.apply(row, previewed);
+      expect(applied).toMatchObject({
+        kind: 'failed',
+        words: expect.stringContaining('back where it was with that edit kept'),
+      });
+      // Back where it was, its edit in it: never stamped over, never written back over.
+      expect(v.files.get(row)).toMatch(/Mine\.\n$/u);
+      expect(
+        [...v.files.keys()].filter(
+          (path) => path.startsWith('Archive/') || path.startsWith('Notes/2026'),
+        ),
+      ).toEqual([]);
+      const closing = parseRunLog(v.files.get(LOG)!).at(-1)!;
+      expect(closing).toMatchObject({
+        kind: 'failed',
+        done: [{ kind: 'assisted', from: row, to: row }],
+      });
+    });
+  }
+});
+
+describe('review #911 round 2: an undo that stops part-way says so, logs it, and can finish (item 2)', () => {
+  it('undoAssistRow: the move back refused after the text is put back', async () => {
+    const v = setUp();
+    const before = v.snapshot();
+    const applied = appliedOf(await v.apply(CALL));
+    const move = v.ports.fs.moveEntry;
+    v.ports.fs.moveEntry = async () => {
+      throw new Error('the disk refused the move');
+    };
+    const partly = await v.undo(applied);
+    expect(partly).toEqual({
+      kind: 'partly',
+      words: `Partly undone: Call Mara is still at ${applied.path}. Undo again to finish.`,
+    });
+    expect(parseRunLog(v.files.get(LOG)!).at(-1)).toMatchObject({
+      kind: 'undo',
+      left: [{ path: applied.path }],
+    });
+    v.ports.fs.moveEntry = move;
+    expect(await v.undo(applied)).toMatchObject({ kind: 'undone' });
+    expect(notesBut(v.files)).toEqual(notesBut(before));
+  });
+
+  it('takeBack: a failed row whose move back is refused says where the item is, and logs it there', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    // The people link fails, then the move back does too.
+    v.fail({ method: 'writeTextFile', nth: 3 });
+    const move = v.ports.fs.moveEntry;
+    let moves = 0;
+    v.ports.fs.moveEntry = async (each) => {
+      moves += 1;
+      if (moves > 1) throw new Error('the disk refused the move');
+      return move(each);
+    };
+    const applied = await v.apply(CALL, previewed);
+    expect(applied).toMatchObject({
+      kind: 'failed',
+      words: expect.stringContaining('Partly undone'),
+    });
+    const closing = parseRunLog(v.files.get(LOG)!).at(-1)!;
+    expect(closing).toMatchObject({ kind: 'failed', done: [{ kind: 'assisted', from: CALL }] });
+    const left = (closing as { done: { to: string }[] }).done[0]!.to;
+    expect(v.files.has(left)).toBe(true);
+    expect(left).not.toBe(CALL);
+  });
+});
+
+describe('review #911 round 2: undo never breaks a link made since (item 4)', () => {
+  it('refuses, naming the note, when another note now links to it where it was filed', async () => {
+    const v = setUp();
+    const applied = appliedOf(await v.apply(CALL));
+    v.files.set('Notes/Week.md', `See [[${applied.path.slice(0, -3)}|the call]].\n`);
+    const after = v.snapshot();
+    expect(await v.undo(applied)).toEqual({
+      kind: 'refused',
+      words:
+        'Not undone: Week links to it where it is now, and undoing would break that link, so nothing was undone.',
+    });
+    expect(v.files).toEqual(after);
+  });
+});
+
+describe('review #911 round 2: a path as the vault spells it (item 7)', () => {
+  it('refuses an item whose path is spelled otherwise than the vault spells it, before reading anything', async () => {
+    const v = setUp();
+    const { row, evidence } = (await v.preview()).of(CALL);
+    const bent = 'inbox/Call Mara.md' as VaultPath;
+    let reads = 0;
+    const read = v.ports.fs.readTextFile;
+    v.ports.fs.readTextFile = async (at) => {
+      reads += 1;
+      return read(at);
+    };
+    const { applied } = await applyAssistRow(v.ports, {
+      row: { ...row, path: bent },
+      evidence: {
+        ...evidence!,
+        item: { ...evidence!.item, path: bent },
+        answer: { ...evidence!.answer, item: bent },
+      },
+      notePaths: v.notePaths(),
+    });
+    expect(applied).toEqual({
+      kind: 'failed',
+      words: `Not applied: the vault spells it ${CALL}. Nothing changed.`,
+    });
+    expect(reads).toBe(0);
   });
 });
 
