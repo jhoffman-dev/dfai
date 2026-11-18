@@ -49,6 +49,22 @@ const SYNC_COMMANDS = new Set([
  * same four commands over the same IPC shape, so the frontend under test is the
  * real one. The production implementation and its guards live in src-tauri/vault.rs.
  */
+/** One write to the vault the app asked the host for: the command, and the vault paths it names. */
+export interface VaultWrite {
+  readonly command: string;
+  readonly paths: readonly string[];
+}
+
+/** The host commands that write the vault. */
+const VAULT_WRITE_COMMANDS = new Set([
+  'write_text_file',
+  'create_note',
+  'create_folder',
+  'move_entry',
+  'trash_entry',
+  'write_binary_file',
+]);
+
 export interface FakeVault {
   root: string;
   write(relativePath: string, contents: string): Promise<void>;
@@ -488,6 +504,12 @@ export interface FakeHost {
   callsTo(command: string): number;
   /** How many times the app has asked the host for each command so far, counted as each call starts. */
   commandCounts(): ReadonlyMap<string, number>;
+  /**
+   * Every write to the vault the app has asked for so far, in order: the
+   * command and the vault paths it names (a move names both). For a spec
+   * that holds an action to exactly the notes it writes.
+   */
+  vaultWrites(): readonly VaultWrite[];
   /**
    * How many calls of this command have been answered in the page, failures
    * included. Each is counted a task after its answer settles there, so the
@@ -2119,6 +2141,7 @@ export async function installHost(
 
   /** Every command the app has asked the host for, by name. */
   const calls = new Map<string, number>();
+  const vaultWritesAsked: VaultWrite[] = [];
   await page.route('**/__atlas-embedding-load*', (route) => {
     const params = new URL(route.request().url()).searchParams;
     const slice = embeddings.loadSlice(Number(params.get('from')), Number(params.get('to')));
@@ -2126,6 +2149,11 @@ export async function installHost(
   });
   await page.exposeFunction('__atlasInvoke', async (command: string, args: unknown) => {
     calls.set(command, (calls.get(command) ?? 0) + 1);
+    if (VAULT_WRITE_COMMANDS.has(command)) {
+      const named = (args ?? {}) as { path?: string; from?: string; to?: string };
+      const paths = [named.path, named.from, named.to].filter((path) => typeof path === 'string');
+      vaultWritesAsked.push({ command, paths });
+    }
     const answered = await answer(command, args).catch(rejectionAsTauriSends);
     // Logged only once a secret exists: before that there is nothing to leak,
     // and the replies that carry whole files would only slow every test.
@@ -2386,6 +2414,7 @@ export async function installHost(
     writesTo: (relativePath) => writes.get(relativePath) ?? 0,
     callsTo: (command) => calls.get(command) ?? 0,
     commandCounts: () => new Map(calls),
+    vaultWrites: () => [...vaultWritesAsked],
     answeredTo: (command) =>
       page.evaluate(
         (named) =>

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { expect, test } from './fixtures.ts';
 import { createVault, expectFile, installHost, type FakeVault } from './host.ts';
 
+type Host = Awaited<ReturnType<typeof installHost>>;
+
 /**
  * #909, Inbox assist's rows applied by hand: Apply on one row and "Apply all
  * sure ones", each re-checked against the notes as they are at the press;
@@ -71,6 +73,7 @@ const READS = new Set([
   'index_search',
   'model_process_start',
   'activity_read',
+  'index_stats',
 ]);
 
 /** The commands that write the vault. */
@@ -83,34 +86,41 @@ const VAULT_WRITES = new Set([
   'write_binary_file',
 ]);
 
-/** What follows a write without being one: the index catching up with the files, and Activity's own file, kept outside the vault. */
-const FOLLOWS_A_WRITE = /^(index_|activity_)/u;
+/**
+ * What follows a write without being one, named: the index catching up with
+ * the files it is told changed, and Activity's own file, kept outside the vault.
+ */
+const FOLLOW_UPS = new Set(['index_put', 'index_remove', 'activity_append']);
+
+/** Where the host's writes stood: how many of each command, and how many vault writes, so far. */
+const mark = (host: Host) => ({ counts: host.commandCounts(), writes: host.vaultWrites().length });
+
+/** A day's folders, as the filing makes them: the year, and the month under it. */
+const dated = (path: string) =>
+  path.replace(/\/\d{4}(\/\d{2})?(?=\/|$)/gu, (found) => (found.length > 5 ? '/YYYY/MM' : '/YYYY'));
 
 /**
- * The vault writes asked for since `before`, by command and how many times:
- * a folder made only by name, since how many a filing makes depends on which
- * of its home's folders exist yet. Any command that is neither a read, a
- * vault write nor what follows one fails the test.
+ * The vault writes asked for since `before`, in order, each as its command and
+ * the paths it names. Any command that is neither a read, a vault write nor a
+ * named follow-up fails the test.
  */
-function writesSince(before: ReadonlyMap<string, number>, now: ReadonlyMap<string, number>) {
-  const called = [...now].filter(
-    ([command, count]) => count > (before.get(command) ?? 0) && !READS.has(command),
-  );
+function writtenSince(host: Host, before: ReturnType<typeof mark>): string[] {
+  const now = host.commandCounts();
+  const called = [...now]
+    .filter(([command, count]) => count > (before.counts.get(command) ?? 0) && !READS.has(command))
+    .map(([command]) => command);
   expect(
-    called
-      .map(([command]) => command)
-      .filter((command) => !VAULT_WRITES.has(command) && !FOLLOWS_A_WRITE.test(command)),
+    called.filter((command) => !VAULT_WRITES.has(command) && !FOLLOW_UPS.has(command)),
   ).toEqual([]);
-  return Object.fromEntries(
-    called
-      .filter(([command]) => VAULT_WRITES.has(command))
-      .map(([command, count]) => [
-        command,
-        command === 'create_folder' ? 'some' : count - (before.get(command) ?? 0),
-      ])
-      .sort(([left], [right]) => String(left).localeCompare(String(right))),
-  );
+  return host
+    .vaultWrites()
+    .slice(before.writes)
+    .map(({ command, paths }) => `${command} ${paths.map(dated).join(' -> ')}`);
 }
+
+const LOG = '.atlas/automations/log/inbox-assist.md';
+/** Where Call Mara Quill is filed: its type's home for the day, as `dated` writes it. */
+const FILED = 'Tasks/YYYY/MM/Call Mara Quill.md';
 
 async function setUp(page: Parameters<Parameters<typeof test>[2]>[0]['page']) {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -155,7 +165,7 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
   await expect(junk).toContainText('Question');
   await expect(junk.getByRole('button')).toHaveCount(0);
 
-  const before = host.commandCounts();
+  const before = mark(host);
   await call.getByRole('button', { name: 'Apply' }).click();
   await expect(call).toContainText(
     'Made it a task under Larkspur Payroll, due 2026-12-01. Linked Mara Quill.',
@@ -166,30 +176,42 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
   // Its fields in one write; filed: a move, then its project linked where it lands; its people
   // linked in a third write; the log made, in its folder.
   await expect.poll(() => host.activityLog()).toContain('Inbox assist applied “Call Mara Quill”');
-  expect(writesSince(before, host.commandCounts())).toEqual({
-    create_folder: 'some',
-    create_note: 1,
-    move_entry: 1,
-    write_text_file: 3,
-  });
+  expect(writtenSince(host, before)).toEqual([
+    // The log's folders and the log itself, with the row begun, before anything else.
+    'create_folder .atlas/automations',
+    'create_folder .atlas/automations/log',
+    `create_note ${LOG}`,
+    // Made a task, its due date written; filed into its home and its project linked there.
+    `write_text_file ${CALL}`,
+    'create_folder Tasks/YYYY',
+    'create_folder Tasks/YYYY/MM',
+    `move_entry ${CALL} -> ${FILED}`,
+    `write_text_file ${FILED}`,
+    // Mara linked under people.
+    `write_text_file ${FILED}`,
+    // The row closed in the log.
+    `write_text_file ${LOG}`,
+  ]);
 
-  const beforeUndo = host.commandCounts();
+  const beforeUndo = mark(host);
   await undo.press('Enter');
   await expect(call).toContainText('Put back as it was.');
   await expectAsSetUp(vault);
   // Moved back, its bytes written back, and one line added to the log.
   await expect.poll(() => host.activityLog()).toContain('Inbox assist undid “Call Mara Quill”');
-  expect(writesSince(beforeUndo, host.commandCounts())).toEqual({
-    move_entry: 1,
-    write_text_file: 2,
-  });
+  // Moved back, rewriting no link; its bytes written back; the undo logged. Nothing else.
+  expect(writtenSince(host, beforeUndo)).toEqual([
+    `move_entry ${FILED} -> ${CALL}`,
+    `write_text_file ${CALL}`,
+    `write_text_file ${LOG}`,
+  ]);
 });
 
 test('applies all sure rows, skipping the question, then undoes all, every byte back', async ({
   page,
 }) => {
   const { vault, host, suggestions } = await setUp(page);
-  const before = host.commandCounts();
+  const before = mark(host);
   await suggestions.getByRole('button', { name: 'Apply all sure ones' }).click();
   const lunch = suggestions.getByRole('listitem', { name: 'Lunch with Tobias Fenn' });
   const renew = suggestions.getByRole('listitem', { name: 'Renew Larkspur contract' });
@@ -204,25 +226,54 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
   // Call Mara: three writes and a move, as above. Tobias's item: made a task, then he is made and
   // linked. The duplicate: its stamp, then archived (a move and the Archive's stamp). The log: made
   // once, then added to twice.
-  expect(writesSince(before, host.commandCounts())).toEqual({
-    create_folder: 'some',
-    create_note: 2,
-    move_entry: 2,
-    write_text_file: 9,
-  });
+  expect(writtenSince(host, before)).toEqual([
+    // Call Mara, as above.
+    'create_folder .atlas/automations',
+    'create_folder .atlas/automations/log',
+    `create_note ${LOG}`,
+    `write_text_file ${CALL}`,
+    'create_folder Tasks/YYYY',
+    'create_folder Tasks/YYYY/MM',
+    `move_entry ${CALL} -> ${FILED}`,
+    `write_text_file ${FILED}`,
+    `write_text_file ${FILED}`,
+    `write_text_file ${LOG}`,
+    // Lunch: begun; made a task; Tobias made, and logged at once; linked; closed.
+    `write_text_file ${LOG}`,
+    `write_text_file ${LUNCH}`,
+    `create_note ${TOBIAS}`,
+    `write_text_file ${LOG}`,
+    `write_text_file ${LUNCH}`,
+    `write_text_file ${LOG}`,
+    // The duplicate: begun; stamped; archived (its folders, the move, the Archive's stamp); closed.
+    `write_text_file ${LOG}`,
+    `write_text_file ${RENEW}`,
+    'create_folder Archive',
+    'create_folder Archive/Inbox',
+    `move_entry ${RENEW} -> Archive/${RENEW}`,
+    `write_text_file Archive/${RENEW}`,
+    `write_text_file ${LOG}`,
+  ]);
 
-  const beforeUndo = host.commandCounts();
+  const beforeUndo = mark(host);
   await suggestions.getByRole('button', { name: 'Undo all' }).click();
   await expect(renew).toContainText('Put back as it was.');
   await expect(lunch).toContainText('Put back as it was.');
   await expectAsSetUp(vault);
   expect(host.trashed()).toEqual([TOBIAS]);
   // Each item moved back or written back, Tobias put in the Trash, a log line each.
-  expect(writesSince(beforeUndo, host.commandCounts())).toEqual({
-    move_entry: 2,
-    trash_entry: 1,
-    write_text_file: 6,
-  });
+  // The last applied first, each moved or written back and logged; Tobias to the Trash.
+  expect(writtenSince(host, beforeUndo)).toEqual([
+    `move_entry Archive/${RENEW} -> ${RENEW}`,
+    `write_text_file ${RENEW}`,
+    `write_text_file ${LOG}`,
+    `write_text_file ${LUNCH}`,
+    `trash_entry ${TOBIAS}`,
+    `write_text_file ${LOG}`,
+    `move_entry ${FILED} -> ${CALL}`,
+    `write_text_file ${CALL}`,
+    `write_text_file ${LOG}`,
+  ]);
 });
 
 test('asks instead, and writes nothing, when the item was edited after the preview', async ({
@@ -233,11 +284,11 @@ test('asks instead, and writes nothing, when the item was edited after the previ
   await vault.write(CALL, edited);
   const anHourAgo = new Date(Date.now() - 60 * 60_000);
   await utimes(join(vault.root, CALL), anHourAgo, anHourAgo);
-  const before = host.commandCounts();
+  const before = mark(host);
   const call = suggestions.getByRole('listitem', { name: 'Call Mara Quill' });
   await call.getByRole('button', { name: 'Apply' }).click();
   await expect(call).toContainText('It changed since the preview. Suggest again to see it.');
   await expect(call.getByRole('button')).toHaveCount(0);
   await expectFile(vault, CALL).toBe(edited);
-  expect(writesSince(before, host.commandCounts())).toEqual({});
+  expect(writtenSince(host, before)).toEqual([]);
 });
