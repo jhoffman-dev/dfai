@@ -177,7 +177,7 @@ test('Ask and Claude chat switched off leaves the sidebar, ⌘J, ⇧⌘J and the
 test('with Ask off, a Claude tab kept in the right sidebar asks Claude Code nothing after a reload', async ({
   page,
 }) => {
-  const { host } = await openVault(page);
+  const { host, vault } = await openVault(page);
   await openNote(page, 'Garden');
   await page.keyboard.press('Shift+Meta+j');
   const chat = page.getByRole('complementary', { name: 'Claude' });
@@ -188,6 +188,8 @@ test('with Ask off, a Claude tab kept in the right sidebar asks Claude Code noth
 
   await switchFeature(page, ASK, false);
   await expect(chat).toHaveCount(0);
+  // Held in the file before the reload, or the window relaunches with Ask on.
+  await expectFile(vault, SETTINGS).toMatch(/featuresOff:\s*\n\s*- ask/);
   const before = signedIn();
   await reloadVault(page);
   await openNote(page, 'Garden');

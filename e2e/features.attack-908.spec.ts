@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from './fixtures.ts';
-import { createVault, installHost, type FakeHost } from './host.ts';
+import { createVault, expectFile, installHost, type FakeHost, type FakeVault } from './host.ts';
 
 /*
  * Attack on PR #908 (#901, slice 2): what a switched-off feature leaves
@@ -12,7 +12,7 @@ const TS = '1793136000.000100';
 const PERMALINK = `https://larkspur.slack.com/archives/${CHANNEL}/p1793136000000100`;
 const ASK = 'Ask and Claude chat';
 
-async function openVault(page: Page): Promise<FakeHost> {
+async function openVault(page: Page): Promise<{ host: FakeHost; vault: FakeVault }> {
   const vault = await createVault();
   await vault.write('Garden.md', '# Garden\n\nBeans by [[Orchard]].\n');
   await vault.write('Orchard.md', '# Orchard\n\nApples.\n');
@@ -20,7 +20,7 @@ async function openVault(page: Page): Promise<FakeHost> {
   await page.goto('/');
   await page.getByRole('button', { name: 'Choose folder…' }).click();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
-  return host;
+  return { host, vault };
 }
 
 const settings = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
@@ -50,7 +50,7 @@ const slackOffer = (page: Page) => page.getByRole('region', { name: 'Slack messa
 test('a Slack offer put away by switching Slack capture off does not come back when it is on again', async ({
   page,
 }) => {
-  const host = await openVault(page);
+  const { host } = await openVault(page);
   host.slack.serve('auth.test', { ok: true, team: 'Larkspur Payroll', user: 'mara' });
   host.slack.serve('conversations.replies', {
     ok: true,
@@ -92,7 +92,7 @@ test('a Slack offer put away by switching Slack capture off does not come back w
 test('with Ask switched off, a kept Ask tab does not ask Claude Code whether it is signed in', async ({
   page,
 }) => {
-  const host = await openVault(page);
+  const { host, vault } = await openVault(page);
   await page.getByRole('treeitem', { name: 'Garden', exact: true }).click();
   await page.keyboard.press('Meta+j');
   await expect(page.getByRole('article', { name: 'Ask' })).toBeVisible();
@@ -101,6 +101,9 @@ test('with Ask switched off, a kept Ask tab does not ask Claude Code whether it 
   await expect.poll(signedIn).toBeGreaterThan(0);
 
   await switchFeature(page, ASK, false);
+  // The switch shows off as it is pressed; the file holds it a few host calls later.
+  // A reload before then would relaunch with Ask on.
+  await expectFile(vault, '.atlas/settings.md').toMatch(/featuresOff:\s*\n\s*- ask/);
   const before = signedIn();
   await page.reload();
   await expect(page.getByText(/notes indexed/)).toBeVisible();
