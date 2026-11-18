@@ -877,7 +877,7 @@ function AppWindow({
     clock: localClock,
     activity: activityLog,
     onWrote: onChanged,
-    enabled: offered.granolaPull,
+    enabled: working.granolaPull,
   });
   // Today's meetings from Google Calendar (ADR-0046): once the index is ready, every 15 minutes, and on asking.
   // Only the Mac that runs the vault's automations writes its meeting notes (U-29), so two never write one note.
@@ -886,8 +886,9 @@ function AppWindow({
   // The clock the vault's event notes are on, which the morning brief keeps (#587).
   const planZone = usePlanZone({ fs: vault.fs, markdown: notes.markdown, vaultKey });
   const meetingsWrittenHere = useAutomationsHere(syncStore, meetingsOn ? vaultKey : null);
+  // Meetings switched off (#901), none are read: a sync under way stops between meetings, as its Stop does.
   const meetingSync = useMeetingSync({
-    meetings: meetingsWrittenHere ? (meetingPorts ?? null) : null,
+    meetings: working.meetingSync && meetingsWrittenHere ? (meetingPorts ?? null) : null,
     fs: vault.fs,
     markdown: notes.markdown,
     index: index.index,
@@ -899,6 +900,7 @@ function AppWindow({
     onWrote: onChanged,
   });
   // Blocks to and from their Google calendar (#30), written only from the Mac that runs the vault's automations (U-29).
+  // Time-blocking, not Meetings (ADR-0055): it shares the sign-in, and runs with Meetings off.
   // Asked only for a vault that syncs its blocks, so opening one that does not draws nothing for it.
   const blocksOn = useBlockSyncOn({ fs: vault.fs, markdown: notes.markdown, vaultKey });
   const blocksWrittenHere = useAutomationsHere(syncStore, blocksOn ? vaultKey : null);
@@ -1927,7 +1929,8 @@ function AppWindow({
     vault: vaultKey,
     active: overlay === 'settings',
     activity: activityLog,
-    meetingSync,
+    // Its meetings part is Meetings' (#901); the sign-in and the blocks part stay with it off.
+    ...(offered.meetingSyncSettings ? { meetingSync } : {}),
     meetingsWrittenHere,
     ...(blockPorts === undefined ? {} : { blockSync }),
     blocksWrittenHere,
@@ -2373,7 +2376,8 @@ function AppWindow({
     />
   );
   const granolaShown = granolaPull.toastShown;
-  const granolaToast = granolaPull.toast !== null && (
+  // A pull that finishes after Meetings is switched off says nothing on screen.
+  const granolaToast = working.granolaPull && granolaPull.toast !== null && (
     <Toast
       key={granolaShown}
       message={granolaPull.toast}
@@ -2620,6 +2624,8 @@ function AppWindow({
           onSettled={settleArchive}
           live={automationsShown}
           sync={syncStore}
+          enabled={working.automationsRunner}
+          featuresKnown={features.setting.answered}
           ownerKnown={ownerKnown}
           selfName={ownerName}
           selfEmails={ownerEmails}
@@ -2629,6 +2635,7 @@ function AppWindow({
         />
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
+          enabled={working.meetingImport}
           sync={syncStore}
           automations={automationsStore}
           rulePorts={rulePorts}
@@ -2744,7 +2751,9 @@ function AppWindow({
                       onOpenLibrary: () => openPage({ kind: 'library' }),
                       onOpenHighlights: () => openPage({ kind: 'highlights' }),
                     })}
-                    onOpenAutomations={() => openPage({ kind: 'automations' })}
+                    {...(offered.automationsPage && {
+                      onOpenAutomations: () => openPage({ kind: 'automations' }),
+                    })}
                     activity={{
                       onOpen: () => openPage({ kind: 'activity' }),
                       unseenErrors: activity.unseenErrors,

@@ -329,8 +329,12 @@ export function useAutomations(options: AutomationsOptions) {
     onSettled,
   });
   const runRule = useCallback(
-    (rule: AutomationRule, trigger: RunTrigger) =>
-      forRule(rule, (vault) =>
+    (rule: AutomationRule, trigger: RunTrigger) => {
+      // The clock's rules run one after another: once this Mac stops running them (Automations
+      // switched off, #901, or the vault's automations named elsewhere), the run under way
+      // finishes, its log written, and no rule after it starts. By hand, a rule still runs.
+      if (trigger !== 'hand' && !runsHere.current) return Promise.resolve(null);
+      return forRule(rule, (vault) =>
         runAutomation({
           ports,
           rule,
@@ -341,7 +345,8 @@ export function useAutomations(options: AutomationsOptions) {
           freshPull: freshPullOf(vault),
           relink: relinkIn(vault),
         }),
-      ),
+      );
+    },
     [forRule, guardOf, ports, clock, activity, freshPullOf, relinkIn],
   );
   /**

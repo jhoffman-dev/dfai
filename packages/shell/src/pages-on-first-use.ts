@@ -89,7 +89,8 @@ export const tagsScreen = laterPage(
   chunk('tags-screen', () => import('./tags/tags-screen.tsx')),
   (m) => m.TagsScreen,
 );
-export const automationsScreen = laterPage(
+export const automationsScreen = featurePage(
+  'automations',
   chunk('automations-screen', () => import('./automations/automations-screen.tsx')),
   (m) => m.AutomationsScreen,
 );
