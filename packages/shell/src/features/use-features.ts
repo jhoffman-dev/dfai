@@ -34,6 +34,8 @@ export function useFeatures({
   activity: Pick<ActivityLog, 'inOpenVault'>;
 }): {
   readonly offered: EntryPointsOffered;
+  /** What work that starts by itself may start: see below. */
+  readonly working: EntryPointsOffered;
   readonly setting: FeaturesSetting;
   readonly known: StoreApi<boolean>;
 } {
@@ -46,7 +48,7 @@ export function useFeatures({
   // Told after the commit, so only what subscribes (a tab on a feature's page) draws for it.
   const [known] = useState(() => createStore<boolean>()(() => false));
   useEffect(() => known.setState(answered, true), [known, answered]);
-  return { offered, setting, known };
+  return { offered, working: offered, setting, known };
 }
 
 /**

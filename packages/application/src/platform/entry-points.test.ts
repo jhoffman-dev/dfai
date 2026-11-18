@@ -23,6 +23,8 @@ import {
   featureOfEntry,
   NEEDS_THE_DESKTOP_APP,
   offeredWithFeatures,
+  STARTS_WORK,
+  workOffered,
   featureOfPage,
   pageTurnedOff,
   presetsOffered,
@@ -72,6 +74,7 @@ const HIDES: Readonly<Record<PlatformCapability, readonly EntryPoint[]>> = {
   claudeCodeChat: [
     'claudeSettings',
     'claudeChat',
+    'chatWork',
     'inboxSuggest',
     'skillDraft',
     'claudeAutomations',
@@ -129,7 +132,7 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
     reading: ['libraryPages', 'documentReader', 'addDocuments'],
     kindle: ['kindleSettings', 'kindleCommands', 'kindleSync'],
     // Settings → Claude, Suggest, Skills' Ask Claude… and rules' Claude steps stay (ADR-0055).
-    ask: ['claudeChat'],
+    ask: ['claudeChat', 'chatWork'],
     graph: ['graphPage'],
     slack: ['slackSettings', 'slackLinkOffer'],
   };
@@ -206,6 +209,51 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
     expect(offered).not.toBe(platform);
     expect(Object.isFrozen(offered)).toBe(true);
     expect(platform.libraryPages).toBe(true);
+  });
+});
+
+describe('workOffered: work that starts by itself waits for the settings (#901)', () => {
+  /** Written out by hand, so an entry point added to or taken from the set shows here. */
+  const HELD: readonly EntryPoint[] = ['kindleSync', 'slackLinkOffer', 'chatWork'];
+  const held = (offered: EntryPointsOffered) =>
+    ENTRY_POINTS.filter((entry) => EVERY_ENTRY_POINT[entry] && !offered[entry]);
+
+  it('holds, until the settings answer, every runner, timer and listener of a feature with a switch', () => {
+    expect([...STARTS_WORK].sort()).toEqual([...HELD].sort());
+    expect(held(workOffered(EVERY_ENTRY_POINT, { answered: false })).sort()).toEqual(
+      [...HELD].sort(),
+    );
+  });
+
+  it('holds only what a switch could stop: every entry point it holds belongs to a feature', () => {
+    for (const entry of STARTS_WORK) expect(featureOfEntry(entry)).not.toBeNull();
+  });
+
+  it('holds no row, command, page or Settings section: what is drawn shows at once', () => {
+    const before = workOffered(EVERY_ENTRY_POINT, { answered: false });
+    for (const entry of [
+      'claudeChat',
+      'graphPage',
+      'libraryPages',
+      'kindleCommands',
+      'slackSettings',
+    ] as const) {
+      expect(before[entry]).toBe(true);
+    }
+  });
+
+  it('answers the very object it was handed once the settings have answered', () => {
+    const offered = entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(['graph']));
+    expect(workOffered(offered, { answered: true })).toBe(offered);
+  });
+
+  it('answers one frozen object for each object held, and never offers what was not', () => {
+    const lacking = entryPointsOffered(WEB_CAPABILITIES);
+    const first = workOffered(lacking, { answered: false });
+    expect(workOffered(lacking, { answered: false })).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(first.chatWork).toBe(false);
+    expect(first.exportNotes).toBe(lacking.exportNotes);
   });
 });
 
