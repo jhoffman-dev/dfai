@@ -192,4 +192,45 @@ describe('Apply on the suggestions', () => {
     rerender(at({ kind: 'applied', words: 'Made it a task.', problem: null }));
     expect(document.activeElement).toBe(other);
   });
+
+  it('says what Claude chose beside Apply, and only while it can be applied', () => {
+    const caution =
+      'Claude chose Larkspur Payroll; nothing in the item confirms it. Check it before you apply.';
+    const offered = { ...row('Call Mara', { kind: 'apply', said: null }), caution };
+    const done = {
+      ...row('Done', { kind: 'applied', words: 'Filed it.', problem: null }),
+      caution,
+    };
+    const { region } = show(plan([offered, done]));
+    expect(
+      within(within(region).getByRole('listitem', { name: 'Call Mara' })).getByText(caution),
+    ).toBeTruthy();
+    expect(
+      within(within(region).getByRole('listitem', { name: 'Done' })).queryByText(caution),
+    ).toBeNull();
+  });
+
+  it('shows rows an earlier apply left unfinished, line by line, with nothing to press', () => {
+    const unfinished = [
+      {
+        title: 'Lunch with Tobias',
+        lines: [
+          'It was to do: Made it a task. Added Tobias Fenn.',
+          'Tobias Fenn was made (People/Tobias Fenn.md), as made. Link it from Lunch with Tobias, or put it in the Trash.',
+        ],
+      },
+    ];
+    render(
+      <AssistSummary
+        view={plan([])}
+        onDismiss={() => undefined}
+        actions={actions()}
+        unfinished={unfinished}
+      />,
+    );
+    const left = screen.getByRole('listitem', { name: 'Lunch with Tobias, left unfinished' });
+    for (const line of unfinished[0]!.lines) expect(within(left).getByText(line)).toBeTruthy();
+    expect(within(left).queryByRole('button')).toBeNull();
+    expect(screen.getByText('Left unfinished')).toBeTruthy();
+  });
 });

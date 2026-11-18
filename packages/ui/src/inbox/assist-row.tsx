@@ -30,6 +30,11 @@ export interface AssistRowView {
   readonly people: readonly string[];
   /** Where it stands with being applied; left out, or `none`, where nothing can be. */
   readonly action?: AssistRowAction;
+  /**
+   * What the person applying it should check (#911): Claude chose its kind and
+   * project, and nothing in the item confirms them. Left out for none.
+   */
+  readonly caution?: string | null;
 }
 
 const NO_ACTION: AssistRowAction = { kind: 'none' };
@@ -81,6 +86,9 @@ export function AssistRow({
         </span>
       ))}
       {row.why !== '' && <small className="inbox-assist__why">{row.why}</small>}
+      {actions !== null && typeof row.caution === 'string' && row.action?.kind === 'apply' && (
+        <small className="inbox-assist__caution">{row.caution}</small>
+      )}
       {actions !== null && <RowAction row={row} actions={actions} />}
     </li>
   );

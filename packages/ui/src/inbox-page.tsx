@@ -38,7 +38,12 @@ import { MeetingCleanup, type MeetingCleanupProps } from './meeting-cleanup.tsx'
 import type { InboxOfferReading } from './inbox-offer.ts';
 import { useListAnchor, type ListAnchorParts } from './list-anchor.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
-import { AssistSummary, type AssistActions, type AssistView } from './inbox/assist-summary.tsx';
+import {
+  AssistSummary,
+  type AssistActions,
+  type AssistUnfinishedView,
+  type AssistView,
+} from './inbox/assist-summary.tsx';
 import { useAssistKeys } from './inbox/use-assist-keys.ts';
 
 const NO_REFUSALS: readonly InboxRefusal[] = [];
@@ -172,6 +177,8 @@ export interface InboxAssistProps {
   readonly onDismiss: () => void;
   /** Apply and Undo, per row and for all (#909); null where nothing can be applied. */
   readonly actions?: AssistActions | null;
+  /** Rows an earlier apply left unfinished (#911); none when left out. */
+  readonly unfinished?: readonly AssistUnfinishedView[];
 }
 
 /**
@@ -286,6 +293,7 @@ export function InboxPage(props: InboxPageProps) {
                 view={assist.view}
                 onDismiss={assistKeys.dismiss}
                 actions={assist.actions ?? null}
+                unfinished={assist.unfinished ?? []}
               />
             )}
             <Offers

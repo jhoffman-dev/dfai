@@ -87,3 +87,21 @@
     grid-column: 1 / -1;
   }
 }
+
+/* What Claude chose that nothing confirms, beside Apply (#911); and rows an
+   earlier apply left unfinished, above the plan. Neutral chrome. */
+.inbox-assist__caution {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  grid-column: 3;
+}
+
+.inbox-assist__unfinished {
+  margin-bottom: var(--space-2);
+}
+
+.inbox-assist__left {
+  display: grid;
+  gap: 2px;
+  grid-column: 2 / -1;
+}

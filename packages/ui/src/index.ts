@@ -293,6 +293,7 @@ export type {
   AssistActions,
   AssistRowAction,
   AssistRowView,
+  AssistUnfinishedView,
   AssistView,
 } from './inbox/assist-summary.tsx';
 export type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';

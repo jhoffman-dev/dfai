@@ -4,6 +4,7 @@ import {
   assistPeopleWords,
   assistReason,
   assistStepWords,
+  assistCautionWords,
   assistTone,
   localTimeMs,
   messageWithoutPaths,
@@ -11,7 +12,9 @@ import {
   type InboxItem,
 } from '@dfai/domain';
 import {
+  findUnfinishedAssist,
   previewInboxAssist,
+  type AssistUnfinished,
   type ActivityLog,
   type ArchivePorts,
   type ClaudeStepPorts,
@@ -67,6 +70,8 @@ export function useInboxAssist({
   apply?: { write: InboxWrite; activity: Pick<ActivityLog, 'inOpenVault'> } | null;
 }): InboxAssistProps | null {
   const [shown, setView] = useState<Shown | null>(null);
+  // Rows an earlier apply left unfinished (#911), read at each press: said, never repaired.
+  const [unfinished, setUnfinished] = useState<readonly AssistUnfinished[]>(NO_UNFINISHED);
   // Each press, and each dismissal, is a generation: an answer for an earlier one is not shown.
   const generation = useRef(0);
   // What a press reads, as it is at the press: Suggest's button keeps one handler, so the
@@ -86,6 +91,11 @@ export function useInboxAssist({
       if (generation.current === mine) setView(next);
     };
     setView({ kind: 'asking' });
+    findUnfinishedAssist({ fs: given.ports.fs }).then(
+      (found) => generation.current === mine && setUnfinished(found),
+      // A log that cannot be read says nothing left unfinished; the apply itself refuses to write without it.
+      () => generation.current === mine && setUnfinished(NO_UNFINISHED),
+    );
     const claim = claimAsk(given.wiring.asks, given.vaultKey ?? '', given.clock);
     previewInboxAssist(
       { ...assistPorts(given.wiring, given.ports, given.clock), recordAsk: claim.sent },
@@ -111,11 +121,15 @@ export function useInboxAssist({
     // Apply all finishes the row it is on, and starts no other.
     stop();
     setView(null);
+    setUnfinished(NO_UNFINISHED);
   }, [stop]);
   const view = useMemo(() => (shown === null ? null : viewOf(shown, applying)), [shown, applying]);
   return useMemo(
-    () => (wiring === null ? null : { view, onSuggest, onDismiss, actions: applying.actions }),
-    [wiring, view, onSuggest, onDismiss, applying.actions],
+    () =>
+      wiring === null
+        ? null
+        : { view, onSuggest, onDismiss, actions: applying.actions, unfinished },
+    [wiring, view, onSuggest, onDismiss, applying.actions, unfinished],
   );
 }
 
@@ -188,5 +202,8 @@ function rowView(row: AssistRow, action: AssistRowAction): AssistRowView {
     tone: assistTone(row.step),
     people: assistPeopleWords(row),
     action,
+    caution: assistCautionWords(row),
   };
 }
+
+const NO_UNFINISHED: readonly AssistUnfinished[] = [];

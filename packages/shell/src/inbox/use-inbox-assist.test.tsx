@@ -111,6 +111,7 @@ describe('useInboxAssist', () => {
           tone: 'leave',
           people: [],
           action: { kind: 'none' },
+          caution: null,
         },
       ],
       more: null,

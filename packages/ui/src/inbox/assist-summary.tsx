@@ -31,10 +31,18 @@ export interface AssistActions extends AssistRowActions {
   readonly onUndoAll: () => void;
 }
 
+/** A row a crash left unfinished (#911), said already: what it was to do and what is on disk. */
+export interface AssistUnfinishedView {
+  readonly title: string;
+  readonly lines: readonly string[];
+}
+
 export interface AssistSummaryProps {
   readonly view: AssistView;
   readonly onDismiss: () => void;
   readonly actions?: AssistActions | null;
+  /** Rows an earlier apply left unfinished, to be put right by hand; none when left out. */
+  readonly unfinished?: readonly AssistUnfinishedView[];
 }
 
 /**
@@ -44,7 +52,12 @@ export interface AssistSummaryProps {
  * Undo, and the panel "Undo all". Dismiss, or Escape anywhere in it, puts it away. It takes the focus as it opens, on its
  * heading, so the keyboard follows Suggest to what it shows (#903).
  */
-export function AssistSummary({ view, onDismiss, actions = null }: AssistSummaryProps) {
+export function AssistSummary({
+  view,
+  onDismiss,
+  actions = null,
+  unfinished = [],
+}: AssistSummaryProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
@@ -65,11 +78,45 @@ export function AssistSummary({ view, onDismiss, actions = null }: AssistSummary
         <h3 className="inbox-assist__heading" tabIndex={-1} ref={heading}>
           Suggestions
         </h3>
+        {unfinished.length > 0 && <Unfinished rows={unfinished} />}
         <AssistBody view={view} actions={actions} />
       </div>
       <button type="button" className="btn btn--ghost btn--sm" onClick={onDismiss}>
         Dismiss
       </button>
+    </section>
+  );
+}
+
+/** What an apply a crash cut short left, row by row, for the person to put right: nothing here repairs it. */
+function Unfinished({ rows }: { rows: readonly AssistUnfinishedView[] }) {
+  const id = useId();
+  return (
+    <section className="inbox-assist__unfinished" aria-labelledby={id}>
+      <p id={id}>
+        <strong>Left unfinished</strong>{' '}
+        <span className="inbox-assist__note">
+          An earlier apply stopped part-way. Nothing was put right.
+        </span>
+      </p>
+      <ul className="inbox-assist__rows">
+        {rows.map((row) => (
+          <li
+            key={row.title}
+            className="inbox-assist__row"
+            aria-label={`${row.title}, left unfinished`}
+          >
+            <span className="inbox-assist__title">{row.title}</span>
+            <span className="inbox-assist__left">
+              {row.lines.map((line) => (
+                <span key={line} className="inbox-assist__said">
+                  {line}
+                </span>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

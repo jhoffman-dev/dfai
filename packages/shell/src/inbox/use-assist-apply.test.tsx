@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { recordingActivity, type ArchivePorts, type ModelProvider } from '@dfai/application';
 import { automationVault } from '@dfai/application/testing/sqlite';
-import { createVaultPath, inboxItem, type InboxItem } from '@dfai/domain';
+import { createVaultPath, digestOf, inboxItem, newLogText, type InboxItem } from '@dfai/domain';
 import type { AssistView } from '@dfai/ui';
 import { assistAsks, useInboxAssist, type InboxAssistWiring } from './use-inbox-assist.ts';
 import type { InboxWrite } from './use-assist-apply.ts';
@@ -92,12 +92,15 @@ function setUp() {
   let holding = false;
   const held: (() => void)[] = [];
   const jobs: Promise<unknown>[] = [];
+  // One job after another, as the Inbox's queue runs them.
+  let queue: Promise<unknown> = Promise.resolve();
   const write: InboxWrite = (job) => {
-    const ran = (async () => {
+    const ran = queue.then(async () => {
       if (holding) await new Promise<void>((resolve) => held.push(resolve));
       const notePaths = [...vault.files.keys()].map((path) => createVaultPath(path));
       return (await job({ notePaths, ports })).done;
-    })();
+    });
+    queue = ran.catch(() => undefined);
     jobs.push(ran);
     return ran;
   };
@@ -130,7 +133,11 @@ function setUp() {
     /** Every job asked for so far, run to its end. */
     settled: () => act(async () => void (await Promise.all(jobs))),
     jobCount: () => jobs.length,
-    letGo: () => held.splice(0).forEach((resolve) => resolve()),
+    /** Stops holding, and lets go of every job waiting. */
+    letGo: () => {
+      holding = false;
+      held.splice(0).forEach((resolve) => resolve());
+    },
   };
 }
 
@@ -198,8 +205,6 @@ describe('useInboxAssist: Apply and Undo', () => {
     expect(t.jobCount()).toBe(2);
     t.letGo();
     await t.settled();
-    t.letGo();
-    await t.settled();
     expect(t.rowOf('Call Mara').action?.kind).toBe('applied');
     // One apply of Call Mara is one log line and one Activity line: the second press did nothing.
     expect(
@@ -218,5 +223,48 @@ describe('useInboxAssist: Apply and Undo', () => {
     await t.settled();
     expect(t.activity.reports).toEqual([]);
     for (const [path, text] of Object.entries(NOTES)) expect(t.vault.files.get(path)).toBe(text);
+  });
+
+  it('shows, on Suggest, a row an earlier apply left unfinished, and repairs nothing', async () => {
+    const t = setUp();
+    const person = json({ type: 'person', email: 'tobias@example.org' });
+    t.vault.files.set('People/Tobias Fenn.md', person);
+    const at = CLOCK.localNow();
+    const row = `${at} ${LUNCH}`;
+    t.vault.files.set(
+      '.atlas/automations/log/inbox-assist.md',
+      newLogText('Inbox assist', [
+        {
+          kind: 'begun',
+          at,
+          row,
+          path: createVaultPath(LUNCH),
+          digest: digestOf(NOTES[LUNCH]!),
+          plan: 'Made it a task. Added Tobias Fenn.',
+        },
+        {
+          kind: 'step',
+          at,
+          row,
+          done: [
+            {
+              kind: 'created',
+              path: createVaultPath('People/Tobias Fenn.md'),
+              digest: digestOf(person),
+            },
+          ],
+        },
+      ]),
+    );
+    const before = new Map(t.vault.files);
+    await t.suggest();
+    await waitFor(() => expect(t.hook.result.current!.unfinished).toHaveLength(1));
+    expect(t.hook.result.current!.unfinished![0]).toMatchObject({
+      title: 'Lunch with Tobias',
+      lines: expect.arrayContaining([expect.stringContaining('Tobias Fenn was made')]),
+    });
+    expect(new Map(t.vault.files)).toEqual(before);
+    act(() => t.hook.result.current!.onDismiss());
+    expect(t.hook.result.current!.unfinished).toEqual([]);
   });
 });
