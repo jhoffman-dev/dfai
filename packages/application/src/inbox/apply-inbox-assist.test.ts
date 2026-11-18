@@ -875,10 +875,37 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
 });
 
 describe('apply then undo, as a seeded property', () => {
-  it('restores every byte of every note, whatever rows are applied and in whatever order', async () => {
-    for (let seed = 1; seed <= 12; seed += 1) {
+  /** A note's links, as a person writes them: by title, by path, and by path under an alias. */
+  const linksTo = (path: string, random: () => number) => {
+    const title = path.split('/').pop()!.slice(0, -3);
+    const forms = [
+      `[[${title}]]`,
+      `[[${path.slice(0, -3)}]]`,
+      `[[${path.slice(0, -3)}|${title.toLowerCase()}]]`,
+    ];
+    return forms.filter(() => random() < 0.6);
+  };
+  /** Third notes linking the items, the kept task and a note sharing an item's title. */
+  function thirdNotes(random: () => number): Record<string, string> {
+    const targets = [CALL, ARTICLE, LUNCH, RENEW, KEPT, 'Reference/Payroll article.md'];
+    const notes: Record<string, string> = {
+      'Reference/Payroll article.md': 'Clipped from the web.\n',
+    };
+    for (const [at, name] of [
+      'Notes/Week.md',
+      'Notes/Ideas.md',
+      'Projects/Larkspur log.md',
+    ].entries()) {
+      const links = targets.flatMap((target) => linksTo(target, random));
+      notes[name] = `${at % 2 === 0 ? '' : '---\ntags: [log]\n---\n'}See ${links.join(', ')}.\n`;
+    }
+    return notes;
+  }
+
+  it('restores every byte of every note, and every path, whatever rows are applied and in whatever order', async () => {
+    for (let seed = 1; seed <= 24; seed += 1) {
       const random = seededRandom(seed);
-      const v = setUp();
+      const v = setUp({ ...VAULT, ...thirdNotes(random) });
       const before = v.snapshot();
       const previewed = await v.preview();
       const rows = [...previewed.rows].sort(() => random() - 0.5).filter(() => random() < 0.8);
@@ -889,7 +916,14 @@ describe('apply then undo, as a seeded property', () => {
       const undos = results.flatMap(({ path, applied }) =>
         applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : [],
       );
-      await undoAssistRows(v.ports, { undos, notePaths: v.notePaths() });
+      const undone = await undoAssistRows(v.ports, { undos, notePaths: v.notePaths() });
+      expect(
+        undone.map(({ undone: each }) => each.kind),
+        `seed ${seed}`,
+      ).not.toContain('refused');
+      expect([...notesBut(v.files).keys()].sort(), `seed ${seed}`).toEqual(
+        [...notesBut(before).keys()].sort(),
+      );
       expect(notesBut(v.files), `seed ${seed}`).toEqual(notesBut(before));
     }
   });
