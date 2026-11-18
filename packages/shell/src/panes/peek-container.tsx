@@ -90,7 +90,7 @@ function PeekContainer({ peek }: { peek: Peek }) {
     onMoveTo: note.onMoveTo,
     onDelete: note.onDelete,
     onMergeInto: note.onMergeInto,
-    onShowInGraph: note.onShowInGraph,
+    ...(note.onShowInGraph !== undefined && { onShowInGraph: note.onShowInGraph }),
     arrangement: {},
   });
   // With the peek up, any overlay is the one above it (`OverlayState`): its Escape is its own.

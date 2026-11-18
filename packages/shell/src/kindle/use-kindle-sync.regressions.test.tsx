@@ -51,6 +51,7 @@ function render(kindle: KindleHost, overrides: Partial<KindleWindowOptions> = {}
     vaultKey: '/Users/mara/Vault',
     indexReady: true,
     onWrote: () => {},
+    enabled: true,
     ...overrides,
   };
   return renderHook((props: KindleWindowOptions) => useKindleSync(props), {

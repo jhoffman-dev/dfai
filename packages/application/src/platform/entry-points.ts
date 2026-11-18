@@ -48,10 +48,19 @@ const NEEDS = {
   kindleSettings: ['kindle'],
   /** ⌘K's Connect Kindle, Sync Kindle now and Disconnect Kindle. */
   kindleCommands: ['kindle'],
+  /** Kindle's highlights synced as the index is ready and every four hours, and a sync asked for. */
+  kindleSync: ['kindle'],
   /** Settings → Claude. */
   claudeSettings: ['claudeCodeChat'],
   /** The chat: the aside's Claude tab, its toggle, ⇧⌘J, and Ask (its other seat). */
   claudeChat: ['claudeCodeChat'],
+  /** The chat's own work for a seat on screen: whether Claude can be reached, the window's context, a turn. */
+  chatWork: ['claudeCodeChat'],
+  /**
+   * The Inbox's Suggest, which asks Claude where each item goes (#900): an
+   * Inbox function that reaches Claude as a rule's step does, not Ask's.
+   */
+  inboxSuggest: ['claudeCodeChat'],
   /** Skills' "Ask Claude…", which drafts a skill. */
   skillDraft: ['claudeCodeChat'],
   /**
@@ -98,6 +107,8 @@ const NEEDS = {
   documentReader: [],
   /** ⌘K's Add PDF… and Add EPUB…. */
   addDocuments: [],
+  /** The graph: its sidebar row, its page, and a note's Show in graph. */
+  graphPage: [],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
 export type EntryPoint = keyof typeof NEEDS;
@@ -119,12 +130,17 @@ const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
   blockSync: null,
   granolaSettings: null,
   granolaPull: null,
-  slackSettings: null,
-  slackLinkOffer: null,
-  kindleSettings: null,
-  kindleCommands: null,
+  slackSettings: 'slack',
+  slackLinkOffer: 'slack',
+  kindleSettings: 'kindle',
+  kindleCommands: 'kindle',
+  kindleSync: 'kindle',
+  // Settings → Claude stays with Ask off: its provider and model are what
+  // Suggest, Skills' Ask Claude… and rules' Claude steps reach Claude by.
   claudeSettings: null,
-  claudeChat: null,
+  claudeChat: 'ask',
+  chatWork: 'ask',
+  inboxSuggest: null,
   skillDraft: null,
   claudeAutomations: null,
   syncSettings: null,
@@ -144,7 +160,23 @@ const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
   libraryPages: 'reading',
   documentReader: 'reading',
   addDocuments: 'reading',
+  graphPage: 'graph',
 };
+
+/**
+ * The entry points of a switchable feature that start work by themselves — a
+ * runner, a timer, a listener, a call to the network — rather than draw
+ * something (#901). Until the vault's settings have answered, its off list
+ * is not known, so these are held (`workOffered`): a feature the file
+ * switches off never starts, and one it leaves on starts once the answer is
+ * in. Rows, commands, pages and Settings sections are not held, so the
+ * chrome shows at once. A new runner of a switchable feature goes here.
+ */
+export const STARTS_WORK: ReadonlySet<EntryPoint> = new Set<EntryPoint>([
+  'kindleSync',
+  'slackLinkOffer',
+  'chatWork',
+]);
 
 /**
  * The entry point each page a switch can hide is drawn under, by the page's
@@ -154,6 +186,8 @@ const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
   library: 'libraryPages',
   highlights: 'libraryPages',
   document: 'documentReader',
+  ask: 'claudeChat',
+  graph: 'graphPage',
 };
 
 /** Whether the screen offers each entry point. Every one is named, so none is forgotten. */
@@ -210,14 +244,45 @@ export function offeredWithFeatures(
   });
 }
 
+/** Each object held, by the object it came from: the same `offered` is always held as the same object. */
+const heldUntilAnswered = new WeakMap<EntryPointsOffered, EntryPointsOffered>();
+
+/**
+ * What work that starts by itself may start: `offered` once the vault's
+ * settings have answered, and until then `offered` with every `STARTS_WORK`
+ * entry point held. Work reads this, never `offered`; a failed read still
+ * answers, so nothing is held for ever.
+ */
+export function workOffered(
+  offered: EntryPointsOffered,
+  { answered }: { answered: boolean },
+): EntryPointsOffered {
+  if (answered) return offered;
+  let held = heldUntilAnswered.get(offered);
+  if (held === undefined) {
+    held = Object.freeze({
+      ...offered,
+      ...Object.fromEntries([...STARTS_WORK].map((entry) => [entry, false])),
+    });
+    heldUntilAnswered.set(offered, held);
+  }
+  return held;
+}
+
 /**
  * The switched-off feature a page belongs to, when its entry point is not
  * offered for that: what a tab kept on it shows a notice for in place of the
- * page. Null for a page that is drawn.
+ * page. Null for a page that is drawn, and for one whose entry point the
+ * platform itself does not offer, whatever the switch says: the notice's
+ * "Turn on in Settings" could not bring that back, so the page is drawn as
+ * it always was there.
  */
-export function pageTurnedOff(place: PagePlace, offered: EntryPointsOffered): FeatureId | null {
+export function pageTurnedOff(
+  place: PagePlace,
+  { offered, platform }: { offered: EntryPointsOffered; platform: EntryPointsOffered },
+): FeatureId | null {
   const entry = PAGE_ENTRY[place.kind];
-  if (entry === undefined || offered[entry]) return null;
+  if (entry === undefined || offered[entry] || !platform[entry]) return null;
   return FEATURE_OF[entry];
 }
 

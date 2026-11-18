@@ -30,7 +30,8 @@ export function useKindleRuns({
   readonly setRecord: (record: KindleSyncRecord) => void;
   readonly say: (message: string) => void;
 }): { readonly asked: () => Promise<void> } {
-  const { kindle, fs, markdown, index, openNotes, rng, clock, vaultKey, indexReady } = options;
+  const { kindle, fs, markdown, index, openNotes, rng, clock, vaultKey, indexReady, enabled } =
+    options;
   const sink = useMemo(
     () => literatureNoteKindleSink({ fs, markdown, index, openNotes, rng, clock }),
     [fs, markdown, index, openNotes, rng, clock],
@@ -65,17 +66,19 @@ export function useKindleRuns({
   });
 
   const asked = useSteadyCallback(async () => {
+    if (!enabled) return;
     if (!intoVault) say(KINDLE_NOT_INTO_VAULT_MESSAGE);
     else settled(await runKindleSync(runPorts, 'asked'), 'asked');
   });
 
-  // Only a vault the person turned it on for has a timer; turning it off clears the timer.
+  // Only a vault the person turned it on for has a timer; turning it off, or
+  // switching Kindle off (#901), clears the timer, and switching it on syncs at once.
   useEffect(() => {
-    if (vaultKey === null || !indexReady || !intoVault) return undefined;
+    if (!enabled || vaultKey === null || !indexReady || !intoVault) return undefined;
     void automatic();
     const timer = window.setInterval(() => void automatic(), KINDLE_AUTO_SYNC_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [vaultKey, indexReady, intoVault, automatic]);
+  }, [enabled, vaultKey, indexReady, intoVault, automatic]);
 
   return useMemo(() => ({ asked }), [asked]);
 }

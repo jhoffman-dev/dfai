@@ -36,7 +36,8 @@ export interface NoteTabCommands {
   readonly onDelete: (path: VaultPath) => void;
   /** "Merge into…" on a person's page (#464). */
   readonly onMergeInto: (path: VaultPath) => void;
-  readonly onShowInGraph: (path: VaultPath) => void;
+  /** Absent while the Graph is not offered (switched off, #901): the menu then has no Show in graph. */
+  readonly onShowInGraph?: (path: VaultPath) => void;
 }
 
 /**

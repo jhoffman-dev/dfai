@@ -12,6 +12,8 @@ export {
   presetsOffered,
   ruleHeldByPlatform,
   sourceRefreshOffered,
+  STARTS_WORK,
+  workOffered,
 } from './entry-points.ts';
 export type { EntryPoint, EntryPointsOffered } from './entry-points.ts';
 export { platformLimits } from './platform-limits.ts';
