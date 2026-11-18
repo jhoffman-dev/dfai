@@ -4,6 +4,7 @@ import {
   type GtdStatus,
   type InboxItem,
   type InboxTask,
+  type TaskPriority,
   type VaultPath,
 } from '@dfai/domain';
 
@@ -17,6 +18,8 @@ export interface InboxDraft {
   readonly waitingOn?: VaultPath;
   readonly defer?: string;
   readonly due?: string;
+  /** The priority picked, 1 to 4, or null for none (#913). */
+  readonly priority?: TaskPriority | null;
 }
 
 /** A date the row holds, as the change to make: none when it is what the task says already. */
@@ -42,6 +45,8 @@ export function clarificationOf(task: InboxTask, draft: InboxDraft): Clarificati
       draft.waitingOn !== task.waitingOn && { waitingOn: draft.waitingOn }),
     ...(defer !== undefined && { defer }),
     ...(due !== undefined && { due }),
+    ...(draft.priority !== undefined &&
+      draft.priority !== (task.priority ?? null) && { priority: draft.priority }),
   };
   return Object.keys(clarification).length === 0 ? null : clarification;
 }

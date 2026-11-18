@@ -45,6 +45,9 @@ const TITLE_COLUMN = 'title';
 export function columnIcon({ key, kind }: { key: string; kind?: PropertyKind }): PropertyIcon {
   if (key === TITLE_COLUMN) return 'title';
   const role = propertyRole(key);
-  if (role !== null && (kind === undefined || kind === 'text')) return role;
+  // A priority is a number, and its heading says so by its kind's glyph.
+  if ((role === 'person' || role === 'duration') && (kind === undefined || kind === 'text')) {
+    return role;
+  }
   return kind === undefined ? 'text' : propertyIcon(kind);
 }

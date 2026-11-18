@@ -67,6 +67,22 @@ describe('PATCH /v1/notes/{path}/properties on a task', () => {
   const patch = (api: ReturnType<typeof vault>, set: Record<string, unknown>) =>
     api.send({ method: 'PATCH', path: '/v1/notes/Call.md/properties', body: { set } });
 
+  it('sets a priority and takes it out again through the generic route, no new field (#913)', async () => {
+    const api = vault(GTD_TYPE, { 'Call.md': TASK });
+    expect((await patch(api, { priority: 1 })).status).toBe(200);
+    expect(api.files.get('Call.md')?.text).toBe(TASK.replace('---\n\n', 'priority: 1\n---\n\n'));
+    expect((await patch(api, { priority: null })).status).toBe(200);
+    expect(api.files.get('Call.md')?.text).toBe(TASK);
+  });
+
+  it('refuses a priority that is not 1 to 4 as invalid, and writes nothing (#913)', async () => {
+    const api = vault(GTD_TYPE, { 'Call.md': TASK });
+    const response = await patch(api, { priority: 'high' });
+    expect(response.status).toBe(400);
+    expect(bodyOf(response)).toMatchObject({ error: { code: 'invalid' } });
+    expect(api.files.get('Call.md')?.text).toBe(TASK);
+  });
+
   it('accepts Waiting with nobody to wait on, writing the status alone (#202)', async () => {
     const api = vault(GTD_TYPE, { 'Call.md': TASK });
     const response = await patch(api, { status: 'waiting' });

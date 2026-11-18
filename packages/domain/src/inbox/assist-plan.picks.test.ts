@@ -8,7 +8,7 @@ import {
 } from '../people/person-match.ts';
 import { createVaultPath, type VaultPath } from '../vault/vault-path.ts';
 import type { AssistItemAnswer, AssistPersonAnswer } from './assist-answer.ts';
-import { listedPeopleOf } from './assist-held.ts';
+import { listedPeopleOf, writtenPropertiesOf } from './assist-held.ts';
 import {
   assistPlan,
   withoutRepeatedAdds,
@@ -221,6 +221,12 @@ describe('duplicates: planned only when the vault confirms and Claude agrees', (
       { due: '2026-12-01', dueWritten: '2026-12-01' },
     );
     expect(row.step).toMatchObject({ kind: 'duplicate', newerHolds: ['due', 'people', 'body'] });
+  });
+
+  it('names a priority written on this copy, read as the item writes it (#913)', () => {
+    const written = writtenPropertiesOf({ type: 'task', priority: 1 });
+    const row = plan({ duplicateOf: RENEW.path }, { duplicates: [SAME], written });
+    expect(row.step).toMatchObject({ kind: 'duplicate', newerHolds: ['priority'] });
   });
 
   it('asks on an item that is the newer of two captures in the Inbox', () => {

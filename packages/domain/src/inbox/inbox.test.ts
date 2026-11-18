@@ -223,6 +223,7 @@ describe('inboxItem — a task (#112)', () => {
       waitingOnNames: '[[People/Mara Quill|Mara Quill]]',
       defer: '2026-10-20',
       due: null,
+      priority: '1',
     });
     expect(item.task).toEqual({
       status: 'inbox',
@@ -231,9 +232,18 @@ describe('inboxItem — a task (#112)', () => {
       waitingOnNames: 'Mara Quill',
       defer: '2026-10-20',
       due: null,
+      priority: 1,
     });
     // It lives outside the Inbox folder, so it arrived in none of its folders.
     expect(item.arrivedIn).toBe('');
+  });
+
+  it('reads a priority that is not one of the four, or missing, as none (#913)', () => {
+    const held = (priority: unknown) =>
+      inboxItem({ path: path('Inbox/Call.md'), title: 'Call', type: 'task', priority }).task
+        ?.priority;
+    expect(held('3')).toBe(3);
+    for (const none of [undefined, null, '', '0', '5', 'high']) expect(held(none)).toBeNull();
   });
 
   it('reads a status that is not one of the eight, or missing, as none', () => {

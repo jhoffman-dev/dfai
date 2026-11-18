@@ -105,3 +105,38 @@ describe('compileViewQuery and the Archive, run against SQLite', () => {
     ).toEqual(['Archive/tasks/Done long ago.md', 'archive/By hand.md', 'tasks/Live.md']);
   });
 });
+
+describe('a sort over a view, run against SQLite: blanks last either way (#913)', () => {
+  const database = new DatabaseSync(':memory:');
+  database.exec('CREATE TABLE v_task (path TEXT, title TEXT, summary TEXT, priority REAL)');
+  const insert = database.prepare('INSERT INTO v_task VALUES (?, ?, ?, ?)');
+  for (const [path, priority] of [
+    ['none.md', null],
+    ['p3.md', 3],
+    ['p1.md', 1],
+    ['blank.md', ''],
+    ['p4.md', 4],
+    ['p2.md', 2],
+  ] as const) {
+    insert.run(path, path, '', priority);
+  }
+  const sorted = (direction: 'asc' | 'desc') => {
+    const { sql, parameters } = compileViewQuery({
+      ...tasks,
+      columns: ['priority'],
+      sorts: [{ key: 'priority', direction }],
+    });
+    return database
+      .prepare(sql)
+      .all(...parameters)
+      .map((row) => row['path']);
+  };
+
+  it('lists P1 first and the tasks with no priority after P4, ascending', () => {
+    expect(sorted('asc')).toEqual(['p1.md', 'p2.md', 'p3.md', 'p4.md', 'blank.md', 'none.md']);
+  });
+
+  it('keeps them last descending too, by path among themselves', () => {
+    expect(sorted('desc')).toEqual(['p4.md', 'p3.md', 'p2.md', 'p1.md', 'blank.md', 'none.md']);
+  });
+});

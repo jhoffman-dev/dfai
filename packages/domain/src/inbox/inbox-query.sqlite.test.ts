@@ -127,6 +127,23 @@ describe('compileInboxQuery', () => {
     ]);
   });
 
+  it('carries a task’s priority as written, one value only (#913)', () => {
+    const rows = inboxIndex([
+      {
+        path: 'Inbox/Call.md',
+        title: 'Call',
+        modified: 3,
+        type: 'task',
+        props: [['priority', '1']],
+      },
+      { path: 'Inbox/Plain.md', title: 'Plain', modified: 2, type: 'task' },
+    ])();
+    expect(rows.map((row) => [row['path'], row['priority']])).toEqual([
+      ['Inbox/Call.md', '1'],
+      ['Inbox/Plain.md', null],
+    ]);
+  });
+
   it('stops at the limit', () => {
     expect(inbox(1)).toHaveLength(1);
   });

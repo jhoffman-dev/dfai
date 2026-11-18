@@ -61,6 +61,8 @@ export const TASK_KEYS = {
   source: 'source',
   /** The day it was chosen to be done on (#108): `YYYY-MM-DD`, or absent when it is not chosen. */
   focus: 'focus',
+  /** How urgent it is (#913): 1, the most urgent, to 4; absent when it has none. */
+  priority: 'priority',
 } as const;
 
 const STATUSES: ReadonlySet<string> = new Set(GTD_STATUSES);

@@ -63,7 +63,7 @@ describe('compileViewQuery', () => {
 
   it('applies sorts before the tiebreak', () => {
     const sql = sqlOf({ sorts: [{ key: 'arr', direction: 'desc' }] });
-    expect(sql).toContain('ORDER BY "arr" DESC, "path" ASC');
+    expect(sql).toContain(`ORDER BY NULLIF("arr", '') DESC NULLS LAST, "path" ASC`);
   });
 
   it('applies several sorts in order', () => {
@@ -73,7 +73,9 @@ describe('compileViewQuery', () => {
         { key: 'arr', direction: 'desc' },
       ],
     });
-    expect(sql).toContain('ORDER BY "stage" ASC, "arr" DESC, "path" ASC');
+    expect(sql).toContain(
+      `ORDER BY NULLIF("stage", '') ASC NULLS LAST, NULLIF("arr", '') DESC NULLS LAST, "path" ASC`,
+    );
   });
 
   describe('filters', () => {

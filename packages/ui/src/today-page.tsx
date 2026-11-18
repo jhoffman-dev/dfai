@@ -19,6 +19,7 @@ import { heldWhile, MoveMenu, todayToggle } from './task-row-commands.tsx';
 import { PageAction, PageBar, type PageHistory } from './page-bar.tsx';
 import { HiddenTitle } from './page-head.tsx';
 import { ROW_SCROLLER_MARK, RowScrollerContext } from './row-scroller.ts';
+import { priorityPill } from './priority-pill.tsx';
 import { StatusPill } from './status-pill.tsx';
 import { useSteadyCallback } from './steady-callback.ts';
 import { Spacer } from './grouped-rows.tsx';
@@ -779,7 +780,7 @@ const SAYS_STATUS: ReadonlySet<TodaySectionId> = new Set([
 
 /**
  * What a row says of its task beside the name: its status where the section
- * mixes them, its project and who it waits on where the group does not
+ * mixes them, its priority when it has one (#913), its project and who it waits on where the group does not
  * already say, its contexts, its day, and how long it has waited — on one
  * line, a · between each (the brief, §3). A function the row calls, not a
  * component: the 34px rows put more of them on the page, and each
@@ -800,6 +801,8 @@ function rowDetails({
   if (SAYS_STATUS.has(sectionId) && task.status !== null) {
     pieces.push(<StatusPill key="status" value={task.status} />);
   }
+  const priority = priorityPill(task.priority);
+  if (priority !== null) pieces.push(priority);
   if (sectionId !== 'nextActions' && project !== null) {
     pieces.push(
       <button

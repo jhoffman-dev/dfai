@@ -267,3 +267,40 @@ what needs attention but had nowhere to say what was chosen.
 - **The API chooses through `POST /v1/today/choose` `{ path, chosen }`**, on
   the app's clock, through the same write as a property change; MCP's
   `atlas_choose_for_today` calls it.
+
+## Addendum (#913, 2026-11-18): a task's priority
+
+Slice 1 of the Todoist sync (#912). James: "Priority should be added."
+
+- **`priority` is a number, 1 to 4, and absent means none.** 1 is the most
+  urgent, as Todoist shows it to the person (P1 to P4). No priority is the
+  key left out, never a fifth value, so a note that never had one is
+  unchanged, and one given a priority and then cleared is back byte for byte
+  (ADR-0003).
+- **It is a task rule.** A change that names `priority` on a task is held to
+  1 to 4 from whichever write makes it: the properties panel, a table cell,
+  Clarify, the API's property route. The digit written as text (`"2"`, as a
+  typed field hands it over) is written as the number, a blank takes the key
+  out, and anything else (`0`, `5`, `2.5`, `high`) is refused with
+  `TaskRuleRefusedError`. A change that does not name `priority` is not judged
+  by it, so a note already holding a value of its own can still be edited
+  otherwise. A note that is not a task is not judged at all.
+- **It is shown as a pill, P1 to P4, and drawn not at all for none**: on
+  Today's rows, the Inbox's, and a task table's `priority` column; named
+  "Priority 1" for a screen reader, so its hue (red, orange, blue, gray) is
+  never the only signal. It is picked, none or P1 to P4, in the properties
+  panel and on an Inbox row's Clarify.
+- **Sorting puts P1 first and none last.** A view's sort now puts blanks last
+  in either direction, as a query's sort and a SQL result's already did; a
+  type table sorted ascending used to list empty cells first.
+- **The built-in Task type declares it**, after GTD's keys, so a new vault
+  has it. It is not one of GTD's keys, so a vault already on GTD is not
+  offered the move again for it. Whether a vault's own Task type, written
+  before it shipped, gains it on opening (as `focus` did, #162) is held for
+  James: that writes into a type file the vault already has.
+- **The mapping to an outside tool is that tool's sync's.** Todoist's API
+  numbers priority the other way round (4 is the most urgent); turning one
+  into the other belongs to the Todoist sync (#912), not to the vault.
+- **The API's shapes are not changed here**: the property route already sets
+  and clears it, held to the rule; its typed answers (Today, the review, the
+  Inbox) gain it with the API's slice of #912.

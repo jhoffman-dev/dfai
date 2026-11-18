@@ -11,6 +11,7 @@ import {
   optionColor,
   optionLabel,
   propertyIcon,
+  propertyRole,
   relationHue,
   relationTypes,
   relationTypesText,
@@ -21,6 +22,12 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { pillPaint } from './pill-paint.ts';
+import {
+  PRIORITY_CHOICES,
+  priorityChoiceOf,
+  priorityFromChoice,
+  priorityPaint,
+} from './priority-pill.tsx';
 import { AddPropertyPopover, type NewProperty } from './add-property-popover.tsx';
 import { Icon, propertyGlyph } from './icon.tsx';
 import { LinkedNote, useNoteNames } from './note-names.tsx';
@@ -259,6 +266,8 @@ function PropertyEditor({
     case 'checkbox':
       return <CheckboxEditor {...props} />;
     case 'number':
+      // A task's priority (#913) is picked, P1 to P4 or none, rather than typed.
+      if (propertyRole(row.def.key) === 'priority') return <PriorityEditor {...props} />;
       return <NumberEditor {...props} />;
     case 'date':
       return <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />;
@@ -331,6 +340,34 @@ function useTyping(
 function NumberEditor({ id, text, onChange }: EditorProps) {
   const typing = useTyping(text, (typed) => onChange(typed === '' ? null : Number(typed)));
   return <input id={id} className="props__input props__input--number" type="number" {...typing} />;
+}
+
+/**
+ * A priority as a pill holding its choices — none, P1 to P4 — on its hue. A
+ * value the note holds that is not one of the four is offered as written, so
+ * the field still says what the file says; picking none takes the key out.
+ */
+function PriorityEditor({ id, row, onChange }: EditorProps) {
+  const held = priorityChoiceOf(row.value);
+  const written = row.value === null || row.value === undefined ? '' : String(row.value);
+  const foreign = held === '' && written.trim() !== '';
+  return (
+    <span className="props__pill" {...priorityPaint(row.value)}>
+      <select
+        id={id}
+        className="props__pill-select"
+        value={foreign ? written : held}
+        onChange={(event) => onChange(priorityFromChoice(event.target.value))}
+      >
+        {PRIORITY_CHOICES.map((choice) => (
+          <option key={choice.value} value={choice.value}>
+            {choice.label}
+          </option>
+        ))}
+        {foreign && <option value={written}>{written}</option>}
+      </select>
+    </span>
+  );
 }
 
 function SelectEditor({ id, row, text, onChange }: EditorProps) {
