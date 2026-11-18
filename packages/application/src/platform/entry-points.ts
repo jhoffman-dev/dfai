@@ -105,7 +105,7 @@ const NEEDS = {
   documentReader: [],
   /** ⌘K's Add PDF… and Add EPUB…. */
   addDocuments: [],
-  /** The graph: its sidebar row, ⌘K's Graph, its page, and a note's Show in graph. */
+  /** The graph: its sidebar row, its page, and a note's Show in graph. */
   graphPage: [],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
@@ -229,11 +229,17 @@ export function offeredWithFeatures(
 /**
  * The switched-off feature a page belongs to, when its entry point is not
  * offered for that: what a tab kept on it shows a notice for in place of the
- * page. Null for a page that is drawn.
+ * page. Null for a page that is drawn, and for one whose entry point the
+ * platform itself does not offer, whatever the switch says: the notice's
+ * "Turn on in Settings" could not bring that back, so the page is drawn as
+ * it always was there.
  */
-export function pageTurnedOff(place: PagePlace, offered: EntryPointsOffered): FeatureId | null {
+export function pageTurnedOff(
+  place: PagePlace,
+  { offered, platform }: { offered: EntryPointsOffered; platform: EntryPointsOffered },
+): FeatureId | null {
   const entry = PAGE_ENTRY[place.kind];
-  if (entry === undefined || offered[entry]) return null;
+  if (entry === undefined || offered[entry] || !platform[entry]) return null;
   return FEATURE_OF[entry];
 }
 

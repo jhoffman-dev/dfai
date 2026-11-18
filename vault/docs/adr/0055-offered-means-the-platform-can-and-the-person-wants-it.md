@@ -76,7 +76,9 @@ rather than the platform. A second set of checks beside it would drift from it.
    tab, a link, a highlight's jump, a file clicked in Pages, a search result —
    reaches `containerFor` like any other, which draws a notice in its place:
    "Reading is turned off", with "Turn on in Settings", which opens Settings
-   at Features. Until the vault's settings have answered, a tab on a
+   at Features. A page whose entry point the platform itself does not offer
+   (Ask on the web) gets no notice, as no switch could bring it: it is drawn
+   as it was before the switches. Until the vault's settings have answered, a tab on a
    feature's page shows its empty frame rather than the page, so a kept tab
    on a PDF never loads the reader of a Reading that turns out to be off; an
    overlay a feature's command opened (Add PDF…) closes when its entry point
@@ -85,16 +87,25 @@ rather than the platform. A second set of checks beside it would drift from it.
    and `addDocuments`. Slice 2 adds four switches:
    - **Kindle** (requires Reading): `kindleSettings`, `kindleCommands` and a
      new `kindleSync`: the sync as the index is ready, its four-hour timer,
-     Sync now and Connect, which stop while it is off and start again,
-     syncing at once, when it is on. Its toast goes with it.
+     Sync now and Connect stop while it is off. A sync already running
+     when it is switched off finishes (it writes whole notes), but says
+     nothing: its toast, and any toast up, are put away, not hidden.
+     Switched on, it runs the usual automatic sync at once. With Kindle off,
+     Disconnect is out of reach and the stored Kindle sign-in stays; switch
+     Kindle on to disconnect.
    - **Ask and Claude chat**: `claudeChat`: the Ask page (`PAGE_ENTRY`), the
      sidebar's Ask, ⌘J, ⇧⌘J, the page bar's Claude and the aside's Claude tab.
-     Its page's code (`askScreen`) is a feature preload.
+     Its page's code (`askScreen`) is a feature preload. Off, the chat does
+     no work for a kept Ask tab or a remembered Claude tab: no "is Claude
+     reachable" check, no window context sent, and a turn under way is
+     stopped as Stop stops it; the conversation and the draft are kept.
    - **Graph**: a new `graphPage`: the page (`PAGE_ENTRY`), the sidebar's
      Graph and a note's Show in graph; its chunk is a feature preload.
    - **Slack capture**: `slackSettings` and `slackLinkOffer`: Settings →
      Slack, and the paste listener, which is taken off the page while it is
-     off (not left to answer nothing), with any offer up at the time.
+     off (not left to answer nothing). An offer up at the time is
+     dismissed, and an answer still on its way dropped, so switching it on
+     brings none back. Its token stays in the Keychain.
      Automations and Meetings come in slice 3.
 
 5. **What is not gated.** The local API and the MCP server keep answering for

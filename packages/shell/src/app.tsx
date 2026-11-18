@@ -243,7 +243,6 @@ import { createClaudeStepRelay } from './api/claude-step-relay.ts';
 import { createMoveRelay } from './api/move-relay.ts';
 import { SettingsPanel } from './settings/settings-panel.tsx';
 import { useSlackPaste } from './slack/use-slack-paste.ts';
-import { useSlackPasteListener } from './slack/slack-paste-listener.ts';
 import {
   GlobalCaptureSettings,
   GoogleCalendarSettingsCard,
@@ -1463,6 +1462,8 @@ function AppWindow({
     store: browserChatSettingsStore,
     seat: chatSeat,
     askShown,
+    // Asked of no one until the vault's settings say whether Ask is on, as a feature's page waits.
+    enabled: offered.claudeChat && features.setting.answered,
     vault: {
       api: apiDeps,
       fs: location === null ? null : vault.fs,
@@ -1961,11 +1962,9 @@ function AppWindow({
     }),
     [slackPort, vault.fs, notes.markdown, index.index, vaultKey, openNote],
   );
-  const slackPaste = useSlackPaste(slackPastePorts);
-  useSlackPasteListener(offered.slackLinkOffer ? slackPaste.offer : null);
-  // An offer up when Slack capture is switched off (#901) goes with it.
+  const slackPaste = useSlackPaste(slackPastePorts, offered.slackLinkOffer);
   const slackOffer =
-    slackPaste.view === null || !offered.slackLinkOffer ? null : (
+    slackPaste.view === null ? null : (
       <SlackMessageOffer
         view={slackPaste.view}
         onSave={slackPaste.save}
@@ -2367,7 +2366,7 @@ function AppWindow({
   });
 
   const kindleShown = kindleSync.toastShown;
-  const kindleToast = offered.kindleSync && kindleSync.toast !== null && (
+  const kindleToast = kindleSync.toast !== null && (
     <Toast
       key={`kindle-${kindleShown}`}
       message={kindleSync.toast}
@@ -2508,6 +2507,7 @@ function AppWindow({
   );
   const featureOff = useFeatureOffWiring({
     offered,
+    platform: platformOffered,
     known: features.known,
     overlay,
     showOverlay,

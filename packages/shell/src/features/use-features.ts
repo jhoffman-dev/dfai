@@ -57,12 +57,15 @@ export function useFeatures({
  */
 export function useFeatureOffWiring({
   offered,
+  platform,
   known,
   overlay,
   showOverlay,
   hideOverlay,
 }: {
   offered: EntryPointsOffered;
+  /** What the platform offers with every feature on: a page it lacks is not the switch's doing. */
+  platform: EntryPointsOffered;
   known: StoreApi<boolean>;
   overlay: Overlay | null;
   showOverlay: (overlay: Overlay) => void;
@@ -86,7 +89,10 @@ export function useFeatureOffWiring({
     setSettingsAt(SETTINGS_SECTIONS.features);
     showOverlay('settings');
   }, [showOverlay]);
-  const wiring = useMemo(() => ({ offered, onTurnOn, known }), [offered, onTurnOn, known]);
+  const wiring = useMemo(
+    () => ({ offered, platform, onTurnOn, known }),
+    [offered, platform, onTurnOn, known],
+  );
   return { wiring, settingsAt };
 }
 

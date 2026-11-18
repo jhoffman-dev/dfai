@@ -37,7 +37,9 @@ function setup({ hasToken = true, vault = '/vaults/larkspur' as string | null } 
     timeZone: () => 'UTC',
     openNote,
   };
-  const hook = renderHook(() => useSlackPaste(ports));
+  const hook = renderHook(({ enabled }: { enabled: boolean }) => useSlackPaste(ports, enabled), {
+    initialProps: { enabled: true },
+  });
   return { api, slack, openNote, hook };
 }
 
@@ -51,6 +53,31 @@ describe('useSlackPaste', () => {
     expect(offered).toBe(false);
     expect(hook.result.current.view).toBeNull();
     expect(slack.calls).toEqual([]);
+  });
+
+  it('puts its offer away when Slack capture is switched off, and keeps it away when it is on again (#901)', async () => {
+    const { hook } = setup();
+    act(() => {
+      hook.result.current.offer(SLACK_PERMALINK);
+    });
+    await waitFor(() => expect(hook.result.current.view?.state).toBe('ready'));
+    hook.rerender({ enabled: false });
+    expect(hook.result.current.view).toBeNull();
+    hook.rerender({ enabled: true });
+    expect(hook.result.current.view).toBeNull();
+  });
+
+  it('drops the answer to a paste still being read when Slack capture is switched off', async () => {
+    const { hook, slack } = setup();
+    act(() => {
+      hook.result.current.offer(SLACK_PERMALINK);
+    });
+    expect(hook.result.current.view).toEqual({ state: 'reading' });
+    hook.rerender({ enabled: false });
+    await waitFor(() => expect(slack.calls.length).toBeGreaterThan(1));
+    await act(async () => {});
+    hook.rerender({ enabled: true });
+    expect(hook.result.current.view).toBeNull();
   });
 
   it('with no vault open, offers nothing', () => {
@@ -123,7 +150,7 @@ describe('useSlackPaste', () => {
       timeZone: () => 'UTC',
       openNote: vi.fn(),
     });
-    const hook = renderHook((vault: string) => useSlackPaste(ports(vault)), {
+    const hook = renderHook((vault: string) => useSlackPaste(ports(vault), true), {
       initialProps: '/vaults/larkspur',
     });
     act(() => {

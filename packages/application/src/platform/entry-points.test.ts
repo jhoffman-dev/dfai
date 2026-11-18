@@ -223,25 +223,31 @@ describe('pageTurnedOff and featureOfPage (#901)', () => {
     [{ kind: 'graph', scope: { kind: 'note', path: pdf, depth: 1 } }, 'graph'],
   ];
 
+  /** Whether `place` shows the notice with `off` switched off, on a platform with `capabilities`. */
+  const turnedOff = (
+    place: PagePlace,
+    off: readonly FeatureId[],
+    capabilities: PlatformCapabilities = DESKTOP_CAPABILITIES,
+  ) =>
+    pageTurnedOff(place, {
+      offered: entryPointsOffered(capabilities, featuresOn(off)),
+      platform: entryPointsOffered(capabilities),
+    });
+
   it.each(otherPages)(
     'names the feature of %o, and hides it only while that is off',
     (place, id) => {
       expect(featureOfPage(place)).toBe(id);
-      expect(pageTurnedOff(place, entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn([id])))).toBe(
-        id,
-      );
-      expect(pageTurnedOff(place, entryPointsOffered(DESKTOP_CAPABILITIES))).toBeNull();
+      expect(turnedOff(place, [id])).toBe(id);
+      expect(turnedOff(place, [])).toBeNull();
       const others = FEATURES.map((feature) => feature.id).filter((other) => other !== id);
-      expect(
-        pageTurnedOff(place, entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(others))),
-      ).toBeNull();
+      expect(turnedOff(place, others)).toBeNull();
     },
   );
 
   it('names Reading for its pages, and hides them while it is off', () => {
-    const offered = entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(['reading']));
     expect(readingPages.map(featureOfPage)).toEqual(['reading', 'reading', 'reading']);
-    expect(readingPages.map((place) => pageTurnedOff(place, offered))).toEqual([
+    expect(readingPages.map((place) => turnedOff(place, ['reading']))).toEqual([
       'reading',
       'reading',
       'reading',
@@ -249,16 +255,27 @@ describe('pageTurnedOff and featureOfPage (#901)', () => {
   });
 
   it('draws every page while every feature is on', () => {
-    const offered = entryPointsOffered(DESKTOP_CAPABILITIES);
-    expect(readingPages.map((place) => pageTurnedOff(place, offered))).toEqual([null, null, null]);
+    expect(readingPages.map((place) => turnedOff(place, []))).toEqual([null, null, null]);
   });
 
   it('draws a page no switch hides, whatever is off', () => {
-    const offered = entryPointsOffered(DESKTOP_CAPABILITIES, featuresOn(['reading']));
     for (const place of [{ kind: 'today' }, { kind: 'tags', tag: null }] as const) {
       expect(featureOfPage(place)).toBeNull();
-      expect(pageTurnedOff(place, offered)).toBeNull();
+      expect(turnedOff(place, ['reading'])).toBeNull();
     }
+  });
+
+  it('blames no switch for a page the platform does not offer: Ask on the web is drawn as before', () => {
+    const ask: PagePlace = { kind: 'ask' };
+    expect(entryPointsOffered(WEB_CAPABILITIES).claudeChat).toBe(false);
+    expect(turnedOff(ask, [], WEB_CAPABILITIES)).toBeNull();
+    expect(turnedOff(ask, ['ask'], WEB_CAPABILITIES)).toBeNull();
+    // Where the platform has it, the switch alone decides.
+    expect(turnedOff(ask, ['ask'])).toBe('ask');
+    // The Graph needs nothing of the platform: its switch is the reason on the web too.
+    expect(
+      turnedOff({ kind: 'graph', scope: { kind: 'vault' } }, ['graph'], WEB_CAPABILITIES),
+    ).toBe('graph');
   });
 });
 

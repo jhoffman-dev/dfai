@@ -128,7 +128,7 @@ describe('useFeatureOffWiring', () => {
     const known = createStore<boolean>()(() => false);
     const hook = renderHook(
       ({ overlay, offered }: { overlay: Overlay | null; offered: typeof platform }) =>
-        useFeatureOffWiring({ offered, known, overlay, showOverlay, hideOverlay }),
+        useFeatureOffWiring({ offered, platform, known, overlay, showOverlay, hideOverlay }),
       { initialProps: { overlay: null as Overlay | null, offered: platform } },
     );
     return { hook, shown, hidden };

@@ -86,7 +86,7 @@ export function useKindleSync(options: KindleWindowOptions): KindleController {
   const [record, setRecord] = useState(() => kindle.records.read());
   const busy = useKindleBusy();
   const [problem, setProblem] = useState<string | null>(null);
-  const toast = useKindleToast();
+  const toast = useKindleToast(options.enabled);
   const { intoVault, setIntoVault } = useKindleVaultChoice(kindle.vaults, vaultKey);
   const runs = useKindleRuns({ options, intoVault, setRecord, say: toast.say });
 

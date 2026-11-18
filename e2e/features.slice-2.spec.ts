@@ -174,6 +174,36 @@ test('Ask and Claude chat switched off leaves the sidebar, ⌘J, ⇧⌘J and the
   await expect(askPage(page)).toBeVisible();
 });
 
+test('with Ask off, a Claude tab kept in the right sidebar asks Claude Code nothing after a reload', async ({
+  page,
+}) => {
+  const { host } = await openVault(page);
+  await openNote(page, 'Garden');
+  await page.keyboard.press('Shift+Meta+j');
+  const chat = page.getByRole('complementary', { name: 'Claude' });
+  await expect(chat).toBeVisible();
+  const signedIn = () => host.claude.runs().filter((run) => run.args[0] === 'auth').length;
+  // The control: the chat on screen asks whether Claude Code is signed in.
+  await expect.poll(signedIn).toBeGreaterThan(0);
+
+  await switchFeature(page, ASK, false);
+  await expect(chat).toHaveCount(0);
+  const before = signedIn();
+  await reloadVault(page);
+  await openNote(page, 'Garden');
+  await expect(chat).toHaveCount(0);
+  // A round trip through the window, so an ask made as it mounted has reached the host.
+  await page.keyboard.press('Meta+k');
+  await expect(page.getByRole('searchbox', { name: 'Search the vault' })).toBeVisible();
+  await closePalette(page);
+  expect(signedIn()).toBe(before);
+
+  // Back on, the right sidebar's remembered Claude tab is the chat again, and asks as before.
+  await switchFeature(page, ASK, true);
+  await expect(chat).toBeVisible();
+  await expect.poll(signedIn).toBeGreaterThan(before);
+});
+
 function serveSlack(host: FakeHost): void {
   host.slack.serve('auth.test', { ok: true, team: 'Larkspur Payroll', user: 'mara' });
   host.slack.serve('conversations.replies', {
