@@ -827,6 +827,70 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     expect(await findUnfinishedAssist(v.ports)).toEqual([]);
   });
 
+  it('says when what a crash left was changed or is gone since', async () => {
+    const v = setUp();
+    const at = CLOCK.localNow();
+    const person = json({ type: 'person', email: 'tobias@example.org' });
+    for (const entry of [
+      {
+        kind: 'begun' as const,
+        at,
+        row: `${at} ${LUNCH}`,
+        path: createVaultPath(LUNCH),
+        digest: digestOf(VAULT[LUNCH]!),
+        plan: 'Added Tobias Fenn.',
+      },
+      {
+        kind: 'step' as const,
+        at,
+        row: `${at} ${LUNCH}`,
+        done: [
+          {
+            kind: 'created' as const,
+            path: createVaultPath('People/Tobias Fenn.md'),
+            digest: digestOf(person),
+          },
+        ],
+      },
+      {
+        kind: 'begun' as const,
+        at,
+        row: `${at} ${CALL}`,
+        path: createVaultPath(CALL),
+        digest: digestOf(VAULT[CALL]!),
+        plan: 'Made it a task.',
+      },
+      {
+        kind: 'step' as const,
+        at,
+        row: `${at} ${CALL}`,
+        done: [
+          {
+            kind: 'created' as const,
+            path: createVaultPath('People/Gone.md'),
+            digest: digestOf('x'),
+          },
+        ],
+      },
+    ]) {
+      await appendToRuleLog({ fs: v.ports.fs, rule: INBOX_ASSIST_RULE, entry, now: CLOCK.now() });
+    }
+    v.files.set(LUNCH, `${VAULT[LUNCH]!}Edited.\n`);
+    v.files.set('People/Tobias Fenn.md', `${person}Edited.\n`);
+    v.files.delete(CALL);
+    const found = await findUnfinishedAssist(v.ports);
+    expect(found.map(({ lines }) => lines.slice(1))).toEqual([
+      [
+        'Lunch with Tobias is where it was, but says something else: what the row wrote may be in it. Check its properties.',
+        'Tobias Fenn was made (People/Tobias Fenn.md) and changed since. Keep it, or put it in the Trash.',
+      ],
+      [
+        `Call Mara is no longer at ${CALL}: it may have been filed or archived. Look for it there.`,
+        'Gone was made (People/Gone.md) and is gone since.',
+      ],
+    ]);
+  });
+
   it('finds a row a crash left unfinished, and says what is on disk and how to put it right', async () => {
     const v = setUp();
     const at = CLOCK.localNow();
