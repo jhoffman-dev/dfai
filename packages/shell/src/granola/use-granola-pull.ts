@@ -325,7 +325,10 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
       },
       [vaultKey, update],
     ),
-    syncNow: useCallback(() => void pull('sync-now'), [pull]),
+    // Read as it is pressed (#920): the card is drawn before the vault's settings answer.
+    syncNow: useCallback(() => {
+      if (latest.current.enabled) void pull('sync-now');
+    }, [pull]),
     syncNowFor: useCallback(
       (vault: string) => pullVault({ vault, mode: 'sync-now', toasts: false }),
       [pullVault],

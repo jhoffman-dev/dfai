@@ -180,10 +180,13 @@ export function useMeetingSync(options: MeetingSyncOptions): MeetingSyncControll
     return report;
   };
 
+  // Every way into a sync — opening, the clock, Sync now, the step after sign-in — comes here,
+  // and reads Meetings' switch as it stands (#920): off, Google is asked nothing.
   const run = useSteadyCallback(async (asked: boolean) => {
     const now = latest.current.options;
     const host = now.meetings;
-    if (host === null || now.vaultKey === null || running.current.has(now.vaultKey)) return;
+    if (!now.enabled || host === null || now.vaultKey === null) return;
+    if (running.current.has(now.vaultKey)) return;
     const vault = now.vaultKey;
     running.current.add(vault);
     try {
