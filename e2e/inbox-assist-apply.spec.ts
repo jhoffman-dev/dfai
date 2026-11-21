@@ -223,6 +223,10 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
     'Linked Mara Quill.',
   );
   await expect.poll(() => vault.exists(TOBIAS)).toBe(true);
+  // The duplicate is applied last; its Activity line is said once its log line is written.
+  await expect
+    .poll(() => host.activityLog())
+    .toContain('Inbox assist applied “Renew Larkspur contract”');
   await expectFile(vault, KEPT).toBe(NOTES[KEPT]);
   await expectFile(vault, JUNK).toBe(NOTES[JUNK]);
   // Call Mara: three writes and a move, as above. Tobias's item: made a task, then he is made and
@@ -266,6 +270,11 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
   await suggestions.getByRole('button', { name: 'Undo all' }).click();
   await expect(renew).toContainText('Put back as it was.');
   await expect(lunch).toContainText('Put back as it was.');
+  // Call Mara is undone last; its Activity line is said once its log line is written.
+  await expect(suggestions.getByRole('listitem', { name: 'Call Mara Quill' })).toContainText(
+    'Put back as it was.',
+  );
+  await expect.poll(() => host.activityLog()).toContain('Inbox assist undid “Call Mara Quill”');
   await expectAsSetUp(vault);
   expect(host.trashed()).toEqual([TOBIAS]);
   // The last applied first: each written back, then moved back, and logged; Tobias to the Trash.
