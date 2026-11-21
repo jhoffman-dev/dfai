@@ -424,6 +424,20 @@ describe('useGranolaPull', () => {
     expect(hook.result.current.report).toBeNull();
   });
 
+  it('pulls nothing on Sync now with Meetings off — the card is drawn before the settings answer (#920)', async () => {
+    const { hook, lists, asked, options } = setUp({ enabled: false });
+    await settles(() => expect(asked.count).toBe(1));
+    act(() => hook.result.current.syncNow());
+    await fifteenMinutes();
+    expect(lists()).toBe(0);
+
+    // On, as on main: the pull as on opening, then Sync now.
+    hook.rerender({ ...options, enabled: workSwitch(true) });
+    await settles(() => expect(lists()).toBe(1));
+    act(() => hook.result.current.syncNow());
+    await settles(() => expect(lists()).toBe(2));
+  });
+
   it('stops pulling on the clock once Meetings is switched off, and pulls again when it is back on (#901)', async () => {
     const { hook, lists, options } = setUp();
     await settles(() => expect(lists()).toBe(1));
