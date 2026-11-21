@@ -250,8 +250,33 @@ describe('Apply on the suggestions', () => {
       />,
     );
     const left = screen.getByRole('listitem', { name: 'Lunch with Tobias, left unfinished' });
-    await userEvent.click(within(left).getByRole('button', { name: 'Put aside' }));
+    // Named for its row, and saying what it does and does not do (round 4, 7).
+    await userEvent.click(
+      within(left).getByRole('button', { name: 'Put aside Lunch with Tobias' }),
+    );
     expect(onPutAside).toHaveBeenCalledWith(row);
+    expect(
+      screen.getByText('Put aside changes no note: it only stops showing that row here.'),
+    ).toBeTruthy();
+  });
+
+  it('says, in a live region there before it, that rows were left unfinished', () => {
+    const view = plan([]);
+    const { rerender } = render(<AssistSummary view={view} onDismiss={() => undefined} />);
+    const live = screen.getByRole('status', { name: 'Left unfinished' });
+    expect(live.textContent).toBe('');
+    rerender(
+      <AssistSummary
+        view={view}
+        onDismiss={() => undefined}
+        unfinished={[
+          { row: 'r', title: 'Lunch with Tobias', lines: ['It was to do: Added Tobias Fenn.'] },
+        ]}
+      />,
+    );
+    // The same region, so it is announced as it changes.
+    expect(screen.getByRole('status', { name: 'Left unfinished' })).toBe(live);
+    expect(live.textContent).toBe('1 row left unfinished by an earlier apply or undo.');
   });
 });
 
