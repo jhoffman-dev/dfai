@@ -18,12 +18,11 @@ import {
   type AssistRow,
   type InboxItem,
   type VaultPath,
-  EVERY_ASSIST_KIND,
 } from '@dfai/domain';
 import { automationVault } from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
 import { fakeModel } from '../testing/fake-model.ts';
-import { seededRandom } from '@dfai/domain/testing';
+import { seededRandom, EVERY_ASSIST_KIND } from '@dfai/domain/testing';
 import {
   applyAssistRow,
   applySureRows,

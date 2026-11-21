@@ -29,6 +29,9 @@ const LUNCH = 'Inbox/Lunch with Tobias.md';
 const JUNK = 'Inbox/Buy now.md';
 /** A task that would be filed under its project: shown, not applied, for now (#925). */
 const RENEW = 'Inbox/Renew payroll.md';
+/** A copy of a task kept elsewhere: shown, not archived, for now (#925). */
+const AGAIN = 'Inbox/Payroll renewal.md';
+const KEPT = 'Tasks/Payroll renewal.md';
 const NOTES: Record<string, string> = {
   'Projects/Larkspur Payroll.md': json({ type: 'project', para: 'project' }),
   'People/Mara Quill.md': json({ type: 'person', email: 'mara.quill@example.com' }),
@@ -36,6 +39,8 @@ const NOTES: Record<string, string> = {
   [LUNCH]: 'Lunch with Tobias Fenn <tobias@example.org>.\n',
   [JUNK]: 'Buy now!\n',
   [RENEW]: 'Renew the payroll contract.\n',
+  [AGAIN]: 'Renew the payroll contract.\n',
+  [KEPT]: json({ type: 'task', status: 'next-action' }, 'Renew the payroll contract.\n'),
 };
 const entry = (item: string, extra: Record<string, unknown> = {}) => ({
   item,
@@ -57,6 +62,7 @@ const ANSWER = JSON.stringify({
     entry(LUNCH, { people: [{ name: 'Tobias Fenn', email: 'tobias@example.org', person: null }] }),
     entry(JUNK, { kind: 'junk' }),
     entry(RENEW, { projects: ['Projects/Larkspur Payroll.md'] }),
+    entry(AGAIN, { duplicateOf: KEPT }),
   ],
 });
 const item = (path: string): InboxItem =>
@@ -113,7 +119,7 @@ function setUp() {
       wiring,
       ports,
       clock: CLOCK,
-      items: [CALL, LUNCH, JUNK, RENEW].map(item),
+      items: [CALL, LUNCH, JUNK, RENEW, AGAIN].map(item),
       vaultKey: '/vault',
       apply: { write, activity },
     }),
@@ -155,6 +161,25 @@ describe('useInboxAssist: Apply and Undo', () => {
       words: 'Filing is not applied automatically yet.',
     });
     expect(t.plan()).toMatchObject({ canApplyAll: true, canUndoAll: false, busy: false });
+  });
+
+  it('refuses a filing row and a duplicate pressed through the shell: the production list, nothing written', async () => {
+    const t = setUp();
+    await t.suggest();
+    expect(t.rowOf('Payroll renewal').action).toEqual({
+      kind: 'preview',
+      words: 'Archiving a duplicate is not applied automatically yet.',
+    });
+    const written = t.vault.log.length;
+    act(() => t.actions().onApply(RENEW));
+    act(() => t.actions().onApply(AGAIN));
+    await waitFor(() => expect(t.plan().busy).toBe(false));
+    // Nothing reached the vault for either: no write, no move, no log.
+    expect(t.vault.log.slice(written).filter((line) => !line.startsWith('read'))).toEqual([]);
+    expect(t.vault.files.get(RENEW)).toBe(NOTES[RENEW]);
+    expect(t.vault.files.get(AGAIN)).toBe(NOTES[AGAIN]);
+    expect(t.rowOf('Renew payroll').action?.kind).toBe('preview');
+    expect(t.rowOf('Payroll renewal').action?.kind).toBe('preview');
   });
 
   it('applies one row, says so, and undoes it to the byte', async () => {

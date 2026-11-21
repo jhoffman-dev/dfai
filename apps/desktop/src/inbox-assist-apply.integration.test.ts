@@ -48,7 +48,8 @@ import {
   type AssistApplied,
 } from '@dfai/application';
 import { automationVault } from '@dfai/application/testing/sqlite';
-import { createVaultPath, EVERY_ASSIST_KIND, inboxItem } from '@dfai/domain';
+import { createVaultPath, inboxItem } from '@dfai/domain';
+import { EVERY_ASSIST_KIND } from '@dfai/domain/testing';
 
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }));

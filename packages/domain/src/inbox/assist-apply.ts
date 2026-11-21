@@ -72,16 +72,6 @@ export function assistNotAppliable(row: AssistRow): string | null {
 /** One thing applying a row does: written where the item is, or a move. */
 export type AssistApplyKind = 'task' | 'due' | 'file' | 'link-person' | 'add-person' | 'duplicate';
 
-/** Every kind: what tests of the moving kinds, and #925 once it lands, hand Apply. */
-export const EVERY_ASSIST_KIND: ReadonlySet<AssistApplyKind> = new Set([
-  'task',
-  'due',
-  'file',
-  'link-person',
-  'add-person',
-  'duplicate',
-]);
-
 /**
  * The kinds Apply writes now (#911): only what is written where the item is,
  * each held end to end by the host's own check of the text. Filing under a

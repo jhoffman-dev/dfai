@@ -95,7 +95,6 @@ export {
   assistRowIntegrity,
   assistStepKeys,
   assistStepPaths,
-  EVERY_ASSIST_KIND,
 } from './assist-apply.ts';
 export type {
   AssistApplyKind,

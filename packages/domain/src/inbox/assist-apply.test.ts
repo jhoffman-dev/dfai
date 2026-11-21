@@ -7,11 +7,11 @@ import {
   assistApplyStep,
   assistNotAppliable,
   assistNotAppliedYet,
-  EVERY_ASSIST_KIND,
   assistStepKeys,
   assistStepPaths,
 } from './assist-apply.ts';
 import type { AssistRow } from './assist-plan.ts';
+import { EVERY_ASSIST_KIND } from '../testing/every-assist-kind.ts';
 
 /** #909: what each planned row comes to when applied, and the fields it must find empty. */
 
