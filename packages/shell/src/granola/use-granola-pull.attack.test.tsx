@@ -80,6 +80,7 @@ function setUp({
   const activity = recordingActivity();
   const records = memoryRecords();
   const options: GranolaPullOptions = {
+    reachable: true,
     enabled: true,
     granola: {
       ...granola.port,

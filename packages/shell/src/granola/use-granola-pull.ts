@@ -56,11 +56,15 @@ export interface GranolaPullOptions {
   /** Re-reads the tree and the index once a pull has written meetings into the vault. */
   readonly onWrote: () => void;
   /**
-   * Whether Granola can be reached on this platform (#657) and Meetings is
-   * switched on (#901, held until the vault's settings answer): where not, its
-   * key is never asked after and nothing is pulled, on opening or on the
-   * clock. A pull already under way as it goes off finishes. The key itself,
-   * held by the host, is kept.
+   * Whether Granola can be reached on this platform (#657): where not, its
+   * key is never asked after and nothing is pulled, on opening or on the clock.
+   */
+  readonly reachable: boolean;
+  /**
+   * Whether Meetings is switched on (#901, held until the vault's settings
+   * answer): off, nothing is pulled, on opening or on the clock, and a pull
+   * under way finishes. Whether a key is held is still asked of the host as
+   * the vault opens, as ever: that asks Granola nothing, and the key is kept.
    */
   readonly enabled: boolean;
 }
@@ -172,7 +176,7 @@ function toastOf(report: GranolaPullReport): string | null {
  * One puller for the window, so a pull of a vault never runs twice at once.
  */
 export function useGranolaPull(options: GranolaPullOptions): GranolaPullController {
-  const { granola, records, fs, markdown, vaultKey, enabled } = options;
+  const { granola, records, fs, markdown, vaultKey, reachable, enabled } = options;
   const latest = useRef(options);
   latest.current = options;
   const caughtUp = useCaughtUp(options);
@@ -223,11 +227,8 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
       ...nothingFor(vaultKey),
       lastPullAt: vaultKey === null ? null : records.read(vaultKey).lastPullAt,
     });
-  }, [vaultKey, records]);
-  // Apart from the reset above, so Meetings switched on again (#901) keeps what the settings said.
-  useEffect(() => {
-    if (vaultKey !== null && enabled) void readKey(vaultKey);
-  }, [vaultKey, readKey, enabled]);
+    if (vaultKey !== null && reachable) void readKey(vaultKey);
+  }, [vaultKey, records, readKey, reachable]);
 
   const { settings, unreadable } = useVaultSettingsRead({ fs, markdown, vaultKey });
   useEffect(() => {
@@ -291,8 +292,8 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
     [pullVault],
   );
 
-  // Where Granola is not offered its key is never asked after, so nothing is ever usable; and
-  // once it stops being offered — Meetings switched off (#901) — the clock stops with it.
+  // Where Granola cannot be reached its key is never asked after, so nothing is ever usable; and
+  // with Meetings switched off (#901) nothing is pulled: switched on, the pull on opening runs.
   const usable = enabled && mine.key?.hasKey === true && mine.key.lastRefusal === null;
   const periodic = mine.periodic === true;
 

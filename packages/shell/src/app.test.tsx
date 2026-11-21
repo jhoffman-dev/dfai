@@ -3031,15 +3031,15 @@ describe('work that starts by itself waits for the settings, through the window 
 
 /**
  * Automations and Meetings (#901, slice 3), through the window: with the
- * settings read held, no rule runs, Granola's key is never asked after and
- * no calendar is read for meetings; a vault that switches them off never
+ * settings read held, no rule runs, nothing is pulled from Granola and no
+ * calendar is read for meetings; a vault that switches them off never
  * starts them, and one that leaves them on starts them once the read
  * answers. Time blocks share the Google sign-in and are not Meetings': they
- * sync with Meetings off. Granola asks after its key as the vault opens, so it
- * is the sharp case here; the rules and the meeting sync also wait on the
- * settings note for the owner and the calendar, so for them the runner's own
- * tests (`automations-runner.test.tsx`, `use-meeting-sync.test.tsx`) hold the
- * switch, and this holds that the window wires them to it.
+ * sync with Meetings off. The rules, Granola's pull and the meeting sync all
+ * wait on the settings note itself (for the owner, the index and the
+ * calendar), so the runners' own tests (`automations-runner.test.tsx`,
+ * `use-granola-pull.test.tsx`, `use-meeting-sync.test.tsx`) hold the switch
+ * before the answer, and this holds that the window wires each to it.
  */
 describe('Automations and Meetings wait for the settings, through the window (#901)', () => {
   const SETTINGS = '.atlas/settings.md';
@@ -3076,14 +3076,16 @@ describe('Automations and Meetings wait for the settings, through the window (#9
       if (paths.includes(SETTINGS)) await answered;
       return vault.fs.readNotes(paths);
     };
-    const keyAsked: string[] = [];
+    // A key is held, so Granola pulls as the vault opens: each listing of its notes is counted.
+    const pulls: string[] = [];
     const granolaHere = {
       ...granola,
       port: {
         ...granola.port,
-        status: async () => {
-          keyAsked.push('status');
-          return { hasKey: false, lastRefusal: null };
+        status: async () => ({ hasKey: true, lastRefusal: null }),
+        listNotes: (args: Parameters<typeof granola.port.listNotes>[0]) => {
+          pulls.push('list');
+          return granola.port.listNotes(args);
         },
       },
     };
@@ -3105,7 +3107,7 @@ describe('Automations and Meetings wait for the settings, through the window (#9
       answer,
       /** What a rule's run log would say: created, or written over. */
       ruleLog: () => vault.written[RULE_LOG] ?? files[RULE_LOG],
-      keyAsked,
+      pulls,
       meetingsRead: () => events.state.asked.length,
       blocksRead: () => blockCalendar.state.asked.length,
     };
@@ -3113,10 +3115,10 @@ describe('Automations and Meetings wait for the settings, through the window (#9
 
   const graphRow = () => screen.queryByRole('button', { name: 'Graph' });
 
-  it('runs no rule, asks Granola nothing and reads no meetings for a vault that switches both off', async () => {
+  it('runs no rule, pulls nothing from Granola and reads no meetings for a vault that switches both off', async () => {
     const opened = await openWith('featuresOff: [automations, meetings, graph]');
     expect(opened.ruleLog()).toBeUndefined();
-    expect(opened.keyAsked).toEqual([]);
+    expect(opened.pulls).toEqual([]);
     expect(opened.meetingsRead()).toBe(0);
     opened.answer();
     await waitFor(() => expect(graphRow()).toBeNull());
@@ -3124,7 +3126,7 @@ describe('Automations and Meetings wait for the settings, through the window (#9
     await waitFor(() => expect(opened.blocksRead()).toBeGreaterThan(0));
     for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
     expect(opened.ruleLog()).toBeUndefined();
-    expect(opened.keyAsked).toEqual([]);
+    expect(opened.pulls).toEqual([]);
     expect(opened.meetingsRead()).toBe(0);
     expect(screen.queryByRole('button', { name: 'Automations' })).toBeNull();
   });
@@ -3132,11 +3134,11 @@ describe('Automations and Meetings wait for the settings, through the window (#9
   it('starts the rules, Granola and the meetings only once the settings say they are on', async () => {
     const opened = await openWith('quickAdd: [task]');
     expect(opened.ruleLog()).toBeUndefined();
-    expect(opened.keyAsked).toEqual([]);
+    expect(opened.pulls).toEqual([]);
     expect(opened.meetingsRead()).toBe(0);
     opened.answer();
     await waitFor(() => expect(opened.ruleLog()).toContain('Ran when DFAI opened'));
-    await waitFor(() => expect(opened.keyAsked.length).toBeGreaterThan(0));
+    await waitFor(() => expect(opened.pulls.length).toBeGreaterThan(0));
     await waitFor(() => expect(opened.meetingsRead()).toBeGreaterThan(0));
     expect(screen.getByRole('button', { name: 'Automations' })).toBeDefined();
   });

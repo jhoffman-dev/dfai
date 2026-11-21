@@ -139,8 +139,11 @@ rather than the platform. A second set of checks beside it would drift from it.
      Calendar's meetings part: its switch, calendars and Sync now) and a new
      `meetingImport` (the import of meetings that arrive by pull, P28-04, on
      the automations Mac, and the Inbox's "meetings wait for the named Mac").
-     Off: no Granola key is asked after and nothing is pulled, on opening, on
-     the clock or by Sync now in Settings; no calendar is read for meetings;
+     Off: nothing is pulled from Granola, on opening, on the clock or by
+     Sync now in Settings (the host is still asked, as the vault opens,
+     whether a key is held: that reads the Keychain, asks Granola nothing,
+     and keeps "Open a vault" to its work budget); no calendar is read for
+     meetings;
      nothing is imported. A Granola pull under way finishes and its toast is
      not shown; a meeting sync under way stops between meetings, writing
      nothing more, as its Stop does; the import asks before each file

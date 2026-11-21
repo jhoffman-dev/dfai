@@ -71,6 +71,7 @@ function setUp({
   synced = [VAULT],
   catchUpIndex = async () => true,
   notes = [],
+  reachable = true,
   enabled = true,
 }: {
   key?: GranolaKeyStatus;
@@ -78,6 +79,7 @@ function setUp({
   synced?: readonly string[];
   catchUpIndex?: () => Promise<boolean>;
   notes?: readonly GranolaNote[];
+  reachable?: boolean;
   enabled?: boolean;
 } = {}) {
   const granola = fakeGranola({ notes });
@@ -90,6 +92,7 @@ function setUp({
   const activity = recordingActivity();
   const records = memoryRecords();
   const options: GranolaPullOptions = {
+    reachable,
     enabled,
     granola: {
       ...granola.port,
@@ -137,7 +140,7 @@ afterEach(() => vi.useRealTimers());
 
 describe('useGranolaPull', () => {
   it('asks nothing of Granola and pulls nothing where the platform has none (#657)', async () => {
-    const { hook, lists, asked } = setUp({ enabled: false });
+    const { hook, lists, asked } = setUp({ reachable: false, enabled: false });
     await fifteenMinutes();
     await fifteenMinutes();
     expect(asked.count).toBe(0);
@@ -409,6 +412,15 @@ describe('useGranolaPull', () => {
     await settles(() => expect(refused.hook.result.current.key).toEqual(REFUSED));
     await fifteenMinutes();
     expect(refused.lists()).toBe(0);
+  });
+
+  it('pulls nothing with Meetings off, on opening or on the clock, though the key is asked after (#901)', async () => {
+    const { hook, lists, asked } = setUp({ enabled: false });
+    await settles(() => expect(asked.count).toBe(1));
+    await fifteenMinutes();
+    await fifteenMinutes();
+    expect(lists()).toBe(0);
+    expect(hook.result.current.report).toBeNull();
   });
 
   it('stops pulling on the clock once Meetings is switched off, and pulls again when it is back on (#901)', async () => {

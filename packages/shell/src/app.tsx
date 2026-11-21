@@ -877,6 +877,8 @@ function AppWindow({
     clock: localClock,
     activity: activityLog,
     onWrote: onChanged,
+    // Whether a key is held is asked as ever; what is pulled waits for the Meetings switch.
+    reachable: platformOffered.granolaPull,
     enabled: working.granolaPull,
   });
   // Today's meetings from Google Calendar (ADR-0046): once the index is ready, every 15 minutes, and on asking.
