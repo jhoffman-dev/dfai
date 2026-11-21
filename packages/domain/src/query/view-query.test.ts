@@ -52,8 +52,9 @@ describe('compileViewQuery', () => {
   });
 
   it('filters on nothing but where the note lives when no filter is set', () => {
+    // The page's notes are chosen by it (#919); the page then reads them by path alone.
     expect(sqlOf()).toContain(
-      `WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'\nORDER BY`,
+      `WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'\n  ORDER BY`,
     );
   });
 

@@ -188,18 +188,55 @@ export function compileViewQuery(
 
   parameters.push(queryRowLimit(query.limit));
 
-  const sql = [
-    `SELECT ${[...new Set(columns)].join(', ')}`,
-    `FROM ${table}`,
-    `WHERE ${conditions.join(' AND ')}`,
-    shape.groupBy === undefined ? null : `GROUP BY ${groupExpression(shape.groupBy)}`,
-    order.length > 0 ? `ORDER BY ${order.join(', ')}` : null,
-    'LIMIT ?',
-  ]
+  const select = `SELECT ${[...new Set(columns)].join(', ')}`;
+  const where = `WHERE ${conditions.join(' AND ')}`;
+  const orderBy = order.length > 0 ? `ORDER BY ${order.join(', ')}` : null;
+  const sql = (
+    shape.groupBy === undefined && shape.aggregate === undefined
+      ? pageFirst({ select, table, where, orderBy: `ORDER BY ${order.join(', ')}` })
+      : [
+          select,
+          `FROM ${table}`,
+          where,
+          shape.groupBy === undefined ? null : `GROUP BY ${groupExpression(shape.groupBy)}`,
+          orderBy,
+          'LIMIT ?',
+        ]
+  )
     .filter((line) => line !== null)
     .join('\n');
 
   return { sql, parameters };
+}
+
+/**
+ * A page of rows, its notes chosen before their cells are read (#919): which
+ * notes are on the page asks only for the cells its filters and sorts name,
+ * and only the notes on it read every column. Read in one pass, SQLite reads
+ * every column of every note before it sorts and keeps 500, and a type of
+ * thousands of notes ran out of its budget. The order ends with `path`, which
+ * no two rows share, so the page and its order are the one-pass query's.
+ */
+function pageFirst({
+  select,
+  table,
+  where,
+  orderBy,
+}: {
+  select: string;
+  table: string;
+  where: string;
+  /** Never empty: a page is always in order, `path` last. */
+  orderBy: string;
+}): string[] {
+  return [
+    select,
+    `FROM ${table}`,
+    `WHERE "path" IN (SELECT "path" FROM ${table} ${where}`,
+    `  ${orderBy}`,
+    '  LIMIT ?)',
+    orderBy,
+  ];
 }
 
 /**

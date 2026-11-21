@@ -12,10 +12,8 @@ import {
 } from '@dfai/application';
 import { withGiveUpRecorded } from '../activity/with-give-up-recorded.ts';
 import type { OpenEditors } from '../panes/open-editors.ts';
+import { errorMessage } from '../query/error-message.ts';
 import { writeNoteProperties } from '../query/use-view-writes.ts';
-
-const message = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 /**
  * Every note of one type, as a table.
@@ -91,7 +89,7 @@ export function useTypeTable({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setResult(null);
-        setError(message(cause));
+        setError(errorMessage(cause));
       });
 
     return () => {
@@ -120,7 +118,7 @@ export function useTypeTable({
       } as const;
       withGiveUpRecorded(edit, () => writeNoteProperties({ editors, fs, markdown, path, values }))
         .then(onChanged)
-        .catch((cause: unknown) => setError(message(cause)));
+        .catch((cause: unknown) => setError(errorMessage(cause)));
     },
     [editors, fs, markdown, activity, onChanged],
   );

@@ -49,8 +49,9 @@ describe('viewSpecsFor', () => {
     });
     const select = viewSpecsFor([task])[0]?.select ?? '';
     expect(select).toContain('AS "due"');
+    // Each is the view's own column, once; the title's own cell reads its key too (#919).
     for (const key of ['modified', 'path', 'title', 'summary']) {
-      expect(select).not.toContain(`p.key = '${key}' AND COALESCE`);
+      expect(select.split(`AS "${key}"`)).toHaveLength(2);
     }
   });
 

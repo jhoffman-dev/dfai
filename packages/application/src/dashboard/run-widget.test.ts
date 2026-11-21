@@ -1,4 +1,4 @@
-import { parseDashboard, parseObjectType, type Widget } from '@dfai/domain';
+import { parseDashboard, parseObjectType, QUERY_STOPPED_WORDS, type Widget } from '@dfai/domain';
 import { describe, expect, it } from 'vitest';
 import { fakeIndexPort } from '../testing/fake-ports.ts';
 import { runDashboard, runWidget } from './run-widget.ts';
@@ -302,6 +302,14 @@ describe('runWidget', () => {
       widget: widgetFor({ kind: 'table', type: 'gone' }),
     });
     expect(result.data).toEqual({ shape: 'error', message: 'no such table: v_gone' });
+  });
+
+  it('says a query the index stopped at its budget in plain words (#919)', async () => {
+    const result = await runWidget({
+      index: fakeIndexPort({ query: () => Promise.reject('interrupted') }),
+      widget: widgetFor({ kind: 'table', type: 'meeting' }),
+    });
+    expect(result.data).toEqual({ shape: 'error', message: QUERY_STOPPED_WORDS });
   });
 
   it('still reports the SQL when the query failed', async () => {

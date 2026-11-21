@@ -21,6 +21,7 @@ import {
   type SqlWidgetSpec,
   type ViewQuery,
   type Widget,
+  failureWords,
 } from '@dfai/domain';
 import { messageWithoutPaths } from '../api/api-error.ts';
 import type { IndexPort } from '../index/ports.ts';
@@ -136,8 +137,10 @@ export async function runWidget({
     const result = await index.query(compiled.sql, compiled.parameters);
     return { widget, sql, data: read(widget, result, types) };
   } catch (error) {
-    // Drawn on a dashboard and answered through the API: the index's words, never where it sits.
-    return { widget, sql, data: { shape: 'error', message: messageWithoutPaths(error) } };
+    // Drawn on a dashboard and answered through the API: the index's words, never where it
+    // sits, and a query stopped at its budget said plainly (#919).
+    const message = failureWords(messageWithoutPaths(error));
+    return { widget, sql, data: { shape: 'error', message } };
   }
 }
 
