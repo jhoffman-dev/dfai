@@ -23,6 +23,7 @@ import { useVirtualRows } from '../virtual-rows.ts';
 import { asksWhoItWaitsOn, clarificationOf, type InboxDraft } from './inbox-triage.ts';
 import { keyHintStrip } from '../key-hints.tsx';
 import type { UndoLast } from '../row-keys.ts';
+import { dueTimeLabel } from '../due-time.tsx';
 import { inboxKeyHints, triageKeysShown, type TriageKeyShown } from './triage-keys.ts';
 import {
   useInboxTriage,
@@ -509,6 +510,8 @@ function ClarifyTask({
         disabled={busy}
         onPick={(due) => pick({ due })}
       />
+      {/* The time its due names (#928): kept when another day is picked here. */}
+      {task.dueTime !== undefined && dueTimeLabel(task.dueTime)}
       {/* Offered only where the vault ranks its tasks 1 to 4: the read says so by carrying it. */}
       {task.priority !== undefined &&
         priorityField({

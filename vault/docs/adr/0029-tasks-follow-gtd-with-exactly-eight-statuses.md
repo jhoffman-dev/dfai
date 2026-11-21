@@ -336,3 +336,58 @@ Slice 1 of the Todoist sync (#912). James: "Priority should be added."
 - **The API's shapes are not changed here.** The property routes write
   `priority` as given, as they did. Its typed answers (Today, the review,
   the Inbox) gain it with the API's slice of #912.
+
+## Addendum (#928, 2026-11-21): a due may carry a time of day
+
+Slice 2 of the Todoist sync (#912). A task's `due` is a day, as before, or a
+day with a time of day, which the sync will later map to Todoist's due date
+and time. Nothing changes for a due that names only its day.
+
+- **Two written forms.** `due: 2026-12-04` (a day) and
+  `due: 2026-12-04T15:30` (a day and a time). The app writes only these two:
+  setting a time writes `YYYY-MM-DDTHH:MM`, clearing it writes back
+  `YYYY-MM-DD`. A date-only due is never rewritten, and a due in another form
+  is not normalised unless the person edits it. Every write goes through the
+  existing byte-preserving property write.
+- **What is read as a time.** The time is read as the calendar reads a
+  timeblock's `start` (`readEventTime`): `T` or a space before `HH:MM`, and
+  seconds or a zone after the minutes read as the same clock time, never
+  converted. Anything the index does not date (`next Friday`,
+  `2026-02-30`) is no due, as before; it is never an error.
+- **Time zone: local wall-clock time, no zone in the file**, the rule
+  ADR-0030 set for timeblocks. 15:30 is 15:30 where the person is. Nothing
+  converts between zones; on the days the clocks change, a time is the
+  time the clock shows.
+- **The index is unchanged.** `value_date` already holds the due as
+  written whenever it is a date (`property-value.ts`). Its first ten
+  characters are the day, which every query, filter and task row reads
+  (`substr(value_date, 1, 10)`), and the query language already sorts a
+  date by its text, with a space read as `T`. No column, no change of
+  meaning, no version bump. The time is read from that text wherever it
+  matters, by one parser (`gtd/task-due.ts`).
+- **Order within a day: a date-only due first, as "sometime that day", then
+  timed ones by time.** This is the order the text sorts in
+  (`2026-12-04` before `2026-12-04T09:00`), so a table sorted by Due and
+  the Today page agree, and sorting costs nothing new.
+- **Overdue.** A date-only due is overdue from the next day, as before. A
+  timed due is overdue once its minute has gone by: due at 15:30, it is due
+  today at 15:30 and overdue at 15:31. "Due today" is by its day. The
+  Today page and the weekly review measure this against the injected
+  clock's wall time (`Clock.localNow`); an open Today page reads again the
+  minute after a due's time passes. A clock that does not tell the wall
+  time reads every due by its day. The query language stays by day:
+  `due < @today` is due before today.
+- **Repeating tasks** roll on to the same time of day: `2026-12-04T15:30`
+  weekly becomes `2026-12-11T15:30`. A date-only due rolls to a day.
+- **Shown** beside the day where a due shows: "Due today at 15:30" on Today,
+  the time beside an Inbox row's due, and the properties panel's date. The
+  panel offers a time field beside a task's due date, with its own Clear,
+  which leaves the date. Picking another day keeps the time, in the panel,
+  in a table cell and in the Inbox's Clarify.
+- **The Inbox assist** fills a due only with a day written in the item's
+  own words, as before; it never fills a time. A due already written, with
+  or without a time, is held and never filled over.
+- **The API's shapes are not changed here.** Today, the review and the
+  Inbox still answer `due` as the day, and their `overdue` sections follow
+  the rule above; a due's time joins their typed answers with the API's
+  slice of #912. The property routes write and read `due` as given.

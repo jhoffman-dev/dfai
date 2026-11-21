@@ -1,0 +1,21 @@
+/* ---- a due's time of day (#928) ---- */
+
+/* Beside its day, muted as the app's quieter details are; a late day stays the loud part. */
+.due-time {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/* The time field beside a task's due date in the properties panel. */
+.props__due-time {
+  align-items: center;
+  column-gap: 2px;
+  display: inline-flex;
+  margin-left: 8px;
+}
+
+.props__time-input {
+  color: var(--ink-2);
+  font-size: 14px;
+  width: auto;
+}

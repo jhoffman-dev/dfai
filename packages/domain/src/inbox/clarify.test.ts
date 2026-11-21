@@ -66,6 +66,29 @@ describe('clarifyPlan — a task', () => {
     });
   });
 
+  it('moves a timed due to the day picked, keeping its time of day (#928)', () => {
+    const timed = { ...TASK, due: '2026-10-12T15:30' };
+    expect(plan({ due: '2026-10-20' }, { properties: timed })).toEqual({
+      changes: { due: '2026-10-20T15:30' },
+      fileUnder: null,
+    });
+    // Taken away, it is gone whole; on a date-only due the day is written as picked.
+    expect(plan({ due: null }, { properties: timed })).toEqual({
+      changes: { due: null },
+      fileUnder: null,
+    });
+    expect(plan({ due: '2026-10-20' }, { properties: { ...TASK, due: '2026-10-12' } })).toEqual({
+      changes: { due: '2026-10-20' },
+      fileUnder: null,
+    });
+  });
+
+  it('refuses a time sent as the day: a due is clarified by its day (#928)', () => {
+    expect(plan({ due: '2026-10-20T15:30' })).toEqual({
+      refused: expect.stringMatching(/is not a day/),
+    });
+  });
+
   it('writes defer, due and contexts; a null or an empty list takes one away', () => {
     expect(
       plan({ defer: '2026-10-20', due: null, contexts: [' @desk ', '', '@desk', '@phone'] }),

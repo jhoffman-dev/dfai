@@ -4,6 +4,7 @@ import {
   TASK_KEYS,
   type GtdStatus,
 } from '../gtd/gtd-status.ts';
+import { compareDues, isPastDue, type DueMoment, type TaskDue } from '../gtd/task-due.ts';
 import type { TaskPriority } from '../gtd/task-priority.ts';
 import { addDays } from '../timeline/timeline.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
@@ -16,6 +17,11 @@ export interface ReviewTask {
   readonly status: GtdStatus | null;
   /** `YYYY-MM-DD`, or null when it has none. */
   readonly due: string | null;
+  /**
+   * The time of day its `due` names (#928), `HH:MM` wall-clock time. Absent
+   * when the due names only its day, or the read did not say.
+   */
+  readonly dueTime?: string;
   /** `YYYY-MM-DD`: the day it comes back into play; null when it is not deferred. */
   readonly defer: string | null;
   /**
@@ -139,6 +145,11 @@ export interface ReviewMoment {
   readonly today: string;
   /** Milliseconds since the epoch, from the injected clock. */
   readonly now: number;
+  /**
+   * The wall-clock time, `HH:MM`, from the injected clock (#928): what a timed
+   * due today has passed by. Absent when not asked, and a timed due today has not.
+   */
+  readonly time?: string | null;
 }
 
 /**
@@ -168,7 +179,7 @@ export function weeklyReview({
       ),
     ),
     projectsWithoutNextAction: stalledProjects(projects),
-    overdue: inPlay.filter((task) => isOverdue(task, at.today)).sort(byDueThenTitle),
+    overdue: inPlay.filter((task) => isOverdue(task, at)).sort(byDueThenTitle),
     untouchedSomeday: oldestFirst(
       inPlay.filter(
         (task) =>
@@ -202,9 +213,23 @@ function untouchedFor(task: ReviewTask, days: number, at: ReviewMoment): boolean
   return task.modified !== null && at.now - task.modified > days * DAY_MS;
 }
 
-/** Due before today, on a status that promises its day. */
-export function isOverdue(task: ReviewTask, today: string): boolean {
-  return task.due !== null && task.due < today && promisesItsDay(task);
+/**
+ * Its due has passed — a day before today, or a time today gone by (#928) —
+ * on a status that promises its day.
+ */
+export function isOverdue(task: ReviewTask, at: DueMoment): boolean {
+  const due = dueOfTask(task);
+  return due !== null && isPastDue(due, at) && promisesItsDay(task);
+}
+
+/** A task's due as its read carried it: its day, and its time when it has one. */
+export function dueOfTask(task: Pick<ReviewTask, 'due' | 'dueTime'>): TaskDue | null {
+  return task.due === null ? null : { day: task.due, time: task.dueTime ?? null };
+}
+
+/** The earliest due first, a date-only due before the timed ones on its day; no due last. */
+export function byDue(left: ReviewTask, right: ReviewTask): number {
+  return compareDues(dueOfTask(left), dueOfTask(right));
 }
 
 /** Longest untouched first: what has waited longest is asked about first. */
@@ -219,7 +244,7 @@ export function byOldestChange(left: ReviewTask, right: ReviewTask): number {
 }
 
 function byDueThenTitle(left: ReviewTask, right: ReviewTask): number {
-  return (left.due ?? '').localeCompare(right.due ?? '') || byTitle(left, right);
+  return byDue(left, right) || byTitle(left, right);
 }
 
 export function byTitle(

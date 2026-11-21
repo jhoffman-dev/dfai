@@ -13,7 +13,6 @@ import {
   archiveTaskChange,
   readWeeklyReview,
   type ActivityLog,
-  type Clock,
   type IndexPort,
   type MarkdownPort,
   type VaultFsPort,
@@ -31,7 +30,7 @@ export interface WeeklyReviewOptions {
   };
   /** A note open in a pane is written through the pane, as every view writes it. */
   readonly editors: OpenEditors;
-  readonly clock: Pick<Clock, 'today' | 'now'>;
+  readonly clock: Parameters<typeof readWeeklyReview>[0]['clock'];
   /** The vault's types: the review is offered once tasks are, and a project moves among its type's statuses. */
   readonly types: readonly ObjectType[];
   /** Changes when the index does, so the review shows what it now holds. */

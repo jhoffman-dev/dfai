@@ -10,6 +10,7 @@ import {
   TASK_TYPE,
   WAITING_STATUS,
 } from '../gtd/gtd-status.ts';
+import { dueOf, writtenDue } from '../gtd/task-due.ts';
 import { isTaskNote, taskRuleChanges } from '../gtd/task-rules.ts';
 import { TASK_TYPE_FILE, type ClarifyVocabulary } from '../gtd/task-type.ts';
 import { wikiLinkTargetFor } from '../markdown/resolve-wikilink.ts';
@@ -85,6 +86,15 @@ function statusRefusal(status: string, { statuses }: ClarifyVocabulary): string 
   return `“${shown}” is not a status a task can have: ${offered}.`;
 }
 
+/**
+ * A due moved to `day`, keeping the time of day it was written with (#928),
+ * as picking a new day in the properties panel keeps it; null takes it away.
+ */
+function dueOnDay(written: unknown, day: string | null): string | null {
+  const time = dueOf(written)?.time ?? null;
+  return day === null ? null : writtenDue({ day, time });
+}
+
 /** The properties a clarification names for a task, before the task rules: a null takes a key out. */
 function taskChanges({
   properties,
@@ -109,7 +119,7 @@ function taskChanges({
   ] as const) {
     if (day === undefined) continue;
     if (day !== null && !isDay(day)) return { refused: `“${day}” is not a day (YYYY-MM-DD).` };
-    changes[key] = day;
+    changes[key] = key === TASK_KEYS.due ? dueOnDay(properties[key], day) : day;
   }
   // Who it waits on is written only on a task that is, or is being made, Waiting: a
   // person picked and then a change of mind about Waiting leaves nobody behind. Taking

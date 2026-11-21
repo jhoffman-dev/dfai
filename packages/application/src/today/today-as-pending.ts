@@ -49,7 +49,7 @@ export function todayAsPending({
   const lists = todayLists({
     tasks: tasks.map((task) => changed.get(task.path) ?? task),
     projects: [],
-    at: { today: report.today, now: newest },
+    at: { today: report.today, now: newest, time: report.time ?? null },
     choosing: report.choosing,
   });
   const read = new Map(tasks.map((task) => [task.path, task]));

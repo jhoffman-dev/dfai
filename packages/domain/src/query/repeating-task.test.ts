@@ -22,6 +22,32 @@ describe('repeatingTaskUpdate', () => {
     expect(update({ recurrence: 'weekly', due: '2026-01-01' })?.['due']).toBe('2026-01-08');
   });
 
+  it('keeps the time of day a due is written with (#928)', () => {
+    expect(update({ recurrence: 'weekly', due: '2026-12-04T15:30' })).toEqual({
+      due: '2026-12-11T15:30',
+      status: 'backlog',
+      lastCompleted: '2026-12-04',
+    });
+    expect(update({ recurrence: 'monthly', due: '2027-01-31T08:05' })?.['due']).toBe(
+      '2027-02-28T08:05',
+    );
+    // Written with a space, it rolls to the time as the app writes one.
+    expect(update({ recurrence: 'daily', due: '2026-12-31 23:59' })?.['due']).toBe(
+      '2027-01-01T23:59',
+    );
+  });
+
+  it('keeps the wall-clock time across a change of the clocks: nothing is converted', () => {
+    // 2027-03-14 is the night the clocks go forward in much of North America.
+    expect(update({ recurrence: 'daily', due: '2027-03-13T02:30' })?.['due']).toBe(
+      '2027-03-14T02:30',
+    );
+  });
+
+  it('rolls a date-only due to a date-only day', () => {
+    expect(update({ recurrence: 'daily', due: '2026-12-04' })?.['due']).toBe('2026-12-05');
+  });
+
   it('records when it was last finished', () => {
     expect(update({ recurrence: 'daily', due: '2026-09-20T09:00:00Z' })?.['lastCompleted']).toBe(
       '2026-09-20',

@@ -1,5 +1,5 @@
 import { weeklyReview, type WeeklyReview } from '@dfai/domain';
-import type { Clock } from '../ports.ts';
+import { reviewMomentOf, type ReviewClock } from './review-moment.ts';
 import {
   readReviewSources,
   type InboxCount,
@@ -27,9 +27,9 @@ export async function readWeeklyReview({
   ...reads
 }: ReviewReadPorts &
   InboxRule & {
-    clock: Pick<Clock, 'today' | 'now'>;
+    clock: ReviewClock;
   }): Promise<WeeklyReviewReport> {
   const { tasks, projects, inbox, truncated } = await readReviewSources(reads);
-  const at = { today: clock.today(), now: clock.now() };
+  const at = reviewMomentOf(clock);
   return { ...weeklyReview({ tasks, projects, at }), today: at.today, inbox, truncated };
 }

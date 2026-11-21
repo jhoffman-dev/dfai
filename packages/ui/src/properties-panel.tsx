@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   createVaultPath,
+  dueOf,
+  dueWithTime,
   formatPropertyDate,
+  isWallTime,
   linkedNames,
   hasOpenQuote,
   listAsInput,
@@ -37,9 +40,10 @@ export interface PropertyRow {
   readonly error: string | null;
   /**
    * The field it is edited in, where it is not its kind's: `priority` for a
-   * task's 1 to 4, picked as None or P1 to P4 (#913). The caller decides.
+   * task's 1 to 4, picked as None or P1 to P4 (#913); `dueTime` for a task's
+   * due, a date with an optional time of day (#928). The caller decides.
    */
-  readonly editor?: 'priority';
+  readonly editor?: 'priority' | 'dueTime';
 }
 
 /** Makes a note of type `target` called `name`; resolves with the link to write. */
@@ -271,7 +275,14 @@ function PropertyEditor({
       // A task's priority (#913) is picked, P1 to P4 or none, rather than typed.
       return <NumberEditor {...props} />;
     case 'date':
-      return <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />;
+      return (
+        <>
+          <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />
+          {row.editor === 'dueTime' && text !== '' && (
+            <DueTimeEditor label={row.def.label} value={text} onChange={onChange} />
+          )}
+        </>
+      );
     case 'select':
       return <SelectEditor {...props} />;
     case 'multiSelect':
@@ -543,6 +554,70 @@ function TextEditor({ id, row, text, onChange }: EditorProps) {
         {...links.field}
       />
       {links.list}
+    </span>
+  );
+}
+
+/**
+ * A due's time of day (#928), beside its date: the platform's time field,
+ * empty for a due that names only its day. Like the date, it writes when it
+ * is left or Enter is pressed, and only a whole time: a part erased puts the
+ * time back, and the time is taken off by its own Clear, which leaves the day.
+ */
+function DueTimeEditor({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: unknown) => void;
+}) {
+  const held = dueOf(value)?.time ?? '';
+  const [draft, setDraft] = useState(held);
+  const [shownTime, setShownTime] = useState(held);
+  // A new value from the file replaces whatever was half-typed.
+  if (shownTime !== held) {
+    setShownTime(held);
+    setDraft(held);
+  }
+  const write = (time: string | null) => {
+    const next = dueWithTime(value, time);
+    if (next !== null && next !== value) onChange(next);
+  };
+  const commit = () => {
+    if (draft === held || !isWallTime(draft)) setDraft(held);
+    else write(draft);
+  };
+
+  return (
+    <span className="props__due-time">
+      <input
+        className="props__input props__time-input"
+        type="time"
+        aria-label={`${label} time`}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+          if (event.key === 'Escape' && draft !== held) {
+            event.preventDefault();
+            setDraft(held);
+          }
+        }}
+      />
+      {held !== '' && (
+        <button
+          type="button"
+          className="props__date-clear"
+          aria-label={`Clear ${label} time`}
+          title="Clear time"
+          onClick={() => write(null)}
+        >
+          <Icon name="close" size={14} />
+        </button>
+      )}
     </span>
   );
 }

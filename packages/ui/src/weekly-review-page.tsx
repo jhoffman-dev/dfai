@@ -117,7 +117,9 @@ function ReviewBody(props: WeeklyReviewPageProps) {
         empty="Nothing is late."
         tasks={review.overdue}
         moves={REVIEW_MOVES.overdue}
-        detail={(task) => `Due ${task.due ?? ''}`}
+        detail={(task) =>
+          `Due ${task.due ?? ''}${task.dueTime === undefined ? '' : ` at ${task.dueTime}`}`
+        }
         actions={props}
       />
       <TaskSection

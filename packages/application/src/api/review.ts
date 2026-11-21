@@ -49,17 +49,24 @@ export async function todayRoute(request: VaultRequest): Promise<RouteResult> {
     ...section,
     groups: section.groups.map((group) => ({ ...group, tasks: group.tasks.map(answered) })),
   }));
-  return { status: 200, body: { today: { ...today, sections } } };
+  // What the contract answers, by name: the wall time it was read at (#928)
+  // joins it with the API's slice of #912.
+  const { today: day, choosing, inbox, truncated, stalledProjects } = today;
+  return {
+    status: 200,
+    body: { today: { today: day, choosing, inbox, truncated, stalledProjects, sections } },
+  };
 }
 
 /**
  * What a task holds that the contract does not answer: the names its project
  * links by, which are the app's own, to read Today again by (#392), and its
- * priority, which joins the contract with the API's slice of #912.
+ * priority and its due's time (#928), which join the contract with the API's
+ * slice of #912: `due` stays the day.
  */
-const UNANSWERED: ReadonlySet<string> = new Set(['projectLinks', 'priority']);
+const UNANSWERED: ReadonlySet<string> = new Set(['projectLinks', 'priority', 'dueTime']);
 
-type Unanswered = 'projectLinks' | 'priority';
+type Unanswered = 'projectLinks' | 'priority' | 'dueTime';
 
 /** A task as the contract answers it (`ApiReviewTask`). */
 function answered<Task extends ReviewTask>(task: Task): Omit<Task, Unanswered> {
