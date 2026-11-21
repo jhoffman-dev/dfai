@@ -44,20 +44,16 @@ export {
 export type { StatusMapping, TaskStatusMove } from './status-mapping.ts';
 export { automationStatusRewrite, rewrittenQuery, viewStatusRewrite } from './status-references.ts';
 export type { StatusesInUse, StatusRewrite } from './status-references.ts';
-export { isTaskNote, TASK_RULE_KEYS, taskPriorityChanges, taskRuleChanges } from './task-rules.ts';
+export { isTaskNote, TASK_RULE_KEYS, taskRuleChanges } from './task-rules.ts';
 export {
   isTaskPriority,
-  isTaskPriorityField,
-  keepsTaskPriority,
   PRIORITY_PROPERTY,
-  PRIORITY_REFUSAL,
-  priorityChange,
   priorityLabel,
   priorityName,
   TASK_PRIORITIES,
   taskPriorityOf,
 } from './task-priority.ts';
-export type { PriorityChange, TaskPriority } from './task-priority.ts';
+export type { TaskPriority } from './task-priority.ts';
 export {
   listsTasksAlone,
   TASK_ROW_COLUMNS,

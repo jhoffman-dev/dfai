@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   humanizeKey,
+  isTaskNote,
   notePropertyKind,
+  ranksTasks,
   relationTypes,
+  TASK_KEYS,
   validatePropertyValue,
   type ObjectType,
   type PropertyDef,
@@ -94,6 +97,11 @@ export function useNoteProperties({
     () => types.find((candidate) => candidate.name === typeName) ?? null,
     [types, typeName],
   );
+  // A task in a vault that ranks its tasks 1 to 4 picks its `priority` as None or P1 to P4 (#913).
+  const ranked = useMemo(
+    () => typeName !== null && isTaskNote({ type: typeName }) && ranksTasks(types),
+    [types, typeName],
+  );
 
   /** Kinds given to properties added to this note alone, for the note they were added to. */
   const [added, setAdded] = useState<{
@@ -129,13 +137,14 @@ export function useNoteProperties({
       ...extras.map((key) => undeclared(key, extraKind(key), properties[key])),
     ].map((def) => ({
       def,
+      ...(ranked && def.key === TASK_KEYS.priority && { editor: 'priority' as const }),
       value: properties[def.key] ?? null,
       error:
         validatePropertyValue({ def, value: properties[def.key] ?? null }) ??
         linkProblems[def.key] ??
         null,
     }));
-  }, [note, isView, type, properties, addedKinds, linkProblems]);
+  }, [note, isView, type, properties, addedKinds, linkProblems, ranked]);
 
   const [relationChoices, setRelationChoices] = useState<
     Readonly<Record<string, readonly RelationChoice[]>>

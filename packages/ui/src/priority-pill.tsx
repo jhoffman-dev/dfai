@@ -45,11 +45,16 @@ export function priorityPill(value: unknown, key = 'priority'): ReactNode {
   );
 }
 
-/**
- * The choices of a priority field: none, then P1 to P4, valued as the digit a
- * `<select>` holds ('' for none).
- */
-export const PRIORITY_CHOICES: readonly { readonly value: string; readonly label: string }[] = [
+/** A choice of a priority field, valued as a `<select>` holds it. */
+export interface PriorityChoice {
+  readonly value: string;
+  readonly label: string;
+}
+
+/** The choice that stands for a value of the note's own — `7`, `high` — kept until another is picked. */
+const OTHER = 'other';
+
+const CHOICES: readonly PriorityChoice[] = [
   { value: '', label: 'No priority' },
   ...TASK_PRIORITIES.map((priority) => ({
     value: String(priority),
@@ -57,19 +62,33 @@ export const PRIORITY_CHOICES: readonly { readonly value: string; readonly label
   })),
 ];
 
-/** What a priority field's choice writes: the number, or null to take the key out. */
-export function priorityFromChoice(choice: string): TaskPriority | null {
-  return taskPriorityOf(choice);
+/**
+ * What a priority field shows for what the note holds: none, P1 to P4, or —
+ * for any other value, which a soft field keeps as written — "Other: 7",
+ * chosen, so the field says what the file says and changes nothing until
+ * the person picks.
+ */
+export function priorityPicker(value: unknown): {
+  readonly selected: string;
+  readonly choices: readonly PriorityChoice[];
+} {
+  const priority = taskPriorityOf(value);
+  if (priority !== null) return { selected: String(priority), choices: CHOICES };
+  const written = value === null || value === undefined ? '' : String(value).trim();
+  if (written === '') return { selected: '', choices: CHOICES };
+  return { selected: OTHER, choices: [...CHOICES, { value: OTHER, label: `Other: ${written}` }] };
+}
+
+/**
+ * What a priority field's choice writes: the number, null to take the key
+ * out, or undefined for "Other", which leaves the note's own value as it is.
+ */
+export function priorityFromChoice(choice: string): TaskPriority | null | undefined {
+  return choice === OTHER ? undefined : taskPriorityOf(choice);
 }
 
 /** How a field holding a priority is painted: its pill's hue, or the empty pill for none. */
 export function priorityPaint(value: unknown): PillPaint {
   const priority = taskPriorityOf(value);
   return pillPaint(priority === null ? null : PRIORITY_HUES[priority]);
-}
-
-/** The choice a priority field shows for what the note holds: '' for none. */
-export function priorityChoiceOf(value: unknown): string {
-  const priority = taskPriorityOf(value);
-  return priority === null ? '' : String(priority);
 }

@@ -28,6 +28,10 @@ function dayChange(picked: string | undefined, held: string | null): string | nu
   return picked === '' ? null : picked;
 }
 
+/** What the task holds under `priority`: one of the four, a value of its own as written, or null. */
+const heldPriority = (task: InboxTask): TaskPriority | string | null =>
+  task.priority ?? task.priorityWritten ?? null;
+
 /**
  * The row's picks as one clarification — only what differs from what the task
  * says — or null when Done would change nothing.
@@ -46,7 +50,7 @@ export function clarificationOf(task: InboxTask, draft: InboxDraft): Clarificati
     ...(defer !== undefined && { defer }),
     ...(due !== undefined && { due }),
     ...(draft.priority !== undefined &&
-      draft.priority !== (task.priority ?? null) && { priority: draft.priority }),
+      draft.priority !== heldPriority(task) && { priority: draft.priority }),
   };
   return Object.keys(clarification).length === 0 ? null : clarification;
 }

@@ -4,7 +4,7 @@ import { declaresFocus, FOCUS_PROPERTY } from '../today/chosen.ts';
 import { FILED_UNDER, type BuiltInTypeFile } from '../types/para.ts';
 import type { ObjectType, PropertyDef } from '../types/property-def.ts';
 import { statusOf } from '../types/status-property.ts';
-import { keepsTaskPriority, PRIORITY_PROPERTY } from './task-priority.ts';
+import { PRIORITY_PROPERTY } from './task-priority.ts';
 import {
   FINISHED_TASK_STATUS,
   GTD_STATUSES,
@@ -216,12 +216,19 @@ export const choosesForToday = (types: readonly ObjectType[]): boolean =>
   declaresFocus(taskTypeOf(types) ?? TASK_TYPE_FILE.type);
 
 /**
- * Whether the vault's tasks are ranked 1 to 4 (#913): its Task type keeps
- * `priority` as a number or not at all (`keepsTaskPriority`). A vault with no
- * Task type yet is taken to have the built-in one, which does.
+ * Whether the vault's tasks are ranked 1 to 4 (#913): its Task type declares
+ * `priority` as a number, or does not declare it — as a vault with no Task
+ * type yet, which is given the built-in one. A type that declares it as any
+ * other kind (High to Low, say) keeps a priority of its own: then no pill and
+ * no P1–P4 picker are shown, and it is edited as that kind. Every surface that
+ * shows a priority reads this one rule.
  */
-export const ranksTasks = (types: readonly ObjectType[]): boolean =>
-  keepsTaskPriority(taskTypeOf(types));
+export function ranksTasks(types: readonly ObjectType[]): boolean {
+  const declared = taskTypeOf(types)?.properties.find(
+    (property) => property.key === TASK_KEYS.priority,
+  );
+  return declared === undefined || declared.kind === 'number';
+}
 
 /** The statuses a row may give a task, and where a note made a task starts. */
 export interface ClarifyVocabulary {
@@ -229,8 +236,6 @@ export interface ClarifyVocabulary {
   readonly statuses: readonly GtdStatus[];
   /** The status a note made a task starts in, or null to leave it unset. */
   readonly startsAt: GtdStatus | null;
-  /** Whether a row may give a task a priority, 1 to 4 (`ranksTasks`). */
-  readonly ranks: boolean;
 }
 
 /**
@@ -242,10 +247,10 @@ export interface ClarifyVocabulary {
 export function clarifyVocabulary(types: readonly ObjectType[]): ClarifyVocabulary {
   const type = taskTypeOf(types);
   const status = statusOf(type);
-  if (type === null) return { statuses: GTD_STATUSES, startsAt: NEW_TASK_STATUS, ranks: true };
+  if (type === null) return { statuses: GTD_STATUSES, startsAt: NEW_TASK_STATUS };
   const declared =
     status?.key === TASK_KEYS.status
       ? GTD_STATUSES.filter((each) => status.options.includes(each))
       : [];
-  return { statuses: declared, startsAt: capturedTaskStatus(type), ranks: keepsTaskPriority(type) };
+  return { statuses: declared, startsAt: capturedTaskStatus(type) };
 }

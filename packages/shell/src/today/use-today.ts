@@ -132,7 +132,7 @@ export function useToday(options: TodayOptions) {
   // Whether tasks can be chosen for today (#108): worked out once, from the vault's Task type.
   const choosing = choosesForToday(types);
   // Whether tasks are ranked 1 to 4 (#913), so their rows show a priority.
-  const ranking = ranksTasks(types);
+  const ranked = ranksTasks(types);
   // When the write just made landed, taken as its refresh is asked (#698).
   const landedAt = useRef<Landed | null>(null);
   const refreshAsked = useCallback(() => {
@@ -186,7 +186,7 @@ export function useToday(options: TodayOptions) {
       clock,
       tasksStartInInbox: startInInbox,
       choosing,
-      ranking,
+      ranksTasks: ranked,
     })
       .then((report) => land({ report, error: null }))
       .catch((cause: unknown) => land({ report: null, error: errorMessage(cause) }));
@@ -206,7 +206,7 @@ export function useToday(options: TodayOptions) {
     day,
     startInInbox,
     choosing,
-    ranking,
+    ranked,
   ]);
 
   // Only what was read of the vault now open: another vault's paths are not this one's.

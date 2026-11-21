@@ -76,6 +76,12 @@ export interface InboxTask {
    * or the read did not say: then its row shows and offers no priority.
    */
   readonly priority?: TaskPriority | null;
+  /**
+   * What the note holds under `priority` as written — `7`, `high` — or null
+   * for nothing: a soft field is kept as it is, and its row says "Other: 7"
+   * rather than none. Present when `priority` is.
+   */
+  readonly priorityWritten?: string | null;
 }
 
 /** A note waiting in the Inbox, as the Inbox lists it. */
@@ -457,7 +463,10 @@ function inboxTask(row: {
     defer: textOrNull(row.defer),
     due: textOrNull(row.due),
     // Absent where the vault does not rank its tasks 1 to 4: its row offers no priority.
-    ...(Object.hasOwn(row, 'priority') && { priority: taskPriorityOf(row.priority) }),
+    ...(Object.hasOwn(row, 'priority') && {
+      priority: taskPriorityOf(row.priority),
+      priorityWritten: textOrNull(row.priority),
+    }),
   };
 }
 

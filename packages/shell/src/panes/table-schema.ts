@@ -1,4 +1,10 @@
-import { isTaskPriorityField, optionColorsByKey, type ObjectType } from '@dfai/domain';
+import {
+  optionColorsByKey,
+  ranksTasks,
+  TASK_KEYS,
+  taskTypeOf,
+  type ObjectType,
+} from '@dfai/domain';
 import type { TableSchema } from '@dfai/ui';
 
 /**
@@ -13,9 +19,12 @@ export function schemaOf(type: ObjectType | null, fallbackNoun: string): TableSc
     labels: Object.fromEntries(properties.map((def) => [def.key, def.label])),
     colors: optionColorsByKey(properties),
     noun: type?.label ?? fallbackNoun,
-    ranksPriority: properties.some((def) =>
-      isTaskPriorityField({ typeName: type?.name ?? null, def }),
-    ),
+    // A task table whose type ranks its tasks 1 to 4 and has the column (#913).
+    ranksPriority:
+      type !== null &&
+      taskTypeOf([type]) !== null &&
+      ranksTasks([type]) &&
+      properties.some((def) => def.key === TASK_KEYS.priority),
   };
 }
 

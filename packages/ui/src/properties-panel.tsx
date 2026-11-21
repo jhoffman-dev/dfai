@@ -10,7 +10,6 @@ import {
   linkedNotes,
   optionColor,
   optionLabel,
-  isTaskPriorityField,
   propertyIcon,
   relationHue,
   relationTypes,
@@ -22,12 +21,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { pillPaint } from './pill-paint.ts';
-import {
-  PRIORITY_CHOICES,
-  priorityChoiceOf,
-  priorityFromChoice,
-  priorityPaint,
-} from './priority-pill.tsx';
+import { priorityFromChoice, priorityPaint, priorityPicker } from './priority-pill.tsx';
 import { AddPropertyPopover, type NewProperty } from './add-property-popover.tsx';
 import { Icon, propertyGlyph } from './icon.tsx';
 import { LinkedNote, useNoteNames } from './note-names.tsx';
@@ -41,6 +35,11 @@ export interface PropertyRow {
   readonly def: PropertyDef;
   readonly value: unknown;
   readonly error: string | null;
+  /**
+   * The field it is edited in, where it is not its kind's: `priority` for a
+   * task's 1 to 4, picked as None or P1 to P4 (#913). The caller decides.
+   */
+  readonly editor?: 'priority';
 }
 
 /** Makes a note of type `target` called `name`; resolves with the link to write. */
@@ -153,7 +152,6 @@ export function PropertiesPanel({
                   <PropertyEditor
                     id={`${idPrefix}-${row.def.key}`}
                     row={row}
-                    typeName={typeName}
                     choices={relationChoices[row.def.key] ?? []}
                     onChange={(value) => onChange(row.def.key, value)}
                     {...(onOpenNote !== undefined && { onOpenNote })}
@@ -239,7 +237,6 @@ interface EditorProps {
 function PropertyEditor({
   id,
   row,
-  typeName,
   choices,
   onChange,
   onOpenNote,
@@ -247,8 +244,6 @@ function PropertyEditor({
 }: {
   id: string;
   row: PropertyRow;
-  /** The note's type, which says whether its `priority` is a task's 1 to 4 (#913). */
-  typeName: string | null;
   choices: readonly RelationChoice[];
   onChange: (value: unknown) => void;
   onOpenNote?: (path: VaultPath) => void;
@@ -265,13 +260,13 @@ function PropertyEditor({
   if (isStructured(row.value)) {
     return <StructuredValue id={id} value={row.value} />;
   }
+  if (row.editor === 'priority') return <PriorityEditor {...props} />;
 
   switch (row.def.kind) {
     case 'checkbox':
       return <CheckboxEditor {...props} />;
     case 'number':
       // A task's priority (#913) is picked, P1 to P4 or none, rather than typed.
-      if (isTaskPriorityField({ typeName, def: row.def })) return <PriorityEditor {...props} />;
       return <NumberEditor {...props} />;
     case 'date':
       return <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />;
@@ -347,28 +342,28 @@ function NumberEditor({ id, text, onChange }: EditorProps) {
 }
 
 /**
- * A priority as a pill holding its choices — none, P1 to P4 — on its hue. A
- * value the note holds that is not one of the four is offered as written, so
- * the field still says what the file says; picking none takes the key out.
+ * A task's priority as a pill holding its choices — none, P1 to P4 — on its
+ * hue. A value of the note's own (`7`, `high`) is shown as "Other: 7" and kept
+ * until another is picked; picking none takes the key out.
  */
 function PriorityEditor({ id, row, onChange }: EditorProps) {
-  const held = priorityChoiceOf(row.value);
-  const written = row.value === null || row.value === undefined ? '' : String(row.value);
-  const foreign = held === '' && written.trim() !== '';
+  const { selected, choices } = priorityPicker(row.value);
   return (
     <span className="props__pill" {...priorityPaint(row.value)}>
       <select
         id={id}
         className="props__pill-select"
-        value={foreign ? written : held}
-        onChange={(event) => onChange(priorityFromChoice(event.target.value))}
+        value={selected}
+        onChange={(event) => {
+          const picked = priorityFromChoice(event.target.value);
+          if (picked !== undefined) onChange(picked);
+        }}
       >
-        {PRIORITY_CHOICES.map((choice) => (
+        {choices.map((choice) => (
           <option key={choice.value} value={choice.value}>
             {choice.label}
           </option>
         ))}
-        {foreign && <option value={written}>{written}</option>}
       </select>
     </span>
   );

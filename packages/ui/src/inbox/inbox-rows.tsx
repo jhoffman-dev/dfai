@@ -9,15 +9,11 @@ import {
   type GtdStatus,
   type InboxItem,
   type InboxTask,
+  type TaskPriority,
   type VaultPath,
 } from '@dfai/domain';
 import { Icon } from '../icon.tsx';
-import {
-  PRIORITY_CHOICES,
-  priorityChoiceOf,
-  priorityFromChoice,
-  priorityPill,
-} from '../priority-pill.tsx';
+import { priorityFromChoice, priorityPicker, priorityPill } from '../priority-pill.tsx';
 import type { RelationChoice } from '../properties-panel.tsx';
 import { LinkCombobox } from '../link-suggest/link-combobox.tsx';
 import type { CreateLink } from '../link-suggest/link-suggestions.tsx';
@@ -514,21 +510,14 @@ function ClarifyTask({
         onPick={(due) => pick({ due })}
       />
       {/* Offered only where the vault ranks its tasks 1 to 4: the read says so by carrying it. */}
-      {task.priority !== undefined && (
-        <select
-          className="inbox__file inbox__priority"
-          aria-label={`Priority of ${item.title}`}
-          value={priorityChoiceOf(draft.priority === undefined ? task.priority : draft.priority)}
-          disabled={busy}
-          onChange={(event) => pick({ priority: priorityFromChoice(event.target.value) })}
-        >
-          {PRIORITY_CHOICES.map((choice) => (
-            <option key={choice.value} value={choice.value}>
-              {choice.label}
-            </option>
-          ))}
-        </select>
-      )}
+      {task.priority !== undefined &&
+        priorityField({
+          title: item.title,
+          held:
+            draft.priority === undefined ? (task.priorityWritten ?? task.priority) : draft.priority,
+          disabled: busy,
+          onPick: (priority) => pick({ priority }),
+        })}
       <button
         type="submit"
         className="btn btn--primary btn--sm"
@@ -624,6 +613,43 @@ function DayField({
         onChange={(event) => onPick(event.target.value)}
       />
     </label>
+  );
+}
+
+/**
+ * A task's priority on its row: none, P1 to P4, or "Other: 7" for a value of
+ * its own, kept until another is picked. A function its row calls, not a
+ * component: each component a row holds is a render "Open the Inbox" counts.
+ */
+function priorityField({
+  title,
+  held,
+  disabled,
+  onPick,
+}: {
+  title: string;
+  held: unknown;
+  disabled: boolean;
+  onPick: (priority: TaskPriority | null) => void;
+}) {
+  const { selected, choices } = priorityPicker(held);
+  return (
+    <select
+      className="inbox__file inbox__priority"
+      aria-label={`Priority of ${title}`}
+      value={selected}
+      disabled={disabled}
+      onChange={(event) => {
+        const picked = priorityFromChoice(event.target.value);
+        if (picked !== undefined) onPick(picked);
+      }}
+    >
+      {choices.map((choice) => (
+        <option key={choice.value} value={choice.value}>
+          {choice.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
