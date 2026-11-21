@@ -33,6 +33,8 @@ export interface AssistActions extends AssistRowActions {
 
 /** A row a crash left unfinished (#911), said already: what it was to do and what is on disk. */
 export interface AssistUnfinishedView {
+  /** The row, as the log names it: what putting it aside names. */
+  readonly row: string;
   readonly title: string;
   readonly lines: readonly string[];
 }
@@ -43,6 +45,8 @@ export interface AssistSummaryProps {
   readonly actions?: AssistActions | null;
   /** Rows an earlier apply left unfinished, to be put right by hand; none when left out. */
   readonly unfinished?: readonly AssistUnfinishedView[];
+  /** Puts one aside once the person has put it right (#911); not offered when left out. */
+  readonly onPutAside?: (row: string) => void;
 }
 
 /**
@@ -57,6 +61,7 @@ export function AssistSummary({
   onDismiss,
   actions = null,
   unfinished = [],
+  onPutAside,
 }: AssistSummaryProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -78,7 +83,7 @@ export function AssistSummary({
         <h3 className="inbox-assist__heading" tabIndex={-1} ref={heading}>
           Suggestions
         </h3>
-        {unfinished.length > 0 && <Unfinished rows={unfinished} />}
+        {unfinished.length > 0 && <Unfinished rows={unfinished} onPutAside={onPutAside} />}
         <AssistBody view={view} actions={actions} />
       </div>
       <button type="button" className="btn btn--ghost btn--sm" onClick={onDismiss}>
@@ -89,20 +94,26 @@ export function AssistSummary({
 }
 
 /** What an apply a crash cut short left, row by row, for the person to put right: nothing here repairs it. */
-function Unfinished({ rows }: { rows: readonly AssistUnfinishedView[] }) {
+function Unfinished({
+  rows,
+  onPutAside,
+}: {
+  rows: readonly AssistUnfinishedView[];
+  onPutAside: ((row: string) => void) | undefined;
+}) {
   const id = useId();
   return (
     <section className="inbox-assist__unfinished" aria-labelledby={id}>
       <p id={id}>
         <strong>Left unfinished</strong>{' '}
         <span className="inbox-assist__note">
-          An earlier apply stopped part-way. Nothing was put right.
+          An earlier apply or undo stopped part-way. Nothing was put right.
         </span>
       </p>
       <ul className="inbox-assist__rows">
         {rows.map((row) => (
           <li
-            key={row.title}
+            key={row.row}
             className="inbox-assist__row"
             aria-label={`${row.title}, left unfinished`}
           >
@@ -114,6 +125,15 @@ function Unfinished({ rows }: { rows: readonly AssistUnfinishedView[] }) {
                 </span>
               ))}
             </span>
+            {onPutAside !== undefined && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => onPutAside(row.row)}
+              >
+                Put aside
+              </button>
+            )}
           </li>
         ))}
       </ul>

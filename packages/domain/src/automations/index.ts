@@ -87,6 +87,7 @@ export {
   MAX_LOG_BYTES,
   MAX_LOG_ENTRIES,
   isAssistMark,
+  openAssistRows,
   newLogText,
   parseAssistLog,
   parseRunLog,

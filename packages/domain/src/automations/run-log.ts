@@ -344,11 +344,20 @@ export type AssistMark =
        * links, or move the item.
        */
       readonly about?: AssistIntent;
-    };
+    }
+  /** A row left unfinished that the person put aside by hand (#911): no longer shown as unfinished. */
+  | { readonly kind: 'dismissed'; readonly at: LocalTime; readonly row: string };
 
 /** One write an Inbox assist row is about to make. */
 export type AssistIntent =
-  | { readonly doing: 'create' | 'relink'; readonly path: VaultPath }
+  | {
+      /**
+       * `write` the item, `relink` another note, `create` a note, make a
+       * `folder`, put a note in the Trash (`trash`).
+       */
+      readonly doing: 'write' | 'relink' | 'create' | 'folder' | 'trash';
+      readonly path: VaultPath;
+    }
   | { readonly doing: 'move'; readonly path: VaultPath; readonly to: VaultPath };
 
 /** Anything a log holds: a rule's entries, and Inbox assist's marks. */
@@ -399,8 +408,12 @@ export function logEntryHeading(entry: LoggedEntry): string {
       return BEGUN_HEADING;
     case 'step':
       return STEP_HEADING;
+    case 'dismissed':
+      return DISMISSED_HEADING;
   }
 }
+
+const DISMISSED_HEADING = 'Put aside by hand';
 
 const BEGUN_HEADING = 'Began applying';
 const STEP_HEADING = 'Went on applying';
@@ -437,6 +450,7 @@ export function logEntrySummary(entry: LoggedEntry): string {
   if (entry.kind === 'failed') return oneLine(truncated(entry.problem));
   if (entry.kind === 'letGo') return letGoWords(entry.count);
   if (entry.kind === 'begun') return oneLine(truncated(entry.plan));
+  if (entry.kind === 'dismissed') return 'Put aside: no longer shown as left unfinished.';
   if (entry.kind === 'step') {
     const { about } = entry;
     if (about === undefined || entry.done.length > 0) return countDone(entry.done);
@@ -755,7 +769,13 @@ export function appendEntryToLog({
   const all = [...folded.sections, formatLogEntry(folded.entry)].map((section) =>
     section.replace(/\n*$/, '\n'),
   );
-  const isEntry = all.map((section) => parseSection(section) !== null);
+  const parsed = all.map((section) => parseSection(section));
+  const isEntry = parsed.map((entry) => entry !== null);
+  // A row still open is never trimmed away (#911): its marks are what a crash left to read.
+  const open = openAssistRows(parsed.flatMap((entry) => (entry === null ? [] : [entry])));
+  const keepsOpen = parsed.map(
+    (entry) => entry !== null && 'row' in entry && entry.row !== undefined && open.has(entry.row),
+  );
   const bytes = all.map((section) => utf8Length(section) + 1);
   let entries = isEntry.filter(Boolean).length;
   let total =
@@ -764,7 +784,7 @@ export function appendEntryToLog({
   const pinned = lastPeriodMade(all);
   // The newest entry, the one being added, always stays; so does the one that made a period's note.
   for (let at = 0; at < all.length - 1 && (entries > keep || total > maxBytes); at += 1) {
-    if (!isEntry[at] || at === pinned) continue;
+    if (!isEntry[at] || at === pinned || keepsOpen[at]) continue;
     dropped.add(at);
     entries -= 1;
     total -= bytes[at]!;
@@ -940,7 +960,23 @@ export function parseAssistLog(text: string): LoggedEntry[] {
 
 /** Whether an entry is one of Inbox assist's marks, which no rule writes. */
 export function isAssistMark(entry: LoggedEntry): entry is AssistMark {
-  return entry.kind === 'begun' || entry.kind === 'step';
+  return entry.kind === 'begun' || entry.kind === 'step' || entry.kind === 'dismissed';
+}
+
+/**
+ * The Inbox assist rows a log leaves open (#911): each row whose last entry
+ * begins it or goes on with it — begun, or a step — rather than closing it:
+ * a run, a failure, an undo, or put aside by hand. An undo begins its row
+ * again, so an undo cut short leaves it open too.
+ */
+export function openAssistRows(entries: readonly LoggedEntry[]): ReadonlySet<string> {
+  const open = new Set<string>();
+  for (const entry of entries) {
+    if (!('row' in entry) || entry.row === undefined) continue;
+    if (entry.kind === 'begun' || entry.kind === 'step') open.add(entry.row);
+    else open.delete(entry.row);
+  }
+  return open;
 }
 
 function parseSection(section: string): LoggedEntry | null {
@@ -959,6 +995,7 @@ function parseSection(section: string): LoggedEntry | null {
   const row = rowOf(body);
   const ofRow = row === null ? {} : { row };
   if (title === BEGUN_HEADING) return begunOf(at, body, row);
+  if (title === DISMISSED_HEADING) return row === null ? null : { kind: 'dismissed', at, row };
   if (title === STEP_HEADING) {
     if (row === null) return null;
     const about = intentOf(body);
@@ -1013,7 +1050,7 @@ function parseSection(section: string): LoggedEntry | null {
 
 const ROW_LINE = new RegExp(`^- row ${JSON_SPAN}$`);
 const INTENT_LINE = new RegExp(
-  `^- about to (create|relink|move) ${JSON_SPAN}(?: → ${JSON_SPAN})?$`,
+  `^- about to (write|relink|create|folder|trash|move) ${JSON_SPAN}(?: → ${JSON_SPAN})?$`,
 );
 
 /** What a step says its row was about to do; null for none, or a line that does not read. */
@@ -1025,7 +1062,7 @@ function intentOf(body: readonly string[]): AssistIntent | null {
       const path = pathOf(match[2]!);
       if (match[1] === 'move')
         return match[3] === undefined ? null : { doing: 'move', path, to: pathOf(match[3]) };
-      return { doing: match[1] as 'create' | 'relink', path };
+      return { doing: match[1] as Exclude<AssistIntent['doing'], 'move'>, path };
     } catch {
       // A line edited into a path that is no path names nothing, on purpose.
       return null;

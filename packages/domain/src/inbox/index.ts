@@ -114,3 +114,4 @@ export {
   compileTitledNotesQuery,
   takenTitles,
 } from './assist-queries.ts';
+export { assistLinksBrokenByMoveBack } from './assist-links.ts';

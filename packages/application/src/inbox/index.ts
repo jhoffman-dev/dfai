@@ -30,5 +30,5 @@ export type {
 export { undoAssistRow, undoAssistRows } from './undo-inbox-assist.ts';
 export type { AssistUndone } from './undo-inbox-assist.ts';
 export { INBOX_ASSIST_RULE } from './assist-log.ts';
-export { findUnfinishedAssist } from './assist-unfinished.ts';
+export { dismissUnfinishedAssist, findUnfinishedAssist } from './assist-unfinished.ts';
 export type { AssistUnfinished } from './assist-unfinished.ts';

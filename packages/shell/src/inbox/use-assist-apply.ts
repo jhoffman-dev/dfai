@@ -258,7 +258,8 @@ function useActions({
               words: `Not undone: ${messageWithoutPaths(cause)}`,
             }));
             update(now.planned, (before) => afterUndo(before, path, held, undone));
-            return { done: undone.kind === 'undone', wrote: undone.kind === 'undone' };
+            // A partly done undo wrote notes too: the Inbox reads its list again (#911).
+            return { done: undone.kind === 'undone', wrote: undone.kind !== 'refused' };
           })
           .finally(claimedRow.release);
       },
@@ -289,7 +290,7 @@ function useActions({
                   afterUndo(before, path, undos.find((each) => each.path === path)!.held, undone),
                 ),
             });
-            return { done: true, wrote: results.some(({ undone }) => undone.kind === 'undone') };
+            return { done: true, wrote: results.some(({ undone }) => undone.kind !== 'refused') };
           })
           .finally(claimedRows.release);
       },
@@ -323,6 +324,20 @@ function afterApply(before: Applying, row: AssistRow, applied: AssistApplied): A
       said,
     };
   }
+  if (applied.kind === 'failed' && applied.undo !== undefined) {
+    // Taken back part-way (#911): held, with Undo on offer to finish it, and why beside it.
+    const next = withRow(before, row.path, {
+      kind: 'applied',
+      words: 'Not applied, and not wholly taken back.',
+      undo: applied.undo,
+      problem: applied.words,
+    });
+    return {
+      ...next,
+      order: [...before.order.filter((path) => path !== row.path), row.path],
+      said,
+    };
+  }
   const state: RowState =
     applied.kind === 'asked'
       ? { kind: 'asked', words: applied.words }
@@ -344,13 +359,10 @@ function afterUndo(
       said,
     };
   }
+  // Refused: held as it was. Stopped part-way: held with what it put back, to be finished.
+  const undo = undone.kind === 'partly' ? undone.undo : held.undo;
   return {
-    ...withRow(before, path, {
-      kind: 'applied',
-      words: held.words,
-      undo: held.undo,
-      problem: undone.words,
-    }),
+    ...withRow(before, path, { kind: 'applied', words: held.words, undo, problem: undone.words }),
     said,
   };
 }

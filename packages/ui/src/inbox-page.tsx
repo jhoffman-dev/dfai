@@ -179,6 +179,8 @@ export interface InboxAssistProps {
   readonly actions?: AssistActions | null;
   /** Rows an earlier apply left unfinished (#911); none when left out. */
   readonly unfinished?: readonly AssistUnfinishedView[];
+  /** Puts an unfinished row aside once it is put right by hand. */
+  readonly onPutAside?: (row: string) => void;
 }
 
 /**
@@ -298,6 +300,7 @@ export function InboxPage(props: InboxPageProps) {
                 onDismiss={assistKeys.dismiss}
                 actions={assist.actions ?? null}
                 unfinished={assist.unfinished ?? []}
+                {...(assist.onPutAside !== undefined && { onPutAside: assist.onPutAside })}
               />
             )}
             <Offers

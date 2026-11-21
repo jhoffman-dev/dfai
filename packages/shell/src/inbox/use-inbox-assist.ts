@@ -12,6 +12,7 @@ import {
   type InboxItem,
 } from '@dfai/domain';
 import {
+  dismissUnfinishedAssist,
   findUnfinishedAssist,
   previewInboxAssist,
   type AssistUnfinished,
@@ -126,13 +127,22 @@ export function useInboxAssist({
     setView(null);
     setUnfinished(NO_UNFINISHED);
   }, [stop]);
+  // Put aside by hand (#911): only the log is written; the notes stay as they are.
+  const onPutAside = useCallback((row: string) => {
+    const given = latest.current;
+    void dismissUnfinishedAssist({ fs: given.ports.fs, clock: given.clock }, row).then(
+      () => setUnfinished((before) => before.filter((each) => each.row !== row)),
+      // Not written: the row stays listed, so the person can try again.
+      () => undefined,
+    );
+  }, []);
   const view = useMemo(() => (shown === null ? null : viewOf(shown, applying)), [shown, applying]);
   return useMemo(
     () =>
       wiring === null
         ? null
-        : { view, onSuggest, onDismiss, actions: applying.actions, unfinished },
-    [wiring, view, onSuggest, onDismiss, applying.actions, unfinished],
+        : { view, onSuggest, onDismiss, actions: applying.actions, unfinished, onPutAside },
+    [wiring, view, onSuggest, onDismiss, applying.actions, unfinished, onPutAside],
   );
 }
 

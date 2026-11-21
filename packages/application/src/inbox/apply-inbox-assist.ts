@@ -29,11 +29,11 @@ import { setNoteProperties } from '../query/set-property.ts';
 import { loadObjectTypes } from '../types/load-types.ts';
 import { loadTemplates } from '../types/templates.ts';
 import type { AsRead } from '../vault/ports.ts';
+import { guardedWrites, type GuardedWrites } from './assist-guard.ts';
 import { assistRecorder, logAssist, logMark, sayNotDone } from './assist-log.ts';
 import { recheckNow, type RecheckedNow } from './assist-recheck-now.ts';
-import { clarifyInboxItem, type ClarifyUndo } from './clarify-inbox-item.ts';
-import { PartlyUndoneError, undoExactly } from './exact-undo.ts';
-import { recordingWrites, type Rewritten } from './recording-writes.ts';
+import { clarifyInboxItem } from './clarify-inbox-item.ts';
+import { PartlyUndoneError, undoExactly, type AssistItemUndo } from './exact-undo.ts';
 
 /** What applying an Inbox assist row reaches (#909): the Inbox's own writes, the clock, and Activity. */
 export interface ApplyAssistPorts extends ArchivePorts {
@@ -44,17 +44,15 @@ export interface ApplyAssistPorts extends ArchivePorts {
 /** What undoing one applied row needs: the item at both ends, the other notes it rewrote, and each person made. */
 export interface AssistUndo {
   readonly title: string;
-  /** The row, as its log names it (#911). */
+  /** The row, as its log names it (#911): its undo is logged under it too. */
   readonly row: string;
   /** When its log says it was applied. */
   readonly at: LocalTime;
-  /**
-   * The item from where it was to where it is, its whole text before and
-   * after, and each other note its filing rewrote with theirs: one exact undo.
-   */
-  readonly item: ClarifyUndo;
+  readonly item: AssistItemUndo;
   /** Each person added, as written: taken out only while it says exactly this. */
   readonly made: readonly AsRead[];
+  /** What an undo that stopped part-way put back already: finishing goes on from there. */
+  readonly progress?: { readonly restored: readonly VaultPath[]; readonly itemRestored: boolean };
 }
 
 /** What applying one row came to. */
@@ -70,8 +68,11 @@ export type AssistApplied =
     }
   /** Asked instead, and nothing written: the domain's reason. */
   | { readonly kind: 'asked'; readonly ask: AssistApplyAsk; readonly words: string }
-  /** Not applied: what went wrong, and whether anything was left changed. */
-  | { readonly kind: 'failed'; readonly words: string };
+  /**
+   * Not applied: what went wrong. When taking it back stopped part-way, `undo`
+   * finishes it (#911): the row stays open in the log until it does.
+   */
+  | { readonly kind: 'failed'; readonly words: string; readonly undo?: AssistUndo };
 
 /** One row to apply, the preview's evidence for it, and the vault's notes as they stand. */
 export interface AssistApplyRequest {
@@ -98,10 +99,11 @@ const nothingChanged = (why: string): AssistApplied => ({
  * it, for this item alone, against the notes and the vault as they are now,
  * and asks rather than write when anything it rests on has changed. Then it
  * logs that it begins, and writes only through the Inbox's own use-cases —
- * clarifying, filing, archiving, adding a person — each write held to the
- * exact text that was checked, refusing before it writes (#911). It records
- * one exact undo for the whole row, a log entry closing the row and one
- * Activity line.
+ * clarifying, filing, archiving, adding a person — handed the one guarded
+ * path (`assist-guard.ts`) as their ports: every write logged before it is
+ * made, held to the exact text the row checked or last wrote, and recorded
+ * (#911). It records one exact undo for the whole row, a log entry closing
+ * the row and one Activity line.
  *
  * A row is applied whole or not at all: a write that fails takes back every
  * write the row made before it, a person added included, and says so.
@@ -136,7 +138,7 @@ export async function applyAssistRow(
   const journal = await begin(ports, { row, step: checked.step, text: checked.text });
   if (journal === null) return unchanged(nothingChanged('its log could not be written.'));
   try {
-    await carryOut(ports, { step: checked.step, journal, notePaths });
+    await carryOut(journal, { step: checked.step, notePaths });
   } catch (cause) {
     return failedApply(ports, { recorder, journal, cause, title: row.title, notePaths });
   }
@@ -150,14 +152,28 @@ interface Journal {
   readonly from: VaultPath;
   /** Where the item is now. */
   at: VaultPath;
-  /** What the item said before the row's first write: what undoing it puts back. */
-  before: string;
-  /** What the row's own last write left the item saying: every next write is held to it. */
-  after: string;
-  /** The other notes the row's filing rewrote, with their text before and after. */
-  relinked: readonly Rewritten[];
-  readonly made: AsRead[];
+  /** What the item said when it was checked: what undoing the row puts back. */
+  readonly before: string;
+  /** Every write of the row goes through these, and they record it. */
+  readonly guard: GuardedWrites;
+  /** Where the item has been, the row's own moves taking it. */
+  readonly items: Set<VaultPath>;
 }
+
+/** What a row writes through: the guarded ports, with the clock the use-cases read. */
+const writing = (journal: Journal, ports: ApplyAssistPorts): ApplyAssistPorts => ({
+  ...ports,
+  ...journal.guard.ports,
+});
+
+/** The steps a row logs before each write it makes, under its own id. */
+const marking =
+  (ports: Pick<ApplyAssistPorts, 'fs' | 'clock'>, row: string) =>
+  (about: AssistIntent): Promise<void> =>
+    logMark(ports, { kind: 'step', at: ports.clock.localNow(), row, done: [], about });
+
+/** How many rows this run of DFAI has begun: part of each row's id. */
+let rowsBegun = 0;
 
 /**
  * Logs that the row begins, before its first write (#911): which row, the
@@ -167,20 +183,19 @@ interface Journal {
 async function begin(
   ports: ApplyAssistPorts,
   { row, step, text }: { row: AssistRow; step: AssistApplyStep; text: string },
-): Promise<Journal | null> {
+): Promise<(Journal & { ports: ApplyAssistPorts; step: AssistApplyStep }) | null> {
   const at = ports.clock.localNow();
   // Unique per apply (#911): the second, the item, the clock's instant and this run's count —
   // two rows begun in one second, even of one item, never share an id the log closes.
   rowsBegun += 1;
   const id = `${at} ${row.path} ${ports.clock.now()}.${rowsBegun}`;
-  const plan = assistAppliedWords(step);
   const mark = {
     kind: 'begun' as const,
     at,
     row: id,
     path: row.path,
     digest: digestOf(text),
-    plan,
+    plan: assistAppliedWords(step),
   };
   // Not written, nothing is: a row never writes what its log does not say it began.
   const logged = await logMark(ports, mark).then(
@@ -188,35 +203,40 @@ async function begin(
     () => false,
   );
   if (!logged) return null;
-  return {
-    row: id,
-    from: row.path,
-    at: row.path,
-    before: text,
-    after: text,
-    relinked: [],
-    made: [],
-  };
+  const items = new Set<VaultPath>([row.path]);
+  // The kept task of a duplicate is never written: the guard refuses it outright.
+  const forbidden = new Set<VaultPath>(step.duplicateOf === null ? [] : [step.duplicateOf.path]);
+  const guard = guardedWrites(ports, {
+    known: new Map([[row.path, text]]),
+    items,
+    forbidden,
+    mark: marking(ports, id),
+    madeIt: (made) =>
+      logMark(ports, {
+        kind: 'step',
+        at: ports.clock.localNow(),
+        row: id,
+        done: [{ kind: 'created', path: made.path, digest: digestOf(made.text) }],
+      }),
+  });
+  return { row: id, from: row.path, at: row.path, before: text, guard, items, ports, step };
 }
 
-/** How many rows this run of DFAI has begun: part of each row's id. */
-let rowsBegun = 0;
+/** The item as the row has left it: exactly the checked text and the row's own writes, never a later read. */
+const afterOf = (journal: Journal) => journal.guard.knows(journal.at) ?? journal.before;
 
-const itemUndo = (journal: Journal): ClarifyUndo => ({
+const itemUndo = (journal: Journal): AssistItemUndo => ({
   from: journal.from,
   to: journal.at,
   before: journal.before,
-  after: journal.after,
-  relinked: journal.relinked,
+  after: afterOf(journal),
+  relinked: journal.guard.rewrites().filter((note) => !journal.items.has(note.path)),
 });
-
-const changedItem = (journal: Journal) =>
-  journal.at !== journal.from || journal.after !== journal.before || journal.relinked.length > 0;
 
 /** The vault's notes once a row's moves and makes are in. */
 function notesAfter(notePaths: readonly VaultPath[], journal: Journal): VaultPath[] {
   const moved = notePaths.map((path) => (path === journal.from ? journal.at : path));
-  return [...moved, ...journal.made.map((person) => person.path)];
+  return [...moved, ...journal.guard.made().map((person) => person.path)];
 }
 
 async function appliedRow(
@@ -238,7 +258,7 @@ async function appliedRow(
     row: journal.row,
     at: ports.clock.localNow(),
     item: itemUndo(journal),
-    made: [...journal.made],
+    made: journal.guard.made(),
   };
   const entry: LogEntry = {
     kind: 'run',
@@ -269,68 +289,20 @@ function doneOf(undo: AssistUndo): DoneAction[] {
   ];
 }
 
-/** The writes a row comes to, one after another, each recorded in `journal` as it lands. */
+/** The writes a row comes to, one after another, each through the guard. */
 async function carryOut(
-  ports: ApplyAssistPorts,
-  {
-    step,
-    journal,
-    notePaths,
-  }: { step: AssistApplyStep; journal: Journal; notePaths: readonly VaultPath[] },
+  journal: Journal & { ports: ApplyAssistPorts },
+  { step, notePaths }: { step: AssistApplyStep; notePaths: readonly VaultPath[] },
 ): Promise<void> {
-  const writing = journaling(ports, journal);
-  if (step.duplicateOf !== null) return archiveDuplicate(writing, { step, journal, notePaths });
-  await fillIn(writing, { step, journal, notePaths });
-  await linkPeople(writing, { step, journal, notePaths: notesAfter(notePaths, journal) });
+  const ports = writing(journal, journal.ports);
+  if (step.duplicateOf !== null) return archiveDuplicate(ports, { step, journal, notePaths });
+  await fillIn(ports, { step, journal, notePaths });
+  await linkPeople(ports, { step, journal, notePaths: notesAfter(notePaths, journal) });
 }
-
-/**
- * The ports a row writes through: each note's text as written kept, and each
- * person, as made, kept in `journal` and logged at once (#911) — so a crash
- * after it is known.
- */
-function journaling(
-  ports: ApplyAssistPorts,
-  journal: Journal,
-): ApplyAssistPorts & { written: ReadonlyMap<VaultPath, string> } {
-  const { ports: recording, written } = recordingWrites(ports);
-  // Where the item is, as the row's own moves take it: a write anywhere else is another note's.
-  const itemAt = new Set<VaultPath>([journal.from]);
-  const about = (intent: AssistIntent) =>
-    logMark(ports, {
-      kind: 'step',
-      at: ports.clock.localNow(),
-      row: journal.row,
-      done: [],
-      about: intent,
-    });
-  const createNote: ArchivePorts['fs']['createNote'] = async (create) => {
-    await about({ doing: 'create', path: create.path });
-    const modified = await recording.fs.createNote(create);
-    const made = { path: create.path, modified, text: create.contents };
-    journal.made.push(made);
-    const done: DoneAction[] = [{ kind: 'created', path: made.path, digest: digestOf(made.text) }];
-    await logMark(ports, { kind: 'step', at: ports.clock.localNow(), row: journal.row, done });
-    return modified;
-  };
-  const writeTextFile: ArchivePorts['fs']['writeTextFile'] = async (write) => {
-    if (!itemAt.has(write.path)) await about({ doing: 'relink', path: write.path });
-    return recording.fs.writeTextFile(write);
-  };
-  const moveEntry: ArchivePorts['fs']['moveEntry'] = async (move) => {
-    await about({ doing: 'move', path: move.from, to: move.to });
-    await recording.fs.moveEntry(move);
-    if (itemAt.has(move.from)) itemAt.add(move.to);
-  };
-  const fs = { ...recording.fs, createNote, writeTextFile, moveEntry };
-  return { ...ports, ...recording, fs, written };
-}
-
-type Writing = ReturnType<typeof journaling>;
 
 /** Stamps the item with the task it copies, then archives it: the kept task is never touched. */
 async function archiveDuplicate(
-  ports: Writing,
+  ports: ApplyAssistPorts,
   {
     step,
     journal,
@@ -346,26 +318,17 @@ async function archiveDuplicate(
     paths: [journal.at],
     notePaths,
     today: ports.clock.today(),
-    // The Archive's stamp, where it lands, held to what the row just wrote (#911).
-    expectedTexts: new Map([[journal.at, journal.after]]),
   });
   const move = outcome.moves[0];
-  if (move !== undefined) {
-    journal.at = move.move.to;
-    journal.after = ports.written.get(journal.at) ?? journal.after;
-  }
+  if (move !== undefined) journal.at = move.move.to;
   if (move === undefined || outcome.failed.length > 0) {
     throw new NotApplied(outcome.failed[0]?.reason ?? 'It could not be archived.');
   }
 }
 
-/**
- * Makes it a task, or files it, filling only what the row found empty:
- * Clarify's one byte-preserving save, held to the text that was checked —
- * Clarify refuses, before writing anything, a note that says anything else.
- */
+/** Makes it a task, or files it, filling only what the row found empty: Clarify's one byte-preserving save. */
 async function fillIn(
-  ports: Writing,
+  ports: ApplyAssistPorts,
   {
     step,
     journal,
@@ -386,17 +349,14 @@ async function fillIn(
     notePaths,
     today: ports.clock.today(),
     unsavedTyping: 'leave',
-    expectedText: journal.after,
   });
   journal.at = outcome.undo.to;
-  journal.after = outcome.undo.after;
-  journal.relinked = outcome.undo.relinked ?? [];
   if (outcome.failed.length > 0) throw new NotApplied(outcome.failed[0]!.reason);
 }
 
 /** Adds each new person, then links everyone under `people` in one write: a person made is linked, or taken out again. */
 async function linkPeople(
-  ports: Writing,
+  ports: ApplyAssistPorts,
   {
     step,
     journal,
@@ -418,20 +378,13 @@ async function linkPeople(
   await writeOnItem(ports, { journal, values });
 }
 
-/**
- * One byte-preserving write of the item's frontmatter where it is now, held
- * to exactly the text the row last checked or left (#911): an edit landing
- * in the disk's timestamp tick is refused as any other, before anything is
- * written, and the row stops.
- */
+/** One byte-preserving write of the item's frontmatter where it is now: the guard holds it to what the row left. */
 async function writeOnItem(
-  ports: Writing,
+  ports: ApplyAssistPorts,
   { journal, values }: { journal: Journal; values: Record<string, unknown> },
 ): Promise<void> {
   const { fs, markdown } = ports;
-  const today = ports.clock.today();
-  await setNoteProperties({ fs, markdown, path: journal.at, values, today, ifText: journal.after });
-  journal.after = ports.written.get(journal.at) ?? journal.after;
+  await setNoteProperties({ fs, markdown, path: journal.at, values, today: ports.clock.today() });
 }
 
 /** A row stopped on purpose, in words for the person. */
@@ -444,9 +397,13 @@ class NotApplied extends Error {
 
 /**
  * A row that could not be finished: every write it made is taken back —
- * the item put back as it was, the other notes its filing rewrote with it,
- * then anyone it added taken out again — and said. Its log entry closes the
- * row either way, with what could not be taken back.
+ * the other notes its filing rewrote, the item put back as it was, then
+ * anyone it added taken out again — through the same guarded path, each
+ * write logged first. Taken back whole, a `failed` entry closes the row. An
+ * edit landed in the item meanwhile: it goes back where it was with that edit
+ * kept, and anyone the row made — never linked yet — is taken out. Taken back
+ * part-way, the row stays open in the log with what is on disk, and its undo
+ * is held to be finished (#911).
  */
 async function failedApply(
   ports: ApplyAssistPorts,
@@ -465,120 +422,191 @@ async function failedApply(
   },
 ): Promise<AssistAppliedRow> {
   const reason = messageWithoutPaths(cause);
-  const left = await takeBack(ports, journal, notesAfter(notePaths, journal));
+  const undo: AssistUndo = {
+    title,
+    row: journal.row,
+    at: ports.clock.localNow(),
+    item: itemUndo(journal),
+    made: journal.guard.made(),
+  };
+  if (!changedAnything(journal, undo))
+    return nothingLeftChanged(ports, { recorder, journal, reason, title, notePaths });
+  const taken = await undoExactly({
+    ports,
+    undo: undo.item,
+    made: undo.made,
+    notePaths: notesAfter(notePaths, journal),
+    keepItemEdit: true,
+    mark: marking(ports, journal.row),
+  }).then(
+    (done) => ({ done, partly: null }),
+    (stopped: unknown) => ({ done: null, partly: stopped }),
+  );
+  if (taken.partly !== null) {
+    return partlyTakenBack(ports, {
+      recorder,
+      undo,
+      reason,
+      stopped: taken.partly,
+      notePaths,
+      journal,
+    });
+  }
+  const { keptEdit, kept } = taken.done!;
+  const words = [
+    `Not applied: ${reason}`,
+    ...(keptEdit
+      ? [
+          'It was edited while it was being applied: it is back where it was with that edit kept, and what this row wrote into it before the edit is still there.',
+        ]
+      : []),
+    ...addedThenTaken(undo.made, kept),
+    keptEdit ? '' : 'Nothing was left changed.',
+  ].filter((part) => part !== '');
   const entry: LogEntry = {
     kind: 'failed',
     at: ports.clock.localNow(),
     trigger: 'hand',
     problem: reason,
-    done: leftDone(journal, left),
+    done: await onDisk(ports, keptEdit ? [journal.from] : [], kept),
     row: journal.row,
   };
-  if (left.problems.length === 0) {
-    const made = journal.made.map((person) => noteTitle(person.path));
-    const addedThenTaken =
-      made.length === 0
-        ? ''
-        : ` ${made.join(' and ')} ${made.length === 1 ? 'was' : 'were'} added, then taken out again (in the Trash).`;
-    await logAssist(ports, { recorder: silent, entry, title, path: journal.from });
-    sayNotDone(recorder, {
-      title,
-      path: journal.from,
-      happened: { doing: 'apply', problem: reason },
-    });
-    return {
-      applied: {
-        kind: 'failed',
-        words: `Not applied: ${reason}${addedThenTaken} Nothing was left changed.`,
-      },
-      notePaths,
-    };
-  }
-  await logAssist(ports, { recorder, entry, title, path: left.itemAt });
-  const words = `Not applied: ${reason} ${left.problems.join(' ')}`;
-  return { applied: { kind: 'failed', words }, notePaths: notesAfter(notePaths, journal) };
+  await logAssist(ports, { recorder: silent, entry, title, path: journal.from });
+  sayNotDone(recorder, {
+    title,
+    path: journal.from,
+    happened: { doing: 'apply', problem: reason },
+  });
+  return { applied: { kind: 'failed', words: words.join(' ') }, notePaths };
+}
+
+/** Whether the row wrote anything at all: a move, a text of its own, a note rewritten or made. */
+function changedAnything(journal: Journal, undo: AssistUndo): boolean {
+  return (
+    journal.at !== journal.from ||
+    undo.item.after !== undo.item.before ||
+    undo.item.relinked.length > 0 ||
+    undo.made.length > 0
+  );
+}
+
+/** A row stopped before it changed anything: closed, and said, with nothing to take back. */
+async function nothingLeftChanged(
+  ports: ApplyAssistPorts,
+  {
+    recorder,
+    journal,
+    reason,
+    title,
+    notePaths,
+  }: {
+    recorder: ActivityRecorder;
+    journal: Journal;
+    reason: string;
+    title: string;
+    notePaths: readonly VaultPath[];
+  },
+): Promise<AssistAppliedRow> {
+  const entry: LogEntry = {
+    kind: 'failed',
+    at: ports.clock.localNow(),
+    trigger: 'hand',
+    problem: reason,
+    row: journal.row,
+  };
+  await logAssist(ports, { recorder: silent, entry, title, path: journal.from });
+  sayNotDone(recorder, {
+    title,
+    path: journal.from,
+    happened: { doing: 'apply', problem: reason },
+  });
+  return {
+    applied: { kind: 'failed', words: `Not applied: ${reason} Nothing was left changed.` },
+    notePaths,
+  };
+}
+
+/** "Tobias Fenn was added, then taken out again (in the Trash)." — and who could not be. */
+function addedThenTaken(made: readonly AsRead[], kept: readonly { path: VaultPath }[]): string[] {
+  const out = made.filter((person) => !kept.some((each) => each.path === person.path));
+  const names = out.map((person) => noteTitle(person.path));
+  return [
+    ...(names.length === 0
+      ? []
+      : [
+          `${names.join(' and ')} ${names.length === 1 ? 'was' : 'were'} added, then taken out again (in the Trash).`,
+        ]),
+    ...kept.map((person) => `${noteTitle(person.path)} was left in People: it changed since.`),
+  ];
+}
+
+/** A rollback that stopped part-way: logged as a step that keeps the row open, said, and held to be finished. */
+async function partlyTakenBack(
+  ports: ApplyAssistPorts,
+  {
+    recorder,
+    undo,
+    reason,
+    stopped,
+    notePaths,
+    journal,
+  }: {
+    recorder: ActivityRecorder;
+    undo: AssistUndo;
+    reason: string;
+    stopped: unknown;
+    notePaths: readonly VaultPath[];
+    journal: Journal;
+  },
+): Promise<AssistAppliedRow> {
+  const partly = stopped instanceof PartlyUndoneError ? stopped : null;
+  const why = messageWithoutPaths(stopped);
+  const progress: { restored: readonly VaultPath[]; itemRestored: boolean; itemAt: VaultPath } =
+    partly?.progress ?? { restored: [], itemRestored: false, itemAt: journal.at };
+  const held: AssistUndo = {
+    ...undo,
+    progress: { restored: progress.restored, itemRestored: progress.itemRestored },
+  };
+  const changed = [
+    progress.itemAt,
+    ...undo.item.relinked
+      .map((note) => note.path)
+      .filter((path) => !progress.restored.includes(path)),
+  ];
+  const done = await onDisk(ports, changed, undo.made);
+  await logMark(ports, { kind: 'step', at: ports.clock.localNow(), row: undo.row, done });
+  sayNotDone(recorder, {
+    title: undo.title,
+    path: progress.itemAt,
+    happened: { doing: 'apply', problem: `${reason} ${why}` },
+  });
+  const words = partly
+    ? `Not applied: ${reason} Taking it back stopped part-way: ${why}`
+    : `Not applied: ${reason} It could not be taken back: ${why} Undo it to try again.`;
+  return {
+    applied: { kind: 'failed', words, undo: held },
+    notePaths: notesAfter(notePaths, journal),
+  };
+}
+
+/** What is on disk at each of `paths` now, by digest, and each person still there: for a log a person can act on. */
+async function onDisk(
+  ports: ApplyAssistPorts,
+  paths: readonly VaultPath[],
+  people: readonly { path: VaultPath }[],
+): Promise<DoneAction[]> {
+  const read = await ports.fs.readNotes([...paths, ...people.map((person) => person.path)]);
+  return read.map((note): DoneAction => {
+    const path = note.path as VaultPath;
+    const digest = digestOf(note.text);
+    return people.some((person) => person.path === path)
+      ? { kind: 'created', path, digest }
+      : { kind: 'assisted', from: path, to: path, digest };
+  });
 }
 
 /** A recorder that says nothing: the line is said once, in the row's own words. */
 const silent: ActivityRecorder = { record: () => undefined };
-
-interface LeftBehind {
-  readonly problems: readonly string[];
-  /** Where the item is: back where it was, or where it was left. */
-  readonly itemAt: VaultPath;
-  readonly itemChanged: boolean;
-  readonly people: readonly AsRead[];
-}
-
-/** Undoes what a row wrote, item first: a person is taken out only once the item no longer links them. */
-async function takeBack(
-  ports: ApplyAssistPorts,
-  journal: Journal,
-  notePaths: readonly VaultPath[],
-): Promise<LeftBehind> {
-  const problems: string[] = [];
-  if (changedItem(journal)) {
-    const undone = await undoExactly({
-      ports,
-      undo: itemUndo(journal),
-      notePaths,
-      keepItemEdit: true,
-    }).then(
-      ({ keptEdit }) => ({ keptEdit, problem: null, itemAt: journal.from }),
-      (cause: unknown) => ({
-        keptEdit: false,
-        problem: messageWithoutPaths(cause),
-        itemAt: cause instanceof PartlyUndoneError ? cause.progress.itemAt : journal.at,
-      }),
-    );
-    if (undone.problem !== null) {
-      problems.push(
-        `It was left as the row changed it (${undone.problem}), and anyone it added is kept.`,
-      );
-      return { problems, itemAt: undone.itemAt, itemChanged: true, people: journal.made };
-    }
-    if (undone.keptEdit) {
-      // Edited while it was applied: back where it was with that edit, never written over.
-      problems.push(
-        'It was edited while it was being applied: it is back where it was with that edit kept, and what this row wrote into it before the edit is still there.',
-      );
-      return { problems, itemAt: journal.from, itemChanged: true, people: journal.made };
-    }
-  }
-  const people: AsRead[] = [];
-  for (const person of [...journal.made].reverse()) {
-    await ports.fs
-      .trashEntry({ path: person.path, unchanged: [person] })
-      .catch((cause: unknown) => {
-        people.push(person);
-        problems.push(
-          `${noteTitle(person.path)} was left in People (${messageWithoutPaths(cause)}).`,
-        );
-      });
-  }
-  return { problems, itemAt: journal.from, itemChanged: false, people };
-}
-
-/** What a row that could not be taken back whole left done, for its log. */
-function leftDone(journal: Journal, left: LeftBehind): DoneAction[] {
-  return [
-    ...(left.itemChanged
-      ? [
-          {
-            kind: 'assisted' as const,
-            from: journal.from,
-            to: left.itemAt,
-            digest: digestOf(journal.after),
-          },
-        ]
-      : []),
-    ...left.people.map((person): DoneAction => ({
-      kind: 'created',
-      path: person.path,
-      digest: digestOf(person.text),
-    })),
-  ];
-}
 
 /** Each row "Apply all" tried, and what it came to. */
 export interface AssistAppliedEach {
