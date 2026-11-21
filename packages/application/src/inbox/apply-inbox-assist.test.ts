@@ -14,6 +14,7 @@ import {
   digestOf,
   isInInbox,
   type AssistEvidence,
+  type AssistIntent,
   type AssistRow,
   type InboxItem,
   type VaultPath,
@@ -899,6 +900,56 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
       new Set(['step']),
     ]);
     expect(await findUnfinishedAssist(v.ports)).toEqual([]);
+  });
+
+  it('says what is on disk of each note a crash was writing, by its digests (round 4, 6)', async () => {
+    const v = setUp();
+    const at = CLOCK.localNow();
+    const row = `${at} ${CALL} 1.1`;
+    const week = createVaultPath('Notes/Week.md');
+    const month = createVaultPath('Notes/Month.md');
+    const year = createVaultPath('Notes/Year.md');
+    const made = createVaultPath('People/Rook Ashby.md');
+    const was = 'See [[Inbox/Call Mara]].\n';
+    const rewritten = 'See [[Tasks/Call Mara]].\n';
+    for (const [path, text] of [
+      [week, rewritten],
+      [month, was],
+      [year, 'Mine now.\n'],
+      [made, 'Made.\n'],
+    ] as const) {
+      v.files.set(path, text);
+    }
+    const about = (intent: AssistIntent) => ({
+      kind: 'step' as const,
+      at,
+      row,
+      done: [],
+      about: intent,
+    });
+    for (const entry of [
+      {
+        kind: 'begun' as const,
+        at,
+        row,
+        path: createVaultPath(CALL),
+        digest: digestOf(VAULT[CALL]!),
+        plan: 'Made it a task.',
+      },
+      about({ doing: 'relink', path: week, holding: digestOf(was), leaving: digestOf(rewritten) }),
+      about({ doing: 'relink', path: month, holding: digestOf(was), leaving: digestOf(rewritten) }),
+      about({ doing: 'relink', path: year, holding: digestOf(was), leaving: digestOf(rewritten) }),
+      about({ doing: 'create', path: made, leaving: digestOf('Made.\n') }),
+    ]) {
+      await appendToRuleLog({ fs: v.ports.fs, rule: INBOX_ASSIST_RULE, entry, now: CLOCK.now() });
+    }
+    const [left] = await findUnfinishedAssist(v.ports);
+    expect(left!.lines.slice(2)).toEqual([
+      `Week (${week}) was changed: its links to Call Mara were rewritten. Check them.`,
+      `Month (${month}) was not changed.`,
+      `Year (${year}) has changed since: what the row wrote may not be in it. Check it.`,
+      `Rook Ashby was made (${made}) just before it stopped, and is as made. Link it from Call Mara, or put it in the Trash.`,
+    ]);
   });
 
   it('says when what a crash left was changed or is gone since', async () => {

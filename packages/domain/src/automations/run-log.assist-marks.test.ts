@@ -103,6 +103,21 @@ describe('a log trimmed past its length', () => {
         about: { doing, path: ITEM },
       })),
       { kind: 'dismissed', at: at(2), row: 'r' },
+      // With what the note held and what the write leaves it, by digest (round 4).
+      {
+        kind: 'step',
+        at: at(3),
+        row: 'r',
+        done: [],
+        about: { doing: 'relink', path: ITEM, holding: '0a1b2c3d', leaving: '4e5f6a7b' },
+      },
+      {
+        kind: 'step',
+        at: at(3),
+        row: 'r',
+        done: [],
+        about: { doing: 'create', path: ITEM, leaving: '4e5f6a7b' },
+      },
     ];
     let text: string | null = null;
     for (const entry of marks)
